@@ -2700,7 +2700,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         for (const auto & [_, matched_name] : matched_expression_nodes_with_names)
             matched_names.push_back(matched_name);
 
-        auto resolve_transformer_targets = [&](const IColumnTransformerNode * transformer, const Names & target_names, const std::vector<IdentifierPartQuote> & target_quotes)
+        auto resolve_transformer_targets = [&](const IColumnTransformerNode * transformer, const Names & target_names, const std::vector<IdentifierPartQuote> & target_quotes, bool duplicate_target_is_error)
         {
             /// A transformer without quote structure was synthesized; its targets match exactly.
             if (target_quotes.size() != target_names.size())
@@ -2719,7 +2719,18 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                         fmt::join(matches, ", "),
                         scope.scope_node->formatASTForErrorMessage());
                 if (matches.size() == 1)
-                    canonical_to_target.emplace(matches.front(), target_names[i]);
+                {
+                    auto [it, inserted] = canonical_to_target.emplace(matches.front(), target_names[i]);
+                    /// Two REPLACE entries folding into one column would pick a replacement arbitrarily.
+                    if (!inserted && duplicate_target_is_error && it->second != target_names[i])
+                        throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                            "Columns '{}' and '{}' in {} transformer both match column '{}' under standard name matching. In scope {}",
+                            it->second,
+                            target_names[i],
+                            transformer->getTransformerTypeName(),
+                            matches.front(),
+                            scope.scope_node->formatASTForErrorMessage());
+                }
             }
         };
 
@@ -2728,11 +2739,11 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             if (auto * except_transformer = transformer->as<ExceptColumnTransformerNode>())
             {
                 if (except_transformer->getExceptTransformerType() == ExceptColumnTransformerType::COLUMN_LIST)
-                    resolve_transformer_targets(except_transformer, except_transformer->getExceptColumnNames(), except_transformer->getExceptColumnNamesQuotes());
+                    resolve_transformer_targets(except_transformer, except_transformer->getExceptColumnNames(), except_transformer->getExceptColumnNamesQuotes(), /*duplicate_target_is_error=*/ false);
             }
             else if (auto * replace_transformer = transformer->as<ReplaceColumnTransformerNode>())
             {
-                resolve_transformer_targets(replace_transformer, replace_transformer->getReplacementsNames(), replace_transformer->getReplacementsNamesQuotes());
+                resolve_transformer_targets(replace_transformer, replace_transformer->getReplacementsNames(), replace_transformer->getReplacementsNamesQuotes(), /*duplicate_target_is_error=*/ true);
             }
         }
     }

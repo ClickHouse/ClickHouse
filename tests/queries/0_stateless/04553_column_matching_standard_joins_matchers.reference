@@ -30,6 +30,7 @@ AMBIGUOUS_IDENTIFIER
 Id	a
 1	15
 AMBIGUOUS_IDENTIFIER
+AMBIGUOUS_IDENTIFIER
 --- standard: COLUMNS list entries fold, case siblings are ambiguous
 FirstName
 a

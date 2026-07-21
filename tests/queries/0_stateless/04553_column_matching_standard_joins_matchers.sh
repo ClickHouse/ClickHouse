@@ -5,6 +5,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Continuation of 04517_column_matching_standard: joins, matchers, views and INTERPOLATE.
+# Column matching is implemented only for the analyzer; force it so old-analyzer suites pass.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_analyzer=1"
 CLIENT_STANDARD="${CLICKHOUSE_CLIENT} --column_and_query_name_matching=standard"
 
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_col_match (FirstName String) ENGINE = Memory; INSERT INTO t_col_match VALUES ('a'); CREATE TABLE t_col_siblings (Val Int32, val Int32) ENGINE = Memory; INSERT INTO t_col_siblings VALUES (1, 2); CREATE TABLE t_col_group (Category String, Amount Int32) ENGINE = Memory; INSERT INTO t_col_group VALUES ('x', 1), ('x', 2), ('y', 5); CREATE TABLE t_col_join_l (Id Int32, a Int32) ENGINE = Memory; INSERT INTO t_col_join_l VALUES (1, 10); CREATE TABLE t_col_join_r (ID Int32, b Int32) ENGINE = Memory; INSERT INTO t_col_join_r VALUES (1, 20); CREATE TABLE t_col_join_sib (Id Int32, ID Int32, c Int32) ENGINE = Memory"
@@ -34,6 +36,7 @@ ${CLIENT_STANDARD} --query "SELECT * EXCEPT (val) FROM t_col_siblings" 2>&1 | gr
 echo '--- standard: REPLACE targets fold, case siblings are ambiguous'
 ${CLIENT_STANDARD} --query "SELECT * REPLACE (a + 5 AS A) FROM t_col_join_l FORMAT TSVWithNames"
 ${CLIENT_STANDARD} --query "SELECT * REPLACE (1 AS val) FROM t_col_siblings" 2>&1 | grep -oF 'AMBIGUOUS_IDENTIFIER' | uniq
+${CLIENT_STANDARD} --query "SELECT * REPLACE ('a' AS FirstName, 'b' AS firstname) FROM t_col_match" 2>&1 | grep -oF 'AMBIGUOUS_IDENTIFIER' | uniq
 
 echo '--- standard: COLUMNS list entries fold, case siblings are ambiguous'
 ${CLIENT_STANDARD} --query "SELECT COLUMNS(firstname) FROM t_col_match FORMAT TSVWithNames"
@@ -55,9 +58,9 @@ ${CLIENT_STANDARD} --analyzer_inline_views=1 --query 'SELECT myalias FROM v_col_
 
 echo '--- standard: recursive CTE quoted column definitions pin inside recursive members'
 ${CLIENT_STANDARD} --query 'WITH RECURSIVE cte("MyCol") AS (SELECT 1 UNION ALL SELECT mycol + 1 FROM cte WHERE mycol < 3) SELECT * FROM cte' 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
-${CLIENT_STANDARD} --query 'WITH RECURSIVE cte("MyCol") AS (SELECT 1 UNION ALL SELECT "MyCol" + 1 FROM cte WHERE "MyCol" < 3) SELECT * FROM cte'
+${CLIENT_STANDARD} --query 'WITH RECURSIVE cte("MyCol") AS (SELECT 1 UNION ALL SELECT "MyCol" + 1 FROM cte WHERE "MyCol" < 3) SELECT * FROM cte ORDER BY 1'
 ${CLIENT_STANDARD} --query 'WITH RECURSIVE cte AS (SELECT 1 AS "MyCol" UNION ALL SELECT mycol + 1 FROM cte WHERE mycol < 3) SELECT * FROM cte' 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
-${CLIENT_STANDARD} --query 'WITH RECURSIVE cte AS (SELECT 1 AS "MyCol" UNION ALL SELECT "MyCol" + 1 FROM cte WHERE "MyCol" < 3) SELECT * FROM cte; WITH RECURSIVE cte AS (SELECT 1 AS MyCol UNION ALL SELECT mycol + 1 FROM cte WHERE mycol < 3) SELECT * FROM cte'
+${CLIENT_STANDARD} --query 'WITH RECURSIVE cte AS (SELECT 1 AS "MyCol" UNION ALL SELECT "MyCol" + 1 FROM cte WHERE "MyCol" < 3) SELECT * FROM cte ORDER BY 1; WITH RECURSIVE cte AS (SELECT 1 AS MyCol UNION ALL SELECT mycol + 1 FROM cte WHERE mycol < 3) SELECT * FROM cte ORDER BY 1'
 
 echo '--- standard: quoted CTE names pin qualifier and table-expression lookups'
 ${CLIENT_STANDARD} --query 'WITH "MyCte" AS (SELECT 1 AS x) SELECT mycte.* FROM "MyCte"' 2>&1 | grep -oF 'UNKNOWN_IDENTIFIER' | uniq
