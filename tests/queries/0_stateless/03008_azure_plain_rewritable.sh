@@ -31,21 +31,25 @@ settings disk = disk(
 
 ${CLICKHOUSE_CLIENT} -nm --query "
 insert into test_azure_mt (*) values (1, 2, 0), (2, 2, 2), (3, 1, 9), (4, 7, 7), (5, 10, 2), (6, 12, 5);
-insert into test_azure_mt (*) select number, number, number from numbers_mt(10000);
+insert into test_azure_mt (*) select number, number, number from numbers_mt(1000);
 select count(*) from test_azure_mt;
 select (*) from test_azure_mt order by tuple(a, b) limit 10;
 "
 
 ${CLICKHOUSE_CLIENT} --query "optimize table test_azure_mt final"
 
-${CLICKHOUSE_CLIENT} -m --query "
-alter table test_azure_mt add projection test_azure_mt_projection (select * order by b)" 2>&1 | grep -Fq "SUPPORT_IS_DISABLED"
+${CLICKHOUSE_CLIENT} -nm --query "
+alter table test_azure_mt update c = 0 where a % 2 = 1 settings mutations_sync = 1;
+alter table test_azure_mt add column d Int64 after c;
+alter table test_azure_mt drop column c settings mutations_sync = 1;
+alter table test_azure_mt add projection test_azure_mt_projection (select * order by b);
+"
 
 ${CLICKHOUSE_CLIENT} -nm --query "
-alter table test_azure_mt update c = 0 where a % 2 = 1;
-alter table test_azure_mt add column d Int64 after c;
-alter table test_azure_mt drop column c;
-" 2>&1 | grep -Fq "SUPPORT_IS_DISABLED"
+select count(*) from test_azure_mt;
+select (*) from test_azure_mt order by tuple(a, b) limit 10;
+select name from system.projections where database = currentDatabase() and table = 'test_azure_mt' order by name;
+"
 
 ${CLICKHOUSE_CLIENT} -nm --query "
 detach table test_azure_mt;

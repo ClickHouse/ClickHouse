@@ -757,6 +757,9 @@ bool DiskObjectStorage::isSharedCompatible() const
 
 bool DiskObjectStorage::supportsHardLinks() const
 {
+    /// plain_rewritable supports real hard links via explicit prefix.path mappings.
+    if (metadata_storage->getType() == MetadataStorageType::PlainRewritable)
+        return !metadata_storage->isWriteOnce();
     return !metadata_storage->isWriteOnce() && !metadata_storage->isPlain();
 }
 

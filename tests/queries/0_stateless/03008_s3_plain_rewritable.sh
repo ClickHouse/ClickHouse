@@ -9,6 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 ${CLICKHOUSE_CLIENT} --query "drop table if exists test_s3_mt"
+${CLICKHOUSE_CLIENT} --query "drop table if exists test_s3_mt_dst"
 
 ${CLICKHOUSE_CLIENT} -m --query "
 create table test_s3_mt (a Int32, b Int64, c Int64) engine = MergeTree() partition by intDiv(a, 1000) order by tuple(a, b)
@@ -30,23 +31,25 @@ select (*) from test_s3_mt order by tuple(a, b) limit 10;
 ${CLICKHOUSE_CLIENT} --query "optimize table test_s3_mt final"
 
 ${CLICKHOUSE_CLIENT} -m --query "
-alter table test_s3_mt add projection test_s3_mt_projection (select * order by b)" 2>&1 | grep -Fq "SUPPORT_IS_DISABLED"
+alter table test_s3_mt update c = 0 where a % 2 = 1 settings mutations_sync = 1;
+alter table test_s3_mt add column d Int64 after c;
+alter table test_s3_mt drop column c settings mutations_sync = 1;
+alter table test_s3_mt add projection test_s3_mt_projection (select * order by b);
+"
 
 ${CLICKHOUSE_CLIENT} -m --query "
-alter table test_s3_mt update c = 0 where a % 2 = 1;
-alter table test_s3_mt add column d Int64 after c;
-alter table test_s3_mt drop column c;
-" 2>&1 | grep -Fq "SUPPORT_IS_DISABLED"
+select count(*) from test_s3_mt;
+select (*) from test_s3_mt order by tuple(a, b) limit 10;
+select name from system.projections where database = currentDatabase() and table = 'test_s3_mt' order by name;
+"
 
 ${CLICKHOUSE_CLIENT} -m --query "
 detach table test_s3_mt;
 attach table test_s3_mt;
 "
 
-${CLICKHOUSE_CLIENT} --query "drop table if exists test_s3_mt_dst"
-
 ${CLICKHOUSE_CLIENT} -m --query "
-create table test_s3_mt_dst (a Int32, b Int64, c Int64) engine = MergeTree() partition by intDiv(a, 1000) order by tuple(a, b)
+create table test_s3_mt_dst (a Int32, b Int64, d Int64) engine = MergeTree() partition by intDiv(a, 1000) order by tuple(a, b)
 settings disk = disk(
     name = 03008_s3_plain_rewritable,
     type = s3_plain_rewritable,
@@ -56,6 +59,10 @@ settings disk = disk(
 "
 
 ${CLICKHOUSE_CLIENT} -m --query "
-alter table test_s3_mt move partition 0 to table test_s3_mt_dst" 2>&1 | grep -Fq "SUPPORT_IS_DISABLED"
+alter table test_s3_mt move partition 0 to table test_s3_mt_dst;
+select count(*) from test_s3_mt;
+select count(*) from test_s3_mt_dst;
+"
 
+${CLICKHOUSE_CLIENT} --query "drop table test_s3_mt_dst sync"
 ${CLICKHOUSE_CLIENT} --query "drop table test_s3_mt sync"

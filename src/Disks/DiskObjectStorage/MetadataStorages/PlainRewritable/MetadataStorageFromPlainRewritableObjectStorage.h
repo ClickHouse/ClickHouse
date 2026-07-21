@@ -3,11 +3,14 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableBlobRefcounts.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
 #include <memory>
+#include <mutex>
+#include <unordered_map>
 
 namespace DB
 {
@@ -22,6 +25,12 @@ namespace DB
   *   each containing a single file, `prefix.path`, with the content as the logical path of the corresponding directory.
   * - when a logical directory is renamed or moved, we don't touch its randomly assigned name,
   *   and simply rewrite the contents of `prefix.path`.
+  *
+  * `prefix.path` may be in two forms:
+  * - implicit: only the logical directory path. Files are discovered by listing blobs under the
+  *   corresponding remote prefix (blob name equals the logical file name);
+  * - explicit: the logical directory path plus a file list with relative blob keys. Blob keys may
+  *   point to a different remote prefix (needed for hard links). See PlainRewritablePrefixPath.
   *
   * Example. Let's suppose, the logical filesystem structure is:
   * /hello/world/test1.txt
@@ -39,13 +48,15 @@ class MetadataStorageFromPlainRewritableObjectStorage final : public IMetadataSt
     friend class MetadataStorageFromPlainRewritableObjectStorageTransaction;
 
     void load(bool is_initial_load, bool do_not_load_unchanged_directories);
+    void rebuildBlobRefcounts(const std::unordered_map<std::string, DirectoryRemoteInfo> & remote_layout);
+    void removeOrphanBlobs(const std::unordered_map<std::string, DirectoryRemoteInfo> & remote_layout);
 
 public:
     MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, std::string storage_path_prefix_);
 
     MetadataStorageType getType() const override { return MetadataStorageType::PlainRewritable; }
     const std::string & getPath() const override { return storage_path_full; }
-    uint32_t getHardlinkCount(const std::string & /* path */) const override { return 0; }
+    uint32_t getHardlinkCount(const std::string & path) const override;
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
     bool isReadOnly() const override { return false; }
@@ -85,6 +96,9 @@ private:
     std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     std::shared_ptr<PlainRewritableLayout> layout;
 
+    /// Relative blob object key -> number of logical file links. Rebuilt on every metadata load.
+    std::shared_ptr<PlainRewritableBlobRefcounts> blob_refcounts;
+
     std::mutex load_mutex;
     AtomicStopwatch previous_refresh;
 };
@@ -120,7 +134,7 @@ public:
     void removeDirectory(const std::string & path) override;
     void removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects) override;
 
-    /// Hard links are simulated using server-side copying.
+    /// Hard links share the source blob via explicit prefix.path mappings.
     void createHardLink(const std::string & path_from, const std::string & path_to) override;
     void moveFile(const std::string & path_from, const std::string & path_to) override;
     void replaceFile(const std::string & path_from, const std::string & path_to) override;

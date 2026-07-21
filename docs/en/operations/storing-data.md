@@ -421,15 +421,19 @@ Configuration:
 A new disk type `s3_plain_rewritable` was introduced in `24.4`.
 Similar to the `s3_plain` disk type, it does not require additional storage for 
 metadata files. Instead, metadata is stored in S3.
-Unlike the `s3_plain` disk type, `s3_plain_rewritable` allows executing merges 
-and supports `INSERT` operations.
-[Mutations](/sql-reference/statements/alter#mutations) and replication of tables are not supported.
+Unlike the `s3_plain` disk type, `s3_plain_rewritable` allows executing merges,
+supports `INSERT` operations, and supports [mutations](/sql-reference/statements/alter#mutations)
+and schema `ALTER`s via real hard links (shared blobs) in object storage metadata.
+Replication of tables is not supported.
+
+Hard links are recorded in an explicit `prefix.path` mapping. Older ClickHouse versions
+that only understand the implicit (single-line path) format cannot correctly read a
+directory after it has been converted to the explicit form.
 
 A use case for this disk type is for non-replicated `MergeTree` tables. Although 
 the `s3` disk type is suitable for non-replicated `MergeTree` tables, you may opt
 for the `s3_plain_rewritable` disk type if you do not require local metadata 
-for the table and are willing to accept a limited set of operations. This could
-be useful, for example, for system tables.
+for the table. This could be useful, for example, for system tables.
 
 Configuration:
 

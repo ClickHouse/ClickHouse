@@ -240,6 +240,32 @@ void InMemoryDirectoryTree::recordFile(const std::string & path, FileRemoteInfo 
     remote_layout_files_count.add();
 }
 
+void InMemoryDirectoryTree::replaceDirectoryRemoteInfo(const std::string & path, DirectoryRemoteInfo info)
+{
+    std::lock_guard guard(mutex);
+    const auto normalized_path = normalizePath(path);
+    const auto inode = walk(normalized_path);
+
+    if (!inode)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", normalized_path.string());
+
+    if (inode->isVirtual())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", normalized_path.string());
+
+    if (inode->remote_info->remote_path != info.remote_path)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Directory '{}' remote path mismatch: existing '{}', new '{}'",
+            normalized_path.string(),
+            inode->remote_info->remote_path,
+            info.remote_path);
+
+    const auto old_files = inode->remote_info->files.size();
+    inode->remote_info = std::move(info);
+    remote_layout_files_count.sub(old_files);
+    remote_layout_files_count.add(inode->remote_info->files.size());
+}
+
 void InMemoryDirectoryTree::unlinkTree(const std::string & path)
 {
     std::lock_guard guard(mutex);
