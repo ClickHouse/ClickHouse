@@ -25,3 +25,5 @@
 2	99900
 3	100100
 4	100300
+-- 9. A read from remote shards is rejected (fail-close), localhost shards work
+1000

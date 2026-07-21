@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -217,6 +218,15 @@ static void checkStepSupportedByCascades(const IQueryPlanStep & step)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan with enable_cascades_optimizer does not support the '{}' step",
             step.getName());
+
+    /// A read from a `Distributed` table (or the `remote`/`cluster` table functions) with remote
+    /// shards fans out by itself and cannot be planned as part of the distributed plan; without
+    /// this check the plan builder would fail on cloning the step in the middle of optimization.
+    /// (Localhost shards do not reach this point: their subplans are inlined and planned locally.)
+    if (dynamic_cast<const ReadFromRemote *>(&step) || dynamic_cast<const ReadFromParallelRemoteReplicasStep *>(&step))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan with enable_cascades_optimizer does not support reading from remote shards "
+            "(a `Distributed` table or the `remote`/`cluster` table functions)");
 
     /// A LOCAL JOIN must use only co-located data, but Cascades would implement it as a
     /// gathered, broadcast or shuffle join over non-co-located data (the rule-based planner

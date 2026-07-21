@@ -70,4 +70,18 @@ SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
     distributed_plan_execute_locally = 1, optimize_use_projections = 1, force_optimize_projection = 1;
 DROP TABLE t_gating_proj;
 
+-- A read from a `Distributed` table with remote shards fans out by itself and cannot be part
+-- of the distributed plan; it is rejected up front. (With localhost shards the shard subplans
+-- are inlined and planned locally, so the same query works.)
+SELECT '-- 9. A read from remote shards is rejected (fail-close), localhost shards work';
+DROP TABLE IF EXISTS t_gating_dist;
+CREATE TABLE t_gating_dist AS t_gating ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_gating);
+SELECT count() FROM t_gating_dist
+SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
+    prefer_localhost_replica = 0; -- { serverError SUPPORT_IS_DISABLED }
+SELECT count() FROM t_gating_dist
+SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
+    prefer_localhost_replica = 1, distributed_plan_execute_locally = 1;
+DROP TABLE t_gating_dist;
+
 DROP TABLE t_gating;
