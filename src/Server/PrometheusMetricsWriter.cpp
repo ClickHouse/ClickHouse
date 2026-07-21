@@ -79,7 +79,7 @@ constexpr auto dimensional_metrics_prefix = "ClickHouseDimensionalMetrics_";
 
 void writeEvent(DB::WriteBuffer & wb, ProfileEvents::Event event)
 {
-    const auto counter = ProfileEvents::global_counters[event];
+    const auto counter = ProfileEvents::global_counters[event].load(std::memory_order_relaxed);
 
     std::string metric_name{ProfileEvents::getName(static_cast<ProfileEvents::Event>(event))};
     std::string metric_doc{ProfileEvents::getDocumentation(static_cast<ProfileEvents::Event>(event))};
@@ -214,9 +214,7 @@ void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const Histo
 
             for (size_t j = 0; j < labels.size(); ++j)
             {
-                wb << labels[j] << '=';
-                writeDoubleQuotedString(label_values[j], wb);
-                wb << ',';
+                wb << labels[j] << "=\"" << label_values[j] << "\",";
             }
 
             wb << "le=\"";
@@ -242,8 +240,7 @@ void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const Histo
                 {
                     wb << ',';
                 }
-                wb << labels[j] << '=';
-                writeDoubleQuotedString(label_values[j], wb);
+                wb << labels[j] << "=\"" << label_values[j] << '"';
             }
             wb << '}';
         }
@@ -259,8 +256,7 @@ void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const Histo
                 {
                     wb << ',';
                 }
-                wb << labels[j] << '=';
-                writeDoubleQuotedString(label_values[j], wb);
+                wb << labels[j] << "=\"" << label_values[j] << '"';
             }
             wb << '}';
         }
@@ -286,7 +282,7 @@ void PrometheusMetricsWriter::writeDimensionalMetric(WriteBuffer & wb, const Dim
     convertHelpToSingleLine(help_text);
 
     writeOutLine(wb, "# HELP", base_name, help_text);
-    writeOutLine(wb, "# TYPE", base_name, family.getTypeString());
+    writeOutLine(wb, "# TYPE", base_name, "gauge");
 
     family.forEachMetric([&wb, &family, &base_name](const DimensionalMetrics::LabelValues & label_values, const DimensionalMetrics::Metric & metric)
     {
@@ -301,8 +297,7 @@ void PrometheusMetricsWriter::writeDimensionalMetric(WriteBuffer & wb, const Dim
                 {
                     wb << ',';
                 }
-                wb << labels[i] << '=';
-                writeDoubleQuotedString(label_values[i], wb);
+                wb << labels[i] << "=\"" << label_values[i] << '"';
             }
             wb << '}';
         }

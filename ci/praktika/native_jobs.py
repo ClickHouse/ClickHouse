@@ -13,7 +13,6 @@ from .cidb import CIDB
 from .digest import Digest
 from .docker import Docker
 from .gh import GH
-from .git import Git
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .info import Info
@@ -496,12 +495,27 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
 
         pushed = False
         if new_commit:
-            # Push with the GitHub App token rather than the default GITHUB_TOKEN
-            # the checkout action persists: only a push authenticated as the App
-            # (or a PAT) re-triggers workflows, so the regenerated YAML is picked
-            # up by a fresh CI run. `repo`/`branch` are attacker-controlled on fork
-            # PRs, so Git.push passes them shell-quoted.
-            pushed = Git.push(repo, f"{new_commit}:refs/heads/{branch}")
+            # Push with the GitHub App token rather than the default GITHUB_TOKEN that
+            # the checkout action persists: only a push authenticated as the App (or a
+            # PAT) re-triggers workflows, so the regenerated YAML is actually picked up
+            # by a fresh CI run. The token is read from the gh auth session and kept out
+            # of the logs (verbose=False), and the inherited http extraheader is cleared
+            # so the tokenized URL is the one that authenticates.
+            # `repo` and `branch` are attacker-controlled on fork PRs, so pass them as
+            # shell-quoted data. The token expands at runtime, so its literal `${token}`
+            # is kept outside the f-string and the URL is assembled by concatenation.
+            repo_url = (
+                "https://x-access-token:${token}@github.com/"
+                + shlex.quote(repo)
+                + ".git"
+            )
+            refspec = shlex.quote(f"{new_commit}:refs/heads/{branch}")
+            push_cmd = (
+                'token="$(gh auth token)" && '
+                "git -c http.https://github.com/.extraheader= push "
+                f"{repo_url} {refspec}"
+            )
+            pushed = Shell.check(push_cmd, verbose=False)
 
         if pushed:
             return _result(
@@ -654,12 +668,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             res_.append(Result.from_commands_run(name=name, command=pre_check))
 
         results.append(
-            Result.create_from(
-                name="Pre Hooks",
-                results=res_,
-                stopwatch=sw_,
-                with_info_from_results=True,
-            )
+            Result.create_from(name="Pre Hooks", results=res_, stopwatch=sw_)
         )
         # reread env object in case some new dada (JOB_KV_DATA) has been added in .pre_hooks
         env = _Environment.get()
@@ -743,9 +752,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 name="Filter Hooks", status=status, stopwatch=sw_, info=info
             )
         )
-        # Reload the environment because workflow filter hooks may have written
-        # report messages through a separate Info instance.
-        env = _Environment.get()
 
     if workflow.enable_job_filtering_by_changes and results[-1].is_ok():
         print("Filter not affected jobs")
@@ -887,27 +893,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 env.COMMIT_AUTHORS = list(commit_authors)
                 env.JOB_KV_DATA["commit_authors"] = list(commit_authors)
                 env.dump()
-        elif not env.COMMIT_AUTHORS:
-            # A push event already has COMMIT_AUTHORS seeded from the webhook
-            # payload by `_Environment.from_env`, so only fill it here when it is
-            # still empty (workflow_dispatch / scheduled runs, e.g. releases).
-            # Those have no PR author, so the Slack feed would notify no one and a
-            # failure would be silent; fall back to the head commit's author so
-            # failures still reach a human. Never overwrite an already-populated
-            # author set — that would drop the full authors of a multi-commit push.
-            author_email = ""
-            try:
-                head_email = Shell.get_output(
-                    f"git log -1 --format='%ae' {env.SHA}", verbose=True
-                ).strip()
-                if head_email and "@" in head_email and "+" not in head_email:
-                    author_email = head_email
-            except Exception as e:
-                print(f"WARNING: Failed to get head commit author: {e}")
-            authors = [author_email] if author_email else []
-            env.COMMIT_AUTHORS = authors
-            env.JOB_KV_DATA["commit_authors"] = authors
-            env.dump()
 
     print(f"WorkflowRuntimeConfig: [{workflow_config.to_json(pretty=True)}]")
     workflow_config.dump()
@@ -1011,12 +996,7 @@ def _finish_workflow(workflow, job_name):
             results_.append(Result.from_commands_run(name=name, command=check))
 
         results.append(
-            Result.create_from(
-                name="Post Hooks",
-                results=results_,
-                stopwatch=sw_,
-                with_info_from_results=True,
-            )
+            Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
         )
 
     ready_for_merge_status = Result.Status.OK

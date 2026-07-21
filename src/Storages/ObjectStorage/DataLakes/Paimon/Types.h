@@ -288,7 +288,7 @@ struct DataType
             }
             else
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported Paimon type: {}", real_type);
+                throw Exception();
             }
             return type;
         }

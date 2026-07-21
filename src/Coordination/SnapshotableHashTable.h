@@ -268,7 +268,7 @@ public:
         insertOrReplace(key, std::move(value), /*owns_key*/ true);
     }
 
-    bool erase(std::string_view key)
+    bool erase(const std::string & key)
     {
         auto it = map.find(key);
         if (it == map.end())
@@ -443,6 +443,8 @@ public:
             approximate_data_size += node.value.sizeInBytes();
         }
     }
+
+    uint64_t keyArenaSize() const { return 0; }
 
     iterator begin() { return list.begin(); }
     const_iterator begin() const { return list.cbegin(); }

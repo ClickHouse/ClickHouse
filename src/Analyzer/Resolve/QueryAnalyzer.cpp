@@ -139,6 +139,58 @@ namespace ErrorCodes
 namespace
 {
 
+/// Verify that a subsequent reference to a MATERIALIZED CTE produced the same projection
+/// types as the storage that was created from the first reference.
+///
+/// Each reference to a MATERIALIZED CTE clones the body subquery and re-resolves it in the
+/// scope of that reference. Normally all clones must produce identical projection types
+/// (otherwise the single shared storage cannot satisfy all readers). Type drift across
+/// clones is possible when the body resolves identifiers from outer scope that take
+/// different values per call site (for example, aliases from the calling subquery's
+/// projection are inlined as different constants).
+///
+/// Without this check the planner would create the storage with one set of column types
+/// but feed it data with another set, leading to a `Bad cast` `LOGICAL_ERROR` at read time
+/// inside `MemorySource::fillPhysicalColumns`. Detecting the mismatch here turns the
+/// silent corruption into a clear analysis-time error.
+void verifyMaterializedCTESubqueryMatchesStorage(
+    const QueryTreeNodePtr & subquery,
+    const StoragePtr & storage,
+    const ContextPtr & context,
+    const std::string & cte_name,
+    const QueryTreeNodePtr & scope_node)
+{
+    const NamesAndTypes & projection_columns = subquery->as<QueryNode>()
+        ? subquery->as<QueryNode>()->getProjectionColumns()
+        : subquery->as<UnionNode>()->computeProjectionColumns();
+
+    auto storage_metadata = storage->getInMemoryMetadataPtr(context, /*throw_on_invalid=*/false);
+    const NamesAndTypesList storage_columns = storage_metadata->getColumns().getOrdinary();
+
+    if (projection_columns.size() != storage_columns.size())
+        throw Exception(ErrorCodes::TYPE_MISMATCH,
+            "Materialized CTE '{}' has inconsistent projection across references: storage has {} columns, "
+            "but this reference resolved to {}. In scope {}",
+            cte_name, storage_columns.size(), projection_columns.size(),
+            scope_node->formatASTForErrorMessage());
+
+    auto storage_it = storage_columns.begin();
+    for (size_t i = 0; i < projection_columns.size(); ++i, ++storage_it)
+    {
+        if (!projection_columns[i].type->equals(*storage_it->type))
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                "Materialized CTE '{}' has inconsistent column types across references: column '{}' has type {} in storage "
+                "but this reference resolved to type {}. This usually means the CTE body references identifiers "
+                "from outer scope (e.g. aliases from the calling subquery) that take different values per call site. "
+                "Materialized CTEs cannot have such dependencies. In scope {}",
+                cte_name,
+                storage_it->name,
+                storage_it->type->getName(),
+                projection_columns[i].type->getName(),
+                scope_node->formatASTForErrorMessage());
+    }
+}
+
 /// Recursively clears aliases from `node` and all of its descendants, stopping at
 /// nested-scope boundaries (`QUERY`, `UNION`, `LAMBDA`).
 ///
@@ -234,16 +286,12 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
                 scope.table_expressions_in_resolve_process.erase(table_expression.get());
             }
 
-            /// Collect aliases defined inside the expression (e.g. `f(...) AS a, ..., a`) into the scope
-            /// before resolution, so that later references to them can be resolved. This must be done for
-            /// a single expression node too, not only for a list: otherwise an alias defined and later
-            /// referenced within a standalone expression (such as a column DEFAULT expression checked
-            /// during `ALTER TABLE ... DROP COLUMN`) is not found and resolution fails with UNKNOWN_IDENTIFIER.
-            QueryExpressionsAliasVisitor visitor(scope.aliases);
-            visitor.visit(node);
-
             if (node_type == QueryTreeNodeType::LIST)
+            {
+                QueryExpressionsAliasVisitor visitor(scope.aliases);
+                visitor.visit(node);
                 resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            }
             else
                 resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -266,7 +314,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
     }
 
     validateCorrelatedSubqueries(node);
-    inlineMaterializedCTEIfNeeded(node, context);
+    inlineMaterializedCTEIfNeeded(node, reused_materialized_cte, context);
 }
 
 void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context)
@@ -297,14 +345,6 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
         initializeTableExpressionData(scope.expression_join_tree_node, scope);
         scope.table_expressions_in_resolve_process.erase(table_expression.get());
     }
-
-    /// Collect aliases defined inside the expression (e.g. `f(...) AS a, ..., a`) into the scope
-    /// before resolution, so that later references to them can be resolved. This mirrors `resolve`
-    /// above and is needed for a single expression node too, not only for a list: otherwise an alias
-    /// defined and later referenced within a standalone constant expression (such as a user predicate
-    /// passed to `mergeTreeAnalyzeIndexes`) is not found and resolution fails with UNKNOWN_IDENTIFIER.
-    QueryExpressionsAliasVisitor visitor(scope.aliases);
-    visitor.visit(node);
 
     if (node_type == QueryTreeNodeType::LIST)
         resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -674,11 +714,9 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
         /// initiator.
         if (scope.context->isPositionalArgumentsAlreadyResolved())
             return;
-        /// Skip only on remote shard execution (SECONDARY_QUERY): the initiator already
-        /// resolved positional arguments. Do not skip for contexts that never set the kind
-        /// (NO_QUERY), e.g. a Replicated database DDL worker running CREATE ... AS SELECT,
-        /// which must resolve positional arguments itself.
-        if (scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        /// Skip on remote shard execution (SECONDARY_QUERY): same reasoning as above for
+        /// paths not covered by setPositionalArgumentsAlreadyResolved.
+        if (scope.context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
             return;
     }
 
@@ -832,8 +870,8 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
 
             if (table_expression_modifiers->hasStream())
             {
-                #if !defined(OS_LINUX) && !defined(OS_DARWIN)
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming requests are supported only on Linux and macOS.");
+                #ifndef OS_LINUX
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming requests are supported only on Linux.");
                 #else
                     if (scope.context && !scope.context->getSettingsRef()[Setting::enable_streaming_queries])
                         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -1303,6 +1341,13 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
 
         cte_node = table_node;
     }
+    else if (auto * table_node = cte_node->as<TableNode>())
+    {
+        if (table_node->isMaterializedCTE())
+        {
+            reused_materialized_cte.insert(table_node->getMaterializedCTE());
+        }
+    }
 
     return { .resolved_identifier = cte_node, .resolve_place = IdentifierResolvePlace::CTE };
 }
@@ -1746,20 +1791,14 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
 }
 
 
-/// Columns resolved from a matcher can also be JOIN USING keys, whose type the join changes
-/// (the supertype of both sides, and Nullable when an OUTER side makes the data Nullable).
+/// Columns that resolved from matcher can also match columns from JOIN USING.
+/// In that case we update type to type of column in USING section.
 ///
-/// Unqualified matcher (`*`): the matched column IS the merged USING key of the top join, so it
-/// takes that key's type directly.
-///
-/// Qualified matcher (`t.*`): the matched column is `t`'s own column, so its type must equal what
-/// the explicit reference `t.col` resolves to. Rather than inspect the USING joins here, resolve
-/// `t.col` through the normal identifier flow and adopt its type. That flow
-/// (IdentifierResolver::tryResolveIdentifierFromJoin) follows only the joins `t` participates in,
-/// wherever the USING join sits in the tree, applies the same type correction, and registers the
-/// changed type in `scope.join_columns_with_changed_types`. So a USING key that `t.col` matches
-/// only by name in a join `t` does not take part in is naturally not applied, and no separate
-/// participation check or registration is needed.
+/// Unqualified matcher (`*`): the matched column IS the merged USING key, so it takes the
+/// key type as-is. Qualified matcher (`t.*`): the matched column is `t`'s own column, so its
+/// type must equal what the explicit reference `t.col` resolves to. The merged key's type is
+/// not correct here: in a nested JOIN it reflects the outer join's other side, while `t.col`
+/// only follows the joins `t` participates in.
 void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
     QueryTreeNodesWithNames & result_matched_column_nodes_with_names,
     bool is_qualified_matcher,
@@ -1775,53 +1814,6 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "There are no table sources. In scope {}",
             scope.scope_node->formatASTForErrorMessage());
-    }
-
-    if (is_qualified_matcher)
-    {
-        /// Only a JOIN USING key can change a matched column's type here; `join_use_nulls`
-        /// nullability for the matcher is applied later in resolveMatcher. With no USING join in
-        /// scope there is nothing to correct, so skip the per-column identifier resolution.
-        /// The count lives on the query scope whose join tree is inspected above, not on the
-        /// current scope: a matcher in a lambda body (`arrayMap(x -> t.*, ...)`) resolves through
-        /// a fresh child scope whose counter is zero, but still expands `t.*` from the parent query.
-        if (nearest_query_scope->using_joins_count == 0)
-            return;
-
-        for (auto & [matched_column_node, _] : result_matched_column_nodes_with_names)
-        {
-            auto & matched_column_node_typed = matched_column_node->as<ColumnNode &>();
-
-            Identifier explicit_identifier = matched_qualified_identifier;
-            explicit_identifier.push_back(matched_column_node_typed.getColumnName());
-            auto explicit_lookup = IdentifierLookup{explicit_identifier, IdentifierLookupContext::EXPRESSION};
-
-            /// The qualifier is a table expression (the matcher already resolved it to one), so any
-            /// type change can only come from the join tree. Resolve against the nearest query scope's
-            /// join tree directly rather than through tryResolveIdentifier: the latter first consults
-            /// expression arguments and aliases, and a non-compound entry sharing the qualifier's name
-            /// throws there before the join tree is ever tried. For a scalar alias (`WITH 0 AS b`) that
-            /// throw is suppressed (the alias path passes can_be_not_found = allow_to_check_join_tree),
-            /// but a lambda argument goes through tryResolveIdentifierFromExpressionArguments, which does
-            /// not, so `arrayMap(b -> b.*, ...) FROM l JOIN r AS b USING (id)` used to fail here.
-            auto explicit_resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(explicit_lookup, *nearest_query_scope);
-            if (!explicit_resolve_result.resolved_identifier)
-                continue;
-
-            auto resolved_type = explicit_resolve_result.resolved_identifier->getResultType();
-            if (resolved_type->equals(*matched_column_node_typed.getColumnType()))
-                continue;
-
-            auto it = node_to_projection_name.find(matched_column_node);
-            matched_column_node = matched_column_node->clone();
-            if (it != node_to_projection_name.end())
-                node_to_projection_name.emplace(matched_column_node, it->second);
-
-            matched_column_node->as<ColumnNode &>().setColumnType(resolved_type);
-            correctColumnExpressionType(matched_column_node->as<ColumnNode &>(), scope.context);
-        }
-
-        return;
     }
 
     const auto & join_tree = nearest_query_scope_query_node->getJoinTree();
@@ -1863,6 +1855,24 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
 
                 auto using_column_type = join_using_column_node.getResultType();
 
+                /// Qualified matcher: the matched column is `t.col`, NOT the merged USING key.
+                /// Resolve the explicit identifier `t.col` and adopt its type, exactly matching
+                /// how an explicit reference is typed (IdentifierResolver::tryResolveIdentifierFromJoin).
+                /// The merged key's type is wrong here: in a nested JOIN it reflects the OUTER
+                /// join's siblings, while `t.col` only follows the joins `t` participates in.
+                if (is_qualified_matcher)
+                {
+                    Identifier explicit_identifier = matched_qualified_identifier;
+                    explicit_identifier.push_back(matched_column_name);
+                    auto explicit_lookup = IdentifierLookup{explicit_identifier, IdentifierLookupContext::EXPRESSION};
+                    IdentifierResolveContext explicit_resolve_settings;
+                    explicit_resolve_settings.allow_to_check_cte = false;
+                    explicit_resolve_settings.allow_to_check_database_catalog = false;
+                    auto explicit_resolve_result = tryResolveIdentifier(explicit_lookup, scope, explicit_resolve_settings);
+                    if (explicit_resolve_result.resolved_identifier)
+                        using_column_type = explicit_resolve_result.resolved_identifier->getResultType();
+                }
+
                 auto it = node_to_projection_name.find(matched_column_node);
                 matched_column_node = matched_column_node->clone();
                 if (it != node_to_projection_name.end())
@@ -1879,10 +1889,9 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
 
 /** Resolve qualified tree matcher.
   *
-  * First try to match qualified identifier to expression. If qualified identifier matched a compound expression node then
-  * match its column names using matcher `isMatchingColumn` method. If the matched expression is not compound, or the
-  * qualified identifier did not match any expression in the query tree, try to lookup qualified identifier in table context.
-  * Only if neither a compound expression nor a table expression matches, throw an exception.
+  * First try to match qualified identifier to expression. If qualified identifier matched expression node then
+  * if expression is compound match it column names using matcher `isMatchingColumn` method, if expression is not compound, throw exception.
+  * If qualified identifier did not match expression in query tree, try to lookup qualified identifier in table context.
   */
 QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope)
 {
@@ -1893,9 +1902,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope);
     auto expression_query_tree_node = expression_identifier_resolve_result.resolved_identifier;
 
-    /// Try to resolve unqualified matcher for query expression.
-
-    QueryTreeNodePtr non_compound_expression_node;
+    /// Try to resolve unqualified matcher for query expression
 
     if (expression_query_tree_node)
     {
@@ -1915,38 +1922,37 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
 
         const auto * tuple_data_type = typeid_cast<const DataTypeTuple *>(result_type.get());
         if (!tuple_data_type)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Qualified matcher {} found a non-compound expression {} with type {}. Expected a tuple or an array of tuples. In scope {}",
+                matcher_node->formatASTForErrorMessage(),
+                expression_query_tree_node->formatASTForErrorMessage(),
+                expression_query_tree_node->getResultType()->getName(),
+                scope.scope_node->formatASTForErrorMessage());
+
+        const auto & element_names = tuple_data_type->getElementNames();
+        QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
+
+        auto qualified_matcher_element_identifier = matcher_node_typed.getQualifiedIdentifier();
+        for (const auto & element_name : element_names)
         {
-            /// The qualifier resolved to a non-compound column and cannot be expanded by a matcher.
-            /// Fall through to table-expression resolution, since the same name may also be a table alias.
-            non_compound_expression_node = expression_query_tree_node;
+            if (!matcher_node_typed.isMatchingColumn(element_name))
+                continue;
+
+            auto get_subcolumn_function = std::make_shared<FunctionNode>("getSubcolumn");
+            get_subcolumn_function->getArguments().getNodes().push_back(expression_query_tree_node);
+            get_subcolumn_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(element_name));
+
+            QueryTreeNodePtr function_query_node = get_subcolumn_function;
+            resolveFunction(function_query_node, scope);
+
+            qualified_matcher_element_identifier.push_back(element_name);
+            node_to_projection_name.emplace(function_query_node, qualified_matcher_element_identifier.getFullName());
+            qualified_matcher_element_identifier.pop_back();
+
+            matched_expression_nodes_with_column_names.emplace_back(std::move(function_query_node), element_name);
         }
-        else
-        {
-            const auto & element_names = tuple_data_type->getElementNames();
-            QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
 
-            auto qualified_matcher_element_identifier = matcher_node_typed.getQualifiedIdentifier();
-            for (const auto & element_name : element_names)
-            {
-                if (!matcher_node_typed.isMatchingColumn(element_name))
-                    continue;
-
-                auto get_subcolumn_function = std::make_shared<FunctionNode>("getSubcolumn");
-                get_subcolumn_function->getArguments().getNodes().push_back(expression_query_tree_node);
-                get_subcolumn_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(element_name));
-
-                QueryTreeNodePtr function_query_node = get_subcolumn_function;
-                resolveFunction(function_query_node, scope);
-
-                qualified_matcher_element_identifier.push_back(element_name);
-                node_to_projection_name.emplace(function_query_node, qualified_matcher_element_identifier.getFullName());
-                qualified_matcher_element_identifier.pop_back();
-
-                matched_expression_nodes_with_column_names.emplace_back(std::move(function_query_node), element_name);
-            }
-
-            return matched_expression_nodes_with_column_names;
-        }
+        return matched_expression_nodes_with_column_names;
     }
 
     /// Try to resolve qualified matcher for table expression
@@ -1961,16 +1967,6 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
 
     if (!table_expression_node)
     {
-        /// The qualifier bound to a non-compound column and there is no table with this name either.
-        /// Emit the precise diagnostic about the non-compound expression rather than "does not find table".
-        if (non_compound_expression_node)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Qualified matcher {} found a non-compound expression {} with type {}. Expected a tuple or an array of tuples. In scope {}",
-                matcher_node->formatASTForErrorMessage(),
-                non_compound_expression_node->formatASTForErrorMessage(),
-                non_compound_expression_node->getResultType()->getName(),
-                scope.scope_node->formatASTForErrorMessage());
-
         throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
             "Qualified matcher {} does not find table. In scope {}",
             matcher_node->formatASTForErrorMessage(),
@@ -2960,19 +2956,14 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
 
     /** Register lambda as being resolved, to prevent recursive lambdas resolution.
       * Example: WITH (x -> x + lambda_2(x)) AS lambda_1, (x -> x + lambda_1(x)) AS lambda_2 SELECT 1;
-      *
-      * A recursive reference resolves to a fresh clone of the alias node, so re-entry must be
-      * detected by structure (tree hash), not by pointer identity. Compute that hash once here and
-      * reuse it for the contains/insert/erase below, instead of letting each operation recompute the
-      * lambda body's full getTreeHash (this guard is on the hot path for queries with large lambdas).
       */
-    const QueryTreeNodePtrWithHash lambda_with_hash{lambda_node};
-    if (lambdas_in_resolve_process.contains(lambda_with_hash))
+    auto it = lambdas_in_resolve_process.find(lambda_node);
+    if (it != lambdas_in_resolve_process.end())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Recursive lambda {}. In scope {}",
             lambda_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
-    lambdas_in_resolve_process.insert(lambda_with_hash);
+    lambdas_in_resolve_process.emplace(lambda_node);
 
     size_t arguments_size = lambda_arguments.size();
     if (lambda_arguments_nodes_size != arguments_size)
@@ -3025,7 +3016,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
     /// Lambda body expression is resolved as standard query expression node.
     auto result_projection_names = resolveExpressionNode(lambda_to_resolve.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-    lambdas_in_resolve_process.erase(lambda_with_hash);
+    lambdas_in_resolve_process.erase(lambda_node);
 
     return result_projection_names;
 }
@@ -3243,8 +3234,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                                 materialized_cte_ptr->storage,
                                 scope.context,
                                 materialized_cte_ptr->cte_name,
-                                scope.scope_node,
-                                /*throw_on_mismatch=*/ true);
+                                scope.scope_node);
                         }
                     }
                 }
@@ -3499,101 +3489,28 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
             break;
     }
 
-    /// For correlated column references, the relevant `nullable_group_by_keys`
-    /// live in the ancestor scope where the column is actually defined.
-    /// During decorrelation a CROSS JOIN feeds those columns from the outer
-    /// scope, where they have already been wrapped to `Nullable` due to
-    /// `group_by_use_nulls` + ROLLUP/CUBE. If we stopped the lookup at the
-    /// inner QUERY scope (the standard behavior for non-correlated references),
-    /// the inner expression DAG, function bindings, and aggregate function
-    /// bindings would all be built with the pre-Nullable type and later fail
-    /// with a type mismatch at runtime.
-    ///
-    /// The `in_aggregate_or_grouping_function_scope` guard is also bypassed for correlated
-    /// columns: a `local` aggregate computes over pre-aggregation rows, but an
-    /// aggregate inside an inner correlated subquery operates on rows produced
-    /// by the outer post-aggregation step, where the correlated column has
-    /// already become `Nullable`.
-    bool is_correlated_column_node = false;
-    QueryTreeNodePtr correlated_column_source;
-    if (auto * column_node = node->as<ColumnNode>())
-    {
-        auto column_source = column_node->getColumnSourceOrNull();
-        if (column_source)
-        {
-            auto source_type = column_source->getNodeType();
-            if (source_type != QueryTreeNodeType::LAMBDA && source_type != QueryTreeNodeType::INTERPOLATE)
-            {
-                for (const auto * sp = &scope; sp; sp = sp->parent_scope)
-                {
-                    if (sp->registered_table_expression_nodes.contains(column_source)
-                        || sp->table_expressions_in_resolve_process.contains(column_source.get()))
-                        break;
-                    if (isQueryOrUnionNode(sp->scope_node))
-                    {
-                        is_correlated_column_node = true;
-                        correlated_column_source = column_source;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    if (!in_aggregate_or_grouping_function_scope || is_correlated_column_node)
+    if (!in_aggregate_or_grouping_function_scope)
     {
         for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
         {
-            /// `nullable_group_by_keys` is keyed by query-tree structure
-            /// (`ColumnNode::isEqualImpl` compares column name and type only,
-            /// ignoring source identity), so a same-shaped key in an
-            /// intermediate ancestor scope can match a correlated column whose
-            /// real source lives further out. For correlated columns we
-            /// therefore consult `nullable_group_by_keys` only at the scope
-            /// that owns the column source: that is the only scope whose
-            /// `group_by_use_nulls` actually applied to this column.
-            const bool at_source_scope = is_correlated_column_node && correlated_column_source
-                && (scope_ptr->registered_table_expression_nodes.contains(correlated_column_source)
-                    || scope_ptr->table_expressions_in_resolve_process.contains(correlated_column_source.get()));
-
-            if ((!is_correlated_column_node || at_source_scope) && !scope_ptr->nullable_group_by_keys.empty())
+            if (!scope_ptr->nullable_group_by_keys.empty())
             {
                 auto it = scope_ptr->nullable_group_by_keys.find(node);
                 if (it != scope_ptr->nullable_group_by_keys.end())
                 {
-                    if (is_correlated_column_node)
-                    {
-                        /// Modify the correlated column in place so the same pointer
-                        /// stored in the outer `QueryNode::correlated_columns_list`
-                        /// (added by `checkCorrelatedColumn`) and the planner's
-                        /// `correlated_columns_set` (which hashes by column type)
-                        /// remains consistent with the inner expression's reference.
-                        /// Cloning here would yield a distinct ColumnNode that the
-                        /// planner would no longer recognize as correlated.
-                        /// A correlated column is always a `ColumnNode`, never a
-                        /// constant, so the constant special-casing below does not apply.
-                        node->convertToNullable();
-                    }
-                    else
-                    {
-                        /// Clone the GROUP BY key and convert it to Nullable. For a constant we clone the
-                        /// matched node itself rather than the stored key `it->second`: two constants equal
-                        /// in value and type but with different source expressions share a single map entry,
-                        /// and the source expression determines the action node name (hence which aggregation
-                        /// key column the projection reads), so the matched node's own one must be preserved.
-                        node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second)->clone();
-                        node->convertToNullable();
-                    }
+                    /// Clone the GROUP BY key and convert it to Nullable. For a constant we clone the
+                    /// matched node itself rather than the stored key `it->second`: two constants equal
+                    /// in value and type but with different source expressions share a single map entry,
+                    /// and the source expression determines the action node name (hence which aggregation
+                    /// key column the projection reads), so the matched node's own one must be preserved.
+                    node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second)->clone();
+                    node->convertToNullable();
                     break;
                 }
             }
 
-            /// For local references stop at the first surrounding QUERY scope.
-            if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY && !is_correlated_column_node)
-                break;
-
-            /// For correlated references stop once we reach the source-owning scope.
-            if (at_source_scope)
+            /// Check parent scopes until find current query scope.
+            if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
                 break;
         }
     }
@@ -4247,8 +4164,6 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                 join_tree_node_ptrs_to_process_queue.push_back(&join.getRightTableExpression());
                 scope.table_expressions_in_resolve_process.insert(current_join_tree_node.get());
                 ++scope.joins_count;
-                if (join.isUsingJoinExpression())
-                    ++scope.using_joins_count;
                 break;
             }
             default:
@@ -4468,14 +4383,6 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         expressions_visitor.visit(table_function_node_typed.getArgumentsNode());
 
     const auto & table_function_name = table_function_node_typed.getTableFunctionName();
-
-    /// The `eval` table function executes its argument at analysis time and generates a new query.
-    /// Inside arguments of other table functions (e.g. `remote('host', eval(...))`) the argument
-    /// would have to be resolved on the initiator while the wrapper is resolved on the remote
-    /// server, which requires special handling, so it is disallowed for simplicity.
-    if (nested_table_function && table_function_name == "eval")
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "Table function `eval` cannot be used as an argument of another table function");
 
     auto & scope_context = scope.context;
 
@@ -5300,11 +5207,6 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
         join_node_typed.getJoinExpression() = std::make_shared<ListNode>(std::move(using_nodes));
         join_node_typed.setUsingJoinExpression();
-
-        /// initializeQueryJoinTreeNode counts USING joins before this NATURAL -> USING conversion,
-        /// when the join still has no USING expression. Count it here so the qualified-matcher guard
-        /// in updateMatchedColumnsFromJoinUsing sees the synthesized key and corrects the matched type.
-        ++scope.using_joins_count;
     }
 
     if (join_node_typed.isOnJoinExpression())
@@ -5816,8 +5718,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                         materialized_cte_ptr->storage,
                         scope.context,
                         materialized_cte_ptr->cte_name,
-                        scope.scope_node,
-                        /*throw_on_mismatch=*/ true);
+                        scope.scope_node);
                 }
             }
 
@@ -6478,25 +6379,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         node->removeAlias();
     }
 
-    const bool was_group_by_all = query_node_typed.isGroupByAll();
     expandGroupByAll(query_node_typed);
-
-    /// `GROUP BY ALL` adds the SELECT expressions as grouping keys only here, after
-    /// `resolveGroupByNode` already ran its tuple unwrapping and key type validation. So a key like
-    /// `tuple(a, b)` is kept as a single key, unlike an explicit `GROUP BY tuple(a, b)` which
-    /// `expandTuplesInList` turns into the separate keys `a` and `b`, and none of the expanded keys go
-    /// through `validateGroupByKeyType`. Redo both here: otherwise the tuple elements are not
-    /// individually available after aggregation, and a later pass such as `OrderByTupleEliminationPass`
-    /// (which rewrites `ORDER BY tuple(a, b)` into `ORDER BY a, b`) would reference columns missing from
-    /// the aggregated block; and a suspicious key type such as `Variant`/`Dynamic`, which explicit
-    /// `GROUP BY` rejects, would be silently accepted. See https://github.com/ClickHouse/ClickHouse/issues/83433.
-    if (was_group_by_all)
-    {
-        expandTuplesInList(query_node_typed.getGroupBy().getNodes());
-
-        for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
-            validateGroupByKeyType(group_by_elem->getResultType(), scope);
-    }
 
     tryMoveNonAggregateHavingPredicatesToWhere(query_node, scope);
 
@@ -6566,19 +6449,6 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
         else
             resolveUnion(non_recursive_query, non_recursive_subquery_scope);
 
-        /// The seed (non-recursive) term of a recursive CTE cannot be correlated to an outer
-        /// scope either: the whole union is lowered to ReadFromRecursiveCTEStep and re-run with
-        /// only the temporary CTE table injected, so there is no mechanism to supply an outer-scope
-        /// binding to the seed. Reject it here for the same reason as a correlated recursive member.
-        bool non_recursive_query_is_correlated = non_recursive_query_is_query_node
-            ? non_recursive_query->as<QueryNode &>().isCorrelated()
-            : non_recursive_query->as<UnionNode &>().isCorrelated();
-        if (non_recursive_query_is_correlated)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Recursive CTE '{}' cannot be correlated. In scope {}",
-                union_node_typed.getCTEName(),
-                scope.scope_node->formatASTForErrorMessage());
-
         auto temporary_table_columns = non_recursive_query_is_query_node
             ? non_recursive_query->as<QueryNode &>().getProjectionColumns()
             : non_recursive_query->as<UnionNode &>().computeProjectionColumns();
@@ -6626,20 +6496,6 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
                     throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                         "UNION unsupported node {}. In scope {}",
                         query_node->formatASTForErrorMessage(),
-                        scope.scope_node->formatASTForErrorMessage());
-
-                /// A recursive CTE is planned as a fixed-point over a temporary table, so it has no
-                /// per-call-site substitution mechanism and cannot be correlated to an outer scope.
-                /// If resolution bound an identifier to an outer table expression, the resulting
-                /// ColumnNode's source is not part of this subquery and produces a dangling source
-                /// node later during planning (LOGICAL_ERROR in ColumnNode::getColumnSource).
-                bool is_correlated = query_node->as<QueryNode>()
-                    ? query_node->as<QueryNode>()->isCorrelated()
-                    : query_node->as<UnionNode>()->isCorrelated();
-                if (is_correlated)
-                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                        "Recursive CTE '{}' cannot be correlated. In scope {}",
-                        union_node_typed.getCTEName(),
                         scope.scope_node->formatASTForErrorMessage());
             }
 
