@@ -1919,9 +1919,23 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// shard aggregates independently and the initiator only concatenates — so a group key
                 /// present on several shards yields one partial row per shard instead of one merged row.
                 /// Fall back to the StorageView path, which still merges on the initiator.
+                ///
+                /// Also skip when the outer query is being lowered to a logical plan
+                /// (`build_logical_plan`, set e.g. for the shard-side plan under
+                /// `serialize_query_plan = 1` or a nested distributed read). That branch below only
+                /// serializes a plain `ReadFromTableStep` for the original view's `TableNode` and
+                /// cannot carry the rewritten distributed-read state (`effective_storage`,
+                /// `effective_context`, the inlined `query_tree`), so the pushdown would be a silent
+                /// no-op there — the remote side would resolve the leaf back through
+                /// `StorageView::readImpl`. Suppressing it up front keeps the behavior explicit and
+                /// avoids the wasted rewrite; results are unchanged because `readImpl` is the correct
+                /// fallback. The common `serialize_query_plan = 1` case still benefits: the outer query
+                /// is planned on the initiator with `build_logical_plan = false`, and only the inner
+                /// body (no view) is later lowered to a logical plan on the shard.
                 const auto * view = (is_single_table_expression
                                      && settings[Setting::optimize_trivial_view_pushdown_to_distributed]
-                                     && !settings[Setting::distributed_group_by_no_merge])
+                                     && !settings[Setting::distributed_group_by_no_merge]
+                                     && !select_query_options.build_logical_plan)
                     ? typeid_cast<const StorageView *>(storage.get())
                     : nullptr;
                 if (view)
