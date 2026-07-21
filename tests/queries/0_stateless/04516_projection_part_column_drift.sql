@@ -234,6 +234,70 @@ WHERE database = currentDatabase() AND table = 't_proj_ignore_default_drift' AND
 
 DROP TABLE t_proj_ignore_default_drift;
 
+-- subcolumn default dependency: the late-added `d DEFAULT n.x` references the subcolumn `n.x` of the
+-- tuple `n`, which the projection part stores and which is still a current projection column. The part
+-- resolves subcolumns, so the default IS fillable there; the fillability check must accept a stored
+-- current subcolumn (not just an exact top-level column) and keep the projection usable rather than
+-- routing to the parent and rebuilding on merge.
+DROP TABLE IF EXISTS t_proj_subcol_default_dep;
+
+CREATE TABLE t_proj_subcol_default_dep
+(
+    a UInt64,
+    n Tuple(x UInt64, y UInt64),
+    c UInt64 ALIAS a + 1,
+    PROJECTION p (SELECT a, n, c ORDER BY a)
+)
+ENGINE = MergeTree ORDER BY a;
+
+INSERT INTO t_proj_subcol_default_dep (a, n) VALUES (1, (100, 200));
+
+-- add d whose default reads the subcolumn n.x (n stays stored and current)
+ALTER TABLE t_proj_subcol_default_dep ADD COLUMN d UInt64 DEFAULT n.x;
+ALTER TABLE t_proj_subcol_default_dep MODIFY COLUMN c UInt64 ALIAS d + 1;
+
+-- c = d + 1 = n.x + 1 = 101; the projection stays usable because n.x is fillable from the stored n
+SELECT 'subcol-dep read after drift', a, c FROM t_proj_subcol_default_dep ORDER BY a;
+
+SELECT 'subcol-dep force projection', a, c FROM t_proj_subcol_default_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+-- merging keeps the projection (no needless rebuild) and stays correct
+OPTIMIZE TABLE t_proj_subcol_default_dep FINAL;
+
+SELECT 'subcol-dep read after merge', a, c FROM t_proj_subcol_default_dep ORDER BY a;
+
+SELECT 'subcol-dep force projection after merge', a, c FROM t_proj_subcol_default_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+DROP TABLE t_proj_subcol_default_dep;
+
+-- same but with an array-size subcolumn (`arr.size0`): a fixed physical subcolumn with its own stream,
+-- fillable from the stored current `arr`, so the projection must stay usable here too
+DROP TABLE IF EXISTS t_proj_arrsize_default_dep;
+
+CREATE TABLE t_proj_arrsize_default_dep
+(
+    a UInt64,
+    arr Array(UInt64),
+    c UInt64 ALIAS a + 1,
+    PROJECTION p (SELECT a, arr, c ORDER BY a)
+)
+ENGINE = MergeTree ORDER BY a;
+
+INSERT INTO t_proj_arrsize_default_dep (a, arr) VALUES (1, [10, 20, 30]);
+
+ALTER TABLE t_proj_arrsize_default_dep ADD COLUMN d UInt64 DEFAULT arr.size0;
+ALTER TABLE t_proj_arrsize_default_dep MODIFY COLUMN c UInt64 ALIAS d + 1;
+
+-- c = d + 1 = length(arr) + 1 = 4; projection stays usable (arr.size0 fillable from stored arr)
+SELECT 'arrsize-dep read after drift', a, c FROM t_proj_arrsize_default_dep ORDER BY a;
+
+SELECT 'arrsize-dep force projection', a, c FROM t_proj_arrsize_default_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+DROP TABLE t_proj_arrsize_default_dep;
+
 -- aggregate projection drift: the state column name embeds the expanded alias
 -- (`sum(plus(b, 1))`), so re-pointing the alias leaves the part without the state column the
 -- metadata now expects (`sum(plus(d, 1))`); the parent never stores aggregate states, so the

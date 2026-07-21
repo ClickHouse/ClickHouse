@@ -316,10 +316,10 @@ size_t filterPartsByProjection(
 }
 
 /// A late-added column's DEFAULT/MATERIALIZED default is fillable from the projection part only if
-/// every column its expression references is both physically stored in the part and still a current
-/// projection column; a read resolves identifiers against the current projection columns, so an
-/// orphaned-but-stored dependency (e.g. an alias source after the alias was re-pointed off it) is
-/// unresolvable and must route to the parent. Immediate dependencies only, not transitively.
+/// every column-or-subcolumn its expression references is both physically stored in the part and
+/// still a current projection column (subcolumns resolve from a stored current base, e.g. `n.x`);
+/// otherwise, e.g. an orphaned-but-stored alias source after the alias was re-pointed off it, the
+/// read is unresolvable and must route to the parent. Immediate dependencies only, not transitively.
 static bool projectionPartCanFillDefault(
     const IMergeTreeDataPart & projection_part,
     const ProjectionDescription & projection,
@@ -337,7 +337,8 @@ static bool projectionPartCanFillDefault(
 
     for (const auto & identifier : identifiers)
     {
-        if ((projection_part.tryGetColumn(identifier) && projection_columns.has(identifier))
+        if ((projection_part.tryGetColumn(identifier)
+             && projection_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier))
             || projection.metadata->virtuals.has(identifier))
             continue;
         return false;
