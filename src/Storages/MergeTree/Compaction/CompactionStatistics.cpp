@@ -13,6 +13,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -773,7 +774,85 @@ UInt64 estimateNeededMemoryForMerge(
     /// stores: a column removed by a metadata-only ALTER DROP COLUMN still has its files on disk (and in
     /// columns.txt), but MergeTask never opens a reader for it. The lightweight-delete mask (_row_exists)
     /// is not a metadata column, yet it is read from every part that stores it, so it joins the read set.
-    const auto output_columns = metadata_snapshot->getColumns().getAllPhysical();
+    const auto & columns_description = metadata_snapshot->getColumns();
+    NamesAndTypesList output_columns = columns_description.getAllPhysical();
+
+    /// A storage column absent from every base source part and without a default expression is expired:
+    /// MergeTask marks it so (new_data_part->expired_columns) and erases it from the storage / merging
+    /// columns, so the merge neither reads nor writes it - after a metadata-only ALTER ... ADD COLUMN with
+    /// no default the next merge does not open a writer for that column at all. Price the output side
+    /// without such columns, or a table that accumulated late-added semi-structured columns would reserve
+    /// writer streams (and raise the adaptive-write-buffer threshold) for columns the merge never writes
+    /// and saturate merges_mutations_memory_usage_soft_limit for no real memory pressure. Only base parts
+    /// decide expiry, exactly as in MergeTask: a patch part stores just the columns it patches, so its
+    /// absence proves nothing. The full expired set (before the required-columns exemption below) also
+    /// decides which projections the merge rebuilds, so it is computed once here and reused by the
+    /// projection pricing below.
+    NameSet expired_columns;
+    {
+        NameSet columns_present_in_parts;
+        for (const auto & part : future_part.parts)
+            for (const auto & part_column : part->getColumns())
+                columns_present_in_parts.insert(part_column.name);
+
+        for (const auto & storage_column : output_columns)
+            if (!columns_present_in_parts.contains(storage_column.name) && !columns_description.getDefault(storage_column.name))
+                expired_columns.insert(storage_column.name);
+    }
+
+    /// MergeTask keeps an expired column its merge semantics still require (merge_required_columns, see
+    /// extractMergingAndGatheringColumns) - such a column IS written, filled with the type's default
+    /// values - so keep a conservative over-approximation of that required set priced. The exact set
+    /// depends on state known only at merge time (the DEDUPLICATE BY column list, whether the minmax index
+    /// is recalculated), and over-keeping a column can only over-reserve a rare corner (a required column
+    /// absent from every source part), never under-reserve.
+    if (!expired_columns.empty() && !future_part.parts.empty())
+    {
+        const auto & merging_params = future_part.parts.front()->storage.merging_params;
+
+        /// Summing / Aggregating / Coalescing merges require every column, and a deduplicating merge may
+        /// compare any subset chosen by DEDUPLICATE BY (unknown here) - keep every column priced there.
+        const bool every_column_required = deduplicate
+            || merging_params.mode == MergeTreeData::MergingParams::Summing
+            || merging_params.mode == MergeTreeData::MergingParams::Aggregating
+            || merging_params.mode == MergeTreeData::MergingParams::Coalescing;
+
+        if (!every_column_required)
+        {
+            NameSet required_columns;
+            const auto physical_names = output_columns.getNameSet();
+            for (const auto & name : metadata_snapshot->getColumnsRequiredForSortingKey())
+                required_columns.insert(
+                    physical_names.contains(name) ? name : String(Nested::getColumnFromSubcolumn(name, physical_names)));
+            if (!merging_params.sign_column.empty())
+                required_columns.insert(merging_params.sign_column);
+            if (!merging_params.is_deleted_column.empty())
+                required_columns.insert(merging_params.is_deleted_column);
+            if (!merging_params.version_column.empty())
+                required_columns.insert(merging_params.version_column);
+            if (merging_params.mode == MergeTreeData::MergingParams::Graphite)
+            {
+                required_columns.insert(merging_params.graphite_params.path_column_name);
+                required_columns.insert(merging_params.graphite_params.time_column_name);
+                required_columns.insert(merging_params.graphite_params.value_column_name);
+                required_columns.insert(merging_params.graphite_params.version_column_name);
+            }
+            /// MergeTask forces at least one merged column when the key is empty.
+            if (required_columns.empty() && !output_columns.empty())
+                required_columns.insert(output_columns.front().name);
+            /// A row-reducing merge recalculates the minmax index from the partition columns.
+            for (const auto & name : metadata_snapshot->getColumnsRequiredForPartitionKey())
+                required_columns.insert(name);
+
+            NameSet unwritten_expired_columns;
+            for (const auto & name : expired_columns)
+                if (!required_columns.contains(name))
+                    unwritten_expired_columns.insert(name);
+            if (!unwritten_expired_columns.empty())
+                output_columns = output_columns.eraseNames(unwritten_expired_columns);
+        }
+    }
+
     NamesAndTypesList input_columns = output_columns;
     input_columns.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
 
@@ -816,29 +895,33 @@ UInt64 estimateNeededMemoryForMerge(
     /// paths that all appear in the merged part. Patch parts are included: a patched JSON / Dynamic column
     /// can carry a path that exists only in a patch, not in any base part.
     ///
-    /// A dynamic-structure (JSON / Dynamic) output column absent from some base part but with a default
-    /// expression in the merged metadata is materialized from that default during the merge: MergeTask keeps
-    /// such a column live (a missing column is expired only when it has no default), and IMergeTreeReader
-    /// fills and evaluates the missing defaults for the rows of the parts that predate the
-    /// ALTER ... ADD COLUMN ... DEFAULT. Those rows can carry real dynamic substreams that no source part
-    /// records, so neither the recorded per-part substream union nor the legacy .bin recovery can see them -
-    /// both countOutputStreams and the rebuilt-projection pricing must fall back to the output type's
-    /// write-time capacity for such a column instead of trusting the union as exact. Only base parts decide
-    /// missing-ness: a patch part physically stores just the columns it patches and its rows are applied as
-    /// patches, never default-filled. A column with dynamic structure but no default, or one missing from no
-    /// part, keeps the exact union pricing, so this is a no-op outside the ADD COLUMN ... DEFAULT upgrade
-    /// window.
+    /// An output column absent from some base part but with a default expression in the merged metadata is
+    /// materialized from that default during the merge: MergeTask keeps such a column live (a missing
+    /// column is expired only when it has no default), and IMergeTreeReader fills and evaluates the missing
+    /// defaults for the rows of the parts that predate the ALTER ... ADD COLUMN ... DEFAULT. The
+    /// synthesized values were never read from any source part, so nothing about them - neither their
+    /// substreams nor their volume - can be derived from the sources:
+    ///  - a dynamic-structure (JSON / Dynamic) such column can write real dynamic substreams that no source
+    ///    part records, invisible to the recorded per-part substream union and to the legacy .bin recovery
+    ///    alike - both countOutputStreams and the rebuilt-projection pricing must fall back to the output
+    ///    type's write-time capacity for it instead of trusting the union as exact
+    ///    (default_filled_dynamic_columns);
+    ///  - a such column of ANY type breaks the input-volume cap on the writer's data-dependent buffers
+    ///    below (default_filled_columns): its written bytes are not bounded by the bytes the merge reads.
+    /// Only base parts decide missing-ness: a patch part physically stores just the columns it patches and
+    /// its rows are applied as patches, never default-filled. A column missing from no part keeps the
+    /// exact pricing, so all of this is a no-op outside the ADD COLUMN ... DEFAULT upgrade window.
+    NameSet default_filled_columns;
     NameSet default_filled_dynamic_columns;
+    for (const auto & column : output_columns)
     {
-        const auto & columns_description = metadata_snapshot->getColumns();
-        for (const auto & column : output_columns)
+        const bool missing_from_some_part = std::any_of(
+            future_part.parts.begin(), future_part.parts.end(),
+            [&](const auto & part) { return !part->getColumns().contains(column.name); });
+        if (missing_from_some_part && columns_description.getDefault(column.name))
         {
-            if (!column.type->hasDynamicStructure())
-                continue;
-            const bool missing_from_some_part = std::any_of(
-                future_part.parts.begin(), future_part.parts.end(),
-                [&](const auto & part) { return !part->getColumns().contains(column.name); });
-            if (missing_from_some_part && columns_description.getDefault(column.name))
+            default_filled_columns.insert(column.name);
+            if (column.type->hasDynamicStructure())
                 default_filled_dynamic_columns.insert(column.name);
         }
     }
@@ -866,7 +949,9 @@ UInt64 estimateNeededMemoryForMerge(
     /// dedup / cleanup / TTL only remove them; a dead dropped column is never written and the projection
     /// parts are priced separately, so their bytes rightly do not enter this bound), and its compressed
     /// size cannot exceed that uncompressed volume, so sum_input_bytes_uncompressed - accumulated over the
-    /// columns actually read - is a sound upper bound on the produced compressed output. Cap the
+    /// columns actually read - is a sound upper bound on the produced compressed output for every column
+    /// the merge reads (a default-filled column writes synthesized data the merge never read; its streams
+    /// are priced at their worst case below instead). Cap the
     /// data-dependent buffers at the compressed output in flight twice over (double buffering of uploads)
     /// plus one uncompressed working block per stream, all bounded by the uncompressed input volume.
     /// Without this cap a merge of tiny parts in a table with many columns on object storage would reserve
@@ -877,8 +962,35 @@ UInt64 estimateNeededMemoryForMerge(
     const UInt64 eager_buffers_per_stream = adaptive_write_buffer
         ? 2 * settings[MergeTreeSetting::adaptive_write_buffer_initial_size]
         : local_write_buffer_size;
+
+    /// The input-volume bound holds only for data the merge actually READS. A column filled from its
+    /// DEFAULT expression for the rows of parts that predate its ALTER ... ADD COLUMN
+    /// (default_filled_columns above) is synthesized by IMergeTreeReader::evaluateMissingDefaults, not
+    /// read: a default such as repeat(toString(k), 1000) writes orders of magnitude more bytes than the
+    /// merge reads, so capping its upload buffers by the input volume would under-reserve the writer's
+    /// real footprint on object storage. No data bound derivable from the sources exists for such a column
+    /// (the default expression is arbitrary), so its writer streams are priced at their per-stream worst
+    /// case instead - a writer stream never holds more than write_buffer_size, whatever flows through it,
+    /// the same argument the rebuilt-projection pricing uses - while every column that is genuinely
+    /// read-bounded keeps the data-volume cap. A column present in only SOME parts is default-filled for
+    /// the other parts' rows, so the whole column goes to the worst-case side (its read bytes stay in the
+    /// input sum - double-counting is the safe direction). A compact output part writes everything through
+    /// one shared stream, which the synthesized data flows through, so the single stream is priced at its
+    /// worst case. Outside the ADD COLUMN ... DEFAULT upgrade window the extra term is zero.
+    NamesAndTypesList default_filled_output_columns;
+    for (const auto & column : output_columns)
+        if (default_filled_columns.contains(column.name))
+            default_filled_output_columns.push_back(column);
+
+    size_t default_filled_output_streams = 0;
+    if (!default_filled_output_columns.empty())
+        default_filled_output_streams = future_part.part_format.part_type == MergeTreeDataPartType::Wide
+            ? countOutputStreams(default_filled_output_columns, source_and_patch_parts, settings, default_filled_dynamic_columns)
+            : 1;
+
     const UInt64 output_data_bound = output_streams * eager_buffers_per_stream
-        + 3 * sum_input_bytes_uncompressed;
+        + 3 * sum_input_bytes_uncompressed
+        + default_filled_output_streams * write_buffer_size;
 
     const UInt64 output_memory = std::min(output_worst_case, output_data_bound);
 
@@ -950,20 +1062,9 @@ UInt64 estimateNeededMemoryForMerge(
             || !future_part.patch_parts.empty()
             || future_part.parts.front()->storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
 
-        /// A storage column absent from every source part and without a default expression is expired: the
-        /// merge marks it so (new_data_part->expired_columns) and rebuilds every projection that requires
-        /// it, again before checking whether the source parts have the projection.
-        NameSet columns_present_in_parts;
-        for (const auto & part : future_part.parts)
-            for (const auto & part_column : part->getColumns())
-                columns_present_in_parts.insert(part_column.name);
-
-        NameSet expired_columns;
-        const auto & columns_description = metadata_snapshot->getColumns();
-        for (const auto & storage_column : output_columns)
-            if (!columns_present_in_parts.contains(storage_column.name) && !columns_description.getDefault(storage_column.name))
-                expired_columns.insert(storage_column.name);
-
+        /// An expired column (absent from every source part with no default expression, the full
+        /// expired_columns set computed above) makes the merge rebuild every projection that requires it,
+        /// again before checking whether the source parts have the projection.
         for (const auto & projection : metadata_snapshot->getProjections())
         {
             /// A special (parent-offset / block-number / block-offset) projection is rebuilt by a
