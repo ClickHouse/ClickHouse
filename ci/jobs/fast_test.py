@@ -37,6 +37,7 @@ def clone_submodules():
         "contrib/llvm-project",
         "contrib/lz4",
         "contrib/zstd",
+        "contrib/zxc",
         "contrib/re2",
         "contrib/sparsehash-c11",
         "contrib/croaring",
