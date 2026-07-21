@@ -164,6 +164,8 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 
 Arguments also can be passed using [named collections](/concepts/features/configuration/server-config/named-collections). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
 
+TLS/SSL parameters can be supplied as named collection keys (or key-value arguments) and are forwarded to `libpq`: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`), `sslrootcert` (CA certificate path, or `system`), `sslcert` (client certificate path) and `sslkey` (client key path). When unset, `libpq` defaults apply (`sslmode=prefer`). The certificate and key files must be located inside the directory configured by the server's `user_files_path` setting; relative paths are resolved against it.
+
 ## Returned value {#returned_value}
 
 A table object with the same columns as the original PostgreSQL table.

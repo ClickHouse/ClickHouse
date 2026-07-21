@@ -909,6 +909,40 @@ If set to `0`, the narrower `Date` and `DateTime` types are used instead (values
 
 This setting only controls the column types chosen by type inference when the nested tables are created, so it must be specified at `CREATE DATABASE` time. It cannot be changed afterwards with `ALTER DATABASE ... MODIFY SETTING` (the already created nested tables keep their fixed column types, and such a change is rejected); recreate the database to change it. It is not applicable to the `MaterializedPostgreSQL` table engine, where the column types are declared explicitly.
 
+### `materialized_postgresql_ssl_mode` {#materialized-postgresql-ssl-mode}
+
+TLS/SSL mode for the PostgreSQL connection, forwarded to `libpq` as `sslmode`. One of `disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`. Default: empty, which keeps the `libpq` default of `prefer` (SSL is used if the server offers it, otherwise a plaintext connection is made).
+
+Use `require` to fail unless the connection is encrypted, and `verify-ca`/`verify-full` to additionally verify the server certificate against a CA (see `materialized_postgresql_ssl_root_cert`). `verify-full` also checks that the server host name matches the certificate.
+
+### `materialized_postgresql_ssl_root_cert` {#materialized-postgresql-ssl-root-cert}
+
+Path to the CA certificate file (`libpq` `sslrootcert`) used to verify the PostgreSQL server certificate. Required for `verify-ca` and `verify-full`, unless the special value `system` is used to verify against the system's trusted CA store. Default: empty.
+
+### `materialized_postgresql_ssl_cert` {#materialized-postgresql-ssl-cert}
+
+Path to the client certificate file (`libpq` `sslcert`) presented to PostgreSQL for certificate authentication. Default: empty.
+
+### `materialized_postgresql_ssl_key` {#materialized-postgresql-ssl-key}
+
+Path to the client private key file (`libpq` `sslkey`) matching `materialized_postgresql_ssl_cert`. Default: empty.
+
+The certificate and key files must be located inside the directory configured by the server's `user_files_path` setting; relative paths are resolved against it.
+
+The TLS/SSL settings are part of the PostgreSQL connection parameters, which are fixed when the database is created: they must be specified at `CREATE DATABASE` time and cannot be changed afterwards with `ALTER DATABASE ... MODIFY SETTING` (such a change is rejected, because the replication connection keeps using the original parameters); recreate the database to change them.
+
+Example of connecting to a PostgreSQL server that enforces TLS, verifying the server certificate:
+
+```sql
+CREATE DATABASE postgres_db
+ENGINE = MaterializedPostgreSQL('postgres-host:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+SETTINGS
+    materialized_postgresql_ssl_mode = 'verify-full',
+    materialized_postgresql_ssl_root_cert = '/var/lib/clickhouse/user_files/postgresql-ca.crt';
+```
+
+The same parameters can be supplied through a [named collection](/operations/named-collections) instead, using the `libpq` key names `sslmode`, `sslrootcert`, `sslcert` and `sslkey`.
+
 ## Notes {#notes}
 
 ### Failover of the logical replication slot {#logical-replication-slot-failover}

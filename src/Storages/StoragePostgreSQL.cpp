@@ -865,6 +865,23 @@ Some parameters can be overridden by key value arguments:
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
+### TLS/SSL {#tls-ssl}
+
+TLS/SSL parameters are forwarded to `libpq` and can be set as named collection keys (or key-value arguments): `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`), `sslrootcert` (CA certificate path, or `system`), `sslcert` (client certificate path) and `sslkey` (client key path). When unset, `libpq` defaults apply (`sslmode=prefer`). The certificate and key files must be located inside the directory configured by the server's `user_files_path` setting; relative paths are resolved against it. For example, to require an encrypted connection and verify the server certificate:
+
+```xml
+<named_collections>
+    <postgres_creds>
+        <host>localhost</host>
+        <port>5432</port>
+        <user>postgres</user>
+        <password>****</password>
+        <sslmode>verify-full</sslmode>
+        <sslrootcert>/var/lib/clickhouse/user_files/postgresql-ca.crt</sslrootcert>
+    </postgres_creds>
+</named_collections>
+```
+
 ## Settings {#settings}
 
 The connection pool used by the `PostgreSQL` table engine (and the [`postgresql`](/sql-reference/table-functions/postgresql) table function) can be configured per table with a `SETTINGS` clause. When a setting is not specified, it defaults to the value of the corresponding query-level `postgresql_*` setting.
