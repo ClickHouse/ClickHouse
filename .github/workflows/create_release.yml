@@ -129,7 +129,10 @@ jobs:
         run: |
           python3 ./tests/ci/create_release.py --create-bump-version-pr ${{ inputs.dry-run == true && '--dry-run' || '' }}
       - name: Bump Docker versions, Changelog, Security
-        if: ${{ inputs.type == 'patch' && ! inputs.only-repo && ! inputs.only-docker }}
+        # Runs in recovery (only-repo/only-docker) too, so a tail skipped by an
+        # earlier interrupted run is re-done. The step is idempotent: it exits
+        # early when the auto/<tag> ChangeLog PR is already open or merged.
+        if: ${{ inputs.type == 'patch' }}
         shell: bash
         run: |
           python3 ./tests/ci/create_release.py --set-progress-started --progress "update changelog, docker version, security"
@@ -165,7 +168,9 @@ jobs:
           python3 ./utils/security-generator/generate_security.py > SECURITY.md
           git diff HEAD
       - name: Create ChangeLog PR
-        if: ${{ inputs.type == 'patch' && ! inputs.dry-run && ! inputs.only-repo && ! inputs.only-docker }}
+        # Runs in recovery too (see above). When the previous step exited early
+        # there is no diff, so create-pull-request detects no changes and is a no-op.
+        if: ${{ inputs.type == 'patch' && ! inputs.dry-run }}
         uses: peter-evans/create-pull-request@c5a7806660adbe173f04e3e038b0ccdcd758773c # v6
         with:
           author: "robot-clickhouse <robot-clickhouse@users.noreply.github.com>"
@@ -183,7 +188,9 @@ jobs:
             ### Changelog category (leave one):
             - Not for changelog (changelog entry is not required)
       - name: Complete previous steps and Restore git state
-        if: ${{ inputs.type == 'patch' && ! inputs.only-repo && ! inputs.only-docker }}
+        # Pairs with the changelog steps above: it completes the progress phase
+        # they start and restores git state, so it must run whenever they do.
+        if: ${{ inputs.type == 'patch' }}
         shell: bash
         run: |
           git reset --hard HEAD
