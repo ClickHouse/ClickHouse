@@ -120,7 +120,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         const String & comment,
         std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
         LoadingStrictnessLevel mode)
-        : IStorage(table_id_)
+        : IStreamingStorage(table_id_)
         , WithContext(context_->getGlobalContext())
         , rabbitmq_settings(std::move(rabbitmq_settings_))
         , exchange_name(getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_exchange_name]))
@@ -248,7 +248,7 @@ StorageRabbitMQ::StorageRabbitMQ(
     looping_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "RabbitMQLoopingTask", [this]{ loopingFunc(); });
     looping_task->deactivate();
 
-    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "RabbitMQStreamingTask", [this]{ streamingToViewsFunc(); });
+    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "RabbitMQStreamingTask", [this]{ threadFunc(); });
     streaming_task->deactivate();
 
     init_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "RabbitMQConnectionTask", [this]{ connectionFunc(); });
@@ -485,7 +485,10 @@ void StorageRabbitMQ::initRabbitMQ()
     {
         auto consumer = createConsumer();
         consumer->updateChannel(*connection);
-        consumers_ref.push_back(consumer);
+        {
+            std::lock_guard lock(consumers_mutex);
+            consumers_ref.push_back(consumer);
+        }
         pushConsumer(consumer);
         ++num_created_consumers;
     }
@@ -863,7 +866,7 @@ void StorageRabbitMQ::read(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
                         "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read data is removed from the queue.");
 
-    if (mv_attached)
+    if (!DatabaseCatalog::instance().getDependentViews(getStorageID()).empty())
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageRabbitMQ with attached materialized views");
 
     std::lock_guard lock(loop_mutex);
@@ -958,6 +961,11 @@ void StorageRabbitMQ::startup()
     StreamingStorageRegistry::instance().registerTable(getStorageID());
 }
 
+void StorageRabbitMQ::scheduleStreamingTasksImpl()
+{
+    streaming_task->schedule();
+}
+
 
 void StorageRabbitMQ::shutdown(bool)
 {
@@ -968,7 +976,13 @@ void StorageRabbitMQ::shutdown(bool)
     LOG_TRACE(log, "Deactivating init task");
     deactivateTask(init_task, true, false);
 
-    for (auto & consumer_weak : consumers_ref)
+    std::vector<std::weak_ptr<RabbitMQConsumer>> consumers_snapshot;
+    {
+        std::lock_guard lock(consumers_mutex);
+        consumers_snapshot = consumers_ref;
+    }
+
+    for (auto & consumer_weak : consumers_snapshot)
     {
         auto consumer = consumer_weak.lock();
         if (!consumer)
@@ -988,7 +1002,7 @@ void StorageRabbitMQ::shutdown(bool)
     /// Just a paranoid try catch, it is not actually needed.
     try
     {
-        for (auto & consumer_weak : consumers_ref)
+        for (auto & consumer_weak : consumers_snapshot)
         {
             auto consumer = consumer_weak.lock();
             if (!consumer)
@@ -1006,7 +1020,10 @@ void StorageRabbitMQ::shutdown(bool)
         for (size_t i = 0; i < num_created_consumers; ++i)
             popConsumer();
 
-        consumers_ref.clear();
+        {
+            std::lock_guard lock(consumers_mutex);
+            consumers_ref.clear();
+        }
     }
     catch (...)
     {
@@ -1094,6 +1111,19 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
 }
 
 
+void StorageRabbitMQ::cancelBackgroundActivity()
+{
+    IStreamingStorage::cancelBackgroundActivity();
+
+    std::lock_guard lock(consumers_mutex);
+    for (auto & consumer_weak : consumers_ref)
+    {
+        if (auto consumer = consumer_weak.lock())
+            consumer->wakeUp();
+    }
+}
+
+
 void StorageRabbitMQ::pushConsumer(RabbitMQConsumerPtr consumer)
 {
     std::lock_guard lock(consumers_mutex);
@@ -1139,18 +1169,62 @@ bool StorageRabbitMQ::hasDependencies(const StorageID & table_id)
     return !DatabaseCatalog::instance().getReadyDependentViews(table_id, getContext()).empty();
 }
 
-void StorageRabbitMQ::streamingToViewsFunc()
+void StorageRabbitMQ::threadFunc()
 {
     try
     {
-        streamToViewsImpl();
+        if (initialized)
+        {
+            auto table_id = getStorageID();
+
+            const size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
+            const bool rabbit_connected = connection->isConnected() || connection->reconnect();
+            const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
+            const bool deps_ready = num_views == 0 || hasDependencies(table_id);
+            const bool run_cycle = rabbit_connected && deps_ready && stream_control.claimCycle(last_seen_refresh_epoch);
+
+            if (num_views && run_cycle)
+            {
+                auto start_time = std::chrono::steady_clock::now();
+
+                // Keep streaming as long as there are attached views and streaming is not cancelled
+                while (!shutdown_called && num_created_consumers > 0)
+                {
+                    if (!hasDependencies(table_id))
+                        break;
+
+                    LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
+
+                    bool continue_reading = streamToViews(cycle_epoch);
+                    if (!continue_reading)
+                        break;
+
+                    if (stream_control.isBlocked() || stream_control.isCancelRequested(cycle_epoch))
+                        break;
+
+                    auto end_time = std::chrono::steady_clock::now();
+                    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+                    if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
+                    {
+                        LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded.");
+                        break;
+                    }
+
+                    milliseconds_to_wait = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_empty_queue_backoff_start_ms];
+                }
+            }
+            else if (num_views == 0)
+                LOG_DEBUG(log, "No attached views");
+        }
+        else
+        {
+            chassert(false);
+        }
     }
     catch (...)
     {
         LOG_ERROR(log, "Error while streaming to views: {}", getCurrentExceptionMessage(true));
     }
-
-    mv_attached.store(false);
 
     try
     {
@@ -1179,52 +1253,7 @@ void StorageRabbitMQ::streamingToViewsFunc()
     }
 }
 
-void StorageRabbitMQ::streamToViewsImpl()
-{
-    if (!initialized)
-    {
-        chassert(false);
-        return;
-    }
-
-    auto table_id = getStorageID();
-
-    // Check if at least one direct dependency is attached
-    size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-    bool rabbit_connected = connection->isConnected() || connection->reconnect();
-
-    if (num_views && rabbit_connected)
-    {
-        auto start_time = std::chrono::steady_clock::now();
-
-        mv_attached.store(true);
-
-        // Keep streaming as long as there are attached views and streaming is not cancelled
-        while (!shutdown_called && num_created_consumers > 0)
-        {
-            if (!hasDependencies(table_id))
-                break;
-
-            LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
-
-            bool continue_reading = tryStreamToViews();
-            if (!continue_reading)
-                break;
-
-            auto end_time = std::chrono::steady_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-            if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
-            {
-                LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded.");
-                break;
-            }
-
-            milliseconds_to_wait = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_empty_queue_backoff_start_ms];
-        }
-    }
-}
-
-bool StorageRabbitMQ::tryStreamToViews()
+bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch)
 {
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -1256,7 +1285,7 @@ bool StorageRabbitMQ::tryStreamToViews()
         auto source = std::make_shared<RabbitMQSource>(
             *this, storage_snapshot, new_context, Names{}, block_size,
             max_execution_time_ms, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode],
-            reject_unhandled_messages, /* ack_in_suffix */false, log);
+            reject_unhandled_messages, /* ack_in_suffix */false, log, cycle_epoch);
 
         sources.emplace_back(source);
         pipes.emplace_back(source);
@@ -1311,6 +1340,7 @@ bool StorageRabbitMQ::tryStreamToViews()
      */
     deactivateTask(looping_task, false, true);
     size_t queue_empty = 0;
+    bool any_aborted = false;
 
     if (!connection->isConnected())
     {
@@ -1334,7 +1364,7 @@ bool StorageRabbitMQ::tryStreamToViews()
     }
     else
     {
-        LOG_TEST(log, "Will {} messages for {} channels", write_failed ? "nack" : "ack", sources.size());
+        LOG_TEST(log, "Committing messages for {} channels", sources.size());
 
         /// Commit
         for (auto & source : sources)
@@ -1361,7 +1391,12 @@ bool StorageRabbitMQ::tryStreamToViews()
                 *    the same channel will also commit all previously not-committed messages. Anyway I do not think that for ack frame this
                 *    will ever happen.
                 */
-                if (write_failed ? source->sendNack() : source->sendAck())
+                const bool source_aborted = source->wasConsumptionAborted();
+                any_aborted |= source_aborted;
+                LOG_TEST(log, "Will {} messages for channel {}", (source_aborted ? "requeue" : (write_failed ? "nack" : "ack")), source->getChannelID());
+                bool send_result = source_aborted ? source->sendNack(/*requeue=*/true)
+                                                  : (write_failed ? source->sendNack(/*requeue=*/false) : source->sendAck());
+                if (send_result)
                 {
                     /// Iterate loop to activate error callbacks if they happened
                     connection->getHandler().iterateLoop();
@@ -1372,6 +1407,12 @@ bool StorageRabbitMQ::tryStreamToViews()
                 connection->getHandler().iterateLoop();
             }
         }
+    }
+
+    if (any_aborted)
+    {
+        LOG_TRACE(log, "Consumption interrupted, reschedule");
+        return true;
     }
 
     if (write_failed)
