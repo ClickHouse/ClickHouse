@@ -6422,7 +6422,7 @@ Allow to merge expressions into JOIN step during join reordering optimization.
 Allow to convert `JOIN` to subquery with `IN` if output columns tied to only left table. May cause wrong results with non-ANY JOINs (e.g. ALL JOINs which is the default).
 )", 0) \
     DECLARE(Bool, query_plan_optimize_self_join_shared_scan, false, R"(
-Scan the table once for `INNER`/`LEFT` self-joins and replay from an in-memory buffer instead of performing a second scan. Only fires when both sides resolve to the same `MergeTree` table, the build side reads a superset of the probe side's columns, the same storage snapshot is used, the join is executed with a purely in-memory hash-family algorithm (`hash`, `parallel_hash`, or `default`, with external-join spilling disabled via `max_bytes_before_external_join = 0` and `max_bytes_ratio_before_external_join = 0`), and there is no `FINAL`, `SAMPLE`, `PREWHERE`, row-level filter, parallel replicas, vector search, or pushed-down `WHERE` filter.
+Scan the table once for `INNER`/`LEFT` self-joins and replay from an in-memory buffer instead of performing a second scan. Only fires when both sides resolve to the same `MergeTree` table, the build side reads a superset of the probe side's columns, the same storage snapshot is used, the join is executed with a hash-family algorithm (`hash`, `parallel_hash`, or `default`), and there is no `FINAL`, `SAMPLE`, `PREWHERE`, row-level filter, parallel replicas, vector search, or pushed-down `WHERE` filter.
 )", 0) \
     DECLARE(Bool, query_plan_optimize_prewhere, true, R"(
 Allow to push down filter to PREWHERE expression for supported storages

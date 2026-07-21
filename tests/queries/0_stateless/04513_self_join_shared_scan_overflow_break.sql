@@ -10,8 +10,6 @@ SET enable_parallel_replicas = 0; -- reading with parallel replicas blocks the r
 SET enable_shared_storage_snapshot_in_query = 1; -- the rewrite requires both scans to share one storage snapshot
 SET query_plan_join_swap_table = 0; -- under break, a swap changes which side gets truncated
 SET query_plan_optimize_join_order_randomize = 0; -- join order randomization may swap the sides
-SET max_bytes_before_external_join = 0; -- a non-zero spill threshold makes the join external-memory and blocks the rewrite
-SET max_bytes_ratio_before_external_join = 0; -- a non-zero spill threshold makes the join external-memory and blocks the rewrite
 
 DROP TABLE IF EXISTS t_sjss_break;
 CREATE TABLE t_sjss_break (x UInt64, y String) ENGINE = MergeTree ORDER BY x;

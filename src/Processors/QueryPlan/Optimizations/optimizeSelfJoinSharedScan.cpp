@@ -106,25 +106,15 @@ void tryOptimizeSelfJoinSharedScan(
     /// (`FillRightFirst`) pipeline: the build side is fully consumed before the probe side is
     /// read, so the probe scan can replay the buffer filled by the build scan.
     ///
-    /// The rewrite also keeps the whole build-side scan result in memory (`ChunkBuffer`), outside
-    /// of any join spill accounting, until the probe side has replayed it. An external-memory
-    /// join algorithm bounds its memory usage by spilling to disk, and the shared buffer would
-    /// silently break that contract: a self-join that would normally spill could instead fail
-    /// with a memory limit exception. So the join must additionally be purely in-memory.
+    /// Note that whether the join spills is irrelevant here: `SpillingHashJoin` does not override
+    /// `pipelineType`, so it is `FillRightFirst` like the rest of the hash family and still drains
+    /// the build side completely before the probe side is read.
     ///
     /// `chooseJoinAlgorithm` walks `join_algorithms` in order and executes the first algorithm
-    /// that applies, so walk the same list and prove that whichever entry wins is a producer-first
-    /// in-memory join. Otherwise (e.g. `join_algorithm = 'full_sorting_merge,hash'`) skip the
-    /// rewrite: the user's algorithm list must keep selecting the same algorithm it would select
-    /// without the rewrite.
+    /// that applies, so walk the same list and prove that whichever entry wins is producer-first.
+    /// Otherwise (e.g. `join_algorithm = 'full_sorting_merge,hash'`) skip the rewrite: the user's
+    /// algorithm list must keep selecting the same algorithm it would select without the rewrite.
     const auto & join_settings = join_step->getJoinSettings();
-
-    /// With a non-zero external-join threshold even the hash family is executed as
-    /// `SpillingHashJoin`, which spills to disk under memory pressure. Check the raw settings
-    /// rather than the effective threshold so the plan shape does not depend on the local memory
-    /// limits the effective value is derived from.
-    if (join_settings.max_bytes_before_external_join != 0 || join_settings.max_bytes_ratio_before_external_join != 0.)
-        return;
 
     bool producer_first_guaranteed = false;
     for (const auto algo : join_settings.join_algorithms)
@@ -134,19 +124,19 @@ void tryOptimizeSelfJoinSharedScan(
         if (algo == JoinAlgorithm::DIRECT)
             continue;
 
-        /// These always create a join, and (with spilling excluded above) always a producer-first
-        /// in-memory one, so no later entry can win: the hash family and `default`, which means
-        /// `direct,hash`.
+        /// These always create a producer-first join, so no later entry can win: the hash family
+        /// and `default`, which means `direct,hash`.
         if (algo == JoinAlgorithm::HASH || algo == JoinAlgorithm::PARALLEL_HASH || algo == JoinAlgorithm::DEFAULT)
         {
             producer_first_guaranteed = true;
             break;
         }
 
-        /// Anything else may win and is either not producer-first (the merge-style algorithms) or
-        /// external-memory: `grace_hash` partitions the build side to disk by design, and `auto`
-        /// prefers `JoinSwitcher`, which switches to an on-disk merge join past a threshold that
-        /// defaults to `default_max_bytes_in_join` even when no join size limits are set.
+        /// Anything else may win. `full_sorting_merge` and `paste` are `YShaped`, which reads both
+        /// sides concurrently and so cannot replay a buffer the build side has not finished filling.
+        /// `grace_hash` and `auto` are producer-first, but re-read the build side from their own
+        /// spill files across multiple bucket passes; the rewrite has not been validated against
+        /// that replay, so exclude them until it is.
         return;
     }
     if (!producer_first_guaranteed)

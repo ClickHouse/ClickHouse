@@ -12,8 +12,6 @@ SET enable_join_runtime_filters = 0; -- a runtime filter makes the scan non-plai
 SET enable_parallel_replicas = 0; -- reading with parallel replicas blocks the rewrite
 SET enable_shared_storage_snapshot_in_query = 1; -- the rewrite requires both scans to share one storage snapshot
 SET max_rows_to_group_by = 0; -- the CI config sets a limit, which make_distributed_plan rejects
-SET max_bytes_before_external_join = 0; -- a non-zero spill threshold makes the join external-memory and blocks the rewrite
-SET max_bytes_ratio_before_external_join = 0; -- a non-zero spill threshold makes the join external-memory and blocks the rewrite
 
 DROP TABLE IF EXISTS t_sjss_dist;
 CREATE TABLE t_sjss_dist (x UInt64, y String) ENGINE = MergeTree ORDER BY x;

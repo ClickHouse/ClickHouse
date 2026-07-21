@@ -9,8 +9,6 @@ SET enable_parallel_replicas = 0; -- reading with parallel replicas blocks the r
 SET enable_shared_storage_snapshot_in_query = 1; -- the rewrite requires both scans to share one storage snapshot
 SET optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1; -- the interaction under test
 SET query_plan_join_swap_table = 0; -- keep the plan shape deterministic
-SET max_bytes_before_external_join = 0; -- a non-zero spill threshold makes the join external-memory and blocks the rewrite
-SET max_bytes_ratio_before_external_join = 0; -- a non-zero spill threshold makes the join external-memory and blocks the rewrite
 
 DROP TABLE IF EXISTS t_sjss_rio;
 CREATE TABLE t_sjss_rio (t UInt64, id UInt64) ENGINE = MergeTree ORDER BY t;
