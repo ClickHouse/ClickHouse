@@ -44,6 +44,7 @@ cleanup()
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${WRITER} SYNC" 2>/dev/null
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${READER1} SYNC" 2>/dev/null
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${READER2} SYNC" 2>/dev/null
+    rm -rf "${DISK_ROOT:-}" "${STAGE:-}" "${CLONE_SRC:-}"
 }
 trap cleanup EXIT
 cleanup
@@ -54,8 +55,13 @@ cleanup
 # SYSTEM RESTART DISK re-scans them via refreshDataPartsOnce. `no-object-storage` is
 # deliberately NOT set: the test REQUIRES a local backing path (object_storage_type = local)
 # so it can fabricate the rolled-back part on disk.
-BASE_PATH="disks/04612/${CLICKHOUSE_DATABASE}"
-DISK_PATH="${BASE_PATH}/w/"
+#
+# The disk backing path must be ABSOLUTE. An object_storage=local disk resolves a relative
+# `path` against the server's working directory, which differs from this script's directory
+# under the CI runner, so a relative path would be unreachable from here. CLICKHOUSE_TMP is an
+# absolute, test-unique directory both the server and this script can reach.
+DISK_ROOT="${CLICKHOUSE_TMP:?}/04612_${CLICKHOUSE_DATABASE}"
+rm -rf "${DISK_ROOT}"
 
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE ${WRITER} (x UInt32) ORDER BY x
@@ -63,19 +69,18 @@ $CLICKHOUSE_CLIENT -q "
       disk = disk(
           name = 04612_writer_${CLICKHOUSE_DATABASE},
           type = object_storage, object_storage_type = local,
-          metadata_type = plain_rewritable, path = '${DISK_PATH}')
+          metadata_type = plain_rewritable, path = '${DISK_ROOT}/w/')
 "
 
 # Committed source part we clone to fabricate the test parts.
 $CLICKHOUSE_CLIENT -q "INSERT INTO ${WRITER} VALUES (42)"
 
-# Physical directory backing the plain_rewritable disk (relative to the server data path).
+# data_paths[1] is the absolute backing directory of the writer's disk.
 STORE=$($CLICKHOUSE_CLIENT -q "
-    SELECT concatWithSeparator('/', trimRight(path, '/'), '${DISK_PATH}')
-    FROM system.disks WHERE name = '04612_writer_${CLICKHOUSE_DATABASE}'
+    SELECT data_paths[1] FROM system.tables
+    WHERE database = currentDatabase() AND name = '${WRITER}'
 ")
-# Fallbacks: some servers report the fully-resolved path already.
-[ -d "${STORE}" ] || STORE=$($CLICKHOUSE_CLIENT -q "SELECT path FROM system.disks WHERE name = '04612_writer_${CLICKHOUSE_DATABASE}'")
+STORE="${STORE%/}/"
 if [ ! -d "${STORE}" ]; then
     echo "FAIL: could not locate plain_rewritable backing dir (${STORE})"
     exit 1
@@ -84,12 +89,10 @@ fi
 # plain_rewritable maps a logical part name to a random directory via __meta/<rnd>/prefix.path.
 # Find the random dir for the committed source part all_1_1_0.
 SRC_RND=""
-for meta in "${STORE}"__meta/*/prefix.path "${STORE}"/__meta/*/prefix.path; do
+for meta in "${STORE}"__meta/*/prefix.path; do
     [ -f "${meta}" ] || continue
     if [ "$(cat "${meta}")" = "all_1_1_0/" ]; then
         SRC_RND=$(basename "$(dirname "${meta}")")
-        META_DIR=$(dirname "$(dirname "${meta}")")
-        STORE=$(dirname "${META_DIR}")/
         break
     fi
 done
@@ -133,8 +136,8 @@ inject_part()
     mv "${STAGE}/meta_${rnd}/prefix.path" "${store}__meta/${rnd}/prefix.path"
 }
 
-# Create a readonly reader over a fresh, empty plain_rewritable layout at ${BASE_PATH}/<sub>.
-# Prints the reader's store directory.
+# Create a readonly reader over a fresh, empty plain_rewritable layout at ${DISK_ROOT}/<sub>.
+# Prints the reader's absolute store directory (from data_paths[1]).
 make_reader()
 {
     # Separate `local` statements: a single `local a=$2 b="${a}"` evaluates every RHS
@@ -143,17 +146,20 @@ make_reader()
     local sub=$2
     local disk="04612_${sub}_${CLICKHOUSE_DATABASE}"
     local store
-    store="$(dirname "${STORE%/}")/${sub}/"
-    mkdir -p "${store}__meta"
+    mkdir -p "${DISK_ROOT}/${sub}/__meta"
     $CLICKHOUSE_CLIENT -q "
         CREATE TABLE ${table} (x UInt32) ORDER BY x
         SETTINGS table_disk = true,
           disk = disk(
               readonly = true, name = ${disk},
               type = object_storage, object_storage_type = local,
-              metadata_type = plain_rewritable, path = '${BASE_PATH}/${sub}/')
+              metadata_type = plain_rewritable, path = '${DISK_ROOT}/${sub}/')
     "
-    echo "${store}"
+    store=$($CLICKHOUSE_CLIENT -q "
+        SELECT data_paths[1] FROM system.tables
+        WHERE database = currentDatabase() AND name = '${table}'
+    ")
+    echo "${store%/}/"
 }
 
 check_active_count()
@@ -202,5 +208,5 @@ check_active_count "${READER2}" all_1_2_1_0 1
 check_active_count "${READER2}" all_3_4_1_0 1
 check_active_count "${READER2}" all_1_4_2_1 0
 
-rm -rf "${STAGE}" "${CLONE_SRC}"
+rm -rf "${STAGE}" "${CLONE_SRC}" "${DISK_ROOT}"
 echo OK
