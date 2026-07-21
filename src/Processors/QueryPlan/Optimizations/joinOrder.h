@@ -40,10 +40,12 @@ struct DPJoinEntry
     std::optional<UInt64> estimated_rows = {};
     std::unordered_map<String, ColumnStats> column_stats = {};
 
-    /// Whether `estimated_rows` was derived from real column statistics: true iff no NDV
-    /// lookup that contributed to any join selectivity inside this subtree fell back to
-    /// `estimated_rows` as a proxy (see `getColumnStats`). Filled by `optimizeJoinOrder`
-    /// for the chosen plan, before `cleanupJoinPredicates` rewrites the predicates.
+    /// Whether `estimated_rows` was derived from real column statistics: true iff at every
+    /// join step inside this subtree the NDV that determined the selectivity came from a
+    /// real statistic — an NDV lookup that fell back to `estimated_rows` as a proxy (see
+    /// `getColumnStats`) poisons the estimate only when it won the max/min competition in
+    /// `computeSelectivity`. Filled by `optimizeJoinOrder` for the chosen plan, before
+    /// `cleanupJoinPredicates` rewrites the predicates.
     /// Used by the star-schema swap guard in `chooseJoinOrder`.
     bool estimate_is_stats_based = true;
 

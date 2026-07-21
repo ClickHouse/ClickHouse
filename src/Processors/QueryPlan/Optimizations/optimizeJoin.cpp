@@ -1208,9 +1208,11 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             ///
             /// Guard against this by not swapping when all of the following hold:
             ///  - the left side is composite (multi-table) and its cardinality estimate
-            ///    is proxy-based: some NDV lookup at some join step inside the subtree
-            ///    fell back to the `estimated_rows` proxy. The flag is recorded by the
-            ///    join order optimizer itself (see `markStatsBasedEstimates` in
+            ///    is proxy-based: at some join step inside the subtree, an NDV lookup that
+            ///    fell back to the `estimated_rows` proxy won the max/min competition in
+            ///    `computeSelectivity` and thus determined the step's estimate (a proxy
+            ///    that loses to a real statistic never affects it). The flag is recorded
+            ///    by the join order optimizer itself (see `markStatsBasedEstimates` in
             ///    joinOrder.cpp), mirroring every lookup `computeSelectivity` makes —
             ///    direct equi-predicates as well as spanning column-equivalence classes —
             ///    and recursively over the whole subtree, because the underestimation of

@@ -1782,24 +1782,36 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BitSet & left
 }
 
 /// Whether the selectivity of this join step was derived from real column statistics,
-/// mirroring every NDV lookup `computeSelectivity` makes for a (left, right) pair:
-///  - both sides of every equi-predicate attached to the step (including predicates routed
-///    to `residual_filter`, which participate in selectivity the same way), looked up as in
-///    `getColumnStats`: a single-relation side in its base relation's stats, a multi-relation
-///    side in the propagated stats of the child subtree containing it;
-///  - every member of every column-equivalence class spanning both children: the class-wide
-///    max NDV contributes to selectivity even when the corresponding predicate is not among
-///    the step's edges (e.g. it was never emitted as an edge for this pair, or is removed
-///    later by `cleanupJoinPredicates`).
-/// A lookup that misses makes `getColumnStats` fall back to `estimated_rows` as an NDV proxy,
-/// which for a large table's join key is far too high and (since selectivity takes the
-/// minimum across predicates and the maximum across a class) dominates the step's estimate.
+/// mirroring the NDV competition in `computeSelectivity` for a (left, right) pair. Each
+/// contribution to the step's selectivity is `1 / max(ndv...)`:
+///  - an equi-predicate attached to the step (including predicates routed to
+///    `residual_filter`, which participate in selectivity the same way) contributes the
+///    max NDV of its two sides;
+///  - a column-equivalence class spanning both children contributes the class-wide max NDV
+///    even when the corresponding predicate is not among the step's edges (e.g. it was never
+///    emitted as an edge for this pair, or is removed later by `cleanupJoinPredicates`).
+/// The step selectivity is the minimum over contributions, so the estimate is determined by
+/// the single largest NDV among all of them. A lookup that misses makes `getColumnStats`
+/// fall back to `estimated_rows` as an NDV proxy — but that only matters when the proxy
+/// value actually wins the competition: a proxy that loses to a real statistic (e.g. a small
+/// stats-less dimension joined on a fact key with a real NDV) never affects the estimate.
+/// Hence the step is proxy-based iff the largest proxy-backed value strictly exceeds every
+/// stats-backed one; on a tie the estimate is numerically equal to a stats-derived one.
+/// Each lookup is mirrored as in `getColumnStats`: a single-relation side in its base
+/// relation's stats, a multi-relation side in the propagated stats of the child subtree
+/// containing it.
 static bool joinStepEstimateIsStatsBased(
     const DPJoinEntry & entry,
     const std::vector<RelationStats> & relation_stats,
     const EquivalenceClasses<JoinActionRef> & column_equivalences)
 {
-    auto side_has_stats = [&](const JoinActionRef & side) -> bool
+    /// The largest NDV supplied by a real statistic and by an `estimated_rows` fallback.
+    size_t best_stats_ndv = 0;
+    size_t best_proxy_ndv = 0;
+
+    /// Mirrors one `getColumnStats` lookup into the two maxima above.
+    /// Returns false when the lookup cannot be reproduced from the final plan.
+    auto account_lookup = [&](const JoinActionRef & side) -> bool
     {
         const auto & side_rels = side.getSourceRelations();
         /// A constant side has no NDV lookup to poison.
@@ -1807,14 +1819,29 @@ static bool joinStepEstimateIsStatsBased(
             return true;
 
         if (auto rel_id = side_rels.getSingleBit())
-            return rel_id.value() < relation_stats.size()
-                && relation_stats[rel_id.value()].column_stats.contains(side.getColumnName());
+        {
+            if (rel_id.value() >= relation_stats.size())
+                return false;
+            const auto & stat = relation_stats[rel_id.value()];
+            if (auto it = stat.column_stats.find(side.getColumnName()); it != stat.column_stats.end())
+                best_stats_ndv = std::max(best_stats_ndv, static_cast<size_t>(it->second.num_distinct_values));
+            else
+                best_proxy_ndv = std::max(best_proxy_ndv, static_cast<size_t>(stat.estimated_rows.value_or(0)));
+            return true;
+        }
 
+        const DPJoinEntry * child = nullptr;
         if (entry.left && isSubsetOf(side_rels, entry.left->relations))
-            return entry.left->column_stats.contains(side.getColumnName());
-        if (entry.right && isSubsetOf(side_rels, entry.right->relations))
-            return entry.right->column_stats.contains(side.getColumnName());
-        return false;
+            child = entry.left.get();
+        else if (entry.right && isSubsetOf(side_rels, entry.right->relations))
+            child = entry.right.get();
+        if (!child)
+            return false;
+        if (auto it = child->column_stats.find(side.getColumnName()); it != child->column_stats.end())
+            best_stats_ndv = std::max(best_stats_ndv, static_cast<size_t>(it->second.num_distinct_values));
+        else
+            best_proxy_ndv = std::max(best_proxy_ndv, static_cast<size_t>(child->estimated_rows.value_or(0)));
+        return true;
     };
 
     for (const auto * predicates : {&entry.join_operator.expression, &entry.join_operator.residual_filter})
@@ -1824,7 +1851,7 @@ static bool joinStepEstimateIsStatsBased(
             auto [op, lhs, rhs] = predicate.asBinaryPredicate();
             if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
                 continue;
-            if (!side_has_stats(lhs) || !side_has_stats(rhs))
+            if (!account_lookup(lhs) || !account_lookup(rhs))
                 return false;
         }
     }
@@ -1842,9 +1869,11 @@ static bool joinStepEstimateIsStatsBased(
         if (!equiv_class || !visited.insert(equiv_class).second)
             continue;
 
+        /// A class contributes to the selectivity only when it spans both children,
+        /// so collect its members first and account them only in that case.
         bool has_left = false;
         bool has_right = false;
-        bool all_members_have_stats = true;
+        std::vector<const JoinActionRef *> class_members;
         for (const auto & equiv_member : *equiv_class)
         {
             auto relation = equiv_member.getSourceRelations().getSingleBit();
@@ -1855,20 +1884,22 @@ static bool joinStepEstimateIsStatsBased(
             if (!in_left && !in_right)
                 continue;
             (in_left ? has_left : has_right) = true;
-            if (*relation >= relation_stats.size()
-                || !relation_stats[*relation].column_stats.contains(equiv_member.getColumnName()))
-                all_members_have_stats = false;
+            class_members.push_back(&equiv_member);
         }
-        if (has_left && has_right && !all_members_have_stats)
-            return false;
+        if (has_left && has_right)
+        {
+            for (const auto * equiv_member : class_members)
+                if (!account_lookup(*equiv_member))
+                    return false;
+        }
     }
 
-    return true;
+    return best_proxy_ndv <= best_stats_ndv;
 }
 
 /// Fill `DPJoinEntry::estimate_is_stats_based` bottom-up over the chosen plan: a leaf's row
 /// count comes from the table itself, and a join's estimate is stats-based iff both children's
-/// are and no NDV lookup of its own step fell back to the `estimated_rows` proxy. A single
+/// are and no `estimated_rows` proxy fallback won the NDV competition of its own step. A single
 /// proxy-based step poisons `estimated_rows` of all enclosing subtrees, hence the recursion.
 /// Must run before `cleanupJoinPredicates`, which removes and synthesizes predicates.
 static void markStatsBasedEstimates(
