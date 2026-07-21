@@ -40,6 +40,11 @@ public:
         String start_param;
         String end_param;
         String step_param;
+        /// Maximum number of returned series of a vector or matrix result (0 means no limit);
+        /// when the result is truncated, the response carries the Prometheus
+        /// "results truncated due to limit" warning. Scalar and string results are not series
+        /// and are never truncated.
+        UInt64 limit = 0;
     };
 
     /// Execute an instant query (/api/v1/query) or range query (/api/v1/query_range)
@@ -82,16 +87,23 @@ public:
 
 private:
     /// Writes the result of a prometheus query as a JSON.
-    void writeQueryResponse(WriteBuffer & response, PullingPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type);
+    void writeQueryResponse(WriteBuffer & response, PullingPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type, UInt64 limit);
 
     /// Helper methods.
     void writeQueryResponseHeader(WriteBuffer & response, PrometheusQueryResultType result_type);
-    void writeQueryResponseFooter(WriteBuffer & response);
-    void writeQueryResponseBlock(WriteBuffer & response, PrometheusQueryResultType result_type, const Block & result_block, bool first);
+    void writeQueryResponseFooter(WriteBuffer & response, bool truncated);
+    void writeQueryResponseBlock(
+        WriteBuffer & response,
+        PrometheusQueryResultType result_type,
+        const Block & result_block,
+        bool first,
+        UInt64 limit,
+        UInt64 & emitted,
+        bool & truncated);
     void writeQueryResponseScalarBlock(WriteBuffer & response, const Block & result_block, bool first);
     void writeQueryResponseStringBlock(WriteBuffer & response, const Block & result_block, bool first);
-    void writeQueryResponseInstantVectorBlock(WriteBuffer & response, const Block & result_block, bool first);
-    void writeQueryResponseRangeVectorBlock(WriteBuffer & response, const Block & result_block, bool first);
+    void writeQueryResponseInstantVectorBlock(WriteBuffer & response, const Block & result_block, UInt64 limit, UInt64 & emitted, bool & truncated);
+    void writeQueryResponseRangeVectorBlock(WriteBuffer & response, const Block & result_block, UInt64 limit, UInt64 & emitted, bool & truncated);
     void writeTags(WriteBuffer & response, const Block & result_block, size_t row_index);
     void writeTimestamp(WriteBuffer & response, DateTime64 value, UInt32 scale);
     void writeScalar(WriteBuffer & response, Float64 value);

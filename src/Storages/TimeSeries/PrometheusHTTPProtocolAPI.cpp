@@ -246,7 +246,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         PullingPipelineExecutor executor(io.pipeline);
 
         /// Mind using the getResultType() method from PrometheusQueryToSQL::Converter, not from the PrometheusQueryTree.
-        writeQueryResponse(response, executor, converter.getResultType());
+        writeQueryResponse(response, executor, converter.getResultType(), params.limit);
 
         /// Store the buffered result in the query result cache now (no-op if no cache writers exist in the pipeline):
         /// the executor's destructor cancels the pipeline processors, after which the pending write would be discarded.
@@ -264,7 +264,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 }
 
 void PrometheusHTTPProtocolAPI::writeQueryResponse(
-    WriteBuffer & response, PullingPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type)
+    WriteBuffer & response, PullingPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type, UInt64 limit)
 {
     /// Pull until the first non-empty block is ready before writing the header
     /// because pulling_executor.pull() can throw an exception and it's better to catch it early and write
@@ -282,18 +282,25 @@ void PrometheusHTTPProtocolAPI::writeQueryResponse(
 
     writeQueryResponseHeader(response, result_type);
 
+    /// `limit` is the maximum number of returned series of a vector or matrix result. Rows past the
+    /// limit only signal that the result is truncated and are not emitted; the pipeline is still
+    /// pulled to completion so that it finishes normally (`finishExecutedQuery` releases the query
+    /// slot, and a pending query result cache write stores the full, untruncated result).
+    UInt64 emitted = 0;
+    bool truncated = false;
+
     if (has_output)
     {
-        writeQueryResponseBlock(response, result_type, block, /*first=*/ true);
+        writeQueryResponseBlock(response, result_type, block, /*first=*/ true, limit, emitted, truncated);
 
         while (pulling_executor.pull(block))
         {
             if (block.rows() > 0)
-                writeQueryResponseBlock(response, result_type, block, /*first=*/ false);
+                writeQueryResponseBlock(response, result_type, block, /*first=*/ false, limit, emitted, truncated);
         }
     }
 
-    writeQueryResponseFooter(response);
+    writeQueryResponseFooter(response, truncated);
 }
 
 void PrometheusHTTPProtocolAPI::writeQueryResponseHeader(WriteBuffer & response, PrometheusQueryResultType result_type)
@@ -320,17 +327,31 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseHeader(WriteBuffer & response,
     writeString(R"(","result":[)", response);
 }
 
-void PrometheusHTTPProtocolAPI::writeQueryResponseFooter(WriteBuffer & response)
+void PrometheusHTTPProtocolAPI::writeQueryResponseFooter(WriteBuffer & response, bool truncated)
 {
-    writeString("]}}", response);
+    /// When the optional `limit` parameter cut the result short, the response carries the same
+    /// warning Prometheus produces for a truncated /api/v1/query or /api/v1/query_range result.
+    if (truncated)
+        writeString(R"(]},"warnings":["results truncated due to limit"]})", response);
+    else
+        writeString("]}}", response);
 }
 
-void PrometheusHTTPProtocolAPI::writeQueryResponseBlock(WriteBuffer & response, PrometheusQueryResultType result_type, const Block & result_block, bool first)
+void PrometheusHTTPProtocolAPI::writeQueryResponseBlock(
+    WriteBuffer & response,
+    PrometheusQueryResultType result_type,
+    const Block & result_block,
+    bool first,
+    UInt64 limit,
+    UInt64 & emitted,
+    bool & truncated)
 {
     LOG_TRACE(log, "Prometheus: Writing {} result ({} rows)", result_type, result_block.rows());
 
     switch (result_type)
     {
+        /// `limit` is the maximum number of returned *series*; a scalar or string result is not
+        /// a series and is never truncated.
         case PrometheusQueryTree::ResultType::SCALAR:
         {
             writeQueryResponseScalarBlock(response, result_block, first);
@@ -343,12 +364,12 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseBlock(WriteBuffer & response, 
         }
         case PrometheusQueryTree::ResultType::INSTANT_VECTOR:
         {
-            writeQueryResponseInstantVectorBlock(response, result_block, first);
+            writeQueryResponseInstantVectorBlock(response, result_block, limit, emitted, truncated);
             return;
         }
         case PrometheusQueryTree::ResultType::RANGE_VECTOR:
         {
-            writeQueryResponseRangeVectorBlock(response, result_block, first);
+            writeQueryResponseRangeVectorBlock(response, result_block, limit, emitted, truncated);
             return;
         }
     }
@@ -397,17 +418,26 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseStringBlock(WriteBuffer & resp
     writeJSONString(value, response, format_settings);
 }
 
-void PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer & response, const Block & result_block, bool first)
+void PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(
+    WriteBuffer & response, const Block & result_block, UInt64 limit, UInt64 & emitted, bool & truncated)
 {
     const auto & timestamp_column = result_block.getByName(TimeSeriesColumnNames::Timestamp).column;
     auto timestamp_data_type = result_block.getByName(TimeSeriesColumnNames::Timestamp).type;
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
     const auto & value_column = result_block.getByName(TimeSeriesColumnNames::Value).column;
 
-    bool need_comma = !first;
+    bool need_comma = emitted > 0;
 
     for (size_t i = 0; i < result_block.rows(); ++i)
     {
+        /// Each row is one series; a row past the limit only signals that the result is truncated.
+        if (limit && emitted == limit)
+        {
+            truncated = true;
+            return;
+        }
+        ++emitted;
+
         if (need_comma)
             writeString(",", response);
 
@@ -439,7 +469,8 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer
     }
 }
 
-void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer & response, const Block & result_block, bool first)
+void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(
+    WriteBuffer & response, const Block & result_block, UInt64 limit, UInt64 & emitted, bool & truncated)
 {
     const auto & time_series_column = result_block.getByName(TimeSeriesColumnNames::TimeSeries).column;
     const auto & array_column = typeid_cast<const ColumnArray &>(*time_series_column);
@@ -455,10 +486,18 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer &
 
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
-    bool need_comma = !first;
+    bool need_comma = emitted > 0;
 
     for (size_t i = 0; i < result_block.rows(); ++i)
     {
+        /// Each row is one series; a row past the limit only signals that the result is truncated.
+        if (limit && emitted == limit)
+        {
+            truncated = true;
+            return;
+        }
+        ++emitted;
+
         if (need_comma)
             writeString(",", response);
 

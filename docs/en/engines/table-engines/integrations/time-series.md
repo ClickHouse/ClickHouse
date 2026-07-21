@@ -420,7 +420,7 @@ These endpoints read from the [tags](#tags-table) target table and deduplicate b
 
 The optional `match[]` parameter restricts the result by metric name, for example `/api/v1/series?match[]=cpu_usage`. The parameter can be repeated, in which case the result is the union over all the given metric names, for example `/api/v1/series?match[]=cpu_usage&match[]=memory_usage`.
 
-The optional `limit` parameter caps the number of returned items, for example `/api/v1/labels?limit=10` (`0` means no limit, which is also the default). When the result is truncated, the response carries the standard Prometheus warning `results truncated due to limit`. The query endpoints (`/api/v1/query` and `/api/v1/query_range`) do not implement `limit` yet and reject a request that specifies it.
+The optional `limit` parameter caps the number of returned items, for example `/api/v1/labels?limit=10` (`0` means no limit, which is also the default). On the query endpoints (`/api/v1/query` and `/api/v1/query_range`), `limit` caps the number of returned series of a vector or matrix result; scalar and string results are not series and are never truncated. When a result is truncated, the response carries the standard Prometheus warning `results truncated due to limit`.
 
 Tags moved into separate columns via the `tags_to_columns` setting are included in the results of all three endpoints.
 

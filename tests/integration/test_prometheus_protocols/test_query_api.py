@@ -172,6 +172,35 @@ def test_query_after_response_sent():
             response.content  # Reading property response.content hits the chunked-stream abort
 
 
+# Generic ClickHouse HTTP parameters (`query_id`, `quota_key`, `stacktrace`, `role`) are excluded
+# from setting-like parameters by the shared HTTP context setup (`makeContext`), and the Prometheus
+# endpoints must keep those exclusions when they reserve their own parameters. Otherwise a request
+# like `/api/v1/query?...&query_id=x` fails with an "unknown setting" error.
+def test_generic_http_params_are_not_settings():
+    node.query("CREATE ROLE IF NOT EXISTS prometheus_api_role")
+    node.query("GRANT prometheus_api_role TO default")
+    url = (
+        f"http://{node.ip_address}:9093/api/v1/query"
+        f"?query=post_body_metric&time=1000"
+        f"&query_id=prometheus_api_query_id"
+        f"&quota_key=prometheus_api_quota"
+        f"&stacktrace=1"
+        f"&role=prometheus_api_role"
+    )
+    response = requests.get(url)
+    assert response.status_code == 200, f"got {response.status_code}: {response.text}"
+    assert response.json()["status"] == "success"
+
+    # The supplied query id must reach the executed query instead of being applied as a setting.
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert (
+        node.query(
+            "SELECT count() > 0 FROM system.query_log WHERE query_id = 'prometheus_api_query_id'"
+        )
+        == "1\n"
+    )
+
+
 def test_table_query_param():
     query = 'foo{shape="square"}'
     timestamp = 150

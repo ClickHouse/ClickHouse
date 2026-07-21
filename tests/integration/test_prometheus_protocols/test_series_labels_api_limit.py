@@ -1,10 +1,11 @@
-"""Tests for the `limit` parameter of the Prometheus metadata endpoints.
+"""Tests for the `limit` parameter of the Prometheus HTTP API endpoints.
 
 Prometheus defines `limit` on /api/v1/series, /api/v1/labels and /api/v1/label/<name>/values as the
-maximum number of returned items (0 means no limit). It must be handled by the endpoints themselves
-and not fall through to ClickHouse's generic `limit` setting: /api/v1/labels prepends the virtual
-`__name__` label outside the query, so applying `limit` as a SQL setting would return more items
-than requested. When the result is truncated, the response carries the standard Prometheus warning
+maximum number of returned items, and on /api/v1/query and /api/v1/query_range as the maximum number
+of returned series (0 means no limit). It must be handled by the endpoints themselves and not fall
+through to ClickHouse's generic `limit` setting: /api/v1/labels prepends the virtual `__name__`
+label outside the query, so applying `limit` as a SQL setting would return more items than
+requested. When the result is truncated, the response carries the standard Prometheus warning
 "results truncated due to limit".
 """
 
@@ -175,12 +176,50 @@ def test_limit_just_below_uint64_max_is_accepted():
     assert "warnings" not in result
 
 
-def test_query_endpoints_reject_limit():
-    """The query endpoints do not implement `limit` yet; it must be rejected instead of being
-    silently ignored or applied as ClickHouse's generic `limit` setting."""
+def test_query_limit():
+    """/api/v1/query truncates a vector result to `limit` series (two series match `cpu_usage`)."""
+    result = get_success_json("/api/v1/query?query=cpu_usage&time=1000&limit=1")
+    assert result["data"]["resultType"] == "vector"
+    assert len(result["data"]["result"]) == 1
+    assert TRUNCATION_WARNING in result.get("warnings", [])
+
+    for limit in [2, 100, 0]:
+        result = get_success_json(f"/api/v1/query?query=cpu_usage&time=1000&limit={limit}")
+        assert len(result["data"]["result"]) == 2
+        assert "warnings" not in result
+
+
+def test_query_range_limit():
+    """/api/v1/query_range truncates a matrix result to `limit` series."""
+    result = get_success_json(
+        "/api/v1/query_range?query=cpu_usage&start=1000&end=1030&step=15&limit=1"
+    )
+    assert result["data"]["resultType"] == "matrix"
+    assert len(result["data"]["result"]) == 1
+    assert TRUNCATION_WARNING in result.get("warnings", [])
+
+    result = get_success_json(
+        "/api/v1/query_range?query=cpu_usage&start=1000&end=1030&step=15&limit=100"
+    )
+    assert len(result["data"]["result"]) == 2
+    assert "warnings" not in result
+
+
+def test_query_scalar_result_is_not_truncated_by_limit():
+    """`limit` is the maximum number of returned series; a scalar result is not a series."""
+    result = get_success_json("/api/v1/query?query=23&time=1000&limit=1")
+    assert result["data"]["resultType"] == "scalar"
+    assert result["data"]["result"] == [1000, "23"]
+    assert "warnings" not in result
+
+
+def test_invalid_limit_is_rejected_on_query_endpoints():
+    """The query endpoints validate `limit` the same way as the metadata endpoints."""
+    uint64_max = 2**64 - 1
     for path in [
-        "/api/v1/query?query=cpu_usage&time=1000&limit=5",
-        "/api/v1/query_range?query=cpu_usage&start=1000&end=1030&step=15&limit=5",
+        "/api/v1/query?query=cpu_usage&time=1000&limit=abc",
+        f"/api/v1/query?query=cpu_usage&time=1000&limit={uint64_max}",
+        "/api/v1/query_range?query=cpu_usage&start=1000&end=1030&step=15&limit=-1",
     ]:
         response = get_response(path)
         assert response.status_code == 400

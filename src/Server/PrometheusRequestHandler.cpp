@@ -444,20 +444,21 @@ public:
 
     bool isSettingLikeParameter(const String & name) override
     {
-        /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
-        if (name.empty())
+        /// Start from the generic exclusions applied by `ImplWithContext` (`user`, `password`, `quota_key`,
+        /// `stacktrace`, `role`, `query_id`, `database`, `table`): `makeContext` gives them the shared HTTP
+        /// semantics (roles, query id, ...), so they must not fail as unknown settings here.
+        if (!ImplWithContext::isSettingLikeParameter(name))
             return false;
 
-        /// Some parameters (database, table, default_format, everything used in the code above) do not
-        /// belong to the Settings class. `match[]` and `limit` are consumed by the metadata endpoints:
-        /// Prometheus defines `limit` on /api/v1/series, /api/v1/labels and /api/v1/label/<name>/values,
-        /// so it must not fall through to ClickHouse's generic `limit` setting.
-        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "database", "table"};
+        /// Additionally reserve the Prometheus HTTP API parameters consumed by these endpoints.
+        /// Prometheus defines `limit` on all of them, so it must not fall through to ClickHouse's
+        /// generic `limit` setting.
+        static const NameSet reserved_param_names{"query", "time", "start", "end", "step", "match[]", "limit"};
         return !reserved_param_names.contains(name);
     }
 
-    /// Parses the optional `limit` parameter of the Prometheus metadata endpoints
-    /// (the maximum number of returned items; 0 means no limit, which is also the default).
+    /// Parses the optional `limit` parameter of the Prometheus HTTP API endpoints (the maximum number
+    /// of returned items - series for the query endpoints; 0 means no limit, which is also the default).
     UInt64 getLimitParam() const
     {
         String limit_str = params->get("limit", "");
@@ -473,7 +474,8 @@ public:
 
         /// The metadata endpoints detect truncation by querying `LIMIT limit + 1` rows, so the maximum
         /// representable value cannot be served: the addition would wrap to zero and turn a valid request
-        /// into an empty response with no truncation warning. Reject it up front (fail closed).
+        /// into an empty response with no truncation warning. Reject it up front (fail closed), uniformly
+        /// for all endpoints.
         if (limit == std::numeric_limits<UInt64>::max())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -481,17 +483,6 @@ public:
                 limit, std::numeric_limits<UInt64>::max() - 1);
 
         return limit;
-    }
-
-    /// The PromQL query endpoints (/api/v1/query, /api/v1/query_range) do not implement the `limit`
-    /// parameter yet. Since `limit` is reserved above (it no longer reaches the ClickHouse `limit`
-    /// setting), reject it explicitly instead of silently ignoring the requested cap (fail closed).
-    void checkNoLimitParam() const
-    {
-        if (!params->get("limit", "").empty())
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "The 'limit' parameter is not implemented for the PromQL query endpoints");
     }
 
     void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
@@ -525,11 +516,10 @@ public:
                 String start = params->get("start", "");
                 String end = params->get("end", "");
                 String step = params->get("step", "");
-                checkNoLimitParam();
+                UInt64 limit = getLimitParam();
 
                 /// TODO: Support the following **optional** query parameters:
                 /// - timeout=<duration>: Evaluation timeout
-                /// - limit=<number>: Maximum number of returned series
                 /// - lookback_delta=<number>: Override for the lookback period for this query.
 
                 PrometheusHTTPProtocolAPI::Params params
@@ -540,6 +530,7 @@ public:
                     .start_param = start,
                     .end_param = end,
                     .step_param = step,
+                    .limit = limit,
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
@@ -548,7 +539,7 @@ public:
             {
                 String query = params->get("query", "");
                 String time = params->get("time", "");
-                checkNoLimitParam();
+                UInt64 limit = getLimitParam();
 
                 /// TODO: Support optional parameters same as for the range query.
 
@@ -560,6 +551,7 @@ public:
                     .start_param = "",
                     .end_param = "",
                     .step_param = "",
+                    .limit = limit,
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
