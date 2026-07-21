@@ -496,6 +496,27 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
+    # tests/fuzz/build.sh runs as a POST_BUILD step of the `fuzzers` target and
+    # stages the .options files and a source-derived fallback all.dict into the
+    # build output (see ArtifactConfigs.fuzzers), so the produced artifact also
+    # depends on the inputs under tests/fuzz, which the shared build digest
+    # does not cover. Extend the digest of the fuzzers build only, so that a
+    # dictionary generation change cannot cache-hit a stale artifact while the
+    # other builds are unaffected.
+    special_build_jobs = [
+        (
+            job.set_digest_config(
+                Job.CacheDigestConfig(
+                    include_paths=build_digest_config.include_paths
+                    + ["./tests/fuzz/"],
+                    with_git_submodules=True,
+                )
+            )
+            if job.parameter == BuildTypes.ARM_FUZZERS
+            else job
+        )
+        for job in special_build_jobs
+    ]
     install_check_jobs = Job.Config(
         name=JobNames.INSTALL_TEST,
         runs_on=[],  # from parametrize()
