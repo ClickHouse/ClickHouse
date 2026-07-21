@@ -40,6 +40,13 @@ struct MemoryTrackerTestAccess
         tracker.profiler_limit.store(value, std::memory_order_relaxed);
     }
 
+    static void setFaultProbability(MemoryTracker & tracker, double value)
+    {
+        /// The public `setFaultProbability` caps the probability at 0.5, but the tests
+        /// need a deterministic fault, so write the raw value directly.
+        tracker.fault_probability.store(value, std::memory_order_relaxed);
+    }
+
     static Int64 getProfilerLimit(const MemoryTracker & tracker)
     {
         return tracker.profiler_limit.load(std::memory_order_relaxed);
@@ -209,7 +216,7 @@ TEST(MemoryTracker, SuccessfulAllocationChargesAndFreesHierarchy)
 TEST(MemoryTracker, FaultInjectionFailureRollsBackHierarchy)
 {
     MemoryTrackerHierarchy hierarchy;
-    hierarchy.user.setFaultProbability(1.0);
+    MemoryTrackerTestAccess::setFaultProbability(hierarchy.user, 1.0);
 
     try
     {
