@@ -154,6 +154,13 @@ tables that enumerate tables per database (`system.parts`, `system.parts_columns
 `system.data_skipping_indices`, `system.projections`, `system.constraints`, and similar): a
 facade row is shown only when `SHOW TABLES` is also granted on the underlying source table.
 
+System views and metrics that aggregate or enumerate tables across all databases
+(`CHECK ALL TABLES`, `system.graphite_retentions`, `system.s3_queue_settings`,
+`system.azure_queue_settings`, and the asynchronous mutation / detached-part metrics)
+count each physical table exactly once. Because a read-only `Overlay` facade owns no
+tables of its own and merely re-exposes its sources, it is skipped by these whole-server
+scans so that an overlay-backed table is never listed or counted twice.
+
 Creating an `Overlay` database requires a `SELECT` privilege on each underlying database
 it unions. A user who cannot read a source database therefore cannot expose it through a
 new `Overlay`. Creating an `Overlay` confers no privileges on the overlay database itself;

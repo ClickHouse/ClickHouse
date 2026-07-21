@@ -640,6 +640,14 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
     DetachedPartsStats current_values{};
     MutationStats current_mutation_stats{};
 
+    /// A table can show up in more than one database if `Overlay(...)` is in
+    /// use: the same physical table is reachable both through its real owner
+    /// database and through every `Overlay` referencing it. Counting its
+    /// detached parts and pending mutations from each appearance would overstate
+    /// these stats (and could raise false pending-mutation warnings), so we
+    /// deduplicate by `IStorage *`, mirroring `updateImpl`.
+    std::unordered_set<const IStorage *> seen_tables;
+
     for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         if (db.second->isExternal())
@@ -649,6 +657,10 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
         {
             const auto & table = iterator->table();
             if (!table)
+                continue;
+
+            /// Skip tables we have already visited through another database view (typically an `Overlay`).
+            if (!seen_tables.insert(table.get()).second)
                 continue;
 
             if (MergeTreeData * table_merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
