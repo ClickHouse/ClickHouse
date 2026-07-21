@@ -20,3 +20,14 @@ SELECT count() FROM
         SELECT quantilesState(0.9)(number) FROM numbers(5)
     )
 );
+
+-- The same, but the aggregate state is nested inside a `Variant`: a set operation over two
+-- unrelated `Tuple` types builds a `Variant` of both, and the aggregate state lives inside one of
+-- the alternatives. The `Variant` columns then differ only by the nested aggregate function, so the
+-- block structure check must descend into `Variant` alternatives too.
+SELECT count() IGNORE NULLS FROM
+(
+    (SELECT tuple(3, quantileState(number)) FROM numbers(7))
+    EXCEPT ALL
+    (SELECT tuple(quantilesState(0.9)(number), toInt128(2)) FROM numbers(5))
+);

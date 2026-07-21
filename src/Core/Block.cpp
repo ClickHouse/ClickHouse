@@ -7,6 +7,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Core/Block.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -84,11 +85,15 @@ static bool haveCompatibleColumnStructure(const IColumn & actual, const IColumn 
 
     /// Descend only into the plain container columns whose name is a pure composition of the
     /// nested column names, so that for everything else the comparison stays exactly as strict
-    /// as comparing full column names.
+    /// as comparing full column names. `Variant` is compositional too: its type equality (checked
+    /// before this point) already fixes the set and order of alternatives, so the only thing that
+    /// can differ between two structurally-equal-typed `Variant` columns is an aggregate state
+    /// nested inside an alternative, which is exactly what we want to relax. `Dynamic`/`Object`
+    /// are deliberately left strict because their nested structure is not fixed by the type.
     const bool is_compositional = typeid_cast<const ColumnTuple *>(&actual) || typeid_cast<const ColumnArray *>(&actual)
         || typeid_cast<const ColumnMap *>(&actual) || typeid_cast<const ColumnNullable *>(&actual)
         || typeid_cast<const ColumnConst *>(&actual) || typeid_cast<const ColumnSparse *>(&actual)
-        || typeid_cast<const ColumnReplicated *>(&actual);
+        || typeid_cast<const ColumnReplicated *>(&actual) || typeid_cast<const ColumnVariant *>(&actual);
 
     if (!is_compositional)
         return actual.getName() == expected.getName();
