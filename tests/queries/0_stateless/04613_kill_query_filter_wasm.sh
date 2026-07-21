@@ -10,6 +10,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 query_id="kill_query_filter_wasm_${CLICKHOUSE_DATABASE}_$RANDOM"
 
+# Ensure isolation from earlier tests (03207_wasm_fault.sh) that also insert the faulty module
+${CLICKHOUSE_CLIENT} -q "DELETE FROM system.webassembly_modules WHERE name = 'faulty'"
+
 # Load the WASM module with the infinite_loop function
 cat ${CUR_DIR}/wasm/faulty.wasm | ${CLICKHOUSE_CLIENT} --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'faulty', code FROM input('code String') FORMAT RawBlob"
 
@@ -40,5 +43,6 @@ wait
 
 # Clean up
 ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q "DROP FUNCTION IF EXISTS infinite_loop"
+${CLICKHOUSE_CLIENT} -q "DELETE FROM system.webassembly_modules WHERE name = 'faulty'"
 
 echo "OK"
