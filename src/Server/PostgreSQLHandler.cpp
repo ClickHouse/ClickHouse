@@ -1557,7 +1557,7 @@ SELECT
                         cols.base = 'Float64', 1022,
                         cols.base = 'UUID', 2951,
                         cols.base IN ('Date', 'Date32'), 1182,
-                        cols.base IN ('DateTime', 'DateTime64') AND cols.dt_precision <= 6, 1115,
+                        cols.base IN ('DateTime', 'DateTime64') AND cols.dt_precision <= 6 AND NOT cols.dt_has_timezone, 1115,
                         cols.base IN ('String', 'FixedString'), 1009,
                         1009),
             cols.base IN ('Bool', 'Boolean'), 16,
@@ -1570,7 +1570,7 @@ SELECT
             cols.base = 'Float64', 701,
             cols.base = 'UUID', 2950,
             cols.base IN ('Date', 'Date32'), 1082,
-            cols.base IN ('DateTime', 'DateTime64') AND cols.dt_precision <= 6, 1114,
+            cols.base IN ('DateTime', 'DateTime64') AND cols.dt_precision <= 6 AND NOT cols.dt_has_timezone, 1114,
             cols.base IN ('String', 'FixedString'), 25,
             25) AS atttypid,
     oids.oid AS attrelid,
@@ -1591,14 +1591,18 @@ SELECT
     /// zone` and schema inference recovers `DateTime` (p = 0) or `DateTime64(p)` instead of collapsing every
     /// timestamp to `DateTime64(6)`. A `DateTime64` scale above 6 does not fit PostgreSQL's `timestamp` at
     /// all, so such a column is advertised as text (see `atttypid` above) and read back as `String` with the
-    /// full value preserved. Everything else uses -1 ("no modifier").
+    /// full value preserved. The same text fallback applies to a `DateTime`/`DateTime64` with an explicit
+    /// time zone (e.g. `DateTime('UTC')`): PostgreSQL's `timestamp without time zone` cannot carry the zone,
+    /// and the reader would reconstruct a plain `DateTime`/`DateTime64(p)` whose values are then interpreted
+    /// in the server default time zone - silently shifting the stored epochs whenever the zones differ.
+    /// Everything else uses -1 ("no modifier").
     multiIf(cols.base IN ('Decimal', 'Decimal32', 'Decimal64', 'Decimal128', 'Decimal256')
                 AND cols.decimal_precision IS NOT NULL AND cols.decimal_scale IS NOT NULL,
                 toInt32(assumeNotNull(cols.decimal_precision) * 65536 + assumeNotNull(cols.decimal_scale) + 4),
             cols.base = 'UInt64', toInt32(20 * 65536 + 4),
             cols.base IN ('Int128', 'UInt128'), toInt32(39 * 65536 + 4),
             cols.base IN ('Int256', 'UInt256'), toInt32(78 * 65536 + 4),
-            cols.base IN ('DateTime', 'DateTime64') AND cols.dt_precision <= 6,
+            cols.base IN ('DateTime', 'DateTime64') AND cols.dt_precision <= 6 AND NOT cols.dt_has_timezone,
                 toInt32(assumeNotNull(cols.dt_precision)),
             -1) AS atttypmod,
     /// A column is advertised as nullable (`attnotnull = 'f'`) when the value that a self-connected client
@@ -1635,7 +1639,13 @@ FROM (
         /// back to parsing the scale out of the type name, skipping the same leading wrappers as `base`.
         coalesce(datetime_precision,
                  toUInt64OrNull(extract(type, '^(?:Nullable\(|LowCardinality\(|Array\()*DateTime64\(([0-9]+)')),
-                 if (base = 'DateTime', 0, NULL)) AS dt_precision
+                 if (base = 'DateTime', 0, NULL)) AS dt_precision,
+        /// Whether the `DateTime`/`DateTime64` carries an explicit time zone argument (a quoted string
+        /// inside the type's parentheses, e.g. `DateTime('UTC')`, `DateTime64(3, 'Europe/Berlin')`),
+        /// skipping the same leading wrappers as `base`. Such a column stays on the text fallback:
+        /// `timestamp without time zone` cannot represent the zone, and advertising it would make the
+        /// reading side reinterpret the values in the server default time zone.
+        match(type, '^(?:Nullable\(|LowCardinality\(|Array\()*DateTime(64)?\([^)]*\'') AS dt_has_timezone
     FROM system.columns
     /// The data path streams a table with `SELECT * FROM <table>` (see `processCopyQuery`), which omits
     /// `MATERIALIZED` / `ALIAS` / `EPHEMERAL` columns by default. Advertise exactly that column set here, so
