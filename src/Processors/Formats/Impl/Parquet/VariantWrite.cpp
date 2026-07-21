@@ -296,13 +296,27 @@ bool variantSharedDataValueMayContainObjectKeys(std::string_view value_data)
 
 void collectVariantObjectKeysForWrite(
     const ColumnObject & object_column,
+    const DataTypeObject & object_type,
     std::unordered_set<String> & unique_keys,
     const FormatSettings & format_settings)
 {
     VariantFlatPathKeysCache flat_path_keys_cache;
 
-    for (const auto & [path, _] : object_column.getTypedPaths())
+    for (const auto & [path, column] : object_column.getTypedPaths())
+    {
         collectVariantObjectKeysFromFlatPath(path, unique_keys, &flat_path_keys_cache);
+
+        /// A typed-path value can itself contain nested objects (e.g. a path declared as
+        /// `Array(JSON)` holding `[{'x': 2}]`). When such a path is not shredded into
+        /// `typed_value` it spills into the residual `value` encoder, which needs the nested
+        /// object keys in the metadata dictionary.
+        auto type_it = object_type.getTypedPaths().find(path);
+        if (type_it != object_type.getTypedPaths().end() && variantSharedDataTypeMayContainObjectKeys(type_it->second))
+        {
+            for (size_t row = 0; row < object_column.size(); ++row)
+                collectVariantObjectKeysFromField((*column)[row], unique_keys, format_settings, 1);
+        }
+    }
 
     for (const auto & [path, column] : object_column.getDynamicPathsPtrs())
     {
@@ -748,7 +762,7 @@ std::optional<PreparedVariantColumns> tryPrepareObjectVariantColumnsFast(
         return std::nullopt;
 
     std::unordered_set<String> unique_keys;
-    collectVariantObjectKeysForWrite(*object_column, unique_keys, format_settings);
+    collectVariantObjectKeysForWrite(*object_column, *object_type, unique_keys, format_settings);
     VariantEncodingContext shared_context = buildVariantEncodingContext(unique_keys);
 
     const size_t num_rows = full_column.size();
@@ -2195,7 +2209,7 @@ bool resolveVariantColumnarSource(
         chassert(context.arena);
         auto [it, inserted] = context.arena->full_sparse_columns.emplace(current_column, nullptr);
         if (inserted)
-            it->second = current_column->convertToFullIfNeeded();
+            it->second = current_column->convertToFullIfWrapped();
 
         return resolveVariantColumnarSource(
             *it->second, current_type, current_row, context,
