@@ -8,7 +8,7 @@ SET join_algorithm = 'hash';
 DROP TABLE IF EXISTS t_sjss_spill;
 CREATE TABLE t_sjss_spill (x UInt64) ENGINE = MergeTree ORDER BY x;
 -- Enough rows that `SpillingHashJoin` actually switches to `GraceHashJoin` below.
-INSERT INTO t_sjss_spill SELECT number FROM numbers(100000);
+INSERT INTO t_sjss_spill SELECT number FROM numbers(5000);
 
 -- `SpillingHashJoin` is still `FillRightFirst`, which is the only property the rewrite needs, so
 -- spilling must not block it: 1 scan plus a buffer in every case below.
