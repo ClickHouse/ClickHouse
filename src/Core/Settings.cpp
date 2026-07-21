@@ -361,13 +361,13 @@ The maximum number of threads to parse data in input formats that support parall
 The maximal size of buffer for parallel downloading (e.g. for URL engine) per each thread.
 )", 0) \
     DECLARE(NonZeroUInt64, max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
-The maximum size of the buffer to read from the filesystem.
+The maximum size of the buffer to read from the filesystem. Values above 256 MiB are clamped to 256 MiB, as a read buffer never needs to be larger.
 )", 0) \
     DECLARE(UInt64, max_read_buffer_size_local_fs, 128*1024, R"(
-The maximum size of the buffer to read from local filesystem. If set to 0 then max_read_buffer_size will be used.
+The maximum size of the buffer to read from local filesystem. If set to 0 then max_read_buffer_size will be used. Values above 256 MiB are clamped to 256 MiB, as a read buffer never needs to be larger.
 )", 0) \
     DECLARE(UInt64, max_read_buffer_size_remote_fs, 0, R"(
-The maximum size of the buffer to read from remote filesystem. If set to 0 then max_read_buffer_size will be used.
+The maximum size of the buffer to read from remote filesystem. If set to 0 then max_read_buffer_size will be used. Values above 256 MiB are clamped to 256 MiB, as a read buffer never needs to be larger.
 )", 0) \
     DECLARE(UInt64, max_distributed_connections, 1024, R"(
 The maximum number of simultaneous connections with remote servers for distributed processing of a single query to a single Distributed table. We recommend setting a value no less than the number of servers in the cluster.
@@ -1604,11 +1604,11 @@ Possible values:
 - Any positive even integer.
 )", 0) \
     DECLARE(UInt64, merge_tree_generic_exclusion_search_max_steps, 0, R"(
-When a filter cannot be evaluated as a single continuous range of the primary key, for example when it uses key columns other than the first one, ClickHouse runs an iterative generic exclusion search algorithm over the index marks. This setting limits the number of steps (index checks) the algorithm spends on each data part.
+When a filter cannot be evaluated as a single continuous range of the primary key, for example when it uses key columns other than the first one, ClickHouse runs an iterative generic exclusion search algorithm over the index marks. The same algorithm is used for the analysis of the text index. This setting limits the number of steps (index checks) the algorithm spends on each data part.
 
 The budget is spent on the largest remaining mark ranges first. When it is exhausted, the ranges that were not fully analyzed are accepted as a whole, so the query stays correct but may read more granules than an unlimited search would select. A lower budget speeds up index analysis at the cost of reading more data. The limit is approximate rather than a strict cap on the analysis cost: the search can exceed it by roughly one round of splitting, and when the part is already divided into many ranges (for example, by the query condition cache), each of them is checked at least once regardless of the limit.
 
-The number of steps the search made for each data part is reported in the trace level log messages of the query, and the `IndexGenericExclusionSearchStepLimitReached` profile event counts how many times the budget was exhausted.
+The number of steps the search made for each data part is reported in the trace level log messages of the query, and the `IndexGenericExclusionSearchStepLimitReached` and `TextIndexGenericExclusionSearchStepLimitReached` profile events count how many times the budget was exhausted.
 
 The (default) value 0 means unlimited steps.
 
@@ -4327,7 +4327,7 @@ Controls whether function [splitBy*()](../../sql-reference/functions/splitting-m
 Possible values:
 
 - `0` - The remaining string will not be included in the last element of the result array.
-- `1` - The remaining string will be included in the last element of the result array. This is the behavior of Spark's [`split()`](https://spark.apache.org/docs/3.1.2/api/python/reference/api/pyspark.sql.functions.split.html) function and Python's ['string.split()'](https://docs.python.org/3/library/stdtypes.html#str.split) method.
+- `1` - The remaining string will be included in the last element of the result array. This is the behavior of Spark's [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) function and Python's ['string.split()'](https://docs.python.org/3/library/stdtypes.html#str.split) method.
 )", 0) \
     \
     DECLARE(Bool, allow_execute_multiif_columnar, true, R"(
@@ -6197,11 +6197,6 @@ UInt64 to minimize public part
 
 Cloud default value: `2`.
 )", 0) \
-    DECLARE(UInt64, cloud_mode_database_engine, 1, R"(
-The database engine allowed in Cloud. 1 - rewrite DDLs to use Replicated database, 2 - rewrite DDLs to use Shared database
-
-Cloud default value: `2`.
-)", 0) \
     DECLARE(DistributedDDLOutputMode, distributed_ddl_output_mode, DistributedDDLOutputMode::THROW, R"(
 Sets format of distributed DDL query result.
 
@@ -6879,7 +6874,7 @@ Prefer prefetched threadpool if all parts are on local filesystem
 )", 0) \
     \
     DECLARE(UInt64, prefetch_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
-The maximum size of the prefetch buffer to read from the filesystem.
+The maximum size of the prefetch buffer to read from the filesystem. Values above 256 MiB are clamped to 256 MiB, as a read buffer never needs to be larger.
 )", 0) \
     DECLARE(UInt64, filesystem_prefetch_step_bytes, 0, R"(
 Prefetch step in bytes. Zero means `auto` - approximately the best prefetch step will be auto deduced, but might not be 100% the best. The actual value might be different because of setting filesystem_prefetch_min_bytes_for_single_read_task
@@ -7931,8 +7926,11 @@ The size of the dynamic candidate list when searching the vector similarity inde
     DECLARE(Bool, vector_search_with_rescoring, false, R"(
 If ClickHouse performs rescoring for queries that use the vector similarity index.
 Without rescoring, the vector similarity index returns the rows containing the best matches directly.
-With rescoring, the rows are extrapolated to granule level and all rows in the granule are checked again.
-In most situations, rescoring helps only marginally with accuracy but it deteriorates performance of vector search queries significantly.
+With rescoring, the vector similarity index fetches candidate rows and ClickHouse computes the exact distance
+for these rows from the original full-precision vectors in the regular SQL pipeline.
+When possible, ClickHouse filters the scan to candidate rows before the final distance computation.
+Increase `vector_search_index_fetch_multiplier` if more candidate rows are needed for better recall, especially
+with additional filters or quantized vector indexes.
 Note: A query run without rescoring and with parallel replicas enabled may fall back to rescoring.
 )", 0) \
     DECLARE(VectorSearchFilterStrategy, vector_search_filter_strategy, VectorSearchFilterStrategy::AUTO, R"(
@@ -7964,6 +7962,9 @@ Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HA
 )", 0) \
     DECLARE(Bool, optimize_and_compare_chain, true, R"(
 Populate constant comparison in AND chains to enhance filtering ability. Support operators `<`, `<=`, `>`, `>=`, `=` and mix of them. For example, `(a < b) AND (b < c) AND (c < 5)` would be `(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)`.
+)", 0) \
+    DECLARE(Bool, optimize_redundant_comparisons, true, R"(
+Detect conflicting and redundant comparison conditions on the same expression within AND chains. For example, `a < 1 AND a > 5` would be rewritten to `false`.
 )", 0) \
     DECLARE(UInt64, optimize_and_compare_chain_max_hash_work, 5'000'000, R"(
 Work budget for the `optimize_and_compare_chain` optimization during query analysis, measured in the number of query-tree nodes hashed by `getTreeHash` (the dominant cost of this optimization). Once a query has hashed more than this many nodes while applying the optimization, it stops applying it for the rest of the query. This bounds analysis time for queries with very many or very large `AND`-chains of comparisons, where the optimization can otherwise dominate analysis while folding nothing. Stopping early is always safe: it only forgoes an optimization and never changes results. Set to `0` to disable the budget (unlimited).
@@ -8515,6 +8516,9 @@ If the number of set bits in a runtime bloom filter exceeds this ratio the filte
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(
 When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.
 )", 0) \
+    DECLARE(Bool, enable_join_runtime_filters_index_analysis, false, R"(
+Run a second pass index analysis (via use_skip_indexes_on_data_read) to prune granules on LHS of a join.
+)", EXPERIMENTAL) \
     DECLARE(Bool, join_runtime_filter_size_from_hash_table_stats, true, R"(
 Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`.
 )", 0) \
@@ -8619,10 +8623,10 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
 Maximum number of texts to include in a single HTTP request made by `aiEmbed`. Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
 )", EXPERIMENTAL) \
     DECLARE(String, ai_function_text_default_credentials, "", R"(
-Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint and model differ from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
+Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint differs from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
 )", EXPERIMENTAL) \
     DECLARE(String, ai_function_embedding_default_credentials, "", R"(
-Name of the named collection used by `aiEmbed` when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. Kept separate from `ai_function_text_default_credentials` because an embeddings endpoint and model differ from a chat one.
+Name of the named collection used by `aiEmbed` when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. `aiEmbed` takes `model` as a required positional argument, not from the named collection. Kept separate from `ai_function_text_default_credentials` because an embeddings endpoint differs from a chat one.
 )", EXPERIMENTAL) \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \
@@ -8748,7 +8752,8 @@ Name of the named collection used by `aiEmbed` when the call does not pass `cred
     MAKE_OBSOLETE(M, BoolAuto, insert_select_deduplicate, Field{"auto"}) \
     MAKE_OBSOLETE(M, Bool, use_text_index_dictionary_cache, false) \
     MAKE_OBSOLETE(M, Bool, query_plan_use_logical_join_step, true) \
-    MAKE_OBSOLETE(M, Bool, query_plan_use_new_logical_join_step, true)
+    MAKE_OBSOLETE(M, Bool, query_plan_use_new_logical_join_step, true) \
+    MAKE_OBSOLETE(M, UInt64, cloud_mode_database_engine, 1)
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 
@@ -9181,17 +9186,32 @@ void Settings::dumpToMapColumn(IColumn * column, bool changed_only) const
     impl->dumpToMapColumn(column, changed_only);
 }
 
-NameToNameMap Settings::toNameToNameMap() const
+void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out)
 {
-    NameToNameMap query_parameters;
-    for (const auto & param : *impl)
+    for (const auto & [name, value] : parameters)
     {
-        std::string value;
-        ReadBufferFromOwnString buf(param.getValueString());
-        readQuoted(value, buf);
-        query_parameters.emplace(param.getName(), value);
+        BaseSettingsHelpers::writeString(name, out);
+        BaseSettingsHelpers::writeFlags(BaseSettingsHelpers::Flags::CUSTOM, out);
+        BaseSettingsHelpers::writeString(SettingFieldCustom(Field(value)).toString(), out);
     }
-    return query_parameters;
+    BaseSettingsHelpers::writeString(std::string_view{}, out);
+}
+
+NameToNameMap readQueryParameters(ReadBuffer & in)
+{
+    NameToNameMap parameters;
+    while (true)
+    {
+        String name = BaseSettingsHelpers::readString(in);
+        if (name.empty())
+            break;
+        std::ignore = BaseSettingsHelpers::readFlags(in);
+        String value;
+        ReadBufferFromOwnString buf(BaseSettingsHelpers::readString(in));
+        readQuoted(value, buf);
+        parameters.insert_or_assign(std::move(name), std::move(value));
+    }
+    return parameters;
 }
 
 void Settings::write(WriteBuffer & out, SettingsWriteFormat format) const
