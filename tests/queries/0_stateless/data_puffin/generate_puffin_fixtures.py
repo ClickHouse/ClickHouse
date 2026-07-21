@@ -625,6 +625,43 @@ def generate_invalid_footer_root() -> None:
     write_raw_footer_fixture("footer_root_array.puffin", b"[1, 2, 3]")
 
 
+def generate_invalid_file_metadata_properties() -> None:
+    """Optional FileMetadata.properties must be a JSON object with string values."""
+    bitmap = pyroaring.BitMap([2, 5])
+    vector = struct.pack("<qi", 1, 0) + bitmap.serialize()
+    blob = wrap_deletion_vector_blob(vector)
+    base = {
+        "blobs": [
+            {
+                "type": "deletion-vector-v1",
+                "fields": [],
+                "snapshot-id": -1,
+                "sequence-number": -1,
+                "offset": 4,
+                "length": len(blob),
+                "properties": default_dv_properties(cardinality="2"),
+            }
+        ]
+    }
+
+    cases: dict[str, object] = {
+        "invalid_file_properties_array.puffin": [],
+        "invalid_file_properties_string.puffin": "not-an-object",
+        "invalid_file_property_number.puffin": {"created-by": "ok", "ndv": 5},
+    }
+    for name, properties in cases.items():
+        payload = json.loads(json.dumps(base))
+        payload["properties"] = properties
+        write_fixture(name, build_puffin_file(blob, json.dumps(payload, separators=(", ", ": ")).encode("utf-8")))
+
+    ok_payload = json.loads(json.dumps(base))
+    ok_payload["properties"] = {"created-by": "ClickHouse test"}
+    write_fixture(
+        "file_properties_ok.puffin",
+        build_puffin_file(blob, json.dumps(ok_payload, separators=(", ", ": ")).encode("utf-8")),
+    )
+
+
 def generate_unparseable_footer_json() -> None:
     """Malformed JSON / oversize integers must fail with BAD_ARGUMENTS, not STD_EXCEPTION."""
     write_raw_footer_fixture("malformed_footer_json.puffin", b"{")
@@ -656,9 +693,11 @@ def main() -> None:
     generate_invalid_integer_fields()
     generate_invalid_string_fields()
     generate_invalid_footer_root()
+    generate_invalid_file_metadata_properties()
     generate_unparseable_footer_json()
     generate_mixed_blob_types()
     generate_invalid_non_dv_properties()
+
     generate_cardinality_mismatch_large_bitmap()
     generate_dense_range_100k()
     generate_cardinality_exceeds_materialization_limit()

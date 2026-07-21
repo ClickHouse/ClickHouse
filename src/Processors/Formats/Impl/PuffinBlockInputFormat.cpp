@@ -280,6 +280,24 @@ void requireDeletionVectorV1Properties(const PuffinBlob & blob, size_t blob_inde
     }
 }
 
+void parseStringValuedProperties(
+    const Poco::JSON::Object::Ptr & props_obj,
+    std::map<String, String> & out,
+    bool for_blob,
+    size_t blob_index)
+{
+    for (const auto & [key, val] : *props_obj)
+    {
+        if (!val.isString())
+        {
+            if (for_blob)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: property '{}' must be a string", blob_index, key);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin footer property '{}' must be a string", key);
+        }
+        out.emplace(key, val.extract<String>());
+    }
+}
+
 void parseBlobProperties(const Poco::JSON::Object::Ptr & blob_obj, PuffinBlob & blob, size_t blob_index, bool required)
 {
     if (!blob_obj->has("properties") || blob_obj->isNull("properties"))
@@ -293,12 +311,21 @@ void parseBlobProperties(const Poco::JSON::Object::Ptr & blob_obj, PuffinBlob & 
     if (!props_obj)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: field 'properties' must be an object", blob_index);
 
-    for (const auto & [key, val] : *props_obj)
-    {
-        if (!val.isString())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: property '{}' must be a string", blob_index, key);
-        blob.properties.emplace(key, val.extract<String>());
-    }
+    parseStringValuedProperties(props_obj, blob.properties, /*for_blob=*/true, blob_index);
+}
+
+/// Optional FileMetadata.properties: JSON object with string values (Iceberg Puffin spec).
+void validateFileMetadataProperties(const Poco::JSON::Object::Ptr & footer_obj)
+{
+    if (!footer_obj->has("properties") || footer_obj->isNull("properties"))
+        return;
+
+    auto props_obj = footer_obj->getObject("properties");
+    if (!props_obj)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin footer field 'properties' must be an object");
+
+    std::map<String, String> ignored;
+    parseStringValuedProperties(props_obj, ignored, /*for_blob=*/false, /*blob_index=*/0);
 }
 
 std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_region_end)
@@ -322,6 +349,8 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin footer JSON must be an object");
 
     auto obj = root.extract<Poco::JSON::Object::Ptr>();
+
+    validateFileMetadataProperties(obj);
 
     if (!obj->has("blobs") || obj->isNull("blobs"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin footer is missing required field 'blobs'");

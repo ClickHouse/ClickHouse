@@ -38,3 +38,9 @@ missing required property
 field 'properties' must be an object
 --- invalid_properties_string.puffin ---
 field 'properties' must be an object
+--- invalid_file_properties_array.puffin ---
+Puffin footer field 'properties' must be an object
+--- invalid_file_properties_string.puffin ---
+Puffin footer field 'properties' must be an object
+--- invalid_file_property_number.puffin ---
+Puffin footer property

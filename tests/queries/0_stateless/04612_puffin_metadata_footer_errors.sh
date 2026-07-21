@@ -87,6 +87,15 @@ do
     id=$((id + 1))
 done
 
+for f in invalid_file_properties_array invalid_file_properties_string
+do
+    launch "$id" "$DATA/$f.puffin" "Puffin footer field 'properties' must be an object"
+    id=$((id + 1))
+done
+
+launch "$id" "$DATA/invalid_file_property_number.puffin" "Puffin footer property"
+id=$((id + 1))
+
 while [[ ${#pids[@]} -gt 0 ]]; do
     wait_one
 done
