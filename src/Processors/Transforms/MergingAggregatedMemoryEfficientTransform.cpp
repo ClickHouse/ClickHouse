@@ -20,7 +20,6 @@ GroupingAggregatedTransform::GroupingAggregatedTransform(const Block & header_, 
     , num_inputs(num_inputs_)
     , params(std::move(params_))
     , last_bucket_number(num_inputs, -1)
-    , max_seen_bucket(num_inputs, -1)
     , input_out_of_order_buckets(num_inputs)
 {
 }
@@ -293,18 +292,6 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
             single_level_chunks.emplace_back(std::move(chunk));
         else
         {
-            /// The bucket streaming relies on every input delivering buckets in ascending
-            /// order; a bucket may come late only when a previous chunk of the same input
-            /// announced it as out of order. A violation means part of an already emitted
-            /// bucket would be emitted again, duplicating groups in the result.
-            if (bucket < max_seen_bucket[input]
-                && std::ranges::find(input_out_of_order_buckets[input], bucket) == input_out_of_order_buckets[input].end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "GroupingAggregatedTransform received bucket {} from input {} after bucket {} "
-                    "without an out-of-order announcement (announced: [{}])",
-                    bucket, input, max_seen_bucket[input], fmt::join(input_out_of_order_buckets[input], ", "));
-            max_seen_bucket[input] = std::max(max_seen_bucket[input], bucket);
-
             chunks_map[bucket].emplace_back(std::move(chunk));
             has_two_level = true;
             last_bucket_number[input] = bucket;

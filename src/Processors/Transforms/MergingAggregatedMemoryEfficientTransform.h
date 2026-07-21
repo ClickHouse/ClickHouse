@@ -78,7 +78,6 @@ private:
     AggregatingTransformParamsPtr params;
 
     std::vector<Int32> last_bucket_number; /// Last bucket read from each input.
-    std::vector<Int32> max_seen_bucket; /// Highest bucket read from each input, to validate the delivery order.
 
     /// See `ConvertingAggregatedToChunksTransform` to learn about sending buckets out of order.
     std::vector<std::vector<Int32>> input_out_of_order_buckets; /// Out of order bucket ids for each input.
