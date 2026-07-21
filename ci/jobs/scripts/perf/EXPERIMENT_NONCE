@@ -1,4 +1,4 @@
-2
+3
 This file is part of the TEMP experiment commit (run perf comparison 5x).
 The praktika success-cache keys perf jobs by (name, digest-of-perf-paths) with
 no sha: a push that does not touch a perf digest path would cache-skip all perf

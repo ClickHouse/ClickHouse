@@ -271,7 +271,7 @@ workflow = Workflow.Config(
 # Remove this whole block and regenerate the YAML (`python3 -m praktika yaml`)
 # before merging.
 # =============================================================================
-_TEMP_PERF_REPEATS = 5
+_TEMP_PERF_REPEATS = 1
 
 
 def _temp_perf_filter_hook(job_name):
