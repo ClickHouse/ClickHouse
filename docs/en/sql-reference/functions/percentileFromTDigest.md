@@ -24,6 +24,7 @@ percentileFromTDigest(sketch, percentile)
 
 - Estimated percentile value. Type: [Float64](../../sql-reference/data-types/float).
 - Returns `NaN` if the sketch is empty.
+- Throws an exception if the input is not a valid serialized sketch.
 
 ## Examples
 

@@ -162,37 +162,27 @@ public:
                 continue;
             }
 
-            try
+            /// ClickHouse aggregate functions (serializedQuantiles, mergeSerializedQuantiles)
+            /// always return raw binary data, never base64. Skip base64 detection for performance.
+            /// If users need to decode base64 sketch data from external sources, they should
+            /// use base64Decode() explicitly before calling this function.
+            std::string decoded_storage;
+            auto [data_ptr, data_size] = decodeSketchData(serialized_data, decoded_storage, /* base64_encoded= */ false);
+
+            if (data_ptr == nullptr || data_size == 0)
             {
-                /// ClickHouse aggregate functions (serializedQuantiles, mergeSerializedQuantiles)
-                /// always return raw binary data, never base64. Skip base64 detection for performance.
-                /// If users need to decode base64 sketch data from external sources, they should
-                /// use base64Decode() explicitly before calling this function.
-                std::string decoded_storage;
-                auto [data_ptr, data_size] = decodeSketchData(serialized_data, decoded_storage, /* base64_encoded= */ false);
-
-                if (data_ptr == nullptr || data_size == 0)
-                {
-                    vec_res[i] = std::numeric_limits<Float64>::quiet_NaN();
-                    continue;
-                }
-
-                auto sketch = datasketches::quantiles_sketch<double>::deserialize(data_ptr, data_size);
-
-                if (sketch.is_empty())
-                {
-                    vec_res[i] = std::numeric_limits<Float64>::quiet_NaN();
-                }
-                else
-                {
-                    vec_res[i] = sketch.get_quantile(percentile);
-                }
-            }
-            catch (...)
-            {
-                /// Ok: if deserialization fails, return NaN.
                 vec_res[i] = std::numeric_limits<Float64>::quiet_NaN();
+                continue;
             }
+
+            /// Fail close: malformed sketch bytes throw INCORRECT_DATA instead of
+            /// being silently coerced to NaN (corruption must not look like an empty sketch).
+            auto sketch = deserializeSketch<datasketches::quantiles_sketch<double>>(data_ptr, data_size);
+
+            if (sketch.is_empty())
+                vec_res[i] = std::numeric_limits<Float64>::quiet_NaN();
+            else
+                vec_res[i] = sketch.get_quantile(percentile);
         }
 
         return col_res;
@@ -206,7 +196,7 @@ REGISTER_FUNCTION(PercentileFromQuantiles)
     FunctionDocumentation::Description description = R"(
 Extracts the percentile value from a serialized Quantiles sketch.
 The function deserializes the sketch and returns the value at the specified percentile.
-If the input is invalid or empty, returns NaN.
+Returns NaN for an empty sketch; throws an exception for input that is not a valid serialized Quantiles sketch.
 )";
     FunctionDocumentation::Syntax syntax = "percentileFromQuantiles(serialized_sketch, percentile)";
     FunctionDocumentation::Arguments arguments = {
@@ -214,7 +204,7 @@ If the input is invalid or empty, returns NaN.
         {"percentile", "Percentile value between 0.0 and 1.0 (e.g., 0.5 for median, 0.95 for 95th percentile).", {"Float64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns the value at the specified percentile from the sketch. Returns NaN if the sketch is empty or invalid.",
+        "Returns the value at the specified percentile from the sketch. Returns NaN if the sketch is empty.",
         {"Float64"}
     };
     FunctionDocumentation::Examples examples = {

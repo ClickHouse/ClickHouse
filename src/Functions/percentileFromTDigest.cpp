@@ -76,33 +76,25 @@ public:
 
             if (!sketch_data.empty())
             {
-                try
+                /// ClickHouse aggregate functions (serializedTDigest, mergeSerializedTDigest) always
+                /// return raw binary data, never base64. Skip base64 detection for performance.
+                /// If users need to decode base64 sketch data from external sources, they should
+                /// use base64Decode() explicitly before calling this function.
+                std::string decoded_storage;
+                auto [data_ptr, data_size] = decodeSketchData(sketch_data, decoded_storage, /* base64_encoded= */ false);
+
+                if (data_ptr == nullptr || data_size == 0)
                 {
-                    /// ClickHouse aggregate functions (serializedTDigest, mergeSerializedTDigest) always
-                    /// return raw binary data, never base64. Skip base64 detection for performance.
-                    /// If users need to decode base64 sketch data from external sources, they should
-                    /// use base64Decode() explicitly before calling this function.
-                    std::string decoded_storage;
-                    auto [data_ptr, data_size] = decodeSketchData(sketch_data, decoded_storage, /* base64_encoded= */ false);
-
-                    if (data_ptr == nullptr || data_size == 0)
-                    {
-                        result_data.push_back(result);
-                        continue;
-                    }
-
-                    auto sketch = datasketches::tdigest<double>::deserialize(data_ptr, data_size);
-
-                    if (!sketch.is_empty())
-                    {
-                        result = sketch.get_quantile(percentile);
-                    }
+                    result_data.push_back(result);
+                    continue;
                 }
-                catch (...)
-                {
-                    /// Ok: keep NaN on invalid/corrupted input (consistent with percentileFromQuantiles).
-                    result = std::numeric_limits<Float64>::quiet_NaN();
-                }
+
+                /// Fail close: malformed sketch bytes throw INCORRECT_DATA instead of
+                /// being silently coerced to NaN (corruption must not look like an empty sketch).
+                auto sketch = deserializeSketch<datasketches::tdigest<double>>(data_ptr, data_size);
+
+                if (!sketch.is_empty())
+                    result = sketch.get_quantile(percentile);
             }
 
             result_data.push_back(result);

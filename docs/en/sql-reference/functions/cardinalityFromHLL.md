@@ -22,7 +22,8 @@ cardinalityFromHLL(sketch)
 ## Returned Value
 
 - Approximate number of distinct elements. Type: [UInt64](../../sql-reference/data-types/int-uint).
-- Returns 0 if the sketch is empty or invalid.
+- Returns 0 if the sketch is empty.
+- Throws an exception if the input is not a valid serialized HLL sketch.
 
 ## Implementation Details
 
@@ -135,7 +136,7 @@ FROM data;
 
 ## Error Handling
 
-- Invalid or corrupted sketches return 0
+- Invalid or corrupted sketches raise an error
 - Empty sketches return 0
 - NULL inputs return 0
 

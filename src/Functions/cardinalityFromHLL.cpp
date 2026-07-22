@@ -80,29 +80,23 @@ public:
                 continue;
             }
 
-            try
-            {
-                /// ClickHouse aggregate functions (serializedHLL, mergeSerializedHLL) always
-                /// return raw binary data, never base64. Skip base64 detection for performance.
-                /// If users need to decode base64 sketch data from external sources, they should
-                /// use base64Decode() explicitly before calling this function.
-                std::string decoded_storage;
-                auto [data_ptr, data_size] = decodeSketchData(serialized_data, decoded_storage, /* base64_encoded= */ false);
+            /// ClickHouse aggregate functions (serializedHLL, mergeSerializedHLL) always
+            /// return raw binary data, never base64. Skip base64 detection for performance.
+            /// If users need to decode base64 sketch data from external sources, they should
+            /// use base64Decode() explicitly before calling this function.
+            std::string decoded_storage;
+            auto [data_ptr, data_size] = decodeSketchData(serialized_data, decoded_storage, /* base64_encoded= */ false);
 
-                if (data_ptr == nullptr || data_size == 0)
-                {
-                    vec_res[i] = 0;
-                    continue;
-                }
-
-                auto sketch = datasketches::hll_sketch::deserialize(data_ptr, data_size);
-                vec_res[i] = static_cast<UInt64>(sketch.get_estimate());
-            }
-            catch (...)
+            if (data_ptr == nullptr || data_size == 0)
             {
-                /// Ok: if deserialization fails, return 0.
                 vec_res[i] = 0;
+                continue;
             }
+
+            /// Fail close: malformed sketch bytes throw INCORRECT_DATA instead of
+            /// being silently coerced to 0 (corruption must not look like an empty sketch).
+            auto sketch = deserializeSketch<datasketches::hll_sketch>(data_ptr, data_size);
+            vec_res[i] = static_cast<UInt64>(sketch.get_estimate());
         }
 
         return col_res;
@@ -116,7 +110,7 @@ REGISTER_FUNCTION(CardinalityFromHLL)
     FunctionDocumentation::Description description = R"(
 Extracts the cardinality estimate from a serialized HLL (HyperLogLog) sketch.
 The function deserializes the HLL sketch and returns the estimated number of unique elements.
-If the input is invalid or empty, returns 0.
+Returns 0 for empty input; throws an exception for input that is not a valid serialized HLL sketch.
 )";
     FunctionDocumentation::Syntax syntax = "cardinalityFromHLL(serialized_hll)";
     FunctionDocumentation::Arguments arguments = {
