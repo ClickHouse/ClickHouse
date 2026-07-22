@@ -894,19 +894,27 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
       * attempted only after the current scope returns no result, so an early exception here would make
       * the outer interpretation unreachable.
       * Example: SELECT (SELECT db1.tbl.id FROM db2.db1 LIMIT 1) FROM db1.tbl;
+      * The retry is only valid when there is an actual database-and-table interpretation to try: some
+      * table expression in this scope or in a parent scope is the table `identifier[1]` inside the
+      * database `path_start` (for a two-part identifier that interpretation is the table itself, e.g. a
+      * matcher qualifier `db.db.*`; for three and more parts it is `db.table.column`). Without such a
+      * candidate a failed lookup must throw as before; e.g. a two-part `db.x` against the table `db`
+      * with no table `x` in the database `db` must not fall through to a column literally named `db.x`
+      * of a sibling table expression.
       */
     bool identifier_first_part_matches_database_name = !database_name.empty() && path_start == database_name;
 
-    bool identifier_first_part_is_database_name_in_scope = identifier_first_part_matches_database_name;
+    bool identifier_can_be_database_and_table_qualified = false;
     for (const IdentifierResolveScope * current_scope = &scope;
-         current_scope && !identifier_first_part_is_database_name_in_scope;
+         current_scope && !identifier_can_be_database_and_table_qualified;
          current_scope = current_scope->parent_scope)
     {
         for (const auto & [_, other_table_expression_data] : current_scope->table_expression_node_to_data)
         {
-            if (!other_table_expression_data.database_name.empty() && path_start == other_table_expression_data.database_name)
+            if (!other_table_expression_data.database_name.empty() && path_start == other_table_expression_data.database_name
+                && identifier[1] == other_table_expression_data.table_name)
             {
-                identifier_first_part_is_database_name_in_scope = true;
+                identifier_can_be_database_and_table_qualified = true;
                 break;
             }
         }
@@ -920,9 +928,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             table_expression_data,
             scope,
             1 /*identifier_column_qualifier_parts*/,
-            identifier_first_part_is_database_name_in_scope /*can_be_not_found*/);
+            identifier_can_be_database_and_table_qualified /*can_be_not_found*/);
 
-        if (lookup_result.resolved_identifier || !identifier_first_part_is_database_name_in_scope)
+        if (lookup_result.resolved_identifier || !identifier_can_be_database_and_table_qualified)
             return lookup_result;
     }
 
@@ -937,9 +945,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
                 table_expression_data,
                 scope,
                 1 /*identifier_column_qualifier_parts*/,
-                identifier_first_part_is_database_name_in_scope /*can_be_not_found*/);
+                identifier_can_be_database_and_table_qualified /*can_be_not_found*/);
 
-            if (lookup_result.resolved_identifier || !identifier_first_part_is_database_name_in_scope)
+            if (lookup_result.resolved_identifier || !identifier_can_be_database_and_table_qualified)
                 return lookup_result;
         }
     }
