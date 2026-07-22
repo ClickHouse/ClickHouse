@@ -690,6 +690,10 @@ if (TARGET ch_contrib::icu)
     target_link_libraries(dbms PRIVATE ch_contrib::icu)
 endif ()
 
+if (TARGET ch_contrib::mecab)
+    target_link_libraries(dbms PRIVATE ch_contrib::mecab)
+endif ()
+
 if (TARGET ch_contrib::capnp)
     target_link_libraries(dbms PRIVATE ch_contrib::capnp)
 endif ()
