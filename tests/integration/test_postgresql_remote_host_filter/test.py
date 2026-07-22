@@ -95,6 +95,20 @@ def test_postgresql_database_engine_named_collection_addresses_expr(started_clus
     error = node.query_and_get_error("CREATE DATABASE pg_nc_blocked_db ENGINE = PostgreSQL(mpg_nc_blocked)")
     assert "UNACCEPTABLE_URL" in error
 
+    # A multi-address failover list is filtered as a whole: the first address is whitelisted, the
+    # second is blocked, and the engine must still be rejected. This is the branch that proves
+    # every failover target in `configuration.addresses` is checked before the pool is created,
+    # not just the first replica.
+    node.query("DROP DATABASE IF EXISTS pg_nc_mixed_db")
+    error = node.query_and_get_error("CREATE DATABASE pg_nc_mixed_db ENGINE = PostgreSQL(pg_nc_mixed)")
+    assert "UNACCEPTABLE_URL" in error
+
+    # The same contract for the positional form, where the failover list comes from the
+    # `host:port` engine argument instead of a named collection.
+    node.query("DROP DATABASE IF EXISTS pg_mixed_db")
+    error = node.query_and_get_error(f"CREATE DATABASE pg_mixed_db ENGINE = PostgreSQL('{PG_HOST}:5432|{BLOCKED_HOST}:5432', 'postgres', 'postgres', '{pg_pass}')")
+    assert "UNACCEPTABLE_URL" in error
+
     # The whitelisted host works: the database engine over the `addresses_expr` collection creates
     # successfully and reads data, proving the filter accepts the whitelisted host.
     node.query("DROP DATABASE IF EXISTS pg_nc_allowed_db")

@@ -22,6 +22,16 @@
              observes. Using a non-whitelisted host here would instead trip the host filter first
              in the table-engine path (where `StoragePostgreSQL::getConfiguration` checks each
              address before the multi-address guard runs). -->
+        <!-- A failover list mixing a whitelisted first address with a blocked second one. The
+             plain `PostgreSQL` database engine accepts multi-address failover lists, so the host
+             filter must reject the whole list: checking only the first replica would let the
+             blocked host through as a failover target. -->
+        <pg_nc_mixed>
+            <addresses_expr>postgres1:5432|blocked-postgres-host:5432</addresses_expr>
+            <database>postgres</database>
+            <username>postgres</username>
+            <password>ClickHouse_PostgreSQL_P@ssw0rd</password>
+        </pg_nc_mixed>
         <mpg_nc_multiple>
             <addresses_expr>postgres1:5432|postgres1:5433</addresses_expr>
             <database>postgres</database>
