@@ -143,7 +143,11 @@ AggregateFunctionPtr createAggregateFunctionSerializedHLL(
 
     WhichDataType which(*data_type);
     if (which.isNumber())
-        return AggregateFunctionPtr(createWithNumericType<AggregationFunctionSerializedHLL>(*data_type, argument_types, params, lg_k, type));
+    {
+        /// createWithNumericType returns nullptr for numeric types outside FOR_NUMERIC_TYPES (e.g. Decimal).
+        if (auto * function = createWithNumericType<AggregationFunctionSerializedHLL>(*data_type, argument_types, params, lg_k, type))
+            return AggregateFunctionPtr(function);
+    }
     if (which.isStringOrFixedString())
         return std::make_shared<AggregationFunctionSerializedHLL<String>>(argument_types, params, lg_k, type);
     throw Exception(

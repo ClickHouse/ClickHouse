@@ -91,8 +91,11 @@ AggregateFunctionPtr createAggregateFunctionSerializedQuantiles(
 
     WhichDataType which(*data_type);
     if (which.isNumber())
-        return AggregateFunctionPtr(createWithNumericType<AggregationFunctionSerializedQuantiles>(
-            *data_type, argument_types, params));
+    {
+        /// createWithNumericType returns nullptr for numeric types outside FOR_NUMERIC_TYPES (e.g. Decimal).
+        if (auto * function = createWithNumericType<AggregationFunctionSerializedQuantiles>(*data_type, argument_types, params))
+            return AggregateFunctionPtr(function);
+    }
     throw Exception(
         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}", argument_types[0]->getName(), name);
 }
