@@ -1,5 +1,5 @@
 -- { echo ON }
--- Correlated subqueries require the new analyzer.
+-- Correlated subqueries require the analyzer.
 SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 SET allow_suspicious_low_cardinality_types = 1;
