@@ -310,7 +310,7 @@ void AddedColumns<false>::appendFromBlock(UInt64 ref_word, const bool has_defaul
     const StoredBlock * block = lazy_output.stored_columns[refWordBlockNo(ref_word)];
     const size_t row_num = refWordRowNo(ref_word);
 
-    /// When the join compressed its stored blocks, decompress this block (cached) before reading.
+    /// When the join compressed its stored blocks, decompress this block before reading.
     DecompressedColumnsPtr decompressed_holder;
     if (lazy_output.have_compressed)
     {

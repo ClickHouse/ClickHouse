@@ -140,8 +140,9 @@ private:
 };
 
 /// Translates a stored (possibly compressed) `StoredBlock` pointer to one that can be read directly.
-/// When the join compressed its right-side blocks, decompressed blocks are fetched from the join's cache
-/// and kept alive in `held` for as long as this resolver lives (i.e. while the output is being built).
+/// When the join compressed its right-side blocks, they are decompressed on first use (at most once per
+/// distinct block) and kept alive in `held` for as long as this resolver lives (i.e. while the output is
+/// being built), then released.
 /// When compression is off, it is a transparent pass-through with no overhead.
 struct DecompressResolver
 {

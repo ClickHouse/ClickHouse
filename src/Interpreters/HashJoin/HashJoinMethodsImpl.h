@@ -817,7 +817,7 @@ static ColumnPtr buildAdditionalFilter(
         auto req_cols_it = required_cols.begin();
         /// Right-side values are read straight from the stored `StoredBlock`, whose columns may be
         /// `ColumnCompressed` when `enable_join_in_memory_compression` triggered. Route them through the
-        /// same decompressed-blocks cache the output paths use; a transparent pass-through otherwise.
+        /// same per-batch decompress resolver the output paths use; a transparent pass-through otherwise.
         DecompressResolver resolve(added_columns.lazy_output);
         for (size_t pos = 0; pos < required_cols.size(); ++pos, ++req_cols_it)
         {
