@@ -583,7 +583,12 @@ inline Int64 toStartOfSubsecondInterval(Int64 t, Int64 num_units, Int64 unit_sca
         if (t >= 0) [[likely]]
             return t_units / num_units * num_units;
         else
-            return ((t_units + 1) / num_units - 1) * num_units;
+        {
+            Int64 result = 0;
+            if (common::mulOverflow((t_units + 1) / num_units - 1, num_units, result))
+                throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+            return result;
+        }
     }
     else if (scale_multiplier > unit_scale)
     {
@@ -620,7 +625,12 @@ inline Int64 toStartOfSubsecondInterval(Int64 t, Int64 num_units, Int64 unit_sca
         if (t >= 0) [[likely]]
             return t / num_units * num_units;
         else
-            return ((t + 1) / num_units - 1) * num_units;
+        {
+            Int64 result = 0;
+            if (common::mulOverflow((t + 1) / num_units - 1, num_units, result))
+                throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+            return result;
+        }
     }
 }
 
