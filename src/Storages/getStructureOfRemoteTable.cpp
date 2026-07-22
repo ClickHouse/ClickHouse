@@ -52,7 +52,11 @@ static ColumnsDescription getStructureOfRemoteTableInShard(
         if (shard_info.isLocal())
         {
             TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
-            return table_function_ptr->getActualTableStructureWithAccess(context, /*is_insert_query*/ true);
+            /// This is a read-only structure lookup: remote shards resolve it with `DESC TABLE`,
+            /// which is also treated as a read. Pass `is_insert_query = false` so a local shard
+            /// behaves the same way — e.g. `url(..., body(...))` allows structure discovery for
+            /// reads but rejects it for insert-style queries.
+            return table_function_ptr->getActualTableStructureWithAccess(context, /*is_insert_query*/ false);
         }
 
         auto table_func_name = table_func_ptr->formatWithSecretsOneLine();
