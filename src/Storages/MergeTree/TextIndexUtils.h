@@ -79,7 +79,8 @@ public:
         MergeTreeIndexPtr index_ptr_,
         std::shared_ptr<MergedPartOffsets> merged_part_offsets_,
         const MergeTreeReaderSettings & reader_settings_,
-        const MergeTreeWriterSettings & writer_settings_);
+        const MergeTreeWriterSettings & writer_settings_,
+        bool sync_);
 
     ~MergeTextIndexesTask() noexcept override;
 
@@ -116,6 +117,8 @@ private:
     /// If not null, posting list values must be recalculated using merged offsets.
     std::shared_ptr<MergedPartOffsets> merged_part_offsets;
     MergeTreeWriterSettings writer_settings;
+    /// Whether to fsync the produced index files in `finalize` (merge/mutation `need_sync`).
+    bool sync;
     size_t step_time_ms;
 
     std::vector<MergeTreeIndexInputStreams> input_streams;

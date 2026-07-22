@@ -2014,7 +2014,8 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
                 index,
                 /*merged_part_offsets=*/ nullptr,
                 reader_settings,
-                ctx->out->getWriterSettings());
+                ctx->out->getWriterSettings(),
+                ctx->need_sync);
 
             merge_subtasks.push_back(std::move(merge_task));
         }

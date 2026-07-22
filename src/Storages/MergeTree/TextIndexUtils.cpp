@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
@@ -234,13 +235,15 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     MergeTreeIndexPtr index_ptr_,
     std::shared_ptr<MergedPartOffsets> merged_part_offsets_,
     const MergeTreeReaderSettings & reader_settings_,
-    const MergeTreeWriterSettings & writer_settings_)
+    const MergeTreeWriterSettings & writer_settings_,
+    bool sync_)
     : segments(std::move(segments_))
     , new_data_part(std::move(new_data_part_))
     , num_rows(num_rows_)
     , index_ptr(std::move(index_ptr_))
     , merged_part_offsets(std::move(merged_part_offsets_))
     , writer_settings(writer_settings_)
+    , sync(sync_)
     , step_time_ms((*new_data_part->storage.getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds())
     , postings_serialization(createPostingsSerialization(*index_ptr))
 {
@@ -572,6 +575,16 @@ void MergeTextIndexesTask::finalize()
 
     for (auto & stream : output_streams_holders)
         stream->finalize();
+
+    /// fsync the index files, like `MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization` does.
+    if (sync)
+    {
+        std::vector<const MergeTreeWriterStream *> streams_to_sync;
+        streams_to_sync.reserve(output_streams_holders.size());
+        for (const auto & stream : output_streams_holders)
+            streams_to_sync.push_back(stream.get());
+        parallelSyncFiles(streams_to_sync);
+    }
 }
 
 void MergeTextIndexesTask::cancel() noexcept
