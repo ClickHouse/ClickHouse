@@ -60,6 +60,7 @@ static struct InitFiu
     ONCE(smt_insert_fake_hardware_error) \
     ONCE(smt_sleep_after_hardware_in_insert) \
     ONCE(smt_throw_keeper_exception_after_successful_insert) \
+    REGULAR(smt_backup_keeper_session_expired_always) \
     ONCE(smt_lightweight_snapshot_fail) \
     ONCE(smt_lightweight_snapshot_table_path_session_expired) \
     ONCE(smt_lightweight_update_sleep_after_block_allocation) \
