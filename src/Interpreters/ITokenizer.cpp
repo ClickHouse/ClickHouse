@@ -301,7 +301,9 @@ String SplitByStringTokenizer::getDescription() const
 SplitByRegexpTokenizer::SplitByRegexpTokenizer(const String & regexp_)
     : ITokenizerHelper(Type::SplitByRegexp)
     , regexp_str(regexp_)
-    , regexp(std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false>(regexp_)))
+    /// `no_capture = true`: only the whole match (group 0) is ever read via `nextRegexpMatch`, so tracking
+    /// capture groups would only waste work (a larger `MatchVec` resized on every match).
+    , regexp(std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, true, false>(regexp_)))
 {
 }
 
