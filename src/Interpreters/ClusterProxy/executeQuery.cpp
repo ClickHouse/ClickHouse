@@ -2,6 +2,7 @@
 #include <optional>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <base/scope_guard.h>
 #include <Columns/ColumnConst.h>
 #include <Common/FailPoint.h>
@@ -1135,8 +1136,24 @@ void executeQueryWithParallelReplicasCustomKey(
     const QueryTreeNodePtr & query_tree,
     ContextPtr context)
 {
-    auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree, context, SelectQueryOptions(processed_stage).analyze());
-    executeQueryWithParallelReplicasCustomKey(query_plan, storage_id, query_info, columns, snapshot, processed_stage, header, context);
+    /// The query tree carries `__tableN` table aliases numbered by the whole outer query's analysis.
+    /// When this read is nested inside a subquery the target table is `__tableK` (K > 1), but a replica
+    /// re-analyzes the query sent to it from scratch and `createUniqueAliasesIfNecessary` restarts the
+    /// numbering at 1, so its result columns (`__table1.*`) would not match an initiator header computed
+    /// from the original tree (NOT_FOUND_COLUMN_IN_BLOCK). Renumber the tree the same way here so the
+    /// header and the query sent to replicas agree (this mirrors `buildQueryTreeForShard`, which the
+    /// task-based parallel-replicas path runs for the same reason).
+    auto modified_query_tree = query_tree->clone();
+    createUniqueAliasesIfNecessary(modified_query_tree, context);
+
+    auto header
+        = InterpreterSelectQueryAnalyzer::getSampleBlock(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
+
+    auto modified_query_info = query_info;
+    modified_query_info.query_tree = std::move(modified_query_tree);
+
+    executeQueryWithParallelReplicasCustomKey(
+        query_plan, storage_id, modified_query_info, columns, snapshot, processed_stage, header, context);
 }
 
 void executeQueryWithParallelReplicasCustomKey(

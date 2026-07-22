@@ -1577,17 +1577,29 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
 
     std::ranges::sort(sorted_tokens, [](const auto & lhs, const auto & rhs) { return lhs.token < rhs.token; });
 
-    /// Join each token's position builder so one entry carries both; no parallel arrays to keep aligned.
+    /// Attach each token's position builder by binary search over the already-sorted sorted_tokens.
+    /// tokens_map and position_map are filled in lockstep in addDocument(), so the key sets are identical.
     if (position_map)
     {
-        for (auto & entry : sorted_tokens)
+        size_t attached = 0;
+        position_map->forEachValue([&](const auto & key, auto & mapped)
         {
-            auto positions = position_map->find(entry.token);
-            if (!positions)
+            const std::string_view token(key);
+            auto it = std::ranges::lower_bound(
+                sorted_tokens, token,
+                [](std::string_view lhs, std::string_view rhs) { return lhs < rhs; },
+                &SortedToken::token);
+            if (it == sorted_tokens.end() || it->token != token)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Text index: token '{}' has postings but no positions slot", entry.token);
-            entry.positions = &positions->getMapped();
-        }
+                    "Text index: positions token '{}' has no postings slot", token);
+            it->positions = &mapped;
+            ++attached;
+        });
+
+        if (attached != sorted_tokens.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Text index: postings map has {} tokens but positions map attached {}",
+                sorted_tokens.size(), attached);
     }
 
     return std::make_unique<MergeTreeIndexGranuleTextWritable>(
