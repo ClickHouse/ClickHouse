@@ -14,6 +14,7 @@
 namespace ProfileEvents
 {
     extern const Event ObjectStorageQueueBucketLockLostOwnership;
+    extern const Event ObjectStorageQueueBucketLockRefreshes;
 }
 
 namespace DB
@@ -303,6 +304,7 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::refresh()
             bucket_info->bucket_lock_path, bucket_info->processor_info, current_owner.value_or("none"));
     }
 
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueBucketLockRefreshes);
     LOG_TEST(log, "Refreshed bucket lock {}", bucket_info->bucket_lock_path);
     age_watch.restart();
 }
