@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -250,6 +251,11 @@ static void checkStepSupportedByCascades(const IQueryPlanStep & step)
         sorting_step && sorting_step->getType() != SortingStep::Type::Full)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan with enable_cascades_optimizer supports only full sorting steps");
+
+    /// `WITH FILL` is not supported yet.
+    if (typeid_cast<const FillingStep *>(&step))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan with enable_cascades_optimizer does not support WITH FILL");
 }
 
 /// Rejects plans with steps the Cascades optimizer cannot distribute correctly.

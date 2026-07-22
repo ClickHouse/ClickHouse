@@ -27,3 +27,9 @@
 4	100300
 -- 9. A read from remote shards is rejected (fail-close), localhost shards work
 1000
+-- 10. WITH FILL is rejected (fail-close)
+0
+1
+2
+3
+4
