@@ -121,6 +121,19 @@ RETURNING (SELECT count() FROM t_ret_settings);
 
 SELECT id FROM t_ret_settings ORDER BY id;
 
+-- For top-level set-ops, source settings precedence must match standalone SELECT:
+-- union-level SETTINGS apply first, then the last first-order branch settings override duplicates.
+SELECT 'set-op source settings keep last-branch precedence';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings
+SELECT 1
+UNION ALL
+(SELECT number FROM numbers(10) SETTINGS max_result_rows = 1, result_overflow_mode = 'break')
+SETTINGS max_result_rows = 5, result_overflow_mode = 'break'
+RETURNING (SELECT count() FROM t_ret_settings);
+
+SELECT count() FROM t_ret_settings;
+
 -- Source DEFAULT settings parsed before RETURNING must survive merge with trailing source settings.
 SELECT 'source default settings merged with trailing settings';
 TRUNCATE TABLE t_ret_settings;
