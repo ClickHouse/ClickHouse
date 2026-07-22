@@ -1,3 +1,6 @@
+-- Tags: use-xray, no-fasttest
+-- no-fasttest: SYSTEM INSTRUMENT is only compiled with XRay, which the fast-test build omits.
+
 -- A large numeric SLEEP argument in SYSTEM INSTRUMENT must survive a format-parse round-trip.
 -- The value is stored as Float64 and formats back as plain digits (1e20 -> 100000000000000000000),
 -- which re-parse as a wide integer; the parser must accept that and coerce it back to the same
