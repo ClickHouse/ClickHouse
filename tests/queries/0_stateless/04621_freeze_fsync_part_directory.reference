@@ -1,0 +1,3 @@
+on: ancestor chain synced
+proj: subtree synced
+off: DirectorySync = 0

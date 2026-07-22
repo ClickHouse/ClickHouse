@@ -275,6 +275,9 @@ public:
         bool make_source_readonly = false;
         DiskTransactionPtr external_transaction = nullptr;
         std::optional<int32_t> metadata_version_to_write = std::nullopt;
+        /// fsync the frozen snapshot's directories (and the chain up to the disk root) so the
+        /// hardlink entries survive a power loss. Only honored by freeze() on a local disk.
+        bool fsync_part_directory = false;
     };
 
     /// For packed storage the whole data.packed archive is rewritten (copied) during a clone whenever

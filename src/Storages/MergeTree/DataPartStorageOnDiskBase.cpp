@@ -42,6 +42,23 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
 }
 
+namespace
+{
+    /// fsync `dir_path` and every subdirectory below it (bottom-up), so that the directory
+    /// entries created by a freeze/hardlink snapshot become durable. Used only for local disks
+    /// (on remote/object disks getDirectorySyncGuard() returns nullptr and this is a no-op).
+    void syncDirectoryTree(IDisk & disk, const std::string & dir_path)
+    {
+        for (auto it = disk.iterateDirectory(dir_path); it->isValid(); it->next())
+        {
+            if (disk.existsDirectory(it->path()))
+                syncDirectoryTree(disk, it->path());
+        }
+        /// Children are synced first; this guard fsyncs `dir_path` itself on destruction.
+        SyncGuardPtr guard = disk.getDirectorySyncGuard(dir_path);
+    }
+}
+
 std::unique_ptr<ReadBufferFromFileBase> IDataPartStorage::readFile(
     const std::string & name,
     const ReadSettings & settings,
@@ -549,6 +566,31 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
         disk->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
+    }
+
+    /// Make the frozen hardlink snapshot durable: the hardlink loop above fsyncs nothing, so a
+    /// power loss erases the acknowledged snapshot (for a hardlink snapshot the directory entries
+    /// *are* the snapshot). Gated on `fsync_part_directory`; a no-op on remote disks; skipped
+    /// under an external transaction (its writes are not materialized on disk here).
+    if (params.fsync_part_directory && !params.external_transaction && !disk->isRemote())
+    {
+        /// Part dir + projection subdirs (bottom-up): persists the hardlinked file entries.
+        syncDirectoryTree(*disk, fs::path(to) / dir_path);
+
+        /// Every directory from the part dir's parent up to and including the disk root ("").
+        /// This persists each new directory entry: e.g. `shadow/` is created without fsync by the
+        /// caller, so only fsyncing the disk root makes the `shadow` entry durable on the first
+        /// FREEZE. A directory merely existing is not evidence that its entry is durable.
+        /// `to` names the part dir's parent; strip a trailing separator so parent_path() ascends.
+        fs::path dir = fs::path(to).has_filename() ? fs::path(to) : fs::path(to).parent_path();
+        while (true)
+        {
+            SyncGuardPtr guard = disk->getDirectorySyncGuard(dir.string());
+            guard.reset();
+            if (dir.empty())
+                break;
+            dir = dir.parent_path();
+        }
     }
 
     /// The SingleDiskVolume and the DataPartStorageOnDiskFull built by `create` are stored on the
