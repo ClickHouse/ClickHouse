@@ -1189,10 +1189,13 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
     const ContextPtr & context)
 {
     auto * function = expression->as<FunctionNode>();
-    if (!function)
-        return;
 
-    if (function->getFunctionName() != "and")
+    /// A top-level expression that is not an `and` conjunction (a bare column, a constant,
+    /// or a single non-`and` function) is kept or dropped as a whole: drop it if it
+    /// references any column whose source is not `table_expression` (e.g. a column of the
+    /// joined-away side of a JOIN), otherwise the child query keeps a column with a
+    /// dangling source.
+    if (!function || function->getFunctionName() != "and")
     {
         if (hasUnknownColumn(expression, table_expression))
             expression = nullptr;
