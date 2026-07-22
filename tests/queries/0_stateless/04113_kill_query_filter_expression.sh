@@ -7,6 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 query_id="kill_query_expression_${CLICKHOUSE_DATABASE}_$RANDOM"
+output_file="${CLICKHOUSE_TMP}/kill_query_expression_${CLICKHOUSE_DATABASE}.out"
 
 # Deep nested sipHash64() functions - requires expression evaluation to be cancelled properly
 $CLICKHOUSE_CLIENT --query_id="$query_id" --query "
@@ -15,7 +16,7 @@ $CLICKHOUSE_CLIENT --query_id="$query_id" --query "
     WHERE sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(sipHash64(number))))))))))))))))))))) % 2 =1
     FORMAT Null
     SETTINGS max_block_size=10000000, max_threads=1, max_rows_to_read=0
-" >/dev/null 2>&1 &
+" >"$output_file" 2>&1 &
 
 wait_for_query_to_start "$query_id"
 
@@ -24,5 +25,8 @@ wait_for_query_to_start "$query_id"
 $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
 
 wait
+
+# Assert cancellation was detected, not normal completion
+grep -qF "QUERY_WAS_CANCELLED" "$output_file" || { echo "FAIL: query was not cancelled"; exit 1; }
 
 echo "OK"
