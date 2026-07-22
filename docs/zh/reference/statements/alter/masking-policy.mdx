@@ -1,0 +1,25 @@
+---
+description: 'ALTER MASKING POLICY 文档'
+sidebarTitle: '数据脱敏策略'
+slug: /sql-reference/statements/alter/masking-policy
+title: 'ALTER MASKING POLICY'
+doc_type: 'reference'
+---
+
+import CloudOnlyBadge from "/snippets/zh/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+
+<CloudOnlyBadge />
+
+修改现有数据脱敏策略。
+
+语法：
+
+```sql
+ALTER MASKING POLICY [IF EXISTS] policy_name ON [database.]table
+    [UPDATE column1 = expression1 [, column2 = expression2 ...]]
+    [WHERE condition]
+    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+    [PRIORITY priority_number]
+```
+
+所有子句均为可选项。只有指定的子句会被更新。

@@ -84,9 +84,22 @@ std::pair<String, StoragePtr> createTableFromAST(
     const String & database_name,
     const String & table_data_path_relative,
     ContextMutablePtr context,
-    LoadingStrictnessLevel mode)
+    LoadingStrictnessLevel mode,
+    bool set_attach_flag)
 {
-    ast_create_query.attach = true;
+    if (set_attach_flag)
+    {
+        ast_create_query.attach = true;
+        /// Every caller of this function attaches a definition read back from metadata stored on this
+        /// server (database loading, `ATTACH DATABASE`, recovery of a dropped table), never a fresh
+        /// user-supplied one, so mark it the same way a short `ATTACH TABLE t` query is marked when it
+        /// is rewritten from stored metadata. Storage creators use this to skip the re-validation of
+        /// the definition that only a freshly introduced one needs (e.g. the `Remote` engine analyzes
+        /// its table-function target under the creating user for the access-control side effect, which
+        /// both must not run under a loading context and may fail spuriously if the target has changed
+        /// since the definition was validated).
+        ast_create_query.attach_short_syntax = true;
+    }
     ast_create_query.setDatabase(database_name);
 
     if (ast_create_query.select && ast_create_query.isView())

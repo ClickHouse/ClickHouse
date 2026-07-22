@@ -1,0 +1,78 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/chainlit
+sidebarTitle: 'Chainlit 통합'
+title: 'Chainlit과 ClickHouse MCP 서버로 AI 에이전트를 구축하는 방법'
+description: 'Chainlit을 사용해 ClickHouse MCP 서버와 함께 LLM 기반 채팅 앱을 구축하는 방법을 알아보세요'
+keywords: ['ClickHouse', 'MCP', 'Chainlit']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+이 가이드에서는 Chainlit의 강력한 채팅 인터페이스 프레임워크와
+ClickHouse Model Context Protocol(MCP) 서버를 결합해 대화형 데이터
+애플리케이션을 만드는 방법을 살펴봅니다. Chainlit을 사용하면 적은 코드만으로 AI
+애플리케이션용 대화형 인터페이스를 구축할 수 있으며, ClickHouse MCP 서버는 ClickHouse의 고성능
+컬럼형 데이터베이스와 매끄럽게 통합됩니다.
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+* Anthropic API Key가 필요합니다
+* [`uv`](https://docs.astral.sh/uv/getting-started/installation/)가 설치되어 있어야 합니다
+
+<div id="basic-chainlit-app">
+  ## 기본 Chainlit 앱
+</div>
+
+다음을 실행하면 기본 Chainlit 채팅 앱의 예시를 확인할 수 있습니다.
+
+```sh
+uv run --with anthropic --with chainlit chainlit run chat_basic.py -w -h
+```
+
+그런 다음 `http://localhost:8000`에 접속하십시오
+
+<div id="adding-clickhouse-mcp-server">
+  ## ClickHouse MCP 서버 추가
+</div>
+
+ClickHouse MCP 서버를 추가하면 활용 범위가 더 넓어집니다.
+`uv` 명령을 사용할 수 있도록 `.chainlit/config.toml` 파일을
+업데이트하십시오:
+
+```toml
+[features.mcp.stdio]
+    enabled = true
+    # 허용 목록에 있는 실행형 파일만 MCP stdio 서버에 사용할 수 있습니다.
+    # 실행형 파일의 기본 이름만 필요합니다. 예: "/usr/bin/npx"가 아닌 "npx".
+    # 현재 이 줄은 주석 처리하지 마십시오. 실행형 파일 이름을 파싱하는 데 필요합니다.
+    allowed_executables = [ "npx", "uvx", "uv" ]
+```
+
+<Info>
+  **config.toml**
+
+  전체 `config.toml` 파일은 [예시 리포지토리](https://github.com/ClickHouse/examples/blob/main/ai/mcp/chainlit/.chainlit/config.toml)에서 확인할 수 있습니다
+</Info>
+
+MCP 서버를 Chainlit와 연동하기 위한 보조 코드가 있으므로, Chainlit는 대신 다음 명령으로 시작해야 합니다:
+
+```sh
+uv run --with anthropic --with chainlit chainlit run chat_mcp.py -w -h
+```
+
+MCP Server를 추가하려면 채팅 인터페이스에서 플러그 아이콘을 클릭한 다음,
+ClickHouse SQL Playground에 연결할 수 있도록 다음 명령을 추가하세요:
+
+```sh
+CLICKHOUSE_HOST=sql-clickhouse.clickhouse.com CLICKHOUSE_USER=demo CLICKHOUSE_PASSWORD= CLICKHOUSE_SECURE=true uv run --with mcp-clickhouse --python 3.13 mcp-clickhouse
+```
+
+자체 ClickHouse 인스턴스를 사용하려면 환경 변수 값을
+조정하면 됩니다.
+
+그런 다음 다음과 같은 질문을 할 수 있습니다:
+
+* 쿼리할 수 있는 테이블에 대해 알려주세요
+* New York 택시에 관해 흥미로운 점을 하나 알려주세요

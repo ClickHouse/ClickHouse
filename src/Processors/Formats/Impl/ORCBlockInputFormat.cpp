@@ -355,7 +355,12 @@ void registerORCSchemaReader(FormatFactory & factory)
 
     factory.registerAdditionalInfoForSchemaCacheGetter("ORC", [](const FormatSettings & settings)
     {
-        return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
+        return fmt::format(
+            "schema_inference_make_columns_nullable={};schema_inference_allow_nullable_tuple_type={};use_fast_decoder={};dictionary_as_low_cardinality={}",
+            settings.schema_inference_make_columns_nullable,
+            settings.schema_inference_allow_nullable_tuple_type,
+            settings.orc.use_fast_decoder,
+            settings.orc.dictionary_as_low_cardinality);
     });
 }
 

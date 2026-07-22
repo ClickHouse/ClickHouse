@@ -1,0 +1,29 @@
+---
+title: README
+---
+
+<div id="customizations">
+  # Настройка
+</div>
+
+Пользовательские скрипты для настройки внешнего вида и поведения сайта Mintlify.
+Они загружаются через массив `scripts` в `docs.json` и выполняются на каждой странице.
+
+Подробнее см. в документации Mintlify о [пользовательских скриптах](https://www.mintlify.com/docs/customize/custom-scripts).
+
+<div id="scripts">
+  ## Скрипты
+</div>
+
+* `ask-ai-button.js` — настраивает стиль и поведение кнопки Ask-AI.
+* `cookie-banner.js` — добавляет баннер согласия на использование cookie и управляет им.
+* `custom-footer.js` — рендерит пользовательский нижний колонтитул сайта (`#ch-custom-footer`).
+* `inkeep-init.js` — заменяет встроенный поиск Mintlify (⌘K / строка поиска на панели навигации) на поисковое модальное окно Inkeep. Только поиск; AI Chat остаётся в Kapa.
+* `kapa-init.js` — инициализирует RAG-виджет Kapa.ai.
+* `navbar-cta.js` — добавляет CTA «Начало работы» на панель навигации.
+* `clickhouse-sql-lexer-wasm.js` — предоставляет SQL-лексер ClickHouse (`src/Parsers/Lexer.cpp`, скомпилированный в WebAssembly) как глобальную переменную в base64. Снимок из ClickHouse `programs/server/play.html`; извлеките заново, если изменится исходный лексер или список ключевых слов.
+* `clickhouse-sql-highlight.js` — заново подсвечивает блоки кода `language="sql"` с помощью WASM-лексера (собственные цвета ClickHouse, как в play.html / клиенте ClickHouse) вместо Shiki. Должен загружаться после `clickhouse-sql-lexer-wasm.js`. Для остальных языков остаётся подсветка, отрендеренная Shiki.
+* `quickstart-back-link.js` — на страницах быстрого старта перемещает автоматически сгенерированный бейдж «руководство по быстрому старту» из верхней части основного содержимого в заголовок над названием (на место хлебных крошек).
+
+Чтобы подключить новый скрипт, добавьте запись `{ "src": "/_site/customizations/<name>.js" }`
+в массив `scripts` верхнего уровня в `docs.json`.

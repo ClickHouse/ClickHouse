@@ -1,0 +1,70 @@
+---
+sidebarTitle: '集成 Schema Registry'
+description: '介绍如何将 ClickPipes 与 Schema Registry 集成，以进行 schema 管理。'
+slug: /integrations/clickpipes/kafka/schema-registries
+title: 'Kafka ClickPipe 的 Schema Registry'
+doc_type: 'guide'
+keywords: ['schema registries', 'kafka', 'clickpipes', 'avro', 'confluent']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+ClickPipes 支持与 Schema Registry 集成，以解码采用 Avro 和 Protobuf 编码的 topic。
+
+<div id="supported-schema-registries">
+  ## Kafka ClickPipes 支持的 Schema Registry
+</div>
+
+支持与 Confluent Schema Registry API 兼容的 Schema Registry，包括：
+
+* Confluent Schema Registry
+* Redpanda Schema Registry
+
+ClickPipes 目前尚不支持 AWS Glue Schema Registry 或 Azure Schema Registry。如需支持这些 Schema Registry，请[联系团队](https://clickhouse.com/company/contact?loc=clickpipes)。
+
+<div id="schema-registry-configuration">
+  ## 配置
+</div>
+
+要在配置 ClickPipes 时集成 Schema Registry，必须使用以下方法之一：
+
+1. 提供 schema subject 的完整路径 (例如 `https://registry.example.com/subjects/events`)
+   * 也可以通过在 URL 后附加 `/versions/[version]` 来指定特定版本 (否则 ClickPipes 会获取最新版本) 。
+2. 提供 schema ID 的完整路径 (例如 `https://registry.example.com/schemas/ids/1000`)
+3. 提供 Schema Registry 的根 URL (例如 `https://registry.example.com`)
+
+<div id="network-connectivity">
+  ## 网络连通性
+</div>
+
+ClickPipes 会通过您提供的 URL 使用 HTTPS 连接到 Schema Registry。Schema Registry 无需可通过公网访问。
+
+如果您的 Kafka 消息代理是通过[反向专用终结点](/zh/integrations/clickpipes/aws-privatelink) (AWS PrivateLink 或 GCP Private Service Connect) 访问的，Schema Registry 也可以使用相同的私有连接。ClickPipes 会通过反向专用终结点的私有 DNS 解析 registry 主机名，因此，只要其主机名解析到反向专用终结点的私有 IP 地址 (通过该端点的私有 DNS 支持或自定义私有 DNS 映射) ，与消息代理一起私有托管的 registry 就可以访问。
+
+请注意以下事项：
+
+* Schema Registry URL 必须使用 `https://`。
+* 如果 registry 主机名解析为私有地址，则它必须能通过为 ClickPipe 选择的反向专用终结点访问；否则，设置期间的连通性检查将失败。
+
+<div id="how-schema-registries-work">
+  ## 工作原理
+</div>
+
+ClickPipes 会动态从已配置的 Schema Registry 获取并应用 schema。
+
+* 如果消息中嵌入了 schema ID，则会使用该 ID 获取 schema。
+* 如果消息中未嵌入 schema ID，则会使用 ClickPipe 配置中指定的 schema ID 或 subject 名称来获取 schema。
+* 如果消息写入时未嵌入 schema ID，且 ClickPipe 配置中也未指定 schema ID 或 subject 名称，则不会获取 schema，该消息将被跳过，并在 ClickPipes 错误表中记录 `SOURCE_SCHEMA_ERROR`。
+* 如果消息不符合 schema，则该消息将被跳过，并在 ClickPipes 错误表中记录 `DATA_PARSING_ERROR`。
+* 仅适用于 Protobuf schema：ClickPipes 会加载定义为依赖项的所有导入 schema。暂不支持带外部引用的 Avro schema。
+
+<div id="schema-mapping">
+  ## Schema 映射
+</div>
+
+以下规则适用于已获取的 schema 与 ClickHouse 目标端表之间的映射：
+
+* 如果 schema 包含某个字段，但该字段未包含在 ClickHouse 目标端映射中，则该字段会被忽略。
+* 如果 schema 缺少 ClickHouse 目标端映射中定义的某个字段，则 ClickHouse 列将填充为“零”值，例如 0 或空字符串。请注意，不支持 `DEFAULT` 表达式。
+* 如果 schema 字段与 ClickHouse 列不兼容，则该行/消息的插入会失败，且失败记录会写入 ClickPipes 错误表。请注意，系统支持一些隐式转换 (例如数值类型之间的转换) ，但并非全部都支持 (例如，Avro record 字段不能插入到 `Int32` ClickHouse 列中) 。

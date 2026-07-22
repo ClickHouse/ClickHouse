@@ -15,6 +15,7 @@ from .cidb import CIDB
 from .digest import Digest
 from .event import EventFeed
 from .gh import GH
+from .gh_auth import GHAuth
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .info import Info
@@ -25,25 +26,6 @@ from .s3 import S3
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import Shell, TeePopen, Utils
-
-_GH_authenticated = False
-
-
-def _GH_Auth():
-    global _GH_authenticated
-    if _GH_authenticated:
-        return True
-    if not Settings.USE_CUSTOM_GH_AUTH:
-        return True
-    from .gh_auth import GHAuth
-
-    try:
-        GHAuth.auth_from_settings()
-        _GH_authenticated = True
-        return True
-    except Exception as e:
-        print(f"WARNING: GH auth failed: {e}")
-        return False
 
 
 class Runner:
@@ -334,7 +316,7 @@ class Runner:
                 )
 
         if job.enable_gh_auth:
-            if not _GH_Auth():
+            if not GHAuth.auth(workflow, no_strict=True):
                 Utils.raise_with_error("GH auth failed - required by job")
 
         print("INFO: disk status before running a job:")
@@ -588,6 +570,24 @@ class Runner:
             result.set_status(Result.Status.OK)
         return result
 
+    @staticmethod
+    def _skip_missing_optional_artifact(artifact, artifact_path) -> bool:
+        """Whether a providing artifact that matched no file may be skipped.
+
+        A missing optional artifact is skipped with a warning on any run (PR,
+        master or release). It is optional because it may legitimately be absent
+        (the non-blocking LLVM coverage merge can crash on a corrupt .profraw and
+        produce no .profdata) and skipping keeps a job whose tests all passed
+        green. A non-optional artifact is an error whenever it is missing.
+        """
+        if artifact.optional:
+            print(
+                f"WARNING: optional artifact [{artifact.name}:{artifact_path}] "
+                f"produced no file - skipping upload"
+            )
+            return True
+        return False
+
     def _post_run(
         self, result, workflow, job, run_exit_code,
     ) -> bool:
@@ -630,10 +630,17 @@ class Runner:
                         artifact_paths = [artifact.path]
                     for artifact_path in artifact_paths:
                         try:
-                            assert Shell.check(
-                                f"ls -l {artifact_path}", verbose=True
-                            ), f"Artifact {artifact_path} not found"
-                            for file_path in glob.glob(artifact_path):
+                            matched = glob.glob(artifact_path)
+                            if not matched:
+                                if self._skip_missing_optional_artifact(
+                                    artifact, artifact_path
+                                ):
+                                    continue
+                                raise FileNotFoundError(
+                                    f"Artifact {artifact_path} not found"
+                                )
+                            Shell.check(f"ls -l {artifact_path}", verbose=True)
+                            for file_path in matched:
                                 link = S3.copy_file_to_s3(
                                     s3_path=s3_path,
                                     local_path=file_path,
@@ -787,7 +794,7 @@ class Runner:
         if (
             workflow.enable_commit_status_on_failure and not result.is_ok()
         ) or job.enable_commit_status:
-            if _GH_Auth():
+            if GHAuth.auth(workflow, no_strict=True):
                 if not GH.post_commit_status(
                     name=job.name,
                     status=result.status,
@@ -805,7 +812,7 @@ class Runner:
             status_updated = HtmlRunnerHooks.post_run(workflow, job)
             if status_updated:
                 print(f"Update GH commit status [{result.name}]: [{status_updated}]")
-                if _GH_Auth():
+                if GHAuth.auth(workflow, no_strict=True):
                     GH.post_commit_status(
                         name=workflow.name,
                         status=status_updated,
@@ -835,7 +842,7 @@ class Runner:
 
         if workflow.enable_gh_summary_comment and (
             job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
-        ) and _GH_Auth():
+        ) and GHAuth.auth(workflow, no_strict=True):
             workflow_result = Result.from_fs(workflow.name)
             try:
                 summary_body = GH.ResultSummaryForGH.from_result(
@@ -860,7 +867,7 @@ class Runner:
             and workflow.is_event_pull_request()
         ):
             try:
-                _GH_Auth()
+                GHAuth.auth(workflow, no_strict=True)
                 workflow_result = Result.from_fs(workflow.name)
                 if workflow_result.is_ok():
                     if not GH.merge_pr():
@@ -1050,7 +1057,12 @@ class Runner:
                 else:
                     name = str(check)
                 results_.append(Result.from_commands_run(name=name, command=check))
-            prehook_result = Result.create_from(name="Pre Hooks", results=results_, stopwatch=sw_)
+            prehook_result = Result.create_from(
+                name="Pre Hooks",
+                results=results_,
+                stopwatch=sw_,
+                with_info_from_results=True,
+            )
 
         if res:
             print(f"=== Run script [{job.name}], workflow [{workflow.name}] ===")
@@ -1104,7 +1116,12 @@ class Runner:
                         name = str(check)
                     results_.append(Result.from_commands_run(name=name, command=check))
                 result.results.append(
-                    Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
+                    Result.create_from(
+                        name="Post Hooks",
+                        results=results_,
+                        stopwatch=sw_,
+                        with_info_from_results=True,
+                    )
                 )
                 print("=== Post hooks finished ===")
 

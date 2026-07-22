@@ -1,0 +1,562 @@
+---
+title: 用户和角色常见操作
+---
+
+<div id="test-admin-privileges">
+  ## 测试管理员权限
+</div>
+
+退出 `default` 用户登录，然后使用 `clickhouse_admin` 用户重新登录。
+
+以下所有操作都应成功：
+
+```sql
+SHOW GRANTS FOR clickhouse_admin;
+```
+
+```sql
+CREATE DATABASE db1
+```
+
+```sql
+CREATE TABLE db1.table1 (id UInt64, column1 String) ENGINE = MergeTree() ORDER BY id;
+```
+
+```sql
+INSERT INTO db1.table1 (id, column1) VALUES (1, 'abc');
+```
+
+```sql
+SELECT * FROM db1.table1;
+```
+
+```sql
+DROP TABLE db1.table1;
+```
+
+```sql
+DROP DATABASE db1;
+```
+
+<div id="non-admin-users">
+  ## 非管理员用户
+</div>
+
+用户应具备必要的权限，而不应全部为管理员用户。本文档其余部分将提供示例场景及所需角色。
+
+<div id="preparation">
+  ### 准备工作
+</div>
+
+创建以下表和用户，供后续示例使用。
+
+<div id="creating-a-sample-database-table-and-rows">
+  #### 创建示例数据库、表和行
+</div>
+
+<Steps>
+  <Step>
+    ##### 创建测试数据库
+
+    ```sql
+    CREATE DATABASE db1;
+    ```
+  </Step>
+
+  <Step>
+    ##### 创建表
+
+    ```sql
+    CREATE TABLE db1.table1 (
+       id UInt64,
+       column1 String,
+       column2 String
+    )
+    ENGINE MergeTree
+    ORDER BY id;
+    ```
+  </Step>
+
+  <Step>
+    ##### 向表中插入示例行
+
+    ```sql
+    INSERT INTO db1.table1
+       (id, column1, column2)
+    VALUES
+       (1, 'A', 'abc'),
+       (2, 'A', 'def'),
+       (3, 'B', 'abc'),
+       (4, 'B', 'def');
+    ```
+  </Step>
+
+  <Step>
+    ##### 验证表
+
+    ```sql title="查询"
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response title="响应"
+    Query id: 475015cc-6f51-4b20-bda2-3c9c41404e49
+
+    ┌─id─┬─column1─┬─column2─┐
+    │  1 │ A       │ abc     │
+    │  2 │ A       │ def     │
+    │  3 │ B       │ abc     │
+    │  4 │ B       │ def     │
+    └────┴─────────┴─────────┘
+    ```
+  </Step>
+
+  <Step>
+    ##### 创建 `column_user`
+
+    创建一个普通用户，用于演示对某些列的访问限制：
+
+    ```sql
+    CREATE USER column_user IDENTIFIED BY 'password';
+    ```
+  </Step>
+
+  <Step>
+    ##### 创建 `row_user`
+
+    创建一个普通用户，用于演示对具有特定值的行实施访问限制：
+
+    ```sql
+    CREATE USER row_user IDENTIFIED BY 'password';
+    ```
+  </Step>
+</Steps>
+
+<div id="creating-roles">
+  #### 创建角色
+</div>
+
+通过这组示例，您将了解如何：
+
+* 创建具有不同权限的角色，例如针对列和行的角色
+* 为角色授予权限
+* 将用户分配给各个角色
+
+角色用于为特定权限定义用户组，而不是逐个管理用户。
+
+<Steps>
+  <Step>
+    ##### 创建一个角色，将该角色的用户限制为只能查看数据库 `db1` 中 `table1` 表的 `column1`：
+
+    ```sql
+    CREATE ROLE column1_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### 设置权限，允许查看 `column1`
+
+    ```sql
+    GRANT SELECT(id, column1) ON db1.table1 TO column1_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### 将用户 `column_user` 添加到角色 `column1_users`
+
+    ```sql
+    GRANT column1_users TO column_user;
+    ```
+  </Step>
+
+  <Step>
+    ##### 创建一个角色，将该角色的用户限制为只能查看选定的行；在本例中，仅能查看 `column1` 中包含 `A` 的行
+
+    ```sql
+    CREATE ROLE A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### 将 `row_user` 添加到角色 `A_rows_users`
+
+    ```sql
+    GRANT A_rows_users TO row_user;
+    ```
+  </Step>
+
+  <Step>
+    ##### 创建一条策略，仅允许查看 `column1` 值为 `A` 的行
+
+    ```sql
+    CREATE ROW POLICY A_row_filter ON db1.table1 FOR SELECT USING column1 = 'A' TO A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### 为数据库和表设置权限
+
+    ```sql
+    GRANT SELECT(id, column1, column2) ON db1.table1 TO A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### 为其他角色授予显式权限，使其仍可访问所有行
+
+    ```sql
+    CREATE ROW POLICY allow_other_users_filter 
+    ON db1.table1 FOR SELECT USING 1 TO clickhouse_admin, column1_users;
+    ```
+
+    <Note>
+      将策略附加到表后，系统会应用该策略，只有策略中定义的用户和角色才能对该表执行操作，其他所有用户和角色都将被拒绝执行任何操作。为了避免将这种限制性的行策略应用到其他用户，必须另外定义一条策略，以允许其他用户和角色保留常规访问权限或其他类型的访问权限。
+    </Note>
+  </Step>
+</Steps>
+
+<div id="verification">
+  ## 验证
+</div>
+
+<div id="testing-role-privileges-with-column-restricted-user">
+  ### 使用列受限用户测试角色权限
+</div>
+
+<Steps>
+  <Step>
+    ##### 使用 `clickhouse_admin` 用户登录 ClickHouse 客户端
+
+    ```bash
+    clickhouse-client --user clickhouse_admin --password password
+    ```
+  </Step>
+
+  <Step>
+    ##### 验证管理员用户对数据库、表和所有行的访问权限。
+
+    ```sql
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: f5e906ea-10c6-45b0-b649-36334902d31d
+
+    ┌─id─┬─column1─┬─column2─┐
+    │  1 │ A       │ abc     │
+    │  2 │ A       │ def     │
+    │  3 │ B       │ abc     │
+    │  4 │ B       │ def     │
+    └────┴─────────┴─────────┘
+    ```
+  </Step>
+
+  <Step>
+    ##### 使用 `column_user` 用户登录 ClickHouse 客户端
+
+    ```bash
+    clickhouse-client --user column_user --password password
+    ```
+  </Step>
+
+  <Step>
+    ##### 测试使用所有列执行 `SELECT`
+
+    ```sql
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: 5576f4eb-7450-435c-a2d6-d6b49b7c4a23
+
+    0 rows in set. Elapsed: 0.006 sec.
+
+    Received exception from server (version 22.3.2):
+    Code: 497. DB::Exception: Received from localhost:9000. 
+    DB::Exception: column_user: Not enough privileges. 
+    To execute this query it's necessary to have grant 
+    SELECT(id, column1, column2) ON db1.table1. (ACCESS_DENIED)
+    ```
+
+    <Note>
+      由于查询指定了所有列，而该用户仅有对 `id` 和 `column1` 的访问权限，因此访问被拒绝。
+    </Note>
+  </Step>
+
+  <Step>
+    ##### 验证仅查询已指定且允许访问的列的 `SELECT` 查询：
+
+    ```sql
+    SELECT
+        id,
+        column1
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: cef9a083-d5ce-42ff-9678-f08dc60d4bb9
+
+    ┌─id─┬─column1─┐
+    │  1 │ A       │
+    │  2 │ A       │
+    │  3 │ B       │
+    │  4 │ B       │
+    └────┴─────────┘
+    ```
+  </Step>
+</Steps>
+
+<div id="testing-role-privileges-with-row-restricted-user">
+  ### 使用行级受限用户测试角色权限
+</div>
+
+<Steps>
+  <Step>
+    ##### 使用 `row_user` 登录 ClickHouse 客户端
+
+    ```bash
+    clickhouse-client --user row_user --password password
+    ```
+  </Step>
+
+  <Step>
+    ##### 查看可访问的行
+
+    ```sql
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: a79a113c-1eca-4c3f-be6e-d034f9a220fb
+
+    ┌─id─┬─column1─┬─column2─┐
+    │  1 │ A       │ abc     │
+    │  2 │ A       │ def     │
+    └────┴─────────┴─────────┘
+    ```
+
+    <Note>
+      确认只返回上述两行，`column1` 中值为 `B` 的行应被排除。
+    </Note>
+  </Step>
+</Steps>
+
+<div id="modifying-users-and-roles">
+  ## 修改用户和角色
+</div>
+
+可以为用户分配多个角色，以组合获得所需的权限。使用多个角色时，系统会将这些角色合并后再判定权限，最终效果是各角色的权限会累加生效。
+
+例如，如果 `role1` 只允许查询 `column1`，而 `role2` 允许查询 `column1` 和 `column2`，那么该用户将有权访问这两列。
+
+<Steps>
+  <Step>
+    ##### 使用管理员账户，创建一个按行和列限制且带默认角色的新用户
+
+    ```sql
+    CREATE USER row_and_column_user IDENTIFIED BY 'password' DEFAULT ROLE A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### 移除 `A_rows_users` 角色先前的权限
+
+    ```sql
+    REVOKE SELECT(id, column1, column2) ON db1.table1 FROM A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### 仅允许 `A_row_users` 角色查询 `column1`
+
+    ```sql
+    GRANT SELECT(id, column1) ON db1.table1 TO A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### 使用 `row_and_column_user` 登录 ClickHouse 客户端
+
+    ```bash
+    clickhouse-client --user row_and_column_user --password password;
+    ```
+  </Step>
+
+  <Step>
+    ##### 使用所有列进行测试：
+
+    ```sql
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: 8cdf0ff5-e711-4cbe-bd28-3c02e52e8bc4
+
+    0 rows in set. Elapsed: 0.005 sec.
+
+    Received exception from server (version 22.3.2):
+    Code: 497. DB::Exception: Received from localhost:9000. 
+    DB::Exception: row_and_column_user: Not enough privileges. 
+    To execute this query it's necessary to have grant 
+    SELECT(id, column1, column2) ON db1.table1. (ACCESS_DENIED)
+    ```
+  </Step>
+
+  <Step>
+    ##### 使用受限的允许列进行测试：
+
+    ```sql
+    SELECT
+        id,
+        column1
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: 5e30b490-507a-49e9-9778-8159799a6ed0
+
+    ┌─id─┬─column1─┐
+    │  1 │ A       │
+    │  2 │ A       │
+    └────┴─────────┘
+    ```
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## 故障排查
+</div>
+
+在某些情况下，权限之间会相互叠加或组合，导致出现意料之外的结果。以下命令可用于通过管理员账户缩小排查范围
+
+<div id="listing-the-grants-and-roles-for-a-user">
+  ### 列出用户的授权和角色
+</div>
+
+```sql
+SHOW GRANTS FOR row_and_column_user
+```
+
+```response
+Query id: 6a73a3fe-2659-4aca-95c5-d012c138097b
+
+┌─GRANTS FOR row_and_column_user───────────────────────────┐
+│ GRANT A_rows_users, column1_users TO row_and_column_user │
+└──────────────────────────────────────────────────────────┘
+```
+
+<div id="list-roles-in-clickhouse">
+  ### 查看 ClickHouse 中的角色
+</div>
+
+```sql
+SHOW ROLES
+```
+
+```response
+Query id: 1e21440a-18d9-4e75-8f0e-66ec9b36470a
+
+┌─name────────────┐
+│ A_rows_users    │
+│ column1_users   │
+└─────────────────┘
+```
+
+<div id="display-the-policies">
+  ### 查看策略
+</div>
+
+```sql
+SHOW ROW POLICIES
+```
+
+```response
+Query id: f2c636e9-f955-4d79-8e80-af40ea227ebc
+
+┌─name───────────────────────────────────┐
+│ A_row_filter ON db1.table1             │
+│ allow_other_users_filter ON db1.table1 │
+└────────────────────────────────────────┘
+```
+
+<div id="view-how-a-policy-was-defined-and-current-privileges">
+  ### 查看策略定义及当前权限
+</div>
+
+```sql
+SHOW CREATE ROW POLICY A_row_filter ON db1.table1
+```
+
+```response
+Query id: 0d3b5846-95c7-4e62-9cdd-91d82b14b80b
+
+┌─CREATE ROW POLICY A_row_filter ON db1.table1────────────────────────────────────────────────┐
+│ CREATE ROW POLICY A_row_filter ON db1.table1 FOR SELECT USING column1 = 'A' TO A_rows_users │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="example-commands-to-manage-roles-policies-and-users">
+  ## 管理角色、策略和用户的示例命令
+</div>
+
+以下命令可用于：
+
+* 删除权限
+* 删除策略
+* 将用户从角色中移除
+* 删除用户和角色
+  <br />
+
+<Tip>
+  请以管理员用户或 `default` 用户身份运行这些命令
+</Tip>
+
+<div id="remove-privilege-from-a-role">
+  ### 撤销角色权限
+</div>
+
+```sql
+REVOKE SELECT(column1, id) ON db1.table1 FROM A_rows_users;
+```
+
+<div id="delete-a-policy">
+  ### 删除策略
+</div>
+
+```sql
+DROP ROW POLICY A_row_filter ON db1.table1;
+```
+
+<div id="unassign-a-user-from-a-role">
+  ### 取消向用户分配角色
+</div>
+
+```sql
+REVOKE A_rows_users FROM row_user;
+```
+
+<div id="delete-a-role">
+  ### 删除角色
+</div>
+
+```sql
+DROP ROLE A_rows_users;
+```
+
+<div id="delete-a-user">
+  ### 删除用户
+</div>
+
+```sql
+DROP USER row_user;
+```
+
+<div id="summary">
+  ## 总结
+</div>
+
+本文介绍了创建 SQL 用户和角色的基础知识，并说明了如何为用户和角色设置及修改权限。有关各项内容的更多信息，请参阅我们的用户指南和参考文档。

@@ -1,0 +1,44 @@
+---
+slug: /use-cases/observability
+title: 'オブザーバビリティ'
+description: 'オブザーバビリティのユースケースガイドのトップページ'
+keywords: ['オブザーバビリティ', 'ログ', 'トレース', 'メトリクス', 'OpenTelemetry', 'Grafana', 'OTel']
+doc_type: 'guide'
+---
+
+ClickHouse は、オブザーバビリティ向けに圧倒的な速度、スケーラビリティ、コスト効率を提供します。このガイドでは、ニーズに応じて 2 つの選択肢を紹介します。
+
+<div id="clickstack">
+  ## ClickStack - ClickHouse オブザーバビリティスタック
+</div>
+
+ClickHouse オブザーバビリティ Stack は、ほとんどのユーザーに推奨されるアプローチです。
+
+**ClickStack** は、ClickHouse と OpenTelemetry (OTel) を基盤とする本番運用向けのオブザーバビリティプラットフォームです。ログ、トレース、メトリクス、セッションを単一の高性能かつスケーラブルなソリューションに統合し、単一ノードのデプロイから**複数ペタバイト**規模まで対応します。
+
+| セクション                                            | 説明                          |
+| ------------------------------------------------ | --------------------------- |
+| [概要](/ja/clickstack/overview)                       | ClickStack の概要と主な機能の紹介      |
+| [はじめに](/ja/clickstack/getting-started/index)        | クイックスタートガイドと基本的なセットアップ手順    |
+| [サンプルデータセット](/ja/clickstack/example-datasets/index) | サンプルデータセットとユースケース           |
+| [アーキテクチャ](/ja/clickstack/architecture)              | システムアーキテクチャと構成要素の概要         |
+| [デプロイメント](/ja/clickstack/deployment/overview)       | デプロイメントガイドとオプション            |
+| [設定](/ja/clickstack/managing/config)                | 詳細な構成オプションと設定               |
+| [データの取り込み](/ja/clickstack/ingesting-data/index)     | ClickStack へのデータ取り込みに関するガイド |
+| [検索](/ja/clickstack/features/search)                | オブザーバビリティデータを検索し、クエリする方法    |
+| [本番運用](/ja/clickstack/managing/production)          | 本番環境へのデプロイに関するベストプラクティス     |
+
+<div id="build-your-own-stack">
+  ## 独自スタックの構築
+</div>
+
+**カスタム要件** (高度に特化したインジェストパイプライン、スキーマ設計、あるいは大規模なスケーリング要件など) があるユーザー向けに、ClickHouse を中核データベースとするカスタムのオブザーバビリティスタックを構築するためのガイダンスを提供しています。
+
+| Page                                                                                                  | Description                                                                                                |
+| ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| [Introduction](/ja/guides/use-cases/observability/build-your-own/introduction)                           | このガイドは、ログとトレースを中心に、ClickHouse を使って独自のオブザーバビリティソリューションを構築したい方向けです。                                          |
+| [Schema design](/ja/guides/use-cases/observability/build-your-own/schema-design)                         | ログとトレース用に独自のスキーマを作成することが推奨される理由と、そのためのベストプラクティスを学べます。                                                      |
+| [Managing data](/ja/guides/use-cases/observability/build-your-own/managing-data)                         | オブザーバビリティ向けの ClickHouse のデプロイメントでは、必然的に大規模なデータセットを扱うことになるため、適切な管理が必要です。ClickHouse にはデータ管理を支援する機能が用意されています。 |
+| [Integrating OpenTelemetry](/ja/guides/use-cases/observability/build-your-own/integrating-opentelemetry) | ClickHouse で OpenTelemetry を使用してログとトレースを収集・エクスポートする方法を説明します。                                               |
+| [Using Visualization Tools](/ja/guides/use-cases/observability/build-your-own/grafana)                   | HyperDX や Grafana など、ClickHouse 向けのオブザーバビリティ可視化ツールの使い方を学べます。                                               |
+| [Demo Application](/ja/guides/use-cases/observability/build-your-own/demo-application)                   | ログとトレース向けに ClickHouse で動作するようフォークされた OpenTelemetry Demo Application を試してみましょう。                             |

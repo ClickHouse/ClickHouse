@@ -1,0 +1,219 @@
+---
+alias: []
+description: 'تنسيق إدخال يقرأ GeoJSON FeatureCollection ويُنتج صفًا واحدًا لكل معلم، مع أعمدة id وgeometry وproperties.'
+input_format: true
+output_format: false
+keywords: ['GeoJSON']
+sidebarTitle: 'GeoJSON'
+slug: /interfaces/formats/GeoJSON
+title: 'GeoJSON'
+doc_type: 'reference'
+---
+
+| إدخال | إخراج | اسم مستعار |
+| ----- | ----- | ---------- |
+| ✔     | ✗     |            |
+
+<div id="description">
+  ## الوصف
+</div>
+
+يقرأ مستند `FeatureCollection` من [GeoJSON](https://geojson.org/) وينتج صفًا واحدًا لكل معلم. ويحتوي كل صف على المخطط الثابت التالي:
+
+| العمود       | النوع            | الوصف                                                                                                                               |
+| ------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `id`         | `String`         | العضو `id` الخاص بالمعلم (سلسلة JSON أو رقم)، ويُخزَّن كنص؛ وتكون قيمته سلسلة فارغة إذا كان `id` غير موجود أو كانت قيمته `null`.    |
+| `geometry`   | `Geometry`       | هندسة المعلم، وتُخزَّن كنوع `Geometry` من `Variant`.                                                                                |
+| `properties` | `Nullable(JSON)` | الكائن `properties` الخاص بالمعلم، ويُخزَّن في عمود `JSON` شبه مُهيكل. وتُحفَظ القيمة الصريحة `"properties": null` على أنها `NULL`. |
+
+تُخزَّن كل هندسة في النوع `Geometry` في ClickHouse (وهو `Variant`). وأنواع هندسة GeoJSON المدعومة هي `Point` و`LineString` و`MultiLineString` و`Polygon` و`MultiPolygon`. أما نوعا هندسة GeoJSON الآخران، `GeometryCollection` و`MultiPoint`، فلا يمكن تمثيلهما بالنوع `Geometry`؛ وتؤدي قراءة أحدهما في العمود `geometry` إلى ظهور استثناء افتراضيًا، ويمكن تغيير هذا السلوك بحيث يُدرَج `NULL` بدلًا من ذلك — راجع [التعامل مع أنواع الهندسة غير المدعومة](#unsupported-geometry) أدناه. افتراضيًا، لا تكون قيمة العمود `geometry` هي `NULL` إلا عندما تكون هندسة المعلم قيمة JSON صريحة من `null`؛ ومع `input_format_geojson_unsupported_geometry_handling = 'null'` تصبح أيضًا `NULL` عند وجود نوع هندسة غير مدعوم.
+
+يُتحقَّق من صحة بنية المستند: يجب أن تكون قيمة `type` في المستوى الأعلى هي `FeatureCollection`، ويجب أن تكون قيمة `type` لكل عنصر ضمن `features` هي `Feature`. كما يجب أن تستوفي الإحداثيات قيود البنية الهندسية في GeoJSON — إذ يجب أن يحتوي `LineString` (وكل خط في `MultiLineString`) على موضعين على الأقل، ويجب أن تكون الحلقة في `Polygon` (وكل حلقة في `MultiPolygon`) مغلقة وأن تحتوي على أربعة مواضع على الأقل. وتُرفَض المستندات غير السليمة بدلًا من تحميلها بصمت.
+
+تُتجاهَل المفاتيح الأخرى في الكائن `FeatureCollection` (مثل `name` أو `crs`) والمفاتيح الأخرى داخل كل كائن `Feature` (مثل `bbox`).
+
+ترتيب المفاتيح مرن: يمكن أن تظهر `type` في المستوى الأعلى قبل المصفوفة `features` أو بعدها، وداخل الكائن الهندسي يمكن أن تظهر `coordinates` قبل `type` أو بعدها.
+
+يعيد استنتاج المخطط المخطط الثابت أعلاه، لذا يعمل `DESCRIBE` و`SELECT ... FROM format(...)` من دون الحاجة إلى تعريف جدول.
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+بالنظر إلى ملف GeoJSON التالي `london.geojson`، الذي يحتوي على مزيج من أنواع الهندسة:
+
+```json
+{
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "id": "1",
+            "geometry": {"type": "Point", "coordinates": [-0.0761, 51.5081]},
+            "properties": {"name": "Tower of London", "feature_type": "landmark", "year_built": 1078}
+        },
+        {
+            "type": "Feature",
+            "id": "2",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[-0.2500, 51.4700], [-0.1800, 51.4900], [-0.1200, 51.5060], [-0.0700, 51.5050], [0.0000, 51.5100]]
+            },
+            "properties": {"name": "River Thames", "feature_type": "river", "length_km": 346}
+        },
+        {
+            "type": "Feature",
+            "id": "3",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[[-0.1880, 51.5074], [-0.1533, 51.5074], [-0.1533, 51.5153], [-0.1880, 51.5153], [-0.1880, 51.5074]]]
+            },
+            "properties": {"name": "Hyde Park", "feature_type": "park", "area_km2": 1.42}
+        }
+    ]
+}
+```
+
+يمكننا الاستعلام عن الملف وفحص الأنواع الهندسية:
+
+```sql title="Query"
+SELECT id, properties.name AS name, variantType(geometry) AS geo_type
+FROM file('london.geojson', GeoJSON);
+```
+
+```response title="Response"
+┌─id─┬─name────────────┬─geo_type───┐
+│ 1  │ Tower of London │ Point      │
+│ 2  │ River Thames    │ LineString │
+│ 3  │ Hyde Park       │ Polygon    │
+└────┴─────────────────┴────────────┘
+```
+
+يُكتشَف امتداد الملف `.geojson` تلقائيًا، لذا يمكن الاستغناء عن وسيطة الصيغة:
+
+```sql title="Query"
+SELECT id, properties.name AS name, variantType(geometry) AS geo_type
+FROM file('london.geojson');
+```
+
+يمكننا استخدام `variantType` للتحقق من النوع الفعلي لكل كائن من نوع Geometry:
+
+```sql title="Query"
+SELECT properties.name AS name, geometry, variantType(geometry)
+FROM file('london.geojson', GeoJSON);
+```
+
+```response title="Response"
+Row 1:
+──────
+name:                  Tower of London
+geometry:              (-0.0761,51.5081)
+variantType(geometry): Point
+
+Row 2:
+──────
+name:                  River Thames
+geometry:              [(-0.25,51.47),(-0.18,51.49),(-0.12,51.506),(-0.07,51.505),(0,51.51)]
+variantType(geometry): LineString
+
+Row 3:
+──────
+name:                  Hyde Park
+geometry:              [[(-0.188,51.5074),(-0.1533,51.5074),(-0.1533,51.5153),(-0.188,51.5153),(-0.188,51.5074)]]
+variantType(geometry): Polygon
+```
+
+ويمكننا استخراج البيانات الأساسية كما يلي:
+
+```sql title="Query"
+SELECT properties.name AS name, variantType(geometry), geometry.Point, geometry.LineString, geometry.Polygon
+FROM file('london.geojson', GeoJSON);
+```
+
+```response title="Response"
+Row 1:
+──────
+name:                  Tower of London
+variantType(geometry): Point
+geometry.Point:        (-0.0761,51.5081)
+geometry.LineString:   []
+geometry.Polygon:      []
+
+Row 2:
+──────
+name:                  River Thames
+variantType(geometry): LineString
+geometry.Point:        (0,0)
+geometry.LineString:   [(-0.25,51.47),(-0.18,51.49),(-0.12,51.506),(-0.07,51.505),(0,51.51)]
+geometry.Polygon:      []
+
+Row 3:
+──────
+name:                  Hyde Park
+variantType(geometry): Polygon
+geometry.Point:        (0,0)
+geometry.LineString:   []
+geometry.Polygon:      [[(-0.188,51.5074),(-0.1533,51.5074),(-0.1533,51.5153),(-0.188,51.5153),(-0.188,51.5074)]]
+```
+
+يؤدي الوصول إلى عمود فرعي من نوع `Geometry` إلى إرجاع القيمة عندما يحتوي الصف على ذلك النوع، وإلا فتُرجَع القيمة الافتراضية لذلك النوع — `(0,0)` لـ `Point` و`[]` للأنواع المستندة إلى المصفوفات — لذا استخدم `variantType(geometry)` لمعرفة النوع المعيَّن.
+
+يمكننا أيضًا إدخال بيانات GeoJSON إلى جدول:
+
+```sql title="Query"
+CREATE TABLE london
+(
+    id           String,
+    geometry     Geometry,
+    properties   Nullable(JSON),
+    name         String MATERIALIZED properties.name,
+    feature_type String MATERIALIZED properties.feature_type
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO london
+SELECT id, geometry, properties
+FROM file('london.geojson', GeoJSON);
+```
+
+ثم نفّذ استعلامًا حسب نوع المعلم:
+
+```sql title="Query"
+SELECT name, feature_type, variantType(geometry) AS geo_type
+FROM london
+ORDER BY id;
+```
+
+```response title="Response"
+┌─name────────────┬─feature_type─┬─geo_type───┐
+│ Tower of London │ landmark     │ Point      │
+│ River Thames    │ river        │ LineString │
+│ Hyde Park       │ park         │ Polygon    │
+└─────────────────┴──────────────┴────────────┘
+```
+
+يمكننا أيضًا استنتاج مخطط بيانات GeoJSON من دون تعريف جدول:
+
+```sql title="Query"
+DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
+```
+
+```response title="Response"
+┌─name───────┬─type───────────┐
+│ id         │ String         │
+│ geometry   │ Geometry       │
+│ properties │ Nullable(JSON) │
+└────────────┴────────────────┘
+```
+
+<div id="unsupported-geometry">
+  ## التعامل مع أنواع هندسة غير المدعومة
+</div>
+
+بعض أنواع الهندسة الصالحة في GeoJSON — مثل `GeometryCollection` و`MultiPoint` — لا يمكن تمثيلها بالنوع `Geometry` في ClickHouse. يمكنك التحكم في ما يحدث عندما يلزم تخزين هندسة من هذا النوع في العمود `geometry` باستخدام الإعداد `input_format_geojson_unsupported_geometry_handling`. القيم الممكنة هي:
+
+* `'throw'` — طرح استثناء (الافتراضي)
+* `'null'` — إدراج قيمة `NULL` في العمود `geometry` ومتابعة التحليل
+
+ينطبق هذا السلوك فقط عند قراءة العمود `geometry`. وعندما لا يكون `geometry` عمود إخراج مطلوبًا (على سبيل المثال `SELECT id FROM ...`)، تظل الهندسة غير المدعومة خاضعة للتحقق من صحة البنية، لكنها لا تؤدي إلى تطبيق هذا السلوك — فلا يُطرح استثناء ولا تُدرج قيمة `NULL`، لأنه لا تتم مادية أي قيمة هندسة.

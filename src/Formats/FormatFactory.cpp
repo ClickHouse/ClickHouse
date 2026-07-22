@@ -49,6 +49,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsNonZeroUInt64 min_chunk_bytes_for_parallel_parsing;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsInt64 zstd_window_log_max;
+    extern const SettingsSnappyMode snappy_mode;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
@@ -130,6 +131,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.csv.delimiter = settings[Setting::format_csv_delimiter];
     format_settings.csv.tuple_delimiter = settings[Setting::format_csv_delimiter];
     format_settings.csv.empty_as_default = settings[Setting::input_format_csv_empty_as_default];
+    format_settings.csv.missing_nullable_as_empty_string = settings[Setting::input_format_csv_missing_nullable_as_empty_string];
     format_settings.csv.enum_as_number = settings[Setting::input_format_csv_enum_as_number];
     format_settings.csv.null_representation = settings[Setting::format_csv_null_representation];
     format_settings.csv.arrays_as_nested_csv = settings[Setting::input_format_csv_arrays_as_nested_csv];
@@ -339,6 +341,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.arrow.output_compression_method = settings[Setting::output_format_arrow_compression_method];
     format_settings.arrow.output_date_as_uint16 = settings[Setting::output_format_arrow_date_as_uint16];
     format_settings.arrow.output_unsupported_types_as_binary = settings[Setting::output_format_arrow_unsupported_types_as_binary];
+    format_settings.arrow.input_use_native_reader = settings[Setting::input_format_arrow_use_native_reader];
+    format_settings.arrow.output_use_native_writer = settings[Setting::output_format_arrow_use_native_writer];
     format_settings.orc.allow_missing_columns = settings[Setting::input_format_orc_allow_missing_columns];
     format_settings.orc.row_batch_size = settings[Setting::input_format_orc_row_batch_size];
     format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_orc_skip_columns_with_unsupported_types_in_schema_inference];
@@ -377,6 +381,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.sql_insert.table_name = settings[Setting::output_format_sql_insert_table_name];
     format_settings.sql_insert.use_replace = settings[Setting::output_format_sql_insert_use_replace];
     format_settings.sql_insert.quote_names = settings[Setting::output_format_sql_insert_quote_names];
+    format_settings.precise_float_parsing = settings[Setting::precise_float_parsing];
     format_settings.try_infer_integers = settings[Setting::input_format_try_infer_integers];
     format_settings.try_infer_dates = settings[Setting::input_format_try_infer_dates];
     format_settings.try_infer_datetimes = settings[Setting::input_format_try_infer_datetimes];
@@ -392,6 +397,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.binary.decode_types_in_binary_format = settings[Setting::input_format_binary_decode_types_in_binary_format];
     format_settings.binary.write_json_as_string = settings[Setting::output_format_binary_write_json_as_string];
     format_settings.binary.read_json_as_string = settings[Setting::input_format_binary_read_json_as_string];
+    format_settings.binary.max_binary_type_complexity = settings[Setting::input_format_binary_max_type_complexity];
     format_settings.native.allow_types_conversion = settings[Setting::input_format_native_allow_types_conversion];
     format_settings.native.encode_types_in_binary_format = settings[Setting::output_format_native_encode_types_in_binary_format];
     format_settings.native.decode_types_in_binary_format = settings[Setting::input_format_native_decode_types_in_binary_format];
@@ -739,7 +745,11 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
     {
         if (!res)
             res = wrapReadBufferReference(buf);
-        res = wrapReadBufferWithCompressionMethod(std::move(res), compression, static_cast<int>(settings[Setting::zstd_window_log_max]));
+        res = wrapReadBufferWithCompressionMethod(
+            std::move(res),
+            compression,
+            static_cast<int>(settings[Setting::zstd_window_log_max]),
+            settings[Setting::snappy_mode]);
     }
 
     return res;

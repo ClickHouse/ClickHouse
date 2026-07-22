@@ -1,8 +1,11 @@
 #pragma once
 
+#include <concepts>
 #include <vector>
 #include <Core/Joins.h>
 #include <Common/EquivalenceClasses.h>
+#include <Common/logger_useful.h>
+#include <base/types.h>
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -19,6 +22,12 @@ enum class JoinMethod : UInt8
     Hash,
     Merge,
 };
+
+template <std::unsigned_integral T>
+inline String toBinaryString(T value)
+{
+    return toString(BitSet::fromUInt(value));
+}
 
 struct DPJoinEntry
 {
@@ -68,26 +77,20 @@ struct QueryGraph
 
     std::vector<JoinActionRef> edges;
 
-    /// Shape constraint for a null-supplying relation.
-    /// Example: `(A LEFT JOIN B) JOIN C ON B.y=C.y` registers for B:
-    ///   required_partners  = {A}   — at `{X} ⋈ {B}`, X must include A.
-    ///   forbidden_partners = {C}   — at `{X} ⋈ {B}`, X must not include C
-    ///                                (C was pulled across the boundary by `B.y=C.y`;
-    ///                                allowing `{A,C} ⋈ {B}` would drag the predicate
-    ///                                into the LEFT JOIN's ON clause). It's still fine
-    ///                                for C to sit opposite a subtree that *contains*
-    ///                                B (e.g. `{A,B} ⋈ {C}`) — the check doesn't fire.
-    ///   kind               = LEFT  — kind to return when the shape is valid.
-    struct OuterJoinRestriction
-    {
-        BitSet required_partners;
-        BitSet forbidden_partners;
-        JoinKind kind{};
-    };
-    std::unordered_map<size_t, OuterJoinRestriction> join_kinds;
+    /// Restriction for a null-supplying relation of an outer join.
+    /// Maps (relation id) -> (set of relations referenced by the outer join's ON clause, join kind).
+    /// The relation may be joined (as a singleton side) only against a set that contains all
+    /// relations its ON clause depends on; the remaining relations may be joined outside.
+    std::unordered_map<size_t, std::pair<BitSet, JoinKind>> join_kinds;
 
-    /// Each predicate may require a set of relations to be already joined before it becomes applicable
-    std::unordered_map<JoinActionRef, BitSet> pinned;
+    /// Predicates from the ON clause of an outer join, mapped to the id of the null-supplying
+    /// relation. Such a predicate must be applied in the ON clause of the join step that joins
+    /// this relation: it affects matching, not filtering (rows of the preserved side are kept
+    /// even when the predicate doesn't hold).
+    /// All other predicates are filters: they may be applied at any step where all their source
+    /// relations are available, but they must not be merged into an outer join's ON clause -
+    /// they go to the post-join `residual_filter` instead.
+    std::unordered_map<JoinActionRef, size_t> outer_join_conditions;
 
     /// Column equivalence classes derived from equi-join edges (e.g., A.x = B.x AND B.x = C.x
     /// implies A.x, B.x, C.x are all equivalent). Used by the join order optimizer to detect

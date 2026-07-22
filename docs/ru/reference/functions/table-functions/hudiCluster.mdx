@@ -1,0 +1,57 @@
+---
+description: 'Расширение табличной функции hudi. Позволяет параллельно обрабатывать файлы из
+  таблиц Apache Hudi в Amazon S3 на множестве узлов указанного кластера.'
+sidebarTitle: 'hudiCluster'
+slug: /sql-reference/table-functions/hudiCluster
+title: 'Табличная функция hudiCluster'
+doc_type: 'reference'
+---
+
+Это расширение табличной функции [hudi](/ru/reference/functions/table-functions/hudi).
+
+Позволяет параллельно обрабатывать файлы из таблиц Apache [Hudi](https://hudi.apache.org/) в Amazon S3 на множестве узлов указанного кластера. На узле-инициаторе создаётся соединение со всеми узлами кластера, после чего каждый файл динамически распределяется между ними. На узле-воркере у инициатора запрашивается следующая задача на обработку, и затем она обрабатывается. Это повторяется, пока не будут завершены все задачи.
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+```sql
+hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+```
+
+<div id="arguments">
+  ## Аргументы
+</div>
+
+| Аргумент                                     | Описание                                                                                                                                                                                                                                                                                                                                                                                                              |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name`                               | Имя кластера, используемое для формирования набора адресов и параметров подключения к удалённым и локальным серверам.                                                                                                                                                                                                                                                                                                 |
+| `url`                                        | URL бакета с путём к существующей таблице Hudi в S3.                                                                                                                                                                                                                                                                                                                                                                  |
+| `aws_access_key_id`, `aws_secret_access_key` | Долговременные учётные данные пользователя аккаунта [AWS](https://aws.amazon.com/). Их можно использовать для аутентификации запросов. Эти параметры необязательны. Если учётные данные не указаны, будут использованы значения из конфигурации ClickHouse. Дополнительные сведения см. в разделе [Using S3 for Data Storage](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3). |
+| `format`                                     | [Формат](/ru/reference/formats/index) файла.                                                                                                                                                                                                                                                                                                                                                                             |
+| `structure`                                  | Структура таблицы. Формат: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                             |
+| `compression`                                | Параметр необязателен. Поддерживаемые значения: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. По умолчанию сжатие определяется автоматически по расширению файла.                                                                                                                                                                                                                                            |
+| `extra_credentials`                          | Параметр необязателен. Используется для передачи `role_arn` для доступа на основе ролей в ClickHouse Cloud. Инструкции по настройке см. в разделе [Secure S3](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely).                                                                                                                                                                                        |
+
+<div id="returned_value">
+  ## Возвращаемое значение
+</div>
+
+Таблица с указанной структурой для чтения данных из указанной таблицы Hudi в S3 на заданном кластере.
+
+<div id="virtual-columns">
+  ## Виртуальные столбцы
+</div>
+
+* `_path` — Путь к файлу. Тип: `LowCardinality(String)`.
+* `_file` — Имя файла. Тип: `LowCardinality(String)`.
+* `_size` — Размер файла в байтах. Тип: `Nullable(UInt64)`. Если размер файла неизвестен, значение равно `NULL`.
+* `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение равно `NULL`.
+* `_etag` — ETag файла. Тип: `LowCardinality(String)`. Если ETag неизвестен, значение равно `NULL`.
+
+<div id="related">
+  ## См. также
+</div>
+
+* [Движок Hudi](/ru/reference/engines/table-engines/integrations/hudi)
+* [Табличная функция Hudi](/ru/reference/functions/table-functions/hudi)

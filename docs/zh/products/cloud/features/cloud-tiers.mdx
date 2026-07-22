@@ -1,0 +1,267 @@
+---
+sidebarTitle: 'ClickHouse Cloud 层级'
+slug: /cloud/manage/cloud-tiers
+title: 'ClickHouse Cloud 层级'
+description: 'ClickHouse Cloud 中可用的层级'
+keywords: ['Cloud 层级', '服务方案', 'Cloud 定价层级', 'Cloud 服务级别']
+doc_type: 'reference'
+---
+
+ClickHouse Cloud 提供多个层级。
+层级是在组织层面分配的。因此，组织内的所有服务都属于同一层级。
+本页将介绍哪些层级适合您的具体使用场景。
+
+**Cloud 层级概览：**
+
+<table>
+  <thead>
+    <tr>
+      <th />
+
+      <th>[基础版](#basic)</th>
+      <th>[Scale (推荐) ](#scale)</th>
+      <th>[Enterprise](#enterprise)</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr className="table-category-header">
+      <td>**服务功能**</td>
+
+      <td colspan="3" />
+    </tr>
+
+    <tr>
+      <td>服务数量</td>
+      <td>✓ 无限制</td>
+      <td>✓ 无限制</td>
+      <td>✓ 无限制</td>
+    </tr>
+
+    <tr>
+      <td>存储</td>
+      <td>✓ 每个服务最多 1 TB</td>
+      <td>✓ 无限制</td>
+      <td>✓ 无限制</td>
+    </tr>
+
+    <tr>
+      <td>内存</td>
+      <td>✓ 总内存 8–12 GiB</td>
+      <td>✓ 可配置</td>
+      <td>✓ 可配置</td>
+    </tr>
+
+    <tr>
+      <td>可用性</td>
+      <td>✓ 1 个可用区</td>
+      <td>✓ 2 个及以上可用区</td>
+      <td>✓ 2 个及以上可用区</td>
+    </tr>
+
+    <tr>
+      <td>备份</td>
+      <td>✓ 每 24 小时 1 次备份，保留 1 天</td>
+      <td>✓ 可配置</td>
+      <td>✓ 可配置</td>
+    </tr>
+
+    <tr>
+      <td>垂直扩缩容</td>
+
+      <td />
+
+      <td>✓ 自动扩缩容</td>
+      <td>✓ 标准 profile 自动，自定义 profile 手动</td>
+    </tr>
+
+    <tr>
+      <td>横向扩缩容</td>
+
+      <td />
+
+      <td>✓ 手动扩缩容</td>
+      <td>✓ 手动扩缩容</td>
+    </tr>
+
+    <tr>
+      <td>ClickPipes</td>
+      <td>✓</td>
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>提前升级</td>
+
+      <td />
+
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>计算-计算分离</td>
+
+      <td />
+
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>将备份导出到您自己的云账户</td>
+      <td>✓</td>
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>定时升级</td>
+
+      <td />
+
+      <td />
+
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>自定义硬件 profile</td>
+
+      <td />
+
+      <td />
+
+      <td>✓</td>
+    </tr>
+
+    <tr className="table-category-header">
+      <td>**安全**</td>
+
+      <td colspan="3" />
+    </tr>
+
+    <tr>
+      <td>SAML/SSO</td>
+
+      <td />
+
+      <td />
+
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>MFA</td>
+      <td>✓</td>
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>SOC 2 Type II</td>
+      <td>✓</td>
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>ISO 27001</td>
+      <td>✓</td>
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>私有网络</td>
+
+      <td />
+
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>基于 S3 角色的访问控制</td>
+
+      <td />
+
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>透明数据加密 (TDE 的 CMEK) </td>
+
+      <td />
+
+      <td />
+
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>HIPAA</td>
+
+      <td />
+
+      <td />
+
+      <td>✓</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="basic">
+  ## 基础版
+</div>
+
+* 经济实惠的选择，支持单副本部署。
+* 非常适合数据量较小且不要求严格可靠性保障的部门级使用场景。
+
+<Note>
+  基础版层级的服务设计为固定规格，不支持自动或手动扩缩容。
+  你可以升级到 Scale 或 Enterprise 层级，以对服务进行扩缩容。
+</Note>
+
+<div id="scale">
+  ## Scale
+</div>
+
+适用于需要更高 SLA (2+ 副本部署) 、可扩展能力和高级安全性的工作负载。
+
+* 提供以下功能支持：
+  * [私有网络支持](/zh/products/cloud/guides/security/connectivity/private-networking/index)。
+  * [计算-计算分离](/zh/products/cloud/features/infrastructure/warehouses#what-is-compute-compute-separation)。
+  * [灵活伸缩](/zh/products/cloud/features/autoscaling/overview) 选项 (纵向扩缩容、横向扩缩容) 。
+  * [可配置备份](/zh/products/cloud/guides/backups/configurable-backups)
+
+<div id="enterprise">
+  ## Enterprise
+</div>
+
+面向大规模、关键任务型部署，满足严格的安全与合规要求。
+
+* 包含 Scale 中的所有内容，**另外**
+* 灵活伸缩：标准配置 (`1:4 vCPU:memory ratio`) ，以及 `HighMemory (1:8 ratio)` 自定义配置。
+* 提供最高水平的性能和韧性保障。
+* 支持企业级安全：
+  * 单点登录 (SSO)
+  * 增强加密：适用于 AWS 和 GCP 服务。服务默认使用我们的密钥进行加密，也可以切换为客户自己的密钥，以启用客户管理的加密密钥 (CMEK) 。
+* 支持计划升级：你可以选择一周中的某一天/时间窗口进行升级，包括数据库和云平台发行版。
+* 提供 [HIPAA](/zh/products/cloud/reference/security/compliance-overview#hipaa-since-2024) 和 PCI 合规支持。
+
+<Note>
+  三个层级中的单副本服务均为固定大小 (`8 GiB`、`12 GiB`)
+</Note>
+
+<div id="upgrading-to-a-different-tier">
+  ## 升级到其他层级
+</div>
+
+您随时可以从基础版升级到 Scale，或从 Scale 升级到 Enterprise。若要降级到较低层级，则需要禁用高级功能。
+
+***
+
+如果您对服务类型有任何疑问，请参阅[定价页面](https://clickhouse.com/pricing)，或发送邮件至 support@clickhouse.com。

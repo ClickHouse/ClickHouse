@@ -1,5 +1,7 @@
 #include <Storages/StorageDistributed.h>
 
+#include <Access/Common/AccessFlags.h>
+
 #include <Databases/IDatabase.h>
 
 #include <Disks/IDisk.h>
@@ -87,6 +89,7 @@
 
 #include <TableFunctions/TableFunctionView.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Storages/Distributed/parseRemoteFunctionArguments.h>
 
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/IStorageCluster.h>
@@ -210,6 +213,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int ALL_CONNECTION_TRIES_FAILED;
+    extern const int ACCESS_DENIED;
 }
 
 namespace ActionLocks
@@ -1106,6 +1110,16 @@ void StorageDistributed::read(
 
 SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
+    /// When the target is a table function (e.g. `numbers(...)`, `view(...)`), there is no remote
+    /// table to insert into: `remote_storage` is an empty `StorageID`, so `DistributedSink` would
+    /// build an `INSERT` into an empty table id. Such targets are read-only by nature, so reject the
+    /// write explicitly instead of producing a malformed query. This covers both the `remote()` table
+    /// function and the `Remote`/`RemoteSecure` storage engines with a table-function target.
+    if (remote_table_function_ptr)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method write is not supported by storage {} with a table function target", getName());
+
     auto cluster = getCluster();
     const auto & settings = local_context->getSettingsRef();
 
@@ -1123,8 +1137,14 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
         throw Exception(ErrorCodes::INVALID_SHARD_ID, "Shard id should be range from 1 to shard number");
     }
 
-    /// Force sync insertion if it is remote() table function
-    bool insert_sync = settings[Setting::distributed_foreground_insert] || settings[Setting::insert_shard_id] || owned_cluster || relative_data_path.empty();
+    /// Force synchronous insertion when there is no persistent data path to spool blocks to: a
+    /// temporary table-function storage (`remote()`/`cluster()`) has an empty `relative_data_path`
+    /// and an owned cluster, so it always inserts synchronously. A persistent `Remote`/`RemoteSecure`
+    /// engine also builds an owned cluster, but it has a data path, so it can use the asynchronous
+    /// `Distributed` queue exactly like a regular `Distributed` table; keying the fallback on
+    /// `relative_data_path.empty()` rather than `owned_cluster` makes `distributed_foreground_insert`
+    /// and the related queue settings effective for it.
+    bool insert_sync = settings[Setting::distributed_foreground_insert] || settings[Setting::insert_shard_id] || relative_data_path.empty();
     auto timeout = settings[Setting::distributed_background_insert_timeout];
 
     Names columns_to_send;
@@ -2107,6 +2127,37 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
     }
 }
 
+/// Validate the distributed table settings and propagate the global `distributed_background_insert_*`
+/// defaults to the settings that were not specified in the query. The background `INSERT` queue reads
+/// these table settings directly, so both the `Distributed` and the `Remote`/`RemoteSecure` engines
+/// must run this after `loadFromQuery`; otherwise `ENGINE = Remote(...)` would ignore the global
+/// defaults and accept invalid combinations that `ENGINE = Distributed(...)` rejects.
+static void finalizeDistributedSettings(DistributedSettings & distributed_settings, const ContextPtr & context)
+{
+    if (distributed_settings[DistributedSetting::max_delay_to_insert] < 1)
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "max_delay_to_insert cannot be less then 1");
+
+    if (distributed_settings[DistributedSetting::bytes_to_throw_insert] && distributed_settings[DistributedSetting::bytes_to_delay_insert] &&
+        distributed_settings[DistributedSetting::bytes_to_throw_insert] <= distributed_settings[DistributedSetting::bytes_to_delay_insert])
+    {
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "bytes_to_throw_insert cannot be less or equal to bytes_to_delay_insert (since it is handled first)");
+    }
+
+    /// Set default values from the distributed_background_insert_* global context settings.
+    if (!distributed_settings[DistributedSetting::background_insert_batch].changed)
+        distributed_settings[DistributedSetting::background_insert_batch] = context->getSettingsRef()[Setting::distributed_background_insert_batch];
+    if (!distributed_settings[DistributedSetting::background_insert_split_batch_on_failure].changed)
+        distributed_settings[DistributedSetting::background_insert_split_batch_on_failure]
+            = context->getSettingsRef()[Setting::distributed_background_insert_split_batch_on_failure];
+    if (!distributed_settings[DistributedSetting::background_insert_sleep_time_ms].changed)
+        distributed_settings[DistributedSetting::background_insert_sleep_time_ms] = context->getSettingsRef()[Setting::distributed_background_insert_sleep_time_ms];
+    if (!distributed_settings[DistributedSetting::background_insert_max_sleep_time_ms].changed)
+        distributed_settings[DistributedSetting::background_insert_max_sleep_time_ms]
+            = context->getSettingsRef()[Setting::distributed_background_insert_max_sleep_time_ms];
+}
+
 void registerStorageDistributed(StorageFactory & factory);
 void registerStorageDistributed(StorageFactory & factory)
 {
@@ -2162,28 +2213,7 @@ void registerStorageDistributed(StorageFactory & factory)
             distributed_settings.loadFromQuery(*args.storage_def);
         }
 
-        if (distributed_settings[DistributedSetting::max_delay_to_insert] < 1)
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                "max_delay_to_insert cannot be less then 1");
-
-        if (distributed_settings[DistributedSetting::bytes_to_throw_insert] && distributed_settings[DistributedSetting::bytes_to_delay_insert] &&
-            distributed_settings[DistributedSetting::bytes_to_throw_insert] <= distributed_settings[DistributedSetting::bytes_to_delay_insert])
-        {
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                "bytes_to_throw_insert cannot be less or equal to bytes_to_delay_insert (since it is handled first)");
-        }
-
-        /// Set default values from the distributed_background_insert_* global context settings.
-        if (!distributed_settings[DistributedSetting::background_insert_batch].changed)
-            distributed_settings[DistributedSetting::background_insert_batch] = context->getSettingsRef()[Setting::distributed_background_insert_batch];
-        if (!distributed_settings[DistributedSetting::background_insert_split_batch_on_failure].changed)
-            distributed_settings[DistributedSetting::background_insert_split_batch_on_failure]
-                = context->getSettingsRef()[Setting::distributed_background_insert_split_batch_on_failure];
-        if (!distributed_settings[DistributedSetting::background_insert_sleep_time_ms].changed)
-            distributed_settings[DistributedSetting::background_insert_sleep_time_ms] = context->getSettingsRef()[Setting::distributed_background_insert_sleep_time_ms];
-        if (!distributed_settings[DistributedSetting::background_insert_max_sleep_time_ms].changed)
-            distributed_settings[DistributedSetting::background_insert_max_sleep_time_ms]
-                = context->getSettingsRef()[Setting::distributed_background_insert_max_sleep_time_ms];
+        finalizeDistributedSettings(distributed_settings, context);
 
         return std::make_shared<StorageDistributed>(
             args.table_id,
@@ -2237,6 +2267,32 @@ When the `Distributed` table is pointing to a table on the current server you ca
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2 ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
 ```
 
+### Remote and RemoteSecure engines {#distributed-remote-engines}
+
+`Remote` and `RemoteSecure` are persistent table engines that accept the same address expressions and credentials as the [`remote` and `remoteSecure`](/reference/functions/table-functions/remote) table functions:
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name
+(
+    name1 [type1],
+    name2 [type2],
+    ...
+) ENGINE = Remote(addresses_expr, [db, table, [user [, password], sharding_key]])
+```
+
+`RemoteSecure` accepts the same arguments and connects over a secure connection (the secure TCP port is used by default). The arguments are interpreted exactly as for the `remote` and `remoteSecure` table functions, see their description for the supported signatures. The table structure may be omitted, in which case it is inferred from the remote table.
+
+For example:
+
+```sql
+CREATE TABLE remote_one ENGINE = Remote('127.0.0.1', system, one);
+SELECT * FROM remote_one;
+```
+
+This is the persistent equivalent of `CREATE TABLE ... AS remote(...)`. Like the `remote` table function, these engines are convenient but do not let you set up shards and replicas declaratively the way [`Distributed`](#distributed-creating-a-table) over a configured cluster does, so for a permanent, frequently used set of servers prefer defining a cluster and using the `Distributed` engine.
+
+The target may also be a table function, for example `Remote('127.0.0.1', numbers(10))` or `Remote('127.0.0.1', merge(db, '^table_'))`. Such a table is read-only: there is no remote table to insert into, so `INSERT` is rejected with a `NOT_IMPLEMENTED` exception. This read-only limitation applies equally to the `remote` and `remoteSecure` table functions: `SELECT` and `INSERT` are both supported for an ordinary `db`/`table` target, but a table-function target (`remote('127.0.0.1', numbers(10))`) is read-only for the same reason.
+
 ### Distributed parameters {#distributed-parameters}
 
 | Parameter                 | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -2257,7 +2313,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 |--------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------|
 | `fsync_after_insert`                       | Do the `fsync` for the file data after background insert to Distributed. Guarantees that the OS flushed the whole inserted data to a file **on the initiator node** disk.                                                             | `false`       |
 | `fsync_directories`                        | Do the `fsync` for directories. Guarantees that the OS refreshed directory metadata after operations related to background inserts on Distributed table (after insert, after sending the data to shard, etc.).                        | `false`       |
-| `skip_unavailable_shards`                  | If true, ClickHouse silently skips unavailable shards. Shard is marked as unavailable when: 1) The shard cannot be reached due to a connection failure. 2) Shard is unresolvable through DNS. 3) Table does not exist on the shard.   | `false`       |
+| `skip_unavailable_shards`                  | If true, ClickHouse silently skips unavailable shards. The behavior of this setting is controlled by the `skip_unavailable_shards_mode` parameter.                                                                                   | `false`       |
+| `skip_unavailable_shards_mode`             | Controls which exceptions from a remote shard are ignored when `skip_unavailable_shards` is enabled: `unavailable` ignores only connection errors; `unavailable_or_table_missing` also ignores a missing table or database; `unavailable_or_exception_before_processing` also ignores any exception received before the shard returned data. | `unavailable_or_table_missing` |
 | `bytes_to_throw_insert`                    | If more than this number of compressed bytes will be pending for background `INSERT`, an exception will be thrown. `0` - do not throw.                                                                                                | `0`           |
 | `bytes_to_delay_insert`                    | If more than this number of compressed bytes will be pending for background INSERT, the query will be delayed. 0 - do not delay.                                                                                                      | `0`           |
 | `max_delay_to_insert`                      | Max delay of inserting data into Distributed table in seconds, if there are a lot of pending bytes for background send.                                                                                                               | `60`          |
@@ -2436,6 +2493,224 @@ Since [`remote`](../../../sql-reference/table-functions/remote.md) and [`cluster
 )DOCS_MD",
         .syntax = "ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]])",
         .related = {"Merge"}});
+}
+
+void registerStorageRemote(StorageFactory & factory);
+void registerStorageRemote(StorageFactory & factory)
+{
+    /// The `Remote` and `RemoteSecure` storage engines accept the same arguments as the
+    /// `remote` and `remoteSecure` table functions and create a `StorageDistributed` over a
+    /// cluster built on the fly from the supplied addresses. This is the persistent counterpart
+    /// of `CREATE TABLE ... AS remote(...)`.
+    auto create = [](const StorageFactory::Arguments & args, bool secure) -> StoragePtr
+    {
+        auto help_message = PreformattedMessage::create(
+            "Storage engine '{}' requires from 1 to 6 parameters: "
+            "<addresses pattern> [, <name of remote database>, <name of remote table>] [, username[, password], sharding_key]",
+            secure ? "RemoteSecure" : "Remote");
+
+        if (args.engine_args.empty())
+            throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        auto parsed = parseRemoteFunctionArguments(
+            args.engine_args,
+            args.getLocalContext(),
+            /* name = */ "remote",
+            /* is_cluster_function = */ false,
+            secure,
+            help_message,
+            /* dependent_table_id = */ &args.table_id);
+
+        DistributedSettings distributed_settings = args.getContext()->getDistributedSettings();
+        if (args.storage_def->settings)
+            distributed_settings.loadFromQuery(*args.storage_def);
+
+        finalizeDistributedSettings(distributed_settings, args.getContext());
+
+        bool has_local_shard = false;
+        for (const auto & shard_info : parsed.cluster->getShardsInfo())
+        {
+            if (shard_info.isLocal())
+            {
+                has_local_shard = true;
+                break;
+            }
+        }
+
+        /// When the structure is not specified, infer it from the remote table under the user's
+        /// context. `StorageDistributed` stores only the global context and would otherwise infer
+        /// the structure under it, bypassing the `SHOW_COLUMNS` access check in
+        /// `getStructureOfRemoteTableInShard` for a local shard — that would let a user who can
+        /// create a `Remote` table read the schema of a local table they are not allowed to describe.
+        ///
+        /// When the target is a table function (e.g. `view(...)`, `numbers(...)`) and the cluster
+        /// contains a local shard, the function must be analyzed under the user's context even when
+        /// the columns are given explicitly: otherwise a persisted
+        /// `Remote('127.0.0.1', view(SELECT ... FROM secret), ...)` could later route the query back
+        /// to this server under the engine credentials, while `CREATE` never validated the creator's
+        /// access to the function's underlying tables. For a local shard,
+        /// `getStructureOfRemoteTableInShard` runs the table function through
+        /// `getActualTableStructureWithAccess`, which performs exactly that check.
+        ///
+        /// These access checks validate the user-supplied definition and must run when it is first
+        /// introduced: a `CREATE`, a user `ATTACH` query that carries a full definition, or a backup
+        /// `RESTORE` (which brings in a new definition under the restoring user). When the table is
+        /// loaded from already-validated metadata that lives on this server (server startup),
+        /// re-running them is unnecessary. The inference still runs unconditionally when the structure
+        /// was omitted, because then it is the only source of the table's columns.
+        ///
+        /// `isLoadingFromExistingMetadata` covers server startup (`FORCE_ATTACH`) and the legacy
+        /// `force_restore_data` flag (`FORCE_RESTORE`): the definition already lives on disk and was
+        /// validated when it was first created on this server, so no check is re-run. A short
+        /// `ATTACH TABLE t` query, and the tables loaded by an `ATTACH DATABASE` query, reach here
+        /// with `args.mode == ATTACH`, but their definitions are likewise read back from the metadata
+        /// stored on this server (`attach_short_syntax`), not supplied by the user, so they are the
+        /// same existing-metadata case: only an `ATTACH` query that carries a full definition
+        /// introduces one that still needs validation.
+        ///
+        /// A backup `RESTORE` is different: it reaches here with `args.mode == SECONDARY_CREATE` and
+        /// `args.is_restore_from_backup`, introducing the definition under a possibly different user, so it
+        /// must be validated like a `CREATE`. Both the plain local-shard `SELECT`/`INSERT` check below and
+        /// the table-function analysis run for it, otherwise a user who can restore could smuggle in
+        /// `Remote('127.0.0.1', protected_db, protected_table, 'default')` or
+        /// `Remote('127.0.0.1', merge(db, '^protected$'), 'default')` and reach a local target they cannot
+        /// access directly, even though a direct `CREATE` would be rejected.
+        ///
+        /// The one concession for a table-function target on restore is that the analysis is allowed to
+        /// fail for reasons other than access control: the target's underlying tables may legitimately be
+        /// absent in the restore environment (e.g. the table matched by `merge(...)` was dropped since the
+        /// backup was taken), and a valid persisted table must still be restorable in that case. An
+        /// access-control failure (`ACCESS_DENIED`) is always fatal — it is the exact case a direct
+        /// `CREATE` would reject and the only one that could let the restoring user reach a local target
+        /// they cannot access. Any other failure means the target could not be analyzed (and therefore
+        /// cannot be read either, so there is nothing to leak), so the restore proceeds with the columns
+        /// carried in the backup metadata.
+        const bool loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
+
+        ColumnsDescription columns = args.columns;
+
+        /// The table-function target must be analyzed under the user's context whenever the definition is
+        /// freshly introduced (`CREATE`, a full-definition `ATTACH`, or backup `RESTORE`) and can route
+        /// back to a local shard; only loads of already-validated stored metadata (server startup, short
+        /// `ATTACH`) skip it.
+        const bool analyze_table_function_target
+            = has_local_shard && parsed.remote_table_function_ptr && !loading_from_existing_metadata;
+
+        if (columns.empty() || analyze_table_function_target)
+        {
+            /// When the structure was carried in the definition, the analysis runs purely for its access
+            /// side effect, so on restore a non-access failure (absent target) may be tolerated. When the
+            /// structure was omitted, the analysis is the only source of columns and must always succeed.
+            const bool tolerate_absent_target = !columns.empty() && args.is_restore_from_backup;
+
+            try
+            {
+                ColumnsDescription inferred = getStructureOfRemoteTable(
+                    *parsed.cluster,
+                    parsed.remote_table_id,
+                    args.getLocalContext(),
+                    parsed.remote_table_function_ptr);
+                if (columns.empty())
+                    columns = std::move(inferred);
+            }
+            catch (const Exception & e)
+            {
+                if (!tolerate_absent_target || e.code() == ErrorCodes::ACCESS_DENIED)
+                    throw;
+
+                /// The target could not be analyzed for a reason other than access control (e.g. the
+                /// table matched by `merge(...)` was dropped since the backup was taken). The restore
+                /// proceeds with the columns carried in the backup metadata, but the swallowed error is
+                /// logged rather than silently discarded, so a genuine problem is not hidden.
+                LOG_WARNING(
+                    getLogger(secure ? "RemoteSecure" : "Remote"),
+                    "Could not analyze the table function target of {} during RESTORE; proceeding with "
+                    "the columns from the backup metadata. Error: {}",
+                    args.table_id.getNameForLogs(),
+                    getExceptionMessage(e, /* with_stacktrace = */ true));
+            }
+        }
+
+        /// If the cluster contains a local shard, a query against this table can be routed back to
+        /// this server under the credentials supplied to the engine (e.g. with `prefer_localhost_replica = 0`),
+        /// bypassing the caller's access rights on the local target. `TableFunctionRemote::executeImpl`
+        /// guards against this with a local-shard `SELECT`/`INSERT` check; mirror it here under the user's
+        /// context. A persistent table can be used for both reading and writing, so require both privileges.
+        /// For a table-function target, `parsed.remote_table_id` is the meaningless parser default
+        /// (`system.one`), so checking it would be both wrong and a spurious rejection of harmless
+        /// targets like `numbers(...)`; the equivalent validation is performed above by analyzing the
+        /// function itself. Unlike the re-analysis above, this check also runs on a backup `RESTORE`.
+        if (has_local_shard && !parsed.remote_table_function_ptr && !loading_from_existing_metadata)
+        {
+            args.getLocalContext()->checkAccess(AccessType::SELECT, parsed.remote_table_id);
+            args.getLocalContext()->checkAccess(AccessType::INSERT, parsed.remote_table_id);
+        }
+
+        return std::make_shared<StorageDistributed>(
+            args.table_id,
+            columns,
+            args.constraints,
+            args.comment,
+            parsed.remote_table_id.database_name,
+            parsed.remote_table_id.table_name,
+            /* cluster_name_ = */ String{},
+            args.getContext(),
+            parsed.sharding_key,
+            /* storage_policy_name_ = */ "default",
+            args.relative_data_path,
+            distributed_settings,
+            args.mode,
+            std::move(parsed.cluster),
+            std::move(parsed.remote_table_function_ptr),
+            /* is_remote_function_ = */ true);
+    };
+
+    StorageFactory::StorageFeatures features
+    {
+        .supports_settings = true,
+        .supports_parallel_insert = true,
+        .supports_schema_inference = true,
+        .source_access_type = AccessTypeObjects::Source::REMOTE,
+        .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
+    };
+
+    const String common_description = R"DOCS_MD(
+The `Remote` and `RemoteSecure` table engines are the persistent counterparts of the [`remote` and `remoteSecure`](/sql-reference/table-functions/remote) table functions.
+They accept the same arguments and let you access remote servers without listing a cluster in the server configuration file: the engine builds a [`Distributed`](/engines/table-engines/special/distributed)-like storage over an ad-hoc cluster created from the supplied addresses on the fly.
+
+Unlike the table functions, the addresses and credentials are stored in the table definition, so the password is hidden in `SHOW CREATE TABLE` and the engine is exposed as `Distributed` in `system.tables.engine`.
+
+The first argument `addresses_expr` is a remote server address or an expression that generates several addresses, in the form `host` or `host:port`.
+The `host` can be a server name or an IPv4/IPv6 address (an IPv6 address must be specified in `[]`).
+The address expression supports globbing patterns such as `{a,b,c}`, `{N..M}` and `{a|b}` to expand into multiple shards and replicas.
+If `db` and `table` are omitted, `system.one` is used.
+
+The remaining arguments are `user` (default: `default`), `password` (default: empty) and a `sharding_key` expression.
+
+The target may also be a table function, e.g. `Remote('127.0.0.1', numbers(10))`. Such a table is read-only: there is no remote table to insert into, so `INSERT` is rejected with a `NOT_IMPLEMENTED` error.
+)DOCS_MD";
+
+    factory.registerStorage("Remote", [create](const StorageFactory::Arguments & args)
+    {
+        return create(args, /* secure = */ false);
+    }, features,
+    Documentation{
+        .description = common_description + R"DOCS_MD(
+`Remote` connects over the plain TCP port (`tcp_port`, `9000` by default) when the port is omitted.
+)DOCS_MD",
+        .syntax = "ENGINE = Remote(addresses_expr[, db, table, user[, password], sharding_key])",
+        .related = {"Distributed"}});
+
+    factory.registerStorage("RemoteSecure", [create](const StorageFactory::Arguments & args)
+    {
+        return create(args, /* secure = */ true);
+    }, features,
+    Documentation{
+        .description = common_description + R"DOCS_MD(
+`RemoteSecure` connects over a secure TLS connection using the secure TCP port (`tcp_port_secure`, `9440` by default) when the port is omitted.
+)DOCS_MD",
+        .syntax = "ENGINE = RemoteSecure(addresses_expr[, db, table, user[, password], sharding_key])",
+        .related = {"Distributed"}});
 }
 
 bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & new_added_disks)

@@ -1,0 +1,373 @@
+---
+slug: /data-modeling/schema-design
+title: 'スキーマ設計'
+description: 'ClickHouseのスキーマを最適化してクエリパフォーマンスを向上'
+keywords: ['スキーマ', 'スキーマ設計', 'クエリ最適化']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+効果的なスキーマ設計を理解することは、ClickHouse のパフォーマンスを最適化するうえで重要です。スキーマ設計ではしばしばトレードオフを伴う選択が求められ、最適なアプローチは、実行するクエリに加えて、データの更新頻度、レイテンシ要件、データ量といった要因によって異なります。このガイドでは、ClickHouse のパフォーマンスを最適化するための、スキーマ設計のベストプラクティスとデータモデリング手法の概要を説明します。
+
+<div id="stack-overflow-dataset">
+  ## Stack Overflow dataset
+</div>
+
+このガイドの例では、Stack Overflow データセットの一部を使用します。これには、2008年から2024年4月までに Stack Overflow で発生したすべての投稿、投票、ユーザー、コメント、バッジが含まれます。このデータは、以下のスキーマに対応する Parquet 形式で、S3 バケット `s3://datasets-documentation/stackoverflow/parquet/` から利用できます。
+
+> 示されている主キーとリレーションシップは制約によって強制されるものではありません (Parquet はテーブルフォーマットではなくファイルフォーマットであるため) 。あくまで、データ同士がどのように関連しているか、およびそれぞれがどの一意キーを持つかを示しているだけです。
+
+<Image img="/images/data-modeling/stackoverflow-schema.webp" size="lg" alt="Stack Overflow スキーマ" />
+
+<br />
+
+Stack Overflow データセットには、相互に関連する複数のテーブルが含まれています。データモデリング作業では、まず主要なテーブルの取り込みから始めることを推奨します。これは必ずしも最大のテーブルとは限らず、むしろ最も多くの分析クエリが実行されると想定されるテーブルです。こうすることで、ClickHouse の主要な概念や型に慣れることができます。これは特に、主に OLTP を扱ってきた方にとって重要です。追加のテーブルを加えて ClickHouse の機能を十分に活用し、最適なパフォーマンスを得るために、このテーブルは再モデリングが必要になる場合があります。
+
+このガイドの目的上、上記のスキーマは意図的に最適化していません。
+
+<div id="establish-initial-schema">
+  ## 初期スキーマを確立する
+</div>
+
+`posts` テーブルはほとんどの分析クエリの対象となるため、このテーブルのスキーマをまず定義することに焦点を当てます。このデータは公開 S3 バケット `s3://datasets-documentation/stackoverflow/parquet/posts/*.parquet` で入手でき、年ごとに 1 つのファイルが格納されています。
+
+> S3 から Parquet フォーマットでデータを読み込む方法は、ClickHouse へのデータ取り込みでもっとも一般的で、推奨される方法です。ClickHouse は Parquet の処理向けに最適化されており、S3 から毎秒数千万行を読み取って挿入できる場合があります。
+
+ClickHouse には、データセットの型を自動的に識別するスキーマ推論機能があります。これは Parquet を含むすべてのデータフォーマットでサポートされています。この機能を利用すると、s3 テーブル関数と[`DESCRIBE`](/ja/reference/statements/describe-table)コマンドを使って、データの ClickHouse 型を特定できます。以下の例では、`stackoverflow/parquet/posts` フォルダー内のすべてのファイルを読み込むために、glob パターン `*.parquet` を使用しています。
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name──────────────────┬─type───────────────────────────┐
+│ Id                    │ Nullable(Int64)               │
+│ PostTypeId            │ Nullable(Int64)               │
+│ AcceptedAnswerId      │ Nullable(Int64)               │
+│ CreationDate          │ Nullable(DateTime64(3, 'UTC')) │
+│ Score                 │ Nullable(Int64)               │
+│ ViewCount             │ Nullable(Int64)               │
+│ Body                  │ Nullable(String)              │
+│ OwnerUserId           │ Nullable(Int64)               │
+│ OwnerDisplayName      │ Nullable(String)              │
+│ LastEditorUserId      │ Nullable(Int64)               │
+│ LastEditorDisplayName │ Nullable(String)              │
+│ LastEditDate          │ Nullable(DateTime64(3, 'UTC')) │
+│ LastActivityDate      │ Nullable(DateTime64(3, 'UTC')) │
+│ Title                 │ Nullable(String)              │
+│ Tags                  │ Nullable(String)              │
+│ AnswerCount           │ Nullable(Int64)               │
+│ CommentCount          │ Nullable(Int64)               │
+│ FavoriteCount         │ Nullable(Int64)               │
+│ ContentLicense        │ Nullable(String)              │
+│ ParentId              │ Nullable(String)              │
+│ CommunityOwnedDate    │ Nullable(DateTime64(3, 'UTC')) │
+│ ClosedDate            │ Nullable(DateTime64(3, 'UTC')) │
+└───────────────────────┴────────────────────────────────┘
+```
+
+> [s3 table function](/ja/reference/functions/table-functions/s3) を使うと、S3 内のデータを ClickHouse からその場でクエリできます。この関数は、ClickHouse がサポートするすべてのファイルフォーマットに対応しています。
+
+これにより、最適化前の初期スキーマを取得できます。デフォルトでは、ClickHouse はこれらを対応する Nullable 型にマッピングします。これらの型を使って、`CREATE EMPTY AS SELECT` コマンドを実行するだけで ClickHouse テーブルを作成できます。
+
+```sql
+CREATE TABLE posts
+ENGINE = MergeTree
+ORDER BY () EMPTY AS
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+```
+
+いくつか重要なポイントがあります。
+
+このコマンドを実行した時点では、posts テーブルは空です。まだデータは読み込まれていません。
+テーブルエンジンには MergeTree を指定しています。MergeTree は、ClickHouse でおそらく最もよく使うテーブルエンジンです。いわば ClickHouse の万能ツールで、PB 級のデータを扱え、ほとんどの分析ユースケースに対応できます。一方、CDC (変更データキャプチャ) のように効率的な更新をサポートする必要があるユースケース向けには、別のテーブルエンジンもあります。
+
+`ORDER BY ()` という句は、索引がなく、より正確にはデータに順序がないことを意味します。これについては後ほど詳しく説明します。今のところは、すべてのクエリで線形スキャンが必要になると理解しておいてください。
+
+テーブルが作成されたことを確認するには:
+
+```sql
+SHOW CREATE TABLE posts
+
+CREATE TABLE posts
+(
+        `Id` Nullable(Int64),
+        `PostTypeId` Nullable(Int64),
+        `AcceptedAnswerId` Nullable(Int64),
+        `CreationDate` Nullable(DateTime64(3, 'UTC')),
+        `Score` Nullable(Int64),
+        `ViewCount` Nullable(Int64),
+        `Body` Nullable(String),
+        `OwnerUserId` Nullable(Int64),
+        `OwnerDisplayName` Nullable(String),
+        `LastEditorUserId` Nullable(Int64),
+        `LastEditorDisplayName` Nullable(String),
+        `LastEditDate` Nullable(DateTime64(3, 'UTC')),
+        `LastActivityDate` Nullable(DateTime64(3, 'UTC')),
+        `Title` Nullable(String),
+        `Tags` Nullable(String),
+        `AnswerCount` Nullable(Int64),
+        `CommentCount` Nullable(Int64),
+        `FavoriteCount` Nullable(Int64),
+        `ContentLicense` Nullable(String),
+        `ParentId` Nullable(String),
+        `CommunityOwnedDate` Nullable(DateTime64(3, 'UTC')),
+        `ClosedDate` Nullable(DateTime64(3, 'UTC'))
+)
+ENGINE = MergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+ORDER BY tuple()
+```
+
+初期スキーマを定義したら、S3 table function を使ってデータを読み込み、`INSERT INTO SELECT` でデータを投入できます。以下の例では、8 コアの ClickHouse Cloud インスタンスで `posts` データを約 2 分で読み込みます。
+
+```sql
+INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+```
+
+```response
+セット内の行数: 0。経過時間: 148.140 秒。59.82 百万行、38.07 GB を処理しました（403.80 千行/秒、257.00 MB/秒）。
+```
+
+> 上記のクエリでは 6000 万行を読み込みます。ClickHouse にとっては小規模ですが、インターネット接続が遅い環境では、データの一部だけを読み込みたい場合もあります。これは、読み込みたい年を glob パターンで指定するだけで実現できます。たとえば、`https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2008.parquet` や `https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/{2008, 2009}.parquet` のように指定します。glob パターンを使ってファイルの一部を対象にする方法については、[こちら](/ja/reference/functions/table-functions/file#globs-in-path)を参照してください。
+
+<div id="optimizing-types">
+  ## 型の最適化
+</div>
+
+ClickHouseのクエリパフォーマンスを高める秘訣の1つは、圧縮です。
+
+ディスク上のデータ量が少ないほどI/Oが減り、その分クエリや挿入は高速になります。圧縮アルゴリズムによるCPUオーバーヘッドは、ほとんどの場合、I/O削減の効果で十分に相殺されます。そのため、ClickHouseのクエリを高速化する際は、まずデータの圧縮率向上に注力すべきです。
+
+> ClickHouseがこれほど高い圧縮率を実現できる理由については、[こちらの記事](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)をおすすめします。要するに、ClickHouseはカラム指向データベースであるため、値はカラム順に書き込まれます。これらの値がソートされていれば、同じ値が隣り合って並びます。圧縮アルゴリズムは、このような連続したデータパターンを活用します。さらに、ClickHouseにはコーデックや粒度を選べるデータ型があり、圧縮方法をさらに調整できます。
+
+ClickHouseの圧縮は、主に3つの要因、すなわち 順序キー、データ型、使用するコーデックの影響を受けます。これらはすべてスキーマで設定されます。
+
+圧縮とクエリパフォーマンスを最初に大きく改善するには、単純な型最適化を行うのが効果的です。スキーマを最適化するために、以下のようないくつかの簡単なルールを適用できます。
+
+* **厳密な型を使う** - 最初のスキーマでは、明らかに数値である多くのカラムにStringを使用していました。適切な型を使うことで、フィルタリングや集計で期待どおりの意味で処理されます。同じことは日付型にも当てはまり、こちらはParquetファイル内で正しく提供されています。
+* **Nullable カラムを避ける** - デフォルトでは、上記のカラムはNullを取りうるものとして扱われます。Nullable型を使うと、クエリで空の値とNull 値の違いを判別できます。そのために、UInt8型の別カラムが作成されます。この追加カラムは、ユーザーが nullable カラムを扱うたびに毎回処理しなければなりません。その結果、ストレージ使用量が増え、ほぼ常にクエリパフォーマンスに悪影響を及ぼします。型のデフォルトの空値とNullの間に意味上の違いがある場合にのみ、Nullableを使用してください。たとえば、`ViewCount`カラムでは、空値に0を使えば、ほとんどのクエリでは十分であり、結果にも影響しないでしょう。空値を別扱いにすべき場合でも、多くはフィルタでクエリから除外できます。
+* **数値型では最小限の精度を使う** - ClickHouseには、さまざまな数値範囲や精度に対応する多数の数値型があります。常に、カラムを表現するのに必要なビット数を最小限に抑えることを目指してください。Int16のようにサイズの異なる整数型に加えて、ClickHouseは最小値が0である符号なし型も提供しています。これにより、カラムに必要なビット数を減らせる場合があります。たとえばUInt16の最大値は65535で、Int16の2倍です。可能であれば、より大きい符号付き型よりもこれらの型を優先してください。
+* **日付型では最小限の精度を使う** - ClickHouseは複数の日付型および日時型をサポートしています。純粋な日付の格納にはDateとDate32を使用でき、後者はより多くのビットを使う代わりに、より広い日付範囲をサポートします。DateTimeとDateTime64は日時を扱えます。DateTimeは秒粒度に限定され、32ビットを使用します。DateTime64はその名のとおり64ビットを使用しますが、ナノ秒粒度まで対応します。ここでも同様に、クエリ要件を満たす範囲でより粗い型を選び、必要なビット数を最小化してください。
+* **LowCardinalityを使う** - 一意な値の数が少ないNumber、String、Date、DateTimeのカラムは、LowCardinality型でエンコードできる可能性があります。これはDictionaryエンコードによって値を符号化し、ディスク上のサイズを削減します。一意な値が1万未満のカラムでは、使用を検討してください。
+* **特殊なケースではFixedStringを使う** - 固定長のStringは、FixedString型でエンコードできます。たとえば言語コードや通貨コードです。これは、データ長がちょうどNバイトである場合に効率的です。それ以外のケースでは、効率が下がる可能性が高く、LowCardinalityのほうが適しています。
+* **データ検証のためのEnum** - Enum型は、列挙型を効率よくエンコードするために使用できます。Enumは、格納する一意な値の数に応じて、8ビットまたは16ビットになります。挿入時の検証 (宣言されていない値は拒否される) が必要な場合や、Enum値の自然な順序を活用するクエリを実行したい場合には、これを検討してください。たとえば、ユーザーの応答を格納するフィードバックカラムに `Enum(':(' = 1, ':|' = 2, ':)' = 3)` が含まれるケースを考えてみてください。
+
+> ヒント: すべてのカラムの範囲と個別値の数を調べるには、単純なクエリ `SELECT * APPLY min, * APPLY  max, * APPLY uniq FROM table FORMAT Vertical` を使用できます。これは高コストになる可能性があるため、より小さなデータのサブセットに対して実行することをおすすめします。正確な結果を得るには、このクエリの対象となる数値が少なくとも数値型として定義されている必要があります。つまり、Stringであってはなりません。
+
+これらの単純なルールをpostsテーブルに適用することで、各カラムに最適な型を特定できます。
+
+| カラム                     | 数値型かどうか | 最小値、最大値                                                      | 一意の値     | NULL 値 | コメント                                                                     | 最適化型                                                                                                                                                         |
+| ----------------------- | ------- | ------------------------------------------------------------ | -------- | ------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PostTypeId`            | はい      | 1, 8                                                         | 8        | なし     |                                                                          | `Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8)` |
+| `AcceptedAnswerId`      | はい      | 0, 78285170                                                  | 12282094 | あり     | NULLと0の値を区別する                                                            | UInt32                                                                                                                                                       |
+| `CreationDate`          | No      | 2008-07-31 21:42:52.667000000, 2024-03-31 23:59:17.697000000 | *        | いいえ    | ミリ秒の粒度は不要なため、DateTime を使用                                                | DateTime                                                                                                                                                     |
+| `Score`                 | はい      | -217, 34970                                                  | 3236     | いいえ    |                                                                          | Int32                                                                                                                                                        |
+| `ViewCount`             | はい      | 2, 13962748                                                  | 170867   | いいえ    |                                                                          | UInt32                                                                                                                                                       |
+| `Body`                  | いいえ     | -                                                            | *        | いいえ    |                                                                          | String                                                                                                                                                       |
+| `OwnerUserId`           | はい      | -1, 4056915                                                  | 6256237  | はい     |                                                                          | Int32                                                                                                                                                        |
+| `OwnerDisplayName`      | いいえ     | -                                                            | 181251   | はい     | NULL は空文字列として扱う                                                          | String                                                                                                                                                       |
+| `LastEditorUserId`      | はい      | -1, 9999993                                                  | 1104694  | はい     | 0 は未使用の値で、NULL に使用できます                                                   | Int32                                                                                                                                                        |
+| `LastEditorDisplayName` | いいえ     | *                                                            | 70952    | はい     | NULL は空文字列として扱います。LowCardinality を試しましたが、効果はありませんでした                     | String                                                                                                                                                       |
+| `LastEditDate`          | いいえ     | 2008-08-01 13:24:35.051000000, 2024-04-06 21:01:22.697000000 | -        | いいえ    | ミリ秒単位の精度は不要なため、DateTime を使用してください                                        | DateTime                                                                                                                                                     |
+| `LastActivityDate`      | いいえ     | 2008-08-01 12:19:17.417000000, 2024-04-06 21:01:22.697000000 | *        | いいえ    | ミリ秒単位の粒度は不要なため、DateTime を使用してください                                        | DateTime                                                                                                                                                     |
+| `Title`                 | いいえ     | -                                                            | *        | いいえ    | NULLは空文字列として扱う                                                           | String                                                                                                                                                       |
+| `Tags`                  | いいえ     | -                                                            | *        | いいえ    | NULLは空文字列として扱う                                                           | String                                                                                                                                                       |
+| `AnswerCount`           | はい      | 0, 518                                                       | 216      | いいえ    | Null と 0 を同じものと見なす                                                       | UInt16                                                                                                                                                       |
+| `CommentCount`          | はい      | 0, 135                                                       | 100      | いいえ    | Null と 0 を同一とみなす                                                         | UInt8                                                                                                                                                        |
+| `FavoriteCount`         | はい      | 0, 225                                                       | 6        | はい     | NULL と 0 は同じものとみなす                                                       | UInt8                                                                                                                                                        |
+| `ContentLicense`        | いいえ     | -                                                            | 3        | いいえ    | LowCardinality は FixedString より高性能                                       | LowCardinality(String)                                                                                                                                       |
+| `ParentId`              | いいえ     | *                                                            | 20696028 | はい     | NULL は空文字列として扱う                                                          | String                                                                                                                                                       |
+| `CommunityOwnedDate`    | いいえ     | 2008-08-12 04:59:35.017000000, 2024-04-01 05:36:41.380000000 | -        | はい     | NULL のデフォルト値として 1970-01-01 を検討してください。ミリ秒の粒度は不要なため、DateTime を使用してください     | DateTime                                                                                                                                                     |
+| `ClosedDate`            | いいえ     | 2008-09-04 20:56:44, 2024-04-06 18:49:25.393000000           | *        | はい     | NULL にはデフォルト値として 1970-01-01 の使用を検討してください。ミリ秒の粒度は不要なため、DateTime を使用してください | DateTime                                                                                                                                                     |
+
+<br />
+
+上記により、次のスキーマが得られます。
+
+```sql
+CREATE TABLE posts_v2
+(
+   `Id` Int32,
+   `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+   `AcceptedAnswerId` UInt32,
+   `CreationDate` DateTime,
+   `Score` Int32,
+   `ViewCount` UInt32,
+   `Body` String,
+   `OwnerUserId` Int32,
+   `OwnerDisplayName` String,
+   `LastEditorUserId` Int32,
+   `LastEditorDisplayName` String,
+   `LastEditDate` DateTime,
+   `LastActivityDate` DateTime,
+   `Title` String,
+   `Tags` String,
+   `AnswerCount` UInt16,
+   `CommentCount` UInt8,
+   `FavoriteCount` UInt8,
+   `ContentLicense`LowCardinality(String),
+   `ParentId` String,
+   `CommunityOwnedDate` DateTime,
+   `ClosedDate` DateTime
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+COMMENT 'Optimized types'
+```
+
+これは、前のテーブルからデータを読み取ってこのテーブルに挿入する、シンプルな `INSERT INTO SELECT` で投入できます。
+
+```sql
+INSERT INTO posts_v2 SELECT * FROM posts
+```
+
+```response
+0 rows in set. Elapsed: 146.471 sec. Processed 59.82 million rows, 83.82 GB (408.40 thousand rows/s., 572.25 MB/s.)
+```
+
+新しいスキーマでは、NULL は一切保持しません。上記の insert では、これらは暗黙的にそれぞれの型のデフォルト値に変換されます。整数は 0、文字列は空の値です。ClickHouse はさらに、あらゆる数値を自動的に目的の精度に変換します。
+ClickHouse のプライマリ (順序) キー
+OLTP データベースに慣れたユーザーは、ClickHouse でもそれに相当する概念を探すことがよくあります。
+
+<div id="choosing-an-ordering-key">
+  ## 順序キーの選び方
+</div>
+
+ClickHouse がよく利用される規模では、メモリとディスクの効率が極めて重要です。データは ClickHouse テーブルにパーツと呼ばれる単位で書き込まれ、バックグラウンドでそれらのパーツをマージするルールが適用されます。ClickHouse では、各パーツがそれぞれ独自のプライマリインデックスを持ちます。パーツがマージされると、マージ後のパーツのプライマリインデックスも統合されます。パーツのプライマリインデックスには、行の各グループごとに 1 つの索引エントリがあります。この手法はスパースインデックスと呼ばれます。
+
+<Image img="/images/data-modeling/schema-design-indices.webp" size="md" alt="ClickHouse におけるスパースインデックス" />
+
+ClickHouse で選択したキーは、索引だけでなく、データがディスクに書き込まれる順序も決定します。そのため、圧縮率に大きな影響を与え、ひいてはクエリパフォーマンスにも影響します。大半のカラムの値が連続した順序で書き込まれるような順序キーを選べば、選択した圧縮アルゴリズム (および コーデック) によってデータをより効果的に圧縮できます。
+
+> テーブル内のすべてのカラムは、そのカラム自体がキーに含まれているかどうかにかかわらず、指定した順序キーの値に基づいてソートされます。たとえば、`CreationDate` をキーとして使用すると、他のすべてのカラムの値の並び順も `CreationDate` カラムの値の順序に対応します。複数の順序キーを指定することもでき、その場合の並び順は `SELECT` クエリの `ORDER BY` clause と同じ意味になります。
+
+順序キーを選ぶ際に役立つ、いくつかのシンプルなルールがあります。以下の条件は互いに競合する場合もあるため、この順序で検討してください。この過程で複数のキー候補を洗い出せますが、通常は 4〜5 個で十分です。
+
+* 一般的によく使う filter に合ったカラムを選びます。あるカラムが `WHERE` clauses で頻繁に使われるなら、使用頻度の低いカラムよりも優先してキーに含めてください。
+  filter 時に全行の大部分を除外できるカラムを優先すると、読み取る必要があるデータ量を減らせます。
+* テーブル内の他のカラムと高い相関がある可能性の高いカラムを優先してください。これにより、それらの値も連続して格納されやすくなり、圧縮効率が向上します。
+  順序キーに含まれるカラムに対する `GROUP BY` および `ORDER BY` 操作も、よりメモリ効率よく実行できます。
+
+順序キーに含めるカラムの部分集合を特定したら、それらのカラムを特定の順序で宣言します。この順序は、クエリにおける secondary key columns の filter 効率と、テーブルの data files の compression ratio の両方に大きく影響します。一般に、キーはカーディナリティの低い順に並べるのが最適です。ただし、順序キーの後ろに現れるカラムでの filter は、tuple の前方にあるカラムでの filter より効率が落ちる点とのバランスを取る必要があります。これらの特性のバランスを取りながら、access patterns を考慮してください (そして最も重要なのは、variant をテストすることです) 。
+
+<div id="example">
+  ### 例
+</div>
+
+上記のガイドラインを `posts` テーブルに当てはめると、ユーザーはたとえば日付や投稿タイプで絞り込む分析を行いたいとします。たとえば次のようなものです。
+
+&quot;直近 3 か月で最もコメント数が多かった質問はどれか&quot;。
+
+最適化された型を使用しているものの、順序キー は持たない先ほどの `posts_v2` テーブルを使うと、この問いに対するクエリは次のようになります。
+
+```sql
+SELECT
+    Id,
+    Title,
+    CommentCount
+FROM posts_v2
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+ORDER BY CommentCount DESC
+LIMIT 3
+```
+
+```response
+┌───────Id─┬─Title─────────────────────────────────────────────────────────────┬─CommentCount─┐
+│ 78203063 │ How to avoid default initialization of objects in std::vector?     │               74 │
+│ 78183948 │ About memory barrier                                               │               52 │
+│ 77900279 │ Speed Test for Buffer Alignment: IBM's PowerPC results vs. my CPU │        49 │
+└──────────┴───────────────────────────────────────────────────────────────────┴──────────────
+
+10 rows in set. Elapsed: 0.070 sec. Processed 59.82 million rows, 569.21 MB (852.55 million rows/s., 8.11 GB/s.)
+Peak memory usage: 429.38 MiB.
+```
+
+> ここでのクエリは、6,000万行すべてを線形スキャンしているにもかかわらず非常に高速です。ClickHouse はとにかく速いのです :) TB や PB スケールでは、順序キーに十分な価値があることは、ひとまず信じてください！
+
+順序キーとして `PostTypeId` と `CreationDate` のカラムを選びましょう。
+
+このケースでは、ユーザーは常に `PostTypeId` で絞り込むと考えられます。これはカーディナリティが 8 で、順序キーの最初のエントリとして理にかなった選択です。また、日付粒度でのフィルタリングで十分な可能性が高く (それでも datetime フィルタの恩恵は受けられます) 、キーの 2 番目の部分には `toDate(CreationDate)` を使います。これにより、日付は 16 ビットで表現できるため、より小さな索引が生成され、フィルタリングも高速になります。最後のキーエントリは `CommentCount` で、コメント数の多い投稿を見つけやすくするためです (最後のソート) 。
+
+```sql
+CREATE TABLE posts_v3
+(
+        `Id` Int32,
+        `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime,
+        `Score` Int32,
+        `ViewCount` UInt32,
+        `Body` String,
+        `OwnerUserId` Int32,
+        `OwnerDisplayName` String,
+        `LastEditorUserId` Int32,
+        `LastEditorDisplayName` String,
+        `LastEditDate` DateTime,
+        `LastActivityDate` DateTime,
+        `Title` String,
+        `Tags` String,
+        `AnswerCount` UInt16,
+        `CommentCount` UInt8,
+        `FavoriteCount` UInt8,
+        `ContentLicense` LowCardinality(String),
+        `ParentId` String,
+        `CommunityOwnedDate` DateTime,
+        `ClosedDate` DateTime
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
+COMMENT 'Ordering Key'
+
+--既存のテーブルからデータを投入する
+
+INSERT INTO posts_v3 SELECT * FROM posts_v2
+```
+
+```response
+0 rows in set. Elapsed: 158.074 sec. Processed 59.82 million rows, 76.21 GB (378.42 thousand rows/s., 482.14 MB/s.)
+Peak memory usage: 6.41 GiB.
+```
+
+前のクエリでは、応答時間が3倍以上改善されます。
+
+```sql
+SELECT
+    Id,
+    Title,
+    CommentCount
+FROM posts_v3
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+ORDER BY CommentCount DESC
+LIMIT 3
+```
+
+```response
+10 rows in set. Elapsed: 0.020 sec. Processed 290.09 thousand rows, 21.03 MB (14.65 million rows/s., 1.06 GB/s.)
+```
+
+特定の型と適切な順序キーを使用して達成できる圧縮の改善に関心がある場合は、[ClickHouse における圧縮](/ja/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)をご覧ください。圧縮をさらに改善したい場合は、[適切なカラム圧縮コーデックの選び方](/ja/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec)のセクションも参照することをお勧めします。
+
+<div id="next-data-modeling-techniques">
+  ## 次へ: データモデリング手法
+</div>
+
+ここまでで移行したのは 1 つのテーブルだけです。これにより ClickHouse の中核的な概念をいくつか紹介できましたが、残念ながら、ほとんどのスキーマはここまで単純ではありません。
+
+以下のガイドでは、ClickHouse で最適にクエリできるよう、より広いスキーマを再構成するためのさまざまな手法を見ていきます。この過程を通じて、ほとんどの分析クエリの中心となるテーブルとして `Posts` を維持することを目指します。他のテーブルを個別にクエリすることもできますが、多くの分析は `posts` を中心に行うことを想定しています。
+
+> この節では、他のテーブルについて最適化済みのバリアントを使用します。これらのスキーマは示しますが、簡潔にするため、そうした判断の詳細は省略します。これらは前述のルールに基づいており、どのような判断を行ったのかは読者自身で推論してください。
+
+以下のアプローチはいずれも、読み取りを最適化してクエリパフォーマンスを向上させるために、JOIN の必要性を最小限に抑えることを目的としています。ClickHouse は JOIN を完全にサポートしていますが、最適なパフォーマンスを得るには必要最小限の使用にとどめることを推奨します (JOIN クエリで 2〜3 テーブルなら問題ありません) 。
+
+> ClickHouse には外部キーの概念がありません。これは JOIN を禁止するものではありませんが、参照整合性はアプリケーションレベルでユーザーが管理する必要があります。ClickHouse のような OLAP システムでは、データ整合性は、データベース自体で大きなオーバーヘッドをかけて強制するのではなく、アプリケーションレベルやデータのインジェスト時に管理されることが一般的です。このアプローチにより、より高い柔軟性と高速なデータ挿入が可能になります。これは、非常に大規模なデータセットに対する読み取りクエリと insert クエリの速度、および scalability を重視する ClickHouse の方針にも合致しています。
+
+クエリ時の JOIN の使用を最小限に抑えるために、ユーザーはいくつかの手段/アプローチを利用できます。
+
+* [**データの非正規化**](/ja/guides/clickhouse/data-modelling/denormalization) - テーブルを結合し、1:1 ではない関係には複合型を使うことでデータを非正規化します。多くの場合、これには JOIN をクエリ時から挿入時へ移すことが含まれます。
+* [**Dictionaries**](/ja/concepts/features/dictionaries/index) - 直接 JOIN や key value のルックアップを扱うための ClickHouse 固有の機能です。
+* [**インクリメンタルmaterialized view**](/ja/concepts/features/materialized-views/incremental-materialized-view) - 集計値を段階的に計算する機能を含め、計算コストをクエリ時から挿入時へ移すための ClickHouse の機能です。
+* [**リフレッシュ可能なマテリアライズドビュー**](/ja/concepts/features/materialized-views/refreshable-materialized-view) - 他の database 製品で使われる materialized view と同様に、クエリ結果を定期的に計算し、その結果を cache できます。
+
+各ガイドでは、これらのアプローチをそれぞれ取り上げ、どのような場合に適しているかを示しながら、Stack Overflow dataset の問いを解くためにどのように適用できるかを例とともに説明します。

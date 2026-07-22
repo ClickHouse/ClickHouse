@@ -1,0 +1,79 @@
+---
+description: 'دليل لإعداد اتصال SSL/TLS آمن بين ClickHouse
+  وZooKeeper'
+sidebarTitle: 'الاتصال الآمن مع ZooKeeper'
+slug: /operations/ssl-zookeeper
+title: 'اتصال آمن اختياري بين ClickHouse وZooKeeper'
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/ar/_self_managed_only_automated.mdx';
+
+<SelfManaged />
+
+يجب تحديد `ssl.keyStore.location` و`ssl.keyStore.password` و`ssl.trustStore.location` و`ssl.trustStore.password` للاتصال مع ClickHouse client عبر SSL. هذه الخيارات متاحة ابتداءً من الإصدار 3.5.2 من ZooKeeper.
+
+يمكنك إضافة `zookeeper.crt` إلى الشهادات الموثوق بها.
+
+```bash
+sudo cp zookeeper.crt /usr/local/share/ca-certificates/zookeeper.crt
+sudo update-ca-certificates
+```
+
+سيكون قسم Client في `config.xml` على النحو التالي:
+
+```xml
+<client>
+    <certificateFile>/etc/clickhouse-server/client.crt</certificateFile>
+    <privateKeyFile>/etc/clickhouse-server/client.key</privateKeyFile>
+    <loadDefaultCAFile>true</loadDefaultCAFile>
+    <cacheSessions>true</cacheSessions>
+    <disableProtocols>sslv2,sslv3</disableProtocols>
+    <preferServerCiphers>true</preferServerCiphers>
+    <invalidCertificateHandler>
+        <name>RejectCertificateHandler</name>
+    </invalidCertificateHandler>
+</client>
+```
+
+أضِف Zookeeper إلى تهيئة ClickHouse مع بعض إعدادات العنقود ووحدات الماكرو:
+
+```xml
+<clickhouse>
+    <zookeeper>
+        <node>
+            <host>localhost</host>
+            <port>2281</port>
+            <secure>1</secure>
+        </node>
+    </zookeeper>
+</clickhouse>
+```
+
+شغّل `clickhouse-server`. في السجلات، من المفترض أن ترى:
+
+```text
+<Trace> ZooKeeper: initialized, hosts: secure://localhost:2281
+```
+
+تدل البادئة `secure://` على أن الاتصال مؤمَّن باستخدام SSL.
+
+للتأكد من أن حركة المرور مشفّرة، شغّل `tcpdump` على المنفذ المؤمَّن:
+
+```bash
+tcpdump -i any dst port 2281 -nnXS
+```
+
+وأجرِ استعلامًا في `clickhouse-client`:
+
+```sql
+SELECT * FROM system.zookeeper WHERE path = '/';
+```
+
+في حالة اتصال غير مُشفَّر، سترى في مخرجات `tcpdump` شيئًا مثل هذا:
+
+```text
+..../zookeeper/quota.
+```
+
+عند استخدام اتصال مشفّر، يجب ألّا ترى هذا.

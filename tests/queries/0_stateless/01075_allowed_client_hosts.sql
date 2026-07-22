@@ -44,6 +44,15 @@ SHOW CREATE USER test_user_01075;
 ALTER USER test_user_01075 HOST REGEXP '.*\.anothersite3\.com' HOST REGEXP '.*\.anothersite3\.org';
 SHOW CREATE USER test_user_01075;
 
+ALTER USER test_user_01075 HOST LIKE '%.likesite.com', '%.likesite.org';
+SHOW CREATE USER test_user_01075;
+
+ALTER USER test_user_01075 HOST LIKE '%.likesite2.com', LIKE '%.likesite2.org';
+SHOW CREATE USER test_user_01075;
+
+ALTER USER test_user_01075 HOST LIKE '%.likesite3.com' HOST LIKE '%.likesite3.org';
+SHOW CREATE USER test_user_01075;
+
 DROP USER test_user_01075;
 
 CREATE USER test_user_01075_x@localhost;
