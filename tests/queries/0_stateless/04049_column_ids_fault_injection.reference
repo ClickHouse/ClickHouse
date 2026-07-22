@@ -12,3 +12,6 @@ parts_after_merge: 1
 FAULT_INJECTED
 1	keep_me
 1
+Sparse
+Sparse
+1	inserted

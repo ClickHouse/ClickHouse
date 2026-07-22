@@ -1,8 +1,0 @@
-after_mutation	1	hello	101.5
-after_mutation	2	world	102.5
-columns	a
-columns	c
-columns	d
-after_merge	1	hello	101.5
-after_merge	2	world	102.5
-after_merge	3	after	3.5

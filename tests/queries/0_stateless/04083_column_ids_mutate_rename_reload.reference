@@ -5,3 +5,27 @@ after_restart	2	99.9
 after_merge	price	1
 final	1	0
 final	2	99.9
+after_mutation	1	hello	101.5
+after_mutation	2	world	102.5
+columns	a
+columns	c
+columns	d
+after_merge	1	hello	101.5
+after_merge	2	world	102.5
+after_merge	3	after	3.5
+1	def_b	1.5
+2	def_b	9.9
+0
+kinds_before_reload	b	b	Sparse
+kinds_before_reload	c	1	Sparse
+values_before_reload	9	7
+kinds_after_reload	b	b	Sparse
+kinds_after_reload	c	1	Sparse
+values_after_reload	9	7
+values_after_mutation	9	8
+kinds_after_merge	b	b	Sparse
+kinds_after_merge	c	1	Sparse
+values_after_merge	9	8
+all_1_1_0	v	['Basic']
+all_1_1_0	w	['Basic']
+all_2_2_0	w	1	['Basic']

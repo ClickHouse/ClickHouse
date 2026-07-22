@@ -6,6 +6,8 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Poco/JSON/Object.h>
 #include <Common/Exception.h>
@@ -310,6 +312,72 @@ TEST(SerializationInfoJSON, ChooseKindStackZeroRows)
 
     ISerialization::KindStack expected{ISerialization::Kind::DEFAULT};
     EXPECT_EQ(kind_stack, expected);
+}
+
+TEST(SerializationInfoColumnIds, CanonicalizeNameEqualsOtherColumnsId)
+{
+    /// `d` was renamed from `b` and kept the column ID "b"; the freed name `b`
+    /// re-appears under the fresh ID "1".  Records accumulated under logical
+    /// names must re-key to their own column's ID in either column order.
+    auto settings = defaultSettings();
+    auto type = std::make_shared<DataTypeUInt64>();
+
+    NameAndTypePair col_d("d", type);
+    col_d.setColumnId("b");
+    NameAndTypePair col_b("b", type);
+    col_b.setColumnId("1");
+
+    for (const auto & columns : {NamesAndTypesList{col_d, col_b}, NamesAndTypesList{col_b, col_d}})
+    {
+        SerializationInfoByName infos(settings);
+        infos.emplace("d", std::make_shared<SerializationInfo>(
+            ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE}, settings, makeData(100, 96)));
+        infos.emplace("b", std::make_shared<SerializationInfo>(
+            ISerialization::KindStack{ISerialization::Kind::DEFAULT}, settings, makeData(200, 0)));
+
+        infos.reKeyToColumnIds(columns);
+
+        ASSERT_EQ(infos.size(), 2u);
+        auto info_d = infos.tryGet("b");
+        ASSERT_NE(info_d, nullptr);
+        EXPECT_EQ(info_d->getData().num_rows, 100u);
+        EXPECT_TRUE(ISerialization::hasKind(info_d->getKindStack(), ISerialization::Kind::SPARSE));
+        auto info_b = infos.tryGet("1");
+        ASSERT_NE(info_b, nullptr);
+        EXPECT_EQ(info_b->getData().num_rows, 200u);
+        EXPECT_FALSE(ISerialization::hasKind(info_b->getKindStack(), ISerialization::Kind::SPARSE));
+    }
+}
+
+TEST(SerializationInfoColumnIds, ReadJSONWithColumnIdsIdOwnsItsKey)
+{
+    /// Stored key "b" is column d's ID and column b's name at once; it must bind
+    /// to the ID's owner regardless of the columns' order.
+    auto type = std::make_shared<DataTypeUInt64>();
+    NameAndTypePair col_d("d", type);
+    col_d.setColumnId("b");
+    NameAndTypePair col_b("b", type);
+    col_b.setColumnId("1");
+
+    String json = R"({"version":0,"columns":[)"
+        R"({"name":"b","kind":"Sparse","num_rows":100,"num_defaults":96},)"
+        R"({"name":"1","kind":"Default","num_rows":200,"num_defaults":0}]})";
+
+    for (const auto & columns : {NamesAndTypesList{col_d, col_b}, NamesAndTypesList{col_b, col_d}})
+    {
+        ReadBufferFromString in(json);
+        auto infos = SerializationInfoByName::readJSONWithColumnIds(columns, in);
+
+        ASSERT_EQ(infos.size(), 2u);
+        auto info_d = infos.tryGet("b");
+        ASSERT_NE(info_d, nullptr);
+        EXPECT_EQ(info_d->getData().num_rows, 100u);
+        EXPECT_TRUE(ISerialization::hasKind(info_d->getKindStack(), ISerialization::Kind::SPARSE));
+        auto info_b = infos.tryGet("1");
+        ASSERT_NE(info_b, nullptr);
+        EXPECT_EQ(info_b->getData().num_rows, 200u);
+        EXPECT_FALSE(ISerialization::hasKind(info_b->getKindStack(), ISerialization::Kind::SPARSE));
+    }
 }
 
 }

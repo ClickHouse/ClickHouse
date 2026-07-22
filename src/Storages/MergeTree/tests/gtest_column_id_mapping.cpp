@@ -2,6 +2,7 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/MergeTree/ColumnIdMapping.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 
 using namespace DB;
@@ -27,7 +28,7 @@ NamesAndTypesList makeColumns(std::initializer_list<String> names)
 
 TEST(ColumnIdMapping, DropReAddSameName)
 {
-    auto mapping = ColumnIdMapping::createForExistingTable(makeColumns({"a"}));
+    auto mapping = ColumnIdMapping::createIdentity(makeColumns({"a"}));
 
     EXPECT_EQ(mapping.getColumnId("a"), "a");
 
@@ -42,14 +43,14 @@ TEST(ColumnIdMapping, DropReAddSameName)
 
 TEST(ColumnIdMapping, CounterWithNumericColumnNames)
 {
-    auto mapping = ColumnIdMapping::createForExistingTable(makeColumns({"2", "a", "10"}));
+    auto mapping = ColumnIdMapping::createIdentity(makeColumns({"2", "a", "10"}));
 
     EXPECT_EQ(mapping.allocateColumnId(), "11");
 }
 
 TEST(ColumnIdMapping, RenamePreservesPhysical)
 {
-    auto mapping = ColumnIdMapping::createForExistingTable(makeColumns({"a", "b"}));
+    auto mapping = ColumnIdMapping::createIdentity(makeColumns({"a", "b"}));
 
     mapping.renameColumn("a", "c");
 
@@ -61,7 +62,7 @@ TEST(ColumnIdMapping, RenamePreservesPhysical)
 
 TEST(ColumnIdMapping, SerializeDeserializeRoundTrip)
 {
-    auto mapping = ColumnIdMapping::createForExistingTable(makeColumns({"10", "a"}));
+    auto mapping = ColumnIdMapping::createIdentity(makeColumns({"10", "a"}));
     auto new_column_id = mapping.allocateColumnId();
     mapping.addColumn("c", new_column_id);
     mapping.renameColumn("a", "b");
@@ -92,7 +93,7 @@ TEST(ColumnIdMapping, DeserializeClampsNextColumnIdToExistingIds)
 
 TEST(ColumnIdMapping, UnmappedColumnsPassthrough)
 {
-    auto mapping = ColumnIdMapping::createForExistingTable(makeColumns({"a"}));
+    auto mapping = ColumnIdMapping::createIdentity(makeColumns({"a"}));
 
     EXPECT_EQ(mapping.getColumnIdOrDefault("_row_exists"), "_row_exists");
 
@@ -110,7 +111,7 @@ TEST(ColumnIdMapping, UnmappedColumnsPassthrough)
 
 TEST(ColumnIdMapping, TwoPhaseRenameNormal)
 {
-    auto mapping = ColumnIdMapping::createForExistingTable(makeColumns({"a", "b"}));
+    auto mapping = ColumnIdMapping::createIdentity(makeColumns({"a", "b"}));
 
     mapping.beginRename("a", "c");
 
@@ -129,7 +130,7 @@ TEST(ColumnIdMapping, TwoPhaseRenameNormal)
 
 TEST(ColumnIdMapping, TwoPhaseRenameCrashRecovery)
 {
-    auto mapping = ColumnIdMapping::createForExistingTable(makeColumns({"a", "b"}));
+    auto mapping = ColumnIdMapping::createIdentity(makeColumns({"a", "b"}));
 
     mapping.beginRename("a", "c");
 
@@ -152,7 +153,7 @@ TEST(ColumnIdMapping, TwoPhaseRenameCrashRecovery)
 
 TEST(ColumnIdMapping, TwoPhaseRenameRemoveOldPreservesPhysical)
 {
-    auto mapping = ColumnIdMapping::createForExistingTable(makeColumns({"a", "b"}));
+    auto mapping = ColumnIdMapping::createIdentity(makeColumns({"a", "b"}));
 
     auto phys = mapping.allocateColumnId();
     mapping.addColumn("c", phys);
@@ -168,7 +169,7 @@ TEST(ColumnIdMapping, TwoPhaseRenameRemoveOldPreservesPhysical)
 
 TEST(ColumnIdMapping, ConcurrentDropAddCycle)
 {
-    auto mapping = ColumnIdMapping::createForExistingTable(makeColumns({"a"}));
+    auto mapping = ColumnIdMapping::createIdentity(makeColumns({"a"}));
 
     mapping.removeColumn("a");
     auto b_column_id = mapping.allocateColumnId();
@@ -186,7 +187,7 @@ TEST(ColumnIdMapping, ConcurrentDropAddCycle)
 
 TEST(ColumnIdMapping, RenameToExistingColumnIdIsRejected)
 {
-    auto mapping = ColumnIdMapping::createForExistingTable(makeColumns({"a", "b"}));
+    auto mapping = ColumnIdMapping::createIdentity(makeColumns({"a", "b"}));
     auto id = mapping.allocateColumnId();
     mapping.addColumn("c", id);
 
@@ -197,4 +198,22 @@ TEST(ColumnIdMapping, RenameToExistingColumnIdIsRejected)
     /// Self-case: renaming "c" to its own ID "1" is allowed.
     EXPECT_NO_THROW(mapping.renameColumn("c", id));
     EXPECT_EQ(mapping.getColumnId(id), id);
+}
+
+/// Change-detector tied to the `addPersistent(...)` set in MergeTreeData::createVirtuals.
+/// `isPersistentVirtualColumn` hardcodes that set; if a new persistent virtual column is
+/// added there, BOTH `isPersistentVirtualColumn` and this test must be updated. Persistent
+/// virtuals are physically stored in parts and must NOT be remapped by the column ID mapping;
+/// misclassifying one would corrupt its stream resolution.
+TEST(ColumnIdMapping, IsPersistentVirtualColumnMatchesAddPersistentSet)
+{
+    /// Exactly the three columns added via addPersistent(...).
+    EXPECT_TRUE(isPersistentVirtualColumn(RowExistsColumn::name));
+    EXPECT_TRUE(isPersistentVirtualColumn(BlockNumberColumn::name));
+    EXPECT_TRUE(isPersistentVirtualColumn(BlockOffsetColumn::name));
+
+    /// A sample of ephemeral (read-computed) virtuals must be excluded.
+    EXPECT_FALSE(isPersistentVirtualColumn(PartDataVersionColumn::name));
+    EXPECT_FALSE(isPersistentVirtualColumn("_part"));
+    EXPECT_FALSE(isPersistentVirtualColumn("_part_offset"));
 }

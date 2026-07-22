@@ -1,15 +1,10 @@
-Test 1: basic wide part with ADD COLUMN
 1	one	\N
 2	two	second
 a	a
-a	a
-b	b
 b	b
 c	1
-Test 2: virtual columns
 1	11
 2	22
-a	a
 a	a
 c	1
 2	0
@@ -17,8 +12,116 @@ c	1
 1
 2	22
 3	33
-Test 3: complex types
 [1,2]	['a','b']	3	c	['k']	[4]
 m	m
 n	n
 t	t
+1	one	\N
+2	two	\N
+3	three	30
+4	four	40
+1
+a	a
+b	b
+c	1
+1	one	0
+2	two	22
+1	one	0
+2	two	22
+3	three	33
+a	a
+b	b
+c	1
+a	a
+b	b
+c	1
+10	UInt64
+20	UInt64
+10	UInt64
+20	UInt64
+a	a
+b	b
+c	1
+a	a
+c	c
+d	b
+1	one	10
+2	two	20
+1	one	10
+2	two	20
+3	three	30
+a	a
+c	c
+d	b
+1	one	10
+2	two	20
+3	three	30
+1	one	10	hello
+2	two	20	hello
+3	three	30	hello
+4	four	40	world
+a	a
+d	b
+dt	dt
+1	one	2024-01-01
+2	two	2024-01-02
+1	one
+2	two
+3	three
+c	1
+a	a
+b	b
+c	1
+a	a
+c	1
+d	b
+1
+0
+1	one
+a	a
+b	b
+0
+1	one
+1	10	UInt64	x
+2	20	UInt64	x
+3	30	UInt64	y
+a	a
+c	c
+d	b
+1	30
+2	70
+a	a
+b	b
+c	1
+52	42
+1	hello world
+2	foo bar
+a	a
+d	b
+1	hello world
+2	foo bar
+3	baz qux
+a	a
+sum(c)	sum(c)
+1
+0	0
+10	10
+20	20
+all_1_1_0	a	a
+all_1_1_0	b2	b
+all_2_2_0	a	a
+all_2_2_0	b2	b
+all_2_2_0	s	2
+s	2	1	1
+s	['null','size']	1
+1
+s	1
+1
+all_1_1_0	a	a
+all_1_1_0	b2	b
+all_2_2_0	a	a
+all_2_2_0	b2	b
+all_2_2_0	s	2
+1
+s	1
+1	1

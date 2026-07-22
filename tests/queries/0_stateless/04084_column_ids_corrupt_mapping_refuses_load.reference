@@ -3,3 +3,13 @@ error_mentions_table
 error_mentions_column
 error_mentions_file
 1	x	1.5
+refused_naming_column_ids_json
+table_loaded_after_fileless_attach=0
+1	x	0
+2	y	9.9
+flip_requires_experimental_flag
+1	x
+mapping_created_by_settings_flip
+1	def
+2	y
+b	1
