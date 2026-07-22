@@ -1556,8 +1556,10 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             return {};
 
         ProfileEvents::increment(ProfileEvents::MergesRejectedByMemoryLimit);
-        return std::unexpected(PreformattedMessage::create("Current background tasks memory usage ({}) is more than the limit ({})",
+        return std::unexpected(PreformattedMessage::create(
+                "Current background tasks memory usage ({}) or the memory reserved by scheduled background tasks ({}) is more than the limit ({})",
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.get()),
+                formatReadableSizeWithBinarySuffix(getReservedMergeMemory()),
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit())));
     };
 

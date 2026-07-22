@@ -15,6 +15,8 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <IO/S3Defines.h>
@@ -43,7 +45,15 @@ namespace ErrorCodes
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsNonZeroUInt64 adaptive_write_buffer_initial_size;
+    extern const MergeTreeSettingsBool allow_vertical_merges_from_compact_to_wide_parts;
+    extern const MergeTreeSettingsUInt64 enable_vertical_merge_algorithm;
+    extern const MergeTreeSettingsUInt64 max_merge_delayed_streams_for_parallel_write;
+    extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_bytes_to_activate;
+    extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_columns_to_activate;
+    extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_rows_to_activate;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
+    extern const MergeTreeSettingsBool enable_block_number_column;
+    extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsBool materialize_projections_on_merge;
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_min_space_in_pool;
@@ -869,6 +879,35 @@ UInt64 estimateNeededMemoryForMerge(
         }
     }
 
+    /// On top of the metadata's physical columns, a base merge writes the persisted `_block_number` /
+    /// `_block_offset` virtual columns when the corresponding table settings are enabled (MergeTask adds
+    /// them via addMergingColumn / addGatheringColumn after the expired-columns filter, so they are never
+    /// expired); a projection merge never writes them (enabledBlockNumberColumn is false under a parent
+    /// part). A source part that predates the setting does not store them - the reader synthesizes their
+    /// values from the part's own block number - so, like a column filled from its DEFAULT expression,
+    /// their written bytes are not bounded by the bytes the merge reads and their writer streams must be
+    /// priced at the per-stream worst case (synthesized_columns joins default_filled_columns below).
+    NameSet synthesized_columns;
+    const bool is_projection_merge = !future_part.parts.empty() && future_part.parts.front()->isProjectionPart();
+    if (!is_projection_merge)
+    {
+        const auto add_persisted_virtual_column = [&](const String & name, const DataTypePtr & type)
+        {
+            if (output_columns.contains(name))
+                return;
+            output_columns.emplace_back(name, type);
+            const bool missing_from_some_part = std::any_of(
+                future_part.parts.begin(), future_part.parts.end(),
+                [&](const auto & part) { return !part->getColumns().contains(name); });
+            if (missing_from_some_part)
+                synthesized_columns.insert(name);
+        };
+        if (settings[MergeTreeSetting::enable_block_number_column])
+            add_persisted_virtual_column(BlockNumberColumn::name, BlockNumberColumn::type);
+        if (settings[MergeTreeSetting::enable_block_offset_column])
+            add_persisted_virtual_column(BlockOffsetColumn::name, BlockOffsetColumn::type);
+    }
+
     NamesAndTypesList input_columns = output_columns;
     input_columns.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
 
@@ -927,6 +966,41 @@ UInt64 estimateNeededMemoryForMerge(
     /// Only base parts decide missing-ness: a patch part physically stores just the columns it patches and
     /// its rows are applied as patches, never default-filled. A column missing from no part keeps the
     /// exact pricing, so all of this is a no-op outside the ADD COLUMN ... DEFAULT upgrade window.
+    /// need_remove_expired_values / merge_may_reduce_rows exactly as the merge itself will compute them
+    /// (MergeTask::ExecuteAndFinalizeHorizontalPart::prepare): a deduplicating or cleanup merge, a
+    /// merge that removes expired TTL values, one that applies lightweight-delete masks or patch
+    /// parts, or a non-Ordinary merging mode. All of these are knowable at selection time: deduplicate
+    /// and cleanup come from the caller (an OPTIMIZE query or a replication log entry - background
+    /// selection never sets them), the TTL state and delete masks from the source parts themselves.
+    /// The merge evaluates the TTL threshold slightly later than this estimate and skips TTL removal
+    /// while a ttl_merges_blocker is held; both can only make the merge rebuild fewer projections than
+    /// priced here, which is the safe direction for a reservation.
+    bool need_remove_expired_values = false;
+    if (metadata_snapshot->hasAnyTTL())
+    {
+        IMergeTreeDataPart::TTLInfos merged_ttl_infos;
+        for (const auto & part : future_part.parts)
+        {
+            merged_ttl_infos.update(part->ttl_infos);
+            if (!part->checkAllTTLCalculated(metadata_snapshot))
+                need_remove_expired_values = true;
+        }
+        if (merged_ttl_infos.part_min_ttl && merged_ttl_infos.part_min_ttl <= std::time(nullptr))
+            need_remove_expired_values = true;
+    }
+
+    const bool has_lightweight_delete = std::any_of(
+        source_and_patch_parts.begin(), source_and_patch_parts.end(),
+        [](const auto & part) { return part->hasLightweightDelete(); });
+
+    const bool merge_may_reduce_rows = !future_part.parts.empty()
+        && (deduplicate
+            || cleanup
+            || need_remove_expired_values
+            || has_lightweight_delete
+            || !future_part.patch_parts.empty()
+            || future_part.parts.front()->storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary);
+
     NameSet default_filled_columns;
     NameSet default_filled_dynamic_columns;
     for (const auto & column : output_columns)
@@ -934,7 +1008,7 @@ UInt64 estimateNeededMemoryForMerge(
         const bool missing_from_some_part = std::any_of(
             future_part.parts.begin(), future_part.parts.end(),
             [&](const auto & part) { return !part->getColumns().contains(column.name); });
-        if (missing_from_some_part && columns_description.getDefault(column.name))
+        if (missing_from_some_part && (columns_description.getDefault(column.name) || synthesized_columns.contains(column.name)))
         {
             default_filled_columns.insert(column.name);
             if (column.type->hasDynamicStructure())
@@ -966,8 +1040,8 @@ UInt64 estimateNeededMemoryForMerge(
     /// parts are priced separately, so their bytes rightly do not enter this bound), and its compressed
     /// size cannot exceed that uncompressed volume, so sum_input_bytes_uncompressed - accumulated over the
     /// columns actually read - is a sound upper bound on the produced compressed output for every column
-    /// the merge reads (a default-filled column writes synthesized data the merge never read; its streams
-    /// are priced at their worst case below instead). Cap the
+    /// the merge reads (a default-filled column writes synthesized data the merge never read; it is
+    /// priced separately below, see default_filled_term). Cap the
     /// data-dependent buffers at the compressed output in flight twice over (double buffering of uploads)
     /// plus one uncompressed working block per stream, all bounded by the uncompressed input volume.
     /// Without this cap a merge of tiny parts in a table with many columns on object storage would reserve
@@ -979,24 +1053,49 @@ UInt64 estimateNeededMemoryForMerge(
         ? 2 * settings[MergeTreeSetting::adaptive_write_buffer_initial_size]
         : local_write_buffer_size;
 
+    /// A writer stream on multipart object storage allocates up to its first upload buffer
+    /// (max(*_max_single_part_upload_size, *_min_upload_part_size), see ExpBufferAllocationPolicy)
+    /// regardless of how little data ends up flowing through it, while everything beyond that first
+    /// buffer only ever holds data already written. Where a stream's data volume is not derivable from
+    /// the sources, this per-stream remnant is what it is priced at - NOT the full multipart ceiling
+    /// (first buffer + max_inflight * max_upload_part_size, ~100 GiB with default S3 settings): pricing
+    /// unknowable-volume streams at the ceiling proved to be a starvation regression in CI - a TTL merge
+    /// of a 2-row table priced at 200.09 GiB (two ceiling-priced streams) was rejected by the admission
+    /// gate for the whole 300 s test window of 03365_column_ttl_should_rebuild_skp_idx_and_proj because
+    /// concurrent merges always held some reservation, so it never ran and the column TTL never took
+    /// effect. The growth of such a stream past its remnant is real data the reactive
+    /// background_memory_tracker sees as it materializes, so under-pricing here degrades to master's
+    /// purely reactive behavior for that stream instead of blocking all progress.
+    const UInt64 remote_stream_remnant = remote_write_buffer_size != 0
+        ? std::max<UInt64>(local_write_buffer_size, S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE)
+        : local_write_buffer_size;
+
     /// The input-volume bound holds only for data the merge actually READS. A column filled from its
     /// DEFAULT expression for the rows of parts that predate its ALTER ... ADD COLUMN
     /// (default_filled_columns above) is synthesized by IMergeTreeReader::evaluateMissingDefaults, not
     /// read: a default such as repeat(toString(k), 1000) writes orders of magnitude more bytes than the
     /// merge reads, so capping its upload buffers by the input volume would under-reserve the writer's
-    /// real footprint on object storage. No data bound derivable from the sources exists for such a column
-    /// (the default expression is arbitrary), so its writer streams are priced at their per-stream worst
-    /// case instead - a writer stream never holds more than write_buffer_size, whatever flows through it,
-    /// the same argument the rebuilt-projection pricing uses - while every column that is genuinely
-    /// read-bounded keeps the data-volume cap. A column present in only SOME parts is default-filled for
-    /// the other parts' rows, so the whole column goes to the worst-case side (its read bytes stay in the
-    /// input sum - double-counting is the safe direction). A compact output part writes everything through
-    /// one shared stream, which the synthesized data flows through, so the single stream is priced at its
-    /// worst case. Outside the ADD COLUMN ... DEFAULT upgrade window the extra term is zero.
+    /// real footprint on object storage. Price the synthesized volume instead: a fixed-size type writes
+    /// exactly rows * value size, so 3x that volume (the same in-flight allowance as the base bound) is
+    /// sound for it; a variable-size type's default expression is arbitrary, so its streams are priced at
+    /// their per-stream remnant with the growth left to the reactive tracker (see remote_stream_remnant
+    /// above - the ceiling alternative is a proven starvation regression). A column present in only SOME
+    /// parts is default-filled for the other parts' rows, so the whole column is priced here (its read
+    /// bytes stay in the input sum - double-counting is the safe direction). Outside the
+    /// ADD COLUMN ... DEFAULT upgrade window the extra term is zero.
     NamesAndTypesList default_filled_output_columns;
+    UInt64 default_filled_value_bytes = 0;
+    UInt64 sum_rows = 0;
+    for (const auto & part : future_part.parts)
+        sum_rows += part->rows_count;
     for (const auto & column : output_columns)
-        if (default_filled_columns.contains(column.name))
-            default_filled_output_columns.push_back(column);
+    {
+        if (!default_filled_columns.contains(column.name))
+            continue;
+        default_filled_output_columns.push_back(column);
+        if (column.type->haveMaximumSizeOfValue())
+            default_filled_value_bytes += sum_rows * column.type->getMaximumSizeOfValueInMemory();
+    }
 
     size_t default_filled_output_streams = 0;
     if (!default_filled_output_columns.empty())
@@ -1004,11 +1103,145 @@ UInt64 estimateNeededMemoryForMerge(
             ? countOutputStreams(default_filled_output_columns, source_and_patch_parts, settings, default_filled_dynamic_columns)
             : 1;
 
+    const UInt64 default_filled_term = default_filled_output_streams * remote_stream_remnant + 3 * default_filled_value_bytes;
+
     const UInt64 output_data_bound = output_streams * eager_buffers_per_stream
         + 3 * sum_input_bytes_uncompressed
-        + default_filled_output_streams * write_buffer_size;
+        + default_filled_term;
 
-    const UInt64 output_memory = std::min(output_worst_case, output_data_bound);
+    UInt64 output_memory = std::min(output_worst_case, output_data_bound);
+
+    /// Both bounds above assume every output stream's buffers are alive at once, which is only true for a
+    /// HORIZONTAL merge. A vertical merge writes the merging (key) columns in its horizontal stage and then
+    /// gathers the remaining columns ONE AT A TIME (MergeTask::VerticalMergeStage); on parallel-write
+    /// (object) storage up to max_merge_delayed_streams_for_parallel_write finished column streams are kept
+    /// alive with delayed finalization, each holding no more than its unflushed remnant, and everything
+    /// else is already finalized. Pricing all streams as concurrent is a proven starvation regression for
+    /// big wide-table merges: a 19-part merge of test.hits_s3 was priced above the whole
+    /// merges_mutations_memory_usage_soft_limit (3x its uncompressed volume > 14.41 GiB) while actually
+    /// using ~139 MiB, and its reservation closed the admission gate for every other merge on the server
+    /// for the minutes it ran (04492_schedule_merge_retry_on_busy_pool timed out waiting for a manual
+    /// merge). Mirror MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm conservatively:
+    /// any case that is not certainly vertical (TTL, cleanup, deduplication, non-Wide output, compact
+    /// sources when not allowed, unsupported merging mode, activation thresholds) keeps the horizontal
+    /// pricing, which can only over-reserve. For a certainly-vertical merge, price the streams that are
+    /// actually alive at once: the merging columns (fully concurrent in the horizontal stage), the single
+    /// widest gathering column, and the delayed remnants.
+    if (!future_part.parts.empty()
+        && future_part.part_format.part_type == MergeTreeDataPartType::Wide
+        && future_part.part_format.storage_type == MergeTreeDataPartStorageType::Full
+        && settings[MergeTreeSetting::enable_vertical_merge_algorithm] != 0
+        && !deduplicate
+        && !cleanup
+        && !need_remove_expired_values
+        && future_part.parts.size() <= RowSourcePart::MAX_PARTS)
+    {
+        const auto & merging_params = future_part.parts.front()->storage.merging_params;
+        const bool is_supported_mode = merging_params.mode == MergeTreeData::MergingParams::Ordinary
+            || merging_params.mode == MergeTreeData::MergingParams::Collapsing
+            || merging_params.mode == MergeTreeData::MergingParams::Replacing
+            || merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
+
+        bool sources_allow_vertical = settings[MergeTreeSetting::allow_vertical_merges_from_compact_to_wide_parts]
+            || std::all_of(future_part.parts.begin(), future_part.parts.end(),
+                [](const auto & part) { return part->getType() == MergeTreeDataPartType::Wide; });
+
+        UInt64 sum_bytes_uncompressed = 0;
+        for (const auto & part : future_part.parts)
+            sum_bytes_uncompressed += part->getTotalColumnsSize().data_uncompressed;
+
+        if (is_supported_mode && sources_allow_vertical
+            && sum_rows >= settings[MergeTreeSetting::vertical_merge_algorithm_min_rows_to_activate]
+            && sum_bytes_uncompressed >= settings[MergeTreeSetting::vertical_merge_algorithm_min_bytes_to_activate])
+        {
+            /// The merging (horizontal-stage) columns, mirroring extractMergingAndGatheringColumns as an
+            /// over-approximation: every skip-index column and every projection's required columns join it
+            /// (MergeTask adds only non-excluded indexes and the projections it actually rebuilds), and the
+            /// min-max index columns join when the merge may reduce rows. Over-classifying a column as
+            /// merging prices it fully concurrent - the over-reserving, safe direction - and shrinks the
+            /// gathering set, which can only make the activation check below stricter than the merge's own.
+            NameSet merging_names;
+            const auto physical_names = output_columns.getNameSet();
+            const auto insert_storage_name = [&](const String & name)
+            {
+                merging_names.insert(
+                    physical_names.contains(name) ? name : String(Nested::getColumnFromSubcolumn(name, physical_names)));
+            };
+            for (const auto & name : metadata_snapshot->getColumnsRequiredForSortingKey())
+                insert_storage_name(name);
+            if (!merging_params.sign_column.empty())
+                merging_names.insert(merging_params.sign_column);
+            if (!merging_params.is_deleted_column.empty())
+                merging_names.insert(merging_params.is_deleted_column);
+            if (!merging_params.version_column.empty())
+                merging_names.insert(merging_params.version_column);
+            for (const auto & index : metadata_snapshot->getSecondaryIndices())
+                for (const auto & name : index.expression->getRequiredColumns())
+                    insert_storage_name(name);
+            for (const auto & projection : metadata_snapshot->getProjections())
+                for (const auto & name : projection.getRequiredColumns())
+                    insert_storage_name(name);
+            if (merge_may_reduce_rows)
+                for (const auto & name : metadata_snapshot->getColumnsRequiredForPartitionKey())
+                    insert_storage_name(name);
+            if (merging_names.empty() && !output_columns.empty())
+                merging_names.insert(output_columns.front().name);
+            /// The persisted block columns can be merged in the horizontal stage (need_block_number_in_merge);
+            /// classify them as merging - the over-reserving, safe direction for two single-stream columns.
+            merging_names.insert(BlockNumberColumn::name);
+            merging_names.insert(BlockOffsetColumn::name);
+
+            NamesAndTypesList merging_columns;
+            NamesAndTypesList gathering_columns;
+            for (const auto & column : output_columns)
+            {
+                if (merging_names.contains(column.name))
+                    merging_columns.push_back(column);
+                else
+                    gathering_columns.push_back(column);
+            }
+
+            if (gathering_columns.size() >= settings[MergeTreeSetting::vertical_merge_algorithm_min_columns_to_activate])
+            {
+                const size_t merging_streams
+                    = countOutputStreams(merging_columns, source_and_patch_parts, settings, default_filled_dynamic_columns);
+
+                size_t gathering_streams_total = 0;
+                size_t max_gathering_column_streams = 0;
+                UInt64 max_gathering_column_uncompressed = 0;
+                for (const auto & column : gathering_columns)
+                {
+                    const NamesAndTypesList single_column{column};
+                    const size_t column_streams
+                        = countOutputStreams(single_column, source_and_patch_parts, settings, default_filled_dynamic_columns);
+                    gathering_streams_total += column_streams;
+                    max_gathering_column_streams = std::max(max_gathering_column_streams, column_streams);
+
+                    UInt64 column_uncompressed = 0;
+                    for (const auto & part : source_and_patch_parts)
+                        column_uncompressed += partReadBytes(*part, single_column).data_uncompressed;
+                    max_gathering_column_uncompressed = std::max(max_gathering_column_uncompressed, column_uncompressed);
+                }
+
+                UInt64 merging_uncompressed = 0;
+                for (const auto & part : source_and_patch_parts)
+                    merging_uncompressed += partReadBytes(*part, merging_columns).data_uncompressed;
+
+                const UInt64 delayed_streams = remote_write_buffer_size != 0
+                    ? std::min<UInt64>(gathering_streams_total, settings[MergeTreeSetting::max_merge_delayed_streams_for_parallel_write])
+                    : 0;
+                const UInt64 alive_streams = merging_streams + max_gathering_column_streams + delayed_streams;
+
+                const UInt64 vertical_worst_case = alive_streams * write_buffer_size;
+                const UInt64 vertical_data_bound = alive_streams * eager_buffers_per_stream
+                    + 3 * (merging_uncompressed + max_gathering_column_uncompressed)
+                    + delayed_streams * remote_stream_remnant
+                    + default_filled_term;
+
+                output_memory = std::min({output_memory, vertical_worst_case, vertical_data_bound});
+            }
+        }
+    }
 
     /// Projections: the merge also reads and writes projection parts, and none of that IO flows through
     /// the base parts' readers and writers priced above. Mirror the decision made in
@@ -1044,40 +1277,6 @@ UInt64 estimateNeededMemoryForMerge(
             || (projection_mode != DeduplicateMergeProjectionMode::THROW && projection_mode != DeduplicateMergeProjectionMode::DROP));
     if (merge_processes_projections)
     {
-        /// merge_may_reduce_rows exactly as the merge itself will compute it
-        /// (MergeTask::ExecuteAndFinalizeHorizontalPart::prepare): a deduplicating or cleanup merge, a
-        /// merge that removes expired TTL values, one that applies lightweight-delete masks or patch
-        /// parts, or a non-Ordinary merging mode. All of these are knowable at selection time: deduplicate
-        /// and cleanup come from the caller (an OPTIMIZE query or a replication log entry - background
-        /// selection never sets them), the TTL state and delete masks from the source parts themselves.
-        /// The merge evaluates the TTL threshold slightly later than this estimate and skips TTL removal
-        /// while a ttl_merges_blocker is held; both can only make the merge rebuild fewer projections than
-        /// priced here, which is the safe direction for a reservation.
-        bool need_remove_expired_values = false;
-        if (metadata_snapshot->hasAnyTTL())
-        {
-            IMergeTreeDataPart::TTLInfos merged_ttl_infos;
-            for (const auto & part : future_part.parts)
-            {
-                merged_ttl_infos.update(part->ttl_infos);
-                if (!part->checkAllTTLCalculated(metadata_snapshot))
-                    need_remove_expired_values = true;
-            }
-            if (merged_ttl_infos.part_min_ttl && merged_ttl_infos.part_min_ttl <= std::time(nullptr))
-                need_remove_expired_values = true;
-        }
-
-        const bool has_lightweight_delete = std::any_of(
-            source_and_patch_parts.begin(), source_and_patch_parts.end(),
-            [](const auto & part) { return part->hasLightweightDelete(); });
-
-        const bool merge_may_reduce_rows = deduplicate
-            || cleanup
-            || need_remove_expired_values
-            || has_lightweight_delete
-            || !future_part.patch_parts.empty()
-            || future_part.parts.front()->storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
-
         /// An expired column (absent from every source part with no default expression, the full
         /// expired_columns set computed above) makes the merge rebuild every projection that requires it,
         /// again before checking whether the source parts have the projection.
@@ -1097,23 +1296,51 @@ UInt64 estimateNeededMemoryForMerge(
                 = (merge_may_reduce_rows && (projection_mode != DeduplicateMergeProjectionMode::IGNORE || is_special_projection))
                 || (some_source_column_expired && projection_mode != DeduplicateMergeProjectionMode::IGNORE);
 
+            /// An existing projection part may lack a column the current projection metadata expects (an
+            /// ALIAS selected by the projection re-pointed by ALTER): the merge rebuilds the projection
+            /// from the parent rows rather than bake stale defaults into the merged part - the same check
+            /// as prepareProjectionsToMergeAndRebuild, where a parent TABLE column the parent part also
+            /// lacks is a legitimate late-add and does not count.
+            const auto projection_columns = projection.metadata->getColumns().getAllPhysical();
+            bool projection_part_misses_column = false;
+
             MergeTreeData::DataPartsVector projection_parts;
             for (const auto & part : future_part.parts)
             {
                 auto it = part->getProjectionParts().find(projection.name);
                 if (it != part->getProjectionParts().end() && !it->second->is_broken)
+                {
+                    for (const auto & column : projection_columns)
+                    {
+                        if (!it->second->tryGetColumn(column.name)
+                            && (part->tryGetColumn(column.name)
+                                || !columns_description.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name)))
+                        {
+                            projection_part_misses_column = true;
+                            break;
+                        }
+                    }
+
                     projection_parts.push_back(it->second);
+                }
             }
 
             /// Decide, exactly as the merge will, whether this projection is merged from the existing
             /// projection parts, rebuilt from the merged rows, or dropped from the result.
             bool rebuild_projection = rebuild_regardless_of_presence;
-            if (!rebuild_regardless_of_presence && projection_parts.size() != future_part.parts.size())
+            if (!rebuild_regardless_of_presence)
             {
-                if (projection.with_block_number || settings[MergeTreeSetting::materialize_projections_on_merge])
+                if (projection_part_misses_column && projection_mode != DeduplicateMergeProjectionMode::IGNORE)
+                {
                     rebuild_projection = true;
-                else
-                    continue; /// Dropped from the merged part - no IO.
+                }
+                else if (projection_parts.size() != future_part.parts.size())
+                {
+                    if (projection.with_block_number || settings[MergeTreeSetting::materialize_projections_on_merge])
+                        rebuild_projection = true;
+                    else
+                        continue; /// Dropped from the merged part - no IO.
+                }
             }
 
             if (!rebuild_projection)
@@ -1172,17 +1399,20 @@ UInt64 estimateNeededMemoryForMerge(
                 const size_t projection_streams
                     = temp_projection_format.part_type == MergeTreeDataPartType::Compact ? 1 : projection_wide_streams;
 
-                /// Unlike the base output above, a rebuilt projection is NOT size-bounded by the merge input:
-                /// a projection expression is not size-monotone (repeat(...), JSON / array construction can
-                /// expand the bytes per row, an aggregate projection can materialize states larger than the raw
-                /// input), so the uncompressed-input cap used for the base output is not a valid cap here and
-                /// would let the writer's upload buffers and the read-back grow past the reservation.
-                /// Reserve the per-stream worst case instead: a writer stream never holds more than
-                /// write_buffer_size and a read-back stream never more than its read buffer, whatever the
-                /// projected data volume. On a local disk write_buffer_size is a small per-stream constant; on
-                /// object storage it is the full multipart ceiling, which a data-expanding projection can
-                /// genuinely approach - a single such merge is always admitted (see MergeMemoryReservation),
-                /// it only throttles concurrent merges while it holds the reservation.
+                /// The rebuild writes the projected rows twice (the temporary parts, then the read-back merge
+                /// into the final projection part), so its data-dependent buffers are bounded by twice the
+                /// projected volume with the same 3x in-flight allowance as the base output, plus the
+                /// per-stream remnant every multipart writer allocates regardless of volume. A projection
+                /// expression is not size-monotone (repeat(...), JSON / array construction can expand the
+                /// bytes per row, an aggregate projection can materialize states larger than the raw input),
+                /// so the source-derived projected volume can undershoot for a data-expanding projection; that
+                /// growth is real data the reactive background_memory_tracker sees as it materializes. The
+                /// alternative - pricing every rebuilt-projection stream at the full multipart ceiling - is a
+                /// proven CI starvation regression: a TTL merge of a 2-row table with one projection was
+                /// priced at 200.09 GiB (two Wide temp-part streams at the ~100 GiB default S3 ceiling) and
+                /// rejected by the admission gate for the whole 300 s window of
+                /// 03365_column_ttl_should_rebuild_skp_idx_and_proj, because concurrent merges always held
+                /// some reservation, so the column TTL never took effect.
                 ///
                 /// The read-back stage (MergeProjectionPartsTask) does not merge the temporary parts one at a
                 /// time: it merges up to max_parts_to_merge_in_one_level of them in a single nested merge, so
@@ -1190,7 +1420,10 @@ UInt64 estimateNeededMemoryForMerge(
                 /// than one temporary part therefore reads back through several readers simultaneously; size
                 /// the read-back for that worst case rather than a single reader set.
                 const UInt64 projection_read_buffer_size = output_on_remote_disk ? remote_read_buffer_size : local_read_buffer_size;
-                projection_memory += projection_streams * write_buffer_size
+                const UInt64 projection_worst_case = projection_streams * write_buffer_size;
+                const UInt64 projection_data_bound = projection_streams * remote_stream_remnant
+                    + 3 * 2 * projection_uncompressed_bytes;
+                projection_memory += std::min(projection_worst_case, projection_data_bound)
                     + MergeProjectionPartsTask::max_parts_to_merge_in_one_level * projection_streams * projection_read_buffer_size;
             }
         }
