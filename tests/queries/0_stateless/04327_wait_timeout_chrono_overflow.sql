@@ -54,7 +54,7 @@ DROP TABLE t_04327_sync_merges;
 SELECT 'qc_04327_top' SETTINGS use_query_cache = 1, query_cache_ttl = 9223372036854;
 SELECT countIf(is_subquery = 0) > 0 AND max(stale) = 0 FROM system.query_cache WHERE query LIKE '%qc\_04327\_top%' AND query NOT LIKE '%system.query_cache%';
 
--- The is_subquery=1 entry is written only by the Planner (new analyzer), so pin enable_analyzer=1 here;
+-- The is_subquery=1 entry is written only by the Planner, so pin enable_analyzer=1 here;
 -- with the old analyzer the Planner never runs and no is_subquery=1 entry is produced.
 SELECT sum(number) FROM (SELECT number FROM numbers(5) WHERE number > 41000000) SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, query_cache_ttl = 9223372036854, enable_analyzer = 1;
 SELECT countIf(is_subquery = 0) > 0 AND countIf(is_subquery = 1) > 0 AND max(stale) = 0 FROM system.query_cache WHERE query LIKE '%41000000%' AND query NOT LIKE '%system.query_cache%';
