@@ -147,6 +147,59 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     }
 }
 
+/// Compact parts store all columns in one data file and the full-column reader
+/// seeks by `columns.txt` ordinal (`getColumnPosition`), while substream offsets
+/// live per-slot in `columns_substreams.txt`.  If `columns.txt` is reordered
+/// relative to that physical layout, a full-column read fetches a neighbour's
+/// bytes and no name check fires (name-checked substream resolution runs only
+/// for subcolumns).  Confirm per slot that the substreams `columns[i]` emits are
+/// the ones recorded at `columns_substreams[i]`, resolving by column ID the same
+/// way the reader does -- so a legitimate rename (which leaves the write-time ID
+/// in `columns_substreams`) is not a false positive.
+static void checkCompactColumnIdSubstreamPositions(
+    const MergeTreeData::DataPartPtr & data_part,
+    const NamesAndTypesList & columns_list,
+    const SerializationInfoByName & serialization_infos,
+    const IDataPartStorage & data_part_storage)
+{
+    const auto & cols_substreams = data_part->getColumnsSubstreams();
+    if (cols_substreams.empty())
+        return;
+
+    const auto storage_settings = data_part->storage.getSettings();
+
+    /// Dynamic substreams need deserialization state to enumerate; the base
+    /// stream alone pins the slot, so skipping them is enough to catch a reorder.
+    ISerialization::EnumerateStreamsSettings enum_settings;
+    enum_settings.enumerate_dynamic_streams = false;
+
+    size_t column_position = 0;
+    for (const auto & column : columns_list)
+    {
+        auto it = serialization_infos.find(column.getColumnIdInStorage());
+        auto serialization = it == serialization_infos.end()
+            ? column.type->getSerialization(serialization_infos.getSettings())
+            : column.type->getSerialization(*it->second);
+
+        auto data = ISerialization::SubstreamData(serialization)
+            .withType(column.type)
+            .withColumn(data_part->getColumnSample(column));
+
+        serialization->enumerateStreams(enum_settings, [&](const ISerialization::SubstreamPath & substream_path)
+        {
+            if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+                return;
+            if (!cols_substreams.tryGetSubstreamPosition(column_position, column, substream_path, storage_settings).has_value())
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Substream layout mismatch in compact part {} at position {}: column '{}' (ID '{}') "
+                    "does not own the substreams recorded there. `columns.txt` is reordered relative to "
+                    "`columns_substreams.txt`; reads would return swapped columns.",
+                    data_part_storage.getFullPath(), column_position, column.name, column.getColumnIdInStorage());
+        }, data);
+        ++column_position;
+    }
+}
+
 static IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     const IDataPartStorage & data_part_storage,
@@ -238,22 +291,13 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                     it->second->getName(), col.type->getName());
         }
 
-        /// Compact parts use ordinal positions to seek into the single data
-        /// file -- the compact reader resolves substream offsets from
-        /// `columns_substreams.txt` by `column_position`.  An earlier
-        /// version of this check called `ColumnsSubstreams::validateColumns`
-        /// to catch reordered `columns.txt`, but `columns.txt` is written
-        /// in the column-id name domain while `columns_substreams.txt`
-        /// retains the LOGICAL name used at write time -- with column-ID
-        /// rename history these two domains can disagree by design (e.g.
-        /// `RENAME COLUMN b TO d` leaves the part with `columns.txt = b`
-        /// resolved by the current mapping to `d`, while
-        /// `columns_substreams.txt` still has `b`).  No clean per-slot
-        /// name comparison survives without a per-part write-time
-        /// snapshot we do not keep, so we rely on the membership/type
-        /// loop above to catch corruption that matters for the reader
-        /// (the reader uses column-id substream names which the per-slot
-        /// substream entries already verify on read).
+        /// The compact ordinal-consistency check (columns.txt order vs the
+        /// physical substream layout) runs below, once serializations are
+        /// loaded -- see `checkCompactColumnIdSubstreamPositions`.  A naive
+        /// `columns[i].name == columns_substreams[i].first` comparison cannot
+        /// be used: `columns_substreams` keeps the write-time name, so rename
+        /// history would false-positive.  The check resolves by column ID
+        /// instead, exactly as the reader does.
     }
 
     /// Real checksums based on contents of data. Must correspond to checksums.txt. If not - it means the data is broken.
@@ -314,6 +358,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         hashing_buf.ignoreAll();
         checksums_data.files[file_name] = IMergeTreeDataPart::Checksums::Checksum(hashing_buf.count(), hashing_buf.getHash());
     };
+
+    if (column_ids_active && part_type == MergeTreeDataPartType::Compact)
+        checkCompactColumnIdSubstreamPositions(data_part, columns_list, serialization_infos, data_part_storage);
 
     /// Do not check uncompressed for projections. But why?
     bool check_uncompressed = !data_part->isProjectionPart();

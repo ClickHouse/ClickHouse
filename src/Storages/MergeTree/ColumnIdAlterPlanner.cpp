@@ -363,8 +363,13 @@ ColumnIdAlterPlan prepareColumnIdMappingForAlter(
     plan.persists_column_id_settings = effective_new_settings[MergeTreeSetting::serialization_info_version]
         == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS;
 
-    bool should_activate = current_mapping == nullptr && alterActivatesColumnIds(effective_new_settings, commands);
-    plan.column_ids_active = (current_mapping != nullptr) || should_activate;
+    /// A non-null but INACTIVE mapping (e.g. a leftover `column_ids.json` from a
+    /// failed activation) means parts still use logical filenames, so it must not
+    /// short-circuit to the "already active" path -- that would make RENAME/DROP
+    /// metadata-only and break reads.  Gate on activation, not on non-null.
+    bool has_active_mapping = current_mapping != nullptr && current_mapping->isActive();
+    bool should_activate = !has_active_mapping && alterActivatesColumnIds(effective_new_settings, commands);
+    plan.column_ids_active = has_active_mapping || should_activate;
 
     if (!plan.column_ids_active)
         return plan;
@@ -372,7 +377,7 @@ ColumnIdAlterPlan prepareColumnIdMappingForAlter(
     ColumnIdMapping local_mapping;
     if (should_activate)
         local_mapping = ColumnIdMapping::createIdentity(old_metadata.getColumns().getAllPhysical());
-    else if (current_mapping)
+    else
         local_mapping = *current_mapping;
 
     rejectUnsafeRenameChains(commands);

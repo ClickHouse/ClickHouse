@@ -712,7 +712,7 @@ void StorageMergeTree::alter(
                         if (old_published_mapping)
                             writeColumnIdMappingToDisk(*old_published_mapping);
                         else
-                            writeColumnIdMappingToDisk(ColumnIdMapping{});
+                            removeColumnIdMappingFromDisk();
                     }
                     catch (...)
                     {

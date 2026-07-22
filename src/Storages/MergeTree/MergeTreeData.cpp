@@ -568,41 +568,62 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
 void MergeTreeData::loadColumnIdMappingFromDisk(bool attach)
 {
     const auto column_ids_path = fs::path(relative_data_path) / COLUMN_IDS_FILE_NAME;
+    const auto & disks = getDisks();
 
-    /// Read every non-broken copy and throw if they diverge.  Picking the
-    /// first readable copy would let a stale mapping on an earlier
-    /// (now-read-only) disk shadow the current copy on a later disk -- a
-    /// stale mapping binds live logical columns to old physical IDs after
-    /// RENAME or DROP+ADD, so this must fail closed.  Mirrors the
-    /// `format_version.txt` pattern above.
+    /// The authoritative copy lives on one disk (policy's first).  Read it there.
+    /// A copy found only on other disks is the old multi-disk on-disk format (or
+    /// the authoritative disk was broken when it was last written): adopt it and
+    /// rewrite to the authoritative disk so divergence becomes unrepresentable.
     std::optional<String> mapping_json;
-    String first_disk;
+    bool found_on_authoritative = false;
     bool has_usable_disk = false;
-    for (const auto & disk : getDisks())
+
+    DiskPtr authoritative = disks.empty() ? nullptr : getColumnIdMappingDisk(getStoragePolicy());
+    if (authoritative && !authoritative->isBroken())
     {
-        if (disk->isBroken())
-            continue;
         has_usable_disk = true;
-
-        auto buf = disk->readFileIfExists(column_ids_path, getReadSettings());
-        if (!buf)
-            continue;
-
-        String contents;
-        readStringUntilEOF(contents, *buf);
-        if (!mapping_json.has_value())
+        if (auto buf = authoritative->readFileIfExists(column_ids_path, getReadSettings()))
         {
+            String contents;
+            readStringUntilEOF(contents, *buf);
             mapping_json = std::move(contents);
-            first_disk = disk->getName();
+            found_on_authoritative = true;
         }
-        else if (*mapping_json != contents)
+    }
+
+    /// Legacy multi-disk fallback: read EVERY readable non-authoritative copy and
+    /// fail closed if any two disagree.  Adopting the first without this check
+    /// could cement a stale copy (e.g. a torn old-format write, or a cleanup skip
+    /// on a read-only disk) whose `b -> old_id` resurrects DROP+re-ADD bytes.
+    if (!mapping_json.has_value())
+    {
+        String first_disk_name;
+        for (const auto & disk : disks)
         {
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Column ID mapping `{}` differs between disks ({} vs {}); "
-                "a stale copy on one disk would silently bind logical columns "
-                "to the wrong physical IDs.  Restore the table from backup or "
-                "re-sync the mapping copies manually.",
-                column_ids_path.string(), first_disk, disk->getName());
+            if (disk->isBroken())
+                continue;
+            has_usable_disk = true;
+            if (authoritative && disk->getName() == authoritative->getName())
+                continue;
+
+            auto buf = disk->readFileIfExists(column_ids_path, getReadSettings());
+            if (!buf)
+                continue;
+            String contents;
+            readStringUntilEOF(contents, *buf);
+            if (!mapping_json.has_value())
+            {
+                mapping_json = std::move(contents);
+                first_disk_name = disk->getName();
+            }
+            else if (*mapping_json != contents)
+            {
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Column ID mapping `{}` differs between legacy disk copies ({} vs {}); "
+                    "a stale copy would silently bind logical columns to the wrong physical "
+                    "IDs.  Restore the table from backup or re-sync the copies manually.",
+                    column_ids_path.string(), first_disk_name, disk->getName());
+            }
         }
     }
 
@@ -612,6 +633,22 @@ void MergeTreeData::loadColumnIdMappingFromDisk(bool attach)
         setColumnIdMapping(ColumnIdMapping::deserialize(buf));
         skipWhitespaceIfAny(buf);
         assertEOF(buf);
+
+        /// Migrate an old multi-disk layout to a single authoritative copy.
+        /// Best-effort: the in-memory mapping is already correct, and a failed
+        /// rewrite just leaves the fallback scan to find it again next load.
+        if (!found_on_authoritative)
+        {
+            try
+            {
+                if (auto mapping = getColumnIdMapping())
+                    writeColumnIdMappingToDisk(*mapping);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to migrate column ID mapping to the authoritative disk");
+            }
+        }
         return;
     }
 
@@ -641,98 +678,93 @@ void MergeTreeData::writeColumnIdMappingToDisk(const ColumnIdMapping & mapping) 
     writeColumnIdMappingToDisk(mapping, getStoragePolicy());
 }
 
+DiskPtr MergeTreeData::getColumnIdMappingDisk(const StoragePolicyPtr & target_policy) const
+{
+    const auto & disks = target_policy->getDisks();
+    if (disks.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Storage policy for table {} has no disks to hold `{}`",
+            getStorageID().getNameForLogs(), COLUMN_IDS_FILE_NAME);
+    return disks.front();
+}
+
 void MergeTreeData::writeColumnIdMappingToDisk(const ColumnIdMapping & mapping, const StoragePolicyPtr & target_policy) const
 {
     const auto column_ids_path = fs::path(relative_data_path) / COLUMN_IDS_FILE_NAME;
     const auto column_ids_tmp_path = fs::path(relative_data_path) / (String(COLUMN_IDS_FILE_NAME) + ".tmp");
 
-    /// Serialize once -- used both for the read-only divergence check below
-    /// and for every per-disk write.
-    String new_contents;
+    auto disk = getColumnIdMappingDisk(target_policy);
+    if (disk->isBroken() || disk->isReadOnly() || disk->isWriteOnce())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot hold the authoritative `{}` for table {}: the policy's "
+            "first disk `{}` is read-only/write-once/broken.  A column-ID table "
+            "requires a writable authoritative disk; change the storage policy "
+            "so a writable disk comes first.",
+            COLUMN_IDS_FILE_NAME, getStorageID().getNameForLogs(), disk->getName());
+
+    /// Two-step atomic publish on the single authoritative disk: write to
+    /// <name>.tmp, fsync, then replace.  A crash between the two leaves either
+    /// the previous file intact or only the .tmp behind; readers never see a
+    /// torn final file.  One filesystem, so no cross-disk divergence is possible.
+    try
     {
-        WriteBufferFromString out(new_contents);
-        mapping.serialize(out);
+        {
+            auto buf = disk->writeFile(column_ids_tmp_path, 4096, WriteMode::Rewrite, getContext()->getWriteSettings());
+            mapping.serialize(*buf);
+            buf->finalize();
+            if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+                buf->sync();
+        }
+        disk->replaceFile(column_ids_tmp_path, column_ids_path);
     }
-
-    /// Refuse to publish if any read-only / write-once disk in the policy
-    /// holds an EXISTING copy that doesn't match what we're about to write.
-    /// Otherwise a successful `ALTER` here followed by a restart would see
-    /// divergent copies (old on the read-only disk, new on the writable
-    /// disks) and `loadColumnIdMappingFromDisk` would refuse to load the
-    /// table.  Failing here keeps the on-disk mapping in a consistent
-    /// state (writable disks aren't touched yet).
-    for (const auto & disk : target_policy->getDisks())
+    catch (...)
     {
-        if (disk->isBroken())
-            continue;
-        if (!disk->isReadOnly() && !disk->isWriteOnce())
-            continue;
-
-        auto buf = disk->readFileIfExists(column_ids_path, getReadSettings());
-        if (!buf)
-            continue;
-        String existing_contents;
-        readStringUntilEOF(existing_contents, *buf);
-        if (existing_contents != new_contents)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Cannot publish a new column ID mapping for table {}: "
-                "disk `{}` is read-only/write-once but already holds an "
-                "older `{}` that disagrees with the new mapping.  Publishing "
-                "to the writable disks would leave divergent copies and "
-                "block restart.  Make the disk writable, remove the stale "
-                "file manually, or rebalance parts off this disk first.",
-                getStorageID().getNameForLogs(), disk->getName(), COLUMN_IDS_FILE_NAME);
-    }
-
-    /// Write to EVERY writable disk in the target policy.  Writing to only
-    /// the first writable disk leaves stale copies on other disks: if the
-    /// first writable disk later becomes read-only, the load path would
-    /// either pick the stale copy or (with the divergence check) refuse to
-    /// start.  Keeping every disk in sync mirrors the `format_version.txt`
-    /// pattern and aligns with `loadColumnIdMappingFromDisk`'s divergence
-    /// check.
-    bool wrote_any = false;
-    for (const auto & disk : target_policy->getDisks())
-    {
-        if (disk->isBroken())
-            continue;
-
-        if (disk->isReadOnly() || disk->isWriteOnce())
-            continue;
-
-        /// Two-step atomic publish: write to <name>.tmp, fsync, then replace.
-        /// Crash between the two leaves either the previous file intact or only
-        /// the .tmp behind; readers never see a torn final file.
         try
         {
-            {
-                auto buf = disk->writeFile(column_ids_tmp_path, 4096, WriteMode::Rewrite, getContext()->getWriteSettings());
-                mapping.serialize(*buf);
-                buf->finalize();
-                if (getContext()->getSettingsRef()[Setting::fsync_metadata])
-                    buf->sync();
-            }
-            disk->replaceFile(column_ids_tmp_path, column_ids_path);
-            wrote_any = true;
+            disk->removeFileIfExists(column_ids_tmp_path);
         }
         catch (...)
         {
-            try
-            {
-                disk->removeFileIfExists(column_ids_tmp_path);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-            throw;
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
+        throw;
     }
 
-    if (wrote_any)
-        return;
+    /// Best-effort: drop any stale copy on the other disks (e.g. left by the old
+    /// multi-disk format) so exactly one authoritative copy exists.
+    for (const auto & other : target_policy->getDisks())
+    {
+        if (other->getName() == disk->getName())
+            continue;
+        if (other->isBroken() || other->isReadOnly() || other->isWriteOnce())
+            continue;
+        try
+        {
+            other->removeFileIfExists(column_ids_path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to remove stale column ID mapping copy");
+        }
+    }
+}
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write `{}` for table {}", COLUMN_IDS_FILE_NAME, getStorageID().getNameForLogs());
+void MergeTreeData::removeColumnIdMappingFromDisk() const
+{
+    const auto column_ids_path = fs::path(relative_data_path) / COLUMN_IDS_FILE_NAME;
+    for (const auto & disk : getStoragePolicy()->getDisks())
+    {
+        if (disk->isBroken() || disk->isReadOnly() || disk->isWriteOnce())
+            continue;
+        try
+        {
+            disk->removeFileIfExists(column_ids_path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to remove column ID mapping from disk");
+        }
+    }
 }
 
 void MergeTreeData::reconcileColumnIdMappingWithMetadata()
@@ -5984,10 +6016,9 @@ void MergeTreeData::changeSettings(
                         disk->createDirectories(relative_data_path);
                         disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
                     }
-                    /// FIXME how would that be done while reloading configuration???
-                    /// TODO(column-ids): a disk added via config reload also misses its `column_ids.json`
-                    /// copy (same gap as `format_version.txt`); the missing-mapping load check fails
-                    /// loudly only once every disk that has the file is removed.
+                    /// TODO(column-ids): a config reload that changes which disk is the
+                    /// policy's first (authoritative) one does not move `column_ids.json`
+                    /// there; the load-time migration adopts a copy found elsewhere.
 
                     has_storage_policy_changed = true;
                     pending_storage_policy = new_storage_policy;
@@ -6034,34 +6065,27 @@ void MergeTreeData::changeSettings(
             mapping_to_publish = ColumnIdMapping::createIdentity(current_metadata->getColumns().getAllPhysical());
             try
             {
-                writeColumnIdMappingToDisk(*mapping_to_publish);
-                if (pending_storage_policy)
-                    writeColumnIdMappingToDisk(*mapping_to_publish, pending_storage_policy);
+                /// Write to the disk this table will use after the commit: the
+                /// pending policy's authoritative disk when the same ALTER also
+                /// switches policy, otherwise the current one.
+                writeColumnIdMappingToDisk(
+                    *mapping_to_publish, pending_storage_policy ? pending_storage_policy : getStoragePolicy());
             }
             catch (...)
             {
-                /// Clear any disks already written -- on the pending policy too:
-                /// a partial multi-disk publish would otherwise activate the
-                /// table on restart (or diverge across disks after the policy
-                /// change is retried).
-                try
-                {
-                    writeColumnIdMappingToDisk(ColumnIdMapping{});
-                    if (pending_storage_policy)
-                        writeColumnIdMappingToDisk(ColumnIdMapping{}, pending_storage_policy);
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(log, "Failed to clear partially written column ID mapping");
-                }
+                /// Delete any partially written copy so a failed activation
+                /// leaves NO `column_ids.json` behind -- an inactive mapping
+                /// persisting would activate the table on restart while parts
+                /// still use logical filenames.
+                removeColumnIdMappingFromDisk();
                 throw;
             }
         }
         else if (pending_storage_policy)
         {
-            /// Policy change on a table that already has a mapping: newly added
-            /// disks need their `column_ids.json` copy.
-            if (auto current_mapping = getColumnIdMapping())
+            /// Policy change on a table that already has an active mapping: put
+            /// the authoritative copy on the new policy's disk before the switch.
+            if (auto current_mapping = getActiveColumnIdMapping())
                 writeColumnIdMappingToDisk(*current_mapping, pending_storage_policy);
         }
 
@@ -11151,12 +11175,12 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
             "tree would mix frozen parts from the old layout with a newer "
             "mapping.  Retry the FREEZE without a concurrent column-ID ALTER.");
 
-    /// Off-line readers (`mergeTreeParts()`, clickhouse-local) need the
-    /// mapping alongside the frozen parts to resolve non-identity IDs.
-    /// Write `column_ids.json` next to the frozen parts on EACH disk that
-    /// produced a frozen part -- multi-disk policies can have parts under
-    /// any of the policy's disks, and a snapshot of just one disk's shadow
-    /// tree would be missing the mapping for parts on the others.
+    /// Off-line readers (`mergeTreeParts()`, clickhouse-local) need the mapping
+    /// alongside the frozen parts to resolve non-identity IDs.  A shadow tree is
+    /// an immutable, portable, PER-DISK artifact consumed one disk at a time, so
+    /// -- unlike the mutable live copy -- write `column_ids.json` into EACH disk's
+    /// shadow subtree that produced a frozen part.  Per-disk redundancy is correct
+    /// here precisely because the shadow never changes (no torn-write concern).
     if (column_ids_mapping_snapshot && !result.empty())
     {
         const auto column_ids_in_freeze = fs::path(backup_path) / relative_data_path / COLUMN_IDS_FILE_NAME;

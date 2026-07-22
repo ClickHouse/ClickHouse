@@ -746,10 +746,26 @@ public:
     void writeColumnIdMappingToDisk() const;
     void writeColumnIdMappingToDisk(const ColumnIdMapping & mapping) const;
     /// Variant that targets an explicit storage policy.  Used by `changeSettings`
-    /// to push the mapping onto the NEW policy's disks BEFORE publishing the
-    /// new `storage_settings`, so the disk-write throw path leaves
+    /// to push the mapping onto the NEW policy's authoritative disk BEFORE
+    /// publishing the new `storage_settings`, so the disk-write throw path leaves
     /// `storage_settings`/metadata unchanged.
     void writeColumnIdMappingToDisk(const ColumnIdMapping & mapping, const StoragePolicyPtr & target_policy) const;
+
+    /// The single disk that holds the authoritative `column_ids.json`.  Unlike
+    /// `format_version.txt`, the mapping is only the live name<->id oracle: parts
+    /// are self-describing (columns.txt stores IDs), so no disk reads its own
+    /// copy.  One `tmp`+`replaceFile` on this one filesystem is atomic, so a
+    /// single copy is crash-safe with no cross-disk protocol.  Deterministic
+    /// (policy's first disk) so load and write always agree on which disk it is.
+    /// Writability is enforced by `writeColumnIdMappingToDisk`, not here, so the
+    /// read path can select the same disk without throwing on an unwritable one.
+    DiskPtr getColumnIdMappingDisk(const StoragePolicyPtr & target_policy) const;
+
+    /// Best-effort removal of `column_ids.json` from every disk in the policy.
+    /// Used to undo a failed activation: an inactive mapping must never persist,
+    /// or a post-restart ALTER would take the wrong (already-active) path while
+    /// parts still use logical filenames.
+    void removeColumnIdMappingFromDisk() const;
 
     /// Reconcile the on-disk mapping with table metadata after load.
     /// Throws `CORRUPTED_DATA` if any column in metadata has no entry in the
