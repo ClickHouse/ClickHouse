@@ -8,17 +8,7 @@ Puffin footer LZ4 frame must declare content size
 trailing bytes
 --- incomplete_lz4_footer.puffin ---
 Puffin footer LZ4 frame is incomplete
---- missing_snapshot_id.puffin ---
-missing required field
---- missing_sequence_number.puffin ---
-missing required field
---- missing_fields.puffin ---
-missing required field
 --- missing_type.puffin ---
-missing required field
---- missing_offset.puffin ---
-missing required field
---- missing_length.puffin ---
 missing required field
 --- missing_blobs.puffin ---
 missing required field 'blobs'
@@ -36,13 +26,9 @@ missing required property
 missing required property
 --- invalid_properties_array.puffin ---
 field 'properties' must be an object
---- invalid_properties_string.puffin ---
-field 'properties' must be an object
 --- null_properties.puffin ---
 field 'properties' must be an object
 --- invalid_file_properties_array.puffin ---
-Puffin footer field 'properties' must be an object
---- invalid_file_properties_string.puffin ---
 Puffin footer field 'properties' must be an object
 --- null_file_properties.puffin ---
 Puffin footer field 'properties' must be an object

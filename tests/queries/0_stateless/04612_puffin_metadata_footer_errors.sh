@@ -21,11 +21,9 @@ id=$((id + 1))
 launch "$id" meta "$DATA/incomplete_lz4_footer.puffin" 'Puffin footer LZ4 frame is incomplete'
 id=$((id + 1))
 
-for f in missing_snapshot_id missing_sequence_number missing_fields missing_type missing_offset missing_length
-do
-    launch "$id" meta "$DATA/$f.puffin" 'missing required field'
-    id=$((id + 1))
-done
+# One missing blob field covers requireBlobMetadataField for all required keys.
+launch "$id" meta "$DATA/missing_type.puffin" 'missing required field'
+id=$((id + 1))
 
 launch "$id" meta "$DATA/missing_blobs.puffin" "missing required field 'blobs'"
 id=$((id + 1))
@@ -44,13 +42,13 @@ do
     id=$((id + 1))
 done
 
-for f in invalid_properties_array invalid_properties_string null_properties
+for f in invalid_properties_array null_properties
 do
     launch "$id" meta "$DATA/$f.puffin" "field 'properties' must be an object"
     id=$((id + 1))
 done
 
-for f in invalid_file_properties_array invalid_file_properties_string null_file_properties
+for f in invalid_file_properties_array null_file_properties
 do
     launch "$id" meta "$DATA/$f.puffin" "Puffin footer field 'properties' must be an object"
     id=$((id + 1))

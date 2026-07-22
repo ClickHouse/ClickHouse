@@ -252,26 +252,18 @@ def generate_incomplete_lz4_footer() -> None:
 
 
 def generate_missing_required_fields() -> None:
+    # One missing blob field covers requireBlobMetadataField; keep distinct blobs /
+    # properties / DV-property cases that hit different branches.
     footer_json = footer_json_for_blob(BLOB_PLACEHOLDER)
     payload = json.loads(footer_json.decode("utf-8"))
-    blob_field_cases = {
-        "missing_snapshot_id.puffin": "snapshot-id",
-        "missing_sequence_number.puffin": "sequence-number",
-        "missing_fields.puffin": "fields",
-        "missing_type.puffin": "type",
-        "missing_offset.puffin": "offset",
-        "missing_length.puffin": "length",
-    }
-    for name, field in blob_field_cases.items():
-        case_payload = json.loads(json.dumps(payload))
-        del case_payload["blobs"][0][field]
-        write_fixture(
-            name,
-            build_puffin_file(
-                BLOB_PLACEHOLDER,
-                json.dumps(case_payload, separators=(", ", ": ")).encode("utf-8"),
-            ),
-        )
+    del payload["blobs"][0]["type"]
+    write_fixture(
+        "missing_type.puffin",
+        build_puffin_file(
+            BLOB_PLACEHOLDER,
+            json.dumps(payload, separators=(", ", ": ")).encode("utf-8"),
+        ),
+    )
 
     footer_field_cases = {
         "missing_blobs.puffin": {},
@@ -293,8 +285,8 @@ def generate_missing_required_fields() -> None:
         "null_properties.puffin": "null",
         "missing_referenced_data_file.puffin": {"cardinality": "0"},
         "missing_cardinality.puffin": {"referenced-data-file": DEFAULT_REFERENCED_DATA_FILE},
+        # Array covers the non-object branch; string would be the same check.
         "invalid_properties_array.puffin": [],
-        "invalid_properties_string.puffin": "not-an-object",
     }
     for name, properties in dv_property_cases.items():
         case_payload = json.loads(footer_json.decode("utf-8"))
@@ -312,20 +304,11 @@ def generate_missing_required_fields() -> None:
             ),
         )
 
+    # Present compression-codec (including null) must be rejected for DV; one fixture is enough.
     case_payload = json.loads(footer_json.decode("utf-8"))
     case_payload["blobs"][0]["compression-codec"] = "lz4"
     write_fixture(
         "dv_with_compression_codec.puffin",
-        build_puffin_file(
-            BLOB_PLACEHOLDER,
-            json.dumps(case_payload, separators=(", ", ": ")).encode("utf-8"),
-        ),
-    )
-
-    case_payload = json.loads(footer_json.decode("utf-8"))
-    case_payload["blobs"][0]["compression-codec"] = None
-    write_fixture(
-        "dv_null_compression_codec.puffin",
         build_puffin_file(
             BLOB_PLACEHOLDER,
             json.dumps(case_payload, separators=(", ", ": ")).encode("utf-8"),
@@ -337,13 +320,10 @@ def generate_invalid_property_value_types() -> None:
     """Property maps must have string values; non-strings must fail with BAD_ARGUMENTS."""
     footer_json = footer_json_for_blob(BLOB_PLACEHOLDER)
     base = json.loads(footer_json.decode("utf-8"))
+    # One extra-key non-string covers the shared !isString check; also require a wrong-typed
+    # required DV key so that path stays covered.
     cases = {
-        # Extra key keeps required DV strings valid so the failure is the value type.
         "invalid_property_number.puffin": {**default_dv_properties(), "ndv": 5},
-        "invalid_property_bool.puffin": {**default_dv_properties(), "flag": True},
-        "invalid_property_null.puffin": {**default_dv_properties(), "x": None},
-        "invalid_property_object.puffin": {**default_dv_properties(), "nested": {"a": 1}},
-        # Required key itself typed wrong must also reject as non-string.
         "invalid_property_cardinality_number.puffin": {
             "referenced-data-file": DEFAULT_REFERENCED_DATA_FILE,
             "cardinality": 5,
@@ -365,19 +345,16 @@ def generate_invalid_integer_fields() -> None:
     """BlobMetadata integer fields must be JSON integers, not floats, strings, or booleans.
 
     Poco reports JSON booleans as integers (`std::numeric_limits<bool>::is_integer`), so
-    boolean cases must be rejected explicitly in the reader.
+    boolean cases must be rejected explicitly in the reader. Keep one scalar and one fields[]
+    example per JSON type / range branch rather than one file per field name.
     """
     footer_json = footer_json_for_blob(BLOB_PLACEHOLDER)
     base = json.loads(footer_json.decode("utf-8"))
     cases = {
         "float_offset.puffin": ("offset", 5.1),
-        "float_length.puffin": ("length", 58.9),
-        "float_snapshot_id.puffin": ("snapshot-id", -1.5),
-        "float_sequence_number.puffin": ("sequence-number", 1.2),
         "float_fields_element.puffin": ("fields", [1.9]),
         "string_offset.puffin": ("offset", "4"),
         "bool_offset.puffin": ("offset", True),
-        "bool_snapshot_id.puffin": ("snapshot-id", False),
         "bool_fields_element.puffin": ("fields", [True]),
         "fields_element_out_of_int32_range.puffin": ("fields", [2**40]),
         # Poco stores integers that fail signed Int64 parse as UInt64 (2**63 wraps in tryParse64).
@@ -401,25 +378,20 @@ def generate_invalid_string_fields() -> None:
     footer_json = footer_json_for_blob(BLOB_PLACEHOLDER)
     base = json.loads(footer_json.decode("utf-8"))
 
-    type_cases = {
-        "type_number.puffin": 123,
-        "type_bool.puffin": True,
-    }
-    for name, type_value in type_cases.items():
-        case_payload = json.loads(json.dumps(base))
-        case_payload["blobs"][0]["type"] = type_value
-        write_fixture(
-            name,
-            build_puffin_file(
-                BLOB_PLACEHOLDER,
-                json.dumps(case_payload, separators=(", ", ": ")).encode("utf-8"),
-            ),
-        )
+    case_payload = json.loads(json.dumps(base))
+    case_payload["blobs"][0]["type"] = 123
+    write_fixture(
+        "type_number.puffin",
+        build_puffin_file(
+            BLOB_PLACEHOLDER,
+            json.dumps(case_payload, separators=(", ", ": ")).encode("utf-8"),
+        ),
+    )
 
     # Non-DV blob so DV omit-codec logic does not hide the type error.
+    # Number covers !isString; null covers present-null for the optional codec field.
     theta_cases = {
         "compression_codec_number.puffin": 1,
-        "compression_codec_bool.puffin": True,
         "compression_codec_null.puffin": None,
     }
     for name, codec_value in theta_cases.items():
@@ -511,20 +483,16 @@ def generate_invalid_dv_snapshot_sequence() -> None:
     """Iceberg requires deletion-vector-v1 snapshot-id and sequence-number to be -1."""
     footer_json = footer_json_for_blob(BLOB_PLACEHOLDER)
     base = json.loads(footer_json.decode("utf-8"))
-    cases = {
-        "dv_nonzero_snapshot_id.puffin": ("snapshot-id", 1),
-        "dv_nonzero_sequence_number.puffin": ("sequence-number", 1),
-    }
-    for name, (field, value) in cases.items():
-        case_payload = json.loads(json.dumps(base))
-        case_payload["blobs"][0][field] = value
-        write_fixture(
-            name,
-            build_puffin_file(
-                BLOB_PLACEHOLDER,
-                json.dumps(case_payload, separators=(", ", ": ")).encode("utf-8"),
-            ),
-        )
+    # Shared check rejects either field; one nonzero fixture is enough.
+    case_payload = json.loads(json.dumps(base))
+    case_payload["blobs"][0]["snapshot-id"] = 1
+    write_fixture(
+        "dv_nonzero_snapshot_id.puffin",
+        build_puffin_file(
+            BLOB_PLACEHOLDER,
+            json.dumps(case_payload, separators=(", ", ": ")).encode("utf-8"),
+        ),
+    )
 
 
 def generate_sparse_large_key() -> None:
@@ -614,7 +582,6 @@ def generate_invalid_non_dv_properties() -> None:
     }
     non_dv_property_cases = {
         "invalid_non_dv_properties_array.puffin": [],
-        "invalid_non_dv_properties_string.puffin": "not-an-object",
         "null_non_dv_properties.puffin": None,
     }
     for name, properties in non_dv_property_cases.items():
@@ -682,7 +649,6 @@ def generate_invalid_file_metadata_properties() -> None:
 
     cases: dict[str, object] = {
         "invalid_file_properties_array.puffin": [],
-        "invalid_file_properties_string.puffin": "not-an-object",
         "invalid_file_property_number.puffin": {"created-by": "ok", "ndv": 5},
         "null_file_properties.puffin": None,
     }

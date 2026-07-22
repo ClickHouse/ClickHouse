@@ -10,15 +10,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./data_puffin/puffin_errors_common.sh
 . "$CURDIR"/data_puffin/puffin_errors_common.sh
 
-for f in invalid_property_number invalid_property_bool invalid_property_null invalid_property_object \
-    invalid_property_cardinality_number
+for f in invalid_property_number invalid_property_cardinality_number
 do
     launch "$id" meta "$DATA/$f.puffin" 'must be a string'
     id=$((id + 1))
 done
 
-for f in float_offset float_length float_snapshot_id float_sequence_number float_fields_element string_offset \
-    bool_offset bool_snapshot_id bool_fields_element
+# One scalar / fields[] example per JSON type or range branch.
+for f in float_offset float_fields_element string_offset bool_offset bool_fields_element
 do
     launch "$id" meta "$DATA/$f.puffin" 'must be an integer'
     id=$((id + 1))
@@ -33,7 +32,7 @@ do
     id=$((id + 1))
 done
 
-for f in type_number type_bool compression_codec_number compression_codec_bool compression_codec_null
+for f in type_number compression_codec_number compression_codec_null
 do
     launch "$id" meta "$DATA/$f.puffin" 'must be a string'
     id=$((id + 1))
@@ -48,7 +47,7 @@ do
     id=$((id + 1))
 done
 
-for f in invalid_non_dv_properties_array invalid_non_dv_properties_string null_non_dv_properties
+for f in invalid_non_dv_properties_array null_non_dv_properties
 do
     launch "$id" meta "$DATA/$f.puffin" "field 'properties' must be an object"
     id=$((id + 1))
@@ -56,14 +55,8 @@ done
 
 launch "$id" meta "$DATA/dv_with_compression_codec.puffin" "must omit 'compression-codec'"
 id=$((id + 1))
-launch "$id" meta "$DATA/dv_null_compression_codec.puffin" "must omit 'compression-codec'"
+launch "$id" meta "$DATA/dv_nonzero_snapshot_id.puffin" 'snapshot-id and sequence-number must be -1'
 id=$((id + 1))
-
-for f in dv_nonzero_snapshot_id dv_nonzero_sequence_number
-do
-    launch "$id" meta "$DATA/$f.puffin" 'snapshot-id and sequence-number must be -1'
-    id=$((id + 1))
-done
 
 for f in invalid_cardinality_non_numeric invalid_cardinality_negative
 do

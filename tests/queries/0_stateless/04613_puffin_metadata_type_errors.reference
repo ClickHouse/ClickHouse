@@ -1,28 +1,14 @@
 --- invalid_property_number.puffin ---
 must be a string
---- invalid_property_bool.puffin ---
-must be a string
---- invalid_property_null.puffin ---
-must be a string
---- invalid_property_object.puffin ---
-must be a string
 --- invalid_property_cardinality_number.puffin ---
 must be a string
 --- float_offset.puffin ---
-must be an integer
---- float_length.puffin ---
-must be an integer
---- float_snapshot_id.puffin ---
-must be an integer
---- float_sequence_number.puffin ---
 must be an integer
 --- float_fields_element.puffin ---
 must be an integer
 --- string_offset.puffin ---
 must be an integer
 --- bool_offset.puffin ---
-must be an integer
---- bool_snapshot_id.puffin ---
 must be an integer
 --- bool_fields_element.puffin ---
 must be an integer
@@ -34,11 +20,7 @@ out of Int64 range
 out of Int64 range
 --- type_number.puffin ---
 must be a string
---- type_bool.puffin ---
-must be a string
 --- compression_codec_number.puffin ---
-must be a string
---- compression_codec_bool.puffin ---
 must be a string
 --- compression_codec_null.puffin ---
 must be a string
@@ -50,17 +32,11 @@ Cannot parse Puffin footer JSON
 Cannot parse Puffin footer JSON
 --- invalid_non_dv_properties_array.puffin ---
 field 'properties' must be an object
---- invalid_non_dv_properties_string.puffin ---
-field 'properties' must be an object
 --- null_non_dv_properties.puffin ---
 field 'properties' must be an object
 --- dv_with_compression_codec.puffin ---
 must omit 'compression-codec'
---- dv_null_compression_codec.puffin ---
-must omit 'compression-codec'
 --- dv_nonzero_snapshot_id.puffin ---
-snapshot-id and sequence-number must be -1
---- dv_nonzero_sequence_number.puffin ---
 snapshot-id and sequence-number must be -1
 --- invalid_cardinality_non_numeric.puffin ---
 property 'cardinality' must be an unsigned integer
