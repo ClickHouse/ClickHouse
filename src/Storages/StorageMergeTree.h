@@ -249,6 +249,13 @@ private:
     /// leader could otherwise activate via `loadNewlyAppearedParts`.
     void assertWritableLeaderAtEpoch(UInt64 admission_epoch) const;
 
+    /// Under `leader_election`, partition commands inside a user transaction are rejected: the
+    /// transactional branch stages removals (persisting `removal_tid` to shared part metadata)
+    /// while leader, but the final `COMMIT TRANSACTION` goes through `TransactionLog` without any
+    /// leadership or epoch re-check, so a leader that lost its lease could finalize the removal
+    /// after failover. Fail closed at admission instead.
+    void throwIfTransactionalPartitionOpUnderLeaderElection(const MergeTreeTransactionPtr & txn, std::string_view command) const;
+
     /// Under `leader_election`, only the lease-holding leader may mutate shared object storage
     /// (delete stale mutation/dedup files, rotate the deduplication log, repair/detach/remove
     /// parts, persist removal TIDs). During construction and while a follower the lease is not

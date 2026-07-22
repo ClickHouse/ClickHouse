@@ -3164,6 +3164,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
         ProfileEventsScope profile_events_scope;
 
         auto txn = query_context->getCurrentTransaction();
+        throwIfTransactionalPartitionOpUnderLeaderElection(txn, "TRUNCATE");
         if (txn)
         {
             auto data_parts_lock = lockParts();
@@ -3247,6 +3248,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
         auto txn = query_context->getCurrentTransaction();
+        throwIfTransactionalPartitionOpUnderLeaderElection(txn, detach ? "DETACH PART" : "DROP PART");
         if (txn)
         {
             if (auto part = outdatePart(txn.get(), part_name, /*force=*/ true))
@@ -3353,6 +3355,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
         auto txn = query_context->getCurrentTransaction();
+        throwIfTransactionalPartitionOpUnderLeaderElection(txn, detach ? "DETACH PARTITION" : "DROP PARTITION");
 
         if (txn)
         {
@@ -4314,6 +4317,18 @@ bool StorageMergeTree::canRunDestructiveCleanup() const
 UInt64 StorageMergeTree::currentLeadershipEpoch() const
 {
     return leader_election_ptr ? leader_election_ptr->leadershipEpoch() : 0;
+}
+
+void StorageMergeTree::throwIfTransactionalPartitionOpUnderLeaderElection(const MergeTreeTransactionPtr & txn, std::string_view command) const
+{
+    if (!txn || !leader_election_ptr)
+        return;
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "{} inside a transaction is not supported for tables with the leader_election setting: "
+        "the final COMMIT TRANSACTION is not fenced by the leadership lease, so a leader that "
+        "lost its lease could finalize the removal after failover",
+        command);
 }
 
 void StorageMergeTree::assertWritableLeaderAtEpoch(UInt64 admission_epoch) const
