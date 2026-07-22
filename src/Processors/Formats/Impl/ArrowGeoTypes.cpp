@@ -232,25 +232,17 @@ inline MultiPoint<CartesianPoint> parseWKTMultiPoint(ReadBuffer & in_buffer, boo
     while (true)
     {
         /// Both MULTIPOINT (1 1, 2 2) and MULTIPOINT ((1 1), (2 2)) are valid WKT spellings.
+        /// Reuse the shared separator/bracket helpers so this path stays as strict as readWKT:
+        /// any separator (space, tab, newline) is tolerated, and a parenthesized point must be
+        /// closed by ')' with nothing but separators in between (so "MULTIPOINT ((1 1 x))" throws).
+        skipWKTSeparators(in_buffer);
         char ch = 0;
-        while (true)
-        {
-            if (!in_buffer.peek(ch))
-                break;
-            if (ch != ' ')
-                break;
-            in_buffer.ignore();
-        }
         const bool parenthesized = in_buffer.peek(ch) && ch == '(';
         if (parenthesized)
             in_buffer.ignore();
         result.push_back(parseWKTPoint(in_buffer, precise_float_parsing));
         if (parenthesized)
-        {
-            /// Consume the closing bracket of the point.
-            while (in_buffer.read(ch) && ch != ')')
-                ;
-        }
+            readCloseBracket(in_buffer);
         if (readItemEnding(in_buffer))
             break;
     }
