@@ -5,6 +5,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Processors/Sources/ObfuscateSource.h>
 #include <Storages/StorageObfuscate.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -57,10 +58,15 @@ ColumnsDescription TableFunctionObfuscate::getActualTableStructure(ContextPtr co
 
     SharedHeader sample_block;
 
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
+    /// Interpret the inner query with the same context adjustments as the execution
+    /// in `ObfuscateSource`, in particular so that positional arguments are resolved
+    /// even on secondary-query (remote-shard) contexts.
+    auto inner_context = ObfuscateSource::makeInnerContext(context);
+
+    if (inner_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], inner_context);
     else
-        sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);
+        sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], inner_context);
 
     return ColumnsDescription(sample_block->getNamesAndTypesList());
 }

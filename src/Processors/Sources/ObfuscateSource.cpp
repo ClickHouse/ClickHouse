@@ -23,9 +23,6 @@ namespace Setting
     extern const SettingsBool extremes;
 }
 
-namespace
-{
-
 /// The inner query is interpreted as a standalone top-level SELECT, so the query-level
 /// `limit` / `offset` result settings would be applied to it as well. That would train and
 /// generate from a truncated source just because the user limited the final result, e.g.
@@ -34,23 +31,29 @@ namespace
 /// For the same reason clear the result-size limits and `extremes`: they describe the final
 /// query result, not the hidden source used for training and generation (subqueries and
 /// `StorageView` clear them for their inner contexts as well).
-ContextPtr makeInnerContext(const ContextPtr & context)
+ContextPtr ObfuscateSource::makeInnerContext(const ContextPtr & context_)
 {
-    const auto & settings = context->getSettingsRef();
-    if (settings[Setting::limit] == 0 && settings[Setting::offset] == 0
-        && settings[Setting::max_result_rows] == 0 && settings[Setting::max_result_bytes] == 0
-        && !settings[Setting::extremes])
-        return context;
+    auto inner_context = Context::createCopy(context_);
 
-    auto inner_context = Context::createCopy(context);
-    inner_context->setSetting("limit", Field(UInt64(0)));
-    inner_context->setSetting("offset", Field(UInt64(0)));
-    inner_context->setSetting("max_result_rows", Field(UInt64(0)));
-    inner_context->setSetting("max_result_bytes", Field(UInt64(0)));
-    inner_context->setSetting("extremes", Field(false));
+    const auto & settings = context_->getSettingsRef();
+    if (settings[Setting::limit] != 0 || settings[Setting::offset] != 0
+        || settings[Setting::max_result_rows] != 0 || settings[Setting::max_result_bytes] != 0
+        || settings[Setting::extremes])
+    {
+        inner_context->setSetting("limit", Field(UInt64(0)));
+        inner_context->setSetting("offset", Field(UInt64(0)));
+        inner_context->setSetting("max_result_rows", Field(UInt64(0)));
+        inner_context->setSetting("max_result_bytes", Field(UInt64(0)));
+        inner_context->setSetting("extremes", Field(false));
+    }
+
+    /// The inner query is analyzed from scratch here and was never seen by a distributed
+    /// initiator. Mark the context the same way `StorageView` does, so that positional
+    /// arguments (`GROUP BY 1`) are resolved even on secondary-query / local-shard-plan
+    /// contexts, where resolution is otherwise skipped as already done by the initiator.
+    inner_context->setIsViewInnerQuery(true);
+
     return inner_context;
-}
-
 }
 
 ObfuscateSource::ObfuscateSource(

@@ -36,6 +36,14 @@ public:
 
     String getName() const override { return "ObfuscateSource"; }
 
+    /// Build the context for interpreting the hidden inner query: clear the query-level
+    /// result settings (`limit`, `offset`, result-size limits, `extremes`) that describe the
+    /// final query result rather than the source used for training and generation, and mark
+    /// the context as a view-inner query so that the inner query is analyzed from scratch
+    /// (e.g. positional arguments are resolved) even on secondary-query / local-shard-plan
+    /// contexts. Used both for execution and for deriving the table structure.
+    static ContextPtr makeInnerContext(const ContextPtr & context_);
+
 protected:
     Chunk generate() override;
 
