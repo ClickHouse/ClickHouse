@@ -1,6 +1,7 @@
 insert projection adds file syncs	1
-insert rows	10000
-insert check
+merge projection adds file syncs	1
+rows	10000
+check
 1
 materialize rows	10000
 materialize check

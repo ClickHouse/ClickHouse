@@ -879,6 +879,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     ctx->sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
     ctx->sum_uncompressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed;
 
+    /// Computed here (before the horizontal phase) because projection temp parts are written
+    /// while streaming rows in executeImpl(), so `need_sync` must already hold its final value.
+    /// force_sync: a projection sub-merge inherits the parent operation's sync decision.
+    ctx->need_sync = global_ctx->force_sync
+        || global_ctx->data_settings->needSyncPart(ctx->sum_input_rows_upper_bound, ctx->sum_compressed_bytes_upper_bound);
+
     global_ctx->chosen_merge_algorithm = chooseMergeAlgorithm();
     global_ctx->merge_list_element_ptr->merge_algorithm.store(global_ctx->chosen_merge_algorithm, std::memory_order_relaxed);
 
@@ -1591,13 +1597,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
 void MergeTask::ExecuteAndFinalizeHorizontalPart::finalize() const
 {
     mergeBuiltStatistics(std::move(ctx->build_statistics_transforms), global_ctx);
-
-    /// Computed before finalizeProjections() so the projection temp parts written there honor it.
-    /// force_sync: a projection sub-merge inherits the parent operation's sync decision.
-    const size_t sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
-    ctx->need_sync = global_ctx->force_sync
-        || global_ctx->data_settings->needSyncPart(ctx->sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound);
-
     finalizeProjections();
     global_ctx->to->finalizeIndexGranularity();
     global_ctx->merging_executor.reset();
@@ -2055,7 +2054,8 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
             global_ctx->data,
             global_ctx->mutator,
             global_ctx->merges_blocker,
-            global_ctx->ttl_merges_blocker));
+            global_ctx->ttl_merges_blocker,
+            /* force_sync */ ctx->need_sync));
     }
 
     /// merge projections with _part_offset first so that we can release offset mapping earlier.
