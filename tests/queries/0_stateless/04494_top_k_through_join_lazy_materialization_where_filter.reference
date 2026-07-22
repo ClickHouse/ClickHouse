@@ -1,0 +1,24 @@
+in_set_mtp0_on	-299
+in_set_mtp0_on	-295
+in_set_mtp0_off	-299
+in_set_mtp0_off	-295
+in_set_default_on	-299
+in_set_default_on	-295
+in_set_default_off	-299
+in_set_default_off	-295
+like_or_mtp0_on	-299	1
+like_or_mtp0_on	-295	5
+like_or_mtp0_on	-289	1
+like_or_mtp0_off	-299	1
+like_or_mtp0_off	-295	5
+like_or_mtp0_off	-289	1
+right_using_mtp0_on	2023-11-14 22:13:20
+right_using_mtp0_on	2023-11-14 22:13:21
+right_using_mtp0_on	2023-11-14 22:13:22
+right_using_mtp0_on	2023-11-14 22:13:23
+right_using_mtp0_on	2023-11-14 22:13:24
+right_using_mtp0_off	2023-11-14 22:13:20
+right_using_mtp0_off	2023-11-14 22:13:21
+right_using_mtp0_off	2023-11-14 22:13:22
+right_using_mtp0_off	2023-11-14 22:13:23
+right_using_mtp0_off	2023-11-14 22:13:24
