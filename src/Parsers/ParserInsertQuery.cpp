@@ -4,7 +4,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -41,48 +40,6 @@ bool selectReadsInlineDataViaInputFunction(const ASTPtr & ast)
         if (selectReadsInlineDataViaInputFunction(child))
             return true;
     return false;
-}
-
-/// Clone the query-scoped WITH (written before INSERT) onto a SELECT generated for a FROM-first or pipe
-/// query, and onto every pipe wrapper it nests. Pipe operators wrap the query into `SELECT ... FROM (inner)`,
-/// so a WITH attached only to the outermost SELECT is not visible in the inner stages when
-/// `enable_global_with_statement = 0`. Spreading it down the chain keeps the aliases and CTEs visible in
-/// every stage, matching the plain `WITH ... FROM ... |> ...` behavior. A user-written subquery that brings
-/// its own WITH ends the chain: its scope is left untouched.
-void spreadWithOntoPipeStages(ASTSelectQuery & select, const ASTPtr & with_expression_list)
-{
-    if (select.getExpression(ASTSelectQuery::Expression::WITH, false))
-        return;
-
-    select.setExpression(ASTSelectQuery::Expression::WITH, with_expression_list->clone());
-    /// WITH was appended after SELECT/TABLES; normalize back to canonical order.
-    select.normalizeChildrenOrder();
-
-    /// Follow the single subquery in the FROM clause to reach the next inner stage.
-    /// The first table element holds the piped-in query (a JOIN operator appends further elements).
-    const auto * tables = select.tables() ? select.tables()->as<ASTTablesInSelectQuery>() : nullptr;
-    if (!tables || tables->children.empty())
-        return;
-
-    const auto * element = tables->children.front()->as<ASTTablesInSelectQueryElement>();
-    if (!element || !element->table_expression)
-        return;
-
-    const auto * table_expression = element->table_expression->as<ASTTableExpression>();
-    if (!table_expression || !table_expression->subquery)
-        return;
-
-    const auto * subquery = table_expression->subquery->as<ASTSubquery>();
-    if (!subquery || subquery->children.empty())
-        return;
-
-    auto * inner_union = subquery->children.front()->as<ASTSelectWithUnionQuery>();
-    if (!inner_union || !inner_union->list_of_selects)
-        return;
-
-    for (const auto & inner_child : inner_union->list_of_selects->children)
-        if (auto * inner_select = inner_child->as<ASTSelectQuery>())
-            spreadWithOntoPipeStages(*inner_select, with_expression_list);
 }
 
 }
@@ -272,7 +229,10 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     if (child_select->getExpression(ASTSelectQuery::Expression::WITH, false))
                         throw Exception(ErrorCodes::SYNTAX_ERROR,
                             "Only one WITH should be presented, either before INSERT or SELECT.");
-                    spreadWithOntoPipeStages(*child_select, with_expression_list);
+                    child_select->setExpression(ASTSelectQuery::Expression::WITH,
+                        ASTPtr(with_expression_list));
+                    /// WITH was appended after SELECT/TABLES; normalize back to canonical order.
+                    child_select->normalizeChildrenOrder();
                 }
             }
         }

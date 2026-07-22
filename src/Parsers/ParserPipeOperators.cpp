@@ -107,9 +107,12 @@ const ASTSelectQuery * getFirstSelect(const IAST & query)
 /// If `select_list` is nullptr, `SELECT *` is used. The alias is consumed and cleared.
 /// The WITH clause of the query is cloned onto the wrapping SELECT, so that query-scoped aliases and CTEs
 /// remain visible in the following pipe operators: WITH 10 AS threshold FROM t |> WHERE x < threshold.
+/// The CTE_ALIASES sidecar is cloned together with WITH: it keeps the CTE column alias lists
+/// (WITH t(a) AS ...) in the children, so the tree hash of the reparsed formatted query matches.
 boost::intrusive_ptr<ASTSelectQuery> wrapQueryIntoSelect(ASTPtr query, String & pending_alias, ASTPtr select_list = nullptr)
 {
     ASTPtr with_clause;
+    ASTPtr cte_aliases;
     bool recursive_with = false;
     if (const auto * inner_select = getFirstSelect(*query))
     {
@@ -117,6 +120,8 @@ boost::intrusive_ptr<ASTSelectQuery> wrapQueryIntoSelect(ASTPtr query, String & 
         {
             with_clause = inner_with->clone();
             recursive_with = inner_select->recursive_with;
+            if (auto inner_cte_aliases = inner_select->cteAliases())
+                cte_aliases = inner_cte_aliases->clone();
         }
     }
 
@@ -148,6 +153,8 @@ boost::intrusive_ptr<ASTSelectQuery> wrapQueryIntoSelect(ASTPtr query, String & 
     }
     select->setExpression(ASTSelectQuery::Expression::SELECT, select_list ? std::move(select_list) : makeAsteriskList());
     select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+    if (cte_aliases)
+        select->setExpression(ASTSelectQuery::Expression::CTE_ALIASES, std::move(cte_aliases));
     return select;
 }
 

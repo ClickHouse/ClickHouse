@@ -75,17 +75,15 @@ CREATE TABLE big_orders (customer String, amount UInt64) ENGINE = MergeTree ORDE
 INSERT INTO big_orders FROM orders |> WHERE amount >= 250 |> SELECT customer, amount;
 FROM big_orders ORDER BY customer;
 
-SELECT '-- An INSERT-scoped WITH stays visible in every pipe stage, even with enable_global_with_statement = 0';
+SELECT '-- An INSERT-scoped WITH stays visible in the pipe operators';
 DROP TABLE IF EXISTS filtered_orders;
 CREATE TABLE filtered_orders (customer String, amount UInt64) ENGINE = MergeTree ORDER BY customer;
-SET enable_global_with_statement = 0;
 WITH 100 AS lo, 300 AS hi INSERT INTO filtered_orders FROM orders |> WHERE amount >= lo |> WHERE amount < hi |> SELECT customer, amount;
-SET enable_global_with_statement = 1;
 FROM filtered_orders ORDER BY customer, amount;
 
-SELECT '-- A column alias list can follow the tables in the FROM-first form, before the SELECT clause';
-FROM (SELECT customer, amount FROM orders) AS o (name, total) SELECT name, total |> WHERE total >= 250 |> ORDER BY name, total;
-FROM (SELECT customer, amount FROM orders) AS o (name, total) |> WHERE total >= 250 |> SELECT name |> ORDER BY name;
+-- The following sections require the analyzer: the old analyzer does not support WITH RECURSIVE
+-- and column alias lists on subqueries, and it expands asterisks in EXPLAIN SYNTAX.
+SET enable_analyzer = 1;
 
 SELECT '-- The resulting AST is the same as with nested subqueries';
 EXPLAIN SYNTAX oneline = 1 FROM orders |> WHERE cancelled = 0 |> AGGREGATE sum(amount) AS total GROUP BY customer |> ORDER BY total DESC |> LIMIT 3;
@@ -94,8 +92,14 @@ EXPLAIN SYNTAX oneline = 1 FROM orders |> ORDER BY amount DESC |> LIMIT 2 OFFSET
 EXPLAIN SYNTAX oneline = 1 WITH 100 AS threshold FROM orders |> WHERE amount >= threshold |> AGGREGATE count() AS c;
 
 SELECT '-- WITH RECURSIVE stays visible across pipe operators (requires the analyzer)';
-SET enable_analyzer = 1;
 WITH RECURSIVE r AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM r WHERE n < 3) FROM r |> AGGREGATE sum(n) AS s;
+
+SELECT '-- A column alias list can follow the tables in the FROM-first form, before the SELECT clause (requires the analyzer)';
+FROM (SELECT customer, amount FROM orders) AS o (name, total) SELECT name, total |> WHERE total >= 250 |> ORDER BY name, total;
+FROM (SELECT customer, amount FROM orders) AS o (name, total) |> WHERE total >= 250 |> SELECT name |> ORDER BY name;
+
+SELECT '-- A CTE column alias list stays intact across pipe operators (requires the analyzer)';
+WITH t(a) AS (SELECT 1 AS x) FROM t |> SELECT a |> LIMIT 1;
 
 SELECT '-- Errors';
 FROM orders |> FOO; -- { clientError SYNTAX_ERROR }
@@ -103,5 +107,6 @@ FROM orders |>; -- { clientError SYNTAX_ERROR }
 SELECT 1 |> WHERE; -- { clientError SYNTAX_ERROR }
 FROM orders |> LIMIT 1 UNION ALL SELECT 'x', 0, 0; -- { clientError SYNTAX_ERROR }
 
+DROP TABLE filtered_orders;
 DROP TABLE big_orders;
 DROP TABLE orders;

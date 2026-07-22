@@ -75,14 +75,9 @@ charlie
 -- INSERT from a pipe query
 alice	250
 charlie	300
--- An INSERT-scoped WITH stays visible in every pipe stage, even with enable_global_with_statement = 0
+-- An INSERT-scoped WITH stays visible in the pipe operators
 alice	100
 alice	250
--- A column alias list can follow the tables in the FROM-first form, before the SELECT clause
-alice	250
-charlie	300
-alice
-charlie
 -- The resulting AST is the same as with nested subqueries
 SELECT * FROM (SELECT * FROM (SELECT customer, sum(amount) AS total FROM (SELECT * FROM (SELECT * FROM orders) WHERE equals(cancelled, 0)) GROUP BY customer) ORDER BY total DESC) LIMIT 3
 SELECT * FROM (SELECT * EXCEPT cancelled FROM (SELECT * REPLACE (plus(amount, 1) AS amount) FROM (SELECT * FROM orders))) AS t ALL LEFT JOIN big_orders AS b USING (customer)
@@ -90,4 +85,11 @@ SELECT * FROM (SELECT * FROM (SELECT * FROM orders) ORDER BY amount DESC) LIMIT 
 WITH 100 AS threshold SELECT count() AS c FROM (WITH 100 AS threshold SELECT * FROM (WITH 100 AS threshold SELECT * FROM orders) WHERE greaterOrEquals(amount, threshold))
 -- WITH RECURSIVE stays visible across pipe operators (requires the analyzer)
 6
+-- A column alias list can follow the tables in the FROM-first form, before the SELECT clause (requires the analyzer)
+alice	250
+charlie	300
+alice
+charlie
+-- A CTE column alias list stays intact across pipe operators (requires the analyzer)
+1
 -- Errors
