@@ -62,7 +62,7 @@ LEFT JOIN (SELECT lower(if(platform = 'ios', idfv, advertising_id)) AS id FROM e
 WHERE event_name LIKE 'af_%'
 SETTINGS join_use_nulls = 1; -- { serverError UNSUPPORTED_METHOD }
 
--- R3: the owner's minimal repro; the nested-alias `id` in `USING` over `remote` is rejected on the initiator.
+-- R3: minimal repro from the PR review; the nested-alias `id` in `USING` over `remote` is rejected on the initiator.
 CREATE TABLE t_shadow (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t_shadow VALUES (1);
 

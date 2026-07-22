@@ -19,6 +19,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Common/StringUtils.h>
@@ -677,7 +678,7 @@ private:
             const auto & left_element = using_elements.front();
 
             /// Marker: the left element carries a resolved alias body, as a `ColumnNode` with an expression (a)
-            /// or as a non-`ColumnNode` node carrying an alias (b, alias-column inlining on the `Distributed` path).
+            /// or as a non-`ColumnNode` node carrying an alias (b, `ReplaseAliasColumnsVisitor` inlining on the `Distributed` path).
             const auto * left_column = left_element->as<ColumnNode>();
             String wrapper_name;
             if (left_column)
@@ -718,7 +719,8 @@ private:
         return false;
     }
 
-    /// Does the JOIN's left table expression expose a real column `N` (schema column, not an alias)?
+    /// Does the JOIN's left table expression expose `name` as a column of the left table's schema
+    /// (as opposed to a query-level alias, which is handled separately by `hasProjectionColumn`)?
     static bool leftTableHasColumn(const QueryTreeNodePtr & node, const String & name)
     {
         if (!node)
@@ -726,6 +728,8 @@ private:
 
         if (const auto * table_node = node->as<TableNode>())
             return table_node->getStorageSnapshot()->tryGetColumn(GetColumnsOptions::All, name).has_value();
+        if (const auto * table_function_node = node->as<TableFunctionNode>())
+            return table_function_node->getStorageSnapshot()->tryGetColumn(GetColumnsOptions::All, name).has_value();
         if (const auto * query_node = node->as<QueryNode>())
             return hasProjectionColumn(*query_node, name);
         if (const auto * union_node = node->as<UnionNode>())
