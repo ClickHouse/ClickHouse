@@ -1,0 +1,76 @@
+---
+sidebarTitle: '技能'
+slug: /cloud/features/ai-ml/agents/builder/skills
+title: '技能'
+description: '供 ClickHouse 智能体使用的可复用指令包'
+keywords: ['AI', 'ClickHouse Cloud', '智能体', '技能', 'SKILL.md']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+技能是智能体可按需使用的可复用指令包。对于会在多个智能体之间反复用到的流程——例如品牌风格指南、代码审查清单、特定工作流的运行手册——应使用技能，而不是把这些说明重复写进每个智能体的系统提示中。
+
+<div id="anatomy-of-a-skill">
+  ## 技能的组成
+</div>
+
+技能是一个 Markdown 文件，开头有一小段 frontmatter：
+
+```markdown
+---
+name: revenue-report
+description: Generates the weekly revenue report using our standard segments
+always-apply: false
+user-invocable: true
+---
+
+When asked to generate a revenue report:
+1. Filter to the requested period.
+2. Apply the standard MRR formula:
+     SUM(CASE
+       WHEN billing_cycle = 'monthly' THEN amount
+       WHEN billing_cycle = 'yearly'  THEN amount / 12
+       ELSE 0
+     END)
+3. Break down by segment: Enterprise, Mid-Market, SMB.
+4. Render the result as a Markdown table.
+```
+
+最重要的 frontmatter 配置项如下：
+
+* **`name`** - kebab-case 标识符。
+* **`description`** - 模型用来判断何时应使用此技能的简短说明。请将其视为最重要的字段。要写得具体明确；描述含糊会导致调用错误的技能。
+* **`always-apply`** - 当为 `true` 时，技能会在每轮对话中自动预置，而不是按需选择。请谨慎使用；always-apply 技能会在每条消息中占用上下文。
+* **`user-invocable`** - 当为 `true` (默认值) 时，该技能会显示在 `$` 弹出菜单中，供手动选择。
+
+你可以将支持文件与技能一并打包——例如参考文档、查询示例和小型脚本——方法是上传一个包含 `SKILL.md` 及其相关资源的 `.zip` 文件。
+
+<div id="use-a-skill">
+  ## 使用技能
+</div>
+
+智能体在一次对话中使用技能有三种方式：
+
+* **用户调用** - 在输入框中按 `$`，然后从弹出菜单中选择技能。该技能的内容会为下一轮预先注入。
+* **模型自动选择** - 智能体会根据技能的 `description` 自行决定何时应用该技能。
+* **Always-apply** - 对于配置为这种方式的技能，每一轮都会预先注入。
+
+<div id="manage-skills">
+  ## 管理技能
+</div>
+
+Cloud 控制台中的 Skills 面板允许您直接创建技能、上传 `.md` 或 `.zip` 文件，并管理对当前用户启用哪些技能。您拥有的技能默认处于启用状态；停用某个技能会将其从弹出菜单和模型目录中移除，但不会删除它。
+
+技能可以与其他用户共享 (请参阅[共享与访问](/zh/products/cloud/features/ai-ml/agents/sharing-and-access)) 。
+
+<div id="skills-vs-instructions">
+  ## 技能与指令
+</div>
+
+* **智能体指令**定义了智能体的角色以及整体行为方式。对该智能体始终生效。
+* **技能**是按场景使用的——仅在相关时应用，并且限定在特定工作流内。
+
+如果同一套分步说明反复出现在多个智能体中，或者你希望它只在特定用户请求时触发，而不是每一轮都生效，就应使用技能。

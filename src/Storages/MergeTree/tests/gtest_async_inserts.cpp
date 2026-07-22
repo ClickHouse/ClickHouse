@@ -28,7 +28,7 @@ std::vector<Int64> testSelfDeduplicate(std::vector<Int64> data, std::vector<size
     }
     Block block({ColumnWithTypeAndName(std::move(column), DataTypePtr(new DataTypeInt64()), "a")});
 
-    auto deduplication_info = DeduplicationInfo::create(true, InsertDeduplicationVersions::NEW_UNIFIED_HASHES);
+    auto deduplication_info = DeduplicationInfo::create(true);
     deduplication_info->setRootViewID({});
     deduplication_info->disabled = false; // there is no insert dependencies instance in this test
     deduplication_info->updateOriginalBlock(Chunk(block.getColumns(), block.rows()), std::make_shared<const Block>(block.cloneEmpty()));
@@ -86,7 +86,7 @@ std::vector<String> testSelfDeduplicateStrings(std::vector<String> data, std::ve
     }
     Block block({ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "a")});
 
-    auto deduplication_info = DeduplicationInfo::create(true, InsertDeduplicationVersions::NEW_UNIFIED_HASHES);
+    auto deduplication_info = DeduplicationInfo::create(true);
     deduplication_info->setRootViewID({});
     deduplication_info->disabled = false; // there is no insert dependencies instance in this test
     deduplication_info->updateOriginalBlock(Chunk(block.getColumns(), block.rows()), std::make_shared<const Block>(block.cloneEmpty()));
@@ -134,6 +134,62 @@ TEST(AsyncInsertsTest, testSelfDeduplicateStrings)
     test_impl({"a","bb","a","bb","ccc"},{2,4,5},{"","",""},{"a","bb","ccc"});
     /// Distinct blocks must survive (no false deduplication from relative offsets).
     test_impl({"ab","c","a","bc"},{2,4},{"",""},{"ab","c","a","bc"});
+}
+
+
+/// Verify that cloneSelf after prewarmDataHashes produces the same deduplication result as
+/// operating on the original. This simulates the partition sink loop: the original
+/// DeduplicationInfo is pre-warmed once, then cloned once per partition; each clone must
+/// inherit the cached data_hash_batch and produce correct results without recomputing hashes.
+std::vector<String> testPrewarmDataHashes(std::vector<String> data, std::vector<size_t> offsets)
+{
+    MutableColumnPtr column = DataTypeString().createColumn();
+    for (const auto & datum : data)
+        column->insert(datum);
+    Block block({ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "a")});
+
+    auto deduplication_info = DeduplicationInfo::create(true);
+    deduplication_info->setRootViewID({});
+    deduplication_info->disabled = false;
+    deduplication_info->updateOriginalBlock(Chunk(block.getColumns(), block.rows()), std::make_shared<const Block>(block.cloneEmpty()));
+
+    /// Empty user token → data-hash path, which is exactly what prewarmDataHashes covers.
+    deduplication_info->setUserToken("", offsets[0]);
+    for (size_t i = 1; i < offsets.size(); ++i)
+        deduplication_info->setUserToken("", offsets[i] - offsets[i - 1]);
+
+    /// Pre-warm on the original, then clone — mirroring what MergeTreeSink / ReplicatedMergeTreeSink do.
+    deduplication_info->prewarmDataHashes();
+    auto clone = deduplication_info->cloneSelf();
+
+    auto filtered = clone->filterImpl(clone->filterSelf("all"));
+
+    if (filtered.removed_rows == 0 || !filtered.filtered_block)
+        return data;
+
+    ColumnPtr col = filtered.filtered_block->getColumns()[0];
+    std::vector<String> result;
+    result.reserve(col->size());
+    for (size_t i = 0; i < col->size(); i++)
+        result.push_back(String(col->getDataAt(i)));
+    return result;
+}
+
+TEST(AsyncInsertsTest, testPrewarmDataHashes)
+{
+    auto test_impl = [](std::vector<String> data, std::vector<size_t> offsets, std::vector<String> answer)
+    {
+        auto result = testPrewarmDataHashes(data, offsets);
+        ASSERT_EQ(answer, result);
+    };
+    /// Two equal single-row blocks: prewarm + clone must still deduplicate correctly.
+    test_impl({"one line","one line"}, {1,2}, {"one line"});
+    /// Equal multi-row blocks: first occurrence kept after clone.
+    test_impl({"a","bb","a","bb","ccc"}, {2,4,5}, {"a","bb","ccc"});
+    /// Distinct blocks: no false deduplication through the pre-warmed clone.
+    test_impl({"ab","c","a","bc"}, {2,4}, {"ab","c","a","bc"});
+    /// Three identical single-row blocks: only the first survives.
+    test_impl({"x","x","x"}, {1,2,3}, {"x"});
 }
 
 }

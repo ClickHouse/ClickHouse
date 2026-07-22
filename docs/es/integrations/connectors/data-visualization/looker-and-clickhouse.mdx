@@ -1,0 +1,79 @@
+---
+sidebarTitle: 'Looker'
+slug: /integrations/looker
+keywords: ['clickhouse', 'looker', 'conectar', 'integrar', 'UI']
+description: 'Looker es una plataforma empresarial de BI, aplicaciones de datos y analítica embebida que ayuda a explorar y compartir información en tiempo real.'
+title: 'Looker'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+import ConnectionDetails from '/snippets/es/_gather_your_details_http.mdx';
+
+import PartnerBadge from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+Looker puede conectarse a ClickHouse Cloud o a un despliegue on-premise mediante el origen de datos oficial de ClickHouse.
+
+<div id="1-gather-your-connection-details">
+  ## 1. Reúne los datos de conexión
+</div>
+
+<ConnectionDetails />
+
+<div id="2-create-a-clickhouse-data-source">
+  ## 2. Crear un origen de datos de ClickHouse
+</div>
+
+Ve a Admin -&gt; Database -&gt; Connections y haz clic en el botón &quot;Add Connection&quot;, en la esquina superior derecha.
+
+<Image size="md" img="/images/integrations/data-visualization/looker_01.webp" alt="Añadir una nueva conexión en la interfaz de administración de bases de datos de Looker" border />
+
+<br />
+
+Elige un nombre para tu origen de datos y selecciona `ClickHouse` en el menú desplegable de dialecto. Introduce tus credenciales en el formulario.
+
+<Image size="md" img="/images/integrations/data-visualization/looker_02.webp" alt="Especificar tus credenciales de ClickHouse en el formulario de conexión de Looker" border />
+
+<br />
+
+Si utilizas ClickHouse Cloud o tu entorno requiere SSL, asegúrate de tener SSL activado en la configuración adicional.
+
+<Image size="md" img="/images/integrations/data-visualization/looker_03.webp" alt="Activar SSL para la conexión de ClickHouse en la configuración de Looker" border />
+
+<br />
+
+Primero prueba la conexión y, una vez completado este paso, conéctate a tu nuevo origen de datos de ClickHouse.
+
+<Image size="md" img="/images/integrations/data-visualization/looker_04.webp" alt="Probar y conectarse al origen de datos de ClickHouse" border />
+
+<br />
+
+Ahora ya deberías poder asociar el origen de datos de ClickHouse a tu proyecto de Looker.
+
+<div id="3-known-limitations">
+  ## 3. Limitaciones conocidas
+</div>
+
+1. Los siguientes tipos de datos se tratan como cadenas de forma predeterminada:
+   * Array - la serialización no funciona como se espera debido a las limitaciones del controlador JDBC
+   * Decimal* - puede cambiarse a número en el modelo
+   * LowCardinality(...) - puede cambiarse a un tipo adecuado en el modelo
+   * Enum8, Enum16
+   * UUID
+   * Tuple
+   * Map
+   * JSON
+   * Nested
+   * FixedString
+   * tipos geoespaciales
+     * MultiPolygon
+     * Polygon
+     * Point
+     * Ring
+2. La [funcionalidad de agregación simétrica](https://cloud.google.com/looker/docs/reference/param-explore-symmetric-aggregates) no se admite
+3. El [Full outer join](https://cloud.google.com/looker/docs/reference/param-explore-join-type#full_outer) aún no está implementado en el controlador

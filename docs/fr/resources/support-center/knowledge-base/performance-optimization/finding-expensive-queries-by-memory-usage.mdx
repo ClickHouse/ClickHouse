@@ -1,0 +1,78 @@
+---
+title: Identifier les requêtes coûteuses en mémoire dans ClickHouse
+description: Découvrez comment utiliser la table `system.query_log` pour repérer les requêtes les plus gourmandes en mémoire dans ClickHouse, avec des exemples pour des configurations en cluster et autonomes.
+date: 2023-06-07
+tags: ['Performances et optimisations']
+keywords: ['Requêtes coûteuses', 'Utilisation de la mémoire']
+---
+
+<div id="using-the-systemquery_log-table">
+  ## Utilisation de la table `system.query_log`
+</div>
+
+La requête suivante, très utile, montre lesquelles de vos requêtes exécutées ont consommé le plus de mémoire.
+
+Quelques remarques à propos de cette requête :
+
+* les résultats sont calculés sur les dernières 24 heures (`now() - toIntervalDay(1))`), mais vous pouvez facilement modifier l&#39;intervalle de temps
+* elle suppose que vous disposez d&#39;un cluster nommé `default`, qui est le nom de votre cluster dans [ClickHouse Cloud](https://console.clickhouse.cloud). Remplacez `default` par le nom de votre cluster
+* si vous n&#39;avez pas de cluster, consultez la requête indiquée à la fin de cet article
+
+```sql
+SELECT
+    count() as nb_query,
+    user,
+    query,
+    sum(memory_usage) AS memory,
+    normalized_query_hash
+FROM
+    clusterAllReplicas(default, system.query_log)
+WHERE
+    (event_time >= (now() - toIntervalDay(1)))
+    AND query_kind = 'Select'
+    AND type = 'QueryFinish'
+    and user != 'monitoring-internal'
+GROUP BY
+    normalized_query_hash,
+    query,
+    user
+ORDER BY
+    memory DESC;
+```
+
+La réponse ressemble à ceci :
+
+```response
+┌─nb_query─┬─user────┬─query─────────────────────────────────────────────────────────┬───memory─┬─normalized_query_hash─┐
+│       11 │ default │ select version()                                              │ 46178924 │   7202516440347714159 │
+│        2 │ default │ SELECT * FROM "system"."table_functions" LIMIT 31 OFFSET 0    │  8391544 │  12830067173062987695 │
+└──────────┴─────────┴───────────────────────────────────────────────────────────────┴──────────┴───────────────────────┘
+```
+
+<Note>
+  Si vous n’avez pas de table `system.query_log`, c’est probablement que la journalisation des requêtes n’est pas activée. Consultez les détails du paramètre [`query_log`](/fr/reference/settings/server-settings/settings#server_configuration_parameters-query-log) pour savoir comment l’activer.
+</Note>
+
+Si vous n’avez pas de cluster, vous pouvez simplement interroger directement votre table `system.query_log` :
+
+```sql
+SELECT
+    count() as nb_query,
+    user,
+    query,
+    sum(memory_usage) AS memory,
+    normalized_query_hash
+FROM
+    system.query_log
+WHERE
+    (event_time >= (now() - toIntervalDay(1)))
+    AND query_kind = 'Select'
+    AND type = 'QueryFinish'
+    and user != 'monitoring-internal'
+GROUP BY
+    normalized_query_hash,
+    query,
+    user
+ORDER BY
+    memory DESC;
+```

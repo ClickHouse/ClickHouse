@@ -1,0 +1,232 @@
+---
+sidebarTitle: 'استراتيجيات إزالة التكرار'
+description: 'التعامل مع الصفوف المكررة والمحذوفة.'
+slug: /integrations/clickpipes/postgres/deduplication
+title: 'استراتيجيات إزالة التكرار (باستخدام CDC)'
+keywords: ['deduplication', 'postgres', 'clickpipes', 'replacingmergetree', 'final']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+تؤدي التحديثات وعمليات الحذف المنسوخة من Postgres إلى ClickHouse إلى ظهور صفوف مكررة في ClickHouse بسبب بنية تخزين البيانات فيه وعملية النسخ المتماثل. تشرح هذه الصفحة سبب حدوث ذلك والاستراتيجيات التي يمكن استخدامها في ClickHouse للتعامل مع الصفوف المكررة.
+
+<div id="how-does-data-get-replicated">
+  ## كيف تتم عملية النسخ المتماثل للبيانات؟
+</div>
+
+<div id="PostgreSQL-logical-decoding">
+  ### فك الترميز المنطقي في PostgreSQL
+</div>
+
+تستخدم ClickPipes [فك الترميز المنطقي في Postgres](https://www.pgedge.com/blog/logical-replication-evolution-in-chronological-order-clustering-solution-built-around-logical-replication) لالتقاط التغييرات في Postgres فور حدوثها. وتتيح عملية فك الترميز المنطقي في Postgres لعملاء مثل ClickPipes تلقي هذه التغييرات بصيغة مقروءة للبشر، أي على شكل سلسلة من عمليات INSERTs وUPDATEs وDELETEs.
+
+<div id="replacingmergetree">
+  ### ReplacingMergeTree
+</div>
+
+يربط ClickPipes جداول Postgres بـ ClickHouse باستخدام محرك [ReplacingMergeTree](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree). يحقق ClickHouse أفضل أداء مع أعباء العمل القائمة على الإلحاق فقط، ولا يوصي بإجراء عمليات UPDATE متكررة. وهنا تتجلى قوة ReplacingMergeTree بشكل خاص.
+
+مع ReplacingMergeTree، تُمثَّل التحديثات على شكل عمليات insert بإصدار أحدث (`_peerdb_version`) من الصف، بينما تُمثَّل عمليات الحذف على شكل عمليات insert بإصدار أحدث مع تعيين `_peerdb_is_deleted` إلى true. ويقوم محرك ReplacingMergeTree بإلغاء التكرار/دمج البيانات في الخلفية، ويحتفظ بأحدث إصدار من الصف لمفتاح أساسي معيّن (id)، مما يتيح معالجة UPDATE وDELETE بكفاءة باعتبارهما versioned inserts.
+
+فيما يلي مثال على عبارة CREATE TABLE ينفذها ClickPipes لإنشاء الجدول في ClickHouse.
+
+```sql
+CREATE TABLE users
+(
+    `id` Int32,
+    `reputation` String,
+    `creationdate` DateTime64(6),
+    `displayname` String,
+    `lastaccessdate` DateTime64(6),
+    `aboutme` String,
+    `views` Int32,
+    `upvotes` Int32,
+    `downvotes` Int32,
+    `websiteurl` String,
+    `location` String,
+    `accountid` Int32,
+    `_peerdb_synced_at` DateTime64(9) DEFAULT now64(),
+    `_peerdb_is_deleted` Int8,
+    `_peerdb_version` Int64
+)
+ENGINE = ReplacingMergeTree(_peerdb_version)
+PRIMARY KEY id
+ORDER BY id;
+```
+
+<div id="illustrative-example">
+  ### مثال توضيحي
+</div>
+
+يوضح الشكل أدناه مثالًا أساسيًا على مزامنة جدول `users` بين PostgreSQL وClickHouse باستخدام ClickPipes.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp" alt="التحميل الأوّلي في ClickPipes" size="lg" />
+
+توضح **الخطوة 1** اللقطة الأولية للصفّين في PostgreSQL، وكيف يجري ClickPipes التحميل الأوّلي لهذين الصفّين إلى ClickHouse. وكما تلاحظ، يُنسخ الصفّان إلى ClickHouse كما هما.
+
+توضح **الخطوة 2** ثلاث عمليات على جدول users: إدراج صف جديد، وتحديث صف موجود، وحذف صف آخر.
+
+توضح **الخطوة 3** كيف يكرّر ClickPipes عمليات INSERT وUPDATE وDELETE إلى ClickHouse على شكل عمليات إدراج بإصدارات. ويظهر UPDATE كإصدار جديد من الصف ذي المعرّف 2، بينما يظهر DELETE كإصدار جديد للمعرّف 1 تم تمييزه بالقيمة true باستخدام `_is_deleted`. ونتيجة لذلك، يحتوي ClickHouse على ثلاثة صفوف إضافية مقارنةً بـ PostgreSQL.
+
+ونتيجةً لذلك، قد يؤدي تشغيل استعلام بسيط مثل `SELECT count(*) FROM users;` إلى نتائج مختلفة في ClickHouse وPostgreSQL. ووفقًا لـ [توثيق الدمج في ClickHouse](/ar/concepts/core-concepts/merges#replacing-merges)، تُستبعَد إصدارات الصفوف القديمة في نهاية المطاف أثناء عملية الدمج. ومع ذلك، فإن توقيت هذا الدمج غير قابل للتنبؤ، ما يعني أن الاستعلامات في ClickHouse قد تُرجع نتائج غير متسقة إلى أن يحدث ذلك.
+
+كيف يمكننا ضمان تطابق نتائج الاستعلام في كلٍّ من ClickHouse وPostgreSQL؟
+
+<div id="deduplicate-using-final-keyword">
+  ### إزالة التكرار باستخدام الكلمة المفتاحية FINAL
+</div>
+
+الطريقة الموصى بها لإزالة التكرار في البيانات ضمن استعلامات ClickHouse هي استخدام [المُعدِّل FINAL.](/ar/reference/statements/select/from#final-modifier) وهذا يضمن إرجاع الصفوف بعد إزالة التكرار فقط.
+
+لنرَ كيفية تطبيقه على ثلاثة استعلامات مختلفة.
+
+*لاحظ عبارة WHERE في الاستعلامات التالية، وهي تُستخدم لاستبعاد الصفوف المحذوفة.*
+
+* **استعلام count بسيط**: احسب عدد المنشورات.
+
+هذا أبسط استعلام يمكنك تشغيله للتحقق من أن المزامنة تمت بنجاح. يجب أن يُرجع الاستعلامان العدد نفسه.
+
+```sql
+-- PostgreSQL
+SELECT count(*) FROM posts;
+
+-- ClickHouse 
+SELECT count(*) FROM posts FINAL WHERE _peerdb_is_deleted=0;
+```
+
+* **تجميع بسيط باستخدام JOIN**: أفضل 10 مستخدمين حصلوا على أكبر عدد من المشاهدات.
+
+مثال على إجراء تجميع على جدول واحد. وجود تكرارات هنا سيؤثر بشكل كبير في ناتج دالة الجمع.
+
+```sql highlight={8,22}
+-- PostgreSQL 
+SELECT
+    sum(p.viewcount) AS viewcount,
+    p.owneruserid AS user_id,
+    u.displayname AS display_name
+FROM posts p
+LEFT JOIN users u ON u.id = p.owneruserid
+WHERE p.owneruserid > 0
+GROUP BY user_id, display_name
+ORDER BY viewcount DESC
+LIMIT 10;
+
+-- ClickHouse 
+SELECT
+    sum(p.viewcount) AS viewcount,
+    p.owneruserid AS user_id,
+    u.displayname AS display_name
+FROM posts AS p
+FINAL
+LEFT JOIN users AS u
+FINAL ON (u.id = p.owneruserid) AND (u._peerdb_is_deleted = 0)
+WHERE (p.owneruserid > 0) AND (p._peerdb_is_deleted = 0)
+GROUP BY
+    user_id,
+    display_name
+ORDER BY viewcount DESC
+LIMIT 10
+```
+
+<div id="final-setting">
+  #### إعداد FINAL
+</div>
+
+بدلاً من إضافة المُعدِّل FINAL إلى اسم كل جدول في الاستعلام، يمكنك استخدام [إعداد FINAL](/ar/reference/settings/session-settings#final) لتطبيقه تلقائيًا على جميع الجداول في الاستعلام.
+
+يمكن تطبيق هذا الإعداد إما على مستوى كل استعلام أو على مستوى الجلسة بأكملها.
+
+```sql
+-- Per query FINAL setting
+SELECT count(*) FROM posts SETTINGS FINAL = 1;
+
+-- Set FINAL for the session
+SET final = 1;
+SELECT count(*) FROM posts; 
+```
+
+<div id="row-policy">
+  #### ROW policy
+</div>
+
+من الطرق السهلة لإخفاء عامل التصفية الزائد `_peerdb_is_deleted = 0` استخدام [ROW policy.](/ar/concepts/features/security/access-rights#row-policy-management) في ما يلي مثال يُنشئ ROW policy لاستبعاد الصفوف المحذوفة من جميع الاستعلامات على جدول Votes.
+
+```sql
+-- Apply row policy to all users
+CREATE ROW POLICY cdc_policy ON votes FOR SELECT USING _peerdb_is_deleted = 0 TO ALL;
+```
+
+> تُطبَّق سياسات الصفوف على قائمة من المستخدمين والأدوار. في هذا المثال، تُطبَّق على جميع المستخدمين والأدوار. ويمكن تعديل ذلك ليقتصر على مستخدمين أو أدوار معيّنة فقط.
+
+<div id="query-like-with-postgres">
+  ### الاستعلام كما في Postgres
+</div>
+
+غالبًا ما يتطلب ترحيل مجموعة بيانات تحليلية من PostgreSQL إلى ClickHouse تعديل استعلامات التطبيق لمراعاة الاختلافات في معالجة البيانات وآلية تنفيذ الاستعلامات.
+
+يستعرض هذا القسم تقنيات لإزالة تكرار البيانات مع الإبقاء على الاستعلامات الأصلية من دون تغيير.
+
+<div id="views">
+  #### عروض
+</div>
+
+تُعد [عروض](/ar/reference/statements/create/view#normal-view) وسيلة رائعة لإخفاء الكلمة المفتاحية FINAL من الاستعلام، لأنها لا تخزّن أي بيانات، وإنما تقرأ ببساطة من جدول آخر في كل مرة يتم الوصول إليها.
+
+فيما يلي مثال على إنشاء عروض لكل جدول في قاعدة البيانات لدينا في ClickHouse باستخدام الكلمة المفتاحية FINAL مع تصفية الصفوف المحذوفة.
+
+```sql
+CREATE VIEW posts_view AS SELECT * FROM posts FINAL WHERE _peerdb_is_deleted=0;
+CREATE VIEW users_view AS SELECT * FROM users FINAL WHERE _peerdb_is_deleted=0;
+CREATE VIEW votes_view AS SELECT * FROM votes FINAL WHERE _peerdb_is_deleted=0;
+CREATE VIEW comments_view AS SELECT * FROM comments FINAL WHERE _peerdb_is_deleted=0;
+```
+
+بعد ذلك، يمكننا الاستعلام عن عروض باستخدام الاستعلام نفسه الذي نستخدمه في PostgreSQL.
+
+```sql
+-- Most viewed posts
+SELECT
+    sum(viewcount) AS viewcount,
+    owneruserid
+FROM posts_view
+WHERE owneruserid > 0
+GROUP BY owneruserid
+ORDER BY viewcount DESC
+LIMIT 10
+```
+
+<div id="refreshable-material-view">
+  #### العرض المادي القابل للتحديث
+</div>
+
+هناك نهج آخر يتمثل في استخدام [عرض مادي قابل للتحديث](/ar/concepts/features/materialized-views/refreshable-materialized-view)، ما يتيح لك جدولة تنفيذ الاستعلام لإزالة التكرار من الصفوف وتخزين النتائج في الجدول الوجهة. ومع كل تحديث مجدول، يُستبدل الجدول الوجهة بأحدث نتائج الاستعلام.
+
+وتتمثل الميزة الأساسية لهذه الطريقة في أن الاستعلام الذي يستخدم الكلمة المفتاحية FINAL لا يُنفَّذ إلا مرة واحدة أثناء التحديث، مما يلغي حاجة الاستعلامات اللاحقة على الجدول الوجهة إلى استخدام FINAL.
+
+لكن من عيوب هذا النهج أن البيانات في الجدول الوجهة لا تكون محدَّثة إلا بقدر حداثة آخر عملية تحديث. ومع ذلك، قد تكون فترات التحديث التي تتراوح بين عدة دقائق وبضع ساعات كافية في كثير من حالات الاستخدام.
+
+```sql
+-- Create deduplicated posts table 
+CREATE TABLE deduplicated_posts AS posts;
+
+-- Create the Materialized view and schedule to run every hour
+CREATE MATERIALIZED VIEW deduplicated_posts_mv REFRESH EVERY 1 HOUR TO deduplicated_posts AS 
+SELECT * FROM posts FINAL WHERE _peerdb_is_deleted=0 
+```
+
+بعد ذلك، يمكنك إجراء استعلام على الجدول `deduplicated_posts` بشكل طبيعي.
+
+```sql
+SELECT
+    sum(viewcount) AS viewcount,
+    owneruserid
+FROM deduplicated_posts
+WHERE owneruserid > 0
+GROUP BY owneruserid
+ORDER BY viewcount DESC
+LIMIT 10;
+```

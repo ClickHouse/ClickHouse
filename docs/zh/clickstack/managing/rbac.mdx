@@ -1,0 +1,203 @@
+---
+slug: /use-cases/observability/clickstack/rbac
+title: '基于角色的访问控制（RBAC）'
+sidebarTitle: '基于角色的访问控制'
+toc_max_heading_level: 2
+description: '在 ClickStack 中配置基于角色的访问控制，管理团队对仪表盘、已保存的搜索、数据源、告警等功能的权限。'
+doc_type: 'guide'
+keywords: ['clickstack', 'rbac', '角色', '权限', '访问控制', '安全']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+ClickStack 包含基于角色的访问控制 (RBAC) ，因此你可以为[仪表盘](/zh/clickstack/features/dashboards/overview)、[已保存的搜索](/zh/clickstack/features/search)、数据源、[告警](/zh/clickstack/features/alerts)、Webhook 和笔记本定义具有细粒度权限的自定义角色。权限分为两个级别：资源级访问 (可按资源类型设置为无权限、只读或管理) 以及可选的细粒度规则，用于按名称、标签或 ID 限制对特定资源的访问。ClickStack 附带三个内置角色，你也可以创建符合团队需求的自定义角色。
+
+<Info>
+  **仅限托管 ClickStack**
+
+  RBAC 仅在托管 ClickStack 部署中可用。
+</Info>
+
+<div id="user-access-prerequisites">
+  ## 用户访问前置条件
+</div>
+
+ClickStack 使用 ClickHouse Cloud 进行身份验证。分配 ClickStack 角色前，每位用户都必须满足以下条件：
+
+1. **已被邀请加入你的 ClickHouse Cloud 组织。** 组织管理员可通过 Cloud 控制台邀请用户。详情请参阅 [管理云用户](/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users)。
+2. **拥有该服务的 SQL 控制台访问权限。** 前往该服务的 **设置** → **SQL 控制台访问**，并设置适当的权限级别：
+
+| Cloud SQL 控制台访问权限                     | ClickStack 访问权限                                                      |
+| ------------------------------------- | -------------------------------------------------------------------- |
+| **SQL Console Admin** (Full Access)   | 拥有 ClickStack 的完全访问权限。启用 [告警](/zh/clickstack/features/alerts) 时必须具备此权限。 |
+| **SQL Console Read Only** (Read Only) | 可查看可观测性数据并创建仪表盘。                                                     |
+| **No access**                         | 无法访问 ClickStack。                                                     |
+
+用户获得 Cloud 访问权限后，就会显示在 ClickStack **团队设置** 页面中，你可以在其中为其分配 ClickStack 角色。
+
+<Tabs>
+  <Tab title="Cloud 用户和角色">
+    <Image img="/images/clickstack/rbac/team-page-cloud.webp" alt="ClickHouse Cloud 用户和角色页面" size="lg" />
+  </Tab>
+
+  <Tab title="ClickStack 团队设置">
+    <Image img="/images/clickstack/rbac/team-page-clickstack.webp" alt="显示团队成员及其角色的 ClickStack 团队设置页面" size="lg" />
+  </Tab>
+</Tabs>
+
+<div id="built-in-roles">
+  ## 内置角色
+</div>
+
+ClickStack 提供三个系统内置角色。这些角色无法编辑或删除。默认情况下，团队创建者会被赋予 Admin 角色。
+
+| 权限         | Admin | Member | ReadOnly |
+| ---------- | :---: | :----: | :------: |
+| 读取所有资源     |   ✓   |    ✓   |     ✓    |
+| 管理仪表盘      |   ✓   |    ✓   |          |
+| 管理已保存的搜索   |   ✓   |    ✓   |          |
+| 管理数据源      |   ✓   |    ✓   |          |
+| 管理告警       |   ✓   |    ✓   |          |
+| 管理 webhook |   ✓   |    ✓   |          |
+| 管理笔记本      |   ✓   |    ✓   |          |
+| 更新团队设置     |   ✓   |    ✓   |          |
+| 创建/删除团队    |   ✓   |        |          |
+| 管理用户和邀请    |   ✓   |        |          |
+
+<div id="assigning-roles">
+  ## 为团队成员分配角色
+</div>
+
+**团队设置** 页面会列出所有团队成员及其当前角色。要更改角色，请点击用户名旁边的 **Edit**，然后选择新角色。每位用户只能拥有一个角色。
+
+<div id="default-new-user-role">
+  ### 默认新用户角色
+</div>
+
+你可以在[安全策略](#security-policies)中为新用户设置默认角色。自动加入团队的新用户将自动被分配此角色。
+
+<div id="creating-a-role">
+  ## 创建自定义角色
+</div>
+
+<Steps>
+  <Step>
+    ### 前往 团队设置
+
+    打开 **团队设置**，然后向下滚动到 **RBAC Roles**。
+
+    <Image img="/images/clickstack/rbac/rbac-section.webp" alt="RBAC Roles" size="lg" />
+  </Step>
+
+  <Step>
+    ### 添加新角色
+
+    点击 **+ Add Role**。输入 **Role Name**，并可选填 **Description**。
+  </Step>
+
+  <Step>
+    ### 配置权限并保存
+
+    为该角色设置权限，然后点击 **Create Role**。
+
+    <Image img="/images/clickstack/rbac/add-role-modal.webp" alt="添加角色模态框" size="md" />
+  </Step>
+</Steps>
+
+自定义角色会与系统角色一同显示在 **RBAC Roles** 部分，并带有 **Edit** 和 **Delete** 按钮。
+
+<div id="role-permissions">
+  ## 角色权限
+</div>
+
+<div id="resource-permissions">
+  ### 资源权限
+</div>
+
+每个角色对每种资源类型都有一个访问级别。共有三个级别：
+
+| 访问级别      | 允许的操作                  |
+| --------- | ---------------------- |
+| **无权限** | 该资源类型对此角色完全隐藏。         |
+| **只读**    | 可查看资源及其配置，但不能创建、编辑或删除。 |
+| **管理**    | 完全控制——可创建、编辑和删除该类型的资源。 |
+
+你可以控制的资源类型包括：
+
+* **[仪表盘](/zh/clickstack/features/dashboards/overview)** — 已保存的仪表盘布局和图表。
+* **[已保存的搜索](/zh/clickstack/features/search)** — 已保存的日志/trace/事件查询。
+* **数据源** — 摄取源配置。
+* **[告警](/zh/clickstack/features/alerts)** — 告警规则及其通知设置。
+* **Webhooks** — 出站通知目标端 (例如 Slack、PagerDuty 和通用 HTTP 端点) ，[告警](/zh/clickstack/features/alerts)会将通知发送到这些目标端。这里指的不是 ClickStack API。
+* **笔记本** — 协作式调查笔记本。
+
+<div id="administrative-permissions">
+  ### 管理权限
+</div>
+
+除资源权限外，每个角色还包含两项管理设置：
+
+* **用户** (无权限 · 受限访问) — 控制该角色是否可以查看团队成员及其角色。只有 Admins 可以邀请、移除或更新用户。
+* **团队** (只读 · 管理) — 控制该角色是否可以查看或修改团队级设置，例如安全策略和 RBAC 配置。
+
+<div id="fine-grained-access-rules">
+  ### 细粒度访问规则
+</div>
+
+仪表盘、已保存搜索、数据源和笔记本都支持细粒度控制，可将访问权限限制到某一类别中的具体资源。当你需要将某个角色的访问范围限制在特定资源上，而不是授予其对整个资源类型的全面访问权限时，请使用这些控制。
+
+<div id="access-control-modes">
+  #### 默认访问与细粒度控制
+</div>
+
+每种资源类型都有一个**访问控制模式**：
+
+* **默认访问** — 对该类型的所有资源统一应用一个访问级别 (无权限、只读或管理) 。
+* **细粒度控制** — 允许你定义按条件匹配特定资源的访问规则。未匹配到任何规则的资源默认无权限。
+
+要切换模式，请点击角色编辑器中某个资源类型旁的箭头以将其展开，然后切换**访问控制模式**。
+
+<Image img="/images/clickstack/rbac/default-vs-fine-grained.webp" alt="角色编辑器中的默认访问与细粒度控制模式" size="md" />
+
+<div id="configuring-access-rules">
+  #### 配置访问规则
+</div>
+
+每条访问规则都由一个**条件**和一个**访问级别**组成。条件会根据资源属性匹配资源：
+
+<Image img="/images/clickstack/rbac/condition-tip.webp" alt="条件提示：可按名称或标签（显示在标题中），或按 ID（可在 URL 中找到）匹配资源" size="md" />
+
+| 条件字段   | 运算符              | 匹配内容                                                      | 示例                                              |
+| ------ | ---------------- | --------------------------------------------------------- | ----------------------------------------------- |
+| **名称** | `is`, `contains` | 资源的显示名称，例如仪表盘标题。                                          | 名称包含 `production` —— 匹配标题中包含“production”的任意仪表盘。 |
+| **标签** | `is`, `contains` | 通过资源视图右上角标签面板分配给资源的标签。仅适用于仪表盘、已保存搜索 和 Notebooks。 | 标签为 `critical` —— 匹配带有“critical”标签的资源。          |
+| **ID** | `is`, `contains` | 资源标识符，可在打开资源时的 URL 栏中找到。                                  | ID 为 `abc123` —— 匹配某个特定的单个资源。                   |
+
+下图同时显示了 URL 栏中高亮显示的仪表盘 ID，以及标签面板 (右上角) 中可见的“TESTING”标签。
+
+<Image img="/images/clickstack/rbac/dashboard-id-and-tag-example.webp" alt="仪表盘中显示了 URL 栏里的资源 ID，以及右上角的一个标签" size="lg" />
+
+你可以为每种资源类型添加多条规则。系统会基于 OR 逻辑分别检查每条规则——只要资源匹配**任意**一条规则，即可访问。不匹配任何规则的资源则无法访问。
+
+<Image img="/images/clickstack/rbac/access-rules-tip.webp" alt="使用 OR 逻辑的访问规则提示" size="md" />
+
+**示例**：要为某个角色授予测试仪表盘的只读访问权限，请展开仪表盘，切换到 细粒度控制，然后添加两条规则：
+
+* **名称** `contains` `testing`，访问级别为 **Read**
+* **标签** `is` `testing`，访问级别为 **Read**
+
+匹配任意一条规则的仪表盘都可以访问。
+
+<Image img="/images/clickstack/rbac/dashboard-fine-grained-example.webp" alt="两条通过 OR 连接的细粒度访问规则：名称包含 testing 且访问级别为 Read，以及标签为 testing 且访问级别为 Read" size="md" />
+
+<div id="security-policies">
+  ## 安全策略
+</div>
+
+**团队设置**中的 **安全策略** 部分提供了更多控制选项。
+
+**默认新用户角色**用于设置新用户加入团队时自动分配的角色。
+
+**生成式 AI** 可让你启用或禁用由 Anthropic 或亚马逊 Bedrock 支持的 LLM 功能 (例如自然语言查询生成) 。禁用后，不会向 AI 提供商发送任何数据。
+
+<Image img="/images/clickstack/rbac/security-policies.webp" alt="安全策略" size="lg" />

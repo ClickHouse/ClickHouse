@@ -1,0 +1,45 @@
+---
+title: ClickHouse の「パーツが多すぎる」エラーの解消
+description: データ挿入レートの最適化、MergeTree 設定の構成、パーティションの適切な管理を通じて、ClickHouse の「パーツが多すぎる」エラーに対処する方法を学びます。
+date: 2023-03-20
+tags: ['エラーと例外']
+keywords: ['パーツが多すぎる']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="dbexception-too-many-parts-252-merges-are-processing-significantly-slower-than-inserts">
+  ## DB::Exception: パーツが多すぎる (エラー: 252)。マージ処理が insert 処理よりも大幅に遅れています
+</div>
+
+MergeTree テーブルで `parts_to_throw_insert` 設定のしきい値に達しています。
+
+次を使用すると、指定したテーブルのアクティブなパーツ数を監視できます。
+
+```sql
+select count(*) from system.parts where table = '<table_name>' and active == 1
+```
+
+ClickHouse への挿入に関する主な要件は、1秒あたりにあまり多くの`INSERT`ステートメントを送信しないことです。理想的には、1秒に1回、または数秒に1回の挿入にしてください。
+
+したがって、1秒あたり10万行を挿入することはできますが、それは1つの大きな一括`INSERT`ステートメントによる場合に限られます。*MergeTree テーブルに対して1秒あたり何百、何千もの insert ステートメントを送信すると、必ず何らかのエラーが発生します。これは設定をいくつか調整しても変えられません。
+
+外部で多数の insert を1つの大きな一括 insert ステートメントにまとめられない場合は、*MergeTree テーブルの前に Buffer table を作成する必要があります。
+
+1. insert が行われるたびに、`/var/lib/clickhouse/.../table_name/` にフォルダーが1つ作成されます。そのフォルダー内には各カラムごとに2つのファイルがあります。1つはデータ用 (圧縮済み) 、もう1つは索引用です。データはそれらのファイル内で主キー順に物理的にソートされています。これらのフォルダーは&#39;**パーツ**&#39;と呼ばれます。
+
+2. ClickHouse は、それらの小さなパーツをバックグラウンドでより大きなパーツへマージします。どのパーツをマージするかは、いくつかのルールに従って選択されます。2つ (またはそれ以上) のパーツがマージされると、より大きな1つのパーツが作成され、古いパーツは削除待ちのキューに入れられます。列挙されている設定を使うと、パーツのマージルールを微調整できます。マージ処理の目標は、各パーティションごとに1つの大きなパーツ (または、大きすぎてマージする価値のない少数の大きなパーツ) だけを残すことです。こちらの[コメント](https://github.com/yandex/ClickHouse/issues/1661#issuecomment-352739726)も確認してください。
+
+3. 新しいパーツをあまりに速く作成すると (たとえば多数の小さな insert を行うことで) 、しかも ClickHouse がそれらを十分な速度でマージできない場合 (つまり、ClickHouse がマージできるより速く新しいパーツが作られる場合) 、&#39;Merges are processing significantly slower than inserts&#39; という例外が発生します。制限を引き上げることはできますが、その結果、ファイル数やディレクトリー数が多すぎることによる filesystem の問題 (inodes 制限など) が発生する可能性があります。
+
+4. 一度に多数のパーティションへ insert すると、問題は insert の影響を受けるパーティション数に応じて増幅されます。
+
+5. 列挙されている設定のいずれか、または max&#95;insert&#95;block&#95;size / max&#95;block&#95;size / insert&#95;format&#95;max&#95;block&#95;size / max&#95;client&#95;network&#95;bandwidth を使って ClickHouse の動作を調整することはできます。しかし、より良い解決策は、想定されるペースでデータを insert することです。想定されるペースは次のとおりです。**1〜2秒ごとに1回の insert、各 insert には1万〜50万行のデータを含める**。
+
+6. したがって、&quot;Merges are processing significantly slower than inserts&quot; を解決する適切な方法は、1秒あたりの insert 数と各 insert の行数を調整することです。データが1行ずつ到着する場合は、batch insert を使って小さな insert をより大きな1つにまとめてください。一度に insert するデータが多すぎる場合は、大きすぎる insert を抑制してください。意味を十分に理解しているのでない限り、ClickHouse の internals は変更しないでください。
+
+7. データが1秒あたり50万行を超える速度で到着する場合、おそらく必要なのは設定の調整ではなく、そのトラフィックを処理するためのクラスター内のサーバー増設です。
+
+8. バックグラウンドマージの速度は通常、ストレージ速度、使用している圧縮設定、MergeTree オプション (マージアルゴリズム - plain merge/aggregating/summing/collapsing など) 、および使用している sorting key に依存します。

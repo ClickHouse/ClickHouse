@@ -1,0 +1,131 @@
+---
+sidebarTitle: 'クラウドユーザーの管理'
+slug: /cloud/security/manage-cloud-users
+title: 'クラウドユーザーの管理'
+description: 'このページでは、管理者によるユーザーの追加、割り当ての管理、ユーザーの削除の方法を説明します'
+doc_type: 'guide'
+keywords: ['クラウドユーザー', 'アクセス管理', 'セキュリティ', '権限', 'チーム管理']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import EnterprisePlanFeatureBadge from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+このガイドは、ClickHouse Cloud で Admin ロールを持つユーザー向けです。
+
+<div id="add-users">
+  ## 組織にユーザーを追加する
+</div>
+
+<div id="invite-users">
+  ### ユーザーを招待する
+</div>
+
+管理者は、一度に複数のユーザーを招待し、招待時に1つ以上のロールを割り当てることができます。
+
+<Steps>
+  <Step>
+    ### 組織設定にアクセスし、`Users and roles` を選択する
+
+    サービスページで組織名を選択します。ポップアップメニューから `Users and roles` を選択します。
+
+    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### 左上の `Invite members` を選択する
+
+    左上の `Invite members` ボタンをクリックします。
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/2_invite_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### 新しいメンバーのメールアドレスを入力し、ロールを割り当てる
+
+    招待画面の上部にメールアドレスを入力します。ユーザーに割り当てるロールを1つ以上選択します。
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/3_invite_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### `Send invites` をクリックする
+
+    画面下部の `Send invites` をクリックします。ユーザーにはメールが送信され、そのメールから組織に参加できます。招待の承諾について詳しくは、[Manage my account](/ja/products/cloud/guides/security/cloud-access-management/manage-my-account)を参照してください。
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/4_invite_user.webp" size="lg" />
+  </Step>
+</Steps>
+
+<div id="add-users-via-saml">
+  ### SAML IDプロバイダー経由でユーザーを追加する
+</div>
+
+<EnterprisePlanFeatureBadge feature="SAML SSO" />
+
+組織で [SAML SSO](/ja/products/cloud/guides/security/cloud-access-management/saml-sso-setup) が設定されている場合は、次の手順に従って組織にユーザーを追加してください。
+
+1. IDプロバイダー内の SAML アプリケーションにユーザーを追加します。ユーザーは一度ログインするまで ClickHouse に表示されません。
+2. ユーザーが ClickHouse Cloud にログインすると、SAML 設定で選択したデフォルトのロールが自動的に割り当てられます。
+3. 権限を付与するには、以下の `ユーザーのロール割り当てを管理する` の手順に従ってください
+
+<div id="enforce-saml">
+  ### SAML のみの認証を強制する
+</div>
+
+組織内に Admin ロールが割り当てられた SAML ユーザーが少なくとも 1 人いる状態になったら、組織で SAML 認証のみを有効にするため、ほかの認証方法を使用するユーザーを組織から削除します。
+
+<div id="manage-role-assignments">
+  ## ユーザーのロール割り当てを管理する
+</div>
+
+Admin ロールが割り当てられているユーザーは、いつでも他のユーザーの権限を更新できます。
+
+<Steps>
+  <Step>
+    ### 組織設定にアクセスして `Users and roles` を選択する
+
+    サービスページで、組織名を選択します。ポップアップメニューから `Users and roles` メニュー項目を選択します。
+
+    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### 更新するユーザーを選択し、Edit を選択する
+
+    アクセスを変更するユーザーの行の末尾にあるメニューを選択します。ポップアップメニューから `Edit` を選択します。
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/5_edit_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### 権限を更新する
+
+    `Roles` ボックスをクリックしてメニューを展開します。チェックボックスを選択して、そのユーザーにロールを追加または削除します。ロールと関連する権限の一覧については、[Console roles and permissions](/ja/products/cloud/reference/security/console-roles) を参照してください。
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/6_edit_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### 変更を保存する
+
+    タブの下部にある `Save changes` ボタンをクリックして変更を保存します。
+  </Step>
+</Steps>
+
+<div id="remove-user">
+  ## ユーザーを削除する
+</div>
+
+<Info>
+  **SAML ユーザーを削除する**
+
+  IDプロバイダー で ClickHouse アプリケーションへの割り当てが解除された SAML ユーザーは、ClickHouse Cloud にログインできなくなります。アカウントはコンソールから自動では削除されないため、手動で削除する必要があります。
+</Info>
+
+以下の手順でユーザーを削除します。
+
+1. 左下にある組織名を選択します
+2. `Users and roles` をクリックします
+3. ユーザー名の横にある 3 点メニューをクリックし、`Remove` を選択します
+4. `Remove user` ボタンをクリックして操作を確定します

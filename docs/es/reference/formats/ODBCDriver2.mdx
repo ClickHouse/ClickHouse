@@ -1,0 +1,19 @@
+---
+description: 'Documentación sobre el formato ODBCDriver2'
+keywords: ['ODBCDriver2']
+slug: /interfaces/formats/ODBCDriver2
+title: 'ODBCDriver2'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descripción
+</div>
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+<div id="format-settings">
+  ## Configuración de formato
+</div>

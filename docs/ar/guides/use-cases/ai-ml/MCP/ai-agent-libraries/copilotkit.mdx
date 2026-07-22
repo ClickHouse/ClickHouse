@@ -1,0 +1,107 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/copilotkit
+sidebarTitle: 'دمج CopilotKit'
+title: 'كيفية بناء وكيل ذكاء اصطناعي باستخدام CopilotKit وClickHouse MCP server'
+description: 'تعرّف على كيفية بناء تطبيق قائم على الوكلاء باستخدام البيانات المخزنة في ClickHouse مع ClickHouse MCP وCopilotKit'
+keywords: ['ClickHouse', 'MCP', 'copilotkit']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+هذا مثال على كيفية بناء تطبيق قائم على الوكلاء باستخدام البيانات المخزنة في
+ClickHouse. ويستخدم [ClickHouse MCP server](https://github.com/ClickHouse/mcp-clickhouse)
+للاستعلام عن البيانات من ClickHouse وإنشاء مخططات بيانية استنادًا إليها.
+
+يُستخدم [CopilotKit](https://github.com/CopilotKit/CopilotKit) لبناء واجهة المستخدم
+وتوفير واجهة دردشة للمستخدم.
+
+<Info>
+  **مثال على الشيفرة**
+
+  يمكن العثور على الشيفرة الخاصة بهذا المثال في [مستودع examples](https://github.com/ClickHouse/examples/edit/main/ai/mcp/copilotkit).
+</Info>
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* `Node.js >= 20.14.0`
+* `uv >= 0.1.0`
+
+<div id="install-dependencies">
+  ## تثبيت التبعيات
+</div>
+
+استنسخ المشروع محليًا: `git clone https://github.com/ClickHouse/examples` ثم
+انتقل إلى المجلد `ai/mcp/copilotkit`.
+
+يمكنك تخطي هذا القسم وتشغيل البرنامج النصي `./install.sh` لتثبيت التبعيات. وإذا
+كنت تريد تثبيت التبعيات يدويًا، فاتبع الإرشادات أدناه.
+
+<div id="install-dependencies-manually">
+  ## تثبيت التبعيات يدويًا
+</div>
+
+1. ثبّت التبعيات:
+
+شغّل `npm install` لتثبيت تبعيات Node.js.
+
+2. ثبّت mcp-clickhouse:
+
+أنشئ مجلدًا جديدًا باسم `external` ثم استنسخ إليه مستودع mcp-clickhouse.
+
+```sh
+mkdir -p external
+git clone https://github.com/ClickHouse/mcp-clickhouse external/mcp-clickhouse
+```
+
+ثبّت تبعيات بايثون وأضف أداة fastmcp لسطر الأوامر.
+
+```sh
+cd external/mcp-clickhouse
+uv sync
+uv add fastmcp
+```
+
+<div id="configure-the-application">
+  ## إعداد التطبيق
+</div>
+
+انسخ ملف `env.example` إلى `.env` ثم عدِّله لإضافة `ANTHROPIC_API_KEY` الخاص بك.
+
+<div id="use-your-own-llm">
+  ## استخدم LLM الخاص بك
+</div>
+
+إذا كنت تفضّل استخدام موفّر LLM آخر غير Anthropic، يمكنك تعديل
+بيئة تشغيل Copilotkit لاستخدام مهايئ LLM مختلف.
+[هنا](https://docs.copilotkit.ai/guides/bring-your-own-llm) ستجد قائمة
+بالموفّرين المدعومين.
+
+<div id="use-your-own-clickhouse-cluster">
+  ## استخدم عنقود ClickHouse الخاص بك
+</div>
+
+افتراضيًا، جرى إعداد المثال للاتصال بـ
+[عنقود ClickHouse التجريبي](https://sql.clickhouse.com/). يمكنك أيضًا استخدام
+عنقود ClickHouse الخاص بك عبر تعيين متغيرات البيئة التالية:
+
+* `CLICKHOUSE_HOST`
+* `CLICKHOUSE_PORT`
+* `CLICKHOUSE_USER`
+* `CLICKHOUSE_PASSWORD`
+* `CLICKHOUSE_SECURE`
+
+<div id="run-the-application">
+  ## شغّل التطبيق
+</div>
+
+شغّل `npm run dev` لبدء خادم التطوير.
+
+يمكنك اختبار الوكيل باستخدام موجّه مثل:
+
+> &quot;أرني تطور الأسعار في
+> Manchester خلال السنوات العشر الماضية.&quot;
+
+افتح [http://localhost:3000](http://localhost:3000) في متصفحك لمشاهدة
+النتيجة.

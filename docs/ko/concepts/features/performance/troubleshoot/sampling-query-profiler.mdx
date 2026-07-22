@@ -1,0 +1,334 @@
+---
+description: 'ClickHouse의 샘플링 쿼리 프로파일러 도구에 대한 문서'
+sidebarTitle: '쿼리 프로파일링'
+slug: /operations/optimizing-performance/sampling-query-profiler
+title: '샘플링 쿼리 프로파일러'
+doc_type: '참고'
+---
+
+ClickHouse는 쿼리 실행을 분석할 수 있는 샘플링 프로파일러를 실행합니다.
+프로파일러를 사용하면 쿼리 실행 중 가장 자주 사용되는 소스 코드 루틴을 찾을 수 있습니다.
+유휴 시간을 포함한 CPU 시간과 wall-clock time을 추적할 수 있습니다.
+
+ClickHouse Cloud에서는 쿼리 프로파일러가 자동으로 활성화됩니다.
+다음 예시 쿼리는 함수 이름과 소스 위치가 확인된 상태로, 프로파일링된 쿼리에서 가장 자주 나타나는 스택 트레이스를 찾습니다:
+
+<Tip>
+  `query_id` 값을 프로파일링할 쿼리의 ID로 바꾸십시오.
+</Tip>
+
+<Tabs>
+  <Tab title="ClickHouse Cloud">
+    ClickHouse Cloud에서는 쿼리 결과 테이블 위 막대의 맨 오른쪽(table/chart 전환 옆)에 있는 **&quot;...&quot;**를 클릭해 쿼리 ID를 확인할 수 있습니다. 그러면 컨텍스트 메뉴가 열리고, 여기서 **&quot;Copy query ID&quot;**를 클릭할 수 있습니다.
+
+    클러스터의 모든 노드에서 조회하려면 `clusterAllReplicas(default, system.trace_log)`를 사용하십시오:
+
+    ```sql
+    SELECT
+        count(),
+        arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+    FROM clusterAllReplicas(default, system.trace_log)
+    WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
+    GROUP BY trace
+    ORDER BY count() DESC
+    LIMIT 10
+    SETTINGS allow_introspection_functions = 1
+    ```
+  </Tab>
+
+  <Tab title="자가 관리형">
+    ```sql
+    SELECT
+        count(),
+        arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+    FROM system.trace_log
+    WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
+    GROUP BY trace
+    ORDER BY count() DESC
+    LIMIT 10
+    SETTINGS allow_introspection_functions = 1
+    ```
+  </Tab>
+</Tabs>
+
+<div id="self-managed-query-profiler">
+  ## 자가 관리형 배포에서 쿼리 프로파일러 사용하기
+</div>
+
+자가 관리형 배포에서 쿼리 프로파일러를 사용하려면 아래 단계를 따르십시오.
+
+<Steps>
+  <Step>
+    ### 디버그 정보와 함께 ClickHouse 설치
+
+    `clickhouse-common-static-dbg` 패키지를 설치하십시오:
+
+    1. [&quot;Debian 리포지토리 설정&quot;](/ko/get-started/setup/self-managed/debian-ubuntu#setup-the-debian-repository) 단계의 지침을 따르십시오
+    2. 디버그 정보가 포함된 ClickHouse 컴파일 바이너리 파일을 설치하려면 `sudo apt-get install clickhouse-server clickhouse-client clickhouse-common-static-dbg`를 실행하십시오
+    3. 서버를 시작하려면 `sudo service clickhouse-server start`를 실행하십시오
+    4. `clickhouse-client`를 실행하십시오. `clickhouse-common-static-dbg`의 디버그 심볼은 서버에서 자동으로 인식되므로 이를 활성화하기 위해 별도로 수행할 작업은 없습니다
+  </Step>
+
+  <Step>
+    ### 서버 구성 확인
+
+    [서버 설정 파일](/ko/concepts/features/configuration/server-config/configuration-files)의 [`trace_log`](/ko/reference/settings/server-settings/settings#trace_log) 섹션이 구성되어 있는지 확인하십시오. 기본적으로 활성화되어 있습니다:
+
+    ```xml
+    <!-- Trace 로그. 쿼리 프로파일러가 수집한 스택 트레이스를 저장합니다.
+         query_profiler_real_time_period_ns 및 query_profiler_cpu_time_period_ns 설정을 참조하십시오. -->
+    <trace_log>
+        <database>system</database>
+        <table>trace_log</table>
+
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <!-- 충돌 발생 시 로그를 디스크에 덤프할지 여부를 나타냅니다 -->
+        <flush_on_crash>false</flush_on_crash>
+        <symbolize>true</symbolize>
+    </trace_log>
+    ```
+
+    이 섹션은 프로파일러 동작 결과를 포함하는 [trace&#95;log](/ko/reference/system-tables/trace_log) 시스템 테이블을 구성합니다.
+    이 테이블의 데이터는 서버가 실행 중일 때만 유효하다는 점에 유의하십시오.
+    서버를 재시작한 후에도 ClickHouse는 이 테이블을 정리하지 않으므로 저장된 모든 가상 메모리 주소가 유효하지 않게 될 수 있습니다.
+  </Step>
+
+  <Step>
+    ### 프로파일 타이머 구성
+
+    [`query_profiler_cpu_time_period_ns`](/ko/reference/settings/session-settings#query_profiler_cpu_time_period_ns) 또는 [`query_profiler_real_time_period_ns`](/ko/reference/settings/session-settings#query_profiler_real_time_period_ns) 설정을 구성하십시오.
+    두 설정은 동시에 사용할 수 있습니다.
+
+    이 설정을 사용하면 프로파일러 타이머를 구성할 수 있습니다.
+    이 설정들은 세션 설정이므로 전체 서버, 개별 사용자 또는 사용자 프로파일, 대화형 세션, 그리고 개별 쿼리마다 서로 다른 샘플링 주기를 적용할 수 있습니다.
+
+    기본 샘플링 주기는 초당 1개 샘플이며, CPU 타이머와 실시간 타이머가 모두 활성화되어 있습니다.
+    이 주기라면 서버 성능에 영향을 주지 않으면서 ClickHouse 클러스터에 대한 충분한 정보를 수집할 수 있습니다.
+    개별 쿼리마다 프로파일링해야 한다면 더 높은 샘플링 주기를 사용하십시오.
+  </Step>
+
+  <Step>
+    ### `trace_log` 시스템 테이블 분석
+
+    `trace_log` 시스템 테이블을 분석하려면 [`allow_introspection_functions`](/ko/reference/settings/session-settings#allow_introspection_functions) 설정으로 인트로스펙션 함수를 허용하십시오:
+
+    ```sql
+    SET allow_introspection_functions=1
+    ```
+
+    <Note>
+      보안상의 이유로 인트로스펙션 함수는 기본적으로 비활성화되어 있습니다
+    </Note>
+
+    함수 이름과 ClickHouse 코드 내 위치를 확인하려면 `addressToLine`, `addressToLineWithInlines`, `addressToSymbol`, `demangle` [인트로스펙션 함수](/ko/reference/functions/regular-functions/introspection)를 사용하십시오.
+    특정 쿼리의 프로파일을 얻으려면 `trace_log` 테이블의 데이터를 집계해야 합니다.
+    개별 함수별로 또는 전체 스택 트레이스별로 데이터를 집계할 수 있습니다.
+
+    <Tip>
+      `trace_log` 정보를 시각화해야 한다면 [flamegraph](/ko/integrations/connectors/tools/gui#clickhouse-flamegraph)와 [speedscope](https://www.speedscope.app)를 사용해 보십시오.
+    </Tip>
+  </Step>
+</Steps>
+
+<div id="flamegraph">
+  ## `flameGraph` 함수로 플레임 그래프 만들기
+</div>
+
+ClickHouse는 `trace_log`에 저장된 스택 트레이스로부터 직접 플레임 그래프를 생성하는 [`flameGraph`](/ko/reference/functions/aggregate-functions/flame_graph) 집계 함수를 제공합니다.
+출력은 [flamegraph.pl](https://github.com/brendangregg/FlameGraph)과 호환되는 포맷의 문자열 배열입니다.
+
+**구문:**
+
+```sql
+flameGraph(traces, [size = 1], [ptr = 0])
+```
+
+**인수:**
+
+* `traces` — 스택 트레이스입니다. [`Array(UInt64)`](/ko/reference/data-types/array).
+* `size` — 메모리 프로파일링용 할당 크기입니다. [`Int64`](/ko/reference/data-types/int-uint).
+* `ptr` — 할당 주소입니다. [`UInt64`](/ko/reference/data-types/int-uint).
+
+`ptr`이 0이 아니면 `flameGraph`는 크기와 포인터가 같은 할당(`size > 0`)과 할당 해제(`size < 0`)를 서로 대응시킵니다.
+해제되지 않은 할당만 표시됩니다.
+짝이 맞지 않는 할당 해제는 무시됩니다.
+
+<div id="cpu-flame-graph">
+  ### CPU 플레임 그래프
+</div>
+
+<Note>
+  아래 쿼리를 실행하려면 [flamegraph.pl](https://github.com/brendangregg/FlameGraph)이 설치되어 있어야 합니다.
+
+  다음 명령으로 설치할 수 있습니다.
+
+  ```bash
+  git clone https://github.com/brendangregg/FlameGraph
+  # 그런 다음 다음과 같이 사용합니다:
+  # ~/FlameGraph/flamegraph.pl
+  ```
+
+  다음 쿼리에서는 `flamegraph.pl`을 로컬 환경에서 `flamegraph.pl`이 있는 경로로 대체하십시오
+</Note>
+
+```sql
+SET query_profiler_cpu_time_period_ns = 10000000;
+```
+
+쿼리를 실행한 다음 플레임 그래프를 만드십시오:
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(arrayReverse(trace)))
+        FROM system.trace_log
+        WHERE trace_type = 'CPU' AND query_id = '<query_id>'" \
+    | flamegraph.pl > flame_cpu.svg
+```
+
+<div id="memory-flame-graph-all">
+  ### 메모리 플레임 그래프 — 전체 할당
+</div>
+
+```sql
+SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
+```
+
+쿼리를 실행한 다음, 플레임 그래프를 생성하세요:
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, size))
+        FROM system.trace_log
+        WHERE trace_type = 'MemorySample' AND query_id = '<query_id>'" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem.svg
+```
+
+<div id="memory-flame-graph-unfreed">
+  ### 메모리 플레임 그래프 — 해제되지 않은 할당
+</div>
+
+이 유형에서는 포인터를 기준으로 할당과 해제를 대조하여, 쿼리 실행 중 해제되지 않은 메모리만 표시합니다.
+
+```sql
+SET memory_profiler_sample_probability = 1, max_untracked_memory = 1,
+    use_uncompressed_cache = 1,
+    merge_tree_max_rows_to_use_cache = 100000000000,
+    merge_tree_max_bytes_to_use_cache = 1000000000000;
+```
+
+플레임 그래프를 생성하려면 다음 쿼리를 실행하십시오:
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, size, ptr))
+        FROM system.trace_log
+        WHERE trace_type = 'MemorySample' AND query_id = '<query_id>'" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem_unfreed.svg
+```
+
+<div id="memory-flame-graph-time-point">
+  ### 메모리 플레임 그래프 — 특정 시점의 활성 할당
+</div>
+
+이 방법을 사용하면 최대 메모리 사용량을 확인하고 해당 시점에 무엇이 할당되었는지 시각화할 수 있습니다.
+
+```sql
+SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
+```
+
+<div id="find-memory-usage-over-time">
+  #### 시간에 따른 메모리 사용량 확인
+</div>
+
+```sql
+SELECT
+    event_time,
+    formatReadableSize(max(s)) AS m
+FROM (
+    SELECT
+        event_time,
+        sum(size) OVER (ORDER BY event_time) AS s
+    FROM system.trace_log
+    WHERE query_id = '<query_id>' AND trace_type = 'MemorySample'
+)
+GROUP BY event_time
+ORDER BY event_time;
+```
+
+<div id="find-time-point-maximum-memory-usage">
+  #### 메모리 사용량이 가장 많은 시점 찾기
+</div>
+
+```sql
+SELECT
+    argMax(event_time, s),
+    max(s)
+FROM (
+    SELECT
+        event_time,
+        sum(size) OVER (ORDER BY event_time) AS s
+    FROM system.trace_log
+    WHERE query_id = '<query_id>' AND trace_type = 'MemorySample'
+);
+```
+
+<div id="build-flame-graph">
+  #### 해당 시점의 활성 할당 플레임 그래프 생성
+</div>
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, size, ptr))
+        FROM (
+            SELECT * FROM system.trace_log
+            WHERE trace_type = 'MemorySample'
+              AND query_id = '<query_id>'
+              AND event_time <= '<time_point>'
+            ORDER BY event_time
+        )" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_pos.svg
+```
+
+<div id="build-flame-graph-deallocations">
+  #### 해당 시점 이후의 메모리 해제에 대한 플레임 그래프 만들기(나중에 무엇이 해제되었는지 파악하기 위해)
+</div>
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, -size, ptr))
+        FROM (
+            SELECT * FROM system.trace_log
+            WHERE trace_type = 'MemorySample'
+              AND query_id = '<query_id>'
+              AND event_time > '<time_point>'
+            ORDER BY event_time DESC
+        )" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_neg.svg
+```
+
+<div id="example">
+  ## 예시
+</div>
+
+아래 코드 스니펫은 다음 작업을 수행합니다.
+
+* `trace_log` 데이터를 쿼리 식별자와 현재 날짜를 기준으로 필터링합니다.
+* 스택 트레이스별로 집계합니다.
+* 다음 보고서를 얻기 위해 인트로스펙션 함수를 사용합니다.
+  * 심볼 이름과 이에 대응하는 소스 코드 함수 이름
+  * 이러한 함수의 소스 코드 위치
+
+```sql
+SELECT
+    count(),
+    arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+FROM system.trace_log
+WHERE (query_id = '<query_id>') AND (event_date = today())
+GROUP BY trace
+ORDER BY count() DESC
+LIMIT 10
+```

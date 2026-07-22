@@ -1,0 +1,32 @@
+---
+slug: /cloud/managed-postgres/monitoring/overview
+sidebarTitle: '概览'
+title: 'Managed Postgres 监控'
+description: 'ClickHouse Managed Postgres 监控和可观测性选项概览'
+keywords: ['Managed Postgres', '监控', '可观测性', '指标', '仪表板', 'Prometheus', 'Query Insights', 'pg_stat_ch']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-overview-beta" />
+
+您可以通过以下方法监控 Managed Postgres 服务：
+
+| 部分                                                                     | 说明                                                                | 需要的设置           |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------- | --------------- |
+| [仪表板](/zh/products/managed-postgres/monitoring/dashboard)                 | Cloud Console 中用于查看资源使用情况和数据库活动的内置图表                              | 无               |
+| [Query Insights](/zh/products/managed-postgres/monitoring/query-insights) | 按语句划分的遥测数据：按影响程度对每种查询模式进行排名，并提供诊断计数器                              | 无               |
+| [Prometheus 端点](/zh/products/managed-postgres/monitoring/prometheus)      | 将指标抓取到 Prometheus、Grafana、Datadog 或任何兼容 OpenMetrics 的 collector 中 | API key + 抓取器配置 |
+| [指标参考](/zh/products/managed-postgres/monitoring/metrics)                  | 由 Prometheus 端点公开的完整指标列表，包括类型、标记及其含义                              | 不适用             |
+
+<div id="quick-start">
+  ## 快速入门
+</div>
+
+打开 Cloud Console，进入任意 Managed Postgres 实例的 **Monitoring** 选项卡，即可查看 CPU、内存、IOPS、连接数、事务数、缓存命中率和死锁的实时图表。无需配置。
+
+如需查看单条查询的遥测数据——延迟百分位数、缓存读取与磁盘读取对比、临时落盘、并行工作线程利用率以及 WAL 量——请打开同一实例上的
+[Query Insights](/zh/products/managed-postgres/monitoring/query-insights) 选项卡。若要将主机级指标接入您自己的
+可观测性技术栈，请使用
+[Prometheus 端点](/zh/products/managed-postgres/monitoring/prometheus)。

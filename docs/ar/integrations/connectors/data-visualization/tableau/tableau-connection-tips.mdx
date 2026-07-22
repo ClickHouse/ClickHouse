@@ -1,0 +1,70 @@
+---
+sidebarTitle: 'نصائح حول الاتصال'
+slug: /integrations/tableau/connection-tips
+keywords: ['ClickHouse', 'Tableau', 'عبر الإنترنت', 'mysql', 'الاتصال', 'التكامل', 'واجهة المستخدم']
+description: 'نصائح حول الاتصال بـ Tableau عند استخدام الموصل الرسمي لـ ClickHouse.'
+title: 'نصائح حول الاتصال'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+import ClickHouseSupportedBadge from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+<div id="initial-sql-tab">
+  ## علامة تبويب Initial SQL
+</div>
+
+إذا كان مربع الاختيار *Set Session ID* مفعّلًا في علامة التبويب Advanced (افتراضيًا)، فلا تتردد في ضبط [الإعدادات](/ar/reference/settings/session-settings) على مستوى الجلسة باستخدام
+
+```text
+SET my_setting=value;
+```
+
+<div id="advanced-tab">
+  ## علامة تبويب Advanced
+</div>
+
+في 99% من الحالات، لن تحتاج إلى علامة تبويب Advanced. أما في 1% المتبقية، فيمكنك استخدام الإعدادات التالية:
+
+* **معلَمات الاتصال المخصّصة**. يكون `socket_timeout` محددًا بالفعل افتراضيًا، وقد تحتاج إلى تغيير هذا المعلَم إذا كانت بعض عمليات الاستخراج تستغرق وقتًا طويلًا جدًا في التحديث. تُحدَّد قيمة هذا المعلَم بالمللي ثانية. ويمكنك العثور على بقية المعلَمات [هنا](https://github.com/ClickHouse/clickhouse-jdbc/blob/master/clickhouse-client/src/main/java/com/clickhouse/client/config/ClickHouseClientOption.java)، ثم إضافتها في هذا الحقل مفصولة بفواصل
+
+* **`custom_http_params` المخصّص في JDBC Driver**. يتيح لك هذا الحقل تمرير بعض المعلَمات إلى سلسلة الاتصال الخاصة بـ ClickHouse عبر إرسال القيم إلى [معلَم `custom_http_params` الخاص بالمشغّل](https://github.com/ClickHouse/clickhouse-jdbc#configuration). على سبيل المثال، بهذه الطريقة يتم تحديد `session_id` عند تفعيل مربع الاختيار *Set Session ID*
+
+* **`typeMappings` في JDBC Driver**. يتيح لك هذا الحقل [تمرير قائمة بتعيينات أنواع بيانات ClickHouse إلى أنواع بيانات Java التي يستخدمها JDBC Driver](https://github.com/ClickHouse/clickhouse-jdbc#configuration). يعرض الموصل تلقائيًا الأعداد الصحيحة الكبيرة كسلاسل نصية بفضل هذا المعلَم، ويمكنك تغيير ذلك بتمرير مجموعة التعيينات الخاصة بك *(لا أعرف لماذا)* باستخدام
+  ```text
+  UInt256=java.lang.Double,Int256=java.lang.Double
+  ```
+  اقرأ المزيد عن التعيين في القسم المقابل
+
+* **معلَمات URL الخاصة بـ JDBC Driver**. يمكنك تمرير بقية [معلَمات المشغّل](https://github.com/ClickHouse/clickhouse-jdbc#configuration)، مثل `jdbcCompliance`، في هذا الحقل. انتبه: يجب تمرير قيم المعلَمات بتنسيق URL Encoded. وإذا مرّرت `custom_http_params` أو `typeMappings` في هذا الحقل وفي الحقول السابقة ضمن علامة تبويب Advanced، فستكون لقيم الحقلين السابقين في علامة تبويب Advanced أولوية أعلى
+
+* **مربع الاختيار Set Session ID**. يلزم هذا الخيار لضبط الإعدادات على مستوى الجلسة في علامة تبويب Initial SQL، ويُنشئ `session_id` مع طابع زمني ورقم شبه عشوائي بالتنسيق `"tableau-jdbc-connector-*{timestamp}*-*{number}*"`
+
+<div id="limited-support-for-uint64-int128-uint256-data-types">
+  ## دعم محدود لأنواع البيانات UInt64 وInt128 و(U)Int256
+</div>
+
+بشكل افتراضي، يعرض المشغّل الحقول من الأنواع *UInt64 وInt128 و(U)Int256* كسلاسل نصية، **لكنه يعرضها فقط ولا يحولها**. وهذا يعني أنك عند محاولة كتابة الحقل المحسوب التالي، ستحصل على خطأ
+
+```text
+LEFT([myUInt256], 2) // Error!
+```
+
+للعمل مع حقول Integer الكبيرة كما لو كانت سلاسل نصية، يجب تغليف الحقل صراحةً بالدالة STR()
+
+```text
+LEFT(STR([myUInt256]), 2) // Works well!
+```
+
+ومع ذلك، تُستخدم مثل هذه الحقول غالبًا لحساب عدد القيم الفريدة *(مثل المعرّفات كـ Watch ID وVisit ID في Yandex.Metrica)* أو كـ *بُعد* لتحديد مستوى تفصيل التصور، وهي تؤدي هذا الغرض جيدًا.
+
+```text
+COUNTD([myUInt256]) // Works well too!
+```
+
+عند استخدام معاينة البيانات (عرض البيانات) لجدول يحتوي على حقول UInt64، لم يعد يظهر أي خطأ.

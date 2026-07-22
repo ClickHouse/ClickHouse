@@ -1,3 +1,0 @@
-<clickhouse>
-    <insert_deduplication_version>old_separate_hashes</insert_deduplication_version>
-</clickhouse>

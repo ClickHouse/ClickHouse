@@ -1,0 +1,184 @@
+---
+description: 'CoalescingMergeTree наследуется от движка MergeTree. Его ключевая возможность
+  — автоматически сохранять последнее не-NULL-значение каждого столбца при слиянии частей.'
+sidebarTitle: 'CoalescingMergeTree'
+slug: /engines/table-engines/mergetree-family/coalescingmergetree
+title: 'Движок таблицы CoalescingMergeTree'
+keywords: ['CoalescingMergeTree']
+show_related_blogs: true
+doc_type: 'reference'
+---
+
+<Info>
+  **Доступно с версии 25.6**
+
+  Этот движок таблицы доступен начиная с версии 25.6 как в OSS, так и в Cloud.
+</Info>
+
+Этот движок наследуется от [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree). Ключевое отличие заключается в том, как сливаются части данных: в таблицах `CoalescingMergeTree` ClickHouse заменяет все строки с одним и тем же первичным ключом (или, точнее, с одним и тем же [ключом сортировки](/ru/reference/engines/table-engines/mergetree-family/mergetree)) одной строкой, содержащей последние не-NULL-значения для каждого столбца.
+
+Это позволяет выполнять upsert на уровне столбцов, то есть обновлять только отдельные столбцы, а не строки целиком.
+
+`CoalescingMergeTree` предназначен для использования с типами Nullable в неключевых столбцах. Если столбцы не имеют типа Nullable, поведение будет таким же, как у [ReplacingMergeTree](/ru/reference/engines/table-engines/mergetree-family/replacingmergetree).
+
+<div id="creating-a-table">
+  ## Создание таблицы
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = CoalescingMergeTree([columns])
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
+```
+
+Описание параметров запроса приведено в разделе [описание запроса](/ru/reference/statements/create/table).
+
+<div id="parameters-of-coalescingmergetree">
+  ### Параметры CoalescingMergeTree
+</div>
+
+<div id="columns">
+  #### Столбцы
+</div>
+
+`columns` — необязательный параметр. Кортеж с именами столбцов, значения в которых будут объединяться. Указанные столбцы не должны входить в партицию или ключ сортировки. Если `columns` не указан, ClickHouse объединяет значения во всех столбцах, которые не входят в ключ сортировки.
+
+<div id="query-clauses">
+  ### Секции запроса
+</div>
+
+При создании таблицы `CoalescingMergeTree` требуются те же [секции](/ru/reference/engines/table-engines/mergetree-family/mergetree), что и при создании таблицы `MergeTree`.
+
+<details markdown="1">
+  <summary>Устаревший метод создания таблицы</summary>
+
+  <Note>
+    Не используйте этот метод в новых проектах и, по возможности, переведите существующие проекты на метод, описанный выше.
+  </Note>
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+  (
+      name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+      name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+      ...
+  ) ENGINE [=] CoalescingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, [columns])
+  ```
+
+  Все параметры, кроме `columns`, имеют тот же смысл, что и в `MergeTree`.
+
+  * `columns` — кортеж с именами столбцов, значения которых будут суммироваться. Необязательный параметр. Описание см. выше.
+</details>
+
+<div id="usage-example">
+  ## Пример использования
+</div>
+
+Рассмотрим следующую таблицу:
+
+```sql
+CREATE TABLE test_table
+(
+    key UInt64,
+    value_int Nullable(UInt32),
+    value_string Nullable(String),
+    value_date Nullable(Date)
+)
+ENGINE = CoalescingMergeTree()
+ORDER BY key
+```
+
+Вставьте в неё данные:
+
+```sql
+INSERT INTO test_table VALUES(1, NULL, NULL, '2025-01-01'), (2, 10, 'test', NULL);
+INSERT INTO test_table VALUES(1, 42, 'win', '2025-02-01');
+INSERT INTO test_table(key, value_date) VALUES(2, '2025-02-01');
+```
+
+Результат будет выглядеть следующим образом:
+
+```sql
+SELECT * FROM test_table ORDER BY key;
+```
+
+```text
+┌─key─┬─value_int─┬─value_string─┬─value_date─┐
+│   1 │        42 │ win          │ 2025-02-01 │
+│   1 │      ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │ 2025-01-01 │
+│   2 │      ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │ 2025-02-01 │
+│   2 │        10 │ test         │       ᴺᵁᴸᴸ │
+└─────┴───────────┴──────────────┴────────────┘
+```
+
+Рекомендуемый запрос для получения корректного окончательного результата:
+
+```sql
+SELECT * FROM test_table FINAL ORDER BY key;
+```
+
+```text
+┌─key─┬─value_int─┬─value_string─┬─value_date─┐
+│   1 │        42 │ win          │ 2025-02-01 │
+│   2 │        10 │ test         │ 2025-02-01 │
+└─────┴───────────┴──────────────┴────────────┘
+```
+
+Использование модификатора `FINAL` заставляет ClickHouse применять логику слияния на этапе выполнения запроса, гарантируя получение корректного, объединённого &quot;последнего&quot; значения для каждого столбца. Это самый безопасный и точный способ при запросах к таблице CoalescingMergeTree.
+
+<Note>
+  Подход с `GROUP BY` может возвращать некорректные результаты, если части данных в основе таблицы ещё не были полностью слиты.
+
+  ```sql
+  SELECT key, last_value(value_int), last_value(value_string), last_value(value_date)  FROM test_table GROUP BY key; -- Не рекомендуется.
+  ```
+</Note>
+
+<div id="tuple-element-aggregation">
+  ## Агрегация элементов Tuple
+</div>
+
+Когда включена настройка `allow_tuple_element_aggregation`, столбцы `Tuple` рекурсивно разворачиваются, так что каждый конечный элемент независимо участвует в коалесценции. Это позволяет хранить несколько полей в одном столбце `Tuple`, а при слияниях выполнять для них поэлементную коалесценцию — каждый подстолбец `Nullable` независимо сохраняет последнее значение, отличное от NULL.
+
+К развёрнутым подстолбцам применяются те же правила, что и к обычным столбцам:
+
+* Подстолбцы, входящие в `Tuple` в ключе сортировки или ключе партиционирования, исключаются из коалесценции.
+* Если указан `columns`, коалесценции подвергаются только подстолбцы перечисленных столбцов `Tuple`.
+
+<Note>
+  Эта настройка не может быть изменена и должна быть указана при создании таблицы.
+</Note>
+
+```sql
+CREATE TABLE coalescing_tuples
+(
+    key UInt64,
+    data Tuple(
+        value_a Nullable(UInt64),
+        value_b Nullable(String),
+        nested Tuple(
+            value_c Nullable(UInt64)
+        )
+    )
+) ENGINE = CoalescingMergeTree()
+ORDER BY key
+SETTINGS allow_tuple_element_aggregation = 1;
+
+INSERT INTO coalescing_tuples VALUES (1, (100, NULL, (NULL)));
+INSERT INTO coalescing_tuples VALUES (1, (NULL, 'hello', (42)));
+
+SELECT key, data.value_a, data.value_b, data.nested.value_c FROM coalescing_tuples FINAL;
+```
+
+```text
+┌─key─┬─data.value_a─┬─data.value_b─┬─data.nested.value_c─┐
+│   1 │          100 │ hello        │                  42 │
+└─────┴──────────────┴──────────────┴─────────────────────┘
+```

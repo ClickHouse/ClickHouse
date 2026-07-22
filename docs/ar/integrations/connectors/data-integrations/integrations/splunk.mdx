@@ -1,0 +1,103 @@
+---
+sidebarTitle: 'Splunk'
+slug: /integrations/audit-splunk
+keywords: ['ClickHouse', 'Splunk', 'تدقيق', 'سحابة']
+description: 'خزّن سجلات التدقيق في ClickHouse Cloud داخل Splunk.'
+title: 'تخزين سجلات التدقيق في ClickHouse Cloud داخل Splunk'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+تُعد [Splunk](https://www.splunk.com/) منصة لتحليلات البيانات والمراقبة.
+
+تتيح لك هذه الإضافة تخزين [سجلات تدقيق ClickHouse Cloud](/ar/products/cloud/reference/security/audit-logging) في Splunk. وتستخدم [واجهة برمجة تطبيقات ClickHouse Cloud](/ar/products/cloud/features/admin-features/api/api-overview) لتنزيل سجلات التدقيق.
+
+لا تتضمن هذه الإضافة سوى مدخل معياري، ولا توفّر أي واجهة مستخدم إضافية.
+
+<div id="installation">
+  # التثبيت
+</div>
+
+<div id="for-splunk-enterprise">
+  ## لـ Splunk Enterprise
+</div>
+
+نزّل إضافة ClickHouse Cloud Audit لـ Splunk من [Splunkbase](https://splunkbase.splunk.com/app/7709).
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_001.webp" size="lg" alt="موقع Splunkbase يعرض صفحة تنزيل إضافة ClickHouse Cloud Audit لـ Splunk" border />
+
+في Splunk Enterprise، انتقل إلى Apps -&gt; Manage، ثم انقر على Install app from file.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_002.webp" size="lg" alt="واجهة Splunk Enterprise تعرض صفحة إدارة Apps مع خيار Install app from file" border />
+
+حدّد الملف المؤرشف الذي نزّلته من Splunkbase، ثم انقر على Upload.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_003.webp" size="lg" alt="مربع حوار تثبيت تطبيق Splunk لتحميل إضافة ClickHouse" border />
+
+إذا سار كل شيء كما ينبغي، فمن المفترض أن ترى الآن تطبيق سجلات تدقيق ClickHouse وقد تم تثبيته. وإذا لم يحدث ذلك، فراجع سجلات Splunkd بحثًا عن أي أخطاء.
+
+<div id="modular-input-configuration">
+  # إعداد المُدخل المعياري
+</div>
+
+لإعداد المُدخل المعياري، ستحتاج أولاً إلى معلومات من نشر ClickHouse Cloud لديك:
+
+* معرّف المؤسسة
+* [مفتاح واجهة برمجة التطبيقات للمسؤول](/ar/products/cloud/features/admin-features/api/openapi)
+
+<div id="getting-information-from-clickhouse-cloud">
+  ## الحصول على المعلومات من ClickHouse Cloud
+</div>
+
+سجّل الدخول إلى [ClickHouse Cloud console](https://console.clickhouse.cloud/).
+
+انتقل إلى Organization -&gt; Organization details في مؤسستك. هناك يمكنك نسخ Organization ID.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_004.webp" size="lg" alt="تعرض ClickHouse Cloud console صفحة Organization details التي تتضمن Organization ID" border />
+
+بعد ذلك، انتقل إلى مفاتيح واجهة برمجة التطبيقات من القائمة الجانبية اليسرى.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_005.webp" size="lg" alt="تعرض ClickHouse Cloud console قسم مفاتيح واجهة برمجة التطبيقات في قائمة التنقل اليسرى" border />
+
+أنشئ مفتاح واجهة برمجة تطبيقات، وامنحه اسمًا واضحًا، وحدد صلاحيات `Admin`. ثم انقر على Generate مفتاح واجهة برمجة تطبيقات.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_006.webp" size="lg" alt="تعرض ClickHouse Cloud console واجهة إنشاء مفتاح واجهة برمجة تطبيقات مع تحديد صلاحيات Admin" border />
+
+احفظ مفتاح واجهة برمجة تطبيقات وsecret في مكان آمن.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_007.webp" size="lg" alt="تعرض ClickHouse Cloud console مفتاح واجهة برمجة تطبيقات وsecret اللذين تم إنشاؤهما ليتم حفظهما" border />
+
+<div id="configure-data-input-in-splunk">
+  ## تكوين إدخال البيانات في Splunk
+</div>
+
+بالعودة إلى Splunk، انتقل إلى Settings -&gt; Data inputs.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_008.webp" size="lg" alt="واجهة Splunk تعرض قائمة Settings مع خيار Data inputs" border />
+
+حدد إدخال بيانات ClickHouse Cloud Audit Logs.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_009.webp" size="lg" alt="صفحة Data inputs في Splunk تعرض خيار ClickHouse Cloud Audit Logs" border />
+
+انقر على &quot;New&quot; لتكوين مثيل جديد من إدخال البيانات.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_010.webp" size="lg" alt="واجهة Splunk لتكوين إدخال بيانات جديد لـ ClickHouse Cloud Audit Logs" border />
+
+بعد إدخال جميع المعلومات، انقر على Next.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_011.webp" size="lg" alt="صفحة التكوين في Splunk بعد اكتمال إعدادات إدخال بيانات ClickHouse" border />
+
+تم تكوين الإدخال، ويمكنك الآن البدء في استعراض سجلات التدقيق.
+
+<div id="usage">
+  # الاستخدام
+</div>
+
+يخزّن الإدخال المعياري البيانات في Splunk. لعرض هذه البيانات، يمكنك استخدام واجهة البحث العامة في Splunk.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_012.webp" size="lg" alt="واجهة البحث في Splunk تعرض بيانات سجلات تدقيق ClickHouse" border />

@@ -1,0 +1,87 @@
+---
+alias: []
+description: 'Документация по формату Npy'
+input_format: true
+keywords: ['Npy']
+output_format: true
+slug: /interfaces/formats/Npy
+title: 'Npy'
+doc_type: 'reference'
+---
+
+| Ввод | Вывод | Псевдоним |
+| ---- | ----- | --------- |
+| ✔    | ✔     |           |
+
+<div id="description">
+  ## Описание
+</div>
+
+Формат `Npy` предназначен для загрузки массива NumPy из файла `.npy` в ClickHouse.
+Формат файлов NumPy — бинарный формат, используемый для эффективного хранения массивов числовых данных.
+При импорте ClickHouse рассматривает размерность верхнего уровня как массив строк с одним столбцом.
+
+В таблице ниже приведены поддерживаемые типы данных Npy и соответствующие им типы в ClickHouse:
+
+<div id="data_types-matching">
+  ## Сопоставление типов данных
+</div>
+
+| Тип данных Npy (`INSERT`) | Тип данных ClickHouse                            | Тип данных Npy (`SELECT`) |
+| ------------------------- | ------------------------------------------------ | ------------------------- |
+| `i1`                      | [Int8](/ru/reference/data-types/int-uint)           | `i1`                      |
+| `i2`                      | [Int16](/ru/reference/data-types/int-uint)          | `i2`                      |
+| `i4`                      | [Int32](/ru/reference/data-types/int-uint)          | `i4`                      |
+| `i8`                      | [Int64](/ru/reference/data-types/int-uint)          | `i8`                      |
+| `u1`, `b1`                | [UInt8](/ru/reference/data-types/int-uint)          | `u1`                      |
+| `u2`                      | [UInt16](/ru/reference/data-types/int-uint)         | `u2`                      |
+| `u4`                      | [UInt32](/ru/reference/data-types/int-uint)         | `u4`                      |
+| `u8`                      | [UInt64](/ru/reference/data-types/int-uint)         | `u8`                      |
+| `f2`, `f4`                | [Float32](/ru/reference/data-types/float)           | `f4`                      |
+| `f8`                      | [Float64](/ru/reference/data-types/float)           | `f8`                      |
+| `S`, `U`                  | [String](/ru/reference/data-types/string)           | `S`                       |
+|                           | [FixedString](/ru/reference/data-types/fixedstring) | `S`                       |
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+<div id="saving-an-array-in-npy-format-using-python">
+  ### Сохранение массива в формате .npy с помощью Python
+</div>
+
+```Python
+import numpy as np
+arr = np.array([[[1],[2],[3]],[[4],[5],[6]]])
+np.save('example_array.npy', arr)
+```
+
+<div id="reading-a-numpy-file-in-clickhouse">
+  ### Чтение файла NumPy в ClickHouse
+</div>
+
+```sql title="Query"
+SELECT *
+FROM file('example_array.npy', Npy)
+```
+
+```response title="Response"
+┌─array─────────┐
+│ [[1],[2],[3]] │
+│ [[4],[5],[6]] │
+└───────────────┘
+```
+
+<div id="selecting-data">
+  ### Выбор данных
+</div>
+
+Вы можете выбрать данные из таблицы ClickHouse и сохранить их в файл в формате Npy с помощью следующей команды clickhouse-client:
+
+```bash
+$ clickhouse-client --query="SELECT {column} FROM {some_table} FORMAT Npy" > {filename.npy}
+```
+
+<div id="format-settings">
+  ## Настройки формата
+</div>

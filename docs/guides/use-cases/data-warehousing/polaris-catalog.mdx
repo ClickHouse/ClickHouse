@@ -1,0 +1,100 @@
+---
+slug: /use-cases/data-lake/polaris-catalog
+sidebarTitle: 'Polaris catalog'
+title: 'Polaris catalog'
+description: 'In this guide, we will walk you through the steps to query
+ your data using ClickHouse and the Snowflake Polaris catalog.'
+keywords: ['Polaris', 'Snowflake', 'Data Lake']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge/>
+
+ClickHouse supports integration with multiple catalogs (Unity, Glue, Polaris,
+etc.). In this guide, we will walk you through the steps to query your data
+using ClickHouse and the [Apache Polaris Catalog](https://polaris.apache.org/releases/1.1.0/getting-started/using-polaris/#setup).
+Apache Polaris supports Iceberg tables and Delta Tables (via Generic Tables). This integration only supports Iceberg tables at this time.
+
+<Note>
+As this feature is experimental, you will need to enable it using:
+`SET allow_experimental_database_unity_catalog = 1;`
+</Note>
+
+## Prerequisites {#prerequisites}
+
+To connect to the Polaris catalog, you will need:
+
+- Snowflake Open Catalog (hosted Polaris) or self-hosted Polaris Catalog
+- Your Polaris catalog URI (for example, `https://<account-id>.<region>.aws.snowflakecomputing.com/polaris/api/catalog/v1` or `http://polaris:8181/api/catalog/v1/oauth/tokens`)
+- Catalog credentials (client ID and client secret)
+- The OAuth tokens URI for your Polaris instance
+- Storage endpoint for the object store where your Iceberg data lives (for example, S3)
+- ClickHouse version 26.1+ 
+
+For Open Catalog, Snowflake's managed Polaris offering, your URI will include `/polaris` while for self-hosted, it may not. 
+
+<Steps>
+<Step title="Creating a connection between Polaris and ClickHouse" id="connecting">
+
+Create a database that connects ClickHouse to your Polaris catalog:
+
+```sql
+CREATE DATABASE polaris_catalog
+ENGINE = DataLakeCatalog('https://<catalog_uri>/api/catalog/v1')
+SETTINGS
+    catalog_type = 'rest',
+    catalog_credential = '<client-id>:<client-secret>',
+    warehouse = 'snowflake',
+    auth_scope = 'PRINCIPAL_ROLE:ALL',
+    oauth_server_uri = 'https://<catalog_uri>/api/catalog/v1/oauth/tokens',
+    storage_endpoint = '<storage_endpoint>'
+```
+</Step>
+<Step title="Query the Polaris catalog using ClickHouse" id="query-polaris-catalog">
+
+Once the connection is in place, you can query Polaris:
+
+```sql title="Query"
+USE polaris_catalog;
+SHOW TABLES;
+```
+
+To query a table:
+
+```sql title="Query"
+SELECT count(*) FROM `polaris_db.my_iceberg_table`;
+```
+
+<Note>
+Backticks are required, for example, `schema.table`.
+</Note>
+
+To inspect the table DDL:
+
+```sql
+SHOW CREATE TABLE `polaris_db.my_iceberg_table`;
+```
+</Step>
+<Step title="Loading data from Polaris into ClickHouse" id="loading-data-into-clickhouse">
+
+To load data from Polaris into a ClickHouse table, create the target table with your desired schema, then insert from the Polaris table:
+
+```sql title="Query"
+CREATE TABLE my_clickhouse_table
+(
+    -- define columns to match your Iceberg table
+    `id` Int64,
+    `name` String,
+    `event_time` DateTime64(3)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO my_clickhouse_table
+SELECT * FROM polaris_catalog.`polaris_db.my_iceberg_table`;
+```
+</Step>
+</Steps>

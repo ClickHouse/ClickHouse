@@ -1,0 +1,35 @@
+---
+description: 'Documentación sobre cómo manipular la expresión SAMPLE BY'
+sidebarTitle: 'SAMPLE BY'
+slug: /sql-reference/statements/alter/sample-by
+title: 'Manipulación de expresiones de clave de muestreo'
+doc_type: 'reference'
+---
+
+Las siguientes operaciones están disponibles:
+
+<div id="modify">
+  ## MODIFICAR
+</div>
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY SAMPLE BY new_expression
+```
+
+El comando cambia la [clave de muestreo](/es/reference/engines/table-engines/mergetree-family/mergetree) de la tabla por `new_expression` (una expresión o una tupla de expresiones). La clave primaria debe contener la nueva clave de muestreo.
+
+<div id="remove">
+  ## ELIMINAR
+</div>
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] REMOVE SAMPLE BY
+```
+
+El comando elimina la [clave de muestreo](/es/reference/engines/table-engines/mergetree-family/mergetree) de la tabla.
+
+Los comandos `MODIFY` y `REMOVE` son operaciones ligeras, en el sentido de que solo modifican metadatos o eliminan archivos.
+
+<Note>
+  Solo funciona con tablas de la familia [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree) (incluidas las tablas [replicadas](/es/reference/engines/table-engines/mergetree-family/replication)).
+</Note>

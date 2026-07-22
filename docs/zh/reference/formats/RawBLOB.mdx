@@ -1,0 +1,66 @@
+---
+description: 'RawBLOB 格式文档'
+keywords: ['RawBLOB']
+slug: /interfaces/formats/RawBLOB
+title: 'RawBLOB'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 描述
+</div>
+
+`RawBLOB` 格式会将所有输入数据读入为单个值。它只能解析仅包含一个 [`String`](/zh/reference/data-types/string) 类型字段或类似类型字段的表。
+结果会以不带分隔符和转义的二进制格式输出。如果输出多个值，这种格式就会产生歧义，从而无法再将数据读回。
+
+<div id="raw-formats-comparison">
+  ### 原始格式对比
+</div>
+
+下面比较 `RawBLOB` 和 [`TabSeparatedRaw`](/zh/reference/formats/TabSeparated/TabSeparatedRaw) 格式。
+
+`RawBLOB`:
+
+* 数据以二进制格式输出，不进行转义；
+* 值之间没有分隔符；
+* 每个值末尾都没有换行符。
+
+`TabSeparatedRaw`:
+
+* 数据输出时不进行转义；
+* 每行包含由制表符分隔的值；
+* 每行最后一个值后都有换行符。
+
+下面是 `RawBLOB` 和 [RowBinary](/zh/reference/formats/RowBinary/RowBinary) 格式的对比。
+
+`RawBLOB`:
+
+* 字符串字段输出时前面不带长度前缀。
+
+`RowBinary`:
+
+* 字符串字段表示为 varint 格式的长度 (无符号 [LEB128] (https://en.wikipedia.org/wiki/LEB128)) ，后跟字符串的字节。
+
+当向 `RawBLOB` 输入传入空数据时，ClickHouse 会抛出异常：
+
+```text
+Code: 108. DB::Exception: No data to insert
+```
+
+<div id="example-usage">
+  ## 使用示例
+</div>
+
+```bash title="Query"
+$ clickhouse-client --query "CREATE TABLE {some_table} (a String) ENGINE = Memory;"
+$ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT RawBLOB"
+$ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
+```
+
+```text title="Response"
+f9725a22f9191e064120d718e26862a9  -
+```
+
+<div id="format-settings">
+  ## 格式设置
+</div>

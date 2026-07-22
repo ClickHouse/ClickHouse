@@ -1,0 +1,270 @@
+---
+sidebarTitle: 'Regexp وقالب'
+slug: /integrations/data-formats/templates-regexp
+title: 'استيراد البيانات النصية المخصصة وتصديرها باستخدام قالب وregex في ClickHouse'
+description: 'صفحة تشرح كيفية استيراد البيانات النصية المخصصة وتصديرها باستخدام قالب وregex في ClickHouse'
+doc_type: 'guide'
+keywords: ['تنسيقات البيانات', 'قالب', 'regex', 'تنسيقات مخصصة', 'التحليل']
+---
+
+غالبًا ما نحتاج إلى التعامل مع بيانات بتنسيقات نصية مخصصة. وقد يكون ذلك تنسيقًا غير قياسي، أو JSON غير صالح، أو ملف CSV تالفًا. ولا تعمل المحللات القياسية مثل CSV أو JSON في جميع هذه الحالات. لكن ClickHouse يوفّر حلًا لذلك من خلال تنسيقي قالب وRegex القويين.
+
+<div id="importing-based-on-a-template">
+  ## الاستيراد باستخدام قالب
+</div>
+
+لنفترض أننا نريد استيراد البيانات من [ملف السجل](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/error.log) التالي:
+
+```bash
+head error.log
+```
+
+```response
+2023/01/15 14:51:17 [error]  client: 7.2.8.1, server: example.com "GET /apple-touch-icon-120x120.png HTTP/1.1"
+2023/01/16 06:02:09 [error]  client: 8.4.2.7, server: example.com "GET /apple-touch-icon-120x120.png HTTP/1.1"
+2023/01/15 13:46:13 [error]  client: 6.9.3.7, server: example.com "GET /apple-touch-icon.png HTTP/1.1"
+2023/01/16 05:34:55 [error]  client: 9.9.7.6, server: example.com "GET /h5/static/cert/icon_yanzhengma.png HTTP/1.1"
+```
+
+يمكننا استخدام تنسيق [Template](/ar/reference/formats/Template/Template) لاستيراد هذه البيانات. ويجب تعريف سلسلة قالب تتضمن عناصر نائبة للقيم لكل صف من بيانات الإدخال:
+
+```response
+<time> [error] client: <ip>, server: <host> "<request>"
+```
+
+لنُنشئ جدولًا لاستيراد بياناتنا إليه:
+
+```sql
+CREATE TABLE error_log
+(
+    `time` DateTime,
+    `ip` String,
+    `host` String,
+    `request` String
+)
+ENGINE = MergeTree
+ORDER BY (host, request, time)
+```
+
+لاستيراد البيانات باستخدام قالب معيّن، علينا حفظ سلسلة القالب الخاصة بنا في ملف ([row.template](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/row.template) في حالتنا):
+
+```response
+${time:Escaped} [error]  client: ${ip:CSV}, server: ${host:CSV} ${request:JSON}
+```
+
+نحدّد اسم العمود وقاعدة الإفلات بصيغة `${name:escaping}`. تتوفر هنا عدة خيارات، مثل CSV وJSON وEscaped وQuoted، وتطبّق [قواعد الإفلات المقابلة](/ar/reference/formats/Template/Template).
+
+يمكننا الآن استخدام الملف المحدد كوسيط لخيار الإعدادات `format_template_row` عند استيراد البيانات (*لاحظ أن ملفَي القالب والبيانات **يجب ألا يحتويَا** على رمز `\n` إضافي في نهاية الملف*):
+
+```sql
+INSERT INTO error_log FROM INFILE 'error.log'
+SETTINGS format_template_row = 'row.template'
+FORMAT Template
+```
+
+ويمكننا التأكد من تحميل بياناتنا إلى الجدول:
+
+```sql
+SELECT
+    request,
+    count(*)
+FROM error_log
+GROUP BY request
+```
+
+```response
+┌─request──────────────────────────────────────────┬─count()─┐
+│ GET /img/close.png HTTP/1.1                      │     176 │
+│ GET /h5/static/cert/icon_yanzhengma.png HTTP/1.1 │     172 │
+│ GET /phone/images/icon_01.png HTTP/1.1           │     139 │
+│ GET /apple-touch-icon-precomposed.png HTTP/1.1   │     161 │
+│ GET /apple-touch-icon.png HTTP/1.1               │     162 │
+│ GET /apple-touch-icon-120x120.png HTTP/1.1       │     190 │
+└──────────────────────────────────────────────────┴─────────┘
+```
+
+<div id="skipping-whitespaces">
+  ### تجاهل المسافات البيضاء
+</div>
+
+فكّر في استخدام [TemplateIgnoreSpaces](/ar/reference/formats/Template/TemplateIgnoreSpaces)، إذ يتيح تجاهل المسافات البيضاء بين المحددات في القالب:
+
+```text
+Template:               -->  "p1: ${p1:CSV}, p2: ${p2:CSV}"
+TemplateIgnoreSpaces    -->  "p1:${p1:CSV}, p2:${p2:CSV}"
+```
+
+<div id="exporting-data-using-templates">
+  ## تصدير البيانات باستخدام القوالب
+</div>
+
+يمكننا أيضًا تصدير البيانات إلى أي تنسيق نصي باستخدام القوالب. في هذه الحالة، نحتاج إلى إنشاء ملفين:
+
+[قالب مجموعة النتائج](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/output.results)، الذي يحدّد بنية مجموعة النتائج بالكامل:
+
+```response
+== Top 10 IPs ==
+${data}
+--- ${rows_read:XML} rows read in ${time:XML} ---
+```
+
+هنا، يُمثّل `rows_read` و`time` مقاييس النظام المتاحة لكل طلب. ويشير `data` إلى الصفوف المُولَّدة (يجب أن يأتي `${data}` دائمًا كأول عنصر نائب في هذا الملف)، استنادًا إلى قالب مُعرَّف في [**ملف قالب الصفوف**](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/output.rows):
+
+```response
+${ip:Escaped} generated ${total:Escaped} requests
+```
+
+الآن، لنستخدم هذه القوالب لتصدير الاستعلام التالي:
+
+```sql
+SELECT
+    ip,
+    count() AS total
+FROM error_log GROUP BY ip ORDER BY total DESC LIMIT 10
+FORMAT Template SETTINGS format_template_resultset = 'output.results',
+                         format_template_row = 'output.rows';
+
+== Top 10 IPs ==
+
+9.8.4.6 generated 3 requests
+9.5.1.1 generated 3 requests
+2.4.8.9 generated 3 requests
+4.8.8.2 generated 3 requests
+4.5.4.4 generated 3 requests
+3.3.6.4 generated 2 requests
+8.9.5.9 generated 2 requests
+2.5.1.8 generated 2 requests
+6.8.3.6 generated 2 requests
+6.6.3.5 generated 2 requests
+
+--- 1000 rows read in 0.001380604 ---
+```
+
+<div id="exporting-to-html-files">
+  ### التصدير إلى ملفات HTML
+</div>
+
+يمكن أيضًا تصدير النتائج المعتمدة على القوالب إلى ملفات باستخدام عبارة [`INTO OUTFILE`](/ar/reference/statements/select/into-outfile). لنُنشئ ملفات HTML استنادًا إلى تنسيقي [مجموعة النتائج](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/html.results) و[الصف](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/html.row) المحدَّدين:
+
+```sql
+SELECT
+    ip,
+    count() AS total
+FROM error_log GROUP BY ip ORDER BY total DESC LIMIT 10
+INTO OUTFILE 'out.html'
+FORMAT Template
+SETTINGS format_template_resultset = 'html.results',
+         format_template_row = 'html.row'
+```
+
+<div id="exporting-to-xml">
+  ### التصدير إلى XML
+</div>
+
+يمكن استخدام تنسيق Template لإنشاء أي ملفات بتنسيقات نصية تقريبًا، بما في ذلك XML. ما عليك سوى توفير قالب مناسب ثم تنفيذ التصدير.
+
+يمكنك أيضًا استخدام تنسيق [XML](/ar/reference/formats/XML) للحصول على نتائج XML قياسية تتضمن البيانات الوصفية:
+
+```sql
+SELECT *
+FROM error_log
+LIMIT 3
+FORMAT XML
+```
+
+```xml
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+        <meta>
+                <columns>
+                        <column>
+                                <name>time</name>
+                                <type>DateTime</type>
+                        </column>
+                        ...
+                </columns>
+        </meta>
+        <data>
+                <row>
+                        <time>2023-01-15 13:00:01</time>
+                        <ip>3.5.9.2</ip>
+                        <host>example.com</host>
+                        <request>GET /apple-touch-icon-120x120.png HTTP/1.1</request>
+                </row>
+                ...
+        </data>
+        <rows>3</rows>
+        <rows_before_limit_at_least>1000</rows_before_limit_at_least>
+        <statistics>
+                <elapsed>0.000745001</elapsed>
+                <rows_read>1000</rows_read>
+                <bytes_read>88184</bytes_read>
+        </statistics>
+</result>
+
+```
+
+<div id="importing-data-based-on-regular-expressions">
+  ## استيراد البيانات باستخدام التعبيرات النمطية
+</div>
+
+يُستخدم تنسيق [Regexp](/ar/reference/formats/Regexp) للحالات الأكثر تعقيدًا، عندما يلزم parse بيانات الإدخال بطريقة أكثر تعقيدًا. لنحلّل ملف المثال [error.log](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/error.log)، لكن هذه المرة سنستخرج اسم الملف والبروتوكول لحفظهما في أعمدة منفصلة. أولًا، لنُعِد جدولًا جديدًا لهذا الغرض:
+
+```sql
+CREATE TABLE error_log
+(
+    `time` DateTime,
+    `ip` String,
+    `host` String,
+    `file` String,
+    `protocol` String
+)
+ENGINE = MergeTree
+ORDER BY (host, file, time)
+```
+
+يمكننا الآن استيراد البيانات باستخدام تعبير نمطي:
+
+```sql
+INSERT INTO error_log FROM INFILE 'error.log'
+SETTINGS
+  format_regexp = '(.+?) \\[error\\]  client: (.+), server: (.+?) "GET .+?([^/]+\\.[^ ]+) (.+?)"'
+FORMAT Regexp
+```
+
+سيُدرج ClickHouse البيانات من كل مجموعة التقاط في العمود المناسب وفقًا لترتيبها. لنتحقق من البيانات:
+
+```sql
+SELECT * FROM error_log LIMIT 5
+```
+
+```response
+┌────────────────time─┬─ip──────┬─host────────┬─file─────────────────────────┬─protocol─┐
+│ 2023-01-15 13:00:01 │ 3.5.9.2 │ example.com │ apple-touch-icon-120x120.png │ HTTP/1.1 │
+│ 2023-01-15 13:01:40 │ 3.7.2.5 │ example.com │ apple-touch-icon-120x120.png │ HTTP/1.1 │
+│ 2023-01-15 13:16:49 │ 9.2.9.2 │ example.com │ apple-touch-icon-120x120.png │ HTTP/1.1 │
+│ 2023-01-15 13:21:38 │ 8.8.5.3 │ example.com │ apple-touch-icon-120x120.png │ HTTP/1.1 │
+│ 2023-01-15 13:31:27 │ 9.5.8.4 │ example.com │ apple-touch-icon-120x120.png │ HTTP/1.1 │
+└─────────────────────┴─────────┴─────────────┴──────────────────────────────┴──────────┘
+```
+
+بشكلٍ افتراضي، سيُصدر ClickHouse خطأً عند وجود صفوف غير متطابقة. إذا كنت تريد تخطي الصفوف غير المتطابقة بدلًا من ذلك، ففعِّل هذا السلوك باستخدام الخيار [format&#95;regexp&#95;skip&#95;unmatched](/ar/reference/settings/formats#format_regexp_skip_unmatched):
+
+```sql
+SET format_regexp_skip_unmatched = 1;
+```
+
+<div id="other-formats">
+  ## تنسيقات أخرى
+</div>
+
+يدعم ClickHouse العديد من التنسيقات، النصية والثنائية على حد سواء، لتلبية مختلف السيناريوهات والمنصات. اطّلع على المزيد من التنسيقات وطرق العمل معها في المقالات التالية:
+
+* [تنسيقات CSV وTSV](/ar/guides/clickhouse/data-formats/csv-tsv)
+* [Parquet](/ar/guides/clickhouse/data-formats/parquet)
+* [تنسيقات JSON](/ar/guides/clickhouse/data-formats/json/intro)
+* **Regex والقوالب**
+* [تنسيقات Native والثنائية](/ar/guides/clickhouse/data-formats/binary)
+* [تنسيقات SQL](/ar/guides/clickhouse/data-formats/sql)
+
+وألقِ نظرة أيضًا على [clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local) - وهي أداة محمولة متكاملة الميزات للعمل على الملفات المحلية/البعيدة دون الحاجة إلى ClickHouse server.

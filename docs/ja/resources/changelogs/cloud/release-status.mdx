@@ -1,0 +1,123 @@
+---
+title: 'リリース状況ページ'
+sidebarTitle: 'リリース状況'
+keywords: ['クラウド', 'リリース状況', 'ロールアウト', 'バージョン', '更新']
+description: '各リリースチャネルのリリース状況を示すページ'
+slug: /cloud/release-status
+doc_type: 'reference'
+---
+
+import ReleaseSchedule from "/snippets/ja/components/ReleaseSchedule/ReleaseSchedule.jsx";
+
+ClickHouse Cloud は、安定性、新機能へのアクセス、アップグレード時期の予測しやすさに関するさまざまなニーズに対応するため、複数のリリースチャネルを提供しています。各チャネルにはそれぞれ異なるアップグレードスケジュールが設定されており、新しいリリースをすぐに利用したいユーザーから、最も安定したバージョンを確実に利用できるようアップグレードを遅らせたいユーザーまで、さまざまなユースケースに対応することを目的としています。
+
+<div id="release-channel-details">
+  ## リリースチャネルの詳細
+</div>
+
+<Accordion title="リリースチャネルの詳細を見る">
+  | チャネル名             | 説明                                                                                                               | 主な考慮事項                                                                | 対応ティア                                    |
+  | :---------------- | :--------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------- | :--------------------------------------- |
+  | **Fast (早期リリース)** | 本番以外の環境に推奨されます。すべてのデータベースバージョンのアップグレードで、最初に提供されるリリースチャネルです                                                       | 安定性よりも新機能への早期アクセスを優先。<br />本番環境をアップグレードする前に、本番以外の環境でリリースをテスト可能        | Basic (デフォルト) <br />Scale、Enterprise ティア |
+  | **Regular**       | すべてのマルチレプリカサービスのデフォルトのリリースチャネルです。<br />このチャネルでのロールアウトは、通常、Fast リリースチャネルの開始から 2 週間後に始まります。                        | デフォルトの全体展開向けアップグレード。<br />サービスは複数週にわたって段階的にアップグレードされます                | Scale および Enterprise                     |
+  | **Slow (延期)**     | リスクをできるだけ抑え、リリーススケジュールの後半でサービスをアップグレードしたいユーザーに推奨されます。<br />このチャネルでのロールアウトは、通常、Regular リリースチャネルの開始から 2 週間後に始まります。 | 最大限の安定性と予測可能性。<br />Fast / Regular チャネルで新しいリリースをより十分にテストする必要があるユーザー向け | Enterprise                               |
+
+  <br />
+
+  <br />
+
+  <Note>
+    すべてのシングルレプリカサービスは、自動的に Fast リリースチャネルに登録されます。
+  </Note>
+</Accordion>
+
+Enterprise ティアのサービスでは、すべてのリリースチャネルでスケジュールされたアップグレードウィンドウを利用できます。この機能により、アップグレードを実施する時間帯を曜日ごとに設定できます。
+
+<div id="release-schedule">
+  ## リリーススケジュール
+</div>
+
+<Warning>
+  **リリース日の見方**
+
+  以下に示す日付は、ClickHouse が各リリースチャネルへの**ロールアウトを開始する**時点を示すものであり、個々のサービスがアップグレードされる時点を示すものではありません。
+
+  * ロールアウトは自動で実施され、数週間かけて段階的に進行します
+  * スケジュールされたアップグレードウィンドウが設定されているサービスは、チャネルのロールアウト終了翌週の予定されたウィンドウ内にアップグレードされます (UTC の月曜日 00:00 開始)
+  * ロールアウトの一時停止 (例: 休日期間中の凍結) やヘルスモニタリングにより、ロールアウト完了が遅れる場合があります
+
+  本番環境へのアップグレード前に事前検証を行う場合は、非本番サービスには Fast または Regular チャネルを、本番サービスには Slow チャネルを使用してください。
+</Warning>
+
+<ReleaseSchedule
+  releases={[
+  {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/26.4',
+   version: '26.4',
+   fast_start_date: '2026-06-22',
+   fast_end_date: '未定',
+   regular_start_date: '未定',
+   regular_end_date: '未定',
+   slow_start_date: '未定',
+   slow_end_date: '未定',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+  },
+  {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/26.2',
+   version: '26.2',
+   fast_start_date: '2026-04-03',
+   fast_end_date: '2026-04-14',
+   regular_start_date: '2026-05-06',
+   regular_end_date: '2026-06-17',
+   slow_start_date: '2026-07-01',
+   slow_end_date: '未定',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+   fast_delay_note: 'アップグレードウィンドウが設定されているサービスは、2026-04-15 からアップグレードされます。',
+  },
+  {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/25.12',
+   version: '25.12',
+   fast_start_date: '2026-02-10',
+   fast_end_date: '2026-02-11',
+   regular_start_date: '2026-03-09',
+   regular_end_date: '2026-03-18',
+   slow_start_date: '2026-04-07',
+   slow_end_date: '2026-04-09',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+   regular_delay_note: 'スケジュールされたアップグレードウィンドウが設定されているサービスには、3 月 23 日の翌週の予定されたウィンドウ内に 25.12 が適用されます',
+   slow_delay_note: 'スケジュールされたアップグレードウィンドウが設定されているサービスには、4 月 13 日の翌週の予定されたウィンドウ内に 25.12 が適用されます',
+ },
+ {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/25.10',
+   version: '25.10',
+   fast_start_date: '2025-12-11',
+   fast_end_date: '2025-12-15',
+   regular_start_date: '2026-01-23',
+   regular_end_date: '2026-03-10',
+   slow_start_date: '2026-03-23',
+   slow_end_date: '2026-03-23',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+ },
+ {
+  changelog_link: 'https://clickhouse.com/docs/changelogs/25.8',
+  version: '25.8',
+  fast_start_date: 'Completed',
+  fast_end_date: 'Completed',
+  regular_start_date: '2025-10-29',
+  regular_end_date: '2025-12-19',
+  slow_start_date: '2026-01-27',
+  slow_end_date: '2026-02-04',
+  fast_progress: 'green',
+  regular_progress: 'green',
+  slow_progress: 'green',
+}
+]}
+/>

@@ -1,0 +1,343 @@
+---
+slug: /use-cases/observability/clickstack/integrations/kafka-logs
+title: 'مراقبة سجلات Kafka باستخدام ClickStack'
+sidebarTitle: 'سجلات Kafka'
+description: 'مراقبة سجلات Kafka باستخدام ClickStack'
+doc_type: 'guide'
+keywords: ['Kafka', 'السجلات', 'OTEL', 'ClickStack', 'مراقبة الوسطاء', 'Log4j']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **باختصار**
+
+  اجمع سجلات وسيط Kafka واعرضها بصريًا في ClickStack (بتنسيق Log4j) باستخدام مستقبل OTel ‏`filelog`. يتضمن مجموعة بيانات تجريبية ولوحة معلومات مُعدّة مسبقًا.
+</Info>
+
+<div id="existing-kafka">
+  ## التكامل مع Kafka الحالي
+</div>
+
+يتناول هذا القسم كيفية تهيئة تثبيت Kafka الحالي لديك لإرسال سجلات وسيط إلى ClickStack من خلال تعديل إعداد ClickStack OTel مجمّع.
+إذا كنت ترغب في اختبار تكامل سجلات Kafka قبل تهيئة إعدادك الحالي، فيمكنك تجربة ذلك باستخدام إعدادنا المهيأ مسبقًا والبيانات النموذجية في قسم [&quot;مجموعة البيانات التجريبية&quot;](/ar/clickstack/integration-examples/kafka-logs#demo-dataset).
+
+<div id="prerequisites">
+  ### المتطلبات الأساسية
+</div>
+
+* مثيل ClickStack قيد التشغيل
+* تثبيت Kafka حالي (الإصدار 2.0 أو أحدث)
+* إمكانية الوصول إلى ملفات سجلات Kafka (`server.log`, `controller.log`، إلخ.)
+
+<Steps>
+  <Step>
+    #### تحقّق من إعدادات تسجيل السجلات في Kafka
+
+    يستخدم Kafka ‏Log4j ويكتب السجلات في الدليل المحدد عبر خاصية النظام `kafka.logs.dir` أو متغير البيئة `LOG_DIR`. تحقّق من موقع ملف السجل:
+
+    ```bash
+    # Default locations
+    ls $KAFKA_HOME/logs/      # Standard Apache Kafka (defaults to <install-dir>/logs/)
+    ls /var/log/kafka/        # RPM/DEB package installations
+    ```
+
+    ملفات سجل Kafka الأساسية:
+
+    * **`server.log`**: سجلات الوسيط العامة (بدء التشغيل، والاتصالات، والنسخ المتماثل، والأخطاء)
+    * **`controller.log`**: الأحداث الخاصة بوحدة التحكم (انتخاب القائد، وإعادة توزيع الأقسام)
+    * **`state-change.log`**: انتقالات حالة الأقسام والنسخ المتماثلة
+
+    يُنتج نمط Log4j الافتراضي في Kafka أسطرًا مثل:
+
+    ```text
+    [2026-03-09 14:23:45,123] INFO [KafkaServer id=0] started (kafka.server.KafkaServer)
+    ```
+
+    <Note>
+      بالنسبة إلى عمليات نشر Kafka المعتمدة على Docker (مثل `confluentinc/cp-kafka`)، لا يشتمل إعداد Log4j الافتراضي إلا على مُلحِق console — ولا يوجد مُلحِق file، لذا لا تُكتَب السجلات إلا إلى stdout. لاستخدام المستقبِل `filelog`، ستحتاج إلى إعادة توجيه السجلات إلى ملف، إما بإضافة مُلحِق file إلى `log4j.properties` أو بتمرير stdout عبر أنبوب (مثل `| tee /var/log/kafka/server.log`).
+    </Note>
+  </Step>
+
+  <Step>
+    #### أنشئ تهيئة مخصصة لـ OTel collector لـ Kafka
+
+    يتيح لك ClickStack توسيع التهيئة الأساسية لـ OpenTelemetry Collector من خلال ربط ملف تهيئة مخصص وتعيين متغير بيئة. وتُدمَج التهيئة المخصصة مع التهيئة الأساسية التي يديرها HyperDX عبر OpAMP.
+
+    أنشئ ملفًا باسم `kafka-logs-monitoring.yaml` يتضمن التهيئة التالية:
+
+    ```yaml
+    receivers:
+      filelog/kafka:
+        include:
+          - /var/log/kafka/server.log
+          - /var/log/kafka/controller.log  # optional, only exists if log4j is configured with separate file appenders
+          - /var/log/kafka/state-change.log  # optional, same as above
+        start_at: beginning
+        multiline:
+          line_start_pattern: '^\[\d{4}-\d{2}-\d{2}'
+        operators:
+          - type: regex_parser
+            regex: '^\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\] (?P<severity>\w+) (?P<message>.*)'
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.timestamp
+              layout: '%Y-%m-%d %H:%M:%S,%L'
+            severity:
+              parse_from: attributes.severity
+
+          - type: move
+            from: attributes.message
+            to: body
+
+          - type: add
+            field: attributes.source
+            value: "kafka"
+
+          - type: add
+            field: resource["service.name"]
+            value: "kafka-production"
+
+    service:
+      pipelines:
+        logs/kafka:
+          receivers: [filelog/kafka]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    ```
+
+    <Note>
+      * لا تُعرِّف في الإعداد المخصّص سوى `receivers` و`pipelines` الجديدين. أمّا `processors` (`memory_limiter` و`transform` و`batch`) و`exporters` (`clickhouse`) فهي مُعرَّفة مسبقًا في إعداد ClickStack الأساسي — وكل ما عليك هو الإشارة إليها بأسمائها.
+      * يضمن إعداد `multiline` التقاط تتبعات المكدس كسجل واحد.
+      * يستخدم هذا الإعداد `start_at: beginning` لقراءة جميع السجلات الموجودة عند بدء تشغيل الـ `collector`. وفي عمليات النشر على بيئة الإنتاج، غيّرها إلى `start_at: end` لتجنّب إعادة استيعاب السجلات عند إعادة تشغيل الـ `collector`.
+    </Note>
+  </Step>
+
+  <Step>
+    #### تهيئة ClickStack لتحميل إعدادات مخصصة
+
+    لتمكين تهيئة المُجمّع المخصصة في عملية نشر ClickStack الحالية، يجب عليك ما يلي:
+
+    1. ربط ملف الإعدادات المخصص على المسار `/etc/otelcol-contrib/custom.config.yaml`
+    2. تعيين متغير البيئة `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`
+    3. ربط دليل سجلات Kafka حتى يتمكن المُجمّع من قراءتها
+
+    <Tabs>
+      <Tab title="Docker Compose">
+        حدّث إعدادات نشر ClickStack:
+
+        ```yaml
+        services:
+          clickstack:
+            # ... الإعدادات الحالية ...
+            environment:
+              - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
+              # ... متغيرات بيئة أخرى ...
+            volumes:
+              - ./kafka-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+              - /var/log/kafka:/var/log/kafka:ro
+              # ... وحدات تخزين أخرى ...
+        ```
+      </Tab>
+
+      <Tab title="Docker Run (الصورة المتكاملة)">
+        إذا كنت تستخدم الصورة المتكاملة مع Docker، فشغّل:
+
+        ```bash
+        docker run --name clickstack \
+          -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+          -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+          -v "$(pwd)/kafka-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+          -v /var/log/kafka:/var/log/kafka:ro \
+          clickhouse/clickstack-all-in-one:latest
+        ```
+      </Tab>
+    </Tabs>
+
+    <Note>
+      تأكد من أن مُجمّع ClickStack لديه الأذونات المناسبة لقراءة ملفات سجلات Kafka. في بيئة الإنتاج، استخدم عمليات ربط للقراءة فقط (`:ro`) واتبع مبدأ الحد الأدنى من الامتيازات.
+    </Note>
+  </Step>
+
+  <Step>
+    #### التحقق من السجلات في HyperDX
+
+    بعد إكمال الإعداد، سجّل الدخول إلى HyperDX وتحقّق من أن السجلات تتدفق:
+
+    <Image img="/images/clickstack/kafka/logs/search-view.webp" alt="واجهة البحث" />
+
+    <Image img="/images/clickstack/kafka/logs/log-view.webp" alt="واجهة السجل" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## مجموعة البيانات التجريبية
+</div>
+
+اختبر تكامل سجلات Kafka باستخدام مجموعة بيانات نموذجية مُعدّة مسبقًا قبل تهيئة أنظمة production لديك.
+
+<Steps>
+  <Step>
+    #### تنزيل مجموعة البيانات النموذجية
+
+    نزّل ملف السجل النموذجي:
+
+    ```bash
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/kafka/server.log
+    ```
+  </Step>
+
+  <Step>
+    #### إنشاء تهيئة مجمّع للاختبار
+
+    أنشئ ملفًا باسم `kafka-logs-demo.yaml` بالمحتوى التالي:
+
+    ```yaml
+    cat > kafka-logs-demo.yaml << 'EOF'
+    receivers:
+      filelog/kafka:
+        include:
+          - /tmp/kafka-demo/server.log
+        start_at: beginning
+        multiline:
+          line_start_pattern: '^\[\d{4}-\d{2}-\d{2}'
+        operators:
+          - type: regex_parser
+            regex: '^\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\] (?P<severity>\w+) (?P<message>.*)'
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.timestamp
+              layout: '%Y-%m-%d %H:%M:%S,%L'
+            severity:
+              parse_from: attributes.severity
+
+          - type: move
+            from: attributes.message
+            to: body
+
+          - type: add
+            field: attributes.source
+            value: "kafka-demo"
+
+          - type: add
+            field: resource["service.name"]
+            value: "kafka-demo"
+
+    service:
+      pipelines:
+        logs/kafka-demo:
+          receivers: [filelog/kafka]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    EOF
+    ```
+  </Step>
+
+  <Step>
+    #### تشغيل ClickStack باستخدام التهيئة التجريبية
+
+    شغّل ClickStack باستخدام السجلات التجريبية وهذه التهيئة:
+
+    ```bash
+    docker run --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/kafka-logs-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/server.log:/tmp/kafka-demo/server.log:ro" \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    ## التحقق من السجلات في HyperDX
+
+    بعد تشغيل ClickStack:
+
+    1. افتح [HyperDX](http://localhost:8080/) وسجّل الدخول إلى حسابك (قد تحتاج أولًا إلى إنشاء حساب)
+    2. انتقل إلى Search view واضبط المصدر على `Logs`
+    3. اضبط النطاق الزمني ليشمل **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**
+
+    <Image img="/images/clickstack/kafka/logs/search-view.webp" alt="عرض البحث" />
+
+    <Image img="/images/clickstack/kafka/logs/log-view.webp" alt="عرض السجل" />
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## لوحات المعلومات والتصورات
+</div>
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-logs-dashboard.json'} download="kafka-logs-dashboard.json" eventName="docs.kafka_logs_monitoring.dashboard_download">نزّل</TrackedLink> إعدادات لوحة المعلومات
+  </Step>
+
+  <Step>
+    #### استيراد لوحة معلومات مُعدّة مسبقًا
+
+    1. افتح HyperDX وانتقل إلى قسم لوحات المعلومات.
+    2. انقر على &quot;Import Dashboard&quot; في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث.
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="استيراد لوحة معلومات" />
+
+    3. حمّل ملف kafka-logs-dashboard.json وانقر على إنهاء الاستيراد.
+
+    <Image img="/images/clickstack/kafka/logs/finish-import.webp" alt="إنهاء استيراد لوحة معلومات Kafka logs" />
+  </Step>
+
+  <Step>
+    #### سيتم إنشاء لوحة المعلومات مع ضبط جميع التصورات مسبقًا
+
+    بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني ليشمل **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
+
+    <Image img="/images/clickstack/kafka/logs/example-dashboard.webp" alt="لوحة معلومات Kafka logs التجريبية" />
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## استكشاف الأخطاء وإصلاحها
+</div>
+
+**تحقّق من أن التهيئة الفعلية تتضمّن مستقبِل filelog الخاص بك:**
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 filelog
+```
+
+**تحقّق من أخطاء المجمّع:**
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/agent.log
+```
+
+**تحقّق من أن تنسيق سجلات Kafka يطابق النمط المتوقع:**
+
+```bash
+tail -1 /var/log/kafka/server.log
+```
+
+إذا كان تثبيت Kafka يستخدم نمط Log4j مخصصًا، فعدّل تعبير regex الخاص بـ `regex_parser` وفقًا لذلك.
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* أعدّ [التنبيهات](/ar/clickstack/features/alerts) للأحداث الحرجة (تعطل الوسطاء، أخطاء النسخ المتماثل، مشكلات مجموعات المستهلكين)
+* اجمعها مع [مقاييس Kafka](/ar/clickstack/integration-examples/kafka-metrics) للحصول على مراقبة شاملة لـ Kafka
+* أنشئ [لوحات معلومات](/ar/clickstack/features/dashboards/overview) إضافية لحالات استخدام محددة (أحداث وحدة التحكم، إعادة إسناد الأقسام)
+
+<div id="going-to-production">
+  ## الانتقال إلى بيئة الإنتاج
+</div>
+
+يستفيد هذا الدليل من OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. بالنسبة إلى عمليات النشر في بيئة الإنتاج، نوصي بتشغيل OTel Collector خاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.

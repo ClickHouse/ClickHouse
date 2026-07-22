@@ -1,0 +1,139 @@
+---
+sidebarTitle: 'Actualizaciones'
+slug: /manage/updates
+title: 'Actualizaciones'
+description: 'Con ClickHouse Cloud, nunca tendrá que preocuparse por aplicar parches ni por las actualizaciones. Realizamos actualizaciones periódicas que incluyen correcciones, nuevas funciones y mejoras de rendimiento.'
+doc_type: 'guide'
+keywords: ['actualizaciones', 'gestión de versiones', 'funciones de Cloud', 'mantenimiento', 'actualizaciones']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/es/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+Con ClickHouse Cloud, nunca tendrá que preocuparse por aplicar parches ni por las actualizaciones. Implementamos periódicamente actualizaciones que incluyen correcciones, nuevas características y mejoras de rendimiento. Para consultar la lista completa de novedades de ClickHouse, consulte nuestro [changelog de Cloud](/es/resources/changelogs/cloud/2026).
+
+<Note>
+  Estamos introduciendo un nuevo mecanismo de actualización, un concepto al que llamamos &quot;make before break&quot; (o MBB). Con este nuevo enfoque, añadimos réplicas actualizadas antes de retirar las antiguas durante la operación de actualización. Esto se traduce en actualizaciones más fluidas y menos disruptivas para las cargas de trabajo activas.
+
+  Como parte de este cambio, los datos históricos de las tablas del sistema se conservarán durante un máximo de 30 días en el contexto de los eventos de actualización. Además, los datos de las tablas del sistema anteriores al 19 de diciembre de 2024 para los servicios en AWS o GCP, y anteriores al 14 de enero de 2025 para los servicios en Azure, no se conservarán como parte de la migración a los nuevos niveles de la organización.
+</Note>
+
+<div id="version-compatibility">
+  ## Compatibilidad de versiones
+</div>
+
+Cuando creas un servicio, la configuración [`compatibility`](/es/reference/settings/session-settings#compatibility) se establece en la versión más reciente de ClickHouse disponible en ClickHouse Cloud en el momento en que tu servicio se aprovisiona por primera vez.
+
+La configuración `compatibility` te permite usar los valores predeterminados de configuración de versiones anteriores. Cuando tu servicio se actualiza a una nueva versión, la versión especificada para la configuración `compatibility` no cambia. Esto significa que los valores predeterminados de configuración que existían cuando creaste tu servicio por primera vez no cambiarán (a menos que ya hayas anulado esos valores predeterminados, en cuyo caso se conservarán después de la actualización).
+
+No puedes administrar la configuración `compatibility` predeterminada a nivel de servicio. Debes [contactar con soporte](https://clickhouse.com/support/program) si quieres cambiar la versión establecida para la configuración `compatibility` predeterminada de tu servicio. Sin embargo, puedes anular la configuración `compatibility` a nivel de usuario, rol, perfil, consulta o sesión mediante los mecanismos de configuración estándar de ClickHouse, como `SET compatibility = '22.3'` en una sesión o `SETTINGS compatibility = '22.3'` en una consulta.
+
+<div id="maintenance-mode">
+  ## Modo de mantenimiento
+</div>
+
+En ocasiones, es posible que necesitemos actualizar su servicio, lo que podría requerir deshabilitar ciertas funciones, como el escalado o la inactividad. En casos excepcionales, puede que tengamos que intervenir en un servicio que esté experimentando problemas para devolverlo a un estado saludable. Durante este mantenimiento, verá un aviso en la página del servicio con el texto *«Mantenimiento en curso»*. Es posible que, aun así, pueda seguir usando el servicio para realizar consultas durante este tiempo.
+
+No se le cobrará por el tiempo en que el servicio esté en mantenimiento. El *modo de mantenimiento* es algo poco frecuente y no debe confundirse con las actualizaciones habituales del servicio.
+
+<div id="release-channels-upgrade-schedule">
+  ## Canales de lanzamiento (programación de actualizaciones)
+</div>
+
+Los usuarios pueden especificar la programación de actualizaciones de su servicio de ClickHouse Cloud suscribiéndose a un canal de lanzamiento concreto. Hay tres canales de lanzamiento, y el usuario puede configurar el día de la semana y la hora de las actualizaciones con la función de **actualizaciones programadas**.
+
+Los tres canales de lanzamiento son:
+
+* El [**canal de lanzamiento rápido**](#fast-release-channel-early-upgrades), para obtener acceso anticipado a las actualizaciones.
+* El [**canal de lanzamiento regular**](#regular-release-channel) es el predeterminado, y las actualizaciones en este canal comienzan dos semanas después de las del canal de lanzamiento rápido. Si su servicio de los niveles Scale y Enterprise no tiene configurado un canal de lanzamiento, estará en el canal de lanzamiento regular de forma predeterminada.
+* El [**canal de lanzamiento lento**](#slow-release-channel-deferred-upgrades) es para lanzamientos aplazados. Las actualizaciones en este canal se realizan dos semanas después de las del canal de lanzamiento regular.
+
+<Note>
+  Los servicios del nivel Basic se asignan automáticamente al canal de lanzamiento rápido
+</Note>
+
+<div id="fast-release-channel-early-upgrades">
+  ### Canal de lanzamiento Fast release (actualizaciones anticipadas)
+</div>
+
+<ScalePlanFeatureBadge feature="El canal de lanzamiento Fast release" />
+
+Además del calendario de actualizaciones habitual, ofrecemos un canal de lanzamiento **Fast release** si desea que sus servicios reciban actualizaciones antes del calendario de versiones habitual.
+
+En concreto, los servicios:
+
+* Recibirán las versiones más recientes de ClickHouse
+* Se actualizarán con mayor frecuencia a medida que se prueben nuevas versiones
+
+Puede modificar el calendario de versiones del servicio en la consola de Cloud, como se muestra a continuación:
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/manage/fast_release.webp" size="lg" alt="Seleccione el tipo de canal de lanzamiento" border />
+</div>
+
+<br />
+
+Este canal de lanzamiento **Fast release** es adecuado para probar nuevas funciones en entornos no críticos. **No se recomienda para cargas de trabajo de producción con requisitos estrictos de tiempo de actividad y fiabilidad.**
+
+<div id="regular-release-channel">
+  ### Canal de lanzamiento regular
+</div>
+
+Para todos los servicios de los niveles Scale y Enterprise que no tengan configurado un canal de lanzamiento ni un calendario de actualizaciones, las actualizaciones se realizarán como parte del canal de lanzamiento regular. Esta opción se recomienda para entornos de producción.
+
+Las actualizaciones del canal de lanzamiento regular suelen realizarse dos semanas después del **canal de lanzamiento rápido**.
+
+<Note>
+  Los servicios del nivel Basic se actualizan poco después del canal de lanzamiento rápido.
+</Note>
+
+<div id="slow-release-channel-deferred-upgrades">
+  ### Canal de lanzamiento lento (actualizaciones diferidas)
+</div>
+
+<EnterprisePlanFeatureBadge feature="El canal de lanzamiento lento" />
+
+Ofrecemos un canal de **lanzamiento lento** si desea que sus servicios reciban actualizaciones después del calendario de lanzamientos habitual.
+
+En concreto, los servicios:
+
+* Se actualizarán una vez que hayan finalizado los despliegues de los canales de lanzamiento Fast y Regular
+* Recibirán versiones de ClickHouse aproximadamente 2 semanas después del lanzamiento regular
+* Están pensados para clientes que desean disponer de más tiempo para probar las versiones de ClickHouse en entornos no productivos antes de la actualización de producción. Los entornos no productivos pueden recibir actualizaciones en el canal de lanzamiento Fast o Regular para realizar pruebas y validaciones.
+
+<Note>
+  Puede cambiar de canal de lanzamiento en cualquier momento. Sin embargo, en determinados casos, el cambio solo se aplicará a lanzamientos futuros.
+
+  * Cambiar a un canal más rápido actualizará su servicio de inmediato; por ejemplo, de Slow a Regular o de Regular a Fast
+  * Si su servicio utiliza [actualizaciones programadas](#scheduled-upgrades), la actualización se realizará en la siguiente actualización programada.
+  * Cambiar a un canal más lento no revertirá su servicio a una versión anterior y lo mantendrá en la versión actual hasta que haya una versión más reciente disponible en ese canal; por ejemplo, de Regular a Slow o de Fast a Regular o Slow
+</Note>
+
+<div id="scheduled-upgrades">
+  ## Actualizaciones programadas
+</div>
+
+<EnterprisePlanFeatureBadge feature="Actualizaciones programadas" linking_verb_are="true" />
+
+Puede configurar una ventana de actualización para los servicios del nivel Enterprise.
+
+Seleccione el servicio para el que desea programar una actualización y, a continuación, seleccione `Settings` en el menú de la izquierda. Desplácese hasta `Scheduled upgrades`.
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/manage/scheduled_upgrades.webp" size="lg" alt="Actualizaciones programadas" border />
+</div>
+
+<br />
+
+Al seleccionar esta opción, podrá elegir el día de la semana y la franja horaria para las actualizaciones de la base de datos y de Cloud.
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/manage/scheduled_upgrade_window.webp" size="lg" alt="Ventana de actualización programada" border />
+</div>
+
+<br />
+
+<Note>
+  Aunque las actualizaciones programadas siguen el calendario definido, se aplican excepciones a los parches de seguridad críticos y a las correcciones de vulnerabilidades, así como a los casos en los que posibles problemas podrían provocar corrupción o pérdida de datos. Si se identifica un problema de seguridad urgente, las actualizaciones podrán realizarse fuera de la ventana programada. Se notificará a los clientes sobre dichas excepciones cuando sea necesario.
+</Note>

@@ -1,0 +1,289 @@
+---
+description: '专为精简以及聚合/平均（rollup）Graphite 数据而设计。'
+sidebarTitle: 'GraphiteMergeTree'
+slug: /engines/table-engines/mergetree-family/graphitemergetree
+title: 'GraphiteMergeTree 表引擎'
+doc_type: 'guide'
+---
+
+此引擎专为精简以及聚合/平均 (rollup) [Graphite](http://graphite.readthedocs.io/en/latest/index.html) 数据而设计。对于希望将 ClickHouse 用作 Graphite 数据存储的开发者，它会很有帮助。
+
+如果不需要 rollup，你可以使用任何 ClickHouse 表引擎来存储 Graphite 数据；但如果需要 rollup，则应使用 `GraphiteMergeTree`。该引擎可减少存储占用，并提高 Graphite 查询的效率。
+
+该引擎继承了 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 的特性。
+
+<div id="creating-table">
+  ## 创建表
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    Path String,
+    Time DateTime,
+    Value Float64,
+    Version <Numeric_type>
+    ...
+) ENGINE = GraphiteMergeTree(config_section)
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
+```
+
+请参阅 [CREATE TABLE](/zh/reference/statements/create/table) 查询的详细说明。
+
+用于存储 Graphite 数据的表应包含以下列，以保存以下数据：
+
+* 指标名称 (Graphite 指标) 。数据类型：`String`。
+
+* 指标的测量时间。数据类型：`DateTime`。
+
+* 指标的值。数据类型：`Float64`。
+
+* 指标的版本。数据类型：任意数值类型 (ClickHouse 会保留版本最高的行；如果版本相同，则保留最后写入的行。其他行会在数据分区片段合并期间被删除) 。
+
+这些列的名称应在 rollup 配置中设置。
+
+**GraphiteMergeTree 参数**
+
+* `config_section` — 配置文件中定义 rollup 规则的节名称。
+
+**查询子句**
+
+创建 `GraphiteMergeTree` 表时，需要使用与创建 `MergeTree` 表时相同的[子句](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table)。
+
+<details markdown="1">
+  <summary>已弃用的建表方法</summary>
+
+  <Note>
+    请勿在新项目中使用此方法；如果可能，请将旧项目切换到上文所述的方法。
+  </Note>
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+  (
+      EventDate Date,
+      Path String,
+      Time DateTime,
+      Value Float64,
+      Version <Numeric_type>
+      ...
+  ) ENGINE [=] GraphiteMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, config_section)
+  ```
+
+  除 `config_section` 外，所有参数的含义都与 `MergeTree` 中相同。
+
+  * `config_section` — 配置文件中定义 rollup 规则的节名称。
+</details>
+
+<div id="rollup-configuration">
+  ## rollup 配置
+</div>
+
+rollup 的设置由服务器配置中的 [graphite&#95;rollup](/zh/reference/settings/server-settings/settings#graphite) 参数定义。参数名称可以任意指定。你可以创建多个配置，并将其用于不同的表。
+
+rollup 配置结构：
+
+required-columns
+patterns
+
+<div id="required-columns">
+  ### 所需列
+</div>
+
+<div id="path_column_name">
+  #### `path_column_name`
+</div>
+
+`path_column_name` — 用于存储指标名称 (Graphite 指标) 的列名。默认值：`Path`。
+
+<div id="time_column_name">
+  #### `time_column_name`
+</div>
+
+`time_column_name` — 存储指标采集时间的列名。默认值：`Time`。
+
+<div id="value_column_name">
+  #### `value_column_name`
+</div>
+
+`value_column_name` — 存储 `time_column_name` 中所设时间点对应指标值的列名。默认值：`Value`。
+
+<div id="version_column_name">
+  #### `version_column_name`
+</div>
+
+`version_column_name` — 用于存储指标版本的列名。默认值：`Timestamp`。
+
+<div id="patterns">
+  ### 匹配规则
+</div>
+
+`patterns` 部分的结构：
+
+```text
+pattern
+    rule_type
+    regexp
+    function
+pattern
+    rule_type
+    regexp
+    age + precision
+    ...
+pattern
+    rule_type
+    regexp
+    function
+    age + precision
+    ...
+pattern
+    ...
+default
+    function
+    age + precision
+    ...
+```
+
+<Warning>
+  Pattern 必须严格按以下顺序排列：
+
+  1. 不包含 `function` 或 `retention` 的 Pattern。
+  2. 同时包含 `function` 和 `retention` 的 Pattern。
+  3. `default` Pattern。
+</Warning>
+
+处理一行数据时，ClickHouse 会检查 `pattern` 部分中的规则。每个 `pattern` (包括 `default`) 部分都可以包含用于 aggregation 的 `function` 参数、`retention` 参数，或同时包含两者。如果指标名称匹配 `regexp`，则应用 `pattern` 部分中的规则 (或多条规则) ；否则，使用 `default` 部分中的规则。
+
+`pattern` 和 `default` 部分中的字段：
+
+* `rule_type` - 规则类型。它仅应用于特定指标。引擎使用它来区分普通指标和带标签的指标。可选参数。默认值：`all`。
+  如果性能不是关键因素，或者只使用一种指标类型 (例如普通指标) ，则不需要它。默认情况下，只会创建一组规则。否则，如果定义了任意特殊类型，则会创建两组不同的规则：一组用于普通指标 (root.branch.leaf) ，另一组用于带标签的指标 (root.branch.leaf;tag1=value1) 。
+  默认规则最终会同时出现在这两组中。
+  有效值：
+  * `all` (默认) - 通用规则，在省略 `rule_type` 时使用。
+  * `plain` - 普通指标的规则。字段 `regexp` 按 regular expression 处理。
+  * `tagged` - 带标签指标的规则 (指标在 DB 中以 `someName?tag1=value1&tag2=value2&tag3=value3` 格式存储) 。regular expression 必须按标签名称排序；如果存在，第一个标签必须是 `__name__`。字段 `regexp` 按 regular expression 处理。
+  * `tag_list` - 带标签指标的规则，这是一种简单的 DSL，便于用 graphite 格式描述指标，例如 `someName;tag1=value1;tag2=value2`、`someName` 或 `tag1=value1;tag2=value2`。字段 `regexp` 会被转换为一条 `tagged` 规则。无需按标签名称排序，系统会自动完成。标签的值 (而不是名称) 可以设置为 regular expression，例如 `env=(dev|staging)`。
+* `regexp` – 指标名称的 pattern (正则或 DSL) 。
+* `age` – 数据最小年龄 (秒) 。
+* `precision`– 定义数据年龄 (秒) 时使用的精度。它应当是 86400 (一天的秒数) 的约数。
+* `function` – 应用于年龄落在 `[age, age + precision]` 范围内的数据的聚合函数名称。可接受的函数：min / max / any / avg。平均值的计算并不精确，类似于对多个平均值再取平均。
+
+<div id="configuration-example">
+  ### 不包含 rules 类型的配置示例
+</div>
+
+```xml
+<graphite_rollup>
+    <version_column_name>Version</version_column_name>
+    <pattern>
+        <regexp>click_cost</regexp>
+        <function>any</function>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <default>
+        <function>max</function>
+        <retention>
+            <age>0</age>
+            <precision>60</precision>
+        </retention>
+        <retention>
+            <age>3600</age>
+            <precision>300</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>3600</precision>
+        </retention>
+    </default>
+</graphite_rollup>
+```
+
+<div id="configuration-typed-example">
+  ### 含规则类型的配置示例
+</div>
+
+```xml
+<graphite_rollup>
+    <version_column_name>Version</version_column_name>
+    <pattern>
+        <rule_type>plain</rule_type>
+        <regexp>click_cost</regexp>
+        <function>any</function>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <pattern>
+        <rule_type>tagged</rule_type>
+        <regexp>^((.*)|.)min\?</regexp>
+        <function>min</function>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <pattern>
+        <rule_type>tagged</rule_type>
+        <regexp><![CDATA[^someName\?(.*&)*tag1=value1(&|$)]]></regexp>
+        <function>min</function>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <pattern>
+        <rule_type>tag_list</rule_type>
+        <regexp>someName;tag2=value2</regexp>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <default>
+        <function>max</function>
+        <retention>
+            <age>0</age>
+            <precision>60</precision>
+        </retention>
+        <retention>
+            <age>3600</age>
+            <precision>300</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>3600</precision>
+        </retention>
+    </default>
+</graphite_rollup>
+```
+
+<Note>
+  数据 rollup 会在合并过程中执行。通常旧分区不会启动合并，因此要进行 rollup，需要使用 [optimize](/zh/reference/statements/optimize) 触发一次非计划合并。也可以使用其他工具，例如 [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer)。
+</Note>

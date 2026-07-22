@@ -1,0 +1,104 @@
+---
+title: 'التهيئة القياسية'
+slug: /cloud/reference/byoc/onboarding/standard
+sidebarTitle: 'العملية القياسية'
+keywords: ['BYOC', 'السحابة', 'استخدام سحابتك الخاصة', 'التهيئة']
+description: 'نشر ClickHouse على البنية التحتية السحابية الخاصة بك'
+doc_type: 'مرجع'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<div id="what-is-standard-onboarding">
+  ## ما هي التهيئة القياسية؟
+</div>
+
+تُعد **التهيئة القياسية** مسار العمل الإرشادي الافتراضي لنشر ClickHouse في حسابك السحابي باستخدام BYOC. في هذا النهج، يتولى ClickHouse Cloud توفير جميع موارد السحابة الأساسية اللازمة لعملية النشر—مثل VPC/VNet، والشبكات الفرعية، ومجموعات الأمان، وعنقود Kubernetes ‏(EKS/GKE/AKS)، وأدوار IAM/حسابات الخدمة/service principals الداعمة—داخل حساب AWS أو مشروع GCP أو اشتراك Azure الخاص بك. ويضمن ذلك إعدادًا متسقًا وآمنًا، ويقلل إلى الحد الأدنى من الخطوات اليدوية المطلوبة من فريقك.
+
+مع التهيئة القياسية، كل ما عليك هو توفير حساب AWS مخصص أو مشروع GCP أو اشتراك Azure، وتشغيل stack أولي (عبر CloudFormation أو Terraform) لإنشاء الحد الأدنى من الأذونات وعلاقة الثقة المطلوبة لكي يتمكن ClickHouse Cloud من تنسيق بقية الإعداد. وتُدار جميع الخطوات اللاحقة—بما في ذلك توفير البنية التحتية وتشغيل الخدمة—من خلال web console الخاصة بـ ClickHouse Cloud.
+
+يُنصح العملاء بشدة بإعداد حساب AWS **مخصص** أو مشروع GCP أو اشتراك Azure لاستضافة نشر ClickHouse BYOC، بما يضمن مستوى أفضل من العزل من حيث الأذونات والموارد. وسيقوم ClickHouse بنشر مجموعة مخصصة من موارد السحابة (VPC/VNet، وعنقود Kubernetes، وأدوار IAM/حسابات الخدمة/service principals، وحاويات تخزين الكائنات، وما إلى ذلك) داخل حسابك.
+
+إذا كنت بحاجة إلى إعداد أكثر تخصيصًا (على سبيل المثال، النشر داخل VPC قائمة)، فارجع إلى وثائق [التهيئة المخصصة](/ar/products/bring-your-own-cloud/onboarding/customization-aws).
+
+<Note>
+  تستغرق التهيئة القياسية لـ BYOC نحو 45–90 دقيقة من البداية إلى النهاية، ويُقاس ذلك من وقت تشغيل خطوات CloudFormation أو Terraform حتى تصبح أول خدمة ClickHouse قابلة للوصول.
+</Note>
+
+<div id="request-access">
+  ## طلب الوصول
+</div>
+
+لبدء عملية التهيئة، يُرجى [التواصل معنا](https://clickhouse.com/cloud/bring-your-own-cloud). سيرشدك فريقنا إلى متطلبات BYOC، ويساعدك على اختيار خيارات النشر الأنسب، ويضيف حسابك إلى قائمة السماح.
+
+<div id="onboarding-process">
+  ## التهيئة
+</div>
+
+<div id="prepare-an-aws-account">
+  ### جهّز حساب AWS/مشروع GCP/اشتراك Azure
+</div>
+
+جهّز حساب AWS جديدًا، أو مشروع GCP جديدًا، أو اشتراك Azure جديدًا ضمن مؤسستك.
+
+<Steps>
+  <Step>
+    ### اختر موفر خدمة سحابية
+
+    <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC choose CSP" background="black" />
+  </Step>
+
+  <Step>
+    ### إعداد الحساب/المشروع/الاشتراك
+
+    يمكن تنفيذ إعداد BYOC الأولي باستخدام [CloudFormation template (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml)، أو [Terraform module (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp)، أو [Terraform module (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). يؤدي ذلك إلى إنشاء هوية عالية الامتيازات (IAM role/service account/service principal)، ما يتيح لوحدات التحكم الخاصة بـ BYOC من ClickHouse Cloud إدارة بنيتك التحتية.
+
+    <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="BYOC initialize account" background="black" />
+
+    <Note>
+      لا يشمل هذا الإعداد الأولي حاويات التخزين، أو VPC/VNet، أو عنقود Kubernetes، أو موارد compute اللازمة لتشغيل ClickHouse. سيتم توفيرها في الخطوة التالية.
+    </Note>
+
+    #### Terraform module بديل لـ AWS
+
+    إذا كنت تفضل استخدام Terraform بدلًا من CloudFormation لعمليات نشر AWS، فنحن نوفر أيضًا [Terraform module لـ AWS](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz).
+
+    الاستخدام:
+
+    ```hcl
+    module "clickhouse_onboarding" {
+      source   = "https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz"
+      byoc_env = "production"
+    }
+    ```
+  </Step>
+
+  <Step>
+    ### إعداد البنية التحتية لـ BYOC
+
+    سيُطلب منك إعداد البنية التحتية، بما في ذلك حاويات تخزين الكائنات وVPC/VNet وعنقود Kubernetes، من خلال وحدة تحكم ClickHouse Cloud. يجب تحديد بعض الإعدادات في هذه المرحلة، لأنها لا يمكن تغييرها لاحقًا. وتحديدًا:
+
+    * **Region**: جميع **المناطق العامة** المدرجة في وثائق [supported regions](/ar/products/cloud/reference/supported-regions) متاحة لعمليات نشر BYOC. أما المناطق الخاصة فغير مدعومة حاليًا.
+
+    * **نطاق CIDR لـ VPC/VNet**: نستخدم افتراضيًا `10.0.0.0/16` لنطاق CIDR الخاص بـ BYOC VPC ‏(AWS/GCP) أو VNet ‏(Azure). إذا كنت تخطط لاستخدام VPC/VNet peering مع حساب آخر، فتأكد من عدم تداخل نطاقات CIDR. خصّص نطاق CIDR مناسبًا لـ BYOC، بحد أدنى `/23` لاستيعاب workloads المطلوبة.
+
+    * **Availability Zones**: إذا كنت تخطط لاستخدام VPC peering، فإن مواءمة Availability Zones بين الحساب المصدر وحساب BYOC قد تساعد في تقليل تكاليف حركة المرور بين مناطق التوافر. على سبيل المثال، في AWS، قد تشير لواحق Availability Zones (`a` و`b` و`c`) إلى معرّفات مناطق فعلية مختلفة عبر الحسابات. راجع [دليل AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html) لمزيد من التفاصيل.
+
+    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="BYOC set up infrastructure" background="black" />
+  </Step>
+</Steps>
+
+<div id="create-clickhouse-service">
+  ### أنشئ أول خدمة ClickHouse BYOC
+</div>
+
+بعد توفير البنية التحتية لـ BYOC، تصبح جاهزًا لإطلاق أول خدمة ClickHouse. افتح وحدة تحكم ClickHouse Cloud، وحدد بيئة BYOC الخاصة بك، ثم اتبع الإرشادات لإنشاء خدمة جديدة.
+
+<Image img="/images/cloud/reference/byoc-new-service-1.webp" size="md" alt="BYOC إنشاء خدمة جديدة" />
+
+أثناء إنشاء الخدمة، ستُهيّئ الخيارات التالية:
+
+* **اسم الخدمة**: أدخل اسمًا واضحًا ووصفيًا لخدمة ClickHouse الخاصة بك.
+* **البنية التحتية لـ BYOC**: حدّد بيئة BYOC، بما في ذلك الحساب السحابي والمنطقة، التي ستعمل فيها خدمتك.
+* **تهيئة الموارد**: اختر مقدار CPU والذاكرة المخصصَين للنسخ المتماثلة في ClickHouse.
+* **عدد النسخ المتماثلة**: حدّد عدد النسخ المتماثلة لتعزيز التوافر العالي.

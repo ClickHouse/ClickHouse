@@ -67,6 +67,7 @@ void StreamingExchangeSource::sendHello()
         .source_version = StreamingExchangeProtocol::PROTOCOL_VERSION,
         .query_id = query_id,
         .stream_name = stream_name,
+        .jwt_token = jwt_token,
     };
     source_hello.write(body);
     body.finalize();
@@ -121,10 +122,12 @@ void StreamingExchangeSource::receiveHello()
     StreamingExchangeProtocol::SinkHelloBody sink_hello;
     sink_hello.read(body_in);
 
+    /// The protocol version must match exactly.
     if (sink_hello.sink_version != StreamingExchangeProtocol::PROTOCOL_VERSION)
         throw Exception(ErrorCodes::PROTOCOL_VERSION_MISMATCH,
             "Streaming exchange protocol version mismatch for stream {}: this node speaks version {}, sink at {}:{} speaks version {}",
-            stream_name, StreamingExchangeProtocol::PROTOCOL_VERSION, host, port, sink_hello.sink_version);
+            stream_name, StreamingExchangeProtocol::PROTOCOL_VERSION,
+            host, port, sink_hello.sink_version);
 }
 
 IProcessor::Status StreamingExchangeSource::prepare()

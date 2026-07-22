@@ -1,0 +1,262 @@
+---
+slug: /cloud/managed-postgres/monitoring/query-insights
+sidebarTitle: 'Query insights'
+title: 'Query insights pour Postgres'
+description: 'Télémétrie par instruction pour Managed Postgres : chaque query pattern exécuté par votre base de données, classé par impact, avec les compteurs de diagnostic qui expliquent pourquoi chacun est lent'
+keywords: ['managed postgres', 'query insights', 'pg_stat_ch', 'slow queries', 'p99 latency', 'query patterns', 'postgres performance', 'temp blocks', 'parallel workers', 'wal']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.query-insights-beta" />
+
+Query Insights recueille la télémétrie de chaque instruction de votre
+instance [Managed Postgres](/fr/products/managed-postgres/overview) et classe chaque
+pattern de requête par impact, afin de vous permettre de passer de &quot;le p99 dérive
+à la hausse&quot; à &quot;ce pattern écrit sur disque&quot; sans quitter la console Cloud.
+
+Les données proviennent de [`pg_stat_ch`](https://github.com/clickhouse/pg_stat_ch),
+l’extension Postgres open-source qui transmet en flux des compteurs par instruction vers
+ClickHouse Cloud. La télémétrie est normalisée dans Postgres avant de quitter
+la base de données — les littéraux sont supprimés et remplacés par des placeholders, afin que les
+valeurs exactes utilisées dans vos requêtes n’entrent jamais dans le flux de télémétrie.
+
+<div id="open">
+  ## Ouvrir Query insights
+</div>
+
+Ouvrez votre instance Managed Postgres dans la Cloud Console, puis cliquez sur
+**Query insights** dans la barre latérale gauche. La page se divise en quatre
+zones, dans l&#39;ordre où vous les utiliserez réellement :
+
+* Un **vue d’ensemble** qui affiche sur un seul écran un aperçu de l&#39;état de santé de la base de données.
+* Une table **requête lente récurrente** qui classe chaque query pattern exécuté par votre base de données,
+  triée selon le critère qui vous semble pertinent.
+* Un panneau **requête récente** qui répertorie les exécutions individuelles dans l&#39;ordre
+  chronologique inverse.
+* Un **volet de détail** qui agrège tous les compteurs pour un seul pattern.
+
+Utilisez le sélecteur **Time period** en haut pour basculer entre les 15
+dernières minutes, la dernière heure, le dernier jour, la dernière semaine ou le dernier mois. La taille des buckets d&#39;agrégation s&#39;ajuste
+automatiquement : buckets d&#39;1 minute pour les 15 dernières minutes ou la dernière heure,
+de 5 minutes pour le dernier jour, et d&#39;1 heure pour la dernière semaine ou le dernier mois, afin que les
+charts restent réactifs.
+
+<div id="overview">
+  ## Vue d’ensemble
+</div>
+
+La vue d’ensemble se présente sous la forme d’une grille 3×2 de six panneaux :
+
+| Panneau                          | Ce qu’il affiche                                                                                                                                       |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Requêtes / s**                 | Volume de requêtes ramené à un débit sur la fenêtre sélectionnée.                                                                                      |
+| **Latence des requêtes**         | Moyenne, p50, p95 et p99 sur un même graphique, pour voir quand la queue de distribution s’écarte de la médiane.                                       |
+| **Répartition des opérations**   | Un diagramme en anneau de la répartition entre `SELECT`, `INSERT`, `UPDATE` et les autres opérations qui composent réellement votre charge de travail. |
+| **Lignes renvoyées / affectées** | Nombre total de lignes traitées par la charge de travail sur la fenêtre.                                                                               |
+| **Taux de succès du buffer**     | Un diagramme en anneau comparant les blocs partagés trouvés en cache aux blocs partagés lus, avec le temps CPU total dans la légende.                  |
+| **Erreurs**                      | Nombre total d’erreurs, ventilé dans le temps.                                                                                                         |
+
+Un seul écran vous permet de voir si la base de données est saine. Une instance saine
+présente un profil familier : un taux de succès du buffer proche de 100 %,
+un volume de requêtes qui suit le trafic applicatif, un taux d’erreur stable
+ou nul, et des latences par percentile qui restent proches les unes des autres.
+
+<Image img="/images/managed-postgres/monitoring/query-insights-overview.webp" alt="Vue d’ensemble de Query Insights montrant les six cartes de statistiques : requêtes par seconde, percentiles de latence des requêtes, diagramme en anneau de répartition des opérations, graphique en aires des lignes renvoyées, diagramme en anneau du taux de succès du buffer à 95,2 % et histogramme des erreurs" size="lg" border />
+
+<div id="slow-patterns">
+  ## Requêtes lentes récurrentes
+</div>
+
+Lorsque la vue d’ensemble signale un problème, c’est dans ce tableau que
+l’analyse commence. Une ligne par pattern de requête normalisé, avec les
+littéraux supprimés pour que les exécutions d’une même instruction SQL se regroupent
+sur une seule et même ligne.
+
+<Image img="/images/managed-postgres/monitoring/query-insights-patterns.webp" alt="Table des requêtes lentes récurrentes montrant une ligne par requête normalisée avec les colonnes Database, User, Operation, Calls, Errors, Avg latency, P95, Max latency, Total runtime, Rows returned et Cache hit" size="lg" border />
+
+<div id="sort">
+  ### Trier selon ce que vous soupçonnez
+</div>
+
+Le tableau est trié par défaut par **Durée d’exécution totale** par ordre décroissant — de cette
+façon, le pattern en tête est généralement la réponse à « qu’est-ce qui me coûte le
+plus ? » Il ne s’agit pas forcément du pattern le plus lent pris individuellement. Une requête exécutée
+huit millions de fois par jour en douze millisecondes peut compter davantage que
+celle qui ne s’est exécutée qu’une seule fois en trois secondes.
+
+Chaque tri vous donne un angle de vue différent :
+
+* **Durée d’exécution totale** — là où la base de données a passé le plus de temps réel.
+* **Temps CPU** — patterns gourmands en calcul.
+* **Appels** — patterns très fréquents.
+* **Erreurs** — échecs répétés.
+* **Latence moy / P50 / P95 / P99 / max** — valeurs aberrantes, par percentile.
+* **Lignes renvoyées**, **Blocs lus**, **Blocs en cache**, **Octets WAL** —
+  patterns qui ont fait transiter le plus de données via le moteur, le cache ou
+  le journal de transactions.
+
+Cliquez sur le bouton **Colonnes** pour afficher ou masquer des colonnes supplémentaires.
+Le tableau des patterns expose 19 colonnes au total, y compris la ventilation
+par percentile, le taux de réussite du cache et le temps CPU par pattern.
+
+<div id="filters">
+  ### Affiner la table
+</div>
+
+Filtrez la table en fonction de la partie de votre charge de travail que vous
+êtes en train d&#39;analyser :
+
+* **Base de données**
+* **Utilisateur**
+* **Opération** (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, …)
+* **Application** — le `application_name` de la chaîne de connexion
+
+« Montre-moi uniquement ce que fait le service orders sur la base de données `sales` »
+se traduit par deux menus déroulants. Les valeurs de filtre se renseignent automatiquement à partir de ce que votre
+instance a réellement exécuté.
+
+<div id="recent-queries">
+  ## Requêtes récentes
+</div>
+
+Sous le tableau des patterns, le panneau **requête récente** liste les
+exécutions individuelles dans l’ordre chronologique inverse — une ligne par
+instruction exécutée, et non une ligne par pattern. Utilisez-le lorsque vous
+voulez le flux brut d’événements plutôt qu’un agrégat, par exemple pour
+vérifier rapidement qu’un correctif a bien été pris en compte ou pour trouver
+le moment exact où une erreur s’est produite.
+
+<Image img="/images/managed-postgres/monitoring/query-insights-recent-queries.webp" alt="Table Recent Queries avec des menus déroulants de filtre Database, User, Operation et Application, et des colonnes pour Time, Operation, Query, Duration, Rows, Database, User et Blks read" size="lg" border />
+
+Les colonnes par défaut sont Time, Operation, Query, Duration, Rows,
+Database, User et Blks read. Ouvrez le sélecteur **Columns** pour afficher
+Application, Blks hit, CPU user, CPU sys et PID. Le tableau accepte
+les mêmes filtres Database, User, Operation et Application que le
+tableau des patterns, et peut être trié par Time, Duration, Rows, Blks read et
+CPU time.
+
+Cliquez sur n’importe quelle ligne pour ouvrir le même volet de détails que le tableau des patterns,
+ciblé sur le pattern de cette exécution précise.
+
+<div id="detail">
+  ## Volet de détail
+</div>
+
+Cliquez sur n’importe quelle ligne du tableau des patterns ou des requêtes récentes pour ouvrir à droite le volet **Détail de la
+requête**. Ce volet regroupe toutes les exécutions
+de ce pattern sur l’intervalle de temps sélectionné et agrège les
+compteurs qui expliquent pourquoi il est lent.
+
+Le volet se présente sous la forme d’une vue unique à défilement comportant cinq sections :
+
+* **Modèle de requête** — le SQL normalisé avec les littéraux remplacés par `$1`,
+  `$2`, … et un bouton pour copier dans le presse-papiers.
+* **Utilisation agrégée des ressources** — une grille de 13 cartes de statistiques couvrant le nombre total
+  d’appels, la latence moy/P95/P99/max, le temps d’exécution total, les lignes renvoyées, le ratio de succès du cache,
+  les blocs lus, les blocs touchés, le temps CPU, les octets WAL et les erreurs.
+* **Contexte de la requête** — la base de données, l’utilisateur, l’opération et l’application
+  dont provient ce pattern.
+* **Exécutions notables** — les erreurs, les exécutions inhabituellement lentes et
+  celles qui renvoient de gros volumes de résultats, affichées avant la liste complète des exécutions récentes.
+* **Exécutions récentes** — les exécutions individuelles du même pattern,
+  avec des compteurs par exécution.
+
+<Image img="/images/managed-postgres/monitoring/query-insights-detail-aggregate.webp" alt="Volet de détail de la requête montrant le bloc de code Modèle de requête et la grille Utilisation agrégée des ressources avec treize cartes de statistiques, notamment le nombre total d’appels, les percentiles de latence, le temps d’exécution total, les lignes renvoyées, le ratio de succès du cache, les blocs lus, les blocs touchés, le temps CPU, les octets WAL et les erreurs" size="md" border />
+
+<Image img="/images/managed-postgres/monitoring/query-insights-detail-recent.webp" alt="Suite du volet de détail de la requête, montrant la section Contexte de la requête avec la base de données, l’utilisateur, l’opération et l’application, ainsi qu’une carte Exécutions récentes avec l’horodatage, le statut OK, le rôle du serveur, l’identifiant de l’hôte et des compteurs par exécution pour la durée, les lignes, les accès au cache réussis, le CPU, les blocs partagés lus et les blocs partagés touchés" size="md" border />
+
+<div id="counters">
+  ### Compteurs par exécution
+</div>
+
+Développez une exécution récente pour afficher les compteurs qui
+indiquent précisément où le temps a été consacré :
+
+* **Blocs partagés** — lectures et hits toujours affichés ; écritures et
+  blocs salis affichés lorsqu&#39;ils sont non nuls.
+* **Opérations sur blocs locaux et temporaires** — des opérations sur
+  blocs temporaires non nulles signifient qu&#39;un tri ou un hachage a
+  débordé sur disque.
+* **Temps de lecture / écriture** — temps d&#39;E/S, distinct du temps CPU.
+* **Temps CPU** — utilisateur et système, séparément.
+* **Workers parallèles** — prévus vs. réellement lancés.
+* **JIT** — temps total de compilation JIT et nombre de fonctions.
+* **WAL** — octets et nombre d&#39;enregistrements.
+
+Tout ce dont vous avez besoin pour diagnostiquer un problème de lenteur
+se trouve au même endroit, sur un seul écran.
+
+<div id="api">
+  ## API Query insights
+</div>
+
+La même télémétrie est également disponible via
+[ClickHouse Cloud OpenAPI](/fr/products/managed-postgres/openapi#query-insights).
+La table [requête lente récurrente](#slow-patterns) correspond à l’endpoint
+[lister les patterns de requêtes lentes](/fr/api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList),
+et le [volet de détail](#detail) correspond à l’endpoint
+[récupérer un pattern de requête lente](/fr/api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet),
+qui renvoie les métriques agrégées d’un pattern ainsi que ses
+exécutions récentes.
+
+<div id="how-it-works">
+  ## Fonctionnement
+</div>
+
+<div id="how-normalized">
+  ### Normalisée dans Postgres, avant le wire
+</div>
+
+`pg_stat_ch` intercepte la phase parse-analyze, remplace chaque littéral par un
+espace réservé (`$1`, `$2`, …) et met en cache le pattern obtenu dans un
+cache LRU propre à chaque backend, indexé par `queryid`. Lorsque l&#39;executor termine
+l&#39;instruction, c&#39;est ce pattern mis en cache qui est associé à l&#39;événement. L&#39;instruction
+exacte avec ses valeurs ne quitte jamais la base de données.
+
+<div id="how-overhead">
+  ### Sans impacter la base de données
+</div>
+
+Le producteur ajoute environ 3 % de surcharge par instruction. Le chemin de mise en file d’attente
+utilise un try-lock non bloquant sur un tampon circulaire en mémoire partagée. En cas de
+forte charge, l’extension supprime les événements en incrémentant un compteur plutôt que de
+ralentir Postgres.
+
+<div id="how-raw-events">
+  ### Événements bruts, non agrégés
+</div>
+
+`pg_stat_ch` émet un événement brut par instruction exécutée (principale ou
+imbriquée), selon l’échantillonnage appliqué. Chaque percentile, classement et ventilation
+dans l’UI correspond à une requête ClickHouse exécutée sur ce même flux d’événements.
+
+<div id="how-engine">
+  ### Le même moteur que celui de nos clients
+</div>
+
+Le backend d’Insights, c’est [ClickHouse Cloud](/fr/products/cloud/getting-started/intro).
+La télémétrie par requête d’une instance Postgres très sollicitée représente des millions de lignes
+par jour ; la compression colonnaire permet de conserver à faible coût des mois de détails par exécution,
+et des agrégations en moins d’une seconde sur des milliards de lignes maintiennent
+l’UI réactive lorsque vous explorez les données sur une semaine ou un mois.
+
+<div id="how-open-source">
+  ### Open source
+</div>
+
+`pg_stat_ch` est sous licence Apache 2.0. Utilisez-le avec n’importe quel Postgres et envoyez les données vers n’importe quel
+ClickHouse. Le code source et les tickets sont disponibles sur
+[github.com/clickhouse/pg&#95;stat&#95;ch](https://github.com/clickhouse/pg_stat_ch).
+
+<div id="related">
+  ## Pages associées
+</div>
+
+* [Tableau de bord Monitoring](/fr/products/managed-postgres/monitoring/dashboard) — graphiques intégrés sur les ressources et l’activité
+* [Prometheus endpoint](/fr/products/managed-postgres/monitoring/prometheus) — scraper les métriques au niveau de l’hôte dans votre propre stack d’observability
+* [Managed Postgres OpenAPI](/fr/products/managed-postgres/openapi#query-insights) — interroger par programmation les requête lente récurrente et les exécutions récentes
+* [Extensions](/fr/products/managed-postgres/extensions) — les extensions disponibles sur les instances Managed Postgres
+* [`pg_stat_ch` sur GitHub](https://github.com/clickhouse/pg_stat_ch) — l’extension open-source sur laquelle repose Query Insights

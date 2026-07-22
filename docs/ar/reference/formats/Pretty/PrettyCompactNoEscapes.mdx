@@ -1,0 +1,33 @@
+---
+alias: []
+description: 'وثائق تنسيق PrettyCompactNoEscapes'
+input_format: false
+keywords: ['PrettyCompactNoEscapes']
+output_format: true
+slug: /interfaces/formats/PrettyCompactNoEscapes
+title: 'PrettyCompactNoEscapes'
+doc_type: 'reference'
+---
+
+import PrettyFormatSettings from '/snippets/ar/common-pretty-format-settings.mdx';
+
+| الإدخال | الإخراج | الاسم البديل |
+| ------- | ------- | ------------ |
+| ✗       | ✔       |              |
+
+<div id="description">
+  ## الوصف
+</div>
+
+يختلف عن التنسيق [`PrettyCompact`](/ar/reference/formats/Pretty/PrettyCompact) في أنه لا يستخدم [تسلسلات إفلات ANSI](http://en.wikipedia.org/wiki/ANSI_escape_code).
+وهذا ضروري لعرض هذا التنسيق في المتصفح، وكذلك لاستخدام أداة سطر الأوامر &#39;watch&#39;.
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>
+
+<PrettyFormatSettings />

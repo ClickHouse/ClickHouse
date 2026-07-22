@@ -63,6 +63,10 @@ public:
 
     String getName() const override;
 
+    /// The concrete data format resolved for this table (after schema/format inference).
+    /// Used by the unified `URL` engine to persist the delegate's inferred format.
+    String getFormatName() const { return configuration->format; }
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -149,6 +153,8 @@ public:
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
     IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
+
+    std::shared_ptr<DataLake::ICatalog> getCatalog() const { return catalog; }
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;

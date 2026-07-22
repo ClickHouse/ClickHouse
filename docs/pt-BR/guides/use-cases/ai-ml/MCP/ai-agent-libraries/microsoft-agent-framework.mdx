@@ -1,0 +1,153 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/microsoft-agent-framework
+sidebarTitle: 'Integrar o framework Microsoft Agent'
+title: 'Como criar um agente de IA com o framework Microsoft Agent e o servidor MCP do ClickHouse'
+description: 'Saiba como criar um agente de IA com o framework Microsoft Agent e o servidor MCP do ClickHouse'
+keywords: ['ClickHouse', 'MCP', 'Microsoft']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+Neste guia, você aprenderá a criar um agente de IA com o [framework Microsoft Agent](https://github.com/microsoft/agent-framework) que pode interagir com o
+[playground SQL do ClickHouse](https://sql.clickhouse.com/) usando o [servidor MCP do ClickHouse](https://github.com/ClickHouse/mcp-clickhouse).
+
+<Info>
+  **Notebook de exemplo**
+
+  Este exemplo está disponível como um notebook no [repositório de exemplos](https://github.com/ClickHouse/examples/blob/main/ai/mcp/microsoft-agent-framework/microsoft-agent-framework.ipynb).
+</Info>
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+* Você precisará ter o Python instalado no seu sistema.
+* Você precisará ter o `pip` instalado no seu sistema.
+* Você precisará de uma API key da OpenAI
+
+Você pode executar as etapas a seguir no REPL do Python ou por meio de um script.
+
+<Steps>
+  <Step>
+    ## Instalar bibliotecas
+
+    Instale a biblioteca do framework Microsoft Agent executando os comandos a seguir:
+
+    ```python
+    pip install -q --upgrade pip
+    pip install -q agent-framework --pre
+    pip install -q ipywidgets
+    ```
+  </Step>
+
+  <Step>
+    ## Configurar credenciais
+
+    Em seguida, você precisará fornecer sua chave de API da OpenAI:
+
+    ```python
+    import os, getpass
+    os.environ["OPENAI_API_KEY"] = getpass.getpass("Enter OpenAI API Key:")
+    ```
+
+    ```response title="Response"
+    Enter OpenAI API Key: ········
+    ```
+
+    Em seguida, defina as credenciais necessárias para se conectar ao playground do ClickHouse SQL:
+
+    ```python
+    env = {
+        "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+        "CLICKHOUSE_PORT": "8443",
+        "CLICKHOUSE_USER": "demo",
+        "CLICKHOUSE_PASSWORD": "",
+        "CLICKHOUSE_SECURE": "true"
+    }
+    ```
+  </Step>
+
+  <Step>
+    ## Inicialize o ClickHouse MCP server e o agente do framework Microsoft Agent
+
+    Agora configure o ClickHouse MCP server para apontar para o Playground do ClickHouse SQL
+    e também inicialize nosso agente e faça uma pergunta a ele:
+
+    ```python
+    from agent_framework import ChatAgent, MCPStdioTool
+    from agent_framework.openai import OpenAIResponsesClient
+    ```
+
+    ```python
+    clickhouse_mcp_server = MCPStdioTool(
+        name="clickhouse",
+        command="uv",
+        args=[
+            "run",
+            "--with",
+            "mcp-clickhouse",
+            "--python",
+            "3.10",
+            "mcp-clickhouse"
+        ],
+        env=env
+    )
+
+    async with ChatAgent(
+        chat_client=OpenAIResponsesClient(model_id="gpt-5-mini-2025-08-07"),
+        name="HousePricesAgent",
+        instructions="You are a helpful assistant that can help query a ClickHouse database",
+        tools=clickhouse_mcp_server,
+    ) as agent:
+        query = "Tell me about UK property prices over the last five years"
+        print(f"User: {query}")
+        async for chunk in agent.run_stream(query):
+            print(chunk.text, end="", flush=True)
+        print("\n\n")
+    ```
+
+    A saída da execução deste script é mostrada abaixo:
+
+    ```response title="Response"
+    Usuário: Conte-me sobre os preços de imóveis no Reino Unido nos últimos cinco anos
+    Analisei os registros mensais de preços de venda de imóveis no Reino Unido na tabela uk.uk_price_paid_simple_partitioned para os últimos cinco anos (toStartOfMonth(date), de out/2020 → ago/2025). Resumo e pontos principais:
+
+    O que foi medido
+    - Métricas: preço mediano mensal, preço médio e contagem de transações (registros de preço pago).
+    - Período coberto: meses de 2020-10-01 a 2025-08-01 (últimos cinco anos a partir de hoje).
+
+    Conclusões gerais
+    - O preço mediano subiu de £255.000 (2020-10) para £294.500 (2025-08) — um aumento de aproximadamente +15,4% em cinco anos.
+      - Taxa de crescimento anual composta (CAGR) equivalente para a mediana ≈ +2,9% ao ano.
+    - O preço médio caiu levemente, de cerca de £376.538 (2020-10) para £364.653 (2025-08) — uma queda de ≈ −3,2% em cinco anos.
+      - CAGR do preço médio ≈ −0,6% ao ano.
+    - A divergência (mediana em alta, média levemente em queda) sugere mudanças na composição das transações (menos vendas de alto valor ou outros efeitos composicionais), já que a média é sensível a valores discrepantes, enquanto a mediana não é.
+
+    Padrões e eventos notáveis nos dados
+    - Fortes altas em 2020–2021 (visíveis tanto na mediana quanto na média), consistentes com a valorização do mercado impulsionada pelo pós-pandemia, isenção de imposto de transferência e aumento da demanda observados naquele período.
+    - Picos nos preços médios por volta de meados de 2022 (valores médios ~£440k), seguidos de um arrefecimento geral ao longo de 2022–2023 e estabilização em torno de 2023–2024.
+    - Alguns meses apresentam grande volatilidade ou contagens incomuns (por exemplo, junho de 2021 registrou contagens de transações muito elevadas; março de 2025 apresenta mediana alta, mas abril–maio de 2025 mostram contagens menores). Meses recentes (meados de 2025) têm contagens de transações muito menores na tabela — isso geralmente indica registros incompletos para os meses mais recentes, e os valores mensais recentes devem ser interpretados com cautela.
+
+    Exemplos de pontos de dados (da consulta)
+    - 2020-10: mediana £255.000, média £376.538, transações 89.125
+    - 2022-08: pico da média ~£441.209 (mediana ~£295.000)
+    - 2025-03: mediana ~£314.750 (uma das medianas mais altas)
+    - 2025-08: mediana £294.500, média £364.653, transações 18.815 (contagem baixa — provavelmente incompleta)
+
+    Ressalvas
+    - Estes são preços de transação (conjunto de dados Price Paid) — os "valores" reais dos imóveis podem ser diferentes.
+    - A média é sensível à composição e a valores discrepantes. Mudanças nos tipos de imóveis vendidos (por exemplo, proporção de apartamentos vs. casas isoladas, composição regional) afetarão a média e a mediana de formas distintas.
+    - Meses recentes podem estar incompletos; meses com contagens de transações incomumente baixas devem ser tratados com cautela.
+    - Este é um agregado nacional — as diferenças regionais podem ser substanciais.
+
+    Se desejar, posso:
+    - Gerar um gráfico da mediana e da média ao longo do tempo.
+    - Comparar ano a ano ou calcular o CAGR para um mês de início/fim diferente.
+    - Detalhar a análise por região/condado/cidade, tipo de imóvel (apartamento, casa em fila, semigeminada, isolada) ou por faixas de preço.
+    - Exibir uma tabela com as regiões de maior e menor crescimento de preços nos últimos 5 anos.
+
+    Qual dessas análises você gostaria de explorar?
+
+    ```
+  </Step>
+</Steps>

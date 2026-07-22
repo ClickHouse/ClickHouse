@@ -36,6 +36,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/LoadingStrictnessLevel.h>
+#include <Databases/DatabasesCommon.h>
 #include <Databases/DataLake/Common.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
@@ -62,6 +63,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
+    extern const int ACCESS_DENIED;
 }
 
 namespace FailPoints
@@ -198,6 +200,13 @@ StorageObjectStorage::StorageObjectStorage(
         // If we don't have format or schema yet, we can't ignore failed configuration update,
         // because relevant configuration is crucial for format and schema inference
         if (mode <= LoadingStrictnessLevel::CREATE || need_resolve_columns_or_format)
+        {
+            throw;
+        }
+        // A credential-restriction denial raised while rebuilding the client for the current session must not be
+        // swallowed: otherwise a restricted session would fall through to a client that an earlier opt-in session
+        // left credentialed in the shared object storage. Fail closed and propagate the denial instead.
+        if (getCurrentExceptionCode() == ErrorCodes::ACCESS_DENIED)
         {
             throw;
         }
@@ -926,6 +935,9 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
+
+    /// Check that the resulting metadata does not exceed max_query_size before mutating external state.
+    checkMetadataDoesNotExceedMaxQuerySize(storage_id, new_metadata, context);
 
     configuration->alter(object_storage, params, context, getStorageID(), catalog);
 

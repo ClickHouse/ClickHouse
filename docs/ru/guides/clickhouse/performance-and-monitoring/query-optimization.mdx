@@ -1,0 +1,862 @@
+---
+slug: /optimize/query-optimization
+sidebarTitle: 'Оптимизация запросов'
+title: 'Простое руководство по оптимизации запросов'
+description: 'Простое руководство по оптимизации запросов, в котором описаны распространённые подходы к повышению производительности запросов'
+doc_type: 'guide'
+keywords: ['оптимизация запросов', 'производительность', 'лучшие практики', 'настройка запросов', 'эффективность']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Цель этого раздела — на примере распространённых сценариев показать, как использовать различные методы повышения производительности и оптимизации, такие как [анализатор](/ru/guides/clickhouse/performance-and-monitoring/analyzer), [профилирование запросов](/ru/concepts/features/performance/troubleshoot/sampling-query-profiler) или [избегайте столбцов с типом Nullable](/ru/concepts/best-practices/avoidnullablecolumns), чтобы повысить производительность запросов к ClickHouse.
+
+<div id="understand-query-performance">
+  ## Как понять производительность запросов
+</div>
+
+Об оптимизации производительности лучше всего задумываться на этапе проектирования [схемы данных](/ru/guides/clickhouse/data-modelling/schema-design), ещё до первой загрузки данных в ClickHouse. 
+
+Но будем честны: сложно заранее предсказать, насколько вырастет объём данных и какие запросы будут выполняться. 
+
+Если у вас уже есть развертывание с несколькими запросами, которые вы хотите оптимизировать, первый шаг — понять, как они выполняются и почему одни из них отрабатывают за несколько миллисекунд, а другие требуют больше времени.
+
+ClickHouse предоставляет широкий набор инструментов, которые помогают понять, как именно выполняется запрос и какие ресурсы при этом потребляются. 
+
+В этом разделе мы рассмотрим эти инструменты и способы работы с ними. 
+
+<div id="general-considerations">
+  ## Общие соображения
+</div>
+
+Чтобы понять производительность запросов, давайте посмотрим, что происходит в ClickHouse при выполнении запроса. 
+
+Следующий раздел намеренно упрощён и местами опускает некоторые детали; цель не в том, чтобы утопить вас в подробностях, а в том, чтобы познакомить с базовыми понятиями. Подробнее см. [анализатор запросов](/ru/guides/clickhouse/performance-and-monitoring/analyzer). 
+
+Если смотреть на это в самом общем виде, то при выполнении запроса в ClickHouse происходит следующее: 
+
+* **Разбор и анализ запроса**
+
+Запрос разбирается и анализируется, после чего создаётся общий план выполнения запроса. 
+
+* **Оптимизация запроса**
+
+План выполнения запроса оптимизируется, лишние данные отсекаются, а на основе плана запроса строится конвейер выполнения запроса. 
+
+* **Выполнение конвейера запроса**
+
+Данные считываются и обрабатываются параллельно. На этом этапе ClickHouse фактически выполняет операции запроса, такие как фильтрация, агрегации и сортировка. 
+
+* **Финальная обработка**
+
+Результаты объединяются, сортируются и форматируются в окончательный результат перед отправкой клиенту.
+
+На практике выполняется множество [оптимизаций](/ru/get-started/about/why-clickhouse-is-so-fast), и в этом руководстве мы поговорим о них немного подробнее. Но уже этих основных понятий достаточно, чтобы понять, что происходит «под капотом», когда ClickHouse выполняет запрос. 
+
+Имея это общее представление, давайте рассмотрим, какие инструменты предоставляет ClickHouse и как их можно использовать для отслеживания метрик, влияющих на производительность запросов. 
+
+<div id="dataset">
+  ## Набор данных
+</div>
+
+Мы используем реальный пример, чтобы показать, как подходим к оптимизации производительности запросов. 
+
+Возьмём датасет NYC Taxi, содержащий данные о поездках на такси в Нью-Йорке. Сначала загрузим датасет NYC Taxi без какой-либо оптимизации.
+
+Ниже приведена команда для создания таблицы и вставки данных из S3 бакета. Обратите внимание, что здесь мы намеренно определяем схему автоматически по данным, то есть без оптимизации.
+
+```sql
+-- Создание таблицы с автоматически определённой схемой
+CREATE TABLE trips_small_inferred
+ORDER BY () EMPTY
+AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
+
+-- Вставка данных в таблицу с автоматически определённой схемой
+INSERT INTO trips_small_inferred
+SELECT *
+FROM s3Cluster
+('default','https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
+```
+
+Давайте посмотрим на схему таблицы, автоматически определённую на основе данных.
+
+```sql
+--- Показать автоматически выведенную схему таблицы
+SHOW CREATE TABLE trips_small_inferred
+```
+
+```response
+Query id: d97361fd-c050-478e-b831-369469f0784d
+
+CREATE TABLE nyc_taxi.trips_small_inferred
+(
+    `vendor_id` Nullable(String),
+    `pickup_datetime` Nullable(DateTime64(6, 'UTC')),
+    `dropoff_datetime` Nullable(DateTime64(6, 'UTC')),
+    `passenger_count` Nullable(Int64),
+    `trip_distance` Nullable(Float64),
+    `ratecode_id` Nullable(String),
+    `pickup_location_id` Nullable(String),
+    `dropoff_location_id` Nullable(String),
+    `payment_type` Nullable(Int64),
+    `fare_amount` Nullable(Float64),
+    `extra` Nullable(Float64),
+    `mta_tax` Nullable(Float64),
+    `tip_amount` Nullable(Float64),
+    `tolls_amount` Nullable(Float64),
+    `total_amount` Nullable(Float64)
+)
+ORDER BY tuple()
+```
+
+<div id="spot-the-slow-queries">
+  ## Найдите медленные запросы
+</div>
+
+<div id="query-logs">
+  ### Журнал запросов
+</div>
+
+По умолчанию ClickHouse собирает и записывает информацию о каждом выполненном запросе в [журнал запросов](/ru/reference/system-tables/query_log). Эти данные хранятся в таблице `system.query_log`. 
+
+Для каждого выполненного запроса ClickHouse записывает такую статистику, как время выполнения запроса, количество прочитанных строк и использование ресурсов, например CPU, использование памяти или обращения к файловому кэшу. 
+
+Поэтому журнал запросов — хорошее место, чтобы начать исследование медленных запросов. Вы можете легко выявить запросы, выполнение которых занимает много времени, и просмотреть информацию об использовании ресурсов для каждого из них. 
+
+Давайте найдём пять самых долгих запросов в нашем наборе данных NYC taxi.
+
+```sql
+-- Найти 5 самых долгих запросов из базы данных nyc_taxi за последний час
+SELECT
+    type,
+    event_time,
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM clusterAllReplicas(default, system.query_log)
+WHERE has(databases, 'nyc_taxi') AND (event_time >= (now() - toIntervalMinute(60))) AND type='QueryFinish'
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```
+
+```response
+Query id: e3d48c9f-32bb-49a4-8303-080f59ed1835
+
+Row 1:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:36
+query_duration_ms: 2967
+query:             WITH
+  dateDiff('s', pickup_datetime, dropoff_datetime) as trip_time,
+  trip_distance / trip_time * 3600 AS speed_mph
+SELECT
+  quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM
+  nyc_taxi.trips_small_inferred
+WHERE
+  speed_mph > 30
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 2:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:11:33
+query_duration_ms: 2026
+query:             SELECT
+    payment_type,
+    COUNT() AS trip_count,
+    formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+    AVG(total_amount) AS total_amount_avg,
+    AVG(tip_amount) AS tip_amount_avg
+FROM
+    nyc_taxi.trips_small_inferred
+WHERE
+    pickup_datetime >= '2009-01-01' AND pickup_datetime < '2009-04-01'
+GROUP BY
+    payment_type
+ORDER BY
+    trip_count DESC;
+
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 3:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:17
+query_duration_ms: 1860
+query:             SELECT
+  avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+FROM nyc_taxi.trips_small_inferred
+WHERE passenger_count = 1 or passenger_count = 2
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 4:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:31
+query_duration_ms: 690
+query:             SELECT avg(total_amount) FROM nyc_taxi.trips_small_inferred WHERE trip_distance > 5
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 5:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:44
+query_duration_ms: 634
+query:             SELECT
+vendor_id,
+avg(total_amount),
+avg(trip_distance),
+FROM
+nyc_taxi.trips_small_inferred
+GROUP BY vendor_id
+ORDER BY 1 DESC
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+```
+
+Поле `query_duration_ms` показывает, сколько времени заняло выполнение конкретного запроса. Из результатов журнала запросов видно, что выполнение первого запроса занимает 2967 мс, и это можно улучшить. 
+
+Возможно, вам также стоит определить, какие запросы создают наибольшую нагрузку на систему, посмотрев, какой запрос потребляет больше всего памяти или CPU. 
+
+```sql
+-- Запросы с наибольшим использованием памяти
+SELECT
+    type,
+    event_time,
+    query_id,
+    formatReadableSize(memory_usage) AS memory,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+    (ProfileEvents['CachedReadBufferReadFromCacheMicroseconds']) / 1000000 AS FromCacheSeconds,
+    (ProfileEvents['CachedReadBufferReadFromSourceMicroseconds']) / 1000000 AS FromSourceSeconds,
+    normalized_query_hash
+FROM clusterAllReplicas(default, system.query_log)
+WHERE has(databases, 'nyc_taxi') AND (type='QueryFinish') AND ((event_time >= (now() - toIntervalDay(2))) AND (event_time <= now())) AND (user NOT ILIKE '%internal%')
+ORDER BY memory_usage DESC
+LIMIT 30
+```
+
+Давайте выделим найденные нами долгие запросы и повторно выполним их несколько раз, чтобы оценить время ответа. 
+
+На этом этапе крайне важно отключить файловый кэш, установив значение параметра `enable_filesystem_cache` в 0, чтобы повысить воспроизводимость результатов.
+
+```sql
+-- Отключить файловый кэш
+set enable_filesystem_cache = 0;
+
+-- Выполнить запрос 1
+WITH
+  dateDiff('s', pickup_datetime, dropoff_datetime) as trip_time,
+  trip_distance / trip_time * 3600 AS speed_mph
+SELECT
+  quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM
+  nyc_taxi.trips_small_inferred
+WHERE
+  speed_mph > 30
+FORMAT JSON
+
+----
+```
+
+```response
+1 row in set. Elapsed: 1.699 sec. Processed 329.04 million rows, 8.88 GB (193.72 million rows/s., 5.23 GB/s.)
+Пиковое потребление памяти: 440.24 MiB.
+```
+
+```sql
+-- Запустите запрос 2
+SELECT
+    payment_type,
+    COUNT() AS trip_count,
+    formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+    AVG(total_amount) AS total_amount_avg,
+    AVG(tip_amount) AS tip_amount_avg
+FROM
+    nyc_taxi.trips_small_inferred
+WHERE
+    pickup_datetime >= '2009-01-01' AND pickup_datetime < '2009-04-01'
+GROUP BY
+    payment_type
+ORDER BY
+    trip_count DESC;
+
+---
+```
+
+```response
+4 rows in set. Elapsed: 1.419 sec. Processed 329.04 million rows, 5.72 GB (231.86 million rows/s., 4.03 GB/s.)
+Пиковое потребление памяти: 546.75 MiB.
+```
+
+```sql
+-- Запустите запрос 3
+SELECT
+  avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+FROM nyc_taxi.trips_small_inferred
+WHERE passenger_count = 1 or passenger_count = 2
+FORMAT JSON
+
+---
+```
+
+```response
+1 row in set. Elapsed: 1.414 sec. Processed 329.04 million rows, 8.88 GB (232.63 million rows/s., 6.28 GB/s.)
+Пиковое потребление памяти: 451.53 MiB.
+```
+
+Сведем результаты в таблицу для удобства чтения.
+
+| Name     | Elapsed   | Обработанные строки | Пиковое потребление памяти |
+| -------- | --------- | ------------------- | -------------------------- |
+| Запрос 1 | 1.699 сек | 329.04 миллионов    | 440.24 MiB                 |
+| Запрос 2 | 1.419 сек | 329.04 миллионов    | 546.75 MiB                 |
+| Запрос 3 | 1.414 сек | 329.04 миллионов    | 451.53 MiB                 |
+
+Давайте чуть лучше разберемся, что именно делают эти запросы. 
+
+* Запрос 1 вычисляет распределение расстояний для поездок со средней скоростью более 30 миль в час.
+* Запрос 2 определяет количество поездок и их среднюю стоимость по неделям. 
+* Запрос 3 вычисляет среднюю длительность каждой поездки в датасете.
+
+Ни один из этих запросов не выполняет ничего особенно сложного, за исключением первого, который при каждом выполнении вычисляет время поездки на лету. Однако каждый из этих запросов выполняется дольше секунды, что по меркам ClickHouse очень долго. Мы также можем отметить использование памяти этими запросами: примерно 400 МБ на запрос — это довольно много. Кроме того, каждый запрос, по-видимому, читает одно и то же количество строк (то есть 329.04 миллионов). Давайте быстро проверим, сколько строк в этой таблице.
+
+```sql
+-- Подсчитать количество строк в таблице
+SELECT count()
+FROM nyc_taxi.trips_small_inferred
+```
+
+```response
+Query id: 733372c5-deaf-4719-94e3-261540933b23
+
+   ┌───count()─┐
+1. │ 329044175 │ -- 329.04 миллиона
+   └───────────┘
+```
+
+Таблица содержит 329,04 миллиона строк, поэтому каждый запрос полностью сканирует таблицу.
+
+<div id="explain-statement">
+  ### Оператор EXPLAIN
+</div>
+
+Теперь, когда у нас есть несколько долгих запросов, давайте разберёмся, как они выполняются. Для этого в ClickHouse есть [оператор EXPLAIN](/ru/reference/statements/explain). Это очень полезный инструмент, который даёт подробное представление обо всех этапах выполнения запроса, не выполняя сам запрос. Хотя для специалиста, не знакомого с ClickHouse, это может выглядеть довольно сложно, этот инструмент остаётся незаменимым для понимания того, как выполняется ваш запрос.
+
+В документации есть подробное [руководство](/ru/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer) о том, что такое оператор EXPLAIN и как использовать его для анализа выполнения запросов. Не будем повторять его содержимое, а сосредоточимся на нескольких командах, которые помогут выявить узкие места в производительности выполнения запросов.
+
+**Explain indexes = 1**
+
+Начнём с EXPLAIN indexes = 1, чтобы посмотреть план запроса. План запроса — это дерево, показывающее, как будет выполняться запрос. В нём видно, в каком порядке будут выполняться части запроса. План запроса, возвращаемый оператором EXPLAIN, читается снизу вверх.
+
+Попробуем воспользоваться первым из наших длительных запросов.
+
+```sql
+EXPLAIN indexes = 1
+WITH
+    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+    (trip_distance / trip_time) * 3600 AS speed_mph
+SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM nyc_taxi.trips_small_inferred
+WHERE speed_mph > 30
+```
+
+```response
+Query id: f35c412a-edda-4089-914b-fa1622d69868
+
+   ┌─explain─────────────────────────────────────────────┐
+1. │ Expression ((Projection + Before ORDER BY))         │
+2. │   Aggregating                                       │
+3. │     Expression (Before GROUP BY)                    │
+4. │       Filter (WHERE)                                │
+5. │         ReadFromMergeTree (nyc_taxi.trips_small_inferred) │
+   └─────────────────────────────────────────────────────┘
+```
+
+Вывод довольно прост. Запрос начинается с чтения данных из таблицы `nyc_taxi.trips_small_inferred`. Затем применяется предложение WHERE, чтобы отфильтровать строки по вычисленным значениям. Отфильтрованные данные подготавливаются для агрегации, после чего вычисляются квантили. Наконец, результат сортируется и выводится.
+
+Здесь видно, что первичные ключи не используются, что вполне логично, поскольку при создании таблицы мы их не задали. В результате ClickHouse выполняет полное сканирование таблицы для этого запроса.
+
+**Explain Pipeline (конвейер выполнения запроса)**
+
+EXPLAIN Pipeline показывает конкретную стратегию выполнения запроса. Здесь можно увидеть, как ClickHouse в действительности выполнил общий план запроса, рассмотренный ранее.
+
+```sql
+EXPLAIN PIPELINE
+WITH
+    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+    (trip_distance / trip_time) * 3600 AS speed_mph
+SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM nyc_taxi.trips_small_inferred
+WHERE speed_mph > 30
+```
+
+```response
+Query id: c7e11e7b-d970-4e35-936c-ecfc24e3b879
+
+    ┌─explain─────────────────────────────────────────────────────────────────────────────┐
+ 1. │ (Expression)                                                                        │
+ 2. │ ExpressionTransform × 59                                                            │
+ 3. │   (Aggregating)                                                                     │
+ 4. │   Resize 59 → 59                                                                    │
+ 5. │     AggregatingTransform × 59                                                       │
+ 6. │       StrictResize 59 → 59                                                          │
+ 7. │         (Expression)                                                                │
+ 8. │         ExpressionTransform × 59                                                    │
+ 9. │           (Filter)                                                                  │
+10. │           FilterTransform × 59                                                      │
+11. │             (ReadFromMergeTree)                                                     │
+12. │             MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 59 0 → 1 │
+```
+
+Здесь можно обратить внимание на количество потоков, задействованных для выполнения запроса: 59 потоков, что свидетельствует о высокой степени параллелизации. Это ускоряет выполнение запроса, которое на менее мощной машине заняло бы больше времени. Количество потоков, работающих параллельно, объясняет высокий объём памяти, потребляемой запросом.
+
+В идеале все медленные запросы следует анализировать одинаково, чтобы выявлять излишне сложные планы выполнения запросов и понимать, сколько строк считывает каждый запрос и какие ресурсы при этом потребляются.
+
+<div id="methodology">
+  ## Методология
+</div>
+
+Выявить проблемные запросы в продакшн-развертывании может быть непросто, поскольку в любой момент времени в вашем развертывании ClickHouse, скорее всего, выполняется большое количество запросов. 
+
+Если вы знаете, у какого пользователя, в какой базе данных или в каких таблицах возникают проблемы, можно использовать поля `user`, `tables` или `databases` из `system.query_logs`, чтобы сузить поиск. 
+
+Когда вы определите запросы, которые хотите оптимизировать, можно приступать к работе. На этом этапе разработчики часто совершают типичную ошибку: одновременно меняют несколько параметров, проводят разрозненные эксперименты и в итоге получают смешанные результаты, а главное — не понимают, что именно ускорило запрос. 
+
+Оптимизация запросов требует системного подхода. Я не говорю о продвинутом бенчмаркинге, но даже простой процесс, позволяющий понять, как ваши изменения влияют на производительность запросов, может дать очень многое. 
+
+Начните с выявления медленных запросов в журнале запросов, затем по отдельности изучите возможные улучшения. При тестировании запроса обязательно отключайте файловый кэш. 
+
+> ClickHouse использует [кэширование](/ru/concepts/features/performance/caches/caches) для ускорения выполнения запросов на разных этапах. Это полезно для производительности, но при устранении неполадок оно может скрыть потенциальные узкие места IO или неудачную схему таблицы. Поэтому во время тестирования я рекомендую отключать файловый кэш. В продакшне он должен быть включен.
+
+После того как вы определили возможные оптимизации, рекомендуется внедрять их по одной, чтобы лучше отслеживать, как они влияют на производительность. Ниже приведена схема, описывающая общий подход.
+
+<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="Процесс оптимизации" />
+
+*Наконец, будьте внимательны к выбросам: нередко запрос выполняется медленно либо потому, что пользователь запустил разовый ресурсоемкий запрос, либо потому, что система по другой причине находилась под нагрузкой. Можно выполнить группировку по полю normalized&#95;query&#95;hash, чтобы выявить ресурсоемкие запросы, которые выполняются регулярно. Скорее всего, именно их и стоит исследовать.*
+
+<div id="basic-optimization">
+  ## Базовая оптимизация
+</div>
+
+Теперь, когда у нас есть основа для тестирования, можно приступать к оптимизации.
+
+Начать лучше всего с того, как хранятся данные. Как и в любой базе данных, чем меньше данных мы читаем, тем быстрее выполняется запрос. 
+
+В зависимости от того, как вы организовали приём данных, вы могли воспользоваться [возможностями](/ru/concepts/features/interfaces/schema-inference) ClickHouse, чтобы определить схему таблицы на основе принимаемых данных. Это очень удобно на старте, но если вы хотите оптимизировать производительность запросов, схему данных нужно пересмотреть так, чтобы она лучше соответствовала вашему сценарию использования.
+
+<div id="nullable">
+  ### Nullable
+</div>
+
+Как описано в [документации с рекомендациями](/ru/concepts/best-practices/select-data-type#avoid-nullable-columns), по возможности избегайте столбцов с типом Nullable. Их часто хочется использовать, поскольку они делают механизм ингестии данных более гибким, но это негативно сказывается на производительности, так как каждый раз приходится обрабатывать дополнительный столбец.
+
+SQL-запрос, подсчитывающий строки со значением NULL, позволяет легко определить, каким столбцам в ваших таблицах действительно нужен тип Nullable.
+
+```sql
+-- Найти столбцы с NULL-значениями
+SELECT
+    countIf(vendor_id IS NULL) AS vendor_id_nulls,
+    countIf(pickup_datetime IS NULL) AS pickup_datetime_nulls,
+    countIf(dropoff_datetime IS NULL) AS dropoff_datetime_nulls,
+    countIf(passenger_count IS NULL) AS passenger_count_nulls,
+    countIf(trip_distance IS NULL) AS trip_distance_nulls,
+    countIf(fare_amount IS NULL) AS fare_amount_nulls,
+    countIf(mta_tax IS NULL) AS mta_tax_nulls,
+    countIf(tip_amount IS NULL) AS tip_amount_nulls,
+    countIf(tolls_amount IS NULL) AS tolls_amount_nulls,
+    countIf(total_amount IS NULL) AS total_amount_nulls,
+    countIf(payment_type IS NULL) AS payment_type_nulls,
+    countIf(pickup_location_id IS NULL) AS pickup_location_id_nulls,
+    countIf(dropoff_location_id IS NULL) AS dropoff_location_id_nulls
+FROM trips_small_inferred
+FORMAT VERTICAL
+```
+
+```response
+Query id: 4a70fc5b-2501-41c8-813c-45ce241d85ae
+
+Row 1:
+──────
+vendor_id_nulls:           0
+pickup_datetime_nulls:     0
+dropoff_datetime_nulls:    0
+passenger_count_nulls:     0
+trip_distance_nulls:       0
+fare_amount_nulls:         0
+mta_tax_nulls:             137946731
+tip_amount_nulls:          0
+tolls_amount_nulls:        0
+total_amount_nulls:        0
+payment_type_nulls:        69305
+pickup_location_id_nulls:  0
+dropoff_location_id_nulls: 0
+```
+
+У нас есть только два столбца со значениями NULL: `mta_tax` и `payment_type`. Остальные поля не должны иметь тип `Nullable`.
+
+<div id="low-cardinality">
+  ### Низкая мощность
+</div>
+
+Простая оптимизация для строковых типов — эффективнее использовать тип данных LowCardinality. Как описано в [документации](/ru/reference/data-types/lowcardinality) по низкой мощности, ClickHouse применяет к столбцам LowCardinality словарное кодирование, что значительно повышает производительность запросов. 
+
+Простое практическое правило, которое помогает определить, какие столбцы хорошо подходят для LowCardinality: любой столбец, содержащий менее 10 000 уникальных значений, — отличный кандидат.
+
+Вы можете использовать следующий SQL-запрос, чтобы найти столбцы с небольшим числом уникальных значений.
+
+```sql
+-- Определить столбцы с низкой кардинальностью
+SELECT
+    uniq(ratecode_id),
+    uniq(pickup_location_id),
+    uniq(dropoff_location_id),
+    uniq(vendor_id)
+FROM trips_small_inferred
+FORMAT VERTICAL
+```
+
+```response
+Query id: d502c6a1-c9bc-4415-9d86-5de74dd6d932
+
+Row 1:
+──────
+uniq(ratecode_id):         6
+uniq(pickup_location_id):  260
+uniq(dropoff_location_id): 260
+uniq(vendor_id):           3
+```
+
+Благодаря низкой мощности эти четыре столбца — `ratecode_id`, `pickup_location_id`, `dropoff_location_id` и `vendor_id` — хорошо подходят для типа данных LowCardinality.
+
+<div id="optimize-data-type">
+  ### Оптимизируйте тип данных
+</div>
+
+ClickHouse поддерживает множество типов данных. Чтобы повысить производительность и уменьшить объем данных, занимаемых на диске, выбирайте минимально возможный тип данных, подходящий для вашего сценария использования. 
+
+Для числовых значений можно проверить минимальное и максимальное значения в наборе данных, чтобы убедиться, что текущая точность соответствует фактическим данным. 
+
+```sql
+-- Найти минимальные/максимальные значения для поля payment_type
+SELECT
+    min(payment_type),max(payment_type),
+    min(passenger_count), max(passenger_count)
+FROM trips_small_inferred
+```
+
+```response
+Query id: 4306a8e1-2a9c-4b06-97b4-4d902d2233eb
+
+   ┌─min(payment_type)─┬─max(payment_type)─┐
+1. │                 1 │                 4 │
+   └───────────────────┴───────────────────┘
+```
+
+Для дат выбирайте такую точность, которая соответствует вашим данным и лучше всего подходит для запросов, которые вы собираетесь выполнять.
+
+<div id="apply-the-optimizations">
+  ### Примените оптимизации
+</div>
+
+Давайте создадим новую таблицу с оптимизированной схемой и заново загрузим данные.
+
+```sql
+-- Создаем таблицу с оптимизированными данными
+CREATE TABLE trips_small_no_pk
+(
+    `vendor_id` LowCardinality(String),
+    `pickup_datetime` DateTime,
+    `dropoff_datetime` DateTime,
+    `passenger_count` UInt8,
+    `trip_distance` Float32,
+    `ratecode_id` LowCardinality(String),
+    `pickup_location_id` LowCardinality(String),
+    `dropoff_location_id` LowCardinality(String),
+    `payment_type` Nullable(UInt8),
+    `fare_amount` Decimal32(2),
+    `extra` Decimal32(2),
+    `mta_tax` Nullable(Decimal32(2)),
+    `tip_amount` Decimal32(2),
+    `tolls_amount` Decimal32(2),
+    `total_amount` Decimal32(2)
+)
+ORDER BY tuple();
+
+-- Вставляем данные
+INSERT INTO trips_small_no_pk SELECT * FROM trips_small_inferred
+```
+
+Мы снова выполняем запросы, используя новую таблицу, чтобы проверить, есть ли улучшения. 
+
+| Name     | Запуск 1 — время выполнения | Время выполнения | Обработано строк | Пиковое потребление памяти |
+| -------- | --------------------------- | ---------------- | ---------------- | -------------------------- |
+| Запрос 1 | 1.699 с                     | 1.353 с          | 329.04 млн       | 337.12 MiB                 |
+| Запрос 2 | 1.419 с                     | 1.171 с          | 329.04 млн       | 531.09 MiB                 |
+| Запрос 3 | 1.414 с                     | 1.188 с          | 329.04 млн       | 265.05 MiB                 |
+
+Мы видим улучшения как по времени выполнения запросов, так и по использованию памяти. Благодаря оптимизации схемы данных удалось уменьшить общий объём хранимых данных, что привело к снижению потребления памяти и сокращению времени обработки. 
+
+Давайте проверим размер таблиц, чтобы увидеть разницу. 
+
+```sql
+SELECT
+    `table`,
+    formatReadableSize(sum(data_compressed_bytes) AS size) AS compressed,
+    formatReadableSize(sum(data_uncompressed_bytes) AS usize) AS uncompressed,
+    sum(rows) AS rows
+FROM system.parts
+WHERE (active = 1) AND ((`table` = 'trips_small_no_pk') OR (`table` = 'trips_small_inferred'))
+GROUP BY
+    database,
+    `table`
+ORDER BY size DESC
+```
+
+```response
+Query id: 72b5eb1c-ff33-4fdb-9d29-dd076ac6f532
+
+   ┌─table────────────────┬─compressed─┬─uncompressed─┬──────rows─┐
+1. │ trips_small_inferred │ 7.38 GiB   │ 37.41 GiB    │ 329044175 │
+2. │ trips_small_no_pk    │ 4.89 GiB   │ 15.31 GiB    │ 329044175 │
+   └──────────────────────┴────────────┴──────────────┴───────────┘
+```
+
+Новая таблица значительно меньше предыдущей. Мы видим, что она занимает примерно на 34% меньше места на диске (7.38 GiB против 4.89 GiB).
+
+<div id="the-importance-of-primary-keys">
+  ## Важность первичных ключей
+</div>
+
+В ClickHouse первичные ключи работают иначе, чем в большинстве традиционных систем управления базами данных. В таких системах первичные ключи обеспечивают уникальность и целостность данных. Любая попытка вставить повторяющиеся значения первичного ключа отклоняется, а для быстрого поиска обычно создаётся индекс на основе B-дерева или хеша. 
+
+В ClickHouse [назначение](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#a-table-with-a-primary-key) первичного ключа иное: он не обеспечивает уникальность и не служит для поддержания целостности данных. Вместо этого он предназначен для оптимизации производительности запросов. Первичный ключ задаёт порядок хранения данных на диске и реализован в виде разреженного индекса, который хранит указатели на первую строку каждой гранулы.
+
+> Гранулы в ClickHouse — это наименьшие единицы данных, считываемые во время выполнения запроса. Они содержат до фиксированного числа строк, определяемого параметром `index_granularity`; значение по умолчанию — 8192 строк. Гранулы хранятся непрерывно и сортируются по первичному ключу. 
+
+Правильный выбор первичных ключей важен для производительности, и на практике одни и те же данные нередко хранят в разных таблицах, используя разные наборы первичных ключей, чтобы ускорить определённый набор запросов. 
+
+Другие возможности ClickHouse, такие как Projection или materialized view, позволяют использовать другой набор первичных ключей для тех же данных. Во второй части этой серии блогов мы рассмотрим это подробнее. 
+
+<div id="choose-primary-keys">
+  ### Выберите первичные ключи
+</div>
+
+Выбор правильного набора первичных ключей — сложная задача, и, чтобы найти наилучшее сочетание, могут потребоваться компромиссы и эксперименты. 
+
+Пока мы будем придерживаться следующих простых рекомендаций: 
+
+* Используйте поля, которые применяются для фильтрации в большинстве запросов
+* Сначала выбирайте столбцы с меньшей мощностью 
+* Рассмотрите возможность включить в первичный ключ компонент времени, поскольку фильтрация по времени в наборах данных с временными метками встречается довольно часто. 
+
+В нашем случае мы будем экспериментировать со следующими первичными ключами: `passenger_count`, `pickup_datetime` и `dropoff_datetime`. 
+
+Мощность `passenger_count` невелика (24 уникальных значения), и это поле используется в наших медленных запросах. Мы также добавляем поля с временными метками (`pickup_datetime` и `dropoff_datetime`), так как по ним часто выполняется фильтрация.
+
+Создайте новую таблицу с этими первичными ключами и повторно загрузите данные.
+
+```sql
+CREATE TABLE trips_small_pk
+(
+    `vendor_id` UInt8,
+    `pickup_datetime` DateTime,
+    `dropoff_datetime` DateTime,
+    `passenger_count` UInt8,
+    `trip_distance` Float32,
+    `ratecode_id` LowCardinality(String),
+    `pickup_location_id` UInt16,
+    `dropoff_location_id` UInt16,
+    `payment_type` Nullable(UInt8),
+    `fare_amount` Decimal32(2),
+    `extra` Decimal32(2),
+    `mta_tax` Nullable(Decimal32(2)),
+    `tip_amount` Decimal32(2),
+    `tolls_amount` Decimal32(2),
+    `total_amount` Decimal32(2)
+)
+PRIMARY KEY (passenger_count, pickup_datetime, dropoff_datetime);
+
+-- Вставить данные
+INSERT INTO trips_small_pk SELECT * FROM trips_small_inferred
+```
+
+Затем мы повторно запускаем наши запросы. Мы сводим результаты трёх экспериментов, чтобы оценить улучшения по времени выполнения, числу обработанных строк и потреблению памяти. 
+
+<table>
+  <thead>
+    <tr>
+      <th colspan="4">Запрос 1</th>
+    </tr>
+
+    <tr>
+      <th />
+
+      <th>Прогон 1</th>
+      <th>Прогон 2</th>
+      <th>Прогон 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>Время выполнения</td>
+      <td>1.699 sec</td>
+      <td>1.353 sec</td>
+      <td>0.765 sec</td>
+    </tr>
+
+    <tr>
+      <td>Обработано строк</td>
+      <td>329.04 million</td>
+      <td>329.04 million</td>
+      <td>329.04 million</td>
+    </tr>
+
+    <tr>
+      <td>Пиковое потребление памяти</td>
+      <td>440.24 MiB</td>
+      <td>337.12 MiB</td>
+      <td>444.19 MiB</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <thead>
+    <tr>
+      <th colspan="4">Запрос 2</th>
+    </tr>
+
+    <tr>
+      <th />
+
+      <th>Прогон 1</th>
+      <th>Прогон 2</th>
+      <th>Прогон 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>Время выполнения</td>
+      <td>1.419 sec</td>
+      <td>1.171 sec</td>
+      <td>0.248 sec</td>
+    </tr>
+
+    <tr>
+      <td>Обработано строк</td>
+      <td>329.04 million</td>
+      <td>329.04 million</td>
+      <td>41.46 million</td>
+    </tr>
+
+    <tr>
+      <td>Пиковое потребление памяти</td>
+      <td>546.75 MiB</td>
+      <td>531.09 MiB</td>
+      <td>173.50 MiB</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <thead>
+    <tr>
+      <th colspan="4">Запрос 3</th>
+    </tr>
+
+    <tr>
+      <th />
+
+      <th>Прогон 1</th>
+      <th>Прогон 2</th>
+      <th>Прогон 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>Время выполнения</td>
+      <td>1.414 sec</td>
+      <td>1.188 sec</td>
+      <td>0.431 sec</td>
+    </tr>
+
+    <tr>
+      <td>Обработано строк</td>
+      <td>329.04 million</td>
+      <td>329.04 million</td>
+      <td>276.99 million</td>
+    </tr>
+
+    <tr>
+      <td>Пиковое потребление памяти</td>
+      <td>451.53 MiB</td>
+      <td>265.05 MiB</td>
+      <td>197.38 MiB</td>
+    </tr>
+  </tbody>
+</table>
+
+Мы видим заметное улучшение как по времени выполнения, так и по потреблению памяти. 
+
+Запрос 2 выигрывает от первичного ключа больше всего. Посмотрим, чем получившийся план запроса отличается от предыдущего.
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    payment_type,
+    COUNT() AS trip_count,
+    formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+    AVG(total_amount) AS total_amount_avg,
+    AVG(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_pk
+WHERE (pickup_datetime >= '2009-01-01') AND (pickup_datetime < '2009-04-01')
+GROUP BY payment_type
+ORDER BY trip_count DESC
+```
+
+```response
+Query id: 30116a77-ba86-4e9f-a9a2-a01670ad2e15
+
+    ┌─explain──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Projection + Before ORDER BY [lifted up part]))                                                     │
+ 2. │   Sorting (Sorting for ORDER BY)                                                                                 │
+ 3. │     Expression (Before ORDER BY)                                                                                 │
+ 4. │       Aggregating                                                                                                │
+ 5. │         Expression (Before GROUP BY)                                                                             │
+ 6. │           Expression                                                                                             │
+ 7. │             ReadFromMergeTree (nyc_taxi.trips_small_pk)                                                          │
+ 8. │             Indexes:                                                                                             │
+ 9. │               PrimaryKey                                                                                         │
+10. │                 Keys:                                                                                            │
+11. │                   pickup_datetime                                                                                │
+12. │                 Condition: and((pickup_datetime in (-Inf, 1238543999]), (pickup_datetime in [1230768000, +Inf))) │
+13. │                 Parts: 9/9                                                                                       │
+14. │                 Granules: 5061/40167                                                                             │
+    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Благодаря первичному ключу было выбрано лишь подмножество гранул таблицы. Уже одно это заметно повышает производительность запроса, поскольку ClickHouse приходится обрабатывать существенно меньше данных.
+
+<div id="next-steps">
+  ## Следующие шаги
+</div>
+
+Надеемся, это руководство помогло вам лучше понять, как исследовать медленные запросы в ClickHouse и ускорять их. Чтобы глубже изучить эту тему, вы можете подробнее прочитать о [анализаторе запросов](/ru/guides/clickhouse/performance-and-monitoring/analyzer) и [данных профилирования](/ru/concepts/features/performance/troubleshoot/sampling-query-profiler), чтобы лучше понять, как именно ClickHouse выполняет ваш запрос.
+
+По мере того как вы будете лучше знакомиться с особенностями ClickHouse, рекомендуем также почитать о [ключах партиционирования](/ru/concepts/best-practices/partitioning-keys) и [индексах пропуска данных](/ru/concepts/features/performance/skip-indexes/skipping-indexes), чтобы освоить более продвинутые методы ускорения запросов.

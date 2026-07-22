@@ -1,0 +1,82 @@
+---
+slug: /cloud/guides/sql-console/manage-sql-console-role-assignments
+sidebarTitle: 'SQL 콘솔 역할 할당 관리'
+title: SQL 콘솔 역할 할당 구성하기
+description: 'SQL 콘솔 역할 할당을 관리하는 방법을 설명하는 가이드'
+doc_type: 'guide'
+keywords: ['SQL 콘솔', '역할 할당', '액세스 관리', '권한', '보안']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<Warning>
+  이 설정은 더 이상 사용되지 않으며, custom roles로 마이그레이션한 조직에서는 역할 생성 화면의 새로운 설정으로 대체되었습니다. 자세한 내용은 [Cloud 사용자 관리](/ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users)를 참조하십시오.
+</Warning>
+
+> 이 가이드에서는 SQL 콘솔 역할 할당을 구성하는 방법을 설명합니다. 역할 할당은 콘솔 전반의 접근 권한과 사용자가 Cloud Console 내에서 사용할 수 있는 기능을 결정합니다.
+
+<Steps>
+  <Step>
+    ### 서비스 설정에 액세스
+
+    서비스 페이지에서 SQL 콘솔 액세스 설정을 조정하려는 서비스의 오른쪽 상단에 있는 메뉴를 클릭합니다.
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/1_service_settings.webp" size="lg" />
+
+    팝업 메뉴에서 `settings`를 선택합니다.
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/2_service_settings.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### SQL 콘솔 액세스 조정
+
+    &quot;Security&quot; 섹션에서 &quot;SQL console access&quot; 영역을 찾습니다:
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/3_service_settings.webp" size="md" />
+  </Step>
+
+  <Step>
+    ### Service Admin 설정 업데이트
+
+    Service Admin의 드롭다운 메뉴를 선택하여 Service Admin 역할의 접근 제어 설정을 변경합니다:
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/4_service_settings.webp" size="md" />
+
+    다음 역할 중에서 선택할 수 있습니다:
+
+    | 역할            |
+    | ------------- |
+    | `No access`   |
+    | `Read only`   |
+    | `Full access` |
+  </Step>
+
+  <Step>
+    ### Service Read Only 설정 업데이트
+
+    Service Read Only의 드롭다운 메뉴를 선택하여 Service Read Only 역할의 접근 제어 설정을 변경합니다:
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/5_service_settings.webp" size="md" />
+
+    다음 역할 중에서 선택할 수 있습니다:
+
+    | 역할            |
+    | ------------- |
+    | `No access`   |
+    | `Read only`   |
+    | `Full access` |
+  </Step>
+
+  <Step>
+    ### 액세스 권한이 있는 사용자 검토
+
+    사용자 수를 선택하면 해당 서비스의 사용자 개요를 확인할 수 있습니다:
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/6_service_settings.webp" size="md" />
+
+    페이지 오른쪽에 탭이 열리며 전체 사용자 수와 각 사용자의 역할이 표시됩니다:
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/7_service_settings.webp" size="md" />
+  </Step>
+</Steps>

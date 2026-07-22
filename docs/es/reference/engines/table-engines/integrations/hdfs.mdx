@@ -1,0 +1,279 @@
+---
+description: 'Este motor proporciona integración con el ecosistema Apache Hadoop al
+  permitir gestionar datos en HDFS a través de ClickHouse. Este motor es similar a los motores File
+  y URL, pero ofrece funcionalidades específicas de Hadoop.'
+sidebarTitle: 'HDFS'
+slug: /engines/table-engines/integrations/hdfs
+title: 'Motor de tabla HDFS'
+doc_type: 'referencia'
+---
+
+import CloudNotSupportedBadge from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+Este motor proporciona integración con el ecosistema de [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) al permitir gestionar datos en [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html) a través de ClickHouse. Este motor es similar a los motores [File](/es/reference/engines/table-engines/special/file) y [URL](/es/reference/engines/table-engines/special/url), pero ofrece funcionalidades específicas de Hadoop.
+
+Esta funcionalidad no cuenta con soporte de los ingenieros de ClickHouse y se sabe que su calidad es irregular. Si surge algún problema, tendrás que solucionarlo por tu cuenta y enviar un pull request.
+
+<div id="usage">
+  ## Uso
+</div>
+
+```sql
+ENGINE = HDFS(URI, format)
+```
+
+**Parámetros del motor**
+
+* `URI` - URI completa del archivo en HDFS. La parte de la ruta de `URI` puede contener globs. En ese caso, la tabla sería de solo lectura.
+* `format` - especifica uno de los formatos de archivo disponibles. Para realizar
+  consultas `SELECT`, el formato debe admitir entrada, y para realizar
+  consultas `INSERT`, salida. Los formatos disponibles se enumeran en la
+  sección [Formatos](/es/reference/formats/index#formats-overview).
+* [PARTITION BY expr]
+
+<div id="partition-by">
+  ### PARTITION BY
+</div>
+
+`PARTITION BY` — Opcional. En la mayoría de los casos, no se necesita una clave de partición y, si hace falta, por lo general no debe ser más granular que por mes. La partición no acelera las consultas (a diferencia de la expresión ORDER BY). Nunca debe usar una partición demasiado granular. No particione sus datos por identificadores o nombres de clientes (en su lugar, haga que el identificador o el nombre del cliente sea la primera columna de la expresión ORDER BY).
+
+Para particionar por mes, use la expresión `toYYYYMM(date_column)`, donde `date_column` es una columna con una fecha del tipo [Date](/es/reference/data-types/date). Aquí, los nombres de las particiones tienen el formato `"YYYYMM"`.
+
+**Ejemplo:**
+
+**1.** Configure la tabla `hdfs_engine_table`:
+
+```sql
+CREATE TABLE hdfs_engine_table (name String, value UInt32) ENGINE=HDFS('hdfs://hdfs1:9000/other_storage', 'TSV')
+```
+
+**2.** Complete el archivo:
+
+```sql
+INSERT INTO hdfs_engine_table VALUES ('one', 1), ('two', 2), ('three', 3)
+```
+
+**3.** Consulta los datos:
+
+```sql
+SELECT * FROM hdfs_engine_table LIMIT 2
+```
+
+```text
+┌─name─┬─value─┐
+│ one  │     1 │
+│ two  │     2 │
+└──────┴───────┘
+```
+
+<div id="implementation-details">
+  ## Detalles de implementación
+</div>
+
+* Las lecturas y escrituras pueden ser paralelas.
+* No se admiten:
+  * Las operaciones `ALTER` y `SELECT...SAMPLE`.
+  * Los índices.
+  * La [replicación zero-copy](/es/concepts/features/configuration/server-config/storing-data#zero-copy) es posible, pero no se recomienda.
+
+<Info>
+  **La replicación zero-copy no está lista para producción**
+
+  La replicación zero-copy está deshabilitada de forma predeterminada en ClickHouse versión 22.8 y posteriores. Esta función no se recomienda para uso en producción.
+</Info>
+
+**Globs en la ruta**
+
+Varios componentes de la ruta pueden contener globs. Para que un archivo se procese, debe existir y coincidir con el patrón completo de la ruta. La lista de archivos se determina durante `SELECT` (no en el momento de `CREATE`).
+
+* `*` — Sustituye cualquier cantidad de caracteres, excepto `/`, incluida la cadena vacía.
+* `?` — Sustituye cualquier carácter individual.
+* `{some_string,another_string,yet_another_one}` — Sustituye cualquiera de las cadenas `'some_string', 'another_string', 'yet_another_one'`.
+* `{N..M}` — Sustituye cualquier número en el intervalo de N a M, incluidos ambos extremos.
+
+Las construcciones con `{}` son similares a la función de tabla [remote](/es/reference/functions/table-functions/remote).
+
+**Ejemplo**
+
+1. Supongamos que tenemos varios archivos en formato TSV con los siguientes URI en HDFS:
+
+   * &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;1&#39;
+   * &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;2&#39;
+   * &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;3&#39;
+   * &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;1&#39;
+   * &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;2&#39;
+   * &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;3&#39;
+
+2. Hay varias formas de crear una tabla compuesta por los seis archivos:
+
+{/* */}
+
+```sql
+CREATE TABLE table_with_range (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV')
+```
+
+Otra forma:
+
+```sql
+CREATE TABLE table_with_question_mark (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/some_file_?', 'TSV')
+```
+
+La tabla se compone de todos los archivos de ambos directorios (todos los archivos deben cumplir el formato y el esquema descritos en la consulta):
+
+```sql
+CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV')
+```
+
+<Note>
+  Si la lista de archivos contiene rangos numéricos con ceros a la izquierda, use la sintaxis con llaves para cada dígito por separado o use `?`.
+</Note>
+
+**Ejemplo**
+
+Cree una tabla con archivos llamados `file000`, `file001`, ... , `file999`:
+
+```sql
+CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV')
+```
+
+<div id="configuration">
+  ## Configuración
+</div>
+
+Al igual que GraphiteMergeTree, el motor HDFS admite una configuración ampliada mediante el archivo de configuración de ClickHouse. Puede usar dos claves de configuración: una global (`hdfs`) y otra a nivel de usuario (`hdfs_*`). Primero se aplica la configuración global y, después, la configuración a nivel de usuario (si existe).
+
+```xml
+<!-- Opciones de configuración global para el tipo de motor HDFS -->
+<hdfs>
+  <hadoop_kerberos_keytab>/tmp/keytab/clickhouse.keytab</hadoop_kerberos_keytab>
+  <hadoop_kerberos_principal>clickuser@TEST.CLICKHOUSE.TECH</hadoop_kerberos_principal>
+  <hadoop_security_authentication>kerberos</hadoop_security_authentication>
+</hdfs>
+
+<!-- Configuración específica para el usuario "root" -->
+<hdfs_root>
+  <hadoop_kerberos_principal>root@TEST.CLICKHOUSE.TECH</hadoop_kerberos_principal>
+</hdfs_root>
+```
+
+<div id="configuration-options">
+  ### Opciones de configuración
+</div>
+
+<div id="supported-by-libhdfs3">
+  #### Compatible con libhdfs3
+</div>
+
+| **parámetro**                                                           | **valor predeterminado**          |
+| ----------------------------------------------------------------------- | --------------------------------- |
+| rpc&#95;client&#95;connect&#95;tcpnodelay                               | true                              |
+| dfs&#95;client&#95;read&#95;shortcircuit                                | true                              |
+| output&#95;replace-datanode-on-failure                                  | true                              |
+| input&#95;notretry-another-node                                         | false                             |
+| input&#95;localread&#95;mappedfile                                      | true                              |
+| dfs&#95;client&#95;use&#95;legacy&#95;blockreader&#95;local             | false                             |
+| rpc&#95;client&#95;ping&#95;interval                                    | 10  * 1000                        |
+| rpc&#95;client&#95;connect&#95;timeout                                  | 600 * 1000                        |
+| rpc&#95;client&#95;read&#95;timeout                                     | 3600 * 1000                       |
+| rpc&#95;client&#95;write&#95;timeout                                    | 3600 * 1000                       |
+| rpc&#95;client&#95;socket&#95;linger&#95;timeout                        | -1                                |
+| rpc&#95;client&#95;connect&#95;retry                                    | 10                                |
+| rpc&#95;client&#95;timeout                                              | 3600 * 1000                       |
+| dfs&#95;default&#95;replica                                             | 3                                 |
+| input&#95;connect&#95;timeout                                           | 600 * 1000                        |
+| input&#95;read&#95;timeout                                              | 3600 * 1000                       |
+| input&#95;write&#95;timeout                                             | 3600 * 1000                       |
+| input&#95;localread&#95;default&#95;buffersize                          | 1 * 1024 * 1024                   |
+| dfs&#95;prefetchsize                                                    | 10                                |
+| input&#95;read&#95;getblockinfo&#95;retry                               | 3                                 |
+| input&#95;localread&#95;blockinfo&#95;cachesize                         | 1000                              |
+| input&#95;read&#95;max&#95;retry                                        | 60                                |
+| output&#95;default&#95;chunksize                                        | 512                               |
+| output&#95;default&#95;packetsize                                       | 64 * 1024                         |
+| output&#95;default&#95;write&#95;retry                                  | 10                                |
+| output&#95;connect&#95;timeout                                          | 600 * 1000                        |
+| output&#95;read&#95;timeout                                             | 3600 * 1000                       |
+| output&#95;write&#95;timeout                                            | 3600 * 1000                       |
+| output&#95;close&#95;timeout                                            | 3600 * 1000                       |
+| output&#95;packetpool&#95;size                                          | 1024                              |
+| output&#95;heartbeat&#95;interval                                       | 10 * 1000                         |
+| dfs&#95;client&#95;failover&#95;max&#95;attempts                        | 15                                |
+| dfs&#95;client&#95;read&#95;shortcircuit&#95;streams&#95;cache&#95;size | 256                               |
+| dfs&#95;client&#95;socketcache&#95;expiryMsec                           | 3000                              |
+| dfs&#95;client&#95;socketcache&#95;capacity                             | 16                                |
+| dfs&#95;default&#95;blocksize                                           | 64 * 1024 * 1024                  |
+| dfs&#95;default&#95;uri                                                 | &quot;hdfs://localhost:9000&quot; |
+| hadoop&#95;security&#95;authentication                                  | &quot;simple&quot;                |
+| hadoop&#95;security&#95;kerberos&#95;ticket&#95;cache&#95;path          | &quot;&quot;                      |
+| dfs&#95;client&#95;log&#95;severity                                     | &quot;INFO&quot;                  |
+| dfs&#95;domain&#95;socket&#95;path                                      | &quot;&quot;                      |
+
+La [referencia de configuración de HDFS](https://hawq.apache.org/docs/userguide/2.3.0.0-incubating/reference/HDFSConfigurationParameterReference.html) puede aclarar algunos parámetros.
+
+<div id="clickhouse-extras">
+  #### Opciones adicionales de ClickHouse
+</div>
+
+| **parámetro**                     | **valor predeterminado** |
+| --------------------------------- | ------------------------ |
+| hadoop&#95;kerberos&#95;keytab    | &quot;&quot;             |
+| hadoop&#95;kerberos&#95;principal | &quot;&quot;             |
+| libhdfs3&#95;conf                 | &quot;&quot;             |
+
+<div id="limitations">
+  ### Limitaciones
+</div>
+
+* `hadoop_security_kerberos_ticket_cache_path` y `libhdfs3_conf` solo pueden ser globales, no específicos para cada usuario
+
+<div id="kerberos-support">
+  ## Compatibilidad con Kerberos
+</div>
+
+Si el parámetro `hadoop_security_authentication` tiene el valor `kerberos`, ClickHouse se autentica mediante Kerberos.
+Los parámetros están [aquí](#clickhouse-extras), y `hadoop_security_kerberos_ticket_cache_path` puede ser útil.
+Tenga en cuenta que, debido a las limitaciones de libhdfs3, solo se admite el enfoque tradicional;
+las comunicaciones del datanode no están protegidas mediante SASL (`HADOOP_SECURE_DN_USER` es un indicador fiable de este
+enfoque de seguridad). Use `tests/integration/test_storage_kerberized_hdfs/hdfs_configs/bootstrap.sh` como referencia.
+
+Si se especifican `hadoop_kerberos_keytab`, `hadoop_kerberos_principal` o `hadoop_security_kerberos_ticket_cache_path`, se utilizará la autenticación de Kerberos. En este caso, `hadoop_kerberos_keytab` y `hadoop_kerberos_principal` son obligatorios.
+
+<div id="namenode-ha">
+  ## Compatibilidad con HDFS NameNode HA
+</div>
+
+libhdfs3 admite HA para el NameNode de HDFS.
+
+* Copie `hdfs-site.xml` desde un nodo de HDFS a `/etc/clickhouse-server/`.
+* Agregue la siguiente sección al archivo de configuración de ClickHouse:
+
+```xml
+  <hdfs>
+    <libhdfs3_conf>/etc/clickhouse-server/hdfs-site.xml</libhdfs3_conf>
+  </hdfs>
+```
+
+* Luego, usa el valor de la etiqueta `dfs.nameservices` de `hdfs-site.xml` como dirección del namenode en el URI de HDFS. Por ejemplo, sustituye `hdfs://appadmin@192.168.101.11:8020/abc/` por `hdfs://appadmin@my_nameservice/abc/`.
+
+<div id="virtual-columns">
+  ## Columnas virtuales
+</div>
+
+* `_path` — Ruta del archivo. Tipo: `LowCardinality(String)`.
+* `_file` — Nombre del archivo. Tipo: `LowCardinality(String)`.
+* `_size` — Tamaño del archivo en bytes. Tipo: `Nullable(UInt64)`. Si se desconoce el tamaño, el valor es `NULL`.
+* `_time` — Fecha y hora de la última modificación del archivo. Tipo: `Nullable(DateTime)`. Si se desconoce la hora, el valor es `NULL`.
+
+<div id="storage-settings">
+  ## Configuración de almacenamiento
+</div>
+
+* [hdfs&#95;truncate&#95;on&#95;insert](/es/reference/settings/session-settings#hdfs_truncate_on_insert) - permite truncar el archivo antes de insertar datos en él. Deshabilitado de forma predeterminada.
+* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/es/reference/settings/session-settings#hdfs_create_new_file_on_insert) - permite crear un archivo nuevo en cada inserción si el formato tiene un sufijo. Deshabilitado de forma predeterminada.
+* [hdfs&#95;skip&#95;empty&#95;files](/es/reference/settings/session-settings#hdfs_skip_empty_files) - permite omitir archivos vacíos durante la lectura. Deshabilitado de forma predeterminada.
+
+**Véase también**
+
+* [Columnas virtuales](/es/reference/engines/table-engines/index#table_engines-virtual_columns)

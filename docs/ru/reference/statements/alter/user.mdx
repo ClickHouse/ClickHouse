@@ -1,0 +1,119 @@
+---
+description: 'Документация по команде USER'
+sidebarTitle: 'USER'
+slug: /sql-reference/statements/alter/user
+title: 'ALTER USER'
+doc_type: 'reference'
+---
+
+Изменяет учетные записи пользователей в ClickHouse.
+
+Синтаксис:
+
+```sql
+ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]] 
+    [ON CLUSTER cluster_name]
+    [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | {IDENTIFIED | ADD IDENTIFIED} {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [VALID UNTIL datetime]
+    [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
+    [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [VALID UNTIL datetime]
+    [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
+    [DROP ALL PROFILES]
+    [DROP ALL SETTINGS]
+    [DROP SETTINGS variable [,...] ]
+    [DROP PROFILES 'profile_name' [,...] ]
+    [ADD|MODIFY SETTINGS variable [=value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE|CONST|CHANGEABLE_IN_READONLY] [,...] ]
+    [ADD PROFILES 'profile_name' [,...] ]
+```
+
+Чтобы использовать `ALTER USER`, у вас должна быть привилегия [ALTER USER](/ru/reference/statements/grant#access-management).
+
+<div id="grantees-clause">
+  ## Предложение GRANTEES
+</div>
+
+Указывает пользователей или роли, которым этот пользователь может предоставлять [привилегии](/ru/reference/statements/grant#privileges), при условии, что ему самому предоставлены все необходимые права с [GRANT OPTION](/ru/reference/statements/grant#granting-privilege-syntax). Варианты предложения `GRANTEES`:
+
+* `user` — Указывает пользователя, которому этот пользователь может предоставлять привилегии.
+* `role` — Указывает роль, которой этот пользователь может предоставлять привилегии.
+* `ANY` — Этот пользователь может предоставлять привилегии кому угодно. Это значение по умолчанию.
+* `NONE` — Этот пользователь не может предоставлять привилегии никому.
+
+Любого пользователя или роль можно исключить с помощью выражения `EXCEPT`. Например, `ALTER USER user1 GRANTEES ANY EXCEPT user2`. Это означает, что если `user1` предоставлены какие-либо привилегии с `GRANT OPTION`, он сможет предоставлять эти привилегии кому угодно, кроме `user2`.
+
+<div id="examples">
+  ## Примеры
+</div>
+
+Сделайте назначенные роли ролями по умолчанию:
+
+```sql
+ALTER USER user DEFAULT ROLE role1, role2
+```
+
+Если роли не были предварительно назначены пользователю, ClickHouse генерирует исключение.
+
+Назначьте все назначенные роли ролями по умолчанию:
+
+```sql
+ALTER USER user DEFAULT ROLE ALL
+```
+
+Если в будущем пользователю будет назначена какая-либо роль, она автоматически станет ролью по умолчанию.
+
+Сделайте все назначенные роли ролями по умолчанию, кроме `role1` и `role2`:
+
+```sql
+ALTER USER user DEFAULT ROLE ALL EXCEPT role1, role2
+```
+
+Позволяет пользователю с учетной записью `john` предоставлять свои привилегии пользователю с учетной записью `jack`:
+
+```sql
+ALTER USER john GRANTEES jack;
+```
+
+Добавляет пользователю новые методы аутентификации, сохраняя существующие:
+
+```sql
+ALTER USER user1 ADD IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3'
+```
+
+Примечания:
+
+1. Более старые версии ClickHouse могут не поддерживать синтаксис для нескольких методов аутентификации. Поэтому, если на сервере ClickHouse есть такие пользователи и затем его понизить до версии, которая этого не поддерживает, эти пользователи станут непригодны к использованию, а некоторые связанные с ними операции перестанут работать. Чтобы корректно понизить версию, перед этим необходимо настроить всех пользователей так, чтобы у каждого был только один метод аутентификации. Либо, если сервер был понижен без соблюдения надлежащей процедуры, проблемных пользователей следует удалить.
+2. `no_password` не может использоваться вместе с другими методами аутентификации по соображениям безопасности.
+   Поэтому добавить метод аутентификации `no_password` с помощью `ADD` невозможно. Приведённый ниже запрос вызовет ошибку:
+
+```sql
+ALTER USER user1 ADD IDENTIFIED WITH no_password
+```
+
+Если вы хотите сбросить методы аутентификации пользователя и использовать `no_password`, это необходимо указать в приведённой ниже форме замены.
+
+Сбрасывает методы аутентификации и добавляет те, которые указаны в запросе (эффект начального IDENTIFIED без ключевого слова ADD):
+
+```sql
+ALTER USER user1 IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3'
+```
+
+Сбросьте методы аутентификации, оставив только последний добавленный:
+
+```sql
+ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
+```
+
+<div id="valid-until-clause">
+  ## Предложение VALID UNTIL
+</div>
+
+Позволяет указать дату истечения срока действия и, при необходимости, время для метода аутентификации. В качестве parameter принимает строку. Для даты и времени рекомендуется использовать формат `YYYY-MM-DD [hh:mm:ss] [timezone]`. По умолчанию значение этого parameter равно `'infinity'`.
+Условие `VALID UNTIL` можно указывать только вместе с методом аутентификации, кроме случая, когда в запросе не указан ни один метод аутентификации. В этом случае условие `VALID UNTIL` будет применено ко всем существующим методам аутентификации.
+
+Примеры:
+
+* `ALTER USER name1 VALID UNTIL '2025-01-01'`
+* `ALTER USER name1 VALID UNTIL '2025-01-01 12:00:00 UTC'`
+* `ALTER USER name1 VALID UNTIL 'infinity'`
+* `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL'2025-01-01''`

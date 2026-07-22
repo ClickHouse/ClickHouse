@@ -1,0 +1,112 @@
+---
+description: 'تثبيت ClickHouse على توزيعات Redhat/CentOS من Linux'
+keywords: ['ClickHouse', 'تثبيت', 'Redhat', 'CentOS', 'rpm']
+sidebarTitle: 'Redhat/CentOS'
+slug: /install/redhat
+title: 'تثبيت ClickHouse على توزيعات Linux المعتمدة على rpm'
+hide_title: true
+doc_type: 'guide'
+---
+
+import Recommendations from '/snippets/ar/recommendations.mdx';
+
+> يُوصى باستخدام حزم `rpm` الرسمية المجمّعة مسبقًا لكلٍ من **CentOS** و**RedHat** وجميع توزيعات
+> Linux الأخرى المعتمدة على rpm.
+
+<Steps>
+  <Step>
+    ## راجع التوصيات
+
+    <Recommendations />
+  </Step>
+
+  <Step>
+    ## إعداد مستودع RPM
+
+    أضِف المستودع الرسمي بتشغيل الأمر التالي:
+
+    ```bash
+    sudo yum install -y yum-utils
+    sudo yum-config-manager --add-repo https://packages.clickhouse.com/rpm/clickhouse.repo
+    ```
+
+    بالنسبة إلى الأنظمة التي تستخدم مدير الحزم `zypper` ‏(مثل openSUSE وSLES)، شغّل:
+
+    ```bash
+    sudo zypper addrepo -r https://packages.clickhouse.com/rpm/clickhouse.repo -g
+    sudo zypper --gpg-auto-import-keys refresh clickhouse-stable
+    ```
+
+    في الخطوات التالية، يمكنك استبدال `yum install` بـ `zypper install`، وذلك بحسب
+    مدير الحزم الذي تستخدمه.
+  </Step>
+
+  <Step>
+    ## تثبيت ClickHouse server وclickhouse-client
+
+    لتثبيت ClickHouse، شغّل الأوامر التالية:
+
+    ```bash
+    sudo yum install -y clickhouse-server clickhouse-client
+    ```
+
+    * يمكنك استبدال `stable` بـ `lts` لاستخدام [أنواع إصدارات](/ar/resources/support-center/knowledge-base/setup-installation/production) مختلفة بحسب احتياجاتك.
+    * يمكنك تنزيل الحزم وتثبيتها يدويًا من [packages.clickhouse.com/rpm](https://packages.clickhouse.com/rpm/stable).
+    * لتحديد إصدار معيّن، أضِف `-$version` إلى نهاية اسم الحزمة،
+      على سبيل المثال:
+
+    ```bash
+    sudo yum install clickhouse-server-22.8.7.34
+    ```
+  </Step>
+
+  <Step>
+    ## بدء ClickHouse server
+
+    لبدء ClickHouse server، شغّل:
+
+    ```bash
+    sudo systemctl enable clickhouse-server
+    sudo systemctl start clickhouse-server
+    sudo systemctl status clickhouse-server
+    ```
+
+    لبدء clickhouse-client، شغّل:
+
+    ```bash
+    clickhouse-client
+    ```
+
+    إذا كنت قد أعددت كلمة مرور لخادمك، فستحتاج إلى تشغيل:
+
+    ```bash
+    clickhouse-client --password
+    ```
+  </Step>
+
+  <Step>
+    ## تثبيت standalone ClickHouse Keeper
+
+    <Tip>
+      في بيئات production، نوصي بشدة بتشغيل ClickHouse Keeper على عُقد مخصصة.
+      في بيئات الاختبار، إذا قررت تشغيل ClickHouse Server وClickHouse Keeper على الخادم نفسه،
+      فلن تحتاج إلى تثبيت ClickHouse Keeper لأنه يكون مضمّنًا مع ClickHouse server.
+    </Tip>
+
+    لتثبيت `clickhouse-keeper` على خوادم standalone ClickHouse Keeper، شغّل:
+
+    ```bash
+    sudo yum install -y clickhouse-keeper
+    ```
+  </Step>
+
+  <Step>
+    ## تمكين ClickHouse Keeper وبدء تشغيله
+
+    ```bash
+    sudo systemctl enable clickhouse-keeper
+    sudo systemctl start clickhouse-keeper
+    sudo systemctl status clickhouse-keeper
+    ```
+  </Step>
+</Steps>

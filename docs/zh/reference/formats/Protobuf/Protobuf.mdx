@@ -1,0 +1,400 @@
+---
+alias: []
+description: '有关 Protobuf 格式的文档'
+input_format: true
+keywords: ['Protobuf']
+output_format: true
+slug: /interfaces/formats/Protobuf
+title: 'Protobuf'
+doc_type: 'guide'
+---
+
+| 输入 | 输出 | 别名 |
+| -- | -- | -- |
+| ✔  | ✔  |    |
+
+<div id="description">
+  ## 描述
+</div>
+
+`Protobuf` 格式即 [Protocol Buffers](https://protobuf.dev/) 格式。
+
+此格式需要外部 format schema，并且会在查询之间缓存。
+
+ClickHouse 支持：
+
+* `proto2` 和 `proto3` 语法。
+* `Repeated`/`optional`/`required` 字段。
+
+为了确定表列与 Protocol Buffers&#39; 消息类型中各字段之间的对应关系，ClickHouse 会比较它们的名称。
+这种比较不区分大小写，并且字符 `_` (下划线) 和 `.` (点) 被视为等同。
+如果某一列与 Protocol Buffers&#39; 消息中对应字段的类型不同，则会进行必要的转换。
+
+支持嵌套消息。例如，对于以下消息类型中的字段 `z`：
+
+```capnp
+message MessageType {
+  message XType {
+    message YType {
+      int32 z;
+    };
+    repeated YType y;
+  };
+  XType x;
+};
+```
+
+ClickHouse 会尝试查找名为 `x.y.z` 的列 (也可能是 `x_y_z`、`X.y_Z` 等) 。
+
+嵌套消息适合作为[嵌套数据结构](/zh/reference/data-types/nested-data-structures/index)的输入或输出。
+
+像下面这样在 protobuf schema 中定义的默认值不会生效，而是改用[表默认值](/zh/reference/statements/create/table#default_values)：
+
+```capnp
+syntax = "proto2";
+
+message MessageType {
+  optional int32 result_per_page = 3 [default = 10];
+}
+```
+
+如果消息包含 [oneof](https://protobuf.dev/programming-guides/proto3/#oneof)，并且设置了 `input_format_protobuf_oneof_presence`，ClickHouse 会填充一个列，用于指示检测到的是 oneof 中的哪个字段。
+
+```capnp
+syntax = "proto3";
+
+message StringOrString {
+  oneof string_oneof {
+    string string1 = 1;
+    string string2 = 42;
+  }
+}
+```
+
+```sql
+CREATE TABLE string_or_string ( string1 String, string2 String, string_oneof Enum('no'=0, 'hello' = 1, 'world' = 42))  Engine=MergeTree ORDER BY tuple();
+INSERT INTO string_or_string from INFILE '$CURDIR/data_protobuf/String1' SETTINGS format_schema='$SCHEMADIR/string_or_string.proto:StringOrString' FORMAT ProtobufSingle;
+SELECT * FROM string_or_string
+```
+
+```text
+   ┌─────────┬─────────┬──────────────┐
+   │ string1 │ string2 │ string_oneof │
+   ├─────────┼─────────┼──────────────┤
+1. │         │ string2 │ world        │
+   ├─────────┼─────────┼──────────────┤
+2. │ string1 │         │ hello        │
+   └─────────┴─────────┴──────────────┘
+```
+
+表示存在性的列名必须与 oneof 的名称相同。
+支持嵌套消息 (参见 [basic-examples](#basic-examples)) 。也支持空消息。
+允许的类型包括 Int8、UInt8、Int16、UInt16、Int32、UInt32、Int64、UInt64、Enum、Enum8 和 Enum16。
+Enum (以及 Enum8 和 Enum16) 必须包含 oneof&#39; 的所有可能标签，另外还必须包含 0 以表示不存在，字符串表示形式并不重要。
+
+设置 [`input_format_protobuf_oneof_presence`](/zh/reference/settings/formats#input_format_protobuf_oneof_presence) 默认处于禁用状态。
+
+ClickHouse 以 `带长度分隔的` 格式输入和输出 protobuf 消息。
+这意味着每条消息前都应先写入其长度，编码为[可变长度整数 (varint) ](https://developers.google.com/protocol-buffers/docs/encoding#varints)。
+
+<div id="example-usage">
+  ## 使用示例
+</div>
+
+<div id="basic-examples">
+  ### 读写数据
+</div>
+
+<Info>
+  **示例文件**
+
+  本示例中使用的文件可在 [示例仓库](https://github.com/ClickHouse/formats/ProtoBuf) 中找到
+</Info>
+
+在本示例中，我们将把 `protobuf_message.bin` 文件中的一些数据读入 ClickHouse 表中，然后再使用 `Protobuf` 格式将其写回名为 `protobuf_message_from_clickhouse.bin` 的文件。
+
+给定文件 `schemafile.proto`：
+
+```capnp
+syntax = "proto3";
+
+message MessageType {
+  string name = 1;
+  string surname = 2;
+  uint32 birthDate = 3;
+  repeated string phoneNumbers = 4;
+};
+```
+
+<Accordion title="生成二进制文件">
+  如果你已经知道如何使用 `Protobuf` 格式序列化和反序列化数据，则可以跳过此步骤。
+
+  我们将使用 Python 将一些数据序列化到 `protobuf_message.bin` 中，并将其读入 ClickHouse。
+  如果你想使用其他语言，请参见：[&quot;如何在常见语言中读取/写入带长度分隔的 Protobuf 消息&quot;](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages)。
+
+  运行以下命令，在
+  与 `schemafile.proto` 相同的目录中生成一个名为 `schemafile_pb2.py` 的 Python 文件。该文件包含
+  表示你的 `UserData` Protobuf 消息的 Python 类：
+
+  ```bash
+  protoc --python_out=. schemafile.proto
+  ```
+
+  现在，在与 `schemafile_pb2.py` 相同的
+  目录中创建一个名为 `generate_protobuf_data.py` 的新 Python 文件。将以下代码粘贴进去：
+
+  ```python
+  import schemafile_pb2  # 由 'protoc' 生成的模块
+  from google.protobuf import text_format
+  from google.protobuf.internal.encoder import _VarintBytes # 导入内部 varint 编码器
+
+  def create_user_data_message(name, surname, birthDate, phoneNumbers):
+      """
+      创建并填充一个 UserData Protobuf 消息。
+      """
+      message = schemafile_pb2.MessageType()
+      message.name = name
+      message.surname = surname
+      message.birthDate = birthDate
+      message.phoneNumbers.extend(phoneNumbers)
+      return message
+
+  # 示例用户数据
+  data_to_serialize = [
+      {"name": "Aisha", "surname": "Khan", "birthDate": 19920815, "phoneNumbers": ["(555) 247-8903", "(555) 612-3457"]},
+      {"name": "Javier", "surname": "Rodriguez", "birthDate": 20001015, "phoneNumbers": ["(555) 891-2046", "(555) 738-5129"]},
+      {"name": "Mei", "surname": "Ling", "birthDate": 19980616, "phoneNumbers": ["(555) 956-1834", "(555) 403-7682"]},
+  ]
+
+  output_filename = "protobuf_messages.bin"
+
+  # 以二进制写入模式 ('wb') 打开二进制文件
+  with open(output_filename, "wb") as f:
+      for item in data_to_serialize:
+          # 为当前用户创建一个 Protobuf 消息实例
+          message = create_user_data_message(
+              item["name"],
+              item["surname"],
+              item["birthDate"],
+              item["phoneNumbers"]
+          )
+
+          # 序列化消息
+          serialized_data = message.SerializeToString()
+
+          # 获取序列化数据的长度
+          message_length = len(serialized_data)
+
+          # 使用 Protobuf 库内部的 _VarintBytes 对长度进行编码
+          length_prefix = _VarintBytes(message_length)
+
+          # 写入长度前缀
+          f.write(length_prefix)
+          # 写入序列化后的消息数据
+          f.write(serialized_data)
+
+  print(f"Protobuf messages (length-delimited) written to {output_filename}")
+
+  # --- 可选：验证（读回并打印）---
+  # 为了读回数据，我们还将使用 Protobuf 内部的 varint 解码器。
+  from google.protobuf.internal.decoder import _DecodeVarint32
+
+  print("\n--- Verifying by reading back ---")
+  with open(output_filename, "rb") as f:
+      buf = f.read() # 将整个文件读入缓冲区，以便更轻松地进行 varint 解码
+      n = 0
+      while n < len(buf):
+          # 解码 varint 长度前缀
+          msg_len, new_pos = _DecodeVarint32(buf, n)
+          n = new_pos
+
+          # 提取消息数据
+          message_data = buf[n:n+msg_len]
+          n += msg_len
+
+          # 解析消息
+          decoded_message = schemafile_pb2.MessageType()
+          decoded_message.ParseFromString(message_data)
+          print(text_format.MessageToString(decoded_message, as_utf8=True))
+  ```
+
+  现在从命令行运行该脚本。建议你在
+  Python 虚拟环境中运行它，例如使用 `uv`：
+
+  ```bash
+  uv venv proto-venv
+  source proto-venv/bin/activate
+  ```
+
+  你需要安装以下 Python 库：
+
+  ```bash
+  uv pip install --upgrade protobuf
+  ```
+
+  运行脚本以生成二进制文件：
+
+  ```bash
+  python generate_protobuf_data.py
+  ```
+</Accordion>
+
+创建一个与 schema 匹配的 ClickHouse 表：
+
+```sql
+CREATE DATABASE IF NOT EXISTS test;
+CREATE TABLE IF NOT EXISTS test.protobuf_messages (
+  name String,
+  surname String,
+  birthDate UInt32,
+  phoneNumbers Array(String)
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+```
+
+通过命令行将数据插入表中：
+
+```bash
+cat protobuf_messages.bin | clickhouse-client --query "INSERT INTO test.protobuf_messages SETTINGS format_schema='schemafile:MessageType' FORMAT Protobuf"
+```
+
+您还可以使用 `Protobuf` 格式将数据重新写入二进制文件：
+
+```sql
+SELECT * FROM test.protobuf_messages INTO OUTFILE 'protobuf_message_from_clickhouse.bin' FORMAT Protobuf SETTINGS format_schema = 'schemafile:MessageType'
+```
+
+借助你的 Protobuf schema，你现在可以对 ClickHouse 写入文件 `protobuf_message_from_clickhouse.bin` 的数据进行反序列化。
+
+<div id="basic-examples-cloud">
+  ### 使用 ClickHouse Cloud 读写数据
+</div>
+
+在 ClickHouse Cloud 中，你无法上传 Protobuf schema 文件。不过，可以使用 `format_protobuf_schema`
+设置在查询中直接指定 schema。本示例将说明如何从本地
+机器读取序列化数据，并将其插入 ClickHouse Cloud 中的表。
+
+与前一个示例一样，请根据 Protobuf schema 在 ClickHouse Cloud 中创建表：
+
+```sql
+CREATE DATABASE IF NOT EXISTS test;
+CREATE TABLE IF NOT EXISTS test.protobuf_messages (
+  name String,
+  surname String,
+  birthDate UInt32,
+  phoneNumbers Array(String)
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+```
+
+设置 `format_schema_source` 用于指定设置 `format_schema` 的来源
+
+可能的取值：
+
+* &#39;file&#39; (默认) ：Cloud 中不支持
+* &#39;string&#39;：`format_schema` 是 schema 的字面内容。
+* &#39;query&#39;：`format_schema` 是用于获取 schema 的查询。
+
+<div id="format-schema-source-string">
+  ### `format_schema_source='string'`
+</div>
+
+将数据插入 ClickHouse Cloud，并以字符串形式指定 schema，运行：
+
+```bash
+cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --password <password> --query "INSERT INTO testing.protobuf_messages SETTINGS format_schema_source='syntax = "proto3";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};', format_schema='schemafile:MessageType' FORMAT Protobuf"
+```
+
+查询已插入表中的数据：
+
+```sql
+clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
+```
+
+```response
+Aisha Khan 19920815 ['(555) 247-8903','(555) 612-3457']
+Javier Rodriguez 20001015 ['(555) 891-2046','(555) 738-5129']
+Mei Ling 19980616 ['(555) 956-1834','(555) 403-7682']
+```
+
+<div id="format-schema-source-query">
+  ### `format_schema_source='query'`
+</div>
+
+你也可以将 Protobuf schema 存储在表中。
+
+在 ClickHouse Cloud 中创建一个用于插入数据的表：
+
+```sql
+CREATE TABLE testing.protobuf_schema (
+  schema String
+)
+ENGINE = MergeTree()
+ORDER BY tuple();
+```
+
+```sql
+INSERT INTO testing.protobuf_schema VALUES ('syntax = "proto3";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};');
+```
+
+将数据插入 ClickHouse Cloud，并将 schema 指定为要执行的查询：
+
+```bash
+cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --password <password> --query "INSERT INTO testing.protobuf_messages SETTINGS format_schema_source='SELECT schema FROM testing.protobuf_schema', format_schema='schemafile:MessageType' FORMAT Protobuf"
+```
+
+查询已插入到表中的数据：
+
+```sql
+clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
+```
+
+```response
+Aisha Khan 19920815 ['(555) 247-8903','(555) 612-3457']
+Javier Rodriguez 20001015 ['(555) 891-2046','(555) 738-5129']
+Mei Ling 19980616 ['(555) 956-1834','(555) 403-7682']
+```
+
+<div id="using-autogenerated-protobuf-schema">
+  ### 使用自动生成的 schema
+</div>
+
+如果你的数据没有外部 Protobuf schema，仍然仍可借助自动生成的 schema 以 Protobuf 格式导出/导入数据。
+为此，请使用 `format_protobuf_use_autogenerated_schema` 设置。
+
+例如：
+
+```sql
+SELECT * FROM test.hits format Protobuf SETTINGS format_protobuf_use_autogenerated_schema=1
+```
+
+在这种情况下，ClickHouse 将使用函数
+[`structureToProtobufSchema`](/zh/reference/functions/regular-functions/other-functions#structureToProtobufSchema)根据表结构自动生成 Protobuf schema。随后，它会使用该 schema 以 Protobuf 格式序列化数据。
+
+你也可以使用自动生成的 schema 读取 Protobuf 文件。在这种情况下，该文件必须使用相同的 schema 创建：
+
+```bash
+$ cat hits.bin | clickhouse-client --query "INSERT INTO test.hits SETTINGS format_protobuf_use_autogenerated_schema=1 FORMAT Protobuf"
+```
+
+设置 [`format_protobuf_use_autogenerated_schema`](/zh/reference/settings/formats#format_protobuf_use_autogenerated_schema) 默认启用，并在未设置 [`format_schema`](/zh/reference/settings/formats#format_schema) 时生效。
+
+你也可以在输入/输出过程中，使用设置 [`output_format_schema`](/zh/reference/settings/formats#output_format_schema) 将自动生成的 schema 保存到文件中。例如：
+
+```sql
+SELECT * FROM test.hits format Protobuf SETTINGS format_protobuf_use_autogenerated_schema=1, output_format_schema='path/to/schema/schema.proto'
+```
+
+在这种情况下，自动生成的 Protobuf schema 会保存到文件 `path/to/schema/schema.capnp` 中。
+
+<div id="drop-protobuf-cache">
+  ### 清除 Protobuf 缓存
+</div>
+
+要重新加载通过 [`format_schema_path`](/zh/reference/settings/server-settings/settings#format_schema_path) 加载的 Protobuf schema，请使用 [`SYSTEM DROP ... FORMAT CACHE`](/zh/reference/statements/system#system-drop-schema-format) 语句。
+
+```sql
+SYSTEM DROP FORMAT SCHEMA CACHE FOR Protobuf
+```

@@ -1,0 +1,109 @@
+---
+sidebarTitle: 'Astrato'
+slug: /integrations/astrato
+keywords: ['ClickHouse', 'Power BI', '连接', '集成', 'UI', '数据应用', '数据可视化', '嵌入式分析', 'Astrato']
+description: 'Astrato 将分析能力交到每位用户手中，让他们能够自行构建仪表盘、报表和数据应用，并在无需 IT 协助的情况下解答数据问题，从而为企业和数据型业务带来真正的自助式 BI。Astrato 可加快采用、提升决策速度，并在一个平台中统一分析、嵌入式分析、数据录入和数据应用。Astrato 将行动与分析融为一体，支持实时写回、与 ML 模型交互，并借助 Astrato 中的 SQL 下推支持和 AI 加速分析——超越传统仪表盘。'
+title: '将 Astrato 连接到 ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
+import { Image } from "/snippets/zh/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+Astrato 使用下推 SQL 直接查询 ClickHouse Cloud 或本地部署。这意味着你可以借助 ClickHouse 业界领先的性能，访问所需的全部数据。
+
+<div id="connection-data-required">
+  ## 所需的连接信息
+</div>
+
+设置数据连接时，您需要准备以下信息：
+
+* 数据连接：主机名、端口
+
+* 数据库凭据：用户名、密码
+
+<ConnectionDetails />
+
+<div id="creating-the-data-connection-to-clickhouse">
+  ## 创建到 ClickHouse 的数据连接
+</div>
+
+* 在侧边栏中选择 **Data**，然后选择 **数据连接** 选项卡
+   (或直接访问此链接：https://app.astrato.io/data/sources) 
+  ​
+* 点击屏幕右上角的 **New Data Connection** 按钮。
+
+<Image size="sm" img="/images/integrations/data-visualization/astrato_1_dataconnection.webp" alt="Astrato 数据连接" border />
+
+* 选择 **ClickHouse**。
+
+<Image size="sm" img="/images/integrations/data-visualization/astrato_2a_clickhouse_connection.webp" alt="Astrato ClickHouse 数据连接" border />
+
+* 在连接对话框中填写必填字段。
+
+<Image size="sm" img="/images/integrations/data-visualization/astrato_2b_clickhouse_connection.webp" alt="Astrato 连接到 ClickHouse 的必填字段" border />
+
+* 点击 **Test Connection**。如果连接成功，请为数据连接命名，然后点击 **Next**。
+
+* 设置数据连接的 **用户访问权限**，然后点击 **connect**。
+
+<Image size="md" img="/images/integrations/data-visualization/astrato_3_user_access.webp" alt="Astrato 连接到 ClickHouse 的用户访问权限" border />
+
+* 连接创建完成后，也会同时创建一个数据视图。
+
+<Note>
+  如果创建了重复项，数据源名称后会附加一个时间戳。
+</Note>
+
+<div id="creating-a-semantic-model--data-view">
+  ## 创建语义模型 / 数据视图
+</div>
+
+在我们的数据视图编辑器中，你会看到 ClickHouse 中所有的表和 schema，选择其中一些即可开始。
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_4a_clickhouse_data_view.webp" alt="Astrato 连接到 ClickHouse 用户访问权限" border />
+
+选择好数据后，接下来定义 **数据视图**。点击网页右上角的 define。
+
+在这里，你可以对数据进行 join，还可以**创建统一治理的维度和度量指标**，非常适合在不同团队之间保持业务逻辑的一致性。
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_4b_clickhouse_data_view_joins.webp" alt="Astrato 连接到 ClickHouse 用户访问权限" border />
+
+**Astrato 会智能推荐 joins**，基于你的元数据进行建议，包括利用 ClickHouse 中的键。借助这些推荐的 joins，你可以直接基于治理良好的 ClickHouse 数据轻松上手，无需从头开始。我们还会展示 **join 质量**，方便你详细审查 Astrato 提供的所有建议。
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_4c_clickhouse_completed_data_view.webp" alt="Astrato 连接到 ClickHouse 用户访问权限" border />
+
+<div id="creating-a-dashboard">
+  ## 创建仪表板
+</div>
+
+只需几个步骤，你就可以在 Astrato 中创建第一个图表。
+
+1. 打开可视化面板
+2. 选择一种可视化 (先从柱状图开始) 
+3. 添加维度
+4. 添加度量
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_5a_clickhouse_build_chart.webp" alt="Astrato 连接到 ClickHouse 的用户访问权限" border />
+
+<div id="view-generated-sql-supporting-each-visualization">
+  ### 查看支持各个可视化的生成 SQL
+</div>
+
+透明性和准确性是 Astrato 的核心。我们确保每个生成的查询都清晰可见，让您始终拥有完全的控制权。所有计算都直接在 ClickHouse 中完成，在发挥其速度优势的同时，兼顾强大的安全性和治理能力。
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_5b_clickhouse_view_sql.webp" alt="Astrato 连接到 ClickHouse 用户访问权限" border />
+
+<div id="example-completed-dashboard">
+  ### 示例完整仪表板
+</div>
+
+现在，距离打造一个美观且完整的仪表板或数据应用已经不远了。想查看更多我们的成果，请访问官网上的演示画廊：https://astrato.io/gallery
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_5c_clickhouse_complete_dashboard.webp" alt="Astrato 连接到 ClickHouse 用户访问权限" border />

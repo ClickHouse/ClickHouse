@@ -404,10 +404,12 @@ SELECT toDate('2106-02-07') + toTime('06:28:15');
 SELECT toDate('2106-02-07') + toTime('06:28:16'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 -- Date + Time -> DateTime: Date max far exceeds DateTime range
 SELECT toDate('2149-06-06') + toTime('00:00:00'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
--- Date32 + Time -> DateTime64(0): underflow below 1900
-SELECT toDate32('1900-01-01') + toTime(-1); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
--- Date32 + Time64 -> DateTime64: underflow below 1900
-SELECT toDate32('1900-01-01') + toTime64('-00:00:00.000001', 6); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+-- Date32 + Time -> DateTime64(0): below 1900 is now representable by the extended DateTime64 range
+SELECT toDate32('1900-01-01') + toTime(-1);
+1899-12-31 23:59:59
+-- Date32 + Time64 -> DateTime64: below 1900 is now representable by the extended DateTime64 range
+SELECT toDate32('1900-01-01') + toTime64('-00:00:00.000001', 6);
+1899-12-31 23:59:59.999999
 -- DateTime64(9) specific boundary: lower limit (1900-01-01 midnight)
 SELECT toDate32('1900-01-01') + toTime64('00:00:00.000000000', 9) AS dt, toTypeName(dt);
 1900-01-01 00:00:00.000000000	DateTime64(9)
@@ -466,7 +468,7 @@ SELECT toDate('2149-06-06') + toTime('23:59:59');
 2106-02-07 06:28:15
 -- Date32 + Time64: underflow saturates to DateTime64 min
 SELECT toDate32('1900-01-01') + toTime64('-00:00:00.000001', 6);
-1900-01-01 00:00:00.000000
+1899-12-31 23:59:59.999999
 -- DateTime64(9) overflow saturates to the last representable value
 SELECT toDate32('2262-04-11') + toTime64('23:47:16.854775808', 9);
 2262-04-11 23:47:16.854775807

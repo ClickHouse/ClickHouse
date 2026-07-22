@@ -1,0 +1,69 @@
+---
+title: 'Instantánea paralelo en Postgres ClickPipe'
+description: 'Documento que explica el instantánea paralelo en Postgres ClickPipe'
+slug: /integrations/clickpipes/postgres/parallel_initial_load
+sidebarTitle: 'Cómo funciona el instantánea paralelo'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ingestión de datos', 'sincronización en tiempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Este documento explica cómo funciona la instantánea/carga inicial en paralelo en Postgres ClickPipe y describe los parámetros de la instantánea que pueden usarse para controlarla.
+
+<div id="overview-pg-snapshot">
+  ## Descripción general
+</div>
+
+La carga inicial es la primera fase de un ClickPipe de CDC, en la que ClickPipe sincroniza en ClickHouse los datos históricos de las tablas de la base de datos de origen antes de iniciar CDC. En muchos casos, los desarrolladores realizan este proceso en un solo hilo, por ejemplo, usando pg&#95;dump o pg&#95;restore, o bien utilizando un único hilo para leer de la base de datos de origen y escribir en ClickHouse.
+Sin embargo, el Postgres ClickPipe puede paralelizar este proceso, lo que puede acelerar significativamente la carga inicial.
+
+<div id="ctid-pg-snapshot">
+  ### Columna CTID en Postgres
+</div>
+
+En Postgres, cada fila de una tabla tiene un identificador único llamado CTID. Se trata de una columna del sistema que no es visible de forma predeterminada, pero puede usarse para identificar de forma única las filas de una tabla. El CTID es una combinación del número de bloque y el desplazamiento dentro de ese bloque, lo que permite acceder de forma eficiente a las filas.
+
+<div id="logical-partitioning-pg-snapshot">
+  ### Particionamiento lógico
+</div>
+
+El Postgres ClickPipe usa la columna CTID para particionar lógicamente las tablas de origen. Para obtener las particiones, primero realiza un COUNT(*) en la tabla de origen y, a continuación, una consulta con función de ventana para obtener los rangos de CTID de cada partición. Esto permite que el ClickPipe lea la tabla de origen en paralelo, y que cada partición se procese en un hilo independiente.
+
+Veamos los siguientes parámetros:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/snapshot_params.webp" alt="Parámetros de la instantánea" size="md" />
+
+<div id="numrows-pg-snapshot">
+  #### Número de filas de la instantánea por partición
+</div>
+
+Esta configuración controla cuántas filas constituyen una partición. El ClickPipe leerá la tabla de origen en fragmentos de este tamaño, y los fragmentos se procesarán en paralelo según el paralelismo de la carga inicial configurado. El valor predeterminado es de 100.000 filas por partición.
+
+<div id="parallelism-pg-snapshot">
+  #### Paralelismo de la carga inicial
+</div>
+
+Esta configuración controla cuántas particiones se procesan en paralelo. El valor predeterminado es 4, lo que significa que ClickPipe leerá 4 particiones de la tabla de origen en paralelo. Este valor puede aumentarse para acelerar la carga inicial, pero se recomienda mantenerlo en un valor razonable según las especificaciones de la instancia de origen, para evitar sobrecargar la base de datos de origen. ClickPipe ajustará automáticamente el número de particiones en función del tamaño de la tabla de origen y del número de filas por partición.
+
+<div id="tables-parallel-pg-snapshot">
+  #### Número de tablas de la instantánea procesadas en paralelo
+</div>
+
+En realidad, no está relacionado con la instantánea en paralelo, pero esta configuración controla cuántas tablas se procesan en paralelo durante la carga inicial. El valor predeterminado es 1. Ten en cuenta que esto se suma al paralelismo de las particiones, por lo que, si tienes 4 particiones y 2 tablas, el ClickPipe leerá 8 particiones en paralelo.
+
+<div id="monitoring-parallel-pg-snapshot">
+  ### Monitoreo de la instantánea paralela en Postgres
+</div>
+
+Puede analizar **pg&#95;stat&#95;activity** para ver la instantánea paralela en acción. ClickPipe crea múltiples conexiones a la base de datos de origen, cada una leyendo una partición diferente de la tabla de origen. Si ve consultas **FETCH** con distintos rangos de CTID, significa que ClickPipe está leyendo las tablas de origen. Aquí también puede ver el COUNT(*) y la consulta de particionado.
+
+<div id="limitations-parallel-pg-snapshot">
+  ### Limitaciones
+</div>
+
+* Los parámetros de la instantánea no se pueden editar después de crear el ClickPipe. Si quiere cambiarlos, tendrá que crear uno nuevo.
+* Al añadir tablas a un ClickPipe existente, no puede cambiar los parámetros de la instantánea. El ClickPipe usará los parámetros existentes para las nuevas tablas.

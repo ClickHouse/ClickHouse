@@ -1,0 +1,72 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/postgresql
+title: 'مصدر قاموس PostgreSQL'
+sidebarTitle: 'PostgreSQL'
+description: 'هيّئ PostgreSQL كمصدر قاموس في ClickHouse.'
+doc_type: 'reference'
+---
+
+مثال على الإعدادات:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(POSTGRESQL(
+        port 5432
+        host 'postgresql-hostname'
+        user 'postgres_user'
+        password 'postgres_password'
+        db 'db_name'
+        table 'table_name'
+        replica(host 'example01-1' port 5432 priority 1)
+        replica(host 'example01-2' port 5432 priority 2)
+        where 'id=10'
+        invalidate_query 'SQL_QUERY'
+        query 'SELECT id, value_1, value_2 FROM db_name.table_name'
+    ))
+    ```
+  </Tab>
+
+  <Tab title="ملف الإعدادات">
+    ```xml
+    <source>
+      <postgresql>
+          <host>postgresql-hostname</hoat>
+          <port>5432</port>
+          <user>clickhouse</user>
+          <password>qwerty</password>
+          <db>db_name</db>
+          <table>table_name</table>
+          <where>id=10</where>
+          <invalidate_query>SQL_QUERY</invalidate_query>
+          <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
+      </postgresql>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+حقول الإعدادات:
+
+| الإعداد                | الوصف                                                                                                                                                      |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host`                 | المضيف على خادم PostgreSQL. يمكنك تحديده لجميع النسخ المتماثلة، أو لكل واحدة منها على حدة (داخل `<replica>`).                                              |
+| `port`                 | المنفذ على خادم PostgreSQL. يمكنك تحديده لجميع النسخ المتماثلة، أو لكل واحدة منها على حدة (داخل `<replica>`).                                              |
+| `user`                 | اسم مستخدم PostgreSQL. يمكنك تحديده لجميع النسخ المتماثلة، أو لكل واحدة منها على حدة (داخل `<replica>`).                                                   |
+| `password`             | كلمة مرور مستخدم PostgreSQL. يمكنك تحديدها لجميع النسخ المتماثلة، أو لكل واحدة منها على حدة (داخل `<replica>`).                                            |
+| `replica`              | قسم إعدادات النسخة المتماثلة. يمكن أن يوجد أكثر من قسم.                                                                                                    |
+| `replica/host`         | مضيف PostgreSQL.                                                                                                                                           |
+| `replica/port`         | منفذ PostgreSQL.                                                                                                                                           |
+| `replica/priority`     | أولوية النسخة المتماثلة. عند محاولة الاتصال، يستعرض ClickHouse النسخ المتماثلة حسب ترتيب الأولوية. كلما كان الرقم أصغر، كانت الأولوية أعلى.                |
+| `db`                   | اسم قاعدة البيانات.                                                                                                                                        |
+| `table`                | اسم الجدول.                                                                                                                                                |
+| `where`                | معايير التحديد. صياغة الشروط هي نفسها المستخدمة في عبارة `WHERE` في PostgreSQL. على سبيل المثال، `id > 10 AND id < 20`. اختياري.                           |
+| `invalidate_query`     | استعلام للتحقق من حالة القاموس. اختياري. اقرأ المزيد في قسم [Refreshing dictionary data using LIFETIME](/ar/reference/statements/create/dictionary/lifetime). |
+| `background_reconnect` | أعد الاتصال بالنسخة المتماثلة في الخلفية إذا فشل الاتصال. اختياري.                                                                                         |
+| `query`                | استعلام مخصص. اختياري.                                                                                                                                     |
+
+<Note>
+  لا يمكن استخدام الحقلين `table` أو `where` مع الحقل `query` في الوقت نفسه. ويجب التصريح بأحد الحقلين `table` أو `query`.
+</Note>

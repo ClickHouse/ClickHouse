@@ -1,0 +1,143 @@
+---
+description: 'ClickHouse が ODBC 経由で外部データベースに接続できるようにします。'
+sidebarTitle: 'ODBC'
+slug: /engines/table-engines/integrations/odbc
+title: 'ODBC テーブルエンジン'
+doc_type: 'reference'
+---
+
+<CloudNotSupportedBadge />
+
+ClickHouse が [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity) 経由で外部データベースに接続できるようにします。
+
+ODBC 接続を安全に実現するため、ClickHouse は `clickhouse-odbc-bridge` という別プロセスを使用します。ODBC ドライバを `clickhouse-server` から直接読み込むと、ドライバの問題によって ClickHouse サーバーがクラッシュする可能性があります。ClickHouse は必要に応じて `clickhouse-odbc-bridge` を自動的に起動します。ODBC ブリッジプログラムは、`clickhouse-server` と同じパッケージに含まれています。
+
+このエンジンは [Nullable](/ja/reference/data-types/nullable) データ型をサポートしています。
+
+<div id="creating-a-table">
+  ## テーブルの作成
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1],
+    name2 [type2],
+    ...
+)
+ENGINE = ODBC(datasource, external_database, external_table)
+```
+
+[CREATE TABLE](/ja/reference/statements/create/table) クエリの詳細な説明を参照してください。
+
+テーブル構造は、元のテーブルの構造と異なる場合があります。
+
+* カラム名は元のテーブルと同じである必要がありますが、それらの一部のカラムだけを任意の順序で使用できます。
+* カラムの型は、元のテーブルのものと異なっていてもかまいません。ClickHouse は値を ClickHouse のデータ型に [cast](/ja/reference/functions/regular-functions/type-conversion-functions#CAST) しようとします。
+* [external&#95;table&#95;functions&#95;use&#95;nulls](/ja/reference/settings/session-settings#external_table_functions_use_nulls) 設定は、Nullable カラムの扱い方を定義します。デフォルト値: 1。0 の場合、テーブル関数は Nullable カラムを作成せず、null の代わりにデフォルト値を挿入します。これは、配列内の NULL 値にも適用されます。
+
+**エンジンパラメータ**
+
+* `datasource` — `odbc.ini` ファイル内の接続設定を含むセクション名。
+* `external_database` — 外部 DBMS 内のデータベース名。
+* `external_table` — `external_database` 内のテーブル名。
+
+これらのパラメータは、[named collections](/ja/concepts/features/configuration/server-config/named-collections) を使用して渡すこともできます。
+
+<div id="usage-example">
+  ## 使用例
+</div>
+
+**ODBC 経由でローカルの MySQL インストールからデータを取得する**
+
+この例は、Ubuntu Linux 18.04 および MySQL server 5.7 で検証されています。
+
+unixODBC と MySQL Connector がインストールされていることを確認してください。
+
+デフォルトでは (パッケージからインストールした場合) 、ClickHouse は `clickhouse` ユーザーとして起動します。そのため、MySQL server 側でこのユーザーを作成し、設定する必要があります。
+
+```bash
+$ sudo mysql
+```
+
+```sql
+mysql> CREATE USER 'clickhouse'@'localhost' IDENTIFIED BY 'clickhouse';
+mysql> GRANT ALL PRIVILEGES ON *.* TO 'clickhouse'@'localhost' WITH GRANT OPTION;
+```
+
+次に、`/etc/odbc.ini` で接続設定を行います。
+
+```bash
+$ cat /etc/odbc.ini
+[mysqlconn]
+DRIVER = /usr/local/lib/libmyodbc5w.so
+SERVER = 127.0.0.1
+PORT = 3306
+DATABASE = test
+USER = clickhouse
+PASSWORD = clickhouse
+```
+
+unixODBC に含まれる `isql` ユーティリティを使用して、接続を確認できます。
+
+```bash
+$ isql -v mysqlconn
++-------------------------+
+| Connected!                            |
+|                                       |
+...
+```
+
+MySQL のテーブル:
+
+```text
+mysql> CREATE DATABASE test;
+Query OK, 1 row affected (0,01 sec)
+
+mysql> CREATE TABLE `test`.`test` (
+    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+    ->   `int_nullable` INT NULL DEFAULT NULL,
+    ->   `float` FLOAT NOT NULL,
+    ->   `float_nullable` FLOAT NULL DEFAULT NULL,
+    ->   PRIMARY KEY (`int_id`));
+Query OK, 0 rows affected (0,09 sec)
+
+mysql> insert into test.test (`int_id`, `float`) VALUES (1,2);
+Query OK, 1 row affected (0,00 sec)
+
+mysql> select * from test.test;
++------+----------+-----+----------+
+| int_id | int_nullable | float | float_nullable |
++------+----------+-----+----------+
+|      1 |         NULL |     2 |           NULL |
++------+----------+-----+----------+
+1 row in set (0,00 sec)
+```
+
+MySQL テーブルからデータを取得する ClickHouse のテーブル:
+
+```sql
+CREATE TABLE odbc_t
+(
+    `int_id` Int32,
+    `float_nullable` Nullable(Float32)
+)
+ENGINE = ODBC('DSN=mysqlconn', 'test', 'test')
+```
+
+```sql
+SELECT * FROM odbc_t
+```
+
+```text
+┌─int_id─┬─float_nullable─┐
+│      1 │           ᴺᵁᴸᴸ │
+└────────┴────────────────┘
+```
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [ODBC Dictionary](/ja/reference/statements/create/dictionary/sources/odbc)
+* [ODBC テーブル関数](/ja/reference/functions/table-functions/odbc)

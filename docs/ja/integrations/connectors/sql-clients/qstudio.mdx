@@ -1,0 +1,80 @@
+---
+slug: /integrations/qstudio
+sidebarTitle: 'QStudio'
+description: 'QStudio は無料の SQL ツールです。'
+title: 'QStudio を ClickHouse に接続'
+doc_type: 'guide'
+keywords: ['qstudio', 'SQL クライアント', 'データベースツール', 'クエリツール', 'IDE']
+integration:
+  - support_level: 'community'
+  - category: 'sql_client'
+---
+
+import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+QStudioは無料のSQL GUIで、SQLスクリプトの実行、テーブルの簡単な閲覧、グラフの作成、結果のエクスポートを行えます。あらゆるオペレーティングシステム上で、あらゆるデータベースに対応しています。
+
+QStudioはJDBCを使用してClickHouseに接続します。
+
+<div id="1-gather-your-clickhouse-details">
+  ## 1. ClickHouse の接続情報を確認する
+</div>
+
+QStudio は HTTP(S) 経由の JDBC を使用して ClickHouse に接続します。必要な情報は次のとおりです。
+
+* エンドポイント
+* ポート番号
+* ユーザー名
+* パスワード
+
+<ConnectionDetails />
+
+<div id="2-download-qstudio">
+  ## 2. QStudio をダウンロードする
+</div>
+
+QStudio は https://www.timestored.com/qstudio/download/ からダウンロードできます。
+
+<div id="3-add-a-database">
+  ## 3. データベースを追加する
+</div>
+
+* QStudio を初めて開いたら、メニューの **Server-&gt;Add Server** をクリックするか、ツールバーのサーバー追加ボタンをクリックします。
+* 次に、接続情報を設定します。
+
+<Image img="/images/integrations/sql-clients/qstudio-add-connection.webp" size="lg" border alt="ClickHouse 接続設定を表示している QStudio のデータベース接続設定画面" />
+
+1. Server Type: Clickhouse.com
+2. Host には必ず `https://` を含めてください
+   Host: https://abc.def.clickhouse.cloud
+   Port: 8443
+3. Username: default
+   Password: `XXXXXXXXXXX`
+4. Add をクリックします
+
+QStudio が ClickHouse JDBCドライバーがインストールされていないことを検出すると、ダウンロードするかどうかを案内します。
+
+<div id="4-query-clickhouse">
+  ## 4. ClickHouse にクエリを実行する
+</div>
+
+* クエリエディタを開いてクエリを実行します。クエリは次の方法で実行できます。
+
+* Ctrl + e - 選択したテキストを実行
+
+* Ctrl + Enter - 現在の行を実行
+
+* クエリの例:
+
+<Image img="/images/integrations/sql-clients/qstudio-running-query.webp" size="lg" border alt="ClickHouse データベースに対するサンプル SQL クエリの実行を示す QStudio インターフェイス" />
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+QStudio の機能については [QStudio](https://www.timestored.com/qstudio) を、ClickHouse の機能については [ClickHouse ドキュメント](/ja/) をご覧ください。

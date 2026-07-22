@@ -1,0 +1,45 @@
+---
+description: 'ClickHouse に接続するためのネットワークインターフェイス、ドライバー、ツールの概要'
+keywords: ['clickhouse', 'network', 'interfaces', 'http', 'tcp', 'grpc', 'command-line',
+  'client', 'jdbc', 'odbc', 'driver']
+sidebarTitle: '概要'
+slug: /interfaces/overview
+title: 'ドライバーとインターフェイス'
+doc_type: 'reference'
+---
+
+ClickHouse は 2 つのネットワークインターフェイスを提供しています (セキュリティをさらに高めるために、必要に応じて TLS で保護できます) 。
+
+* [HTTP](/ja/concepts/features/interfaces/http)：ドキュメントが整備されており、直接利用しやすいインターフェイスです。
+* [Native TCP](/ja/concepts/features/interfaces/tcp)：オーバーヘッドが少ないインターフェイスです。
+
+ほとんどの場合、これらを直接扱うのではなく、適切なツールやライブラリを使用することを推奨します。以下は ClickHouse が公式にサポートしているものです。
+
+* [コマンドラインクライアント](/ja/concepts/features/interfaces/cli)
+* [JDBC driver](/ja/concepts/features/interfaces/jdbc)
+* [ODBC ドライバ](/ja/concepts/features/interfaces/odbc)
+* [C++ client library](/ja/concepts/features/interfaces/cpp)
+
+ClickHouse は 2 つの RPC プロトコルもサポートしています。
+
+* [gRPC protocol](/ja/concepts/features/interfaces/grpc)：ClickHouse 向けに特別に設計されたプロトコルです。
+* [Apache Arrow Flight](/ja/concepts/features/interfaces/arrowflight)。
+
+ClickHouse server は、上級ユーザー向けの組み込みのビジュアルインターフェイスを提供しています。
+
+* Play UI: ブラウザーで `/play` を開きます;
+* 高度なダッシュボード: ブラウザーで `/dashboard` を開きます;
+* ClickHouse エンジニア向けのバイナリシンボルビューアー: ブラウザーで `/binary` を開きます;
+* オブザーバビリティ向けの ClickStack UI: ブラウザーで `/clickstack` を開きます;
+
+<Info>
+  **ClickStack**
+
+  このバージョンの ClickStack は、ローカルでのデバッグや迅速な調査には適していますが、本番環境向けではありません。本番対応のフル機能版 ClickStack については、[Open Source ClickStack](/ja/clickstack/getting-started/oss) を参照してください。
+</Info>
+
+ClickHouse で利用できるサードパーティライブラリも幅広く提供されています。
+
+* [Client libraries](/ja/integrations/language-clients/third-party/client-libraries)
+* [Integrations](/ja/integrations/connectors/tools/third-party-libraries)
+* [Visual interfaces](/ja/integrations/connectors/tools/gui)

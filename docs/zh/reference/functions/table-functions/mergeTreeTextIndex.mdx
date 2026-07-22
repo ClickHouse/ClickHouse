@@ -1,0 +1,65 @@
+---
+description: '表示 MergeTree 表中文本索引的字典。
+  可用于查看内部信息。'
+sidebarTitle: 'mergeTreeTextIndex'
+slug: /sql-reference/table-functions/mergeTreeTextIndex
+title: 'mergeTreeTextIndex'
+doc_type: 'reference'
+---
+
+表示 MergeTree 表中文本索引的字典。
+返回标记及其倒排列表元数据。
+可用于查看内部信息。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+mergeTreeTextIndex(database, table, index_name)
+```
+
+<div id="arguments">
+  ## 参数
+</div>
+
+| 参数           | 描述               |
+| ------------ | ---------------- |
+| `database`   | 要读取其中文本索引的数据库名称。 |
+| `table`      | 要读取其中文本索引的表名称。   |
+| `index_name` | 要读取的文本索引名称。      |
+
+<div id="returned_value">
+  ## 返回值
+</div>
+
+一个包含标记及其倒排列表元数据的表。
+
+<div id="usage-example">
+  ## 使用示例
+</div>
+
+```sql title="Query"
+CREATE TABLE tab
+(
+    id UInt64,
+    s String,
+    INDEX idx_s (s) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab SELECT number, concatWithSeparator(' ', 'apple', 'banana') FROM numbers(500);
+INSERT INTO tab SELECT 500 + number, concatWithSeparator(' ', 'cherry', 'date') FROM numbers(500);
+
+SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab, idx_s);
+```
+
+```text title="Response"
+   ┌─part_name─┬─token──┬─dictionary_compression─┬─cardinality─┬─num_posting_blocks─┬─has_embedded_postings─┬─has_raw_postings─┬─has_compressed_postings─┐
+1. │ all_1_1_0 │ apple  │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
+2. │ all_1_1_0 │ banana │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
+3. │ all_2_2_0 │ cherry │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
+4. │ all_2_2_0 │ date   │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
+   └───────────┴────────┴────────────────────────┴─────────────┴────────────────────┴───────────────────────┴──────────────────┴─────────────────────────┘
+```

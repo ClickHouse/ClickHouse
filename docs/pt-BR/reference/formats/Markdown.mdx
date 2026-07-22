@@ -1,0 +1,46 @@
+---
+alias: ['MD']
+description: 'Documentação sobre o formato Markdown'
+keywords: ['Markdown']
+slug: /interfaces/formats/Markdown
+title: 'Markdown'
+doc_type: 'reference'
+---
+
+| Entrada | Saída | Alias |
+| ------- | ----- | ----- |
+| ✗       | ✔     | `MD`  |
+
+<div id="description">
+  ## Descrição
+</div>
+
+Você pode exportar resultados usando o formato [Markdown](https://en.wikipedia.org/wiki/Markdown) para gerar uma saída pronta para ser colada em arquivos `.md`:
+
+A tabela em Markdown será gerada automaticamente e poderá ser usada em plataformas com suporte a Markdown, como o GitHub. Esse formato é usado apenas para saída.
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+```sql
+SELECT
+    number,
+    number * 2
+FROM numbers(5)
+FORMAT Markdown
+```
+
+```results
+| number | multiply(number, 2) |
+|-:|-:|
+| 0 | 0 |
+| 1 | 2 |
+| 2 | 4 |
+| 3 | 6 |
+| 4 | 8 |
+```
+
+<div id="format-settings">
+  ## Configurações de formato
+</div>

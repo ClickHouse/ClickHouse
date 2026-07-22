@@ -1,0 +1,63 @@
+---
+sidebarTitle: 'Marketplace'
+slug: /cloud/features/ai-ml/agents/marketplace
+title: 'Marketplace des agents'
+description: 'Découvrez et utilisez les agents partagés dans votre organisation ClickHouse Cloud'
+keywords: ['IA', 'ClickHouse Cloud', 'agents', 'marketplace', 'partage', 'découverte']
+doc_type: 'référence'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<BetaBadge />
+
+L’Agent Marketplace vous permet de parcourir, rechercher et exécuter des agents que d’autres personnes de votre organisation ont partagés avec vous. Il comprend également des agents que votre admin a publiés à l’échelle de l’organisation. Ouvrez-le depuis l’option **Agent Marketplace** dans la barre latérale de gauche.
+
+<Image img="/images/cloud/agent-builder/marketplace/marketplace.webp" alt="Interface de chat avec l’option Agent Marketplace mise en évidence dans la barre latérale de gauche" size="lg" />
+
+<div id="browse">
+  ## Parcourir
+</div>
+
+Les agents sont regroupés par catégories — par exemple, *Général*, *Ressources humaines*, *Recherche et développement*, *Finance*, *IT*, *Ventes*. Passez d’une catégorie à l’autre à l’aide des onglets en haut de la marketplace. Chaque carte d’agent affiche le nom, une icône et la catégorie à laquelle il appartient.
+
+Utilisez la barre de recherche pour trouver un agent par nom ou mot-clé dans toutes les catégories.
+
+<Image img="/images/cloud/agent-builder/marketplace/browse.webp" alt="Vue de l’Agent Marketplace avec le titre, la barre de recherche, les onglets de catégorie (Général, Ressources humaines, Recherche et développement, Finance, IT, Ventes, Après-vente, Tous) et une carte d’agent visible" size="lg" />
+
+<div id="open-an-agent">
+  ## Ouvrir un agent
+</div>
+
+Cliquez sur la carte de n’importe quel agent pour ouvrir sa vue détaillée. Vous pouvez ensuite :
+
+* **Démarrer une discussion** - ouvrir une nouvelle discussion avec l’agent.
+* **Épingler** - ajouter l’agent à vos favoris pour y accéder rapidement.
+* **Copier le lien** - partager un lien direct vers l’agent.
+
+<Image img="/images/cloud/agent-builder/marketplace/use-agent.webp" alt="Fenêtre modale des détails de l’agent affichant le nom de l’agent, une icône, ainsi que les actions Épingler, Copier le lien et Démarrer une discussion" size="md" />
+
+<div id="publish-your-own">
+  ## Publiez le vôtre
+</div>
+
+Pour qu’un agent puisse être découvert dans le marketplace, partagez-le avec le niveau de visibilité approprié depuis le panneau [partage et accès](/fr/products/cloud/features/ai-ml/agents/sharing-and-access). Les niveaux de visibilité :
+
+* **Privé** - vous seul pouvez le voir. Il n’apparaît pas dans le marketplace.
+* **Partagé avec des utilisateurs ou des groupes** - visible par ces utilisateurs ou groupes. Il apparaît dans leur marketplace.
+* **À l’échelle de l’organisation** - visible par tous les membres de l’organisation. Soumis aux permissions du marketplace définies par votre administrateur.
+
+Catégorisez votre agent et rédigez une description claire avant de le publier — ces champs alimentent à la fois la recherche et la navigation par catégorie.
+
+<div id="admin-controls">
+  ## Contrôles d’administration
+</div>
+
+Les admins de l’org peuvent :
+
+* Gérer les catégories affichées dans le marketplace.
+* Mettre en avant des agents individuels dans la vue à l’échelle de l’organisation.
+* Autoriser ou restreindre l’accès au marketplace selon le rôle.
+
+Consultez [partage et accès](/fr/products/cloud/features/ai-ml/agents/sharing-and-access) pour le modèle d’autorisations.

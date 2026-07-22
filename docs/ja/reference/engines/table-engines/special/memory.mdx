@@ -1,0 +1,116 @@
+---
+description: 'Memoryエンジンは、非圧縮のデータをRAMに格納します。データは、読み取り時に受信した
+  ときとまったく同じ形式で格納されます。つまり、このテーブルからの読み取りは実質的にコストがかかりません。'
+sidebarTitle: 'Memory'
+slug: /engines/table-engines/special/memory
+title: 'Memoryテーブルエンジン'
+doc_type: 'reference'
+---
+
+<Note>
+  ClickHouse Cloud で Memoryテーブルエンジンを使用する場合、データはすべてのノード間でレプリカされません (これは仕様です) 。すべてのクエリが同じノードにルーティングされ、Memoryテーブルエンジンが期待どおりに動作するようにするには、次のいずれかを行います。
+
+  * すべての操作を同じセッションで実行する
+  * [clickhouse-client](/ja/concepts/features/interfaces/client) など、TCP またはネイティブインターフェイス (スティッキー接続をサポート) を使用するクライアントを使う
+</Note>
+
+Memoryエンジンは、非圧縮のデータをRAMに格納します。データは、読み取り時に受信したときとまったく同じ形式で格納されます。つまり、このテーブルからの読み取りは実質的にコストがかかりません。
+同時実行のデータアクセスは同期されます。ロック時間は短く、読み取り操作と書き込み操作は互いにブロックしません。
+索引はサポートされていません。読み取りは並列化されます。
+
+単純なクエリでは、非常に高いスループット (10 GB/秒超) を実現できます。これは、ディスクからの読み取りや、データの展開、デシリアライズが不要なためです。 (多くの場合、MergeTreeエンジンのスループットもほぼ同程度に高いことは付記しておきます。)
+サーバーを再起動すると、テーブル内のデータは失われ、テーブルは空になります。
+通常、このテーブルエンジンを使う妥当な理由はあまりありません。ただし、テストや、比較的少ない行数 (約100,000,000行まで) に対して最大速度が必要なタスクには使用できます。
+
+Memoryエンジンは、システムによって、外部クエリデータ用の一時テーブル (「クエリ処理用の外部データ」の節を参照) や、`GLOBAL IN` の実装 (「IN 演算子」の節を参照) に使用されます。
+
+Memoryエンジンのテーブルサイズを制限するために上限と下限を指定でき、これにより実質的に循環バッファとして動作させることができます ([エンジンパラメータ](#engine-parameters) を参照) 。
+
+<div id="engine-parameters">
+  ## エンジンパラメータ
+</div>
+
+* `min_bytes_to_keep` — メモリテーブルにサイズ上限が設定されている場合に保持する最小バイト数。
+  * デフォルト値: `0`
+  * `max_bytes_to_keep` が必要
+* `max_bytes_to_keep` — メモリテーブル内で保持する最大バイト数。各 insert 時に最も古い行が削除されます (つまり循環バッファ) 。大きな ブロック を追加する際、削除対象となる最も古い行のまとまりを削除すると `min_bytes_to_keep` の制限を下回る場合、最大バイト数は指定した上限を超えることがあります。
+  * デフォルト値: `0`
+* `min_rows_to_keep` — メモリテーブルにサイズ上限が設定されている場合に保持する最小行数。
+  * デフォルト値: `0`
+  * `max_rows_to_keep` が必要
+* `max_rows_to_keep` — メモリテーブル内で保持する最大行数。各 insert 時に最も古い行が削除されます (つまり循環バッファ) 。大きな ブロック を追加する際、削除対象となる最も古い行のまとまりを削除すると `min_rows_to_keep` の制限を下回る場合、最大行数は指定した上限を超えることがあります。
+  * デフォルト値: `0`
+* `compress` - メモリ内のデータを圧縮するかどうか。
+  * デフォルト値: `false`
+
+<div id="usage">
+  ## 使用方法
+</div>
+
+**設定の初期化**
+
+```sql
+CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_rows_to_keep = 100, max_rows_to_keep = 1000;
+```
+
+**設定の変更**
+
+```sql
+ALTER TABLE memory MODIFY SETTING min_rows_to_keep = 100, max_rows_to_keep = 1000;
+```
+
+**注:** `bytes` と `行` の上限指定パラメータは同時に設定できますが、実際に適用されるのは `max` と `min` のうち低い方の制限値です。
+
+<div id="examples">
+  ## 例
+</div>
+
+```sql
+CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_bytes_to_keep = 4096, max_bytes_to_keep = 16384;
+
+/* 1. 最小閾値により最古のブロックが削除されないことをテスト - 3000行 */
+INSERT INTO memory SELECT * FROM numbers(0, 1600); -- 8'192 bytes
+
+/* 2. 削除されないブロックを追加 */
+INSERT INTO memory SELECT * FROM numbers(1000, 100); -- 1'024 bytes
+
+/* 3. 最古のブロックが削除されることをテスト - 9216バイト - 1100 */
+INSERT INTO memory SELECT * FROM numbers(9000, 1000); -- 8'192 bytes
+
+/* 4. 非常に大きなブロックがすべてを上書きすることを確認 */
+INSERT INTO memory SELECT * FROM numbers(9000, 10000); -- 65'536 bytes
+
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND database = currentDatabase();
+```
+
+```text
+┌─total_bytes─┬─total_rows─┐
+│       65536 │      10000 │
+└─────────────┴────────────┘
+```
+
+また、行の場合:
+
+```sql
+CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_rows_to_keep = 4000, max_rows_to_keep = 10000;
+
+/* 1. 最小閾値により最古のブロックが削除されないことをテスト - 3000行 */
+INSERT INTO memory SELECT * FROM numbers(0, 1600); -- 1'600行
+
+/* 2. 削除されないブロックを追加 */
+INSERT INTO memory SELECT * FROM numbers(1000, 100); -- 100行
+
+/* 3. 最古のブロックが削除されることをテスト - 9216バイト - 1100 */
+INSERT INTO memory SELECT * FROM numbers(9000, 1000); -- 1'000行
+
+/* 4. 非常に大きなブロックがすべてを上書きすることを確認 */
+INSERT INTO memory SELECT * FROM numbers(9000, 10000); -- 10'000行
+
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND database = currentDatabase();
+```
+
+```text
+┌─total_bytes─┬─total_rows─┐
+│       65536 │      10000 │
+└─────────────┴────────────┘
+```

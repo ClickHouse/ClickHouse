@@ -1,0 +1,72 @@
+---
+description: 'このテーブル関数を使用すると、ClickHouse を [Redis](https://redis.io/) と統合できます。'
+sidebarTitle: 'redis'
+slug: /sql-reference/table-functions/redis
+title: 'redis'
+doc_type: 'reference'
+---
+
+このテーブル関数を使用すると、ClickHouse を [Redis](https://redis.io/) と統合できます。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+redis(host:port, key, structure[, db_index[, password[, pool_size]]])
+```
+
+<div id="arguments">
+  ## 引数
+</div>
+
+| Argument    | Description                                                             |
+| ----------- | ----------------------------------------------------------------------- |
+| `host:port` | Redis server のアドレスです。ポートは省略可能で、その場合はデフォルトの Redis ポート 6379 が使用されます。      |
+| `key`       | カラム一覧内の任意のカラム名です。                                                       |
+| `structure` | この関数が返す ClickHouse テーブルのスキーマです。                                         |
+| `db_index`  | Redis の DB 索引で、範囲は 0〜15、デフォルトは 0 です。                                    |
+| `password`  | ユーザーパスワードです。デフォルトは空文字列です。                                               |
+| `pool_size` | Redis の接続プールの最大サイズです。デフォルトは 16 です。                                      |
+| `primary`   | 指定は必須です。主キーとしてサポートされるのは 1 つのカラムのみです。主キーは Redis のキーとしてバイナリ形式でシリアライズされます。 |
+
+* 主キー以外のカラムは、対応する順序で Redis の値としてバイナリ形式でシリアライズされます。
+* `key` に対する equals または in フィルタを含むクエリは、Redis に対する複数キーのルックアップに最適化されます。`key` でフィルタしないクエリではテーブル全体のスキャンが発生し、負荷の高い操作になります。
+
+[Named collections](/ja/concepts/features/configuration/server-config/named-collections) は現時点では `redis` テーブル関数ではサポートされていません。
+
+<div id="returned_value">
+  ## 戻り値
+</div>
+
+Redisキーをキーとし、その他のカラムをまとめてRedisの値としたテーブルオブジェクト。
+
+<div id="usage-example">
+  ## 使用例
+</div>
+
+Redisから読み込む:
+
+```sql
+SELECT * FROM redis(
+    'redis1:6379',
+    'key',
+    'key String, v1 String, v2 UInt32'
+)
+```
+
+Redisへの挿入:
+
+```sql
+INSERT INTO TABLE FUNCTION redis(
+    'redis1:6379',
+    'key',
+    'key String, v1 String, v2 UInt32') values ('1', '1', 1);
+```
+
+<div id="related">
+  ## 関連
+</div>
+
+* [`Redis` テーブルエンジン](/ja/reference/engines/table-engines/integrations/redis)
+* [`Redis` を Dictionary ソースとして使用する](/ja/reference/statements/create/dictionary/sources/redis)

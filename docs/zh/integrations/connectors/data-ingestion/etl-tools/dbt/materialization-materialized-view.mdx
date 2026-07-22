@@ -1,0 +1,607 @@
+---
+sidebarTitle: '物化：materialized_view'
+slug: /integrations/dbt/materialization-materialized-view
+description: '关于 materialized_view 物化的专门文档'
+keywords: ['clickhouse', 'dbt', 'materialized_view', 'refreshable', 'Materialized Views', 'catchup']
+title: 'materialized views'
+doc_type: 'guide'
+---
+
+import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+`materialized_view` 物化类型应基于现有的 (源) 表执行 `SELECT`。与 PostgreSQL 不同，ClickHouse 的 materialized view 不是“静态”的 (也没有对应的 REFRESH 操作) 。相反，它充当**插入触发器**：对插入源表的行应用已定义的 `SELECT` 转换，并将新行插入目标表。有关 materialized view 在 ClickHouse 中的工作方式的更多详细信息，请参阅 [ClickHouse materialized view 文档](/zh/concepts/features/materialized-views/index)。
+
+<Note>
+  有关物化的一般概念和共享配置 (engine、order&#95;by、partition&#95;by 等) ，请参阅 [Materializations](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations) 页面。
+</Note>
+
+<div id="target-table-management">
+  ## 如何管理目标表
+</div>
+
+当你使用 `materialized_view` 物化 时，dbt-clickhouse 需要同时创建 **materialized view** 和接收转换后行的 **目标表**。目标表有两种管理方式：
+
+| 方式       | 描述                                                                                                                                                                                              | 状态       |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| **隐式目标** | dbt-clickhouse 会在同一个模型内自动创建并管理目标表。目标表的 schema 会根据 MV 的 SQL 自动推断。                                                                                                                                | 稳定版本     |
+| **显式目标** | 你将目标表定义为独立的 `table` 物化，并在 MV 模型中使用 `materialization_target_table()` macro 引用它。创建 MV 时会使用指向该表的 `TO` 子句。此功能从 **dbt-clickhouse 1.10 版本**开始提供。**注意**：该功能目前处于 Beta 阶段，API 可能会根据社区反馈而变化。 | **Beta** |
+
+你选择的方式会影响 schema 变更、全量刷新以及多 MV 配置的处理方式。以下各节将详细介绍这两种方式。
+
+<div id="implicit-target">
+  ## 使用隐式目标进行物化
+</div>
+
+这是默认行为。定义 `materialized_view` 模型时，适配器会：
+
+1. 使用模型名称创建一个**目标表**
+2. 创建一个名为 `<model_name>_mv` 的 ClickHouse **materialized view**
+
+目标表的 schema 会根据 MV 的 `SELECT` 语句中的列推断出来。所有资源 (目标表 + MV) 共享同一份模型配置。
+
+```sql
+-- models/events_mv.sql
+{{
+    config(
+        materialized='materialized_view',
+        engine='SummingMergeTree()',
+        order_by='(event_date, event_type)'
+    )
+}}
+
+SELECT
+    toStartOfDay(event_time) AS event_date,
+    event_type,
+    count() AS total
+FROM {{ source('raw', 'events') }}
+GROUP BY event_date, event_type
+```
+
+更多示例请参见[测试文件](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/materialized_view/test_materialized_view.py)。
+
+<Tip>
+  你也可以通过强制实施模型契约，在目标表上定义列级别的 `codec` 和 `ttl`。详情请参见[列配置](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#column-configuration)。
+</Tip>
+
+<div id="multiple-materialized-views">
+  ### 多个 materialized view
+</div>
+
+ClickHouse 允许多个 materialized view 将记录写入同一个目标表。要在 dbt-clickhouse 中通过隐式目标方式支持这一点，可以在模型文件中构造一个 `UNION`，并使用 `--my_mv_name:begin` 和 `--my_mv_name:end` 形式的注释来包裹每个 materialized view 的 SQL。
+
+例如，下面的配置会构建两个 materialized view，它们都会将数据写入该模型的同一个目标表。materialized view 的名称将采用 `<model_name>_mv1` 和 `<model_name>_mv2` 的形式：
+
+```sql
+--mv1:begin
+select a,b,c from {{ source('raw', 'table_1') }}
+--mv1:end
+union all
+--mv2:begin
+select a,b,c from {{ source('raw', 'table_2') }}
+--mv2:end
+```
+
+<Warning>
+  更新包含多个 materialized view (MV) 的模型时，尤其是重命名其中一个 MV 时，
+  dbt-clickhouse 不会自动删除旧的 MV。相反，
+  你会看到以下警告：
+
+  `Warning - Table <previous table name> was detected with the same pattern as model name <your model name> but was not found in this run. In case it is a renamed mv that was previously part of this model, drop it manually (!!!) `
+</Warning>
+
+<div id="how-to-iterate-the-target-table-schema">
+  ### 如何演进目标表 schema
+</div>
+
+从 **dbt-clickhouse 1.9.8 版本**起，当 `dbt run` 在 MV 的 SQL 中发现列存在差异时，你可以控制目标表 schema 的演进方式。
+
+```python
+{{config(
+    materialized='materialized_view',
+    engine='MergeTree()',
+    order_by='(id)',
+    on_schema_change='fail'  # 此设置
+)}}
+```
+
+默认情况下，dbt 不会对目标表应用任何更改 (设置值为 `ignore`) ，但你可以修改此设置，使其遵循[in incremental models](https://docs.getdbt.com/docs/build/incremental-models#what-if-the-columns-of-my-incremental-model-change) 中 `on_schema_change` 配置的相同行为。
+
+此外，你也可以将此设置用作一种安全机制。如果将其设为 `fail`，那么当 MV 的 SQL 中的列与首次执行 `dbt run` 时创建的目标表不一致时，构建就会失败。
+
+<div id="data-catch-up">
+  ### 数据补齐
+</div>
+
+默认情况下，创建或重新创建 materialized view (MV) 时，会先用历史数据填充目标表，再创建 MV 本身 (`catchup=True`) 。你可以将 `catchup` 配置设为 `False` 以禁用此行为。
+
+```python
+{{config(
+    materialized='materialized_view',
+    engine='MergeTree()',
+    order_by='(id)',
+    catchup=False  # 此设置
+)}}
+```
+
+| 操作                               | `catchup: True` (默认)       | `catchup: False`           |
+| -------------------------------- | -------------------------- | -------------------------- |
+| 初始部署 (`dbt run`)                 | 使用历史数据回填目标表                | 创建空目标表                     |
+| 完全刷新 (`dbt run --full-refresh`)  | 重建目标表并回填历史数据               | 重新创建空目标表，**现有数据会丢失**       |
+| 正常运行                             | materialized view 捕获新的插入操作 | materialized view 捕获新的插入操作 |
+
+<Warning>
+  **完全刷新时存在数据丢失风险**
+
+  将 `catchup: False` 与 `dbt run --full-refresh` 一起使用会**丢弃目标表中的所有现有数据**。该表会被重新创建为空表，之后只会捕获新数据。如果后续可能需要历史数据，请确保已做好备份。
+</Warning>
+
+<div id="explicit-target">
+  ## 使用显式目标进行物化 (Beta)
+</div>
+
+<Warning>
+  **Beta**
+
+  此功能目前处于 Beta 阶段，自 **dbt-clickhouse 1.10 版本**起可用。API 可能会根据社区反馈而发生变化。
+</Warning>
+
+默认情况下，dbt-clickhouse 会在单个模型中同时创建和管理目标表以及 materialized views (即上文所述的[隐式目标](#implicit-target)方式) 。这种方式有一些限制：
+
+* 所有资源 (目标表 + MVs) 共享同一套配置。如果多个 MVs 指向同一个目标表，就必须使用 `UNION ALL` 语法将它们一起定义。
+* 这些资源都无法单独处理，必须通过同一个模型文件统一管理。
+* 你无法轻松控制每个 MV 的名称。
+* 目标表和 MVs 共享所有设置，因此很难分别配置各个资源，也不容易判断哪些配置属于哪个资源。
+
+**显式目标**功能允许你将目标表单独定义为常规的 `table` 物化，然后在 materialized view 模型中引用它。
+
+<div id="explicit-target-benefits">
+  ### 优势
+</div>
+
+* **资源完全分离**：现在每个资源都可以单独定义，可读性更高
+* **dbt 与 CH 之间实现 1:1 资源对应**：现在你可以使用 dbt 工具分别管理和迭代这些资源。
+* **现可使用不同配置**：现在可以为每个资源分别应用不同的配置。
+* **无需再遵循命名约定**：现在所有资源都会使用你指定的名称创建，而不是像 MV 那样额外添加 `_mv` 后缀的自定义名称。
+
+<div id="explicit-target-limitations">
+  ### 局限性
+</div>
+
+* 目标表定义对 dbt 来说并不算自然：它不是一段会从源表读取数据的 SQL，因此这里无法享受到 dbt 的校验。不过，MV 的 SQL 仍会通过 dbt 工具进行校验，而它与目标表各列的兼容性则会在 CH 层面校验。
+* **我们发现了一些与 `ref()` 函数局限性相关的问题**：我们需要用它在模型之间建立引用，但它只能引用上游模型，不能引用下游模型。这给这种实现方式带来了一些问题。我们已在 dbt-core 仓库中提交了一个 issue，目前也正在与他们讨论，[寻找可能的解决方案 (dbt-labs/dbt-core#12319) ](https://github.com/dbt-labs/dbt-core/issues/12319)：
+  * 当在 config 块内部调用 `ref()` 时，它返回的是当前模型，而不是共享的那个模型。这使我们无法在 config() 部分中定义它，只能通过注释添加这个依赖。我们采用了与 dbt 文档中相同的模式，即 [“--depends&#95;on:” 方法](https://docs.getdbt.com/reference/dbt-jinja-functions/ref#forcing-dependencies)。
+  * `ref()` 对我们是可行的，因为它会强制先创建目标表；但在生成文档中的依赖关系图里，目标表会被绘制成另一个上游依赖，而不是下游依赖，这会让图有些难以理解。
+  * `unit-test` 也会迫使我们为目标表定义一些数据，即使本意并不是从中读取数据。变通方法就是将这个表的数据留空。
+
+<div id="explicit-target-usage">
+  ### 用法
+</div>
+
+**第 1 步：将目标表定义为普通表模型**
+
+模型 `events_daily.sql`：
+
+```sql
+{{
+    config(
+        materialized='table',
+        engine='SummingMergeTree()',
+        order_by='(event_date, event_type)',
+        partition_by='toYYYYMM(event_date)'
+    )
+}}
+
+SELECT
+    toDate(now()) AS event_date,
+    '' AS event_type,
+    toUInt64(0) AS total
+WHERE 0  -- 创建具有正确 schema 的空表
+```
+
+这是我们在限制部分提到的权宜之计。这里可能会丢失一些 dbt 验证，但仍会在 ClickHouse 层面检查 schema。
+
+**第 2 步：定义指向目标表的 materialized views**
+
+例如，你可以像下面这样在不同模型中定义不同的 MV，甚至让它们指向同一个目标表。请注意新增的 `{{ materialization_target_table(ref('events_daily')) }}` macro 调用，它会为 MV 配置目标表。
+
+模型 `page_events_aggregator.sql`：
+
+```sql
+{{ config(materialized='materialized_view') }}
+{{ materialization_target_table(ref('events_daily')) }}
+
+SELECT
+    toStartOfDay(event_time) AS event_date,
+    event_type,
+    count() AS total
+FROM {{ source('raw', 'page_events') }}
+GROUP BY event_date, event_type
+```
+
+模型 `mobile_events_aggregator.sql`：
+
+```sql
+{{ config(materialized='materialized_view') }}
+{{ materialization_target_table(ref('events_daily')) }}
+
+SELECT
+    toStartOfDay(event_time) AS event_date,
+    event_type,
+    count() AS total
+FROM {{ source('raw', 'mobile_events') }}
+GROUP BY event_date, event_type
+```
+
+<div id="explicit-target-configuration">
+  ### 配置选项
+</div>
+
+使用显式目标时，除[常规物化配置](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#general-materialization-configurations)和[表级配置](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-table)外，还适用以下配置：
+
+**在目标表上 (`materialized='table'`) ：**
+
+| 选项                                    | 描述                                                                                                                                                                                 | 默认值                                                                                                                                        |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `mv_on_schema_change`                 | 当该表被 dbt 管理的 MV 使用时，如何处理 schema 变更。其行为与[增量模型](https://docs.getdbt.com/docs/build/incremental-models#what-if-the-columns-of-my-incremental-model-change)中的 `on_schema_change` 配置一致。 | **注意**：如果 `materialized='table'` 模型没有任何 MV 指向它，则其行为与平时相同，因此即使定义了此设置，也会被忽略。如果该表是 MV 的目标表，为保护这些表中的数据，此配置的默认值将为 `mv_on_schema_change='fail'`。 |
+| `repopulate_from_mvs_on_full_refresh` | 在执行 `--full-refresh` 时，不运行该表的 SQL，而是通过使用所有指向它的 MV 中的 SQL 执行 INSERT-SELECT 来重建该表。                                                                                                   | `False`                                                                                                                                    |
+
+**在 materialized view 上 (`materialized='materialized_view'`) ：**
+
+| 选项        | 描述               | 默认值    |
+| --------- | ---------------- | ------ |
+| `catchup` | 创建 MV 时是否回填历史数据。 | `True` |
+
+<Note>
+  通常只需要在 MV 中将 `catchup` 设为 `True`，或在其目标表中将 `repopulate_from_mvs_on_full_refresh` 设为 `True`。如果两者都设为 `True`，可能会导致数据重复。
+</Note>
+
+<div id="explicit-target-common-operations">
+  ### 常见操作
+</div>
+
+<div id="explicit-target-full-refresh">
+  #### 使用显式目标执行完全刷新
+</div>
+
+使用 `--full-refresh` 时，显式目标表会被重新创建 (因此如果在此过程中正在进行数据摄取，可能会导致数据丢失) 。具体表现取决于你的配置：
+
+**选项 1：默认的 `--full-refresh` 行为。所有内容都会被重新创建，但在重新创建 MVs 期间，目标表将为空，或仅加载了部分数据。**
+
+所有内容都会被删除并重新创建。如果你希望通过 MVs SQL 重新插入数据，请保留 `catchup=True` 设置：
+
+```sql
+-- models/page_events_aggregator.sql
+{{ config(
+    materialized='materialized_view',
+    catchup=True  -- 这是默认值，实际上无需显式设置。
+) }}
+{{ materialization_target_table(ref('events_daily')) }}
+...
+```
+
+**选项 2：我想重建目标表，并且不希望在重建 MV 期间读到空数据。**
+
+如果你需要先更新 MV 的 SQL，可以先将其设置为 `catchup=False`，然后对这些 MV 执行 `dbt run` 或 `dbt run --full-refresh`。请确保在对目标表运行 `--full-refresh` 之前，这些 MV 已创建完成，因为它会使用 ClickHouse 中的 MV 定义。
+
+在目标表模型上设置 `repopulate_from_mvs_on_full_refresh=True`。执行 `dbt run --full-refresh` 时，这将会：
+
+1. 创建一个新的临时表
+2. 使用每个 MV 的 SQL 执行 INSERT-SELECT
+3. 以原子方式交换表
+
+因此，在重建 MV 的过程中，你的表中不会出现空数据。
+
+```sql
+-- models/events_daily.sql
+{{
+    config(
+        materialized='table',
+        engine='SummingMergeTree()',
+        order_by='(event_date, event_type)',
+        repopulate_from_mvs_on_full_refresh=True
+    )
+}}
+...
+```
+
+<div id="explicit-target-changing">
+  #### 更改目标表
+</div>
+
+如果不使用 `--full-refresh`，则无法更改 MV 的目标表。如果你在修改 `materialization_target_table()` 引用后尝试运行常规的 `dbt run`，构建会失败，并报错提示目标已发生更改。
+
+如需更改目标：
+
+1. 更新 `materialization_target_table()` 调用
+2. 运行 `dbt run --full-refresh -s your_mv_model`
+
+<div id="explicit-target-troubleshooting">
+  ### 常见问题排查
+</div>
+
+<div id="target-table-empty">
+  #### 执行 `run` 期间/之后目标表为空
+</div>
+
+出现这种情况通常有以下几种原因：
+
+* materialized views 可能配置了 `catchup=False`，或者目标表配置了 `repopulate_from_mvs_on_full_refresh=False`，因此在创建 materialized views 或重新创建目标表时，不会执行回填。这是预期行为。因此，如果你想通过 materialized views SQL 重新插入数据，请确保在 materialized view 中将 `catchup` 设为 `True` (默认值) ，或在目标表中将 `repopulate_from_mvs_on_full_refresh` 设为 `True`。注意不要同时启用这两项，以免产生重复数据。更多详情请参阅[配置部分](#explicit-target-configuration)。
+* 执行 `dbt run --full-refresh` 时，如果 materialized views 使用默认的 `catchup=True`，目标表会被重新创建，而 MVs 会按顺序重新插入数据。要避免这种情况，请参阅[使用显式目标进行完全刷新](#explicit-target-full-refresh)。
+
+<div id="full-refresh-with-repopulate-from-mvs-on-full-refresh">
+  #### 在目标表中将 `repopulate_from_mvs_on_full_refresh=True` 与 `dbt run --full-refresh` 一起使用时，使用的是旧版 materialized view 的逻辑，而不是项目中当前的 SQL
+</div>
+
+`repopulate_from_mvs_on_full_refresh=True` 会使用 ClickHouse 中已经定义的现有 MV SQL。为确保使用新的 materialized view 定义，请先对每个 materialized view 执行一次 `dbt run`，然后再对目标表执行 `dbt run --full-refresh`。
+
+<div id="duplicate-data">
+  #### 执行运行后出现重复数据
+</div>
+
+可能的原因：
+
+* materialized views 上的 `catchup=True` 和目标表上的 `repopulate_from_mvs_on_full_refresh=True` 可能同时启用：根据你要执行的操作，只保留其中一个。更多详情请参阅[配置部分](#explicit-target-configuration)。
+* 目标表定义时未使用 `WHERE 0`：目标表应创建为空表，但如果未包含 `WHERE 0`，内部查询可能会插入数据。请确保包含该子句。
+
+<div id="data-loss-active-ingestion">
+  #### 执行 `dbt run --full-refresh` 后，在持续摄取期间发生数据丢失
+</div>
+
+执行 `dbt run --full-refresh` 后，源表中的某些行没有出现在目标表中。
+ClickHouse materialized view 的作用类似插入触发器——它们只会在存在期间捕获数据。完全刷新期间，MV 会先被删除再重新创建，中间会有一个短暂的窗口期 (“盲窗”) 。在这个窗口期内插入到源表的任何行都不会被捕获。更多详情，请参阅[持续摄取期间的行为](#behavior-during-active-ingestion)部分。
+
+<div id="debugging-techniques">
+  ### 调试技巧
+</div>
+
+<div id="check-mv-target">
+  #### 检查 ClickHouse 中 MV 当前的目标表
+</div>
+
+查询 `system.tables`，查看 materialized view 正在写入哪个位置：
+
+```sql
+SELECT
+    name as mv_name,
+    replaceRegexpOne(
+        create_table_query,
+        '.*TO\\s+`?([^`\\s(]+)`?\\.`?([^`\\s(]+)`?.*',
+        '\\1.\\2'
+    ) AS target_table
+FROM system.tables
+WHERE database = 'your_schema'
+  AND engine = 'MaterializedView'
+```
+
+<div id="check-dbt-recognition">
+  #### 检查 dbt 是否将某个表识别为 materialized view 的目标表
+</div>
+
+在运行 dbt 时，查找以下日志消息：
+
+> 表 `<table_name>` 被 dbt 管理的 materialized view 用作目标表。为防止数据丢失，默认将 mv&#95;on&#95;schema&#95;change 设为 &quot;fail&quot;。
+
+如果出现此消息，说明 dbt 已检测到该表是至少一个由 dbt 管理的 materialized view 的目标表。如果你预期会看到这条消息却没有看到，请确认：
+
+* materialized view 模型已正确定义 `{{ materialization_target_table(ref('your_target')) }}`
+* materialized view 模型在其 config 中设置了 `materialized='materialized_view'`
+* materialized view 和目标表都至少已运行过一次
+
+<div id="migration-implicit-to-explicit">
+  ### 从隐式目标迁移到显式目标
+</div>
+
+如果你现有的 materialized view 模型采用的是隐式目标方式，并且想迁移到显式目标方式，请按以下步骤操作：
+
+**1. 创建目标表模型**
+
+创建一个新的模型文件，使用 `materialized='table'` 定义与当前 MV 目标表相同的 schema。使用 `WHERE 0` 子句创建一个空表。名称应与当前隐式 materialized view 模型的名称相同。这样一来，你现在就可以使用该模型对目标表进行迭代调整。
+
+```sql
+-- models/events_daily.sql
+{{
+    config(
+        materialized='table',
+        engine='MergeTree()',
+        order_by='(event_date, event_type)'
+    )
+}}
+
+SELECT
+    toDate(now()) AS event_date,
+    '' AS event_type,
+    toUInt64(0) AS total
+WHERE 0
+```
+
+**2. 更新 MV 模型**
+
+创建新的模型，每个模型分别包含对应的 MV SQL，以及指向新目标表的 `materialization_target_table()` 宏调用。如果你之前使用了 `UNION ALL`，请移除这部分以及注释。
+
+模型名称需要遵循以下命名约定：
+
+* 如果只定义了一个 MV，其名称应为：`<old_model_name>_mv`
+* 如果定义了多个 MV，则每个 MV 的名称应为：`<old_model_name>_mv_<name_in_comments>`
+
+此前在 `my_model.sql` 中 (隐式目标，单个包含 UNION ALL 的模型) ：
+
+```sql
+--mv1:begin
+select a, b, c from {{ source('raw', 'table_1') }}
+--mv1:end
+union all
+--mv2:begin
+select a, b, c from {{ source('raw', 'table_2') }}
+--mv2:end
+```
+
+调整后 (显式目标，单独的模型文件) ：
+
+```sql
+-- models/my_model_mv_mv1.sql
+{{ config(materialized='materialized_view') }}
+{{ materialization_target_table(ref('events_daily')) }}
+
+select a, b, c from {{ source('raw', 'table_1') }}
+```
+
+```sql
+-- models/my_model_mv_mv2.sql
+{{ config(materialized='materialized_view') }}
+{{ materialization_target_table(ref('events_daily')) }}
+
+select a, b, c from {{ source('raw', 'table_2') }}
+```
+
+**3. 如有需要，请按照[显式目标](#explicit-target)部分中的说明对其进行调整。**
+
+<div id="behavior-comparison">
+  ## 隐式目标与显式目标方式的行为比较
+</div>
+
+<div id="general-behavior">
+  ### 它们的总体表现
+</div>
+
+| 操作                     | 隐式目标                                                                                                                                                                                         | 显式目标                                                                                                                                                                                                                                        |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 首次运行 dbt               | 创建所有资源                                                                                                                                                                                       | 创建所有资源                                                                                                                                                                                                                                      |
+| 下一次运行 dbt              | **无法单独管理各个资源，所有变更会一并发生：**<br /><br />**目标表**: <br />变更由 `on_schema_change` 设置管理。默认值为 `ignore`，因此不会处理新增列。<br /><br />**materialized views**: 全部通过 `alter table modify query` 操作更新             | **变更可以单独应用：<br /><br />目标表**: <br />会自动检测其是否为 dbt 定义的 materialized views 的目标表。如果是，列演进默认由值为 `fail` 的 `mv_on_schema_change` 设置管理，因此一旦列发生变化就会失败。我们将该默认值作为一层保护机制。<br /><br />**materialized views**: 其 SQL 会通过 `alter table modify query` 操作更新。 |
+| dbt run --full-refresh | **无法单独管理各个资源，所有变更会一并发生：<br /><br />目标表**: <br />目标表会被重新创建为空表。可通过 `catchup` 配置，结合所有 materialized views 的 SQL 一起执行 backfill。`catchup` 默认为 `True`<br /><br />**materialized views**: 全部都会被重新创建。 | **变更将单独应用：<br /><br />目标表:** 将按常规重新创建。<br /><br />**materialized views**: 删除并重新创建。可使用 `catchup` 执行初始 backfill。`catchup` 默认为 `True`。 <br /><br />**注意：在此过程中，目标表会为空，或仅完成部分加载，直到 materialized views 重新创建完成。为避免这种情况，请参阅下一节，了解如何迭代目标表。**         |
+
+<div id="behavior-during-active-ingestion">
+  ### 持续摄取期间的行为
+</div>
+
+在迭代模型时，你需要了解不同操作与正在插入的数据之间如何相互影响：
+
+* 由于 ClickHouse materialized view 充当**插入触发器**，它们只能在存在期间捕获数据。如果某个 materialized view 被删除后又重新创建 (例如在执行 `--full-refresh` 期间) ，那么在这段时间窗口内插入源表的任何行都**不会**被该 materialized view 处理。这种情况称为 materialized view 处于“盲区”状态。
+* 各种 `catchup` 过程都基于使用 materialized view SQL 的 `INSERT INTO ... SELECT` 操作，与 materialized view 本身的工作机制无关。一旦 `INSERT` 开始，它就不会捕获新数据，但这些新数据会被已附加的 materialized view 捕获。
+
+下表总结了在源表持续发生插入时，各种操作的安全性。
+
+<div id="ingestion-implicit-target">
+  #### 隐式目标操作
+</div>
+
+| 操作                       | 内部过程                                                                                                               | 发生插入时的安全性                                                                  |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| 首次执行 `dbt run`           | 1. 创建目标表<br />2. 插入数据 (如果 `catchup=True`) <br />3. 创建 materialized view                                            | ⚠️ **在步骤 1 到 3 之间，materialized view 无法捕获数据。** 在此期间插入到源表中的任何行都不会被捕获。        |
+| 后续执行 `dbt run`           | `ALTER TABLE ... MODIFY QUERY`                                                                                     | ✅ 安全。materialized view 会以原子方式更新。                                           |
+| `dbt run --full-refresh` | 1. 创建备份表<br />2. 插入数据 (如果 `catchup=True`) <br />3. 删除 materialized view<br />4. 交换表<br />5. 重新创建 materialized view | ⚠️ **在重新创建期间，materialized view 无法捕获数据。** 在步骤 3 到 5 之间插入到源表中的数据不会出现在新的目标表中。 |
+
+<div id="ingestion-explicit-target">
+  #### 显式目标操作
+</div>
+
+**materialized view 模型：**
+
+| 操作                               | 内部过程                                                           | 有插入发生时的安全性                                                                                                                 |
+| -------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| 首次 `dbt run`                     | 1. 创建 MV (带 `TO` 子句) <br />2. 执行 catch-up (如果 `catchup=True`)  | ✅ MV 会先创建，因此新的插入会立即被捕获。<br />⚠️ **catch-up 可能导致数据重复**——回填查询可能与 MV 已在处理的行发生重叠。如果使用支持去重的引擎 (例如 `ReplacingMergeTree`) ，则是安全的。 |
+| 后续 `dbt run`                     | `ALTER TABLE ... MODIFY QUERY`                                 | ✅ 安全。MV 会以原子方式更新。                                                                                                          |
+| 对 MV 执行 `dbt run --full-refresh` | 1. 删除并重新创建 MV<br />2. 执行 catch-up (如果 `catchup=True`)          | ⚠️ **MV 在重建期间存在盲区** (即删除与创建之间) 。<br />⚠️ 如果同时有插入发生，**catch-up 可能导致数据重复**。                                                  |
+
+**目标表模型：**
+
+| 操作                                                                       | 内部过程                                                 | 有插入发生时的安全性                                                      |
+| ------------------------------------------------------------------------ | ---------------------------------------------------- | --------------------------------------------------------------- |
+| `dbt run`                                                                | 按照 `mv_on_schema_change` 设置应用 schema 变更              | ✅ 安全。不会发生数据移动。                                                  |
+| `dbt run --full-refresh` (默认)                                            | 重新创建该表 (创建后为空)                                       | ⚠️ **目标表为空**，直到 MV 将数据回填进去。新表一旦创建完成，MV 就会继续向其中插入数据。             |
+| 使用 `repopulate_from_mvs_on_full_refresh=True` 的 `dbt run --full-refresh` | 1. 创建备份表<br />2. 使用每个 MV 的 SQL 插入数据<br />3. 以原子方式交换表 | ⚠️ **MV 在重建期间存在盲区。**在步骤 1 到 3 之间插入的数据不会出现在新表中。**这在后续版本中可能会变化**。 |
+
+<Tip>
+  **针对有活跃摄取的生产环境的建议**
+
+  * **如果可能，请在执行 dbt 操作期间暂停摄取**：这样所有操作都是安全的，也不会丢失数据。
+  * **如果可能，请在目标表上使用支持去重的引擎** (例如 `ReplacingMergeTree`) ，以处理 catch-up 重叠可能带来的重复数据。
+  * **尽量优先使用 `ALTER TABLE ... MODIFY QUERY`** (不带 `--full-refresh` 的常规 `dbt run`) ——这始终是安全的。
+  * **注意 dbt 操作期间的风险窗口**。
+</Tip>
+
+<div id="refreshable-materialized-views">
+  ## 可刷新materialized views
+</div>
+
+[可刷新materialized views](/zh/concepts/features/materialized-views/refreshable-materialized-view) 是 ClickHouse 中一种特殊的 materialized view，它会定期重新执行查询并存储结果，类似于其他数据库中的 materialized view。这适用于需要定期快照或聚合，而不是实时插入触发器的场景。
+
+<Tip>
+  可刷新materialized views 可与 [隐式目标](#implicit-target) 和 [显式目标](#explicit-target) 这两种方式配合使用。`refreshable` 配置与 target 表的管理方式无关。
+</Tip>
+
+要使用可刷新materialized view，请在 MV 模型中添加一个 `refreshable` 配置对象，并使用以下选项：
+
+| 选项                            | 说明                                                                         | 必填 | 默认值   |
+| ----------------------------- | -------------------------------------------------------------------------- | -- | ----- |
+| refresh&#95;interval          | interval 子句 (必填)                                                           | 是  |       |
+| randomize                     | 随机化子句，将出现在 `RANDOMIZE FOR` 之后                                              |    |       |
+| append                        | 如果设置为 `True`，每次刷新都会向表中插入行，而不会删除现有行。该插入不是原子的，与普通的 `INSERT SELECT` 一样。       |    | False |
+| depends&#95;on                | 可刷新 mv 的依赖项列表。请按 `{schema}.{view_name}` 格式提供依赖项                            |    |       |
+| depends&#95;on&#95;validation | 是否验证 `depends_on` 中提供的依赖项是否存在。如果某个依赖项未包含 schema，则会在 `default` schema 中执行验证 |    | False |
+
+<div id="refreshable-implicit-example">
+  ### 隐式目标示例
+</div>
+
+```python
+{{
+    config(
+        materialized='materialized_view',
+        engine='MergeTree()',
+        order_by='(event_date)',
+        refreshable={
+            "interval": "EVERY 5 MINUTE",
+            "randomize": "1 MINUTE",
+            "append": True,
+            "depends_on": ['schema.depend_on_model'],
+            "depends_on_validation": True
+        }
+    )
+}}
+
+SELECT
+    toStartOfDay(event_time) AS event_date,
+    count() AS total
+FROM {{ source('raw', 'events') }}
+GROUP BY event_date
+```
+
+<div id="refreshable-explicit-example">
+  ### 显式目标示例
+</div>
+
+```python
+{{
+    config(
+        materialized='materialized_view',
+        refreshable={
+            "interval": "EVERY 1 HOUR",
+            "append": False
+        }
+    )
+}}
+{{ materialization_target_table(ref('events_daily')) }}
+
+SELECT
+    toStartOfDay(event_time) AS event_date,
+    event_type,
+    count() AS total
+FROM {{ source('raw', 'events') }}
+GROUP BY event_date, event_type
+```
+
+<div id="explicit-target-limitations">
+  ### 局限性
+</div>
+
+* 在 ClickHouse 中创建带有依赖项的可刷新materialized view (MV) 时，如果指定的依赖项在创建时不存在，ClickHouse 不会报
+  错。相反，可刷新 MV 会保持
+  非活动状态，在依赖项满足之前一直处于等待状态，之后才会开始处理更新或执行刷新。
+  这种行为是有意设计的，但如果未及时处理所需的依赖项，可能会导致数据可用性延迟。
+  你应确保在创建可刷新
+  materialized view 之前，所有依赖项都已正确定义且确实存在。
+* 截至目前，mv 与其依赖项之间实际上没有真正的“dbt 关联”，因此无法
+  保证创建顺序。
+* 可刷新功能尚未针对多个 mvs 指向同一目标模型的情况进行测试。

@@ -1,0 +1,125 @@
+---
+sidebarTitle: 'إعداد مرشحات IP'
+slug: /cloud/security/setting-ip-filters
+title: 'إعداد مرشحات IP'
+description: 'تشرح هذه الصفحة كيفية إعداد مرشحات IP في ClickHouse Cloud للتحكم في الوصول إلى خدمات ClickHouse.'
+doc_type: 'guide'
+keywords: ['مرشحات IP', 'قائمة الوصول لعناوين IP']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<div id="setting-ip-filters">
+  ## إعداد عوامل تصفية IP
+</div>
+
+تُرشِّح قوائم الوصول لعناوين IP حركة المرور إلى خدمات ClickHouse أو مفاتيح API من خلال تحديد عناوين المصدر المسموح لها بالاتصال. يمكن تكوين هذه القوائم لكل خدمة ولكل مفتاح API. ويمكن تكوين القوائم أثناء إنشاء الخدمة أو مفتاح API، أو بعد ذلك.
+
+<Warning>
+  **قم بتكوين قائمة الوصول لعناوين IP لخدمتك**
+
+  عند إنشاء خدمة ClickHouse Cloud، يكون الإعداد الافتراضي لقائمة السماح حسب IP هو &#39;Allow from anywhere.&#39; نوصي بشدة بقصر الوصول على عناوين أو نطاقات IP محددة في أقرب وقت ممكن. قد تُنقَل الخدمات المضبوطة على `Allow from anywhere` دوريًا من حالة الخمول إلى الحالة النشطة بواسطة زواحف الإنترنت وأدوات الفحص التي تبحث عن عناوين IP العامة، مما قد يؤدي إلى تكاليف غير متوقعة.
+</Warning>
+
+<div id="prepare">
+  ## التحضير
+</div>
+
+قبل أن تبدأ، اجمع عناوين IP أو النطاقات التي ينبغي إضافتها إلى قائمة الوصول. ضع في اعتبارك العاملين عن بُعد، ومواقع المناوبة، وشبكات VPN، وما إلى ذلك. تقبل واجهة مستخدم قائمة الوصول لعناوين IP العناوين الفردية وتدوين CIDR.
+
+يتيح لك تدوين التوجيه غير الصنفي بين النطاقات (CIDR) تحديد نطاقات عناوين IP أصغر من أحجام أقنعة الشبكات الفرعية التقليدية للفئات A أو B أو C ‏(8 أو 6 أو 24). توفّر [ARIN](https://account.arin.net/public/cidrCalculator) وعدة مؤسسات أخرى حاسبات CIDR إذا كنت بحاجة إلى واحدة. وإذا كنت ترغب في مزيد من المعلومات حول تدوين CIDR، فيُرجى الاطلاع على RFC ‏[Classless Inter-domain Routing (CIDR)](https://www.rfc-editor.org/rfc/rfc4632.html).
+
+<div id="create-or-modify-an-ip-access-list">
+  ## إنشاء قائمة وصول لعناوين IP أو تعديلها
+</div>
+
+<Info>
+  **ينطبق فقط على الاتصالات من خارج PrivateLink**
+
+  تنطبق قوائم الوصول لعناوين IP فقط على الاتصالات القادمة من الإنترنت العام، أي من خارج [PrivateLink](/ar/products/cloud/guides/security/connectivity/private-networking/index).
+  إذا كنت تريد فقط حركة المرور القادمة عبر PrivateLink، فعيّن `DenyAll` ضمن قائمة السماح حسب IP.
+</Info>
+
+<Accordion title="قائمة الوصول لعناوين IP لخدمات ClickHouse">
+  عند إنشاء خدمة ClickHouse، يكون الإعداد الافتراضي لقائمة السماح حسب IP هو &#39;Allow from anywhere.&#39;
+
+  من قائمة خدمات ClickHouse Cloud، حدّد الخدمة ثم اختر **Settings**. ضمن قسم **Security**، ستجد قائمة الوصول لعناوين IP. انقر على زر Add IPs.
+
+  سيظهر شريط جانبي يتضمن خيارات يمكنك تهيئتها:
+
+  * السماح بحركة المرور الواردة من أي مكان إلى الخدمة
+  * السماح بالوصول إلى الخدمة من مواقع محددة
+  * رفض جميع أشكال الوصول إلى الخدمة
+</Accordion>
+
+<Accordion title="قائمة الوصول لعناوين IP لمفاتيح API">
+  عند إنشاء مفتاح API، يكون الإعداد الافتراضي لقائمة السماح حسب IP هو &#39;Allow from anywhere.&#39;
+
+  من قائمة مفاتيح API، انقر على النقاط الثلاث بجوار مفتاح API ضمن العمود **Actions** ثم اختر **Edit**. في أسفل الشاشة ستجد قائمة الوصول لعناوين IP وخيارات تهيئتها:
+
+  * السماح بحركة المرور الواردة من أي مكان إلى الخدمة
+  * السماح بالوصول إلى الخدمة من مواقع محددة
+  * رفض جميع أشكال الوصول إلى الخدمة
+</Accordion>
+
+تُظهر لقطة الشاشة هذه قائمة وصول تسمح بحركة المرور من نطاق من عناوين IP، وموسومة باسم &quot;NY Office range&quot;:
+
+<Image img="/images/cloud/security/ip-filtering-after-provisioning.webp" size="md" alt="قائمة وصول حالية في ClickHouse Cloud" border />
+
+<div id="possible-actions">
+  ### الإجراءات الممكنة
+</div>
+
+1. لإضافة إدخال إضافي، يمكنك استخدام **+ Add new IP**
+
+يوضح هذا المثال إضافة عنوان IP واحد، مع الوصف `London server`:
+
+<Image img="/images/cloud/security/ip-filter-add-single-ip.webp" size="md" alt="إضافة عنوان IP واحد إلى access list في ClickHouse Cloud" border />
+
+2. احذف إدخالاً موجودًا
+
+يؤدي النقر على علامة (x) إلى حذف الإدخال
+
+3. عدّل إدخالاً موجودًا
+
+من خلال تعديل الإدخال مباشرةً
+
+4. بدّل إلى السماح بالوصول من **Anywhere**
+
+لا يُنصح بهذا، لكنه مسموح. نوصي بإتاحة التطبيق المبني فوق ClickHouse للعامة، مع تقييد الوصول إلى خدمة ClickHouse Cloud الخلفية.
+
+لتطبيق التغييرات التي أجريتها، يجب النقر على **Save**.
+
+<div id="verification">
+  ## التحقّق
+</div>
+
+بمجرد إنشاء عامل التصفية، تأكّد من إمكانية الاتصال بخدمة من داخل النطاق، وتأكد من رفض الاتصالات الواردة من خارج النطاق المسموح به. يمكن استخدام أمر `curl` بسيط للتحقق:
+
+```bash title="Attempt rejected from outside the allow list"
+curl https://<HOSTNAME>.clickhouse.cloud:8443
+```
+
+```response
+curl: (35) error:02FFF036:system library:func(4095):Connection reset by peer
+```
+
+أو
+
+```response
+curl: (35) LibreSSL SSL_connect: SSL_ERROR_SYSCALL in connection to HOSTNAME.clickhouse.cloud:8443
+```
+
+```bash title="Attempt permitted from inside the allow list"
+curl https://<HOSTNAME>.clickhouse.cloud:8443
+```
+
+```response
+Ok.
+```
+
+<div id="limitations">
+  ## القيود
+</div>
+
+* حاليًا، لا تدعم قوائم الوصول لعناوين IP سوى IPv4

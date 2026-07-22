@@ -934,13 +934,14 @@ Checks whether the point belongs to the polygon on the plane.
 :::note
 - You can set `validate_polygons = 0` to bypass geometry validation.
 - `pointInPolygon` assumes every polygon is well-formed. If the input is self-intersecting, has mis-ordered rings, or overlapping edges, results become unreliable—especially for points that sit exactly on an edge, a vertex, or inside a self-intersection where the notion of "inside" vs. "outside" is undefined.
+- The polygon-shaped types (`Ring`, `Polygon`, `MultiPolygon`, and `Geometry`) may be passed either as constants or as regular (non-constant) table columns. When the polygon is provided across several separate arguments (an outer ring followed by holes, or several polygons of a multipolygon), all of those arguments must be constant.
 :::
     )";
     FunctionDocumentation::Syntax syntax = "pointInPolygon((x, y), [(a, b), (c, d) ...], ...)";
     FunctionDocumentation::Arguments arguments = {
-        {"(x, y)", "Coordinates of a point on the plane.", {"Tuple(Float64, Float64)"}},
-        {"[(a, b), (c, d) ...]", "Polygon vertices as an array of coordinate pairs. Vertices should be in clockwise or counterclockwise order. Minimum 3 vertices required.", {"Array(Tuple(Float64, Float64))"}},
-        {"...", "Optional. Additional arguments for polygons with holes (as separate arrays) or multipolygons (as separate polygons).", {"Array(Tuple(Float64, Float64))", "Polygon", "MultiPolygon"}}
+        {"(x, y)", "Coordinates of a point on the plane.", {"Tuple(Float64, Float64)", "Point"}},
+        {"[(a, b), (c, d) ...]", "The polygon, either as an array of coordinate pairs or as a named polygon-shaped value. Vertices should be in clockwise or counterclockwise order. Minimum 3 vertices required.", {"Array(Tuple(Float64, Float64))", "Ring", "Polygon", "MultiPolygon", "Geometry"}},
+        {"...", "Optional. Additional arguments for polygons with holes (each hole as a separate ring) or multipolygons (each component polygon as a separate argument). A whole `MultiPolygon` can only be passed as the sole polygon argument, not as one of several arguments. These additional arguments must be constant.", {"Array(Tuple(Float64, Float64))", "Ring", "Polygon"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
         "Returns `1` if the point is inside the polygon, `0` if it is not. If the point is on the polygon boundary, the function may return either `0` or `1`.",
@@ -954,6 +955,17 @@ Checks whether the point belongs to the polygon on the plane.
 ┌─res─┐
 │   1 │
 └─────┘
+            )"
+        },
+        {
+            "Passing the polygon as a named geometric type from a table column",
+            "CREATE TABLE poly (id UInt32, shape Polygon) ENGINE = Memory;\n"
+            "INSERT INTO poly VALUES (1, [[(0, 0), (10, 0), (10, 10), (0, 10)], [(4, 4), (6, 4), (6, 6), (4, 6)]]);\n"
+            "SELECT id, pointInPolygon((2., 2.), shape) AS res FROM poly;",
+            R"(
+┌─id─┬─res─┐
+│  1 │   1 │
+└────┴─────┘
             )"
         }
     };

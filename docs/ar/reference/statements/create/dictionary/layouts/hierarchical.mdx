@@ -1,0 +1,92 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/hierarchical
+title: 'القواميس الهرمية'
+sidebarTitle: 'هرمية'
+description: 'اضبط القواميس الهرمية باستخدام علاقات مفاتيح الأصل والفرع.'
+doc_type: 'reference'
+---
+
+<div id="hierarchical-dictionaries">
+  ## القواميس الهرمية
+</div>
+
+تدعم ClickHouse القواميس الهرمية ذات [مفتاح رقمي](/ar/reference/statements/create/dictionary/attributes#numeric-key).
+
+انظر إلى البنية الهرمية التالية:
+
+```text
+0 (Common parent)
+│
+├── 1 (United States of America)
+│   │
+│   └── 2 (California)
+│       │
+│       └── 3 (San Francisco)
+│
+└── 4 (Great Britain)
+    │
+    └── 5 (London)
+```
+
+يمكن تمثيل هذا التسلسل الهرمي بجدول القاموس التالي.
+
+| region&#95;id | parent&#95;region | region&#95;name            |
+| ------------- | ----------------- | -------------------------- |
+| 1             | 0                 | الولايات المتحدة الأمريكية |
+| 2             | 1                 | كاليفورنيا                 |
+| 3             | 2                 | سان فرانسيسكو              |
+| 4             | 0                 | بريطانيا العظمى            |
+| 5             | 4                 | لندن                       |
+
+يحتوي هذا الجدول على عمود `parent_region` يتضمن مفتاح أقرب عنصر أب لهذا العنصر.
+
+يدعم ClickHouse الخاصية الهرمية لسمات القواميس الخارجية. تتيح لك هذه الخاصية تهيئة القاموس الهرمي بطريقة مماثلة لما هو موضح أعلاه.
+
+تتيح لك الدالة [dictGetHierarchy](/ar/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy) الحصول على سلسلة العناصر الأب لعنصر معيّن.
+
+في مثالنا، يمكن أن تكون بنية القاموس كما يلي:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY regions_dict
+    (
+        region_id UInt64,
+        parent_region UInt64 DEFAULT 0 HIERARCHICAL,
+        region_name String DEFAULT ''
+    )
+    PRIMARY KEY region_id
+    SOURCE(...)
+    LAYOUT(HASHED())
+    LIFETIME(3600);
+    ```
+  </Tab>
+
+  <Tab title="ملف التكوين">
+    ```xml
+    <dictionary>
+        <structure>
+            <id>
+                <name>region_id</name>
+            </id>
+
+            <attribute>
+                <name>parent_region</name>
+                <type>UInt64</type>
+                <null_value>0</null_value>
+                <hierarchical>true</hierarchical>
+            </attribute>
+
+            <attribute>
+                <name>region_name</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+
+        </structure>
+    </dictionary>
+    ```
+  </Tab>
+</Tabs>
+
+<br />

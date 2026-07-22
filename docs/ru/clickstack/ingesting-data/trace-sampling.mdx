@@ -1,0 +1,56 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/trace-sampling
+title: 'Сэмплирование трасс'
+sidebarTitle: 'Сэмплирование трасс'
+description: 'Настройте взвешенные с учётом выборки агрегации для сэмплированных данных трасс в ClickStack.'
+doc_type: 'guide'
+keywords: ['clickstack', 'сэмплирование трасс', 'tail-сэмплирование', 'коэффициент выборки', 'взвешенные агрегации', 'OpenTelemetry', 'SampleRate']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Сервисы с высокой пропускной способностью могут генерировать миллионы спанов в секунду. Хранить каждый спан дорого, поэтому команды обычно используют [процессор tail-sampling](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/tailsamplingprocessor) в OpenTelemetry Collector, чтобы сохранять только один из N спанов. Каждый сохранённый спан содержит атрибут `SampleRate`, в котором записано значение N.
+
+После сэмплирования данных наивные агрегации дают неверный результат: `count()` возвращает в N раз меньше событий, чем произошло на самом деле, `sum()` и `avg()` оказываются смещёнными, а процентильные значения сдвигаются. Панели мониторинга показывают заниженные значения числа запросов, пропускной способности и частоты ошибок, что вводит в заблуждение.
+
+ClickStack решает эту проблему с помощью движка запросов, учитывающего сэмплирование. Когда вы настраиваете выражение коэффициента выборки для источника трассировки, конструктор запросов переписывает SQL-агрегации так, чтобы вес каждого спана учитывался по его коэффициенту выборки — в панелях мониторинга, оповещениях и ad-hoc поисковых запросах.
+
+<div id="how-it-works">
+  ## Как это работает
+</div>
+
+Когда для источника трассировки задан `sampleRateExpression`, ClickStack оборачивает его в следующую конструкцию:
+
+```sql
+greatest(toUInt64OrZero(toString(expr)), 1)
+```
+
+Для спанов без атрибута `SampleRate` по умолчанию назначается вес 1, поэтому данные без сэмплирования дают те же результаты, что и исходные запросы.
+
+Затем конструктор запросов переписывает агрегации:
+
+| Aggregation        | Before             | After (sample-corrected)                  |
+| ------------------ | ------------------ | ----------------------------------------- |
+| count              | `count()`          | `sum(weight)`                             |
+| count + condition  | `countIf(cond)`    | `sumIf(weight, cond)`                     |
+| avg                | `avg(col)`         | `sum(col * weight) / sum(weight)`         |
+| sum                | `sum(col)`         | `sum(col * weight)`                       |
+| quantile(p)        | `quantile(p)(col)` | `quantileTDigestWeighted(p)(col, weight)` |
+| min / max          | unchanged          | unchanged                                 |
+| count&#95;distinct | unchanged          | unchanged                                 |
+
+<Note>
+  Для перцентилей при сэмплировании используется `quantileTDigestWeighted` — приблизительный эскиз T-Digest. Результаты близки к точным, но не совпадают с ними полностью.
+</Note>
+
+<div id="configuring">
+  ## Настройка выражения коэффициента выборки
+</div>
+
+Откройте источник трассировки в **Source Settings** и в поле **Sample Rate Expression** введите выражение ClickHouse, которое вычисляет коэффициент выборки для каждого span.
+
+Например, если ваш процессор tail-sampling OpenTelemetry записывает это значение в `SpanAttributes['SampleRate']`:
+
+<Image img="/images/clickstack/trace-sampling-source-settings.webp" alt="Поле Sample Rate Expression в настройках источника ClickStack" size="lg" />
+
+После настройки все графики, панели мониторинга, оповещения и панели мониторинга сервисов автоматически применяют агрегации с учетом коэффициента выборки. Изменять отдельные запросы не нужно.

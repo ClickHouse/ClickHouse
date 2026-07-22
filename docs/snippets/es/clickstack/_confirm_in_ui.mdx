@@ -1,0 +1,27 @@
+---
+title: Confirmar en la UI
+---
+
+Abre tu servicio en la [consola de ClickHouse Cloud](https://console.clickhouse.cloud) y selecciona **ClickStack** en el menú izquierdo; luego, **Iniciar la ingestión**.
+
+<Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="Abrir ClickStack" border />
+
+El siguiente paso puede omitirse, ya que ya has configurado tu collector. Haz clic en **Abrir ClickStack** para continuar.
+
+ClickStack se abrirá en una nueva pestaña y deberías acceder automáticamente a la página **Primeros pasos**. Si no es así, selecciona **Primeros pasos** en el menú izquierdo y luego haz clic en **Iniciar la ingestión** y después en **Siguiente**.
+
+<Image img="/images/use-cases/observability/clickstack-start-ingestion.webp" size="lg" alt="Iniciar la ingestión en ClickStack" border />
+
+Llegarás a la página **Primeros pasos**. Si se te pide comenzar la ingestión, avanza por las pantallas de onboarding que te guían para iniciar un collector de Docker. Como ya has completado ese paso, puedes simplemente hacer clic para pasar por ellas. ClickStack detectará automáticamente tus datos de telemetría y tablas; después, podrás seleccionar **Comenzar a explorar** para empezar a usar la plataforma.
+
+<Image img="/images/use-cases/observability/clickstack-start-exploring.webp" size="lg" alt="Comenzar a explorar en ClickStack" border />
+
+Cambia la fuente a `Logs` y establece el intervalo de tiempo en **Últimos 15 minutos**. Los logs sintéticos de `telemetrygen` deberían aparecer en unos segundos.
+
+<Image img="/images/use-cases/observability/clickstack-search.webp" size="lg" alt="Vista de Búsqueda de ClickStack con logs apareciendo" />
+
+Si no aparece nada:
+
+* Confirma que el valor del header de autenticación enviado a `telemetrygen` coincida con el que espera tu collector.
+* Revisa los logs de tu collector con `tail` y busca errores de exportación.
+* Verifica que el endpoint de ClickHouse configurado en el collector incluya tanto el protocolo como el puerto (`https://...:8443`).

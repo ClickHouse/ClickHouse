@@ -1,0 +1,56 @@
+---
+slug: /use-cases/observability/clickstack/dashboards/dashboard-templates
+title: 'Templates de dashboard'
+sidebarTitle: 'Templates de dashboard'
+description: 'Importação de templates de dashboard prontos para uso no ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'dashboards', 'templates', 'importação', 'observabilidade']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+O ClickStack inclui uma biblioteca de templates de dashboards pré-configurados que oferecem visibilidade imediata de métricas comuns de infraestrutura e aplicações.
+
+<div id="browsing-templates">
+  ## Navegando pelos templates disponíveis
+</div>
+
+Para navegar pela biblioteca integrada de templates, vá para **Dashboards** e clique em **Explorar templates de dashboard**.
+
+<Image img="/images/use-cases/observability/browse-dashboard-template.webp" alt="Botão Explorar templates de dashboard" size="lg" />
+
+Isso abre a galeria de templates, onde eles são organizados por categoria. Clique em **Importar** para iniciar o fluxo de importação desse template.
+
+<Image img="/images/use-cases/observability/dashboard-template-gallery.webp" alt="Galeria de templates de dashboard" size="lg" />
+
+<div id="importing-a-template">
+  ## Importando um template
+</div>
+
+Para importar um template, é preciso definir uma fonte de dados para cada visualização do dashboard. Selecione uma fonte de dados no menu suspenso de cada visualização e clique em `Finish Import`.
+
+<Image img="/images/use-cases/observability/import-dashboard-template.webp" alt="Importação de template de dashboard" size="lg" />
+
+<div id="pre-built-templates">
+  ## Templates prontos
+</div>
+
+<div id="otel-runtime-metrics">
+  ### Métricas de runtime do OTel
+</div>
+
+Os templates integrados de métricas de runtime do OTel foram criados para aplicações instrumentadas com [métricas de runtime do OpenTelemetry](https://opentelemetry.io/docs/specs/semconv/runtime/).
+
+| Template                    | Descrição                                                                                                             |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **.NET Runtime Metrics**    | Coletas do GC, tamanho do heap, uso do thread pool e contagem de assemblies para aplicações .NET                      |
+| **Go Runtime Metrics**      | Contagem de goroutines, tempos de pausa do GC, uso do heap e estatísticas de memória para aplicações Go               |
+| **JVM Runtime Metrics**     | Memória heap e non-heap, duração do GC, contagem de threads e carregamento de classes para aplicações baseadas em JVM |
+| **Node.js Runtime Metrics** | Latência do event loop, uso do heap, utilização de CPU e memória do V8 para aplicações Node.js                        |
+
+Observações:
+
+* Cada template é configurado com um [filtro personalizado](/pt-BR/clickstack/features/dashboards/overview#custom-filters) para serviços cujo atributo de recurso [`telemetry.sdk.language`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-language) corresponda ao runtime do dashboard.
+  * Ambientes com schemas personalizados para tabelas de métricas do ClickHouse talvez precisem ajustar esse filtro para consultar as colunas corretas de Nome do Serviço e Atributos de Recurso.
+  * Em ambientes de alto volume, o tempo de carregamento do filtro pode ser reduzido [materializando](/pt-BR/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes) a coluna `ResourceAttributes['telemetry.sdk.language']`.
+* Os templates fazem referência às Convenções Semânticas do OTel mais atuais no momento da publicação e são atualizados periodicamente conforme a especificação do OTel evolui. Para serviços instrumentados com SDKs do OTel mais antigos, talvez seja necessário [editar](/pt-BR/clickstack/features/dashboards/overview#dashboards-editing-visualizations) as visualizações para referenciar nomes de métricas antigos.

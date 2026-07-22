@@ -1,0 +1,219 @@
+---
+alias: []
+description: '一种输入格式，用于读取 GeoJSON FeatureCollection，并为每个要素生成一行数据，包含 id、geometry 和 properties 列。'
+input_format: true
+output_format: false
+keywords: ['GeoJSON']
+sidebarTitle: 'GeoJSON'
+slug: /interfaces/formats/GeoJSON
+title: 'GeoJSON'
+doc_type: 'reference'
+---
+
+| 输入 | 输出 | 别名 |
+| -- | -- | -- |
+| ✔  | ✗  |    |
+
+<div id="description">
+  ## 说明
+</div>
+
+读取 [GeoJSON](https://geojson.org/) `FeatureCollection` 文档，并为每个要素生成一行。每一行都具有以下固定 schema：
+
+| Column       | Type             | Description                                                                |
+| ------------ | ---------------- | -------------------------------------------------------------------------- |
+| `id`         | `String`         | 要素的 `id` 成员 (JSON 字符串或数字) ，以文本形式存储；如果 `id` 不存在或为 `null`，则为空字符串。            |
+| `geometry`   | `Geometry`       | 要素的几何对象，存储为 `Geometry` Variant 类型。                                         |
+| `properties` | `Nullable(JSON)` | 要素的 `properties` 对象，存储为半结构化 `JSON` 列。显式的 `"properties": null` 会保留为 `NULL`。 |
+
+每个几何对象都存储在 ClickHouse 的 `Geometry` 类型中 (即 `Variant`) 。支持的 GeoJSON 几何类型包括 `Point`、`LineString`、`MultiLineString`、`Polygon` 和 `MultiPolygon`。另外两种 GeoJSON 几何类型 `GeometryCollection` 和 `MultiPoint` 无法用 `Geometry` 类型表示；默认情况下，将其读入 `geometry` 列时会引发异常，但也可以改为插入 `NULL`——请参见下方的[处理不受支持的几何类型](#unsupported-geometry)。默认情况下，只有当要素的几何对象是显式的 JSON `null` 时，`geometry` 列才为 `NULL`；在 `input_format_geojson_unsupported_geometry_handling = 'null'` 下，不受支持的几何类型也会被写为 `NULL`。
+
+系统会校验文档结构：顶层 `type` 必须为 `FeatureCollection`，并且 `features` 中的每个元素都必须具有 `type` `Feature`。坐标必须满足 GeoJSON 的形状约束——`LineString` (以及 `MultiLineString` 中的每条线) 必须至少包含两个位置，而 `Polygon` 的 ring (以及 `MultiPolygon` 中的每个 ring) 必须闭合且至少包含四个位置。格式不正确的文档会被拒绝，而不会被静默加载。
+
+`FeatureCollection` 对象中的其他键 (如 `name` 或 `crs`) 以及每个 `Feature` 对象中的其他键 (如 `bbox`) 都会被忽略。
+
+键的顺序可以灵活调整：顶层 `type` 可以出现在 `features` 数组之前或之后；在几何对象内部，`coordinates` 也可以出现在 `type` 之前或之后。
+
+schema inference 会返回上述固定 schema，因此 `DESCRIBE` 和 `SELECT ... FROM format(...)` 无需表定义即可使用。
+
+<div id="example-usage">
+  ## 示例用法
+</div>
+
+给定以下 GeoJSON 文件 `london.geojson`，其中包含多种几何类型：
+
+```json
+{
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "id": "1",
+            "geometry": {"type": "Point", "coordinates": [-0.0761, 51.5081]},
+            "properties": {"name": "Tower of London", "feature_type": "landmark", "year_built": 1078}
+        },
+        {
+            "type": "Feature",
+            "id": "2",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[-0.2500, 51.4700], [-0.1800, 51.4900], [-0.1200, 51.5060], [-0.0700, 51.5050], [0.0000, 51.5100]]
+            },
+            "properties": {"name": "River Thames", "feature_type": "river", "length_km": 346}
+        },
+        {
+            "type": "Feature",
+            "id": "3",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[[-0.1880, 51.5074], [-0.1533, 51.5074], [-0.1533, 51.5153], [-0.1880, 51.5153], [-0.1880, 51.5074]]]
+            },
+            "properties": {"name": "Hyde Park", "feature_type": "park", "area_km2": 1.42}
+        }
+    ]
+}
+```
+
+我们可以查询该文件并查看几何类型：
+
+```sql title="Query"
+SELECT id, properties.name AS name, variantType(geometry) AS geo_type
+FROM file('london.geojson', GeoJSON);
+```
+
+```response title="Response"
+┌─id─┬─name────────────┬─geo_type───┐
+│ 1  │ Tower of London │ Point      │
+│ 2  │ River Thames    │ LineString │
+│ 3  │ Hyde Park       │ Polygon    │
+└────┴─────────────────┴────────────┘
+```
+
+会自动识别文件扩展名 `.geojson`，因此可省略 `format` 参数：
+
+```sql title="Query"
+SELECT id, properties.name AS name, variantType(geometry) AS geo_type
+FROM file('london.geojson');
+```
+
+我们可以使用 `variantType` 查看每个 Geometry 对象的底层类型：
+
+```sql title="Query"
+SELECT properties.name AS name, geometry, variantType(geometry)
+FROM file('london.geojson', GeoJSON);
+```
+
+```response title="Response"
+Row 1:
+──────
+name:                  Tower of London
+geometry:              (-0.0761,51.5081)
+variantType(geometry): Point
+
+Row 2:
+──────
+name:                  River Thames
+geometry:              [(-0.25,51.47),(-0.18,51.49),(-0.12,51.506),(-0.07,51.505),(0,51.51)]
+variantType(geometry): LineString
+
+Row 3:
+──────
+name:                  Hyde Park
+geometry:              [[(-0.188,51.5074),(-0.1533,51.5074),(-0.1533,51.5153),(-0.188,51.5153),(-0.188,51.5074)]]
+variantType(geometry): Polygon
+```
+
+我们可以这样提取底层数据：
+
+```sql title="Query"
+SELECT properties.name AS name, variantType(geometry), geometry.Point, geometry.LineString, geometry.Polygon
+FROM file('london.geojson', GeoJSON);
+```
+
+```response title="Response"
+Row 1:
+──────
+name:                  Tower of London
+variantType(geometry): Point
+geometry.Point:        (-0.0761,51.5081)
+geometry.LineString:   []
+geometry.Polygon:      []
+
+Row 2:
+──────
+name:                  River Thames
+variantType(geometry): LineString
+geometry.Point:        (0,0)
+geometry.LineString:   [(-0.25,51.47),(-0.18,51.49),(-0.12,51.506),(-0.07,51.505),(0,51.51)]
+geometry.Polygon:      []
+
+Row 3:
+──────
+name:                  Hyde Park
+variantType(geometry): Polygon
+geometry.Point:        (0,0)
+geometry.LineString:   []
+geometry.Polygon:      [[(-0.188,51.5074),(-0.1533,51.5074),(-0.1533,51.5153),(-0.188,51.5153),(-0.188,51.5074)]]
+```
+
+访问 `Geometry` 子列时，如果该行存储的是该类型，则返回该值；否则返回该类型的默认值——`Point` 为 `(0,0)`，基于数组的类型为 `[]`——因此请使用 `variantType(geometry)` 来判断当前设置的是哪种类型。
+
+我们也可以将 GeoJSON 数据摄取到表中：
+
+```sql title="Query"
+CREATE TABLE london
+(
+    id           String,
+    geometry     Geometry,
+    properties   Nullable(JSON),
+    name         String MATERIALIZED properties.name,
+    feature_type String MATERIALIZED properties.feature_type
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO london
+SELECT id, geometry, properties
+FROM file('london.geojson', GeoJSON);
+```
+
+然后按要素类型进行查询：
+
+```sql title="Query"
+SELECT name, feature_type, variantType(geometry) AS geo_type
+FROM london
+ORDER BY id;
+```
+
+```response title="Response"
+┌─name────────────┬─feature_type─┬─geo_type───┐
+│ Tower of London │ landmark     │ Point      │
+│ River Thames    │ river        │ LineString │
+│ Hyde Park       │ park         │ Polygon    │
+└─────────────────┴──────────────┴────────────┘
+```
+
+无需表定义，我们也可以推断 GeoJSON 数据的 schema：
+
+```sql title="Query"
+DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
+```
+
+```response title="Response"
+┌─name───────┬─type───────────┐
+│ id         │ String         │
+│ geometry   │ Geometry       │
+│ properties │ Nullable(JSON) │
+└────────────┴────────────────┘
+```
+
+<div id="unsupported-geometry">
+  ## 处理不受支持的几何类型
+</div>
+
+某些有效的 GeoJSON 几何类型 — 例如 `GeometryCollection` 和 `MultiPoint` — 无法用 ClickHouse 的 `Geometry` 类型表示。你可以使用 `input_format_geojson_unsupported_geometry_handling` 设置，控制当这类几何对象必须存储到 `geometry` 列中时应如何处理。可能的值为：
+
+* `'throw'` — 抛出异常 (默认) 
+* `'null'` — 为 `geometry` 列插入 `NULL` 值并继续解析
+
+这种处理方式仅在读取 `geometry` 列时适用。当 `geometry` 不是请求输出的列时 (例如 `SELECT id FROM ...`) ，不受支持的几何对象仍会验证其格式是否正确，但不会触发该处理方式——既不会抛出异常，也不会插入 `NULL`，因为不会将任何几何值 materialize。

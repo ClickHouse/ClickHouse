@@ -1,0 +1,71 @@
+---
+description: 'Documentação da otimização LowCardinality para colunas do tipo string'
+sidebarTitle: 'LowCardinality(T)'
+slug: /sql-reference/data-types/lowcardinality
+title: 'LowCardinality(T)'
+doc_type: 'reference'
+---
+
+Altera a representação interna de outros tipos de dados para usar codificação por dicionário.
+
+<div id="syntax">
+  ## Sintaxe
+</div>
+
+```sql
+LowCardinality(data_type)
+```
+
+**Parâmetros**
+
+* `data_type` — [String](/pt-BR/reference/data-types/string), [FixedString](/pt-BR/reference/data-types/fixedstring), [Date](/pt-BR/reference/data-types/date), [DateTime](/pt-BR/reference/data-types/datetime) e números, com exceção de [Decimal](/pt-BR/reference/data-types/decimal). `LowCardinality` não é eficiente para alguns tipos de dados; consulte a descrição da configuração [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/pt-BR/reference/settings/session-settings#allow_suspicious_low_cardinality_types).
+
+<div id="description">
+  ## Descrição
+</div>
+
+`LowCardinality` é uma superestrutura que altera o método de armazenamento dos dados e as regras de processamento. O ClickHouse aplica [codificação por dicionário](https://en.wikipedia.org/wiki/Dictionary_coder) às colunas `LowCardinality`. Trabalhar com dados codificados por dicionário aumenta significativamente o desempenho de consultas [SELECT](/pt-BR/reference/statements/select/index) em muitas aplicações.
+
+A eficiência do uso do tipo de dado `LowCardinality` depende da diversidade dos dados. Se um dicionário contiver menos de 10.000 valores distintos, o ClickHouse geralmente apresenta maior eficiência na leitura e no armazenamento de dados. Se um dicionário contiver mais de 100.000 valores distintos, o desempenho do ClickHouse pode ser inferior em comparação com o uso de tipos de dados comuns.
+
+Considere usar `LowCardinality` em vez de [Enum](/pt-BR/reference/data-types/enum) ao trabalhar com strings. `LowCardinality` oferece mais flexibilidade e, muitas vezes, apresenta a mesma eficiência ou até uma eficiência maior.
+
+<div id="example">
+  ## Exemplo
+</div>
+
+Crie uma tabela com uma coluna `LowCardinality`:
+
+```sql
+CREATE TABLE lc_t
+(
+    `id` UInt16,
+    `strings` LowCardinality(String)
+)
+ENGINE = MergeTree()
+ORDER BY id
+```
+
+<div id="related-settings-and-functions">
+  ## Configurações e funções relacionadas
+</div>
+
+Configurações:
+
+* [low&#95;cardinality&#95;max&#95;dictionary&#95;size](/pt-BR/reference/settings/session-settings#low_cardinality_max_dictionary_size)
+* [low&#95;cardinality&#95;use&#95;single&#95;dictionary&#95;for&#95;part](/pt-BR/reference/settings/session-settings#low_cardinality_use_single_dictionary_for_part)
+* [low&#95;cardinality&#95;allow&#95;in&#95;native&#95;format](/pt-BR/reference/settings/session-settings#low_cardinality_allow_in_native_format)
+* [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/pt-BR/reference/settings/session-settings#allow_suspicious_low_cardinality_types)
+* [output&#95;format&#95;arrow&#95;low&#95;cardinality&#95;as&#95;dictionary](/pt-BR/reference/settings/formats#output_format_arrow_low_cardinality_as_dictionary)
+
+Funções:
+
+* [toLowCardinality](/pt-BR/reference/functions/regular-functions/type-conversion-functions#toLowCardinality)
+
+<div id="related-content">
+  ## Conteúdo relacionado
+</div>
+
+* Blog: [Otimizando o ClickHouse com esquemas e codecs](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
+* Blog: [Trabalhando com dados de séries temporais no ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
+* [Otimização de String (apresentação em vídeo, em russo)](https://youtu.be/rqf-ILRgBdY?list=PL0Z2YDlm0b3iwXCpEFiOOYmwXzVmjJfEt). [Slides em inglês](https://github.com/ClickHouse/clickhouse-presentations/raw/master/meetup19/string_optimization.pdf)

@@ -1,0 +1,87 @@
+---
+slug: /best-practices/use-materialized-views
+sidebarTitle: '使用 materialized view'
+title: '使用 materialized view'
+description: '介绍 materialized view 的页面'
+keywords: ['materialized view', '奖章架构']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+ClickHouse 支持两种类型的materialized view：[**增量**](/zh/concepts/features/materialized-views/incremental-materialized-view) 和 [**可刷新**](/zh/concepts/features/materialized-views/refreshable-materialized-view)。虽然二者都旨在通过预计算并存储结果来加速查询，但它们在底层查询的执行方式和执行时机、适用的工作负载，以及数据新鲜度的处理方式上存在显著差异。
+
+**如果某些特定查询模式需要加速，并且此前已经遵循了[类型选择](/zh/concepts/best-practices/select-data-type)和[主键优化](/zh/concepts/best-practices/choosing-a-primary-key)方面的最佳实践，那么就应该考虑使用materialized view。**
+
+**增量materialized view**会实时更新。每当新数据写入源表时，ClickHouse 都会自动将materialized view的查询应用到新的数据块，并将结果写入单独的目标表。随着时间推移，ClickHouse 会合并这些部分结果，从而生成完整且最新的视图。这种方式非常高效，因为它将计算开销转移到写入时，而且只处理新数据。因此，针对目标表的 `SELECT` 查询会更快、开销也更低。增量视图支持所有聚合函数，并且具备良好的扩展性——即使数据规模达到 PB 级也是如此——因为每次查询处理的都只是当前写入数据集中的一小部分最新数据。
+
+<Image img="/images/bestpractices/incremental_materialized_view.webp" size="lg" alt="Materialized View" />
+
+相比之下，**可刷新materialized view**是按计划更新的。这类视图会定期重新执行完整查询，并覆盖目标表中的结果。这与 Postgres 等传统 OLTP 数据库中的materialized view类似。
+
+<Image img="/images/bestpractices/refreshable_materialized_view.webp" size="lg" alt="Refreshable materialized view diagram" />
+
+增量materialized view 与可刷新materialized view 之间如何选择，很大程度上取决于查询本身的性质、数据变化的频率，以及视图更新是否必须在每一行写入时立即反映出来，还是可以接受按周期刷新。理解这些权衡，是在 ClickHouse 中设计高性能、可扩展的materialized view的关键。
+
+<div id="when-to-use-incremental-materialized-views">
+  ## 何时使用增量materialized view
+</div>
+
+通常优先使用增量materialized view，因为每当源表接收到新数据时，它们都会自动实时更新。它们支持所有聚合函数，尤其适合对单表进行聚合。由于在插入时以增量方式计算结果，查询只需处理显著更小的数据子集，因此这些视图即使面对高达 PB 级的数据量，也能轻松扩展。在大多数情况下，它们不会对整体集群性能产生明显影响。
+
+在以下情况下，请使用增量materialized view：
+
+* 你需要每次插入后都会更新的实时查询结果。
+* 你需要频繁对海量数据进行聚合或过滤。
+* 你的查询仅涉及对单表进行简单的转换或聚合。
+
+有关增量materialized view 的示例，请参见[这里](/zh/concepts/features/materialized-views/incremental-materialized-view)。
+
+<div id="when-to-use-refreshable-materialized-views">
+  ## 何时使用可刷新materialized view
+</div>
+
+可刷新materialized view 会周期性地执行查询，而不是以增量方式执行，并存储查询结果集以便快速检索。
+
+当查询性能至关重要 (例如亚毫秒级延迟) ，且可以接受结果有轻微滞后时，这类视图最有用。由于查询每次都会完整重新执行，可刷新materialized view 最适合那些计算速度相对较快，或可以按较低频率 (例如每小时) 执行的查询，例如缓存“top N”结果或查找表。
+
+应仔细调整执行频率，以避免给系统带来过高负载。对于会消耗大量资源的极其复杂的查询，应谨慎安排调度——这类查询可能会影响缓存并占用 CPU 和内存，从而导致整个集群的性能下降。为避免集群过载，查询的运行时间应明显短于刷新间隔。例如，如果查询本身至少需要 10 秒才能完成计算，就不要将某个视图设置为每 10 秒更新一次。
+
+<div id="summary">
+  ## 总结
+</div>
+
+总之，在以下情况下应使用可刷新materialized view：
+
+* 你需要能立即获得缓存的查询结果，并且可以接受数据新鲜度有轻微延迟。
+* 你需要查询结果集中的前 N 项。
+* 结果集的大小不会随着时间推移而无限增长，否则会导致目标视图性能下降。
+* 你正在执行涉及多个表的复杂 JOIN 或反规范化，并且只要任一源表发生更改就需要更新。
+* 你正在构建批次工作流、反规范化任务，或创建类似 DBT DAG 的视图依赖关系。
+
+有关可刷新materialized view的示例，请参见[这里](/zh/concepts/features/materialized-views/refreshable-materialized-view)。
+
+<div id="append-vs-replace-mode">
+  ### APPEND 与 REPLACE 模式
+</div>
+
+可刷新materialized view 支持两种将数据写入目标表的模式：`APPEND` 和 `REPLACE`。这些模式定义了视图刷新时，如何写入该视图查询的结果。
+
+`REPLACE` 是默认行为。每次刷新视图时，目标表中原有的内容都会被最新的查询结果完全覆盖。这适用于视图应始终反映最新状态的场景，例如缓存结果集。
+
+相比之下，`APPEND` 允许将新行追加到目标表末尾，而不是替换其现有内容。这使其适用于更多场景，例如捕获周期性快照。当每次刷新都代表一个独立的时间点，或者需要对结果进行历史累积时，`APPEND` 尤其有用。
+
+在以下情况下选择 `APPEND` 模式：
+
+* 你希望保留过去刷新的历史记录。
+* 你正在构建周期性快照或报表。
+* 你需要随时间推移增量收集刷新后的结果。
+
+在以下情况下选择 `REPLACE` 模式：
+
+* 你只需要最新的结果。
+* 过时数据应被完全丢弃。
+* 该视图表示当前状态或用于查找。
+
+如果你正在构建 [Medallion architecture](https://clickhouse.com/blog/building-a-medallion-architecture-for-bluesky-json-data-with-clickhouse)，可以在这里看到 `APPEND` 功能的一个应用场景。

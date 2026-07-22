@@ -1,0 +1,78 @@
+---
+noindex: true
+title: "용어집"
+description: "ClickHouse Private의 구성 요소, 개념 및 용어를 정의합니다."
+---
+
+<div id="clickhouse-components">
+  ## ClickHouse 구성 요소
+</div>
+
+**ClickHouse 서버**
+ClickHouse의 기본 데이터베이스 프로세스입니다. ClickHouse Private에서는 각 서버 레플리카가 자체 StatefulSet으로 관리되는 파드로 실행됩니다. [공식 문서](https://clickhouse.com/docs/operations/server-configuration-parameters/settings)를 참조하십시오.
+
+**ClickHouse Keeper**
+복제 메타데이터를 위한 분산 조정 서비스입니다. 고가용성(HA)을 위해 최소 3개의 인스턴스가 필요합니다. [공식 문서](https://clickhouse.com/docs/operations/clickhouse-keeper)를 참조하십시오.
+
+**ClickHouse Operator**
+프로비저닝, 스케일링, 백업, 리컨실리에이션을 포함하여 ClickHouseCluster 사용자 지정 리소스의 수명 주기를 관리하는 Kubernetes 오퍼레이터입니다.
+
+**ClickHouseCluster (CR)**
+레플리카, 스토리지, 네트워킹, 구성을 포함해 ClickHouse 클러스터의 목표 상태를 정의하는 Kubernetes 사용자 지정 리소스입니다. `onprem-clickhouse-cluster` Helm 차트를 통해 생성됩니다.
+
+**Airgap Management API**
+ClickHouse Private 클러스터 관리를 위한 선택적 REST API 구성 요소입니다. 백업, 수직 스케일링, 비밀번호 재설정, 상태 모니터링용 엔드포인트를 제공합니다.
+
+<div id="architecture-concepts">
+  ## 아키텍처 개념
+</div>
+
+**MultiStatefulSet (MultiSTS)**
+각 ClickHouse 서버 레플리카를 각각의 StatefulSet이 소유하는 오퍼레이터의 StatefulSet 모델입니다(1 STS = 1 파드). 이를 통해 더 안전한 rolling update와 레플리카별 독립 관리가 가능합니다. MultiSTS는 더 이상 권장되지 않는 기존 SingleSTS 모델을 대체했습니다.
+
+**ReplicaStateMap**
+MultiSTS 모드에서 각 레플리카의 상태를 추적하는 ClickHouseCluster CR의 status에 있는 내부 데이터 구조입니다. 상태에는 **Pending**, **Ready**, **Stopped**, **Condemned**, **Dropped**, **VolumeRestoring**, **VolumeRestored**가 포함됩니다. 이는 오퍼레이터 내부 전용이므로 외부 시스템에서 사용해서는 안 됩니다.
+
+**Condemned Replica**
+scale-in 작업 중 삭제 대상으로 표시된 레플리카입니다. 오퍼레이터는 ReplicaStateMap에서 이 레플리카의 상태를 **Ready**에서 **Condemned**로 전환한 다음, 데이터를 동기화한 후 안전하게 제거합니다.
+
+**Hydra (Compute Separation)**
+단일 ClickHouse 클러스터 내에서 여러 컴퓨트 프로필(노드 그룹)을 사용할 수 있게 하는 기능입니다. 각 프로필은 서로 다른 리소스 할당과 별도의 엔드포인트를 가질 수 있으며, 하나의 Keeper 인스턴스와 S3 데이터를 공유합니다. 하위 인스턴스는 읽기 전용 또는 읽기-쓰기로 구성할 수 있습니다.
+
+**Backup Pod**
+MultiSTS 모드에서는 하나의 레플리카가 백업 파드로 지정됩니다(`isBackupPod: true` in the ReplicaStateMap). 백업은 항상 이 파드에서 실행되며, scale-in 중에도 이 파드는 절대 폐기 대상으로 지정되지 않습니다.
+
+<div id="infrastructure-terms">
+  ## 인프라 용어
+</div>
+
+**IRSA (IAM Roles for Service Accounts)**
+Kubernetes 서비스 계정이 IAM 역할을 수임할 수 있게 해주는 AWS 메커니즘입니다. 정적 자격 증명 없이 ClickHouse 파드에 S3 접근 권한을 부여하는 데 사용됩니다.
+
+**Workload Identity**
+IRSA에 해당하는 GCP 기능입니다. Kubernetes 서비스 계정을 GCP 서비스 계정에 바인딩하여 GCS 및 기타 GCP 서비스에 접근할 수 있게 합니다.
+
+**FIPS 140-2**
+암호화 모듈에 대한 미국 정부 표준입니다. ClickHouse Private는 특별히 빌드된 서버 이미지와 FIPS 검증을 거친 TLS 인증서 생성 방식을 사용해 FIPS 준수 배포를 지원합니다.
+
+**NVMe Cache**
+서버 노드에 연결된 로컬 NVMe SSD 스토리지로, S3/GCS에 저장된 데이터의 디스크 캐시로 사용됩니다. 자주 액세스하는 데이터를 로컬에 캐싱하여 쿼리 성능을 향상합니다. Helm 차트에서 `bytesPerGiRAM` 또는 `cacheDiskSize`를 통해 구성됩니다.
+
+**S3 Key Prefix**
+S3 버킷 내에서 클러스터 데이터를 구분하는 고유 식별자(일반적으로 UUID)입니다. 여러 클러스터가 서로 다른 키 프리픽스를 사용해 하나의 버킷을 공유할 수 있습니다.
+
+<div id="operational-terms">
+  ## 운영 용어
+</div>
+
+**리컨실리에이션**
+오퍼레이터가 목표 상태(CR spec)와 실제 상태(실행 중인 파드, StatefulSets)를 비교하여 차이를 바로잡는 프로세스입니다. `last_cluster_reconcile` 메트릭으로 모니터링합니다.
+
+**Skip-Reconcile 어노테이션**
+ClickHouseCluster CR의 `clickhouse.com/skip-reconcile` 어노테이션입니다. 이 어노테이션이 있으면 오퍼레이터는 해당 클러스터에 대해 리컨실리에이션을 수행하지 않습니다. 레플리카 제거와 같은 수동 작업 중에 사용됩니다.
+
+**Preflight 검사**
+ClickHouse를 배포하기 전에 클러스터의 사전 요구 사항을 검증하는 도구(Troubleshoot.sh 기반)입니다. 노드 레이블, 스토리지 클래스, CRD 등을 확인합니다.
+
+**PDB (파드 중단 예산)**
+동시에 사용할 수 없게 되는 파드 수를 제한하는 Kubernetes 리소스입니다. 오퍼레이터는 가용성을 유지하기 위해 롤링 업데이트 중 PDB를 준수합니다.
