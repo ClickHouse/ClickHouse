@@ -1,13 +1,20 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <Columns/ColumnObject.h>
+#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnString.h>
+#include <Core/ColumnWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/ProtocolDefines.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/Serializations/SerializationInfoObject.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Formats/NativeWriter.h>
 #include <IO/WriteBufferFromString.h>
 #include <Poco/JSON/Object.h>
 #include <Common/Exception.h>
@@ -264,6 +271,50 @@ TEST(SerializationInfoObject, EnabledOnlyForSubcolumnsVersion)
     auto restored = SerializationInfoByName::readJSONFromString(columns, out.str());
     EXPECT_EQ(restored.getVersion(), MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS);
     EXPECT_NE(typeid_cast<const SerializationInfoObject *>(restored.tryGet("j").get()), nullptr);
+}
+
+TEST(SerializationInfoObject, NativeRevisionGate)
+{
+    constexpr size_t rows = 4;
+    auto values = ColumnString::create();
+    values->insertDefault();
+    values->insertData("value", 5);
+    auto offsets = ColumnUInt64::create();
+    offsets->getData().push_back(0);
+
+    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths;
+    typed_paths["x"] = ColumnSparse::create(
+        MutableColumnPtr(std::move(values)), MutableColumnPtr(std::move(offsets)), rows);
+
+    ColumnWithTypeAndName column;
+    column.name = "j";
+    column.type = DataTypeFactory::instance().get("JSON(x String, max_dynamic_paths=0)");
+    auto object_template = column.type->createColumn();
+    auto shared_data = assert_cast<const ColumnObject &>(*object_template).getSharedDataPtr()->cloneResized(rows);
+    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> dynamic_paths;
+    column.column = ColumnObject::create(
+        std::move(typed_paths),
+        std::move(dynamic_paths),
+        std::move(shared_data),
+        0,
+        0,
+        DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES);
+
+    auto new_result = NativeWriter::getSerializationAndColumn(DBMS_MIN_REVISION_WITH_JSON_TYPED_PATHS_SERIALIZATION, column);
+    const auto & new_info = std::get<1>(new_result);
+    const auto & new_column = std::get<2>(new_result);
+    const auto * object_info = typeid_cast<const SerializationInfoObject *>(new_info.get());
+    ASSERT_NE(object_info, nullptr);
+    EXPECT_EQ(
+        object_info->getTypedPathInfo("x")->getKindStack(),
+        ISerialization::KindStack({ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE}));
+    EXPECT_TRUE(recursiveHasSparse(new_column));
+
+    auto old_result = NativeWriter::getSerializationAndColumn(DBMS_MIN_REVISION_WITH_JSON_TYPED_PATHS_SERIALIZATION - 1, column);
+    const auto & old_info = std::get<1>(old_result);
+    const auto & old_column = std::get<2>(old_result);
+    EXPECT_EQ(typeid_cast<const SerializationInfoObject *>(old_info.get()), nullptr);
+    EXPECT_FALSE(recursiveHasSparse(old_column));
 }
 
 /// Malformed kind tests.

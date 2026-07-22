@@ -407,18 +407,19 @@ MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const Seriali
     return std::make_shared<SerializationInfoTuple>(std::move(infos), names, settings);
 }
 
-SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column) const
+SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const
 {
     if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
-        return getSerializationInfo(column_const->getDataColumn());
-    return getSerializationInfoImpl(column);
+        return getSerializationInfo(column_const->getDataColumn(), settings);
+    return getSerializationInfoImpl(column, settings);
 }
 
-SerializationInfoMutablePtr DataTypeTuple::getSerializationInfoImpl(const IColumn & column) const
+SerializationInfoMutablePtr DataTypeTuple::getSerializationInfoImpl(
+    const IColumn & column, const SerializationInfoSettings & settings) const
 {
     if (const auto * column_replicated = checkAndGetColumn<ColumnReplicated>(&column))
     {
-        auto info = getSerializationInfoImpl(*column_replicated->getNestedColumn());
+        auto info = getSerializationInfoImpl(*column_replicated->getNestedColumn(), settings);
         info->appendToKindStack(ISerialization::Kind::REPLICATED);
         return info;
     }
@@ -431,11 +432,16 @@ SerializationInfoMutablePtr DataTypeTuple::getSerializationInfoImpl(const IColum
 
     for (size_t i = 0; i < elems.size(); ++i)
     {
-        auto element_info = elems[i]->getSerializationInfo(column_tuple.getColumn(i));
+        auto element_info = elems[i]->getSerializationInfo(column_tuple.getColumn(i), settings);
         infos.push_back(const_pointer_cast<SerializationInfo>(element_info));
     }
 
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), names, settings);
+}
+
+bool DataTypeTuple::hasSparseSerializationSubcolumns() const
+{
+    return std::any_of(elems.begin(), elems.end(), [](const auto & elem) { return elem->hasSparseSerializationSubcolumns(); });
 }
 
 

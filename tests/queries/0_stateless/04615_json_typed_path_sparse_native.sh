@@ -33,4 +33,11 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=SELECT+j+FROM+${table}+FORMAT+Na
     | ${CLICKHOUSE_LOCAL} --input-format Native --query \
         "SELECT count(), countIf(j.x = 'value'), countIf(j.y = 'dense') FROM table"
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE ${table}"
+${CLICKHOUSE_CLIENT} --multiquery --query "
+    DROP TABLE IF EXISTS ${table}_remote;
+    CREATE TABLE ${table}_remote AS ${table};
+    INSERT INTO ${table}_remote SELECT * FROM remote('127.0.0.1', currentDatabase(), '${table}');
+    SELECT count(), countIf(j.x = 'value'), countIf(j.y = 'dense') FROM ${table}_remote;
+    DROP TABLE ${table}_remote;
+    DROP TABLE ${table};
+"

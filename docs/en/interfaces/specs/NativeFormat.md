@@ -179,7 +179,7 @@ A Column appears `num_columns` times within a Block.
 | 1 | name                     | String  | always                   | Column name |
 | 2 | type                     | String *or* binary type encoding | always | ClickHouse type string (e.g., `"UInt64"`, `"Array(String)"`) by default; a binary type encoding when `output_format_native_encode_types_in_binary_format = 1` (see note below) |
 | 3 | has_custom_serialization | UInt8   | feature `CUSTOM_SERIALIZATION` (v54454) | `0` = default, `1` = custom (kind_stack follows) |
-| 4 | kind_stack               | bytes   | when field 3 = `1`       | One UInt8 enum byte (see below) describing the non-default serialization (sparse, etc.). For the `COMBINATION` value, followed by a VarUInt count plus that many additional kind bytes. For a `Tuple` (and other composites with element-level serialization info) the payload is recursive — see below. |
+| 4 | kind_stack               | bytes   | when field 3 = `1`       | One UInt8 enum byte (see below) describing the non-default serialization (sparse, etc.). For the `COMBINATION` value, followed by a VarUInt count plus that many additional kind bytes. For composites with element-level serialization info, such as `Tuple` and `JSON` with declared typed paths, the payload is recursive — see below. |
 | 5 | data                     | bytes   | always                   | Column values for all `num_rows` rows. Layout per type — see [data types](#data-types). For sparse columns, see below. |
 
 A decoder dispatches on the `type` string. Type strings often carry parameters in parentheses; the decoder strips the `(...)` suffix to find the base type and then parses the parameters for size, scale, or inner-type decisions. Parsing a parameter list with nested types (a `Tuple` inside an `Array`, say) needs a depth-aware comma splitter that tracks parenthesis nesting rather than a naive split on `,`.
@@ -225,7 +225,11 @@ The byte values differ from the compact codes: `REPLICATED` is `0x03` in this ne
 
 The `count` is the full stack length **including the leading `DEFAULT` entry** that begins every stack. The compact codes already cover every one- and two-entry stack, so a `COMBINATION` always has a `count` of at least three.
 
-**Recursive `kind_stack` for `Tuple` columns.** The `kind_stack` payload above is the byte (or `COMBINATION` sequence) for one column's own serialization info. A `Tuple` carries a `SerializationInfoTuple`, which first writes the tuple's *own* kind-stack payload and then writes one full kind-stack payload for *each* element, in order; a decoder reads back the same recursive structure. So for `Tuple(A, B, C)` the field-4 bytes are `[tuple_kind][A_kind][B_kind][C_kind]`, and each element payload is itself recursive if that element is again a composite. The `has_custom_serialization` byte (field 3) is set whenever the tuple's own info *or any element's* info is non-default, so a `Tuple` whose only special element is sparse, replicated, or detached still triggers the kind-stack payload. A decoder that reads only the single leading enum byte for a `Tuple` will stop too early and misread the remaining element-kind bytes as column data.
+**Recursive `kind_stack` for named subcolumns.** The `kind_stack` payload above is the byte (or `COMBINATION` sequence) for one column's own serialization info. A `Tuple` first writes its own kind-stack payload and then one full payload for each element in order. So for `Tuple(A, B, C)` the field-4 bytes are `[tuple_kind][A_kind][B_kind][C_kind]`, and each element payload is itself recursive if that element is again a composite.
+
+At revision `54489` and above, `JSON` with declared typed paths uses the same recursive shape: `[json_kind][path_0_kind]...[path_n_kind]`. Typed paths are ordered lexicographically by their full declared path names; dynamic paths and shared data do not have entries in this metadata. Below revision `54489`, declared paths are materialized dense and only the outer `JSON` kind is present.
+
+The `has_custom_serialization` byte (field 3) is set whenever a composite's own info or any recursively described child is non-default. A decoder that reads only the single leading enum byte will stop too early and misread the remaining child-kind bytes as column data.
 
 **Sparse wire format.** When `kind_stack = 0x01`, the column `data` is two streams written back-to-back in the single shared TCP stream:
 
@@ -342,6 +346,7 @@ Each feature sits behind a `DBMS_MIN_REVISION_WITH_*` threshold. The writer emit
 | Aggregate-function versioning | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING` | `54452` | `AggregateFunction` state is written without an embedded version. |
 | `out_of_order_buckets` in `BlockInfo` | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION` | `54480` | `BlockInfo` field ID `3` is not written (see [BlockInfo](#blockinfo)). |
 | Parallel block marshalling (`DETACHED`) | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` | `54478` | Columns are never wrapped in a `ColumnBLOB`; no `DETACHED` / `DETACHED_OVER_SPARSE` kinds appear (see [kind_stack](#kind-stack-and-sparse-encoding)). |
+| Recursive serialization for declared `JSON` paths | `DBMS_MIN_REVISION_WITH_JSON_TYPED_PATHS_SERIALIZATION` | `54489` | Declared typed paths are materialized dense and their recursive kind-stack entries are omitted. |
 | `DateTime(tz)` type parameter | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337` | The timezone parameter is dropped from the `type` string — `DateTime('UTC')` is announced as bare `DateTime`. |
 
 That makes revision `0` the most conservative encoding for almost everything: the stream carries no `BlockInfo`, no `has_custom_serialization` byte, V1 `Dynamic`/`JSON`, no aggregate-function version, and a bare `DateTime` with the timezone parameter dropped.
@@ -1367,9 +1372,9 @@ There are two kinds of path:
 - **Typed paths** are declared in the type string, for example `JSON(a UInt32, b String)`, and decoded in their declared type. A path name containing dots is backtick-quoted in the type string.
 - **Dynamic paths** are discovered at runtime and each decoded as a [Dynamic](#dynamic) column.
 
-Typed paths are always materialized to their regular dense columns before `JSON` is written in the `Native` format. MergeTree parts may store an individual declared path with sparse serialization, but that per-path choice is not added to the outer column's `Native` kind stack and does not change the wire layout below.
+At protocol revision `54489` and above, a declared typed path may use sparse serialization. Its kind is carried in the recursive [`kind_stack`](#kind-stack-and-sparse-encoding) for the outer `JSON` column. At lower revisions, including the revision-`0` file and default `FORMAT Native` paths, declared paths are materialized dense and the wire layout remains compatible with older readers.
 
-In FLATTENED mode there is **no shared-data column** (that overflow store belongs to the non-flat V2/V3 Object encodings). Every path is a full column of `num_rows` values.
+In FLATTENED mode there is **no shared-data column** (that overflow store belongs to the non-flat V2/V3 Object encodings). Every path is logically a column of `num_rows` values; a typed path with a recursive `SPARSE` kind uses the sparse physical layout described above.
 
 ```text
 [per block with rows > 0]:

@@ -59,7 +59,9 @@ public:
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
     SerializationPtr getSerialization(const SerializationInfo & info) const override;
     MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const override;
-    SerializationInfoPtr getSerializationInfo(const IColumn & column) const override;
+    using IDataType::getSerializationInfo;
+    SerializationInfoPtr getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const override;
+    bool hasSparseSerializationSubcolumns() const override;
 
     DataTypePtr getNormalizedType() const override;
     const DataTypePtr & getElement(size_t i) const { return elems[i]; }
@@ -77,7 +79,7 @@ public:
     void forEachChild(const ChildCallback & callback) const override;
 
 private:
-    SerializationInfoMutablePtr getSerializationInfoImpl(const IColumn & column) const;
+    SerializationInfoMutablePtr getSerializationInfoImpl(const IColumn & column, const SerializationInfoSettings & settings) const;
 };
 
 }

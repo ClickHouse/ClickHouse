@@ -14,7 +14,9 @@
 #include <DataTypes/Serializations/SerializationDetached.h>
 #include <DataTypes/Serializations/SerializationReplicated.h>
 #include <DataTypes/Serializations/SerializationWrapper.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnObject.h>
+#include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnReplicated.h>
 #include <Interpreters/castColumn.h>
@@ -231,6 +233,47 @@ MutableSerializationInfoPtr DataTypeObject::createSerializationInfo(const Serial
     infos.reserve(paths.size());
     for (const auto & path : paths)
         infos.push_back(typed_paths.at(path)->createSerializationInfo(settings));
+
+    return std::make_shared<SerializationInfoObject>(std::move(infos), std::move(paths), settings);
+}
+
+SerializationInfoPtr DataTypeObject::getSerializationInfo(
+    const IColumn & column, const SerializationInfoSettings & settings) const
+{
+    if (settings.version < MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS)
+        return IDataType::getSerializationInfo(column, settings);
+
+    if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
+        return getSerializationInfo(column_const->getDataColumn(), settings);
+
+    if (const auto * column_replicated = checkAndGetColumn<ColumnReplicated>(&column))
+    {
+        auto info = const_pointer_cast<SerializationInfo>(getSerializationInfo(*column_replicated->getNestedColumn(), settings));
+        info->appendToKindStack(ISerialization::Kind::REPLICATED);
+        return info;
+    }
+
+    if (const auto * column_blob = checkAndGetColumn<ColumnBLOB>(&column))
+    {
+        auto info = const_pointer_cast<SerializationInfo>(getSerializationInfo(*column_blob->getWrappedColumn(), settings));
+        info->appendToKindStack(ISerialization::Kind::DETACHED);
+        return info;
+    }
+
+    const auto & column_object = assert_cast<const ColumnObject &>(column);
+    Names paths;
+    paths.reserve(typed_paths.size());
+    for (const auto & [path, _] : typed_paths)
+        paths.push_back(path);
+    std::sort(paths.begin(), paths.end());
+
+    MutableSerializationInfos infos;
+    infos.reserve(paths.size());
+    for (const auto & path : paths)
+    {
+        infos.push_back(const_pointer_cast<SerializationInfo>(
+            typed_paths.at(path)->getSerializationInfo(*column_object.getTypedPaths().at(path), settings)));
+    }
 
     return std::make_shared<SerializationInfoObject>(std::move(infos), std::move(paths), settings);
 }

@@ -80,7 +80,7 @@ void SerializationInfoSettings::updateHash(SipHash & hash) const
 SerializationInfoSettings SerializationInfoSettings::enableAllSupportedSerializations()
 {
     SerializationInfoSettings settings;
-    settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
+    settings.version = MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS;
     settings.nullable_serialization_version = MergeTreeNullableSerializationVersion::ALLOW_SPARSE;
     return settings;
 }
