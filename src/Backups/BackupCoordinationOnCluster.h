@@ -78,7 +78,7 @@ public:
     String getKeeperMapDataPath(const String & table_zookeeper_root_path) const override;
 
     void addFileInfos(BackupFileInfos && file_infos) override;
-    BackupFileInfos getFileInfos() const override;
+    const BackupFileInfos & getFileInfos() const override;
     void forEachFileInfoForAllHosts(const std::function<void(const BackupFileInfo &)> & callback) const override;
     bool startWritingFile(size_t data_file_index) override;
 

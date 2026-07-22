@@ -2327,7 +2327,7 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
                 if (fuzz_rand() % 5 == 0)
                     value_ast = make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 2048 + 1));
             }
-            else if (param_id->name() == "positions")
+            else if (param_id->name() == "support_phrase_search")
             {
                 if (fuzz_rand() % 5 == 0)
                     value_ast = make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 2));
@@ -2358,7 +2358,7 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
         add_missing_param("posting_list_block_size", UInt64(fuzz_rand() % 2048 + 1));
         add_missing_param("posting_list_codec", String(pickRandomly(fuzz_rand, posting_list_codecs)));
         /// `support_phrase_search = 1` requires the `allow_experimental_text_index_phrase_search` MergeTree setting.
-        add_missing_param("positions", UInt64(fuzz_rand() % 2));
+        add_missing_param("support_phrase_search", UInt64(fuzz_rand() % 2));
     }
 
     /// Fuzz vector_similarity index positional arguments independently of type swap.
@@ -6735,6 +6735,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 {Type::STOP_REPLICATED_VIEW, Type::START_REPLICATED_VIEW},
                 {Type::STOP_VIRTUAL_PARTS_UPDATE, Type::START_VIRTUAL_PARTS_UPDATE},
                 {Type::STOP_REDUCE_BLOCKING_PARTS, Type::START_REDUCE_BLOCKING_PARTS},
+                {Type::STOP, Type::START},
+                {Type::STOP_ALL_BACKGROUND, Type::START_ALL_BACKGROUND},
                 {Type::STOP_LISTEN, Type::START_LISTEN},
                 {Type::LOAD_PRIMARY_KEY, Type::UNLOAD_PRIMARY_KEY},
                 /* These are too slow
@@ -6799,6 +6801,24 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 if (system_query->type == t && fuzz_rand() % 10 == 0)
                 {
                     system_query->type = view_cmd_types[fuzz_rand() % std::size(view_cmd_types)];
+                    break;
+                }
+            }
+        }
+        /// Rotate among background control commands that all take a table argument
+        {
+            static const Type background_cmd_types[] = {
+                Type::STOP,
+                Type::START,
+                Type::PAUSE,
+                Type::CANCEL,
+                Type::REFRESH,
+            };
+            for (const auto & t : background_cmd_types)
+            {
+                if (system_query->type == t && fuzz_rand() % 10 == 0)
+                {
+                    system_query->type = background_cmd_types[fuzz_rand() % std::size(background_cmd_types)];
                     break;
                 }
             }
