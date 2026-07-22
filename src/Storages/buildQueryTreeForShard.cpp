@@ -17,8 +17,8 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
-#include <utility>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
