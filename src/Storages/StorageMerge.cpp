@@ -625,7 +625,15 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     // Using narrowPipe instead. But in case of reading in order of primary key, we cannot do it,
     // because narrowPipe doesn't preserve order. Also, if we are doing a memory efficient distributed agggregation, bucket
     // order must be preserved.
-    const bool should_not_narrow = query_info.input_order_info || (
+    // Same for a global ORDER BY over a child read at a partial stage: the outer merge-only sort needs each
+    // stream individually sorted, which narrowPipe's concatenation does not preserve (issue #111211). The
+    // condition matches when the planner adds a merge-only sort (any after-aggregation stage, or
+    // WithMergeableState without aggregation/window).
+    const bool merging_sorted_streams = query_info.has_order_by
+        && (common_processed_stage >= QueryProcessingStage::Enum::WithMergeableStateAfterAggregation
+            || (common_processed_stage == QueryProcessingStage::Enum::WithMergeableState && !query_info.need_aggregate
+                && !query_info.has_window));
+    const bool should_not_narrow = query_info.input_order_info || merging_sorted_streams || (
         context->getSettingsRef()[Setting::distributed_aggregation_memory_efficient]
         && common_processed_stage == QueryProcessingStage::Enum::WithMergeableState);
     if (!should_not_narrow)

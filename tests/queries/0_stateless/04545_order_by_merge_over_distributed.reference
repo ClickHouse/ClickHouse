@@ -1,0 +1,30 @@
+analyzer, DESC
+1297
+1294
+1291
+analyzer, ASC
+0
+3
+6
+old analyzer, DESC
+1297
+1294
+1291
+analyzer, group by + DESC, no_merge=2
+1297
+1294
+1291
+old analyzer, group by + DESC, no_merge=2
+1297
+1294
+1291
+analyzer, group by + DESC, no_merge=2, push_down_limit=0
+1297
+1294
+1291
+full order head
+1297
+1294
+full order tail
+0
+3
