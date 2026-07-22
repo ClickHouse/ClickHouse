@@ -884,9 +884,15 @@ std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregating
     if (!canUseProjection())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot aggregate from projection");
 
+    /// The projection pipeline never runs `canUseAdaptiveAggregator` and never creates the
+    /// adaptive shared state, so the flag it receives must not claim otherwise: it would only
+    /// mis-drive the size-hint branch of `initDataVariantsWithSizeHint`.
+    auto params_without_adaptive = params;
+    params_without_adaptive.enable_adaptive_aggregator = false;
+
     auto aggregating_projection = std::make_unique<AggregatingProjectionStep>(
         SharedHeaders{input_headers.front(), input_header},
-        params,
+        params_without_adaptive,
         final,
         merge_threads,
         temporary_data_merge_threads
