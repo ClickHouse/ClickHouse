@@ -968,7 +968,9 @@ Fixed output columns:
 - `compression_codec` (`String`) - compression codec of the blob payload, if present
 - `properties` (`Map(String, String)`) - blob-specific properties
 
-LZ4-compressed puffin footers are supported. Declared decompressed footer size is bounded by a compression ratio and an absolute ceiling; oversized frames are rejected before allocation.
+Optional top-level `FileMetadata.properties` in the footer (for example `created-by`) are type-checked when present but are not returned as columns. If the key is present it must be a JSON object with string values (null is rejected).
+
+LZ4-compressed and uncompressed puffin footers are supported. Footer payload size (and declared LZ4 content size) is bounded by a compression ratio where applicable and an absolute ceiling; oversized footers are rejected before allocation.
 
 ## Example usage {#example-usage}
 
@@ -1006,7 +1008,7 @@ Fixed output columns:
 
 Deletion vectors whose declared `cardinality` exceeds an absolute materialization ceiling are rejected.
 
-LZ4-compressed puffin footers are supported. Declared decompressed footer size is bounded by a compression ratio and an absolute ceiling; oversized frames are rejected before allocation.
+LZ4-compressed and uncompressed puffin footers are supported. Footer payload size (and declared LZ4 content size) is bounded by a compression ratio where applicable and an absolute ceiling; oversized footers are rejected before allocation.
 
 Only a subset of output columns can be requested. A user-provided structure with unexpected column names or types is rejected when the format is created.
 
