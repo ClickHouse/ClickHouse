@@ -102,8 +102,12 @@ namespace DB
             /// expired instant, `1970-01-01 00:00:01` (the value 0 would mean "no expiration"). This also
             /// keeps every deadline produced by `VALID FOR` exactly representable in the stored access
             /// entity encoding (see `AuthenticationData::toAST`).
+            /// On the other end a huge interval saturates at the `DateTime64` ceiling
+            /// (`9999-12-31 23:59:59 UTC`), which is above `MAX_VALID_UNTIL_TIME` (see the constant's
+            /// declaration) and so would be displayed clamped on a positive-offset node; saturate at
+            /// `MAX_VALID_UNTIL_TIME` instead, so the stored deadline displays exactly in every time zone.
             const auto deadline = evaluateConstantExpression(ast, context).first;
-            return std::max<time_t>(static_cast<time_t>(deadline.safeGet<Int64>()), 1);
+            return std::clamp<time_t>(static_cast<time_t>(deadline.safeGet<Int64>()), 1, MAX_VALID_UNTIL_TIME);
         }
 
         if (context)
@@ -188,17 +192,30 @@ namespace DB
                 ErrorCodes::BAD_ARGUMENTS,
                 "VALID UNTIL deadline is too far in the past, the earliest supported deadline is 1900-01-01 00:00:00 UTC");
 
-        /// Symmetrically, a deadline after the latest `DateLUT`-representable instant would be displayed
-        /// clamped to `9999-12-31 23:59:59` by `SHOW CREATE USER` / `AuthenticationData::toAST` while the
-        /// authentication check keeps enforcing the larger stored value, so the credential would outlive
-        /// the shown deadline. This is reachable through an explicit time-zone offset that crosses the
-        /// year-9999 boundary, e.g. `VALID UNTIL '9999-12-31 23:59:59 -01:00'`. Reject it rather than
-        /// silently clamp on display. (The `VALID FOR` path saturates at this same bound via
-        /// `toDateTime64`, so it never reaches this branch with a larger value.)
+        /// Symmetrically, a deadline after `MAX_VALID_UNTIL_TIME` (see the constant's declaration) would
+        /// be displayed clamped by `SHOW CREATE USER` / `system.users` in a time zone whose offset pushes
+        /// it past the year-9999 boundary, while the authentication check keeps enforcing the larger
+        /// stored value, so the credential would outlive the shown deadline. This is reachable through an
+        /// explicit time-zone offset, e.g. `VALID UNTIL '9999-12-31 23:59:59 -01:00'`, or simply through
+        /// `VALID UNTIL '9999-12-31 23:59:59 UTC'` (in local year 10000 on a UTC+14:00 node). Reject it
+        /// at query time rather than silently store a deadline that displays clamped.
+        ///
+        /// The bound is enforced by rejection only for query input. An already-stored deadline beyond it
+        /// must still load: an older release accepted any year-9999 `VALID UNTIL` and persisted it as a
+        /// bare datetime string, which parses on load - in the server time zone - to an instant that can
+        /// exceed the bound, and rejecting it would make an upgraded server skip that user on startup.
+        /// It is clamped down to the bound instead, which is fail-closed (the credential expires up to a
+        /// day earlier, never later) and makes the loaded deadline display exactly from then on. The same
+        /// clamp covers a hand-edited stored definition.
         if (time > MAX_VALID_UNTIL_TIME)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "VALID UNTIL deadline is too far in the future, the latest supported deadline is 9999-12-31 23:59:59 UTC");
+        {
+            if (context)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "VALID UNTIL deadline is too far in the future, the latest supported deadline is 9999-12-31 09:59:59 UTC "
+                    "(the latest instant that stays within year 9999 in every time zone)");
+            time = MAX_VALID_UNTIL_TIME;
+        }
 
         /// Every deadline in the past means the same thing - the credential is already expired - so any
         /// pre-epoch deadline (`time <= 0`) is normalized to the smallest expired instant,

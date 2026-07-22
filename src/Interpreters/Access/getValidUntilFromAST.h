@@ -23,13 +23,20 @@ namespace DB
     /// skip such a user - see `getValidUntilFromAST`.
     constexpr time_t MIN_VALID_UNTIL_TIME = -2208988800; /// 1900-01-01 00:00:00 UTC
 
-    /// The upper bound is the latest instant `DateLUT` can represent and format. Accepting a deadline
-    /// beyond it would make `SHOW CREATE USER` / `AuthenticationData::toAST` display a clamped
-    /// (`9999-12-31 23:59:59`) deadline that is earlier than the one the authentication check actually
-    /// enforces, so the credential would stay valid longer than shown. This is reachable with an explicit
-    /// time-zone offset that pushes an otherwise in-range date past the ceiling, e.g.
-    /// `VALID UNTIL '9999-12-31 23:59:59 -01:00'`.
-    constexpr time_t MAX_VALID_UNTIL_TIME = 253402300799; /// 9999-12-31 23:59:59 UTC
+    /// The upper bound of a stored `valid_until` deadline: the latest instant whose local rendering
+    /// stays within year 9999 in EVERY time zone. The deadline is displayed (`SHOW CREATE USER`,
+    /// `system.users`) in the server or session time zone, and `DateLUT` clamps a local year above
+    /// `9999` back to `9999-12-31 23:59:59`. So the bound cannot be the latest UTC instant of year 9999
+    /// (`253402300799`): on a positive-offset node (up to UTC+14:00, e.g. `Pacific/Kiritimati`) that
+    /// instant falls into local year 10000 and would be displayed clamped - earlier than the deadline
+    /// the authentication check actually enforces, so the credential would stay valid longer than shown.
+    /// Subtracting the largest UTC offset in the time-zone database (+14:00) makes every stored deadline
+    /// display exactly on every node, which matters because an access entity created on one server can
+    /// be rendered on another (replicated access storage, `ON CLUSTER`) or under any `session_timezone`.
+    /// A deadline beyond this bound is rejected when it comes from a query and clamped down (fail-closed:
+    /// the credential expires earlier, never later) when an already-stored entity is deserialized - see
+    /// `getValidUntilFromAST`. The `VALID FOR` path saturates at the same bound.
+    constexpr time_t MAX_VALID_UNTIL_TIME = 253402250399; /// 9999-12-31 09:59:59 UTC = 9999-12-31 23:59:59 in UTC+14:00
 
     /// Returns the current wall-clock time in seconds. When resolving `VALID FOR <interval>`, sample it
     /// once per `CREATE`/`ALTER USER` statement and pass it to every `getValidUntilFromAST` call, so that

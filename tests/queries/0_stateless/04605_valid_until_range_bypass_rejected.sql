@@ -8,9 +8,11 @@
 --   1. An explicit year `0000` with a leading space: `parseDateTimeBestEffort` skips the space before
 --      it reads the year, so ` 0000-...` reached the "year omitted" fallback and became a current-year
 --      deadline instead of being rejected.
---   2. An in-range date with an explicit time-zone offset that crosses the year-9999 boundary: the
---      instant is stored past the `DateLUT` ceiling, but `SHOW CREATE USER` displays it clamped back to
---      `9999-12-31 23:59:59`, so the credential outlived the shown deadline.
+--   2. An instant past the `MAX_VALID_UNTIL_TIME` ceiling (`9999-12-31 09:59:59 UTC`, the latest
+--      instant that stays within year 9999 in every time zone): the instant was stored exactly, but
+--      `SHOW CREATE USER` / `system.users` display it clamped back to `9999-12-31 23:59:59` in a time
+--      zone whose offset pushes it past the year-9999 boundary, so the credential outlived the shown
+--      deadline there.
 -- Both must be rejected at query time.
 
 DROP USER IF EXISTS user_04605_valid_until;
@@ -18,13 +20,16 @@ DROP USER IF EXISTS user_04605_valid_until;
 -- Year `0000` with a leading space is rejected (global VALID UNTIL).
 CREATE USER user_04605_valid_until VALID UNTIL ' 0000-01-01 00:00:00 UTC'; -- { serverError BAD_ARGUMENTS }
 
--- A deadline one hour past the year-9999 ceiling (via a time-zone offset) is rejected.
+-- A deadline past the ceiling is rejected, whether it crosses it via a time-zone offset or directly:
+-- the latest UTC instant of year 9999 is itself past the ceiling (it falls into local year 10000 on a
+-- UTC+14:00 node).
 CREATE USER user_04605_valid_until VALID UNTIL '9999-12-31 23:59:59 -01:00'; -- { serverError BAD_ARGUMENTS }
+CREATE USER user_04605_valid_until VALID UNTIL '9999-12-31 23:59:59 UTC'; -- { serverError BAD_ARGUMENTS }
 
--- The latest representable deadline itself is accepted (its exact round-trip value is asserted by the
--- gtest `ValidUntilAttachEncoding.HandEditedDeadlineBeyondMaxFailsToLoad`; `SHOW CREATE USER` /
--- `system.users` would display it time-zone-dependently or clamped, so it is not printed here).
-CREATE USER user_04605_valid_until VALID UNTIL '9999-12-31 23:59:59 UTC';
+-- The ceiling itself is accepted (its exact round-trip value is asserted by the gtest
+-- `ValidUntilAttachEncoding.DeadlineBeyondMaxIsClampedOnLoad`; `SHOW CREATE USER` / `system.users`
+-- would display it time-zone-dependently, so it is not printed here).
+CREATE USER user_04605_valid_until VALID UNTIL '9999-12-31 09:59:59 UTC';
 DROP USER user_04605_valid_until;
 
 -- The same rejections apply at the authentication-method (credential) level.

@@ -7,6 +7,11 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", stay_alive=True)
+# Runs in the most positive server time zone (UTC+14), where the year-9999 boundary is the
+# tightest: the latest UTC instant of year 9999 already falls into local year 10000 here.
+node_kiritimati = cluster.add_instance(
+    "node_kiritimati", main_configs=["configs/timezone_kiritimati.xml"]
+)
 
 
 @pytest.fixture(scope="module")
@@ -184,6 +189,53 @@ def test_valid_for_interval_overflow(started_cluster):
     )
 
     node.query("DROP USER IF EXISTS user_valid_for_overflow")
+
+
+def test_valid_until_max_deadline_positive_offset_timezone(started_cluster):
+    # The largest accepted deadline (`MAX_VALID_UNTIL_TIME` = 9999-12-31 09:59:59 UTC) is chosen
+    # so that its local rendering stays within year 9999 in every time zone. On this UTC+14 node
+    # a saturated `VALID FOR` deadline must therefore be displayed exactly - the same instant the
+    # authentication check enforces - instead of `DateLUT` clamping the local year-10000 rendering
+    # back to an earlier instant.
+    node_kiritimati.query("DROP USER IF EXISTS user_valid_max_tz")
+    node_kiritimati.query("CREATE USER user_valid_max_tz VALID FOR INTERVAL 1000000 YEAR")
+
+    assert (
+        node_kiritimati.query(
+            "SELECT toUnixTimestamp64Second(valid_until[1]), toString(valid_until[1])"
+            " FROM system.users WHERE name = 'user_valid_max_tz'"
+        )
+        == "253402250399\t9999-12-31 23:59:59\n"
+    )
+
+    # `SHOW CREATE USER` renders the same local instant, and parsing that rendering back in the
+    # node's own time zone yields exactly the stored epoch - nothing was clamped on display.
+    assert "VALID UNTIL \\'9999-12-31 23:59:59\\'" in node_kiritimati.query(
+        "SHOW CREATE USER user_valid_max_tz"
+    )
+    assert (
+        node_kiritimati.query(
+            "SELECT toUnixTimestamp64Second(parseDateTime64BestEffort('9999-12-31 23:59:59', 0))"
+        )
+        == "253402250399\n"
+    )
+
+    # An absolute deadline past the ceiling is rejected here the same way as in every other zone,
+    # and the ceiling itself is accepted and stored exactly.
+    assert "BAD_ARGUMENTS" in node_kiritimati.query_and_get_error(
+        "CREATE USER user_valid_max_tz_reject VALID UNTIL '9999-12-31 23:59:59 UTC'"
+    )
+    node_kiritimati.query(
+        "ALTER USER user_valid_max_tz VALID UNTIL '9999-12-31 09:59:59 UTC'"
+    )
+    assert (
+        node_kiritimati.query(
+            "SELECT toUnixTimestamp64Second(valid_until[1]) FROM system.users WHERE name = 'user_valid_max_tz'"
+        )
+        == "253402250399\n"
+    )
+
+    node_kiritimati.query("DROP USER IF EXISTS user_valid_max_tz")
 
 
 def test_valid_for_interval_negative_overflow(started_cluster):

@@ -104,7 +104,7 @@ ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
 
 ## VALID UNTIL Clause {#valid-until-clause}
 
-Allows you to specify the expiration date and, optionally, the time for an authentication method. It accepts a string as a parameter. It is recommended to use the `YYYY-MM-DD [hh:mm:ss] [timezone]` format for datetime. By default, this parameter equals `'infinity'`.
+Allows you to specify the expiration date and, optionally, the time for an authentication method. It accepts a string as a parameter. It is recommended to use the `YYYY-MM-DD [hh:mm:ss] [timezone]` format for datetime. By default, this parameter equals `'infinity'`. The accepted deadline range is `1900-01-01 00:00:00 UTC` through `9999-12-31 09:59:59 UTC` — the latest instant that stays within year 9999 in every time zone, so the stored deadline is always displayed exactly. A deadline in the past means the credentials are already expired.
 
 The placement of the clause determines which authentication methods it applies to:
 

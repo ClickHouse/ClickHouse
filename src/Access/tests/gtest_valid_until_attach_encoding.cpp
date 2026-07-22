@@ -50,7 +50,7 @@ TEST(ValidUntilAttachEncoding, PostEpochDeadlinesRoundTripExactly)
         1234567890,
         4294967295, /// the `DateTime` upper bound (year 2106)
         10413792000, /// year 2300, beyond the former `DateTime64` upper bound
-        253402300799, /// 9999-12-31 23:59:59 UTC, the `DateTime64` upper bound
+        253402250399, /// 9999-12-31 09:59:59 UTC = `MAX_VALID_UNTIL_TIME`, the largest accepted deadline
     };
     for (time_t deadline : deadlines)
         EXPECT_EQ(roundTrip(deadline), deadline);
@@ -82,7 +82,7 @@ TEST(ValidUntilAttachEncoding, StoredFormIsParsedByEverySupportedReader)
     /// strings are rejected as ambiguous by `readDateTimeText`, which older versions (and the current
     /// no-context reader) use for this form. A Unix timestamp denotes the same instant regardless of the
     /// time zone and is read the same way by every supported version, unlike a datetime string.
-    for (time_t deadline : {static_cast<time_t>(1), static_cast<time_t>(9999), static_cast<time_t>(253402300799)})
+    for (time_t deadline : {static_cast<time_t>(1), static_cast<time_t>(9999), static_cast<time_t>(253402250399)})
     {
         const String stored = serializedValidUntil(deadline);
         EXPECT_GE(stored.size(), 5u) << stored;
@@ -205,31 +205,40 @@ TEST(ValidUntilAttachEncoding, HandEditedSpacedYearZeroFailsToLoad)
     }
 }
 
-TEST(ValidUntilAttachEncoding, HandEditedDeadlineBeyondMaxFailsToLoad)
+TEST(ValidUntilAttachEncoding, DeadlineBeyondMaxIsClampedOnLoad)
 {
-    /// A deadline after the latest `DateLUT`-representable instant would be displayed clamped to
-    /// `9999-12-31 23:59:59` by `SHOW CREATE USER` / `AuthenticationData::toAST` while the authentication
-    /// check keeps enforcing the larger stored value, so the credential would outlive the shown deadline.
-    /// This is reachable with an explicit time-zone offset that crosses the year-9999 boundary, and must
-    /// fail to load rather than silently clamp on display. (A literal year past `9999` is rejected earlier,
-    /// by the date-time parser itself, so it is not covered here.)
-    const char * definition = "ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '9999-12-31 23:59:59 -01:00';";
-    try
+    /// A stored deadline above `MAX_VALID_UNTIL_TIME` (`9999-12-31 09:59:59 UTC`, the latest instant
+    /// that stays within year 9999 in every time zone) would be displayed clamped on a positive-offset
+    /// node while the authentication check keeps enforcing the larger stored value. A query is rejected
+    /// with `BAD_ARGUMENTS` (see the stateless test `04605_valid_until_range_bypass_rejected`), but an
+    /// already-stored deadline beyond the bound must still load: an older release accepted any year-9999
+    /// `VALID UNTIL` and persisted it as a bare datetime string, which parses on load to an instant that
+    /// can exceed the bound, and rejecting it would make an upgraded server skip that user on startup.
+    /// It is clamped down to the bound instead - fail-closed: the credential expires earlier, never
+    /// later - and displays exactly from then on.
+    for (const char * definition :
+         {"ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '9999-12-31 23:59:59 -01:00';",
+          "ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '9999-12-31 23:59:59 UTC';"})
     {
-        deserializeAccessEntity(definition);
-        FAIL() << "expected the deadline to be rejected: " << definition;
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_TRUE(e.message().contains("too far in the future")) << e.message();
+        const auto entity = deserializeAccessEntity(definition);
+        const auto * user = typeid_cast<const User *>(entity.get());
+        ASSERT_NE(user, nullptr) << definition;
+        ASSERT_EQ(user->authentication_methods.size(), 1u) << definition;
+        EXPECT_EQ(user->authentication_methods.front().getValidUntil(), 253402250399) << definition;
     }
 
-    /// The latest representable deadline itself still loads, exactly.
-    const auto entity = deserializeAccessEntity("ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '9999-12-31 23:59:59 UTC';");
+    /// The bound itself loads exactly.
+    const auto entity = deserializeAccessEntity("ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '9999-12-31 09:59:59 UTC';");
     const auto * user = typeid_cast<const User *>(entity.get());
     ASSERT_NE(user, nullptr);
     ASSERT_EQ(user->authentication_methods.size(), 1u);
-    EXPECT_EQ(user->authentication_methods.front().getValidUntil(), 253402300799);
+    EXPECT_EQ(user->authentication_methods.front().getValidUntil(), 253402250399);
+
+    /// The serialized (`ATTACH`) form applies the same clamp for an `AuthenticationData` filled directly
+    /// via `setValidUntil`, so a beyond-the-bound deadline round-trips to the bound, not to a value that
+    /// would display clamped.
+    EXPECT_EQ(roundTrip(253402300799), 253402250399);
+    EXPECT_EQ(serializedValidUntil(253402300799), "253402250399");
 }
 
 TEST(ValidUntilAttachEncoding, NoAuthenticationTypeKeepsDeadline)

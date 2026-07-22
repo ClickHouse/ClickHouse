@@ -14,6 +14,8 @@
 
 #include <fmt/format.h>
 
+#include <algorithm>
+
 #include <boost/algorithm/hex.hpp>
 #include <Poco/SHA1Engine.h>
 
@@ -487,11 +489,14 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST(bool attac
             /// it to `0`, which is the "no expiration" sentinel, so serializing a negative deadline in a
             /// datetime form would let an already-expired credential come back as non-expiring - a
             /// fail-open downgrade. Every deadline in the past is equivalent (the credential is expired),
-            /// so this loses no meaningful information. The query path already normalizes a pre-epoch
-            /// `VALID UNTIL` / `VALID FOR` deadline to `1` (see `getValidUntilFromAST`); this guard also
-            /// fail-closes an `AuthenticationData` object built directly via `setValidUntil`, without
-            /// going through query parsing.
-            node->setValidUntil(make_intrusive<ASTLiteral>(fmt::format("{:010}", std::max<time_t>(valid_until, 1))));
+            /// so this loses no meaningful information. Symmetrically, a deadline above
+            /// `MAX_VALID_UNTIL_TIME` would be displayed clamped on a positive-offset node (see the
+            /// constant's declaration), so it is clamped down - also fail-closed: the credential expires
+            /// earlier, never later. The query path already normalizes both ends (see
+            /// `getValidUntilFromAST`); these guards also fail-close an `AuthenticationData` object built
+            /// directly via `setValidUntil`, without going through query parsing.
+            node->setValidUntil(
+                make_intrusive<ASTLiteral>(fmt::format("{:010}", std::clamp<time_t>(valid_until, 1, MAX_VALID_UNTIL_TIME))));
         }
         else
         {
