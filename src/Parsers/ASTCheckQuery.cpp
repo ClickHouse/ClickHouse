@@ -1,5 +1,6 @@
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTPartition.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 
@@ -35,7 +36,11 @@ void ASTCheckTableQuery::readJSON(const Poco::JSON::Object & json)
     if (!table)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'table' in `CheckTableQuery` during AST JSON deserialization");
     children.push_back(table);
-    partition = r.readChild("partition");
+    /// `partition` is parser-produced as an `ASTPartition`; `InterpreterCheckQuery` forwards it into
+    /// `StorageMergeTree::getCheckTaskList` / `StorageReplicatedMergeTree::getCheckTaskList`, which
+    /// downcast via `partition->as<ASTPartition>()` and raise `LOGICAL_ERROR` otherwise. Reject any
+    /// other node type at the deserialization boundary instead.
+    partition = r.readChildOfType<ASTPartition>("partition");
     if (partition)
         children.push_back(partition);
     part_name = r.getString("part_name");

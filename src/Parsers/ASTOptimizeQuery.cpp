@@ -4,6 +4,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTPartition.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
@@ -104,7 +105,11 @@ void ASTOptimizeQuery::readJSON(const Poco::JSON::Object & json)
     if (!table)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'table' field in `OptimizeQuery` during AST JSON deserialization");
     children.push_back(table);
-    partition = r.readChild("partition");
+    /// `partition` is parser-produced as an `ASTPartition`; `InterpreterOptimizeQuery` forwards it into
+    /// `StorageMergeTree::optimize` / `StorageReplicatedMergeTree::optimize`, which call
+    /// `getPartitionIDFromQuery` and immediately downcast via `partition->as<ASTPartition &>()`,
+    /// raising `LOGICAL_ERROR` otherwise. Reject any other node type at the deserialization boundary.
+    partition = r.readChildOfType<ASTPartition>("partition");
     if (partition)
         children.push_back(partition);
     final = r.getBool("final");
