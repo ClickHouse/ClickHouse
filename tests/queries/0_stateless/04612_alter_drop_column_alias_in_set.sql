@@ -8,7 +8,8 @@
 -- for key" when the table has an ALIAS column referencing another ALIAS column that uses an
 -- IN expression. Expanding such ALIAS expressions runs PlannerActionsVisitor, which resolves
 -- IN via the prepared sets, so the sets must be registered (collectSets) before the columns
--- are collected. Covers the DROP COLUMN validator and the DELETE/UPDATE mutation paths.
+-- are collected. On 26.3 MutationsInterpreter cannot expand ALIAS chains in mutations at all
+-- (UNKNOWN_IDENTIFIER), so unlike newer branches this only covers the DROP COLUMN validator.
 
 SET mutations_sync = 2;
 SET enable_analyzer = 1;
@@ -40,17 +41,8 @@ SELECT 'subquery where', count() FROM t_alias_in_set WHERE 'YES' IS DISTINCT FRO
 -- In a mutation filter a correlated subquery is rejected with a regular error, not a LOGICAL_ERROR.
 ALTER TABLE t_alias_in_set DELETE WHERE 'YES' IS DISTINCT FROM (SELECT label); -- { serverError NOT_IMPLEMENTED, UNKNOWN_IDENTIFIER }
 
--- Mutation predicate references ALIAS -> ALIAS -> IN (MutationsInterpreter).
-ALTER TABLE t_alias_in_set DELETE WHERE label = 'YES';
-SELECT 'after delete', id, is_special, label FROM t_alias_in_set ORDER BY id;
-
--- Mutation update value references ALIAS -> ALIAS -> IN (MutationsInterpreter).
-ALTER TABLE t_alias_in_set UPDATE category = if(is_special, 'clothing', 'food') WHERE id = 2;
-SELECT 'after update', id, is_special, label FROM t_alias_in_set ORDER BY id;
-
--- Lightweight DELETE goes through the same mutation preparation.
-DELETE FROM t_alias_in_set WHERE label = 'YES';
-SELECT 'after lightweight delete', count() FROM t_alias_in_set;
+-- No DELETE/UPDATE/lightweight-DELETE coverage here: on 26.3 any mutation referencing the
+-- ALIAS chain fails with UNKNOWN_IDENTIFIER, fixed or not.
 
 ALTER TABLE t_alias_in_set DROP COLUMN IF EXISTS nonexistent_col;
 
