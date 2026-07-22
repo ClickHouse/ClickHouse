@@ -782,11 +782,13 @@ private:
         /// mixed scales rescale and can throw `DECIMAL_OVERFLOW`, so the scale keys the domain.
         if (isDecimal(nested_type))
             return {.kind = Kind::Decimal, .scale = getDecimalScale(*nested_type)};
-        /// Every remaining comparable type accepts only its own exact type as a counterpart
-        /// (`types_equal` -> `executeGenericIdenticalTypes`), so each type is a single-order
-        /// domain of its own: UUID, a concrete Enum, a concrete FixedString width, IP types and
-        /// so on. The domain matches only between equal types, which keeps order-mixing edges
-        /// (Enum vs String, FixedString of different widths) outside any transitive chain.
+        /// Every remaining comparable type gets a domain keyed by the type itself. The domain
+        /// matches only between equal types, so all nodes of a chain share one type and its
+        /// single canonical order (UUID, a concrete Enum, a concrete FixedString width, ...),
+        /// while order-mixing edges (Enum vs String, FixedString of different widths) never
+        /// join a chain. Types whose comparison is three-valued (e.g. a Tuple with Nullable
+        /// elements) cannot reach the chain optimization at all: their Nullable result makes
+        /// the whole `and` node Nullable, and the pass skips Nullable chains.
         return {.kind = Kind::ExactType, .exact_type = nested_type};
     }
 
@@ -1318,7 +1320,7 @@ public:
         if (arguments.size() != 2)
             return {};
 
-        const auto left_domain = getComparisonOrderDomainForType(arguments[0]);
+        auto left_domain = getComparisonOrderDomainForType(arguments[0]);
         if (!left_domain.isValid() || left_domain != getComparisonOrderDomainForType(arguments[1]))
             return {};
         return left_domain;

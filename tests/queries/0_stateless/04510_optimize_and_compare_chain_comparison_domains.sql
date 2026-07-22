@@ -303,3 +303,33 @@ SELECT
            WHERE e < s AND s < 'zz'
            SETTINGS optimize_and_compare_chain = 0)
      WHERE explain LIKE '%function_name: less,%');
+
+-- Tuples with Nullable elements compare three-valued; their Nullable result makes the whole
+-- `AND` chain Nullable, which the pass skips: results stay NULL and nothing is derived.
+SELECT
+    'tuple nullable keeps null',
+    (SELECT x < y AND y < CAST(tuple(2), 'Tuple(Nullable(Int32))')
+     FROM (SELECT materialize(CAST(tuple(3), 'Tuple(Nullable(Int32))')) AS x,
+                  materialize(CAST(tuple(NULL), 'Tuple(Nullable(Int32))')) AS y)
+     SETTINGS optimize_and_compare_chain = 1)
+        IS NULL,
+    (SELECT x < y AND y < CAST(tuple(2), 'Tuple(Nullable(Int32))')
+     FROM (SELECT materialize(CAST(tuple(3), 'Tuple(Nullable(Int32))')) AS x,
+                  materialize(CAST(tuple(NULL), 'Tuple(Nullable(Int32))')) AS y)
+     SETTINGS optimize_and_compare_chain = 0)
+        IS NULL,
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT x < y AND y < CAST(tuple(2), 'Tuple(Nullable(Int32))')
+           FROM (SELECT materialize(CAST(tuple(3), 'Tuple(Nullable(Int32))')) AS x,
+                        materialize(CAST(tuple(NULL), 'Tuple(Nullable(Int32))')) AS y)
+           SETTINGS optimize_and_compare_chain = 1)
+     WHERE explain LIKE '%function_name: less,%')
+        =
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT x < y AND y < CAST(tuple(2), 'Tuple(Nullable(Int32))')
+           FROM (SELECT materialize(CAST(tuple(3), 'Tuple(Nullable(Int32))')) AS x,
+                        materialize(CAST(tuple(NULL), 'Tuple(Nullable(Int32))')) AS y)
+           SETTINGS optimize_and_compare_chain = 0)
+     WHERE explain LIKE '%function_name: less,%');

@@ -14,3 +14,4 @@ time same scale remains optimized	1	1
 decimal same scale remains optimized	1	1
 exact type domains remain optimized	1	1	1
 exact type requires equal types	1	1
+tuple nullable keeps null	1	1	1
