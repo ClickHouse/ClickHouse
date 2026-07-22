@@ -387,6 +387,20 @@ static void splitAndModifyMutationCommands(
                     }
                 }
             }
+            else if (command.type == MutationCommand::Type::DROP_COLUMN && !command.clear)
+            {
+                /// A column that exists only as a missing-columns marker has no
+                /// data files, but DROP COLUMN must still forget the marker;
+                /// otherwise a column re-added under the same name would read the
+                /// stale frozen default. The drop is recorded under the current
+                /// name, while the marker keeps the original physical name, so
+                /// resolve through the rename mapping before checking the marker.
+                String marker_name = command.column_name;
+                if (alter_conversions->isColumnRenamed(marker_name))
+                    marker_name = alter_conversions->getColumnOldName(marker_name);
+                if (part->getSerializationInfos().isMissingColumn(marker_name))
+                    for_file_renames.push_back(command);
+            }
         }
 
         /// We don't add renames from commands, instead we take them from rename_map.
@@ -624,6 +638,17 @@ static void splitAndModifyMutationCommands(
 
                 for_file_renames.push_back(command);
             }
+            else if (command.type == MutationCommand::Type::DROP_COLUMN && !command.clear)
+            {
+                /// Same as in the branch above: DROP COLUMN of a column that exists
+                /// only as a missing-columns marker must be forwarded so that
+                /// getColumnsForNewDataPart forgets the marker.
+                String marker_name = command.column_name;
+                if (alter_conversions->isColumnRenamed(marker_name))
+                    marker_name = alter_conversions->getColumnOldName(marker_name);
+                if (part->getSerializationInfos().isMissingColumn(marker_name))
+                    for_file_renames.push_back(command);
+            }
         }
 
         /// We don't add renames from commands, instead we take them from rename_map.
@@ -746,6 +771,24 @@ getColumnsForNewDataPart(
             renamed_columns_to_from.emplace(command.rename_to, command.column_name);
             renamed_columns_from_to.emplace(command.column_name, command.rename_to);
         }
+    }
+
+    /// DROP COLUMN of a column that exists only as a missing-columns marker was
+    /// skipped by the loop above (the column is absent from part_columns), but the
+    /// marker must still be forgotten; otherwise a column re-added under the same
+    /// name in a newer metadata version would read the stale frozen default. The
+    /// drop is recorded under the current name while the marker keeps the original
+    /// physical name, so resolve it in a second pass, after the whole rename chain
+    /// is known, regardless of the relative order of the commands in the lists.
+    for (const auto & command : all_commands)
+    {
+        if (command.type != MutationCommand::DROP_COLUMN || command.clear || part_columns.has(command.column_name))
+            continue;
+
+        auto it = renamed_columns_to_from.find(command.column_name);
+        const String & original_name = it != renamed_columns_to_from.end() ? it->second : command.column_name;
+        if (serialization_infos.isMissingColumn(original_name))
+            removed_columns.insert(command.column_name);
     }
 
     for (const auto & [name, type] : persistent_virtuals)

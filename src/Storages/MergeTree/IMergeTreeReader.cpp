@@ -203,7 +203,12 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
                     /// ... DEFAULT 999, the newly added `b` must read 999, not the
                     /// frozen default. Fall through to normal missing-column handling
                     /// (which evaluates the DEFAULT expression) in that case.
-                    if (alter_conversions->isColumnDropped(name_in_part))
+                    /// AlterConversions records the drop under the name that was
+                    /// current at the time of the drop (for RENAME b TO c, DROP c
+                    /// that is the renamed name), so check both the physical name
+                    /// and the currently requested name.
+                    if (alter_conversions->isColumnDropped(name_in_part)
+                        || alter_conversions->isColumnDropped(column.getNameInStorage()))
                         continue;
 
                     if (data_part_info_for_read->getSerializationInfos().isMissingColumn(name_in_part))

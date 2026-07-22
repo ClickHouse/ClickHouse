@@ -844,6 +844,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
     global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());
 
+    /// Carrying the union of the source parts' markers is correct also for source
+    /// parts that lack the column without a marker (e.g. parts written before
+    /// ALTER ADD COLUMN): without this optimization the column would have been
+    /// written physically by the part that now carries the marker, the column
+    /// would not be expired by the merge, and the merge would materialize the
+    /// type default for the rows of the marker-less parts as well. The marker
+    /// (whose kind is the type default) reproduces exactly that result lazily.
+    /// Parts where the column has a DEFAULT expression never take this path,
+    /// because such columns are not expired by the merge and are materialized.
     NameSet source_missing_column_names;
     /// Collect MissingColumnInfo with the most recent info per column name.
     /// For merge, all sources should agree (they were all written with TypeDefault
@@ -876,15 +885,19 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /// part records the current column name.
         for (const auto & mc : part->getSerializationInfos().getMissingColumns())
         {
-            /// A column dropped (or cleared) by a pending mutation has stale data
-            /// in this part, so its missing marker must not be carried into the
-            /// merged part.
-            if (part_alter_conversions->isColumnDropped(mc.name))
-                continue;
-
             String current_name = mc.name;
             if (part_alter_conversions->columnHasNewName(mc.name))
                 current_name = part_alter_conversions->getColumnNewName(mc.name);
+
+            /// A column dropped (or cleared) by a pending mutation has stale data
+            /// in this part, so its missing marker must not be carried into the
+            /// merged part. AlterConversions records DROP COLUMN under the name
+            /// that was current at the time of the drop, which for a pending
+            /// RENAME b TO c, DROP c chain is the renamed name, so check the
+            /// marker's physical name both before and after the rename mapping.
+            if (part_alter_conversions->isColumnDropped(mc.name)
+                || part_alter_conversions->isColumnDropped(current_name))
+                continue;
 
             source_missing_column_names.insert(current_name);
             if (!source_missing_map.contains(current_name))
