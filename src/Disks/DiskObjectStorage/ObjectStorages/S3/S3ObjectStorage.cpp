@@ -356,6 +356,17 @@ UInt64 S3ObjectStorage::getWriteBufferMemoryCeiling() const
     return std::max(max_single_part_upload_size, min_upload_part_size) + max_inflight_parts_for_one_file * max_upload_part_size;
 }
 
+UInt64 S3ObjectStorage::getWriteBufferGuaranteedMemory() const
+{
+    /// The first multipart upload buffer of WriteBufferFromS3 / BufferAllocationPolicy: a stream allocates
+    /// it regardless of how little data flows through it, while every later buffer only ever holds data
+    /// already written. Same source of truth as getWriteBufferMemoryCeiling above.
+    const auto & request_settings = s3_settings.get()->request_settings;
+    return std::max<UInt64>(
+        request_settings[S3RequestSetting::max_single_part_upload_size],
+        request_settings[S3RequestSetting::min_upload_part_size]);
+}
+
 
 ObjectStorageIteratorPtr S3ObjectStorage::iterate(
     const std::string & path_prefix,

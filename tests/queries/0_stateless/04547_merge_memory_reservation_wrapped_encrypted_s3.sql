@@ -2,7 +2,7 @@
 -- Tag no-fasttest: requires S3 (minio)
 
 -- Regression test for the merge memory reservation on a decorator (wrapped) object-storage disk
--- (see CompactionStatistics::getDiskWriteBufferMemoryCeiling). An encrypted disk delegates writes to the
+-- (see CompactionStatistics::getDiskWriteBufferMemory). An encrypted disk delegates writes to the
 -- disk it wraps, so a merge onto encrypted-over-S3 allocates the same multipart upload buffers as onto bare
 -- S3, and the reservation must take its per-stream ceiling from the wrapped disk's request settings instead
 -- of falling back to the query/session settings (which a background object-storage writer ignores). The

@@ -377,6 +377,15 @@ public:
     /// global defaults).
     virtual UInt64 getWriteBufferMemoryCeiling() const { return 0; }
 
+    /// The amount of memory a single write buffer to this storage allocates regardless of how little data
+    /// ends up flowing through it: the first multipart upload buffer,
+    /// max(*_max_single_part_upload_size, *_min_upload_part_size) (see BufferAllocationPolicy), taken from
+    /// this storage's own request settings just like getWriteBufferMemoryCeiling above. The up-front merge
+    /// memory reservation prices output streams whose data volume it cannot derive from the source parts at
+    /// this guaranteed allocation (pricing them at the full ceiling proved to starve merge admission).
+    /// Returns 0 when the storage does not buffer writes in memory in a settings-dependent size.
+    virtual UInt64 getWriteBufferGuaranteedMemory() const { return 0; }
+
     virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
 
     virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;

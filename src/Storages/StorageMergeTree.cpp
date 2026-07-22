@@ -1726,7 +1726,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
             const UInt64 needed_memory = CompactionStatistics::estimateNeededMemoryForMerge(
                 *future_part, metadata_snapshot, merge_context, *getSettings(), output_on_remote_disk,
-                /*remote_write_buffer_ceiling=*/ std::nullopt, deduplicate, cleanup);
+                /*remote_write_buffer_memory=*/ std::nullopt, deduplicate, cleanup);
 
             std::optional<MergeMemoryReservation> memory_reservation;
             if (user_initiated)
@@ -1775,7 +1775,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 memory_reservation = MergeMemoryReservation::reserve(static_cast<Int64>(
                     CompactionStatistics::estimateNeededMemoryForMerge(
                         *future_part, metadata_snapshot, merge_context, *getSettings(), actual_output_on_remote_disk,
-                        CompactionStatistics::getDiskWriteBufferMemoryCeiling(actual_disk), deduplicate, cleanup)));
+                        CompactionStatistics::getDiskWriteBufferMemory(actual_disk), deduplicate, cleanup)));
             }
 
             tagger->memory_reservation = std::move(*memory_reservation);

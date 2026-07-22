@@ -126,6 +126,8 @@ public:
 
     UInt64 getWriteBufferMemoryCeiling() const override;
 
+    UInt64 getWriteBufferGuaranteedMemory() const override;
+
     const AzureBlobStorage::ConnectionParams & getConnectionParameters() const
     {
         return connection_params;

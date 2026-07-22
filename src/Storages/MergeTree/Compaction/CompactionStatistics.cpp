@@ -719,7 +719,7 @@ UInt64 estimateNeededMemoryForMerge(
     const ContextPtr & context,
     const MergeTreeSettings & settings,
     bool output_on_remote_disk,
-    std::optional<UInt64> remote_write_buffer_ceiling,
+    std::optional<DiskWriteBufferMemory> remote_write_buffer_memory,
     bool deduplicate,
     bool cleanup)
 {
@@ -744,8 +744,8 @@ UInt64 estimateNeededMemoryForMerge(
     /// *_max_upload_part_size, and up to *_max_inflight_parts_for_one_file of them can be held in memory at
     /// once while their uploads are in flight.
     ///
-    /// Prefer the actual destination disk's ceiling (remote_write_buffer_ceiling from
-    /// getDiskWriteBufferMemoryCeiling) when the caller knows the disk: a background merge's
+    /// Prefer the actual destination disk's sizing (remote_write_buffer_memory from
+    /// getDiskWriteBufferMemory) when the caller knows the disk: a background merge's
     /// object-storage writer takes its multipart sizes from the disk's own request settings and ignores the
     /// query/session settings (see S3ObjectStorage::writeObject), so a disk config that raises the multipart
     /// sizes is reflected here and cannot allocate more per stream than is reserved. A known disk with a
@@ -759,30 +759,36 @@ UInt64 estimateNeededMemoryForMerge(
     /// disk is only one of them, so the max is a safe upper bound); pinning the first buffer to
     /// *_max_single_part_upload_size alone would underestimate it when *_min_upload_part_size is the larger
     /// of the two. This is only a ceiling: the output side is separately capped by the merge's data volume
-    /// below, because an upload buffer never holds more than the data written into it.
+    /// below, because an upload buffer never holds more than the data written into it. The first upload
+    /// buffer (the guaranteed part of the ceiling) is carried alongside: a stream allocates it regardless
+    /// of how little data flows through it, so streams whose data volume the estimate cannot derive from
+    /// the source parts are priced at it (see remote_stream_remnant below), and it too must come from the
+    /// destination disk's own settings - Azure's default first buffer (100 MiB) is already larger than
+    /// S3's (32 MiB), and either back end's disk config can raise it further.
     UInt64 remote_write_buffer_size = 0;
-    if (remote_write_buffer_ceiling.has_value())
+    UInt64 remote_write_buffer_guaranteed_size = 0;
+    if (remote_write_buffer_memory.has_value())
     {
-        remote_write_buffer_size = *remote_write_buffer_ceiling;
+        remote_write_buffer_size = remote_write_buffer_memory->ceiling;
+        remote_write_buffer_guaranteed_size = remote_write_buffer_memory->guaranteed;
     }
     else if (output_on_remote_disk)
     {
-        auto remote_stream_ceiling = [](UInt64 max_single, UInt64 min_upload, UInt64 max_upload, UInt64 max_inflight) -> UInt64
-        {
-            return std::max(max_single, min_upload) + max_inflight * max_upload;
-        };
         const auto & query_settings = context->getSettingsRef();
+        const UInt64 s3_first_buffer = std::max<UInt64>(
+            {S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE,
+             query_settings[Setting::s3_max_single_part_upload_size],
+             query_settings[Setting::s3_min_upload_part_size]});
+        const UInt64 azure_first_buffer = std::max<UInt64>(
+            {S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE,
+             query_settings[Setting::azure_max_single_part_upload_size],
+             query_settings[Setting::azure_min_upload_part_size]});
+        remote_write_buffer_guaranteed_size = std::max(s3_first_buffer, azure_first_buffer);
         remote_write_buffer_size = std::max(
-            remote_stream_ceiling(
-                std::max<UInt64>(S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, query_settings[Setting::s3_max_single_part_upload_size]),
-                query_settings[Setting::s3_min_upload_part_size],
-                query_settings[Setting::s3_max_upload_part_size],
-                query_settings[Setting::s3_max_inflight_parts_for_one_file]),
-            remote_stream_ceiling(
-                std::max<UInt64>(S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, query_settings[Setting::azure_max_single_part_upload_size]),
-                query_settings[Setting::azure_min_upload_part_size],
-                query_settings[Setting::azure_max_upload_part_size],
-                query_settings[Setting::azure_max_inflight_parts_for_one_file]));
+            s3_first_buffer
+                + query_settings[Setting::s3_max_inflight_parts_for_one_file] * query_settings[Setting::s3_max_upload_part_size],
+            azure_first_buffer
+                + query_settings[Setting::azure_max_inflight_parts_for_one_file] * query_settings[Setting::azure_max_upload_part_size]);
     }
 
     /// A merge that applies patch parts (lightweight updates, apply_patches_on_merge) opens a separate
@@ -1056,8 +1062,12 @@ UInt64 estimateNeededMemoryForMerge(
     /// A writer stream on multipart object storage allocates up to its first upload buffer
     /// (max(*_max_single_part_upload_size, *_min_upload_part_size), see ExpBufferAllocationPolicy)
     /// regardless of how little data ends up flowing through it, while everything beyond that first
-    /// buffer only ever holds data already written. Where a stream's data volume is not derivable from
-    /// the sources, this per-stream remnant is what it is priced at - NOT the full multipart ceiling
+    /// buffer only ever holds data already written. The first buffer's size comes from the destination
+    /// disk's own settings (remote_write_buffer_guaranteed_size above): pinning it to the S3 default
+    /// would under-reserve such streams on Azure, whose default first buffer is 100 MiB, and on any disk
+    /// whose config raises *_max_single_part_upload_size or *_min_upload_part_size. Where a stream's data
+    /// volume is not derivable from the sources, this per-stream remnant is what it is priced at - NOT
+    /// the full multipart ceiling
     /// (first buffer + max_inflight * max_upload_part_size, ~100 GiB with default S3 settings): pricing
     /// unknowable-volume streams at the ceiling proved to be a starvation regression in CI - a TTL merge
     /// of a 2-row table priced at 200.09 GiB (two ceiling-priced streams) was rejected by the admission
@@ -1067,7 +1077,7 @@ UInt64 estimateNeededMemoryForMerge(
     /// background_memory_tracker sees as it materializes, so under-pricing here degrades to master's
     /// purely reactive behavior for that stream instead of blocking all progress.
     const UInt64 remote_stream_remnant = remote_write_buffer_size != 0
-        ? std::max<UInt64>(local_write_buffer_size, S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE)
+        ? std::max<UInt64>(local_write_buffer_size, remote_write_buffer_guaranteed_size)
         : local_write_buffer_size;
 
     /// The input-volume bound holds only for data the merge actually READS. A column filled from its
@@ -1348,7 +1358,7 @@ UInt64 estimateNeededMemoryForMerge(
                 FutureMergedMutatedPart projection_future_part;
                 projection_future_part.assign(std::move(projection_parts), /*patch_parts_=*/ {}, &projection);
                 projection_memory += estimateNeededMemoryForMerge(
-                    projection_future_part, projection.metadata, context, settings, output_on_remote_disk, remote_write_buffer_ceiling);
+                    projection_future_part, projection.metadata, context, settings, output_on_remote_disk, remote_write_buffer_memory);
             }
             else
             {
@@ -1432,20 +1442,27 @@ UInt64 estimateNeededMemoryForMerge(
     return input_memory + output_memory + projection_memory;
 }
 
-UInt64 getDiskWriteBufferMemoryCeiling(const DiskPtr & disk)
+DiskWriteBufferMemory getDiskWriteBufferMemory(const DiskPtr & disk)
 {
     /// Unwrap decorator disks (encrypted, read-only, ...) down to the disk they delegate to: they forward
     /// object-storage writes to the wrapped disk (see DiskEncrypted::getObjectStorage), so a wrapped
-    /// S3 / Azure disk allocates the same multipart upload buffers as a bare one and its ceiling must come
-    /// from the same request settings. Only a real object-storage disk exposes a settings-dependent
-    /// ceiling; for everything else - a plain local disk, or a remote disk such as HDFS whose writer has
-    /// no multipart upload buffers - return 0, which the estimator takes as "use the local per-stream
-    /// estimate" (dynamic_cast avoids the exception that IDisk::getObjectStorage throws for disks that do
-    /// not support object storage).
+    /// S3 / Azure disk allocates the same multipart upload buffers as a bare one and its sizing must come
+    /// from the same request settings. Only a real object-storage disk exposes settings-dependent write
+    /// buffer sizes; for everything else - a plain local disk, or a remote disk such as HDFS whose writer
+    /// has no multipart upload buffers - return zeroes, which the estimator takes as "use the local
+    /// per-stream estimate" (dynamic_cast avoids the exception that IDisk::getObjectStorage throws for
+    /// disks that do not support object storage).
     for (DiskPtr current = disk; current; current = current->getDelegateDiskIfExists())
+    {
         if (auto * object_storage_disk = dynamic_cast<DiskObjectStorage *>(current.get()))
-            return object_storage_disk->getObjectStorage()->getWriteBufferMemoryCeiling();
-    return 0;
+        {
+            const auto object_storage = object_storage_disk->getObjectStorage();
+            return DiskWriteBufferMemory{
+                .guaranteed = object_storage->getWriteBufferGuaranteedMemory(),
+                .ceiling = object_storage->getWriteBufferMemoryCeiling()};
+        }
+    }
+    return {};
 }
 
 UInt64 estimateAtLeastAvailableSpace(const PartsRange & range)

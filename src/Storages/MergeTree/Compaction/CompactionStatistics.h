@@ -12,6 +12,22 @@ struct MergeTreeSettings;
 namespace CompactionStatistics
 {
 
+/** Per-stream multipart write buffer memory of a merge's destination disk, for the up-front merge memory
+  * reservation (see estimateNeededMemoryForMerge below). Both values come from the disk's own request
+  * settings, which a background writer uses instead of the query/session settings. Both are 0 for disks
+  * whose writer has no multipart upload buffers (a plain local disk, or a remote disk such as HDFS that
+  * writes through a normal buffer).
+  */
+struct DiskWriteBufferMemory
+{
+    /// The first multipart upload buffer, max(*_max_single_part_upload_size, *_min_upload_part_size): a
+    /// writer stream allocates it regardless of how little data ends up flowing through it, while every
+    /// later buffer only ever holds data already written.
+    UInt64 guaranteed = 0;
+    /// The most one stream's buffers can hold at once: the first buffer plus all in-flight upload parts.
+    UInt64 ceiling = 0;
+};
+
 /** Estimate approximate amount of disk space needed for merge or mutation. With a surplus.
   */
 UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, const bool & account_for_deleted = false);
@@ -27,15 +43,15 @@ UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, co
   * (columns_substreams.txt), so that dynamic substreams of JSON / Dynamic columns are counted correctly
   * instead of being collapsed to a single stream by the default serialization.
   * Multipart object storage (S3 / Azure) write buffers are large and double-buffered, so they are
-  * accounted separately, controlled by remote_write_buffer_ceiling:
-  *   - a positive value is the known per-stream ceiling of the destination disk (see
-  *     getDiskWriteBufferMemoryCeiling - background writes take their sizes from the disk configuration,
+  * accounted separately, controlled by remote_write_buffer_memory:
+  *   - a value with a positive ceiling is the known per-stream sizing of the destination disk (see
+  *     getDiskWriteBufferMemory - background writes take their sizes from the disk configuration,
   *     not from the query/session settings);
-  *   - zero means the destination disk is known and has no multipart upload buffers (a local disk, or a
-  *     remote disk such as HDFS whose writer uses a normal buffer), so the local per-stream estimate
-  *     applies even when output_on_remote_disk is true;
+  *   - a value with a zero ceiling means the destination disk is known and has no multipart upload
+  *     buffers (a local disk, or a remote disk such as HDFS whose writer uses a normal buffer), so the
+  *     local per-stream estimate applies even when output_on_remote_disk is true;
   *   - nullopt means the destination disk is not chosen yet, so if output_on_remote_disk is true the
-  *     worst-case ceiling over the S3 / Azure upload settings of the context is used as a
+  *     worst case over the S3 / Azure upload settings of the context is used as a
   *     pre-disk-selection guess.
   * Since upload buffers only ever hold data that has already flown through them, their contribution is
   * capped by the data volume of the merge (see the implementation for details).
@@ -59,19 +75,19 @@ UInt64 estimateNeededMemoryForMerge(
     const ContextPtr & context,
     const MergeTreeSettings & settings,
     bool output_on_remote_disk,
-    std::optional<UInt64> remote_write_buffer_ceiling = std::nullopt,
+    std::optional<DiskWriteBufferMemory> remote_write_buffer_memory = std::nullopt,
     bool deduplicate = false,
     bool cleanup = false);
 
-/** The per-stream multipart write buffer memory ceiling of a merge's destination disk, or 0 for disks
-  * whose writer has no multipart upload buffers (a plain local disk, or a remote disk such as HDFS that
-  * writes through a normal buffer). Decorator disks (encrypted, read-only) are unwrapped down to the disk
-  * they delegate to, so a wrapped S3 / Azure disk reports the same ceiling as a bare one. Pass the result
-  * into estimateNeededMemoryForMerge as remote_write_buffer_ceiling once the destination disk is known, so
-  * the reservation reflects the disk's own multipart upload sizes rather than the query/session settings
-  * that a background writer ignores.
+/** The per-stream multipart write buffer memory sizing of a merge's destination disk (see
+  * DiskWriteBufferMemory above); both values are 0 for disks whose writer has no multipart upload buffers
+  * (a plain local disk, or a remote disk such as HDFS that writes through a normal buffer). Decorator
+  * disks (encrypted, read-only) are unwrapped down to the disk they delegate to, so a wrapped S3 / Azure
+  * disk reports the same sizes as a bare one. Pass the result into estimateNeededMemoryForMerge as
+  * remote_write_buffer_memory once the destination disk is known, so the reservation reflects the disk's
+  * own multipart upload sizes rather than the query/session settings that a background writer ignores.
   */
-UInt64 getDiskWriteBufferMemoryCeiling(const DiskPtr & disk);
+DiskWriteBufferMemory getDiskWriteBufferMemory(const DiskPtr & disk);
 
 /** Estimate approximate amount of disk space needed to be free before schedule such merge.
   */

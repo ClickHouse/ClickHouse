@@ -154,6 +154,8 @@ public:
 
     UInt64 getWriteBufferMemoryCeiling() const override;
 
+    UInt64 getWriteBufferGuaranteedMemory() const override;
+
     std::shared_ptr<const S3::Client> getS3StorageClient() override;
     std::shared_ptr<const S3::Client> tryGetS3StorageClient() override;
 
