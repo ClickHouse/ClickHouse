@@ -9,7 +9,6 @@ namespace DB
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
@@ -30,9 +29,8 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     , reset_columns(reset_columns_)
     , info_settings
     {
-        static_cast<double>((*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
+        (*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
         false,
-        (*storage_settings)[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
         (*storage_settings)[MergeTreeSetting::serialization_info_version],
         (*storage_settings)[MergeTreeSetting::string_serialization_version],
         (*storage_settings)[MergeTreeSetting::nullable_serialization_version],
