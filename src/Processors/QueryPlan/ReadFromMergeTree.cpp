@@ -73,7 +73,6 @@
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
-#include <Columns/ColumnConst.h>
 
 #include <algorithm>
 #include <iterator>
@@ -1652,7 +1651,7 @@ static std::optional<size_t> isPartitionKeyMonotonicInSortKey(
                 const ActionsDAG::Node * monotonic_child = nullptr;
                 for (const auto * child : node->children)
                 {
-                    if (child->column && isColumnConst(*child->column))
+                    if (child->column)
                         continue;
                     if (monotonic_child) /// More than one non-const arg.
                         return std::nullopt;
@@ -1866,11 +1865,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     if (is_local_plan_follower)
         all_parts_for_replicas = parts_with_ranges;
 
-    std::vector<RangesInDataParts> split_parts_and_ranges;
-    if (need_split)
-        split_parts_and_ranges = splitPartsIntoStreams(
-            std::move(parts_with_ranges), num_streams, info, input_order_info->direction, split_ranges, input_order_info->limit);
-
     Pipes pipes;
     /// Each split runs as an independent pool. If we pass the top-level `.threads = num_streams`
     /// to every pool, `min_marks_per_request = min_marks_per_task * threads` is inflated by
@@ -1883,16 +1877,35 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         return per_split;
     };
 
-    if (is_local_plan_initiator)
+    std::vector<RangesInDataParts> split_parts_and_ranges;
+    if (need_split)
     {
-        /// Initiator with local plan: each split gets its own subset of parts (genuine splitting).
-        const size_t num_splits = split_parts_and_ranges.size();
-        const PoolSettings per_split_pool_settings = make_per_split_pool_settings(num_splits);
-        for (size_t i = 0; i < num_splits; ++i)
+        split_parts_and_ranges = splitPartsIntoStreams(
+            std::move(parts_with_ranges), num_streams, info, input_order_info->direction, split_ranges, input_order_info->limit);
+
+        if (is_local_plan_initiator)
         {
-            pipes.emplace_back(readInOrder(
-                std::move(split_parts_and_ranges[i]), index_build_context, column_names, per_split_pool_settings, read_type,
-                input_order_info->limit, /*split_index=*/i));
+            /// Initiator with local plan: each split gets its own subset of parts (genuine splitting).
+            const size_t num_splits = split_parts_and_ranges.size();
+            const PoolSettings per_split_pool_settings = make_per_split_pool_settings(num_splits);
+            for (size_t i = 0; i < num_splits; ++i)
+            {
+                pipes.emplace_back(readInOrder(
+                    std::move(split_parts_and_ranges[i]), index_build_context, column_names, per_split_pool_settings, read_type,
+                    input_order_info->limit, /*split_index=*/i));
+            }
+        }
+        else /* local reading case */
+        {
+            /// Preserve master behaviour: every split gets the unmodified `pool_settings` (with
+            /// `.threads = num_streams`). The per-split divider only exists to keep the new
+            /// parallel-replicas split topology from inflating `min_marks_per_request` across the
+            /// per-split pools — local reads have no such concern.
+            for (auto && item : split_parts_and_ranges)
+            {
+                pipes.emplace_back(readInOrder(
+                    std::move(item), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
+            }
         }
     }
     else if (is_local_plan_follower)
@@ -1945,18 +1958,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             out_projection = createProjection(original_pipe_header);
 
         return pipe;
-    }
-    else /* local reading case */
-    {
-        /// Preserve master behaviour: every split gets the unmodified `pool_settings` (with
-        /// `.threads = num_streams`). The per-split divider only exists to keep the new
-        /// parallel-replicas split topology from inflating `min_marks_per_request` across the
-        /// per-split pools — local reads have no such concern.
-        for (auto && item : split_parts_and_ranges)
-        {
-            pipes.emplace_back(readInOrder(
-                std::move(item), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
-        }
     }
 
     std::erase_if(pipes, [](const Pipe & p) { return p.empty(); });
