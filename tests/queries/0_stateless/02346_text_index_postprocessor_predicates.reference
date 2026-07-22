@@ -74,3 +74,8 @@ Postprocessor with a lambda parameter shadowing an ALIAS column.
 1
 0
 Postprocessor referencing an ALIAS whose body is captured by a lambda parameter is rejected.
+Postprocessor referencing chained ALIAS columns (a -> b -> s).
+1
+1
+1
+0

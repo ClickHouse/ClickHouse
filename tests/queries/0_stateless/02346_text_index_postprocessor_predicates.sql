@@ -288,7 +288,6 @@ SELECT count() FROM tab WHERE hasAllTokens(val, 'etf');     -- 2
 DROP TABLE IF EXISTS tab;
 
 SELECT 'ALIAS column + postprocessor: needle and stored tokens are postprocessed.';
--- The index is on an ALIAS column and the postprocessor references the ALIAS by name.
 -- https://github.com/ClickHouse/ClickHouse/issues/95944
 
 CREATE TABLE tab
@@ -312,8 +311,7 @@ SELECT count() FROM tab WHERE hasToken(alias, 'missing');
 DROP TABLE IF EXISTS tab;
 
 SELECT 'Postprocessor with a lambda parameter shadowing an ALIAS column.';
--- The postprocessor references the physical column `val` as the token; its lambda parameter `x` collides
--- with an ALIAS column named `x`. The lambda parameter must win and must not be expanded to the ALIAS.
+-- The lambda parameter `x` shadows the ALIAS column `x` and must not be expanded.
 
 CREATE TABLE tab
 (
@@ -335,7 +333,7 @@ SELECT count() FROM tab WHERE hasToken(val, 'shadow'); -- 0: the lambda arg is n
 DROP TABLE IF EXISTS tab;
 
 SELECT 'Postprocessor referencing an ALIAS whose body is captured by a lambda parameter is rejected.';
--- `a` expands to `x`, which is shadowed by the lambda parameter `x`, so the reference is inaccessible.
+-- `a` expands to `x`, shadowed by the lambda parameter, so it is inaccessible.
 CREATE TABLE tab
 (
     s String,
@@ -344,3 +342,23 @@ CREATE TABLE tab
     INDEX idx(s) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = arrayStringConcat(arrayMap(x -> lower(a), [s]), ''))
 )
 ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+SELECT 'Postprocessor referencing chained ALIAS columns (a -> b -> s).';
+
+CREATE TABLE tab
+(
+    s String,
+    b String ALIAS s,
+    a String ALIAS b,
+    INDEX idx(s) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(a))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO tab(s) VALUES ('Hello World'), ('FOO bar');
+
+SELECT count() FROM tab WHERE hasToken(s, 'hello');
+SELECT count() FROM tab WHERE hasToken(s, 'world');
+SELECT count() FROM tab WHERE hasToken(s, 'foo');
+SELECT count() FROM tab WHERE hasToken(s, 'missing');
+
+DROP TABLE IF EXISTS tab;

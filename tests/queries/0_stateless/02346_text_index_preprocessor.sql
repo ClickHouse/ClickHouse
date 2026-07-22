@@ -606,8 +606,7 @@ SELECT count() FROM tab WHERE hasToken(name, 'missing');
 DROP TABLE tab;
 
 SELECT '-- Preprocessor on an ALIAS column with direct read from text index disabled (row-level path)';
--- The row-level path must apply the preprocessor to the ALIAS haystack, giving the same result as the
--- direct-read path. https://github.com/ClickHouse/ClickHouse/issues/95944
+-- Row-level path must apply the preprocessor to the ALIAS haystack, same as direct read.
 
 CREATE TABLE tab
 (
@@ -631,9 +630,7 @@ SELECT count() FROM tab WHERE hasToken(name, 'missing') SETTINGS query_plan_dire
 DROP TABLE tab;
 
 SELECT '-- Preprocessor with a lambda parameter shadowing an ALIAS column';
--- The preprocessor references the physical column `val`; its lambda parameter `x` collides with an
--- ALIAS column named `x`. The lambda parameter must win, i.e. it must not be expanded to the ALIAS
--- expression, so this previously valid definition keeps working.
+-- The lambda parameter `x` shadows the ALIAS column `x` and must not be expanded.
 
 CREATE TABLE tab
 (
@@ -655,7 +652,7 @@ SELECT count() FROM tab WHERE hasToken(val, 'shadow'); -- 0: the lambda arg is n
 DROP TABLE tab;
 
 SELECT '-- Preprocessor referencing an ALIAS whose body is captured by a lambda parameter is rejected';
--- `a` expands to `x`, which is shadowed by the lambda parameter `x`, so the reference is inaccessible.
+-- `a` expands to `x`, shadowed by the lambda parameter, so it is inaccessible.
 CREATE TABLE tab
 (
     s String,
@@ -664,6 +661,43 @@ CREATE TABLE tab
     INDEX idx(s) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arrayStringConcat(arrayMap(x -> lower(a), splitByChar(' ', s)), ' '))
 )
 ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- Preprocessor referencing chained ALIAS columns (a -> b -> s)';
+
+CREATE TABLE tab
+(
+    s String,
+    b String ALIAS s,
+    a String ALIAS b,
+    INDEX idx(s) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(a))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO tab(s) VALUES ('Hello World'), ('FOO bar');
+
+SELECT count() FROM tab WHERE hasToken(s, 'hello');
+SELECT count() FROM tab WHERE hasToken(s, 'world');
+SELECT count() FROM tab WHERE hasToken(s, 'foo');
+SELECT count() FROM tab WHERE hasToken(s, 'bar');
+SELECT count() FROM tab WHERE hasToken(s, 'missing');
+
+DROP TABLE tab;
+
+SELECT '-- Preprocessor referencing an ALIAS whose body has its own shadowing lambda (not a capture)';
+-- `a`'s body binds its own `x`, shadowing the outer lambda's `x`, so it is not a capture.
+CREATE TABLE tab
+(
+    s String,
+    a String ALIAS arrayStringConcat(arrayMap(x -> lower(x), splitByChar(' ', s)), ' '),
+    INDEX idx(s) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arrayStringConcat(arrayMap(x -> upper(a), splitByChar(' ', s)), ' '))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO tab(s) VALUES ('ab cd'), ('ef gh');
+
+SELECT count() FROM tab;
+
+DROP TABLE tab;
 
 SELECT '-- Preprocessor on an ALIAS column with the sparseGrams tokenizer';
 
