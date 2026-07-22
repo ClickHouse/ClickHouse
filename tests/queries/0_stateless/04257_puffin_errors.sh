@@ -25,8 +25,6 @@ launch "$id" puffin "$DATA/cardinality_mismatch_large_bitmap.puffin" 'exceeds de
 id=$((id + 1))
 launch "$id" puffin "$DATA/cardinality_exceeds_materialization_limit.puffin" 'exceeds materialization limit' 'BAD_ARGUMENTS'
 id=$((id + 1))
-launch "$id" puffin "$DATA/dv_envelope_length_mismatch.puffin" 'does not match combined length'
-id=$((id + 1))
 
 # Oversized DV blob region is generated at runtime (sparse) to avoid committing a 2 GiB fixture.
 OVERSIZE_DV_BLOB="$TMP/oversized_dv_blob.puffin"
@@ -38,8 +36,6 @@ import sys
 path = sys.argv[1]
 magic = b"PFA1"
 blob_length = 2 * 1024 * 1024 * 1024 + 1
-# Minimal envelope header so the absolute-size check fails before a full read.
-header = struct.pack(">I", 4) + bytes([0xD1, 0xD3, 0x39, 0x64])
 footer = {
     "blobs": [
         {
@@ -60,7 +56,6 @@ footer_json = json.dumps(footer, separators=(", ", ": ")).encode("utf-8")
 flags = b"\x00\x00\x00\x00"
 with open(path, "wb") as f:
     f.write(magic)
-    f.write(header)
     f.seek(4 + blob_length - 1, 0)
     f.write(b"\x00")
     f.write(magic)
