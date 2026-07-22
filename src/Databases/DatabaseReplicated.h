@@ -201,8 +201,13 @@ private:
     /// same Keeper path between that read and the snapshot inside this call is rejected with
     /// `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT` instead of silently substituting metadata from a
     /// different database instance. Pass `0` from callers that have not pre-observed an identity.
+    /// `can_reconcile_renames` must be set only when this replica has applied every committed log
+    /// entry (its log pointer is current and it is not a brand-new replica). It gates the
+    /// reconciliation of power-loss-reverted renames of non-replicated on-disk tables: that
+    /// reconciliation matches a local table to a ZooKeeper table by UUID, which is only sound when
+    /// the replica cannot have missed a `DROP`+`CREATE` that deliberately reused the same UUID.
     void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr,
-                            int64_t expected_max_log_ptr_czxid = 0);
+                            int64_t expected_max_log_ptr_czxid = 0, bool can_reconcile_renames = false);
 
     std::map<String, String> tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr,
                                                               int64_t expected_max_log_ptr_czxid = 0) const;

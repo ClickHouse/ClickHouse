@@ -1528,8 +1528,23 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
     return create.uuid;
 }
 
+/// Extract the table UUID from a stored CREATE query, regardless of engine.
+/// Metadata stored on disk and in ZooKeeper always uses TABLE_WITH_UUID_NAME_PLACEHOLDER
+/// for the table name and carries the real UUID, so this is name-independent.
+static UUID getTableUUID(const String & metadata, ContextPtr context)
+{
+    ParserCreateQuery parser;
+    auto depth = context->getSettingsRef()[Setting::max_parser_depth];
+    auto backtracks = context->getSettingsRef()[Setting::max_parser_backtracks];
+    /// Use size limit 0 (unlimited) as the metadata parser does: stored metadata can exceed
+    /// `max_query_size`, and it must still be parseable during recovery.
+    ASTPtr query = parseQuery(parser, metadata, /*description*/ "", /*max_query_size*/ 0, depth, backtracks);
+    const ASTCreateQuery & create = query->as<const ASTCreateQuery &>();
+    return create.uuid;
+}
+
 void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr,
-                                            int64_t expected_max_log_ptr_czxid)
+                                            int64_t expected_max_log_ptr_czxid, bool can_reconcile_renames)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::recoverLostReplica");
     waitDatabaseStarted();
@@ -1555,11 +1570,21 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     /// We need to handle renamed tables only.
     /// TODO maybe we should also update MergeTree SETTINGS if required?
     std::unordered_map<UUID, String> zk_replicated_id_to_name;
+    /// For non-replicated on-disk tables (e.g. plain MergeTree) there is no cross-replica data,
+    /// so metadata does not converge separately: we can only treat a local table as "renamed"
+    /// if its metadata is identical to a ZooKeeper table's metadata modulo name (same UUID).
+    /// This map lets us detect that case and rename the local table into place instead of
+    /// exiling it to `<db>_broken_tables` and recreating an empty table (which loses the data).
+    std::unordered_map<UUID, String> zk_id_to_name;
     for (const auto & zk_table : table_name_to_metadata)
     {
         UUID zk_replicated_id = getTableUUIDIfReplicated(zk_table.second, getContext());
         if (zk_replicated_id != UUIDHelpers::Nil)
             zk_replicated_id_to_name.emplace(zk_replicated_id, zk_table.first);
+
+        UUID zk_id = getTableUUID(zk_table.second, getContext());
+        if (zk_id != UUIDHelpers::Nil)
+            zk_id_to_name.emplace(zk_id, zk_table.first);
     }
 
     /// We will drop or move tables which exist only in local metadata
@@ -1575,7 +1600,22 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     /// This is needed to generate intermediate name
     String salt = toString(thread_local_rng());
 
-    std::vector<RenameEdge> replicated_tables_to_rename;
+    std::vector<RenameEdge> tables_to_rename;
+
+    /// Build the intermediate-rename edge `from` -> `.rename-...` -> `to`, reusing an existing
+    /// intermediate name if a previous recovery attempt already renamed the table part-way.
+    auto make_rename_edge = [&salt](const String & from, const String & to)
+    {
+        String intermediate_name;
+        /// Possibly we failed to rename it on previous iteration
+        /// And this table was already renamed to an intermediate name
+        if (startsWith(from, ".rename-") && !startsWith(to, ".rename-"))
+            intermediate_name = from;
+        else
+            intermediate_name = fmt::format(".rename-{}-{}", from, sipHash64(fmt::format("{}-{}", from, salt)));
+        return RenameEdge{from, intermediate_name, to};
+    };
+
     size_t total_tables = 0;
     std::vector<UUID> replicated_ids;
     for (auto existing_tables_it = getTablesIterator(getContext(), {}, /*skip_not_loaded=*/false); existing_tables_it->isValid();
@@ -1594,15 +1634,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             {
                 if (name != it->second)
                 {
-                    String intermediate_name;
-                    /// Possibly we failed to rename it on previous iteration
-                    /// And this table was already renamed to an intermediate name
-                    if (startsWith(name, ".rename-") && !startsWith(it->second, ".rename-"))
-                        intermediate_name = name;
-                    else
-                        intermediate_name = fmt::format(".rename-{}-{}", name, sipHash64(fmt::format("{}-{}", name, salt)));
                     /// Need just update table name
-                    replicated_tables_to_rename.push_back({name, intermediate_name, it->second});
+                    tables_to_rename.push_back(make_rename_edge(name, it->second));
                 }
                 continue;
             }
@@ -1611,9 +1644,53 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         auto in_zk = table_name_to_metadata.find(name);
         if (in_zk == table_name_to_metadata.end() || in_zk->second != readMetadataFile(name))
         {
-            LOG_DEBUG(log, "Table to detach {}", name);
-            /// Local table does not exist in ZooKeeper or has different metadata
-            tables_to_detach.emplace_back(std::move(name));
+            /// The local table's current name is not a matching ZooKeeper table. Before exiling it,
+            /// check whether it is a non-replicated on-disk table (e.g. plain MergeTree) that was
+            /// renamed in ZooKeeper but whose local rename was lost (e.g. an acknowledged
+            /// RENAME/EXCHANGE followed by a power cut, since the local metadata rename is not
+            /// fsynced). Such a table has a ZooKeeper entry under a different name with the same
+            /// UUID and identical metadata modulo name. Renaming it into place preserves the data;
+            /// exiling it to `<db>_broken_tables` and recreating an empty table loses it.
+            ///
+            /// Restricted to `storesDataOnDisk()` tables on purpose: non-persistent objects (e.g.
+            /// Memory, dictionaries, views) hold replica-local or no data and must keep the existing
+            /// drop/recreate-empty recovery -- the same distinction the detach loop below draws at
+            /// `!table->storesDataOnDisk()`.
+            ///
+            /// Gated on `can_reconcile_renames`: only a replica that has applied every committed log
+            /// entry may match a local table to a ZooKeeper table purely by UUID. A log-stale or new
+            /// replica could have missed a `DROP`+`CREATE` that reused the same UUID (allowed via
+            /// `database_replicated_allow_explicit_uuid`), and must not rename its stale local table
+            /// into the recreated table's name -- for those replicas we keep the safe exile.
+            const bool is_reverted_rename = can_reconcile_renames
+                && existing_tables_it->table()->storesDataOnDisk()
+                && local_replicated_id == UUIDHelpers::Nil
+                && [&]
+                {
+                    UUID local_id = existing_tables_it->table()->getStorageID().uuid;
+                    if (local_id == UUIDHelpers::Nil)
+                        return false;
+                    auto zk_it = zk_id_to_name.find(local_id);
+                    /// Require a ZooKeeper table with the same UUID under a different name, whose
+                    /// metadata is byte-identical to the local metadata (both use the placeholder
+                    /// name, so equality means "identical modulo name"). UUIDs are globally unique
+                    /// and stable across renames, so this match is unambiguously the renamed table.
+                    return zk_it != zk_id_to_name.end() && zk_it->second != name
+                        && table_name_to_metadata.at(zk_it->second) == readMetadataFile(name);
+                }();
+
+            if (is_reverted_rename)
+            {
+                const String & to = zk_id_to_name.at(existing_tables_it->table()->getStorageID().uuid);
+                LOG_DEBUG(log, "Local table {} matches ZooKeeper table {} by UUID and metadata; will rename instead of detaching", name, to);
+                tables_to_rename.push_back(make_rename_edge(name, to));
+            }
+            else
+            {
+                LOG_DEBUG(log, "Table to detach {}", name);
+                /// Local table does not exist in ZooKeeper or has different metadata
+                tables_to_detach.emplace_back(std::move(name));
+            }
         }
     }
 
@@ -1763,7 +1840,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         LOG_WARNING(log, "Cleaned {} outdated objects: dropped {} dictionaries and {} tables, moved {} tables",
                     tables_to_detach.size(), dropped_dictionaries, dropped_tables.size() - dropped_dictionaries, moved_tables);
 
-    /// Now database is cleared from outdated tables, let's rename ReplicatedMergeTree tables to actual names
+    /// Now database is cleared from outdated tables, let's rename the surviving tables to actual names
     /// We have to take into account that tables names could be changed with two general queries
     /// 1) RENAME TABLE. There could be multiple pairs of tables (e.g. RENAME b TO c, a TO b, c TO d)
     /// But it is equal to multiple subsequent RENAMEs each of which operates only with two tables
@@ -1787,7 +1864,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     };
 
     LOG_DEBUG(log, "Starting first stage of renaming process. Will rename tables to intermediate names");
-    for (auto & [from, intermediate, _] : replicated_tables_to_rename)
+    for (auto & [from, intermediate, _] : tables_to_rename)
     {
         /// Due to some unknown failures there could be tables
         /// which are already in an intermediate state
@@ -1797,7 +1874,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         rename_table(from, intermediate);
     }
     LOG_DEBUG(log, "Starting second stage of renaming process. Will rename tables from intermediate to desired names");
-    for (auto & [_, intermediate, to] : replicated_tables_to_rename)
+    for (auto & [_, intermediate, to] : tables_to_rename)
         rename_table(intermediate, to);
 
     LOG_DEBUG(log, "Renames completed successfully");

@@ -235,7 +235,12 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
             LOG_WARNING(log, "Replica seems to be lost: our_log_ptr={}, max_log_ptr={}, local_digest={}, zk_digest={}",
                         our_log_ptr, max_log_ptr, local_digest, digest);
 
-        database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr, max_log_ptr_stat.czxid);
+        /// Only a replica that has applied every committed log entry (log pointer current, not a
+        /// brand-new replica) may reconcile power-loss-reverted renames of non-replicated on-disk
+        /// tables by UUID: otherwise it could have missed a DROP+CREATE that reused the same UUID
+        /// and would expose stale local data under the recreated table's name.
+        bool can_reconcile_renames = !is_new_replica && !lost_according_to_log_ptr;
+        database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr, max_log_ptr_stat.czxid, can_reconcile_renames);
 
         fiu_do_on(FailPoints::database_replicated_delay_recovery,
         {
