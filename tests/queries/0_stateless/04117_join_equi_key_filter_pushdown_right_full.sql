@@ -42,6 +42,25 @@ SELECT count() > 0 FROM (
 SELECT 'RIGHT ANTI JOIN USING, equi-key WHERE: correctness preserved';
 SELECT k FROM mt AS l RIGHT ANTI JOIN (SELECT toUInt64(0) AS k UNION ALL SELECT toUInt64(1000000000) AS k) AS r USING (k) WHERE k = 1000000000 ORDER BY k;
 
+-- A substitution is only registered when the replacement column already carries the type the replaced
+-- name has in the JOIN output, so `join_use_nulls` widening the output never leaves the pushed-down
+-- predicate bound to a column of a different type.
+SET join_use_nulls = 1;
+
+SELECT 'RIGHT JOIN USING, equi-key WHERE, join_use_nulls: left MergeTree prunes granules';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN indexes = 1
+    SELECT k FROM mt AS l RIGHT JOIN (SELECT 1 AS k) AS r USING (k) WHERE k = 1
+) WHERE explain ILIKE '%Condition: (k in [1, 1])%';
+
+SELECT 'RIGHT JOIN USING, equi-key WHERE, join_use_nulls: result';
+SELECT k FROM mt AS l RIGHT JOIN (SELECT 1 AS k) AS r USING (k) WHERE k = 1 ORDER BY k;
+
+SELECT 'RIGHT JOIN ON, equi-key WHERE, join_use_nulls: unmatched right row keeps its NULL left side';
+SELECT l.k, r.k FROM mt AS l RIGHT JOIN (SELECT toUInt64(1000000000) AS k) AS r ON l.k = r.k WHERE r.k = 1000000000 ORDER BY 1, 2;
+
+SET join_use_nulls = 0;
+
 SELECT 'FULL JOIN USING, equi-key WHERE: result (matched row)';
 SELECT k FROM mt AS l FULL JOIN (SELECT toUInt64(1) AS k) AS r USING (k) WHERE k = 1 ORDER BY k;
 

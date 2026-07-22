@@ -8,6 +8,12 @@ RIGHT ALL JOIN ON, equi-key WHERE: left MergeTree prunes granules
 1
 RIGHT ANTI JOIN USING, equi-key WHERE: correctness preserved
 1000000000
+RIGHT JOIN USING, equi-key WHERE, join_use_nulls: left MergeTree prunes granules
+1
+RIGHT JOIN USING, equi-key WHERE, join_use_nulls: result
+1
+RIGHT JOIN ON, equi-key WHERE, join_use_nulls: unmatched right row keeps its NULL left side
+\N	1000000000
 FULL JOIN USING, equi-key WHERE: result (matched row)
 1
 FULL JOIN USING, equi-key WHERE: result (right-only contributing row preserved)
