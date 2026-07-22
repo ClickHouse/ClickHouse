@@ -416,6 +416,13 @@ void OwnAsyncSplitChannel::flushTextLogs()
     if (!text_log_locked)
         return;
 
+    /// The async text-log thread services this handshake. It is not running while logging is stopped around
+    /// remapExecutable (where the only caller is the fatal signal handler; the server accepts no connections
+    /// yet) nor after shutdown, so return instead of waiting forever for a flag nobody will clear. Anything
+    /// queued meanwhile is drained when the thread (re)starts.
+    if (!is_open)
+        return;
+
     /// Wait out any flush already in progress, else we'd wake when that one ends; concurrent callers flush together.
     text_log_flush_requested.wait(true, std::memory_order_seq_cst);
 
