@@ -2036,6 +2036,19 @@ class QueryProgressElement extends HTMLElement
         }
     }
 
+    /// Restore the shared view toggles from a tab's own state (see `syncActiveTabChrome`): reveal
+    /// each toggle only if that tab produced logs / metrics, and mark the tab's selected view active.
+    /// The view and toggle visibility are tab-owned, so switching tabs does not carry one tab's
+    /// selection or toggle visibility onto another (see the `set-view` handler and `_markLogsAvailable`).
+    setViewState(view, logsAvailable, metricsAvailable)
+    {
+        this._view = view;
+        this._logsToggle.style.display = logsAvailable ? 'inline-block' : 'none';
+        this._metricsToggle.style.display = metricsAvailable ? 'inline-block' : 'none';
+        this._logsToggle.classList.toggle('active', view === 'logs');
+        this._metricsToggle.classList.toggle('active', view === 'metrics');
+    }
+
     clear()
     {
         this._hourglass.style.display = 'none';
@@ -4510,6 +4523,35 @@ class QueryResultElement extends HTMLElement
     {
     }
 
+    /// Record that this result has server logs / profile-event metrics available, so its Logs /
+    /// Metrics toggle can be offered. Availability is stored on the OWNING tab (set in
+    /// `getOrCreatePanel` / `postMulti`), and the shared toggle in the progress line is revealed only
+    /// when that tab is active. A background tab's stream thus marks its own availability - replayed
+    /// by `syncActiveTabChrome` when it is next opened - instead of lighting up the toggle on the
+    /// wrong (active) tab. Falls back to revealing the shared toggle directly for a result element
+    /// with no owning tab.
+    _markLogsAvailable()
+    {
+        const tab = this._ownerTab;
+        if (tab)
+        {
+            tab.logsAvailable = true;
+            if (tab.id !== activeTabId) return;
+        }
+        progressEl.showLogsToggle();
+    }
+
+    _markMetricsAvailable()
+    {
+        const tab = this._ownerTab;
+        if (tab)
+        {
+            tab.metricsAvailable = true;
+            if (tab.id !== activeTabId) return;
+        }
+        progressEl.showMetricsToggle();
+    }
+
     /// Queue a server log entry (from a framing `log` packet) for the logs view. Lines are buffered
     /// and appended in batches per animation frame (see `_flushLogs`), so streaming many lines does
     /// not do a DOM insertion, reflow and counter update per line.
@@ -4517,6 +4559,20 @@ class QueryResultElement extends HTMLElement
     {
         this._log_buffer.push(entry);
         ++this._log_count;
+
+        /// Bound the pending queue too, not just the rendered DOM. `_flushLogs` drains at most
+        /// `MAX_PER_FRAME` lines per animation frame, so a burst that arrives faster than frames
+        /// fire would grow `_log_buffer` without limit. At most `MAX_DOM_LINES` lines are ever kept
+        /// (rendered + queued); drop the oldest queued lines beyond that budget and count them like
+        /// the ones the DOM cap drops, so `logCount` still reports the true total and the "... N
+        /// earlier lines were dropped ..." marker reflects them (see `_flushLogs`).
+        const MAX_DOM_LINES = 100000;
+        if (this._log_buffer.length > MAX_DOM_LINES)
+            this._log_dropped += this._log_buffer.splice(0, this._log_buffer.length - MAX_DOM_LINES).length;
+
+        /// Now that there is at least one log line, reveal the Logs toggle (on the owning tab, and in
+        /// the shared progress line when that tab is active - see `_markLogsAvailable`).
+        this._markLogsAvailable();
 
         if (!this._log_flush_raf)
             this._log_flush_raf = requestAnimationFrame(() => this._flushLogs());
@@ -4548,6 +4604,10 @@ class QueryResultElement extends HTMLElement
         const MAX_DOM_LINES = 100000;
         let excess = this._logsContent.childElementCount - (this._log_dropped_marker ? 1 : 0) - MAX_DOM_LINES;
         if (excess > 0)
+            this._log_dropped += excess;
+        /// Surface the total dropped count (from the DOM cap here AND the pending-queue cap in
+        /// `appendLog`) in a single italic marker line at the top; create it lazily on the first drop.
+        if (this._log_dropped > 0)
         {
             if (!this._log_dropped_marker)
             {
@@ -4556,14 +4616,10 @@ class QueryResultElement extends HTMLElement
                 this._log_dropped_marker.style.fontStyle = 'italic';
                 this._logsContent.prepend(this._log_dropped_marker);
             }
-            this._log_dropped += excess;
             while (excess-- > 0)
                 this._log_dropped_marker.nextElementSibling.remove();
             this._log_dropped_marker.textContent = `... ${this._log_dropped} earlier lines were dropped ...`;
         }
-
-        /// Now that there is at least one log line, reveal the Logs toggle in the progress line.
-        progressEl.showLogsToggle();
 
         if (this._log_buffer.length > 0)
             this._log_flush_raf = requestAnimationFrame(() => this._flushLogs());
@@ -4682,11 +4738,11 @@ class QueryResultElement extends HTMLElement
 
         if (!saw_any) return;
 
-        /// Sample every metric's current per-second rate into its (unbounded) history, one point per
-        /// packet, and track the observed maximum - both feed the sparkline column and its scaling.
-        /// Every metric is stepped (even one with no new data this packet, whose rate is 0), so all
-        /// histories keep the same length and the sparklines stay aligned. Done here (not only at
-        /// render) so the history accrues even while the view is hidden; it widens by one pixel/packet.
+        /// Sample every metric's current per-second rate into its history, one point per packet, and
+        /// track the observed maximum - both feed the sparkline column and its scaling. Every metric
+        /// is stepped (even one with no new data this packet, whose rate is 0), so all histories keep
+        /// the same length (`_metrics_ticks`) and the sparklines stay aligned. Done here (not only at
+        /// render) so the history accrues even while the view is hidden.
         for (const m of this._metrics.values())
         {
             const rate = this._metricRecentRate(m, now_sec);
@@ -4695,7 +4751,21 @@ class QueryResultElement extends HTMLElement
         }
         ++this._metrics_ticks;
 
-        progressEl.showMetricsToggle();
+        /// Bound the retained history so a long query does not grow the arrays - or the SVG the
+        /// sparkline regenerates from them - without limit. When the point count reaches the cap,
+        /// halve EVERY history in lockstep by averaging adjacent points: all histories stay the same
+        /// length (so the sparklines remain time-aligned - `_metrics_ticks` tracks that shared
+        /// length), while memory and the SVG node count stay bounded. Each retained point then spans
+        /// twice as many packets, so the trace compresses in time rather than being truncated.
+        const MAX_HISTORY_POINTS = 4000;
+        if (this._metrics_ticks > MAX_HISTORY_POINTS)
+        {
+            for (const m of this._metrics.values())
+                m.history = downsampleHistoryByHalf(m.history);
+            this._metrics_ticks = Math.ceil(this._metrics_ticks / 2);
+        }
+
+        this._markMetricsAvailable();
         if (this._view === 'metrics')
             this.renderMetricsTable();
     }
@@ -5484,11 +5554,16 @@ function handleResultProgress(tab, detail) {
     }
 }
 
-/// The Logs and Metrics toggles live in the progress line; apply the selected view to every result
-/// element on the page (the single result, or one per statement in multi-query mode), switching
-/// them between the query result, the streamed server logs, and the extended profile-event metrics.
+/// The Logs and Metrics toggles live in the progress line, but the selected view is tab-owned:
+/// apply it only to the ACTIVE tab's result element(s) (the single result, or one per statement in
+/// multi-query mode) and record it on the tab, so switching to another tab does not carry this
+/// tab's Logs/Metrics selection over. The view is replayed by `syncActiveTabChrome` when the tab is
+/// reopened. Falls back to all results when there is no active tab (before the first run).
 progressEl.addEventListener('set-view', (e) => {
-    for (const el of document.querySelectorAll('query-result'))
+    const tab = getActiveTab();
+    if (tab) tab.view = e.detail.view;
+    const scope = (tab && tab.panel) ? tab.panel : document;
+    for (const el of scope.querySelectorAll('query-result'))
         el.showView(e.detail.view);
 });
 
@@ -7297,13 +7372,41 @@ async function readEventStream(response, targetResultEl, abortController, tab, p
         if (done) break;
     }
 
-    /// Render the collected binary payload (image or raw text) once the stream is complete.
-    const is_image = binary_chunks ? renderBinaryPayload(targetResultEl, binary_chunks, imageMime) : false;
+    /// EOF. Flush any bytes still held by the streaming decoder (a multi-byte sequence split across
+    /// the final chunk), then handle a residual frame. A well-formed stream terminates every event -
+    /// including the terminal `exception` - with a blank line (see `FramingFormatEventStream`), so a
+    /// non-empty residual here means the response was truncated (e.g. the connection dropped after a
+    /// terminal `exception` event but before its blank line). Parse the residual as a final event so
+    /// a cut-off `exception` is still surfaced, and fail closed regardless: a leftover frame marks
+    /// the stream failed, so the snapshot is not saved as complete and `Run all` does not proceed
+    /// past a broken response.
+    const tail = decoder.decode();
+    if (tail) { buffer += tail; reply = appendCappedSnapshot(reply, tail); }
+    let truncated = false;
+    if (buffer.trim().length > 0)
+    {
+        const had_exception = saw_exception;
+        dispatchEventStreamBlock(buffer, handleEvent);
+        if (saw_exception && !had_exception) exception_block = buffer;
+        if (!saw_exception)
+        {
+            /// The residual was not a recognizable terminal `exception`: the stream was cut off.
+            /// Render an explicit error and synthesize a carrier so the failure survives replay too.
+            const message = 'The response stream was truncated before it completed.';
+            targetResultEl.renderError(message);
+            exception_block = 'event: exception\ndata: ' + JSON.stringify({ exception: message });
+        }
+        truncated = true;
+    }
+
+    /// Render the collected binary payload (image or raw text) once the stream is complete. Skip it
+    /// on a truncated stream: the collected bytes are incomplete and the error is already shown.
+    const is_image = (binary_chunks && !truncated) ? renderBinaryPayload(targetResultEl, binary_chunks, imageMime) : false;
 
     /// The stream is complete: switch the metrics table to totals / query-average rates.
     targetResultEl.finalizeMetrics();
 
-    return { reply, is_image, exception: saw_exception, exception_block };
+    return { reply, is_image, exception: saw_exception || truncated, exception_block };
 }
 
 /// Execute a single query, rendering results into the given targetResultEl.
@@ -8111,6 +8214,7 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
         const el = document.createElement('query-result');
         el._colorModes = tab.colorModes;
         el._pinnedColumns = tab.pinnedColumns;
+        el._ownerTab = tab;
         tab.multiContainer.appendChild(el);
         resultElements.push(el);
     }
@@ -8252,21 +8356,41 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
     /// image. A framed image comes from an `EventStream` with a base64 payload, so its `reply`
     /// is a replayable snapshot (`renderEventStreamText` reconstructs the picture on restore)
     /// and is persisted like any other statement, the same way the single-query path keeps it.
-    let multi = collected.map((r, i) => ({
-        query: parsed[i].query,
-        format: r ? r.format : null,
-        ok: r ? !!r.response_ok : false,
-        /// A statement can fail with `response_ok` still true (an in-band `{"exception":...}` after
-        /// rows streamed under 200 OK); persist the failure separately so the restored run does not
-        /// look successful (see `restoreMultiQuery`'s logo condition).
-        error: r ? !!r.is_error : false,
-        data: (r && (!r.is_image || r.is_base64)) ? r.reply : null,
-        base64: r ? !!r.is_base64 : false,
-        framing_kind: r ? (r.framing_kind ?? '') : '',
-    }));
+    let multi = collected.map((r, i) => {
+        /// A statement is failed when the response was not OK or an in-band `{"exception":...}`
+        /// arrived after rows streamed under 200 OK (`response_ok` still true - see `restoreMultiQuery`).
+        const failed = r ? (!r.response_ok || !!r.is_error) : false;
+        let data = (r && (!r.is_image || r.is_base64)) ? r.reply : null;
+        /// A failed statement whose full reply is oversized keeps a COMPACT failure snapshot (its
+        /// exception carrier in the form its `framing_kind` replays), the same way the single-query
+        /// path does. Otherwise the total-size cap below could drop the whole run to `null` and lose
+        /// the error, so a large statement that failed would reopen looking successful / blank.
+        if (failed && data != null && data.length > 100000)
+            data = compactFailureSnapshot(data, r.framing_kind ?? '', r.exception_carrier);
+        return {
+            query: parsed[i].query,
+            format: r ? r.format : null,
+            ok: r ? !!r.response_ok : false,
+            error: r ? !!r.is_error : false,
+            data,
+            base64: r ? !!r.is_base64 : false,
+            framing_kind: r ? (r.framing_kind ?? '') : '',
+            failed,
+        };
+    });
+    /// Mirror the single-query 100 KB cap, but on the TOTAL size across all statements. Rather than
+    /// dropping everything (which would lose failed statements' errors), first drop only the
+    /// SUCCESSFUL statements' payloads to `null` - they stay reproducible via re-run - while failed
+    /// statements keep their (already compact) error so the restored run does not look successful.
+    /// Only if the total still exceeds the budget after that (e.g. very many failed statements) is
+    /// the whole run stored query-only.
     let multi_size = 0;
     for (const s of multi) multi_size += s.data ? s.data.length : 0;
+    if (multi_size > 100000)
+        for (const s of multi)
+            if (s.data && !s.failed) { multi_size -= s.data.length; s.data = null; }
     if (multi_size > 100000) multi = null;
+    else if (multi) for (const s of multi) delete s.failed;
 
     /// Save all queries to browser history, using the full editor content captured at launch.
     saveHistory({
@@ -8537,6 +8661,7 @@ async function restoreMultiQuery(snapshot, tab, matToken) {
         const el = document.createElement('query-result');
         el._colorModes = tab.colorModes;
         el._pinnedColumns = tab.pinnedColumns;
+        el._ownerTab = tab;
         tab.multiContainer.appendChild(el);
         elements.push(el);
     }
@@ -9067,6 +9192,9 @@ function tabRuntimeDefaults() {
         progressPhase: 'idle',  /// 'idle' | 'running' | 'done' | 'error' — drives the shared bar on activation
         finalStats: null,       /// { rowCount, elapsedNs, incomplete } shown when a run finishes
         logoVisible: true,      /// whether the shared logo shows for this tab (hidden by errors / multi)
+        view: 'result',         /// this tab's selected view ('result' | 'logs' | 'metrics'), replayed by syncActiveTabChrome
+        logsAvailable: false,   /// this tab produced server logs (its Logs toggle can be offered)
+        metricsAvailable: false,/// this tab produced profile-event metrics (its Metrics toggle can be offered)
         colorModes: {},         /// per-column color modes for this tab's result (shared with its element)
         pinnedColumns: {},      /// pinned columns for this tab's result (shared with its element)
         downloadQuery: '',      /// query the download button should re-run for this tab
@@ -9133,6 +9261,8 @@ function getOrCreatePanel(tab) {
     const el = document.createElement('query-result');
     el._colorModes = tab.colorModes;
     el._pinnedColumns = tab.pinnedColumns;
+    /// The element's log/metric packets mark availability on this tab (see `_markLogsAvailable`).
+    el._ownerTab = tab;
     panel.appendChild(el);
     resultPanelsEl.appendChild(panel);
     tab.panel = panel;
@@ -9156,7 +9286,12 @@ function clearPanel(tab) {
     if (tab.resultEl) { tab.resultEl.clear(); tab.resultEl.style.display = ''; }
     if (tab.multiContainer) { tab.multiContainer.innerHTML = ''; tab.multiContainer.style.display = 'none'; }
     tab.logoVisible = true;
-    if (tab.id === activeTabId) { progressEl.clear(); logoEl.style.display = 'block'; elapsed_ns = 0; }
+    /// A cleared tab has no logs/metrics and shows the result view; its toggles are re-offered as the
+    /// new run streams them (see `_markLogsAvailable`). Reset the shared toggles too when active.
+    tab.view = 'result';
+    tab.logsAvailable = false;
+    tab.metricsAvailable = false;
+    if (tab.id === activeTabId) { progressEl.clear(); progressEl.resetViewToggles(); logoEl.style.display = 'block'; elapsed_ns = 0; }
 }
 
 /// Point the shared download/copy buttons at a tab's stored state.
@@ -9209,6 +9344,16 @@ function syncActiveTabChrome() {
     }
 
     logoEl.style.display = tab.logoVisible ? 'block' : 'none';
+
+    /// Replay this tab's Logs/Metrics availability and selected view: reveal the shared toggles only
+    /// for what this tab produced, and switch its result element(s) to its own view. The view and
+    /// toggles are tab-owned (see the `set-view` handler and `_markLogsAvailable`), so opening a tab
+    /// never inherits the previously active tab's selection or leaves a result hidden with no toggle.
+    progressEl.setViewState(tab.view || 'result', !!tab.logsAvailable, !!tab.metricsAvailable);
+    if (tab.panel)
+        for (const el of tab.panel.querySelectorAll('query-result'))
+            el.showView(tab.view || 'result');
+
     paintDownloadCopy(tab);
 }
 
@@ -10851,6 +10996,17 @@ function formatReadableTime(ns) {
     if (ns < 1e6) return (ns / 1e3).toFixed(2) + ' µs';
     if (ns < 1e9) return (ns / 1e6).toFixed(2) + ' ms';
     return (ns / 1e9).toFixed(2) + ' s';
+}
+
+/// Halve a sparkline history by averaging adjacent points (a trailing odd point is kept as-is), so
+/// a bounded number of points can span an unbounded stream while preserving the overall shape. All
+/// histories have the same length before the call, so the result length (`ceil(n/2)`) is the same
+/// for every metric and the sparklines stay time-aligned (see `updateMetrics`).
+function downsampleHistoryByHalf(history) {
+    const out = [];
+    for (let i = 0; i < history.length; i += 2)
+        out.push(i + 1 < history.length ? (history[i] + history[i + 1]) / 2 : history[i]);
+    return out;
 }
 
 /// Infer a profile-event's value type from its name. The Web UI has no compiled ProfileEvents

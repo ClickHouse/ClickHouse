@@ -11,6 +11,12 @@ snapshot cap helper present: OK
 all collection sites capped: OK
 no uncapped reply growth: OK
 in-band exception detector present: OK
+truncated stream fails closed: OK
+multi keeps compact failed snapshots: OK
+log queue bounded: OK
+metric history bounded: OK
+view is tab-owned: OK
+toggles replayed per tab: OK
 --- an incompatible explicit format is rejected as a framed exception the page can match
 1
 text/event-stream

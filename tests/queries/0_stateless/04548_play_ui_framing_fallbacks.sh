@@ -123,6 +123,26 @@ echo "$page" | grep -q -F 'function appendCappedSnapshot(' && echo 'snapshot cap
 # A retried plain `JSON*EachRowWithProgress` stream is scanned for its own in-band `{"exception":...}`
 # object, keyed off the output format (`formatMayWriteInBandException`), not only the user's framing.
 echo "$page" | grep -q -F 'function formatMayWriteInBandException(' && echo 'in-band exception detector present: OK'
+# A truncated event stream (EOF with a residual frame that never got its terminating blank line)
+# fails closed: the residual is parsed as a final event so a cut-off `exception` is still surfaced,
+# and otherwise the run is marked failed so "Run all" does not proceed. Browser-only lifecycle,
+# checked by the guard's presence on the served page.
+echo "$page" | grep -q -F 'The response stream was truncated before it completed.' && echo 'truncated stream fails closed: OK'
+# A "Run all" whose total per-statement snapshot exceeds the size budget keeps a COMPACT failure
+# snapshot for each failed statement (dropping only oversized SUCCESSFUL payloads), so a large
+# statement that failed still restores its error instead of the whole run reopening blank.
+echo "$page" | grep -q -F 'if (failed && data != null && data.length > 100000)' && echo 'multi keeps compact failed snapshots: OK'
+# The pending log queue is bounded, not just the rendered DOM: `appendLog` drops the oldest queued
+# lines beyond the retained budget so a burst faster than the per-frame flush cannot grow it without
+# limit. The sparkline history is bounded too - `downsampleHistoryByHalf` halves every metric's
+# history in lockstep once the point cap is reached.
+echo "$page" | grep -q -F 'this._log_buffer.length - MAX_DOM_LINES' && echo 'log queue bounded: OK'
+echo "$page" | grep -q -F 'function downsampleHistoryByHalf(' && echo 'metric history bounded: OK'
+# The Logs/Metrics view and toggle availability are tab-owned, not global: the `set-view` handler
+# records the view on the active tab and applies it only to that tab's results, `_markLogsAvailable`
+# marks availability on the owning tab, and `syncActiveTabChrome` replays both via `setViewState`.
+echo "$page" | grep -q -F 'if (tab) tab.view = e.detail.view;' && echo 'view is tab-owned: OK'
+echo "$page" | grep -q -F 'setViewState(view, logsAvailable, metricsAvailable)' && echo 'toggles replayed per tab: OK'
 
 echo '--- an incompatible explicit format is rejected as a framed exception the page can match'
 # The same request shape the page sends for a framed query.
