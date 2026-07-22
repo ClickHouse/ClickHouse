@@ -98,6 +98,12 @@ public:
     /// resolving the alias to the factory's hardcoded fallback codec.
     static bool isDefaultCodecAlias(const ASTPtr & codec_ast);
 
+    /// Whether the `CODEC(...)` AST contains the `Default` alias anywhere in the chain (e.g.
+    /// `CODEC(Delta, Default)`). Callers that resolve such a chain without a column type must supply
+    /// a `current_default` obtained from the same normal default selection, so the alias does not
+    /// silently resolve to the factory's hardcoded fallback codec.
+    static bool containsDefaultCodecAlias(const ASTPtr & codec_ast);
+
     /// Insert codec information into MutableColumns to show in the system table
     void fillCodecDescriptions(MutableColumns & res_columns) const;
 

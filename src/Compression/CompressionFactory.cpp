@@ -85,6 +85,31 @@ bool CompressionCodecFactory::isDefaultCodecAlias(const ASTPtr & codec_ast)
     return false;
 }
 
+bool CompressionCodecFactory::containsDefaultCodecAlias(const ASTPtr & codec_ast)
+{
+    if (!codec_ast)
+        return false;
+
+    const auto * func = codec_ast->as<ASTFunction>();
+    if (!func || !func->arguments)
+        return false;
+
+    for (const auto & inner_codec_ast : func->arguments->children)
+    {
+        if (const auto * family_name = inner_codec_ast->as<ASTIdentifier>())
+        {
+            if (family_name->name() == DEFAULT_CODEC_NAME)
+                return true;
+        }
+        else if (const auto * ast_func = inner_codec_ast->as<ASTFunction>())
+        {
+            if (ast_func->name == DEFAULT_CODEC_NAME)
+                return true;
+        }
+    }
+    return false;
+}
+
 String CompressionCodecFactory::getReasonUnsafeForUntypedData(const ASTPtr & codec_ast) const
 {
     if (!codec_ast)

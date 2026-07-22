@@ -9433,28 +9433,42 @@ CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_c
     const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
     auto best_ttl_entry = selectTTLDescriptionForTTLInfos(recompression_ttl_entries, ttl_infos.recompression_ttl, current_time, true);
 
+    /// The normal default selection, matching an ordinary part write: the `default_compression_codec`
+    /// setting, then the server `<compression>` selector.
+    auto choose_default_codec = [&]() -> CompressionCodecPtr
+    {
+        auto codec_setting = (*getSettings())[MergeTreeSetting::default_compression_codec].value;
+        if (!codec_setting.empty())
+            return CompressionCodecFactory::instance().get(codec_setting);
+
+        /// On the first write into an empty table `getTotalActiveSizeInBytes()` is `0`, which would
+        /// turn `part_size / total` into `NaN` and make every `<compression>` case fail the
+        /// `part_size_ratio >= min_part_size_ratio` check inside `CompressionCodecSelector`.
+        /// Use a ratio of `0` in that case so the configuration with `min_part_size_ratio = 0` still applies.
+        auto total_active_size = getTotalActiveSizeInBytes();
+        double part_size_ratio = total_active_size > 0
+            ? static_cast<double>(part_size_compressed) / static_cast<double>(total_active_size)
+            : 0.0;
+
+        return getContext()->chooseCompressionCodec(part_size_compressed, part_size_ratio);
+    };
+
     /// A `RECOMPRESS CODEC(Default)` entry — user-specified, or the result of normalizing a codec that is
     /// unsafe for untyped data on the metadata-load path (see `TTLDescription::getTTLFromAST`) — does not
-    /// force a codec: fall through to the normal default selection below (the `default_compression_codec`
+    /// force a codec: fall through to the normal default selection (the `default_compression_codec`
     /// setting, then the server `<compression>` selector), matching an ordinary part write, instead of
     /// resolving the `Default` alias to the factory's hardcoded fallback (`LZ4`) here.
     if (best_ttl_entry && !CompressionCodecFactory::isDefaultCodecAlias(best_ttl_entry->recompression_codec))
-        return CompressionCodecFactory::instance().get(best_ttl_entry->recompression_codec, {});
+    {
+        /// A `Default` entry inside a longer chain (e.g. `CODEC(Delta, Default)`) is the same alias:
+        /// resolve it through the normal default selection too, not to the factory's hardcoded fallback.
+        CompressionCodecPtr current_default;
+        if (CompressionCodecFactory::containsDefaultCodecAlias(best_ttl_entry->recompression_codec))
+            current_default = choose_default_codec();
+        return CompressionCodecFactory::instance().get(best_ttl_entry->recompression_codec, {}, current_default);
+    }
 
-    auto codec_setting = (*getSettings())[MergeTreeSetting::default_compression_codec].value;
-    if (!codec_setting.empty())
-        return CompressionCodecFactory::instance().get(codec_setting);
-
-    /// On the first write into an empty table `getTotalActiveSizeInBytes()` is `0`, which would
-    /// turn `part_size / total` into `NaN` and make every `<compression>` case fail the
-    /// `part_size_ratio >= min_part_size_ratio` check inside `CompressionCodecSelector`.
-    /// Use a ratio of `0` in that case so the configuration with `min_part_size_ratio = 0` still applies.
-    auto total_active_size = getTotalActiveSizeInBytes();
-    double part_size_ratio = total_active_size > 0
-        ? static_cast<double>(part_size_compressed) / static_cast<double>(total_active_size)
-        : 0.0;
-
-    return getContext()->chooseCompressionCodec(part_size_compressed, part_size_ratio);
+    return choose_default_codec();
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds) const

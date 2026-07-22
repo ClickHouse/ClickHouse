@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
 {
@@ -44,12 +45,30 @@ std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(StorageM
         /// merge worthwhile.
         const bool forces_codec = !CompressionCodecFactory::isDefaultCodecAlias(ttl_description->recompression_codec);
 
-        /// FIXME: Implement in other way -- not string comparison
-        const std::string next_codec = astToString(ttl_description->recompression_codec);
-        const std::string current_codec = astToString(part->default_codec->getFullCodecDesc());
+        bool will_change_codec = false;
+        if (forces_codec)
+        {
+            const std::string current_codec = astToString(part->default_codec->getFullCodecDesc());
+            if (CompressionCodecFactory::containsDefaultCodecAlias(ttl_description->recompression_codec))
+            {
+                /// A chain containing the `Default` alias (e.g. `CODEC(Delta, Default)`) is written with
+                /// the alias resolved through the normal default selection, so the raw AST would never
+                /// match the concrete codec of an already recompressed part and would keep scheduling
+                /// recompression-only merges forever. Resolve it the same way the merge will —
+                /// `MergeTreeData::getCompressionCodecForPart` — and compare the concrete chains.
+                const auto resolved_codec
+                    = part->storage.getCompressionCodecForPart(part->getBytesOnDisk(), part->ttl_infos, current_time);
+                will_change_codec = astToString(resolved_codec->getFullCodecDesc()) != current_codec;
+            }
+            else
+            {
+                /// FIXME: Implement in other way -- not string comparison
+                will_change_codec = astToString(ttl_description->recompression_codec) != current_codec;
+            }
+        }
 
         return PartProperties::RecompressTTLInfo{
-            .will_change_codec = forces_codec && (next_codec != current_codec),
+            .will_change_codec = will_change_codec,
             .next_recompress_ttl = part->ttl_infos.getMinimalMaxRecompressionTTL(),
         };
     }
