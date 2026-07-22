@@ -302,6 +302,11 @@ void optimizeTreeSecondPass(
                         break;
                 }
             });
+
+        /// After the __applyFilter filters been fixed, do work to indicate index analysis again
+        if (optimization_settings.enable_join_runtime_filters_index_analysis)
+            traverseQueryPlan(stack, root,
+                [&](auto & frame_node) { registerLeftSideIndexAnalysisSecondPass(frame_node, optimization_settings); });
     }
 
     /// Run after runtime filter push-down so that chains of joins are detected correctly.
