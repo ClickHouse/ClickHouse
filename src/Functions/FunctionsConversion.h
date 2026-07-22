@@ -2099,7 +2099,8 @@ struct ConvertImpl
             return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToTimeImpl<date_time_overflow_behavior>>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
-        /// Conversion of Time64 to Time: both store local seconds since midnight, so drop the fractional part.
+        /// Conversion of Time64 to Time: drop the fractional part, then clamp / throw on overflow governed by
+        /// date_time_overflow_behavior, exactly like the DateTime64 -> DateTime conversion above.
         else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
             && std::is_same_v<ToDataType, DataTypeTime>)
         {
@@ -2124,10 +2125,7 @@ struct ConvertImpl
                 vec_to[i] = static_cast<Int32>(std::clamp<Int64>(whole, -MAX_TIME_TIMESTAMP, MAX_TIME_TIMESTAMP));
             }
 
-            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-                return ColumnNullable::create(std::move(col_to), ColumnUInt8::create(input_rows_count, false));
-            else
-                return col_to;
+            return col_to;
         }
         /// Conversion of Date or DateTime to DateTime64: add zero sub-second part.
         else if constexpr ((
