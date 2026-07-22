@@ -549,10 +549,11 @@ class ReleaseInfo:
                 # Release branches are protected by the "Merge only for
                 # releases" ruleset: changes must go through a pull request, so
                 # the version bump cannot be pushed directly to the release
-                # branch. Commit it on a dedicated branch, open a PR into the
-                # release branch, and enable auto-merge. The rule requires no
-                # approvals and no status checks, so the PR merges through the
-                # queue without human interaction.
+                # branch. Commit it on a dedicated branch and open a PR into the
+                # release branch. The PR is not auto-merged: release branches
+                # have no merge queue (unlike master, which the changelog PRs
+                # use), so for now the version-bump PR is left to be merged
+                # separately.
                 bump_branch = self.get_release_version_bump_branch()
                 Shell.check(
                     f"{GIT_PREFIX} checkout -B {bump_branch}",
@@ -603,10 +604,7 @@ class ReleaseInfo:
                             branch=bump_branch, repo=GITHUB_REPOSITORY
                         )
                     )
-                if not dry_run:
-                    Git.enable_automerge(
-                        int(bump_pr.rsplit("/", 1)[-1]), GITHUB_REPOSITORY
-                    )
+                print(f"Release version-bump PR ready [{bump_pr}]")
             if dry_run:
                 Shell.check(
                     f"{GIT_PREFIX} diff '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}'",
