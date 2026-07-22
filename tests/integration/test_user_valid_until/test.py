@@ -198,7 +198,12 @@ def test_valid_until_max_deadline_positive_offset_timezone(started_cluster):
     # authentication check enforces - instead of `DateLUT` clamping the local year-10000 rendering
     # back to an earlier instant.
     node_kiritimati.query("DROP USER IF EXISTS user_valid_max_tz")
-    node_kiritimati.query("CREATE USER user_valid_max_tz VALID FOR INTERVAL 1000000 YEAR")
+    # A huge second interval saturates numerically at the `DateTime64` ceiling and is then
+    # clamped to `MAX_VALID_UNTIL_TIME` (a year interval would instead clamp the year and keep
+    # the current month/day/time, landing on a date-dependent instant below the bound).
+    node_kiritimati.query(
+        "CREATE USER user_valid_max_tz VALID FOR INTERVAL 1000000000000 SECOND"
+    )
 
     assert (
         node_kiritimati.query(
@@ -215,7 +220,7 @@ def test_valid_until_max_deadline_positive_offset_timezone(started_cluster):
     )
     assert (
         node_kiritimati.query(
-            "SELECT toUnixTimestamp64Second(parseDateTime64BestEffort('9999-12-31 23:59:59', 0))"
+            "SELECT toUnixTimestamp64Second(parseDateTime64BestEffort('9999-12-31 23:59:59'))"
         )
         == "253402250399\n"
     )
