@@ -94,16 +94,20 @@ struct AdaptiveAggregationSharedState
     /// one of two modes:
     ///  - value-staged (`value_staged`, simple-count aggregation only): the record is the key
     ///    itself plus a run-length count, and the source block is not retained;
-    ///  - row-reference (general aggregates): the record is a row number in the retained
-    ///    `source_columns`, through which the drain reads the aggregate arguments; the key bytes
-    ///    are staged as well, so the drain emplaces without constructing a hashing state per
-    ///    (block, bucket) slice.
+    ///  - row-reference (general aggregates): the record is a row number in `source_columns`,
+    ///    through which the drain reads the aggregate arguments; the key bytes are staged as
+    ///    well, so the drain emplaces without constructing a hashing state per (block, bucket)
+    ///    slice. The argument values are compacted at publish (`source_columns` are the
+    ///    records' values gathered in record order, so `source_rows` is the identity); a block
+    ///    with sparse arguments retains the source block's argument columns instead, because
+    ///    the sparse batch path needs the original representation.
     ///
     /// One record batch per block, rather than one per (block, bucket).
     struct DelayedBlock
     {
-        /// The row-reference mode's retained source block: only the aggregate-argument columns
-        /// are kept (the drain emplaces the keys from the staged bytes).
+        /// The row-reference mode's argument columns, compacted or retained (see above): only
+        /// the aggregate-argument positions are filled, kept at their original indexes so that
+        /// the instruction preparation can index the vector.
         Columns source_columns;
         size_t num_source_rows = 0;
         PaddedPODArray<UInt32> source_rows;
@@ -111,6 +115,11 @@ struct AdaptiveAggregationSharedState
         std::array<UInt32, NUM_BUCKETS + 1> bucket_offsets{};
 
         bool value_staged = false;
+        /// Row-reference payload whose argument columns were compacted at publish (every block
+        /// without sparse arguments): the records' values sit in bucket-grouped order, so a
+        /// bucket's slice is a contiguous row range of `source_columns` and `source_rows` is
+        /// the identity.
+        bool arguments_compacted = false;
         /// The key of the i-th record occupies `key_bytes[key_offsets[i], key_offsets[i + 1])`,
         /// in the same bucket-grouped order as `routing_hashes`; `run_lengths[i]` is the run length
         /// (consecutive occurrences of one key collapse into one record at staging time).

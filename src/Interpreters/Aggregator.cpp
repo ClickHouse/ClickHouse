@@ -2158,10 +2158,6 @@ void NO_INLINE Aggregator::publishDelayedRecords(
         block->run_lengths.resize(total);
     else
     {
-        block->source_columns.assign(columns.size(), nullptr);
-        for (const auto & argument_positions : aggregates_positions)
-            for (const auto position : argument_positions)
-                block->source_columns[position] = columns[position];
         block->num_source_rows = num_rows;
         block->source_rows.resize(total);
     }
@@ -2195,6 +2191,46 @@ void NO_INLINE Aggregator::publishDelayedRecords(
             memcpy(block->key_bytes.data() + byte_pos, &widened, sizeof(widened));
         }
         keyHolderDiscardKey(key_holder);
+    }
+
+    if (!value_staged)
+    {
+        bool compact = params.aggregates_size != 0;
+        for (const auto & argument_positions : aggregates_positions)
+            for (const auto position : argument_positions)
+                compact = compact && !columns[position]->isSparse();
+
+        block->source_columns.assign(columns.size(), nullptr);
+        if (compact)
+        {
+            auto gather_indexes = ColumnUInt32::create();
+            gather_indexes->getData().assign(block->source_rows.begin(), block->source_rows.end());
+            for (const auto & argument_positions : aggregates_positions)
+                for (const auto position : argument_positions)
+                {
+                    if (block->source_columns[position])
+                        continue;
+                    /// A constant argument stays constant: resizing it to the record count is
+                    /// exact and avoids materializing the whole block just to gather from it.
+                    if (isColumnConst(*columns[position]))
+                        block->source_columns[position] = columns[position]->cloneResized(total);
+                    else
+                        block->source_columns[position] = columns[position]->index(*gather_indexes, 0);
+                }
+
+            /// The compacted columns hold the records' rows in bucket-grouped order, so record j
+            /// reads row j.
+            for (size_t j = 0; j < total; ++j)
+                block->source_rows[j] = static_cast<UInt32>(j);
+            block->num_source_rows = total;
+            block->arguments_compacted = true;
+        }
+        else
+        {
+            for (const auto & argument_positions : aggregates_positions)
+                for (const auto position : argument_positions)
+                    block->source_columns[position] = columns[position];
+        }
     }
 
     adaptive.miss_source_rows.clear();
@@ -2391,7 +2427,9 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
     const auto & prep = *block.prepared;
     const auto & rows = block.source_rows;
 
-    places.resize(slice_end - slice_begin);
+
+    const size_t places_base = block.arguments_compacted ? 0 : slice_begin;
+    places.resize(slice_end - places_base);
 
     for (size_t j = slice_begin; j < slice_end; ++j)
     {
@@ -2420,7 +2458,7 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
         else
             aggregate_data = it->getMapped();
 
-        places[j - slice_begin] = aggregate_data;
+        places[j - places_base] = aggregate_data;
     }
 
     if (!params.aggregates_size)
@@ -2442,7 +2480,7 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
                 const size_t row = rows[j];
                 const size_t end = inst->offsets[row];
                 for (size_t k = inst->offsets[static_cast<ssize_t>(row) - 1]; k < end; ++k)
-                    inst->batch_that->add(places[j - slice_begin] + inst->state_offset, inst->batch_arguments, k, bucket_arena);
+                    inst->batch_that->add(places[j - places_base] + inst->state_offset, inst->batch_arguments, k, bucket_arena);
             }
         }
         else if (inst->has_sparse_arguments)
@@ -2451,9 +2489,17 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
             {
                 full_places.resize_fill(block.num_source_rows, nullptr);
                 for (size_t j = slice_begin; j < slice_end; ++j)
-                    full_places[rows[j]] = places[j - slice_begin];
+                    full_places[rows[j]] = places[j - places_base];
             }
             inst->batch_that->addBatchSparse(0, block.num_source_rows, full_places.data(), inst->state_offset, inst->batch_arguments, bucket_arena);
+        }
+        else if (block.arguments_compacted)
+        {
+            /// The slice is a contiguous row range of the compacted argument columns: the
+            /// aggregate applies to it directly, with no gather. Zero-argument functions take
+            /// the same call.
+            inst->batch_that->addBatch(
+                slice_begin, slice_end, places.data(), inst->state_offset, inst->batch_arguments, bucket_arena);
         }
         else
         {
