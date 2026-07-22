@@ -275,6 +275,12 @@ struct JoinAlgorithmParams
         std::chrono::milliseconds lock_acquire_timeout_);
 };
 
+/** Can at least one of the enabled join algorithms execute a join of this kind/strictness?
+  * Mirrors the per-algorithm dispatch in PlannerJoins.cpp::tryCreateJoin, so a caller can tell
+  * up front whether a planned (kind, strictness) has a runnable algorithm before building it.
+  */
+bool anyEnabledAlgorithmSupports(const std::vector<JoinAlgorithm> & join_algorithms, JoinKind kind, JoinStrictness strictness);
+
 /** Choose JOIN algorithm for table join, right table expression, right table expression header and planner context.
   * Table join structure can be modified during JOIN algorithm choosing for special JOIN algorithms.
   * For example JOIN with Dictionary engine, or JOIN with JOIN engine.

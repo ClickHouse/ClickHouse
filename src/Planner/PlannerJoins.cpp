@@ -1162,6 +1162,37 @@ QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node)
     return join_expression;
 }
 
+bool anyEnabledAlgorithmSupports(const std::vector<JoinAlgorithm> & join_algorithms, JoinKind kind, JoinStrictness strictness)
+{
+    for (auto algorithm : join_algorithms)
+    {
+        switch (algorithm)
+        {
+            /// Hash family (and the hash fallbacks) execute any kind/strictness.
+            case JoinAlgorithm::HASH:
+            case JoinAlgorithm::PARALLEL_HASH:
+            case JoinAlgorithm::PREFER_PARTIAL_MERGE: /// falls back to hash when merge can't do it
+            case JoinAlgorithm::GRACE_HASH:
+            case JoinAlgorithm::AUTO:
+            case JoinAlgorithm::DEFAULT:
+                return true;
+            /// Plain partial merge has no hash fallback: only what MergeJoin implements.
+            case JoinAlgorithm::PARTIAL_MERGE:
+                if (MergeJoin::isSupported(kind, strictness))
+                    return true;
+                break;
+            case JoinAlgorithm::FULL_SORTING_MERGE:
+                if (FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported(kind, strictness))
+                    return true;
+                break;
+            /// DIRECT joins only special key-value storages and has no hash fallback.
+            case JoinAlgorithm::DIRECT:
+                break;
+        }
+    }
+    return false;
+}
+
 static std::shared_ptr<IJoin> tryCreateJoin(
     JoinAlgorithm algorithm,
     std::shared_ptr<TableJoin> & table_join,

@@ -21,12 +21,14 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/JoinOperator.h>
+#include <Interpreters/TableJoin.h>
 
 #include <Parsers/SelectUnionMode.h>
 
 #include <Planner/Planner.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/PlannerJoins.h>
 #include <Planner/PlannerJoinsLogical.h>
 #include <Planner/Utils.h>
 
@@ -595,6 +597,13 @@ QueryPlan buildLogicalJoin(
         /// Forbid reordering of this JOIN step. Child subplans still can be reordered and optimized.
         result_join->setOptimized();
     }
+
+    /// Ensure this internal ANY join is runnable. Only add the hash fallback when no enabled
+    /// algorithm can already run the ANY shape: an unconditional hash makes an FSM-only join
+    /// runtime-filter-eligible and the runtime-filter pass then drops FSM (demoting the plan).
+    auto & result_join_algorithms = result_join->getJoinSettings().join_algorithms;
+    if (!anyEnabledAlgorithmSupports(result_join_algorithms, join_kind_to_use, JoinStrictness::Any))
+        result_join_algorithms.push_back(JoinAlgorithm::HASH);
 
     QueryPlan result_plan;
 
