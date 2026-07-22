@@ -281,9 +281,8 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
     if (eligible.empty())
         return;
 
-    /// The split step is created above the read and takes its context: the read that is going to be
-    /// shipped to the replicas knows the context it will be read with.
-    auto make_split_above = [&](QueryPlan::Node * read_node) -> QueryPlan::Node *
+    /// The split step is created directly above the read. When converting the split marker into a
+    /// distributed fragment, the fragment's execution context is taken from the ReadFromMergeTree step.
     {
         auto & split_node = nodes.emplace_back();
         split_node.step = std::make_unique<ParallelReplicasSplitStep>(read_node->step->getOutputHeader());
