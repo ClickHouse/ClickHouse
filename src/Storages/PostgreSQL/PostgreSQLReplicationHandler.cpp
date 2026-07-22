@@ -510,6 +510,22 @@ void validateMaterializedPostgreSQLCoordinationSettings(
                 "{{replica}} macro). If this registration is a leftover of an incompletely dropped setup, "
                 "remove the Keeper node manually",
                 expanded_replica_name, expanded_keeper_path);
+
+        /// Reject a CREATE while a last-replica drop is still tearing the setup on this keeper path down (its
+        /// <keeper_path>/teardown ownership token is still in place): the pending teardown drops the shared
+        /// PostgreSQL slot/publication by name, so a fresh setup built in that window would have its objects
+        /// deleted from under it. The startup-time fence in `ensureCoordinatedNamingCompatible` enforces this
+        /// authoritatively (and keeps retrying); failing the CREATE synchronously is the better UX for the
+        /// common case, where the teardown finishes within moments and a retried CREATE succeeds.
+        String teardown_owner;
+        if (context->getZooKeeper()->tryGet(expanded_keeper_path + "/teardown", teardown_owner)
+            && teardown_owner != coordinationReplicaOwnerId(toString(clickhouse_uuid)))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The coordinated MaterializedPostgreSQL setup at Keeper path '{}' is still being torn down by "
+                "the drop of its last replica. Retry the CREATE once the teardown has finished. If the "
+                "tearing-down server died before completing it, remove the leftover node '{}/teardown' "
+                "manually after dropping the leftover replication slot and publication in PostgreSQL",
+                expanded_keeper_path, expanded_keeper_path);
     }
 }
 
@@ -1528,6 +1544,7 @@ void PostgreSQLReplicationHandler::registerReplicaThenEnsureNestedTables()
     /// copy still exists. In that case keep the replica registered and let the idempotent startup-task retry
     /// finish creating the remaining tables (it skips the ones that already exist).
     ensureCoordinatedNamingCompatible();
+    ensureCoordinatedTableSetCompatible();
     registerReplicaInKeeper();
     try
     {
@@ -1578,6 +1595,35 @@ void PostgreSQLReplicationHandler::ensureCoordinatedNamingCompatible()
     auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::ensureCoordinatedNamingCompatible");
 
     auto zookeeper = getContext()->getZooKeeper();
+
+    /// While a last-replica drop is tearing this setup down, its <keeper_path>/teardown ownership token is
+    /// still in place: the dropper has removed the coordination nodes but has not yet dropped the shared
+    /// PostgreSQL slot/publication (that happens after its local data is gone). A fresh setup must not be
+    /// built in that window - the pending teardown would delete the new setup's slot/publication by name.
+    /// Refuse and let the startup task retry until the teardown finishes and removes the token. The token of
+    /// this replica's own earlier refused drop (the teardown ran, but the later local nested-table drop
+    /// failed) is reclaimed instead: this replica still owns the path, and the retrying startup is exactly
+    /// the recovery of that refused drop.
+    const String teardown_path = coordination_keeper_path + "/teardown";
+    String teardown_owner;
+    if (zookeeper->tryGet(teardown_path, teardown_owner))
+    {
+        if (teardown_owner == coordination_replica_owner)
+        {
+            LOG_INFO(log, "Reclaiming the teardown token of this replica's own earlier refused drop at {}", teardown_path);
+            zookeeper->tryRemove(teardown_path);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                "The coordinated MaterializedPostgreSQL setup at Keeper path '{}' is still being torn down by "
+                "the drop of its last replica (teardown token owner: {}). Will retry once the teardown has "
+                "finished. If the tearing-down server died before completing it, remove the leftover node '{}' "
+                "manually after dropping the leftover replication slot and publication in PostgreSQL",
+                coordination_keeper_path, teardown_owner, teardown_path);
+        }
+    }
+
     const String naming_path = coordination_keeper_path + "/naming";
     zookeeper->createAncestors(naming_path);
     auto code = zookeeper->tryCreate(naming_path, coordination_naming_fingerprint, zkutil::CreateMode::Persistent);
@@ -1599,6 +1645,56 @@ void PostgreSQLReplicationHandler::ensureCoordinatedNamingCompatible()
             "Existing setup:\n{}\nThis replica:\n{}\n(If the existing setup was dropped incompletely, "
             "remove the leftover Keeper path manually.)",
             coordination_keeper_path, published_fingerprint, coordination_naming_fingerprint);
+}
+
+
+void PostgreSQLReplicationHandler::ensureCoordinatedTableSetCompatible()
+{
+    /// The authoritative shared table set must be fenced BEFORE this replica builds any nested table.
+    /// `fetchRequiredTables` derives the set locally (from materialized_postgresql_tables_list, from the
+    /// shared publication once it exists, or from the source schema), but the shared publication is only
+    /// created later, by the elected active worker - so two fresh replicas starting concurrently could both
+    /// pass that derivation with different sets and silently build diverging nested tables on one keeper
+    /// path: whichever set the publication is then created from, the other replica keeps extra
+    /// never-replicated (forever empty) tables or misses published ones, breaking failover for them.
+    ///
+    /// The first replica therefore publishes its derived set at <keeper_path>/table_set, and every replica
+    /// must match it before it may register or create nested tables. This is enforced fail-close (mismatch
+    /// refuses the join and the startup task retries), and it converges on its own: once the shared
+    /// publication exists, a joining replica derives its set from the publication (which the fenced set
+    /// created), and a mismatching explicit materialized_postgresql_tables_list is overridden by the
+    /// publication's set with a warning (see fetchRequiredTables). Only a genuine divergence - e.g. the
+    /// publication was altered externally, or a pre-publication CREATE raced with a different table set -
+    /// keeps being refused and requires the operator to reconcile the table lists.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::ensureCoordinatedTableSetCompatible");
+
+    std::vector<String> table_names;
+    table_names.reserve(materialized_storages.size());
+    for (const auto & [table_name, _] : materialized_storages)
+        table_names.push_back(table_name);
+    ::sort(table_names.begin(), table_names.end());
+    const String local_table_set = fmt::format("{}\n", fmt::join(table_names, "\n"));
+
+    auto zookeeper = getContext()->getZooKeeper();
+    const String table_set_path = coordination_keeper_path + "/table_set";
+    zookeeper->createAncestors(table_set_path);
+    auto code = zookeeper->tryCreate(table_set_path, local_table_set, zkutil::CreateMode::Persistent);
+    if (code == Coordination::Error::ZOK)
+        return;
+    if (code != Coordination::Error::ZNODEEXISTS)
+        throw zkutil::KeeperException::fromPath(code, table_set_path);
+
+    const String published_table_set = zookeeper->get(table_set_path);
+    if (published_table_set != local_table_set)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The table set this replica derived differs from the table set of the coordinated "
+            "MaterializedPostgreSQL setup at Keeper path '{}'. All replicas of one coordinated setup replicate "
+            "the same shared set of tables through one shared publication; a replica that disagrees would "
+            "build nested tables the publication never feeds, or miss tables it does feed. Make "
+            "materialized_postgresql_tables_list match the existing setup (or recreate the setup with the new "
+            "list). Existing setup:\n{}This replica:\n{}(If the existing setup was dropped incompletely, "
+            "remove the leftover Keeper path manually.)",
+            coordination_keeper_path, published_table_set, local_table_set);
 }
 
 
@@ -1807,14 +1903,28 @@ bool PostgreSQLReplicationHandler::unregisterReplicaAndCheckLast()
         return false;
 
     /// Removing the parent succeeds only when this replica's node was its last child, which atomically
-    /// designates this caller - and only this caller - as the last replica.
-    const auto parent_code = zookeeper->tryRemove(replicas_path);
+    /// designates this caller - and only this caller - as the last replica. The <keeper_path>/teardown
+    /// ownership token is created in the same multi-request, so winning the last-replica fence and fencing
+    /// the keeper path against fresh CREATEs is one atomic step: from this moment until the token is removed
+    /// (after the shared PostgreSQL slot/publication have been dropped, see shutdownFinal), no fresh setup
+    /// can be built on this path, so the pending by-name drops can never delete a new setup's objects.
+    const String teardown_path = coordination_keeper_path + "/teardown";
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeRemoveRequest(replicas_path, -1));
+    ops.emplace_back(zkutil::makeCreateRequest(teardown_path, coordination_replica_owner, zkutil::CreateMode::Persistent));
+    Coordination::Responses responses;
+    const auto multi_code = zookeeper->tryMulti(ops, responses);
 
-    if (parent_code == Coordination::Error::ZOK)
+    if (multi_code == Coordination::Error::ZOK)
     {
         LOG_INFO(log, "Unregistered the last replica '{}'", coordination_replica_name);
         return true;
     }
+
+    if (responses.empty() || (responses[0]->error != Coordination::Error::ZNOTEMPTY && responses[0]->error != Coordination::Error::ZNONODE))
+        throw zkutil::KeeperMultiException(multi_code, ops, responses);
+
+    const auto parent_code = responses[0]->error;
 
     if (parent_code == Coordination::Error::ZNOTEMPTY)
     {
@@ -1824,18 +1934,25 @@ bool PostgreSQLReplicationHandler::unregisterReplicaAndCheckLast()
         return false;
     }
 
-    if (parent_code == Coordination::Error::ZNONODE)
+    /// The /replicas parent is already gone: either a concurrent dropper removed it as the last replica
+    /// (and is tearing down the shared state, so this replica must not repeat that teardown), or this
+    /// replica's OWN earlier refused drop did - its pre-data teardown won the fence and left its teardown
+    /// token behind, and this call is the retried drop resuming it. The token's owner distinguishes the
+    /// two; resuming matters, because reading "not last" here would skip the shared PostgreSQL cleanup and
+    /// leak the slot/publication while the token keeps rejecting recreates.
+    String teardown_owner;
+    if (zookeeper->tryGet(teardown_path, teardown_owner) && teardown_owner == coordination_replica_owner)
     {
-        /// The /replicas parent is already gone: a concurrent dropper removed it as the last replica and has
-        /// therefore already torn down (or is tearing down) the shared state. This replica is consequently not
-        /// the last one, so it must not repeat the shared teardown here.
         LOG_INFO(log,
-            "Unregistered replica '{}'; the shared /replicas node was already removed by a concurrent last-replica teardown",
+            "Replica '{}' resumes the last-replica teardown of its own earlier refused drop",
             coordination_replica_name);
-        return false;
+        return true;
     }
 
-    throw zkutil::KeeperException::fromPath(parent_code, replicas_path);
+    LOG_INFO(log,
+        "Unregistered replica '{}'; the shared /replicas node was already removed by a concurrent last-replica teardown",
+        coordination_replica_name);
+    return false;
 }
 
 
@@ -1847,17 +1964,23 @@ void PostgreSQLReplicationHandler::removeCoordinationNodes()
     zookeeper->tryRemove(coordination_keeper_path + "/leader");
     zookeeper->tryRemoveRecursive(coordination_keeper_path + "/replicas");
     zookeeper->tryRemove(coordination_keeper_path + "/snapshot_completed");
-    /// The naming fingerprint goes AFTER the marker and the replicas: if this teardown dies partway, the
-    /// surviving state must keep its fingerprint, or a replica with different naming settings could adopt
-    /// the leftover publication/marker unchecked. The safe failure direction is a leftover /naming node,
-    /// which merely rejects a recreate with different settings until removed manually.
+    /// The naming fingerprint and the table set go AFTER the marker and the replicas: if this teardown dies
+    /// partway, the surviving state must keep them, or a replica with different naming settings or a
+    /// different table set could adopt the leftover publication/marker unchecked. The safe failure direction
+    /// is a leftover /naming or /table_set node, which merely rejects a recreate with different settings
+    /// until removed manually.
     zookeeper->tryRemove(coordination_keeper_path + "/naming");
+    zookeeper->tryRemove(coordination_keeper_path + "/table_set");
     /// The nested Replicated tables remove their own trees under <keeper_path>/tables when they are
     /// dropped; only clean up the (then empty) parents. For the single-table engine the nested table is
     /// dropped after this handler shuts down, so these removals may legitimately fail as not-empty,
     /// leaving empty nodes behind - correctness over tidiness.
     zookeeper->tryRemove(coordination_keeper_path + "/tables");
-    zookeeper->tryRemove(coordination_keeper_path);
+    /// The <keeper_path>/teardown ownership token (created atomically with winning the last-replica fence in
+    /// unregisterReplicaAndCheckLast) and the keeper path root itself are deliberately NOT removed here: the
+    /// token must survive until the shared PostgreSQL slot/publication have actually been dropped, fencing
+    /// the path against fresh CREATEs whose new objects those pending by-name drops would otherwise delete.
+    /// Both are removed at the very end of the teardown, in shutdownFinal.
 }
 
 
@@ -2182,6 +2305,26 @@ void PostgreSQLReplicationHandler::shutdownFinal()
             /// instead of resuming into empty tables. A leaked PostgreSQL slot/publication is recoverable manually.
             removeCoordinationNodes();
         }
+
+        /// The shared PostgreSQL slot/publication below are dropped by NAME, so the drop must still own the
+        /// setup incarnation it decided to tear down: if the <keeper_path>/teardown ownership token (created
+        /// atomically with winning the last-replica fence) is gone or owned by someone else, a fresh setup may
+        /// already live on this path - or the cleanup already ran - and dropping by name would delete objects
+        /// that are not this teardown's to remove. While this replica DOES own the token, no fresh setup can be
+        /// built (every CREATE and every joining startup refuses while the token exists), which is exactly what
+        /// makes the by-name drops safe.
+        auto zookeeper = getContext()->getZooKeeper();
+        const String teardown_path = coordination_keeper_path + "/teardown";
+        String teardown_owner;
+        if (!zookeeper->tryGet(teardown_path, teardown_owner) || teardown_owner != coordination_replica_owner)
+        {
+            LOG_INFO(log,
+                "Skipping the removal of the shared replication slot and publication: this replica no longer "
+                "owns the teardown of the coordinated setup at {} (the cleanup has already run, or the path "
+                "has been reused)",
+                coordination_keeper_path);
+            return;
+        }
     }
 
     try
@@ -2214,6 +2357,29 @@ void PostgreSQLReplicationHandler::shutdownFinal()
     catch (...)
     {
         LOG_ERROR(log, "Failed to drop replication slot: {}. It must be dropped manually. Error: {}", replication_slot, getCurrentExceptionMessage(true));
+    }
+
+    if (coordination_enabled)
+    {
+        /// The teardown is complete (the shared PostgreSQL objects were dropped, or their failure was reported
+        /// as requiring manual cleanup - which a fresh setup also recovers from by itself: a leaked publication
+        /// or slot without coordination state is dropped and recreated). Release the keeper path for reuse by
+        /// removing the teardown ownership token, and clean up the (now empty) root. This is the point of no
+        /// return, so a Keeper failure here is only reported: the leftover token keeps rejecting recreates on
+        /// this path until it is removed manually (the safe direction).
+        try
+        {
+            auto zookeeper = getContext()->getZooKeeper();
+            zookeeper->tryRemove(coordination_keeper_path + "/teardown");
+            zookeeper->tryRemove(coordination_keeper_path);
+        }
+        catch (...)
+        {
+            LOG_ERROR(log,
+                "Failed to remove the teardown ownership token at {}/teardown; recreating a coordinated setup "
+                "on this keeper path will be rejected until it is removed manually. Error: {}",
+                coordination_keeper_path, getCurrentExceptionMessage(true));
+        }
     }
 }
 

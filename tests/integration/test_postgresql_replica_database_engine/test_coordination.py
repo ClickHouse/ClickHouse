@@ -1531,3 +1531,105 @@ def test_duplicate_replica_name_is_rejected(started_cluster):
     # Both replicas dropped: the last one removed the shared slot and publication.
     assert len(pg_query("SELECT slot_name FROM pg_replication_slots")) == 0
     assert not publication_exists()
+
+
+def test_join_with_different_table_set_is_rejected(started_cluster):
+    # The authoritative shared table set is fenced at <keeper_path>/table_set BEFORE a replica registers or
+    # builds any nested table: the shared publication (from which joining replicas derive their set) is only
+    # created later, by the elected active worker, so without the fence two fresh replicas starting
+    # concurrently could derive different sets (different materialized_postgresql_tables_list values, or the
+    # same empty setting around a source schema change) and silently build diverging nested tables on one
+    # keeper path. Simulate the pre-publication window: another replica has already fenced a different table
+    # set on this keeper path, and no publication exists yet - this replica must refuse to proceed.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    table_set_keeper_path = "/clickhouse/mat_pg/1/table_set_test"
+    zk = started_cluster.get_kazoo_client("zoo1")
+    try:
+        zk.create(
+            table_set_keeper_path + "/table_set",
+            b"some_other_table\n",
+            makepath=True,
+        )
+
+        settings = [
+            "materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree'",
+            f"materialized_postgresql_keeper_path = '{table_set_keeper_path}'",
+            "materialized_postgresql_replica_name = '{replica}'",
+            "materialized_postgresql_tables_list = 'test_table'",
+        ]
+        pg_manager.create_materialized_db(
+            ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+        )
+
+        # The mismatch is detected by the background startup task (the publication does not exist yet, so
+        # the CREATE itself cannot know the fenced set): the join is refused fail-close and retried, and no
+        # nested table may appear.
+        instance.wait_for_log_line(
+            "The table set this replica derived differs from the table set",
+            timeout=60,
+        )
+        assert "test_table" not in instance.query("SHOW TABLES FROM test_database").split()
+    finally:
+        pg_manager.drop_materialized_db()
+        zk.delete(table_set_keeper_path, recursive=True)
+        zk.stop()
+
+
+def test_create_is_rejected_while_teardown_token_is_held(started_cluster):
+    # A last-replica drop removes the shared PostgreSQL slot and publication BY NAME only after the local
+    # data is gone, so between its pre-data teardown (which removes the coordination nodes) and those drops
+    # a fresh CREATE on the same keeper path could build a new setup whose objects the pending teardown
+    # would then delete. The teardown therefore holds an ownership token at <keeper_path>/teardown - created
+    # atomically with winning the last-replica fence and removed only after the PostgreSQL objects are gone -
+    # and a CREATE on a path with a foreign token is rejected. Simulate a teardown that is still pending
+    # (e.g. the tearing-down server died mid-way) by placing a foreign token.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    teardown_keeper_path = "/clickhouse/mat_pg/1/teardown_token_test"
+    settings = [
+        "materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree'",
+        f"materialized_postgresql_keeper_path = '{teardown_keeper_path}'",
+        "materialized_postgresql_replica_name = '{replica}'",
+        "materialized_postgresql_tables_list = 'test_table'",
+    ]
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    try:
+        zk.create(
+            teardown_keeper_path + "/teardown",
+            b"dead-server-uuid|dead-database-uuid",
+            makepath=True,
+        )
+
+        error = instance.query_and_get_error(
+            f"CREATE DATABASE test_teardown_token "
+            f"ENGINE = MaterializedPostgreSQL("
+            f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'postgres', '{pg_pass}') "
+            f"SETTINGS " + ", ".join(settings)
+        )
+        assert "still being torn down" in error
+        assert "test_teardown_token" not in instance.query("SHOW DATABASES")
+
+        # Once the teardown has finished (the token is gone), the same CREATE succeeds and replicates.
+        zk.delete(teardown_keeper_path + "/teardown")
+        pg_manager.create_materialized_db(
+            ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+        )
+        check_tables_are_synchronized(instance, "test_table")
+    finally:
+        pg_manager.drop_materialized_db()
+        if zk.exists(teardown_keeper_path):
+            zk.delete(teardown_keeper_path, recursive=True)
+        zk.stop()
+
+    # The last-replica drop finished its teardown: it dropped the shared PostgreSQL objects and released
+    # the keeper path by removing its own teardown token (and the then-empty path root).
+    assert not replication_slot_exists()
+    assert not publication_exists()

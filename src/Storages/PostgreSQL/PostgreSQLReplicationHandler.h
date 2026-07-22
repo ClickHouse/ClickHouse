@@ -201,8 +201,17 @@ private:
     /// them against the already published ones (joining replica), throwing BAD_ARGUMENTS on a mismatch.
     /// All coordinated replicas derive the ClickHouse names of the shared nested tables from the shared
     /// publication through these settings, so replicas that disagree on them would build disjoint
-    /// replicated trees on the same keeper path. Idempotent.
+    /// replicated trees on the same keeper path. Also refuses to proceed while the setup is still being
+    /// torn down by a last-replica drop (see the <keeper_path>/teardown ownership token). Idempotent.
     void ensureCoordinatedNamingCompatible();
+
+    /// Publish this replica's derived table set at <keeper_path>/table_set (first replica) or check it
+    /// against the already published one (joining replica), throwing on a mismatch. This fences the
+    /// authoritative shared table set BEFORE any nested table is built: without it, two fresh replicas
+    /// starting concurrently (before the shared publication exists) could derive different table sets
+    /// (different materialized_postgresql_tables_list values, or the same empty setting around a source
+    /// schema change) and silently build diverging nested tables on the same keeper path. Idempotent.
+    void ensureCoordinatedTableSetCompatible();
 
     /// Register this replica under <keeper_path>/replicas, so that dropping the engine on another
     /// replica knows the shared PostgreSQL objects (slot, publication) are still in use. Idempotent.
