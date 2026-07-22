@@ -759,13 +759,16 @@ See also:
 Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to [0, 3, 6],
 corresponding to 'seconds', 'milliseconds', and 'microseconds')", 0) \
     DECLARE(Bool, input_format_read_datetime_number_as_raw_value, false, R"(
-Read an unquoted number for a `DateTime`/`DateTime64` column as the raw underlying value — seconds for `DateTime`,
-ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds.
+Read a bare unquoted integer for a `DateTime`/`DateTime64` column as the raw underlying value — seconds for
+`DateTime`, ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds.
 
 Disabled by default: an unquoted number is a Unix timestamp in seconds (with optional sub-second precision),
 consistent with the `Values` format, `CAST` and `toDateTime64`. Enable it (or `SET compatibility = '26.6'`) to
 restore the behavior of versions up to and including 26.6, where a bare unquoted integer fed to a `DateTime64`
-column was interpreted as the raw scaled value (ticks).
+column was interpreted as the raw scaled value (ticks). The legacy path accepts only such a bare integer:
+with the setting enabled, a number with a fractional or exponent part is rejected by the row input paths
+(as before 26.7), while in `JSONExtract` and the typed `JSON` type a fractional number is still read as
+seconds for `DateTime64` and rejected for `DateTime` (also as before 26.7).
 
 This setting governs only the `JSON`, `Values`/`Quoted` and `JSONExtract`/typed `JSON` paths (the `Quoted` path
 covers every format parsing fields with the `Quoted` escaping rule: `Values`, `MySQLDump`, and
