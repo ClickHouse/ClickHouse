@@ -1,0 +1,8 @@
+-- Interface is HTTP when queried via HTTP.
+HTTP
+-- HTTP method is POST for -d requests.
+POST
+-- User-Agent is populated for HTTP queries.
+getClientInfo-test/1.0
+-- current_user works over HTTP.
+1
