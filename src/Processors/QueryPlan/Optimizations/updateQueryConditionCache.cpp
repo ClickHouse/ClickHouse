@@ -1,10 +1,15 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Storages/VirtualColumnUtils.h>
 
 #include <boost/functional/hash.hpp>
+
+#include <algorithm>
+#include <string_view>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -38,6 +43,122 @@ bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node)
 
     if (!node->function_base->isDeterministic())
         return node->function_base->getName() == "__topKFilter";
+
+    return true;
+}
+
+/// Unwrap leading ALIAS nodes so `extractConjunctionAtoms` can see a top-level `and(...)` behind an
+/// alias. Mirrors `optimizeUseNormalProjection`.
+const ActionsDAG::Node * unwrapAliases(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+        node = node->children.front();
+    return node;
+}
+
+/// Strip a leading analyzer `__tableN.` qualifier from a column identifier so the storage-domain name
+/// `v` compares equal to the analyzer-domain name `__table1.v`. Same helper as `optimizeUseNormalProjection`.
+std::string_view stripTableQualifier(std::string_view name)
+{
+    static constexpr std::string_view prefix = "__table";
+    if (!name.starts_with(prefix))
+        return name;
+
+    size_t pos = prefix.size();
+    while (pos < name.size() && isdigit(static_cast<unsigned char>(name[pos])))
+        ++pos;
+
+    if (pos > prefix.size() && pos < name.size() && name[pos] == '.')
+        return name.substr(pos + 1);
+
+    return name;
+}
+
+/// Name-independent structural equality of two ActionsDAG expression nodes. Ignores `result_name`,
+/// aliases, and `__tableN.` qualifiers — the analyzer decorates the same predicate with different names
+/// in the FilterStep (analyzer domain) vs the read step's `filter_actions_dag` (storage domain), so a
+/// raw `Node::getHash` comparison (which folds `result_name`) would not match. Adapted from the
+/// DAG-to-AST `matchDAGNodeToAST` used by projection implication matching.
+bool nodesStructurallyEqual(const ActionsDAG::Node * lhs, const ActionsDAG::Node * rhs)
+{
+    lhs = unwrapAliases(lhs);
+    rhs = unwrapAliases(rhs);
+
+    if (lhs->type != rhs->type)
+        return false;
+
+    switch (lhs->type)
+    {
+        case ActionsDAG::ActionType::FUNCTION:
+        {
+            if (!lhs->function_base || !rhs->function_base)
+                return false;
+            if (lhs->function_base->getName() != rhs->function_base->getName())
+                return false;
+            /// We compare inputs by unqualified name, so a name-sensitive function (formatRowNoNewline,
+            /// toTypeName) with differently-aliased args could match spuriously; require name-insensitivity.
+            if (!lhs->function_base->isNameInsensitive())
+                return false;
+            if (!lhs->result_type || !rhs->result_type || !lhs->result_type->equals(*rhs->result_type))
+                return false;
+            if (lhs->children.size() != rhs->children.size())
+                return false;
+            for (size_t i = 0; i < lhs->children.size(); ++i)
+                if (!nodesStructurallyEqual(lhs->children[i], rhs->children[i]))
+                    return false;
+            return true;
+        }
+        case ActionsDAG::ActionType::INPUT:
+            return stripTableQualifier(lhs->result_name) == stripTableQualifier(rhs->result_name);
+        case ActionsDAG::ActionType::COLUMN:
+        {
+            /// Only match deterministic constants. A non-deterministic constant (e.g. `now()`) must never
+            /// be treated as equal — the read side already rejects those via `isDeterministicAllowingTopKFilter`.
+            if (!lhs->is_deterministic_constant || !rhs->is_deterministic_constant)
+                return false;
+            const auto * lhs_const = typeid_cast<const ColumnConst *>(lhs->column.get());
+            const auto * rhs_const = typeid_cast<const ColumnConst *>(rhs->column.get());
+            if (!lhs_const || !rhs_const || !lhs->result_type || !rhs->result_type)
+                return false;
+            if (!lhs->result_type->equals(*rhs->result_type))
+                return false;
+            /// Reject dummy constants (ColumnSet for IN, ColumnFunction for lambdas): their value is not
+            /// Field-representable, so distinct sets would compare equal (mirrors `hasDummyInside` in
+            /// ActionsDAG.cpp). Otherwise compare the inner data column value.
+            const IColumn & lhs_inner = lhs_const->getDataColumn();
+            const IColumn & rhs_inner = rhs_const->getDataColumn();
+            if (lhs_inner.isDummy() || rhs_inner.isDummy())
+                return false;
+            return lhs_inner.compareAt(0, 0, rhs_inner, /* nan_direction_hint */ 1) == 0;
+        }
+        default:
+            /// ALIAS is unwrapped above; other node types (ARRAY_JOIN, etc.) are not expected in a filter
+            /// predicate. Be conservative: treat as not-equal so we skip (miss the optimization) rather
+            /// than risk a false match.
+            return false;
+    }
+}
+
+/// Attributing the read condition to a `FilterStep` is sound only if every mark the step drops is also
+/// dropped by the read condition, i.e. the step predicate is implied by it. Conservative sufficient
+/// check: every conjunction atom of the step predicate must structurally match a read-condition atom.
+/// A false negative only skips the write (missed optimization); a false positive returns wrong results,
+/// so the comparison errs conservative.
+bool filterStepConditionIsImpliedByReadCondition(
+    const ActionsDAG::Node * filter_step_condition, const ActionsDAG::Node * read_condition)
+{
+    const auto read_atoms = ActionsDAG::extractConjunctionAtoms(unwrapAliases(read_condition));
+    const auto filter_atoms = ActionsDAG::extractConjunctionAtoms(unwrapAliases(filter_step_condition));
+
+    for (const auto * filter_atom : filter_atoms)
+    {
+        const bool implied = std::any_of(
+            read_atoms.begin(),
+            read_atoms.end(),
+            [&](const auto * read_atom) { return nodesStructurallyEqual(filter_atom, read_atom); });
+        if (!implied)
+            return false;
+    }
 
     return true;
 }
@@ -89,13 +210,28 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
             return;
     }
 
+    /// Expression DAGs of `ExpressionStep`s encountered between the read step and the `FilterStep`,
+    /// bottom-to-top. The `FilterStep` predicate is composed through them so its column identifiers
+    /// resolve into the read step's naming domain before it is compared against `filter_actions_dag`.
+    /// Same technique as `optimizePrimaryKeyConditionAndLimit`.
+    std::vector<const ActionsDAG *> expression_dags;
+
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
-            /// Only tag the storage WHERE filter, not one carrying e.g. `__applyFilter`.
-            const auto * filter_node = filter_step->getExpression().tryFindInOutputs(filter_step->getFilterColumnName());
-            if (!filter_node || !isDeterministicAllowingTopKFilter(filter_node))
+            /// Compose the step predicate through the intervening `ExpressionStep`s so its
+            /// identifiers resolve into the read domain, then attribute only if it is deterministic
+            /// (skip filters carrying e.g. `__applyFilter`) and implied by the read condition
+            /// (`filterStepConditionIsImpliedByReadCondition`).
+            auto filter_dag = filter_step->getExpression().clone();
+            for (auto it = expression_dags.rbegin(); it != expression_dags.rend(); ++it)
+                filter_dag = ActionsDAG::merge((*it)->clone(), std::move(filter_dag));
+
+            const auto * filter_node = filter_dag.tryFindInOutputs(filter_step->getFilterColumnName());
+            if (!filter_node
+                || !isDeterministicAllowingTopKFilter(filter_node)
+                || !filterStepConditionIsImpliedByReadCondition(filter_node, filter_actions_dag->getOutputs()[0]))
                 return;
 
             /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
@@ -115,6 +251,20 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
             filter_step->setConditionForQueryConditionCache(condition_hash, condition);
             return;
         }
+
+        if (auto * expression_step = typeid_cast<ExpressionStep *>(iter->node->step.get()))
+        {
+            /// `arrayJoin` changes row cardinality, so composing a filter through it is unsound; stop
+            /// walking and skip attribution (same guard as `optimizePrimaryKeyConditionAndLimit`).
+            if (expression_step->getExpression().hasArrayJoin())
+                return;
+            expression_dags.push_back(&expression_step->getExpression());
+            continue;
+        }
+
+        /// Any other step between the read step and the filter (e.g. cardinality-changing) makes the
+        /// attribution unsound to reason about; be conservative and stop.
+        return;
     }
 }
 
