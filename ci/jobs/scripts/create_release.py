@@ -520,6 +520,13 @@ class ReleaseInfo:
                 version.githash = CHVersion.get_release_version().githash
             else:
                 version.githash = Shell.get_output_or_raise("git rev-parse HEAD")
+            # Record this release's own commit as the predecessor for the *next*
+            # release. The version file written here is what the next release
+            # inherits, so that release's changelog interval starts at this SHA —
+            # read straight from the file, without guessing the predecessor from
+            # git tags. (For the current release, the equivalent value was
+            # written by the previous release's bump and is present at this tag.)
+            version.previous_sha = self.commit_sha
             version.write()
             update_contributors(raise_error=True)
             cmd_commit_version_upd = (
@@ -572,6 +579,9 @@ class ReleaseInfo:
                     # The post-release bump on master must point VERSION_GITHASH
                     # at master's head, not back at the release commit.
                     version.githash = Shell.get_output_or_raise("git rev-parse HEAD")
+                    # Predecessor for the next release cut from master is the
+                    # release just made (see the release-branch bump above).
+                    version.previous_sha = self.commit_sha
                     version.write()
                     update_contributors(raise_error=True)
                     actor = os.getenv("GITHUB_ACTOR", "") or "me"

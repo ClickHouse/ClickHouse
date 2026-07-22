@@ -16,6 +16,7 @@ SET(VERSION_MAJOR {major})
 SET(VERSION_MINOR {minor})
 SET(VERSION_PATCH {patch})
 SET(VERSION_GITHASH {githash})
+SET(VERSION_PREVIOUS_SHA {previous_sha})
 SET(VERSION_DESCRIBE {describe})
 SET(VERSION_STRING {string})
 # end of autochange
@@ -39,8 +40,9 @@ def _read_versions() -> dict:
         line = line.strip()
         if not line.startswith("SET("):
             continue
-        name, value = line[4:-1].split(maxsplit=1)
-        name = name.removeprefix("VERSION_").lower()
+        parts = line[4:-1].split(maxsplit=1)
+        name = parts[0].removeprefix("VERSION_").lower()
+        value = parts[1] if len(parts) > 1 else ""
         try:
             value = int(value)
         except ValueError:
@@ -98,6 +100,7 @@ class CHVersion:
         tweak=1,
         githash="",
         version_type="",
+        previous_sha="",
     ):
         self.major = int(major)
         self.minor = int(minor)
@@ -106,6 +109,10 @@ class CHVersion:
         self.tweak = int(tweak)
         self.githash = githash
         self.version_type = version_type
+        # The commit SHA of the previous release (the changelog interval start).
+        # Recorded so `changelog.py` reads it straight from the version file
+        # instead of guessing the predecessor from git tags.
+        self.previous_sha = previous_sha
         self._refresh()
 
     def _refresh(self) -> "CHVersion":
@@ -147,6 +154,7 @@ class CHVersion:
             tweak=tweak,
             githash=Shell.get_output("git rev-parse HEAD") or "0" * 40,
             version_type=_version_type_from_describe(versions),
+            previous_sha=str(versions.get("previous_sha", "")),
         )
 
     @classmethod
@@ -165,6 +173,7 @@ class CHVersion:
             tweak=tweak,
             githash=str(versions.get("githash", "")),
             version_type=_version_type_from_describe(versions),
+            previous_sha=str(versions.get("previous_sha", "")),
         )
 
     @classmethod
@@ -189,6 +198,7 @@ class CHVersion:
             tweak=tweak,
             githash=str(data.get("githash", "")),
             version_type=_version_type_from_describe(data),
+            previous_sha=str(data.get("previous_sha", "")),
         )
 
     def to_dict(self) -> dict:
@@ -199,6 +209,10 @@ class CHVersion:
             "patch": self.patch,
             "tweak": self.tweak,
             "githash": self.githash,
+            # Always written with a value so the `SET(...)` line parses (the
+            # readers unpack name+value); a placeholder of 40 zeros means "no
+            # recorded predecessor" (same convention as githash).
+            "previous_sha": self.previous_sha or "0" * 40,
             "describe": self.describe,
             "string": self.string,
         }
