@@ -122,8 +122,114 @@ UInt64 TableFunctionNumbers<multithreaded>::evaluateArgument(ContextPtr context,
 
 void registerTableFunctionNumbers(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionNumbers<true>>({}, {.allow_readonly = true});
-    factory.registerFunction<TableFunctionNumbers<false>>({}, {.allow_readonly = true});
+    factory.registerFunction<TableFunctionNumbers<true>>(
+        {
+            .description = R"(The same as `numbers`, but generates the values using multiple threads (according to the `max_threads` setting), so the order of the rows is not deterministic. Returns a table with a single `number` column of type `UInt64`. When called with no arguments, it produces an unbounded stream of integers starting from 0.)",
+            .syntax = "numbers_mt() | numbers_mt(N) | numbers_mt(N, M) | numbers_mt(N, M, S)",
+            .arguments = {
+                {"N", "When used as `numbers_mt(N)`: the number of integers to return (`0` to `N - 1`). When used as `numbers_mt(N, M[, S])`: the starting value (offset).", {"UInt64"}},
+                {"M", "The width of the value range `[N, N + M)`. Values are emitted from this range starting at `N` and stepping by `S`, so `numbers_mt(N, M)` returns `N` to `N + M - 1` and `numbers_mt(N, M, S)` returns fewer values when `S > 1` (only for `numbers_mt(N, M)` and `numbers_mt(N, M, S)`).", {"UInt64"}},
+                {"S", "The step between successive values (`S >= 1`), only for `numbers_mt(N, M, S)`.", {"UInt64"}},
+            },
+            .returned_value = {"A table with a single `number` column of type `UInt64`.", {"UInt64"}},
+            .examples = {
+                {"The integers from 0 to 9, in an unspecified order", "SELECT * FROM numbers_mt(10) ORDER BY number;", ""},
+                {"Count rows using multiple threads", "SELECT count() FROM numbers_mt(1000000000);", ""},
+                {"Limit an infinite stream", "SELECT * FROM numbers_mt() LIMIT 10;", ""},
+            },
+            .introduced_in = {1, 1},
+            .category = FunctionDocumentation::Category::TableFunction,
+        },
+        {.allow_readonly = true});
+
+    factory.registerFunction<TableFunctionNumbers<false>>(
+        {.description = R"DOCS_MD(
+- `numbers()` – Returns an infinite table with a single `number` column (UInt64) that contains integers in ascending order, starting from 0. Use `LIMIT` (and optionally `OFFSET`) to restrict the number of rows.
+
+- `numbers(N)` – Returns a table with a single `number` column (UInt64) that contains integers from 0 to `N - 1`.
+
+- `numbers(N, M)` – Returns a table with a single `number` column (UInt64) that contains `M` integers from `N` to `N + M - 1`.
+
+- `numbers(N, M, S)` – Returns a table with a single `number` column (UInt64) that contains values in `[N, N + M)` with step `S` (about `M / S` rows, rounded up). `S` must be `>= 1`.
+
+This is similar to the [`system.numbers`](/reference/system-tables/numbers) system table. It can be used for testing and generating successive values.
+
+The following queries are equivalent:
+
+```sql
+SELECT * FROM numbers(10);
+SELECT * FROM numbers(0, 10);
+SELECT * FROM numbers() LIMIT 10;
+SELECT * FROM system.numbers LIMIT 10;
+SELECT * FROM system.numbers WHERE number BETWEEN 0 AND 9;
+SELECT * FROM system.numbers WHERE number IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+```
+
+The following queries are also equivalent:
+
+```sql
+SELECT * FROM numbers(10, 10);
+SELECT * FROM numbers() LIMIT 10 OFFSET 10;
+SELECT * FROM system.numbers LIMIT 10 OFFSET 10;
+```
+
+The following queries are also equivalent:
+
+```sql
+SELECT number * 2 FROM numbers(10);
+SELECT (number - 10) * 2 FROM numbers(10, 10);
+SELECT * FROM numbers(0, 20, 2);
+```
+
+### Examples {#examples}
+
+The first 10 numbers.
+```sql
+SELECT * FROM numbers(10);
+```
+
+```response
+ ┌─number─┐
+ │      0 │
+ │      1 │
+ │      2 │
+ │      3 │
+ │      4 │
+ │      5 │
+ │      6 │
+ │      7 │
+ │      8 │
+ │      9 │
+ └────────┘
+```
+
+Generate a sequence of dates from 2010-01-01 to 2010-12-31.
+
+```sql
+SELECT toDate('2010-01-01') + number AS d FROM numbers(365);
+```
+
+Find the first `UInt64` `>= 10^15` whose `sipHash64(number)` has 20 trailing zero bits.
+
+```sql
+SELECT number
+FROM numbers()
+WHERE number >= 1e15
+  AND bitAnd(sipHash64(number), 0xFFFFF) = 0
+LIMIT 1;
+```
+
+```response
+ ┌───────────number─┐
+ │ 1000000000056095 │ -- 1.00 quadrillion
+ └──────────────────┘
+```
+
+### Notes {#notes}
+- For performance reasons, if you know how many rows you need, prefer bounded forms (`numbers(N)`, `numbers(N, M[, S])`) over unbounded `numbers()` / `system.numbers`.
+- For parallel generation, use `numbers_mt(...)` or the [`system.numbers_mt`](/reference/system-tables/numbers_mt) table. Note that results may be returned in any order.
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        {.allow_readonly = true});
 }
 
 }

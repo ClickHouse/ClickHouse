@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesJoinTags(<group>, 'dest_tag', 'separator', ['src_tag_1', 'src_tag_2', ...])
 /// joins all the values of all the `src_tags` using `separator` and returns a new group with the tag `dest_tag` set to the joined value.
-class FunctionTimeSeriesJoinTags : public IFunction
+class FunctionTimeSeriesJoinTags final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesJoinTags";

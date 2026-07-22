@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/IReadBufferMetadataProvider.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
@@ -21,7 +22,7 @@ extern const Metric FilesystemCacheReadBuffers;
 namespace DB
 {
 
-class CachedOnDiskReadBufferFromFile : public ReadBufferFromFileBase
+class CachedOnDiskReadBufferFromFile : public ReadBufferFromFileBase, public IReadBufferMetadataProvider
 {
 public:
     using ImplementationBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>()>;
@@ -32,13 +33,16 @@ public:
         FileCachePtr cache_,
         const FileCacheOriginInfo & origin_,
         ImplementationBufferCreator implementation_buffer_creator_,
-        const ReadSettings & settings_,
+        const FilesystemCacheSettings & cache_settings_,
+        size_t remote_fs_buffer_size_,
+        size_t local_fs_buffer_size_,
         const String & query_id_,
         size_t file_size_,
         bool allow_seeks_after_first_read_,
         bool use_external_buffer_,
         std::optional<size_t> read_until_position_,
-        std::shared_ptr<FilesystemCacheLog> cache_log_);
+        std::shared_ptr<FilesystemCacheLog> cache_log_,
+        ThrottlerPtr local_throttler_ = nullptr);
 
     ~CachedOnDiskReadBufferFromFile() override;
 
@@ -73,6 +77,7 @@ public:
     bool isContentCached(size_t offset, size_t size) override;
 
     std::optional<size_t> tryGetFileSize() override;
+    std::optional<Field> getMetadata(const String & name) const override;
 
     size_t getFileSize();
 
@@ -92,8 +97,10 @@ public:
             const std::string & source_file_path_,
             ImplementationBufferCreator impl_creator_,
             bool use_external_buffer_,
-            const ReadSettings & read_settings_,
-            size_t read_until_position_);
+            const FilesystemCacheSettings & cache_settings_,
+            size_t local_fs_buffer_size_,
+            size_t read_until_position_,
+            ThrottlerPtr local_throttler_ = nullptr);
 
         /// The readers can be reused among different ReadFromFileSegmentState
         /// objects, therefore they are stored here.
@@ -109,8 +116,12 @@ public:
         /// Whether buffer will be passed "externally",
         /// e.g. current buffer does not need to allocate its own memory.
         const bool use_external_buffer;
-        /// Query read settings.
-        const ReadSettings settings;
+        /// Filesystem cache settings.
+        const FilesystemCacheSettings cache_settings;
+        /// Buffer size for local filesystem reads (cache file reads).
+        const size_t local_fs_buffer_size;
+        /// Throttler for local filesystem reads (cache file reads).
+        const ThrottlerPtr local_throttler;
 
         /// Non-included range end offset.
         size_t read_until_position = 0;

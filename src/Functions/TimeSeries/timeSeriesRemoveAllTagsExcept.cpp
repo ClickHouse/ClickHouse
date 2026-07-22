@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesRemoveAllTagsExcept(group, ['tag_name_1', 'tag_name_2', ...])
 /// removes all tags from a tags group except specified ones, and returns the new tags group.
-class FunctionTimeSeriesRemoveAllTagsExcept : public IFunction
+class FunctionTimeSeriesRemoveAllTagsExcept final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesRemoveAllTagsExcept";

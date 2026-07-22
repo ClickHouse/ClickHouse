@@ -16,12 +16,15 @@ namespace DB
 class ParserViewTargets : public IParserBase
 {
 public:
-    ParserViewTargets();
-    explicit ParserViewTargets(const std::vector<ViewTarget::Kind> & accept_kinds_) : accept_kinds(accept_kinds_) { }
+    explicit ParserViewTargets(std::vector<ViewTarget::Kind> accept_kinds_)
+        : accept_kinds(std::move(accept_kinds_))
+    {
+    }
 
 protected:
     const char * getName() const override { return "ViewTargets"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool canAccept(ViewTarget::Kind kind) const;
 
     std::vector<ViewTarget::Kind> accept_kinds;
 };

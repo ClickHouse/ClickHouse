@@ -1,6 +1,9 @@
 #pragma once
+
+#include <future>
 #include <optional>
 #include <Common/re2.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
 #include <IO/Archives/IArchiveReader.h>
@@ -8,14 +11,14 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatFilterInfo.h>
+
 namespace DB
 {
 
 class SchemaCache;
 
-class StorageObjectStorageSource : public ISource
+class StorageObjectStorageSource final : public ISource
 {
     friend class ObjectStorageQueueSource;
 
@@ -46,7 +49,7 @@ public:
 
     Chunk generate() override;
 
-    void onFinish() override { parser_shared_resources->finishStream(); }
+    void onFinish() override;
 
     static std::shared_ptr<IObjectIterator> createFileIterator(
         StorageObjectStorageConfigurationPtr configuration,
@@ -111,6 +114,7 @@ protected:
 
         ObjectInfoPtr getObjectInfo() const { return object_info; }
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
+        ReadBuffer * readBuffer() const { return read_buf.get(); }
 
     private:
         ObjectInfoPtr object_info;
@@ -164,7 +168,10 @@ public:
     size_t estimatedKeysCount() override { return buffer.size(); }
 
 private:
-    ObjectInfoPtr createObjectInfoInArchive(const std::string & path_to_archive, const std::string & path_in_archive);
+    ObjectInfoPtr createObjectInfoInArchive(
+        const std::string & path_to_archive,
+        const std::string & path_in_archive,
+        std::optional<size_t> read_source_index);
 
     ClusterFunctionReadTaskCallback callback;
     ObjectInfos buffer;
@@ -218,6 +225,7 @@ private:
     ExpressionActionsPtr filter_expr;
     ObjectStorageIteratorPtr object_storage_iterator;
     bool recursive{false};
+    bool match_web_paths_only{false};
     std::vector<String> expanded_keys;
     std::vector<String>::iterator expanded_keys_iter;
 

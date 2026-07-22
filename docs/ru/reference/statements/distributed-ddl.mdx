@@ -1,0 +1,23 @@
+---
+description: 'Документация по Distributed DDL'
+sidebarTitle: 'Distributed DDL'
+slug: /sql-reference/distributed-ddl
+title: 'Запросы Distributed DDL (предложение ON CLUSTER)'
+doc_type: 'reference'
+---
+
+По умолчанию запросы `CREATE`, `DROP`, `ALTER` и `RENAME` затрагивают только текущий сервер, на котором они выполняются. В кластере такие запросы можно выполнять распределённо с помощью предложения `ON CLUSTER`.
+
+Например, следующий запрос создаёт таблицу `all_hits` `Distributed` на каждом узле в `cluster`:
+
+```sql
+CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE = Distributed(cluster, default, hits)
+```
+
+Чтобы эти запросы выполнялись корректно, на каждом хосте должно быть задано одинаковое определение кластера (чтобы упростить синхронизацию конфигураций, можно использовать подстановки из ZooKeeper). Хосты также должны подключаться к серверам ZooKeeper.
+
+Локальная версия запроса в итоге будет выполнена на каждом хосте кластера, даже если некоторые хосты в данный момент недоступны.
+
+<Warning>
+  Порядок выполнения запросов на одном хосте гарантируется.
+</Warning>

@@ -1,0 +1,64 @@
+---
+date: 2023-03-24
+title: "Cómo recrear rápidamente una tabla pequeña entre distintas terminales"
+description: "Aprende a recrear rápidamente una tabla pequeña y sus datos entre distintas terminales mediante copiar y pegar en entornos de desarrollo."
+tags: ['Herramientas y utilidades']
+keywords: ['Recrear una tabla', 'Terminales']
+---
+
+<div id="question">
+  ## Pregunta
+</div>
+
+¿Cómo puedo volver a crear rápidamente una tabla y sus datos con solo copiar y pegar entre distintas terminales?
+
+<div id="answer">
+  ## Respuesta
+</div>
+
+Esta NO es una práctica recomendada para migrar datos de una base de datos a otra y NO debe usarse para migraciones de datos de producción.
+
+Esto solo pretende ser una forma rápida e improvisada de recrear una pequeña cantidad de datos al desarrollar en varios entornos.
+
+1. Obtén la sentencia CREATE TABLE con `SHOW CREATE table`:
+
+```sql
+SHOW CREATE TABLE cookies;
+
+SHOW CREATE TABLE cookies
+
+Query id: 248ec8e2-5bce-45b3-97d9-ed68edf445a5
+
+┌─statement────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.cookies
+(
+    `id` String,
+    `timestamp` DateTime
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8192 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+```
+
+2. Obtén la exportación de los datos con `FORMAT SQLInsert`
+
+```sql
+SELECT * FROM cookies FORMAT SQLInsert;
+
+SELECT *
+FROM cookies
+FORMAT SQLInsert
+
+Query id: 383759b8-69c0-4561-ab95-f8224abc0071
+
+INSERT INTO table (`id`, `timestamp`) VALUES ('4', '2023-03-15 16:28:46')
+, ('2', '2023-03-15 16:28:41')
+, ('1', '2023-03-15 16:11:02'), ('1', '2023-03-15 16:11:40'), ('1', '2023-03-15 16:11:48'), ('1', '2023-03-15 16:16:05'), ('2', '2023-03-15 16:11:06'), ('3', '2023-03-15 16:11:12'), ('3', '2023-03-15 16:11:45'), ('3', '2023-03-15 16:16:08'), ('4', '2023-03-15 16:11:14'), ('4', '2023-03-15 16:11:50'), ('4', '2023-03-15 16:16:01'), ('5', '2023-03-15 16:11:18'), ('5', '2023-03-15 16:16:11')
+;
+
+15 rows in set. Elapsed: 0.023 sec.
+```
+
+Ten en cuenta que tendrás que sustituir el nombre `table` en el punto 2 por el nombre real de la tabla (`cookies` en este ejemplo)

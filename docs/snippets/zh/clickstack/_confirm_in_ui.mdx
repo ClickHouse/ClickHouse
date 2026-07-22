@@ -1,0 +1,27 @@
+---
+title: 在 UI 中确认
+---
+
+在 [ClickHouse Cloud 控制台](https://console.clickhouse.cloud) 中打开你的服务，从左侧菜单中选择 **ClickStack**，然后点击 **Start Ingestion**。
+
+<Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="启动 ClickStack" border />
+
+下一步可以跳过，因为你已经配置好了 collector。点击 **Launch ClickStack** 继续。
+
+ClickStack 会在新选项卡中打开，并自动跳转到 **Getting Started** 页面。如果没有，请从左侧菜单中选择 **Getting Started**，然后点击 **Start Ingestion**，再点击 **Next**。
+
+<Image img="/images/use-cases/observability/clickstack-start-ingestion.webp" size="lg" alt="ClickStack 开始摄取" border />
+
+你会进入 **Getting Started** 页面。如果系统提示你开始摄取，请继续完成引导你启动 Docker collector 的 onboarding 页面。由于这一步你已经完成，因此直接一路点击即可。ClickStack 会自动检测你的 telemetry data 和表，之后你可以选择 **Start Exploring** 开始使用平台。
+
+<Image img="/images/use-cases/observability/clickstack-start-exploring.webp" size="lg" alt="ClickStack 开始探索" border />
+
+将 source 切换为 `Logs`，并将时间范围设置为 **Last 15 minutes**。来自 `telemetrygen` 的合成日志应该会在几秒内出现。
+
+<Image img="/images/use-cases/observability/clickstack-search.webp" size="lg" alt="显示日志的 ClickStack 搜索视图" />
+
+如果没有显示任何内容：
+
+* 确认传递给 `telemetrygen` 的 auth 请求头值与你的 collector 预期的值一致。
+* 查看 collector 的日志，并查找导出错误。
+* 验证 collector 上配置的 ClickHouse 端点同时包含 protocol 和 port (`https://...:8443`) 。

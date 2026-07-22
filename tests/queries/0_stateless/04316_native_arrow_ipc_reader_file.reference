@@ -1,0 +1,20 @@
+--- schema (native) ---
+i	Int32					
+s	String					
+arr	Array(UInt8)					
+lc	LowCardinality(String)					
+--- data (native) ---
+0	0	[]	0
+1	1	[0]	1
+2	2	[0,1]	2
+3	3	[0,1,2]	0
+4	4	[]	1
+5	5	[0]	2
+6	6	[0,1]	0
+7	7	[0,1,2]	1
+8	8	[]	2
+9	9	[0]	0
+--- native vs library: data identical? ---
+OK
+--- count only (native) ---
+10

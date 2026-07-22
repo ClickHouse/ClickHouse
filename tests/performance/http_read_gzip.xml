@@ -1,0 +1,33 @@
+<test>
+    <!--
+        End-to-end latency of reading data over the HTTP interface, with and
+        without gzip response compression.
+
+        `SELECT number FROM numbers(500000) FORMAT TSV` produces about 3.2 MB of
+        text, which gzip compresses to about 1 MB. Comparing the plain and the
+        gzip variant, and the reference (LEFT) against the patched (RIGHT)
+        binary, shows the cost of the HTTP layer and of the gzip codec.
+
+        These are shell-script queries (type="shell"): they are run with bash and
+        timed end to end, talking to the server over HTTP via $CLICKHOUSE_CURL /
+        $CLICKHOUSE_URL, which are prepared per-server (the LEFT and the RIGHT
+        server listen on different HTTP ports). The compressed bytes are written
+        to /dev/null; client-side decompression is left out on purpose, as it is
+        the same for both builds and would only add noise.
+    -->
+
+    <!-- Plain HTTP response, no compression (baseline). -->
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CURL} "${CLICKHOUSE_URL}" \
+            --data-binary "SELECT number FROM numbers(500000) FORMAT TSV" \
+            -o /dev/null
+    ]]></query>
+
+    <!-- gzip-compressed HTTP response (~1 MB transferred). -->
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CURL} -H 'Accept-Encoding: gzip' \
+            "${CLICKHOUSE_URL}?enable_http_compression=1" \
+            --data-binary "SELECT number FROM numbers(500000) FORMAT TSV" \
+            -o /dev/null
+    ]]></query>
+</test>

@@ -4,6 +4,7 @@
 #include <Core/Defines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DatabaseFactory.h>
@@ -49,6 +50,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
@@ -72,6 +74,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNKNOWN_TABLE;
+    extern const int QUERY_IS_TOO_LARGE;
 }
 
 namespace DatabaseMetadataDiskSetting
@@ -363,7 +366,7 @@ void DatabaseOrdinary::loadTableFromMetadata(
     const ASTPtr & ast,
     LoadingStrictnessLevel mode)
 {
-    assert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
+    chassert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
     const auto & query = ast->as<const ASTCreateQuery &>();
 
     if (shouldLazyLoad(query, mode))
@@ -424,6 +427,11 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStric
 
     if (query.is_ordinary_view || query.is_materialized_view || query.is_dictionary
         || query.isParameterizedView() || query.is_window_view)
+        return false;
+
+    /// A lazy proxy would hide the TimeSeries type from the cross-database rename guard, so its
+    /// inner tables could be orphaned by a cross-database move. Load it eagerly, as for views.
+    if (query.is_time_series_table)
         return false;
 
     /// Already handled by `StorageTableFunctionProxy`.
@@ -693,7 +701,7 @@ DatabaseDetachedTablesSnapshotIteratorPtr DatabaseOrdinary::getDetachedTablesIte
     return DatabaseWithOwnTablesBase::getDetachedTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
 }
 
-Strings DatabaseOrdinary::getAllTableNames(ContextPtr) const
+VectorWithMemoryTracking<String> DatabaseOrdinary::getAllTableNames(ContextPtr) const
 {
     std::set<String> unique_names;
     {
@@ -705,6 +713,23 @@ Strings DatabaseOrdinary::getAllTableNames(ContextPtr) const
             unique_names.emplace(table_name);
     }
     return {unique_names.begin(), unique_names.end()};
+}
+
+void DatabaseOrdinary::eraseAsyncLoadState(const String & table_name)
+{
+    /// Drop pending async load/startup task references so that `getAllTableNames`
+    /// (and the hints derived from it) do not still suggest a no-longer-present name.
+    startup_table.erase(table_name);
+    load_table.erase(table_name);
+}
+
+StoragePtr DatabaseOrdinary::detachTableUnlocked(const String & table_name)
+{
+    /// Detach first: if the base throws (e.g. UNKNOWN_TABLE) the table is not
+    /// detached, so its async-load state must stay intact. Erase only on success.
+    auto table = DatabaseWithOwnTablesBase::detachTableUnlocked(table_name);
+    eraseAsyncLoadState(table_name);
+    return table;
 }
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
@@ -737,6 +762,20 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     applyMetadataChangesToCreateQuery(ast, metadata, local_context, validate_new_create_query);
 
     statement = getObjectDefinitionFromCreateQuery(ast);
+
+    if (validate_new_create_query)
+    {
+        size_t max_query_size = local_context->getSettingsRef()[Setting::max_query_size];
+        if (max_query_size && statement.size() > max_query_size)
+            throw Exception(
+                ErrorCodes::QUERY_IS_TOO_LARGE,
+                "The resulting metadata of table {} ({} bytes) would exceed max_query_size ({}), "
+                "which would make the table unloadable. Reduce the number of columns or increase max_query_size.",
+                table_id.getNameForLogs(),
+                statement.size(),
+                max_query_size);
+    }
+
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
@@ -767,6 +806,7 @@ void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_
     }
 }
 
+void registerDatabaseOrdinary(DatabaseFactory & factory);
 void registerDatabaseOrdinary(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -794,6 +834,9 @@ void registerDatabaseOrdinary(DatabaseFactory & factory)
 
         return make_shared<DatabaseOrdinary>(args.database_name, args.metadata_path, args.context, database_metadata_disk_settings);
     };
-    factory.registerDatabase("Ordinary", create_fn, /*features=*/{.supports_settings = true});
+    factory.registerDatabase("Ordinary", create_fn, /*features=*/{.supports_settings = true}, Documentation{
+        .description = "The legacy, deprecated default database engine. It stores each table in its own metadata file and has been superseded by the `Atomic` engine.",
+        .syntax = "ENGINE = Ordinary",
+        .related = {"Atomic"}});
 }
 }

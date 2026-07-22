@@ -1,0 +1,102 @@
+---
+sidebarTitle: 'Querio'
+slug: /integrations/querio
+keywords: ['Querio', 'conectar', 'integrar', 'analítica', 'IA']
+description: 'Querio es un espacio de trabajo de analítica e inteligencia empresarial nativo para IA. Conecta ClickHouse con Querio para explorar, visualizar y analizar datos en tiempo real con SQL, Python e IA.'
+title: 'Conecta ClickHouse con Querio'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import CommunityMaintainedBadge from "/snippets/es/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+Querio es un espacio de trabajo de análisis e inteligencia empresarial impulsado por IA que permite a los equipos consultar, explorar, visualizar y generar información valiosa a partir de los datos mediante SQL, Python y lenguaje natural. Cuando conectas Querio a tu base de datos o warehouse de ClickHouse, puedes ejecutar análisis en tiempo real a gran escala y crear tableros, notebooks e informes asistidos por IA sobre tus datos de ClickHouse sin moverlos.
+
+<div id="setup-clickhouse-for-querio">
+  ## Configura ClickHouse para Querio
+</div>
+
+<Steps>
+  <Step>
+    ### Crea un usuario dedicado
+
+    Como práctica recomendada de seguridad, crea una cuenta de usuario dedicada exclusivamente a Querio con los privilegios mínimos necesarios:
+
+    ```sql
+    CREATE USER querio_user IDENTIFIED BY 'STRONG_PASSWORD';
+    ```
+
+    <Tip>
+      Usa una contraseña larga y aleatoria (de al menos 16 caracteres), idealmente generada con un gestor de contraseñas.
+    </Tip>
+  </Step>
+
+  <Step>
+    ### Concede acceso de solo lectura a la base de datos
+
+    Limita los permisos de Querio únicamente a las bases de datos y tablas que necesita consultar:
+
+    ```sql
+    GRANT SELECT ON my_database.* TO querio_user;
+    ```
+
+    Para tablas específicas, usa:
+
+    ```sql
+    GRANT SELECT ON database.table_name TO querio_user;
+    ```
+
+    Repite este proceso para cada base de datos a la que Querio necesite acceso.
+  </Step>
+
+  <Step>
+    ### Recopila los detalles de conexión
+
+    Para conectar Querio a ClickHouse, necesitarás la siguiente información de conexión:
+
+    | Parámetro  | Descripción                                                                                        |
+    | ---------- | -------------------------------------------------------------------------------------------------- |
+    | `HOST`     | La dirección de tu servidor o clúster de ClickHouse                                                |
+    | `PORT`     | El puerto 9440 (predeterminado para el protocolo nativo seguro) o el puerto que tengas configurado |
+    | `DATABASE` | La base de datos que quieres que Querio consulte                                                   |
+    | `USERNAME` | `querio_user` (o el nombre de usuario que hayas elegido)                                           |
+    | `PASSWORD` | La contraseña de la cuenta de usuario                                                              |
+
+    <Note>
+      * En ClickHouse Cloud, puedes encontrar los detalles de conexión en tu consola de ClickHouse Cloud
+      * En instancias autogestionadas, si tu ClickHouse usa un puerto distinto, revisa la configuración del servidor
+      * El puerto 9440 es el predeterminado para las conexiones seguras mediante el protocolo nativo
+    </Note>
+  </Step>
+</Steps>
+
+<div id="create-account-and-connect">
+  ## Crea tu cuenta de Querio y conecta ClickHouse
+</div>
+
+Inicia sesión o crea tu espacio de trabajo en Querio en [https://app.querio.ai/](https://app.querio.ai/)
+
+1. En Querio, ve a **Configuración → Fuentes de datos** y haz clic en **Añadir fuente de datos**.
+
+2. Selecciona **ClickHouse** en la lista de opciones de bases de datos.
+
+3. Introduce los datos de conexión indicados arriba y guarda la configuración.
+
+4. Querio validará la conexión. Si la validación se completa correctamente, ClickHouse estará disponible como fuente de datos en todo tu espacio de trabajo.
+
+<div id="querying-clickhouse">
+  ## Consultar ClickHouse
+</div>
+
+Después de conectar Querio a ClickHouse, puedes explorar y analizar tus datos desde cualquier lugar de la plataforma. Crea un bloque SQL o una celda de Python en un notebook de Querio, selecciona ClickHouse como tu fuente de datos y ejecuta consultas directamente en tu clúster de ClickHouse. Usa las visualizaciones y herramientas de IA de Querio para descubrir información valiosa, crear tableros y compartir resultados.
+
+<div id="additional-resources">
+  ## Recursos adicionales
+</div>
+
+* [Documentación de Querio](https://docs.querio.ai/integrations/clickhouse)
+* [Guías y tutoriales de primeros pasos de Querio](https://www.querio.ai)

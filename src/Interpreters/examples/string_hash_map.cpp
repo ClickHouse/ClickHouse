@@ -10,6 +10,7 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/Stopwatch.h>
+#include <Examples/clickhouse_examples.h>
 
 /**
 
@@ -148,7 +149,7 @@ void NO_INLINE bench(const std::vector<std::string_view> & data, DB::Arena &, co
         Stopwatch watch;
         Map map;
         typename Map::LookupResult it;
-        bool inserted;
+        bool inserted = {};
 
         for (const auto & value : data)
         {

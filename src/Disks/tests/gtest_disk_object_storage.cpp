@@ -1,23 +1,31 @@
-#include <gtest/gtest.h>
-
 #include <Disks/DiskFactory.h>
+#include <Disks/DiskEncrypted.h>
 #include <Disks/registerDisks.h>
 #include <Disks/IDiskTransaction.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
+#include <IO/FileEncryptionCommon.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadPipeline.h>
+#include <IO/ReadSettings.h>
+#include <IO/SharedThreadPools.h>
 
+#include <Common/PageCache.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/FailPoint.h>
 #include <Common/thread_local_rng.h>
+
 #include <Core/Defines.h>
+#include <Core/ServerUUID.h>
 
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
+
+#include <gtest/gtest.h>
 
 #include <filesystem>
 #include <string>
@@ -83,6 +91,13 @@ void setUpConfig(const std::string & file_name)
                     <metadata_request_size>100</metadata_request_size>
                 </data_background_cleanup>
             </local_object_storage_disk>
+            <local_plain_rewritable_disk>
+                <type>object_storage</type>
+                <object_storage_type>local_blob_storage</object_storage_type>
+                <path>local_plain_rewritable_dir/</path>
+                <metadata_type>plain_rewritable</metadata_type>
+                <use_fake_transaction>false</use_fake_transaction>
+            </local_plain_rewritable_disk>
         </disks>
     </storage_configuration>
 
@@ -104,6 +119,18 @@ std::string readAll(DB::ReadBuffer & rb)
     std::string str;
     DB::readStringUntilEOF(str, rb);
     return str;
+}
+
+DB::PageCachePtr makePageCacheForTest()
+{
+    return std::make_shared<DB::PageCache>(
+        std::chrono::milliseconds(0),
+        "SLRU",
+        /*size_ratio=*/ 0.5,
+        /*min_size_in_bytes=*/ 64 << 20,
+        /*max_size_in_bytes=*/ 64 << 20,
+        /*free_memory_ratio=*/ 0.0,
+        /*num_shards=*/ 1);
 }
 
 }
@@ -130,6 +157,9 @@ public:
 
     static void SetUpTestSuite()
     {
+        DB::ServerUUID::setRandomForUnitTests();
+        DB::getIOThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+
         setUpConfig(config_path);
         DB::ConfigProcessor config_processor(config_path, true, true);
         auto config = config_processor.loadConfig(false);
@@ -166,6 +196,7 @@ public:
 
         fs::remove_all("./local_blob_storage_dir");
         fs::remove_all("./metadata_storage_dir");
+        fs::remove_all("./local_plain_rewritable_dir");
     }
 
     void waitBlobsCount(DB::DiskPtr disk, size_t needed_count)
@@ -194,13 +225,12 @@ public:
         return test_info->name();
     }
 
-    DB::DiskPtr getDiskObjectStorage()
+    DB::DiskPtr getDiskObjectStorage(const std::string & name = "local_object_storage_disk")
     {
-        if (!initialized_disks.empty())
-            return initialized_disks.begin()->second;
+        if (auto it = initialized_disks.find(name); it != initialized_disks.end())
+            return it->second;
 
         auto & factory = DB::DiskFactory::instance();
-        std::string name = "local_object_storage_disk";
         std::string prefix = "storage_configuration.disks." + name;
         auto disk = factory.create(
             name,
@@ -702,6 +732,28 @@ TEST_F(DiskObjectStorageTest, HardLinkAndRewriteFileTxCommitFail)
     waitBlobsCount(disk, 1);
 }
 
+TEST_F(DiskObjectStorageTest, CopyEmptyFileToPlainRewritable)
+{
+    auto from_disk = getDiskObjectStorage();
+    auto to_disk = getDiskObjectStorage("local_plain_rewritable_disk");
+
+    std::string file_name = getTestName() + "_file";
+
+    {
+        auto wb = from_disk->writeFile(file_name);
+        wb->finalize();
+    }
+
+    EXPECT_TRUE(from_disk->existsFile(file_name));
+    EXPECT_EQ(from_disk->getFileSize(file_name), 0);
+
+    from_disk->copyFile(file_name, *to_disk, file_name, {});
+
+    EXPECT_TRUE(to_disk->existsFile(file_name));
+    EXPECT_EQ(to_disk->getFileSize(file_name), 0);
+    EXPECT_EQ(readAll(*to_disk->readFile(file_name, {})), "");
+}
+
 TEST_F(DiskObjectStorageTest, TruncateFileToZero)
 {
     auto disk = getDiskObjectStorage();
@@ -796,3 +848,362 @@ TEST_F(DiskObjectStorageTest, TruncateFileToNotZero)
 
     waitBlobsCount(disk, 1);
 }
+
+TEST_F(DiskObjectStorageTest, RewriteFileOnPlainRewritableWithPageCache)
+{
+    auto disk = getDiskObjectStorage("local_plain_rewritable_disk");
+
+    auto page_cache = makePageCacheForTest();
+
+    DB::ReadSettings read_settings;
+    read_settings.page_cache_settings.cache = page_cache;
+    read_settings.use_page_cache_for_disks_without_file_cache = true;
+
+    std::string directory_name = getTestName() + "_dir";
+    std::string file_name = fs::path(directory_name) / (getTestName() + "_file");
+    std::string file_content = getTestName() + "_file_content_v1";
+
+    disk->createDirectories(directory_name);
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+
+    /// Blob paths are deterministic and a rewrite reuses them, so the page cache must be bypassed.
+    EXPECT_EQ(readAll(*disk->readFile(file_name, read_settings)), file_content);
+    EXPECT_EQ(readAll(*disk->readFile(file_name, read_settings)), file_content);
+    EXPECT_EQ(page_cache->count(), 0);
+
+    std::string rewrite_file_content = getTestName() + "_file_content_v2";
+    ASSERT_EQ(file_content.size(), rewrite_file_content.size());
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(rewrite_file_content, *wb);
+        wb->finalize();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, read_settings)), rewrite_file_content);
+}
+
+TEST_F(DiskObjectStorageTest, RewriteFileWithPageCache)
+{
+    auto disk = getDiskObjectStorage();
+
+    auto page_cache = makePageCacheForTest();
+
+    DB::ReadSettings read_settings;
+    read_settings.page_cache_settings.cache = page_cache;
+    read_settings.use_page_cache_for_disks_without_file_cache = true;
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = getTestName() + "_file_content_v1";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    EXPECT_TRUE(disk->existsFile(file_name));
+
+    /// Blob paths are random, so the page cache is used.
+    EXPECT_EQ(readAll(*disk->readFile(file_name, read_settings)), file_content);
+    EXPECT_EQ(readAll(*disk->readFile(file_name, read_settings)), file_content);
+    EXPECT_EQ(page_cache->count(), 1);
+
+    std::string rewrite_file_content = getTestName() + "_file_content_v2";
+    ASSERT_EQ(file_content.size(), rewrite_file_content.size());
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(rewrite_file_content, *wb);
+        wb->finalize();
+    }
+
+    /// The rewritten file lives at a new random blob path, so cached data of the old blob
+    /// cannot be returned for it.
+    EXPECT_TRUE(disk->existsFile(file_name));
+    EXPECT_EQ(readAll(*disk->readFile(file_name, read_settings)), rewrite_file_content);
+}
+
+
+/// -- ReadPipeline integration tests --
+
+TEST_F(DiskObjectStorageTest, ReadPipelineBasic)
+try
+{
+    auto disk = getDiskObjectStorage();
+    auto * dos = dynamic_cast<DB::DiskObjectStorage *>(disk.get());
+    ASSERT_NE(dos, nullptr);
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = "ReadPipeline basic test data";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    /// Build a pipeline and read data through it.
+    DB::ReadPipeline pipeline;
+    DB::ReadSettings read_settings;
+    dos->prepareRead(file_name, read_settings, std::nullopt, pipeline);
+
+    EXPECT_TRUE(pipeline.hasSource());
+    ASSERT_EQ(pipeline.getStoredObjects().size(), 1u);
+
+    auto buf = pipeline.build();
+    ASSERT_NE(buf, nullptr);
+    EXPECT_EQ(readAll(*buf), file_content);
+}
+catch (...)
+{
+    FAIL() << DB::getCurrentExceptionMessage(true);
+}
+
+
+TEST_F(DiskObjectStorageTest, ReadPipelineDescribeStages)
+try
+{
+    auto disk = getDiskObjectStorage();
+    auto * dos = dynamic_cast<DB::DiskObjectStorage *>(disk.get());
+    ASSERT_NE(dos, nullptr);
+
+    std::string file_name = getTestName() + "_file";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText("data", *wb);
+        wb->finalize();
+    }
+
+    /// Synchronous read: no async prefetch.
+    {
+        DB::ReadPipeline pipeline;
+        DB::ReadSettings read_settings;
+        read_settings.remote_fs_settings.method = DB::RemoteFSReadMethod::read;
+        dos->prepareRead(file_name, read_settings, std::nullopt, pipeline);
+
+        String desc = pipeline.describe();
+        EXPECT_NE(desc.find("Source"), String::npos) << "describe: " << desc;
+        EXPECT_NE(desc.find("Gather"), String::npos) << "describe: " << desc;
+        EXPECT_EQ(desc.find("AsyncPrefetch"), String::npos) << "describe: " << desc;
+        EXPECT_EQ(desc.find("MemoryCache"), String::npos) << "describe: " << desc;
+    }
+
+    /// Default settings (threadpool): async prefetch is added.
+    {
+        DB::ReadPipeline pipeline;
+        DB::ReadSettings read_settings;
+        dos->prepareRead(file_name, read_settings, std::nullopt, pipeline);
+
+        String desc = pipeline.describe();
+        EXPECT_NE(desc.find("AsyncPrefetch"), String::npos) << "describe: " << desc;
+    }
+}
+catch (...)
+{
+    FAIL() << DB::getCurrentExceptionMessage(true);
+}
+
+
+TEST_F(DiskObjectStorageTest, ReadPipelineMultipleObjects)
+try
+{
+    auto disk = getDiskObjectStorage();
+    auto * dos = dynamic_cast<DB::DiskObjectStorage *>(disk.get());
+    ASSERT_NE(dos, nullptr);
+
+    std::string file_name = getTestName() + "_file";
+    std::string part1 = "FIRST_PART_DATA";
+    std::string part2 = "_SECOND_PART_DATA";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(part1, *wb);
+        wb->finalize();
+    }
+    {
+        auto wb = disk->writeFile(file_name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Append, DB::WriteSettings{});
+        DB::writeText(part2, *wb);
+        wb->finalize();
+    }
+
+    waitBlobsCount(disk, 2);
+
+    /// The file is split across two blobs. Pipeline should read both seamlessly.
+    DB::ReadPipeline pipeline;
+    DB::ReadSettings read_settings;
+    dos->prepareRead(file_name, read_settings, std::nullopt, pipeline);
+
+    EXPECT_EQ(pipeline.getStoredObjects().size(), 2u);
+
+    auto buf = pipeline.build();
+    EXPECT_EQ(readAll(*buf), part1 + part2);
+}
+catch (...)
+{
+    FAIL() << DB::getCurrentExceptionMessage(true);
+}
+
+
+TEST_F(DiskObjectStorageTest, ReadPipelineSeek)
+try
+{
+    auto disk = getDiskObjectStorage();
+    auto * dos = dynamic_cast<DB::DiskObjectStorage *>(disk.get());
+    ASSERT_NE(dos, nullptr);
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = "0123456789ABCDEF";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    DB::ReadPipeline pipeline;
+    DB::ReadSettings read_settings;
+    dos->prepareRead(file_name, read_settings, std::nullopt, pipeline);
+
+    auto buf = pipeline.build();
+
+    /// Seek to offset 10, read the rest.
+    buf->seek(10, SEEK_SET);
+    EXPECT_EQ(readAll(*buf), "ABCDEF");
+}
+catch (...)
+{
+    FAIL() << DB::getCurrentExceptionMessage(true);
+}
+
+
+TEST_F(DiskObjectStorageTest, ReadPipelineClone)
+try
+{
+    auto disk = getDiskObjectStorage();
+    auto * dos = dynamic_cast<DB::DiskObjectStorage *>(disk.get());
+    ASSERT_NE(dos, nullptr);
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = "clone test data";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    DB::ReadPipeline pipeline;
+    DB::ReadSettings read_settings;
+    dos->prepareRead(file_name, read_settings, std::nullopt, pipeline);
+
+    /// Clone the pipeline and build both.
+    DB::ReadPipeline cloned = pipeline.clone();
+
+    auto buf1 = pipeline.build();
+    auto buf2 = cloned.build();
+
+    EXPECT_EQ(readAll(*buf1), file_content);
+    EXPECT_EQ(readAll(*buf2), file_content);
+}
+catch (...)
+{
+    FAIL() << DB::getCurrentExceptionMessage(true);
+}
+
+
+TEST_F(DiskObjectStorageTest, ReadPipelineMatchesReadFile)
+try
+{
+    auto disk = getDiskObjectStorage();
+    auto * dos = dynamic_cast<DB::DiskObjectStorage *>(disk.get());
+    ASSERT_NE(dos, nullptr);
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = "consistency check between readFile and pipeline";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+    }
+
+    /// Read via readFile (which internally uses the pipeline).
+    DB::ReadSettings read_settings;
+    std::string via_read_file = readAll(*disk->readFile(file_name, read_settings));
+
+    /// Read via explicit prepareRead + build.
+    DB::ReadPipeline pipeline;
+    dos->prepareRead(file_name, read_settings, std::nullopt, pipeline);
+    std::string via_pipeline = readAll(*pipeline.build());
+
+    EXPECT_EQ(via_read_file, file_content);
+    EXPECT_EQ(via_pipeline, file_content);
+    EXPECT_EQ(via_read_file, via_pipeline);
+}
+catch (...)
+{
+    FAIL() << DB::getCurrentExceptionMessage(true);
+}
+
+
+#if USE_SSL
+TEST_F(DiskObjectStorageTest, ReadPipelineEncrypted)
+try
+{
+    auto disk = getDiskObjectStorage();
+
+    /// Wrap with encryption.
+    String key = "1234567890123456"; /// 16 bytes = AES-128-CTR
+    auto enc_settings = std::make_unique<DB::DiskEncryptedSettings>();
+    enc_settings->wrapped_disk = disk;
+    enc_settings->current_algorithm = DB::FileEncryption::Algorithm::AES_128_CTR;
+    auto fingerprint = DB::FileEncryption::calculateKeyFingerprint(key);
+    enc_settings->all_keys[fingerprint] = key;
+    enc_settings->current_key = key;
+    enc_settings->current_key_fingerprint = fingerprint;
+    enc_settings->disk_path = "";
+    auto encrypted_disk = std::make_shared<DB::DiskEncrypted>("encrypted_test", std::move(enc_settings));
+
+    std::string file_name = getTestName() + "_file";
+    std::string file_content = "encrypted pipeline test data 0123456789";
+
+    {
+        auto tx = encrypted_disk->createTransaction();
+        auto wb = tx->writeFile(file_name, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, DB::WriteSettings{});
+        DB::writeText(file_content, *wb);
+        wb->finalize();
+        tx->commit();
+    }
+
+    /// Read via readFile (old path — DiskEncrypted wraps the buffer manually).
+    DB::ReadSettings read_settings;
+    std::string via_read_file = readAll(*encrypted_disk->readFile(file_name, read_settings, {}));
+    EXPECT_EQ(via_read_file, file_content);
+
+    /// Read via prepareRead + build (pipeline path — decryption is a stage).
+    DB::ReadPipeline pipeline;
+    encrypted_disk->prepareRead(file_name, read_settings, std::nullopt, pipeline);
+
+    String desc = pipeline.describe();
+    EXPECT_NE(desc.find("Source"), String::npos) << "describe: " << desc;
+    EXPECT_NE(desc.find("Decrypt"), String::npos) << "describe: " << desc;
+
+    auto buf = pipeline.build();
+    std::string via_pipeline = readAll(*buf);
+    EXPECT_EQ(via_pipeline, file_content);
+}
+catch (...)
+{
+    FAIL() << DB::getCurrentExceptionMessage(true);
+}
+#endif

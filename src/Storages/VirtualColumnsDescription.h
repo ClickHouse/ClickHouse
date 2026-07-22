@@ -55,6 +55,10 @@ public:
     Block getSampleBlock(VirtualsKind kind, VirtualsMaterializationPlace place) const;
     ColumnsDescription toColumnsDescription(VirtualsKind kind, VirtualsMaterializationPlace place) const;
 
+    /// Like `getSampleBlock`, but skips the per-column `IDataType::createColumn()` allocation
+    /// and the `Block` round-trip. Hot in `StorageSnapshot::getColumns`.
+    NamesAndTypesList getNamesAndTypes(VirtualsKind kind, VirtualsMaterializationPlace place) const;
+
 private:
     Container container;
 };

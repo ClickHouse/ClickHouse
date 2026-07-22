@@ -1,9 +1,10 @@
 #include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
-#include <Common/CurrentThread.h>
-#include <Common/setThreadName.h>
 
 #if USE_PARQUET
 
+#include <Common/CurrentThread.h>
+#include <Common/setThreadName.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromVector.h>
@@ -452,6 +453,7 @@ void ParquetBlockOutputFormat::threadFunction()
     }
 }
 
+void registerOutputFormatParquet(FormatFactory & factory);
 void registerOutputFormatParquet(FormatFactory & factory)
 {
     factory.registerOutputFormat(
@@ -475,6 +477,7 @@ void registerOutputFormatParquet(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerOutputFormatParquet(FormatFactory &);
 void registerOutputFormatParquet(FormatFactory &)
 {
 }

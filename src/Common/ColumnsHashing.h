@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/demangle.h>
+#include <base/getL2CacheSize.h>
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/ColumnsHashing/HashMethod.h>
@@ -17,7 +18,6 @@
 
 #include <Core/Defines.h>
 #include <memory>
-#include <cassert>
 #include <Common/HashTable/Hash.h>
 
 namespace DB
@@ -136,7 +136,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         if (!context)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache wasn't created for HashMethodSingleLowCardinalityColumn");
 
-        LowCardinalityDictionaryCache * lcd_cache;
+        LowCardinalityDictionaryCache * lcd_cache = nullptr;
         if constexpr (use_cache)
         {
             lcd_cache = typeid_cast<LowCardinalityDictionaryCache *>(context.get());
@@ -153,7 +153,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         key_columns = {dict};
         const bool is_shared_dict = column->isSharedDictionary();
 
-        typename LowCardinalityDictionaryCache::DictionaryKey dictionary_key;
+        typename LowCardinalityDictionaryCache::DictionaryKey dictionary_key{};
         typename LowCardinalityDictionaryCache::CachedValuesPtr cached_values;
 
         if (is_shared_dict)
@@ -511,11 +511,7 @@ struct HashMethodSerialized
         return true;
 #endif
 
-        size_t l2_size = 256 * 1024;
-#if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
-        if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
-            l2_size = ret;
-#endif
+        size_t l2_size = getL2CacheSize();
         // Calculate the average row size.
         size_t avg_row_size = total_size / std::max(row_sizes.size(), 1UL);
         // Use batch serialization only if total size fits in 4x L2 cache and average row size is small.

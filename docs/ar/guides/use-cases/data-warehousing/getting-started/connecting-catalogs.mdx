@@ -1,0 +1,167 @@
+---
+title: 'الاتصال بكتالوج بيانات'
+sidebarTitle: 'الاتصال بالكتالوجات'
+slug: /use-cases/data-lake/getting-started/connecting-catalogs
+toc_max_heading_level: 3
+description: 'اربط ClickHouse بكتالوجات البيانات الخارجية باستخدام محرك قاعدة البيانات DataLakeCatalog لإتاحة جداول الكتالوج كقواعد بيانات ClickHouse أصلية.'
+keywords: ['بحيرة بيانات', 'lakehouse', 'كتالوج', 'glue', 'unity', 'rest', 'lakekeeper', 'nessie', 'OneLake']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+في [القسم السابق](/ar/guides/use-cases/data-warehousing/getting-started/querying-directly)، أجريتَ استعلامات على صيغ الجداول المفتوحة من خلال تمرير مسارات التخزين مباشرةً. عمليًا، تدير معظم المؤسسات البيانات الوصفية للجداول عبر **كتالوج بيانات** — وهو سجل مركزي يتتبّع مواقع الجداول، والمخططات، والأقسام. عند توصيل ClickHouse بكتالوج باستخدام محرك قاعدة البيانات [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake)، يُعرَض الكتالوج بالكامل كقاعدة بيانات في ClickHouse. ويظهر كل جدول في الكتالوج تلقائيًا، ويمكن الاستعلام عنه باستخدام ClickHouse SQL بالكامل، من دون الحاجة إلى معرفة مسارات الجداول الفردية أو إدارة بيانات الاعتماد لكل جدول.
+
+يشرح هذا الدليل كيفية الاتصال بـ [Databricks Unity Catalog](https://www.databricks.com/product/unity-catalog). كما يدعم ClickHouse الكتالوجات التالية أيضًا — راجع الدليل المرجعي الخاص بكل منها للحصول على تعليمات الإعداد الكاملة:
+
+| الكتالوج             | الدليل المرجعي                                                             |
+| -------------------- | -------------------------------------------------------------------------- |
+| AWS Glue             | [كتالوج AWS Glue](/ar/guides/use-cases/data-warehousing/glue-catalog)         |
+| Iceberg REST Catalog | [كتالوج REST](/ar/guides/use-cases/data-warehousing/rest-catalog)             |
+| Lakekeeper           | [كتالوج Lakekeeper](/ar/guides/use-cases/data-warehousing/lakekeeper-catalog) |
+| Project Nessie       | [كتالوج Nessie](/ar/guides/use-cases/data-warehousing/nessie-catalog)         |
+| Microsoft OneLake    | [Fabric OneLake](/ar/guides/use-cases/data-warehousing/onelake-catalog)       |
+
+<div id="connecting-to-unity-catalog">
+  ## الاتصال بـ Unity Catalog
+</div>
+
+<BetaBadge />
+
+لأغراض هذا المثال، سنستخدم Unity Catalog.
+
+يوفّر [Databricks Unity Catalog](https://www.databricks.com/product/unity-catalog) حوكمة مركزية لبيانات lakehouse في Databricks.
+
+يدعم Databricks عدة تنسيقات بيانات في بيئة lakehouse الخاصة به. ومع ClickHouse، يمكنك الاستعلام من جداول Unity Catalog بكلٍّ من Delta وIceberg.
+
+<Note>
+  يعمل التكامل مع Unity Catalog مع الجداول المُدارة والجداول الخارجية.
+  هذا التكامل مدعوم حاليًا على AWS فقط.
+</Note>
+
+<div id="configuring-unity-in-databricks">
+  ### إعداد Unity في Databricks
+</div>
+
+للسماح لـ ClickHouse بالتفاعل مع Unity Catalog، عليك التأكد من أن Unity Catalog مهيأ للسماح بالتفاعل مع قارئ خارجي. ويمكن تحقيق ذلك باتباع الدليل [&quot;Enable external data access to Unity Catalog&quot;](https://docs.databricks.com/aws/en/external-access/admin).
+
+بالإضافة إلى تمكين الوصول الخارجي، تأكد من أن الجهة التي تُعِدّ التكامل لديها امتياز `EXTERNAL USE SCHEMA` [امتياز](https://docs.databricks.com/aws/en/external-access/admin#external-schema) على المخطط الذي يحتوي على الجداول.
+
+بمجرد تهيئة الكتالوج، يجب إنشاء بيانات اعتماد لـ ClickHouse. ويمكن استخدام طريقتين مختلفتين، وذلك بحسب نمط التفاعل مع Unity:
+
+* بالنسبة إلى عملاء Iceberg، صادِق باستخدام [service principal](https://docs.databricks.com/aws/en/dev-tools/auth/oauth-m2m).
+
+* بالنسبة إلى عملاء Delta، استخدم رمز وصول شخصيًا ([PAT](https://docs.databricks.com/aws/en/dev-tools/auth/pat)).
+
+<div id="connect-catalog">
+  ### الاتصال بالكتالوج
+</div>
+
+باستخدام بيانات الاعتماد، يمكنك الاتصال بنقطة النهاية المناسبة للاستعلام عن جداول Iceberg أو Delta.
+
+<Tabs>
+  <Tab title="Delta">
+    ينبغي استخدام [Unity catalog](/ar/guides/use-cases/data-warehousing/unity-catalog) للوصول إلى البيانات بصيغة Delta.
+
+    ```sql
+    SET allow_experimental_database_unity_catalog = 1;
+
+    CREATE DATABASE unity
+    ENGINE = DataLakeCatalog('https://<workspace-id>.cloud.databricks.com/api/2.1/unity-catalog')
+    SETTINGS warehouse = 'CATALOG_NAME', catalog_credential = '<PAT>', catalog_type = 'unity';
+    ```
+  </Tab>
+
+  <Tab title="Iceberg">
+    ```sql
+    SET allow_database_iceberg = 1;
+
+    CREATE DATABASE unity
+    ENGINE = DataLakeCatalog('https://<workspace-id>.cloud.databricks.com/api/2.1/unity-catalog/iceberg-rest')
+    SETTINGS catalog_type = 'rest', catalog_credential = '<client-id>:<client-secret>', warehouse = 'workspace',
+    oauth_server_uri = 'https://<workspace-id>.cloud.databricks.com/oidc/v1/token', auth_scope = 'all-apis,sql';
+    ```
+  </Tab>
+</Tabs>
+
+<div id="list-tables">
+  ### عرض الجداول
+</div>
+
+بمجرد إنشاء اتصال بالكتالوج الخاص بك، يمكنك عرض الجداول.
+
+```sql
+SHOW TABLES FROM unity
+```
+
+```response
+┌─name───────────────────────────────────────────────┐
+│ unity.logs                                         │
+│ unity.single_day_log                               │
+└────────────────────────────────────────────────────┘
+
+31 rows in set.
+```
+
+<div id="exploring-table-schemas">
+  ### استكشاف مخططات الجداول
+</div>
+
+يمكننا استخدام الأمر القياسي `SHOW CREATE TABLE` لمعرفة كيفية إنشاء الجداول.
+
+<Info>
+  **علامات الاقتباس الخلفية مطلوبة**
+
+  لاحظ ضرورة تحديد مساحة الأسماء واسم الجدول، مع إحاطتهما بعلامات اقتباس خلفية - لا يدعم ClickHouse أكثر من مساحة أسماء واحدة.
+</Info>
+
+يفترض ما يلي أنك تستعلم من كتالوج Iceberg عبر REST:
+
+```sql
+SHOW CREATE TABLE unity.`icebench.single_day_log`
+
+CREATE TABLE unity.`icebench.single_day_log`
+(
+    `pull_request_number` Nullable(Int64),
+    `commit_sha` Nullable(String),
+    `check_start_time` Nullable(DateTime64(6, 'UTC')),
+    `check_name` Nullable(String),
+    `instance_type` Nullable(String),
+    `instance_id` Nullable(String),
+    `event_date` Nullable(Date32),
+    `event_time` Nullable(DateTime64(6, 'UTC')),
+    `event_time_microseconds` Nullable(DateTime64(6, 'UTC')),
+    `thread_name` Nullable(String),
+    `thread_id` Nullable(Decimal(20, 0)),
+    `level` Nullable(String),
+    `query_id` Nullable(String),
+    `logger_name` Nullable(String),
+    `message` Nullable(String),
+    `revision` Nullable(Int64),
+    `source_file` Nullable(String),
+    `source_line` Nullable(Decimal(20, 0)),
+    `message_format_string` Nullable(String)
+)
+ENGINE = Iceberg('s3://...')
+```
+
+<div id="querying-a-table">
+  ### الاستعلام عن جدول
+</div>
+
+جميع دوال ClickHouse مدعومة. ومرة أخرى، يجب وضع مساحة الأسماء واسم الجدول بين علامتَي اقتباس خلفيتين.
+
+```sql
+SELECT count()
+FROM unity.`icebench.single_day_log`
+```
+
+```response
+┌───count()─┐
+│ 282634391 │ -- 282.63 million
+└───────────┘
+
+1 row in set. Elapsed: 1.265 sec.
+```
+
+للحصول على تعليمات الإعداد الكاملة، راجع [الدليل المرجعي لـ Unity Catalog](/ar/guides/use-cases/data-warehousing/unity-catalog).

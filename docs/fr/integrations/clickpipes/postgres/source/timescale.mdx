@@ -1,0 +1,116 @@
+---
+sidebarTitle: 'Timescale'
+description: 'Configurer Postgres avec l’extension TimescaleDB comme source pour ClickPipes'
+slug: /integrations/clickpipes/postgres/source/timescale
+title: 'Guide de configuration de Postgres avec TimescaleDB comme source'
+keywords: ['TimescaleDB']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+<div id="background">
+  ## Contexte
+</div>
+
+[TimescaleDB](https://github.com/timescale/timescaledb) est une extension open-source de Postgres développée par Timescale Inc
+qui vise à améliorer les performances des requêtes analytiques sans avoir à quitter Postgres. Cela repose sur
+la création d’« hypertables » gérées par l’extension et prenant en charge le partitionnement automatique en « chunks ».
+Les hypertables prennent également en charge la compression transparente et le stockage hybride ligne-colonne (appelé « hypercore »), bien que ces
+fonctionnalités nécessitent une version de l’extension sous licence propriétaire.
+
+Timescale Inc propose également deux services managés pour TimescaleDB :
+
+* `Managed Service for Timescale`
+* `Timescale Cloud`.
+
+Des fournisseurs tiers proposent également des services managés permettant d’utiliser l’extension TimescaleDB, mais pour des raisons de
+licence, ces fournisseurs ne prennent en charge que la version open-source de l’extension.
+
+Les hypertables Timescale se comportent différemment des tables Postgres classiques à plusieurs égards. Cela complique quelque peu
+leur réplication, c’est pourquoi la possibilité de répliquer les hypertables Timescale doit être considérée comme relevant du
+**best effort**.
+
+<div id="supported-postgres-versions">
+  ## Versions de Postgres prises en charge
+</div>
+
+ClickPipes prend en charge Postgres version 12 et versions ultérieures.
+
+<div id="enable-logical-replication">
+  ## Activer la réplication logique
+</div>
+
+Les étapes à suivre dépendent du mode de déploiement de votre instance Postgres avec TimescaleDB.
+
+* Si vous utilisez un service managé et que votre fournisseur figure dans la barre latérale, veuillez suivre le guide correspondant.
+* Si vous déployez TimescaleDB vous-même, suivez le guide générique.
+
+Pour les autres services managés, veuillez ouvrir un ticket d&#39;assistance auprès de votre fournisseur afin de vous faire aider pour activer la réplication logique si elle ne l&#39;est pas déjà.
+
+<Info>
+  Timescale Cloud ne permet pas d&#39;activer la réplication logique, pourtant nécessaire pour les pipes Postgres en mode CDC.
+  Par conséquent, les utilisateurs de Timescale Cloud peuvent uniquement effectuer un chargement unique de leurs données (`Initial Load Only`) avec le Postgres ClickPipe.
+</Info>
+
+<div id="configuration">
+  ## Configuration
+</div>
+
+Les hypertables Timescale ne stockent aucune des données qui y sont insérées. À la place, les données sont stockées dans plusieurs tables « chunk » correspondantes, situées dans le schéma `_timescaledb_internal`. Pour exécuter des requêtes sur les hypertables, cela ne pose aucun problème. En revanche, lors de la réplication logique, au lieu de détecter les modifications dans l’hypertable, nous les détectons dans la table chunk sous-jacente. Le Postgres ClickPipe inclut une logique qui remappe automatiquement les modifications des tables chunk vers l’hypertable parente, mais cela nécessite des étapes supplémentaires.
+
+<Info>
+  Si vous souhaitez uniquement effectuer un chargement unique de vos données (`Initial Load Only`), veuillez ignorer l’étape 2 et les suivantes.
+</Info>
+
+1. Créez un utilisateur dédié pour ClickPipes :
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. Accordez à l’utilisateur créé à l’étape précédente un accès en lecture seule au niveau du schéma. L’exemple suivant montre les autorisations pour le schéma `public`. Répétez ces commandes pour chaque schéma contenant des tables que vous souhaitez répliquer :
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. Accordez à l’utilisateur les privilèges de réplication :
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. En tant que superutilisateur/administrateur Postgres, créez une [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html) avec les hypertables que vous souhaitez répliquer. La publication **doit également inclure l’intégralité du schéma `_timescaledb_internal`** afin que le pipe puisse recevoir les modifications provenant des chunks sous-jacents. Nous vous recommandons vivement de n’inclure dans la publication que les tables dont vous avez besoin afin d’éviter toute surcharge de performance.
+
+<Warning>
+  Toute table incluse dans la publication doit soit avoir une **clé primaire** définie, *soit* avoir son **replica identity** configuré sur `FULL`. Consultez la [FAQ Postgres](/fr/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) pour obtenir des conseils sur le périmètre à couvrir.
+</Warning>
+
+```sql
+   -- When adding new tables to the ClickPipe, you'll need to add them to the publication manually as well.
+   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2, TABLES IN SCHEMA _timescaledb_internal;
+```
+
+La publication `clickpipes` contiendra l’ensemble des événements de changement générés par les tables spécifiées, puis servira à ingérer le flux de réplication.
+
+<Info>
+  Certains services managés n’accordent pas à leurs administrateurs les autorisations nécessaires pour créer une publication sur l’ensemble d’un schéma. Si c’est le cas, ouvrez un ticket d’assistance auprès de votre fournisseur. Vous pouvez également ignorer cette étape (ainsi que les suivantes) et effectuer à la place un chargement unique de vos données.
+</Info>
+
+Après ces étapes, vous devriez pouvoir poursuivre en [créant un ClickPipe](/fr/integrations/clickpipes/postgres/index).
+
+<div id="configure-network-access">
+  ## Configurer l’accès réseau
+</div>
+
+Si vous souhaitez restreindre le trafic vers votre instance Timescale, veuillez autoriser les [adresses IP NAT statiques documentées](/fr/integrations/clickpipes/home#list-of-static-ips).
+Les instructions varient selon les fournisseurs. Veuillez consulter la barre latérale si le vôtre y figure, ou ouvrir un
+ticket auprès de celui-ci.

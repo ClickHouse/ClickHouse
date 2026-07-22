@@ -104,6 +104,7 @@ public:
 
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
@@ -168,7 +169,7 @@ public:
     void setDummyStats(String dummy_stats_) { dummy_stats = std::move(dummy_stats_); }
 
     bool canRemoveUnusedColumns() const override;
-    RemovedUnusedColumns removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
     bool canRemoveColumnsFromOutput() const override;
 
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
@@ -229,6 +230,8 @@ public:
 
     void initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override;
     String getName() const override { return "JoinStepLogicalLookup"; }
+
+    QueryPlanRawPtrs getChildPlans() override;
 
     PreparedJoinStorage & getPreparedJoinStorage() { return prepared_join_storage; }
 

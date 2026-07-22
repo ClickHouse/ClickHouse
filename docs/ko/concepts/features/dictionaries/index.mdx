@@ -1,0 +1,371 @@
+---
+slug: /dictionary
+title: 딕셔너리
+keywords: ['dictionary', 'dictionaries']
+description: '딕셔너리는 빠른 조회를 위해 데이터를 키-값 형태로 제공합니다.'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+ClickHouse의 딕셔너리는 다양한 [내부 및 외부 소스](/ko/reference/statements/create/dictionary/sources/overview#dictionary-sources)의 데이터를 메모리 내 [키-값](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) 형태로 표현하며, 매우 짧은 지연 시간의 조회 쿼리에 최적화되어 있습니다.
+
+딕셔너리는 다음과 같은 용도에 유용합니다:
+
+* 특히 `JOIN`과 함께 사용할 때 쿼리 성능 향상
+* 수집 프로세스의 속도를 저하시키지 않으면서 수집된 데이터를 실시간으로 보강
+
+<Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="ClickHouse 딕셔너리의 사용 사례" />
+
+<div id="speeding-up-joins-using-a-dictionary">
+  ## 딕셔너리를 사용해 조인 속도 높이기
+</div>
+
+딕셔너리는 특정 유형의 `JOIN` 속도를 높이는 데 사용할 수 있습니다. 여기서 말하는 유형은 조인 키가 기반 키-값 저장소의 키 속성과 일치해야 하는 [`LEFT ANY` 유형](/ko/reference/statements/select/join#supported-types-of-join)입니다.
+
+<Image img="/images/dictionary/dictionary-left-any-join.webp" size="sm" alt="딕셔너리를 사용한 LEFT ANY JOIN" />
+
+이 경우 ClickHouse는 딕셔너리를 활용해 [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join)을 수행할 수 있습니다. 이는 ClickHouse에서 가장 빠른 조인 알고리즘이며, 오른쪽 테이블의 기반 [테이블 엔진](/ko/reference/engines/table-engines/index)이 지연 시간이 짧은 키-값 요청을 지원할 때 적용할 수 있습니다. ClickHouse는 이를 지원하는 3개의 테이블 엔진을 제공합니다. [Join](/ko/reference/engines/table-engines/special/join)(기본적으로 미리 계산된 해시 테이블), [EmbeddedRocksDB](/ko/reference/engines/table-engines/integrations/embedded-rocksdb), [Dictionary](/ko/reference/engines/table-engines/special/dictionary)입니다. 여기서는 딕셔너리 기반 접근 방식을 설명하지만, 동작 원리는 세 엔진 모두 동일합니다.
+
+Direct Join 알고리즘을 사용하려면 오른쪽 테이블이 딕셔너리를 기반으로 해야 합니다. 즉, 해당 테이블에서 조인할 데이터가 이미 메모리에 지연 시간이 짧은 키-값 데이터 구조 형태로 존재해야 합니다.
+
+<div id="example">
+  ### 예시
+</div>
+
+[Stack Overflow 데이터셋](/ko/get-started/sample-datasets/stackoverflow)을 사용해 다음 질문에 답해 보겠습니다.
+*Hacker News에서 SQL과 관련된 게시물 중 가장 논란이 많은 게시물은 무엇입니까?*
+
+여기서는 추천 수와 비추천 수가 비슷한 게시물을 논란이 많은 게시물로 정의하겠습니다. 이를 위해 두 값의 절대 차이를 계산하며, 값이 0에 가까울수록 더 논란이 많다고 볼 수 있습니다. 또한 추천과 비추천이 각각 최소 10개 이상인 게시물만 대상으로 가정하겠습니다. 사람들이 투표하지 않은 게시물은 그다지 논란이 많지 않기 때문입니다.
+
+데이터가 정규화되어 있으므로, 현재 이 쿼리에는 `posts` 테이블과 `votes` 테이블을 사용하는 `JOIN`이 필요합니다.
+
+```sql
+WITH PostIds AS
+(
+         SELECT Id
+         FROM posts
+         WHERE Title ILIKE '%SQL%'
+)
+SELECT
+    Id,
+    Title,
+    UpVotes,
+    DownVotes,
+    abs(UpVotes - DownVotes) AS Controversial_ratio
+FROM posts
+INNER JOIN
+(
+    SELECT
+         PostId,
+         countIf(VoteTypeId = 2) AS UpVotes,
+         countIf(VoteTypeId = 3) AS DownVotes
+    FROM votes
+    WHERE PostId IN (PostIds)
+    GROUP BY PostId
+    HAVING (UpVotes > 10) AND (DownVotes > 10)
+) AS votes ON posts.Id = votes.PostId
+WHERE Id IN (PostIds)
+ORDER BY Controversial_ratio ASC
+LIMIT 1
+```
+
+```response
+Row 1:
+──────
+Id:                     25372161
+Title:                  How to add exception handling to SqlDataSource.UpdateCommand
+UpVotes:                13
+DownVotes:              13
+Controversial_ratio: 0
+
+1 rows in set. Elapsed: 1.283 sec. Processed 418.44 million rows, 7.23 GB (326.07 million rows/s., 5.63 GB/s.)
+Peak memory usage: 3.18 GiB.
+```
+
+> **`JOIN`의 오른쪽에는 더 작은 데이터셋을 사용하십시오**: 이 쿼리는 필요 이상으로 장황해 보일 수 있으며, `PostId`에 대한 필터링이 외부 쿼리와 서브쿼리 양쪽에 모두 들어갑니다. 이는 쿼리 응답 시간을 빠르게 유지하기 위한 성능 최적화입니다. 최적의 성능을 위해서는 항상 `JOIN`의 오른쪽이 더 작은 집합이 되도록 하고, 가능한 한 작게 유지하십시오. JOIN 성능을 최적화하고 사용 가능한 알고리즘을 이해하는 방법은 [이 블로그 글 시리즈](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1)를 참고하는 것이 좋습니다.
+
+이 쿼리는 빠르지만, 좋은 성능을 내려면 `JOIN`을 신중하게 작성해야 합니다. 이상적으로는 메트릭을 계산하기 위해 해당 블로그 하위 집합의 `UpVote` 및 `DownVote` 수를 보기 전에, 먼저 &quot;SQL&quot;을 포함하는 게시물만 필터링하면 됩니다.
+
+<div id="applying-a-dictionary">
+  #### 딕셔너리 적용
+</div>
+
+이 개념을 설명하기 위해 투표 데이터에 딕셔너리를 사용합니다. 딕셔너리는 일반적으로 메모리에 유지되므로([ssd&#95;cache](/ko/reference/statements/create/dictionary/layouts/ssd-cache)는 예외입니다) 데이터 크기를 염두에 두어야 합니다. `votes` 테이블의 크기를 확인해 보겠습니다:
+
+```sql
+SELECT table,
+        formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+        formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+        round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE table IN ('votes')
+GROUP BY table
+```
+
+```response
+┌─table───────────┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+│ votes           │ 1.25 GiB        │ 3.79 GiB          │  3.04 │
+└─────────────────┴─────────────────┴───────────────────┴───────┘
+```
+
+데이터는 딕셔너리에 압축되지 않은 상태로 저장되므로, 모든 컬럼을 딕셔너리에 저장한다고 가정하면(실제로는 그렇게 하지 않지만) 최소 4GB의 메모리가 필요합니다. 딕셔너리는 클러스터 전체에 복제되므로, 이 정도 메모리를 *노드당* 확보해야 합니다.
+
+> 아래 예시에서는 딕셔너리 데이터의 원본이 ClickHouse 테이블입니다. 이것이 딕셔너리에서 가장 일반적인 소스이지만, 파일, HTTP, [Postgres](/ko/reference/statements/create/dictionary/sources/postgresql)를 포함한 데이터베이스 등 [여러 소스](/ko/reference/statements/create/dictionary/sources/overview#dictionary-sources)도 지원됩니다. 아래에서 보시겠지만 딕셔너리는 자동으로 갱신할 수 있으므로, 자주 변경되는 소규모 데이터셋을 Direct JOIN에 사용할 수 있도록 유지하는 데 매우 적합합니다.
+
+딕셔너리에는 조회에 사용할 프라이머리 키(primary key)가 필요합니다. 이는 개념적으로 트랜잭션 데이터베이스의 프라이머리 키와 동일하며, 고유해야 합니다. 위 쿼리에서는 조인 키인 `PostId`에 대한 조회가 필요합니다. 따라서 딕셔너리는 `votes` 테이블에서 `PostId`별 upvote와 downvote의 합계로 채워져야 합니다. 다음은 이 딕셔너리 데이터를 가져오기 위한 쿼리입니다:
+
+```sql
+SELECT PostId,
+   countIf(VoteTypeId = 2) AS UpVotes,
+   countIf(VoteTypeId = 3) AS DownVotes
+FROM votes
+GROUP BY PostId
+```
+
+딕셔너리를 생성하려면 다음 DDL이 필요합니다. 여기서는 위에서 사용한 쿼리를 활용합니다.
+
+```sql
+CREATE DICTIONARY votes_dict
+(
+  `PostId` UInt64,
+  `UpVotes` UInt32,
+  `DownVotes` UInt32
+)
+PRIMARY KEY PostId
+SOURCE(CLICKHOUSE(QUERY 'SELECT PostId, countIf(VoteTypeId = 2) AS UpVotes, countIf(VoteTypeId = 3) AS DownVotes FROM votes GROUP BY PostId'))
+LIFETIME(MIN 600 MAX 900)
+LAYOUT(HASHED())
+```
+
+```response
+0 rows in set. Elapsed: 36.063 sec.
+```
+
+> 자가 관리형 OSS에서는 위 명령을 모든 노드에서 실행해야 합니다. ClickHouse Cloud에서는 딕셔너리가 모든 노드로 자동 복제됩니다. 위 작업은 RAM 64GB의 ClickHouse Cloud 노드에서 실행했으며, 로드에는 36초가 소요되었습니다.
+
+딕셔너리가 사용하는 메모리를 확인하려면:
+
+```sql
+SELECT formatReadableSize(bytes_allocated) AS size
+FROM system.dictionaries
+WHERE name = 'votes_dict'
+```
+
+```response
+┌─size─────┐
+│ 4.00 GiB │
+└──────────┘
+```
+
+이제 특정 `PostId`의 찬성표와 반대표는 간단한 `dictGet` 함수로 조회할 수 있습니다. 아래에서는 게시물 `11227902`의 값을 조회합니다:
+
+```sql
+SELECT dictGet('votes_dict', ('UpVotes', 'DownVotes'), '11227902') AS votes
+```
+
+```response
+┌─votes──────┐
+│ (34999,32) │
+└────────────┘
+```
+
+앞서 살펴본 쿼리에서 이를 활용하면 JOIN을 제거할 수 있습니다:
+
+```sql
+WITH PostIds AS
+(
+        SELECT Id
+        FROM posts
+        WHERE Title ILIKE '%SQL%'
+)
+SELECT Id, Title,
+        dictGet('votes_dict', 'UpVotes', Id) AS UpVotes,
+        dictGet('votes_dict', 'DownVotes', Id) AS DownVotes,
+        abs(UpVotes - DownVotes) AS Controversial_ratio
+FROM posts
+WHERE (Id IN (PostIds)) AND (UpVotes > 10) AND (DownVotes > 10)
+ORDER BY Controversial_ratio ASC
+LIMIT 3
+```
+
+```response
+3 rows in set. Elapsed: 0.551 sec. Processed 119.64 million rows, 3.29 GB (216.96 million rows/s., 5.97 GB/s.)
+Peak memory usage: 552.26 MiB.
+```
+
+이 쿼리는 훨씬 더 단순할 뿐만 아니라 속도도 2배 이상 빠릅니다! 또한 upvote와 downvote가 10개를 넘는 게시물만 딕셔너리에 로드하고, 미리 계산된 controversial 값만 저장하도록 하면 더 최적화할 수 있습니다.
+
+<div id="query-time-enrichment">
+  ## 쿼리 시점 보강
+</div>
+
+딕셔너리는 쿼리 시점에 값을 조회하는 데 사용할 수 있습니다. 이러한 값은 결과로 반환되거나 집계에 활용될 수 있습니다. 예를 들어, 사용자 ID를 위치에 매핑하는 딕셔너리를 생성한다고 가정해 보겠습니다:
+
+```sql
+CREATE DICTIONARY users_dict
+(
+  `Id` Int32,
+  `Location` String
+)
+PRIMARY KEY Id
+SOURCE(CLICKHOUSE(QUERY 'SELECT Id, Location FROM stackoverflow.users'))
+LIFETIME(MIN 600 MAX 900)
+LAYOUT(HASHED())
+```
+
+이 딕셔너리를 사용해 게시물 조회 결과를 보강할 수 있습니다:
+
+```sql
+SELECT
+        Id,
+        Title,
+        dictGet('users_dict', 'Location', CAST(OwnerUserId, 'UInt64')) AS location
+FROM posts
+WHERE Title ILIKE '%clickhouse%'
+LIMIT 5
+FORMAT PrettyCompactMonoBlock
+```
+
+```response
+┌───────Id─┬─Title─────────────────────────────────────────────────────────┬─Location──────────────┐
+│ 52296928 │ Comparison between two Strings in ClickHouse                  │ Spain                 │
+│ 52345137 │ How to use a file to migrate data from mysql to a clickhouse? │ 中国江苏省Nanjing Shi   │
+│ 61452077 │ How to change PARTITION in clickhouse                         │ Guangzhou, 广东省中国   │
+│ 55608325 │ Clickhouse select last record without max() on all table      │ Moscow, Russia        │
+│ 55758594 │ ClickHouse create temporary table                             │ Perm', Russia         │
+└──────────┴───────────────────────────────────────────────────────────────┴───────────────────────┘
+
+5 rows in set. Elapsed: 0.033 sec. Processed 4.25 million rows, 82.84 MB (130.62 million rows/s., 2.55 GB/s.)
+Peak memory usage: 249.32 MiB.
+```
+
+위의 JOIN 예시와 마찬가지로, 동일한 딕셔너리를 사용해 대부분의 게시글이 어디에서 작성되었는지 효율적으로 파악할 수 있습니다:
+
+```sql
+SELECT
+        dictGet('users_dict', 'Location', CAST(OwnerUserId, 'UInt64')) AS location,
+        count() AS c
+FROM posts
+WHERE location != ''
+GROUP BY location
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─location───────────────┬──────c─┐
+│ India                  │ 787814 │
+│ Germany                │ 685347 │
+│ United States          │ 595818 │
+│ London, United Kingdom │ 538738 │
+│ United Kingdom         │ 537699 │
+└────────────────────────┴────────┘
+
+5 rows in set. Elapsed: 0.763 sec. Processed 59.82 million rows, 239.28 MB (78.40 million rows/s., 313.60 MB/s.)
+Peak memory usage: 248.84 MiB.
+```
+
+<div id="index-time-enrichment">
+  ## 인덱싱 시점 보강
+</div>
+
+위 예시에서는 쿼리 시점에 딕셔너리를 사용해 join을 제거했습니다. 딕셔너리는 삽입 시점에 행을 보강하는 데에도 사용할 수 있습니다. 일반적으로 이 방식은 보강 값이 바뀌지 않고, 딕셔너리를 채우는 데 사용할 수 있는 외부 소스에 해당 값이 존재할 때 적합합니다. 이 경우 삽입 시점에 행을 보강하면 쿼리 시점에 딕셔너리를 조회하지 않아도 됩니다.
+
+Stack Overflow에서 사용자의 `Location`은 절대 바뀌지 않는다고 가정해 보겠습니다(실제로는 바뀝니다). 구체적으로는 `users` 테이블의 `Location` 컬럼입니다. 위치별로 `posts` 테이블에 대한 분석 쿼리를 수행하려고 한다고 가정해 보겠습니다. 이 테이블에는 `UserId`가 포함되어 있습니다.
+
+딕셔너리는 `users` 테이블을 기반으로 사용자 ID를 위치에 매핑합니다:
+
+```sql
+CREATE DICTIONARY users_dict
+(
+    `Id` UInt64,
+    `Location` String
+)
+PRIMARY KEY Id
+SOURCE(CLICKHOUSE(QUERY 'SELECT Id, Location FROM users WHERE Id >= 0'))
+LIFETIME(MIN 600 MAX 900)
+LAYOUT(HASHED())
+```
+
+> `Id < 0`인 사용자는 제외하여 `Hashed` 딕셔너리 유형을 사용할 수 있게 합니다. `Id < 0`인 사용자는 시스템 사용자입니다.
+
+Posts 테이블에서 이 딕셔너리를 삽입 시점에 활용하려면 스키마를 수정해야 합니다:
+
+```sql
+CREATE TABLE posts_with_location
+(
+    `Id` UInt32,
+    `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+     ...
+    `Location` MATERIALIZED dictGet(users_dict, 'Location', OwnerUserId::'UInt64')
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
+```
+
+위 예시에서는 `Location`이 `MATERIALIZED` 컬럼으로 선언되어 있습니다. 즉, 값은 `INSERT` 쿼리의 일부로 제공할 수 있지만 항상 계산됩니다.
+
+> ClickHouse는 [`DEFAULT` 컬럼](/ko/reference/statements/create/table#default_values)도 지원합니다(이 경우 값은 삽입할 수도 있고, 제공되지 않으면 계산됩니다).
+
+테이블을 채우려면 S3에서 일반적인 `INSERT INTO SELECT`를 사용할 수 있습니다:
+
+```sql
+INSERT INTO posts_with_location SELECT Id, PostTypeId::UInt8, AcceptedAnswerId, CreationDate, Score, ViewCount, Body, OwnerUserId, OwnerDisplayName, LastEditorUserId, LastEditorDisplayName, LastEditDate, LastActivityDate, Title, Tags, AnswerCount, CommentCount, FavoriteCount, ContentLicense, ParentId, CommunityOwnedDate, ClosedDate FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 36.830 sec. Processed 238.98 million rows, 2.64 GB (6.49 million rows/s., 71.79 MB/s.)
+```
+
+이제 대부분의 게시물이 작성된 위치의 이름을 확인할 수 있습니다:
+
+```sql
+SELECT Location, count() AS c
+FROM posts_with_location
+WHERE Location != ''
+GROUP BY Location
+ORDER BY c DESC
+LIMIT 4
+```
+
+```response
+┌─Location───────────────┬──────c─┐
+│ India                  │ 787814 │
+│ Germany                │ 685347 │
+│ United States          │ 595818 │
+│ London, United Kingdom │ 538738 │
+└────────────────────────┴────────┘
+
+4 rows in set. Elapsed: 0.142 sec. Processed 59.82 million rows, 1.08 GB (420.73 million rows/s., 7.60 GB/s.)
+Peak memory usage: 666.82 MiB.
+```
+
+<div id="advanced-dictionary-topics">
+  ## 고급 딕셔너리 주제
+</div>
+
+딕셔너리 레이아웃을 선택하는 방법, 딕셔너리와 조인 중 언제 무엇을 사용해야 하는지, 그리고 딕셔너리 사용량을 모니터링하는 방법에 대한 지침은 [딕셔너리 모범 사례](/ko/concepts/features/dictionaries/best-practices)를 참조하십시오.
+
+<div id="refreshing-dictionaries">
+  ### 딕셔너리 갱신
+</div>
+
+딕셔너리에 `MIN 600 MAX 900`의 `LIFETIME`을 지정했습니다. LIFETIME은 딕셔너리의 갱신 주기이며, 여기서 설정한 값에 따라 600초에서 900초 사이의 임의 간격으로 주기적으로 다시 로드됩니다. 이러한 임의 간격은 많은 수의 서버에서 업데이트할 때 딕셔너리 소스에 걸리는 부하를 분산하기 위해 필요합니다. 업데이트 중에도 이전 버전의 딕셔너리는 계속 쿼리할 수 있으며, 쿼리가 차단되는 경우는 초기 적재 시뿐입니다. `(LIFETIME(0))`을 설정하면 딕셔너리가 갱신되지 않습니다.
+딕셔너리는 `SYSTEM RELOAD DICTIONARY` 명령으로 강제로 다시 로드할 수 있습니다.
+
+ClickHouse 및 Postgres와 같은 데이터베이스 소스의 경우, 주기적 간격으로 업데이트하는 대신 실제로 변경되었을 때만 딕셔너리가 업데이트되도록 쿼리를 설정할 수 있습니다(이 여부는 쿼리 응답으로 결정됩니다). 자세한 내용은 [여기](/ko/reference/statements/create/dictionary/lifetime)에서 확인할 수 있습니다.
+
+<div id="other-dictionary-types">
+  ### 기타 딕셔너리 유형
+</div>
+
+ClickHouse는 [Hierarchical](/ko/reference/statements/create/dictionary/layouts/hierarchical), [Polygon](/ko/reference/statements/create/dictionary/layouts/polygon), [Regular Expression](/ko/reference/statements/create/dictionary/layouts/regexp-tree) 딕셔너리도 지원합니다.
+
+<div id="more-reading">
+  ### 추가 참고 자료
+</div>
+
+* [딕셔너리 모범 사례](/ko/concepts/features/dictionaries/best-practices) — 레이아웃 선택, 딕셔너리와 조인 비교, 모니터링
+* [딕셔너리를 사용해 쿼리 가속화하기](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)
+* [딕셔너리용 고급 구성](/ko/reference/statements/create/dictionary)

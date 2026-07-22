@@ -1,0 +1,134 @@
+---
+title: Como inserir todas as linhas de uma tabela em outra?
+description: "Artigo da base de conhecimento sobre como inserir todas as linhas de uma tabela em outra."
+date: 2024-12-17
+tags: ['Ingestão de dados']
+keywords: ['Inserção a partir de uma tabela']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## Introdução
+</div>
+
+Às vezes, é preciso fazer a reingestão de todos os dados de uma tabela para outra.
+
+Por exemplo, talvez você queira fazer a reingestão de dados de uma tabela de staging para uma tabela de produção. Este artigo mostra como fazer isso usando a instrução `INSERT INTO`.
+
+<div id="example">
+  ## Exemplo
+</div>
+
+Veja abaixo um exemplo simples de como isso funciona e como testar:
+
+* Crie um banco de dados de exemplo
+
+```sql
+CREATE DATABASE db1;
+```
+
+* Crie uma tabela de exemplo
+
+```sql
+CREATE TABLE db1.source_table
+(
+    city VARCHAR,
+    country VARCHAR,
+    continent VARCHAR
+)
+engine = MergeTree()
+ORDER BY continent;
+```
+
+* Insira alguns dados na tabela de origem
+
+```sql
+INSERT INTO db1.source_table (city, country, continent)
+VALUES
+    ('New York', 'USA', 'North America'),
+    ('Tokyo', 'Japan', 'Asia'),
+    ('Berlin', 'Germany', 'Europe'),
+    ('Paris', 'France', 'Europe'),
+    ('Cairo', 'Egypt', 'Africa'),
+    ('Sydney', 'Australia', 'Australia');
+```
+
+* Verifique o número de linhas na tabela de origem
+
+```sql
+SELECT COUNT(*) FROM db1.source_table;
+```
+
+```text
+┌─count()─┐
+│      6  │
+└─────────┘
+```
+
+* Crie uma nova tabela com a mesma estrutura da tabela de origem.
+
+```sql
+CREATE TABLE db1.target_table AS db1.source_table;
+```
+
+* Insira todas as linhas da tabela de origem para a tabela de destino.
+
+```sql
+INSERT INTO db1.target_table SELECT * FROM db1.source_table;
+```
+
+* Verifique o número de linhas na tabela de destino
+
+```sql
+SELECT COUNT(*) FROM db1.target_table;
+```
+
+```text
+┌─count()─┐
+│      6  │
+└─────────┘
+```
+
+Se quiser modificar a estrutura da nova tabela, você pode primeiro exibir a estrutura da tabela de origem.
+
+```sql
+SHOW CREATE TABLE db1.source_table;
+```
+
+Em seguida, crie a nova tabela com a estrutura modificada. No nosso caso, queremos adicionar uma nova coluna `population` à tabela de destino.
+
+```sql
+CREATE TABLE db1.target_table_population
+(
+    `city` String,
+    `country` String,
+    `continent` String,
+    `population` UInt16,
+)
+ENGINE = MergeTree
+ORDER BY continent;
+```
+
+* Insira todas as linhas da tabela de origem na tabela de destino, incluindo a nova coluna. O campo population é definido como 0 para todas as linhas.
+
+```sql
+INSERT INTO db1.target_table_population (city, country, continent, population)
+SELECT city, country, continent, 0 FROM db1.source_table;
+```
+
+* Verifique os dados na tabela de destino
+
+```sql
+SELECT * FROM db1.target_table_population LIMIT 3;
+```
+
+```text
+┌─city──────┬─country───┬─continent──────┬─population─┐
+│ New York  │ USA       │ North America  │          0 │
+│ Tokyo     │ Japan     │ Asia           │          0 │
+│ Berlin    │ Germany   │ Europe         │          0 │
+└───────────┴───────────┴────────────────┴────────────┘
+```

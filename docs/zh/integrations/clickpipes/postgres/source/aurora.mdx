@@ -1,0 +1,151 @@
+---
+sidebarTitle: '亚马逊 Aurora Postgres'
+description: '将亚马逊 Aurora Postgres 设置为 ClickPipes 的数据源'
+slug: /integrations/clickpipes/postgres/source/aurora
+title: 'Aurora Postgres 源设置指南'
+doc_type: 'guide'
+keywords: ['亚马逊 Aurora', 'PostgreSQL', 'ClickPipes', 'AWS 数据库', '逻辑复制设置']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="supported-postgres-versions">
+  ## 支持的 Postgres 版本
+</div>
+
+ClickPipes 支持 Aurora PostgreSQL-Compatible Edition 12 及更高版本。
+
+<div id="enable-logical-replication">
+  ## 启用逻辑复制
+</div>
+
+如果你的 Aurora 实例已配置以下设置，则可以跳过本节：
+
+* `rds.logical_replication = 1`
+
+如果你之前使用过其他数据复制工具，通常会预先启用此设置。
+
+```text
+postgres=> SHOW rds.logical_replication ;
+ rds.logical_replication
+-------------------------
+ on
+(1 row)
+```
+
+如果尚未配置，请按照以下步骤操作：
+
+1. 为您的 Aurora PostgreSQL 版本创建一个新的参数组，并配置所需设置：
+   * 将 `rds.logical_replication` 设置为 1
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp" alt="在 Aurora 中查找参数组的位置" size="lg" border />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp" alt="更改 rds.logical_replication" size="lg" border />
+
+2. 将新的参数组应用到您的 Aurora PostgreSQL 集群
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp" alt="使用新参数组修改 Aurora PostgreSQL" size="lg" border />
+
+3. 重启您的 Aurora 集群以应用更改
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp" alt="重启 Aurora PostgreSQL" size="lg" border />
+
+<div id="configure-database-user">
+  ## 配置数据库用户
+</div>
+
+以管理员身份连接到您的 Aurora PostgreSQL writer 实例，并执行以下命令：
+
+1. 为 ClickPipes 创建一个专用用户：
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. 为上一步创建的用户授予 schema 级别的只读访问权限。以下示例展示了 `public` schema 的权限。对每个包含待复制表的 schema，都重复执行这些命令：
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. 向该用户授予复制特权：
+
+   ```sql
+   GRANT rds_replication TO clickpipes_user;
+   ```
+
+4. 使用您想要复制的表创建一个 [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html)。我们强烈建议仅在 publication 中包含必要的表，以避免额外的性能开销。
+
+<Warning>
+  publication 中包含的任何表都必须定义了**主键**，&#95;或&#95;将其**副本标识**配置为 `FULL`。有关范围界定的指导，请参阅 [Postgres FAQ](/zh/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication)。
+</Warning>
+
+* 为特定表创建 publication：
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * 为特定 schema 中的所有表创建 publication：
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+`clickpipes` publication 将包含从指定表生成的一组变更事件，后续将用于摄取复制 stream。
+
+<div id="configure-network-access">
+  ## 配置网络访问
+</div>
+
+<div id="ip-based-access-control">
+  ### 基于 IP 的访问控制
+</div>
+
+如果你想限制对 Aurora 集群的访问流量，请将[文档中列出的静态 NAT IP 地址](/zh/integrations/clickpipes/home#list-of-static-ips)添加到 Aurora 安全组 (Security Group) 的 `Inbound rules` 中。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="在 Aurora PostgreSQL 中在哪里可以找到安全组（Security Group）？" size="lg" border />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="编辑上述安全组（Security Group）的入站规则" size="lg" border />
+
+<div id="private-access-via-aws-privatelink">
+  ### 通过 AWS PrivateLink 进行私有访问
+</div>
+
+要通过私有网络连接到您的 Aurora 集群，您可以使用 AWS PrivateLink。请按照我们的 [ClickPipes 的 AWS PrivateLink 设置指南](/zh/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) 来建立连接。
+
+<div id="aurora-specific-considerations">
+  ### Aurora 特定注意事项
+</div>
+
+在为 Aurora PostgreSQL 设置 ClickPipes 时，请牢记以下注意事项：
+
+1. **连接端点**：始终连接到 Aurora 集群的写入端点，因为逻辑复制需要写入权限来创建 replication slots，并且必须连接到主实例。
+
+2. **故障转移处理**：发生故障转移时，Aurora 会自动将一个只读实例提升为新的写入实例。ClickPipes 会检测到连接中断，并尝试重新连接到写入端点；此时该端点会指向新的主实例。
+
+3. **Global Database**：如果你使用的是 Aurora Global Database，应连接到主区域的写入端点，因为跨区域复制已经负责处理区域之间的数据移动。
+
+4. **存储注意事项**：Aurora 的存储层由集群中的所有实例共享，与标准 RDS 相比，这通常能为逻辑复制提供更好的性能。
+
+<div id="dealing-with-dynamic-cluster-endpoints">
+  ### 处理动态集群端点
+</div>
+
+虽然 Aurora 提供了可自动路由到相应实例的稳定端点，但还可以采用以下方法来进一步确保连接稳定：
+
+1. 对于高可用部署，请将应用程序配置为使用 Aurora 写入端点，它会自动指向当前的主实例。
+
+2. 如果使用跨区域复制，请考虑为每个区域分别设置 ClickPipes，以降低延迟并提高容错能力。
+
+<div id="whats-next">
+  ## 下一步是什么？
+</div>
+
+现在，您可以[创建您的 ClickPipe](/zh/integrations/clickpipes/postgres/index)，并开始将 Aurora PostgreSQL 集群中的数据摄取到 ClickHouse Cloud。
+请务必记下您在设置 Aurora PostgreSQL 集群时使用的连接信息，因为在创建 ClickPipe 的过程中需要用到这些信息。

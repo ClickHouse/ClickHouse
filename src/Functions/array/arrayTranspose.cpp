@@ -25,7 +25,7 @@ namespace ErrorCodes
 
 
 /// arrayTranspose([[1, 2, 3], [4, 5, 6]]) = [[1, 4], [2, 5], [3, 6]]
-class FunctionArrayTranspose : public IFunction
+class FunctionArrayTranspose final : public IFunction
 {
 public:
     static constexpr auto name = "arrayTranspose";

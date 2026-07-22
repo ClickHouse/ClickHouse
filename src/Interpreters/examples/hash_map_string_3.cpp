@@ -5,6 +5,7 @@
 
 #include <farmhash.h>
 #include <metrohash.h>
+#include <Examples/clickhouse_examples.h>
 
 #define DBMS_HASH_MAP_COUNT_COLLISIONS
 #define DBMS_HASH_MAP_DEBUG_RESIZES
@@ -124,9 +125,9 @@ struct FastHash64
         const uint64_t    m = 0x880355f21e6d1965ULL;
         const uint64_t *pos = reinterpret_cast<const uint64_t *>(buf);
         const uint64_t *end = pos + (len / 8);
-        const unsigned char *pos2;
+        const unsigned char *pos2 = nullptr;
         uint64_t h = len * m;
-        uint64_t v;
+        uint64_t v = {};
 
         while (pos != end)
         {
@@ -342,7 +343,7 @@ struct SMetroHash64
 {
     size_t operator() (std::string_view x) const
     {
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             uint64_t u64;
             std::uint8_t u8[sizeof(u64)];
@@ -449,7 +450,7 @@ void NO_INLINE bench(const std::vector<std::string_view> & data, const char * na
 
     Map map;
     typename Map::LookupResult it;
-    bool inserted;
+    bool inserted = {};
 
     for (const auto & value : data)
     {

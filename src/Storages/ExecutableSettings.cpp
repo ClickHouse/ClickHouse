@@ -43,13 +43,7 @@ ExecutableSettings::ExecutableSettings(const ExecutableSettings & settings)
 {
 }
 
-ExecutableSettings::ExecutableSettings(ExecutableSettings && settings) noexcept
-    : script_name(std::move(settings.script_name))
-    , script_arguments(std::move(settings.script_arguments))
-    , is_executable_pool(settings.is_executable_pool)
-    , impl(std::make_unique<ExecutableSettingsImpl>(std::move(*settings.impl)))
-{
-}
+ExecutableSettings::ExecutableSettings(ExecutableSettings && settings) noexcept = default;
 
 ExecutableSettings::~ExecutableSettings() = default;
 

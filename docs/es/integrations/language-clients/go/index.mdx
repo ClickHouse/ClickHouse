@@ -1,0 +1,314 @@
+---
+sidebarTitle: 'Go'
+keywords: ['clickhouse', 'go', 'client', 'golang']
+slug: /integrations/go
+description: 'Los clientes de Go para ClickHouse permiten conectarse a ClickHouse mediante la interfaz estándar `database/sql` de Go o una interfaz nativa optimizada.'
+title: 'ClickHouse Go'
+doc_type: 'reference'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+---
+
+import ConnectionDetails from '/snippets/es/_gather_your_details_native.mdx';
+
+<div id="quick-start">
+  ## Inicio rápido
+</div>
+
+Empecemos con un ejemplo sencillo. Esto se conectará a ClickHouse y realizará una consulta en la base de datos del sistema. Para empezar, necesitará los datos de conexión.
+
+<div id="connection-details">
+  ### Datos de conexión
+</div>
+
+<ConnectionDetails />
+
+<div id="initialize-a-module">
+  ### Inicializar un módulo
+</div>
+
+```bash
+mkdir clickhouse-golang-example
+cd clickhouse-golang-example
+go mod init clickhouse-golang-example
+```
+
+<div id="copy-in-some-sample-code">
+  ### Copia un ejemplo de código
+</div>
+
+Copia este código en el directorio `clickhouse-golang-example` como `main.go`.
+
+```go title=main.go
+package main
+
+import (
+    "context"
+    "crypto/tls"
+    "fmt"
+    "log"
+
+    "github.com/ClickHouse/clickhouse-go/v2"
+    "github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+)
+
+func main() {
+    conn, err := connect()
+    if err != nil {
+        panic(err)
+    }
+
+    ctx := context.Background()
+    rows, err := conn.Query(ctx, "SELECT name, toString(uuid) as uuid_str FROM system.tables LIMIT 5")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer rows.Close()
+
+    for rows.Next() {
+        var name, uuid string
+        if err := rows.Scan(&name, &uuid); err != nil {
+            log.Fatal(err)
+        }
+        log.Printf("name: %s, uuid: %s", name, uuid)
+    }
+
+    // NOTA: No omitir la comprobación de rows.Err()
+    if err := rows.Err(); err != nil {
+        log.Fatal(err)
+    }
+
+}
+
+func connect() (driver.Conn, error) {
+    var (
+        ctx       = context.Background()
+        conn, err = clickhouse.Open(&clickhouse.Options{
+            Addr: []string{"<CLICKHOUSE_SECURE_NATIVE_HOSTNAME>:9440"},
+            Auth: clickhouse.Auth{
+                Database: "default",
+                Username: "default",
+                Password: "<DEFAULT_USER_PASSWORD>",
+            },
+            ClientInfo: clickhouse.ClientInfo{
+                Products: []struct {
+                    Name    string
+                    Version string
+                }{
+                    {Name: "an-example-go-client", Version: "0.1"},
+                },
+            },
+            Debugf: func(format string, v ...interface{}) {
+                fmt.Printf(format, v)
+            },
+            TLS: &tls.Config{
+                InsecureSkipVerify: true,
+            },
+        })
+    )
+
+    if err != nil {
+        return nil, err
+    }
+
+    if err := conn.Ping(ctx); err != nil {
+        if exception, ok := err.(*clickhouse.Exception); ok {
+            fmt.Printf("Exception [%d] %s \n%s\n", exception.Code, exception.Message, exception.StackTrace)
+        }
+        return nil, err
+    }
+    return conn, nil
+}
+```
+
+<div id="run-go-mod-tidy">
+  ### Ejecutar go mod tidy
+</div>
+
+```bash
+go mod tidy
+```
+
+<div id="set-your-connection-details">
+  ### Configura tus datos de conexión
+</div>
+
+Antes consultaste tus datos de conexión. Configúralos en `main.go`, en la función `connect()`:
+
+```go highlight={5,7-9}
+func connect() (driver.Conn, error) {
+  var (
+    ctx       = context.Background()
+    conn, err = clickhouse.Open(&clickhouse.Options{
+      Addr: []string{"<CLICKHOUSE_SECURE_NATIVE_HOSTNAME>:9440"},
+      Auth: clickhouse.Auth{
+        Database: "default",
+        Username: "default",
+        Password: "<DEFAULT_USER_PASSWORD>",
+      },
+```
+
+<div id="run-the-example">
+  ### Ejecutar el ejemplo
+</div>
+
+```bash
+go run .
+```
+
+```response
+2023/03/06 14:18:33 name: COLUMNS, uuid: 00000000-0000-0000-0000-000000000000
+2023/03/06 14:18:33 name: SCHEMATA, uuid: 00000000-0000-0000-0000-000000000000
+2023/03/06 14:18:33 name: TABLES, uuid: 00000000-0000-0000-0000-000000000000
+2023/03/06 14:18:33 name: VIEWS, uuid: 00000000-0000-0000-0000-000000000000
+2023/03/06 14:18:33 name: hourly_data, uuid: a4e36bd4-1e82-45b3-be77-74a0fe65c52b
+```
+
+<div id="learn-more">
+  ### Más información
+</div>
+
+El resto de la documentación de esta categoría detalla el cliente de Go para ClickHouse.
+
+<div id="overview">
+  ## Descripción general
+</div>
+
+ClickHouse admite dos clientes oficiales de Go. Estos clientes son complementarios y están diseñados intencionadamente para distintos casos de uso.
+
+* [clickhouse-go](https://github.com/ClickHouse/clickhouse-go) - Cliente de alto nivel que admite tanto la interfaz estándar `database/sql` de Go como la API nativa de ClickHouse.
+* [ch-go](https://github.com/ClickHouse/ch-go) - Cliente de bajo nivel. Solo interfaz nativa.
+
+clickhouse-go proporciona una interfaz de alto nivel que permite a los usuarios realizar consultas e insertar datos con una semántica orientada a filas y batching flexible en lo que respecta a los tipos de datos: los valores se convertirán siempre que no exista riesgo de pérdida de precisión. ch-go, por su parte, proporciona una interfaz optimizada orientada a columnas que ofrece streaming rápido de bloques de datos con baja sobrecarga de CPU y memoria, a costa de una mayor estrictez de tipos y de un uso más complejo.
+
+A partir de la versión 2.3, clickhouse-go utiliza ch-go para funciones de bajo nivel como la codificación, la decodificación y la compresión. Ambos clientes usan el formato nativo para su codificación a fin de ofrecer un rendimiento óptimo y pueden comunicarse a través del protocolo nativo de ClickHouse. clickhouse-go también admite HTTP como mecanismo de transporte para los casos en que los usuarios necesiten usar un proxy o balancear la carga del tráfico.
+
+<div id="four-ways-to-connect">
+  ### Cuatro formas de conectarse
+</div>
+
+clickhouse-go te ofrece dos opciones independientes: **qué API** usar y **qué transporte** usar. Estas se combinan en cuatro modos de conexión:
+
+|                                                   | **TCP** (protocolo nativo, puerto 9000/9440) |      **HTTP** (puerto 8123/8443)      |
+| :------------------------------------------------ | :------------------------------------------: | :-----------------------------------: |
+| **ClickHouse API** (`clickhouse.Open`)            |      Predeterminado — mejor rendimiento      | Configura `Protocol: clickhouse.HTTP` |
+| **API de `database/sql`** (`OpenDB` / `sql.Open`) |           `clickhouse://host:9000`           |           `http://host:8123`          |
+
+**Elegir una API:** Elige ClickHouse API para obtener el máximo rendimiento y todas las funcionalidades (callbacks de progreso, inserciones columnares y compatibilidad avanzada de tipos). Elige `database/sql` cuando necesites integrarte con ORMs o herramientas que esperan una interfaz estándar de base de datos de Go.
+
+**Elegir un transporte:** TCP es más rápido y es la opción predeterminada. Cambia a HTTP cuando tu infraestructura lo requiera; por ejemplo, al conectarte a través de un balanceador de carga HTTP o un proxy, o cuando necesites funciones específicas de HTTP, como sesiones con tablas temporales o algoritmos de compresión adicionales (`gzip`, `deflate`, `br`).
+
+Ambas APIs usan codificación binaria nativa independientemente del transporte, por lo que HTTP no añade sobrecarga de serialización.
+
+|                       | formato nativo | Transporte TCP | Transporte HTTP | Escritura masiva | Serialización de structs | Compresión | Callbacks de progreso |
+| :-------------------: | :-----------: | :------------: | :-------------: | :--------------: | :----------------------: | :--------: | :-------------------: |
+|     ClickHouse API    |       ✅       |        ✅       |        ✅        |         ✅        |             ✅            |      ✅     |           ✅           |
+| API de `database/sql` |       ✅       |        ✅       |        ✅        |         ✅        |                          |      ✅     |                       |
+
+<div id="choosing-a-client">
+  ### Elegir un cliente
+</div>
+
+La elección de una biblioteca cliente depende de sus patrones de uso y de la necesidad de obtener un rendimiento óptimo. Para casos de uso con muchas inserciones, en los que se requieren millones de inserciones por segundo, recomendamos utilizar el cliente de bajo nivel [ch-go](https://github.com/ClickHouse/ch-go). Este cliente evita la sobrecarga asociada a reorganizar los datos de un formato orientado a filas a uno orientado a columnas, como exige el formato nativo de ClickHouse. Además, evita el uso de reflexión y del tipo `interface{}` (`any`), lo que simplifica su uso.
+
+Para cargas de trabajo de consultas centradas en agregaciones o cargas de trabajo de inserción con menor throughput, [clickhouse-go](https://github.com/ClickHouse/clickhouse-go) proporciona una interfaz `database/sql` conocida y una semántica de filas más sencilla. También puede usar HTTP opcionalmente como protocolo de transporte y aprovechar funciones auxiliares para serializar y deserializar filas hacia y desde structs.
+
+|               | Formato nativo | Protocolo nativo | Protocolo HTTP | API orientada a filas | API orientada a columnas | Flexibilidad de tipos | Compresión | Marcadores de posición de consulta |
+| :-----------: | :------------: | :--------------: | :------------: | :-------------------: | :----------------------: | :-------------------: | :--------: | :--------------------------------: |
+| clickhouse-go |        ✅       |         ✅        |        ✅       |           ✅           |             ✅            |           ✅           |      ✅     |                  ✅                 |
+|     ch-go     |        ✅       |         ✅        |                |                       |             ✅            |                       |      ✅     |                                    |
+
+<div id="installation">
+  ## Instalación
+</div>
+
+La v1 del driver está obsoleta y no recibirá actualizaciones de funcionalidades ni compatibilidad con nuevos tipos de ClickHouse. Deberías migrar a la v2, que ofrece un rendimiento superior.
+
+Para instalar la versión 2.x del cliente, añade el paquete a tu archivo go.mod:
+
+`require github.com/ClickHouse/clickhouse-go/v2 main`
+
+O bien, clona el repositorio:
+
+```bash
+git clone --branch v2 https://github.com/clickhouse/clickhouse-go.git $GOPATH/src/github
+```
+
+Para instalar otra versión, modifique la ruta o el nombre de la rama según sea necesario.
+
+```bash
+mkdir my-clickhouse-app && cd my-clickhouse-app
+
+cat > go.mod <<-END
+  module my-clickhouse-app
+
+  go 1.21
+
+  require github.com/ClickHouse/clickhouse-go/v2 main
+END
+
+cat > main.go <<-END
+  package main
+
+  import (
+    "fmt"
+    "github.com/ClickHouse/clickhouse-go/v2"
+  )
+
+  func main() {
+   conn, _ := clickhouse.Open(&clickhouse.Options{Addr: []string{"127.0.0.1:9000"}})
+    v, _ := conn.ServerVersion()
+    fmt.Println(v.String())
+  }
+END
+
+go mod tidy
+go run main.go
+
+```
+
+<div id="versioning">
+  ### Versiones
+</div>
+
+El cliente se publica de forma independiente de ClickHouse. La rama 2.x corresponde a la versión principal actualmente en desarrollo. Todas las versiones 2.x deberían ser compatibles entre sí.
+
+<div id="clickhouse-compatibility">
+  #### Compatibilidad con ClickHouse
+</div>
+
+El cliente admite:
+
+* Todas las versiones de ClickHouse compatibles actualmente, como se indica [aquí](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md). A medida que las versiones de ClickHouse dejan de tener soporte, también dejan de probarse activamente con las versiones del cliente.
+* Todas las versiones de ClickHouse durante los 2 años posteriores a la fecha de lanzamiento del cliente. Ten en cuenta que solo las versiones LTS se prueban activamente.
+
+<div id="golang-compatibility">
+  #### Compatibilidad con Go
+</div>
+
+|  Versión del cliente | Versiones de Go |
+| :------------------: | :-------------: |
+|  =&gt; 2.0 &lt;= 2.2 |    1.17, 1.18   |
+| &gt;= 2.3, &lt; 2.41 |      1.18+      |
+|      &gt;= 2.41      |      1.21+      |
+|      &gt;= 2.43      |      1.24+      |
+
+<div id="best-practices">
+  ## buenas prácticas
+</div>
+
+* Utilice la API de ClickHouse siempre que sea posible, especialmente para tipos primitivos. Esto evita una reflexión y una indirección significativas.
+* Si lee conjuntos de datos grandes, considere modificar [`BlockBufferSize`](/es/integrations/language-clients/go/configuration#connection-settings). Esto aumentará el uso de memoria, pero permitirá decodificar más bloques en paralelo durante la iteración de filas. El valor predeterminado de 2 es conservador y minimiza la sobrecarga de memoria. Los valores más altos implicarán más bloques en memoria. Esto requiere pruebas, ya que distintas consultas pueden producir bloques de distintos tamaños. Por lo tanto, también puede establecerse a [nivel de consulta](/es/integrations/language-clients/go/clickhouse-api#using-context) mediante el Context.
+* Sea específico con los tipos al insertar datos. Aunque el cliente busca ser flexible, por ejemplo, permitiendo analizar cadenas como UUID o IP, esto requiere validación de datos y supone un coste en el momento de la inserción.
+* Utilice inserciones orientadas a columna siempre que sea posible. De nuevo, estas deben estar fuertemente tipadas para evitar que el cliente tenga que convertir sus valores.
+* Siga las [recomendaciones](/es/reference/statements/insert-into#performance-considerations) de ClickHouse para lograr un rendimiento de inserción óptimo.
+
+<div id="next-steps">
+  ## Siguientes pasos
+</div>
+
+* [Configuración](/es/integrations/language-clients/go/configuration) — ajustes de conexión, TLS, autenticación, registro y compresión
+* [ClickHouse API](/es/integrations/language-clients/go/clickhouse-api) — API nativa de Go para consultas e inserciones
+* [API de base de datos/SQL](/es/integrations/language-clients/go/database-sql-api) — interfaz estándar `database/sql`
+* [Tipos de datos](/es/integrations/language-clients/go/data-types) — correspondencia de tipos de Go y compatibilidad con tipos complejos

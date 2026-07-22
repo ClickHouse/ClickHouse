@@ -35,6 +35,7 @@
 #include <QueryPipeline/Pipe.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/checkDataPart.h>
 
 
 namespace DB
@@ -48,6 +49,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ABORTED;
 }
 
 namespace FailPoints
@@ -148,6 +150,11 @@ public:
         }
         catch (const Exception & e)
         {
+            /// Rethrow transient errors instead of reporting a false "broken" row. Keep swallowing the shutdown
+            /// ABORTED (what this catch was added for) — `isRetryableException` treats ABORTED as retryable.
+            if (e.code() != ErrorCodes::ABORTED && isRetryableException(std::current_exception()))
+                throw;
+
             is_finished = true;
             CheckResult result{"", false, e.displayText()};
             return result;
@@ -174,7 +181,7 @@ private:
 };
 
 /// Sends TableCheckTask to workers
-class TableCheckSource : public ISource
+class TableCheckSource final : public ISource
 {
 public:
     TableCheckSource(Strings databases_, ContextPtr context_, LoggerPtr log_)
@@ -290,7 +297,7 @@ private:
 };
 
 /// Receives TableCheckTask and returns CheckResult converted to sinle-row chunk
-class TableCheckWorkerProcessor : public ISimpleTransform
+class TableCheckWorkerProcessor final : public ISimpleTransform
 {
 public:
     TableCheckWorkerProcessor(bool with_table_name_, LoggerPtr log_)
@@ -339,7 +346,7 @@ private:
 
 /// Accumulates all results and returns single value
 /// Used when settings.check_query_single_value_result is true
-class TableCheckResultEmitter : public IAccumulatingTransform
+class TableCheckResultEmitter final : public IAccumulatingTransform
 {
 public:
     explicit TableCheckResultEmitter(SharedHeader input_header)
@@ -474,7 +481,7 @@ BlockIO InterpreterCheckQuery::execute()
         }
     }
 
-    OutputPort * resize_outport;
+    OutputPort * resize_outport = nullptr;
     {
         chassert(!processors->empty() && !processors->back()->getOutputs().empty());
         auto header = processors->back()->getOutputs().front().getSharedHeader();
@@ -488,7 +495,7 @@ BlockIO InterpreterCheckQuery::execute()
             connect(*worker_ports[i], *resize_inport_it);
         processors->emplace_back(resize_processor);
 
-        assert(resize_processor->getOutputs().size() == 1);
+        chassert(resize_processor->getOutputs().size() == 1);
         resize_outport = &resize_processor->getOutputs().front();
     }
 
@@ -513,6 +520,7 @@ BlockIO InterpreterCheckQuery::execute()
     return res;
 }
 
+void registerInterpreterCheckQuery(InterpreterFactory & factory);
 void registerInterpreterCheckQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

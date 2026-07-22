@@ -11,7 +11,7 @@ namespace
 {
 
 /** Incremental number of row within all columns passed to this function. */
-class FunctionRowNumberInAllBlocks : public IFunction
+class FunctionRowNumberInAllBlocks final : public IFunction
 {
 private:
     mutable std::atomic<size_t> rows{0};

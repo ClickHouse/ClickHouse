@@ -1,0 +1,72 @@
+---
+title: مثال JSON Extract
+description: "مثال قصير يوضّح كيفية استخراج الأنواع الأساسية من JSON"
+date: 2021-09-01
+tags: ['تنسيقات البيانات']
+keywords: ['JSON', 'استخراج الأنواع الأساسية']
+---
+
+<div id="json-extract-example">
+  ## مثال على JSON Extract
+</div>
+
+هذا مجرد مثال قصير يوضّح كيفية استخدام دوال [JSONExtract](/ar/reference/functions/regular-functions/json-functions).
+
+أنشئ جدولًا:
+
+```sql
+CREATE TABLE default.json_extract_example
+(
+    `rawJSON` String EPHEMERAL,
+    `a1` String DEFAULT JSONExtractString(rawJSON, 'a1'),
+    `a2` Boolean DEFAULT JSONExtractBool(rawJSON, 'a2'),
+    `a3.aa1` Float DEFAULT JSONExtractFloat(JSONExtractRaw(rawJSON, 'a3'), 'aa1'),
+    `a3.aa2` UInt8 DEFAULT JSONExtractUInt(JSONExtractRaw(rawJSON, 'a3'), 'aa2')
+)
+ENGINE = MergeTree
+ORDER BY (a1, a2)
+```
+
+أضف سلسلة JSON الخام:
+
+```sql
+INSERT INTO default.json_extract_example (rawJSON) VALUES ('{"a1": "XX", "a2": true, "a3":{"aa1":23.11,"aa2":12}}');
+```
+
+نفّذ استعلامًا على بياناتك:
+
+```
+SELECT *
+FROM json_extract_example
+FORMAT Pretty
+```
+
+الناتج:
+
+```
+┏━━━━┳━━━━━━┳━━━━━━━━┳━━━━━━━━┓
+┃ a1 ┃ a2   ┃ a3.aa1 ┃ a3.aa2 ┃
+┡━━━━╇━━━━━━╇━━━━━━━━╇━━━━━━━━┩
+│ XX │ true │  23.11 │     12 │
+└────┴──────┴────────┴────────┘
+```
+
+ويُخزَّن كلٌّ منها بنوع JSON الأصلي:
+
+```sql
+SELECT
+    toTypeName(a1),
+    toTypeName(a2),
+    toTypeName(a3.aa1),
+    toTypeName(a3.aa2)
+FROM default.json_extract_example
+FORMAT Pretty
+```
+
+```
+┏━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┓
+┃ toTypeName(a1) ┃ toTypeName(a2) ┃ toTypeName(a3.aa1) ┃ toTypeName(a3.aa2) ┃
+┡━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━┩
+│ String         │ Bool           │ Float32            │ UInt8              │
+└────────────────┴────────────────┴────────────────────┴────────────────────┘
+```

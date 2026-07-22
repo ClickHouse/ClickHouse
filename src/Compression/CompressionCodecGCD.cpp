@@ -1,6 +1,7 @@
 #include <Compression/ICompressionCodec.h>
 #include <Common/Exception.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/registerCompressionCodecs.h>
 #include <Compression/CompressionInfo.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST.h>

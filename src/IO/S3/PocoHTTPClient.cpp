@@ -202,7 +202,7 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
     }
 }
 
-ConnectionTimeouts getTimeoutsFromConfiguration(const PocoHTTPClientConfiguration & client_configuration)
+static ConnectionTimeouts getTimeoutsFromConfiguration(const PocoHTTPClientConfiguration & client_configuration)
 {
     return ConnectionTimeouts()
         .withConnectionTimeout(Poco::Timespan(client_configuration.connectTimeoutMs * 1000))
@@ -422,7 +422,7 @@ void PocoHTTPClient::makeRequestInternal(
     makeRequestInternalImpl(request, response, readLimiter, writeLimiter);
 }
 
-String getMethod(const Aws::Http::HttpRequest & request)
+static String getMethod(const Aws::Http::HttpRequest & request)
 {
     switch (request.GetMethod())
     {
@@ -860,9 +860,9 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken()
     if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
         return requestBearerTokenFromADC();
 
-    assert(!request_token_path.empty());
-    assert(!metadata_service.empty());
-    assert(!service_account.empty());
+    chassert(!request_token_path.empty());
+    chassert(!metadata_service.empty());
+    chassert(!service_account.empty());
 
     Poco::URI url;
     url.setScheme("http");

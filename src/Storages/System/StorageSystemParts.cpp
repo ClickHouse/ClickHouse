@@ -1,4 +1,5 @@
 #include <atomic>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <memory>
 #include <string_view>
 #include <Interpreters/MergeTreeTransaction.h>
@@ -67,6 +68,7 @@ Name of the data part. The part naming structure can be used to determine many a
 )"},
         {"uuid",                                        std::make_shared<DataTypeUUID>(),      "The UUID of data part."},
         {"part_type",                                   std::make_shared<DataTypeString>(),    "The data part storing format. Possible values: `Wide` — each column is stored in a separate file, `Compact` — all columns are stored in one file. Data storing format is controlled by the `min_bytes_for_wide_part` and `min_rows_for_wide_part` settings of the MergeTree table."},
+        {"part_storage_type",                           std::make_shared<DataTypeString>(),    "The type of DataPartStorage. Possible values: Packed - all files are stored in a single blob, Full - a blob per file."},
         {"active",                                      std::make_shared<DataTypeUInt8>(),     "Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's about to be deleted. Inactive data parts appear after merging and mutating operations."},
         {"marks",                                       std::make_shared<DataTypeUInt64>(),    "The number of marks. To get the approximate number of rows in a data part, multiply marks by the index granularity (usually 8192) (this hint does not work for adaptive granularity)."},
         {"rows",                                        std::make_shared<DataTypeUInt64>(),    "The number of rows."},
@@ -185,6 +187,8 @@ void StorageSystemParts::processNextStorage(
             columns[res_index++]->insert(part->uuid);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getTypeName());
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->getDataPartStorage().getType().toString());
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part_state == State::Active);
         if (columns_mask[src_index++])
@@ -388,3 +392,6 @@ void StorageSystemParts::processNextStorage(
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemParts) }

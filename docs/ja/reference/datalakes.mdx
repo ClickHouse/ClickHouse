@@ -1,0 +1,60 @@
+---
+description: 'データレイクのドキュメント'
+sidebarTitle: 'データレイク'
+slug: /sql-reference/datalakes
+title: 'データレイク'
+doc_type: 'reference'
+---
+
+このセクションでは、ClickHouse のデータレイクサポートについて説明します。
+ClickHouse は、Iceberg、Delta Lake、Hudi、AWS Glue、REST Catalog、Unity Catalog、Microsoft OneLake など、広く利用されている多くのテーブルフォーマットとデータカタログをサポートしています。
+
+<div id="open-table-formats">
+  # オープンテーブルフォーマット
+</div>
+
+<div id="iceberg">
+  ## Iceberg
+</div>
+
+Amazon S3、S3互換サービス、HDFS、Azure、ローカルファイルシステムからの読み取りをサポートする[iceberg](/ja/reference/functions/table-functions/iceberg)を参照してください。[icebergCluster](/ja/reference/functions/table-functions/icebergCluster)は、`iceberg`関数の分散版です。
+
+<div id="delta-lake">
+  ## Delta Lake
+</div>
+
+Amazon S3、S3互換サービス、Azure、ローカルファイルシステムからの読み取りをサポートする [deltaLake](/ja/reference/functions/table-functions/deltalake) を参照してください。[deltaLakeCluster](/ja/reference/functions/table-functions/deltalakeCluster) は、`deltaLake` 関数の分散版です。
+
+<div id="hudi">
+  ## Hudi
+</div>
+
+Amazon S3 および S3互換サービスからの読み取りをサポートする [hudi](/ja/reference/functions/table-functions/hudi) を参照してください。[hudiCluster](/ja/reference/functions/table-functions/hudiCluster) は、`hudi` 関数の分散版です。
+
+<div id="data-catalogs">
+  # データカタログ
+</div>
+
+<div id="aws-glue">
+  ## AWS Glue
+</div>
+
+AWS Glue Data Catalog は、Iceberg テーブルで使用できます。`iceberg` テーブルエンジン、または [DataLakeCatalog](/ja/reference/engines/database-engines/datalake) データベースエンジンと組み合わせて利用できます。
+
+<div id="iceberg-rest-catalog">
+  ## Iceberg REST Catalog
+</div>
+
+Iceberg REST Catalog は、Iceberg テーブルで使用できます。`iceberg` テーブルエンジンまたは [DataLakeCatalog](/ja/reference/engines/database-engines/datalake) データベースエンジンと組み合わせて使用できます。
+
+<div id="unity-catalog">
+  ## Unity Catalog
+</div>
+
+Unity Catalog は、Delta Lake テーブルと Iceberg テーブルの両方で使用できます。`iceberg` または `deltaLake` テーブルエンジンと組み合わせて使用することも、[DataLakeCatalog](/ja/reference/engines/database-engines/datalake) データベースエンジンで使用することもできます。
+
+<div id="microsoft-onelake">
+  ## Microsoft OneLake
+</div>
+
+Microsoft OneLake は、Delta Lake テーブルと Iceberg テーブルの両方で利用できます。[DataLakeCatalog](/ja/reference/engines/database-engines/datalake) データベースエンジンと組み合わせて使用できます。

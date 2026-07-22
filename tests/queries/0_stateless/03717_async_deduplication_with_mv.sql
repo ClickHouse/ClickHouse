@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP TABLE IF EXISTS 03717_table;
 CREATE TABLE 03717_table
 (

@@ -1,0 +1,5 @@
+CREATE TABLE t (`c` Decimal(76, 12)) ENGINE = Memory
+CREATE TABLE t (`c` FixedString(8)) ENGINE = Memory
+CREATE TABLE t (`c` DateTime64(3)) ENGINE = Memory
+CREATE TABLE t (`c` Array(Decimal(10, 2))) ENGINE = Memory
+CREATE TABLE t (`c` UInt64) ENGINE = Memory
