@@ -9,7 +9,9 @@
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTPartition.h>
 #include <Parsers/ASTProjectionDeclaration.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSQLSecurity.h>
@@ -248,7 +250,52 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     readTypedChild.operator()<ASTProjectionDeclaration>("projection_decl", projection_decl);
     readTypedChild.operator()<ASTIdentifier>("projection", projection);
     readTypedChild.operator()<ASTStatisticsDeclaration>("statistics_decl", statistics_decl);
-    readRawChild("partition", partition);
+    /// `partition` is not an arbitrary expression slot: `ParserAlterQuery` builds it with
+    /// `ParserPartition` for the `... PARTITION ...` forms and with a string literal or query
+    /// parameter (`ParserStringAndSubstitution`) for the `... PART ...` forms — the 'part' flag,
+    /// which the parser produces only for the `DROP`/`DROP DETACHED`/`ATTACH`/`MOVE`/`FETCH`
+    /// `PART` commands. Execution relies on those shapes: `MergeTreeData::getPartitionIDFromQuery`
+    /// downcasts the `PARTITION` forms with `->as<ASTPartition &>()` and `getPartNameFromAST`
+    /// requires a string `ASTLiteral` for `PART`. Restoring the slot generically would let
+    /// malformed `clickhouse_json` reach those internal casts and could format parser-impossible
+    /// SQL such as `DROP PART PARTITION 1`, so validate the node shape against the 'part' flag.
+    if (part)
+    {
+        switch (type)
+        {
+            case ASTAlterCommand::DROP_PARTITION:
+            case ASTAlterCommand::DROP_DETACHED_PARTITION:
+            case ASTAlterCommand::ATTACH_PARTITION:
+            case ASTAlterCommand::MOVE_PARTITION:
+            case ASTAlterCommand::FETCH_PARTITION:
+                break;
+            default:
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "'part' is only valid for the DROP/DROP DETACHED/ATTACH/MOVE/FETCH PART commands, "
+                    "not '{}', during AST JSON deserialization",
+                    magic_enum::enum_name(type));
+        }
+    }
+    if (auto partition_child = r.readChild("partition"))
+    {
+        if (part)
+        {
+            const auto * partition_literal = partition_child->as<ASTLiteral>();
+            if ((!partition_literal || partition_literal->value.getType() != Field::Types::String)
+                && !partition_child->as<ASTQueryParameter>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "'partition' must be a string literal or query parameter for the PART form "
+                    "of an ALTER command during AST JSON deserialization");
+        }
+        else if (!partition_child->as<ASTPartition>())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'partition' must be a `Partition` node for the PARTITION form of an ALTER command "
+                "during AST JSON deserialization");
+        }
+        partition = partition_child.get();
+        children.push_back(std::move(partition_child));
+    }
     readRawChild("predicate", predicate);
     /// `update_assignments` is an `ASTExpressionList` of `ASTAssignment` (`MutationCommand::parse`
     /// downcasts each child to `ASTAssignment`).

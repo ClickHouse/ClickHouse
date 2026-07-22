@@ -4,6 +4,7 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTPartition.h>
 
 namespace DB
 {
@@ -120,7 +121,11 @@ void ASTUpdateQuery::readJSON(const Poco::JSON::Object & json)
                 "Every child of 'assignments' must be an `ASTAssignment` during AST JSON deserialization");
     assignments = assignments_list;
     children.push_back(assignments);
-    partition = r.readChild("partition");
+    /// `partition` (IN PARTITION) is always built by `ParserPartition`; `InterpreterUpdateQuery`
+    /// forwards it into `ASTAlterCommand::partition`, and `MutationsInterpreter` /
+    /// `MergeTreeData::getPartitionIDFromQuery` downcast it with `->as<ASTPartition &>()`.
+    /// Reject any other node type at the boundary instead of reaching those internal casts.
+    partition = r.readChildOfType<ASTPartition>("partition");
     if (partition)
         children.push_back(partition);
     predicate = r.readChild("predicate");
