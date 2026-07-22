@@ -1540,6 +1540,9 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
 
 void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position)
 {
+    if (postprocessor_drop_filter && postprocessor_drop_filter->shouldDrop(token))
+        return;
+
     bool inserted = false;
     TokenToPostingsBuilderMap::LookupResult it;
     ArenaKeyHolder key_holder(token, *arena);
@@ -1572,7 +1575,8 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
 
     tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
-        sorted_tokens.push_back(SortedToken{key, &mapped, nullptr});
+        std::string_view token = key;
+        sorted_tokens.push_back(SortedToken{token, &mapped, nullptr});
     });
 
     std::ranges::sort(sorted_tokens, [](const auto & lhs, const auto & rhs) { return lhs.token < rhs.token; });
@@ -1641,6 +1645,17 @@ MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
     , preprocessor(preprocessor_)
     , postprocessor(postprocessor_)
 {
+    /// Fast path for IN/NOT IN filter-only postprocessors only: drops are decided per distinct token in
+    /// addToken so dropped tokens never build postings. Positions must be disabled (phrase search needs
+    /// dense position renumbering after drops). Any other postprocessor uses the general per-batch path.
+    if (postprocessor->hasActions() && !params.positions)
+    {
+        if (const auto * inline_filter = postprocessor->getInlineFilter())
+        {
+            granule_builder.postprocessor_drop_filter = inline_filter;
+            use_postprocessor_drop_fast_path = true;
+        }
+    }
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorText::getGranuleAndReset()
@@ -1673,7 +1688,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     const auto & index_column = block.getByName(index_column_name);
     auto [preprocessed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
 
-    if (postprocessor->hasActions())
+    if (postprocessor->hasActions() && !use_postprocessor_drop_fast_path)
     {
         ColumnPtr tokenized = tokenizeToArray(*tokenizer, *preprocessed_column, offset, rows_read);
         ColumnPtr postprocessed = postprocessor->processTokensArrayBatch(assert_cast<const ColumnArray *>(tokenized.get()));
