@@ -25,6 +25,10 @@ namespace ProfileEvents
     extern const Event TextIndexReaderTotalMicroseconds;
     extern const Event TextIndexPositionsDecodeMicroseconds;
     extern const Event TextIndexPhraseMatchMicroseconds;
+    extern const Event TextIndexBlockedPositionsBlocksRead;
+    extern const Event TextIndexBlockedPositionsBlocksSkipped;
+    extern const Event TextIndexBlockedPositionsBytesRead;
+    extern const Event TextIndexPhraseCandidates;
 }
 
 namespace DB
@@ -945,6 +949,7 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const TextS
 
     PaddedPODArray<UInt32> candidates(intersection.cardinality());
     intersection.toUint32Array(candidates.data());
+    ProfileEvents::increment(ProfileEvents::TextIndexPhraseCandidates, candidates.size());
 
     /// A single-term "phrase" needs no positional check: every row containing the token matches.
     if (term_to_unique.size() == 1)
@@ -959,6 +964,9 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const TextS
     std::vector<PaddedPODArray<UInt32>> per_token_positions(unique_tokens.size());
     {
         ProfileEventTimeIncrement<Microseconds> decode_watch(ProfileEvents::TextIndexPositionsDecodeMicroseconds);
+        size_t blocks_read = 0;
+        size_t blocks_total = 0;
+        size_t block_bytes_read = 0;
         std::vector<UInt32> block_local_ranks;
         PaddedPODArray<UInt64> candidate_ranks;
         PaddedPODArray<UInt32> posting_docs;
@@ -969,6 +977,7 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const TextS
             const size_t available = pos_file_size > token_info.position_offset ? pos_file_size - token_info.position_offset : 0;
             const auto dir = TextIndexBlockedPositionsCodec::readDirectory(
                 *data_buffer, token_info.position_offset, token_info.position_cardinality, available);
+            blocks_total += dir.numBlocks();
 
             /// Candidate ranks in this token's postings. Dense candidates: one linear walk over the
             /// materialized list beats per-candidate roaring rank(); sparse: rank() wins.
@@ -1018,8 +1027,13 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const TextS
                     *data_buffer, dir, block_idx, block_local_ranks,
                     per_token_offsets[u], per_token_positions[u], blocked_positions_scratch);
                 previous_block = block_idx;
+                ++blocks_read;
+                block_bytes_read += dir.block_offsets[block_idx + 1] - dir.block_offsets[block_idx];
             }
         }
+        ProfileEvents::increment(ProfileEvents::TextIndexBlockedPositionsBlocksRead, blocks_read);
+        ProfileEvents::increment(ProfileEvents::TextIndexBlockedPositionsBlocksSkipped, blocks_total - blocks_read);
+        ProfileEvents::increment(ProfileEvents::TextIndexBlockedPositionsBytesRead, block_bytes_read);
     }
 
     ProfileEventTimeIncrement<Microseconds> match_watch(ProfileEvents::TextIndexPhraseMatchMicroseconds);
