@@ -1,5 +1,6 @@
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
@@ -100,7 +101,11 @@ void ASTDeleteQuery::readJSON(const Poco::JSON::Object & json)
     if (!table)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'table' in DeleteQuery JSON");
     children.push_back(table);
-    partition = r.readChild("partition");
+    /// `partition` is parser-produced as an `ASTPartition` (`ParserPartition`); `InterpreterDeleteQuery`
+    /// splices `partition->formatWithSecretsOneLine()` into a synthesized `UPDATE`/`ALTER ... IN PARTITION`
+    /// query, so an arbitrary node here could change the partition semantics or fail late at reparse
+    /// instead of being rejected at the JSON boundary.
+    partition = r.readChildOfType<ASTPartition>("partition");
     if (partition)
         children.push_back(partition);
     predicate = r.readChild("predicate");

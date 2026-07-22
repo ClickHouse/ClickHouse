@@ -4,6 +4,7 @@
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTTTLElement.h>
@@ -636,7 +637,17 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
 
     child = r.readChildOfType<ASTExpressionList>("aliases_list");
     if (child)
+    {
+        /// `aliases_list` is parser-produced as an `ASTExpressionList` of `ASTIdentifier`
+        /// (`ParserAliasesExpressionList`); `InterpreterCreateQuery` later does
+        /// `aliases_children[i]->as<ASTIdentifier &>()` when applying view column aliases,
+        /// so validate the children too, not just the outer list type.
+        for (const auto & alias : child->children)
+            if (!alias || !alias->as<ASTIdentifier>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "View column aliases in 'aliases_list' must be identifiers during AST JSON deserialization");
         set(aliases_list, child);
+    }
 
     child = r.readChildOfType<ASTStorage>("storage");
     if (child)

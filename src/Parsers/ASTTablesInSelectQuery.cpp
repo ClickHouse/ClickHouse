@@ -542,10 +542,17 @@ void ASTTableExpression::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`sample_offset` requires `sample_size` during AST JSON deserialization");
 
-    /// `column_aliases` is parser-produced as an `ASTExpressionList`; alias handling expects that shape.
+    /// `column_aliases` is parser-produced as an `ASTExpressionList` of `ASTIdentifier`
+    /// (`ParserAliasesExpressionList`); `QueryTreeBuilder` later does
+    /// `column_alias->as<ASTIdentifier &>()` when applying `AS alias(col1, col2, ...)`,
+    /// so validate the children too, not just the outer list type.
     child = r.readChildOfType<ASTExpressionList>("column_aliases");
     if (child)
     {
+        for (const auto & alias : child->children)
+            if (!alias || !alias->as<ASTIdentifier>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Table expression column aliases in 'column_aliases' must be identifiers during AST JSON deserialization");
         column_aliases = child;
         children.push_back(column_aliases);
     }
