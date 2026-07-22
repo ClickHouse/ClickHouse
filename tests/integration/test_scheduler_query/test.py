@@ -74,13 +74,13 @@ def test_create() -> None:
         assert node.query(f"{common_select_part} '%/admin/%' and type='fifo'") == "1\n"
 
         assert (
-            node.query(f"{common_select_part} '%/admin' and type='unified' and priority=0") == "1\n"
+            node.query(f"{common_select_part} '%/admin' and type='workload' and priority=0") == "1\n"
         )
 
         assert node.query(f"{common_select_part} '%/production/%' and type='fifo'") == "1\n"
 
         assert (
-            node.query(f"{common_select_part} '%/production' and type='unified' and weight=9")
+            node.query(f"{common_select_part} '%/production' and type='workload' and weight=9")
             == "1\n"
         )
 

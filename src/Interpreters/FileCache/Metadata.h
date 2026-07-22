@@ -8,10 +8,13 @@
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
+#include <Interpreters/FileCache/ShardedMap.h>
 #include <Common/SharedMutex.h>
 #include <Common/ThreadPool_fwd.h>
 
+#include <map>
 #include <memory>
+#include <optional>
 
 namespace DB
 {
@@ -101,11 +104,12 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     using Key = FileCacheKey;
     using iterator = iterator;
     using OriginInfo = FileCacheOriginInfo;
+    using OriginInfoPtr = std::shared_ptr<const OriginInfo>;
     using UserID = OriginInfo::UserID;
 
     KeyMetadata(
         const Key & key_,
-        const OriginInfo & origin_,
+        OriginInfoPtr origin_,
         const CacheMetadata * cache_metadata_,
         bool created_base_directory_ = false);
 
@@ -117,7 +121,9 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     };
 
     const Key key;
-    const OriginInfo origin;
+    /// Shared across all keys with the same origin, since OriginInfo is immutable
+    /// and distinct origins are very few. See CacheMetadata::getOrCreateSharedOrigin.
+    const OriginInfoPtr origin;
 
     LockedKeyPtr lock();
 
@@ -245,14 +251,25 @@ private:
     LoggerPtr log;
     mutable SharedMutex key_prefix_directory_mutex;
 
+    using OriginInfoPtr = KeyMetadata::OriginInfoPtr;
+
     struct MetadataBucket : public std::unordered_map<FileCacheKey, KeyMetadataPtr>
     {
         CacheMetadataGuard::Lock lock() const;
+
     private:
         mutable CacheMetadataGuard guard;
     };
     using MetadataBuckets = std::vector<MetadataBucket>;
     MetadataBuckets metadata_buckets{buckets_num};
+
+    /// Return a deduplicated immutable origin, shared by all keys with the same OriginPoolKey.
+    /// The pool is sharded by a hash of the origin's identity (i.e. by client), not by the
+    /// cache key, so each distinct origin is stored exactly once instead of being duplicated
+    /// across the (much more numerous) key buckets.
+    OriginInfoPtr getOrCreateSharedOrigin(const OriginInfo & origin);
+
+    mutable FileCacheUtils::ShardedMap<OriginPoolKey, OriginInfoPtr> origins;
 
     struct DownloadThread
     {
