@@ -563,6 +563,59 @@ static void disableVirtualRowInSubtree(QueryPlan::Node & node)
     }
 }
 
+/// Whether a `FinishSorting` side's read-in-order plan relies on virtual rows, so the side must not be
+/// scattered. The scatter cannot pass virtual rows through, so `disableVirtualRowInSubtree` clears them.
+/// That is fine when they are a mere optimization, but `optimizeReadInOrder` admits an in-order read
+/// *through* a nested join other than `LEFT ANY`/`LEFT ALL` only when the source emits virtual rows
+/// (see the guard in `buildInputOrderInfo` in optimizeReadInOrder.cpp): without them the merge above the
+/// nested join cannot cheaply pick the next input stream once the join filters rows out, and can read an
+/// excessive amount of data. Clearing the conversions on such a side would leave the plan in the exact
+/// shape that optimizer refused to produce, so the whole join falls back to a single merge join with the
+/// virtual rows intact, exactly like `full_sorting_merge`.
+///
+/// The walk mirrors `disableVirtualRowInSubtree`: it stops at nested consuming sorts (their virtual rows
+/// are consumed below them and never cleared, so they are irrelevant to the scatter) and descends through
+/// everything else, tracking whether the path has passed through a virtual-row-requiring `JoinStep`.
+static bool subtreeReliesOnVirtualRows(const QueryPlan::Node & node)
+{
+    struct Frame
+    {
+        const QueryPlan::Node * node;
+        bool below_join_requiring_virtual_rows;
+    };
+
+    std::stack<Frame> stack;
+    stack.push({&node, false});
+    while (!stack.empty())
+    {
+        auto [current, below_join] = stack.top();
+        stack.pop();
+
+        if (below_join)
+            if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(current->step.get());
+                reading && reading->hasVirtualRowConversions())
+                return true;
+
+        if (const auto * nested_join = typeid_cast<const JoinStep *>(current->step.get()))
+        {
+            const auto & nested_table_join = nested_join->getJoin()->getTableJoin();
+            auto nested_strictness = nested_table_join.strictness();
+            if (nested_table_join.kind() != JoinKind::Left
+                || (nested_strictness != JoinStrictness::All && nested_strictness != JoinStrictness::Any))
+                below_join = true;
+        }
+
+        for (const auto * child : current->children)
+        {
+            if (const auto * sort = typeid_cast<const SortingStep *>(child->step.get());
+                sort && sort->getType() != SortingStep::Type::PartitionedFinishSorting)
+                continue;
+            stack.push({child, below_join});
+        }
+    }
+    return false;
+}
+
 /// Shard a `parallel_full_sorting_merge` join into independent per-shard merge joins by the hash of the
 /// join keys.
 ///
@@ -660,6 +713,20 @@ void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_sha
                             || joinKeyTypeBreaksHashSharding(*right_key->type))
                             can_shard = false;
                     }
+
+                    /// A `FinishSorting` side whose in-order plan relies on virtual rows must not be
+                    /// scattered - the scatter would clear the virtual rows the plan was admitted on
+                    /// (see `subtreeReliesOnVirtualRows`). Both sides are scattered together or not at
+                    /// all, so this skips the sharded rewrite for the whole join.
+                    auto side_relies_on_virtual_rows = [](const QueryPlan::Node & sort_node, const SortingStep & sort)
+                    {
+                        return sort.getType() == SortingStep::Type::FinishSorting
+                            && subtreeReliesOnVirtualRows(sort_node);
+                    };
+                    if (can_shard
+                        && (side_relies_on_virtual_rows(*node->children[0], *left_sort)
+                            || side_relies_on_virtual_rows(*node->children[1], *right_sort)))
+                        can_shard = false;
 
                     if (can_shard)
                     {
