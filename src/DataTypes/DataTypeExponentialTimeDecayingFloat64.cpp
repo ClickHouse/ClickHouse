@@ -2,7 +2,6 @@
 
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -51,16 +50,12 @@ std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & arguments)
     auto time_type = DataTypeFactory::instance().get(arguments->children[0]);
     assertTimeType(time_type);
 
-    auto component_type = std::make_shared<DataTypeTuple>(
-        DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()},
-        Names{"value", "half_life"});
     auto storage_type = std::make_shared<DataTypeTuple>(
         DataTypes{
             std::make_shared<DataTypeFloat64>(),
             time_type,
-            std::make_shared<DataTypeFloat64>(),
-            std::make_shared<DataTypeArray>(component_type)},
-        Names{"value", "time", "half_life", "components"});
+            std::make_shared<DataTypeFloat64>()},
+        Names{"value", "time", "half_life"});
 
     return {
         storage_type,
@@ -75,8 +70,7 @@ DataTypePtr createDataTypeExponentialTimeDecayingFloat64(const DataTypePtr & tim
     assertTimeType(time_type);
 
     auto custom_name = std::make_unique<DataTypeExponentialTimeDecayingFloat64Name>(time_type);
-    const String base_name = "Tuple(value Float64, time " + time_type->getName()
-        + ", half_life Float64, components Array(Tuple(value Float64, half_life Float64)))";
+    const String base_name = "Tuple(value Float64, time " + time_type->getName() + ", half_life Float64)";
     return DataTypeFactory::instance().getCustom(
         base_name,
         std::make_unique<DataTypeCustomDesc>(std::move(custom_name)));
@@ -110,10 +104,8 @@ void registerDataTypeExponentialTimeDecayingFloat64(DataTypeFactory & factory)
             .description = R"(
 Represents one or more non-negative exponentially time-decaying values at a shared anchor time.
 
-The public fields are `value`, `time`, and `half_life`. `value` is the sum of the component
-values at `time`. The public `half_life` is
-`sum(component.half_life * component.value) / value`. The internal `components` field preserves
-the individual half-lives so values can be combined independently of evaluation order.
+The fields are `value`, `time`, and `half_life`. Values can only be added when their half-lives
+are identical. This keeps the result representable as one exponential decay curve.
 Use `tupleElement(decaying_value, 'time')` to read the greatest observed or current anchor time.
 )",
             .syntax = "ExponentialTimeDecayingFloat64(time_type)",

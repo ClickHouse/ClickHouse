@@ -1,4 +1,3 @@
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
@@ -15,8 +14,6 @@
 #include <Interpreters/Context.h>
 
 #include <cmath>
-#include <limits>
-#include <map>
 
 namespace DB
 {
@@ -48,22 +45,18 @@ void assertExperimentalFeatureEnabled(const ContextPtr & context, const String &
 
 struct DecayingColumnView
 {
+    const ColumnFloat64 & value;
     const IColumn & time;
-    const ColumnArray & components;
-    const ColumnFloat64 & component_value;
-    const ColumnFloat64 & component_half_life;
+    const ColumnFloat64 & half_life;
 };
 
 DecayingColumnView getDecayingColumnView(const ColumnPtr & column)
 {
     const auto & tuple = assert_cast<const ColumnTuple &>(*column);
-    const auto & components = assert_cast<const ColumnArray &>(tuple.getColumn(3));
-    const auto & component_tuple = assert_cast<const ColumnTuple &>(components.getData());
     return {
+        assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)),
         tuple.getColumn(1),
-        components,
-        assert_cast<const ColumnFloat64 &>(component_tuple.getColumn(0)),
-        assert_cast<const ColumnFloat64 &>(component_tuple.getColumn(1)),
+        assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)),
     };
 }
 
@@ -90,33 +83,23 @@ void assertMatchingTimeType(const DataTypePtr & decaying_type, const DataTypePtr
             target_type->getName());
 }
 
-std::pair<size_t, size_t> getComponentRange(const ColumnArray & components, size_t row)
+void assertValidRow(const DecayingColumnView & input, size_t row, const String & function_name)
 {
-    const auto & offsets = components.getOffsets();
-    return {row == 0 ? 0 : offsets[row - 1], offsets[row]};
+    const Float64 value = input.value.getData()[row];
+    const Float64 time = input.time.getFloat64(row);
+    const Float64 half_life = input.half_life.getData()[row];
+    if (!std::isfinite(value) || value < 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of function {} must be finite and non-negative", function_name);
+    if (!std::isfinite(time))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time of function {} must be finite", function_name);
+    if (!std::isfinite(half_life) || half_life <= 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Half-life of function {} must be finite and positive", function_name);
 }
 
-void addRebasedComponents(
-    std::map<Float64, Float64> & values_by_half_life,
-    const DecayingColumnView & input,
-    size_t row,
-    Float64 target_time)
+Float64 valueAt(const DecayingColumnView & input, size_t row, Float64 target_time)
 {
-    const Float64 source_time = input.time.getFloat64(row);
-    const auto [begin, end] = getComponentRange(input.components, row);
-    const auto & values = input.component_value.getData();
-    const auto & half_lives = input.component_half_life.getData();
-
-    for (size_t index = begin; index < end; ++index)
-    {
-        const Float64 half_life = half_lives[index];
-        if (!std::isfinite(half_life) || half_life <= 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Decay component half-life must be finite and positive");
-        if (!std::isfinite(values[index]) || values[index] < 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Decay component value must be finite and non-negative");
-        const Float64 value = values[index] * std::exp2((source_time - target_time) / half_life);
-        values_by_half_life[half_life] += value;
-    }
+    return input.value.getData()[row]
+        * std::exp2((input.time.getFloat64(row) - target_time) / input.half_life.getData()[row]);
 }
 
 struct DecayingColumnBuilder
@@ -125,48 +108,24 @@ struct DecayingColumnBuilder
         : time(time_type->createColumn())
         , value(ColumnFloat64::create())
         , half_life(ColumnFloat64::create())
-        , component_value(ColumnFloat64::create())
-        , component_half_life(ColumnFloat64::create())
-        , component_offsets(ColumnArray::ColumnOffsets::create())
     {
     }
 
-    void append(const IColumn & source_time, size_t source_row, const std::map<Float64, Float64> & values_by_half_life)
+    void append(Float64 value_value, const IColumn & source_time, size_t source_row, Float64 half_life_value)
     {
-        Float64 total_value = 0;
-        Float64 weighted_half_life = 0;
-        for (const auto & [component_half_life_value, component_value_value] : values_by_half_life)
-        {
-            component_value->insertValue(component_value_value);
-            component_half_life->insertValue(component_half_life_value);
-            total_value += component_value_value;
-            weighted_half_life += component_half_life_value * component_value_value;
-        }
-
-        value->insertValue(total_value);
-        half_life->insertValue(
-            total_value > 0
-                ? weighted_half_life / total_value
-                : std::numeric_limits<Float64>::quiet_NaN());
+        value->insertValue(value_value);
         time->insertFrom(source_time, source_row);
-        component_offsets->insertValue(component_value->size());
+        half_life->insertValue(half_life_value);
     }
 
     ColumnPtr build()
     {
-        auto component_tuple = ColumnTuple::create(
-            Columns{std::move(component_value), std::move(component_half_life)});
-        auto component_array = ColumnArray::create(std::move(component_tuple), std::move(component_offsets));
-        return ColumnTuple::create(
-            Columns{std::move(value), std::move(time), std::move(half_life), std::move(component_array)});
+        return ColumnTuple::create(Columns{std::move(value), std::move(time), std::move(half_life)});
     }
 
     MutableColumnPtr time;
     ColumnFloat64::MutablePtr value;
     ColumnFloat64::MutablePtr half_life;
-    ColumnFloat64::MutablePtr component_value;
-    ColumnFloat64::MutablePtr component_half_life;
-    ColumnArray::ColumnOffsets::MutablePtr component_offsets;
 };
 
 class FunctionExponentialTimeDecayingFloat64 final : public IFunction
@@ -217,15 +176,7 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time of function {} must be finite", getName());
         }
 
-        auto offsets = ColumnArray::ColumnOffsets::create(input_rows_count);
-        auto & offsets_data = offsets->getData();
-        for (size_t row = 0; row < input_rows_count; ++row)
-            offsets_data[row] = row + 1;
-
-        auto components = ColumnArray::create(
-            ColumnTuple::create(Columns{value, half_life}),
-            std::move(offsets));
-        return ColumnTuple::create(Columns{std::move(value), std::move(time), std::move(half_life), std::move(components)});
+        return ColumnTuple::create(Columns{std::move(value), std::move(time), std::move(half_life)});
     }
 };
 
@@ -270,16 +221,26 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            if (!std::isfinite(left.time.getFloat64(row)) || !std::isfinite(right.time.getFloat64(row)))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Times of function {} must be finite", getName());
+            assertValidRow(left, row, getName());
+            assertValidRow(right, row, getName());
+            const Float64 left_half_life = left.half_life.getData()[row];
+            const Float64 right_half_life = right.half_life.getData()[row];
+            if (left_half_life != right_half_life)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Function {} cannot add values with different half-lives: {} and {}",
+                    getName(),
+                    left_half_life,
+                    right_half_life);
+
             const bool left_is_latest = left.time.compareAt(row, row, right.time, 1) >= 0;
             const IColumn & latest_time_column = left_is_latest ? left.time : right.time;
             const Float64 latest_time = latest_time_column.getFloat64(row);
-
-            std::map<Float64, Float64> values_by_half_life;
-            addRebasedComponents(values_by_half_life, left, row, latest_time);
-            addRebasedComponents(values_by_half_life, right, row, latest_time);
-            result.append(latest_time_column, row, values_by_half_life);
+            result.append(
+                valueAt(left, row, latest_time) + valueAt(right, row, latest_time),
+                latest_time_column,
+                row,
+                left_half_life);
         }
 
         return result.build();
@@ -317,14 +278,12 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
+            assertValidRow(input, row, getName());
             if (!std::isfinite(target_time_column->getFloat64(row)))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Target time of function {} must be finite", getName());
             if (target_time_column->compareAt(row, row, input.time, 1) < 0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Target time of function {} must not precede the anchor time", getName());
-            std::map<Float64, Float64> values_by_half_life;
-            addRebasedComponents(values_by_half_life, input, row, target_time_column->getFloat64(row));
-            for (const auto & component : values_by_half_life)
-                result_data[row] += component.second;
+            result_data[row] = valueAt(input, row, target_time_column->getFloat64(row));
         }
         return result;
     }
@@ -361,13 +320,16 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
+            assertValidRow(input, row, getName());
             if (!std::isfinite(target_time_column->getFloat64(row)))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Target time of function {} must be finite", getName());
             if (target_time_column->compareAt(row, row, input.time, 1) < 0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Target time of function {} must not precede the anchor time", getName());
-            std::map<Float64, Float64> values_by_half_life;
-            addRebasedComponents(values_by_half_life, input, row, target_time_column->getFloat64(row));
-            result.append(*target_time_column, row, values_by_half_life);
+            result.append(
+                valueAt(input, row, target_time_column->getFloat64(row)),
+                *target_time_column,
+                row,
+                input.half_life.getData()[row]);
         }
         return result.build();
     }
@@ -392,29 +354,27 @@ The value must be finite and non-negative, and the half-life must be finite and 
         .examples = {{
             "Construct a value",
             "SELECT exponentialTimeDecayingFloat64(8, toFloat64(0), 10)",
-            "(8,0,10,[(8,10)])"}},
+            "(8,0,10)"}},
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::Other});
 
     factory.registerFunction<FunctionExponentialTimeDecayingAdd>(FunctionDocumentation{
         .description = R"(
 Adds two exponentially time-decaying values at their greatest anchor time.
-First rebase both inputs to `ct = greatest(A.time, B.time)`. If `Av` and `Bv` are their rebased
-values and `Ad` and `Bd` are their rebased effective half-lives, the result has `value = Av + Bv`,
-`time = ct`, and `half_life = (Ad * Av + Bd * Bv) / (Av + Bv)`.
-Distinct half-lives remain separate internally so repeated additions remain independent of grouping and input order.
+Both inputs must have identical half-lives. The function rebases them to
+`ct = greatest(A.time, B.time)` and returns `(A.value_at(ct) + B.value_at(ct), ct, A.half_life)`.
 )",
         .syntax = "exponentialTimeDecayingAdd(a, b)",
         .arguments = {
             {"a", "First decaying value.", {"ExponentialTimeDecayingFloat64"}},
-            {"b", "Second decaying value with the same time type.", {"ExponentialTimeDecayingFloat64"}}},
+            {"b", "Second decaying value with the same time type and half-life.", {"ExponentialTimeDecayingFloat64"}}},
         .returned_value = {"Returns the combined decaying value.", {"ExponentialTimeDecayingFloat64"}},
         .examples = {{
-            "Add values with different half-lives",
+            "Add values with the same half-life",
             "SELECT exponentialTimeDecayingAdd("
             "exponentialTimeDecayingFloat64(8, toFloat64(0), 10), "
-            "exponentialTimeDecayingFloat64(4, toFloat64(10), 20))",
-            "(8,10,15,[(4,10),(4,20)])"}},
+            "exponentialTimeDecayingFloat64(4, toFloat64(10), 10))",
+            "(8,10,10)"}},
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::Other});
 
@@ -429,7 +389,7 @@ For `DateTime64`, use `now64()` with the matching scale and time zone.
             {"value", "Decaying value.", {"ExponentialTimeDecayingFloat64"}},
             {"target_time", "Evaluation time at or after the anchor, with the type used by the decaying value.",
                 {"Number", "DateTime", "DateTime64"}}},
-        .returned_value = {"Returns the sum of all independently decayed components at the target time.", {"Float64"}},
+        .returned_value = {"Returns the decayed value at the target time.", {"Float64"}},
         .examples = {{
             "Evaluate one half-life later",
             "SELECT exponentialTimeDecayingValueAt(exponentialTimeDecayingFloat64(8, toFloat64(0), 10), toFloat64(10))",
@@ -438,7 +398,7 @@ For `DateTime64`, use `now64()` with the matching scale and time zone.
         .category = FunctionDocumentation::Category::Other});
 
     factory.registerFunction<FunctionExponentialTimeDecayingRebase>(FunctionDocumentation{
-        .description = "Re-anchors a decaying value at its anchor time or a later time and recalculates its value and effective half-life.",
+        .description = "Re-anchors a decaying value at its anchor time or a later time and recalculates its value.",
         .syntax = "exponentialTimeDecayingRebase(value, target_time)",
         .arguments = {
             {"value", "Decaying value.", {"ExponentialTimeDecayingFloat64"}},
@@ -448,7 +408,7 @@ For `DateTime64`, use `now64()` with the matching scale and time zone.
         .examples = {{
             "Rebase one half-life later",
             "SELECT exponentialTimeDecayingRebase(exponentialTimeDecayingFloat64(8, toFloat64(0), 10), toFloat64(10))",
-            "(4,10,10,[(4,10)])"}},
+            "(4,10,10)"}},
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::Other});
 }

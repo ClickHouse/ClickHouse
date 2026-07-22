@@ -176,8 +176,7 @@ SELECT
     round(tupleElement(decaying_count, 'value'), 6),
     toTypeName(decaying_sum),
     tupleElement(decaying_sum, 'time'),
-    tupleElement(decaying_sum, 'half_life'),
-    length(tupleElement(decaying_sum, 'components'))
+    tupleElement(decaying_sum, 'half_life')
 FROM
 (
     SELECT
@@ -191,17 +190,16 @@ FROM
         (5, '2020-01-01 00:00:05'))
 );
 
--- Decaying values expose their anchor and the value-weighted effective half-life.
+-- Decaying values with the same half-life can be combined at their latest anchor.
 WITH
     exponentialTimeDecayingFloat64(8, toFloat64(0), 10) AS a,
-    exponentialTimeDecayingFloat64(4, toFloat64(10), 20) AS b,
+    exponentialTimeDecayingFloat64(4, toFloat64(10), 10) AS b,
     exponentialTimeDecayingAdd(a, b) AS c
 SELECT
     toTypeName(c),
     round(tupleElement(c, 'value'), 6),
     tupleElement(c, 'time'),
     round(tupleElement(c, 'half_life'), 6),
-    length(tupleElement(c, 'components')),
     round(exponentialTimeDecayingValueAt(c, toFloat64(20)), 6);
 
 -- DateTime anchors retain their type and use seconds as the half-life unit.
@@ -215,11 +213,10 @@ SELECT
         decaying_value,
         toDateTime('2020-01-01 00:00:10', 'UTC')), 6);
 
--- Rebasing recalculates both the value and effective half-life while preserving
--- the exact components and the original DateTime64 type.
+-- Rebasing recalculates the value while preserving the half-life and original DateTime64 type.
 WITH
     exponentialTimeDecayingFloat64(8, toDateTime64('2020-01-01 00:00:00', 3), 10) AS a,
-    exponentialTimeDecayingFloat64(4, toDateTime64('2020-01-01 00:00:10', 3), 20) AS b,
+    exponentialTimeDecayingFloat64(4, toDateTime64('2020-01-01 00:00:10', 3), 10) AS b,
     exponentialTimeDecayingRebase(
         a + b,
         toDateTime64('2020-01-01 00:00:20', 3)) AS rebased
@@ -229,8 +226,7 @@ SELECT
     round(tupleElement(rebased, 'value'), 6),
     round(tupleElement(rebased, 'half_life'), 6);
 
--- The parameterized type can be stored while preserving its exact time type
--- and independently decaying components.
+-- The parameterized type can be stored while preserving its exact time type.
 DROP TABLE IF EXISTS exponential_time_decaying_values;
 CREATE TABLE exponential_time_decaying_values
 (
@@ -241,7 +237,7 @@ ENGINE = Memory;
 INSERT INTO exponential_time_decaying_values
 WITH
     exponentialTimeDecayingFloat64(8, toDateTime64('2020-01-01 00:00:00', 3), 10) AS a,
-    exponentialTimeDecayingFloat64(4, toDateTime64('2020-01-01 00:00:10', 3), 20) AS b
+    exponentialTimeDecayingFloat64(4, toDateTime64('2020-01-01 00:00:10', 3), 10) AS b
 SELECT a + b;
 
 SELECT
@@ -255,12 +251,19 @@ FROM exponential_time_decaying_values;
 
 DROP TABLE exponential_time_decaying_values;
 
--- Distinct half-lives must remain associative instead of being collapsed after
--- each intermediate addition.
+-- Different half-lives cannot be represented by one decay curve and are rejected.
+SELECT exponentialTimeDecayingAdd(
+    exponentialTimeDecayingFloat64(8, toFloat64(0), 10),
+    exponentialTimeDecayingFloat64(4, toFloat64(10), 20)); -- { serverError BAD_ARGUMENTS }
+SELECT
+    exponentialTimeDecayingFloat64(8, toFloat64(0), 10)
+    + exponentialTimeDecayingFloat64(4, toFloat64(10), 20); -- { serverError BAD_ARGUMENTS }
+
+-- Repeated addition with the same half-life remains independent of grouping.
 WITH
-    exponentialTimeDecayingFloat64(1, toFloat64(0), 1) AS a,
-    exponentialTimeDecayingFloat64(1, toFloat64(1), 2) AS b,
-    exponentialTimeDecayingFloat64(1, toFloat64(2), 4) AS c,
+    exponentialTimeDecayingFloat64(1, toFloat64(0), 10) AS a,
+    exponentialTimeDecayingFloat64(1, toFloat64(1), 10) AS b,
+    exponentialTimeDecayingFloat64(1, toFloat64(2), 10) AS c,
     (a + b) + c AS lhs,
     a + (b + c) AS rhs
 SELECT
@@ -268,14 +271,14 @@ SELECT
     abs(tupleElement(lhs, 'half_life') - tupleElement(rhs, 'half_life')) < 1e-12,
     abs(exponentialTimeDecayingValueAt(lhs, toFloat64(10)) - exponentialTimeDecayingValueAt(rhs, toFloat64(10))) < 1e-12;
 
--- Reproducibly generated values with different timestamps and half-lives must
--- be independent of input order and intermediate batch grouping.
+-- Reproducibly generated values with different timestamps and the same half-life
+-- must be independent of input order and intermediate batch grouping.
 WITH
     arrayMap(
         number -> exponentialTimeDecayingFloat64(
             toFloat64((sipHash64(number, 11) % 100000) + 1) / 1000,
             toFloat64(sipHash64(number, 22) % 100000) / 100,
-            toFloat64((sipHash64(number, 33) % 17) + 1)),
+            toFloat64(17)),
         range(64)) AS values,
     arrayFold(
         (acc, value) -> acc + value,

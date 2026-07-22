@@ -219,13 +219,10 @@ public:
             const Float64 result = result_kind == ExponentialTimeDecayedResult::Sum
                 ? state.weighted_sum
                 : state.weight;
-            Tuple component{Field(result), Field(half_life)};
-            Array components{Field(component)};
             Tuple decaying_value{
                 Field(result),
                 state.initialized ? state.max_time_field : time_type->getDefault(),
-                Field(half_life),
-                Field(components)};
+                Field(half_life)};
             to.insert(Field(decaying_value));
         }
     }
