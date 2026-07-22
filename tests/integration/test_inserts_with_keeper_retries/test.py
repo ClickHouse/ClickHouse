@@ -14,7 +14,8 @@ from helpers.network import PartitionManager
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/storage_conf.xml"],
+    main_configs=["configs/storage_conf.xml", "configs/backups_disk.xml"],
+    external_dirs=["/backups/"],
     with_zookeeper=True,
     with_minio=True,
     with_remote_database_disk=False,  # The tests stop Keeper connections, some queries will not work with the remote disk.
@@ -407,7 +408,7 @@ def test_ambiguous_zk_commit_attach_keeps_part_in_table_path(started_cluster):
 
 
 def test_ambiguous_zk_commit_restore_keeps_part_in_table_path(started_cluster):
-    backup_name = f"Memory('amb_restore_{uuid.uuid4().hex}')"
+    backup_name = f"Disk('backups', 'amb_restore_{uuid.uuid4().hex}')"
 
     try:
         node1.query(
