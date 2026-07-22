@@ -74,9 +74,9 @@
 #if CLICKHOUSE_CLOUD
     #include <Interpreters/FileCache/FileCacheFactory.h>
     #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
-    #include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
-    #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #endif
+#include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
+#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 
 
 namespace ProfileEvents
@@ -2186,6 +2186,9 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     auto cached_index_marks = global_ctx->to->releaseCachedIndexMarks();
     for (auto & [name, marks] : cached_index_marks)
         global_ctx->cached_index_marks.emplace(name, std::move(marks));
+
+    global_ctx->new_data_part->getDataPartStorage().setPreferredFileOrder(
+        global_ctx->new_data_part->getPreferredFileOrder());
 
     global_ctx->new_data_part->getDataPartStorage().precommitTransaction();
     global_ctx->promise.set_value(std::exchange(global_ctx->new_data_part, nullptr));
