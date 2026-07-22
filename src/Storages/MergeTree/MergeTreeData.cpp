@@ -5075,6 +5075,24 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
     }
 
+    /// A `MATERIALIZED` column whose effective expression changes is rematerialized with an
+    /// automatic `MATERIALIZE COLUMN` mutation (see `AlterCommands::getMutationCommands`), but
+    /// `MATERIALIZE COLUMN` refuses to run on sort-key columns because it could break the sort
+    /// order. Reject such ALTERs up front instead of persisting the new metadata and queueing
+    /// a mutation that can never succeed.
+    {
+        Names sorting_key_columns = new_metadata.getSortingKeyColumns();
+        for (const auto & column_name : commands.getMaterializedColumnsWithChangedExpansion(old_metadata, new_metadata, local_context))
+        {
+            if (std::find(sorting_key_columns.begin(), sorting_key_columns.end(), column_name) != sorting_key_columns.end())
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "The ALTER changes the effective expression of the MATERIALIZED column {}, which is in the sort key. "
+                    "Existing parts would have to be rematerialized, and that could break the sort order",
+                    backQuote(column_name));
+        }
+    }
+
     auto unfinished_mutations = getUnfinishedMutationCommands();
     std::optional<NameDependencies> name_deps{};
     for (const AlterCommand & command : commands)

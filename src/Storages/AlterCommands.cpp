@@ -2348,10 +2348,14 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
         if (new_column.default_desc.kind != ColumnDefaultKind::Materialized || !new_column.default_desc.expression)
             continue;
 
-        /// Compare the matcher expansions of the stored expression under the old and the new
-        /// schema. Renames were already applied to the stored expressions of the new metadata,
-        /// so apply them to the old expansion too: a pure rename does not change the values.
-        ASTPtr old_expanded = cloneAndExpandColumnDefaultExpression(old_column.default_desc, old_metadata.columns, context);
+        /// Compare the effective expressions — matchers expanded and referenced `ALIAS` columns
+        /// lowered to their bodies, the same way execution materializes the column — under the
+        /// old and the new schema. Lowering aliases catches changes that arrive through an alias
+        /// body, e.g. `m MATERIALIZED y` with `y ALIAS greatest(*, 0)` when `ADD COLUMN` extends
+        /// the matcher inside `y`. Renames were already applied to the stored expressions of the
+        /// new metadata, so apply them to the old expansion too: a pure rename does not change
+        /// the values.
+        ASTPtr old_expanded = cloneAndExpandColumnDefaultExpressionWithAliases(old_column.default_desc, old_metadata.columns, context);
         for (const auto & [from, to] : renames)
         {
             RenameColumnData rename_data{from, to};
@@ -2359,9 +2363,38 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
             rename_visitor.visit(old_expanded);
         }
 
-        ASTPtr new_expanded = cloneAndExpandColumnDefaultExpression(new_column.default_desc, new_metadata.columns, context);
+        ASTPtr new_expanded = cloneAndExpandColumnDefaultExpressionWithAliases(new_column.default_desc, new_metadata.columns, context);
         if (old_expanded->formatWithSecretsOneLine() != new_expanded->formatWithSecretsOneLine())
             res.push_back(new_name);
+    }
+
+    if (res.empty())
+        return res;
+
+    /// Rematerializing a column changes its values, so `MATERIALIZED` columns that read it
+    /// (directly or through an `ALIAS`) must be rematerialized as well. Close the set over
+    /// such dependents; the loop terminates because the set only grows.
+    NameSet changed(res.begin(), res.end());
+    bool progress = true;
+    while (progress)
+    {
+        progress = false;
+        for (const auto & column : new_metadata.columns)
+        {
+            if (column.default_desc.kind != ColumnDefaultKind::Materialized || !column.default_desc.expression
+                || changed.contains(column.name))
+                continue;
+
+            ASTPtr expanded = cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, new_metadata.columns, context);
+            NameSet dependencies;
+            collectAliasDependenciesFromAST(expanded, changed, dependencies);
+            if (!dependencies.empty())
+            {
+                changed.insert(column.name);
+                res.push_back(column.name);
+                progress = true;
+            }
+        }
     }
     return res;
 }

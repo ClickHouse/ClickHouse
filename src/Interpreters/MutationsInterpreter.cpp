@@ -813,10 +813,21 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
     }
 
+    /// `MATERIALIZE COLUMN` rewrites its target from the current default expression, so
+    /// MATERIALIZED columns that depend on the target must be recalculated as well —
+    /// otherwise they keep values computed from the old target while new inserts use the
+    /// new one. Collect the targets to include them in the dependency analysis below.
+    NameSet materialize_column_targets;
+    for (const auto & command : commands)
+    {
+        if (command.type == MutationCommand::MATERIALIZE_COLUMN)
+            materialize_column_targets.insert(command.column_name);
+    }
+
     /// We need to know which columns affect which MATERIALIZED columns, data skipping indices
     /// and projections to recalculate them if dependencies are updated.
     std::unordered_map<String, Names> column_to_affected_materialized;
-    if (!updated_columns.empty())
+    if (!updated_columns.empty() || !materialize_column_targets.empty())
     {
         /// Collect ephemeral columns and include them in the analysis set so
         /// TreeRewriter can resolve MATERIALIZED expressions that reference them.
@@ -858,13 +869,23 @@ void MutationsInterpreter::prepare(bool dry_run)
                     continue;
                 }
 
+                /// For `MATERIALIZE COLUMN` also record edges between MATERIALIZED columns
+                /// themselves, so the dependent closure can be followed transitively
+                /// (`m2 MATERIALIZED m1 + 1` depends on `m1 MATERIALIZED ...`).
                 for (const auto & dependency : required_columns)
-                    if (updated_columns.contains(dependency))
+                {
+                    bool is_relevant = updated_columns.contains(dependency)
+                        || (!materialize_column_targets.empty()
+                            && (materialize_column_targets.contains(dependency)
+                                || columns_desc.tryGetColumn(GetColumnsOptions::Materialized, dependency)));
+                    if (is_relevant)
                         column_to_affected_materialized[dependency].push_back(column.name);
+                }
             }
         }
 
-        validateUpdateColumns(source, metadata_snapshot, updated_columns, column_to_affected_materialized, context);
+        if (!updated_columns.empty())
+            validateUpdateColumns(source, metadata_snapshot, updated_columns, column_to_affected_materialized, context);
     }
 
     StorageInMemoryMetadata::HasDependencyCallback has_dependency =
@@ -1157,6 +1178,67 @@ void MutationsInterpreter::prepare(bool dry_run)
                 "_CAST", cloneAndValidateExpandedDefaultExpression(column, columns_desc, context), make_intrusive<ASTLiteral>(column.type->getName()));
 
             stages.back().column_to_updated.emplace(column.name, materialized_column);
+
+            /// Recalculate MATERIALIZED columns that depend on the materialized column,
+            /// mirroring the dependent-column handling of UPDATE: otherwise they would keep
+            /// values computed from the old target while new inserts use the new one. Each
+            /// dependency level gets its own stage, so its expressions see the values already
+            /// recalculated by the previous levels.
+            NameSet processed_dependents{command.column_name};
+            NameSet current_level{command.column_name};
+            while (true)
+            {
+                NameSet next_level;
+                for (const auto & dependency : current_level)
+                {
+                    auto it = column_to_affected_materialized.find(dependency);
+                    if (it == column_to_affected_materialized.end())
+                        continue;
+
+                    for (const auto & mat_column : it->second)
+                    {
+                        if (processed_dependents.insert(mat_column).second)
+                            next_level.insert(mat_column);
+                    }
+                }
+
+                if (next_level.empty())
+                    break;
+
+                for (const auto & mat_column : next_level)
+                {
+                    if (std::find(sort_columns.begin(), sort_columns.end(), mat_column) != sort_columns.end())
+                        throw Exception(
+                            ErrorCodes::CANNOT_UPDATE_COLUMN,
+                            "Refused to materialize column {} because the dependent MATERIALIZED column {} is in the sort key. "
+                            "Doing so could break the sort order",
+                            backQuote(command.column_name),
+                            backQuote(mat_column));
+                }
+
+                stages.emplace_back(context);
+                for (const auto & dependent_column : columns_desc)
+                {
+                    if (dependent_column.default_desc.kind == ColumnDefaultKind::Materialized
+                        && next_level.contains(dependent_column.name)
+                        && dependent_column.default_desc.expression)
+                    {
+                        auto type_literal = make_intrusive<ASTLiteral>(dependent_column.type->getName());
+
+                        ASTPtr dependent_materialized_column = makeASTFunction("_CAST",
+                            cloneAndValidateExpandedDefaultExpression(dependent_column, columns_desc, context),
+                            type_literal);
+
+                        /// See the same replacement in the UPDATE branch: subcolumns must be
+                        /// extracted from the recalculated source column, not the old one.
+                        replaceSubcolumnsToGetSubcolumnFunctionInQuery(dependent_materialized_column, all_columns);
+
+                        stages.back().column_to_updated.emplace(dependent_column.name, dependent_materialized_column);
+                    }
+                }
+
+                current_level = std::move(next_level);
+            }
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {

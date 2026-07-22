@@ -329,6 +329,10 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
 
 ASTPtr cloneAndExpandColumnDefaultExpression(const ColumnDefault & column_default, const ColumnsDescription & columns, ContextPtr context);
 ASTPtr cloneAndExpandColumnDefaultExpressionWithAliases(const ColumnDefault & column_default, const ColumnsDescription & columns, ContextPtr context);
+
+/// Insert into `dependencies` the columns from `candidate_names` that `node` reads,
+/// excluding names bound by lambda arguments inside the expression.
+void collectAliasDependenciesFromAST(const ASTPtr & node, const NameSet & candidate_names, NameSet & dependencies);
 void validateNoCyclicAliasesAfterExpansion(const String & alias_name, const ASTPtr & expanded_alias_expression, const ColumnsDescription & columns, ContextPtr context);
 void expandColumnMatchersInExpression(ASTPtr & expression, const ColumnsDescription & columns, ContextPtr context);
 void expandColumnMatchersInExpressionList(ASTPtr & expression_list, const ColumnsDescription & columns, ContextPtr context);

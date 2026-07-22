@@ -1360,6 +1360,8 @@ ColumnsDescription clearDefaultExpressions(const ColumnsDescription & columns)
     return result;
 }
 
+}
+
 void collectAliasDependenciesFromAST(
     const ASTPtr & node,
     const NameSet & candidate_names,
@@ -1374,6 +1376,9 @@ void collectAliasDependenciesFromAST(
         if (candidate_names.contains(column_name))
             dependencies.insert(column_name);
 }
+
+namespace
+{
 
 [[noreturn]] void throwDefaultCycleException(const Strings & cycle_path)
 {

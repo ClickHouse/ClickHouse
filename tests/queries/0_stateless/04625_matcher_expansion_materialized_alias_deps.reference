@@ -1,0 +1,21 @@
+-- materialized via alias body: rematerialized on ADD COLUMN
+1
+0	1000
+1	1001
+2	1002
+10	1010
+0
+2
+0
+-- dependent materialized closure: recalculated transitively
+0	1000	1001	1002
+1	1001	1002	1003
+2	1002	1003	1004
+0
+-- explicit MATERIALIZE COLUMN: dependents recalculated
+0	2	20
+1	3	30
+2	4	40
+-- sort-key materialized column: ALTER rejected up front
+0
+0

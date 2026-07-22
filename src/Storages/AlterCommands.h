@@ -264,10 +264,15 @@ public:
         const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata, ContextPtr context) const;
 
     /// Names (post-ALTER) of `MATERIALIZED` columns that these commands do not
-    /// modify explicitly but whose matcher expansion changes under the post-ALTER
-    /// schema, e.g. `m MATERIALIZED greatest(a, * EXCEPT m)` when a column is
-    /// added. Existing parts keep values computed from the old expansion while
-    /// new inserts would use the new one, so such columns must be rematerialized.
+    /// modify explicitly but whose effective expression (matchers expanded,
+    /// referenced `ALIAS` columns lowered to their bodies) changes under the
+    /// post-ALTER schema, e.g. `m MATERIALIZED greatest(a, * EXCEPT m)` when a
+    /// column is added, or `m MATERIALIZED y` when the expansion of a matcher
+    /// inside the body of `y` changes. Existing parts keep values computed from
+    /// the old expression while new inserts would use the new one, so such
+    /// columns must be rematerialized. The result is closed over dependents:
+    /// it also includes `MATERIALIZED` columns that read a changed column,
+    /// directly or through an `ALIAS`, transitively.
     /// `new_metadata` must already have the commands applied to its columns.
     Names getMaterializedColumnsWithChangedExpansion(
         const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata, ContextPtr context) const;
