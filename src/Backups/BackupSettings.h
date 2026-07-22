@@ -44,6 +44,12 @@ struct BackupSettings
     /// Whether the BACKUP will omit similar files (within one backup only).
     bool deduplicate_files = true;
 
+    /// Whether to fsync the backup's files, the `.backup` manifest and the containing
+    /// directories to local storage before the backup is reported as created, so that an
+    /// acknowledged backup survives power loss. Only affects local `File`/`Disk` destinations;
+    /// object-storage destinations (`S3`/`Azure`) are already durable once uploaded.
+    bool fsync_backup_files = true;
+
     /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
     bool allow_s3_native_copy = true;
 

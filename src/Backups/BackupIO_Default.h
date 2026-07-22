@@ -5,6 +5,8 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 
+#include <filesystem>
+
 
 namespace DB
 {
@@ -14,6 +16,18 @@ class ReadBuffer;
 class SeekableReadBuffer;
 class WriteBuffer;
 enum class WriteMode : uint8_t;
+
+/// Durability helper (issue #111320): fsync the contents of an already-written local file by
+/// re-opening it. Needed because backup files are written either through a WriteBuffer or copied
+/// natively (fs::copy / IDisk::copyFile), and the latter leaves no buffer to call sync() on.
+/// Increments the FileSync ProfileEvent (like WriteBufferFromFileDescriptor::sync).
+void fsyncBackupFileContents(const std::filesystem::path & path);
+
+/// Durability helper (issue #111320): fsync a directory so the entries of the files renamed or
+/// created inside it are persisted. Unlike LocalDirectorySyncGuard this THROWS on failure, so a
+/// backup cannot report success while its durability guarantee silently failed. Increments the
+/// DirectorySync ProfileEvent.
+void fsyncBackupDirectory(const std::filesystem::path & path);
 
 /// Represents operations of loading from disk or downloading for reading a backup.
 class BackupReaderDefault : public IBackupReader

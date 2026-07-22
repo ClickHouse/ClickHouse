@@ -6,6 +6,8 @@
 #include <IO/WriteBufferFromFileBase.h>
 
 
+namespace fs = std::filesystem;
+
 namespace DB
 {
 
@@ -158,6 +160,54 @@ void BackupWriterDisk::copyFile(const String & destination, const String & sourc
     auto src_file_path = root_path / source;
     disk->createDirectories(dest_file_path.parent_path());
     disk->copyFile(src_file_path, *disk, dest_file_path, read_settings, write_settings);
+}
+
+void BackupWriterDisk::syncFileToDisk(const String & file_name)
+{
+    /// Only local disks need an explicit fsync; a completed upload to remote object storage is
+    /// already durable. For a local disk getBlobPath() resolves to the absolute filesystem path.
+    if (disk->isRemote())
+        return;
+
+    auto file_path = root_path / file_name;
+    auto blob_path = disk->getBlobPath(file_path);
+    if (blob_path.size() == 1)
+        fsyncBackupFileContents(blob_path[0]);
+
+    /// Remember the disk-relative ancestor directories of this file (down to the disk root ""),
+    /// so syncDirectoriesToDisk() can persist their entries.
+    std::lock_guard lock{dirs_to_sync_mutex};
+    for (auto dir = file_path.parent_path(); ; dir = dir.parent_path())
+    {
+        if (!dirs_to_sync.emplace(dir).second)
+            break; /// this dir and all its ancestors are already recorded
+        if (dir.empty())
+            break; /// reached the disk root
+    }
+}
+
+void BackupWriterDisk::syncDirectoriesToDisk()
+{
+    if (disk->isRemote())
+        return;
+
+    std::set<fs::path> dirs;
+    {
+        std::lock_guard lock{dirs_to_sync_mutex};
+        dirs = dirs_to_sync;
+    }
+    if (dirs.empty())
+        return;
+
+    /// Sync deepest-first: a child directory entry is durable only once its parent is fsynced.
+    /// getBlobPath() resolves the disk-relative path (including the disk root "") to the
+    /// absolute filesystem path for a local disk.
+    for (auto it = dirs.rbegin(); it != dirs.rend(); ++it)
+    {
+        auto blob_path = disk->getBlobPath(*it);
+        if (blob_path.size() == 1)
+            fsyncBackupDirectory(blob_path[0]);
+    }
 }
 
 }

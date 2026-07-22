@@ -181,4 +181,50 @@ void BackupWriterFile::copyFile(const String & destination, const String & sourc
     fs::copy(abs_source_path, abs_dest_path, fs::copy_options::overwrite_existing);
 }
 
+void BackupWriterFile::syncFileToDisk(const String & file_name)
+{
+    auto file_path = (root_path / file_name).lexically_normal();
+    fsyncBackupFileContents(file_path);
+
+    /// Remember the ancestor directories of this file (up to and including the backup root)
+    /// so syncDirectoriesToDisk() can persist their entries. root_path is absolute here, so
+    /// the walk stops at the root and never leaves the backup. Normalize so a configured
+    /// trailing separator does not break the comparison with the root.
+    const auto root = root_path.lexically_normal();
+    const auto stop = root.parent_path();
+    std::lock_guard lock{dirs_to_sync_mutex};
+    for (auto dir = file_path.parent_path(); dir.has_relative_path() && dir != stop; dir = dir.parent_path())
+    {
+        if (!dirs_to_sync.emplace(dir).second)
+            break; /// this dir and all its ancestors are already recorded
+        if (dir == root)
+            break;
+    }
+}
+
+void BackupWriterFile::syncDirectoriesToDisk()
+{
+    std::set<fs::path> dirs;
+    {
+        std::lock_guard lock{dirs_to_sync_mutex};
+        dirs = dirs_to_sync;
+    }
+    if (dirs.empty())
+        return;
+
+    /// Sync deepest-first: a child directory entry is durable only once its parent is fsynced.
+    for (auto it = dirs.rbegin(); it != dirs.rend(); ++it)
+        fsyncBackupDirectory(*it);
+
+    /// Finally the backup root's parent, so the root directory's own entry is persisted
+    /// (create_directories may have created the root too).
+    const auto root_parent = root_path.lexically_normal().parent_path();
+    if (!root_parent.empty())
+    {
+        std::error_code ec;
+        if (fs::is_directory(root_parent, ec))
+            fsyncBackupDirectory(root_parent);
+    }
+}
+
 }

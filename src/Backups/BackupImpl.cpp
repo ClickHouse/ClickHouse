@@ -1171,6 +1171,15 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
 
     std::ranges::for_each(info.data_file_copies, copy_file_inside_backup);
 
+    /// Make the just-written data file and its copies durable. Archives are synced as a single
+    /// file in finalizeWriting instead. Concurrency-safe: each call fsyncs its own file.
+    if (params.fsync_backup_files && !use_archive)
+    {
+        writer->syncFileToDisk(info.data_file_name);
+        for (const auto & data_file_copy : info.data_file_copies)
+            writer->syncFileToDisk(data_file_copy);
+    }
+
     {
         std::lock_guard lock{mutex};
         ++num_entries;
@@ -1198,9 +1207,21 @@ void BackupImpl::finalizeWriting()
         writeBackupMetadata();
         closeArchive(/* finalize= */ true);
         setCompressedSize();
+
+        /// Sync the manifest (or, for archives, the archive file) last, after all data files were
+        /// synced in writeFile, so a persisted manifest never precedes its payload. Only the
+        /// initiator writes the manifest.
+        if (params.fsync_backup_files && writer)
+            writer->syncFileToDisk(use_archive ? archive_params.archive_name : ".backup");
+
         removeLockFile();
         LOG_TRACE(log, "Finalized backup {}", backup_name_for_logging);
     }
+
+    /// Sync directory entries on every writer, including the internal writers of BACKUP ON
+    /// CLUSTER (they write their own data files), so they are durable before reporting success.
+    if (params.fsync_backup_files && writer)
+        writer->syncDirectoriesToDisk();
 
     writing_finalized = true;
 }

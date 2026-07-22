@@ -2,7 +2,10 @@
 
 #include <Backups/BackupIO_Default.h>
 #include <Disks/DiskType.h>
+
 #include <filesystem>
+#include <mutex>
+#include <set>
 
 
 namespace DB
@@ -44,12 +47,21 @@ public:
     void removeFile(const String & file_name) override;
     void removeEmptyDirectories() override;
 
+    void syncFileToDisk(const String & file_name) override;
+    void syncDirectoriesToDisk() override;
+
 private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;
     void removeEmptyDirectoriesImpl(const std::filesystem::path & current_dir);
 
     const std::filesystem::path root_path;
     const DataSourceDescription data_source_description;
+
+    /// Directories that received a file synced via syncFileToDisk(), collected so they can be
+    /// fsynced (deepest-first) in syncDirectoriesToDisk(). Written from the concurrent backup
+    /// write path, hence guarded.
+    std::mutex dirs_to_sync_mutex;
+    std::set<std::filesystem::path> dirs_to_sync TSA_GUARDED_BY(dirs_to_sync_mutex);
 };
 
 }
