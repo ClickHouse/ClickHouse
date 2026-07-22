@@ -119,7 +119,10 @@ def test_iceberg_history_append_operation_and_summary(
     assert s2["total-equality-deletes"] == "0"
 
 
-def test_iceberg_mutation_summary_totals(started_cluster_iceberg_no_spark):
+@pytest.mark.parametrize("storage_type", ["local", "s3"])
+def test_iceberg_mutation_summary_totals(
+    started_cluster_iceberg_no_spark, storage_type
+):
     """Iceberg mutations must accumulate the physical data and position-delete totals.
 
     An `UPDATE` adds a replacement record and a position delete, while a `DELETE` only
@@ -127,10 +130,10 @@ def test_iceberg_mutation_summary_totals(started_cluster_iceberg_no_spark):
     total minus the position-delete total.
     """
     instance = started_cluster_iceberg_no_spark.instances["node1"]
-    table_name = "test_iceberg_mutation_summary_" + get_uuid_str()
+    table_name = f"test_iceberg_mutation_summary_{storage_type}_{get_uuid_str()}"
 
     create_iceberg_table(
-        "local",
+        storage_type,
         instance,
         table_name,
         started_cluster_iceberg_no_spark,
@@ -180,13 +183,16 @@ def test_iceberg_mutation_summary_totals(started_cluster_iceberg_no_spark):
     )
 
 
-def test_iceberg_optimize_summary_totals(started_cluster_iceberg_no_spark):
+@pytest.mark.parametrize("storage_type", ["local", "s3"])
+def test_iceberg_optimize_summary_totals(
+    started_cluster_iceberg_no_spark, storage_type
+):
     """`OPTIMIZE TABLE` must not count carried-forward manifests more than once."""
     instance = started_cluster_iceberg_no_spark.instances["node1"]
-    table_name = "test_iceberg_optimize_summary_" + get_uuid_str()
+    table_name = f"test_iceberg_optimize_summary_{storage_type}_{get_uuid_str()}"
 
     create_iceberg_table(
-        "local",
+        storage_type,
         instance,
         table_name,
         started_cluster_iceberg_no_spark,
@@ -224,15 +230,18 @@ def test_iceberg_optimize_summary_totals(started_cluster_iceberg_no_spark):
     assert instance.query(f"SELECT count() FROM {table_name}").strip() == "5"
 
 
+@pytest.mark.parametrize("storage_type", ["local", "s3"])
 def test_iceberg_optimize_manifest_preserves_mutation_totals(
-    started_cluster_iceberg_no_spark,
+    started_cluster_iceberg_no_spark, storage_type
 ):
     """`OPTIMIZE TABLE ... MANIFEST` must inherit every total from its parent."""
     instance = started_cluster_iceberg_no_spark.instances["node1"]
-    table_name = "test_iceberg_optimize_manifest_summary_" + get_uuid_str()
+    table_name = (
+        f"test_iceberg_optimize_manifest_summary_{storage_type}_{get_uuid_str()}"
+    )
 
     create_iceberg_table(
-        "local",
+        storage_type,
         instance,
         table_name,
         started_cluster_iceberg_no_spark,
