@@ -7,6 +7,7 @@
 #include <Core/BaseSettingsProgramOptions.h>
 #include <Core/MergeSelectorAlgorithm.h>
 #include <Core/MergeTreeSerializationEnums.h>
+#include <Core/SettingsEnums.h>
 #include <Core/SettingsChangesHistory.h>
 #include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -2026,6 +2027,9 @@ Maximum time between runs of merge coordinator thread
 )", 0) \
     DECLARE(Float, shared_merge_tree_merge_coordinator_factor, 1.1f, R"(
 Time changing factor for delay of coordinator thread
+)", 0) \
+    DECLARE(MergeCoordinatorDistributionAlgorithm, shared_merge_tree_merge_coordinator_distribution_algorithm, MergeCoordinatorDistributionAlgorithm::WATER_FILLING, R"(
+What algorithm will be used by merge coordinator thread to distribute merges between replicas
 )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
 Timeout that merge worker thread will use if it is needed to update it's state after immediate action
