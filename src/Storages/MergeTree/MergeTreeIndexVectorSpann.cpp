@@ -629,7 +629,7 @@ MergeTreeIndexConditionVectorSpann::MergeTreeIndexConditionVectorSpann(
     if (expansion_search == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
 
-    if (index_fetch_multiplier < 1.0)
+    if (index_fetch_multiplier < 1.0f)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_index_fetch_multiplier' must be >= 1.0");
 
     if (!std::isfinite(index_fetch_multiplier)
