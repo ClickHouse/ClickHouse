@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# Tags: no-fasttest, no-replicated-database, no-shared-merge-tree, no-object-storage, no-random-merge-tree-settings
+#
+# `no-fasttest`: this test does local-disk part-file surgery (rewrites the
+# skp_idx.packed footer in the detached part dir) like other fixture-surgery
+# tests (e.g. 02864_restore_table_with_broken_part). The Fast test macOS
+# (arm_darwin) environment does not reliably expose that layout, so the surgery
+# cannot run there. The bug is disk-layer independent and is fully covered by
+# the sanitizer stateless jobs.
+#
+# `no-object-storage` / `no-shared-merge-tree` / `no-replicated-database`: the
+# test rewrites a real on-disk archive file in the local part directory and
+# relies on ATTACH recomputing checksums.txt from it. On object storage the
+# files are DiskObjectStorageMetadata pointer files, and the replicated/shared
+# engines gate ATTACH on ZooKeeper checksum digests, so the local-disk surgery
+# does not apply there. The bug is in MutateTask's packed-archive preservation
+# loop and is independent of the disk layer, so a plain local MergeTree suffices.
+#
+# `no-random-merge-tree-settings`: the test depends on a fixed granule count and
+# on both minmax indices living inside skp_idx.packed. The relevant settings are
+# pinned explicitly in the CREATE below (index_granularity, replace_long_file_name_to_hash,
+# min_bytes_for_wide_part, packed_skip_index_max_bytes).
+#
+# Regression test for the second backward-compatibility gap flagged on PR #109616
+# (issue #109595), in the PACKED-ARCHIVE preservation path (companion to the
+# per-file hardlink path covered by 04402). A mutation that rebuilds skp_idx.packed
+# because one packed index (mm_w) is recomputed must preload the surviving packed
+# members of the OTHER, non-recalculated index (mm_v) into the new archive. The
+# preserve loop used to enumerate the current writer substreams via getSubstreams().
+# For minmax the on-disk format changed from ".idx" (v1) to ".idx2" (v2), so
+# getSubstreams() reports only ".idx2". On an upgraded part that still carries a
+# legacy "skp_idx_mm_v.idx" member inside skp_idx.packed, the loop preloaded the
+# mark member but never the ".idx" data member: the rebuilt archive kept mm_v's
+# mark but dropped its data, silently losing the index after the mutation (CHECK
+# TABLE still passed because the old archive checksum is removed and rewritten).
+# The fix enumerates the substreams actually present in the source part via
+# getDeserializedFormat(source_part->checksums, ...), which probes both ".idx"
+# and ".idx2".
+#
+# The modern writer only produces ".idx2", so the legacy shape is fabricated:
+# build a packed part with two minmax indices, DETACH it, rewrite the packed
+# footer to rename "skp_idx_mm_v.idx2" to "skp_idx_mm_v.idx" (for a non-nullable
+# column the v1 and v2 minmax payloads are byte-identical), drop checksums.txt so
+# ATTACH recomputes it, then ATTACH and run an ALTER UPDATE that touches only w
+# (recomputes mm_w, rebuilds the archive) while mm_v is preserved.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_legacy_packed SYNC"
+
+# v = k and w = k are monotone, so each minmax index prunes a point query to a
+# single granule. index_granularity = 100 over 2000 rows gives 20 granules.
+${CLICKHOUSE_CLIENT} -q "
+CREATE TABLE t_legacy_packed
+(
+    k UInt64,
+    v UInt64,
+    w UInt64,
+    INDEX mm_v v TYPE minmax GRANULARITY 1,
+    INDEX mm_w w TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         index_granularity = 100, replace_long_file_name_to_hash = 0,
+         packed_skip_index_max_bytes = 1000000,
+         columns_and_secondary_indices_sizes_lazy_calculation = 0"
+
+${CLICKHOUSE_CLIENT} -q "INSERT INTO t_legacy_packed (k, v, w) SELECT number, number, number FROM numbers(2000)"
+${CLICKHOUSE_CLIENT} -q "OPTIMIZE TABLE t_legacy_packed FINAL"
+
+# Detach so we can rewrite the packed archive, then downgrade mm_v to the legacy
+# ".idx" layout inside skp_idx.packed.
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_legacy_packed DETACH PARTITION tuple() SETTINGS mutations_sync = 2"
+
+DATA_PATH=$(${CLICKHOUSE_CLIENT} -q "SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND table = 't_legacy_packed'")
+PART_DIR=$(find "${DATA_PATH}detached" -maxdepth 1 -type d -name 'all_*' | head -1)
+
+chmod u+w "${PART_DIR}/skp_idx.packed"
+# Rewrite the packed footer, renaming skp_idx_mm_v.idx2 -> skp_idx_mm_v.idx.
+# The footer is: version(1B) num_files(u64) then per file [varint name_len, name,
+# u64 offset, u64 size, and in v1+ u64 uncompressed_size], followed by the
+# concatenated data region. Renaming one member shrinks its name by 1 byte, so
+# every offset must be recomputed. The extra per-entry fields (v1 adds
+# uncompressed_size) are carried through unchanged.
+python3 - "${PART_DIR}/skp_idx.packed" 'skp_idx_mm_v.idx2' 'skp_idx_mm_v.idx' <<'PY'
+import sys, struct
+path, rename_from, rename_to = sys.argv[1], sys.argv[2], sys.argv[3]
+d = open(path, 'rb').read()
+def rvar(b, o):
+    shift = res = 0
+    while True:
+        x = b[o]; o += 1; res |= (x & 0x7f) << shift
+        if not (x & 0x80): break
+        shift += 7
+    return res, o
+def wvar(n):
+    out = bytearray()
+    while True:
+        x = n & 0x7f; n >>= 7
+        out.append(x | 0x80 if n else x)
+        if not n: break
+    return bytes(out)
+off = 0
+ver = d[off]; off += 1
+# v0: [offset, size]; v1+: [offset, size, uncompressed_size].
+num_u64 = 3 if ver >= 1 else 2
+(num,) = struct.unpack_from('<Q', d, off); off += 8
+entries = []
+for _ in range(num):
+    ln, off = rvar(d, off); name = d[off:off+ln].decode(); off += ln
+    (o2,) = struct.unpack_from('<Q', d, off); off += 8
+    (sz,) = struct.unpack_from('<Q', d, off); off += 8
+    extra = []
+    for _ in range(num_u64 - 2):
+        (e,) = struct.unpack_from('<Q', d, off); off += 8
+        extra.append(e)
+    entries.append((name, o2, sz, extra))
+members = {name: d[o:o+sz] for name, o, sz, _ in entries}
+renamed = [(rename_to if n == rename_from else n, sz, extra) for n, _, sz, extra in entries]
+footer = 1 + 8 + sum(len(wvar(len(n))) + len(n) + 8 * num_u64 for n, _, _ in renamed)
+out = bytearray(); out.append(ver); out += struct.pack('<Q', len(renamed))
+cur = footer
+for n, sz, extra in renamed:
+    out += wvar(len(n)); out += n.encode()
+    out += struct.pack('<Q', cur); out += struct.pack('<Q', sz)
+    for e in extra:
+        out += struct.pack('<Q', e)
+    cur += sz
+for (orig, _, _, _), (n, _, _) in zip(entries, renamed):
+    out += members[orig]
+open(path, 'wb').write(out)
+PY
+rm -f "${PART_DIR}/checksums.txt"
+
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_legacy_packed ATTACH PARTITION tuple()"
+
+# Sanity: the legacy ".idx" minmax member inside the archive is recognized and
+# prunes to one granule.
+echo "before:"
+${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_legacy_packed WHERE v = 42) WHERE explain ILIKE '%Granules: 1/20%'"
+
+# Rebuild the archive: ALTER UPDATE touches only w, so mm_w is recomputed (and the
+# packed archive is rewritten) while mm_v is preserved. Before the fix the legacy
+# ".idx" data member of mm_v was dropped from the new archive and no longer pruned.
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_legacy_packed UPDATE w = w + 0 WHERE 1 SETTINGS mutations_sync = 2"
+
+${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_legacy_packed SETTINGS check_query_single_value_result = 1"
+
+# The preserved legacy mm_v index must still prune to one granule (was 20/20 before
+# the fix), and the recomputed mm_w must prune too.
+echo "after:"
+${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_legacy_packed WHERE v = 42) WHERE explain ILIKE '%Granules: 1/20%'"
+${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_legacy_packed WHERE w = 42) WHERE explain ILIKE '%Granules: 1/20%'"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_legacy_packed WHERE v = 42"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_legacy_packed SYNC"

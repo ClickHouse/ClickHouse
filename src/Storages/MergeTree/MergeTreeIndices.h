@@ -274,6 +274,15 @@ struct IMergeTreeIndex
         const std::string & relative_path_prefix,
         const IDataPartStorage * storage) const;
 
+    /// Union of every checksummed or packed on-disk version present (unlike
+    /// `getDeserializedFormat()`, which returns only the preferred read layout). Mutation cleanup
+    /// uses this so a stale legacy substream on a mixed-format part is skipped/stripped, not
+    /// hardlinked forward. Read paths keep `getDeserializedFormat()`; default delegates to it.
+    virtual MergeTreeIndexSubstreams getAllSubstreamsInPart(
+        const MergeTreeDataPartChecksums & checksums,
+        const std::string & relative_path_prefix,
+        const IDataPartStorage * storage) const;
+
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
     /// A more optimal filtering method

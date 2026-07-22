@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# Tags: no-fasttest, no-replicated-database, no-shared-merge-tree, no-object-storage, no-random-merge-tree-settings
+#
+# Regression for the multi-stream text-index case flagged on PR #109616 (issue #109595).
+# 04427 covers the corrupted-orphan repair (skp_idx_<name>.* on disk, no per-file entries
+# in checksums.txt) for a single-stream minmax index on the some-columns mutation and
+# DROP INDEX paths. A text index owns several substreams -- the base .idx plus .dct, .pst
+# and, with positions enabled, .pos -- each with its own data file and mark. The orphan
+# scan and the DROP INDEX rename fallback previously enumerated only the base .idx/.idx2
+# plus one mark, so the .dct/.pst/.pos side streams of a corrupted text part were hardlinked
+# into the new part unchanged and CHECK TABLE kept failing with UNEXPECTED_FILE_IN_DATA_PART.
+#
+# no-fasttest: local-disk part-file surgery (see 04402/04404/04426/04427).
+# no-object-storage/-shared/-replicated: relies on local on-disk file layout.
+# no-random-merge-tree-settings: depends on standalone (non-packed) index files.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+# Fabricate a part in the released-bug shape: skp_idx_txt.* on disk but absent from
+# checksums.txt. Save the freshly written index files, DROP+re-ADD the index so the active
+# part has no skp_idx entries in checksums, then re-inject the files on disk.
+make_corrupted_part () {
+    local tbl="$1"
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${tbl} SYNC"
+    ${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE ${tbl}
+    (
+        k UInt64,
+        s String,
+        w UInt64,
+        INDEX txt(s) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1) GRANULARITY 1
+    )
+    ENGINE = MergeTree ORDER BY k
+    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+             index_granularity = 100, replace_long_file_name_to_hash = 0,
+             columns_and_secondary_indices_sizes_lazy_calculation = 0,
+             allow_experimental_text_index_phrase_search = 1"
+
+    ${CLICKHOUSE_CLIENT} -q "INSERT INTO ${tbl} (k, s, w) SELECT number, concat('hello', number % 50, ' world', number % 50), number FROM numbers(2000)"
+
+    local data_path active
+    data_path=$(${CLICKHOUSE_CLIENT} -q "SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND table = '${tbl}'")
+    active=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active LIMIT 1")
+
+    rm -rf "${data_path}/saved_${tbl}"
+    mkdir -p "${data_path}/saved_${tbl}"
+    cp "${active}"skp_idx_txt.* "${data_path}/saved_${tbl}/"
+
+    ${CLICKHOUSE_CLIENT} -q "ALTER TABLE ${tbl} DROP INDEX txt SETTINGS mutations_sync = 2"
+    ${CLICKHOUSE_CLIENT} -q "ALTER TABLE ${tbl} ADD INDEX txt(s) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1) GRANULARITY 1"
+
+    local corrupt
+    corrupt=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active LIMIT 1")
+    cp "${data_path}/saved_${tbl}/"skp_idx_txt.* "${corrupt}"
+}
+
+orphan_on_disk () {
+    local tbl="$1"
+    local part
+    part=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active LIMIT 1")
+    if ls "${part}"skp_idx_txt.* >/dev/null 2>&1; then echo 1; else echo 0; fi
+}
+
+# --- Path A: some-columns mutation (ALTER UPDATE of the non-indexed column w) ---
+make_corrupted_part t_some
+echo "A_corrupted_orphan_on_disk:"
+orphan_on_disk t_some
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_some UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2"
+echo "A_orphan_after_update:"
+orphan_on_disk t_some
+echo "A_check_table:"
+${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_some SETTINGS check_query_single_value_result = 1"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_some WHERE hasToken(s, 'hello10')"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_some SYNC"
+
+# --- Path B: DROP INDEX on a corrupted part ---
+make_corrupted_part t_drop
+echo "B_corrupted_orphan_on_disk:"
+orphan_on_disk t_drop
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_drop DROP INDEX txt SETTINGS mutations_sync = 2"
+echo "B_orphan_after_drop_index:"
+orphan_on_disk t_drop
+echo "B_check_table:"
+${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_drop SETTINGS check_query_single_value_result = 1"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_drop SYNC"
+
+# --- Path C (no regression): a healthy text index survives a some-columns mutation ---
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_ok SYNC"
+${CLICKHOUSE_CLIENT} -q "
+CREATE TABLE t_ok (k UInt64, s String, w UInt64, INDEX txt(s) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         index_granularity = 100, replace_long_file_name_to_hash = 0,
+         allow_experimental_text_index_phrase_search = 1"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO t_ok (k, s, w) SELECT number, concat('hello', number % 50, ' world', number % 50), number FROM numbers(2000)"
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_ok UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2"
+echo "C_healthy_index_survives:"
+${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM system.parts WHERE database = currentDatabase() AND table = 't_ok' AND active AND secondary_indices_marks_bytes > 0"
+echo "C_check_table:"
+${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_ok SETTINGS check_query_single_value_result = 1"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ok WHERE hasToken(s, 'hello10')"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ok SYNC"

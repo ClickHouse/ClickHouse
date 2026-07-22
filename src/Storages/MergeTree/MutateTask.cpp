@@ -1086,12 +1086,12 @@ static NameSet collectFilesToSkip(
 
     auto skip_index = [&files_to_skip, &mrk_extension, &source_part](const MergeTreeIndexPtr & index)
     {
-        /// The substream may live on disk under either its logical name (skp_idx_<name>) or a
-        /// hash of it when replace_long_file_name_to_hash kicks in for long / case-insensitive
-        /// names. Resolve the actual stored name against source checksums so the hardlink loop
-        /// really skips both shapes; otherwise the old per-file substream survives in the new
-        /// part without a matching checksum entry and CHECK TABLE fails.
-        for (const auto & index_substream : index->getSubstreams())
+        /// Skip every substream present in the source part (`getAllSubstreamsInPart` covers a stale
+        /// legacy file alongside the current one), resolving each against checksums via
+        /// `getStreamNameOrHash` so `replace_long_file_name_to_hash` names match too. Missing one
+        /// leaks it into the new part with no checksum entry and `CHECK TABLE` fails.
+        for (const auto & index_substream : index->getAllSubstreamsInPart(
+                 source_part->checksums, index->getFileName(), &source_part->getDataPartStorage()))
         {
             const String stream_name = index->getFileName() + index_substream.suffix;
             const String logical_data = stream_name + index_substream.extension;
@@ -1190,8 +1190,10 @@ static NameToNameVector collectFilesForRenames(
     {
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
+            /// The index type is gone from metadata by now, so enumerate every suffix any skip
+            /// index can own (positional text adds `.pos` to `.dct`/`.pst`) and both minmax extensions.
             static const std::array<String, 2> extensions = {".idx2", ".idx"};
-            static const std::array<String, 3> substreams = {"", ".dct", ".pst"};
+            static const std::array<String, 4> substreams = {"", ".dct", ".pst", ".pos"};
 
             for (const auto & substream : substreams)
             {
@@ -1200,14 +1202,20 @@ static NameToNameVector collectFilesForRenames(
                     const String index_filename = getIndexFileName(command.column_name, metadata_snapshot->escape_index_filenames);
                     const String stream_name = index_filename + substream;
 
-                    /// Check for both original and hashed filenames (hashed if the index name is too long)
+                    /// Resolve against checksums first (no I/O), then fall back to storage so `DROP
+                    /// INDEX` also removes corrupted-part orphan files absent from `checksums.txt`.
+                    /// Matches real standalone files only (a `skp_idx.packed` member is left alone).
                     auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, source_part->checksums);
+                    if (!actual_stream_name)
+                        actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, source_part->getDataPartStorage());
                     if (actual_stream_name)
                     {
                         add_rename(*actual_stream_name + extension, "");
 
                         /// Also try to remove the mark file (check for both original and hashed)
                         auto actual_mark_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, mrk_extension, source_part->checksums);
+                        if (!actual_mark_name)
+                            actual_mark_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, mrk_extension, source_part->getDataPartStorage());
                         if (actual_mark_name)
                             add_rename(*actual_mark_name + mrk_extension, "");
                     }
@@ -1590,6 +1598,11 @@ struct MutationContext
     /// the freshly recomputed entries and the preserved ones, without hardlinking (and risking
     /// truncating) the source's skp_idx.packed inode.
     NameSet preserved_skip_index_archive_file_names;
+    /// Orphan skip-index files on parts corrupted by the released #109595 bug: on disk but missing
+    /// from `checksums.txt`, so no checksums-based resolver sees them. Filled by
+    /// `updateIndicesToRecalculateAndDrop`, merged into `files_to_skip` so the hardlink loop drops
+    /// them instead of carrying the broken files forward.
+    NameSet orphan_skip_index_files;
     ColumnsStatistics stats_to_recalc;
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
     NameSet files_to_skip;
@@ -2184,12 +2197,23 @@ private:
             if (index_ptr->isInert())
                 continue;
 
+            /// Part corrupted by the pre-#109595 bug: index files on disk but missing from
+            /// `checksums.txt`. `getDeserializedFormat(checksums)` finds nothing to preserve, so
+            /// force a recalculate and let the writer rebuild the index from column data (otherwise
+            /// this full rewrite would drop the orphan files, leaving the index absent on disk).
+            bool index_present_on_disk = ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot);
+            bool index_resolvable_from_checksums = !index_ptr->getDeserializedFormat(
+                ctx->source_part->checksums, index_ptr->getFileName(), &ctx->source_part->getDataPartStorage()).substreams.empty()
+                || ctx->source_part->isSkipIndexInPackedArchive(*index_ptr);
+            bool index_checksums_missing = index_present_on_disk && !index_resolvable_from_checksums;
+
             /// For packed part we need to recalculate all indices because they are stored inside packed parts format
             /// For compact parts we need to recalculate indices because rewrite of compact part may produce a little bit different data part
             /// with different number of marks.
             bool need_recalculate = ctx->materialized_indices.contains(idx.name)
                 || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot))
-                || ctx->source_part->isSkipIndexInPackedArchive(*index_ptr);
+                || ctx->source_part->isSkipIndexInPackedArchive(*index_ptr)
+                || index_checksums_missing;
 
             if (need_recalculate)
             {
@@ -2197,15 +2221,28 @@ private:
             }
             else
             {
-                auto prefix = getIndexFileName(idx.name, idx.escape_filenames);
-                auto it = ctx->source_part->checksums.files.upper_bound(prefix);
-                while (it != ctx->source_part->checksums.files.end())
+                /// Hardlink the source index files and copy their checksum entries explicitly (the
+                /// writer does not rewrite them, else `CHECK TABLE` fails). Use the source's on-disk
+                /// format (`getDeserializedFormat`) so an upgraded legacy part keeps its data file,
+                /// and `getStreamNameOrHash` to match `replace_long_file_name_to_hash` names.
+                auto carry = [&](const String & stream_name, const String & extension)
                 {
-                    if (!startsWith(it->first, prefix))
-                        break;
+                    auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, ctx->source_part->checksums);
+                    if (!actual)
+                        return;
+                    const String file_name = *actual + extension;
+                    entries_to_hardlink.insert(file_name);
+                    ctx->all_gathered_data.checksums.addFile(file_name, ctx->source_part->checksums.files.at(file_name));
+                };
 
-                    entries_to_hardlink.insert(it->first);
-                    ++it;
+                auto index_format = index_ptr->getDeserializedFormat(
+                    ctx->source_part->checksums, index_ptr->getFileName(), &ctx->source_part->getDataPartStorage());
+
+                for (const auto & substream : index_format.substreams)
+                {
+                    const String stream_name = index_ptr->getFileName() + substream.suffix;
+                    carry(stream_name, substream.extension);
+                    carry(stream_name, ctx->mrk_extension);
                 }
             }
         }
@@ -2606,7 +2643,11 @@ private:
         /// at a file that doesn't exist in the new part.
         auto remove_per_substream_checksums = [&](const MergeTreeIndexPtr & index)
         {
-            for (const auto & index_substream : index->getSubstreams())
+            /// Strip the checksum of every substream present in the source (`getAllSubstreamsInPart`
+            /// covers a stale legacy file too); a `getSubstreams()`-only walk would leave a stale
+            /// `.idx` checksum pointing at a file absent from the new part.
+            for (const auto & index_substream : index->getAllSubstreamsInPart(
+                     ctx->source_part->checksums, index->getFileName(), &ctx->source_part->getDataPartStorage()))
             {
                 String stream_name = index->getFileName() + index_substream.suffix;
 
@@ -3159,6 +3200,48 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         }
     }
 
+    /// Drop the standalone orphan `skp_idx_*` files left by parts corrupted by the released #109595
+    /// bug (on disk, missing from `checksums.txt`) instead of hardlinking them forward: the
+    /// some-columns / `DROP INDEX` path cannot rebuild the index, so the index becomes absent here
+    /// (valid; `MATERIALIZE INDEX` rebuilds it). Only full (non-packed) Wide storage holds orphans.
+    if (is_full_part_storage && isWidePart(source_part))
+    {
+        for (const auto & index : indices)
+        {
+            auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
+            if (index_ptr->isInert())
+                continue;
+
+            const bool present_on_disk = source_part->hasSecondaryIndex(index.name, ctx->metadata_snapshot);
+            if (!present_on_disk)
+                continue;
+            const bool resolvable_from_checksums = !index_ptr->getDeserializedFormat(
+                source_part->checksums, index_ptr->getFileName(), &source_part->getDataPartStorage()).substreams.empty()
+                || source_part->isSkipIndexInPackedArchive(*index_ptr);
+            if (resolvable_from_checksums)
+                continue;
+
+            /// Enumerate the orphan files from storage (not in checksums). Walk every declared
+            /// substream (text owns `.dct`/`.pst`/`.pos` side streams, each with its own data + mark)
+            /// and probe both minmax extensions per substream so a legacy `.idx` orphan is caught too.
+            const String file_name = index_ptr->getFileName();
+            static const std::array<String, 2> index_extensions = {".idx2", ".idx"};
+            for (const auto & index_substream : index_ptr->getSubstreams())
+            {
+                const String stream_name = file_name + index_substream.suffix;
+                for (const auto & extension : index_extensions)
+                {
+                    if (auto actual = IMergeTreeDataPart::getStreamNameOrHash(
+                            stream_name, extension, source_part->getDataPartStorage()))
+                        ctx->orphan_skip_index_files.insert(*actual + extension);
+                }
+                if (auto actual_mrk = IMergeTreeDataPart::getStreamNameOrHash(
+                        stream_name, ctx->mrk_extension, source_part->getDataPartStorage()))
+                    ctx->orphan_skip_index_files.insert(*actual_mrk + ctx->mrk_extension);
+            }
+        }
+    }
+
     /// The packed skip-index archive is a single file holding several indices' data. If at least
     /// one index inside the archive is being recomputed or dropped, we cannot preserve a subset
     /// of the archive by hardlinking it: the new writer must rewrite skp_idx.packed from scratch
@@ -3175,7 +3258,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         /// all skip-index types. This both detects archive_dirty for drop-only mutations and yields
         /// the exact in-archive filenames the filter must remove (avoiding a prefix collision when
         /// two indices share a getIndexFileName prefix, e.g. "a" and "a.b" with escape_index_filenames=0).
-        static const std::array<String, 3> known_substream_suffixes = {"", ".dct", ".pst"};
+        static const std::array<String, 4> known_substream_suffixes = {"", ".dct", ".pst", ".pos"};
         static const std::array<String, 2> known_index_extensions = {".idx2", ".idx"};
         const bool escape_filenames = ctx->metadata_snapshot->escape_index_filenames;
 
@@ -3239,7 +3322,10 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
 
                 auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
                 const String file_name = index_ptr->getFileName();
-                for (const auto & sub : index_ptr->getSubstreams())
+                /// Probe the format present in the source (`getDeserializedFormat`), not the writer's
+                /// `getSubstreams()`, so a legacy `.idx` member is pre-loaded into the rebuilt archive.
+                for (const auto & sub : index_ptr->getDeserializedFormat(
+                         source_part->checksums, file_name, &source_part->getDataPartStorage()).substreams)
                 {
                     const String data = file_name + sub.suffix + sub.extension;
                     if (source_disk_storage->isFileInPackedSkipIndicesArchive(data))
@@ -3620,6 +3706,10 @@ bool MutateTask::prepare()
             projections_to_skip,
             updated_columns_in_patches,
             ctx->packed_skip_index_archive_dirty);
+
+        /// Skip the corrupted-part orphan files (see `MutationContext::orphan_skip_index_files`);
+        /// `collectFilesToSkip` cannot reach them since they are absent from `checksums.txt`.
+        ctx->files_to_skip.insert(ctx->orphan_skip_index_files.begin(), ctx->orphan_skip_index_files.end());
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
             ctx->metadata_snapshot,

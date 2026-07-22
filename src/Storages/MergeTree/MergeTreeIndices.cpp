@@ -74,6 +74,16 @@ MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(
     return {0 /*unknown*/, {}};
 }
 
+MergeTreeIndexSubstreams IMergeTreeIndex::getAllSubstreamsInPart(
+    const MergeTreeDataPartChecksums & checksums,
+    const std::string & relative_path_prefix,
+    const IDataPartStorage * storage) const
+{
+    /// No format ever changed for this index type, so the preferred layout is the only version.
+    /// (minmax overrides this to also union its legacy `.idx` extension.)
+    return getDeserializedFormat(checksums, relative_path_prefix, storage).substreams;
+}
+
 void IMergeTreeIndexGranule::serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const
 {
     auto * stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
