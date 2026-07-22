@@ -374,6 +374,12 @@ void stampColumnIdsForRead(NamesAndTypesList & columns, const ColumnIdMapping & 
 
     for (auto & column : columns)
     {
+        /// Only stamp columns that don't already carry a part-local id. Some callers
+        /// (e.g. getListOfStreamsForColumn, for subcolumn sizes) pass columns already
+        /// stamped with the part's real id; re-stamping from the (possibly live) mapping
+        /// would clobber it after a DROP + re-ADD name reuse and mis-resolve streams.
+        if (!column.column_id.empty())
+            continue;
         const auto name_in_storage = column.getNameInStorage();
         if (mapping.hasLogicalName(name_in_storage))
             column.setColumnId(mapping.getColumnId(name_in_storage));

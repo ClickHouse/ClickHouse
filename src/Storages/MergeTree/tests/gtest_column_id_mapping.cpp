@@ -200,6 +200,36 @@ TEST(ColumnIdMapping, RenameToExistingColumnIdIsRejected)
     EXPECT_EQ(mapping.getColumnId(id), id);
 }
 
+/// stampColumnIdsForRead must NOT clobber a column that already carries a part-local id.
+/// Callers such as MergeTreeDataPartWide::getListOfStreamsForColumn (subcolumn sizes) feed
+/// an already-stamped part column into the reader factory, which then re-stamps off the
+/// *live* metadata mapping. After a DROP + re-ADD reuses the logical name at a fresh id,
+/// re-stamping would rewrite the old part's real id to the live one and mis-resolve its
+/// streams. Columns that arrive id-less (the main read path's query columns) must still
+/// get stamped.
+TEST(ColumnIdMapping, StampForReadPreservesExistingId)
+{
+    /// Live mapping after DROP COLUMN a; ADD COLUMN a ...: name "a" now resolves to "1",
+    /// while old parts still store it under the original id "a".
+    auto mapping = ColumnIdMapping::createIdentity(makeColumns({"a"}));
+    mapping.removeColumn("a");
+    auto fresh_id = mapping.allocateColumnId();
+    mapping.addColumn("a", fresh_id);
+    ASSERT_EQ(fresh_id, "1");
+    ASSERT_EQ(mapping.getColumnId("a"), "1");
+
+    /// A pre-stamped old-part column keeps its own id.
+    NamesAndTypesList prestamped = makeColumns({"a"});
+    prestamped.front().setColumnId("a");
+    stampColumnIdsForRead(prestamped, mapping);
+    EXPECT_EQ(prestamped.front().getColumnIdInStorage(), "a");
+
+    /// An id-less query column (the main read path) still gets stamped to the live id.
+    NamesAndTypesList idless = makeColumns({"a"});
+    stampColumnIdsForRead(idless, mapping);
+    EXPECT_EQ(idless.front().getColumnIdInStorage(), "1");
+}
+
 /// Change-detector tied to the `addPersistent(...)` set in MergeTreeData::createVirtuals.
 /// `isPersistentVirtualColumn` hardcodes that set; if a new persistent virtual column is
 /// added there, BOTH `isPersistentVirtualColumn` and this test must be updated. Persistent

@@ -913,7 +913,10 @@ getColumnsForNewDataPart(
 
     /// In column-IDs mode the lookup key is the CURRENT logical name;
     /// `getColumnPosition` indexes by load-time name.  Identity elsewhere.
-    auto sourceLocalName = [&](const String & key) -> const String &
+    /// Returns by value (not `const String &`): the fallback returns the `key`
+    /// parameter, so a reference would dangle if a caller ever passed a temporary
+    /// (clang-tidy bugprone-return-const-ref-from-parameter). Column-name copies are cheap.
+    auto sourceLocalName = [&](const String & key) -> String
     {
         if (auto it = source_local_name_by_current_logical.find(key);
             it != source_local_name_by_current_logical.end())
