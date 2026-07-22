@@ -1048,14 +1048,19 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
     /// branch, which is already correct for every source (this backup, base backup, archive).
     if (!sync && info.size && !info.base_size && !use_archive)
     {
-        /// Data comes completely from this backup.
+        /// Data comes completely from this backup. The reader copies without exposing a write
+        /// buffer we could fsync, so this fast path is used only when `sync` isn't requested.
         reader->copyFileToDisk(info.data_file_name, info.size, info.encrypted_by_disk, destination_disk, destination_path, write_mode);
         file_copied = true;
     }
-    else if (!sync && info.size && (info.size == info.base_size))
+    else if (info.size && (info.size == info.base_size))
     {
-        /// Data comes completely from the base backup (nothing comes from this backup).
-        getBaseBackup()->copyFileToDisk(std::pair{info.base_size, info.base_checksum}, destination_disk, destination_path, write_mode, /* sync= */ false);
+        /// Data comes completely from the base backup (nothing comes from this backup). The base
+        /// backup is itself a BackupImpl that honours `sync` and can read its own encrypted-by-disk
+        /// entries, so forward the copy (and the `sync` request) there. Going through the generic
+        /// branch below instead would read the base via the public readFile(), which always requests
+        /// unencrypted data and would fail on an encrypted entry (CANNOT_RESTORE_TO_NONENCRYPTED_DISK).
+        getBaseBackup()->copyFileToDisk(std::pair{info.base_size, info.base_checksum}, destination_disk, destination_path, write_mode, sync);
         file_copied = true;
     }
 
