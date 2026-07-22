@@ -28,7 +28,8 @@ public:
         const StorageID & table_id_,
         ContextPtr context_,
         const ColumnsDescription & columns_,
-        std::unique_ptr<PulsarSettings> pulsar_settings_);
+        std::unique_ptr<PulsarSettings> pulsar_settings_,
+        LoadingStrictnessLevel mode);
 
     ~StoragePulsar() override = default;
 

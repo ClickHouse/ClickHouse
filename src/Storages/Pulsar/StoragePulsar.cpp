@@ -46,6 +46,7 @@ namespace Setting
 
 namespace PulsarSetting
 {
+    extern const PulsarSettingsBool pulsar_commit_on_select;
     extern const PulsarSettingsMilliseconds pulsar_flush_interval_ms;
     extern const PulsarSettingsString pulsar_format;
     extern const PulsarSettingsString pulsar_group_name;
@@ -69,6 +70,7 @@ extern const int BAD_ARGUMENTS;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int QUERY_NOT_ALLOWED;
 extern const int ABORTED;
+extern const int CANNOT_CONNECT_PULSAR;
 }
 
 class ReadFromStoragePulsar final : public ReadFromStreamLikeEngine
@@ -106,8 +108,15 @@ private:
 
         // Claim as many consumers as requested, but don't block
         for (size_t i = 0; i < pulsar_storage.num_consumers; ++i)
-            pipes.emplace_back(
-                std::make_shared<PulsarSource>(pulsar_storage, storage_snapshot, modified_context, column_names, 1, pulsar_storage.log, 0));
+            pipes.emplace_back(std::make_shared<PulsarSource>(
+                pulsar_storage,
+                storage_snapshot,
+                modified_context,
+                column_names,
+                1,
+                pulsar_storage.log,
+                0,
+                (*pulsar_storage.pulsar_settings)[PulsarSetting::pulsar_commit_on_select].value));
 
         return Pipe::unitePipes(std::move(pipes));
     }
@@ -118,7 +127,11 @@ private:
 };
 
 StoragePulsar::StoragePulsar(
-    const StorageID & table_id_, ContextPtr context_, const ColumnsDescription & columns_, std::unique_ptr<PulsarSettings> pulsar_settings_)
+    const StorageID & table_id_,
+    ContextPtr context_,
+    const ColumnsDescription & columns_,
+    std::unique_ptr<PulsarSettings> pulsar_settings_,
+    LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_)
     , pulsar_settings(std::move(pulsar_settings_))
@@ -135,11 +148,22 @@ StoragePulsar::StoragePulsar(
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 
-    for (size_t i = 0; i < num_consumers; ++i)
+    try
     {
-        auto consumer = std::make_shared<PulsarConsumer>(log);
-        createConsumer(consumer->consumer);
-        pushConsumer(consumer);
+        for (size_t i = 0; i < num_consumers; ++i)
+        {
+            auto consumer = std::make_shared<PulsarConsumer>(log);
+            createConsumer(consumer->consumer);
+            pushConsumer(consumer);
+        }
+    }
+    catch (...)
+    {
+        /// A failure to subscribe must fail CREATE TABLE, but must not prevent the server
+        /// from loading an already existing table when the broker is temporarily unreachable.
+        if (mode <= LoadingStrictnessLevel::CREATE)
+            throw;
+        tryLogCurrentException(log, "Failed to subscribe to Pulsar topics on startup; the table will not consume anything until it is detached and attached again");
     }
     streamer = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "PulsarStreamingTask", [this]() { streaming(); });
     streamer->deactivate();
@@ -256,7 +280,13 @@ ProducerPtr StoragePulsar::createProducer()
     if (topics.size() > 1)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't write to Pulsar table with multiple topics!");
 
-    pulsar_client.createProducer(topics[0], config, *producer);
+    auto result = pulsar_client.createProducer(topics[0], config, *producer);
+    if (result != pulsar::ResultOk)
+        throw Exception(
+            ErrorCodes::CANNOT_CONNECT_PULSAR,
+            "Cannot create Pulsar producer for topic {}: {}",
+            topics[0],
+            pulsar::strResult(result));
     return producer;
 }
 
@@ -267,7 +297,13 @@ void StoragePulsar::createConsumer(pulsar::Consumer & consumer)
     /// NOLINTNEXTLINE(google-runtime-int)
     config.setBatchReceivePolicy({static_cast<int>(getPollMaxBatchSize()), 0, static_cast<long>(getPollTimeoutMilliseconds())});
 
-    pulsar_client.subscribe(topics, (*pulsar_settings)[PulsarSetting::pulsar_group_name].value, config, consumer);
+    auto result = pulsar_client.subscribe(topics, (*pulsar_settings)[PulsarSetting::pulsar_group_name].value, config, consumer);
+    if (result != pulsar::ResultOk)
+        throw Exception(
+            ErrorCodes::CANNOT_CONNECT_PULSAR,
+            "Cannot subscribe to Pulsar topics [{}]: {}",
+            fmt::join(topics, ", "),
+            pulsar::strResult(result));
 }
 
 size_t StoragePulsar::getPollTimeoutMilliseconds() const
@@ -456,13 +492,29 @@ bool StoragePulsar::streamToViews()
     std::atomic_size_t rows = 0;
     block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
     CompletedPipelineExecutor executor(block_io.pipeline);
-    executor.execute();
+    try
+    {
+        executor.execute();
+    }
+    catch (...)
+    {
+        /// The blocks were not written: request redelivery of the polled messages
+        /// instead of acknowledging them, to keep at-least-once delivery.
+        for (auto & source : sources)
+            source->rollback();
+        throw;
+    }
 
     LOG_TRACE(log, "Processed messages: {}", rows.load());
 
     bool some_stream_is_stalled = false;
     for (auto & source : sources)
+    {
         some_stream_is_stalled = some_stream_is_stalled || source->isStalled();
+        /// The pipeline finished successfully, so the blocks are written to the views
+        /// and the messages can be acknowledged.
+        source->commit();
+    }
 
     return some_stream_is_stalled;
 }
@@ -493,7 +545,7 @@ void registerStoragePulsar(StorageFactory & factory)
         if (!(*pulsar_settings)[PulsarSetting::pulsar_format].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `pulsar_format` setting");
 
-        return std::make_shared<StoragePulsar>(args.table_id, args.getContext(), args.columns, std::move(pulsar_settings));
+        return std::make_shared<StoragePulsar>(args.table_id, args.getContext(), args.columns, std::move(pulsar_settings), args.mode);
     };
 
     factory.registerStorage(

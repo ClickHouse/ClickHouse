@@ -27,7 +27,8 @@ PulsarSource::PulsarSource(
     const Names & columns_,
     size_t max_block_size_,
     LoggerPtr log_,
-    UInt64 max_execution_time_)
+    UInt64 max_execution_time_,
+    bool commit_in_suffix_)
     : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns_)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -37,6 +38,7 @@ PulsarSource::PulsarSource(
     , log(log_)
     , max_execution_time(max_execution_time_)
     , handle_error_mode(storage.getStreamingHandleErrorMode())
+    , commit_in_suffix(commit_in_suffix_)
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader))
 {
@@ -50,7 +52,23 @@ PulsarSource::~PulsarSource()
 
 Chunk PulsarSource::generate()
 {
-    return generateImpl();
+    auto chunk = generateImpl();
+    if (!chunk && commit_in_suffix)
+        commit();
+
+    return chunk;
+}
+
+void PulsarSource::commit()
+{
+    if (consumer)
+        consumer->commit();
+}
+
+void PulsarSource::rollback()
+{
+    if (consumer)
+        consumer->rollback();
 }
 
 Chunk PulsarSource::generateImpl()
@@ -109,12 +127,19 @@ Chunk PulsarSource::generateImpl()
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
 
+    /// An exit condition for reading from an empty topic: without it, a direct SELECT
+    /// (which has no time limit) would poll forever. Mirrors Kafka's failed-poll counter.
+    static constexpr size_t MAX_FAILED_POLL_ATTEMPTS = 10;
+    size_t failed_poll_attempts = 0;
+
     while (true)
     {
         size_t new_rows = 0;
         exception_message.reset();
         if (auto buf = consumer->consume())
             new_rows = executor.execute(*buf);
+        else
+            ++failed_poll_attempts;
 
         if (new_rows)
         {
@@ -158,7 +183,8 @@ Chunk PulsarSource::generateImpl()
             total_rows += new_rows;
         }
 
-        if (total_rows >= max_block_size || (max_execution_time != 0 && stopwatch.elapsedMilliseconds() > max_execution_time))
+        if (total_rows >= max_block_size || (max_execution_time != 0 && stopwatch.elapsedMilliseconds() > max_execution_time)
+            || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS)
             break;
     }
 

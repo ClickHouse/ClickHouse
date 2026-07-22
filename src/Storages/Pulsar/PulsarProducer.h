@@ -20,7 +20,7 @@ public:
 
     void start(const ContextPtr &) override { }
     void finish() override;
-    void cancel() noexcept override { }
+    void cancel() noexcept override;
 
 private:
     ProducerPtr producer;

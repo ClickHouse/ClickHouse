@@ -11,6 +11,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int ABORTED;
+extern const int CANNOT_CONNECT_PULSAR;
+}
+
 PulsarProducer::PulsarProducer(
     ProducerPtr producer_, const std::string & topic_, std::atomic<bool> & shutdown_called_, const Block & header)
     : IMessageProducer(getLogger("PulsarProducer")), producer(producer_), topic(topic_), shutdown_called(shutdown_called_)
@@ -39,18 +45,37 @@ void PulsarProducer::produce(const String & message, size_t /* rows_in_message *
 
     auto final_message = builder.build();
 
-    while (!shutdown_called.load())
-    {
-        auto result = producer->send(final_message);
-        if (result != pulsar::ResultOk)
-            continue;
-        break;
-    }
+    if (shutdown_called.load())
+        throw Exception(ErrorCodes::ABORTED, "Cannot send message to Pulsar: table is shut down");
+
+    /// The producer is configured with `setBlockIfQueueFull(true)`, so transient backpressure is
+    /// handled by blocking inside `send` (bounded by the send timeout). Every non-OK result is
+    /// therefore a real error and must fail the insert instead of being retried indefinitely.
+    auto result = producer->send(final_message);
+    if (result != pulsar::ResultOk)
+        throw Exception(
+            ErrorCodes::CANNOT_CONNECT_PULSAR,
+            "Failed to send message to Pulsar topic {}: {}",
+            topic,
+            pulsar::strResult(result));
 }
 
 void PulsarProducer::finish()
 {
-    producer->flush();
+    auto result = producer->flush();
+    if (result != pulsar::ResultOk)
+        throw Exception(
+            ErrorCodes::CANNOT_CONNECT_PULSAR,
+            "Failed to flush messages to Pulsar topic {}: {}",
+            topic,
+            pulsar::strResult(result));
+}
+
+void PulsarProducer::cancel() noexcept
+{
+    /// Closing the producer aborts a `send` blocked on a full queue and fails all pending sends,
+    /// so a cancelled `INSERT` does not hang on a stuck broker.
+    producer->close();
 }
 
 }

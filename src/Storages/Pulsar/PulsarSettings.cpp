@@ -30,6 +30,7 @@ namespace ErrorCodes
     DECLARE(Milliseconds, pulsar_flush_interval_ms, 0, "Timeout for flushing data from Pulsar.", 0) \
     DECLARE(StreamingHandleErrorMode, pulsar_handle_error_mode, StreamingHandleErrorMode::DEFAULT, "How to handle errors for Pulsar engine. Possible values: default (throw an exception after pulsar_skip_broken_messages broken messages), stream (save broken messages and errors in virtual columns _raw_message, _error).", 0) \
     DECLARE(UInt64, pulsar_max_rows_per_message, 1, "The maximum number of rows produced in one Pulsar message for row-based formats.", 0) \
+    DECLARE(Bool, pulsar_commit_on_select, false, "Acknowledge polled messages when a direct SELECT query is made from the table.", 0) \
 
 #define OBSOLETE_PULSAR_SETTINGS(M, ALIAS) \
     MAKE_OBSOLETE(M, Char, pulsar_row_delimiter, '\0') \

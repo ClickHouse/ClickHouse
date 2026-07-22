@@ -21,6 +21,12 @@ public:
     ReadBufferPtr getNextMessage();
     ReadBufferPtr consume();
 
+    /// Acknowledge all consumed messages. Must be called only after the blocks built
+    /// from these messages have been durably written, to keep at-least-once delivery.
+    void commit();
+    /// Negatively acknowledge all consumed but uncommitted messages, requesting redelivery.
+    void rollback();
+
     String currentTopic() const { return next_message[-1].getTopicName(); }
     String currentOrderingKey() const { return next_message[-1].getOrderingKey(); }
     String currentPartitionKey() const { return next_message[-1].getPartitionKey(); }
@@ -34,6 +40,7 @@ private:
     pulsar::Consumer consumer;
     pulsar::Messages polled_messages;
     pulsar::Messages::const_iterator next_message;
+    pulsar::MessageIdList pending_acks;
 
     bool hasPolledMessages() const { return next_message != polled_messages.end(); }
 };
