@@ -305,7 +305,7 @@ String getInsertDataSchemaMismatchDescription(
         /// a quoted numeric string that the parser accepts into a numeric column is not confirmed as text
         /// and stays compatible) — the reliable "text where a number is expected" signal this diagnostic
         /// exists to surface — and a nested/complex column (`Array`, `Tuple`, `Map`), which genuinely
-        /// cannot be built from a single scalar string.
+        /// cannot be built from a single scalar string (except in the whole-text formats, see below).
         if (which_inferred.isString())
         {
             /// `Bool` is backed by `UInt8` but is not a generic numeric destination: its deserializers
@@ -323,8 +323,17 @@ String getInsertDataSchemaMismatchDescription(
             if (isBool(expected_unwrapped))
                 return format_reads_string_values_as_whole_text;
 
+            /// The same exemption applies to the nested destinations: the whole-text formats re-parse the
+            /// content of a string value with the whole-text deserializer of the destination type, and
+            /// `Array` / `Tuple` / `Map` all implement it (through `SimpleTextSerialization`), so a string
+            /// like `"[1,2]"` is a valid value for an `Array(UInt8)` column there and the content of the
+            /// string is unknown at the type level. For the other formats a nested destination genuinely
+            /// cannot be built from a single scalar string, so it stays a mismatch.
+            if (expected_is_nested)
+                return format_reads_string_values_as_whole_text;
+
             const bool expected_is_numeric = which_expected.isInt() || which_expected.isUInt() || which_expected.isFloat();
-            return !(expected_is_numeric && inferred_is_text) && !expected_is_nested;
+            return !(expected_is_numeric && inferred_is_text);
         }
 
         /// A numeric value that schema inference widened to `Int64` / `UInt64` / `Float64` is accepted by
