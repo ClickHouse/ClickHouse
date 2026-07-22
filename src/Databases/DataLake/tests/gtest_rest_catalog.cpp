@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Databases/DataLake/RestCatalog.h>
+#include <IO/HTTPCommon.h>
 #include <Interpreters/Context.h>
 
 #include <Poco/AutoPtr.h>
@@ -53,6 +54,14 @@ enum class CatalogShape
 void writeJSON(Poco::Net::HTTPServerResponse & response, const std::string & body)
 {
     response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+    response.setContentType("application/json");
+    response.setContentLength(body.size());
+    response.send() << body;
+}
+
+void writeError(Poco::Net::HTTPServerResponse & response, Poco::Net::HTTPResponse::HTTPStatus status, const std::string & body)
+{
+    response.setStatus(status);
     response.setContentType("application/json");
     response.setContentLength(body.size());
     response.send() << body;
@@ -136,6 +145,27 @@ public:
         if (path == "/v1/namespaces/parent%1Fleaf_with_table/tables")
         {
             writeJSON(response, R"({"identifiers":[{"name":"table_a"}]})");
+            return;
+        }
+
+        /// Table metadata endpoints (shape-independent), for `tryGetTableMetadata` tests:
+        /// an existing table, a missing table (404) and a table behind expired/invalid
+        /// credentials (401).
+        if (path == "/v1/namespaces/namespace/tables/table_a")
+        {
+            writeJSON(response, R"({"metadata":{"table-uuid":"11111111-2222-3333-4444-555555555555"}})");
+            return;
+        }
+
+        if (path == "/v1/namespaces/namespace/tables/missing_table")
+        {
+            writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, R"({"error":{"message":"Table does not exist","type":"NoSuchTableException","code":404}})");
+            return;
+        }
+
+        if (path == "/v1/namespaces/namespace/tables/unauthorized_table")
+        {
+            writeError(response, Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED, R"({"error":{"message":"The access token has expired","type":"NotAuthorizedException","code":401}})");
             return;
         }
 
@@ -277,6 +307,39 @@ TEST(RestCatalog, EmptyKeepsFoundTableStateSticky)
 TEST(RestCatalog, EmptyReturnsTrueWhenNoTablesExist)
 {
     EXPECT_TRUE(restCatalogEmpty(CatalogShape::Empty));
+}
+
+TEST(RestCatalog, TryGetTableMetadataDistinguishesMissingTableFromOtherErrors)
+{
+    RestCatalogTestServer server(CatalogShape::TopLevelTable);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    RestCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* catalog_credential */"",
+        /* auth_scope */"",
+        /* auth_header */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        context);
+
+    /// An existing table resolves.
+    TableMetadata existing;
+    EXPECT_TRUE(catalog.tryGetTableMetadata("namespace", "table_a", existing));
+    EXPECT_TRUE(catalog.existsTable("namespace", "table_a"));
+
+    /// 404 means the table does not exist.
+    TableMetadata missing;
+    EXPECT_FALSE(catalog.tryGetTableMetadata("namespace", "missing_table", missing));
+    EXPECT_FALSE(catalog.existsTable("namespace", "missing_table"));
+
+    /// 401 (expired/invalid credentials) must propagate as an error rather than be
+    /// misreported as a missing table (`UNKNOWN_TABLE`).
+    TableMetadata unauthorized;
+    EXPECT_THROW(catalog.tryGetTableMetadata("namespace", "unauthorized_table", unauthorized), DB::HTTPException);
+    EXPECT_THROW(catalog.existsTable("namespace", "unauthorized_table"), DB::HTTPException);
 }
 
 TEST(RestCatalog, ApplySettingsChangesWithoutAuthenticationRejected)
