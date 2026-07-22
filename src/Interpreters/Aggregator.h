@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <type_traits>
@@ -57,6 +59,96 @@ using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 
 class RuntimeDataflowStatisticsCacheUpdater;
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+
+/// Shared state of the adaptive aggregation. 
+/// One instance per aggregation, created by `AggregatingStep` when the query qualifies,
+/// owned by `ManyAggregatedData` and shared by all its transforms.
+///
+/// Production phase: every thread aggregates into its own local hash table as usual, until the
+/// table holds `adaptive_aggregator_freeze_threshold` keys and freezes. From that point a row
+/// whose key the table already holds (a frequent key, learned for free from the first rows)
+/// keeps aggregating in place with zero coordination, while a miss (a rare key) is not inserted
+/// anywhere: it becomes a delayed record in one of the 256 backlogs, chosen by the two-level
+/// bucket of the key's hash. A record is the key value itself with a run-length count when the
+/// only aggregate is count, and a row reference into the retained source block otherwise; both
+/// carry the precomputed routing hash. Nothing is drained while production runs, so the staged
+/// records accumulate until the merge (external aggregation settings are ignored on this path:
+/// spilling the staged state is not implemented yet).
+///
+/// Merge phase: at the end of input every local table converts to two-level and the standard
+/// bucket-parallel merge runs, except that the merge task owning bucket b first drains backlog b
+/// into the destination's bucket b (it is the exclusive owner, so no locks are needed) and only
+/// then folds the locals' bucket b in as usual.
+///
+/// The net effect: frequent keys stay in small cache-resident tables, and a rare key is stored
+/// and emplaced exactly once, by one thread, instead of once per thread that saw it.
+struct AdaptiveDelayedBlockPreparation;
+
+struct AdaptiveAggregationSharedState
+{
+    static constexpr size_t NUM_BUCKETS = 256;
+
+    /// All delayed records of one consumed block, grouped by bucket: bucket b owns the slice
+    /// [bucket_offsets[b], bucket_offsets[b + 1]) of every per-record array, and `routing_hashes` (the
+    /// routing hash, reused by the drain's emplace) is filled for every record. The payload is
+    /// one of two modes:
+    ///  - value-staged (`value_staged`, simple-count aggregation only): the record is the key
+    ///    itself plus a run-length count, and the source block is not retained;
+    ///  - row-reference (general aggregates): the record is a row number in the retained
+    ///    `source_columns`, through which the drain reads the aggregate arguments; the key bytes
+    ///    are staged as well, so the drain emplaces without constructing a hashing state per
+    ///    (block, bucket) slice.
+    ///
+    /// One record batch per block, rather than one per (block, bucket).
+    struct DelayedBlock
+    {
+        /// The row-reference mode's retained source block.
+        Columns source_columns;
+        size_t num_source_rows = 0;
+        PaddedPODArray<UInt32> source_rows;
+        PaddedPODArray<UInt64> routing_hashes;
+        std::array<UInt32, NUM_BUCKETS + 1> bucket_offsets{};
+
+        bool value_staged = false;
+        /// The key of the i-th record occupies `key_bytes[key_offsets[i], key_offsets[i + 1])`,
+        /// in the same bucket-grouped order as `routing_hashes`; `run_lengths[i]` is the run length
+        /// (consecutive occurrences of one key collapse into one record at staging time).
+        PaddedPODArray<char> key_bytes;
+        PaddedPODArray<UInt64> key_offsets;
+        PaddedPODArray<UInt32> run_lengths;
+
+        /// Built under `prepared_flag` by the first bucket drained from this block.
+        /// Unused (and never built) for value-staged blocks.
+        std::once_flag prepared_flag;
+        std::unique_ptr<AdaptiveDelayedBlockPreparation> prepared;
+
+        ~DelayedBlock();
+    };
+    using DelayedBlockPtr = std::shared_ptr<DelayedBlock>;
+
+    /// TODO (nihalzp): Consider using a lock-free queue for the backlog, to avoid contention on the mutex.
+    struct Bucket
+    {
+        /// Guards the backlog list. During production the threads only append (nothing is
+        /// drained until the scan is over); afterwards the backlog is swapped out and consumed
+        /// exactly once, by the merge task that owns the bucket.
+        std::mutex backlog_mutex;
+        /// Blocks holding a non-empty slice for this bucket.
+        std::vector<DelayedBlockPtr> backlog;
+    };
+
+    std::array<Bucket, NUM_BUCKETS> buckets;
+
+    /// An empty two-level variant of the query's aggregation method, initialized by the first
+    /// thread that freezes.
+    AggregatedDataVariantsPtr routing_variants;
+    std::once_flag init_flag;
+    std::atomic<bool> initialized{false};
+
+    std::atomic<size_t> pending_records{0};
+};
+
+using AdaptiveAggregationSharedStatePtr = std::shared_ptr<AdaptiveAggregationSharedState>;
 
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
@@ -131,6 +223,9 @@ public:
         const float min_hit_rate_to_use_consecutive_keys_optimization = 0.;
         StatsCollectingParams stats_collecting_params;
 
+        bool enable_adaptive_aggregator = false;
+        UInt64 adaptive_aggregator_freeze_threshold = 0;
+
         bool enable_producing_buckets_out_of_order_in_aggregation = true;
 
         bool serialize_string_with_zero_byte = false;
@@ -171,7 +266,9 @@ public:
             float min_hit_rate_to_use_consecutive_keys_optimization_,
             const StatsCollectingParams & stats_collecting_params_,
             bool enable_producing_buckets_out_of_order_in_aggregation_,
-            bool serialize_string_with_zero_byte_);
+            bool serialize_string_with_zero_byte_,
+            bool enable_adaptive_aggregator_,
+            UInt64 adaptive_aggregator_freeze_threshold_);
 
         /// Only parameters that matter during merge.
         Params(
@@ -207,13 +304,51 @@ public:
 
     const Params & getParams() const { return params; }
 
+    /// Per-transform context of the adaptive aggregation: whether this thread's local table has
+    /// frozen, per-block staging for the missed rows (the arrays are cleared but keep their
+    /// capacity across blocks), and the sampling state of the probe bypass.
+    struct AdaptiveAggregationThreadContext
+    {
+        explicit AdaptiveAggregationThreadContext(AdaptiveAggregationSharedStatePtr shared_) : shared_state(std::move(shared_)) { }
+
+        AdaptiveAggregationSharedStatePtr shared_state;
+        bool local_table_frozen = false;
+        /// The current block's misses, one entry per delayed record, in staging order.
+        PaddedPODArray<UInt32> miss_source_rows;
+        PaddedPODArray<UInt64> miss_hashes;
+        PaddedPODArray<UInt8> miss_buckets;
+        PaddedPODArray<UInt64> miss_key_sizes;
+        PaddedPODArray<UInt32> miss_run_lengths;
+
+        /// Post-freeze hit-rate sampling. When the frozen table turns out to hold almost none of
+        /// the stream's keys (a uniform high-cardinality distribution), probing it is pure
+        /// overhead on every row; after the sample window the kernel switches to staging every
+        /// row without the lookup.
+        size_t bypass_sampled_rows = 0;
+        size_t bypass_sampled_hits = 0;
+        bool bypass_local_probe = false;
+    };
+
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
+    /// `adaptive` is the per-thread adaptive-aggregation context, or nullptr when the feature is off.
     bool executeOnBlock(Columns columns,
         size_t row_begin, size_t row_end,
         AggregatedDataVariants & result,
         ColumnRawPtrs & key_columns,
         AggregateColumns & aggregate_columns, /// Passed to not create them anew for each block
-        bool & no_more_keys) const;
+        bool & no_more_keys,
+        AdaptiveAggregationThreadContext * adaptive) const;
+
+    /// Drains one bucket's whole backlog into the destination variant's two-level bucket. Called
+    /// by the merge task that owns the bucket, before it merges that bucket: production is over
+    /// by then and the ownership is exclusive, so no locking beyond the backlog swap is needed.
+    void drainAdaptiveBucketForMerge(
+        AggregatedDataVariants & dest,
+        Arena * arena,
+        size_t bucket,
+        AdaptiveAggregationSharedState & shared,
+        std::atomic<bool> & is_cancelled) const;
+
 
     /** This array serves two purposes.
       *
@@ -314,6 +449,7 @@ public:
 private:
 
     friend struct AggregatedDataVariants;
+    friend struct AdaptiveDelayedBlockPreparation;
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
     friend class ConvertingAggregatedToChunksWithMergingSource;
@@ -454,6 +590,73 @@ private:
         bool all_keys_are_const,
         bool use_compiled_functions,
         AggregateDataPtr overflow_row) const;
+
+    void initAdaptiveSharedState(AggregatedDataVariants & local_result, AdaptiveAggregationSharedState & shared) const;
+
+    /// The frozen consume path: rows whose key the local table holds are aggregated in place,
+    /// the other rows are staged per bucket and published to the shared backlogs for the
+    /// merge-time drain.
+    void executeFrozen(
+        const Columns & columns,
+        size_t row_begin,
+        size_t row_end,
+        AggregatedDataVariants & result,
+        ColumnRawPtrs & key_columns,
+        AggregateFunctionInstruction * aggregate_instructions,
+        AdaptiveAggregationThreadContext & adaptive,
+        bool all_keys_are_const) const;
+
+    template <typename LocalMethod, typename SharedMethod>
+    void executeFrozenImpl(
+        LocalMethod & local_method,
+        const SharedMethod & shared_method,
+        Arena * aggregates_pool,
+        const Columns & columns,
+        size_t row_begin,
+        size_t row_end,
+        ColumnRawPtrs & key_columns,
+        AggregateFunctionInstruction * aggregate_instructions,
+        AdaptiveAggregationThreadContext & adaptive,
+        bool all_keys_are_const) const;
+
+    /// Groups the current block's staged misses by bucket (counting sort) into one delayed block
+    /// and pushes it to every bucket it touches. Key bytes are copied exactly once, straight from
+    /// the hashing state's key holder into their bucket position; row-reference mode additionally
+    /// retains the block's columns for the aggregate arguments.
+    template <typename SharedKey, typename State>
+    void publishDelayedRecords(
+        const Columns & columns,
+        size_t num_rows,
+        AdaptiveAggregationThreadContext & adaptive,
+        State & local_find_state,
+        Arena & scratch_pool,
+        bool value_staged,
+        std::optional<UInt32> key_row_override = std::nullopt) const;
+
+    /// Builds the delayed block's shared preparation on its first drained bucket.
+    void prepareDelayedBlock(AdaptiveAggregationSharedState::DelayedBlock & block) const;
+
+    /// Drains one bucket's backlog into `method.data.impls[bucket_index]`.
+    template <typename Method>
+    void drainAdaptiveBucketBacklog(
+        Method & method,
+        Arena * arena,
+        const std::vector<AdaptiveAggregationSharedState::DelayedBlockPtr> & backlog,
+        size_t bucket_index,
+        size_t total_records,
+        PaddedPODArray<AggregateDataPtr> & places,
+        std::atomic<bool> & is_cancelled) const;
+
+    /// Applies one delayed block's slice [slice_begin, slice_end) to the bucket's table.
+    template <typename Method>
+    void drainAdaptiveBucketImpl(
+        Method & method,
+        Arena * bucket_arena,
+        const AdaptiveAggregationSharedState::DelayedBlock & block,
+        size_t slice_begin,
+        size_t slice_end,
+        PaddedPODArray<AggregateDataPtr> & places,
+        size_t bucket_index) const;
 
     void executeAggregateInstructions(
         Arena * aggregates_pool,
