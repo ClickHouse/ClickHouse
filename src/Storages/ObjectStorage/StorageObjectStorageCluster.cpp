@@ -1144,7 +1144,7 @@ SinkToStoragePtr StorageObjectStorageCluster::import(
         context);
 }
 
-void StorageObjectStorageCluster::commitExportPartitionTransaction(
+IStorage::ExportPartitionCommitInfo StorageObjectStorageCluster::commitExportPartitionTransaction(
     const String & transaction_id,
     const String & partition_id,
     const Strings & exported_paths,
@@ -1153,16 +1153,15 @@ void StorageObjectStorageCluster::commitExportPartitionTransaction(
 {
     if (pure_storage)
     {
-        pure_storage->commitExportPartitionTransaction(
+        return pure_storage->commitExportPartitionTransaction(
             transaction_id,
             partition_id,
             exported_paths,
             iceberg_commit_export_partition_arguments,
             local_context
         );
-        return;
     }
-    IStorageCluster::commitExportPartitionTransaction(
+    return IStorageCluster::commitExportPartitionTransaction(
         transaction_id,
         partition_id,
         exported_paths,

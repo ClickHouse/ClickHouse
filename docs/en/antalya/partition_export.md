@@ -6,7 +6,11 @@ The `ALTER TABLE EXPORT PARTITION` command exports entire partitions from Replic
 
 The set of parts that are exported is based on the list of parts the replica that received the export command sees. The other replicas will assist in the export process if they have those parts locally. Otherwise they will ignore it.
 
+<<<<<<< HEAD
 The partition export tasks can be observed through `system.replicated_partition_exports`. The table is served from each replica's in-memory mirror, so queries do not contact ZooKeeper and are cheap to run. The mirror is refreshed on the manifest-updater poll cycle and on every status change, so a freshly written exception or terminal state may take up to one poll interval to appear. Individual part export progress can be observed as usual through `system.exports`.
+=======
+The partition export tasks can be observed through `system.replicated_partition_exports`. Querying this table reads an in-memory mirror that the manifest-updater refreshes from ZooKeeper on its poll cycle (roughly every 30s); it does not issue a fresh ZooKeeper read per query. Individual part export progress can be observed as usual through `system.exports`.
+>>>>>>> 0329de17630 (Merge pull request #1832 from Altinity/expand-replicated-partition-exports-columns)
 
 The same partition can not be exported to the same destination more than once. There are two ways to override this behavior: either by setting the `export_merge_tree_partition_force_export` setting or waiting for the task to expire.
 
@@ -105,7 +109,11 @@ TO TABLE [destination_database.]destination_table
 - **Type**: `UInt64`
 - **Default**: `3600`
 - **Description**: The timeout is measured from the manifest's create_time. Set to 0 to disable the timeout.
+<<<<<<< HEAD
 When the timeout is exceeded the task transitions to KILLED (same terminal state as `KILL QUERY ... EXPORT PARTITION`), and a `last_exception_per_replica` entry on the replica that fires the timeout is populated with a timeout reason.
+=======
+When the timeout is exceeded the task transitions to KILLED (same terminal state as `KILL QUERY ... EXPORT PARTITION`), and `last_exception_per_replica` is populated with a timeout reason for the replica that enforced the timeout.
+>>>>>>> 0329de17630 (Merge pull request #1832 from Altinity/expand-replicated-partition-exports-columns)
 
 Notes:
 - Enforcement is best-effort: actual kill latency is bounded by one manifest-updater poll cycle (~30s) plus ZooKeeper watch propagation.
@@ -167,6 +175,7 @@ Query id: 9efc271a-a501-44d1-834f-bc4d20156164
 
 Row 1:
 ──────
+<<<<<<< HEAD
 source_database:      default
 source_table:         replicated_source
 destination_database: default
@@ -198,6 +207,51 @@ parts_to_do:          0
 status:               COMPLETED
 last_exception_per_replica: []
 exception_count:      0
+=======
+source_database:            default
+source_table:               replicated_source
+destination_database:       default
+destination_table:          s3_destination
+create_time:                2025-11-21 18:21:51
+partition_id:               2022
+transaction_id:             9b2c1e5a-3f47-4c8e-8a1d-6f0b2d4e7c31
+query_id:                   3fa3c8d3-7d6b-4f8b-9aa2-2c1f1ad0a111
+source_replica:             r1
+parts:                      ['2022_0_0_0','2022_1_1_0','2022_2_2_0']
+parts_count:                3
+parts_to_do:                0
+status:                     COMPLETED
+last_exception_per_replica: []
+exception_count:            0
+destination_file_paths:     {'2022_0_0_0':['data/year=2022/2022_0_0_0_<hash>.parquet'],'2022_1_1_0':['data/year=2022/2022_1_1_0_<hash>.parquet'],'2022_2_2_0':['data/year=2022/2022_2_2_0_<hash>.parquet']}
+committed_metadata_file:
+committed_manifest_list:
+committed_manifest_file:
+committed_marker_file:      data/commit_2022_9b2c1e5a-3f47-4c8e-8a1d-6f0b2d4e7c31
+
+Row 2:
+──────
+source_database:            default
+source_table:               replicated_source
+destination_database:       default
+destination_table:          iceberg_destination
+create_time:                2025-11-21 18:20:35
+partition_id:               2021
+transaction_id:             d0e4f7a2-8c19-4b6d-9e3a-1f5c7b2e9d40
+query_id:                   1c8e0fd0-6a3a-4d6e-9bd6-bdf64adfe118
+source_replica:             r2
+parts:                      ['2021_0_0_0']
+parts_count:                1
+parts_to_do:                0
+status:                     COMPLETED
+last_exception_per_replica: [('r1','Code: 999. Coordination::Exception: Session expired','2021_0_0_0','2025-11-21 18:20:42',1)]
+exception_count:            1
+destination_file_paths:     {'2021_0_0_0':['data/year=2021/2021_0_0_0_<hash>.parquet']}
+committed_metadata_file:    data/metadata/v3.metadata.json
+committed_manifest_list:    data/metadata/snap-4029103741930112856-1-<uuid>.avro
+committed_manifest_file:    data/metadata/<uuid>-m0.avro
+committed_marker_file:
+>>>>>>> 0329de17630 (Merge pull request #1832 from Altinity/expand-replicated-partition-exports-columns)
 
 2 rows in set. Elapsed: 0.019 sec. 
 
@@ -215,6 +269,22 @@ Status values include:
 - `last_exception_per_replica` is an `Array(Tuple(replica String, message String, part String, time DateTime, count UInt64))`. Each tuple is the most recent exception observed by a single replica plus a best-effort within-replica `count`. Replicas that have never reported an exception are omitted.
 - `exception_count` is the sum of every `count` in `last_exception_per_replica`. Each replica owns its own counter, so cross-replica updates do not race; the sum is exact w.r.t. the snapshot returned. Within a single replica concurrent failing writers may under-count by one.
 
+<<<<<<< HEAD
+=======
+### Per-part destination file paths
+
+- `destination_file_paths` is a `Map(String, Array(String))` keyed by source part name. Each value is the list of file paths written to the destination object storage when that part was exported (a single part can produce multiple files depending on `max_bytes` / `max_rows`). If a refresh cannot read a processed entry from ZooKeeper, the affected key holds the sentinel `<failed to read from zk>` instead of silently under-counting.
+
+### Commit info columns
+
+These columns surface paths produced by the destination storage during commit, so it is possible to inspect what was written without consulting the destination directly:
+
+- `committed_metadata_file` — for Iceberg destinations: path of the new `vN.metadata.json` written by the commit. Empty for non-Iceberg destinations and before the commit lands. If the commit was already finished by a previous run (detected via the transaction id stored in the snapshot summary), this column carries a human-readable sentinel string instead of a path because the original committer's paths are not recoverable from inside the impl.
+- `committed_manifest_list` — for Iceberg destinations: path of the manifest list file (`snap-*.avro`) referenced by the new snapshot. Empty under the same conditions as `committed_metadata_file`.
+- `committed_manifest_file` — for Iceberg destinations: path of the manifest file referenced by `committed_manifest_list`. Empty under the same conditions as `committed_metadata_file`.
+- `committed_marker_file` — for plain object storage destinations: path of the per-transaction commit marker file written by the destination. Empty for Iceberg destinations and for tasks that have not committed yet.
+
+>>>>>>> 0329de17630 (Merge pull request #1832 from Altinity/expand-replicated-partition-exports-columns)
 To pick the latest exception across replicas:
 
 ```sql

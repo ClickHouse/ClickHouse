@@ -163,7 +163,7 @@ public:
     /// data_file_paths contains the metadata-path for each exported data file (as recorded in
     /// ZooKeeper).  For every path a co-located sidecar Avro file (same path, ".avro" extension)
     /// must exist in the object storage; it supplies record_count and file_size_in_bytes.
-    void commitExportPartitionTransaction(
+    IStorage::ExportPartitionCommitInfo commitExportPartitionTransaction(
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id,
         const String & transaction_id,
@@ -241,7 +241,12 @@ private:
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
 
-    bool commitImportPartitionTransactionImpl(
+    /// Non-empty return value means the attempt succeeded (covers both the normal
+    /// publish path and the `isExportPartitionTransactionAlreadyCommitted` short-circuit).
+    /// An empty `ExportPartitionCommitInfo` means the caller must retry. The
+    /// short-circuit branch fills `iceberg_metadata_file` with a sentinel note since
+    /// the original committer's paths are not trivially recoverable from inside this call.
+    std::optional<IStorage::ExportPartitionCommitInfo> commitImportPartitionTransactionImpl(
         FileNamesGenerator & filename_generator,
         Poco::JSON::Object::Ptr & metadata,
         Poco::JSON::Object::Ptr & partition_spec,

@@ -15,7 +15,11 @@
 #include <Processors/ISimpleTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
+<<<<<<< HEAD
 #include <Storages/IStorage_fwd.h>
+=======
+#include <Storages/IStorage.h>
+>>>>>>> 0329de17630 (Merge pull request #1832 from Altinity/expand-replicated-partition-exports-columns)
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/prepareReadingFromFormat.h>
@@ -221,7 +225,7 @@ public:
         throwNotImplemented("import");
     }
 
-    virtual void commitExportPartitionTransaction(
+    virtual IStorage::ExportPartitionCommitInfo commitExportPartitionTransaction(
         std::shared_ptr<DataLake::ICatalog> /* catalog */,
         const StorageID & /* table_id */,
         const String & /* transaction_id */,
