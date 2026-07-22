@@ -124,7 +124,8 @@ public:
         const String & to_file_path,
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
-        const std::function<void()> & cancellation_hook) override;
+        const std::function<void()> & cancellation_hook,
+        bool sync) override;
 
     void prepareRead(
         const String & path,

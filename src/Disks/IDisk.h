@@ -230,13 +230,17 @@ public:
         const std::function<void()> & cancellation_hook);
 
     /// Copy file `from_file_path` to `to_file_path` located at `to_disk`.
+    /// With `sync = true` the target file content is fsynced before returning (buffered copy
+    /// path only). Genuinely remote object storage is durable once the copy transaction commits;
+    /// local object storage does not honor the flag. Default `false` keeps existing callers as-is.
     virtual void copyFile( /// NOLINT
         const String & from_file_path,
         IDisk & to_disk,
         const String & to_file_path,
         const ReadSettings & read_settings,
         const WriteSettings & write_settings = {},
-        const std::function<void()> & cancellation_hook = {});
+        const std::function<void()> & cancellation_hook = {},
+        bool sync = false);
 
     /// List files at `path` and add their names to `file_names`
     virtual void listFiles(const String & path, std::vector<String> & file_names) const = 0;
