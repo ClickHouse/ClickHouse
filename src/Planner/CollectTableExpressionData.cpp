@@ -12,6 +12,7 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
@@ -107,6 +108,11 @@ public:
                 }
 
                 auto column_identifier = planner_context->getGlobalPlannerContext()->createColumnIdentifier(node);
+
+                /// The ALIAS column may be referenced from inside a subquery, which collectSets
+                /// never descends into (it skips QUERY and UNION children), so register the sets
+                /// of the ALIAS expression here before building actions over it.
+                collectSets(column_node->getExpression(), *planner_context);
 
                 ActionsDAG alias_column_actions_dag;
                 ColumnNodePtrWithHashSet empty_correlated_columns_set;
@@ -463,6 +469,12 @@ void collectSourceColumns(QueryTreeNodePtr & expression_node, PlannerContextPtr 
 {
     CollectSourceColumnsVisitor collect_source_columns_visitor(planner_context, keep_alias_columns);
     collect_source_columns_visitor.visit(expression_node);
+}
+
+void collectSetsAndSourceColumns(QueryTreeNodePtr & expression_node, PlannerContextPtr & planner_context, bool keep_alias_columns)
+{
+    collectSets(expression_node, *planner_context);
+    collectSourceColumns(expression_node, planner_context, keep_alias_columns);
 }
 
 }
