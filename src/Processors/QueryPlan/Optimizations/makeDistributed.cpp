@@ -180,6 +180,12 @@ void checkDistributedReadSupported(const QueryPlan::Node & root)
                     "make_distributed_plan does not support a distributed read with a pinned block-number "
                     "boundary (for example select_sequential_consistency)");
 
+            /// A `STREAM` read cannot be serialized, and every distributed read ships as a
+            /// serialized fragment; reject it here instead of from `serialize` mid-execution.
+            if (read->getQueryInfo().isStream())
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "make_distributed_plan does not support a distributed read with the STREAM modifier");
+
             for (const auto & column : read->getAllColumnNames())
                 if (column == "_part_index" || column == "_part_starting_offset")
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,

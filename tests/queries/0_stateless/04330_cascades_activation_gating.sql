@@ -97,4 +97,9 @@ SELECT '-- 11. Subquery WITH TOTALS under an outer top-N is rejected (fail-close
 SELECT k, s FROM (SELECT k, sum(x) AS s FROM t_gating GROUP BY k WITH TOTALS) ORDER BY s DESC LIMIT 3
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1; -- { serverError SUPPORT_IS_DISABLED }
 
+-- A `STREAM` read cannot be serialized into a fragment; rejected at planning time.
+SELECT '-- 12. A STREAM read is rejected (fail-close)';
+SELECT count() FROM t_gating STREAM
+SETTINGS enable_streaming_queries = 1, enable_cascades_optimizer = 1, make_distributed_plan = 1; -- { serverError SUPPORT_IS_DISABLED }
+
 DROP TABLE t_gating;
