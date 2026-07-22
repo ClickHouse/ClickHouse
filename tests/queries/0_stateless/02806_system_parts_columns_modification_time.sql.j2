@@ -6,9 +6,11 @@ set mutations_sync=1;
 {# modification time of the part folder and column files not always equal, this is how much seconds of difference is allowed #}
 {% set mtime_diff_in_seconds = 5 %}
 
+{# min_bytes_for_full_part_storage=0 forces full storage: a packed part keeps all columns in one
+   data.packed archive, so per-column modification times no longer differ as this test expects #}
 {% for id, settings, file_per_column in [
-    ("wide",    "min_bytes_for_wide_part=0, min_rows_for_wide_part=0",      true),
-    ("compact", "min_bytes_for_wide_part=1000, min_rows_for_wide_part=100", false)
+    ("wide",    "min_bytes_for_wide_part=0, min_rows_for_wide_part=0, min_bytes_for_full_part_storage=0",      true),
+    ("compact", "min_bytes_for_wide_part=1000, min_rows_for_wide_part=100, min_bytes_for_full_part_storage=0", false)
 ]
 %}
 
