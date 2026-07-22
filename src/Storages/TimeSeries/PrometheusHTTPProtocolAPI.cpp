@@ -838,8 +838,13 @@ void PrometheusHTTPProtocolAPI::getLabels(
     }
 
     /// Query distinct label keys. __name__ is always included as a virtual label.
+    /// The `ARRAY JOIN` clause is used instead of the `arrayJoin` function on purpose: `arrayJoin`
+    /// reports `isDeterministic() = false` (it returns many rows for a single argument), so a query
+    /// using it is rejected by the query result cache under the default
+    /// `query_cache_nondeterministic_function_handling = 'throw'`, breaking `use_query_cache=1` on
+    /// this endpoint. The clause form is semantically identical here and is not a function call.
     String query = fmt::format(
-        "SELECT DISTINCT arrayJoin({}) AS label_key FROM {}", label_keys_expr, tags_table_id.getFullTableName());
+        "SELECT DISTINCT label_key FROM {} ARRAY JOIN {} AS label_key", tags_table_id.getFullTableName(), label_keys_expr);
 
     std::vector<String> conditions;
     if (String metric_name_condition = makeMetricNameCondition(match_params); !metric_name_condition.empty())
