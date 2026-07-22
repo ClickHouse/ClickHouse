@@ -85,10 +85,11 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_RE
 /// mixed-version deployment does not make not-yet-upgraded workers reject tasks. Settings introduced
 /// by newer versions are omitted for this version by writeChangedBinary; they only tune in-memory
 /// behavior, so the omission degrades gracefully. Exception: when a join step of the fragment has
-/// `enable_join_in_memory_compression` enabled, the task plan is serialized at version 4 instead, so
-/// the opted-in feature is not silently dropped on this path - a not-yet-upgraded worker then rejects
-/// the task with a clear unsupported-version error rather than misbehaving (see serializeQueryPlan
-/// in DistributedPlanExecutor.cpp). Bump it only after the task protocol learns to negotiate the
+/// `enable_join_in_memory_compression` enabled and its `join_algorithm` may resolve to a hash-family
+/// implementation (the only consumers of the setting), the task plan is serialized at version 4
+/// instead, so the opted-in feature is not silently dropped on this path - a not-yet-upgraded worker
+/// then rejects the task with a clear unsupported-version error rather than misbehaving (see
+/// serializeQueryPlan in DistributedPlanExecutor.cpp). Bump it only after the task protocol learns to negotiate the
 /// query-plan version, or when every supported worker release understands the newer one.
 static constexpr auto DBMS_STATELESS_WORKER_QUERY_PLAN_SERIALIZATION_VERSION = 3;
 /// Version 1 added the initiator's settings changes to the task.

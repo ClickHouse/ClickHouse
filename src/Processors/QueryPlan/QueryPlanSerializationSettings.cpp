@@ -169,6 +169,33 @@ void QueryPlanSerializationSettings::readBinary(ReadBuffer & in)
     impl->readBinary(in);
 }
 
+/// Whether the enabled `join_algorithm` set may resolve to a hash-family join implementation
+/// (see tryCreateJoin in Planner/PlannerJoins.cpp): those are the only ones that consume
+/// `enable_join_in_memory_compression`. `prefer_partial_merge` counts because it falls back to
+/// hash when partial merge does not support the join kind; `direct`, `partial_merge` and
+/// `full_sorting_merge` never construct a hash join.
+static bool canChooseHashFamilyJoin(const std::vector<JoinAlgorithm> & algorithms)
+{
+    for (const auto algorithm : algorithms)
+    {
+        switch (algorithm)
+        {
+            case JoinAlgorithm::DEFAULT:
+            case JoinAlgorithm::AUTO:
+            case JoinAlgorithm::HASH:
+            case JoinAlgorithm::PREFER_PARTIAL_MERGE:
+            case JoinAlgorithm::PARALLEL_HASH:
+            case JoinAlgorithm::GRACE_HASH:
+                return true;
+            case JoinAlgorithm::PARTIAL_MERGE:
+            case JoinAlgorithm::DIRECT:
+            case JoinAlgorithm::FULL_SORTING_MERGE:
+                break;
+        }
+    }
+    return false;
+}
+
 UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
 {
     /// This cannot be keyed on the "changed" flags of the version-4 settings: a step assigns every
@@ -181,7 +208,11 @@ UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
     /// the receiver behave exactly like a pre-version-4 server - a graceful degradation - unless
     /// compression was requested, in which case dropping the settings would silently disable the
     /// requested feature and the higher version is required.
-    if ((*this)[QueryPlanSerializationSetting::enable_join_in_memory_compression])
+    /// Even with compression enabled, the setting can only matter when the step's `join_algorithm`
+    /// may pick a hash-family implementation: a step restricted to e.g. `full_sorting_merge` or
+    /// `partial_merge` never consumes it, so its fragment stays readable by older receivers.
+    if ((*this)[QueryPlanSerializationSetting::enable_join_in_memory_compression]
+        && canChooseHashFamilyJoin((*this)[QueryPlanSerializationSetting::join_algorithm]))
         return 4;
     return 1;
 }

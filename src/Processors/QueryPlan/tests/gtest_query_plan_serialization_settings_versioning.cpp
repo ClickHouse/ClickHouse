@@ -12,6 +12,7 @@ extern const QueryPlanSerializationSettingsUInt64 max_bytes_in_join;
 extern const QueryPlanSerializationSettingsUInt64 max_memory_usage;
 extern const QueryPlanSerializationSettingsBool enable_join_in_memory_compression;
 extern const QueryPlanSerializationSettingsUInt64 join_decompressed_columns_cache_bytes;
+extern const QueryPlanSerializationSettingsJoinAlgorithm join_algorithm;
 }
 
 namespace
@@ -110,5 +111,29 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
         settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = false;
         settings[QueryPlanSerializationSetting::max_memory_usage] = 12345;
         EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
+    }
+
+    /// Even with compression enabled, a step whose `join_algorithm` cannot resolve to a hash-family
+    /// implementation (`full_sorting_merge`, `partial_merge`, `direct`) never consumes the setting,
+    /// so its fragment must stay on the baseline version and remain readable by a version-3 worker.
+    {
+        QueryPlanSerializationSettings settings;
+        settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = true;
+        settings[QueryPlanSerializationSetting::join_algorithm]
+            = std::vector<JoinAlgorithm>{JoinAlgorithm::FULL_SORTING_MERGE, JoinAlgorithm::PARTIAL_MERGE, JoinAlgorithm::DIRECT};
+        EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
+    }
+
+    /// A single hash-capable algorithm in the set is enough to require version 4 - including
+    /// `prefer_partial_merge`, which falls back to hash when partial merge does not support the
+    /// join kind, and `grace_hash`, whose buckets are hash joins.
+    for (auto algorithm : {JoinAlgorithm::DEFAULT, JoinAlgorithm::AUTO, JoinAlgorithm::HASH,
+                           JoinAlgorithm::PREFER_PARTIAL_MERGE, JoinAlgorithm::PARALLEL_HASH, JoinAlgorithm::GRACE_HASH})
+    {
+        QueryPlanSerializationSettings settings;
+        settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = true;
+        settings[QueryPlanSerializationSetting::join_algorithm]
+            = std::vector<JoinAlgorithm>{JoinAlgorithm::FULL_SORTING_MERGE, algorithm};
+        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
     }
 }
