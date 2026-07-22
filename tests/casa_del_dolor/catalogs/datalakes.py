@@ -1055,19 +1055,31 @@ logger.jetty.level = warn
                     command=cluster.client_bin_path,
                 )
                 nloops = random.randint(1, 50)
+                is_file = data["engine"] == "file"
                 tbl = (
                     f"{data['catalog_name']}.{data['table_name']}"
                     if data["engine"] in ("kafka", "file")
                     else next_table.get_clickhouse_path()
                 )
-                # A File table's data file can be truncated to 0 bytes by ClickHouse (e.g.
-                # TRUNCATE), unreadable as a structured format; skip empty files to read 0 rows
-                settings = (
-                    " SETTINGS engine_file_skip_empty_files = 1"
-                    if data["engine"] == "file"
-                    else ""
-                )
+                # For File tables, reuse the reader's decode settings so these concurrent
+                # probes tolerate the same truncated/empty files and deliberately-skipped
+                # columns the checker does (engine_file_skip_empty_files + the per-format
+                # allow-missing-columns flags), exercising real reads instead of noise the
+                # BackgroundWorker would just log and swallow.
+                file_table = None
+                if is_file:
+                    with self.file_handler.file_lock:
+                        file_table = self.file_handler.file_tables.get(
+                            (data["catalog_name"], data["table_name"])
+                        )
                 for _ in range(nloops):
+                    if file_table is not None:
+                        # Recompute per probe to rotate the reader/decoder choices
+                        settings = f" SETTINGS {self.file_handler._full_decode_settings(file_table)}"
+                    elif is_file:
+                        settings = " SETTINGS engine_file_skip_empty_files = 1"
+                    else:
+                        settings = ""
                     client.query(f"SELECT * FROM {tbl} LIMIT 100{settings};")
                     time.sleep(1)
 

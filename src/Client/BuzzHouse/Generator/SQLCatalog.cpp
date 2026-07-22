@@ -808,7 +808,8 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         if (isFileEngine() && integration == IntegrationCall::Dolor)
         {
             /// Whole-file wrappers the dolor side can write with Python codecs (no lz4/brotli packages there)
-            static const DB::Strings dolorFileCompressions = {"none", "gz", "gzip", "deflate", "xz", "lzma", "zst", "zstd", "bz2", "snappy"};
+            static const DB::Strings dolorFileCompressions
+                = {"none", "gz", "gzip", "deflate", "xz", "lzma", "zst", "zstd", "bz2", "snappy"};
 
             file_comp = rg.pickRandomly(dolorFileCompressions);
         }

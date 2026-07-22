@@ -2706,8 +2706,11 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     }
     setClusterClause(rg, next.cluster, ct->mutable_cluster());
     if ((next.isAnyIcebergEngine() && next.integration == IntegrationCall::Dolor && next.getLakeCatalog() == LakeCatalog::None)
-        || ((next.isDistributedEngine() || next.isAnyRemoteEngine() || next.isBufferEngine() || next.isAliasEngine())
-            && rg.nextMediumNumber() < 96))
+        /// Alias never accepts an explicit column list (StorageAlias throws), so always omit it
+        || next.isAliasEngine()
+        /// Distributed/Remote/Buffer infer their schema from the target, but also accept an
+        /// explicit one, so exercise both by omitting it only most of the time
+        || ((next.isDistributedEngine() || next.isAnyRemoteEngine() || next.isBufferEngine()) && rg.nextMediumNumber() < 96))
     {
         /// For Iceberg tables created from Spark, don't give table schema
         ct->clear_table_def();
