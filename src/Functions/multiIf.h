@@ -10,6 +10,7 @@ using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(
     bool allow_execute_multiif_columnar,
     bool use_variant_as_common_type,
+    bool allow_lossy_numeric_supertype,
     bool optimize_if_transform_const_strings_to_lowcardinality);
 
 }

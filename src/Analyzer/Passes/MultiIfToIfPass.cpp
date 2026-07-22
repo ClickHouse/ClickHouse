@@ -14,6 +14,7 @@ namespace Setting
     extern const SettingsBool optimize_if_transform_strings_to_enum;
     extern const SettingsBool optimize_multiif_to_if;
     extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 namespace
@@ -70,8 +71,8 @@ void MultiIfToIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context
     /// type-equality guard below fails, and the `multiIf` is never rewritten.
     const bool use_low_cardinality_optimisation = settings[Setting::optimize_if_transform_const_strings_to_lowcardinality]
         && !settings[Setting::optimize_if_transform_strings_to_enum];
-    auto if_function_ptr
-        = createInternalFunctionIfOverloadResolver(settings[Setting::use_variant_as_common_type], use_low_cardinality_optimisation);
+    auto if_function_ptr = createInternalFunctionIfOverloadResolver(
+        settings[Setting::use_variant_as_common_type], settings[Setting::allow_lossy_numeric_supertype], use_low_cardinality_optimisation);
     MultiIfToIfVisitor visitor(std::move(if_function_ptr), std::move(context));
     visitor.visit(query_tree_node);
 }

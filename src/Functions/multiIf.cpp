@@ -35,6 +35,7 @@ namespace Setting
     extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
     extern const SettingsBool optimize_if_transform_strings_to_enum;
     extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 namespace ErrorCodes
@@ -72,12 +73,20 @@ public:
         const bool use_low_cardinality_optimisation = settings[Setting::optimize_if_transform_const_strings_to_lowcardinality]
             && !settings[Setting::optimize_if_transform_strings_to_enum];
         return std::make_shared<FunctionMultiIf>(
-            settings[Setting::allow_execute_multiif_columnar], settings[Setting::use_variant_as_common_type], use_low_cardinality_optimisation);
+            settings[Setting::allow_execute_multiif_columnar],
+            settings[Setting::use_variant_as_common_type],
+            settings[Setting::allow_lossy_numeric_supertype],
+            use_low_cardinality_optimisation);
     }
 
-    explicit FunctionMultiIf(bool allow_execute_multiif_columnar_, bool use_variant_as_common_type_, bool optimize_if_transform_const_strings_to_lowcardinality_)
+    explicit FunctionMultiIf(
+        bool allow_execute_multiif_columnar_,
+        bool use_variant_as_common_type_,
+        bool allow_lossy_numeric_supertype_ = false,
+        bool optimize_if_transform_const_strings_to_lowcardinality_ = false)
         : allow_execute_multiif_columnar(allow_execute_multiif_columnar_)
         , use_variant_as_common_type(use_variant_as_common_type_)
+        , allow_lossy_numeric_supertype(allow_lossy_numeric_supertype_)
         , optimize_if_transform_const_strings_to_lowcardinality(optimize_if_transform_const_strings_to_lowcardinality_)
     {}
 
@@ -189,9 +198,9 @@ public:
         }
 
         if (use_variant_as_common_type)
-            return getLeastSupertypeOrVariant(types_of_branches);
+            return getLeastSupertypeOrVariant(types_of_branches, allow_lossy_numeric_supertype);
 
-        return getLeastSupertype(types_of_branches);
+        return getLeastSupertype(types_of_branches, allow_lossy_numeric_supertype);
     }
 
     struct Instruction
@@ -588,6 +597,7 @@ private:
 
     const bool allow_execute_multiif_columnar;
     const bool use_variant_as_common_type;
+    const bool allow_lossy_numeric_supertype;
     const bool optimize_if_transform_const_strings_to_lowcardinality;
 };
 
@@ -656,11 +666,13 @@ FROM LEFT_RIGHT;
 FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(
     bool allow_execute_multiif_columnar,
     bool use_variant_as_common_type,
+    bool allow_lossy_numeric_supertype,
     bool optimize_if_transform_const_strings_to_lowcardinality)
 {
     return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(
         allow_execute_multiif_columnar,
         use_variant_as_common_type,
+        allow_lossy_numeric_supertype,
         optimize_if_transform_const_strings_to_lowcardinality));
 }
 }

@@ -7442,6 +7442,9 @@ SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as 
 └───────────────────────────────┘
 ```
 )", 0) \
+    DECLARE(Bool, allow_lossy_numeric_supertype, false, R"(
+When enabled, `if`/`multiIf`/`coalesce`/`ifNull`/`array`/`map` over a set of numeric arguments that has no lossless common type (for example a `Decimal` and a `Float64`, or an `Int64` and a `Float64`) resolve to a numeric supertype (`Float64`) instead of failing, with possible precision loss. This allows the result to be used directly with value-combining aggregate functions like `sum`, `avg`, `min` and `max`. This is independent of `use_variant_as_common_type`: the numeric supertype is produced whether or not `use_variant_as_common_type` is enabled. When disabled (the default), such argument sets have no common type, so they either become a `Variant` (if `use_variant_as_common_type` is enabled) or raise `NO_COMMON_TYPE`.
+)", 0) \
     DECLARE(Bool, enable_order_by_all, true, R"(
 Enables or disables sorting with `ORDER BY ALL` syntax, see [ORDER BY](../../sql-reference/statements/select/order-by.md).
 
@@ -8781,6 +8784,9 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
 
     void set(std::string_view name, const Field & value) override;
 
+    bool hasSettingsChangedByCompatibility() const { return !settings_changed_by_compatibility_setting.empty(); }
+    void resetSettingsChangedByCompatibility();
+
 private:
     void applyCompatibilitySetting(const String & compatibility);
 
@@ -8919,13 +8925,19 @@ void SettingsImpl::set(std::string_view name, const Field & value)
     BaseSettings::set(name, value);
 }
 
-void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
+void SettingsImpl::resetSettingsChangedByCompatibility()
 {
-    /// First, revert all changes applied by previous compatibility setting
     for (const auto & setting_name : settings_changed_by_compatibility_setting)
         resetToDefault(setting_name);
 
     settings_changed_by_compatibility_setting.clear();
+}
+
+void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
+{
+    /// First, revert all changes applied by previous compatibility setting
+    resetSettingsChangedByCompatibility();
+
     /// If setting value is empty, we don't need to change settings
     if (compatibility_value.empty())
         return;
@@ -9039,6 +9051,16 @@ void Settings::set(std::string_view name, const Field & value)
 void Settings::setDefaultValue(std::string_view name)
 {
     impl->resetToDefault(name);
+}
+
+bool Settings::hasSettingsChangedByCompatibility() const
+{
+    return impl->hasSettingsChangedByCompatibility();
+}
+
+void Settings::resetSettingsChangedByCompatibility()
+{
+    impl->resetSettingsChangedByCompatibility();
 }
 
 VectorWithMemoryTracking<String> Settings::getHints(const String & name) const

@@ -45,6 +45,7 @@ namespace Setting
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
     extern const SettingsBool optimize_if_transform_strings_to_enum;
+    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 namespace ErrorCodes
@@ -286,18 +287,20 @@ public:
         auto const & settings = context->getSettingsRef();
         auto const use_variant_as_common_type = settings[Setting::use_variant_as_common_type];
         auto const use_low_cardinality_optimisation = settings[Setting::optimize_if_transform_const_strings_to_lowcardinality] && !settings[Setting::optimize_if_transform_strings_to_enum];
-        return std::make_shared<FunctionIf>(use_variant_as_common_type, use_low_cardinality_optimisation);
+        return std::make_shared<FunctionIf>(use_variant_as_common_type, settings[Setting::allow_lossy_numeric_supertype], use_low_cardinality_optimisation);
     }
 
-    explicit FunctionIf(bool use_variant_when_no_common_type_ = false, bool use_low_cardinality_optimisation_ = false)
+    explicit FunctionIf(bool use_variant_when_no_common_type_ = false, bool allow_lossy_numeric_supertype_ = false, bool use_low_cardinality_optimisation_ = false)
         : FunctionIfBase()
         , use_variant_when_no_common_type(use_variant_when_no_common_type_)
+        , allow_lossy_numeric_supertype(allow_lossy_numeric_supertype_)
         , use_low_cardinality_optimisation(use_low_cardinality_optimisation_)
     {
     }
 
 private:
     bool use_variant_when_no_common_type = false;
+    bool allow_lossy_numeric_supertype = false;
     bool use_low_cardinality_optimisation = false;
 
     template <typename T0, typename T1>
@@ -1411,9 +1414,9 @@ public:
         }
 
         if (use_variant_when_no_common_type)
-            return getLeastSupertypeOrVariant(DataTypes{arguments[1].type, arguments[2].type});
+            return getLeastSupertypeOrVariant(DataTypes{arguments[1].type, arguments[2].type}, allow_lossy_numeric_supertype);
 
-        return getLeastSupertype(DataTypes{arguments[1].type, arguments[2].type});
+        return getLeastSupertype(DataTypes{arguments[1].type, arguments[2].type}, allow_lossy_numeric_supertype);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -1598,9 +1601,9 @@ SELECT if(1, 2 + 2, 2 + 6) AS res;
     factory.registerFunction<FunctionIf>(documentation, FunctionFactory::Case::Insensitive);
 }
 
-FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool use_variant_as_common_type, bool use_low_cardinality_optimisation)
+FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool use_variant_as_common_type, bool allow_lossy_numeric_supertype, bool use_low_cardinality_optimisation)
 {
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(use_variant_as_common_type, use_low_cardinality_optimisation));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(use_variant_as_common_type, allow_lossy_numeric_supertype, use_low_cardinality_optimisation));
 }
 
 }
