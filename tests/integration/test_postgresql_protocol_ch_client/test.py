@@ -995,3 +995,62 @@ def test_copy_rejects_unsupported_endpoints(started_cluster):
     finally:
         conn.close()
     node.query("DROP TABLE test_copy_endpoint SYNC")
+
+
+def test_array_of_datetime64_pre_epoch_roundtrip(started_cluster):
+    # `DateTime64` has a valid pre-epoch range, so a negative value inside an array must round-trip
+    # through self-connect: the array-element parser must not clamp it to the epoch the way 32-bit
+    # `DateTime` parsing does (a regression where `['1969-12-31 23:59:59.500']` came back as
+    # `['1970-01-01 00:00:00.000']`).
+    node.query("DROP TABLE IF EXISTS test_dt64_pre_epoch SYNC")
+    node.query(
+        "CREATE TABLE test_dt64_pre_epoch (id UInt32, dt3 DateTime64(3), adt3 Array(DateTime64(3))) "
+        "ENGINE = MergeTree ORDER BY id"
+    )
+    node.query(
+        "INSERT INTO test_dt64_pre_epoch VALUES "
+        "(1, '1969-12-31 23:59:59.500', ['1969-12-31 23:59:59.500', '2023-01-02 03:04:05.123'])"
+    )
+
+    assert node.query(
+        f"SELECT dt3, adt3 FROM {pg_source('default', 'test_dt64_pre_epoch')}"
+    ) == ("1969-12-31 23:59:59.500\t['1969-12-31 23:59:59.500','2023-01-02 03:04:05.123']\n")
+    node.query("DROP TABLE test_dt64_pre_epoch SYNC")
+
+
+def test_copy_from_stdin_large_payload_spills_to_disk(started_cluster):
+    # The `COPY FROM STDIN` payload is staged in full before the insert starts (to keep the commit
+    # boundary after `CopyDone`), but only the first megabyte is kept in memory - the rest spills to a
+    # temporary file. A payload well above the in-memory staging limit must be ingested completely and
+    # correctly through the spill path.
+    node.query("DROP TABLE IF EXISTS test_copy_large SYNC")
+    node.query(
+        "CREATE TABLE test_copy_large (id UInt32, s String) ENGINE = MergeTree ORDER BY id"
+    )
+
+    row_count = 200000
+    # Each row is ~18 bytes, so the payload is ~3.5 MB - several times the 1 MiB in-memory staging
+    # limit, guaranteeing the temporary-file spill is exercised.
+    payload = "".join(f"{i},payload-{i:07d}\n" for i in range(1, row_count + 1))
+    assert len(payload) > 3 * 1024 * 1024
+
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+        cur.copy_expert(
+            "COPY test_copy_large FROM STDIN WITH (FORMAT csv)", io.StringIO(payload)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert node.query("SELECT count(), sum(id), uniqExact(s) FROM test_copy_large") == (
+        f"{row_count}\t{row_count * (row_count + 1) // 2}\t{row_count}\n"
+    )
+    assert (
+        node.query("SELECT s FROM test_copy_large WHERE id IN (1, 199999) ORDER BY id")
+        == "payload-0000001\npayload-0199999\n"
+    )
+    node.query("DROP TABLE test_copy_large SYNC")
