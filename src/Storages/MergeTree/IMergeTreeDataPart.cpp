@@ -2595,7 +2595,9 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
         .copy_instead_of_hardlink = isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication() && (*storage_settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication],
         .keep_metadata_version = true,
         .make_source_readonly = true,
-        .external_transaction = disk_transaction
+        .external_transaction = disk_transaction,
+        /// Make the detached/ clone durable so an acknowledged DETACH is not lost on power loss (#111382).
+        .fsync_part_directory = (*storage_settings)[MergeTreeSetting::fsync_part_directory],
     };
     return getDataPartStorage().freeze(
         storage.relative_data_path,
