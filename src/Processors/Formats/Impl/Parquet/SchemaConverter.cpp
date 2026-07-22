@@ -241,7 +241,8 @@ SchemaConverter::SchemaConverter(
 
 void SchemaConverter::checkSchemaReadDepth(size_t depth) const
 {
-    if (depth > options.format.max_parser_depth)
+    /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
+    if (options.format.max_parser_depth != 0 && depth > options.format.max_parser_depth)
     {
         throw Exception(
             ErrorCodes::TOO_DEEP_RECURSION,
