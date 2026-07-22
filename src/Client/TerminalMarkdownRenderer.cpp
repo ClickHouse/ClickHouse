@@ -286,7 +286,7 @@ You can also mix approaches—use standard columns for predictable top-level fie
 \**  The [Variant type](/reference/data-types/variant) implicitly accepts `null` as a field value, so for example the Avro `union(T1, T2, null)` will be converted to `Variant(T1, T2)`.
 As a result, when producing Avro from ClickHouse, we have to always include the `null` type to the Avro `union` type set as we don't know if any value is actually `null` during the schema inference.
 
-\**\* [Avro logical types](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+\**\* [Avro logical types](https://avro.apache.org/docs/1.12.0/specification/#logical-types)
 
 Unsupported Avro logical data types:
 - `time-millis`
