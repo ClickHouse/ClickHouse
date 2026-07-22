@@ -236,11 +236,13 @@ def ensure_primary_submodules():
 def prepare_before_worktree(merge_base, pr_sha, test_files):
     """Create an isolated worktree at the merge-base with only the test files overlaid.
 
-    Submodule working trees are populated by hardlinking from the primary checkout
-    (fast, no network) so the build sees contrib sources.  This is content-correct
-    whenever the PR did not bump submodule pointers, which is the normal case for a
-    unit-test bugfix.  Returns True iff the worktree ended up with its submodules
-    populated (checked via SUBMODULE_MARKER) — the caller must fail close otherwise.
+    Each submodule is populated by hardlinking the primary checkout (fast, no network)
+    when the merge-base pins the same commit the primary has on disk, and by fetching the
+    submodule at its own merge-base pin when they differ (drift). Hardlinking master's
+    content for a drifted submodule is content-incorrect: the before-worktree uses the
+    merge-base cmake wrappers, which reference the merge-base submodule's file layout.
+    Returns True iff every submodule the merge-base needs ended up populated at that pin;
+    the caller must fail close otherwise.
     """
     Shell.check(f"git worktree remove --force {BEFORE_SRC} ||:", verbose=True)
     Shell.check(f"rm -rf {BEFORE_SRC}", verbose=True)
@@ -265,15 +267,18 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
     # hardlink them across (see ensure_primary_submodules).
     ensure_primary_submodules()
 
-    # Populate submodules by hardlinking from the primary checkout.
+    # Populate the submodules the merge-base needs. Iterate the merge-base's own
+    # `.gitmodules` (the set the before-binary actually builds against), NOT the primary's
+    # — master may have added or removed submodules relative to the merge-base.
     sub_paths = Shell.get_output(
-        "git config --file .gitmodules --get-regexp '^submodule\\..*\\.path$' "
-        "| awk '{print $2}'"
+        f"git config --file {shlex.quote(BEFORE_SRC)}/.gitmodules "
+        "--get-regexp '^submodule\\..*\\.path$' | awk '{print $2}'"
     ).splitlines()
     before_src_real = os.path.realpath(BEFORE_SRC)
+    drifted = []
     for path in sub_paths:
         path = path.strip()
-        if not path or not os.path.isdir(path) or not os.listdir(path):
+        if not path:
             continue
         dst = os.path.join(BEFORE_SRC, path)
         # SECURITY: defense in depth against a traversal path that somehow slipped past
@@ -289,18 +294,82 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
                 f"refusing to populate submodule '{path}': destination '{dst}' "
                 f"escapes '{BEFORE_SRC}'"
             )
-        # SECURITY: submodule paths come from the PR's `.gitmodules` and are PR-controlled,
-        # so shell-quote them (and use `--`) before Shell.check to avoid command/option
+        # SECURITY: submodule paths come from `.gitmodules` (PR-controlled), so shell-quote
+        # them (and use `--`) before any Shell.check (shell=True) to avoid command/option
         # injection on the runner.
         q_path, q_dst, q_dst_parent = (
             shlex.quote(path),
             shlex.quote(dst),
             shlex.quote(os.path.dirname(dst)),
         )
-        Shell.check(f"rm -rf -- {q_dst} && mkdir -p -- {q_dst_parent}", verbose=False)
-        # cp -al = recursive hardlink copy (instant, no data duplication).
-        Shell.check(f"cp -al -- {q_path} {q_dst}", verbose=False)
 
+        # "want" = the commit the merge-base pins for this submodule; "have" = the commit
+        # the primary checkout has on disk. They differ only when master moved the pointer
+        # after the merge-base (a submodule bump/URL switch on master, or a submodule the
+        # primary lacks). Hardlinking is content-correct only when want == have.
+        want = Shell.get_output(
+            f"git -C {shlex.quote(BEFORE_SRC)} rev-parse --verify --quiet "
+            f"HEAD:{q_path}",
+            verbose=False,
+        ).strip()
+        have = (
+            Shell.get_output(
+                f"git -C {q_path} rev-parse --verify --quiet HEAD",
+                verbose=False,
+            ).strip()
+            if os.path.isdir(path) and os.listdir(path)
+            else ""
+        )
+
+        if want and want == have:
+            # No drift: hardlink the primary's content (fast, no network).
+            Shell.check(
+                f"rm -rf -- {q_dst} && mkdir -p -- {q_dst_parent}", verbose=False
+            )
+            # cp -al = recursive hardlink copy (instant, no data duplication).
+            Shell.check(f"cp -al -- {q_path} {q_dst}", verbose=False)
+        else:
+            # Drift (or the primary lacks this submodule): populate the before-worktree's
+            # own copy at its merge-base pin. `submodule sync` first, so the merge-base URL
+            # is used (it may itself differ from master, e.g. a fork->upstream switch). A
+            # network fetch is unavoidable: the merge-base pin is generally not local once
+            # master has moved the pointer.
+            drifted.append(path)
+            Shell.check(f"rm -rf -- {q_dst}", verbose=False)
+            ok = Shell.check(
+                f"git -C {shlex.quote(BEFORE_SRC)} submodule sync -- {q_path} && "
+                f"git -C {shlex.quote(BEFORE_SRC)} submodule update --init --depth 1 "
+                f"-- {q_path}",
+                retries=3,
+                verbose=True,
+            )
+            if not ok:
+                print(
+                    f"WARNING: failed to populate drifted submodule '{path}' at its "
+                    f"merge-base pin '{want}'; before-binary configure may fail."
+                )
+
+    if drifted:
+        print(
+            "Submodule pointers drift between the merge-base and master; populated at the "
+            f"merge-base pin instead of hardlinking master content: {drifted}"
+        )
+
+    # Fail close: every submodule the merge-base needs must be populated with a working
+    # tree, else the before-binary cannot configure/build. Checking only SUBMODULE_MARKER
+    # (a single unrelated submodule) would miss a drifted submodule that failed to
+    # repopulate. Report the first missing one so the caller's ERROR verdict is specific.
+    for path in sub_paths:
+        path = path.strip()
+        if not path:
+            continue
+        dst = os.path.join(BEFORE_SRC, path)
+        if not os.path.isdir(dst) or not os.listdir(dst):
+            print(
+                f"ERROR: submodule '{path}' is not populated in the before-worktree; "
+                "cannot build the before-binary."
+            )
+            return False
     return os.path.isfile(os.path.join(BEFORE_SRC, SUBMODULE_MARKER))
 
 

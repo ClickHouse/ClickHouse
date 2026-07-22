@@ -348,5 +348,122 @@ def test_before_run_started_a_test_handles_no_files():
     assert before_run_started_a_test(_FakeResult([])) is False
 
 
+# --------------------------------------------------------------------------
+# prepare_before_worktree submodule population: hardlink only when the
+# merge-base pins the same commit the primary has checked out; otherwise
+# (pin/URL drift, e.g. the abseil-cpp fork->upstream switch) populate the
+# before-worktree's own copy at the merge-base pin instead of hardlinking
+# master's content — which would break configure against the merge-base
+# cmake wrappers.
+# --------------------------------------------------------------------------
+def _drive_prepare_before_worktree(monkeypatch, want_by_path, have_by_path):
+    """Run prepare_before_worktree with Shell + os stubbed, returning the issued
+    commands. `want_by_path` = merge-base gitlink SHA per submodule; `have_by_path`
+    = primary checked-out SHA per submodule ("" = primary lacks it)."""
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+
+    calls = []
+
+    def fake_check(cmd, **kwargs):
+        calls.append(cmd)
+        return True
+
+    def fake_get_output(cmd, **kwargs):
+        calls.append(cmd)
+        # merge-base .gitmodules path listing
+        if "--get-regexp" in cmd and ".gitmodules" in cmd:
+            return "\n".join(want_by_path)
+        # want: `git -C before_src rev-parse ... HEAD:<path>`
+        if "rev-parse" in cmd and "HEAD:" in cmd:
+            for p in want_by_path:
+                if f"HEAD:{shlex.quote(p)}" in cmd or f"HEAD:{p}" in cmd:
+                    return want_by_path[p]
+            return ""
+        # have: `git -C <path> rev-parse ... HEAD`
+        if "rev-parse" in cmd and "HEAD" in cmd:
+            for p in have_by_path:
+                if f"-C {shlex.quote(p)} " in cmd or f"-C {p} " in cmd:
+                    return have_by_path[p]
+            return ""
+        return ""
+
+    monkeypatch.setattr(job.Shell, "check", staticmethod(fake_check))
+    monkeypatch.setattr(job.Shell, "get_output", staticmethod(fake_get_output))
+    monkeypatch.setattr(job, "ensure_primary_submodules", lambda: None)
+    # Primary has a populated dir iff it recorded a "have" SHA; the before-worktree
+    # dst dir is treated as populated after the loop (fail-close check passes).
+    monkeypatch.setattr(job.os.path, "realpath", lambda p: "/abs/" + p)
+    monkeypatch.setattr(
+        job.os.path, "isdir", lambda p: True
+    )  # both primary paths and before_src dsts exist
+    monkeypatch.setattr(job.os.path, "isfile", lambda p: True)  # SUBMODULE_MARKER present
+    monkeypatch.setattr(job.os, "listdir", lambda p: ["x"])  # never-empty
+
+    ok = job.prepare_before_worktree("mb_sha", "pr_sha", ["src/X/tests/gtest_x.cpp"])
+    return ok, calls
+
+
+def test_prepare_before_worktree_hardlinks_when_pin_matches(monkeypatch):
+    # A submodule whose merge-base pin equals the primary's checked-out SHA is
+    # content-correct to hardlink.
+    ok, calls = _drive_prepare_before_worktree(
+        monkeypatch,
+        want_by_path={"contrib/sysroot": "samesha"},
+        have_by_path={"contrib/sysroot": "samesha"},
+    )
+    assert ok is True
+    assert any("cp -al -- contrib/sysroot" in c for c in calls), (
+        "matching pin must hardlink from the primary checkout"
+    )
+    assert not any("submodule update" in c for c in calls), (
+        "matching pin must not trigger a submodule fetch"
+    )
+
+
+def test_prepare_before_worktree_repopulates_drifted_submodule(monkeypatch):
+    # abseil-cpp drift: the merge-base pins the fork commit, master has upstream
+    # checked out. Hardlinking master content breaks the merge-base wrapper, so the
+    # before-worktree's own copy must be fetched at the merge-base pin.
+    ok, calls = _drive_prepare_before_worktree(
+        monkeypatch,
+        want_by_path={
+            "contrib/sysroot": "samesha",
+            "contrib/abseil-cpp": "forkpin",
+        },
+        have_by_path={
+            "contrib/sysroot": "samesha",
+            "contrib/abseil-cpp": "upstreampin",
+        },
+    )
+    assert ok is True
+    # sysroot (no drift) is hardlinked; abseil (drift) is NOT.
+    assert any("cp -al -- contrib/sysroot" in c for c in calls)
+    assert not any("cp -al -- contrib/abseil-cpp" in c for c in calls), (
+        "a drifted submodule must not be hardlinked from the primary"
+    )
+    # abseil is sync'd then updated in the before-worktree at its own pin.
+    assert any(
+        "submodule sync -- contrib/abseil-cpp" in c for c in calls
+    ), "drifted submodule must be re-synced to the merge-base URL"
+    assert any(
+        "submodule update --init" in c and "contrib/abseil-cpp" in c for c in calls
+    ), "drifted submodule must be populated at the merge-base pin"
+
+
+def test_prepare_before_worktree_repopulates_when_primary_lacks_submodule(monkeypatch):
+    # A submodule the merge-base needs but the primary lacks (master removed it) must
+    # be populated from the before-worktree's own pin, not silently skipped.
+    ok, calls = _drive_prepare_before_worktree(
+        monkeypatch,
+        want_by_path={"contrib/removed_on_master": "mbpin"},
+        have_by_path={"contrib/removed_on_master": ""},
+    )
+    assert ok is True
+    assert any(
+        "submodule update --init" in c and "contrib/removed_on_master" in c
+        for c in calls
+    )
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
