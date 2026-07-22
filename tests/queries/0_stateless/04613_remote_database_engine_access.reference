@@ -9,5 +9,8 @@ id	UInt64
 2
 -- resolution is rejected without SHOW COLUMNS on the underlying local table (prints 1 if rejected)
 1
--- SHOW TABLES still lists the table even without SHOW COLUMNS on the underlying table
+-- SHOW TABLES does not leak the underlying table name without SHOW TABLES on the underlying database (prints nothing)
+-- SHOW TABLES lists the table once SHOW TABLES on the underlying database is granted, even without SHOW COLUMNS
 t
+-- ...but DESCRIBE is still rejected without SHOW COLUMNS on the underlying table (prints 1 if rejected)
+1

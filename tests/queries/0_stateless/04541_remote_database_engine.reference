@@ -32,6 +32,7 @@ MATERIALIZED a + 3
 -- a remote failure on table resolution is reported as the real error, not as UNKNOWN_TABLE
 1
 0
+1
 -- DDL against a Remote database is not supported (prints 1 if the expected error is raised)
 1
 1

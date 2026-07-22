@@ -77,6 +77,9 @@ echo '-- a remote failure on table resolution is reported as the real error, not
 ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${REMOTE_DB}_unreachable ENGINE = Remote('127.0.0.1:1', 'default', 'default', '')"
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${REMOTE_DB}_unreachable.t" 2>&1 | grep -c -m1 -E "NETWORK_ERROR|ALL_CONNECTION_TRIES_FAILED|CONNECTION_REFUSED"
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${REMOTE_DB}_unreachable.t" 2>&1 | grep -c "UNKNOWN_TABLE" || true
+# `EXISTS TABLE` must propagate the same real error rather than silently answering that the table
+# does not exist (which would be indistinguishable from a genuinely missing table).
+${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${REMOTE_DB}_unreachable.t" 2>&1 | grep -c -m1 -E "NETWORK_ERROR|ALL_CONNECTION_TRIES_FAILED|CONNECTION_REFUSED"
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${REMOTE_DB}_unreachable"
 
 echo '-- DDL against a Remote database is not supported (prints 1 if the expected error is raised)'

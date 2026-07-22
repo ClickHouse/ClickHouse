@@ -1,6 +1,7 @@
 #include <Databases/DatabaseRemote.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
 #include <Core/Block.h>
 #include <Core/Defines.h>
@@ -157,9 +158,20 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context) const
             /// The local database may be another `Remote` database that (indirectly) refers back
             /// to this one; the guard rejects such a cycle instead of recursing forever.
             LocalTraversalGuard guard(this);
+            /// `getTablesIterator` returns every attached table regardless of the caller's grants, so
+            /// filter by the caller's own `SHOW TABLES` right on the underlying local table, exactly
+            /// like `system.tables` does. Otherwise a user with `SHOW TABLES` on the proxy database
+            /// but no grants on the underlying local database could enumerate all of its table names
+            /// through `Remote('127.0.0.1', ...)`.
+            const auto access = local_context->getAccess();
+            const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES, remote_database);
             Strings tables;
             for (auto it = local_database->getTablesIterator(query_context); it->isValid(); it->next())
+            {
+                if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, remote_database, it->name()))
+                    continue;
                 tables.push_back(it->name());
+            }
             return tables;
         }
 
@@ -427,7 +439,11 @@ VectorWithMemoryTracking<String> DatabaseRemote::getAllTableNames(ContextPtr loc
 
 bool DatabaseRemote::isTableExist(const String & table_name, ContextPtr local_context) const
 {
-    return static_cast<bool>(fetchTable(table_name, local_context));
+    /// `isTableExist` is user-visible: `EXISTS TABLE` reaches it through `InterpreterExistsQuery`.
+    /// Resolve with `throw_on_error = true` (like `tryGetTable`) so that only a genuinely missing
+    /// table yields `false`, while a transport/authentication failure on an existing remote table is
+    /// propagated as the real error instead of being reported as "does not exist".
+    return static_cast<bool>(fetchTable(table_name, local_context, /* throw_on_error = */ true));
 }
 
 
