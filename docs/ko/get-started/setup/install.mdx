@@ -1,0 +1,72 @@
+---
+description: 'ClickHouse 설치'
+keywords: ['ClickHouse', '설치', '시작하기', '빠른 시작']
+sidebarTitle: '설치'
+slug: /install
+title: '설치 안내'
+doc_type: 'guide'
+---
+
+import {galaxyOnClick} from "/snippets/ko/lib/galaxy.jsx";
+
+<Card title="ClickHouse Cloud" icon="cloud" href="https://console.clickhouse.cloud/signUp?loc=docs-install-page-banner" cta="무료로 시작하기">
+  클러스터의 용량을 산정하거나 스케일링할 필요 없이 즉시 시작할 수 있습니다. ClickHouse Cloud가 용량 산정, 스케일링
+  , 보안, 안정성 및 업그레이드를 처리합니다.
+</Card>
+
+<br />
+
+직접 관리하는 방식을 선호한다면 아래의 오픈소스 ClickHouse 옵션 중 하나를 선택하십시오.
+로컬 환경에서는 빠른 설치 스크립트 또는 `clickhousectl` CLI를 사용하고, 프로덕션 배포에는
+패키지 또는 바이너리로 ClickHouse 서버를 설치하십시오.
+
+<h3 className="install-group-heading">로컬 개발</h3>
+
+<p className="install-group-description">
+  로컬 머신에서 ClickHouse를 실행하여 개발, 테스트 및 실험을 수행하십시오.
+  빠른 설치를 사용하면 단일 바이너리를 빠르게 설치할 수 있고, clickhousectl을 사용하면
+  로컬 버전과 서버를 설치하고 관리할 수 있습니다.
+</p>
+
+<div className="installContainer">
+  <a href="/ko/install/quick-install" style={{textDecoration: 'none'}}>
+    <Card title="빠른 설치" />
+  </a>
+
+  <a href="/ko/install/clickhousectl" style={{textDecoration: 'none'}}>
+    <Card title="clickhousectl (CLI)" icon="console" />
+  </a>
+
+  <a href="/ko/install/docker" style={{textDecoration: 'none'}}>
+    <Card title="Docker" />
+  </a>
+
+  <a href="/ko/install/advanced" style={{textDecoration: 'none'}}>
+    <Card title="소스 빌드" icon="code" />
+  </a>
+</div>
+
+<h3 className="install-group-heading">프로덕션 서버</h3>
+
+<p className="install-group-description">
+  자체 인프라에서 장기간 실행되는 환경을 위해 패키지 또는 바이너리로 ClickHouse 서버를
+  설치하십시오.
+</p>
+
+<div className="installContainer">
+  <a href="/ko/install/debian_ubuntu" style={{textDecoration: 'none'}}>
+    <Card title="Debian/Ubuntu" />
+  </a>
+
+  <a href="/ko/install/redhat" style={{textDecoration: 'none'}}>
+    <Card title="Redhat" />
+  </a>
+
+  <a href="/ko/install/nixos" style={{textDecoration: 'none'}}>
+    <Card title="NixOS" />
+  </a>
+
+  <a href="/ko/install/linux_other" style={{textDecoration: 'none'}}>
+    <Card title="기타 Linux" />
+  </a>
+</div>

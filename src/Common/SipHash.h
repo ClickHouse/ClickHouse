@@ -228,12 +228,12 @@ inline CityHash_v1_0_2::uint128 getSipHash128AsPair(SipHash & sip_hash)
     return result;
 }
 
-inline String getSipHash128AsHexString(SipHash & sip_hash)
+inline String getSipHash128AsHexString(const UInt128 & hash)
 {
     String result;
 
-    const auto hash_data = getSipHash128AsArray(sip_hash);
-    const auto hash_size = hash_data.size();
+    const auto * hash_data = reinterpret_cast<const UInt8 *>(&hash);
+    const auto hash_size = sizeof(hash);
     result.resize(hash_size * 2);
     for (size_t i = 0; i < hash_size; ++i)
     {
@@ -243,6 +243,11 @@ inline String getSipHash128AsHexString(SipHash & sip_hash)
             writeHexByteLowercase(hash_data[i], &result[2 * i]);
     }
     return result;
+}
+
+inline String getSipHash128AsHexString(SipHash & sip_hash)
+{
+    return getSipHash128AsHexString(sip_hash.get128());
 }
 
 inline UInt128 sipHash128Keyed(UInt64 key0, UInt64 key1, const char * data, const size_t size)

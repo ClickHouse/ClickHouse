@@ -1,0 +1,120 @@
+---
+description: 'تثبيت ClickHouse على MacOS'
+keywords: ['ClickHouse', 'تثبيت', 'Linux', 'tar']
+sidebarTitle: 'أنظمة Linux الأخرى'
+slug: /install/linux_other
+title: 'تثبيت ClickHouse باستخدام ملفات tgz المضغوطة'
+hide_title: true
+doc_type: 'guide'
+---
+
+import Recommendations from '/snippets/ar/recommendations.mdx';
+
+> يُوصى باستخدام أرشيفات `tgz` الرسمية المجمّعة مسبقًا لجميع توزيعات Linux عندما لا يكون تثبيت حزم `deb` أو `rpm` ممكنًا.
+
+<Steps>
+  <Step>
+    ## راجع التوصيات
+
+    <Recommendations />
+  </Step>
+
+  <Step>
+    ## نزّل وثبّت أحدث إصدار مستقر
+
+    يمكن تنزيل الإصدار المطلوب باستخدام `curl` أو `wget` من المستودع https://packages.clickhouse.com/tgz/.
+    بعد ذلك، يجب فك ضغط الأرشيفات التي تم تنزيلها وتثبيتها باستخدام البرامج النصية الخاصة بالتثبيت.
+
+    فيما يلي مثال على كيفية تثبيت أحدث إصدار مستقر.
+
+    <Note>
+      بالنسبة إلى بيئات production، يُوصى باستخدام أحدث إصدار `stable`.
+      يمكنك العثور على رقم الإصدار في [صفحة GitHub](https://github.com/ClickHouse/ClickHouse/tags)
+      ذات اللاحقة `-stable`.
+    </Note>
+  </Step>
+
+  <Step>
+    ## احصل على أحدث إصدار من ClickHouse
+
+    احصل على أحدث إصدار من ClickHouse من GitHub وخزّنه في المتغير `LATEST_VERSION`.
+
+    ```bash
+    LATEST_VERSION=$(curl -s https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/utils/list-versions/version_date.tsv | \
+        grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -V -r | head -n 1)
+    export LATEST_VERSION
+    ```
+  </Step>
+
+  <Step>
+    ## اكتشف معمارية نظامك
+
+    اكتشف معمارية النظام واضبط المتغير `ARCH` وفقًا لذلك:
+
+    ```bash
+    case $(uname -m) in
+      x86_64) ARCH=amd64 ;;         # لمعالجات Intel/AMD ذات 64 بت
+      aarch64) ARCH=arm64 ;;        # لمعالجات ARM ذات 64 بت
+      *) echo "Unknown architecture $(uname -m)"; exit 1 ;; # اخرج إذا كانت المعمارية غير مدعومة
+    esac
+    ```
+  </Step>
+
+  <Step>
+    ## نزّل ملفات tarball لكل مكوّن من مكوّنات ClickHouse
+
+    نزّل ملفات tarball لكل مكوّن من مكوّنات ClickHouse. تحاول الحلقة تنزيل
+    الحزم الخاصة بالمعمارية أولًا، ثم تلجأ إلى الحزم العامة.
+
+    ```bash
+    for PKG in clickhouse-common-static clickhouse-common-static-dbg clickhouse-server clickhouse-client clickhouse-keeper
+    do
+      curl -fO "https://packages.clickhouse.com/tgz/stable/$PKG-$LATEST_VERSION-${ARCH}.tgz" \
+        || curl -fO "https://packages.clickhouse.com/tgz/stable/$PKG-$LATEST_VERSION.tgz"
+    done
+    ```
+  </Step>
+
+  <Step>
+    ## استخرج الحزم وثبّتها
+
+    شغّل الأوامر أدناه لاستخراج الحزم التالية وتثبيتها:
+
+    * `clickhouse-common-static`
+
+    ```bash
+    # استخرج حزمة clickhouse-common-static وثبّتها
+    tar -xzvf "clickhouse-common-static-$LATEST_VERSION-${ARCH}.tgz" \
+      || tar -xzvf "clickhouse-common-static-$LATEST_VERSION.tgz"
+    sudo "clickhouse-common-static-$LATEST_VERSION/install/doinst.sh"
+    ```
+
+    * `clickhouse-common-static-dbg`
+
+    ```bash
+    # استخرج حزمة رموز التصحيح وثبّتها
+    tar -xzvf "clickhouse-common-static-dbg-$LATEST_VERSION-${ARCH}.tgz" \
+      || tar -xzvf "clickhouse-common-static-dbg-$LATEST_VERSION.tgz"
+    sudo "clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh"
+    ```
+
+    * `clickhouse-server`
+
+    ```bash
+    # استخرج حزمة الخادم وثبّتها مع الإعدادات
+    tar -xzvf "clickhouse-server-$LATEST_VERSION-${ARCH}.tgz" \
+      || tar -xzvf "clickhouse-server-$LATEST_VERSION.tgz"
+    sudo "clickhouse-server-$LATEST_VERSION/install/doinst.sh" configure
+    sudo /etc/init.d/clickhouse-server start  # ابدأ الخادم
+    ```
+
+    * `clickhouse-client`
+
+    ```bash
+    # استخرج حزمة العميل وثبّتها
+    tar -xzvf "clickhouse-client-$LATEST_VERSION-${ARCH}.tgz" \
+      || tar -xzvf "clickhouse-client-$LATEST_VERSION.tgz"
+    sudo "clickhouse-client-$LATEST_VERSION/install/doinst.sh"
+    ```
+  </Step>
+</Steps>

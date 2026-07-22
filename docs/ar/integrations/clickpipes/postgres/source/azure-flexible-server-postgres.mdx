@@ -1,0 +1,97 @@
+---
+sidebarTitle: 'Azure Flexible Server for Postgres'
+description: 'إعداد Azure Flexible Server for Postgres كمصدر لـ ClickPipes'
+slug: /integrations/clickpipes/postgres/source/azure-flexible-server-postgres
+title: 'دليل إعداد Azure Flexible Server for Postgres كمصدر'
+keywords: ['azure', 'flexible server', 'postgres', 'clickpipes', 'wal level']
+doc_type: 'guide'
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يدعم ClickPipes ‏Postgres الإصدار 12 وما بعده.
+
+<div id="enable-logical-replication">
+  ## تمكين النسخ المتماثل المنطقي
+</div>
+
+**لست بحاجة** إلى اتباع الخطوات أدناه إذا كانت قيمة `wal_level` مضبوطة على `logical`. غالبًا ما يكون هذا الإعداد مُهيّأً مسبقًا إذا كنت تنتقل من أداة أخرى للنسخ المتماثل للبيانات.
+
+1. انقر على قسم **Server parameters**
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/server_parameters.webp" alt="Server Parameters في Azure Flexible Server for Postgres" size="lg" border />
+
+2. عدّل قيمة `wal_level` إلى `logical`
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/wal_level.webp" alt="تغيير wal_level إلى logical في Azure Flexible Server for Postgres" size="lg" border />
+
+3. سيتطلب هذا التغيير إعادة تشغيل الخادم، لذا أعد تشغيله عند مطالبتك بذلك.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/restart.webp" alt="إعادة تشغيل الخادم بعد تغيير wal_level" size="lg" border />
+
+<div id="creating-clickpipes-user-and-granting-permissions">
+  ## إنشاء مستخدمي ClickPipes ومنح الأذونات
+</div>
+
+اتصل بـ Azure Flexible Server Postgres باستخدام المستخدم admin، ثم شغّل الأوامر التالية:
+
+1. أنشئ مستخدمًا مخصصًا لـ ClickPipes.
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. امنح المستخدم الذي أنشأته في الخطوة السابقة صلاحية وصول للقراءة فقط على مستوى الـ schema. يوضّح المثال التالي الأذونات الخاصة بـ schema ‏`public`. كرّر هذه الأوامر لكل schema تحتوي على جداول تريد نسخها متماثلًا:
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. امنح المستخدم امتيازات النسخ المتماثل:
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. أنشئ [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html) يتضمن الجداول التي تريد نسخها متماثلًا. نوصي بشدة بقصر الـ publication على الجداول التي تحتاج إليها فقط، لتجنّب العبء الإضافي على الأداء.
+
+<Warning>
+  يجب أن يكون لكل table مُدرج في الـ publication إما **primary key** معرّف، *أو* أن تكون **replica identity** الخاصة به مضبوطة على `FULL`. راجع [الأسئلة الشائعة حول Postgres](/ar/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) للحصول على إرشادات حول تحديد النطاق.
+</Warning>
+
+* لإنشاء publication لجداول محددة:
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * لإنشاء publication لجميع الجداول ضمن schema محدد:
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+سيحتوي الـ publication ‏`clickpipes` على مجموعة أحداث التغيير الناتجة عن الجداول المحددة، وسيُستخدم لاحقًا لاستيعاب تدفق النسخ المتماثل.
+
+<div id="add-clickpipes-ips-to-firewall">
+  ## أضِف ClickPipes IPs إلى جدار الحماية
+</div>
+
+يُرجى اتباع الخطوات أدناه لإضافة [ClickPipes IPs](/ar/integrations/clickpipes/home#list-of-static-ips) إلى شبكتك.
+
+1. انتقل إلى علامة التبويب **Networking** وأضِف [ClickPipes IPs](/ar/integrations/clickpipes/home#list-of-static-ips) إلى جدار الحماية
+   الخاص بـ Azure Flexible Server Postgres أو Jump Server/Bastion إذا كنت تستخدم نفق SSH.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/firewall.webp" alt="أضِف ClickPipes IPs إلى جدار الحماية في Azure Flexible Server for Postgres" size="lg" />
+
+<div id="whats-next">
+  ## ما الخطوة التالية؟
+</div>
+
+يمكنك الآن [إنشاء ClickPipe الخاص بك](/ar/integrations/clickpipes/postgres/index) والبدء في استيراد البيانات من مثيل Postgres الخاص بك إلى ClickHouse Cloud.
+احرص على تدوين تفاصيل الاتصال التي استخدمتها أثناء إعداد مثيل Postgres الخاص بك، إذ ستحتاج إليها خلال عملية إنشاء ClickPipe.

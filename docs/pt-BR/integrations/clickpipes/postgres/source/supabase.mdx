@@ -1,0 +1,108 @@
+---
+sidebarTitle: 'Postgres do Supabase'
+description: 'Configure uma instância do Supabase como origem para o ClickPipes'
+slug: /integrations/clickpipes/postgres/source/supabase
+title: 'Guia de configuração da origem do Supabase'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ingestão de dados', 'sincronização em tempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Este é um guia de como configurar o Supabase Postgres para uso no ClickPipes.
+
+<Note>
+  O ClickPipes oferece suporte nativo ao Supabase via IPv6 para uma replicação sem interrupções.
+</Note>
+
+<div id="creating-a-user-with-permissions-and-replication-slot">
+  ## Criando um usuário com permissões e slot de replicação
+</div>
+
+Conecte-se à sua instância do Supabase como um usuário administrador e execute os seguintes comandos:
+
+1. Crie um usuário dedicado para o ClickPipes:
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. Conceda ao usuário criado na etapa anterior acesso de somente leitura no nível de schema. O exemplo a seguir mostra as permissões para o schema `public`. Repita esses comandos para cada schema que contenha tabelas que você deseja replicar:
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. Conceda privilégios de replicação ao usuário:
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. Crie uma [publicação](https://www.postgresql.org/docs/current/logical-replication-publication.html) com as tabelas que você deseja replicar. Recomendamos fortemente incluir na publicação apenas as tabelas necessárias para evitar sobrecarga de desempenho.
+
+<Warning>
+  Qualquer tabela incluída na publicação deve ter uma **chave primária** definida *ou* ter sua **identidade de réplica** configurada como `FULL`. Consulte as [FAQs do Postgres](/pt-BR/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) para orientações sobre escopo.
+</Warning>
+
+* Para criar uma publicação para tabelas específicas:
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * Para criar uma publicação para todas as tabelas em um schema específico:
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+A publicação `clickpipes` conterá o conjunto de eventos de alteração gerados pelas tabelas especificadas e será usada posteriormente para a ingestão do fluxo de replicação.
+
+<div id="increase-max_slot_wal_keep_size">
+  ## Aumente `max_slot_wal_keep_size`
+</div>
+
+<Warning>
+  Esta etapa reiniciará seu banco de dados Supabase e poderá causar uma breve indisponibilidade.
+
+  Você pode aumentar o parâmetro `max_slot_wal_keep_size` do seu banco de dados Supabase para um valor mais alto (pelo menos 100 GB ou `102400`) seguindo a [documentação do Supabase](https://supabase.com/docs/guides/database/custom-postgres-config#cli-supported-parameters)
+
+  Para obter uma recomendação mais precisa para esse valor, entre em contato com a equipe do ClickPipes.
+</Warning>
+
+<div id="connection-details-to-use-for-supabase">
+  ## Detalhes de conexão para usar com o Supabase
+</div>
+
+Acesse `Project Settings` -&gt; `Database` no seu projeto do Supabase (em `Configuration`).
+
+**Importante**: Desative `Display connection pooler` nesta página, depois vá para a seção `Connection parameters` e anote/copie os parâmetros.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/supabase/supabase-connection-details.jpg" size="lg" border alt="Localize os detalhes de conexão do Supabase" border />
+
+<Info>
+  O connection pooler não é compatível com replicação baseada em CDC, portanto precisa ser desativado.
+</Info>
+
+<div id="note-on-rls">
+  ## Observação sobre RLS
+</div>
+
+O usuário do ClickPipes para Postgres não deve estar sujeito a políticas de RLS, pois isso pode resultar em dados ausentes. Você pode desativar as políticas de RLS para esse usuário executando o comando abaixo:
+
+```sql
+ALTER USER clickpipes_user BYPASSRLS;
+```
+
+<div id="whats-next">
+  ## Próximos passos
+</div>
+
+Agora você pode [criar seu ClickPipe](/pt-BR/integrations/clickpipes/postgres/index) e iniciar a ingestão de dados da sua instância do Postgres no ClickHouse Cloud.
+Anote os detalhes da conexão usados na configuração da sua instância do Postgres, pois você precisará deles durante o processo de criação do ClickPipe.

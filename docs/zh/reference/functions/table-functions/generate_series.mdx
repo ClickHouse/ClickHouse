@@ -1,0 +1,110 @@
+---
+slug: /sql-reference/table-functions/generate_series
+sidebarTitle: 'generate_series'
+title: 'generate_series (generateSeries)'
+description: '返回一个仅包含 `generate_series` 列（UInt64）的表，该列包含从 start 到 stop（含端点）的整数。'
+doc_type: 'reference'
+---
+
+别名：`generateSeries`
+
+<div id="syntax">
+  ## 语法
+</div>
+
+返回一个仅包含单个 &#39;generate&#95;series&#39; 列 (`UInt64`) 的表，其中含有从 start 到 stop (含两端) 的整数：
+
+```sql
+generate_series(START, STOP)
+```
+
+返回一个表，其中只有一个 &#39;generate&#95;series&#39; 列 (`UInt64`) ，包含从 start 到 stop (含两端) 的整数，值之间的间隔由 `STEP` 指定：
+
+```sql
+generate_series(START, STOP, STEP)
+```
+
+`STEP` 可以是负数，此时会按降序生成从 `START` 到 `STOP` 的序列。如果 `STEP` 为负数且 `START < STOP`，则结果为空。
+
+<div id="examples">
+  ## 示例
+</div>
+
+以下查询会返回内容相同、但列名不同的表：
+
+```sql
+SELECT * FROM numbers(10, 5);
+```
+
+```response
+┌─number─┐
+│     10 │
+│     11 │
+│     12 │
+│     13 │
+│     14 │
+└────────┘
+```
+
+```sql
+SELECT * FROM generate_series(10, 14);
+```
+
+```response
+┌─generate_series─┐
+│              10 │
+│              11 │
+│              12 │
+│              13 │
+│              14 │
+└─────────────────┘
+```
+
+以下查询会返回内容相同但列名不同的表 (但第二种写法效率更高) ：
+
+```sql
+SELECT * FROM numbers(10, 11) WHERE number % 3 == (10 % 3);
+```
+
+```response
+┌─number─┐
+│     10 │
+│     13 │
+│     16 │
+│     19 │
+└────────┘
+```
+
+```sql
+SELECT * FROM generate_series(10, 20, 3);
+```
+
+```response
+┌─generate_series─┐
+│              10 │
+│              13 │
+│              16 │
+│              19 │
+└─────────────────┘
+```
+
+生成降序序列：
+
+```sql
+SELECT * FROM generate_series(9, 0, -1);
+```
+
+```response
+┌─generate_series─┐
+│               9 │
+│               8 │
+│               7 │
+│               6 │
+│               5 │
+│               4 │
+│               3 │
+│               2 │
+│               1 │
+│               0 │
+└─────────────────┘
+```

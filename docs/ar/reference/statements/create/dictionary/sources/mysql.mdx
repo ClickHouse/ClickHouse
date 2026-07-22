@@ -1,0 +1,127 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/mysql
+title: 'مصدر قاموس MySQL'
+sidebarTitle: 'MySQL'
+description: 'هيّئ MySQL كمصدر قاموس في ClickHouse.'
+doc_type: 'reference'
+---
+
+مثال على الإعدادات:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(MYSQL(
+        port 3306
+        user 'clickhouse'
+        password 'qwerty'
+        replica(host 'example01-1' priority 1)
+        replica(host 'example01-2' priority 1)
+        db 'db_name'
+        table 'table_name'
+        where 'id=10'
+        invalidate_query 'SQL_QUERY'
+        fail_on_connection_loss 'true'
+        query 'SELECT id, value_1, value_2 FROM db_name.table_name'
+        enable_compression 1
+    ))
+    ```
+  </Tab>
+
+  <Tab title="ملف التهيئة">
+    ```xml
+    <source>
+      <mysql>
+          <port>3306</port>
+          <user>clickhouse</user>
+          <password>qwerty</password>
+          <replica>
+              <host>example01-1</host>
+              <priority>1</priority>
+          </replica>
+          <replica>
+              <host>example01-2</host>
+              <priority>1</priority>
+          </replica>
+          <db>db_name</db>
+          <table>table_name</table>
+          <where>id=10</where>
+          <invalidate_query>SQL_QUERY</invalidate_query>
+          <fail_on_connection_loss>true</fail_on_connection_loss>
+          <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
+          <enable_compression>1</enable_compression>
+      </mysql>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+حقول الإعداد:
+
+| الإعداد                   | الوصف                                                                                                                                                                                                                                                                                                      |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `port`                    | المنفذ على خادم MySQL. يمكنك تحديده لجميع النسخ المتماثلة، أو لكل نسخة على حدة (داخل `<replica>`).                                                                                                                                                                                                         |
+| `user`                    | اسم مستخدم MySQL. يمكنك تحديده لجميع النسخ المتماثلة، أو لكل نسخة على حدة (داخل `<replica>`).                                                                                                                                                                                                              |
+| `password`                | كلمة مرور مستخدم MySQL. يمكنك تحديدها لجميع النسخ المتماثلة، أو لكل نسخة على حدة (داخل `<replica>`).                                                                                                                                                                                                       |
+| `replica`                 | قسم إعدادات النسخة المتماثلة. يمكن أن يوجد أكثر من قسم واحد.                                                                                                                                                                                                                                               |
+| `replica/host`            | مضيف MySQL.                                                                                                                                                                                                                                                                                                |
+| `replica/priority`        | أولوية النسخة المتماثلة. عند محاولة الاتصال، يمر ClickHouse على النسخ المتماثلة وفق ترتيب الأولوية. وكلما كان الرقم أصغر، كانت الأولوية أعلى.                                                                                                                                                              |
+| `db`                      | اسم قاعدة البيانات.                                                                                                                                                                                                                                                                                        |
+| `table`                   | اسم الجدول.                                                                                                                                                                                                                                                                                                |
+| `where`                   | معايير التحديد. صياغة الشروط هي نفسها المستخدمة في عبارة `WHERE` في MySQL، على سبيل المثال: `id > 10 AND id < 20`. اختياري.                                                                                                                                                                                |
+| `invalidate_query`        | استعلام للتحقق من حالة القاموس. اختياري. اقرأ المزيد في قسم [Refreshing dictionary data using LIFETIME](/ar/reference/statements/create/dictionary/lifetime).                                                                                                                                                 |
+| `fail_on_connection_loss` | يتحكم في سلوك الخادم عند فقدان الاتصال. إذا كانت القيمة `true`، فسيُطرَح استثناء فورًا عند فقدان الاتصال بين العميل والخادم. وإذا كانت `false`، فسيعيد الخادم محاولة جلب البيانات ثلاث مرات على الأقل قبل الإبلاغ عن خطأ. لاحظ أن إعادة المحاولة تؤدي إلى زيادة زمن الاستجابة. القيمة الافتراضية: `false`. |
+| `query`                   | الاستعلام المخصص. اختياري.                                                                                                                                                                                                                                                                                 |
+| `enable_compression`      | يفعّل ضغط zlib لاتصال بروتوكول MySQL. عند ضبطه على `1`، يطلب ClickHouse ضغطًا على مستوى البروتوكول من خادم MySQL. ويمكن أيضًا ضبطه لكل نسخة متماثلة داخل `<replica>`. القيمة الافتراضية: `0`.                                                                                                              |
+
+<Note>
+  لا يمكن استخدام الحقلين `table` أو `where` مع الحقل `query` في الوقت نفسه. ويجب التصريح بأحد الحقلين `table` أو `query`.
+</Note>
+
+<Note>
+  لا توجد معلمة صريحة باسم `secure`. عند إنشاء اتصال SSL، يكون الأمان إلزاميًا.
+</Note>
+
+يمكن الاتصال بـ MySQL على المضيف المحلي عبر المقابس. للقيام بذلك، اضبط `host` و`socket`.
+
+مثال على الإعدادات:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(MYSQL(
+        host 'localhost'
+        socket '/path/to/socket/file.sock'
+        user 'clickhouse'
+        password 'qwerty'
+        db 'db_name'
+        table 'table_name'
+        where 'id=10'
+        invalidate_query 'SQL_QUERY'
+        fail_on_connection_loss 'true'
+        query 'SELECT id, value_1, value_2 FROM db_name.table_name'
+    ))
+    ```
+  </Tab>
+
+  <Tab title="ملف التهيئة">
+    ```xml
+    <source>
+      <mysql>
+          <host>localhost</host>
+          <socket>/path/to/socket/file.sock</socket>
+          <user>clickhouse</user>
+          <password>qwerty</password>
+          <db>db_name</db>
+          <table>table_name</table>
+          <where>id=10</where>
+          <invalidate_query>SQL_QUERY</invalidate_query>
+          <fail_on_connection_loss>true</fail_on_connection_loss>
+          <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
+      </mysql>
+    </source>
+    ```
+  </Tab>
+</Tabs>

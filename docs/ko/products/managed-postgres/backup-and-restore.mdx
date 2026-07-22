@@ -1,0 +1,53 @@
+---
+slug: /cloud/managed-postgres/backup-and-restore
+sidebarTitle: 'Backup 및 복원'
+title: 'Backup 및 복원'
+description: 'ClickHouse Managed Postgres의 Backup 전략과 특정 시점 복구를 알아봅니다'
+keywords: ['Backup', '복원', '특정 시점 복구', 'pitr', '재해 복구', 'Postgres Backup']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.backup-and-restore-beta" />
+
+Managed Postgres는 자동 Backup과 특정 시점 복구를 통해 데이터의 안전성과 가용성을 보장합니다. 인스턴스의 **Backups** 보기에서 Backup 이력을 확인하고 복원을 시작할 수 있습니다.
+
+<Image img="/images/managed-postgres/backup-and-restore.webp" alt="Backup 이력과 특정 시점 복구 옵션을 보여주는 Backups 보기" size="lg" border />
+
+<div id="backups">
+  ## Backups
+</div>
+
+<div id="backup-frequency">
+  ### Backup 주기
+</div>
+
+Managed Postgres는 데이터베이스의 전체 백업을 매일 수행합니다. 전체 백업 외에도 Write-Ahead Log(WAL) 파일은 60초마다 또는 WAL 데이터가 16 MB 누적될 때마다 아카이브되며, 둘 중 먼저 도래하는 시점이 기준입니다. 이러한 전체 백업과 지속적인 WAL 아카이빙을 통해 보관 기간 내의 임의 시점으로 특정 시점 복구를 수행할 수 있습니다.
+
+<div id="retention-period">
+  ### 보존 기간
+</div>
+
+백업은 7일 동안 보존되며, 데이터 손실이나 손상 발생 시 복구할 수 있도록 충분한 시간을 제공합니다. 더 긴 백업 보존 기간이 필요하면 [support](https://clickhouse.com/support/program)에 문의하십시오.
+
+<div id="storage-and-durability">
+  ### 스토리지 및 내구성
+</div>
+
+백업은 erasure coding을 사용해 여러 서버에 복제되므로, 일부 스토리지 서버를 사용할 수 없더라도 계속 접근할 수 있습니다. 백업 스토리지는 버킷 수준에서 격리됩니다. 즉, 각 Managed Postgres 인스턴스는 전용 스토리지 버킷을 가지며, 자격 증명은 해당 인스턴스의 백업에만 접근할 수 있도록 범위가 제한됩니다.
+
+<div id="point-in-time-recovery">
+  ## 특정 시점 복구
+</div>
+
+특정 시점 복구를 사용하면 백업 보존 기간 내의 원하는 특정 시점으로 데이터베이스를 복원할 수 있습니다. 이 기능은 실수로 데이터를 삭제했거나 데이터가 손상되는 등, 정상 상태로 되돌려야 하는 문제가 발생했을 때 유용합니다.
+
+특정 시점 복구를 수행하려면 다음 단계를 따르세요.
+
+1. Managed Postgres 인스턴스의 **Backups** 뷰로 이동합니다.
+2. **Point in time recovery** 섹션에서 복원할 대상 날짜와 시간(UTC)을 선택합니다.
+3. **Restore to point in time**를 클릭합니다.
+
+복원 작업을 수행하면 선택한 시점의 데이터베이스 상태를 반영한 새 Managed Postgres 인스턴스가 생성됩니다. 원래 인스턴스는 변경되지 않으므로, 어떤 인스턴스를 유지할지 결정하기 전에 복원된 데이터를 확인할 수 있습니다.

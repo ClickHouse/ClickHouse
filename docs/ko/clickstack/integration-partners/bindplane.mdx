@@ -1,0 +1,218 @@
+---
+slug: /use-cases/observability/clickstack/integration-partners/bindplane
+title: 'Bindplane으로 ClickStack에 OpenTelemetry 전송하기'
+sidebarTitle: 'Bindplane'
+description: 'Bindplane을 사용해 텔레메트리를 ClickStack으로 라우팅하고 collector를 중앙에서 관리'
+doc_type: 'guide'
+keywords: ['Bindplane', 'OTEL', 'ClickStack', 'OpenTelemetry', 'collector 관리']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import PartnerBadge from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<Info>
+  **요약**
+
+  이 가이드에서는 Bindplane의 네이티브 ClickStack 대상 기능을 사용해 텔레메트리를 ClickStack으로 라우팅하는 방법을 설명합니다. 다음 작업을 수행하는 방법을 알아봅니다.
+
+  * Bindplane에서 ClickStack을 대상으로 구성
+  * 텔레메트리를 처리하고 라우팅하기 위한 구성을 생성
+  * 구성을 OTel collector에 원격으로 배포하고 데이터 수집을 시작
+  * ClickStack에서 텔레메트리를 확인
+
+  이 통합은 ClickStack의 고성능 수집과 Bindplane의 중앙 집중식 collector 관리를 결합하여 운영 부담 없이 관측성을 더욱 쉽게 확장할 수 있도록 해줍니다.
+
+  소요 시간: 10~15분
+</Info>
+
+<div id="what-is-bindplane">
+  ## Bindplane이란 무엇입니까?
+</div>
+
+Bindplane은 OpenTelemetry 네이티브 텔레메트리 파이프라인으로, OpenTelemetry Collector를 중앙에서 관리할 수 있게 해줍니다. 시각적 구성 편집, 안전한 rollout, 그리고 pipeline intelligence를 제공하여 대규모 collector 환경의 운영을 간소화합니다.
+
+<div id="why-bindplane-clickstack">
+  ## 왜 Bindplane + ClickStack인가
+</div>
+
+대규모 환경에서는 OpenTelemetry Collector fleet 관리가 운영상의 병목이 됩니다. ClickStack은 극한의 수집량도 처리할 수 있다는 점이 이미 입증되었습니다. 실제로 고객은 초당 기가바이트 규모의 텔레메트리를 수집하고, 수백 페타바이트를 저장하고 있습니다. 이제 과제는 쿼리 성능이 아니라 ClickHouse로 데이터를 보내는 collector 인프라를 안정적으로 운영하는 데 있습니다.
+
+Bindplane은 다음 기능으로 이 문제를 해결합니다.
+
+* 수천 개부터 100만 개가 넘는 OpenTelemetry Collector를 중앙에서 관리
+* 안전한 원클릭 롤아웃을 지원하는 시각적 구성 편집
+* 데이터가 ClickStack에 도달하기 전에 자동 리소스 감지와 보강을 일관되게 적용
+* 팬아웃 라우팅을 통해 동일한 텔레메트리 스트림을 ClickStack과 다른 대상에 동시에 전송
+* collector 상태, 처리량, 엔드투엔드 성능을 포함한 전체 파이프라인 가시성
+
+<Tip>
+  **핵심 요약**
+
+  * **ClickStack은 극한의 수집량, 저장소, 그리고 빠른 분석용 쿼리를 처리합니다**
+  * **Bindplane은 수집 파이프라인과 collector fleet 운영의 복잡성을 관리합니다**
+</Tip>
+
+<div id="prerequisites">
+  ## 사전 요구사항
+</div>
+
+* 실행 중인 ClickStack 인스턴스(로컬, Server 또는 ClickHouse Cloud)
+* Bindplane 계정([`app.bindplane.com`에서 계정 생성](https://app.bindplane.com))
+* Bindplane OTel collector 설치 완료([Install Your First Collector](https://docs.bindplane.com/readme/install-your-first-collector) 참조)
+* Bindplane collector에서 ClickStack OTLP 엔드포인트까지의 네트워크 연결
+* ClickStack API Ingestion Key(ClickStack Team Settings &gt; API Keys에서 확인 가능, [참고 문서는 여기에서 확인](/ko/clickstack/ingesting-data/opentelemetry#sending-otel-data))
+* 필요한 네트워크 포트가 열려 있어야 합니다(HTTP/s의 경우 `4318`, gRPC의 경우 `4317`)
+
+<div id="integrate-bindplane-clickstack">
+  ## Bindplane과 ClickStack 통합
+</div>
+
+<Steps>
+  <Step>
+    #### 대상으로 사용할 ClickStack 구성
+
+    1. Bindplane 계정에 로그인합니다
+    2. **Library**로 이동합니다
+    3. **Add Destination**을 클릭합니다
+    4. 사용 가능한 대상 목록에서 **ClickStack**을 선택합니다
+    5. 연결을 구성합니다:
+       * **Protocol**: HTTP 또는 gRPC를 선택합니다(기본값: 포트 `4318`의 HTTP)
+       * **Hostname**: ClickStack OTLP 엔드포인트의 호스트명 또는 IP 주소를 입력합니다
+       * **Port**: 포트를 입력합니다(HTTP는 `4318`, gRPC는 `4317`)
+       * **API Ingestion Key**: ClickStack API Ingestion Key를 입력합니다
+    6. 대상 이름을 지정합니다(예: &quot;ClickStack Production&quot;)
+    7. 대상을 생성하려면 **Save**를 클릭합니다
+
+    <Tip>
+      **핵심 요약**
+
+      ClickStack 대상은 HTTP와 gRPC 프로토콜을 모두 지원합니다. 대용량 환경에서는 더 나은 성능을 위해 압축(gzip, zstd 또는 snappy)을 사용하는 gRPC를 권장합니다.
+    </Tip>
+  </Step>
+
+  <Step>
+    #### 구성 생성
+
+    ClickStack 대상 구성이 완료되면 텔레메트리를 처리하고 라우팅할 구성을 생성합니다:
+
+    1. **Configurations** → **Create Configuration**으로 이동합니다
+    2. 구성 이름을 지정합니다(예: &quot;ClickStack Pipeline&quot;)
+    3. 배포에 사용할 **Collector Type** 및 **Platform**을 선택합니다
+    4. 소스를 추가합니다:
+       * **Add Source**를 클릭하여 80개 이상의 사용 가능한 소스 중에서 선택합니다
+       * 테스트용으로는 트래픽을 시뮬레이션하는 텔레메트리 생성기 소스를 추가할 수 있습니다
+       * 운영 환경에서는 실제 텔레메트리(logs, metrics, traces)에 대한 소스를 추가합니다
+    5. ClickStack 대상을 추가합니다:
+       * **Add Destination**를 클릭합니다
+       * 이전 단계에서 생성한 ClickStack 대상을 선택합니다
+       * 전송할 텔레메트리 타입을 선택합니다(Logs, Metrics, Traces 또는 전체)
+
+    <Tip>
+      **핵심 요약**
+
+      필터링, 샘플링, 마스킹, 보강, 배칭 등 다양한 프로세서를 추가하여 텔레메트리가 ClickStack에 도달하기 전에 형태를 조정할 수 있습니다. 이렇게 하면 일관되고 구조화된 데이터가 ClickHouse에 수집되도록 할 수 있습니다.
+    </Tip>
+  </Step>
+
+  <Step>
+    #### 프로세서 추가(선택 사항)
+
+    Bindplane은 pipeline intelligence와 프로세서 권장 사항을 제공합니다. 프로세서를 추가하여 다음 작업을 수행할 수 있습니다:
+
+    * **Filter**: 불필요한 텔레메트리를 제외해 데이터 양을 줄입니다
+    * **Sample**: 대용량 traces에 샘플링 전략을 적용합니다
+    * **Enrich**: resource 속성, 레이블 또는 메타데이터를 추가합니다
+    * **Transform**: 텔레메트리 구조 또는 내용을 수정합니다
+    * **Batch**: 효율적인 전송을 위해 배치 크기를 최적화합니다
+
+    이러한 프로세서는 데이터가 ClickStack에 도달하기 전에 collector fleet 전체에 일관되게 적용됩니다.
+  </Step>
+
+  <Step>
+    #### collector 배포 및 롤아웃 시작
+
+    1. 구성에 collector(BDOT Collector)를 추가합니다:
+       * Bindplane의 **Agents**로 이동합니다
+       * 대상 시스템에 Bindplane collector를 설치합니다([Bindplane 설치 지침](https://docs.bindplane.com/readme/install-your-first-collector) 참조)
+       * 연결되면 collector 목록에 표시됩니다
+
+    2. collector에 구성을 할당합니다:
+       * 사용할 collector를 선택합니다
+       * 해당 collector에 ClickStack 구성을 할당합니다
+
+    3. 롤아웃을 시작합니다:
+       * 구성을 배포하려면 **Start Rollout**을 클릭합니다
+       * Bindplane은 롤아웃 전에 구성을 검증합니다
+       * Bindplane UI에서 롤아웃 상태를 모니터링합니다
+
+    <Tip>
+      **핵심 요약**
+
+      Bindplane은 검증이 포함된 안전한 원클릭 롤아웃을 제공합니다. Bindplane 인터페이스를 통해 collector 상태, 처리량 및 오류를 실시간으로 모니터링할 수 있습니다.
+    </Tip>
+
+    <Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="Bindplane을 통해 ClickStack으로 들어오는 텔레메트리 신호" size="lg" />
+  </Step>
+
+  <Step>
+    #### ClickStack에서 텔레메트리 확인
+
+    구성이 롤아웃되면 관리되는 collector fleet에서 ClickStack으로 텔레메트리가 유입되기 시작합니다:
+
+    1. ClickStack 인스턴스(HyperDX UI)에 로그인합니다
+    2. **Logs**, **Metrics** 또는 **Traces** 탐색기로 이동합니다
+    3. Bindplane이 관리하는 collector에서 들어오는 텔레메트리 데이터가 표시되어야 합니다
+    4. ClickStack에 도착하는 데이터는 이미 Bindplane 프로세서에 의해 보강되고 구조화된 상태입니다
+
+    <Image img="/images/clickstack/bindplane/bindplane-hyperdx.webp" alt="Bindplane을 통해 ClickStack으로 들어오는 텔레메트리 신호" size="lg" />
+  </Step>
+</Steps>
+
+<div id="advanced-configuration">
+  ## 고급 구성
+</div>
+
+<div id="fan-out-routing">
+  ### 팬아웃 라우팅
+</div>
+
+Bindplane은 팬아웃 라우팅을 지원하므로 동일한 텔레메트리 스트림을 여러 대상에 동시에 보낼 수 있습니다. 다음 작업을 수행할 수 있습니다.
+
+* 로그, 메트릭, 트레이스를 장기 저장 및 분석을 위해 ClickStack으로 전송
+* 동일한 데이터를 실시간 알림을 위해 다른 관측성 플랫폼으로 라우팅
+* 특정 텔레메트리를 보안 분석을 위해 SIEM 플랫폼으로 전달
+
+이 기능은 Bindplane 구성에 여러 대상을 추가하여 설정합니다.
+
+<div id="compression">
+  ### 압축 및 성능
+</div>
+
+대용량 환경에서는 ClickStack 대상의 압축을 설정하십시오:
+
+* **HTTP**: gzip, deflate, snappy, zstd 또는 none을 지원합니다(기본값: gzip)
+* **gRPC**: gzip, snappy, zstd 또는 none을 지원합니다(기본값: gzip)
+
+압축을 사용하면 ClickStack으로 텔레메트리를 전송할 때 대역폭 사용량을 줄일 수 있으며, 특히 대규모 환경에서 중요합니다.
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+이제 Bindplane에서 ClickStack으로 텔레메트리가 수집되므로, 다음 작업을 수행할 수 있습니다.
+
+* **대시보드 구축**: ClickStack(HyperDX)에서 로그, 메트릭, 트레이스용 시각화를 생성합니다
+* **알림 설정**: 중요한 조건에 대해 ClickStack에서 알림을 구성합니다
+* **배포 확장**: 관측성 요구 사항이 증가함에 따라 더 많은 collector와 소스를 추가합니다
+* **파이프라인 최적화**: Bindplane의 pipeline intelligence를 사용하여 최적화 기회를 파악합니다
+
+<div id="read-more">
+  ## 더 알아보기
+</div>
+
+* [Bindplane 문서의 ClickStack 통합](https://docs.bindplane.com/integrations/destinations/clickstack)
+
+{/* - ["Bindplane + ClickStack 통합: OpenTelemetry (OTel)를 ClickStack으로 전송" - Bindplane 블로그](tbd) -- 게시되면 링크 추가 */}

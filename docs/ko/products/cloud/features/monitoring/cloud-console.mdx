@@ -1,0 +1,157 @@
+---
+title: 'ClickHouse Cloud 콘솔의 모니터링'
+slug: /cloud/monitoring/cloud-console
+description: 'ClickHouse Cloud 콘솔의 기본 제공 모니터링 대시보드'
+keywords: ['cloud', '모니터링', '대시보드', '서비스 상태', '리소스 사용량', 'Advanced dashboard']
+sidebarTitle: 'Cloud Console'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+ClickHouse Cloud의 서비스에는 사용자가 대시보드와 알림을 이용할 수 있도록 하는 기본 제공 모니터링 구성 요소가 포함되어 있습니다. 기본적으로 Cloud Console의 모든 사용자는 이러한 대시보드에 액세스할 수 있습니다.
+
+<div id="dashboards">
+  ## 대시보드
+</div>
+
+<div id="service-health">
+  ### 서비스 상태
+</div>
+
+Service Health 대시보드는 서비스의 전반적인 상태를 모니터링하는 데 사용할 수 있습니다. ClickHouse Cloud는 이 대시보드에 표시되는 메트릭을 시스템 테이블에서 스크레이프해 저장하므로 서비스가 유휴 상태(idled)일 때도 확인할 수 있습니다.
+
+{/* TODO: Service Health 대시보드 스크린샷 추가 */}
+
+<div id="resource-utilization">
+  ### 리소스 사용량
+</div>
+
+Infrastructure 대시보드는 ClickHouse 프로세스가 사용 중인 리소스를 자세히 보여줍니다. ClickHouse Cloud는 서비스가 유휴 상태여도 이 대시보드에서 확인할 수 있도록 시스템 테이블(system tables)의 메트릭을 스크레이프하여 저장합니다.
+
+<div id="memory-and-cpu">
+  #### 메모리 및 CPU
+</div>
+
+**할당된 CPU** 및 **할당된 메모리** 그래프는 서비스의 각 레플리카에 사용할 수 있는 전체 컴퓨트 리소스를 보여줍니다. 이러한 할당량은 ClickHouse Cloud의 [스케일링 기능](/ko/products/cloud/features/autoscaling/overview)을 사용해 변경할 수 있습니다.
+
+**메모리 사용량** 및 **CPU 사용량** 그래프는 각 레플리카에서 ClickHouse 프로세스가 실제로 사용 중인 CPU 및 메모리의 양을 추정해 보여줍니다. 여기에는 쿼리는 물론 머지와 같은 백그라운드 프로세스도 포함됩니다.
+
+<Info>
+  **성능 저하**
+
+  메모리 또는 CPU 사용률이 할당된 메모리 또는 CPU에 근접하면 성능 저하가 발생할 수 있습니다. 이를 해결하기 위해 다음을 권장합니다.
+
+  * 쿼리 최적화
+  * 테이블 엔진의 파티셔닝 변경
+  * [스케일링](/ko/products/cloud/features/autoscaling/overview)을 사용해 서비스에 더 많은 컴퓨트 리소스 추가
+</Info>
+
+다음은 이 그래프에 표시되는 해당 시스템 테이블(system table) 메트릭입니다.
+
+| 그래프       | 해당 메트릭 이름           | 집계 | 참고                                                      |
+| --------- | ------------------- | -- | ------------------------------------------------------- |
+| 할당된 메모리   | `CGroupMemoryTotal` | 최대 |                                                         |
+| 할당된 CPU   | `CGroupMaxCPU`      | 최대 |                                                         |
+| 사용 중인 메모리 | `MemoryResident`    | 최대 |                                                         |
+| 사용 중인 CPU | 시스템 CPU 메트릭         | 최대 | Prometheus 엔드포인트를 통해 제공되는 `ClickHouseServer_UsageCores` |
+
+<div id="data-transfer">
+  #### 데이터 전송
+</div>
+
+그래프는 ClickHouse Cloud의 데이터 유입량과 유출량을 표시합니다. 자세한 내용은 [네트워크 데이터 전송](/ko/products/cloud/reference/billing/network-data-transfer)을 참조하십시오.
+
+<div id="advanced-dashboard">
+  ### Advanced dashboard
+</div>
+
+이 대시보드는 [기본 제공 고급 관측성 대시보드](/ko/products/cloud/features/monitoring/advanced-dashboard)를 수정한 버전으로, 각 시리즈는 레플리카별 메트릭을 나타냅니다. ClickHouse 관련 문제를 모니터링하고 문제를 해결할 때 유용합니다.
+
+<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="ClickHouse Cloud의 Advanced dashboard" border />
+
+<Note>
+  ClickHouse Cloud는 이 대시보드에 표시되는 메트릭을 system table에서 스크레이프해 저장하므로, 서비스가 유휴 상태여도 확인할 수 있습니다. 이러한 메트릭에 액세스해도 기본 서비스에 쿼리가 실행되지 않으며, 유휴 상태의 서비스가 다시 활성화되지도 않습니다.
+</Note>
+
+아래 표는 Advanced Dashboard의 각 그래프를 해당 ClickHouse 메트릭 이름, system table 소스, 집계 유형에 매핑한 것입니다:
+
+| 그래프                     | 해당 ClickHouse 메트릭 이름                                                                                                                                                    | System table              | 집계 유형                  |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ---------------------- |
+| 쿼리/초                    | `ProfileEvent_Query`                                                                                                                                                    | `metric_log`              | 합계 / bucketSizeSeconds |
+| 실행 중인 쿼리                | `CurrentMetric_Query`                                                                                                                                                   | `metric_log`              | 평균                     |
+| 실행 중인 머지                | `CurrentMetric_Merge`                                                                                                                                                   | `metric_log`              | 평균                     |
+| 선택된 바이트/초               | `ProfileEvent_SelectedBytes`                                                                                                                                            | `metric_log`              | 합계 / bucketSizeSeconds |
+| IO 대기                   | `ProfileEvent_OSIOWaitMicroseconds`                                                                                                                                     | `metric_log`              | 합계 / bucketSizeSeconds |
+| S3 읽기 대기                | `ProfileEvent_ReadBufferFromS3Microseconds`                                                                                                                             | `metric_log`              | 합계 / bucketSizeSeconds |
+| S3 읽기 오류/초              | `ProfileEvent_ReadBufferFromS3RequestsErrors`                                                                                                                           | `metric_log`              | 합계 / bucketSizeSeconds |
+| CPU 대기                  | `ProfileEvent_OSCPUWaitMicroseconds`                                                                                                                                    | `metric_log`              | 합계 / bucketSizeSeconds |
+| OS CPU 사용량(사용자 공간, 정규화) | `OSUserTimeNormalized`                                                                                                                                                  | `asynchronous_metric_log` |                        |
+| OS CPU 사용량(커널, 정규화)     | `OSSystemTimeNormalized`                                                                                                                                                | `asynchronous_metric_log` |                        |
+| 디스크에서 읽기                | `ProfileEvent_OSReadBytes`                                                                                                                                              | `metric_log`              | 합계 / bucketSizeSeconds |
+| 파일 시스템에서 읽기             | `ProfileEvent_OSReadChars`                                                                                                                                              | `metric_log`              | 합계 / bucketSizeSeconds |
+| 메모리(추적됨, 바이트)           | `CurrentMetric_MemoryTracking`                                                                                                                                          | `metric_log`              |                        |
+| MergeTree 총 파트 수        | `TotalPartsOfMergeTreeTables`                                                                                                                                           | `asynchronous_metric_log` |                        |
+| 파티션별 최대 파트 수            | `MaxPartCountForPartition`                                                                                                                                              | `asynchronous_metric_log` |                        |
+| S3에서 읽기                 | `ProfileEvent_ReadBufferFromS3Bytes`                                                                                                                                    | `metric_log`              | 합계 / bucketSizeSeconds |
+| 파일 시스템 캐시 크기            | `CurrentMetric_FilesystemCacheSize`                                                                                                                                     | `metric_log`              |                        |
+| Disk S3 쓰기 요청/초         | `ProfileEvent_DiskS3PutObject` + `ProfileEvent_DiskS3UploadPart` + `ProfileEvent_DiskS3CreateMultipartUpload` + `ProfileEvent_DiskS3CompleteMultipartUpload`            | `metric_log`              | 합계 / bucketSizeSeconds |
+| Disk S3 읽기 요청/초         | `ProfileEvent_DiskS3GetObject` + `ProfileEvent_DiskS3HeadObject` + `ProfileEvent_DiskS3ListObjects`                                                                     | `metric_log`              | 합계 / bucketSizeSeconds |
+| FS 캐시 적중률               | `sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) / (sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) + sum(ProfileEvent_CachedReadBufferReadFromSourceBytes))` | `metric_log`              |                        |
+| 페이지 캐시 적중률              | `greatest(0, (sum(ProfileEvent_OSReadChars) - sum(ProfileEvent_OSReadBytes)) / (sum(ProfileEvent_OSReadChars) + sum(ProfileEvent_ReadBufferFromS3Bytes)))`              | `metric_log`              |                        |
+| 네트워크 수신 바이트/초           | `NetworkReceiveBytes`                                                                                                                                                   | `asynchronous_metric_log` | 합계 / bucketSizeSeconds |
+| 네트워크 송신 바이트/초           | `NetworkSendBytes`                                                                                                                                                      | `asynchronous_metric_log` | 합계 / bucketSizeSeconds |
+| 동시 TCP 연결               | `CurrentMetric_TCPConnection`                                                                                                                                           | `metric_log`              |                        |
+| 동시 MySQL 연결             | `CurrentMetric_MySQLConnection`                                                                                                                                         | `metric_log`              |                        |
+| 동시 HTTP 연결              | `CurrentMetric_HTTPConnection`                                                                                                                                          | `metric_log`              |                        |
+
+각 시각화의 의미와 문제 해결에 활용하는 방법에 대한 자세한 내용은 [advanced dashboard 문서](/ko/products/cloud/features/monitoring/advanced-dashboard)를 참조하십시오.
+
+<div id="query-insights">
+  ## 쿼리 인사이트
+</div>
+
+**쿼리 인사이트** 기능을 사용하면 다양한 시각화와 테이블을 통해 ClickHouse에 기본으로 내장된 쿼리 로그를 더 쉽게 활용할 수 있습니다. ClickHouse의 `system.query_log` 테이블은 쿼리 최적화, 디버깅, 그리고 전체 클러스터 상태와 성능을 모니터링하는 데 핵심적인 정보원입니다.
+
+서비스를 선택한 후 왼쪽 사이드바에서 **모니터링** 탐색 메뉴를 펼치면 **쿼리 인사이트** 하위 항목이 표시됩니다:
+
+<Image img="/images/cloud/sqlconsole/insights_overview.webp" size="md" alt="쿼리 인사이트 UI 개요" border />
+
+<div id="top-level-metrics">
+  ### 상위 메트릭
+</div>
+
+상단의 통계 상자는 선택한 시간 범위의 기본 쿼리 메트릭을 나타냅니다. 그 아래의 시계열 차트는 쿼리 유형(select, insert, other)별 쿼리 수, 지연 시간, 오류율을 보여줍니다. 지연 시간 차트는 p50, p90, p99 지연 시간을 표시하도록 조정할 수 있습니다:
+
+<Image img="/images/cloud/sqlconsole/insights_latency.webp" size="md" alt="쿼리 인사이트 지연 시간 차트" border />
+
+<div id="recent-queries">
+  ### 최근 쿼리
+</div>
+
+테이블에는 선택한 시간 윈도우 동안 정규화된 쿼리 해시와 사용자별로 그룹화된 쿼리 로그 항목이 표시됩니다. 최근 쿼리는 사용 가능한 모든 필드로 필터링하고 정렬할 수 있으며, 테이블, p90 및 p99 지연 시간과 같은 추가 필드의 표시 여부도 구성할 수 있습니다:
+
+<Image img="/images/cloud/sqlconsole/insights_recent.webp" size="md" alt="쿼리 인사이트 최근 쿼리 테이블" border />
+
+<div id="query-drill-down">
+  ### 쿼리 드릴다운
+</div>
+
+최근 쿼리 테이블에서 쿼리를 선택하면, 선택한 쿼리와 관련된 메트릭 및 정보가 포함된 플라이아웃이 열립니다:
+
+<Image img="/images/cloud/sqlconsole/insights_drilldown.webp" size="md" alt="쿼리 인사이트 UI 쿼리 드릴다운" border />
+
+**쿼리 정보** 탭의 모든 메트릭은 집계 메트릭이지만, **쿼리 이력** 탭을 선택하면 개별 실행의 메트릭도 확인할 수 있습니다:
+
+<Image img="/images/cloud/sqlconsole/insights_query_info.webp" size="sm" alt="쿼리 인사이트 UI 쿼리 정보" border />
+
+이 패널에서 각 쿼리 실행의 `Settings` 및 `Profile Events` 항목을 펼쳐 추가 정보를 확인할 수 있습니다.
+
+<div id="related">
+  ## 관련 페이지
+</div>
+
+* [알림](/ko/products/cloud/features/monitoring/notifications) — 스케일링 이벤트, 오류, 청구에 대한 알림을 구성합니다
+* [Advanced dashboard](/ko/products/cloud/features/monitoring/advanced-dashboard) — 각 대시보드 시각화에 대한 상세 참고 문서
+* [시스템 테이블 쿼리](/ko/products/cloud/features/monitoring/system-tables) — 심층적인 내부 검사를 위해 시스템 테이블에 사용자 지정 SQL 쿼리를 실행합니다
+* [Prometheus 엔드포인트](/ko/products/cloud/features/monitoring/prometheus) — 메트릭을 Grafana, Datadog 또는 기타 Prometheus 호환 도구로 내보냅니다

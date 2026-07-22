@@ -1,0 +1,73 @@
+---
+alias: []
+description: 'Hash 포맷 문서'
+input_format: false
+keywords: ['hash', 'format']
+output_format: true
+slug: /interfaces/formats/Hash
+title: 'Hash'
+doc_type: 'reference'
+---
+
+| 입력 | 출력 | 별칭 |
+| -- | -- | -- |
+| ✗  | ✔  |    |
+
+<div id="description">
+  ## 설명
+</div>
+
+`Hash` 출력 형식은 결과의 모든 컬럼과 행에 대한 단일 해시 값을 계산합니다.
+예를 들어 데이터 전송이 병목일 때 결과의 &quot;지문&quot;을 계산하는 데 유용합니다.
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+<div id="reading-data">
+  ### 데이터 읽기
+</div>
+
+다음과 같은 데이터가 있는 `football` 테이블이 있다고 가정하겠습니다:
+
+```text
+    ┌───────date─┬─season─┬─home_team─────────────┬─away_team───────────┬─home_team_goals─┬─away_team_goals─┐
+ 1. │ 2022-04-30 │   2021 │ Sutton United         │ Bradford City       │               1 │               4 │
+ 2. │ 2022-04-30 │   2021 │ Swindon Town          │ Barrow              │               2 │               1 │
+ 3. │ 2022-04-30 │   2021 │ Tranmere Rovers       │ Oldham Athletic     │               2 │               0 │
+ 4. │ 2022-05-02 │   2021 │ Port Vale             │ Newport County      │               1 │               2 │
+ 5. │ 2022-05-02 │   2021 │ Salford City          │ Mansfield Town      │               2 │               2 │
+ 6. │ 2022-05-07 │   2021 │ Barrow                │ Northampton Town    │               1 │               3 │
+ 7. │ 2022-05-07 │   2021 │ Bradford City         │ Carlisle United     │               2 │               0 │
+ 8. │ 2022-05-07 │   2021 │ Bristol Rovers        │ Scunthorpe United   │               7 │               0 │
+ 9. │ 2022-05-07 │   2021 │ Exeter City           │ Port Vale           │               0 │               1 │
+10. │ 2022-05-07 │   2021 │ Harrogate Town A.F.C. │ Sutton United       │               0 │               2 │
+11. │ 2022-05-07 │   2021 │ Hartlepool United     │ Colchester United   │               0 │               2 │
+12. │ 2022-05-07 │   2021 │ Leyton Orient         │ Tranmere Rovers     │               0 │               1 │
+13. │ 2022-05-07 │   2021 │ Mansfield Town        │ Forest Green Rovers │               2 │               2 │
+14. │ 2022-05-07 │   2021 │ Newport County        │ Rochdale            │               0 │               2 │
+15. │ 2022-05-07 │   2021 │ Oldham Athletic       │ Crawley Town        │               3 │               3 │
+16. │ 2022-05-07 │   2021 │ Stevenage Borough     │ Salford City        │               4 │               2 │
+17. │ 2022-05-07 │   2021 │ Walsall               │ Swindon Town        │               0 │               3 │
+    └────────────┴────────┴───────────────────────┴─────────────────────┴─────────────────┴─────────────────┘
+```
+
+`Hash` 포맷으로 데이터를 읽습니다:
+
+```sql
+SELECT *
+FROM football
+FORMAT Hash
+```
+
+쿼리는 데이터를 처리하지만 아무것도 출력하지 않습니다.
+
+```response
+df2ec2f0669b000edff6adee264e7d68
+
+1 rows in set. Elapsed: 0.154 sec.
+```
+
+<div id="format-settings">
+  ## 포맷 설정
+</div>

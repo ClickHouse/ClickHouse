@@ -14,9 +14,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-namespace
-{
-
+/// This function is exposed for testing purposes
 FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const ActionsDAG & filter_dag, const String & filter_column_name)
 {
     /// If either DAG contains IN subquery sets that are not yet built we cannot evaluate the filter result
@@ -56,6 +54,9 @@ FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const Action
 
     return getFilterResult(filter_output[0]);
 }
+
+namespace
+{
 
 /// Check if filter has a form like "column" or "NOT column", where column is an input
 bool isSimpleFilter(const ActionsDAG::Node * filter_node, bool must_negate)

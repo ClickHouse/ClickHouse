@@ -1,0 +1,704 @@
+---
+slug: /data-modeling/projections
+title: 'Projections'
+description: 'Page expliquant ce que sont les projections, comment elles peuvent être utilisées pour améliorer
+les performances des requêtes et en quoi elles diffèrent des vues matérialisées.'
+keywords: ['projection', 'projections', 'optimisation des requêtes']
+sidebar_order: 1
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+import { RunnableCode } from "/snippets/fr/components/RunnableCode/RunnableCode.jsx";
+
+<div id="introduction">
+  ## Introduction
+</div>
+
+ClickHouse offre divers mécanismes pour accélérer les requêtes analytiques sur de grandes
+quantités de données dans des scénarios en temps réel. L’un de ces mécanismes pour accélérer vos
+requêtes consiste à utiliser des *projections*. Les projections permettent d’optimiser les
+requêtes en créant une réorganisation des données selon les attributs pertinents. Cela peut être :
+
+1. Une réorganisation complète
+2. Un sous-ensemble de la table d’origine avec un ordre différent
+3. Une agrégation précalculée (semblable à une vue matérialisée), mais avec un ordre
+   aligné sur l’agrégation.
+
+<br />
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/6CdnUdZSEG0?si=1zUyrP-tCvn9tXse" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="how-do-projections-work">
+  ## Comment fonctionnent les projections ?
+</div>
+
+En pratique, une projection peut être considérée comme une table cachée
+supplémentaire associée à la table d’origine. La projection peut avoir un ordre de tri différent, et donc un
+index primaire différent de celui de la table d’origine, et elle peut
+pré-calculer automatiquement et de manière incrémentielle des agrégats. Par conséquent, l’utilisation des projections
+offre deux « leviers d’optimisation » pour accélérer l’exécution des requêtes :
+
+* **Utiliser correctement les index primaires**
+* **Pré-calculer les agrégats**
+
+Les projections sont, à certains égards, similaires aux [vues matérialisées](/fr/concepts/features/materialized-views/index)
+, qui permettent également d’avoir plusieurs ordres de tri et de pré-calculer des agrégations
+au moment de l’insertion.
+Les projections sont automatiquement mises à jour et
+restent synchronisées avec la table d’origine, contrairement aux vues matérialisées, qui doivent être
+mises à jour explicitement. Lorsqu’une requête cible la table d’origine,
+ClickHouse échantillonne automatiquement les clés primaires et choisit la table qui peut
+produire le même résultat correct, tout en nécessitant de lire le moins de données possible,
+comme illustré dans la figure ci-dessous :
+
+<Image img="/images/data-modeling/projections_1.webp" size="md" alt="Projections dans ClickHouse" />
+
+<div id="smarter_storage_with_part_offset">
+  ### Un stockage plus intelligent avec `_part_offset`
+</div>
+
+Depuis la version 25.5, ClickHouse prend en charge la colonne virtuelle `_part_offset` dans les projections, ce qui offre une nouvelle façon de définir une projection.
+
+Il existe désormais deux façons de définir une projection :
+
+* **Stocker des colonnes complètes (comportement d’origine)** : la projection contient l’intégralité des données et peut être lue directement, ce qui offre de meilleures performances lorsque les filtres correspondent à l’ordre de tri de la projection.
+
+* **Stocker uniquement la clé de tri + `_part_offset`** : la projection fonctionne comme un index. ClickHouse utilise l’index primaire de la projection pour localiser les lignes correspondantes, mais lit les données réelles depuis la table de base. Cela réduit la surcharge de stockage, au prix d’un peu plus d’E/S au moment de la requête.
+
+Les approches ci-dessus peuvent également être combinées, en stockant certaines colonnes dans la projection et d’autres indirectement via `_part_offset`.
+
+<div id="when-to-use-projections">
+  ## Quand utiliser les projections ?
+</div>
+
+Les projections constituent une fonctionnalité intéressante pour les nouveaux utilisateurs, car elles sont automatiquement
+maintenues lors de l&#39;insertion des données. De plus, les requêtes peuvent simplement être envoyées à une
+seule table, les projections étant exploitées lorsque c&#39;est possible pour accélérer
+le temps de réponse.
+
+Cela contraste avec les vues matérialisées, où l&#39;utilisateur doit sélectionner la
+table cible optimisée appropriée ou réécrire sa requête selon les
+filtres. Cela reporte davantage de responsabilité sur les applications clientes et augmente
+la complexité côté client.
+
+Malgré ces avantages, les projections présentent certaines limitations inhérentes
+dont vous devez avoir conscience, et doivent donc être utilisées avec parcimonie.
+
+* Les projections ne permettent pas d&#39;utiliser des TTL différents pour la table source et la
+  table cible (masquée), tandis que les vues matérialisées autorisent des TTL différents.
+* Les lightweight updates et les suppressions ne sont pas prises en charge pour les tables avec projections.
+* Les vues matérialisées peuvent être chaînées : la table cible d&#39;une vue matérialisée
+  peut être la table source d&#39;une autre vue matérialisée, et ainsi de suite. Ce n&#39;est pas
+  possible avec les projections.
+* Les définitions de projections ne prennent pas en charge les jointures, contrairement aux vues matérialisées. Cependant, les requêtes sur des tables avec projections peuvent librement utiliser des jointures.
+* Les définitions de projections ne prennent pas en charge les filtres (clause `WHERE`), contrairement aux vues matérialisées. Cependant, les requêtes sur des tables avec projections peuvent librement appliquer des filtres.
+
+Nous recommandons d&#39;utiliser les projections lorsque :
+
+* Une réorganisation complète des données est nécessaire. Bien que l&#39;expression de la
+  projection puisse, en théorie, utiliser un `GROUP BY,` les vues matérialisées sont plus
+  efficaces pour maintenir des agrégats. L&#39;optimiseur de requêtes est également plus susceptible
+  d&#39;exploiter des projections qui reposent sur une simple réorganisation, c.-à-d. `SELECT * ORDER BY x`.
+  Vous pouvez sélectionner un sous-ensemble de colonnes dans cette expression afin de réduire
+  l&#39;empreinte de stockage.
+* Les utilisateurs acceptent l&#39;augmentation potentielle de l&#39;empreinte de stockage ainsi que
+  le surcoût lié à l&#39;écriture des données en double. Testez l&#39;impact sur la vitesse d&#39;insertion et
+  [évaluez le surcoût de stockage](/fr/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
+
+<div id="examples">
+  ## Exemples
+</div>
+
+<div id="filtering-without-using-primary-keys">
+  ### Filtrage sur des colonnes qui ne font pas partie de la clé primaire
+</div>
+
+Dans cet exemple, nous allons voir comment ajouter une projection à une table.
+Nous verrons également comment une projection peut être utilisée pour accélérer les requêtes qui filtrent
+sur des colonnes ne faisant pas partie de la clé primaire d&#39;une table.
+
+Pour cet exemple, nous utiliserons le jeu de données New York Taxi Data,
+disponible sur [sql.clickhouse.com](https://sql.clickhouse.com/), trié
+par `pickup_datetime`.
+
+Écrivons une requête simple pour trouver tous les identifiants de trajet pour lesquels les passagers
+ont laissé un pourboire de plus de 200 $ à leur chauffeur :
+
+<RunnableCode>
+  ```sql
+  SELECT
+    tip_amount,
+    trip_id,
+    dateDiff('minutes', pickup_datetime, dropoff_datetime) AS trip_duration_min
+  FROM nyc_taxi.trips WHERE tip_amount > 200 AND trip_duration_min > 0
+  ORDER BY tip_amount, trip_id ASC
+  ```
+</RunnableCode>
+
+Notez que, comme nous filtrons sur `tip_amount`, qui ne figure pas dans `ORDER BY`, ClickHouse
+a dû parcourir l&#39;ensemble de la table. Accélérons cette requête.
+
+Afin de préserver la table d&#39;origine et les résultats, nous allons créer une nouvelle table et copier les données à l&#39;aide d&#39;un `INSERT INTO SELECT` :
+
+```sql
+CREATE TABLE nyc_taxi.trips_with_projection AS nyc_taxi.trips;
+INSERT INTO nyc_taxi.trips_with_projection SELECT * FROM nyc_taxi.trips;
+```
+
+Pour ajouter une projection, nous utilisons l’instruction `ALTER TABLE` avec l’instruction `ADD PROJECTION`
+suivante :
+
+```sql
+ALTER TABLE nyc_taxi.trips_with_projection
+ADD PROJECTION prj_tip_amount
+(
+    SELECT *
+    ORDER BY tip_amount, dateDiff('minutes', pickup_datetime, dropoff_datetime)
+)
+```
+
+Il est nécessaire, après avoir ajouté une projection, d&#39;utiliser l&#39;instruction `MATERIALIZE PROJECTION`
+pour que les données qu&#39;elle contient soient physiquement ordonnées et réécrites
+selon la requête spécifiée ci-dessus :
+
+```sql
+ALTER TABLE nyc.trips_with_projection MATERIALIZE PROJECTION prj_tip_amount
+```
+
+Exécutons de nouveau la requête maintenant que nous avons ajouté la projection :
+
+<RunnableCode>
+  ```sql
+  SELECT
+    tip_amount,
+    trip_id,
+    dateDiff('minutes', pickup_datetime, dropoff_datetime) AS trip_duration_min
+  FROM nyc_taxi.trips_with_projection WHERE tip_amount > 200 AND trip_duration_min > 0
+  ORDER BY tip_amount, trip_id ASC
+  ```
+</RunnableCode>
+
+Notez que nous avons pu réduire considérablement le temps de requête et parcourir
+moins de lignes.
+
+Nous pouvons confirmer que la requête ci-dessus a bien utilisé la projection que nous avons créée en
+interrogeant la table `system.query_log` :
+
+```sql
+SELECT query, projections 
+FROM system.query_log 
+WHERE query_id='<query_id>'
+```
+
+```response
+   ┌─query─────────────────────────────────────────────────────────────────────────┬─projections──────────────────────┐
+   │ SELECT                                                                       ↴│ ['default.trips.prj_tip_amount'] │
+   │↳  tip_amount,                                                                ↴│                                  │
+   │↳  trip_id,                                                                   ↴│                                  │
+   │↳  dateDiff('minutes', pickup_datetime, dropoff_datetime) AS trip_duration_min↴│                                  │
+   │↳FROM trips WHERE tip_amount > 200 AND trip_duration_min > 0                   │                                  │
+   └───────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────┘
+```
+
+<div id="using-projections-to-speed-up-UK-price-paid">
+  ### Utiliser les projections pour accélérer les requêtes sur les prix de l’immobilier au Royaume-Uni
+</div>
+
+Pour montrer comment les projections peuvent être utilisées pour améliorer les performances des requêtes, examinons
+un exemple basé sur un jeu de données réel. Pour cet exemple, nous allons
+utiliser la table de notre tutoriel [UK Property Price Paid](/fr/get-started/sample-datasets/uk-price-paid),
+qui contient 30,03 millions de lignes. Ce jeu de données est également disponible dans notre
+environnement [sql.clickhouse.com](https://sql.clickhouse.com/?query_id=6IDMHK3OMR1C97J6M9EUQS).
+
+Si vous souhaitez voir comment la table a été créée et comment les données ont été insérées, vous pouvez
+consulter la page [&quot;The UK property prices dataset&quot;](/fr/get-started/sample-datasets/uk-price-paid).
+
+Nous pouvons exécuter deux requêtes simples sur ce jeu de données. La première liste les comtés de Londres où
+les prix de vente sont les plus élevés, et la seconde calcule le prix moyen par comté :
+
+<RunnableCode>
+  ```sql
+  SELECT
+    county,
+    price
+  FROM uk.uk_price_paid
+  WHERE town = 'LONDON'
+  ORDER BY price DESC
+  LIMIT 3
+  ```
+</RunnableCode>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      county,
+      avg(price)
+  FROM uk.uk_price_paid
+  GROUP BY county
+  ORDER BY avg(price) DESC
+  LIMIT 3
+  ```
+</RunnableCode>
+
+Notez que, malgré leur grande rapidité, ces deux requêtes ont nécessité un parcours complet de la table des 30,03 millions de lignes,
+car ni `town` ni `price` ne figuraient dans notre instruction `ORDER BY` lorsque nous
+avons créé la table :
+
+```sql highlight={6}
+CREATE TABLE uk.uk_price_paid
+(
+  ...
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2);
+```
+
+Voyons si nous pouvons accélérer cette requête à l’aide de projections.
+
+Pour préserver la table d’origine et les résultats, nous allons créer une nouvelle table et copier les données à l’aide d’un `INSERT INTO SELECT` :
+
+```sql
+CREATE TABLE uk.uk_price_paid_with_projections AS uk_price_paid;
+INSERT INTO uk.uk_price_paid_with_projections SELECT * FROM uk.uk_price_paid;
+```
+
+Nous créons et peuplons la projection `prj_oby_town_price`, qui produit une
+table supplémentaire (masquée) dotée d&#39;un index primaire, ordonnée par ville et par prix, afin
+d&#39;optimiser la requête qui répertorie les comtés d&#39;une ville donnée pour les prix
+payés les plus élevés :
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections
+  (ADD PROJECTION prj_obj_town_price
+  (
+    SELECT *
+    ORDER BY
+        town,
+        price
+  ))
+```
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections
+  (MATERIALIZE PROJECTION prj_obj_town_price)
+SETTINGS mutations_sync = 1
+```
+
+Le paramètre [`mutations_sync`](/fr/reference/settings/session-settings#mutations_sync) est
+utilisé pour forcer l’exécution synchrone.
+
+Nous créons et peuplons la projection `prj_gby_county` — une table supplémentaire (masquée)
+qui précalcule de façon incrémentielle les valeurs agrégées de avg(price) pour les
+130 comtés existants du Royaume-Uni :
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections
+  (ADD PROJECTION prj_gby_county
+  (
+    SELECT
+        county,
+        avg(price)
+    GROUP BY county
+  ))
+```
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections
+  (MATERIALIZE PROJECTION prj_gby_county)
+SETTINGS mutations_sync = 1
+```
+
+<Note>
+  S’il existe une clause `GROUP BY` dans une projection comme la projection
+  `prj_gby_county` ci-dessus, le moteur de stockage sous-jacent de la table
+  (masquée) devient alors `AggregatingMergeTree`, et toutes les fonctions d’agrégation sont converties en
+  `AggregateFunction`. Cela garantit une agrégation incrémentielle correcte des données.
+</Note>
+
+La figure ci-dessous est une visualisation de la table principale `uk_price_paid_with_projections`
+et de ses deux projections :
+
+<Image img="/images/data-modeling/projections_2.webp" size="md" alt="Visualisation de la table principale uk_price_paid_with_projections et de ses deux projections" />
+
+Si nous exécutons maintenant de nouveau la requête qui affiche les comtés de Londres pour les trois prix
+les plus élevés, nous constatons une amélioration des performances de la requête :
+
+<RunnableCode>
+  ```sql
+  SELECT
+    county,
+    price
+  FROM uk.uk_price_paid_with_projections
+  WHERE town = 'LONDON'
+  ORDER BY price DESC
+  LIMIT 3
+  ```
+</RunnableCode>
+
+De même, pour la requête qui liste les comtés du Royaume-Uni avec les trois prix moyens
+les plus élevés :
+
+<RunnableCode>
+  ```sql
+  SELECT
+      county,
+      avg(price)
+  FROM uk.uk_price_paid_with_projections
+  GROUP BY county
+  ORDER BY avg(price) DESC
+  LIMIT 3
+  ```
+</RunnableCode>
+
+Notez que les deux requêtes ciblent la table d’origine et que, dans les deux cas,
+elles ont entraîné un parcours complet de la table (les 30,03 millions de lignes ont été lues depuis le disque) avant la
+création des deux projections.
+
+Notez également que la requête qui liste les comtés de Londres pour les trois prix les plus
+élevés nécessite la lecture de 2,17 millions de lignes. Lorsque nous avons utilisé directement une seconde table
+optimisée pour cette requête, seules 81 920 lignes ont été lues depuis le disque.
+
+La raison de cette différence est qu’actuellement, l’optimisation `optimize_read_in_order`
+mentionnée ci-dessus n’est pas prise en charge pour les projections.
+
+Nous examinons la table `system.query_log` pour vérifier que ClickHouse
+a automatiquement utilisé les deux projections pour les deux requêtes ci-dessus (voir la
+colonne projections ci-dessous) :
+
+```sql
+SELECT
+  tables,
+  query,
+  query_duration_ms::String ||  ' ms' AS query_duration,
+        formatReadableQuantity(read_rows) AS read_rows,
+  projections
+FROM clusterAllReplicas(default, system.query_log)
+WHERE (type = 'QueryFinish') AND (tables = ['default.uk_price_paid_with_projections'])
+ORDER BY initial_query_start_time DESC
+  LIMIT 2
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+tables:         ['uk.uk_price_paid_with_projections']
+query:          SELECT
+    county,
+    avg(price)
+FROM uk_price_paid_with_projections
+GROUP BY county
+ORDER BY avg(price) DESC
+LIMIT 3
+query_duration: 5 ms
+read_rows:      132.00
+projections:    ['uk.uk_price_paid_with_projections.prj_gby_county']
+
+Row 2:
+──────
+tables:         ['uk.uk_price_paid_with_projections']
+query:          SELECT
+  county,
+  price
+FROM uk_price_paid_with_projections
+WHERE town = 'LONDON'
+ORDER BY price DESC
+LIMIT 3
+SETTINGS log_queries=1
+query_duration: 11 ms
+read_rows:      2.29 million
+projections:    ['uk.uk_price_paid_with_projections.prj_obj_town_price']
+
+2 rows in set. Elapsed: 0.006 sec.
+```
+
+<div id="further-examples">
+  ### Autres exemples
+</div>
+
+Les exemples suivants utilisent le même jeu de données sur les prix au Royaume-Uni et comparent des requêtes avec et sans projections.
+
+Afin de préserver notre table d&#39;origine (et ses performances), nous créons à nouveau une copie de la table à l&#39;aide de `CREATE AS` et de `INSERT INTO SELECT`.
+
+```sql
+CREATE TABLE uk.uk_price_paid_with_projections_v2 AS uk.uk_price_paid;
+INSERT INTO uk.uk_price_paid_with_projections_v2 SELECT * FROM uk.uk_price_paid;
+```
+
+<div id="build-projection">
+  #### Créer une projection
+</div>
+
+Créons une projection agrégée selon les dimensions `toYear(date)`, `district` et `town` :
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections_v2
+    ADD PROJECTION projection_by_year_district_town
+    (
+        SELECT
+            toYear(date),
+            district,
+            town,
+            avg(price),
+            sum(price),
+            count()
+        GROUP BY
+            toYear(date),
+            district,
+            town
+    )
+```
+
+Peuplez la projection avec les données existantes. (Sans la matérialiser, la projection ne sera créée que pour les données nouvellement insérées) :
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections_v2
+    MATERIALIZE PROJECTION projection_by_year_district_town
+SETTINGS mutations_sync = 1
+```
+
+Les requêtes suivantes comparent les performances avec et sans projections. Pour désactiver l’utilisation des projections, nous utilisons le paramètre [`optimize_use_projections`](/fr/reference/settings/session-settings#optimize_use_projections), activé par défaut.
+
+<div id="average-price-projections">
+  #### Requête 1. Prix moyen par année
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toYear(date) AS year,
+      round(avg(price)) AS price,
+      bar(price, 0, 1000000, 80)
+  FROM uk.uk_price_paid_with_projections_v2
+  GROUP BY year
+  ORDER BY year ASC
+  SETTINGS optimize_use_projections=0
+  ```
+</RunnableCode>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toYear(date) AS year,
+      round(avg(price)) AS price,
+      bar(price, 0, 1000000, 80)
+  FROM uk.uk_price_paid_with_projections_v2
+  GROUP BY year
+  ORDER BY year ASC
+
+  ```
+</RunnableCode>
+
+Les résultats devraient être identiques, mais les performances sont meilleures dans ce dernier exemple !
+
+<div id="average-price-london-projections">
+  #### Requête 2. Prix moyen par année à Londres
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toYear(date) AS year,
+      round(avg(price)) AS price,
+      bar(price, 0, 2000000, 100)
+  FROM uk.uk_price_paid_with_projections_v2
+  WHERE town = 'LONDON'
+  GROUP BY year
+  ORDER BY year ASC
+  SETTINGS optimize_use_projections=0
+  ```
+</RunnableCode>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toYear(date) AS year,
+      round(avg(price)) AS price,
+      bar(price, 0, 2000000, 100)
+  FROM uk.uk_price_paid_with_projections_v2
+  WHERE town = 'LONDON'
+  GROUP BY year
+  ORDER BY year ASC
+  ```
+</RunnableCode>
+
+<div id="most-expensive-neighborhoods-projections">
+  #### Requête 3. Les quartiers les plus chers
+</div>
+
+La condition (date &gt;= &#39;2020-01-01&#39;) doit être modifiée afin de correspondre à la dimension de la projection (`toYear(date) >= 2020)`) :
+
+<RunnableCode>
+  ```sql
+  SELECT
+      town,
+      district,
+      count() AS c,
+      round(avg(price)) AS price,
+      bar(price, 0, 5000000, 100)
+  FROM uk.uk_price_paid_with_projections_v2
+  WHERE toYear(date) >= 2020
+  GROUP BY
+      town,
+      district
+  HAVING c >= 100
+  ORDER BY price DESC
+  LIMIT 100
+  SETTINGS optimize_use_projections=0
+  ```
+</RunnableCode>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      town,
+      district,
+      count() AS c,
+      round(avg(price)) AS price,
+      bar(price, 0, 5000000, 100)
+  FROM uk.uk_price_paid_with_projections_v2
+  WHERE toYear(date) >= 2020
+  GROUP BY
+      town,
+      district
+  HAVING c >= 100
+  ORDER BY price DESC
+  LIMIT 100
+  ```
+</RunnableCode>
+
+Là encore, le résultat est identique, mais notez l’amélioration des performances d’exécution de la 2e requête.
+
+<div id="combining-projections">
+  ### Combiner plusieurs projections dans une même requête
+</div>
+
+À partir de la version 25.6, en s’appuyant sur la prise en charge de `_part_offset` introduite dans
+la version précédente, ClickHouse peut désormais utiliser plusieurs projections pour accélérer
+une même requête comportant plusieurs filtres.
+
+Il est important de noter que ClickHouse lit toujours les données à partir d’une seule projection (ou de la table de base),
+mais peut utiliser les index primaires d’autres projections pour écarter les parties inutiles avant la lecture.
+Cela est particulièrement utile pour les requêtes qui filtrent sur plusieurs colonnes, chacune
+pouvant potentiellement correspondre à une projection différente.
+
+> Actuellement, ce mécanisme n’écarte que des parties entières. L’exclusion au niveau des granules
+> n’est pas encore prise en charge.
+
+Pour le démontrer, nous définissons la table (avec des projections utilisant des colonnes `_part_offset`)
+et insérons cinq lignes d’exemple correspondant aux schémas ci-dessus.
+
+```sql
+CREATE TABLE page_views
+(
+    id UInt64,
+    event_date Date,
+    user_id UInt32,
+    url String,
+    region String,
+    PROJECTION region_proj
+    (
+        SELECT _part_offset ORDER BY region
+    ),
+    PROJECTION user_id_proj
+    (
+        SELECT _part_offset ORDER BY user_id
+    )
+)
+ENGINE = MergeTree
+ORDER BY (event_date, id)
+SETTINGS
+  index_granularity = 1, -- one row per granule
+  max_bytes_to_merge_at_max_space_in_pool = 1; -- disable merge
+```
+
+Ensuite, nous insérons des données dans la table :
+
+```sql
+INSERT INTO page_views VALUES (
+1, '2025-07-01', 101, 'https://example.com/page1', 'europe');
+INSERT INTO page_views VALUES (
+2, '2025-07-01', 102, 'https://example.com/page2', 'us_west');
+INSERT INTO page_views VALUES (
+3, '2025-07-02', 106, 'https://example.com/page3', 'us_west');
+INSERT INTO page_views VALUES (
+4, '2025-07-02', 107, 'https://example.com/page4', 'us_west');
+INSERT INTO page_views VALUES (
+5, '2025-07-03', 104, 'https://example.com/page5', 'asia');
+```
+
+<Note>
+  Remarque : la table utilise des paramètres personnalisés à des fins d’illustration, comme des granules d’une seule ligne
+  et des fusions de parts désactivées, ce qui n’est pas recommandé en production.
+</Note>
+
+Cette configuration produit :
+
+* Cinq parts distinctes (une par ligne insérée)
+* Une entrée d’index primaire par ligne (dans la table de base et chaque projection)
+* Chaque part contient exactement une ligne
+
+Avec cette configuration, nous exécutons une requête avec filtrage sur `region` et `user_id`.
+Comme l’index primaire de la table de base est construit à partir de `event_date` et `id`, il
+n’est d’aucune utilité ici. ClickHouse utilise donc :
+
+* `region_proj` pour élaguer les parts par région
+* `user_id_proj` pour élaguer davantage les parts selon `user_id`
+
+Ce comportement est visible avec `EXPLAIN projections = 1`, qui montre comment
+ClickHouse sélectionne et applique les projections.
+
+```sql
+EXPLAIN projections=1
+SELECT * FROM page_views WHERE region = 'us_west' AND user_id = 107;
+```
+
+```response
+    ┌─explain────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))                                              │
+ 2. │   Expression                                                                           │                                                                        
+ 3. │     ReadFromMergeTree (default.page_views)                                             │
+ 4. │     Projections:                                                                       │
+ 5. │       Name: region_proj                                                                │
+ 6. │         Description: Projection has been analyzed and is used for part-level filtering │
+ 7. │         Condition: (region in ['us_west', 'us_west'])                                  │
+ 8. │         Search Algorithm: binary search                                                │
+ 9. │         Parts: 3                                                                       │
+10. │         Marks: 3                                                                       │
+11. │         Ranges: 3                                                                      │
+12. │         Rows: 3                                                                        │
+13. │         Filtered Parts: 2                                                              │
+14. │       Name: user_id_proj                                                               │
+15. │         Description: Projection has been analyzed and is used for part-level filtering │
+16. │         Condition: (user_id in [107, 107])                                             │
+17. │         Search Algorithm: binary search                                                │
+18. │         Parts: 1                                                                       │
+19. │         Marks: 1                                                                       │
+20. │         Ranges: 1                                                                      │
+21. │         Rows: 1                                                                        │
+22. │         Filtered Parts: 2                                                              │
+    └────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+La sortie `EXPLAIN` (affichée ci-dessus) présente le plan de requête logique, de haut en bas :
+
+| Numéro de ligne | Description                                                                                                 |
+| --------------- | ----------------------------------------------------------------------------------------------------------- |
+| 3               | Prévoit de lire dans la table de base `page_views`                                                          |
+| 5-13            | Utilise `region_proj` pour identifier 3 parts où region = &#39;us&#95;west&#39;, écartant 2 des 5 parts |
+| 14-22           | Utilise user`_id_proj` pour identifier 1 part où `user_id = 107`, écartant 2 des 3 parts restantes      |
+
+Au final, **1 seule part sur 5** est lue dans la table de base.
+En combinant l’analyse des index de plusieurs projections, ClickHouse réduit considérablement le volume de données analysées,
+ce qui améliore les performances tout en maintenant un faible surcoût de stockage.
+
+<div id="related-content">
+  ## Contenu connexe
+</div>
+
+* [Introduction pratique aux index primaires dans ClickHouse](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
+* [Vues matérialisées](/fr/concepts/features/materialized-views/index)
+* [ALTER PROJECTION](/fr/reference/statements/alter/projection)

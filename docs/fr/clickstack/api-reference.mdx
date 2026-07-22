@@ -1,0 +1,207 @@
+---
+slug: /use-cases/observability/clickstack/api-reference
+title: 'Référence API'
+description: 'Référence API ClickStack pour gérer les tableaux de bord, les alertes et les sources par programmation'
+doc_type: 'guide'
+keywords: ['ClickStack', 'observability', 'API', 'API REST', 'tableaux de bord', 'alertes', 'HyperDX']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+ClickStack met à disposition une API REST pour gérer de façon programmatique les tableaux de bord, les alertes et les sources de données. L’API est disponible à la fois pour les déploiements **Managed ClickStack** (ClickHouse Cloud) et **ClickStack Open Source**, bien que les points de terminaison et l’authentification diffèrent entre les deux.
+
+<div id="api-docs">
+  ## Documentation de référence de l’API
+</div>
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    Pour Managed ClickStack, l’API est accessible via la **ClickHouse Cloud API**. Les endpoints ClickStack sont disponibles dans la [spécification de la Cloud API](/fr/api-reference/organization/get-list-of-available-organizations#tag/ClickStack).
+
+    Les endpoints suivants sont disponibles :
+
+    | Ressource            | Opérations                                                                |
+    | -------------------- | ------------------------------------------------------------------------- |
+    | **Tableaux de bord** | Créer, lister, récupérer, mettre à jour et supprimer des tableaux de bord |
+    | **Alertes**          | Créer, lister, récupérer, mettre à jour et supprimer des alertes          |
+    | **Sources**          | Lister les sources de données                                             |
+  </Tab>
+
+  <Tab title="Open Source ClickStack">
+    Pour ClickStack Open Source, la spécification complète de l’API est maintenue dans le [dépôt HyperDX](https://github.com/hyperdxio/hyperdx) et peut être consultée de façon interactive ou téléchargée au format OpenAPI :
+
+    * [Référence interactive de l’API](https://www.clickhouse.com/docs/clickstack/api-reference)
+    * [Télécharger la spécification OpenAPI (JSON)](https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json)
+
+    Les endpoints suivants sont disponibles :
+
+    | Ressource            | Opérations                                                                |
+    | -------------------- | ------------------------------------------------------------------------- |
+    | **Tableaux de bord** | Créer, lister, récupérer, mettre à jour et supprimer des tableaux de bord |
+    | **Alertes**          | Créer, lister, récupérer, mettre à jour et supprimer des alertes          |
+    | **Graphiques**       | Interroger des données de séries temporelles (POST uniquement)            |
+    | **Sources**          | Lister les sources de données                                             |
+    | **Webhooks**         | Lister les webhooks                                                       |
+  </Tab>
+</Tabs>
+
+<div id="authentication">
+  ## Authentification
+</div>
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    Managed ClickStack utilise la **clé API ClickHouse Cloud** pour l’authentification via l’[authentification HTTP Basic](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication). Pour créer et gérer des clés API, consultez [Gestion des clés API](/fr/products/cloud/features/admin-features/api/openapi).
+
+    Incluez l’ID de la clé et le secret à l’aide de l’authentification HTTP Basic :
+
+    ```bash
+    export KEY_ID=<your_key_id>
+    export KEY_SECRET=<your_key_secret>
+
+    curl --user $KEY_ID:$KEY_SECRET \
+      https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/dashboards
+    ```
+  </Tab>
+
+  <Tab title="Open Source ClickStack">
+    ClickStack Open Source utilise un **Bearer token** pour l’authentification via une **Personal API Access Key**.
+
+    Pour obtenir une clé API :
+
+    1. Ouvrez HyperDX à l’URL de votre instance ClickStack (par exemple, http://localhost:8080)
+    2. Créez un compte ou connectez-vous si nécessaire
+    3. Accédez à **Team Settings → API Keys**
+    4. Copiez votre **Personal API Access Key**
+
+    <Image img="/images/clickstack/api-key-personal.webp" alt="Clé API ClickStack" />
+
+    <Note>
+      Elle est différente de la **clé API d’ingestion** disponible dans Team Settings, qui sert à authentifier les données de télémétrie envoyées au collector OpenTelemetry.
+    </Note>
+
+    Par défaut, le serveur API s’exécute sur le port `8000` (distinct de l’UI, qui utilise le port `8080`). Si vous utilisez l’image Docker tout-en-un, veillez à mapper explicitement ce port :
+
+    ```bash
+    docker run -p 8080:8080 -p 8000:8000 -p 4317:4317 -p 4318:4318 docker.hyperdx.io/hyperdx/hyperdx-all-in-one
+    ```
+
+    Incluez la clé dans l’en-tête `Authorization` :
+
+    ```bash
+    curl -H "Authorization: Bearer <YOUR_API_KEY>" \
+      http://localhost:8000/api/v2/dashboards
+    ```
+  </Tab>
+</Tabs>
+
+<div id="base-url">
+  ## URL de base et format de requête
+</div>
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    Toutes les requêtes API de Managed ClickStack sont envoyées à la ClickHouse Cloud API :
+
+    ```bash
+    https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/<resource>
+    ```
+
+    Vous trouverez votre **Organization ID** dans la console ClickHouse Cloud, sous **Organization → Organization details**. Votre **Service ID** est visible dans l’URL du service ou sur sa page de détails.
+
+    ### Exemple : Lister les tableaux de bord
+
+    ```bash
+    curl --user $KEY_ID:$KEY_SECRET \
+      https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/dashboards
+    ```
+
+    ### Exemple : Créer une alerte
+
+    ```bash
+    curl -X POST --user $KEY_ID:$KEY_SECRET \
+      -H "Content-Type: application/json" \
+      -d '{
+        "dashboardId": "<DASHBOARD_ID>",
+        "tileId": "<TILE_ID>",
+        "threshold": 100,
+        "interval": "1h",
+        "source": "tile",
+        "thresholdType": "above",
+        "channel": {
+          "type": "webhook",
+          "webhookId": "<WEBHOOK_ID>"
+        },
+        "name": "Error Spike Alert",
+        "message": "Error rate exceeded 100 in the last hour"
+      }' \
+      https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/alerts
+    ```
+  </Tab>
+
+  <Tab title="Open Source ClickStack">
+    Toutes les requêtes API de Open Source ClickStack sont envoyées au serveur API HyperDX sur le port `8000` :
+
+    ```bash
+    http://<YOUR_HYPERDX_HOST>:8000/api/v2/<resource>
+    ```
+
+    Par exemple, avec un déploiement local par défaut :
+
+    ```bash
+    http://localhost:8000/api/v2/dashboards
+    ```
+
+    ### Exemple : Lister les tableaux de bord
+
+    ```bash
+    curl -H "Authorization: Bearer <YOUR_API_KEY>" \
+      http://localhost:8000/api/v2/dashboards
+    ```
+
+    ### Exemple : Créer une alerte
+
+    ```bash
+    curl -X POST \
+      -H "Authorization: Bearer <YOUR_API_KEY>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "dashboardId": "<DASHBOARD_ID>",
+        "tileId": "<TILE_ID>",
+        "threshold": 100,
+        "interval": "1h",
+        "source": "tile",
+        "thresholdType": "above",
+        "channel": {
+          "type": "webhook",
+          "webhookId": "<WEBHOOK_ID>"
+        },
+        "name": "Error Spike Alert",
+        "message": "Error rate exceeded 100 in the last hour"
+      }' \
+      http://localhost:8000/api/v2/alerts
+    ```
+
+    ### Exemple : Interroger les données de série d’un graphique
+
+    ```bash
+    curl -X POST \
+      -H "Authorization: Bearer <YOUR_API_KEY>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "startTime": 1647014400000,
+        "endTime": 1647100800000,
+        "granularity": "1h",
+        "series": [
+          {
+            "sourceId": "<SOURCE_ID>",
+            "aggFn": "count",
+            "where": "SeverityText:error",
+            "groupBy": []
+          }
+        ]
+      }' \
+      http://localhost:8000/api/v2/charts/series
+    ```
+  </Tab>
+</Tabs>

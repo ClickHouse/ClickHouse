@@ -1246,7 +1246,7 @@ static ColumnPtr readByteMapFromArrowColumn(const std::shared_ptr<arrow::Chunked
     return nullmap_column;
 }
 
-static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, GeoColumnMetadata geo_metadata)
+static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, GeoColumnMetadata geo_metadata, bool precise_float_parsing)
 {
     DataTypePtr type = getGeoDataType(geo_metadata.type);
     MutableColumnPtr column = type->createColumn();
@@ -1290,7 +1290,7 @@ static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::
                     result_object = parseWKBFormat(in_buffer);
                     break;
                 case GeoEncoding::WKT:
-                    result_object = parseWKTFormat(in_buffer);
+                    result_object = parseWKTFormat(in_buffer, precise_float_parsing);
                     break;
             }
             appendObjectToGeoColumn(result_object, geo_metadata.type, *column);
@@ -1353,6 +1353,11 @@ static ColumnPtr readOffsetsFromArrowListColumn(const std::shared_ptr<arrow::Chu
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         auto & list_chunk = dynamic_cast<ArrowListArray &>(*(arrow_column->chunk(chunk_i)));
+        /// A zero-length list chunk accesses no offsets (the loop below is skipped), so no bytes
+        /// are required.  Skip before checkedCast to accept the 0-byte offsets buffer that Apache
+        /// Arrow Java < 19.0.0 emits for an empty nested List/Map (see checkBinaryOffsetsBuffer).
+        if (list_chunk.length() == 0)
+            continue;
         auto arrow_offsets_array = list_chunk.offsets();
         /// The offsets array is a numeric Int32/Int64 array, validate its buffer before Value() calls.
         using OffsetArray = typename ArrowOffsetArray<ArrowListArray>::type;
@@ -1538,6 +1543,21 @@ static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(const std::shar
         /// Validate the parent list validity bitmap before Flatten(): when null_count > 0,
         /// Flatten calls IsValid on the parent list array which reads buffers[0].
         checkValidityBitmap(list_chunk, column_name);
+
+        /// A zero-length list chunk may carry a 0-byte offsets buffer (Apache Arrow Java < 19.0.0
+        /// emits one for an empty nested List/Map).  Arrow's Flatten() would read offset[0] from
+        /// that missing buffer and return a slice with a garbage offset; instead push an empty
+        /// slice of the values array, which preserves the child type with zero rows.
+        if (list_chunk.length() == 0)
+        {
+            const auto & values = list_chunk.values();
+            if (!values)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow List chunk has no values array for column '{}'", column_name);
+            array_vector.emplace_back(values->Slice(0, 0));
+            continue;
+        }
 
         /// Validate the offsets buffer before Flatten() reads it: Flatten() iterates
         /// over offset[0..length] to slice the values array, so it needs (length+1) entries.
@@ -1822,11 +1842,11 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 
             if (geo_metadata && settings.allow_geoparquet_parser)
             {
-                return readColumnWithGeoData(arrow_column, column_name, *geo_metadata);
+                return readColumnWithGeoData(arrow_column, column_name, *geo_metadata, settings.format_settings.precise_float_parsing);
             }
             if (type_hint && type_hint->getName() == "Geometry" && settings.allow_geoparquet_parser)
             {
-                return readColumnWithGeoData(arrow_column, column_name, GeoColumnMetadata{GeoEncoding::WKB, GeoType::Mixed});
+                return readColumnWithGeoData(arrow_column, column_name, GeoColumnMetadata{GeoEncoding::WKB, GeoType::Mixed}, settings.format_settings.precise_float_parsing);
             }
             return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);
         }
@@ -2432,11 +2452,19 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     /// LowCardinality(Nullable(...)) holds nulls inside the dictionary, so canBeInsideNullable() is false; exclude it explicitly.
     bool type_hint_not_nullable_capable = type_hint && !type_hint->isLowCardinalityNullable() && !removeNullable(type_hint)->canBeInsideNullable();
     bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable()))) && !geo_metadata && !type_hint_not_nullable_capable && settings.allow_inferring_nullable_columns;
+    /// A struct is wrapped into Nullable only when the Nullable(Tuple) type is allowed by
+    /// allow_experimental_nullable_tuple_type (otherwise schema inference would return a type
+    /// that CREATE TABLE rejects) or explicitly requested by the type hint (e.g. an existing
+    /// table with such a column). Otherwise the struct is read as a plain Tuple, as it worked
+    /// before Nullable(Tuple) was supported.
+    bool allow_nullable_struct = settings.format_settings.schema_inference_allow_nullable_tuple_type
+        || (type_hint && isNullableOrLowCardinalityNullable(type_hint));
     if (read_as_nullable_column &&
         arrow_column->type()->id() != arrow::Type::LIST &&
         arrow_column->type()->id() != arrow::Type::LARGE_LIST &&
         arrow_column->type()->id() != arrow::Type::FIXED_SIZE_LIST &&
         arrow_column->type()->id() != arrow::Type::MAP &&
+        (arrow_column->type()->id() != arrow::Type::STRUCT || allow_nullable_struct) &&
         arrow_column->type()->id() != arrow::Type::DICTIONARY)
     {
         DataTypePtr nested_type_hint;

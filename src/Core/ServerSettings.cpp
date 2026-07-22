@@ -7,6 +7,7 @@
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
 #include <IO/MMappedFileCache.h>
+#include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <IO/UncompressedCache.h>
 #include <IO/SharedThreadPools.h>
@@ -22,11 +23,15 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 #if USE_AVRO
 #    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#    include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadataFilesCache.h>
 #endif
 #if USE_PARQUET
 #    include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #endif
 #include <Storages/System/ServerSettingColumnsParams.h>
+#if ENABLE_DISTRIBUTED_CACHE
+#    include <Disks/IO/WriteBufferFromDistributedCache.h>
+#endif
 #include <base/types.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Common/HTTPConnectionPool.h>
@@ -48,6 +53,7 @@ extern const Metric BackgroundSchedulePoolSize;
 extern const Metric BackgroundBufferFlushSchedulePoolSize;
 extern const Metric BackgroundDistributedSchedulePoolSize;
 extern const Metric BackgroundMessageBrokerSchedulePoolSize;
+extern const Metric BackgroundStreamingSchedulePoolSize;
 extern const Metric PointInPolygonCacheSizeLimit;
 }
 
@@ -88,19 +94,7 @@ namespace
 
 /// Settings without path are top-level server settings (no nesting).
 #define LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(DECLARE, ALIAS) \
-    DECLARE(InsertDeduplicationVersions, insert_deduplication_version, InsertDeduplicationVersions::NEW_UNIFIED_HASHES, R"(
-This setting makes it possible to migrate from the code version which makes insert deduplication for sync and async inserts totally different not transparent way to the code version where inserted data would be deduplicated across sync and async inserts.
-The value `old_separate_hashes` means that ClickHouse will use different deduplication hashes for sync and async inserts (the same as before).
-This value preserves the legacy pre-migration behavior, for instances that intentionally have not started the migration; it is no longer the recommended default.
-The value `compatible_double_hashes` means that ClickHouse will use two deduplication hashes: the old one for sync or async inserts and another the new one for all inserts. This value should be used to migrate existing instances to the new behavior in a safe way.
-This value should be enabled for some time (see replicated_deduplication_window and non_replicated_deduplication_window settings) to make sure that no sync or async inserts are lost during migration.
-Finally the value `new_unified_hash` means that ClickHouse will use the new deduplication hash for sync and async inserts. This value could be enabled on new instances of ClickHouse or on instances which already used `compatible_double_hashes` value for some time.
-With `new_unified_hash`, the deduplication hash covers the whole inserted block, so an insert is deduplicated only when its entire data matches a previous insert (a retry), not per individual partition.
-Under `new_unified_hash` async inserts also use the unified hash and share the sync deduplication window (`replicated_deduplication_window` / `replicated_deduplication_window_seconds`); the `*_for_async_inserts` window settings apply only to the legacy `old_separate_hashes` / `compatible_double_hashes` path.
-The default was `compatible_double_hashes` for one phase of the migration and is now `new_unified_hash`, which completes the migration in a safe way in two phases.
-Instances upgraded directly from `old_separate_hashes` should run with `compatible_double_hashes` until the longest relevant deduplication window has elapsed (the sync window `replicated_deduplication_window` / `replicated_deduplication_window_seconds`, the async window `replicated_deduplication_window_for_async_inserts` / `replicated_deduplication_window_seconds_for_async_inserts` which defaults to one week if async inserts are used, and `non_replicated_deduplication_window`) before relying on the unified hash. Otherwise pre-upgrade ids still held in the old `blocks` / `async_blocks` directories are not seen by the unified hash and their retries can be accepted as new inserts, producing duplicates.
-Async inserts add a caveat at the switch to `new_unified_hash`: under `compatible_double_hashes` their deduplication effectively spans the async window (the `async_blocks` id is kept that long), while `new_unified_hash` consults only `deduplication_hashes` (kept for the sync window), so async inserts older than the sync window can be re-accepted after the switch even after waiting. Before switching async workloads, either raise `replicated_deduplication_window` / `replicated_deduplication_window_seconds` to the async window and run so for a full async window, quiesce async inserts for the async window, or keep `compatible_double_hashes`.
-)", 0) \
+    DECLARE(String, insert_deduplication_version, "new_unified_hash", R"(Deprecated migration guard. This version supports only the unified insert deduplication hash (`new_unified_hash`); the server refuses to start if this setting is present with any other value (such as `old_separate_hashes` or `compatible_double_hashes`). Complete the deduplication migration on the previous version before upgrading by running `compatible_double_hashes` (which writes both the legacy and unified hashes). For replicated tables run it for at least `replicated_deduplication_window_seconds` (one hour by default); the default windows retain the unified hashes of all inserts for that window, which is considered enough to cover an insert retry loop. For non-replicated tables with `non_replicated_deduplication_window` > 0 the window is count-based rather than time-based, so run `compatible_double_hashes` for at least that many inserts before upgrading.)", 0) \
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
     DECLARE(Bool, shutdown_wait_unfinished_queries, false, R"(If set true ClickHouse will wait for running queries finish before shutdown.)", 0) \
@@ -480,6 +474,7 @@ A value of `0` means "never". The default value corresponds to 1 day.
     DECLARE(UInt64, database_catalog_drop_table_concurrency, 16, R"(The size of the threadpool used for dropping tables.)", 0) \
     \
     \
+    DECLARE(UInt64, max_remote_read_connections, 1000, R"(Maximum number of open remote read connections kept alive by `ReaderExecutor` for sequential read optimization. 0 disables connection reuse.)", EXPERIMENTAL) \
     DECLARE(UInt64, max_concurrent_queries, 0, R"(
 Limit on total number of concurrently executed queries. Note that limits on `INSERT` and `SELECT` queries, and on the maximum number of queries for users must also be considered.
 
@@ -579,6 +574,10 @@ This setting can be modified at runtime and will take effect immediately.
     DECLARE(UInt64, iceberg_metadata_files_cache_size, DEFAULT_ICEBERG_METADATA_CACHE_MAX_SIZE, "Maximum size of iceberg metadata cache in bytes. Zero means disabled.", 0) \
     DECLARE(UInt64, iceberg_metadata_files_cache_max_entries, DEFAULT_ICEBERG_METADATA_CACHE_MAX_ENTRIES, "Maximum size of iceberg metadata files cache in entries. Zero means disabled.", 0) \
     DECLARE(Double, iceberg_metadata_files_cache_size_ratio, DEFAULT_ICEBERG_METADATA_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the iceberg metadata cache relative to the cache's total size.", 0) \
+    DECLARE(String, paimon_metadata_files_cache_policy, DEFAULT_PAIMON_METADATA_CACHE_POLICY, "Paimon metadata cache policy name.", 0) \
+    DECLARE(UInt64, paimon_metadata_files_cache_size, DEFAULT_PAIMON_METADATA_CACHE_MAX_SIZE, "Maximum size of paimon metadata cache in bytes. Zero means disabled.", 0) \
+    DECLARE(UInt64, paimon_metadata_files_cache_max_entries, DEFAULT_PAIMON_METADATA_CACHE_MAX_ENTRIES, "Maximum size of paimon metadata files cache in entries. Zero means no entry-count limit.", 0) \
+    DECLARE(Double, paimon_metadata_files_cache_size_ratio, DEFAULT_PAIMON_METADATA_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the paimon metadata cache relative to the cache's total size.", 0) \
     DECLARE(String, parquet_metadata_cache_policy, DEFAULT_PARQUET_METADATA_CACHE_POLICY, "Parquet metadata cache policy name.", 0) \
     DECLARE(UInt64, parquet_metadata_cache_size, DEFAULT_PARQUET_METADATA_CACHE_MAX_SIZE, "Maximum size of parquet metadata cache in bytes. Zero means disabled.", 0) \
     DECLARE(UInt64, parquet_metadata_cache_max_entries, DEFAULT_PARQUET_METADATA_CACHE_MAX_ENTRIES, "Maximum size of parquet metadata files cache in entries. Zero means disabled.", 0) \
@@ -681,6 +680,14 @@ This setting can be modified at runtime and will take effect immediately.
 :::
 )", 0) \
     DECLARE(Double, query_condition_cache_size_ratio, DEFAULT_QUERY_CONDITION_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the query condition cache relative to the cache's total size.", 0) \
+    DECLARE(String, encryption_header_cache_policy, DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY, "Encryption header cache policy name.", 0) \
+    DECLARE(UInt64, encryption_header_cache_size, DEFAULT_ENCRYPTION_HEADER_CACHE_MAX_SIZE, R"(
+Maximum size of the cache of encryption headers read from encrypted files. Used only by the experimental ReaderExecutor read path.
+:::note
+This setting can be modified at runtime and will take effect immediately.
+:::
+)", 0) \
+    DECLARE(Double, encryption_header_cache_size_ratio, DEFAULT_ENCRYPTION_HEADER_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the encryption header cache relative to the cache's total size.", 0) \
     \
     DECLARE(Bool, disable_internal_dns_cache, false, "Disables the internal DNS cache. Recommended for operating ClickHouse in systems with frequently changing infrastructure such as Kubernetes.", 0) \
     DECLARE(UInt64, dns_cache_max_entries, 10000, R"(Internal DNS cache max entries.)", 0) \
@@ -982,6 +989,7 @@ Possible values:
     DECLARE(Float, background_schedule_pool_max_parallel_tasks_per_type_ratio, 0.8f, R"(The maximum ratio of threads in the pool that can execute tasks of the same type simultaneously.)", 0) \
     DECLARE(UInt64, background_message_broker_schedule_pool_size, 16, R"(The maximum number of threads that will be used for executing background operations for message streaming.)", 0) \
     DECLARE(UInt64, background_distributed_schedule_pool_size, 16, R"(The maximum number of threads that will be used for executing distributed sends.)", 0) \
+    DECLARE(UInt64, background_streaming_schedule_pool_size, 16, R"(The maximum number of threads that will be used for executing streaming background operations.)", 0) \
     DECLARE(UInt64, tables_loader_foreground_pool_size, 0, R"(
 Sets the number of threads performing load jobs in foreground pool. The foreground pool is used for loading table synchronously before server start listening on a port and for loading tables that are waited for. Foreground pool has higher priority than background pool. It means that no job starts in background pool while there are jobs running in foreground pool.
 
@@ -1251,23 +1259,23 @@ Whether background memory worker should correct internal memory tracker based on
 )", 0) \
     DECLARE(Bool, memory_worker_use_cgroup, true, "Use current cgroup memory usage information to correct memory tracking.", 0) \
     DECLARE(Double, memory_worker_rss_speculative_reserve_ratio, getDefaultMemoryWorkerRssSpeculativeReserveRatio(), R"(
-    On each `MemoryWorker` tick, reserve an additional
-    `ratio * min(resident - previous_resident, resident - tracked)` on top of
-    the observed RSS, on the assumption that the next tick may grow by the same
-    amount as the last one (`resident - previous_resident` is the RSS growth
-    over the last tick). The growth is capped by `resident - tracked`, the part
-    of RSS not visible to the global memory tracker, because growth that is
-    already tracked is handled by the ordinary hard-limit check. The reservation
-    is applied to the `rss` counter that the global hard-limit check consults
-    via `MemoryTracker::allocImpl`, so when the extrapolated value crosses
-    `max_server_memory_usage`, subsequent allocations throw
-    `MEMORY_LIMIT_EXCEEDED` before the kernel OOM-killer fires. A value of `0`
-    disables speculation (falling back to `rss = resident`); the default `1`
-    reserves one full growth delta of headroom for the next interval. Under
-    sanitizers (`ASan`, `UBSan`, `MSan`, `TSan`) the default is `0`, because the
-    `resident - tracked` gap is dominated by sanitizer shadow / runtime overhead
-    rather than tracker bookkeeping lag.
-    )", 0) \
+On each `MemoryWorker` tick, reserve an additional
+`ratio * min(resident - previous_resident, resident - tracked)` on top of
+the observed RSS, on the assumption that the next tick may grow by the same
+amount as the last one (`resident - previous_resident` is the RSS growth
+over the last tick). The growth is capped by `resident - tracked`, the part
+of RSS not visible to the global memory tracker, because growth that is
+already tracked is handled by the ordinary hard-limit check. The reservation
+is applied to the `rss` counter that the global hard-limit check consults
+via `MemoryTracker::allocImpl`, so when the extrapolated value crosses
+`max_server_memory_usage`, subsequent allocations throw
+`MEMORY_LIMIT_EXCEEDED` before the kernel OOM-killer fires. A value of `0`
+disables speculation (falling back to `rss = resident`); the default `1`
+reserves one full growth delta of headroom for the next interval. Under
+sanitizers (`ASan`, `UBSan`, `MSan`, `TSan`) the default is `0`, because the
+`resident - tracked` gap is dominated by sanitizer shadow / runtime overhead
+rather than tracker bookkeeping lag.
+)", 0) \
     DECLARE(Bool, memory_worker_dynamic_hard_limit, true, R"(
 Whether the background memory worker periodically recomputes the server's hard memory limit at runtime as `(resident memory + system available memory) * max_server_memory_usage_to_ram_ratio`, so the server leaves headroom for other processes running on the same host.
 
@@ -1317,6 +1325,7 @@ Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching
     DECLARE(UInt64, iceberg_background_schedule_pool_size, 10, "Size of thread pool to asynchronously fetch the latest metadata from a remote iceberg catalog; the pool is shared by all the active tables.", 0) \
     DECLARE(UInt64, drop_distributed_cache_pool_size, 8, R"(The size of the threadpool used for dropping distributed cache.)", 0) \
     DECLARE(UInt64, drop_distributed_cache_queue_size, 1000, R"(The queue size of the threadpool used for dropping distributed cache.)", 0) \
+    DECLARE(UInt64, distributed_cache_write_pool_size, 100, R"(The maximum number of distributed cache write requests that run on a background thread at the same time (across all queries). When the limit is reached, a write goes through the cache inline (on the calling thread) instead of on a background thread, so it neither blocks waiting for a slot nor creates an unbounded number of threads.)", 0) \
     DECLARE(Bool, distributed_cache_apply_throttling_settings_from_client, true, R"(Whether cache server should apply throttling settings received from client.)", 0) \
     DECLARE(UInt32, allow_feature_tier, 0, R"(
 Controls if the user can change settings related to the different feature tiers.
@@ -1417,6 +1426,31 @@ Changing this value calls `prof.reset` which resets all accumulated profiling st
 \
     DECLARE(UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(Max number of S3 redirects hops allowed.)", 0) \
     DECLARE(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, R"(Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries)", 0) \
+    DECLARE(Bool, s3_load_table_anonymously_if_credentials_restricted, true, R"(
+Controls what happens when a persistent `S3` or `S3Queue` table, a dynamic `disk(type = s3, ...)`, or a
+`DataLakeCatalog` (Glue, BigLake) database is loaded from existing metadata (server startup or `RESTORE`) and
+its definition would resolve the server's own (ambient) S3/cloud credentials that are blocked for user
+queries by `s3_allow_server_credentials_in_user_queries`.
+
+When enabled (the default), the object is loaded without those credentials instead of aborting startup: an
+`S3`/`S3Queue` table or a dynamic S3 disk is built with an anonymous S3 client, and a `DataLakeCatalog`
+database is left with an unavailable catalog. The server starts, but the object is inaccessible (its requests
+to a private bucket are denied, or the catalog reports a clear error) until its credentials resolve to a
+permitted source again. It never silently regains the server's identity. This keeps a single such object —
+for example one created in an older version before the restriction existed, or one whose named collection was
+later re-bound to `use_environment_credentials = 1` — from aborting server startup.
+
+When disabled, loading such an object instead fails, which can prevent the server from starting. Use this only
+if you prefer a hard failure over a silently inaccessible table, disk, or catalog database.
+)", 0) \
+    DECLARE(Bool, s3_allow_server_credentials_for_system_table_disks, false, R"(
+Allows a dynamic `disk(type = s3, ...)` of a table in the `system` database to use the server's own (ambient)
+S3 credentials, exempting it from the `s3_allow_server_credentials_in_user_queries` restriction. This is for
+server-internal infrastructure that ships system tables to S3 with the server's identity (attached by the
+cloud operator into the `system` database). Unlike the session setting, it is a server-level setting, so the
+exemption also applies when the table is reloaded from metadata on restart. It is scoped to the `system`
+database, which ordinary users cannot create tables in, so it does not relax the restriction for user queries.
+)", 0) \
     DECLARE(Int32, os_threads_nice_value_merge_mutate, 0, R"(
 Linux nice value for merge and mutation threads. Lower values mean higher CPU priority.
 
@@ -1520,6 +1554,19 @@ The directory with top level domains.
 ```xml
 <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path>
 ```
+)", 0) \
+    DECLARE(Bool, interserver_tables_status_require_auth, true, R"(
+Require interserver `TablesStatusRequest` to be authenticated with the cluster
+`<secret>`. Clients new enough to send a secret hash (protocol revision
+`DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS`) are always validated; this
+setting additionally rejects older clients that send no hash, which is what closes the
+unauthenticated table-status disclosure by default.
+
+Defaults to `true` (secure by default). During a rolling upgrade a not-yet-upgraded
+node speaks the old protocol and sends no hash, so a `Distributed` query initiated on
+such a node against an already-upgraded node would have its `TablesStatusRequest`
+rejected. If you must run a mixed-version cluster, set this to `false` on the upgraded
+nodes until every node is upgraded, then remove the override.
 )", 0) \
     DECLARE(String, interserver_http_host, "", R"(
 The hostname that can be used by other servers to access this server.
@@ -1969,6 +2016,8 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
                 {std::to_string(CurrentMetrics::get(CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize)), ChangeableWithoutRestart::IncreaseOnly}},
             {"background_distributed_schedule_pool_size",
                 {std::to_string(CurrentMetrics::get(CurrentMetrics::BackgroundDistributedSchedulePoolSize)), ChangeableWithoutRestart::IncreaseOnly}},
+            {"background_streaming_schedule_pool_size",
+                {std::to_string(CurrentMetrics::get(CurrentMetrics::BackgroundStreamingSchedulePoolSize)), ChangeableWithoutRestart::IncreaseOnly}},
 
             {"mark_cache_size", {std::to_string(context->getMarkCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"uncompressed_cache_size", {std::to_string(context->getUncompressedCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
@@ -1976,6 +2025,7 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"index_uncompressed_cache_size", {std::to_string(context->getIndexUncompressedCache(/*only_if_enabled=*/ false)->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"mmap_cache_size", {std::to_string(context->getMMappedFileCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"query_condition_cache_size", {std::to_string(context->getQueryConditionCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"encryption_header_cache_size", {std::to_string(context->getEncryptionHeaderCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"primary_index_cache_size", {std::to_string(context->getPrimaryIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"vector_similarity_index_cache_size", {std::to_string(context->getVectorSimilarityIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"text_index_tokens_cache_size", {std::to_string(context->getTextIndexTokensCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
@@ -2014,6 +2064,10 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {context->getDistributedCacheReadThrottler() ? std::to_string(context->getDistributedCacheReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_distributed_cache_write_bandwidth_for_server",
              {context->getDistributedCacheWriteThrottler() ? std::to_string(context->getDistributedCacheWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+#if ENABLE_DISTRIBUTED_CACHE
+            {"distributed_cache_write_pool_size",
+             {std::to_string(WriteBufferFromDistributedCache::getBackgroundWritePoolSize()), ChangeableWithoutRestart::Yes}},
+#endif
             {"max_io_thread_pool_size",
              {getIOThreadPool().isInitialized() ? std::to_string(getIOThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_io_thread_pool_free_size",
@@ -2091,6 +2145,15 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
         changeable_settings.insert(
             {"iceberg_metadata_files_cache_size",
              {std::to_string(context->getIcebergMetadataFilesCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
+    if (context->getPaimonMetadataFilesCache())
+    {
+        changeable_settings.insert(
+            {"paimon_metadata_files_cache_size",
+             {std::to_string(context->getPaimonMetadataFilesCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert(
+            {"paimon_metadata_files_cache_max_entries",
+             {std::to_string(context->getPaimonMetadataFilesCache()->maxCount()), ChangeableWithoutRestart::Yes}});
+    }
 #endif
 #if USE_PARQUET
     if (context->getParquetMetadataCache())

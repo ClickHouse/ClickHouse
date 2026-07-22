@@ -1,0 +1,34 @@
+---
+title: 'Resynchronisation de tables spécifiques'
+description: 'Resynchronisation de tables spécifiques dans un MySQL ClickPipe'
+slug: /integrations/clickpipes/mysql/table_resync
+sidebarTitle: 'Resynchroniser une table'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'cdc', 'ingestion de données', 'synchronisation en temps réel']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+Dans certains cas, il peut être utile de resynchroniser des tables spécifiques d’un pipe. C’est notamment le cas après des modifications majeures du schéma dans MySQL, ou après une refonte de la modélisation de certaines données dans ClickHouse.
+
+Même si la resynchronisation de tables individuelles en un clic est encore en cours de développement, ce guide explique comment y parvenir dès aujourd’hui dans le MySQL ClickPipe.
+
+<div id="removing-table">
+  ### 1. Supprimer la table du pipe
+</div>
+
+Pour ce faire, suivez le [guide de suppression de table](/fr/integrations/clickpipes/mysql/remove-table).
+
+<div id="truncate-drop-table">
+  ### 2. TRUNCATE ou drop la table dans ClickHouse
+</div>
+
+Cette étape permet d&#39;éviter les doublons de données lorsque nous ajouterons à nouveau cette table à l&#39;étape suivante. Pour ce faire, accédez à l&#39;onglet **SQL Console** dans ClickHouse Cloud et exécutez une requête.
+Notez qu&#39;une validation empêche l&#39;ajout de la table si elle existe déjà dans ClickHouse et n&#39;est pas vide.
+
+<div id="add-table-again">
+  ### 3. Ajouter de nouveau la table au ClickPipe
+</div>
+
+Pour cela, suivez le [guide d’ajout d’une table](/fr/integrations/clickpipes/mysql/add-table).

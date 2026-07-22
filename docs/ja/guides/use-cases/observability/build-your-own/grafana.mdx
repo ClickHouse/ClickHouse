@@ -1,0 +1,220 @@
+---
+title: 'Grafana と ClickHouse を使用したオブザーバビリティ'
+description: 'Grafana と ClickHouse を使用したオブザーバビリティ'
+slug: /observability/grafana
+keywords: ['オブザーバビリティ', 'ログ', 'トレース', 'メトリクス', 'OpenTelemetry', 'Grafana', 'OTel']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+Grafana は、ClickHouse のオブザーバビリティデータを可視化するための推奨ツールです。これは、Grafana 向けの公式 ClickHouse プラグインによって実現されます。インストール手順は[こちら](/ja/integrations/connectors/data-visualization/grafana/index)を参照してください。
+
+プラグインの V4 では、新しいクエリビルダーでログとトレースが主要な機能として扱われるようになりました。これにより、SRE が SQL クエリを記述する必要性が最小限に抑えられ、SQL ベースのオブザーバビリティがよりシンプルになり、この新しいアプローチの前進を後押しします。
+その一環として、私たちは OpenTelemetry (OTel) をプラグインの中核に据えてきました。今後数年にわたり、これが SQL ベースのオブザーバビリティの基盤となり、データ収集のあり方を形作っていくと考えているためです。
+
+<div id="open-telemetry-integration">
+  ## OpenTelemetry インテグレーション
+</div>
+
+Grafana で ClickHouse データソースを設定する際、このプラグインでは、ログとトレース用のデフォルトのデータベースとテーブル、およびそれらのテーブルが OTel スキーマに準拠しているかどうかを指定できます。これにより、Grafana でログとトレースを正しく表示するために必要なカラムをプラグインが返せるようになります。デフォルトの OTel スキーマに変更を加えていて独自のカラム名を使いたい場合は、それらを指定できます。time (`Timestamp`) 、log level (`SeverityText`) 、message body (`Body`) などでデフォルトの OTel カラム名を使用している場合は、変更は不要です。
+
+<Info>
+  **HTTP または Native**
+
+  Grafana は HTTP またはネイティブプロトコルのいずれかで ClickHouse に接続できます。後者にはわずかなパフォーマンス上の利点がありますが、Grafana ユーザーが発行する集計クエリでは、その差を体感できることはほとんどありません。一方、HTTP プロトコルは通常、プロキシや内部確認を行いやすいという利点があります。
+</Info>
+
+Logs の設定では、ログを正しく表示するために、time、log level、message の各カラムが必要です。
+
+Traces の設定はやや複雑です (完全な一覧は [こちら](/ja/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) を参照してください) 。ここで必要となるカラムは、後続のクエリで完全なトレースプロファイルを構築する処理を抽象化できるようにするために必要です。これらのクエリは、データが OTel と同様の構造になっていることを前提としているため、標準スキーマから大きく外れている場合は、この機能を利用するためにビューを使用する必要があります。
+
+<Image img="/images/use-cases/observability/observability-15.webp" alt="コネクタ設定" size="sm" />
+
+設定が完了したら、[Grafana Explore](https://grafana.com/docs/grafana/latest/explore/) に移動して、ログとトレースの検索を開始できます。
+
+<div id="logs">
+  ## ログ
+</div>
+
+ログに関する Grafana の要件を満たしている場合は、クエリビルダーで `Query Type: Log` を選択し、`Run Query` をクリックできます。クエリビルダーはログを一覧表示するクエリを生成し、たとえば次のように表示されるようにします。
+
+```sql
+SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as traceID FROM "default"."otel_logs" WHERE ( timestamp >= $__fromTime AND timestamp <= $__toTime ) ORDER BY timestamp DESC LIMIT 1000
+```
+
+<Image img="/images/use-cases/observability/observability-16.webp" alt="コネクタのログ設定" size="lg" border />
+
+クエリビルダーを使えば、SQL を書かずに簡単にクエリを変更できます。キーワードを含むログの検索を含む絞り込みは、クエリビルダーから実行できます。より複雑なクエリを記述したい場合は、SQL エディタに切り替えられます。必要なカラムが返され、クエリタイプとして `logs` が選択されていれば、結果はログとして表示されます。ログの表示に必要なカラムは [こちら](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format) に記載されています。
+
+<div id="logs-to-traces">
+  ### ログからトレースへ
+</div>
+
+ログに trace ID が含まれていれば、特定のログ行から対応するトレースへ移動できます。
+
+<Image img="/images/use-cases/observability/observability-17.webp" alt="ログからトレースへ" size="lg" border />
+
+<div id="traces">
+  ## Traces
+</div>
+
+上記のログ表示と同様に、Grafana がトレースを表示するために必要なカラムが揃っていれば (たとえば OTel スキーマを使用している場合) 、クエリビルダーが必要なクエリを自動的に組み立てます。`Query Type: Traces` を選択して `Run Query` をクリックすると、次のようなクエリが生成されて実行されます (内容は設定したカラムによって異なります。以下は OTel の使用を前提としています) 。
+
+```sql
+SELECT "TraceId" as traceID,
+  "ServiceName" as serviceName,
+  "SpanName" as operationName,
+  "Timestamp" as startTime,
+  multiply("Duration", 0.000001) as duration
+FROM "default"."otel_traces"
+WHERE ( Timestamp >= $__fromTime AND Timestamp <= $__toTime )
+  AND ( ParentSpanId = '' )
+  AND ( Duration > 0 )
+  ORDER BY Timestamp DESC, Duration DESC LIMIT 1000
+```
+
+このクエリは、Grafana が想定するカラム名を返し、以下に示すようなトレースのテーブルを表示します。`duration` やその他のカラムでのフィルタリングは、SQL を記述しなくても行えます。
+
+<Image img="/images/use-cases/observability/observability-18.webp" alt="Traces" size="lg" border />
+
+より複雑なクエリを記述したい場合は、`SQL エディタ` に切り替えることができます。
+
+<div id="view-trace-details">
+  ### トレースの詳細を表示する
+</div>
+
+上に示したように、トレース ID はクリック可能なリンクとして表示されます。トレース ID をクリックすると、`View Trace` リンクから関連するスパンを表示できます。これにより、必要な構造でスパンを取得するために次のクエリ (OTel のカラムを前提) が実行され、結果はウォーターフォール形式で表示されます。
+
+```sql
+WITH '<trace_id>' AS trace_id,
+  (SELECT min(Start) FROM "default"."otel_traces_trace_id_ts"
+    WHERE TraceId = trace_id) AS trace_start,
+  (SELECT max(End) + 1 FROM "default"."otel_traces_trace_id_ts"
+    WHERE TraceId = trace_id) AS trace_end
+SELECT "TraceId" AS traceID,
+  "SpanId" AS spanID,
+  "ParentSpanId" AS parentSpanID,
+  "ServiceName" AS serviceName,
+  "SpanName" AS operationName,
+  "Timestamp" AS startTime,
+  multiply("Duration", 0.000001) AS duration,
+  arrayMap(key -> map('key', key, 'value',"SpanAttributes"[key]),
+  mapKeys("SpanAttributes")) AS tags,
+  arrayMap(key -> map('key', key, 'value',"ResourceAttributes"[key]),
+  mapKeys("ResourceAttributes")) AS serviceTags
+FROM "default"."otel_traces"
+WHERE traceID = trace_id
+  AND startTime >= trace_start
+  AND startTime <= trace_end
+LIMIT 1000
+```
+
+<Note>
+  上記のクエリでは、トレース ID のルックアップに materialized view `otel_traces_trace_id_ts` が使用されている点に注目してください。詳しくは、[クエリの高速化 - ルックアップに materialized view を使用する](/ja/guides/use-cases/observability/build-your-own/schema-design#using-materialized-views-incremental--for-fast-lookups)を参照してください。
+</Note>
+
+<Image img="/images/use-cases/observability/observability-19.webp" alt="トレースの詳細" size="lg" border />
+
+<div id="traces-to-logs">
+  ### トレースからログへ
+</div>
+
+ログにトレース ID が含まれていれば、トレースから関連するログへ移動できます。ログを表示するには、トレース ID をクリックして `View Logs` を選択します。すると、デフォルトの OTel カラムを前提として、次のクエリが実行されます。
+
+```sql
+SELECT Timestamp AS "timestamp",
+  Body AS "body", SeverityText AS "level",
+  TraceId AS "traceID" FROM "default"."otel_logs"
+WHERE ( traceID = '<trace_id>' )
+ORDER BY timestamp ASC LIMIT 1000
+```
+
+<Image img="/images/use-cases/observability/observability-20.webp" alt="トレースからログへ" size="lg" border />
+
+<div id="dashboards">
+  ## ダッシュボード
+</div>
+
+Grafana では、ClickHouse データソースを使用してダッシュボードを作成できます。詳しくは、Grafana と ClickHouse の[データソースドキュメント](https://github.com/grafana/clickhouse-datasource)を参照することをお勧めします。特に、[マクロの概念](https://github.com/grafana/clickhouse-datasource?tab=readme-ov-file#macros)と[変数](https://grafana.com/docs/grafana/latest/dashboards/variables/)をご確認ください。
+
+このプラグインには、すぐに使えるダッシュボードがいくつか用意されており、その中には、OTel 仕様に準拠したログおよびトレーシングデータ向けのサンプルダッシュボード「Simple ClickHouse OTel dashboarding」も含まれています。これを利用するには、データが OTel のデフォルトのカラム名に従っている必要があり、このダッシュボードはデータソース設定からインストールできます。
+
+<Image img="/images/use-cases/observability/observability-21.webp" alt="ダッシュボード" size="lg" border />
+
+以下では、可視化を作成する際の簡単なヒントをいくつか紹介します。
+
+<div id="time-series">
+  ### 時系列
+</div>
+
+オブザーバビリティのユースケースでは、統計情報と並んで、折れ線グラフが最も一般的な可視化形式です。ClickHouse プラグインは、クエリが `time` という名前の `datetime` と数値カラムを返す場合、自動的に折れ線グラフを表示します。例:
+
+```sql
+SELECT
+ $__timeInterval(Timestamp) as time,
+ quantile(0.99)(Duration)/1000000 AS p99
+FROM otel_traces
+WHERE
+ $__timeFilter(Timestamp)
+ AND ( Timestamp  >= $__fromTime AND Timestamp <= $__toTime )
+GROUP BY time
+ORDER BY time ASC
+LIMIT 100000
+```
+
+<Image img="/images/use-cases/observability/observability-22.webp" alt="時系列" size="lg" border />
+
+<div id="multi-line-charts">
+  ### 複数系列チャート
+</div>
+
+複数系列チャートは、次の条件を満たすクエリに対して自動的に自動描画されます。
+
+* フィールド 1: `time` というエイリアスを持つ datetime フィールド
+* フィールド 2: グループ化する値。これは String である必要があります。
+* フィールド 3+: メトリックの値
+
+たとえば:
+
+```sql
+SELECT
+  $__timeInterval(Timestamp) as time,
+  ServiceName,
+  quantile(0.99)(Duration)/1000000 AS p99
+FROM otel_traces
+WHERE $__timeFilter(Timestamp)
+AND ( Timestamp  >= $__fromTime AND Timestamp <= $__toTime )
+GROUP BY ServiceName, time
+ORDER BY time ASC
+LIMIT 100000
+```
+
+<Image img="/images/use-cases/observability/observability-23.webp" alt="複数系列チャート" size="lg" border />
+
+<div id="visualizing-geo-data">
+  ### 地理データの可視化
+</div>
+
+前のセクションでは、IP辞書を使用してオブザーバビリティデータに地理座標を付加する方法を説明しました。`latitude` と `longitude` のカラムがあることを前提に、`geohashEncode` 関数を使ってオブザーバビリティデータを可視化できます。これにより、Grafana Geo Mapチャートと互換性のあるジオハッシュが生成されます。クエリ例と可視化例を以下に示します。
+
+```sql
+WITH coords AS
+        (
+        SELECT
+                Latitude,
+                Longitude,
+                geohashEncode(Longitude, Latitude, 4) AS hash
+        FROM otel_logs_v2
+        WHERE (Longitude != 0) AND (Latitude != 0)
+        )
+SELECT
+        hash,
+        count() AS heat,
+        round(log10(heat), 2) AS adj_heat
+FROM coords
+GROUP BY hash
+```
+
+<Image img="/images/use-cases/observability/observability-24.webp" alt="地理データの可視化" size="lg" border />

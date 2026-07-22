@@ -1,0 +1,175 @@
+---
+title: Comment créer une table permettant d’interroger plusieurs clusters distants
+description: "Comment créer une table permettant d’interroger plusieurs clusters distants"
+date: 2024-07-03
+tags: ['Déploiements et mise à l’échelle']
+keywords: ['Requête', 'Cluster distant']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+***
+
+<div id="question">
+  ## Question
+</div>
+
+Comment créer une table qui peut interroger d’autres clusters ou instances ?
+
+<div id="answer">
+  ## Réponse
+</div>
+
+Voici un exemple simple pour tester les fonctionnalités.
+
+Dans cet exemple, ClickHouse Cloud est utilisé, mais l&#39;exemple fonctionnera également avec des clusters auto-hébergés.
+Les cibles devront être adaptées aux URL/hôtes/DNS d&#39;un nœud cible ou d&#39;un load balancer.
+
+Dans le cluster A :
+
+```
+./clickhouse client --host clusterA.us-west-2.aws.clickhouse.cloud --secure --password 'Password123!'
+```
+
+Créez la base de données :
+
+```
+create database db1;
+```
+
+Créez la table :
+
+```
+ CREATE TABLE db1.table1_remote1
+(
+    `id` UInt32,
+    `timestamp_column` DateTime,
+    `string_column` String
+)
+ENGINE = MergeTree()
+ORDER BY id;
+```
+
+Insérez quelques lignes d&#39;exemple :
+
+```
+insert into db1.table1_remote1
+values
+(1, '2023-09-29 00:01:00', 'a'),
+(2, '2023-09-29 00:02:00', 'b'),
+(3, '2023-09-29 00:03:00', 'c');
+```
+
+Dans le cluster B :
+
+```
+./clickhouse client --host clusterB.us-east-2.aws.clickhouse.cloud --secure --password 'Password123!'
+```
+
+Créez la base de données :
+
+```
+create database db1;
+```
+
+Créez la table :
+
+```
+CREATE TABLE db1.table1_remote2
+(
+    `id` UInt32,
+    `timestamp_column` DateTime,
+    `string_column` String
+)
+ENGINE = MergeTree()
+ORDER BY id;
+```
+
+Insérez des lignes d&#39;exemple :
+
+```
+insert into db1.table1_remote1
+values
+(4, '2023-09-29 00:04:00', 'x'),
+(5, '2023-09-29 00:05:00', 'y'),
+(6, '2023-09-29 00:06:00', 'z');
+```
+
+Dans le cluster C :
+*ce cluster sera utilisé pour collecter les données des deux autres clusters, mais peut également servir de source.
+
+```
+./clickhouse client --host clusterC.us-west-2.aws.clickhouse.cloud --secure --password 'Password123!'
+```
+
+Créez la base de données :
+
+```
+create database db1;
+```
+
+Créez les tables distantes avec remoteSecure() pour vous connecter aux autres clusters.
+Définition de la table du cluster distant A :
+
+```
+CREATE TABLE db1.table1_remote1_main
+(
+    `id` UInt32,
+    `timestamp_column` DateTime,
+    `string_column` String
+) AS remoteSecure('clusterA.us-west-2.aws.clickhouse.cloud:9440', 'db1.table1_remote1', 'default', 'Password123!');
+```
+
+Définition de la table du cluster distant B :
+
+```
+CREATE TABLE db1.table1_remote2_main
+(
+    `id` UInt32,
+    `timestamp_column` DateTime,
+    `string_column` String
+) AS remoteSecure('clusterB.us-east-2.aws.clickhouse.cloud:9440', 'db1.table1_remote2', 'default', 'Password123!')
+```
+
+Créez la Merge table à utiliser pour regrouper les résultats :
+
+```
+create table db1.table1_merge_remote
+(
+  id UInt32,
+  timestamp_column DateTime,
+  string_column String
+)
+engine = Merge('db1', 'table.\_main');
+```
+
+Testez les résultats :
+
+```
+clickhouse-cloud :) select * from db1.table1_merge_remote;
+
+SELECT *
+FROM db1.table1_merge_remote
+
+Query id: 46b6e741-bbd1-47ed-b40e-69ddb6e0c364
+
+┌─id─┬────timestamp_column─┬─string_column─┐
+│  1 │ 2023-09-29 00:01:00 │ a             │
+│  2 │ 2023-09-29 00:02:00 │ b             │
+│  3 │ 2023-09-29 00:03:00 │ c             │
+└────┴─────────────────────┴───────────────┘
+┌─id─┬────timestamp_column─┬─string_column─┐
+│  4 │ 2023-09-29 00:04:00 │ x             │
+│  5 │ 2023-09-29 00:05:00 │ y             │
+│  6 │ 2023-09-29 00:06:00 │ z             │
+└────┴─────────────────────┴───────────────┘
+
+6 rows in set. Elapsed: 0.275 sec. 
+```
+
+Pour plus d&#39;informations :
+
+* [Fonction de table remote](/fr/reference/functions/table-functions/remote)
+* [Moteur de table Merge](/fr/reference/engines/table-engines/special/merge)

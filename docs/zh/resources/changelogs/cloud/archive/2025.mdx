@@ -1,0 +1,436 @@
+---
+slug: /whats-new/cloud/2025
+sidebarTitle: '2025'
+title: 'Cloud 更新日志 - 2025'
+description: 'ClickHouse Cloud 2025 年更新日志'
+doc_type: 'changelog'
+keywords: ['更新日志', '发布说明', '更新', '新功能', 'Cloud 变更', '2025']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="december-19-2025">
+  ## 2025 年 12 月 19 日
+</div>
+
+* AWS ap-south-1 现已支持创建符合 PCI 标准的服务。
+* **统一用户身份私有预览**
+  有意在控制台中管理数据库用户的客户，现在可以为 SQL 控制台启用一种新的身份验证方法。
+  这样，客户就可以在我们继续将数据库用户管理功能引入控制台的同时，试用这种新的身份验证方法。
+* **S3 ClickPipes 现已支持无序模式**：
+  客户现在可以按任意顺序将数据从 Amazon S3 摄取到 ClickHouse Cloud 中，以支持事件驱动分析。
+  文件不再需要按词典序排列即可被消费。更多详情请参阅这篇[公告博文](https://clickhouse.com/blog/clickpipes-s3-unordered-mode)。
+* Fivetran 连接器最近已进入 Beta 阶段。如果您正在使用 Fivetran，并希望将 ClickHouse 设置为目标端，请查看这些[文档](https://fivetran.com/docs/destinations/clickhouse/setup-guide)。
+
+<div id="december-12-2025">
+  ## 2025 年 12 月 12 日
+</div>
+
+* **SAML 单点登录自助设置**
+
+  Enterprise 客户现在无需提交支持工单，即可在控制台中完成 SAML 设置。
+  此外，SAML 客户还可以设置默认角色，将其分配给通过其身份提供商添加的新用户，并设置自定义会话超时。
+  如需了解更多信息，请参阅我们的[文档](/zh/products/cloud/guides/security/cloud-access-management/saml-sso-setup)。
+* **Azure 中的最大副本大小和扩缩容限制**
+
+  现在，客户可在除 `eastus2` 外的所有 Azure 区域将最大副本大小设为 356 GiB；而在 `eastus2` 中，可用的最大副本大小为 120 GiB。
+
+<div id="november-21-2025">
+  ## 2025 年 11 月 21 日
+</div>
+
+* ClickHouse Cloud 现已在 **AWS Israel (Tel Aviv) — il-central-1** 区域上线
+* 改进了市场引导流程，使 ClickHouse 组织可以设置为通过市场按使用量付费订阅或私有报价计费。
+
+<div id="november-14-2025">
+  ## 2025 年 11 月 14 日
+</div>
+
+* 我们很高兴地宣布，**ClickHouse Cloud** 现已在**另外两个公共区域**上线：
+
+  * **GCP Japan (asia-northeast1)**
+  * **AWS Seoul (Asia Pacific, ap-northeast-2)** — **ClickPipes** 现也支持该区域
+
+  这些区域此前为**私有区域**，现已**向所有用户开放**。
+* Terraform 和 API 现已支持为服务添加标签，以及按标签过滤服务。
+
+<div id="november-7-2025">
+  ## 2025 年 11 月 7 日
+</div>
+
+* ClickHouse Cloud 控制台现已支持以 1 vCPU、4 GiB 为增量配置副本大小。
+  无论是在创建新 service 时，还是在 settings 页面设置最小和最大副本大小时，这些选项都可用。
+* 自定义硬件 profile (适用于 Enterprise 层级) 现已支持 idling。
+* ClickHouse Cloud 现已通过 AWS Marketplace 提供更简化的购买体验，并分别提供 [按使用量付费](https://aws.amazon.com/marketplace/pp/prodview-p4gwofrqpkltu?sr=0-2\&ref_=beagle\&applicationId=AWSMPContessa) 和 [承诺消费合同](https://aws.amazon.com/marketplace/pp/prodview-4qyeihstyym2s?sr=0-3\&ref_=beagle\&applicationId=AWSMPContessa) 两种选项。
+* ClickHouse Cloud 中的 ClickStack 用户现已可使用告警功能。
+  现在，你可以直接在 HyperDX UI 中创建和管理日志、指标和链路追踪的告警，无需额外设置、基础设施或 service，也无需 config。告警可与 Slack、PagerDuty 等集成。
+  更多信息，请参阅[告警文档](/zh/clickstack/features/alerts)。
+
+<div id="october-17-2025">
+  ## 2025 年 10 月 17 日
+</div>
+
+* **服务监控 - 资源利用率仪表板**
+  CPU 利用率和内存利用率指标的显示方式将由显示平均值改为显示特定时间段内的最大利用率指标，以便更好地发现资源配置不足的实例。
+  此外，CPU 利用率指标还将显示 Kubernetes 层级的 CPU 利用率指标，这与 ClickHouse Cloud 自动扩缩器使用的指标更接近。
+* **外部存储桶**
+  ClickHouse Cloud 现已支持将备份直接导出到您自己的云服务提供商账号。
+  连接您的外部存储桶——AWS S3、Google Cloud Storage 或 Azure Blob 存储——即可自主管理备份。
+
+<div id="august-29-2025">
+  ## 2025 年 8 月 29 日
+</div>
+
+* [ClickHouse Cloud Azure Private Link](/zh/products/cloud/guides/security/connectivity/private-networking/azure-privatelink) 已将用于资源标识的过滤器从 Resource GUID 切换为 Resource ID。您仍可使用旧版的 Resource GUID，现有配置仍然兼容，但我们建议改用 Resource ID 过滤器。有关迁移的详细信息，请参阅 Azure Private Link 的[文档](/zh/products/cloud/guides/security/connectivity/private-networking/azure-privatelink#obtaining-private-endpoint-resourceid)。
+
+<div id="august-22-2025">
+  ## 2025年8月22日
+</div>
+
+* **适用于 AWS Glue 的 ClickHouse 连接器**
+  现在，您可以使用在 [AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-eqvmuopqzdg7s) 上提供的官方[适用于 AWS Glue 的 ClickHouse 连接器](/zh/integrations/connectors/data-ingestion/AWS/glue)。该连接器利用 AWS Glue 基于 Apache
+  Spark 的 serverless 引擎，在 ClickHouse 与其他数据源之间执行提取、转换和加载。请参阅这篇公告[博文](http://clickhouse.com/blog/clickhouse-connector-aws-glue)快速上手，了解如何创建表，以及如何在 ClickHouse 和 Spark 之间写入和读取数据。
+* **服务最小副本数变更**
+  已扩容的服务现在可以[缩容](/zh/products/cloud/features/autoscaling/overview)至仅使用单个副本 (此前最少为 2 个副本) 。注意：单副本服务的可用性较低，不建议在生产环境中使用。
+* 默认情况下，ClickHouse Cloud 将开始向管理员角色发送与服务扩缩容和服务版本升级相关的通知。您可以在通知设置中调整相关通知偏好。
+
+<div id="august-13-2025">
+  ## 2025 年 8 月 13 日
+</div>
+
+* **ClickPipes for MongoDB CDC 现已开放私有预览**
+  现在，只需点几下，即可使用 ClickPipes 将数据从 MongoDB 复制到 ClickHouse Cloud，从而实现
+  实时分析，无需借助外部 ETL 工具。该连接器支持持续
+  复制和一次性迁移，并兼容 MongoDB Atlas 和自托管 MongoDB
+  部署。阅读这篇[博客文章](https://clickhouse.com/blog/mongodb-cdc-clickhouse-preview)，了解 MongoDB CDC 连接器的整体情况，并[在此注册抢先体验](https://clickhouse.com/cloud/clickpipes/mongodb-cdc-connector)！
+
+<div id="august-08-2025">
+  ## 2025 年 8 月 8 日
+</div>
+
+* **通知**：当您的服务开始升级到新的 ClickHouse 版本时，您现在会收到一条 UI 通知。您还可以通过通知中心添加额外的电子邮件和 Slack 通知。
+* **ClickPipes**：ClickHouse Terraform provider 现已支持 Azure Blob 存储 (ABS) ClickPipes。有关如何以编程方式创建 ABS ClickPipe 的示例，请参阅该 provider 的文档。
+  * [缺陷修复] 对象存储 ClickPipes 在向使用 Null 引擎的目标表写入时，现在会在 UI 中报告“总记录数”和“已摄取数据”指标。
+  * [缺陷修复] 此前，UI 中指标的“时间段”选择器无论所选时间段为何，默认都会显示为“24 小时”。此问题现已修复，UI 现在会根据所选时间段正确更新图表。
+* **跨区域 Private Link (AWS)** 现已正式可用。支持区域列表请参阅[文档](/zh/products/cloud/guides/security/connectivity/private-networking/aws-privatelink)。
+
+<div id="july-31-2025">
+  ## 2025年7月31日
+</div>
+
+**ClickPipes 现已支持垂直扩缩容**
+
+[流式 ClickPipes 现已支持垂直扩缩容](https://clickhouse.com/blog/clickpipes-flexible-scaling-monitoring)。
+除了副本数量 (横向扩缩容) 外，此功能还允许您控制每个副本的规格。每个 ClickPipe 的详情页面现在
+还会显示各副本的 CPU 和内存利用率，帮助您更好地
+了解工作负载，并更有把握地规划扩缩容操作。
+
+<div id="july-24-2025">
+  ## 2025 年 7 月 24 日
+</div>
+
+**ClickPipes 的 MySQL CDC 连接器现已开放 Public Beta**
+
+ClickPipes 中的 MySQL CDC 连接器现已面向广大用户开放 Public Beta。只需点击几下，
+您就可以开始将 MySQL (或 MariaDB) 数据直接实时复制到 ClickHouse Cloud，
+且无需任何外部依赖。阅读这篇[博文](https://clickhouse.com/blog/mysql-cdc-connector-clickpipes-beta)
+了解该连接器的概况，并按照[快速入门](/zh/integrations/clickpipes/mysql/index)
+开始使用。
+
+<div id="june-11-2025">
+  ## 2025 年 7 月 11 日
+</div>
+
+* 新服务现已将数据库和表元数据存储在统一的 **SharedCatalog** 中。
+  这是一种新的协调与对象生命周期模型，可实现：
+
+  * **Cloud 规模的 DDL**，即使在高并发下也能支持
+  * **更具弹性的删除能力和新的 DDL 操作**
+  * **更快的启动和唤醒**，因为无状态节点现在启动时不再依赖磁盘
+  * **跨原生格式和开放格式的无状态计算**，包括 Iceberg 和 Delta Lake
+
+  在我们的[博客](https://clickhouse.com/blog/clickhouse-cloud-stateless-compute)中了解 SharedCatalog 的更多信息
+
+* 我们现在支持在 GCP `europe-west4` 中启动符合 HIPAA 要求的服务
+
+<div id="june-27-2025">
+  ## 2025 年 6 月 27 日
+</div>
+
+* 我们现已正式支持用于管理数据库特权的 Terraform provider，
+  也兼容自管理部署。更多信息请参阅我们的
+  [博客](https://clickhouse.com/blog/new-terraform-provider-manage-clickhouse-database-users-roles-and-privileges-with-code)
+  和 [文档](https://registry.terraform.io/providers/ClickHouse/clickhousedbops/latest/docs)。
+* Enterprise 层级服务现可选择加入[慢速发布渠道](/zh/products/cloud/features/admin-features/upgrades#slow-release-channel-deferred-upgrades)，将
+  升级推迟到常规发布两周后进行，从而留出更多时间用于
+  测试。
+
+<div id="june-13-2025">
+  ## 2025 年 6 月 13 日
+</div>
+
+* 我们很高兴地宣布，ClickHouse Cloud 仪表盘现已正式发布。借助仪表盘，您可以将查询结果可视化，通过过滤器和查询参数与数据交互，并管理共享设置。
+* API 密钥 IP 过滤器：我们为您与 ClickHouse Cloud 的交互新增了一层保护。在生成 API 密钥时，您可以设置 IP 允许列表，以限制该 API 密钥可从哪些位置使用。有关详细信息，请参阅[文档](/zh/products/cloud/guides/security/connectivity/setting-ip-filters)。
+
+<div id="may-30-2025">
+  ## 2025 年 5 月 30 日
+</div>
+
+* 我们很高兴地宣布，**ClickPipes for Postgres CDC**
+  已在 ClickHouse Cloud 中正式发布。现在只需点击几下，您就可以将 Postgres
+  数据库复制到 ClickHouse，并实现极速的实时分析。该连接器可提供
+  更快的数据同步、低至数秒的延迟、自动 schema 变更、
+  全面的安全连接等更多能力。更多信息请参阅
+  [博客](https://clickhouse.com/blog/postgres-cdc-connector-clickpipes-ga)。如需
+  开始使用，请参阅[此处](/zh/integrations/clickpipes/postgres/index)的说明。
+
+* SQL 控制台仪表盘新增了以下改进：
+  * 共享：您可以与团队成员共享仪表盘。支持四个访问级别，既可在全局范围内调整，也可按用户单独调整：
+    * *写入权限*：添加/编辑可视化内容、调整刷新设置、通过过滤器与仪表盘交互。
+    * *所有者*：共享仪表盘、删除仪表盘，以及拥有“写入权限”的用户具备的所有其他权限。
+    * *只读权限*：查看仪表盘并通过过滤器与之交互
+    * *无权限*：无法查看仪表盘
+  * 对于已创建的现有仪表盘，组织管理员现在可以将其指定给自己作为所有者。
+  * 您现在可以在查询视图中，将 SQL 控制台中的表或图表添加到仪表盘。
+
+<Image img="/images/cloud/reference/may-30-dashboards.webp" size="md" alt="仪表盘改进" border />
+
+* 我们正在为 AWS 和 GCP 的[Distributed Cache](https://clickhouse.com/cloud/distributed-cache-waitlist)招募预览版参与者。
+  更多内容请参阅[博客](https://clickhouse.com/blog/building-a-distributed-cache-for-s3)。
+
+<div id="may-16-2025">
+  ## 2025 年 5 月 16 日
+</div>
+
+* 新增了资源利用率仪表板，用于查看 ClickHouse Cloud 中服务的资源使用情况。以下指标
+  会从系统表中抓取，并显示在该仪表板上：
+  * 内存和 CPU：`CGroupMemoryTotal` (已分配内存) 、`CGroupMaxCPU` (已分配 CPU) 、
+    `MemoryResident` (已用内存) 以及 `ProfileEvent_OSCPUVirtualTimeMicroseconds` (已用 CPU) 的图表
+  * 数据传输：显示 ClickHouse Cloud 入站和出站数据传输的图表。更多信息请参阅[此处](/zh/products/cloud/reference/billing/network-data-transfer)。
+* 我们很高兴宣布推出全新的 ClickHouse Cloud Prometheus/Grafana mix-in，
+  旨在简化对 ClickHouse Cloud 服务的监控。
+  该 mix-in 使用我们兼容 Prometheus 的 API 端点，可将
+  ClickHouse 指标无缝集成到您现有的 Prometheus 和 Grafana 配置中。它包含
+  一个预先配置好的仪表板，让您能够实时了解服务的健康状态
+  和性能。更多信息请参阅发布[博客](https://clickhouse.com/blog/monitor-with-new-prometheus-grafana-mix-in)。
+
+<div id="april-18-2025">
+  ## 2025 年 4 月 18 日
+</div>
+
+* 推出了新的 **Member** 组织级角色，以及两个新的服务级角色：
+  **Service Admin** 和 **Service Read Only**。
+  **Member** 是默认分配给 SAML 单点登录用户的组织级角色，
+  仅提供登录和更新 profile 的能力。一个或多个服务的 **Service Admin**
+  和 **Service Read Only** 角色可分配给拥有 **Member**、**Developer**
+  或 **Billing Admin** 角色的用户。更多信息请参见
+  [&quot;ClickHouse Cloud 中的 access control&quot;](/zh/products/cloud/guides/security/cloud-access-management/manage-database-users)
+* ClickHouse Cloud 现已在以下区域为 **Enterprise** 客户提供 **HIPAA** 和 **PCI**
+  服务：AWS eu-central-1、AWS eu-west-2、AWS us-east-2。
+* 推出了 **面向用户的 ClickPipes 通知**。此功能会通过电子邮件、ClickHouse Cloud UI
+  和 Slack 在 ClickPipes 发生故障时自动发送告警。电子邮件和 UI 通知默认启用，
+  并且可按管道单独配置。对于 **Postgres CDC ClickPipes**，告警还涵盖
+  replication slot 阈值 (可在 **Settings** 选项卡中配置) 、特定 error
+  类型，以及用于解决故障的自助操作步骤。
+* **MySQL CDC 私有预览** 现已开放。这使客户只需点击几下即可将 MySQL
+  database 复制到 ClickHouse Cloud，从而实现快速分析，并免去使用外部 ETL 工具的需要。
+  该 connector 同时支持持续复制和一次性迁移，无论 MySQL 部署在云上 (RDS、
+  Aurora、Cloud SQL、Azure 等) 还是本地环境。你可以通过
+  [点击此链接](https://clickhouse.com/cloud/clickpipes/mysql-cdc-connector) 注册私有预览。
+* 推出了 **适用于 ClickPipes 的 AWS PrivateLink**。你可以使用 AWS PrivateLink
+  在 VPC、AWS 服务、本地系统与 ClickHouse Cloud 之间建立安全连接。
+  这样在从 AWS 上的 Postgres、MySQL 和 MSK 等来源移动数据时，
+  无需将流量暴露在公共互联网之上。它还支持通过 VPC service endpoints 实现跨区域访问。
+  现在可通过 ClickPipes [完全自助完成](/zh/integrations/clickpipes/aws-privatelink)
+  PrivateLink 连接设置。
+
+<div id="april-4-2025">
+  ## 2025 年 4 月 4 日
+</div>
+
+* ClickHouse Cloud 的 Slack 通知：除控制台通知和电子邮件通知外，ClickHouse Cloud 现在还支持针对计费、扩缩容和 ClickPipes 事件的 Slack 通知。这些通知通过 ClickHouse Cloud Slack 应用发送。组织管理员可以在通知中心指定接收通知的 Slack 频道，以配置这些通知。
+* 使用 Production 和 Development 服务的用户现在将在账单中看到 ClickPipes 和数据传输的用量费用。
+
+<div id="march-21-2025">
+  ## 2025 年 3 月 21 日
+</div>
+
+* AWS 上的跨区域 Private Link 连接现已进入 Beta。有关
+  设置方法和受支持区域列表的详细信息，请参阅 ClickHouse Cloud Private Link [文档](/zh/products/cloud/guides/security/connectivity/private-networking/aws-privatelink)。
+* AWS 上服务当前可用的最大副本大小现已设为 236 GiB RAM。
+  这有助于提高资源利用效率，同时确保为后台进程
+  预留了资源。
+
+<div id="march-7-2025">
+  ## 2025 年 3 月 7 日
+</div>
+
+* 新增 `UsageCost` API 端点：API 规范现已支持一个用于获取使用情况信息的新端点。
+  这是一个组织级端点，最多可查询 31 天的使用成本。可获取的指标包括
+  Storage、Compute、Data Transfer 和 ClickPipes。详情请参阅
+  [文档](/zh/api-reference/billing/get-organization-usage-costs)。
+* Terraform provider [v2.1.0](https://registry.terraform.io/providers/ClickHouse/clickhouse/2.1.0/docs/resources/service#nestedatt--endpoints_configuration) 版本现已支持启用 MySQL 端点。
+
+<div id="february-21-2025">
+  ## 2025 年 2 月 21 日
+</div>
+
+<div id="clickhouse-byoc-for-aws-ga">
+  ### 适用于 AWS 的 ClickHouse 自备 Cloud (BYOC) 现已正式发布
+</div>
+
+在这种部署模式下，数据平面组件 (计算资源、存储、备份、日志、指标)
+运行在客户的 VPC 中，而控制平面 (Web 访问、API 和计费)
+仍位于 ClickHouse 的 VPC 内。这种设置非常适合需要满足严格数据驻留要求的大型工作负载，
+因为它能够确保所有数据都保留在安全的客户环境中。
+
+* 如需了解更多详情，你可以参阅 BYOC 的[文档](/zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview)
+  或阅读我们的[公告博文](https://clickhouse.com/blog/announcing-general-availability-of-clickhouse-bring-your-own-cloud-on-aws)。
+* [联系我们](https://clickhouse.com/cloud/bring-your-own-cloud)以申请开通权限。
+
+<div id="postgres-cdc-connector-for-clickpipes">
+  ### ClickPipes 的 Postgres CDC 连接器
+</div>
+
+ClickPipes 的 Postgres CDC 连接器可让您将 Postgres 数据库无缝复制到 ClickHouse Cloud。
+
+* 要开始使用，请参阅 ClickPipes Postgres CDC 连接器的[文档](/zh/integrations/clickpipes/postgres/index)。
+* 如需了解更多客户用例和功能，请参阅[产品页面](https://clickhouse.com/cloud/clickpipes/postgres-cdc-connector)和[发布博客](https://clickhouse.com/blog/postgres-cdc-connector-clickpipes-public-beta)。
+
+<div id="pci-compliance-for-clickhouse-cloud-on-aws">
+  ### AWS 上 ClickHouse Cloud 的 PCI 合规
+</div>
+
+ClickHouse Cloud 现已在 **us-east-1** 和 **us-west-2** 区域为 **Enterprise 层级**
+客户提供 **符合 PCI 合规要求的服务**。希望在符合 PCI 合规要求的环境中创建
+服务的用户可联系 [support](https://clickhouse.com/support/program)
+获取帮助。
+
+<div id="tde-and-cmek-on-gcp">
+  ### Google Cloud Platform 上的透明数据加密和客户管理的加密密钥
+</div>
+
+ClickHouse Cloud 现已在 **Google Cloud Platform (GCP)** 上提供对 **透明数据加密 (TDE)** 和 **客户管理的加密密钥 (CMEK)** 的支持。
+
+* 更多信息请参阅这些功能的[文档](/zh/products/cloud/guides/security/cmek#transparent-data-encryption-tde)。
+
+<div id="aws-middle-east-uae-availability">
+  ### AWS Middle East (UAE) 区域可用性
+</div>
+
+ClickHouse Cloud 新增了一个支持区域，现已在
+**AWS Middle East (UAE) me-central-1** 区域上线。
+
+<div id="clickhouse-cloud-guardrails">
+  ### ClickHouse Cloud 防护措施
+</div>
+
+为倡导最佳实践并确保 ClickHouse Cloud 的稳定使用，我们将针对当前使用的
+表、数据库、分区和 parts 数量引入防护措施。
+
+* 详情请参阅文档中的[使用限制](/zh/products/cloud/guides/best-practices/usagelimits)
+  部分。
+* 如果您的服务已超出这些限制，我们将允许其在此基础上再增加 10%。
+  如有任何疑问，请联系 [支持](https://clickhouse.com/support/program)。
+
+<div id="january-27-2025">
+  ## 2025 年 1 月 27 日
+</div>
+
+<div id="changes-to-clickhouse-cloud-tiers">
+  ### ClickHouse Cloud 层级变更
+</div>
+
+我们始终致力于让产品适应客户不断变化的需求。自两年前正式进入 GA 以来，ClickHouse Cloud 已发生了显著演进，我们也由此深入了解了客户如何使用我们的云产品。
+
+我们正在推出新功能，以优化 ClickHouse Cloud 服务针对您的工作负载的规格配置和成本效益。其中包括 **compute-compute separation**、高性能机型以及 **单副本服务**。我们也在持续改进自动扩缩容和托管升级，使其执行过程更加无缝、响应更加迅速。
+
+我们正在新增一个 **新的 Enterprise 层级**，以满足要求最严苛的客户和工作负载的需求，重点提供行业特定的安全与合规功能、对底层硬件和升级的更多控制，以及高级灾难恢复功能。
+
+为支持这些变化，我们正在调整当前的 **Development** 和 **Production** 层级，使其更贴合不断演进的客户群体对我们产品的实际使用方式。我们正在推出 **基础版** 层级，面向测试新想法和新项目的用户；同时推出 **Scale** 层级，对应处理生产工作负载和大规模数据的用户。
+
+您可以在这篇[博客](https://clickhouse.com/blog/evolution-of-clickhouse-cloud-new-features-superior-performance-tailored-offerings)中了解这些以及其他功能变更。现有客户需要采取相应操作以选择[新方案](https://clickhouse.com/pricing)。面向客户的相关通知已通过电子邮件发送给组织管理员。
+
+<div id="warehouses-compute-compute-separation-ga">
+  ### 仓库：Compute-compute separation (GA)
+</div>
+
+Compute-compute separation (也称为“仓库”) 现已正式可用；更多详情请参阅[博客](https://clickhouse.com/blog/introducing-warehouses-compute-compute-separation-in-clickhouse-cloud)和[文档](/zh/products/cloud/features/infrastructure/warehouses)。
+
+<div id="single-replica-services">
+  ### 单副本服务
+</div>
+
+我们正在引入“单副本服务”这一概念：它既可以作为独立形态提供，也可以在仓库中使用。作为独立形态时，单副本服务的规模受限，主要适用于较小的测试工作负载。在仓库中，单副本服务则可以部署为更大规模，并可用于无需大规模高可用性的工作负载，例如可重启的 ETL 作业。
+
+<div id="vertical-auto-scaling-improvements">
+  ### 垂直自动扩缩容改进
+</div>
+
+我们为计算副本引入了一种新的垂直扩缩容机制，称为“Make Before Break” (MBB) 。这种方法会先添加一个或多个新规格的副本，再移除旧副本，从而避免在扩缩容过程中出现容量损失。通过消除移除现有副本与添加新副本之间的时间空档，MBB 让扩缩容过程更加平滑，对业务的影响也更小。它在 scale-up 场景中尤其有用；在这类场景下，较高的资源利用率会触发对额外容量的需求，因为过早移除副本只会进一步加剧资源压力。
+
+<div id="horizontal-scaling-ga">
+  ### 横向扩缩容 (GA)
+</div>
+
+横向扩缩容现已正式可用。您可以通过 API 和 Cloud Console 添加更多副本，以横向扩展服务。请参阅[文档](/zh/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling)了解详情。
+
+<div id="configurable-backups">
+  ### 可配置备份
+</div>
+
+我们现已支持客户将备份导出到自己的云账户；更多信息请参阅[文档](/zh/products/cloud/guides/backups/configurable-backups)。
+
+<div id="managed-upgrade-improvements">
+  ### 托管升级改进
+</div>
+
+安全的托管升级可为用户带来显著价值，让他们能够在数据库不断演进、持续新增功能的同时保持最新状态。通过此次发布，我们在升级过程中采用了“先建后断” (make before break，或 MBB) 方法，进一步降低了对正在运行的工作负载的影响。
+
+<div id="hipaa-support">
+  ### HIPAA 支持
+</div>
+
+我们现已在合规区域支持 HIPAA，包括 AWS `us-east-1`、`us-west-2` 以及 GCP `us-central1`、`us-east1`。希望开通的客户必须签署 Business Associate Agreement (BAA)，并部署到相应区域的合规版本。如需了解有关 HIPAA 的更多信息，请参阅[文档](/zh/products/cloud/reference/security/compliance-overview)。
+
+<div id="scheduled-upgrades">
+  ### 计划升级
+</div>
+
+您可以为服务安排升级时间。此功能仅支持 Enterprise 层级服务。有关计划升级的更多信息，请参阅[文档](/zh/products/cloud/features/admin-features/upgrades)。
+
+<div id="language-client-support-for-complex-types">
+  ### 各语言客户端对复杂类型的支持
+</div>
+
+[Golang](https://github.com/ClickHouse/clickhouse-go/releases/tag/v2.30.1)、[Python](https://github.com/ClickHouse/clickhouse-connect/releases/tag/v0.8.11) 和 [Node.js](https://github.com/ClickHouse/clickhouse-js/releases/tag/1.10.1) 客户端现已支持 Dynamic、Variant 和 JSON 类型。
+
+<div id="dbt-support-for-refreshable-materialized-views">
+  ### DBT 支持可刷新 materialized view
+</div>
+
+DBT 现已在 `1.8.7` 发行版中[支持可刷新 materialized view](https://github.com/ClickHouse/dbt-clickhouse/releases/tag/v1.8.7)。
+
+<div id="jwt-token-support">
+  ### JWT 令牌支持
+</div>
+
+JDBC 驱动 v2、clickhouse-java、[Python](https://github.com/ClickHouse/clickhouse-connect/releases/tag/v0.8.12) 和[ Node.js](https://github.com/ClickHouse/clickhouse-js/releases/tag/1.10.0) 客户端现已支持基于 JWT 的身份验证。
+
+JDBC / Java 将在[ 0.8.0](https://github.com/ClickHouse/clickhouse-java/releases/tag/v0.8.0) 发布时支持该功能 - 预计发布时间待定。
+
+<div id="prometheus-integration-improvements">
+  ### Prometheus 集成改进
+</div>
+
+我们对 Prometheus 集成进行了多项增强：
+
+* **组织级端点**。我们增强了 ClickHouse Cloud 的 Prometheus 集成。除服务级指标外，API 现在还提供了一个用于**组织级指标**的端点。这个新端点会自动收集您组织内所有服务的指标，从而简化将指标导出到 Prometheus collector 的流程。这些指标还可以与 Grafana 和 Datadog 等可视化工具集成，帮助您更全面地了解组织的整体性能。
+
+  此功能现已面向所有用户开放。您可以在[这里](/zh/products/cloud/features/monitoring/prometheus)了解更多详情。
+
+* **过滤指标**。我们已为 ClickHouse Cloud 的 Prometheus 集成新增返回过滤后指标列表的支持。借助此功能，您可以聚焦于对监控服务健康状态至关重要的指标，从而减少响应载荷大小。
+
+  该功能通过 API 中的可选查询参数提供，让您更轻松地优化数据收集，并简化与 Grafana 和 Datadog 等工具的集成。
+
+  过滤指标功能现已面向所有用户开放。您可以在[这里](/zh/products/cloud/features/monitoring/prometheus)了解更多详情。

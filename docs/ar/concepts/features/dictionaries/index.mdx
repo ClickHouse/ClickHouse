@@ -1,0 +1,371 @@
+---
+slug: /dictionary
+title: 'القاموس'
+keywords: ['dictionary', 'dictionaries']
+description: 'يوفّر القاموس تمثيلًا للبيانات بصيغة مفتاح-قيمة لعمليات بحث سريعة.'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يوفّر القاموس في ClickHouse تمثيلاً [بصيغة المفتاح-القيمة](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) للبيانات داخل الذاكرة من [مصادر داخلية وخارجية متنوعة](/ar/reference/statements/create/dictionary/sources/overview#dictionary-sources)، وهو مُحسَّن لتنفيذ استعلامات البحث بزمن كمون منخفض جدًا.
+
+تكون القواميس مفيدة في الحالات التالية:
+
+* تحسين أداء الاستعلامات، خاصةً عند استخدامها مع عمليات `JOIN`
+* إثراء البيانات الواردة لحظيًا من دون إبطاء عملية الإدخال
+
+<Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="حالات استخدام القاموس في ClickHouse" />
+
+<div id="speeding-up-joins-using-a-dictionary">
+  ## تسريع عمليات JOIN باستخدام قاموس
+</div>
+
+يمكن استخدام القواميس لتسريع نوع محدد من `JOIN`: [النوع `LEFT ANY`](/ar/reference/statements/select/join#supported-types-of-join)، حيث يجب أن يتطابق مفتاح الربط مع سمة المفتاح في مخزن المفتاح-القيمة الأساسي.
+
+<Image img="/images/dictionary/dictionary-left-any-join.webp" size="sm" alt="استخدام القاموس مع LEFT ANY JOIN" />
+
+في هذه الحالة، يمكن لـ ClickHouse الاستفادة من القاموس لتنفيذ [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join). وهذه أسرع خوارزمية JOIN في ClickHouse، وتُطبَّق عندما يدعم [محرك الجدول](/ar/reference/engines/table-engines/index) الأساسي للجدول الأيمن طلبات مفتاح-قيمة منخفضة زمن الانتقال. يوفّر ClickHouse ثلاثة محركات جداول تدعم ذلك: [Join](/ar/reference/engines/table-engines/special/join) (وهو في الأساس جدول hash محسوب مسبقًا)، و[EmbeddedRocksDB](/ar/reference/engines/table-engines/integrations/embedded-rocksdb)، و[Dictionary](/ar/reference/engines/table-engines/special/dictionary). سنشرح النهج القائم على القاموس، لكن الآلية نفسها تنطبق على المحركات الثلاثة جميعًا.
+
+تتطلب خوارزمية Direct Join أن يكون الجدول الأيمن مدعومًا بقاموس، بحيث تكون البيانات المراد ربطها من ذلك الجدول موجودة مسبقًا في الذاكرة على هيئة بنية بيانات مفتاح-قيمة منخفضة زمن الانتقال.
+
+<div id="example">
+  ### مثال
+</div>
+
+باستخدام [مجموعة بيانات Stack Overflow](/ar/get-started/sample-datasets/stackoverflow)، لنُجب عن السؤال:
+*ما المنشور الأكثر إثارةً للجدل المتعلق بـ SQL على Hacker News؟*
+
+سنعتبر المنشور مثيرًا للجدل عندما يكون عدد الأصوات المؤيدة والمعارضة فيه متقاربًا. نحسب هذا الفرق المطلق، حيث تعني القيمة الأقرب إلى 0 جدلًا أكبر. وسنفترض أيضًا أن المنشور يجب أن يكون قد حصل على 10 أصوات مؤيدة و10 أصوات معارضة على الأقل — فالمنشورات التي لا يصوّت عليها الناس كثيرًا لا تكون مثيرةً للجدل عادةً.
+
+بعد تطبيع بياناتنا، يتطلب هذا الاستعلام حاليًا استخدام `JOIN` مع الجدولين `posts` و`votes`:
+
+```sql
+WITH PostIds AS
+(
+         SELECT Id
+         FROM posts
+         WHERE Title ILIKE '%SQL%'
+)
+SELECT
+    Id,
+    Title,
+    UpVotes,
+    DownVotes,
+    abs(UpVotes - DownVotes) AS Controversial_ratio
+FROM posts
+INNER JOIN
+(
+    SELECT
+         PostId,
+         countIf(VoteTypeId = 2) AS UpVotes,
+         countIf(VoteTypeId = 3) AS DownVotes
+    FROM votes
+    WHERE PostId IN (PostIds)
+    GROUP BY PostId
+    HAVING (UpVotes > 10) AND (DownVotes > 10)
+) AS votes ON posts.Id = votes.PostId
+WHERE Id IN (PostIds)
+ORDER BY Controversial_ratio ASC
+LIMIT 1
+```
+
+```response
+Row 1:
+──────
+Id:                     25372161
+Title:                  How to add exception handling to SqlDataSource.UpdateCommand
+UpVotes:                13
+DownVotes:              13
+Controversial_ratio: 0
+
+1 rows in set. Elapsed: 1.283 sec. Processed 418.44 million rows, 7.23 GB (326.07 million rows/s., 5.63 GB/s.)
+Peak memory usage: 3.18 GiB.
+```
+
+> **استخدم مجموعة أصغر على الجانب الأيمن من `JOIN`**: قد يبدو هذا الاستعلام أكثر إسهابًا مما يلزم، إذ يجري تطبيق عامل التصفية على `PostId`s في كلٍّ من الاستعلام الخارجي والاستعلام الفرعي. وهذا تحسين للأداء يضمن سرعة زمن استجابة الاستعلام. ولتحقيق أفضل أداء، احرص دائمًا على أن يكون الجانب الأيمن من `JOIN` هو المجموعة الأصغر، وأن يكون صغيرًا قدر الإمكان. وللحصول على نصائح حول تحسين أداء `JOIN` وفهم الخوارزميات المتاحة، نوصي [بهذه السلسلة من مقالات المدوّنة](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1).
+
+على الرغم من أن هذا الاستعلام سريع، فإنه يتطلب منا كتابة `JOIN` بعناية لتحقيق أداء جيد. ومن الناحية المثالية، سنكتفي بتصفية المنشورات إلى تلك التي تحتوي على &quot;SQL&quot;، قبل النظر في عدد `UpVote` و`DownVote` للمجموعة الفرعية من المدوّنات لحساب المقياس.
+
+<div id="applying-a-dictionary">
+  #### استخدام قاموس
+</div>
+
+لتوضيح هذه المفاهيم، نستخدم قاموسًا لبيانات التصويت لدينا. وبما أن القواميس تُحفَظ عادةً في الذاكرة (ويُعَد [ssd&#95;cache](/ar/reference/statements/create/dictionary/layouts/ssd-cache) الاستثناء)، ينبغي أن تكون على دراية بحجم البيانات. للتأكد من حجم جدول `votes` لدينا:
+
+```sql
+SELECT table,
+        formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+        formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+        round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE table IN ('votes')
+GROUP BY table
+```
+
+```response
+┌─table───────────┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+│ votes           │ 1.25 GiB        │ 3.79 GiB          │  3.04 │
+└─────────────────┴─────────────────┴───────────────────┴───────┘
+```
+
+سيُخزَّن البيانات بشكل غير مضغوط في قاموسنا، لذا نحتاج إلى 4 جيجابايت على الأقل من الذاكرة إذا أردنا تخزين جميع الأعمدة (ولن نفعل ذلك) في قاموس. وسيتم تكرار القاموس عبر العنقود، لذا يجب حجز هذه الكمية من الذاكرة *لكل عقدة*.
+
+> في المثال أدناه، تأتي بيانات قاموسنا من جدول في ClickHouse. ومع أن هذا يمثّل المصدر الأكثر شيوعًا للقواميس، فإن [عددًا من المصادر](/ar/reference/statements/create/dictionary/sources/overview#dictionary-sources) الأخرى مدعوم أيضًا، بما في ذلك الملفات وHTTP وقواعد البيانات مثل [Postgres](/ar/reference/statements/create/dictionary/sources/postgresql). وكما سنوضّح، يمكن تحديث القواميس تلقائيًا، مما يوفّر طريقة مثالية لضمان إتاحة مجموعات البيانات الصغيرة المعرّضة لتغييرات متكررة لاستخدامها في direct joins.
+
+يتطلّب قاموسنا مفتاحًا أساسيًا تُجرى على أساسه عمليات lookup. وهذا مماثل من حيث المفهوم للمفتاح الأساسي في قواعد البيانات المعاملاتية، ويجب أن يكون فريدًا. يتطلّب الاستعلام أعلاه إجراء lookup على مفتاح الربط `PostId`. ويجب بدوره ملء القاموس بإجمالي الأصوات المؤيدة والمعارضة لكل `PostId` من جدول `votes` الخاص بنا. إليك الاستعلام للحصول على بيانات هذا القاموس:
+
+```sql
+SELECT PostId,
+   countIf(VoteTypeId = 2) AS UpVotes,
+   countIf(VoteTypeId = 3) AS DownVotes
+FROM votes
+GROUP BY PostId
+```
+
+يتطلب إنشاء القاموس لدينا عبارة DDL التالية — لاحظ استخدام الاستعلام الوارد أعلاه:
+
+```sql
+CREATE DICTIONARY votes_dict
+(
+  `PostId` UInt64,
+  `UpVotes` UInt32,
+  `DownVotes` UInt32
+)
+PRIMARY KEY PostId
+SOURCE(CLICKHOUSE(QUERY 'SELECT PostId, countIf(VoteTypeId = 2) AS UpVotes, countIf(VoteTypeId = 3) AS DownVotes FROM votes GROUP BY PostId'))
+LIFETIME(MIN 600 MAX 900)
+LAYOUT(HASHED())
+```
+
+```response
+0 rows in set. Elapsed: 36.063 sec.
+```
+
+> في بيئات OSS المُدارة ذاتيًا، يجب تنفيذ الأمر أعلاه على جميع العُقد. في ClickHouse Cloud، سيُنسخ القاموس تلقائيًا إلى جميع العُقد. نُفِّذ ما سبق على عقدة في ClickHouse Cloud مزوّدة بذاكرة RAM بسعة 64GB، واستغرق التحميل 36 ثانية.
+
+لتأكيد مقدار الذاكرة التي يستهلكها القاموس:
+
+```sql
+SELECT formatReadableSize(bytes_allocated) AS size
+FROM system.dictionaries
+WHERE name = 'votes_dict'
+```
+
+```response
+┌─size─────┐
+│ 4.00 GiB │
+└──────────┘
+```
+
+يمكن الآن استرجاع الأصوات الإيجابية والسلبية لـ `PostId` محدد باستخدام دالة `dictGet` بسيطة. في ما يلي نسترجع القيم الخاصة بالمنشور `11227902`:
+
+```sql
+SELECT dictGet('votes_dict', ('UpVotes', 'DownVotes'), '11227902') AS votes
+```
+
+```response
+┌─votes──────┐
+│ (34999,32) │
+└────────────┘
+```
+
+وباستخدام ذلك في استعلامنا السابق، يمكننا الاستغناء عن JOIN:
+
+```sql
+WITH PostIds AS
+(
+        SELECT Id
+        FROM posts
+        WHERE Title ILIKE '%SQL%'
+)
+SELECT Id, Title,
+        dictGet('votes_dict', 'UpVotes', Id) AS UpVotes,
+        dictGet('votes_dict', 'DownVotes', Id) AS DownVotes,
+        abs(UpVotes - DownVotes) AS Controversial_ratio
+FROM posts
+WHERE (Id IN (PostIds)) AND (UpVotes > 10) AND (DownVotes > 10)
+ORDER BY Controversial_ratio ASC
+LIMIT 3
+```
+
+```response
+3 rows in set. Elapsed: 0.551 sec. Processed 119.64 million rows, 3.29 GB (216.96 million rows/s., 5.97 GB/s.)
+Peak memory usage: 552.26 MiB.
+```
+
+هذا الاستعلام ليس أبسط بكثير فحسب، بل أسرع أيضًا بأكثر من الضعف! ويمكن تحسينه أكثر من ذلك من خلال تحميل المنشورات التي تضم أكثر من 10 أصوات تأييد ومعارضة فقط إلى القاموس، والاحتفاظ فقط بقيمة الجدل المحتسَبة مسبقًا.
+
+<div id="query-time-enrichment">
+  ## الإثراء وقت تنفيذ الاستعلام
+</div>
+
+يمكن استخدام القواميس للبحث عن القيم وقت تنفيذ الاستعلام. ويمكن إرجاع هذه القيم في النتائج أو استخدامها في عمليات التجميع. لنفترض أننا ننشئ قاموس لربط معرّفات المستخدمين بمواقعهم:
+
+```sql
+CREATE DICTIONARY users_dict
+(
+  `Id` Int32,
+  `Location` String
+)
+PRIMARY KEY Id
+SOURCE(CLICKHOUSE(QUERY 'SELECT Id, Location FROM stackoverflow.users'))
+LIFETIME(MIN 600 MAX 900)
+LAYOUT(HASHED())
+```
+
+يمكننا استخدام هذا القاموس لإثراء نتائج المنشورات:
+
+```sql
+SELECT
+        Id,
+        Title,
+        dictGet('users_dict', 'Location', CAST(OwnerUserId, 'UInt64')) AS location
+FROM posts
+WHERE Title ILIKE '%clickhouse%'
+LIMIT 5
+FORMAT PrettyCompactMonoBlock
+```
+
+```response
+┌───────Id─┬─Title─────────────────────────────────────────────────────────┬─Location──────────────┐
+│ 52296928 │ Comparison between two Strings in ClickHouse                  │ Spain                 │
+│ 52345137 │ How to use a file to migrate data from mysql to a clickhouse? │ 中国江苏省Nanjing Shi   │
+│ 61452077 │ How to change PARTITION in clickhouse                         │ Guangzhou, 广东省中国   │
+│ 55608325 │ Clickhouse select last record without max() on all table      │ Moscow, Russia        │
+│ 55758594 │ ClickHouse create temporary table                             │ Perm', Russia         │
+└──────────┴───────────────────────────────────────────────────────────────┴───────────────────────┘
+
+5 rows in set. Elapsed: 0.033 sec. Processed 4.25 million rows, 82.84 MB (130.62 million rows/s., 2.55 GB/s.)
+Peak memory usage: 249.32 MiB.
+```
+
+على غرار مثال join السابق، يمكننا استخدام القاموس نفسه لتحديد مصدر معظم المنشورات بكفاءة:
+
+```sql
+SELECT
+        dictGet('users_dict', 'Location', CAST(OwnerUserId, 'UInt64')) AS location,
+        count() AS c
+FROM posts
+WHERE location != ''
+GROUP BY location
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─location───────────────┬──────c─┐
+│ India                  │ 787814 │
+│ Germany                │ 685347 │
+│ United States          │ 595818 │
+│ London, United Kingdom │ 538738 │
+│ United Kingdom         │ 537699 │
+└────────────────────────┴────────┘
+
+5 rows in set. Elapsed: 0.763 sec. Processed 59.82 million rows, 239.28 MB (78.40 million rows/s., 313.60 MB/s.)
+Peak memory usage: 248.84 MiB.
+```
+
+<div id="index-time-enrichment">
+  ## الإثراء وقت الفهرسة
+</div>
+
+في المثال أعلاه، استخدمنا قاموسًا وقت الاستعلام لتجنّب عملية join. ويمكن أيضًا استخدام القواميس لإثراء الصفوف وقت الإدراج. ويكون هذا مناسبًا عادةً إذا كانت قيمة الإثراء لا تتغير وكانت موجودة في مصدر خارجي يمكن استخدامه لتعبئة القاموس. في هذه الحالة، يؤدّي إثراء الصف وقت الإدراج إلى تجنّب عملية البحث في القاموس وقت الاستعلام.
+
+لنفترض أن `Location` الخاص بمستخدم في Stack Overflow لا يتغير أبدًا (مع أنه يتغير في الواقع) — وتحديدًا العمود `Location` في الجدول `users`. ولنفترض أننا نريد تنفيذ استعلام تحليلي على جدول `posts` حسب الموقع. ويحتوي هذا الجدول على `UserId`.
+
+يوفّر القاموس ربطًا بين معرّف المستخدم والموقع، ويستند إلى الجدول `users`:
+
+```sql
+CREATE DICTIONARY users_dict
+(
+    `Id` UInt64,
+    `Location` String
+)
+PRIMARY KEY Id
+SOURCE(CLICKHOUSE(QUERY 'SELECT Id, Location FROM users WHERE Id >= 0'))
+LIFETIME(MIN 600 MAX 900)
+LAYOUT(HASHED())
+```
+
+> نستبعد المستخدمين ذوي `Id < 0`، ما يتيح لنا استخدام نوع القاموس `Hashed`. والمستخدمون الذين لديهم `Id < 0` هم مستخدمو النظام.
+
+وللاستفادة من هذا القاموس أثناء الإدراج في جدول posts، نحتاج إلى تعديل المخطط:
+
+```sql
+CREATE TABLE posts_with_location
+(
+    `Id` UInt32,
+    `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+     ...
+    `Location` MATERIALIZED dictGet(users_dict, 'Location', OwnerUserId::'UInt64')
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
+```
+
+في المثال أعلاه، تم تعريف `Location` كعمود `MATERIALIZED`. وهذا يعني أنه يمكن تمرير القيمة كجزء من استعلام `INSERT`، وسيتم احتسابها دائمًا.
+
+> يدعم ClickHouse أيضًا [أعمدة `DEFAULT`](/ar/reference/statements/create/table#default_values) (حيث يمكن إدراج القيمة أو احتسابها إذا لم يتم توفيرها).
+
+لملء الجدول بالبيانات، يمكننا استخدام `INSERT INTO SELECT` المعتاد من S3:
+
+```sql
+INSERT INTO posts_with_location SELECT Id, PostTypeId::UInt8, AcceptedAnswerId, CreationDate, Score, ViewCount, Body, OwnerUserId, OwnerDisplayName, LastEditorUserId, LastEditorDisplayName, LastEditDate, LastActivityDate, Title, Tags, AnswerCount, CommentCount, FavoriteCount, ContentLicense, ParentId, CommunityOwnedDate, ClosedDate FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 36.830 sec. Processed 238.98 million rows, 2.64 GB (6.49 million rows/s., 71.79 MB/s.)
+```
+
+يمكننا الآن الحصول على اسم الموقع الجغرافي الذي تأتي منه معظم المشاركات:
+
+```sql
+SELECT Location, count() AS c
+FROM posts_with_location
+WHERE Location != ''
+GROUP BY Location
+ORDER BY c DESC
+LIMIT 4
+```
+
+```response
+┌─Location───────────────┬──────c─┐
+│ India                  │ 787814 │
+│ Germany                │ 685347 │
+│ United States          │ 595818 │
+│ London, United Kingdom │ 538738 │
+└────────────────────────┴────────┘
+
+4 rows in set. Elapsed: 0.142 sec. Processed 59.82 million rows, 1.08 GB (420.73 million rows/s., 7.60 GB/s.)
+Peak memory usage: 666.82 MiB.
+```
+
+<div id="advanced-dictionary-topics">
+  ## موضوعات متقدمة عن القواميس
+</div>
+
+للاطلاع على إرشادات حول اختيار بُنى القواميس، ومتى تُستخدَم القواميس بدلًا من عبارات JOIN، وكيفية مراقبة استخدامها، راجع [أفضل ممارسات القواميس](/ar/concepts/features/dictionaries/best-practices).
+
+<div id="refreshing-dictionaries">
+  ### تحديث القواميس
+</div>
+
+لقد حدّدنا قيمة `LIFETIME` لـ قاموس على هيئة `MIN 600 MAX 900`. تمثل `LIFETIME` فترة تحديث الـ قاموس، وتؤدي القيم هنا إلى إعادة تحميله دوريًا على فترات عشوائية بين 600 و900 ثانية. ويكون هذا التباعد العشوائي ضروريًا لتوزيع الحمل على dictionary source عند التحديث عبر عدد كبير من الخوادم. أثناء التحديث، تظل الاستعلامات على الإصدار القديم من الـ قاموس ممكنة، ولا تُحجب الاستعلامات إلا أثناء initial load. لاحظ أن تعيين `(LIFETIME(0))` يمنع تحديث القواميس.
+يمكن أيضًا فرض إعادة تحميل القواميس باستخدام الأمر `SYSTEM RELOAD DICTIONARY`.
+
+بالنسبة إلى مصادر قواعد البيانات مثل ClickHouse وPostgres، يمكنك إعداد query لتحديث القواميس فقط إذا كانت قد تغيّرت فعلًا (ويحدد ذلك ردّ الـ query)، بدلًا من التحديث على فترات دورية. يمكن العثور على مزيد من التفاصيل [هنا](/ar/reference/statements/create/dictionary/lifetime).
+
+<div id="other-dictionary-types">
+  ### أنواع القواميس الأخرى
+</div>
+
+يدعم ClickHouse أيضًا قواميس [هرمية](/ar/reference/statements/create/dictionary/layouts/hierarchical) و[Polygon](/ar/reference/statements/create/dictionary/layouts/polygon) و[التعبير النمطي](/ar/reference/statements/create/dictionary/layouts/regexp-tree).
+
+<div id="more-reading">
+  ### للمزيد من القراءة
+</div>
+
+* [أفضل ممارسات القواميس](/ar/concepts/features/dictionaries/best-practices) — اختيار البنية، القواميس مقابل JOINs، المراقبة
+* [استخدام القواميس لتسريع الاستعلامات](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)
+* [التهيئة المتقدمة للقواميس](/ar/reference/statements/create/dictionary)

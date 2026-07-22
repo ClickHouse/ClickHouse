@@ -1,0 +1,52 @@
+---
+title: 'Resincronizar un ClickPipe de base de datos'
+description: 'Guía para resincronizar un ClickPipe de base de datos'
+slug: /integrations/clickpipes/mongodb/resync
+sidebarTitle: 'Resincronizar un ClickPipe'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'ingestión de datos', 'sincronización en tiempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<div id="what-mongodb-resync-do">
+  ### ¿Qué hace Resync?
+</div>
+
+Resync implica las siguientes operaciones, en este orden:
+
+1. Se elimina el ClickPipe existente y se inicia un nuevo ClickPipe de &quot;resync&quot;. De este modo, cuando se realiza un resync, se detectan los cambios en las estructuras de las tablas de origen.
+2. El ClickPipe de resync crea (o reemplaza) un nuevo conjunto de tablas de destino con los mismos nombres que las tablas originales, salvo por el sufijo `_resync`.
+3. Se realiza la carga inicial en las tablas `_resync`.
+4. A continuación, las tablas `_resync` se intercambian con las tablas originales. Las filas con eliminación lógica se transfieren de las tablas originales a las tablas `_resync` antes del intercambio.
+
+Se conservan todos los ajustes del ClickPipe original en el ClickPipe de resync. Las estadísticas del ClickPipe original se borran en la UI.
+
+<div id="use-cases-mongodb-resync">
+  ### Casos de uso para resincronizar un ClickPipe
+</div>
+
+Aquí tienes algunos escenarios:
+
+1. Puede que necesites realizar cambios importantes en el esquema de las tablas de origen que rompan el ClickPipe existente y te obliguen a reiniciarlo. Basta con hacer clic en Resync después de aplicar los cambios.
+2. En el caso concreto de ClickHouse, puede que necesites cambiar las claves de ORDER BY en las tablas de destino. Puedes usar Resync para volver a poblar la nueva tabla con los datos y la clave de ordenación correctos.
+
+<div id="guide-mongodb-resync">
+  ### Guía para resincronizar ClickPipe
+</div>
+
+1. En la pestaña **Data Sources**, haz clic en el ClickPipe de MongoDB que quieres resincronizar.
+2. Ve a la pestaña **Settings**.
+3. Haz clic en el botón **Resync**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp" border size="md" />
+
+4. Debería aparecer un cuadro de diálogo de confirmación. Haz clic en **Resync** otra vez.
+5. Ve a la pestaña **Metrics**.
+6. Espera a que el estado del pipe sea **Setup** o **Snapshot**.
+7. La carga inicial de la resincronización puede consultarse en la pestaña **Tables**, en la sección **Initial Load Stats**.
+8. Una vez completada la carga inicial, el pipe intercambiará atómicamente las tablas `_resync` por las tablas originales. Durante el intercambio, el estado será **Resync**.
+9. Una vez completado el intercambio, el pipe pasará al estado **Running** y realizará CDC si está habilitado.

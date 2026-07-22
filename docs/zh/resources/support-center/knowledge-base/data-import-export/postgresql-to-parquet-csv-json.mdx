@@ -1,0 +1,136 @@
+---
+title: "如何将 PostgreSQL 数据导出为 Parquet、CSV 或 JSON？"
+date: 2023-03-22
+description: "了解如何使用 `clickhouse-local` 通过多个示例将 PostgreSQL 数据导出为 Parquet、CSV 或 JSON 格式。"
+tags: ['数据导出', '数据格式']
+keywords: ['PostgreSQL', 'Parquet', 'CSV', 'JSON']
+---
+
+{frontMatter.description}
+
+{/* 截断 */}
+
+<div id="how-to-export-postgresql-data-to-parquet-csv-or-json">
+  ## 如何将 PostgreSQL 数据导出为 Parquet、CSV 或 JSON
+</div>
+
+使用 `clickhouse-local` 很容易做到这一点：
+
+* 使用 [`postgresql` 表函数](/zh/reference/functions/table-functions/postgresql) 读取数据
+* 使用 `INTO OUTFILE _filename_ FORMAT` 子句，并指定所需的输出格式
+
+输出格式可以是 ClickHouse 支持的任意一种 [ouput formats](/zh/reference/formats/index)。我们来看几个示例……
+
+这些示例使用了 `clickhouse-local`，它是 ClickHouse 二进制程序的一部分。请按以下方式下载：
+
+```bash
+curl https://clickhouse.com/ | sh
+```
+
+<div id="export-postgresql-to-parquet">
+  ## 将 PostgreSQL 导出为 Parquet
+</div>
+
+`postgresql` 表函数允许对存储在远程 PostgreSQL 服务器上的数据执行 `SELECT` (以及 `INSERT`) 查询。例如，要查看 PostgreSQL 中某张表的全部内容：
+
+```bash
+SELECT *
+FROM
+   postgresql(
+    'localhost:5432',
+    'postgres_database',
+    'postgres_table',
+    'user',
+    'password'
+);
+```
+
+我们可以使用 `INTO OUTFILE` 将此查询的输出写入文件。使用 `FORMAT` 指定要创建的文件格式。我们来获取 PostgreSQL 表的全部内容，并将其写入一个 Parquet 文件：
+
+```bash
+./clickhouse local -q "SELECT * FROM
+   postgresql(
+    'localhost:5432',
+    'postgres_database',
+    'postgres_table',
+    'user',
+    'password'
+)
+INTO OUTFILE 'my_output_file.parquet'"
+```
+
+<Note>
+  由于输出文件名带有 `.parquet` 扩展名，ClickHouse 会默认我们要使用 Parquet 格式，因此这里省略了 `FORMAT Parquet` 子句。
+</Note>
+
+<div id="export-postgresql-to-csv">
+  ## 将 PostgreSQL 导出为 CSV
+</div>
+
+这与导出为 Parquet 时相同，只是我们为输出指定了一个更合适的文件名：
+
+```bash
+./clickhouse local -q "SELECT * FROM
+   postgresql(
+    'localhost:5432',
+    'postgres_database',
+    'postgres_table',
+    'user',
+    'password'
+)
+INTO OUTFILE 'my_output_file.csv'"
+```
+
+就是这样！ClickHouse 会根据输出文件名中的 `.csv` 扩展名，将数据输出为逗号分隔格式。除此之外，该命令与上面的命令完全相同。
+
+<div id="export-postgresql-to-json">
+  ## 将 PostgreSQL 导出为 JSON
+</div>
+
+要将 PostgreSQL 导出为 JSON，只需更改文件名，ClickHouse 就会自动识别格式：
+
+```bash
+./clickhouse local -q "SELECT * FROM
+   postgresql(
+    'localhost:5432',
+    'postgres_database',
+    'postgres_table',
+    'user',
+    'password'
+)
+INTO OUTFILE 'my_output_file.ndjson'"
+```
+
+<Note>
+  你不必止步于此——还可以使用 `clickhouse-local` 从 PostgreSQL 拉取数据，并将其输出为[各种输出格式](/zh/reference/formats/index)。
+
+  如果 ClickHouse 无法通过文件扩展名确定输出类型，或者你想显式指定格式，请添加 `FOMRAT` 子句：
+
+  ```bash
+  ./clickhouse local -q "SELECT * FROM
+     postgresql(
+      'localhost:5432',
+      'postgres_database',
+      'postgres_table',
+      'user',
+      'password'
+  )
+  INTO OUTFILE 'my_output_file.ndjson'
+  FORMAT JSONEachRow"
+  ```
+</Note>
+
+<div id="stream-postgresql-to-another-process">
+  ## 将 PostgreSQL 的输出流式传给另一个进程
+</div>
+
+你可以不使用 `INTO OUTFILE`，而是将表函数的结果流式传给另一个进程。下面用一个简单示例演示这种语法——我们使用 Linux 的 `wc -l` 命令来统计行数：
+
+```bash
+./clickhouse local -q "SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet'
+FORMAT JSONEachRow
+)" | wc -l
+```
+
+不过，我们也可以轻松地将这些行流式发送给 shell 脚本、Python 脚本或你需要的任何其他进程。

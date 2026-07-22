@@ -1,0 +1,105 @@
+---
+sidebarTitle: 'HIPAA オンボーディング'
+slug: /cloud/security/compliance/hipaa-onboarding
+title: 'HIPAA オンボーディング'
+description: 'HIPAA 準拠サービスのオンボーディングについて詳しく説明します'
+doc_type: 'guide'
+keywords: ['HIPAA', 'コンプライアンス', '医療', 'セキュリティ', 'データ保護']
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<EnterprisePlanFeatureBadge feature="HIPAA" />
+
+ClickHouse は、1996 年の Health Insurance Portability and Accountability Act (HIPAA) の Security Rule に準拠したサービスを提供しています。お客様は、Business Associate Agreement (BAA) を締結し、準拠リージョンにサービスをデプロイした後、これらのサービス内で保護対象保健情報 (PHI) を処理できます。
+
+ClickHouse のコンプライアンスプログラムおよび第三者監査レポートの提供状況の詳細については、[コンプライアンスの概要](/ja/products/cloud/reference/security/compliance-overview) と [Trust Center](https://trust.clickhouse.com) をご確認ください。さらに、お客様は、各自のワークロードに適したセキュリティ管理策を選定して実装するために、[セキュリティ機能](/ja/products/cloud/features/security) のページもご確認ください。
+
+このページでは、ClickHouse Cloud で HIPAA 準拠サービスのデプロイを有効にする手順について説明します。
+
+<div id="enable-hipaa-compliant-services">
+  ## HIPAA 準拠サービスを有効にしてデプロイする
+</div>
+
+<Steps>
+  <Step>
+    ### Enterprise サービスに登録する
+
+    1. コンソールの左下にある組織名を選択します。
+    2. **Billing** をクリックします。
+    3. 左上の **Plan** を確認します。
+    4. **Plan** が **Enterprise** の場合は、次のセクションに進みます。そうでない場合は、**Change plan** をクリックします。
+    5. **Switch to Enterprise** を選択します。
+  </Step>
+
+  <Step>
+    ### 組織で HIPAA を有効にする
+
+    1. コンソールの左下にある組織名を選択します。
+    2. **Organization details** をクリックします。
+    3. **Enable HIPAA** をオンにします。
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/hipaa_1.webp" size="md" alt="HIPAA の有効化をリクエスト" background="black" />
+
+    <br />
+
+    4. 画面の指示に従って、BAA 締結のリクエストを送信します。
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/hipaa_2.webp" size="md" alt="BAA リクエストを送信" background="black" />
+
+    <br />
+
+    5. BAA の締結が完了すると、組織で HIPAA が有効になります。
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/hipaa_3.webp" size="md" alt="HIPAA が有効化済み" background="black" />
+
+    <br />
+  </Step>
+
+  <Step>
+    ### HIPAA 準拠リージョンにサービスをデプロイする
+
+    1. コンソールのホーム画面左上で **New service** を選択します
+    2. **Region type** を **HIPAA 準拠** に変更します
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/hipaa_4.webp" size="md" alt="HIPAA リージョンにデプロイ" background="black" />
+
+    <br />
+
+    3. サービス名と残りの情報を入力します
+
+    HIPAA 準拠のクラウドプロバイダーとサービスの一覧については、[サポートされているクラウドリージョン](/ja/products/cloud/reference/supported-regions) ページを参照してください。
+  </Step>
+</Steps>
+
+<div id="migrate-to-hipaa">
+  ## 既存のサービスを移行する
+</div>
+
+必要に応じて、サービスは準拠環境にデプロイすることを強く推奨します。サービスを標準リージョンから HIPAA 準拠リージョンに移行する場合は、バックアップから復元する必要があり、一定時間のダウンタイムが発生する可能性があります。
+
+標準リージョンから HIPAA 準拠リージョンへの移行が必要な場合は、以下の手順に従ってセルフサービスで移行してください。
+
+1. 移行するサービスを選択します。
+2. 左側の **Backups** をクリックします。
+3. 復元するバックアップの左側にある三点メニューを選択します。
+4. バックアップの復元先として HIPAA 準拠リージョンを選ぶには、**Region type** を選択します。
+5. 復元が完了したら、いくつかのクエリを実行して、スキーマとレコード件数が想定どおりであることを確認します。
+6. 古いサービスを削除します。
+
+<Info>
+  **制限事項**
+
+  サービスは同じクラウドプロバイダーおよび同じ地理的リージョン内に維持する必要があります。このプロセスでは、同じクラウドプロバイダーおよびリージョン内の準拠環境にサービスを移行します。
+</Info>

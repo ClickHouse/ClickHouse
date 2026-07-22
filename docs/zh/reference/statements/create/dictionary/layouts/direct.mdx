@@ -1,0 +1,43 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/direct
+title: 'direct 字典布局'
+sidebarTitle: 'direct'
+description: '一种不经过缓存、直接查询源的字典布局。'
+doc_type: 'reference'
+---
+
+<div id="direct">
+  ## direct
+</div>
+
+字典不存储在内存中，而是在处理请求时直接访问源。
+
+字典键的类型为 [UInt64](/zh/reference/data-types/int-uint)。
+
+支持除本地文件外的所有 [源](/zh/reference/statements/create/dictionary/sources/overview#dictionary-sources) 类型。
+
+配置示例：
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(DIRECT())
+    ```
+  </Tab>
+
+  <Tab title="配置文件">
+    ```xml
+    <layout>
+      <direct />
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="complex_key_direct">
+  ## complex_key_direct
+</div>
+
+这种存储类型用于复合[键](/zh/reference/statements/create/dictionary/attributes#composite-key)，与 `direct` 类似。

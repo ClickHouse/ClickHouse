@@ -1,0 +1,89 @@
+---
+slug: /guides/developer/alternative-query-languages
+sidebarTitle: 'Linguagens de consulta alternativas'
+title: 'Linguagens de consulta alternativas'
+description: 'Use linguagens alternativas de consulta no ClickHouse'
+keywords: ['linguagens de consulta alternativas', 'dialetos de consulta', 'dialeto MySQL', 'dialeto PostgreSQL', 'guia do desenvolvedor']
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+Além do SQL padrão, o ClickHouse suporta várias linguagens de consulta alternativas para consultar dados.
+
+Os dialetos atualmente suportados são:
+
+* `clickhouse`: O [dialeto SQL](/pt-BR/products/chdb/reference/sql-reference) padrão do ClickHouse
+* `prql`: [Pipelined Relational Query Language (PRQL)](https://prql-lang.org/)
+* `kusto`: [Kusto Query Language (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
+
+A linguagem de consulta usada é controlada pela configuração `dialect`.
+
+<div id="standard-sql">
+  ## SQL padrão
+</div>
+
+SQL padrão é a linguagem de consulta padrão do ClickHouse.
+
+```sql
+SET dialect = 'clickhouse'
+```
+
+<div id="pipelined-relational-query-language-prql">
+  ## Linguagem de consulta relacional em pipeline (PRQL)
+</div>
+
+<ExperimentalBadge />
+
+Para ativar o PRQL:
+
+```sql
+SET allow_experimental_prql_dialect = 1; -- este SET statement é necessário apenas para versões do ClickHouse >= v25.1
+SET dialect = 'prql'
+```
+
+Exemplo de consulta em PRQL:
+
+```prql
+from trips
+aggregate {
+    ct = count this
+    total_days = sum days
+}
+```
+
+Nos bastidores, o ClickHouse usa a transpilação de PRQL para SQL para executar consultas PRQL.
+
+<div id="kusto-query-language-kql">
+  ## Linguagem de Consulta Kusto (KQL)
+</div>
+
+<ExperimentalBadge />
+
+Para ativar o KQL:
+
+```sql
+SET allow_experimental_kusto_dialect = 1; -- este SET statement é necessário apenas para versões do ClickHouse >= 25.1
+SET dialect = 'kusto'
+```
+
+```kql title="Query"
+numbers(10) | project number
+```
+
+```response title="Response"
+┌─number─┐
+│      0 │
+│      1 │
+│      2 │
+│      3 │
+│      4 │
+│      5 │
+│      6 │
+│      7 │
+│      8 │
+│      9 │
+└────────┘
+```
+
+Observe que as consultas KQL talvez não consigam acessar todas as funções definidas no ClickHouse.

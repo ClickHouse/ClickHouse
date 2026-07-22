@@ -257,13 +257,8 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
                 partition_id, convertMergeConstraintsToString(selector.merge_constraints), ranges_in_partition.size());
     }
 
-    /// A read-only table (the `table_readonly` MergeTree setting) must not run regular merges,
-    /// including forced whole-partition merges (`min_age_to_force_merge_seconds`).
-    if (!selector.readonly)
-    {
-        if (auto best = getBestPartitionToOptimizeEntire(selector.merge_constraints[0].max_size_bytes, context, settings, partitions_stats, log); !best.empty())
-            partitions_hint.insert(std::move(best));
-    }
+    if (auto best = getBestPartitionToOptimizeEntire(selector.merge_constraints[0].max_size_bytes, context, settings, partitions_stats, log); !best.empty())
+        partitions_hint.insert(std::move(best));
 
     LOG_TRACE(log,
             "Checked {} partitions, found {} partitions with parts that may be merged: [{}] "
@@ -287,17 +282,6 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     const time_t current_time = std::time(nullptr);
     const bool can_use_ttl_merges = !ttl_merges_blocker.isCancelled();
     LogSeriesLimiter series_log(log, 1, /*interval_s_=*/60 * 30);
-
-    /// A read-only table (the `table_readonly` MergeTree setting) runs no merges of any kind. Bail out
-    /// before the candidate scan (`collectAllPossibleRanges` -> `grabAllPossibleRanges` and
-    /// `splitByMergePredicate`) so a rotated log table with many parts does not keep burning background CPU
-    /// on every scheduling pass — the very work this setting is meant to avoid. `MergeSelectorApplier::chooseMergesFrom`
-    /// enforces the same "no merges when read-only" invariant as a secondary guard.
-    if (selector.readonly)
-        return std::unexpected(SelectMergeFailure{
-            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
-            .explanation = PreformattedMessage::create("Table is in readonly mode"),
-        });
 
     auto collected = collectAllPossibleRanges(parts_collector, metadata_snapshot, storage_policy, current_time, partitions_hint, series_log);
     if (collected.ranges.empty())
@@ -330,8 +314,6 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
         return merge_choices;
     }
 
-    /// Forced whole-partition merges (`min_age_to_force_merge_seconds`). Read-only tables already returned
-    /// above, so no readonly guard is needed here.
     if (auto best = getBestPartitionToOptimizeEntire(selector.merge_constraints[0].max_size_bytes, context, settings, partitions_stats, log); !best.empty())
     {
         return selectAllPartsToMergeWithinPartition(
@@ -505,12 +487,25 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     MutationCommandsConstPtr commands,
     MergeListEntry * merge_entry,
     time_t time_of_mutation,
-    ContextPtr context,
+    ContextMutablePtr context,
     const MergeTreeTransactionPtr & txn,
     ReservationSharedPtr space_reservation,
     TableLockHolder & holder,
     bool need_prefix)
 {
+    /// Building the mutation pipeline can run nested blocking pipelines via `CompletedPipelineExecutor` -
+    /// most notably `KeyCondition::buildOrderedSetInplace` materializing the right side of `x IN (subquery)`
+    /// to use it for primary-key / skip-index analysis. Such a build observes cancellation only through the
+    /// query context's interactive-cancel callback, so without one it blocks server shutdown and
+    /// `KILL MUTATION` until the subquery finishes (issue #51586). `context` is this mutation's query context
+    /// (`makeQueryContextForMutate`), which the reading context resolves via `getQueryContext`.
+    const String partition_id = future_part->part_info.getPartitionId();
+    context->setInteractiveCancelCallback(
+        [&blocker = merges_blocker, merge_entry, partition_id]()
+        {
+            return blocker.isCancelledForPartition(partition_id) || (*merge_entry)->is_cancelled;
+        });
+
     return std::make_shared<MutateTask>(
         future_part,
         metadata_snapshot,

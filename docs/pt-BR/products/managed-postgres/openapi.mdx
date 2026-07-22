@@ -1,0 +1,482 @@
+---
+slug: /cloud/managed-postgres/openapi
+sidebarTitle: 'OpenAPI'
+title: 'Managed Postgres OpenAPI'
+description: 'Controle seus serviços do Managed Postgres com nossa OpenAPI'
+keywords: ['managed postgres', 'openapi', 'api', 'curl', 'tutorial', 'linha de comando', 'query insights', 'consultas lentas']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.openapi-beta" />
+
+Use a [OpenAPI do ClickHouse](/pt-BR/products/cloud/features/admin-features/api/index) para
+controlar programaticamente seus serviços de Managed Postgres da mesma forma que os serviços do ClickHouse. A
+mesma API também expõe um [endpoint do Prometheus] para coleta de métricas do serviço.
+Já conhece a [OpenAPI]? Obtenha suas [chaves de API] e vá direto para a
+[referência da API do Managed Postgres][pg-openapi]. Caso contrário, acompanhe este
+guia rápido.
+
+<div id="api-keys">
+  ## Chaves de API
+</div>
+
+O uso da OpenAPI do ClickHouse requer autenticação; consulte [chaves de API] para saber como
+criá-las. Depois, use-as como credenciais de autenticação básica, assim:
+
+```bash
+KEY_ID=mykeyid
+KEY_SECRET=mykeysecret
+
+curl -s --user "$KEY_ID:$KEY_SECRET" https://api.clickhouse.cloud/v1/organizations | jq
+```
+
+<div id="organization-id">
+  ## Organization ID
+</div>
+
+Em seguida, você precisará do Organization ID da sua organização.
+
+1. Selecione o nome da sua organização no canto inferior esquerdo do Console.
+2. Selecione **Organization details**.
+3. Clique no ícone de cópia à direita de **Organization ID** para copiá-lo diretamente
+   para a área de transferência.
+
+Agora você já pode usá-lo nas suas requisições, assim:
+
+```bash
+ORG_ID=myorgid
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres" | jq
+```
+
+Agora você fez sua primeira requisição à API do Postgres: a [list API] acima lista todos os
+servidores Postgres da sua organização. A saída deve ser algo
+como:
+
+```json
+{
+  "result": [
+    {
+      "id": "ee2fef9f-b443-8ad0-8c9b-724390cdb826",
+      "name": "oltp",
+      "provider": "aws",
+      "region": "eu-west-2",
+      "postgresVersion": "18",
+      "size": "r6gd.medium",
+      "storageSize": 59,
+      "haType": "none",
+      "tags": [],
+      "isPrimary": true,
+      "state": "running",
+      "createdAt": "2026-05-25T16:42:16+00:00"
+    }
+  ],
+  "requestId": "c128d830-5769-4c82-8235-f79aa69d1ebf",
+  "status": 200
+}
+```
+
+<div id="crud">
+  ## CRUD
+</div>
+
+Vamos analisar o ciclo de vida de um serviço Postgres.
+
+<div id="create">
+  ### Criar
+</div>
+
+Primeiro, crie um novo serviço
+usando a [create API]. Ela exige as seguintes propriedades no corpo JSON
+da solicitação:
+
+* `name`: Nome do novo serviço Postgres
+* `provider`: Nome do provedor de Cloud
+* `region`: Região na rede do provedor onde o
+  serviço será implantado
+* `size`: Tamanho da VM
+
+Consulte a documentação da [create API] para ver os valores possíveis dessas propriedades. Além
+disso, vamos especificar o Postgres 18 em vez da versão padrão, 17:
+
+```bash
+create_data='{
+  "name": "my postgres",
+  "provider": "aws",
+  "region": "us-west-2",
+  "postgresVersion": "18",
+  "size": "r8gd.large"
+}'
+```
+
+Agora use esses dados para criar uma nova instância; observe que isso requer o cabeçalho
+Content-Type:
+
+```bash
+curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres" \
+    -d "$create_data" | jq
+```
+
+Em caso de sucesso, uma nova instância será criada e as informações sobre ela serão retornadas,
+incluindo os dados de conexão:
+
+```json
+{
+  "result": {
+    "id": "67b4bc12-8582-45d0-8806-fe9b2e5a54e6",
+    "name": "my postgres",
+    "provider": "aws",
+    "region": "us-west-2",
+    "postgresVersion": "18",
+    "size": "r8gd.large",
+    "storageSize": 118,
+    "haType": "none",
+    "tags": [],
+    "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@my-postgres-6d8d2e3e.pg7myrd1j06p3gx4zrm2ze8qz6.c0.us-west-2.aws.pg.clickhouse-dev.com:5432/postgres?channel_binding=require",
+    "username": "postgres",
+    "password": "vV6cfEr2p_-TzkCDrZOx",
+    "hostname": "my-postgres-6d8d2e3e.pg7myrd1j06p3gx4zrm2ze8qz6.c0.us-west-2.aws.pg.clickhouse-dev.com",
+    "isPrimary": true,
+    "state": "creating"
+  },
+  "requestId": "a5957990-dbe5-46fd-b5ce-a7f8f79e50fe",
+  "status": 200
+}
+```
+
+<div id="read">
+  ### Ler
+</div>
+
+Use o `id` da resposta para obter o serviço novamente:
+
+```bash
+PG_ID=67b4bc12-8582-45d0-8806-fe9b2e5a54e6
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
+    | jq
+```
+
+A saída será semelhante ao JSON retornado na criação, mas fique de olho
+em `state`; quando ele mudar para `running`, o servidor estará pronto:
+
+```bash
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
+    | jq .result.state
+```
+
+```json
+"running"
+```
+
+Agora você pode usar a propriedade `connectionString` para se conectar, por exemplo, usando
+[psql]:
+
+```bash
+$ psql "$(
+    curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
+    | jq -r .result.connectionString
+)"
+
+psql (18.3)
+SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, compression: off, ALPN: postgresql)
+Type "help" for help.
+
+postgres=#
+```
+
+Digite `\q` para sair do [psql].
+
+<div id="update">
+  ### Atualização
+</div>
+
+A [API de patch] oferece suporte à atualização de um subconjunto das propriedades de um serviço Managed Postgres
+Postgres usando [RFC 7396] JSON Merge Patch. As tags podem ser especialmente úteis em implantações complexas;
+basta enviá-las sozinhas na solicitação:
+
+```bash
+curl -sX PATCH --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
+    -d '{"tags": [{"key": "Environment", "value": "production"}]}' \
+    | jq .result
+```
+
+Os dados retornados devem incluir as novas tags:
+
+```json
+{
+  "id": "67b4bc12-8582-45d0-8806-fe9b2e5a54e6",
+  "name": "my postgres",
+  "provider": "aws",
+  "region": "us-west-2",
+  "postgresVersion": "18",
+  "size": "r8gd.large",
+  "storageSize": 118,
+  "haType": "none",
+  "tags": [
+    {
+      "key": "Environment",
+      "value": "production"
+    }
+  ],
+  "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com:5432/postgres?channel_binding=require",
+  "username": "postgres",
+  "password": "vV6cfEr2p_-TzkCDrZOx",
+  "hostname": "my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com",
+  "isPrimary": true,
+  "state": "running"
+}
+```
+
+A OpenAPI fornece endpoints adicionais para atualizar propriedades não suportadas
+pela [API de patch]. Por exemplo, para atualizar a [configuração do Postgres],
+use a [config API]:
+
+```bash
+curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/config" \
+    -d '{"pgConfig": {"max_connections": "42"}, "pgBouncerConfig": {}}' | jq
+```
+
+A saída mostrará a configuração atualizada, bem como uma mensagem que descreve
+as consequências da alteração:
+
+```json
+{
+  "result":{
+    "pgConfig": {
+      "max_connections": "42"
+    },
+    "pgBouncerConfig": {},
+    "message": "The changes in the following parameters require a database restart to take effect: max_connections. You can restart the database by using the restart endpoint."
+  },
+  "requestId":"fdec06f2-66f7-45b4-9f82-0c051aba20aa",
+  "status": 200
+}
+```
+
+{/*
+
+  TODO: Descomente e insira a saída de exemplo correta quando a API estiver disponível.
+
+  Outras APIs de atualização incluem:
+
+  * Redefinir a senha do superusuário
+  * Renomear um serviço Postgres (altera o nome do host)
+  * Atualizar para a próxima versão principal do Postgres
+
+  */}
+
+<div id="delete">
+  ### Excluir
+</div>
+
+Use a [API de exclusão] para excluir um serviço Postgres.
+
+<Warning>
+  Excluir um serviço Postgres remove completamente o serviço e todos os seus
+  dados. Certifique-se de ter um backup ou de ter promovido uma
+  réplica para primária antes de excluir um serviço.
+</Warning>
+
+```bash
+curl -sX DELETE --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
+    | jq
+```
+
+Em caso de sucesso, a resposta retornará o código de status 200, por exemplo:
+
+```json
+{
+  "requestId": "ac9bbffa-e370-410c-8bdd-bd24bf3d7f82",
+  "status": 200
+}
+```
+
+<div id="monitoring">
+  ## Monitoramento
+</div>
+
+Dois endpoints compatíveis com o Prometheus expõem métricas de CPU, memória, E/S, conexão
+e transação para serviços do Managed Postgres: um fornece
+métricas de todos os serviços da organização; o outro, de um único
+serviço. Consulte a página [endpoint do Prometheus] para a configuração e a
+[referência de métricas] para ver a lista completa de métricas.
+
+<div id="query-insights">
+  ## Query insights
+</div>
+
+A telemetria por instrução que alimenta a aba [Query Insights] no console da
+Cloud também está disponível programaticamente. Dois endpoints expõem os
+padrões de consulta mais lentos em um serviço: um lista todos os padrões
+ordenados por impacto; o outro retorna um único padrão com suas execuções
+recentes.
+
+<div id="list-slow-query-patterns">
+  ### Listar padrões de consultas lentas
+</div>
+
+A [slow patterns API] retorna métricas agregadas dos padrões de consulta
+mais lentos observados em uma janela de tempo. A janela é obrigatória — passe
+`from_date` e `to_date` como timestamps no formato RFC 3339:
+
+```bash
+FROM=2026-05-25T00:00:00Z
+TO=2026-05-26T00:00:00Z
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/slowQueryPatterns?from_date=$FROM&to_date=$TO" \
+    | jq
+```
+
+Por padrão, os resultados mostram primeiro os padrões de maior custo, classificados por `total_duration`
+em ordem decrescente. Ordene por um contador diferente com `sort_by` (por exemplo,
+`p99_duration`, `call_count` ou `total_wal_bytes`) e inverta a direção
+com `sort_order`. Restrinja o conjunto com os filtros `db_name`, `db_user`,
+`db_operation` e `app`, e percorra as páginas com `limit` e
+`offset`.
+
+Cada resultado é um padrão normalizado, com os literais removidos e
+as durações informadas em microssegundos:
+
+```json
+{
+  "result": [
+    {
+      "queryId": "-4748036479882663975",
+      "queryText": "SELECT * FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT $2",
+      "dbName": "sales",
+      "dbUser": "orders_service",
+      "dbOperation": "SELECT",
+      "app": "orders-api",
+      "callCount": 84213,
+      "errorCount": 0,
+      "totalDurationUs": 1012384556,
+      "avgDurationUs": 12021,
+      "maxDurationUs": 482915,
+      "p50DurationUs": 9874,
+      "p95DurationUs": 28431,
+      "p99DurationUs": 41200,
+      "totalRows": 842130,
+      "totalSharedBlksRead": 19284,
+      "totalSharedBlksHit": 48217734,
+      "totalCpuTimeUs": 938472113,
+      "totalWalBytes": 0
+    }
+  ],
+  "requestId": "c128d830-5769-4c82-8235-f79aa69d1ebf",
+  "status": 200
+}
+```
+
+O `queryId` é um hash com sinal de 64 bits da instrução normalizada, então
+geralmente é negativo. Envie-o de volta exatamente como está — com o `-`
+inicial e tudo — para obter um único padrão.
+
+<div id="get-slow-query-pattern">
+  ### Obter um padrão de consulta lenta
+</div>
+
+Passe um `queryId` retornado pela resposta da lista para a [API de padrão de consulta lenta] para obter as
+métricas agregadas desse padrão, junto com suas execuções individuais mais recentes.
+`db_name`, `db_user` e `db_operation`, que identificam o padrão, são
+obrigatórios:
+
+```bash
+QUERY_ID=-4748036479882663975
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/slowQueryPatterns/$QUERY_ID?db_name=sales&db_user=orders_service&db_operation=SELECT" \
+    | jq
+```
+
+A resposta retorna a mesma agregação do endpoint de listagem em
+`aggregate`, além de um array `recentExecutions`. Cada execução inclui os
+contadores completos por execução — E/S de blocos compartilhados e temporários, tempo
+de CPU em modo usuário e do sistema, workers paralelos, JIT e WAL — os mesmos contadores que o
+[painel lateral de detalhes] detalha no Console:
+
+```json
+{
+  "result": {
+    "aggregate": {
+      "queryId": "-4748036479882663975",
+      "queryText": "SELECT * FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT $2",
+      "dbName": "sales",
+      "dbUser": "orders_service",
+      "dbOperation": "SELECT",
+      "callCount": 84213,
+      "avgDurationUs": 12021,
+      "p99DurationUs": 41200
+    },
+    "recentExecutions": [
+      {
+        "timestamp": "2026-05-25T16:42:09Z",
+        "durationUs": 41200,
+        "rows": 10,
+        "sharedBlksHit": 412,
+        "sharedBlksRead": 3,
+        "tempBlksWritten": 0,
+        "cpuUserTimeUs": 38211,
+        "cpuSysTimeUs": 1044,
+        "parallelWorkersPlanned": 0,
+        "parallelWorkersLaunched": 0,
+        "walBytes": 0,
+        "serverRole": "primary"
+      }
+    ]
+  },
+  "requestId": "a5957990-dbe5-46fd-b5ce-a7f8f79e50fe",
+  "status": 200
+}
+```
+
+O exemplo resume ambos os objetos por brevidade; a API retorna o conjunto completo
+de contadores documentado em [contadores por execução].
+
+[OpenAPI do ClickHouse]: /products/cloud/features/admin-features/api/index "API do Cloud"
+
+[OpenAPI]: https://www.openapis.org "Iniciativa OpenAPI"
+
+[chaves de API]: /products/cloud/features/admin-features/api/openapi "Gerenciar chaves de API"
+
+[pg-openapi]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres "Especificação OpenAPI para ClickHouse Cloud: Postgres"
+
+[list API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceGetList "Buscar a lista de serviços Postgres de uma organização"
+
+[create API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceCreate "Criar um novo serviço Postgres"
+
+[psql]: https://www.postgresql.org/docs/current/app-psql.html "Documentação do PostgreSQL: psql — terminal interativo do PostgreSQL"
+
+[API de patch]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServicePatch "Atualizar um serviço PostgreSQL"
+
+[RFC 7396]: https://www.rfc-editor.org/rfc/rfc7396 "RFC 7396: JSON Merge Patch"
+
+[Configuração do Postgres]: https://www.postgresql.org/docs/18/runtime-config.html "Documentação do PostgreSQL: Configuração do servidor"
+
+[config API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceSetConfig "Atualizar a configuração de um serviço Postgres"
+
+[API de exclusão]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceDelete "Excluir um serviço PostgreSQL"
+
+[endpoint do Prometheus]: /products/managed-postgres/monitoring/prometheus "Endpoint do Prometheus do Managed Postgres"
+
+[referência de métricas]: /products/managed-postgres/monitoring/metrics "Referência de métricas do Managed Postgres"
+
+[Query Insights]: /products/managed-postgres/monitoring/query-insights "Query Insights do Postgres"
+
+[painel lateral de detalhes]: /products/managed-postgres/monitoring/query-insights#detail "Painel lateral de detalhes do Query Insights"
+
+[contadores por execução]: /products/managed-postgres/monitoring/query-insights#counters "Contadores por execução do Query Insights"
+
+[slow patterns API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList "Listar padrões de consultas lentas do Postgres"
+
+[slow pattern API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet "Obter um padrão de consulta lenta do Postgres com execuções recentes"

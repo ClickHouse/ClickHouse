@@ -1,0 +1,334 @@
+---
+description: 'Documentación de la herramienta de perfilado de consultas por muestreo en ClickHouse'
+sidebarTitle: 'Perfilado de consultas'
+slug: /operations/optimizing-performance/sampling-query-profiler
+title: 'Perfilador de consultas por muestreo'
+doc_type: 'reference'
+---
+
+ClickHouse ejecuta un perfilador por muestreo que permite analizar la ejecución de consultas.
+Con el perfilador, puede identificar las rutinas del código fuente que se usan con más frecuencia durante la ejecución de consultas.
+Puede rastrear el tiempo de CPU y el tiempo de reloj consumidos, incluido el tiempo inactivo.
+
+El perfilador de consultas se habilita automáticamente en ClickHouse Cloud.
+La siguiente consulta de ejemplo encuentra las trazas de pila más frecuentes de una consulta perfilada, con los nombres de función resueltos y las ubicaciones en el código fuente:
+
+<Tip>
+  Reemplace el valor de `query_id` por el ID de la consulta que quiere perfilar.
+</Tip>
+
+<Tabs>
+  <Tab title="ClickHouse Cloud">
+    En ClickHouse Cloud, puede obtener el ID de la consulta haciendo clic en **&quot;...&quot;** en el extremo derecho de la barra situada sobre la tabla de resultados de la consulta (junto al selector de tabla/gráfico). Esto abre un menú contextual en el que puede hacer clic en **&quot;Copy query ID&quot;**.
+
+    Use `clusterAllReplicas(default, system.trace_log)` para seleccionar datos de todos los nodos del clúster:
+
+    ```sql
+    SELECT
+        count(),
+        arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+    FROM clusterAllReplicas(default, system.trace_log)
+    WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
+    GROUP BY trace
+    ORDER BY count() DESC
+    LIMIT 10
+    SETTINGS allow_introspection_functions = 1
+    ```
+  </Tab>
+
+  <Tab title="Autogestionado">
+    ```sql
+    SELECT
+        count(),
+        arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+    FROM system.trace_log
+    WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
+    GROUP BY trace
+    ORDER BY count() DESC
+    LIMIT 10
+    SETTINGS allow_introspection_functions = 1
+    ```
+  </Tab>
+</Tabs>
+
+<div id="self-managed-query-profiler">
+  ## Uso del perfilador de consultas en implementaciones autogestionadas
+</div>
+
+En las implementaciones autogestionadas, para usar el perfilador de consultas, siga los pasos que se indican a continuación:
+
+<Steps>
+  <Step>
+    ### Instale ClickHouse con información de depuración
+
+    Instale el paquete `clickhouse-common-static-dbg`:
+
+    1. Siga las instrucciones del paso [&quot;Configurar el repositorio de Debian&quot;](/es/get-started/setup/self-managed/debian-ubuntu#setup-the-debian-repository)
+    2. Ejecute `sudo apt-get install clickhouse-server clickhouse-client clickhouse-common-static-dbg` para instalar los archivos binarios compilados de ClickHouse con información de depuración
+    3. Ejecute `sudo service clickhouse-server start` para iniciar el servidor
+    4. Ejecute `clickhouse-client`. El servidor detectará automáticamente los símbolos de depuración de clickhouse-common-static-dbg; no necesita hacer nada especial para habilitarlos
+  </Step>
+
+  <Step>
+    ### Compruebe la configuración del servidor
+
+    Asegúrese de que la sección [`trace_log`](/es/reference/settings/server-settings/settings#trace_log) de su [archivo de configuración del servidor](/es/concepts/features/configuration/server-config/configuration-files) esté configurada. Está habilitada de forma predeterminada:
+
+    ```xml
+    <!-- Registro de trazas. Almacena trazas de pila recopiladas por los perfiladores de consultas.
+         Consulte la configuración query_profiler_real_time_period_ns y query_profiler_cpu_time_period_ns. -->
+    <trace_log>
+        <database>system</database>
+        <table>trace_log</table>
+
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <!-- Indica si los logs deben volcarse al disco en caso de fallo -->
+        <flush_on_crash>false</flush_on_crash>
+        <symbolize>true</symbolize>
+    </trace_log>
+    ```
+
+    Esta sección configura la tabla del sistema [trace&#95;log](/es/reference/system-tables/trace_log), que contiene los resultados del funcionamiento del perfilador.
+    Recuerde que los datos de esta tabla solo son válidos mientras el servidor esté en ejecución.
+    Después de reiniciar el servidor, ClickHouse no limpia la tabla y todas las direcciones de memoria virtual almacenadas pueden quedar inválidas.
+  </Step>
+
+  <Step>
+    ### Configure los temporizadores del perfilador
+
+    Configure las opciones [`query_profiler_cpu_time_period_ns`](/es/reference/settings/session-settings#query_profiler_cpu_time_period_ns) o [`query_profiler_real_time_period_ns`](/es/reference/settings/session-settings#query_profiler_real_time_period_ns).
+    Ambas opciones pueden usarse simultáneamente.
+
+    Estas opciones le permiten configurar los temporizadores del perfilador.
+    Como se trata de opciones de sesión, puede obtener una frecuencia de muestreo distinta para todo el servidor, usuarios individuales o perfiles de usuario, para su sesión interactiva y para cada consulta individual.
+
+    La frecuencia de muestreo predeterminada es de una muestra por segundo, y tanto los temporizadores de CPU como los de tiempo real están habilitados.
+    Esta frecuencia le permite recopilar información suficiente sobre su clúster de ClickHouse sin afectar al rendimiento del servidor.
+    Si necesita perfilar cada consulta individual, use una frecuencia de muestreo más alta.
+  </Step>
+
+  <Step>
+    ### Analice la tabla del sistema `trace_log`
+
+    Para analizar la tabla del sistema `trace_log`, habilite las funciones de introspección con la opción [`allow_introspection_functions`](/es/reference/settings/session-settings#allow_introspection_functions):
+
+    ```sql
+    SET allow_introspection_functions=1
+    ```
+
+    <Note>
+      Por razones de seguridad, las funciones de introspección están deshabilitadas de forma predeterminada
+    </Note>
+
+    Use las [funciones de introspección](/es/reference/functions/regular-functions/introspection) `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` y `demangle` para obtener los nombres de las funciones y sus posiciones en el código de ClickHouse.
+    Para obtener un perfil de alguna consulta, necesita agregar datos de la tabla `trace_log`.
+    Puede agregar los datos por funciones individuales o por trazas de pila completas.
+
+    <Tip>
+      Si necesita visualizar la información de `trace_log`, pruebe [flamegraph](/es/integrations/connectors/tools/gui#clickhouse-flamegraph) y [speedscope](https://www.speedscope.app).
+    </Tip>
+  </Step>
+</Steps>
+
+<div id="flamegraph">
+  ## Crear flame graphs con la función `flameGraph`
+</div>
+
+ClickHouse proporciona la función de agregación [`flameGraph`](/es/reference/functions/aggregate-functions/flame_graph), que genera un flame graph directamente a partir de las trazas de pila almacenadas en `trace_log`.
+La salida es un array de cadenas en un formato compatible con [flamegraph.pl](https://github.com/brendangregg/FlameGraph).
+
+**Sintaxis:**
+
+```sql
+flameGraph(traces, [size = 1], [ptr = 0])
+```
+
+**Argumentos:**
+
+* `traces` — una traza de pila. [`Array(UInt64)`](/es/reference/data-types/array).
+* `size` — el tamaño de una asignación para el profiling de memoria. [`Int64`](/es/reference/data-types/int-uint).
+* `ptr` — una dirección de asignación. [`UInt64`](/es/reference/data-types/int-uint).
+
+Cuando `ptr` no es cero, `flameGraph` empareja las asignaciones (`size > 0`) y las liberaciones de memoria (`size < 0`) que tienen el mismo tamaño y puntero.
+Solo se muestran las asignaciones que no se liberaron.
+Las liberaciones de memoria sin correspondencia se ignoran.
+
+<div id="cpu-flame-graph">
+  ### flame graph de CPU
+</div>
+
+<Note>
+  Las consultas siguientes requieren que tengas instalado [flamegraph.pl](https://github.com/brendangregg/FlameGraph).
+
+  Para ello, ejecuta:
+
+  ```bash
+  git clone https://github.com/brendangregg/FlameGraph
+  # Luego úsalo así:
+  # ~/FlameGraph/flamegraph.pl
+  ```
+
+  Sustituye `flamegraph.pl` en las siguientes consultas por la ruta en la que se encuentra `flamegraph.pl` en tu equipo
+</Note>
+
+```sql
+SET query_profiler_cpu_time_period_ns = 10000000;
+```
+
+Ejecuta tu consulta y luego genera el flame graph:
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(arrayReverse(trace)))
+        FROM system.trace_log
+        WHERE trace_type = 'CPU' AND query_id = '<query_id>'" \
+    | flamegraph.pl > flame_cpu.svg
+```
+
+<div id="memory-flame-graph-all">
+  ### flame graph de memoria — todas las asignaciones
+</div>
+
+```sql
+SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
+```
+
+Ejecute la consulta y, a continuación, genere el flame graph:
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, size))
+        FROM system.trace_log
+        WHERE trace_type = 'MemorySample' AND query_id = '<query_id>'" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem.svg
+```
+
+<div id="memory-flame-graph-unfreed">
+  ### flame graph de memoria — asignaciones no liberadas
+</div>
+
+Esta variante relaciona las asignaciones con las desasignaciones por puntero y muestra únicamente la memoria que no se liberó durante la consulta.
+
+```sql
+SET memory_profiler_sample_probability = 1, max_untracked_memory = 1,
+    use_uncompressed_cache = 1,
+    merge_tree_max_rows_to_use_cache = 100000000000,
+    merge_tree_max_bytes_to_use_cache = 1000000000000;
+```
+
+Ejecute la siguiente consulta para generar el flame graph:
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, size, ptr))
+        FROM system.trace_log
+        WHERE trace_type = 'MemorySample' AND query_id = '<query_id>'" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem_unfreed.svg
+```
+
+<div id="memory-flame-graph-time-point">
+  ### Flame graph de memoria — asignaciones activas en un momento dado
+</div>
+
+Este enfoque permite identificar el pico de uso de memoria y visualizar qué se había asignado en ese momento.
+
+```sql
+SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
+```
+
+<div id="find-memory-usage-over-time">
+  #### Ver el uso de memoria a lo largo del tiempo
+</div>
+
+```sql
+SELECT
+    event_time,
+    formatReadableSize(max(s)) AS m
+FROM (
+    SELECT
+        event_time,
+        sum(size) OVER (ORDER BY event_time) AS s
+    FROM system.trace_log
+    WHERE query_id = '<query_id>' AND trace_type = 'MemorySample'
+)
+GROUP BY event_time
+ORDER BY event_time;
+```
+
+<div id="find-time-point-maximum-memory-usage">
+  #### Encontrar el momento de mayor uso de memoria
+</div>
+
+```sql
+SELECT
+    argMax(event_time, s),
+    max(s)
+FROM (
+    SELECT
+        event_time,
+        sum(size) OVER (ORDER BY event_time) AS s
+    FROM system.trace_log
+    WHERE query_id = '<query_id>' AND trace_type = 'MemorySample'
+);
+```
+
+<div id="build-flame-graph">
+  #### Crear un flame graph de las asignaciones activas en ese instante
+</div>
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, size, ptr))
+        FROM (
+            SELECT * FROM system.trace_log
+            WHERE trace_type = 'MemorySample'
+              AND query_id = '<query_id>'
+              AND event_time <= '<time_point>'
+            ORDER BY event_time
+        )" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_pos.svg
+```
+
+<div id="build-flame-graph-deallocations">
+  #### Crea un flame graph de las liberaciones de memoria posteriores a ese momento (para entender qué se liberó después)
+</div>
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, -size, ptr))
+        FROM (
+            SELECT * FROM system.trace_log
+            WHERE trace_type = 'MemorySample'
+              AND query_id = '<query_id>'
+              AND event_time > '<time_point>'
+            ORDER BY event_time DESC
+        )" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_neg.svg
+```
+
+<div id="example">
+  ## Ejemplo
+</div>
+
+El siguiente fragmento de código:
+
+* Filtra los datos de `trace_log` por un identificador de consulta y la fecha actual.
+* Agrupa por traza de pila.
+* Usa funciones de introspección para obtener un informe de:
+  * Los nombres de los símbolos y las funciones correspondientes del código fuente.
+  * Las ubicaciones de estas funciones en el código fuente.
+
+```sql
+SELECT
+    count(),
+    arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+FROM system.trace_log
+WHERE (query_id = '<query_id>') AND (event_date = today())
+GROUP BY trace
+ORDER BY count() DESC
+LIMIT 10
+```

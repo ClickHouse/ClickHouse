@@ -1,0 +1,249 @@
+---
+title: 'العمليات الأساسية - السلاسل الزمنية'
+sidebarTitle: 'العمليات الأساسية'
+description: 'عمليات السلاسل الزمنية الأساسية في ClickHouse.'
+slug: /use-cases/time-series/basic-operations
+keywords: ['السلاسل الزمنية', 'العمليات الأساسية', 'إدخال البيانات', 'الاستعلام عن', 'التصفية', 'التجميع', 'التجميع التلخيصي']
+show_related_blogs: true
+doc_type: 'دليل'
+---
+
+يوفّر ClickHouse عدة أساليب للتعامل مع بيانات السلاسل الزمنية، ما يتيح لك تجميع نقاط البيانات وتحليلها عبر فترات زمنية مختلفة.
+يغطي هذا القسم العمليات الأساسية الشائعة عند العمل مع البيانات المستندة إلى الوقت.
+
+تشمل العمليات الشائعة تجميع البيانات حسب الفترات الزمنية، ومعالجة الفجوات في بيانات السلاسل الزمنية، وحساب التغيّرات بين الفترات الزمنية.
+يمكن تنفيذ هذه العمليات باستخدام بناء جملة SQL القياسي مع دوال الوقت المضمّنة في ClickHouse.
+
+سنستعرض إمكانات ClickHouse للاستعلام عن السلاسل الزمنية باستخدام مجموعة بيانات Wikistat (بيانات مشاهدات صفحات Wikipedia):
+
+```sql
+CREATE TABLE wikistat
+(
+    `time` DateTime,
+    `project` String,
+    `subproject` String,
+    `path` String,
+    `hits` UInt64
+)
+ENGINE = MergeTree
+ORDER BY (time);
+```
+
+لنقم بملء هذا الجدول بمليار سجل:
+
+```sql
+INSERT INTO wikistat 
+SELECT *
+FROM s3('https://ClickHouse-public-datasets.s3.amazonaws.com/wikistat/partitioned/wikistat*.native.zst') 
+LIMIT 1e9;
+```
+
+<div id="time-series-aggregating-time-bucket">
+  ## التجميع حسب الفترات الزمنية
+</div>
+
+أكثر المتطلبات شيوعًا هو تجميع البيانات على أساس فترات زمنية، مثل الحصول على العدد الإجمالي للزيارات لكل يوم:
+
+```sql
+SELECT
+    toDate(time) AS date,
+    sum(hits) AS hits
+FROM wikistat
+GROUP BY ALL
+ORDER BY date ASC
+LIMIT 5;
+```
+
+```text
+┌───────date─┬─────hits─┐
+│ 2015-05-01 │ 25524369 │
+│ 2015-05-02 │ 25608105 │
+│ 2015-05-03 │ 28567101 │
+│ 2015-05-04 │ 29229944 │
+│ 2015-05-05 │ 29383573 │
+└────────────┴──────────┘
+```
+
+لقد استخدمنا هنا الدالة [`toDate()`](/ar/reference/functions/regular-functions/type-conversion-functions#toDate)، التي تحوّل الوقت المحدد إلى النوع Date. وبدلًا من ذلك، يمكننا التجميع على أساس كل ساعة مع التصفية حسب التاريخ المحدد:
+
+```sql
+SELECT
+    toStartOfHour(time) AS hour,
+    sum(hits) AS hits    
+FROM wikistat
+WHERE date(time) = '2015-07-01'
+GROUP BY ALL
+ORDER BY hour ASC
+LIMIT 5;
+```
+
+```text
+┌────────────────hour─┬───hits─┐
+│ 2015-07-01 00:00:00 │ 656676 │
+│ 2015-07-01 01:00:00 │ 768837 │
+│ 2015-07-01 02:00:00 │ 862311 │
+│ 2015-07-01 03:00:00 │ 829261 │
+│ 2015-07-01 04:00:00 │ 749365 │
+└─────────────────────┴────────┘
+```
+
+تُحوِّل الدالة [`toStartOfHour()`](/ar/reference/functions/regular-functions/date-time-functions#toStartOfHour) المستخدمة هنا الوقت المحدد إلى بداية الساعة.
+يمكنك أيضًا التجميع حسب السنة أو الربع أو الشهر أو اليوم.
+
+<div id="time-series-custom-grouping-intervals">
+  ## فترات التجميع المخصصة
+</div>
+
+يمكننا حتى التجميع حسب فترات زمنية اعتباطية، مثل 5 دقائق، باستخدام الدالة [`toStartOfInterval()`](/ar/reference/functions/regular-functions/date-time-functions#toStartOfInterval).
+
+لنفترض أننا نريد التجميع حسب فترات مدتها 4 ساعات.
+يمكننا تحديد فترة التجميع باستخدام البند [`INTERVAL`](/ar/reference/data-types/special-data-types/interval):
+
+```sql
+SELECT
+    toStartOfInterval(time, INTERVAL 4 HOUR) AS interval,
+    sum(hits) AS hits
+FROM wikistat
+WHERE date(time) = '2015-07-01'
+GROUP BY ALL
+ORDER BY interval ASC
+LIMIT 6;
+```
+
+أو يمكن استخدام الدالة [`toIntervalHour()`](/ar/reference/functions/regular-functions/type-conversion-functions#toIntervalHour)
+
+```sql
+SELECT
+    toStartOfInterval(time, toIntervalHour(4)) AS interval,
+    sum(hits) AS hits
+FROM wikistat
+WHERE date(time) = '2015-07-01'
+GROUP BY ALL
+ORDER BY interval ASC
+LIMIT 6;
+```
+
+في كلتا الحالتين، تكون النتائج كما يلي:
+
+```text
+┌────────────interval─┬────hits─┐
+│ 2015-07-01 00:00:00 │ 3117085 │
+│ 2015-07-01 04:00:00 │ 2928396 │
+│ 2015-07-01 08:00:00 │ 2679775 │
+│ 2015-07-01 12:00:00 │ 2461324 │
+│ 2015-07-01 16:00:00 │ 2823199 │
+│ 2015-07-01 20:00:00 │ 2984758 │
+└─────────────────────┴─────────┘
+```
+
+<div id="time-series-filling-empty-groups">
+  ## ملء المجموعات الفارغة
+</div>
+
+في كثير من الحالات، نتعامل مع بيانات متفرقة تتضمن بعض الفترات الزمنية المفقودة. وينتج عن ذلك مجموعات فارغة. لنأخذ المثال التالي حيث نُجمِّع البيانات ضمن فترات زمنية مدتها ساعة واحدة. سينتج عن ذلك الإحصاءات التالية، مع غياب القيم لبعض الساعات:
+
+```sql
+SELECT
+    toStartOfHour(time) AS hour,
+    sum(hits)
+FROM wikistat
+WHERE (project = 'ast') AND (subproject = 'm') AND (date(time) = '2015-07-01')
+GROUP BY ALL
+ORDER BY hour ASC;
+```
+
+```text
+┌────────────────hour─┬─sum(hits)─┐
+│ 2015-07-01 00:00:00 │         3 │ <- missing values
+│ 2015-07-01 02:00:00 │         1 │ <- missing values
+│ 2015-07-01 04:00:00 │         1 │
+│ 2015-07-01 05:00:00 │         2 │
+│ 2015-07-01 06:00:00 │         1 │
+│ 2015-07-01 07:00:00 │         1 │
+│ 2015-07-01 08:00:00 │         3 │
+│ 2015-07-01 09:00:00 │         2 │ <- missing values
+│ 2015-07-01 12:00:00 │         2 │
+│ 2015-07-01 13:00:00 │         4 │
+│ 2015-07-01 14:00:00 │         2 │
+│ 2015-07-01 15:00:00 │         2 │
+│ 2015-07-01 16:00:00 │         2 │
+│ 2015-07-01 17:00:00 │         1 │
+│ 2015-07-01 18:00:00 │         5 │
+│ 2015-07-01 19:00:00 │         5 │
+│ 2015-07-01 20:00:00 │         4 │
+│ 2015-07-01 21:00:00 │         4 │
+│ 2015-07-01 22:00:00 │         2 │
+│ 2015-07-01 23:00:00 │         2 │
+└─────────────────────┴───────────┘
+```
+
+يوفّر ClickHouse المُعدِّل [`WITH FILL`](/ar/guides/use-cases/real-time-analytics/time-series/time-series-filling-gaps#with-fill) لمعالجة ذلك. سيملأ هذا جميع الساعات الفارغة بالأصفار، مما يتيح لنا فهم التوزيع عبر الزمن بصورة أفضل:
+
+```sql
+SELECT
+    toStartOfHour(time) AS hour,
+    sum(hits)
+FROM wikistat
+WHERE (project = 'ast') AND (subproject = 'm') AND (date(time) = '2015-07-01')
+GROUP BY ALL
+ORDER BY hour ASC WITH FILL STEP toIntervalHour(1);
+```
+
+```text
+┌────────────────hour─┬─sum(hits)─┐
+│ 2015-07-01 00:00:00 │         3 │
+│ 2015-07-01 01:00:00 │         0 │ <- new value
+│ 2015-07-01 02:00:00 │         1 │
+│ 2015-07-01 03:00:00 │         0 │ <- new value
+│ 2015-07-01 04:00:00 │         1 │
+│ 2015-07-01 05:00:00 │         2 │
+│ 2015-07-01 06:00:00 │         1 │
+│ 2015-07-01 07:00:00 │         1 │
+│ 2015-07-01 08:00:00 │         3 │
+│ 2015-07-01 09:00:00 │         2 │
+│ 2015-07-01 10:00:00 │         0 │ <- new value
+│ 2015-07-01 11:00:00 │         0 │ <- new value
+│ 2015-07-01 12:00:00 │         2 │
+│ 2015-07-01 13:00:00 │         4 │
+│ 2015-07-01 14:00:00 │         2 │
+│ 2015-07-01 15:00:00 │         2 │
+│ 2015-07-01 16:00:00 │         2 │
+│ 2015-07-01 17:00:00 │         1 │
+│ 2015-07-01 18:00:00 │         5 │
+│ 2015-07-01 19:00:00 │         5 │
+│ 2015-07-01 20:00:00 │         4 │
+│ 2015-07-01 21:00:00 │         4 │
+│ 2015-07-01 22:00:00 │         2 │
+│ 2015-07-01 23:00:00 │         2 │
+└─────────────────────┴───────────┘
+```
+
+<div id="time-series-rolling-time-windows">
+  ## النوافذ الزمنية المتحركة
+</div>
+
+أحيانًا، لا نريد التعامل مع بدايات الفترات الزمنية (مثل بداية يوم أو ساعة)، بل مع نوافذ زمنية.
+لنفترض أننا نريد فهم إجمالي hits لنافذة زمنية، ليس على أساس الأيام بل على أساس فترة من 24 ساعة تبدأ من الساعة 6 مساءً.
+
+يمكننا استخدام الدالة [`date_diff()`](/ar/reference/functions/regular-functions/date-time-functions#timeDiff) لحساب الفرق بين وقت مرجعي ووقت كل سجل.
+في هذه الحالة، سيمثل العمود `day` الفرق بالأيام (على سبيل المثال: قبل يوم واحد، قبل يومين، وهكذا):
+
+```sql
+SELECT    
+    dateDiff('day', toDateTime('2015-05-01 18:00:00'), time) AS day,
+    sum(hits),
+FROM wikistat
+GROUP BY ALL
+ORDER BY day ASC
+LIMIT 5;
+```
+
+```text
+┌─day─┬─sum(hits)─┐
+│   0 │  25524369 │
+│   1 │  25608105 │
+│   2 │  28567101 │
+│   3 │  29229944 │
+│   4 │  29383573 │
+└─────┴───────────┘
+```

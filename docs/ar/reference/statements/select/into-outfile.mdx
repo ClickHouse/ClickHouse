@@ -1,0 +1,45 @@
+---
+description: 'توثيق لعبارة INTO OUTFILE'
+sidebarTitle: 'INTO OUTFILE'
+slug: /sql-reference/statements/select/into-outfile
+title: 'عبارة INTO OUTFILE'
+doc_type: 'مرجع'
+---
+
+تُعيد عبارة `INTO OUTFILE` توجيه ناتج استعلام `SELECT` إلى ملف على جانب **العميل**.
+
+الملفات المضغوطة مدعومة. ويُستدل على نوع الضغط من امتداد اسم الملف (ويُستخدم الوضع `'auto'` افتراضيًا). كما يمكن تحديده صراحةً في عبارة `COMPRESSION`. ويمكن تحديد مستوى الضغط لنوع ضغط معيّن في عبارة `LEVEL`.
+
+**الصيغة**
+
+```sql
+SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMPRESSION type [LEVEL level]]
+```
+
+`file_name` و`type` هما قيمتان نصيتان حرفيتان. أنواع الضغط المدعومة هي: `'none'`، `'gzip'`، `'deflate'`، `'br'`، `'xz'`، `'zstd'`، `'lz4'`، `'bz2'`.
+
+`level` قيمة رقمية حرفية. الأعداد الصحيحة الموجبة المدعومة تكون ضمن النطاقات التالية: `1-12` للنوع `lz4`، و`1-22` للنوع `zstd`، و`1-9` لأنواع الضغط الأخرى.
+
+<div id="implementation-details">
+  ## تفاصيل التنفيذ
+</div>
+
+* هذه الوظيفة متاحة في [عميل سطر الأوامر](/ar/concepts/features/interfaces/client) و[clickhouse-local](/ar/concepts/features/tools-and-utilities/clickhouse-local). لذلك، سيفشل أي استعلام يُرسَل عبر [واجهة HTTP](/ar/concepts/features/interfaces/http).
+* سيفشل الـاستعلام إذا كان هناك بالفعل ملف بالاسم نفسه.
+* [تنسيق الإخراج](/ar/reference/formats/index) الافتراضي هو `TabSeparated` (كما في وضع الدفعات لعميل سطر الأوامر). استخدم عبارة [FORMAT](/ar/reference/statements/select/format) لتغييره.
+* إذا ورد `AND STDOUT` في الـاستعلام، فسيُعرَض أيضًا على المخرجات القياسية الإخراج الذي يُكتَب إلى الملف. وإذا استُخدم مع الضغط، فسيُعرَض النص العادي على المخرجات القياسية.
+* إذا ورد `APPEND` في الـاستعلام، فسيُلحَق الإخراج بملف موجود. وإذا استُخدم الضغط، فلا يمكن استخدامه.
+* عند الكتابة إلى ملف موجود بالفعل، يجب استخدام `APPEND` أو `TRUNCATE`.
+
+**مثال**
+
+نفّذ الـاستعلام التالية باستخدام [عميل سطر الأوامر](/ar/concepts/features/interfaces/client):
+
+```bash title="Query"
+clickhouse-client --query="SELECT 1,'ABC' INTO OUTFILE 'select.gz' FORMAT CSV;"
+zcat select.gz 
+```
+
+```text title="Response"
+1,"ABC"
+```

@@ -1,0 +1,54 @@
+---
+slug: /cloud/managed-postgres/migrations/faq
+sidebarTitle: 'الأسئلة الشائعة'
+title: 'الأسئلة الشائعة حول عمليات ترحيل Managed Postgres'
+description: 'الأسئلة الشائعة حول ترحيل البيانات إلى ClickHouse Managed Postgres.'
+keywords: ['Postgres', 'ترحيل', 'الأسئلة الشائعة', 'Managed Postgres', 'النسخ المتماثل المنطقي', 'enum', 'قيد فريد']
+doc_type: 'مرجع'
+---
+
+import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+<PrivatePreviewBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} slug="migrations-faq" />
+
+تتناول [الأسئلة الشائعة حول ClickPipes for Postgres](/ar/integrations/clickpipes/postgres/faq) العديد من الأسئلة المتعلقة بكيفية عمل النسخ المتماثل في Postgres — بما في ذلك أعمدة `TOAST`، وفتحات النسخ المتماثل، والمنشورات، وتغييرات المخطط، وتعيينات الأنواع. وتنطبق المعلومات الواردة هناك أيضًا على عمليات الترحيل إلى Managed Postgres.
+
+<div id="invalid-enum-value">
+  ### أواجه خطأ &quot;invalid input value for enum&quot; أثناء النسخ المتماثل
+</div>
+
+يحدث هذا الخطأ عندما يحتوي Postgres المصدر على قيمة enum غير موجودة في Managed Postgres الهدف. لا ينقل النسخ المتماثل المنطقي أوامر `ALTER TYPE ... ADD VALUE` تلقائيًا، لذلك فإن أي قيم enum جديدة تُضاف إلى المصدر بعد الإعداد الأولي للمخطط ستؤدي إلى فشل عمليات الإدراج على الهدف.
+
+لإصلاح ذلك، أضف القيمة المفقودة إلى نوع enum في Postgres الهدف:
+
+```sql
+ALTER TYPE your_enum_type ADD VALUE 'new_value';
+```
+
+استبدل `your_enum_type` باسم نوع enum الخاص بك، و`'new_value'` بالقيمة المفقودة الواردة في رسالة الخطأ.
+
+<div id="unique-constraint-violation">
+  ### أرى خطأ انتهاك القيد الفريد أثناء النسخ المتماثل
+</div>
+
+قد تحدث انتهاكات القيد الفريد أثناء النسخ المتماثل المنطقي عندما يتسبب ترتيب النسخ في تعارض مع قيد فريد موجود مسبقًا على نظام Postgres الهدف. ويمكن أن يحدث ذلك في أعباء عمل CDC التي تتضمن إعادة تنفيذ عمليات تنتهك شرط التفرد مؤقتًا قبل أن يعالجها تحديث لاحق.
+
+لفك حظر النسخ المتماثل، احذف القيد الفريد من Postgres الهدف:
+
+```sql
+ALTER TABLE your_table DROP CONSTRAINT your_constraint_name;
+```
+
+يمكنك العثور على اسم القيد عبر تشغيل:
+
+```sql
+SELECT conname, conrelid::regclass
+FROM pg_constraint
+WHERE contype = 'u';
+```
+
+أعِد إضافة القيد عند التحويل النهائي، بعد اكتمال النسخ المتماثل وعدم بقاء المصدر نشطًا:
+
+```sql
+ALTER TABLE your_table ADD CONSTRAINT your_constraint_name UNIQUE (column1, column2);
+```

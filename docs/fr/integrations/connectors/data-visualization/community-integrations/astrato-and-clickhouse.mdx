@@ -1,0 +1,109 @@
+---
+sidebarTitle: 'Astrato'
+slug: /integrations/astrato
+keywords: ['clickhouse', 'Power BI', 'connecter', 'intégrer', 'UI', 'applications de données', 'visualisation de données', 'embedded analytics', 'Astrato']
+description: "Astrato apporte une véritable BI en libre-service aux entreprises et aux data businesses en mettant l’analytics entre les mains de chaque utilisateur, afin qu’il puisse créer ses propres tableaux de bord, rapports et applications de données, et répondre à ses questions sur les données sans l’aide de l’IT. Astrato accélère l’adoption, raccourcit la prise de décision et réunit l’analytics, l’embedded analytics, la saisie de données et les applications de données sur une seule plateforme. Astrato combine action et analytics dans une même solution, introduit le write-back en temps réel, permet d’interagir avec des modèles de ML et accélère votre analytics grâce à l’IA : allez au-delà des tableaux de bord grâce à la prise en charge du pushdown SQL dans Astrato."
+title: 'Connecter Astrato à ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
+import { Image } from "/snippets/fr/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/fr/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+Astrato utilise Pushdown SQL pour interroger directement ClickHouse Cloud ou des déploiements sur site. Vous pouvez ainsi accéder à toutes les données dont vous avez besoin, en bénéficiant des performances de référence de ClickHouse.
+
+<div id="connection-data-required">
+  ## Informations de connexion requises
+</div>
+
+Lors de la configuration de votre connexion de données, vous devrez disposer des informations suivantes :
+
+* Connexion de données : nom d’hôte, Port
+
+* Identifiants de la base de données : nom d’utilisateur, mot de passe
+
+<ConnectionDetails />
+
+<div id="creating-the-data-connection-to-clickhouse">
+  ## Création de la connexion de données à ClickHouse
+</div>
+
+* Sélectionnez **Data** dans la barre latérale, puis l’onglet **connexion de données**
+  (ou accédez à ce lien : https://app.astrato.io/data/sources)
+  ​
+* Cliquez sur le bouton **New connexion de données** en haut à droite de l’écran.
+
+<Image size="sm" img="/images/integrations/data-visualization/astrato_1_dataconnection.webp" alt="Connexion de données Astrato" border />
+
+* Sélectionnez **ClickHouse**.
+
+<Image size="sm" img="/images/integrations/data-visualization/astrato_2a_clickhouse_connection.webp" alt="Connexion de données ClickHouse Astrato" border />
+
+* Renseignez les champs requis dans la boîte de dialogue de connexion
+
+<Image size="sm" img="/images/integrations/data-visualization/astrato_2b_clickhouse_connection.webp" alt="Champs requis pour connecter Astrato à ClickHouse" border />
+
+* Cliquez sur **Test Connection**. Si la connexion aboutit, donnez un **nom** à la connexion de données, puis cliquez sur **Next.**
+
+* Définissez le **user access** de la connexion de données, puis cliquez sur **connect.**
+
+<Image size="md" img="/images/integrations/data-visualization/astrato_3_user_access.webp" alt="Accès utilisateur pour connecter Astrato à ClickHouse" border />
+
+* Une connexion et une vue de données sont créées.
+
+<Note>
+  si un doublon est créé, un horodatage est ajouté au nom de la source de données.
+</Note>
+
+<div id="creating-a-semantic-model--data-view">
+  ## Création d’un modèle sémantique / d’une vue de données
+</div>
+
+Dans notre éditeur de vue de données, vous verrez toutes vos tables et tous vos schémas dans ClickHouse ; sélectionnez-en quelques-uns pour commencer.
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_4a_clickhouse_data_view.webp" alt="Astrato se connecter à ClickHouse Accès utilisateur" border />
+
+Maintenant que vous avez sélectionné vos données, passez à la définition de la **vue de données**. Cliquez sur Define en haut à droite de la page.
+
+Ici, vous pouvez effectuer des jointures sur les données, ainsi que **créer des dimensions et des mesures gouvernées** — idéal pour assurer la cohérence de la logique métier entre différentes équipes.
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_4b_clickhouse_data_view_joins.webp" alt="Astrato se connecter à ClickHouse Accès utilisateur" border />
+
+**Astrato suggère intelligemment des jointures** à partir de vos métadonnées, notamment en exploitant les clés dans ClickHouse. Nos jointures suggérées vous permettent de démarrer facilement à partir de vos données ClickHouse bien gouvernées, sans réinventer la roue. Nous vous indiquons également la **qualité des jointures**, afin que vous puissiez examiner en détail toutes les suggestions d’Astrato.
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_4c_clickhouse_completed_data_view.webp" alt="Astrato se connecter à ClickHouse Accès utilisateur" border />
+
+<div id="creating-a-dashboard">
+  ## Créer un tableau de bord
+</div>
+
+En quelques étapes seulement, vous pouvez créer votre premier graphique dans Astrato.
+
+1. Ouvrez le panneau des visuels
+2. Sélectionnez un visuel (commencez par un graphique en barres verticales)
+3. Ajoutez des dimensions
+4. Ajoutez des mesures
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_5a_clickhouse_build_chart.webp" alt="Astrato : se connecter à l’accès utilisateur ClickHouse" border />
+
+<div id="view-generated-sql-supporting-each-visualization">
+  ### Voir le SQL généré pour chaque visualisation
+</div>
+
+La transparence et la précision sont au cœur d’Astrato. Nous veillons à ce que chaque requête générée soit visible, afin que vous gardiez un contrôle total. Toute la puissance de calcul s’effectue directement dans ClickHouse, tirant parti de sa rapidité tout en maintenant un haut niveau de sécurité et de gouvernance.
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_5b_clickhouse_view_sql.webp" alt="Connexion d’Astrato à ClickHouse accès utilisateur" border />
+
+<div id="example-completed-dashboard">
+  ### Exemple de tableau de bord finalisé
+</div>
+
+Un superbe tableau de bord complet ou une application analytique est désormais à votre portée. Pour découvrir davantage ce que nous avons créé, consultez notre galerie de démos sur notre site web : https://astrato.io/gallery
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_5c_clickhouse_complete_dashboard.webp" alt="Connexion d’Astrato à ClickHouse — Accès utilisateur" border />

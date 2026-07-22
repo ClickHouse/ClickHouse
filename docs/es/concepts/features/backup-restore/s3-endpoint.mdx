@@ -1,0 +1,199 @@
+---
+description: 'Descripción general de la copia de seguridad y restauración de ClickHouse'
+sidebarTitle: 'endpoint de S3'
+slug: /operations/backup/s3_endpoint
+title: 'COPIA DE SEGURIDAD / RESTAURACIÓN hacia o desde un endpoint de S3'
+doc_type: 'guide'
+---
+
+import Syntax from '/snippets/es/_syntax.mdx';
+
+Este artículo trata sobre cómo hacer copias de seguridad o restaurarlas en/desde un bucket de S3
+mediante un endpoint de S3.
+
+<div id="syntax">
+  ## Sintaxis
+</div>
+
+<Syntax />
+
+<div id="usage-examples">
+  ## Ejemplo de uso
+</div>
+
+<div id="incremental-backup-to-an-s3-endpoint">
+  ### Copia de seguridad incremental a un endpoint de S3
+</div>
+
+En este ejemplo, crearemos una copia de seguridad en un endpoint de S3 y luego la restauraremos
+desde él.
+
+<Note>
+  Para ver una explicación de las diferencias entre una copia de seguridad completa y una
+  copia de seguridad incremental, consulta [&quot;Tipos de copia de seguridad&quot;](/es/concepts/features/backup-restore/overview#backup-types)
+</Note>
+
+Necesitarás la siguiente información para usar este método:
+
+| Parámetro               | Ejemplo                                                      |
+| ----------------------- | ------------------------------------------------------------ |
+| Un endpoint de S3       | `https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/` |
+| ID de clave de acceso   | `BKIOZLE2VYN3VXXTP9RC`                                       |
+| Clave de acceso secreta | `40bwYnbqN7xU8bVePaUCh3+YEyGXu8UOMV9ANpwL`                   |
+
+<Tip>
+  La creación de un bucket de S3 se explica en la sección [&quot;usar almacenamiento de objetos S3 como disco de ClickHouse&quot;](/es/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#configuring-s3-for-clickhouse-use)
+</Tip>
+
+El destino de una copia de seguridad se especifica de la siguiente manera:
+
+```sql
+S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extra_credentials>')
+```
+
+<br />
+
+<Steps>
+  <Step>
+    #### Configuración
+
+    Cree la siguiente base de datos y tabla, e inserte algunos datos aleatorios:
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS test_db;
+    CREATE TABLE test_db.test_table
+    (
+        `key` Int,
+        `value` String,
+        `array` Array(String)
+    )
+    ENGINE = MergeTree
+    ORDER BY tuple()
+    ```
+
+    ```sql
+    INSERT INTO test_db.test_table SELECT *
+    FROM generateRandom('key Int, value String, array Array(String)')
+    LIMIT 1000
+    ```
+  </Step>
+
+  <Step>
+    #### Crear una copia de seguridad base
+
+    Las copias de seguridad incrementales requieren una copia de seguridad *base* como punto de partida. El primer parámetro
+    del destino S3 es el endpoint de S3, seguido del directorio dentro del bucket
+    que se usará para esta copia de seguridad. En este ejemplo, el directorio se llama `my_backup`.
+
+    Ejecuta el siguiente comando para crear la copia de seguridad base:
+
+    ```sql
+    BACKUP TABLE test_db.test_table TO S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/base_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    ```
+
+    ```response
+    ┌─id───────────────────────────────────┬─status─────────┐
+    │ de442b75-a66c-4a3c-a193-f76f278c70f3 │ BACKUP_CREATED │
+    └──────────────────────────────────────┴────────────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### Agregar más datos
+
+    Las copias de seguridad incrementales contienen la diferencia entre la copia de seguridad base y
+    el contenido actual de la tabla de la que se está haciendo una copia de seguridad. Agregue más datos antes de realizar la
+    copia de seguridad incremental:
+
+    ```sql
+    INSERT INTO test_db.test_table SELECT *
+    FROM generateRandom('key Int, value String, array Array(String)')
+    LIMIT 100
+    ```
+  </Step>
+
+  <Step>
+    #### Hacer una copia de seguridad incremental
+
+    Este comando de copia de seguridad es similar al de la copia de seguridad base, pero añade `SETTINGS base_backup` y la ubicación de la copia de seguridad base. Ten en cuenta que el destino de la copia de seguridad incremental no es el mismo directorio que el de la base, sino el mismo endpoint con un directorio de destino distinto dentro del bucket. La copia de seguridad base está en `my_backup`, y la incremental se escribirá en `my_incremental`:
+
+    ```sql
+    BACKUP TABLE test_db.test_table TO S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/incremental_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    SETTINGS base_backup = S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/base_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    ```
+
+    ```response
+    ┌─id───────────────────────────────────┬─status─────────┐
+    │ f6cd3900-850f-41c9-94f1-0c4df33ea528 │ BACKUP_CREATED │
+    └──────────────────────────────────────┴────────────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### Restaurar desde la copia de seguridad incremental
+
+    Este comando restaura la copia de seguridad incremental en una tabla nueva, `test_table_restored`.
+    Ten en cuenta que, al restaurar una copia de seguridad incremental, también se incluye la copia de seguridad base.
+    Al restaurar, especifica solo la **copia de seguridad incremental**:
+
+    ```sql
+    RESTORE TABLE data AS test_db.test_table_restored FROM S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/incremental_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    ```
+
+    ```response
+    ┌─id───────────────────────────────────┬─status───┐
+    │ ff0c8c39-7dff-4324-a241-000796de11ca │ RESTORED │
+    └──────────────────────────────────────┴──────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### Verifique el recuento
+
+    Hubo dos inserciones en la tabla original `data`: una de 1.000 filas y otra de 100, para un total de 1.100.
+    Verifique que la tabla restaurada tenga 1.100 filas:
+
+    ```sql
+    SELECT count()
+    FROM test_db.test_table_restored
+    ```
+
+    ```response
+    ┌─count()─┐
+    │    1100 │
+    └─────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### Verifique el contenido
+
+    Aquí se compara el contenido de la tabla original, `test_table`, con el de la tabla restaurada `test_table_restored`:
+
+    ```sql
+    SELECT throwIf((
+       SELECT groupArray(tuple(*))
+       FROM test_db.test_table
+       ) != (
+       SELECT groupArray(tuple(*))
+       FROM test_db.test_table_restored
+    ), 'Data does not match after BACKUP/RESTORE')
+    ```
+  </Step>
+</Steps>

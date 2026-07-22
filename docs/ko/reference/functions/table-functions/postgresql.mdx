@@ -1,0 +1,168 @@
+---
+description: '원격 PostgreSQL 서버에 저장된 데이터에서 `SELECT` 및 `INSERT` 쿼리를 수행할 수 있습니다.'
+sidebarTitle: 'postgresql'
+slug: /sql-reference/table-functions/postgresql
+title: 'postgresql'
+doc_type: '참고'
+---
+
+원격 PostgreSQL 서버에 저장된 데이터에서 `SELECT` 및 `INSERT` 쿼리를 수행할 수 있습니다.
+
+<div id="syntax">
+  ## 구문
+</div>
+
+```sql
+postgresql({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]})
+```
+
+<div id="arguments">
+  ## 인수
+</div>
+
+| 인수            | 설명                                                   |
+| ------------- | ---------------------------------------------------- |
+| `host:port`   | PostgreSQL 서버의 주소입니다.                                |
+| `database`    | 원격 데이터베이스 이름입니다.                                     |
+| `table`       | 원격 테이블 이름입니다.                                        |
+| `user`        | PostgreSQL 사용자 이름입니다.                                |
+| `password`    | 사용자 비밀번호입니다.                                         |
+| `schema`      | 기본 스키마가 아닌 테이블 스키마입니다. 선택 사항입니다.                     |
+| `on_conflict` | 충돌 해결 전략입니다. 예시: `ON CONFLICT DO NOTHING`. 선택 사항입니다. |
+
+인수는 [이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 사용해 전달할 수도 있습니다. 이 경우 `host`와 `port`는 별도로 지정해야 합니다. 프로덕션 환경에서는 이 방식을 권장합니다.
+
+<div id="returned_value">
+  ## 반환 값
+</div>
+
+원본 PostgreSQL 테이블과 동일한 컬럼으로 구성된 테이블 객체입니다.
+
+<Note>
+  컬럼 이름 목록이 포함된 테이블 이름과 테이블 함수 `postgresql(...)`를 `INSERT` 쿼리에서 구분하려면 `FUNCTION` 또는 `TABLE FUNCTION` 키워드를 사용해야 합니다. 아래 예시를 참조하십시오.
+</Note>
+
+<div id="implementation-details">
+  ## 구현 세부 사항
+</div>
+
+PostgreSQL 측의 `SELECT` 쿼리는 각 `SELECT` 쿼리 후 커밋되는 읽기 전용 PostgreSQL 트랜잭션 내에서 `COPY (SELECT ...) TO STDOUT` 형태로 실행됩니다.
+
+`=`, `!=`, `>`, `>=`, `<`, `<=`, `IN`과 같은 단순한 `WHERE` 절은 PostgreSQL 서버에서 실행됩니다.
+
+모든 조인, 집계, 정렬, `IN [ array ]` 조건 및 `LIMIT` 샘플링 제약은 PostgreSQL 쿼리가 완료된 후에만 ClickHouse에서 실행됩니다.
+
+PostgreSQL 측의 `INSERT` 쿼리는 각 `INSERT` 문 후 자동 커밋되는 PostgreSQL 트랜잭션 내에서 `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` 형태로 실행됩니다.
+
+PostgreSQL 배열 타입은 ClickHouse 배열로 변환됩니다.
+
+<Note>
+  주의하십시오. PostgreSQL에서는 Integer[]와 같은 배열 데이터 타입 컬럼에 행마다 서로 다른 차원의 배열이 들어갈 수 있지만, ClickHouse에서는 모든 행에서 동일한 차원의 다차원 배열만 허용됩니다.
+</Note>
+
+여러 레플리카를 지원하며, `|`로 구분해 나열해야 합니다. 예시는 다음과 같습니다:
+
+```sql
+SELECT name FROM postgresql(`postgres{1|2|3}:5432`, 'postgres_database', 'postgres_table', 'user', 'password');
+```
+
+또는
+
+```sql
+SELECT name FROM postgresql(`postgres1:5431|postgres2:5432`, 'postgres_database', 'postgres_table', 'user', 'password');
+```
+
+PostgreSQL 딕셔너리 소스의 레플리카 우선순위를 지원합니다. 맵의 숫자가 클수록 우선순위는 낮아집니다. 가장 높은 우선순위는 `0`입니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+PostgreSQL 테이블:
+
+```text
+postgres=# CREATE TABLE "public"."test" (
+"int_id" SERIAL,
+"int_nullable" INT NULL DEFAULT NULL,
+"float" FLOAT NOT NULL,
+"str" VARCHAR(100) NOT NULL DEFAULT '',
+"float_nullable" FLOAT NULL DEFAULT NULL,
+PRIMARY KEY (int_id));
+
+CREATE TABLE
+
+postgres=# INSERT INTO test (int_id, str, "float") VALUES (1,'test',2);
+INSERT 0 1
+
+postgresql> SELECT * FROM test;
+  int_id | int_nullable | float | str  | float_nullable
+ --------+--------------+-------+------+----------------
+       1 |              |     2 | test |
+(1 row)
+```
+
+일반 인수를 사용해 ClickHouse에서 데이터 선택하기:
+
+```sql
+SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password') WHERE str IN ('test');
+```
+
+또는 [이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections) 사용:
+
+```sql
+CREATE NAMED COLLECTION mypg AS
+        host = 'localhost',
+        port = 5432,
+        database = 'test',
+        user = 'postgresql_user',
+        password = 'password';
+SELECT * FROM postgresql(mypg, table='test') WHERE str IN ('test');
+```
+
+```text
+┌─int_id─┬─int_nullable─┬─float─┬─str──┬─float_nullable─┐
+│      1 │         ᴺᵁᴸᴸ │     2 │ test │           ᴺᵁᴸᴸ │
+└────────┴──────────────┴───────┴──────┴────────────────┘
+```
+
+삽입:
+
+```sql
+INSERT INTO TABLE FUNCTION postgresql('localhost:5432', 'test', 'test', 'postgrsql_user', 'password') (int_id, float) VALUES (2, 3);
+SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password');
+```
+
+```text
+┌─int_id─┬─int_nullable─┬─float─┬─str──┬─float_nullable─┐
+│      1 │         ᴺᵁᴸᴸ │     2 │ test │           ᴺᵁᴸᴸ │
+│      2 │         ᴺᵁᴸᴸ │     3 │      │           ᴺᵁᴸᴸ │
+└────────┴──────────────┴───────┴──────┴────────────────┘
+```
+
+기본 스키마가 아닌 스키마 사용:
+
+```text
+postgres=# CREATE SCHEMA "nice.schema";
+
+postgres=# CREATE TABLE "nice.schema"."nice.table" (a integer);
+
+postgres=# INSERT INTO "nice.schema"."nice.table" SELECT i FROM generate_series(0, 99) as t(i)
+```
+
+```sql
+CREATE TABLE pg_table_schema_with_dots (a UInt32)
+        ENGINE PostgreSQL('localhost:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
+```
+
+<div id="related">
+  ## 관련 항목
+</div>
+
+* [PostgreSQL 테이블 엔진](/ko/reference/engines/table-engines/integrations/postgresql)
+* [PostgreSQL을 딕셔너리 소스로 사용하기](/ko/reference/statements/create/dictionary/sources/postgresql)
+
+<div id="replicating-or-migrating-postgres-data-with-peerdb">
+  ### PeerDB를 사용해 Postgres 데이터를 복제하거나 마이그레이션하기
+</div>
+
+> 테이블 함수 외에도 ClickHouse의 [PeerDB](https://docs.peerdb.io/introduction)를 사용하면 Postgres에서 ClickHouse로 이어지는 연속적인 데이터 파이프라인을 언제든지 설정할 수 있습니다. PeerDB는 CDC(Change Data Capture)를 사용해 Postgres에서 ClickHouse로 데이터를 복제하도록 특별히 설계된 도구입니다.

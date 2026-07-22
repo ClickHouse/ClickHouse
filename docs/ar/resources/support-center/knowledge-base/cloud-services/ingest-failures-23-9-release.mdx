@@ -1,0 +1,35 @@
+---
+title: كيف أحلّ حالات فشل الإدخال بعد إصدار ClickHouse 23.9؟
+description: "تعرّف على كيفية حل حالات فشل الإدخال الناتجة عن التحقق الأكثر صرامة من الامتيازات، والذي استُحدث في ClickHouse 23.9 للجداول التي تستخدم `async_inserts`. حدِّث الامتيازات لإصلاح الأخطاء."
+date: 2022-11-17
+tags: ['الأخطاء والاستثناءات']
+keywords: ['GRANT', 'أخطاء الأذونات']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="resolving-ingest-failures-after-clickhouse-239-release">
+  ## معالجة فشل الإدخال بعد إصدار ClickHouse 23.9
+</div>
+
+تم تحديد السبب الجذري لأخطاء الأذونات هذه، ويعود إلى التدقيق الأكثر صرامة في الامتيازات في الإصدار الجديد للميزة [`async_inserts`](/ar/concepts/features/operations/insert/asyncinserts).
+
+لإصلاح هذه المشكلة، يجب تحديث الامتيازات لكي تعمل خدمتك بشكل صحيح. تحقّق من رسالة الخطأ التي تشير إلى الامتيازات المفقودة، ثم أضِف الامتيازات المطلوبة يدويًا. وستكون الامتيازات الإضافية المطلوبة للجداول التي تستخدم `async_inserts` إما امتياز `SELECT` أو امتياز `dictGet`.
+
+<div id="add-necessary-grants-to-affected-tables-and-dictionaries">
+  ## أضف امتيازات GRANT اللازمة إلى الجداول والقواميس المتأثرة
+</div>
+
+```
+-- Add SELECT grant permissions
+GRANT SELECT ON mydb.insertTable TO insert_role WITH GRANT OPTION
+
+-- Add dictGet grant permissions
+GRANT dictGet ON mydb.insertDictionary TO insert_role
+```
+
+لمعرفة المزيد عن الأمر `GRANT`، يُرجى الاطلاع على [هذه الصفحة](/ar/reference/statements/grant).
+
+إذا لم تتمكن من إجراء هذا التغيير، فيُرجى التواصل مع [ClickHouse Support](https://clickhouse.com/support/program) للحصول على المساعدة.

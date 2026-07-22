@@ -1,0 +1,43 @@
+---
+description: '指定された構造でサーバーに送信されたデータを、別の構造を持つテーブルに効率よく変換して挿入できる
+  テーブル関数。'
+sidebarTitle: 'input'
+slug: /sql-reference/table-functions/input
+title: 'input'
+doc_type: 'reference'
+---
+
+`input(structure)` - 指定された構造でサーバーに送信されたデータを、別の構造を持つテーブルに効率よく変換して挿入できるテーブル関数です。
+
+`structure` - サーバーに送信されるデータの構造です。形式は `'column1_name column1_type, column2_name column2_type, ...'` です。
+たとえば、`'id UInt32, name String'` です。
+
+この関数は `INSERT SELECT` クエリでのみ使用でき、使用できるのは 1 回だけです。ただし、それ以外の動作は通常のテーブル関数と同じです
+(たとえば、サブクエリなどで使用できます) 。
+
+データは通常の `INSERT` クエリと同じ方法で送信でき、利用可能な任意の[フォーマット](/ja/reference/formats/index)で渡せます。
+そのフォーマットはクエリの末尾で指定する必要があります (通常の `INSERT SELECT` とは異なります) 。
+
+この関数の主な特徴は、サーバーがクライアントからデータを受信すると同時に、それを `SELECT` 句内の式の一覧に従って変換し、
+ターゲットテーブルに挿入することです。転送されたすべてのデータを保持する一時テーブルは作成されません。
+
+<div id="examples">
+  ## 例
+</div>
+
+* `test` テーブルの構造が `(a String, b String)` で、`data.csv` のデータ構造がそれとは異なる `(col1 String, col2 Date, col3 Int32)` であるとします。`data.csv` から `test` テーブルにデータを挿入しつつ同時に変換するクエリは、次のようになります。
+
+{/* */}
+
+```bash
+$ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT lower(col1), col3 * col3 FROM input('col1 String, col2 Date, col3 Int32') FORMAT CSV";
+```
+
+* `data.csv` に、テーブル `test` と同じ構造である `test_structure` のデータが含まれている場合、次の2つのクエリは等価です:
+
+{/* */}
+
+```bash
+$ cat data.csv | clickhouse-client --query="INSERT INTO test FORMAT CSV"
+$ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT * FROM input('test_structure') FORMAT CSV"
+```

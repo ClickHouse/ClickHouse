@@ -1,0 +1,104 @@
+---
+slug: /deployment-modes
+sidebarTitle: '部署模式'
+description: 'ClickHouse 提供五种部署方式，均使用同样强大的数据库引擎，只是封装形式不同，以满足您的具体需求。'
+title: '部署模式'
+keywords: ['部署模式', 'chDB']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+ClickHouse 是一个用途广泛的数据库系统，可根据你的需求以多种方式部署。其核心在于，所有部署选项**都使用同一个强大的 ClickHouse 数据库引擎**——不同之处在于你如何与其交互，以及它运行在何处。
+
+无论你是在生产环境中运行大规模分析、进行本地数据分析，还是构建应用程序，都有适合你使用场景的部署选项。底层引擎的一致性意味着，在所有部署模式中，你都能获得同样出色的性能和 SQL 兼容性。
+本指南将介绍部署和使用 ClickHouse 的五种主要方式：
+
+* 用于传统客户端/服务器部署的 ClickHouse Server
+* 用于全托管数据库运维的 ClickHouse Cloud
+* 用于本地开发和 Cloud 管理的 ClickHouse 命令行客户端
+* 用于命令行数据处理的 clickhouse-local
+* 用于将 ClickHouse 直接嵌入应用程序的 chDB
+
+每种部署模式都有各自的优势和最适合的使用场景，我们将在下文中详细介绍。
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/EOXEW_-r10A?si=6IanDSJlRzN8f9Mo" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="clickhouse-server">
+  ## ClickHouse Server
+</div>
+
+ClickHouse Server 代表传统的客户端/服务器架构，非常适合生产环境部署。该部署模式提供 ClickHouse 广为人知的完整 OLAP 数据库能力，具备高吞吐量和低延迟查询性能。
+
+<Image img="/images/deployment-modes/ch-server.webp" alt="ClickHouse Server" size="sm" />
+
+<br />
+
+在部署灵活性方面，ClickHouse Server 既可以安装在本地计算机上用于开发或测试，也可以部署到 AWS、GCP 或 Azure 等主流云提供商上进行云端运行，或者部署在您自有的本地硬件上。对于更大规模的运行场景，还可以将其配置为分布式集群，以应对更高负载并提供高可用性。
+
+对于可靠性、性能和完整功能访问至关重要的生产环境，这种部署模式是首选。
+
+<div id="clickhouse-cloud">
+  ## ClickHouse Cloud
+</div>
+
+[ClickHouse Cloud](/zh/products/cloud/getting-started/intro) 是 ClickHouse 的全托管版本，可免去自行运行部署所带来的运维开销。它在保留 ClickHouse Server 全部核心能力的同时，还通过额外功能进一步优化了开发和运维体验。
+
+<Image img="/images/deployment-modes/ch-cloud.webp" alt="ClickHouse Cloud" size="sm" />
+
+ClickHouse Cloud 的一大优势在于其集成工具。[ClickPipes](/zh/get-started/setup/cloud#clickpipes) 提供了强大的数据摄取框架，让您无需管理复杂的 ETL 管道，也能轻松连接各种数据源并传输流式数据。该平台还提供了专用的[查询 API](/zh/products/cloud/guides/sql-console/query-endpoints)，使构建应用程序变得更加容易。
+
+ClickHouse Cloud 中的 SQL 控制台包含强大的[仪表盘](/zh/products/cloud/features/sql-console-features/dashboards)功能，可让您将查询转换为交互式可视化。您可以基于已保存的查询创建并共享仪表盘，还可以通过查询参数添加交互元素。这些仪表盘还可借助全局过滤器实现动态展示，让用户能够通过可自定义的视图探索数据——不过需要注意的是，要查看这些可视化内容，您至少需要对底层已保存查询具有读取权限。
+
+在监控和优化方面，ClickHouse Cloud 内置了图表和[Query Insights](/zh/products/cloud/features/sql-console-features/query-insights)。这些工具可让您深入了解集群性能，帮助您分析查询模式、资源利用率以及潜在的优化空间。对于需要维持高性能分析运营、又不想将资源投入基础设施管理的团队而言，这种级别的可观测性尤为宝贵。
+
+由于该服务是托管式的，您无需担心更新、备份、扩缩容或安全补丁——这些都会自动处理。对于希望将精力集中在数据和应用程序上，而不是数据库管理上的组织来说，这是一个理想选择。
+
+<div id="clickhouse-cli">
+  ## ClickHouse 命令行客户端
+</div>
+
+ClickHouse 命令行客户端 (`clickhousectl`) 是一款用于本地 ClickHouse 开发和 ClickHouse Cloud 管理的命令行工具。它简化了安装 ClickHouse 各版本、启动和管理本地服务器实例以及运行查询的流程。
+
+对于本地开发，`clickhousectl` 可帮助安装 ClickHouse 版本并运行服务器。您可以安装任意版本的 ClickHouse、启动命名服务器，并通过内置客户端进行连接。每个服务器都有自己的数据目录，因此可以并行运行多个相互隔离的环境。
+
+`clickhousectl` 还提供对 ClickHouse Cloud 资源的全面管理，包括创建和扩缩容服务、管理 API 密钥以及管理组织，使其成为同时适用于本地和云端工作流的统一工具。
+
+```bash
+# Install the CLI
+curl https://clickhouse.com/cli | sh
+
+# Install the latest ClickHouse, set it as your default, and symlink the clickhouse binary onto your PATH
+clickhousectl local use latest
+clickhousectl local server start
+clickhousectl local client
+```
+
+<div id="clickhouse-local">
+  ## clickhouse-local
+</div>
+
+[clickhouse-local](/zh/concepts/features/tools-and-utilities/clickhouse-local) 是一款功能强大的命令行工具，以独立可执行程序的形式提供 ClickHouse 的完整功能。它本质上与 ClickHouse Server 是同一个数据库，只是采用了不同的打包方式，让你无需运行服务器实例，也能直接通过命令行使用 ClickHouse 的全部能力。
+
+<Image img="/images/deployment-modes/ch-local.webp" alt="clickHouse-local" size="sm" />
+
+该工具尤其适合即席数据分析，特别是在处理本地文件或存储于云存储服务中的数据时。你可以使用 ClickHouse 的 SQL 方言直接查询各种格式的文件 (CSV、JSON、Parquet 等) ，因此它非常适合快速进行数据探索或一次性分析任务。
+
+由于 clickhouse-local 包含了 ClickHouse 的全部功能，你可以用它执行数据转换、格式转换，或其他任何通常会借助 ClickHouse Server 完成的数据库操作。虽然它主要用于临时操作，但在需要时也可以使用与 ClickHouse Server 相同的存储引擎来持久化数据。
+
+远程表函数与本地文件系统访问能力的结合，使 clickhouse-local 在需要将 ClickHouse Server 中的数据与本地机器上的文件数据进行关联查询的场景中特别有用。尤其是在处理敏感或临时的本地数据、且你不希望将其上传到服务器时，这一点更显价值。
+
+<div id="chdb">
+  ## chDB
+</div>
+
+[chDB](/zh/products/chdb/index) 是以进程内数据库引擎形式嵌入的 ClickHouse，目前以 Python 作为主要实现，同时也提供 Go、Rust、NodeJS 和 Bun 版本。这种部署方式可将 ClickHouse 强大的 OLAP 能力直接带入你的应用进程内，无需单独安装数据库。
+
+<Image img="/images/deployment-modes/chdb.webp" alt="chDB - 嵌入式 ClickHouse" size="sm" />
+
+chDB 可与应用程序生态无缝集成。以 Python 为例，它经过专门优化，能够高效配合 Pandas、Arrow 等常见数据科学工具使用，并通过 Python 的 memoryview 最大限度减少数据复制开销。这使它对希望在现有工作流中利用 ClickHouse 查询性能的数据科学家和分析师尤其有价值。
+
+chDB 还可以连接到使用 clickhouse-local 创建的数据库，让你在处理数据时拥有更高的灵活性。这意味着你可以在本地开发、在 Python 中探索数据以及使用更持久的存储方案之间无缝切换，而无需改变数据访问模式。

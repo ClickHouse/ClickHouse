@@ -1,0 +1,799 @@
+---
+slug: /architecture/replication
+sidebarTitle: '복제'
+title: '데이터 복제'
+description: '5개의 서버로 구성된 예시 아키텍처를 설명하는 페이지입니다. 이 중 2개는 데이터 사본을 저장하는 데 사용되며, 나머지는 데이터 복제를 조정하는 데 사용됩니다'
+doc_type: 'guide'
+keywords: ['복제', '고가용성', '클러스터 설정', '데이터 이중화', '장애 허용']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import ConfigExplanation from '/snippets/ko/_config_explanation.mdx';
+import ListenHost from '/snippets/ko/_listen_host.mdx';
+import ServerParameterTable from '/snippets/ko/_server_parameter_table.mdx';
+import KeeperConfig from '/snippets/ko/_keeper_config.mdx';
+import KeeperConfigExplanation from '/snippets/ko/_keeper_explanation.mdx';
+import VerifyKeeperStatus from '/snippets/ko/_verify_keeper_using_mntr.mdx';
+import DedicatedKeeperServers from '/snippets/ko/_dedicated_keeper_servers.mdx';
+import ExampleFiles from '/snippets/ko/_working_example.mdx';
+import CloudTip from '/snippets/ko/_cloud_tip.mdx';
+
+> 이 예시에서는 데이터를 복제하는 간단한 ClickHouse 클러스터를 설정하는 방법을 알아봅니다.
+> 총 5개의 서버가 구성됩니다. 이 중 2개는 데이터 사본을 호스팅하는 데 사용됩니다.
+> 나머지 3개의 서버는 데이터 복제를 조정하는 데 사용됩니다.
+
+설정할 클러스터의 아키텍처는 아래와 같습니다.
+
+<Image img="/images/deployment-guides/replication-sharding-examples/replication.webp" size="md" alt="1개 세그먼트와 2개 레플리카로 구성된 ReplicatedMergeTree의 아키텍처 다이어그램" />
+
+<DedicatedKeeperServers />
+
+<div id="pre-requisites">
+  ## 사전 준비 사항
+</div>
+
+* 이전에 [로컬 ClickHouse 서버](/ko/get-started/setup/install)를 설정해 본 적이 있습니다
+* [설정 파일](/ko/concepts/features/configuration/server-config/configuration-files)과 같은 ClickHouse의 기본 구성 개념을 숙지하고 있습니다
+* 시스템에 Docker가 설치되어 있습니다
+
+<Steps>
+  <Step>
+    ## 디렉터리 구조 및 테스트 환경 설정
+
+    <ExampleFiles />
+
+    이 튜토리얼에서는 [Docker compose](https://docs.docker.com/compose/)를 사용하여 ClickHouse 클러스터를 구성합니다. 이 설정은 별도의 로컬 머신, 가상 머신 또는 클라우드 인스턴스 환경에서도 동작하도록 수정할 수 있습니다.
+
+    다음 명령어를 실행하여 이 예시의 디렉터리 구조를 설정하십시오.
+
+    ```bash
+    mkdir cluster_1S_2R
+    cd cluster_1S_2R
+
+    # clickhouse-keeper 디렉토리 생성
+    for i in {01..03}; do
+      mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
+    done
+
+    # clickhouse-server 디렉토리 생성
+    for i in {01..02}; do
+      mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
+    done
+    ```
+
+    다음 `docker-compose.yml` 파일을 `cluster_1S_2R` 디렉터리에 추가하십시오:
+
+    ```yaml title="docker-compose.yml"
+    version: '3.8'
+    services:
+      clickhouse-01:
+        image: "clickhouse/clickhouse-server:latest"
+        user: "101:101"
+        container_name: clickhouse-01
+        hostname: clickhouse-01
+        volumes:
+          - ${PWD}/fs/volumes/clickhouse-01/etc/clickhouse-server/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml
+          - ${PWD}/fs/volumes/clickhouse-01/etc/clickhouse-server/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml
+        ports:
+          - "127.0.0.1:8123:8123"
+          - "127.0.0.1:9000:9000"
+        depends_on:
+          - clickhouse-keeper-01
+          - clickhouse-keeper-02
+          - clickhouse-keeper-03
+      clickhouse-02:
+        image: "clickhouse/clickhouse-server:latest"
+        user: "101:101"
+        container_name: clickhouse-02
+        hostname: clickhouse-02
+        volumes:
+          - ${PWD}/fs/volumes/clickhouse-02/etc/clickhouse-server/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml
+          - ${PWD}/fs/volumes/clickhouse-02/etc/clickhouse-server/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml
+        ports:
+          - "127.0.0.1:8124:8123"
+          - "127.0.0.1:9001:9000"
+        depends_on:
+          - clickhouse-keeper-01
+          - clickhouse-keeper-02
+          - clickhouse-keeper-03
+      clickhouse-keeper-01:
+        image: "clickhouse/clickhouse-keeper:latest-alpine"
+        user: "101:101"
+        container_name: clickhouse-keeper-01
+        hostname: clickhouse-keeper-01
+        volumes:
+         - ${PWD}/fs/volumes/clickhouse-keeper-01/etc/clickhouse-keeper/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml
+        ports:
+            - "127.0.0.1:9181:9181"
+      clickhouse-keeper-02:
+        image: "clickhouse/clickhouse-keeper:latest-alpine"
+        user: "101:101"
+        container_name: clickhouse-keeper-02
+        hostname: clickhouse-keeper-02
+        volumes:
+         - ${PWD}/fs/volumes/clickhouse-keeper-02/etc/clickhouse-keeper/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml
+        ports:
+            - "127.0.0.1:9182:9181"
+      clickhouse-keeper-03:
+        image: "clickhouse/clickhouse-keeper:latest-alpine"
+        user: "101:101"
+        container_name: clickhouse-keeper-03
+        hostname: clickhouse-keeper-03
+        volumes:
+         - ${PWD}/fs/volumes/clickhouse-keeper-03/etc/clickhouse-keeper/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml
+        ports:
+            - "127.0.0.1:9183:9181"
+    ```
+
+    다음 하위 디렉터리와 파일을 생성하십시오.
+
+    ```bash
+    for i in {01..02}; do
+      mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server/config.d
+      mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server/users.d
+      touch fs/volumes/clickhouse-${i}/etc/clickhouse-server/config.d/config.xml
+      touch fs/volumes/clickhouse-${i}/etc/clickhouse-server/users.d/users.xml
+    done
+    ```
+
+    <ConfigExplanation />
+  </Step>
+
+  <Step>
+    ## ClickHouse 노드 구성
+
+    ### 서버 설정
+
+    이제 `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`에 위치한 각 빈 설정 파일 `config.xml`을 수정하십시오. 아래에 강조 표시된 줄은 각 노드에 맞게 수정해야 합니다:
+
+    ```xml highlight={9,53-57}
+    <clickhouse replace="true">
+        <logger>
+            <level>debug</level>
+            <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+            <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+            <size>1000M</size>
+            <count>3</count>
+        </logger>
+        <display_name>cluster_1S_2R node 1</display_name>
+        <listen_host>0.0.0.0</listen_host>
+        <http_port>8123</http_port>
+        <tcp_port>9000</tcp_port>
+        <user_directories>
+            <users_xml>
+                <path>users.xml</path>
+            </users_xml>
+            <local_directory>
+                <path>/var/lib/clickhouse/access/</path>
+            </local_directory>
+        </user_directories>
+        <distributed_ddl>
+            <path>/clickhouse/task_queue/ddl</path>
+        </distributed_ddl>
+        <remote_servers>
+            <cluster_1S_2R>
+                <shard>
+                    <internal_replication>true</internal_replication>
+                    <replica>
+                        <host>clickhouse-01</host>
+                        <port>9000</port>
+                    </replica>
+                    <replica>
+                        <host>clickhouse-02</host>
+                        <port>9000</port>
+                    </replica>
+                </shard>
+            </cluster_1S_2R>
+        </remote_servers>
+        <zookeeper>
+            <node>
+                <host>clickhouse-keeper-01</host>
+                <port>9181</port>
+            </node>
+            <node>
+                <host>clickhouse-keeper-02</host>
+                <port>9181</port>
+            </node>
+            <node>
+                <host>clickhouse-keeper-03</host>
+                <port>9181</port>
+            </node>
+        </zookeeper>
+        <macros>
+            <shard>01</shard>
+            <replica>01</replica>
+            <cluster>cluster_1S_2R</cluster>
+        </macros>
+    </clickhouse>
+    ```
+
+    | 디렉터리                                                      | File                                                                                                                                                                             |
+    | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `fs/volumes/clickhouse-01/etc/clickhouse-server/config.d` | [`config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-01/etc/clickhouse-server/config.d/config.xml) |
+    | `fs/volumes/clickhouse-02/etc/clickhouse-server/config.d` | [`config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-02/etc/clickhouse-server/config.d/config.xml) |
+
+    위 설정 파일의 각 섹션에 대해서는 아래에서 자세히 설명합니다.
+
+    #### 네트워킹 및 로깅
+
+    <ListenHost />
+
+    로깅은 `<logger>` 블록에서 정의됩니다. 다음 예시 구성은 1000M 크기에서 최대 3회 롤오버되는 디버그 로그를 설정합니다:
+
+    ```xml
+    <logger>
+        <level>debug</level>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+        <size>1000M</size>
+        <count>3</count>
+    </logger>
+    ```
+
+    로깅 구성에 대한 자세한 내용은 기본 ClickHouse [설정 파일](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml)에 포함된 주석을 참조하십시오.
+
+    #### 클러스터 구성
+
+    클러스터 구성은 `<remote_servers>` 블록에서 설정합니다.
+    여기서 클러스터 이름 `cluster_1S_2R`을 정의합니다.
+
+    `<cluster_1S_2R></cluster_1S_2R>` 블록은 `<shard></shard>` 및 `<replica></replica>` 설정을 사용하여 클러스터의 레이아웃을 정의하며, `ON CLUSTER` 절을 통해 클러스터 전체에서 실행되는 분산 DDL 쿼리의 template 역할을 합니다. 기본적으로 분산 DDL 쿼리는 허용되지만, `allow_distributed_ddl_queries` 설정으로 비활성화할 수도 있습니다.
+
+    `internal_replication`이 true로 설정되어 있어 데이터는 레플리카 중 하나에만 기록됩니다.
+
+    ```xml
+    <remote_servers>
+        <!-- 클러스터 이름 (점(.)을 포함하면 안 됩니다) -->
+        <cluster_1S_2R>
+            <!-- <allow_distributed_ddl_queries>false</allow_distributed_ddl_queries> -->
+            <shard>
+                <!-- 선택 사항. 레플리카 중 하나에만 데이터를 쓸지 여부입니다. 기본값: false (모든 레플리카에 데이터를 씁니다). -->
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>clickhouse-01</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>clickhouse-02</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster_1S_2R>
+    </remote_servers>
+    ```
+
+    <ServerParameterTable />
+
+    #### Keeper 구성
+
+    `<ZooKeeper>` 섹션은 ClickHouse Keeper(또는 ZooKeeper)가 실행 중인 위치를 ClickHouse에 알려줍니다.
+    ClickHouse Keeper 클러스터를 사용하는 경우, 클러스터의 각 `<node>`에 대해 `<host>` 및 `<port>` 태그를 사용하여 호스트명과 포트 번호를 지정해야 합니다.
+
+    ClickHouse Keeper 설정은 튜토리얼의 다음 단계에서 설명합니다.
+
+    ```xml
+    <zookeeper>
+        <node>
+            <host>clickhouse-keeper-01</host>
+            <port>9181</port>
+        </node>
+        <node>
+            <host>clickhouse-keeper-02</host>
+            <port>9181</port>
+        </node>
+        <node>
+            <host>clickhouse-keeper-03</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+    ```
+
+    <Note>
+      ClickHouse Keeper를 ClickHouse 서버와 동일한 서버에서 실행할 수는 있지만,
+      프로덕션 환경에서는 ClickHouse Keeper를 전용 호스트에서 실행할 것을 강력히 권장합니다.
+    </Note>
+
+    #### 매크로 구성
+
+    또한 `<macros>` 섹션은 복제된 테이블에 대한 매개변수 치환을 정의하는 데 사용됩니다. 이 항목들은 `system.macros`에 나열되며, 쿼리에서 `{shard}` 및 `{replica}` 같은 치환 값을 사용할 수 있습니다.
+
+    ```xml
+    <macros>
+        <shard>01</shard>
+        <replica>01</replica>
+        <cluster>cluster_1S_2R</cluster>
+    </macros>
+    ```
+
+    <Note>
+      클러스터 구성에 따라 각각 다르게 정의됩니다.
+    </Note>
+
+    ### 사용자 구성
+
+    이제 `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d`에 있는 빈 설정 파일 `users.xml`을 각각 다음과 같이 수정하십시오.
+
+    ```xml title="/users.d/users.xml"
+    <?xml version="1.0"?>
+    <clickhouse replace="true">
+        <profiles>
+            <default>
+                <max_memory_usage>10000000000</max_memory_usage>
+                <use_uncompressed_cache>0</use_uncompressed_cache>
+                <load_balancing>in_order</load_balancing>
+                <log_queries>1</log_queries>
+            </default>
+        </profiles>
+        <users>
+            <default>
+                <access_management>1</access_management>
+                <profile>default</profile>
+                <networks>
+                    <ip>::/0</ip>
+                </networks>
+                <quota>default</quota>
+                <access_management>1</access_management>
+                <named_collection_control>1</named_collection_control>
+                <show_named_collections>1</show_named_collections>
+                <show_named_collections_secrets>1</show_named_collections_secrets>
+            </default>
+        </users>
+        <quotas>
+            <default>
+                <interval>
+                    <duration>3600</duration>
+                    <queries>0</queries>
+                    <errors>0</errors>
+                    <result_rows>0</result_rows>
+                    <read_rows>0</read_rows>
+                    <execution_time>0</execution_time>
+                </interval>
+            </default>
+        </quotas>
+    </clickhouse>
+    ```
+
+    | 디렉터리                                                     | File                                                                                                                                                                          |
+    | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `fs/volumes/clickhouse-01/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-01/etc/clickhouse-server/users.d/users.xml) |
+    | `fs/volumes/clickhouse-02/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-02/etc/clickhouse-server/users.d/users.xml) |
+
+    이 예시에서는 편의상 기본 사용자를 비밀번호 없이 구성합니다.
+    실제 운영 환경에서는 권장하지 않는 방식입니다.
+
+    <Note>
+      이 예시에서는 cluster의 모든 노드에서 `users.xml` 파일이 동일합니다.
+    </Note>
+  </Step>
+
+  <Step>
+    ## ClickHouse Keeper 구성
+
+    ### Keeper 설정
+
+    <KeeperConfig />
+
+    | 디렉터리                                                    | 파일                                                                                                                                                                                           |
+    | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `fs/volumes/clickhouse-keeper-01/etc/clickhouse-keeper` | [`keeper_config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-keeper-01/etc/clickhouse-keeper/keeper_config.xml) |
+    | `fs/volumes/clickhouse-keeper-02/etc/clickhouse-keeper` | [`keeper_config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-keeper-02/etc/clickhouse-keeper/keeper_config.xml) |
+    | `fs/volumes/clickhouse-keeper-03/etc/clickhouse-keeper` | [`keeper_config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-keeper-03/etc/clickhouse-keeper/keeper_config.xml) |
+
+    <KeeperConfigExplanation />
+
+    <CloudTip />
+  </Step>
+
+  <Step>
+    ## 설정 테스트
+
+    로컬 환경에서 Docker가 실행 중인지 확인하세요.
+    `cluster_1S_2R` 디렉터리의 루트에서 `docker-compose up` 명령으로 클러스터를 시작하세요:
+
+    ```bash
+    docker-compose up -d
+    ```
+
+    docker가 ClickHouse 및 Keeper 이미지를 가져오기 시작한 다음,
+    컨테이너를 시작하는 것을 확인할 수 있습니다:
+
+    ```bash
+    [+] Running 6/6
+     ✔ Network cluster_1s_2r_default   Created
+     ✔ Container clickhouse-keeper-03  Started
+     ✔ Container clickhouse-keeper-02  Started
+     ✔ Container clickhouse-keeper-01  Started
+     ✔ Container clickhouse-01         Started
+     ✔ Container clickhouse-02         Started
+    ```
+
+    클러스터가 실행 중인지 확인하려면 `clickhouse-01` 또는 `clickhouse-02`에 연결한 다음
+    다음 쿼리를 실행합니다. 첫 번째 노드에 연결하는 명령은 다음과 같습니다:
+
+    ```bash
+    # 임의의 노드에 연결
+    docker exec -it clickhouse-01 clickhouse-client
+    ```
+
+    정상적으로 완료되면 ClickHouse client 프롬프트가 표시됩니다:
+
+    ```response
+    cluster_1S_2R node 1 :)
+    ```
+
+    어떤 호스트에 어떤 클러스터 토폴로지가 정의되어 있는지 확인하려면 다음 쿼리를 실행하십시오:
+
+    ```sql title="Query"
+    SELECT 
+        cluster,
+        shard_num,
+        replica_num,
+        host_name,
+        port
+    FROM system.clusters;
+    ```
+
+    ```response title="Response"
+       ┌─cluster───────┬─shard_num─┬─replica_num─┬─host_name─────┬─port─┐
+    1. │ cluster_1S_2R │         1 │           1 │ clickhouse-01 │ 9000 │
+    2. │ cluster_1S_2R │         1 │           2 │ clickhouse-02 │ 9000 │
+    3. │ default       │         1 │           1 │ localhost     │ 9000 │
+       └───────────────┴───────────┴─────────────┴───────────────┴──────┘
+    ```
+
+    다음 쿼리를 실행하여 ClickHouse Keeper 클러스터의 상태를 확인하세요:
+
+    ```sql title="Query"
+    SELECT *
+    FROM system.zookeeper
+    WHERE path IN ('/', '/clickhouse')
+    ```
+
+    ```response title="Response"
+       ┌─name───────┬─value─┬─path────────┐
+    1. │ sessions   │       │ /clickhouse │
+    2. │ task_queue │       │ /clickhouse │
+    3. │ keeper     │       │ /           │
+    4. │ clickhouse │       │ /           │
+       └────────────┴───────┴─────────────┘
+    ```
+
+    <VerifyKeeperStatus />
+
+    이제 단일 세그먼트와 2개의 레플리카로 구성된 ClickHouse 클러스터 설정이 완료되었습니다.
+    다음 단계에서는 클러스터에 테이블을 생성합니다.
+  </Step>
+
+  <Step>
+    ## 데이터베이스 생성
+
+    이제 클러스터가 올바르게 설정되어 실행 중임을 확인했으므로,
+    [UK property prices](/ko/get-started/sample-datasets/uk-price-paid)
+    예시 데이터셋 튜토리얼에서 사용한 것과 동일한 테이블을 다시 생성합니다. 이 데이터셋은
+    1995년 이후 잉글랜드와 웨일스의 부동산 거래 가격 데이터 약 3천만 행으로 구성되어 있습니다.
+
+    각 호스트의 클라이언트에 연결하려면, 별도의 터미널
+    탭 또는 창에서 다음 각 명령을 실행하십시오:
+
+    ```bash
+    docker exec -it clickhouse-01 clickhouse-client
+    docker exec -it clickhouse-02 clickhouse-client
+    ```
+
+    아래 쿼리를 각 호스트의 clickhouse-client에서 실행하여
+    기본 데이터베이스를 제외하고는 아직 생성된 데이터베이스가 없는지 확인할 수 있습니다:
+
+    ```sql title="Query"
+    SHOW DATABASES;
+    ```
+
+    ```response title="Response"
+       ┌─name───────────────┐
+    1. │ INFORMATION_SCHEMA │
+    2. │ default            │
+    3. │ information_schema │
+    4. │ system             │
+       └────────────────────┘
+    ```
+
+    `clickhouse-01` 클라이언트에서 `ON CLUSTER` 절을 사용해 `uk`라는 이름의 새 데이터베이스를 생성하는 다음 **분산** DDL 쿼리를 실행하십시오:
+
+    ```sql highlight={2}
+    CREATE DATABASE IF NOT EXISTS uk 
+    ON CLUSTER cluster_1S_2R;
+    ```
+
+    각 호스트의 클라이언트에서 앞서와 동일한 쿼리를 다시 실행해,
+    쿼리를 `clickhouse-01`에서만 실행했더라도 데이터베이스가 클러스터 전체에 생성되었는지
+    확인할 수 있습니다:
+
+    ```sql
+    SHOW DATABASES;
+    ```
+
+    ```response highlight={6}
+       ┌─name───────────────┐
+    1. │ INFORMATION_SCHEMA │
+    2. │ default            │
+    3. │ information_schema │
+    4. │ system             │
+    5. │ uk                 │
+       └────────────────────┘
+    ```
+  </Step>
+
+  <Step>
+    ## 클러스터에 테이블 생성
+
+    이제 데이터베이스가 생성되었으므로 클러스터에 테이블을 생성합니다.
+    다음 쿼리를 호스트 클라이언트 중 아무 곳에서나 실행하세요:
+
+    ```sql highlight={2,19}
+    CREATE TABLE IF NOT EXISTS uk.uk_price_paid_local
+    ON CLUSTER cluster_1S_2R
+    (
+        price UInt32,
+        date Date,
+        postcode1 LowCardinality(String),
+        postcode2 LowCardinality(String),
+        type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
+        is_new UInt8,
+        duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
+        addr1 String,
+        addr2 String,
+        street LowCardinality(String),
+        locality LowCardinality(String),
+        town LowCardinality(String),
+        district LowCardinality(String),
+        county LowCardinality(String)
+    )
+    ENGINE = ReplicatedMergeTree
+    ORDER BY (postcode1, postcode2, addr1, addr2);
+    ```
+
+    이는 원래 `CREATE` 문에서 사용된 쿼리와 동일합니다.
+    [UK property prices](/ko/get-started/sample-datasets/uk-price-paid) 예시 데이터셋 튜토리얼에서 사용된 쿼리와 같으며,
+    차이점은 `ON CLUSTER` 절과 `ReplicatedMergeTree` 엔진을 사용한다는 점뿐입니다.
+
+    `ON CLUSTER` 절은 `CREATE`, `DROP`, `ALTER`, `RENAME`과 같은 DDL (Data Definition Language)
+    쿼리를 분산 실행하기 위해 설계되었으며, 이러한
+    스키마 변경이 클러스터의 모든 노드에 적용되도록 보장합니다.
+
+    [`ReplicatedMergeTree`](/ko/reference/engines/table-engines/mergetree-family/replication#converting-from-mergetree-to-replicatedmergetree)
+    엔진은 일반 `MergeTree` 테이블 엔진과 동일하게 동작하지만, 데이터도 복제합니다.
+
+    아래 쿼리를 `clickhouse-01` 또는 `clickhouse-02` 클라이언트에서 실행하여
+    테이블이 클러스터 전체에 생성되었는지 확인할 수 있습니다:
+
+    ```sql title="Query"
+    SHOW TABLES IN uk;
+    ```
+
+    ```response title="Response"
+       ┌─name────────────────┐
+    1. │ uk_price_paid.      │
+       └─────────────────────┘
+    ```
+  </Step>
+
+  <Step>
+    ## 데이터 삽입
+
+    데이터 세트의 크기가 크고 전체 수집에 몇 분이 소요되므로, 우선 일부 데이터만 삽입합니다.
+
+    `clickhouse-01`에서 아래 쿼리를 사용하여 더 작은 데이터 하위 집합을 삽입하십시오:
+
+    ```sql
+    INSERT INTO uk.uk_price_paid_local
+    SELECT
+        toUInt32(price_string) AS price,
+        parseDateTimeBestEffortUS(time) AS date,
+        splitByChar(' ', postcode)[1] AS postcode1,
+        splitByChar(' ', postcode)[2] AS postcode2,
+        transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+        b = 'Y' AS is_new,
+        transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+        addr1,
+        addr2,
+        street,
+        locality,
+        town,
+        district,
+        county
+    FROM url(
+        'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+        'CSV',
+        'uuid_string String,
+        price_string String,
+        time String,
+        postcode String,
+        a String,
+        b String,
+        c String,
+        addr1 String,
+        addr2 String,
+        street String,
+        locality String,
+        town String,
+        district String,
+        county String,
+        d String,
+        e String'
+    ) LIMIT 10000
+    SETTINGS max_http_get_redirects=10;
+    ```
+
+    각 호스트에 데이터가 완전히 복제되어 있는 것을 확인할 수 있습니다.
+
+    ```sql
+    -- clickhouse-01
+    SELECT count(*)
+    FROM uk.uk_price_paid_local
+
+    --   ┌─count()─┐
+    -- 1.│   10000 │
+    --   └─────────┘
+
+    -- clickhouse-02
+    SELECT count(*)
+    FROM uk.uk_price_paid_local
+
+    --   ┌─count()─┐
+    -- 1.│   10000 │
+    --   └─────────┘
+    ```
+
+    호스트 중 하나에 장애가 발생했을 때 어떤 일이 발생하는지 확인하려면, 임의의 호스트에서 간단한 테스트 데이터베이스와 테스트 테이블을 생성하십시오:
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS test ON CLUSTER cluster_1S_2R;
+    CREATE TABLE test.test_table ON CLUSTER cluster_1S_2R
+    (
+        `id` UInt64,
+        `name` String
+    )
+    ENGINE = ReplicatedMergeTree
+    ORDER BY id;
+    ```
+
+    `uk_price_paid` 테이블과 마찬가지로, 두 호스트 중 어느 쪽에서나 데이터를 삽입할 수 있습니다:
+
+    ```sql
+    INSERT INTO test.test_table (id, name) VALUES (1, 'Clicky McClickface');
+    ```
+
+    호스트 중 하나가 다운되면 어떻게 될까요? 이를 시뮬레이션하기 위해 다음 명령을 실행하여
+    `clickhouse-01`을 중지하십시오.
+
+    ```bash
+    docker stop clickhouse-01
+    ```
+
+    다음 명령을 실행하여 호스트가 중단되었는지 확인하십시오:
+
+    ```bash
+    docker-compose ps
+    ```
+
+    ```response title="Response"
+    NAME                   IMAGE                                        COMMAND            SERVICE                CREATED          STATUS          PORTS
+    clickhouse-02          clickhouse/clickhouse-server:latest          "/entrypoint.sh"   clickhouse-02          X minutes ago    Up X minutes    127.0.0.1:8124->8123/tcp, 127.0.0.1:9001->9000/tcp
+    clickhouse-keeper-01   clickhouse/clickhouse-keeper:latest-alpine   "/entrypoint.sh"   clickhouse-keeper-01   X minutes ago    Up X minutes    127.0.0.1:9181->9181/tcp
+    clickhouse-keeper-02   clickhouse/clickhouse-keeper:latest-alpine   "/entrypoint.sh"   clickhouse-keeper-02   X minutes ago    Up X minutes    127.0.0.1:9182->9181/tcp
+    clickhouse-keeper-03   clickhouse/clickhouse-keeper:latest-alpine   "/entrypoint.sh"   clickhouse-keeper-03   X minutes ago    Up X minutes    127.0.0.1:9183->9181/tcp
+    ```
+
+    `clickhouse-01`이 중단된 상태에서 테스트 테이블에 데이터 행을 하나 더 삽입한 후
+    테이블을 쿼리하십시오:
+
+    ```sql
+    INSERT INTO test.test_table (id, name) VALUES (2, 'Alexey Milovidov');
+    SELECT * FROM test.test_table;
+    ```
+
+    ```response title="Response"
+    ┌─id─┬─name───────────────┐
+    1. │  1 │ Clicky McClickface │
+    2. │  2 │ Alexey Milovidov   │
+       └────┴────────────────────┘
+    ```
+
+    이제 다음 명령어로 `clickhouse-01`을 재시작하십시오(재시작 후 `docker-compose ps`를 다시 실행하여 확인할 수 있습니다):
+
+    ```sql
+    docker start clickhouse-01
+    ```
+
+    `docker exec -it clickhouse-01 clickhouse-client`를 실행한 후 `clickhouse-01`에서 테스트 테이블을 다시 쿼리하세요:
+
+    ```sql title="Query"
+    SELECT * FROM test.test_table
+    ```
+
+    ```response title="Response"
+    ┌─id─┬─name───────────────┐
+    1. │  1 │ Clicky McClickface │
+    2. │  2 │ Alexey Milovidov   │
+       └────┴────────────────────┘
+    ```
+
+    이 단계에서 영국 부동산 가격 데이터셋 전체를 수집하여 직접 다뤄보고 싶다면, 다음 쿼리를 실행하십시오:
+
+    ```sql
+    TRUNCATE TABLE uk.uk_price_paid_local ON CLUSTER cluster_1S_2R;
+    INSERT INTO uk.uk_price_paid_local
+    SELECT
+        toUInt32(price_string) AS price,
+        parseDateTimeBestEffortUS(time) AS date,
+        splitByChar(' ', postcode)[1] AS postcode1,
+        splitByChar(' ', postcode)[2] AS postcode2,
+        transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+        b = 'Y' AS is_new,
+        transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+        addr1,
+        addr2,
+        street,
+        locality,
+        town,
+        district,
+        county
+    FROM url(
+        'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+        'CSV',
+        'uuid_string String,
+        price_string String,
+        time String,
+        postcode String,
+        a String,
+        b String,
+        c String,
+        addr1 String,
+        addr2 String,
+        street String,
+        locality String,
+        town String,
+        district String,
+        county String,
+        d String,
+        e String'
+        ) SETTINGS max_http_get_redirects=10;
+    ```
+
+    `clickhouse-02` 또는 `clickhouse-01`에서 테이블을 쿼리하세요:
+
+    ```sql title="Query"
+    SELECT count(*) FROM uk.uk_price_paid_local;
+    ```
+
+    ```response title="Response"
+    ┌──count()─┐
+    1. │ 30212555 │ -- 3,021만
+       └──────────┘
+    ```
+  </Step>
+</Steps>
+
+<div id="conclusion">
+  ## 결론
+</div>
+
+이 클러스터 토폴로지의 장점은 레플리카가 2개이므로
+데이터가 서로 다른 2개의 호스트에 저장된다는 점입니다. 한 호스트에 장애가 발생하더라도 다른 레플리카가
+데이터를 중단 없이 계속 제공하므로 데이터 손실이 없습니다. 따라서 스토리지 계층의
+단일 장애 지점이 제거됩니다.
+
+호스트 하나가 다운되더라도 남아 있는 레플리카는 계속해서 다음 작업을 수행할 수 있습니다:
+
+* 중단 없이 읽기 쿼리 처리
+* 새 쓰기 요청 수락(일관성 설정에 따라 다름)
+* 애플리케이션에 대한 서비스 가용성 유지
+
+장애가 발생한 호스트가 다시 온라인 상태가 되면 다음 작업을 수행할 수 있습니다:
+
+* 정상 레플리카에서 누락된 데이터를 자동으로 동기화
+* 수동 개입 없이 정상 운영 재개
+* 전체 이중화 상태를 신속하게 복원
+
+다음 예시에서는 세그먼트가 2개이지만
+레플리카는 1개뿐인 클러스터를 설정하는 방법을 살펴보겠습니다.

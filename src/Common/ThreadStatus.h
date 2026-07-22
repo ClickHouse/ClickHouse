@@ -11,6 +11,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
 #include <Common/MemorySpillScheduler.h>
+#include <Common/UntrackedMemoryRegistry.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -55,6 +56,8 @@ using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue
 using InternalProfileEventsQueueWeakPtr = std::weak_ptr<InternalProfileEventsQueue>;
 
 using QueryIsCanceledPredicate = std::function<bool()>;
+/// Throws the real cancellation cause if the query has been cancelled and its process-list element is available.
+using ThrowIfQueryCanceledPredicate = std::function<void()>;
 
 /** Thread group is a collection of threads dedicated to single task
   * (query or other process like background merge).
@@ -106,6 +109,7 @@ public:
         std::shared_ptr<std::atomic_size_t> pipeline_processor_index = std::make_shared<std::atomic_size_t>(0);
 
         QueryIsCanceledPredicate query_is_canceled_predicate = {};
+        ThrowIfQueryCanceledPredicate throw_if_query_canceled_predicate = {};
     };
 
     SharedData getSharedData()
@@ -178,7 +182,7 @@ public:
 
     MemoryTracker memory_tracker{VariableContext::Thread};
     /// Small amount of untracked memory (per thread atomic-less counter)
-    Int64 untracked_memory = 0;
+    UntrackedMemoryCounter untracked_memory;
     /// MemoryTrackerBlockerInThread state corresponding to untracked_memory.
     VariableContext untracked_memory_blocker_level = VariableContext::Max;
     /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
@@ -287,6 +291,9 @@ public:
     const String & getQueryForLog() const;
 
     bool isQueryCanceled() const;
+
+    /// Throws the real cancellation cause if the query has been cancelled. No-op if not attached to a query.
+    void throwIfQueryCanceled() const;
 
     /// Proper cal for fatal_error_callback
     void onFatalError();

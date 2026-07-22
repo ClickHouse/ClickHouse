@@ -1,0 +1,147 @@
+---
+description: "Documentation de l’instruction ATTACH"
+sidebarTitle: 'ATTACH'
+slug: /sql-reference/statements/attach
+title: 'Instruction ATTACH'
+doc_type: 'reference'
+---
+
+Permet de rattacher une table ou un dictionnaire, par exemple lors du déplacement d’une base de données vers un autre serveur.
+
+**Syntaxe**
+
+```sql
+ATTACH TABLE|DICTIONARY|DATABASE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] ...
+```
+
+La requête ne crée pas de données sur le disque, mais suppose que les données se trouvent déjà aux emplacements appropriés et se contente d’ajouter au serveur des informations sur la table, le dictionnaire ou la base de données spécifiés. Après l’exécution de la requête `ATTACH`, le serveur connaîtra l’existence de la table, du dictionnaire ou de la base de données.
+
+Si une table a été précédemment détachée (requête [DETACH](/fr/reference/statements/detach)), c’est-à-dire que sa structure est connue, vous pouvez utiliser la forme abrégée sans définir la structure.
+
+<div id="attach-existing-table">
+  ## Attacher une table existante
+</div>
+
+**Syntaxe**
+
+```sql
+ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+```
+
+Cette requête est utilisée au démarrage du serveur. Le serveur stocke les métadonnées des tables dans des fichiers contenant des requêtes `ATTACH`, qu’il exécute simplement au lancement (à l’exception de certaines tables système, qui sont créées explicitement sur le serveur).
+
+Si la table a été détachée de façon permanente, elle ne sera pas attachée au démarrage du serveur ; vous devez donc exécuter explicitement la requête `ATTACH`.
+
+<div id="create-new-table-and-attach-data">
+  ## Créer une nouvelle table et y attacher des données
+</div>
+
+<div id="with-specified-path-to-table-data">
+  ### Avec un chemin spécifié pour les données de la table
+</div>
+
+La requête crée une nouvelle table avec la structure fournie et y attache les données de la table à partir du répertoire indiqué dans `user_files`.
+
+**Syntaxe**
+
+```sql
+ATTACH TABLE name FROM 'path/to/data/' (col1 Type1, ...)
+```
+
+**Exemple**
+
+```sql title="Query"
+DROP TABLE IF EXISTS test;
+INSERT INTO TABLE FUNCTION file('01188_attach/test/data.TSV', 'TSV', 's String, n UInt8') VALUES ('test', 42);
+ATTACH TABLE test FROM '01188_attach/test' (s String, n UInt8) ENGINE = File(TSV);
+SELECT * FROM test;
+```
+
+```sql title="Response"
+┌─s────┬──n─┐
+│ test │ 42 │
+└──────┴────┘
+```
+
+<div id="with-specified-table-uuid">
+  ### Avec l’UUID de la table spécifié
+</div>
+
+Cette requête crée une nouvelle table avec la structure fournie et y attache les données de la table ayant l’UUID spécifié.
+Elle est prise en charge par le moteur de base de données [Atomic](/fr/reference/engines/database-engines/atomic).
+
+**Syntaxe**
+
+```sql
+ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
+```
+
+<div id="attach-mergetree-table-as-replicatedmergetree">
+  ## Attacher une table MergeTree en ReplicatedMergeTree
+</div>
+
+Permet d’attacher une table MergeTree non répliquée en tant que ReplicatedMergeTree. La table ReplicatedMergeTree sera créée avec les valeurs des paramètres `default_replica_path` et `default_replica_name`. Il est également possible d’attacher une table répliquée en tant que table MergeTree classique.
+
+Notez que les données de la table dans ZooKeeper ne sont pas modifiées par cette requête. Cela signifie que vous devez ajouter les métadonnées dans ZooKeeper à l’aide de `SYSTEM RESTORE REPLICA` ou les supprimer avec `SYSTEM DROP REPLICA ... FROM ZKPATH ...` après l’attachement.
+
+Si vous essayez d’ajouter une réplique à une table ReplicatedMergeTree existante, gardez à l’esprit que toutes les données locales de la table MergeTree convertie seront détachées.
+
+**Syntaxe**
+
+```sql
+ATTACH TABLE [db.]name AS [NOT] REPLICATED
+```
+
+**Convertir une table en table répliquée**
+
+```sql
+DETACH TABLE test;
+ATTACH TABLE test AS REPLICATED;
+SYSTEM RESTORE REPLICA test;
+```
+
+**Convertir une table en table non répliquée**
+
+Récupérez le chemin ZooKeeper et le nom de la réplique de la table :
+
+```sql title="Query"
+SELECT replica_name, zookeeper_path FROM system.replicas WHERE table='test';
+```
+
+```sql title="Response"
+┌─replica_name─┬─zookeeper_path─────────────────────────────────────────────┐
+│ r1           │ /clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1 │
+└──────────────┴────────────────────────────────────────────────────────────┘
+```
+
+Attacher la table comme non répliquée et supprimer les données de la réplique dans ZooKeeper :
+
+```sql title="Query"
+DETACH TABLE test;
+ATTACH TABLE test AS NOT REPLICATED;
+SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1';
+```
+
+<div id="attach-existing-dictionary">
+  ## Attacher un dictionnaire existant
+</div>
+
+Rattache un dictionnaire précédemment détaché.
+
+**Syntaxe**
+
+```sql
+ATTACH DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+```
+
+<div id="attach-existing-database">
+  ## Attacher une base de données existante
+</div>
+
+Permet de rattacher une base de données précédemment détachée.
+
+**Syntaxe**
+
+```sql
+ATTACH DATABASE [IF NOT EXISTS] name [ENGINE=<database engine>] [ON CLUSTER cluster]
+```

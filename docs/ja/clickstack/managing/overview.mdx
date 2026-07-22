@@ -1,0 +1,40 @@
+---
+slug: /use-cases/observability/clickstack/managing
+title: 'ClickStack の管理'
+sidebarTitle: 'ClickStack の管理'
+description: 'ClickStack の管理'
+doc_type: 'guide'
+keywords: ['ClickStack の管理', 'パフォーマンス', 'materialized view', '管理コマンド']
+---
+
+このセクションでは、ClickStack の管理方法について説明します。
+
+<div id="admin-guides">
+  ## 管理ガイド
+</div>
+
+| Section                                                      | Description                                                   |
+| ------------------------------------------------------------ | ------------------------------------------------------------- |
+| [基本的な管理](/ja/clickstack/managing/admin)                         | ClickStackで一般的な管理タスクを実行するための入門ガイド。                            |
+| [リソースの見積もり](/ja/clickstack/managing/estimating-resources)       | 取り込み量に基づいて Managed ClickStack のコンピュートリソースをサイジングするためのガイドです。    |
+| [本番運用に向けて](/ja/clickstack/managing/production)                  | ClickStack を本番環境で運用する前に推奨される手順とベストプラクティス。                     |
+| [materialized view](/ja/clickstack/managing/materialized-views) | ClickStack で materialized view を使用してクエリパフォーマンスを向上させるための詳細ガイド。 |
+| [パフォーマンスチューニング](/ja/clickstack/managing/performance-tuning)     | 大規模ワークロード向けに ClickStack をチューニングするための包括的なガイド。                  |
+| [RBAC](/ja/clickstack/managing/rbac)                            | ダッシュボード、保存済み検索、ログソースに対するチームの権限を管理するためのロールベースのアクセス制御を構成します。    |
+
+<div id="core-concepts">
+  ## ClickHouse の中核概念
+</div>
+
+ClickStack の管理タスクの多くでは、基盤となる ClickHouse データベースに関する理解が必要です。管理作業やパフォーマンス関連の操作を行う前に、以下に示す ClickHouse の中核概念を確認することをお勧めします。
+
+| 概念                 | 説明                                                                                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **テーブル**           | ClickStack のデータソースが基盤となる ClickHouse テーブルにどのように対応するか。ClickHouse テーブルでは主に [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) エンジンが使用されます。 |
+| **パーツ**            | データが不変のパーツとしてどのように書き込まれ、時間の経過とともにマージされるか。                                                                                                                     |
+| **パーティション**        | データ管理、クエリ、最適化を容易にする、テーブルパーツの論理的なグループ化。                                                                                                                        |
+| **マージ**            | クエリ対象となるパーツ数を減らし、パフォーマンスを維持するために、パーツを結合するバックグラウンドプロセス。                                                                                                        |
+| **グラニュール**         | クエリ実行中に読み取られ、プルーニングされるデータの最小単位。                                                                                                                               |
+| **プライマリ (ソート) キー** | `ORDER BY` キーが、ディスク上のデータレイアウト、圧縮、およびクエリのプルーニング動作をどのように定義するか。                                                                                                  |
+
+これらの概念は ClickHouse のパフォーマンスを理解するうえで基本となるものであり、ClickStack の管理時に適切な運用判断を行う助けになります。

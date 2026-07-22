@@ -1,0 +1,226 @@
+---
+description: 'ClickHouse 開発の前提条件とセットアップ手順'
+sidebarTitle: '前提条件'
+slug: /development/developer-instruction
+title: '開発者向け前提条件'
+doc_type: 'guide'
+---
+
+ClickHouse は Linux、FreeBSD、macOS でビルドできます。
+Windows を使用している場合でも、Linux が動作する仮想マシン上で ClickHouse をビルドできます。たとえば、Ubuntu を実行する [VirtualBox](https://www.virtualbox.org/) などです。
+
+<div id="create-a-repository-on-github">
+  ## GitHub でリポジトリを作成する
+</div>
+
+ClickHouse の開発を始めるには、[GitHub](https://www.github.com/) アカウントが必要です。
+また、ローカルで SSH 鍵を生成し (まだ持っていない場合) 、公開鍵を GitHub にアップロードしてください。これはパッチを提供するための前提条件です。
+
+次に、右上隅にある &quot;fork&quot; ボタンをクリックして、[ClickHouse リポジトリ](https://github.com/ClickHouse/ClickHouse/) を自分のアカウントにフォークします。
+
+変更を提供するには、たとえば issue の修正や機能追加を行う場合、まずフォーク内のブランチに変更をコミットし、その後、変更内容をメインリポジトリに対する &quot;プルリクエスト&quot; として作成します。
+
+Git リポジトリを扱うには、Git をインストールしてください。たとえば Ubuntu では、次を実行します。
+
+```sh
+sudo apt update
+sudo apt install git
+```
+
+Git のチートシートは[こちら](https://education.github.com/git-cheat-sheet-education.pdf)で確認できます。
+詳細な Git マニュアルは[こちら](https://git-scm.com/book/en/v2)で確認できます。
+
+<div id="clone-the-repository-to-your-development-machine">
+  ## 開発マシンにリポジトリをクローンする
+</div>
+
+まず、作業用マシンにソースファイルをダウンロードします。つまり、リポジトリをクローンします。
+
+```sh
+git clone git@github.com:your_github_username/ClickHouse.git  # プレースホルダーをGitHubユーザー名に置き換えてください
+cd ClickHouse
+```
+
+このコマンドにより、ソースコード、テスト、その他のファイルを含む `ClickHouse/` ディレクトリが作成されます。
+URL の後ろにチェックアウト先として任意のディレクトリを指定できますが、このパスには空白文字を含めないことが重要です。空白文字が含まれていると、後でビルドが失敗する可能性があります。
+
+ClickHouse の Git リポジトリでは、3rd party libraries を取り込むためにサブモジュールを使用しています。
+サブモジュールはデフォルトではチェックアウトされません。
+次のいずれかを実行できます
+
+* `git clone` を `--recurse-submodules` オプション付きで実行する
+
+* `git clone` を `--recurse-submodules` なしで実行した場合は、`git submodule update --init --jobs <N>` を実行して、すべてのサブモジュールを明示的にチェックアウトする (`<N>` には、たとえばダウンロードを並列化するために `12` を指定できます) 。
+
+* `git clone` を `--recurse-submodules` なしで実行し、容量を節約するためにサブモジュール内の履歴を省く [shallow](https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/) サブモジュールチェックアウトを使用したい場合は、`./contrib/update-submodules.sh` を実行する。この方法は CI で使われていますが、サブモジュールの操作が不便になり、動作も遅くなるため、ローカル開発には推奨されません。
+
+Git サブモジュールの状態を確認するには、`git submodule status` を実行します。
+
+次のエラーメッセージが表示された場合
+
+```bash
+Permission denied (publickey).
+fatal: Could not read from remote repository.
+
+Please make sure you have the correct access rights
+and the repository exists.
+```
+
+GitHub に接続するための SSH キーが見つかりません。
+これらのキーは通常 `~/.ssh` にあります。
+SSH キーを利用するには、GitHub の設定でアップロードする必要があります。
+
+HTTPS 経由でリポジトリをクローンすることもできます。
+
+```sh
+git clone https://github.com/ClickHouse/ClickHouse.git
+```
+
+ただし、この方法では変更内容をサーバーに送信できません。
+とはいえ、一時的にはこのまま使い、後で SSH キーを追加してから、`git remote` コマンドでリポジトリのリモートアドレスを置き換えることができます。
+
+元の ClickHouse リポジトリのアドレスをローカルリポジトリに追加して、そこから更新をプルすることもできます:
+
+```sh
+git remote add upstream git@github.com:ClickHouse/ClickHouse.git
+```
+
+このコマンドを正常に実行すると、`git pull upstream master` を実行して、ClickHouse のメインリポジトリから更新を取り込めるようになります。
+
+<Tip>
+  `git push` をそのまま使わないでください。誤ったリモートやブランチに push してしまうおそれがあります。
+  代わりに、`git push origin my_branch_name` のように、リモート名とブランチ名を明示的に指定することをおすすめします。
+</Tip>
+
+<div id="writing-code">
+  ## コードを書く
+</div>
+
+以下に、ClickHouse 向けのコードを書く際に役立つクイックリンクをいくつか示します。
+
+* [ClickHouse のアーキテクチャ](/ja/resources/develop-contribute/introduction/architecture).
+* [コーディングスタイルガイド](/ja/resources/develop-contribute/contribute/style).
+* [サードパーティライブラリ](/ja/resources/develop-contribute/contribute/contrib#adding-and-maintaining-third-party-libraries)
+* [テストの書き方](/ja/resources/develop-contribute/contribute/tests)
+* [未解決の issue](https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22)
+
+<div id="ide">
+  ### IDE
+</div>
+
+[Visual Studio Code](https://code.visualstudio.com/) と [Neovim](https://neovim.io/) は、これまで ClickHouse の開発で特に使いやすかった 2 つの選択肢です。VS Code を使っている場合は、IntelliSense の代わりに、より高いパフォーマンスを発揮する [clangd 拡張機能](https://marketplace.visualstudio.com/items?itemName=llvm-vs-code-extensions.vscode-clangd) の使用をおすすめします。
+
+[CLion](https://www.jetbrains.com/clion/) も優れた選択肢です。ただし、ClickHouse のような大規模プロジェクトでは動作が遅くなることがあります。CLion を使用する際は、次の点に注意してください。
+
+* CLion は自動的に `build` パスを作成し、ビルドタイプに `debug` を選択します
+* 使用される CMake は、ユーザーがインストールしたものではなく、CLion で指定されたバージョンです
+* CLion は `ninja` ではなく `make` を使ってビルドタスクを実行します (これは通常の動作です)
+
+このほか、[Sublime Text](https://www.sublimetext.com/)、[Qt Creator](https://www.qt.io/product/development-tools)、[Kate](https://kate-editor.org/) も利用できます。
+
+<div id="create-a-pull-request">
+  ## プルリクエストを作成する
+</div>
+
+GitHub の UI で、自分のフォーク先リポジトリに移動します。
+ブランチで開発していた場合は、そのブランチを選択する必要があります。
+画面上に &quot;Pull request&quot; ボタンがあります。
+つまり、これは「自分の変更をメインリポジトリに取り込んでもらうためのリクエストを作成する」ということです。
+
+作業がまだ完了していなくても、プルリクエストは作成できます。
+その場合は、タイトルの先頭に &quot;WIP&quot; (work in progress) を付けてください。これは後で変更できます。
+これは、共同レビューや変更内容の議論を進めるのに役立つほか、利用可能なすべてのテストを実行するためにも有用です。
+変更内容の簡単な説明を必ず記載してください。これは後で release changelog の生成に使用されます。
+
+ClickHouse の社員があなたの PR に &quot;can be tested&quot; タグを付けると、すぐにテストが開始されます。
+最初のいくつかのチェック (たとえば code style) の結果は、数分以内に返ってきます。
+ビルドチェックの結果は 30 分以内に届きます。
+主要なテスト一式の結果は 1 時間以内に返ってきます。
+
+システムは、あなたのプルリクエストごとに ClickHouse の binary build を個別に用意します。
+これらのビルドを取得するには、チェック一覧の &quot;Builds&quot; エントリの横にある &quot;Details&quot; リンクをクリックします。
+そこには、ビルド済みの ClickHouse .deb パッケージへの直接リンクがあります。必要であれば、これを production サーバーにデプロイすることもできます。
+
+<div id="write-documentation">
+  ## ドキュメントの作成
+</div>
+
+新機能を追加するすべてのプルリクエストには、適切なドキュメントを必ず添付してください。
+ドキュメントの変更内容をプレビューしたい場合は、ドキュメントページをローカルでビルドする手順を [こちら](https://github.com/ClickHouse/clickhouse-docs) の README.md ファイルで確認できます。
+ClickHouse に新しい関数を追加する場合は、以下のテンプレートを参考にしてください。
+
+````markdown
+# newFunctionName
+
+A short description of the function goes here. It should describe briefly what it does and a typical usage case.
+
+**Syntax**
+
+\```sql
+newFunctionName(arg1, arg2[, arg3])
+\```
+
+**Arguments**
+
+- `arg1` — Description of the argument. [DataType](../data-types/float.md)
+- `arg2` — Description of the argument. [DataType](../data-types/float.md)
+- `arg3` — Description of optional argument (optional). [DataType](../data-types/float.md)
+
+**Implementation Details**
+
+A description of implementation details if relevant.
+
+**Returned value**
+
+- Returns {insert what the function returns here}. [DataType](../data-types/float.md)
+
+**Example**
+
+\```sql title="Query"
+SELECT 'write your example query here';
+\```
+
+\```response title="Response"
+┌───────────────────────────────────┐
+│ the result of the query           │
+└───────────────────────────────────┘
+\```
+````
+
+<div id="using-test-data">
+  ## テストデータの使用
+</div>
+
+ClickHouseの開発では、現実に近いデータセットを読み込む必要が生じることがよくあります。
+これは、特に性能テストでは重要です。
+特に用意した、匿名化済みのweb analyticsデータセットを利用できます。
+これには、追加で約3GBの空きディスク容量が必要です。
+
+```sh
+    sudo apt install wget xz-utils
+
+    wget https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz
+    wget https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz
+
+    xz -v -d hits_v1.tsv.xz
+    xz -v -d visits_v1.tsv.xz
+
+    clickhouse-client
+```
+
+clickhouse-client では:
+
+```sql
+CREATE DATABASE IF NOT EXISTS test;
+
+CREATE TABLE test.hits ( WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16,  EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32,  UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String,  RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16),  URLRegions Array(UInt32),  RefererRegions Array(UInt32),  ResolutionWidth UInt16,  ResolutionHeight UInt16,  ResolutionDepth UInt8,  FlashMajor UInt8,  FlashMinor UInt8,  FlashMinor2 String,  NetMajor UInt8,  NetMinor UInt8,  UserAgentMajor UInt16,  UserAgentMinor FixedString(2),  CookieEnable UInt8,  JavascriptEnable UInt8,  IsMobile UInt8,  MobilePhone UInt8,  MobilePhoneModel String,  Params String,  IPNetworkID UInt32,  TraficSourceID Int8,  SearchEngineID UInt16,  SearchPhrase String,  AdvEngineID UInt8,  IsArtifical UInt8,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  ClientTimeZone Int16,  ClientEventTime DateTime,  SilverlightVersion1 UInt8,  SilverlightVersion2 UInt8,  SilverlightVersion3 UInt32,  SilverlightVersion4 UInt16,  PageCharset String,  CodeVersion UInt32,  IsLink UInt8,  IsDownload UInt8,  IsNotBounce UInt8,  FUniqID UInt64,  HID UInt32,  IsOldCounter UInt8,  IsEvent UInt8,  IsParameter UInt8,  DontCountHits UInt8,  WithHash UInt8,  HitColor FixedString(1),  UTCEventTime DateTime,  Age UInt8,  Sex UInt8,  Income UInt8,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16),  RemoteIP UInt32,  RemoteIP6 FixedString(16),  WindowName Int32,  OpenerName Int32,  HistoryLength Int16,  BrowserLanguage FixedString(2),  BrowserCountry FixedString(2),  SocialNetwork String,  SocialAction String,  HTTPError UInt16,  SendTiming Int32,  DNSTiming Int32,  ConnectTiming Int32,  ResponseStartTiming Int32,  ResponseEndTiming Int32,  FetchTiming Int32,  RedirectTiming Int32,  DOMInteractiveTiming Int32,  DOMContentLoadedTiming Int32,  DOMCompleteTiming Int32,  LoadEventStartTiming Int32,  LoadEventEndTiming Int32,  NSToDOMContentLoadedTiming Int32,  FirstPaintTiming Int32,  RedirectCount Int8,  SocialSourceNetworkID UInt8,  SocialSourcePage String,  ParamPrice Int64,  ParamOrderID String,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16,  GoalsReached Array(UInt32),  OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String,  UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String,  FromTag String,  HasGCLID UInt8,  RefererHash UInt64,  URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String,  `ParsedParams.Key1` Array(String),  `ParsedParams.Key2` Array(String),  `ParsedParams.Key3` Array(String),  `ParsedParams.Key4` Array(String),  `ParsedParams.Key5` Array(String),  `ParsedParams.ValueDouble` Array(Float64),  IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8) ENGINE = MergeTree PARTITION BY toYYYYMM(EventDate) SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime);
+
+CREATE TABLE test.visits ( CounterID UInt32,  StartDate Date,  Sign Int8,  IsNew UInt8,  VisitID UInt64,  UserID UInt64,  StartTime DateTime,  Duration UInt32,  UTCStartTime DateTime,  PageViews Int32,  Hits Int32,  IsBounce UInt8,  Referer String,  StartURL String,  RefererDomain String,  StartURLDomain String,  EndURL String,  LinkURL String,  IsDownload UInt8,  TraficSourceID Int8,  SearchEngineID UInt16,  SearchPhrase String,  AdvEngineID UInt8,  PlaceID Int32,  RefererCategories Array(UInt16),  URLCategories Array(UInt16),  URLRegions Array(UInt32),  RefererRegions Array(UInt32),  IsYandex UInt8,  GoalReachesDepth Int32,  GoalReachesURL Int32,  GoalReachesAny Int32,  SocialSourceNetworkID UInt8,  SocialSourcePage String,  MobilePhoneModel String,  ClientEventTime DateTime,  RegionID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RemoteIP UInt32,  RemoteIP6 FixedString(16),  IPNetworkID UInt32,  SilverlightVersion3 UInt32,  CodeVersion UInt32,  ResolutionWidth UInt16,  ResolutionHeight UInt16,  UserAgentMajor UInt16,  UserAgentMinor UInt16,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  SilverlightVersion2 UInt8,  SilverlightVersion4 UInt16,  FlashVersion3 UInt16,  FlashVersion4 UInt16,  ClientTimeZone Int16,  OS UInt8,  UserAgent UInt8,  ResolutionDepth UInt8,  FlashMajor UInt8,  FlashMinor UInt8,  NetMajor UInt8,  NetMinor UInt8,  MobilePhone UInt8,  SilverlightVersion1 UInt8,  Age UInt8,  Sex UInt8,  Income UInt8,  JavaEnable UInt8,  CookieEnable UInt8,  JavascriptEnable UInt8,  IsMobile UInt8,  BrowserLanguage UInt16,  BrowserCountry UInt16,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16),  Params Array(String),  `Goals.ID` Array(UInt32),  `Goals.Serial` Array(UInt32),  `Goals.EventTime` Array(DateTime),  `Goals.Price` Array(Int64),  `Goals.OrderID` Array(String),  `Goals.CurrencyID` Array(UInt32),  WatchIDs Array(UInt64),  ParamSumPrice Int64,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16,  ClickLogID UInt64,  ClickEventID Int32,  ClickGoodEvent Int32,  ClickEventTime DateTime,  ClickPriorityID Int32,  ClickPhraseID Int32,  ClickPageID Int32,  ClickPlaceID Int32,  ClickTypeID Int32,  ClickResourceID Int32,  ClickCost UInt32,  ClickClientIP UInt32,  ClickDomainID UInt32,  ClickURL String,  ClickAttempt UInt8,  ClickOrderID UInt32,  ClickBannerID UInt32,  ClickMarketCategoryID UInt32,  ClickMarketPP UInt32,  ClickMarketCategoryName String,  ClickMarketPPName String,  ClickAWAPSCampaignName String,  ClickPageName String,  ClickTargetType UInt16,  ClickTargetPhraseID UInt64,  ClickContextType UInt8,  ClickSelectType Int8,  ClickOptions String,  ClickGroupBannerID Int32,  OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String,  UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String,  FromTag String,  HasGCLID UInt8,  FirstVisit DateTime,  PredLastVisit Date,  LastVisit Date,  TotalVisits UInt32,  `TraficSource.ID` Array(Int8),  `TraficSource.SearchEngineID` Array(UInt16),  `TraficSource.AdvEngineID` Array(UInt8),  `TraficSource.PlaceID` Array(UInt16),  `TraficSource.SocialSourceNetworkID` Array(UInt8),  `TraficSource.Domain` Array(String),  `TraficSource.SearchPhrase` Array(String),  `TraficSource.SocialSourcePage` Array(String),  Attendance FixedString(16),  CLID UInt32,  YCLID UInt64,  NormalizedRefererHash UInt64,  SearchPhraseHash UInt64,  RefererDomainHash UInt64,  NormalizedStartURLHash UInt64,  StartURLDomainHash UInt64,  NormalizedEndURLHash UInt64,  TopLevelDomain UInt64,  URLScheme UInt64,  OpenstatServiceNameHash UInt64,  OpenstatCampaignIDHash UInt64,  OpenstatAdIDHash UInt64,  OpenstatSourceIDHash UInt64,  UTMSourceHash UInt64,  UTMMediumHash UInt64,  UTMCampaignHash UInt64,  UTMContentHash UInt64,  UTMTermHash UInt64,  FromHash UInt64,  WebVisorEnabled UInt8,  WebVisorActivity UInt32,  `ParsedParams.Key1` Array(String),  `ParsedParams.Key2` Array(String),  `ParsedParams.Key3` Array(String),  `ParsedParams.Key4` Array(String),  `ParsedParams.Key5` Array(String),  `ParsedParams.ValueDouble` Array(Float64),  `Market.Type` Array(UInt8),  `Market.GoalID` Array(UInt32),  `Market.OrderID` Array(String),  `Market.OrderPrice` Array(Int64),  `Market.PP` Array(UInt32),  `Market.DirectPlaceID` Array(UInt32),  `Market.DirectOrderID` Array(UInt32),  `Market.DirectBannerID` Array(UInt32),  `Market.GoodID` Array(String),  `Market.GoodName` Array(String),  `Market.GoodQuantity` Array(Int32),  `Market.GoodPrice` Array(Int64),  IslandID FixedString(16)) ENGINE = CollapsingMergeTree(Sign) PARTITION BY toYYYYMM(StartDate) SAMPLE BY intHash32(UserID) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID);
+```
+
+データをインポートします。
+
+```bash
+clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.hits FORMAT TSV" < hits_v1.tsv
+clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.visits FORMAT TSV" < visits_v1.tsv
+```

@@ -1,0 +1,52 @@
+---
+slug: /use-cases/observability/clickstack/service-maps
+title: 'サービスマップ'
+sidebarTitle: 'サービスマップ'
+description: 'ClickStack のサービスマップで、サービス間の依存関係とリクエストフローを可視化します。'
+doc_type: 'guide'
+keywords: ['clickstack', 'サービスマップ', 'トポロジー', 'トレース', '依存関係', '分散トレーシング', 'オブザーバビリティ', 'リクエストグラフ']
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+import { Video } from "/snippets/ja/components/Video/Video.jsx";
+
+<BetaBadge />
+
+サービスマップでは、サービス同士がどのようにやり取りしているかを可視化できます。ClickStack は、同じトレース内のクライアントスパン (送信リクエスト) とサーバースパン (受信リクエスト) を対応付けてグラフを構築し、サービス間のリクエスト経路を再現します。
+
+左側のナビゲーションパネルで **サービスマップ** をクリックすると、グラフ全体を表示できます。サービスは、OpenTelemetry で[トレースデータを取り込み](/ja/clickstack/ingesting-data)始めると表示されます。
+
+<Image img="/images/clickstack/service-maps/service-map-overview.webp" alt="サービスノードとそれらの間のリクエストフローを示すサービスマップ" size="lg" />
+
+<div id="exploring-the-service-map">
+  ## サービスマップの確認
+</div>
+
+各ノードはサービスを表し、`service.name` リソース属性で識別されます。エッジ (破線) は、あるサービスのクライアントスパンが別のサービスのサーバースパンに対応している場合に、それらのサービスを結びます。ノードの大きさは相対的なトラフィック量を示し、赤いノードは選択した時間範囲内にエラーがあるサービスを表します。
+
+マップ上部のツールバーでは、表示の絞り込みや調整を行えます。
+
+**ソースセレクター** — マップを特定のトレースソース (例: &quot;ClickPy Traces&quot;) に絞り込みます。
+
+<Image img="/images/clickstack/service-maps/source-selector.webp" alt="サービスマップのツールバーでソースセレクターが強調表示されている" size="lg" />
+
+**サンプリングスライダー** — パフォーマンスと精度のバランスを取るために、サンプリング率を調整します。高トラフィックのクラスターでは、低い値のほうがより速く読み込まれます。
+
+<Image img="/images/clickstack/service-maps/sampling.webp" alt="サービスマップのツールバーでサンプリングスライダーが強調表示されている" size="lg" />
+
+**日付範囲ピッカー** — マップの作成に使用するトレースデータの時間範囲を設定します。
+
+<Image img="/images/clickstack/service-maps/date-selector.webp" alt="サービスマップのツールバーで日付範囲ピッカーが強調表示されている" size="lg" />
+
+マップ左下の **+/-** ボタン、またはスクロール操作で拡大・縮小できます。
+
+<div id="trace-level-service-maps">
+  ## トレースレベルのサービスマップ
+</div>
+
+個々のトレースを確認すると、そのリクエストがサービス間をどのように経由したかを示す、対象を絞ったサービスマップが表示されます。これにより、トレースのウォーターフォールを離れることなく、単一のリクエストのトポロジーを確認できます。
+
+<Frame>
+  <Video src="/images/clickstack/service-maps/service-map-demo.mp4" />
+</Frame>

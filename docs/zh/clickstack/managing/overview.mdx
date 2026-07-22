@@ -1,0 +1,40 @@
+---
+slug: /use-cases/observability/clickstack/managing
+title: '管理 ClickStack'
+sidebarTitle: '管理 ClickStack'
+description: '管理 ClickStack'
+doc_type: 'guide'
+keywords: ['管理 ClickStack', '性能', 'materialized views', '管理命令']
+---
+
+本节介绍如何管理 ClickStack。
+
+<div id="admin-guides">
+  ## 管理指南
+</div>
+
+| Section                                                       | Description                                        |
+| ------------------------------------------------------------- | -------------------------------------------------- |
+| [基础管理](/zh/clickstack/managing/admin)                            | 介绍如何在 ClickStack 中执行常见的管理任务。                       |
+| [资源估算](/zh/clickstack/managing/estimating-resources)             | 根据摄取量为托管 ClickStack 规划计算资源规模的指导。                   |
+| [投入生产](/zh/clickstack/managing/production)                       | 在生产环境中运行 ClickStack 之前建议采取的步骤和最佳实践。                |
+| [materialized views](/zh/clickstack/managing/materialized-views) | 详细介绍如何在 ClickStack 中使用 materialized views 来提升查询性能。 |
+| [性能调优](/zh/clickstack/managing/performance-tuning)               | 面向大规模工作负载的 ClickStack 综合调优指南。                      |
+| [RBAC](/zh/clickstack/managing/rbac)                             | 配置基于角色的访问控制，以管理团队对仪表盘、已保存的搜索和 sources 的权限。         |
+
+<div id="core-concepts">
+  ## ClickHouse 核心概念
+</div>
+
+大多数 ClickStack 管理任务都要求熟悉底层的 ClickHouse 数据库。我们建议在执行管理或性能相关操作之前，先了解以下 ClickHouse 核心概念。
+
+| 概念                 | 说明                                                                                                                                |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| **表**              | ClickStack 数据源如何映射到底层的 ClickHouse 表。ClickHouse 表主要使用 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 引擎。 |
+| **parts**          | 数据如何以不可变的 parts 形式写入，并随着时间推移逐步合并。                                                                                                 |
+| **分区**             | 对表中 parts 进行逻辑分组，以简化数据管理、查询和优化。                                                                                                   |
+| **合并**             | 在后台将多个 parts 合并的过程，用于减少查询时需要处理的 parts 数量并维持性能。                                                                                    |
+| **粒度**             | 查询执行期间读取和裁剪的最小数据单位。                                                                                                               |
+| **主键 (排序键)&#x20;**&#x20;| `ORDER BY` 键如何定义磁盘上的数据布局、压缩方式和查询裁剪行为。                                                                                             |
+
+这些概念是 ClickHouse 性能的基础，有助于您在管理 ClickStack 时做出更明智的管理决策。

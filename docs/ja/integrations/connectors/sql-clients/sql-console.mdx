@@ -1,0 +1,431 @@
+---
+sidebarTitle: 'SQLコンソール'
+title: 'SQLコンソール'
+slug: /integrations/sql-clients/sql-console
+description: 'SQLコンソール の概要'
+doc_type: 'guide'
+keywords: ['sql console', 'クエリインターフェイス', 'web UI', 'SQL エディタ', 'Cloud Console']
+integration:
+   - support_level: 'community'
+   - category: 'sql_client'
+---
+
+import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+SQLコンソール は、ClickHouse Cloud でデータベースを調べたりクエリを実行したりするための、最も迅速で簡単な方法です。SQLコンソール では、次のことができます。
+
+* ClickHouse Cloud サービスに接続する
+* テーブルデータを表示、フィルタリング、ソートする
+* わずか数クリックでクエリを実行し、結果データを可視化する
+* クエリをチームメンバーと共有し、より効果的に共同作業する
+
+<div id="exploring-tables">
+  ## テーブルを確認する
+</div>
+
+<div id="viewing-table-list-and-schema-info">
+  ### テーブル一覧とスキーマ情報を表示する
+</div>
+
+ClickHouseインスタンスに含まれるテーブルの概要は、左側のサイドバーで確認できます。特定のデータベース内のテーブルを表示するには、左側バー上部のデータベースセレクタを使用します
+
+<Image img="/images/cloud/sqlconsole/table-list-and-schema.webp" size="lg" border alt="左側のサイドバーにデータベース内のテーブルが表示されたテーブル一覧とスキーマの画面" />
+
+一覧内のテーブルは展開して、カラムとデータ型を表示することもできます
+
+<Image img="/images/cloud/sqlconsole/view-columns.webp" size="lg" border alt="カラム名とデータ型が表示された展開済みテーブルの画面" />
+
+<div id="exploring-table-data">
+  ### テーブルデータの確認
+</div>
+
+リスト内のテーブルをクリックすると、新しいタブで開きます。Table View では、データを簡単に表示、選択、コピーできます。Microsoft Excel や Google Sheets などの表計算アプリケーションにコピー＆ペーストしても、構造とフォーマットは保持されます。フッターのナビゲーションを使って、テーブルデータのページ (30行単位でページ分割) を切り替えられます。
+
+<Image img="/images/cloud/sqlconsole/abc.webp" size="lg" border alt="選択してコピーできるデータが表示されたテーブルビュー" />
+
+<div id="inspecting-cell-data">
+  ### セルデータの確認
+</div>
+
+Cell Inspector ツールを使用すると、1 つのセルに含まれる大量のデータを表示できます。開くには、セルを右クリックして「Inspect Cell」を選択します。Cell Inspector の内容は、内容ペインの右上にあるコピーアイコンをクリックするとコピーできます。
+
+<Image img="/images/cloud/sqlconsole/inspecting-cell-content.webp" size="lg" border alt="選択したセルの内容を表示する Cell Inspector ダイアログ" />
+
+<div id="filtering-and-sorting-tables">
+  ## テーブルの絞り込みとソート
+</div>
+
+<div id="sorting-a-table">
+  ### テーブルのソート
+</div>
+
+SQLコンソールでテーブルをソートするには、テーブルを開き、ツールバーの「Sort」ボタンを選択します。このボタンをクリックするとメニューが開き、ソートを設定できます。ソート対象のカラムを選択し、ソート順 (昇順または降順) を指定できます。テーブルをソートするには、「Apply」を選択するか、Enterキーを押します
+
+<Image img="/images/cloud/sqlconsole/sort-descending-on-column.webp" size="lg" border alt="カラムに対する降順ソートの設定を示すソートダイアログ" />
+
+SQLコンソールでは、テーブルに複数のソートを追加することもできます。別のソートを追加するには、もう一度「Sort」ボタンをクリックします。注: ソートは、ソートペインに表示されている順序 (上から下) で適用されます。ソートを削除するには、そのソートの横にある「x」ボタンをクリックするだけです。
+
+<div id="filtering-a-table">
+  ### テーブルのフィルタリング
+</div>
+
+SQLコンソールでテーブルをフィルタリングするには、テーブルを開いて &#39;Filter&#39; ボタンを選択します。ソートと同様に、このボタンをクリックすると、フィルタを設定するためのメニューが開きます。フィルタ対象のカラムを選び、必要な条件を指定できます。SQLコンソールでは、カラムに含まれるデータ型に応じたフィルタオプションが自動的に表示されます。
+
+<Image img="/images/cloud/sqlconsole/filter-on-radio-column-equal-gsm.webp" size="lg" border alt="radio カラムが GSM に等しい条件でフィルタする設定を表示したフィルタダイアログ" />
+
+フィルタの設定が完了したら、&#39;Apply&#39; を選択してデータをフィルタリングできます。以下のように、さらにフィルタを追加することもできます。
+
+<Image img="/images/cloud/sqlconsole/add-more-filters.webp" size="lg" border alt="2000 より大きい範囲に対する追加フィルタの追加方法を示すダイアログ" />
+
+ソート機能と同様に、フィルタの横にある &#39;x&#39; ボタンをクリックすると削除できます。
+
+<div id="filtering-and-sorting-together">
+  ### フィルタリングとソートを同時に行う
+</div>
+
+SQLコンソールでは、テーブルに対してフィルタリングとソートを同時に行えます。これを行うには、上記の手順に従って必要なフィルタとソートをすべて追加し、[Apply] ボタンをクリックします。
+
+<Image img="/images/cloud/sqlconsole/filtering-and-sorting-together.webp" size="lg" border alt="フィルタリングとソートの両方が同時に適用された状態を示すインターフェイス" />
+
+<div id="creating-a-query-from-filters-and-sorts">
+  ### フィルターとソートからクエリを作成する
+</div>
+
+SQLコンソールでは、ソートやフィルターの内容をワンクリックでそのままクエリに変換できます。任意のソートおよびフィルターのパラメーターを設定し、ツールバーの「Create Query」ボタンを選択してください。「Create Query」をクリックすると、新しいクエリタブが開き、テーブルビューのデータに対応するSQLコマンドがあらかじめ入力された状態で表示されます。
+
+<Image img="/images/cloud/sqlconsole/create-a-query-from-sorts-and-filters.webp" size="lg" border alt="フィルターとソートからSQLを生成する Create Query ボタンを示すインターフェイス" />
+
+<Note>
+  「Create Query」機能の使用時に、フィルターやソートは必須ではありません。
+</Note>
+
+SQLコンソールでのクエリについて詳しくは、(link) クエリのドキュメントを参照してください。
+
+<div id="creating-and-running-a-query">
+  ## クエリの作成と実行
+</div>
+
+<div id="creating-a-query">
+  ### クエリの作成
+</div>
+
+SQLコンソールで新しいクエリを作成する方法は、2つあります。
+
+* タブバーの「+」ボタンをクリックします
+* 左側のサイドバーにあるクエリ一覧から「New Query」ボタンを選択します
+
+<Image img="/images/cloud/sqlconsole/creating-a-query.webp" size="lg" border alt="「+」ボタンまたは「New Query」ボタンを使って新しいクエリを作成する方法を示すインターフェイス" />
+
+<div id="running-a-query">
+  ### クエリの実行
+</div>
+
+クエリを実行するには、SQL コマンドを SQL エディタに入力し、&#39;Run&#39; ボタンをクリックするか、ショートカット `cmd / ctrl + enter` を使用します。複数のコマンドを順番に記述して実行する場合は、各コマンドの末尾にセミコロンを付けてください。
+
+クエリ実行オプション
+デフォルトでは、実行ボタンをクリックすると SQL エディタ内のすべてのコマンドが実行されます。SQL コンソールでは、このほかに 2 つのクエリ実行オプションを利用できます。
+
+* 選択したコマンドを実行
+* カーソル位置のコマンドを実行
+
+選択したコマンドを実行するには、対象のコマンドまたは一連のコマンドを選択して &#39;Run&#39; ボタンをクリックします (または `cmd / ctrl + enter` ショートカットを使用します) 。選択範囲がある場合は、SQL エディタのコンテキストメニュー (エディタ内の任意の場所を右クリックして開きます) から &#39;Run selected&#39; を選択することもできます。
+
+<Image img="/images/cloud/sqlconsole/run-selected-query.webp" size="lg" border alt="SQL クエリの選択した部分を実行する方法を示すインターフェイス" />
+
+現在のカーソル位置にあるコマンドは、次の 2 つの方法で実行できます。
+
+* 拡張実行オプションメニューから &#39;At Cursor&#39; を選択する (または対応する `cmd / ctrl + shift + enter` キーボードショートカットを使用する
+
+<Image img="/images/cloud/sqlconsole/run-at-cursor-2.webp" size="lg" border alt="拡張実行オプションメニューの Run at cursor オプション" />
+
+* SQL エディタのコンテキストメニューから &#39;Run at cursor&#39; を選択する
+
+<Image img="/images/cloud/sqlconsole/run-at-cursor.webp" size="lg" border alt="SQL エディタのコンテキストメニューの Run at cursor オプション" />
+
+<Note>
+  実行時には、カーソル位置のコマンドが黄色で点滅します。
+</Note>
+
+<div id="canceling-a-query">
+  ### クエリのキャンセル
+</div>
+
+クエリの実行中は、Query Editor のツールバーにある &#39;Run&#39; ボタンが &#39;Cancel&#39; ボタンに切り替わります。このボタンをクリックするか、`Esc` キーを押すだけでクエリをキャンセルできます。注意: すでに返された結果は、キャンセル後もそのまま保持されます。
+
+<Image img="/images/cloud/sqlconsole/cancel-a-query.webp" size="lg" border alt="クエリ実行中に表示される 'Cancel' ボタン" />
+
+<div id="saving-a-query">
+  ### クエリの保存
+</div>
+
+まだ名前を付けていない場合、クエリ名は「Untitled Query」になっています。名前を変更するには、クエリ名をクリックします。クエリ名を変更すると、クエリは保存されます。
+
+<Image img="/images/cloud/sqlconsole/give-a-query-a-name.webp" size="lg" border alt="Untitled Query からクエリ名を変更する方法を示すインターフェイス" />
+
+保存ボタンまたは `cmd / ctrl + s` のキーボードショートカットを使ってクエリを保存することもできます。
+
+<Image img="/images/cloud/sqlconsole/save-the-query.webp" size="lg" border alt="クエリエディタのツールバーにある保存ボタン" />
+
+<div id="using-genai-to-manage-queries">
+  ## GenAI を使用してクエリを管理する
+</div>
+
+この機能を使うと、自然言語で質問を入力するだけで、利用可能なテーブルのコンテキストに基づいてクエリコンソールが SQL クエリを生成します。GenAI は、クエリのデバッグにも役立ちます。
+
+GenAI の詳細については、[ClickHouse Cloud で GenAI によるクエリ候補を発表したブログ記事](https://clickhouse.com/blog/announcing-genai-powered-query-suggestions-clickhouse-cloud)をご覧ください。
+
+<div id="table-setup">
+  ### テーブルのセットアップ
+</div>
+
+UK Price Paid のサンプルデータセットをインポートし、それを使っていくつかの GenAI クエリを作成しましょう。
+
+1. ClickHouse Cloud サービスを開きます。
+
+2. *+* アイコンをクリックして、新しいクエリを作成します。
+
+3. 次のコードを貼り付けて実行します。
+
+   ```sql
+   CREATE TABLE uk_price_paid
+   (
+       price UInt32,
+       date Date,
+       postcode1 LowCardinality(String),
+       postcode2 LowCardinality(String),
+       type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
+       is_new UInt8,
+       duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
+       addr1 String,
+       addr2 String,
+       street LowCardinality(String),
+       locality LowCardinality(String),
+       town LowCardinality(String),
+       district LowCardinality(String),
+       county LowCardinality(String)
+   )
+   ENGINE = MergeTree
+   ORDER BY (postcode1, postcode2, addr1, addr2);
+   ```
+
+   このクエリは完了まで約 1 秒かかります。完了すると、`uk_price_paid` という空のテーブルが作成されます。
+
+4. 新しいクエリを作成し、次のクエリを貼り付けます。
+
+   ```sql
+   INSERT INTO uk_price_paid
+   WITH
+      splitByChar(' ', postcode) AS p
+   SELECT
+       toUInt32(price_string) AS price,
+       parseDateTimeBestEffortUS(time) AS date,
+       p[1] AS postcode1,
+       p[2] AS postcode2,
+       transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+       b = 'Y' AS is_new,
+       transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+       addr1,
+       addr2,
+       street,
+       locality,
+       town,
+       district,
+       county
+   FROM url(
+       'http://prod.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+       'CSV',
+       'uuid_string String,
+       price_string String,
+       time String,
+       postcode String,
+       a String,
+       b String,
+       c String,
+       addr1 String,
+       addr2 String,
+       street String,
+       locality String,
+       town String,
+       district String,
+       county String,
+       d String,
+       e String'
+   ) SETTINGS max_http_get_redirects=10;
+   ```
+
+このクエリは `gov.uk` の Web サイトからデータセットを取得します。このファイルは約 4 GB あるため、完了まで数分かかります。ClickHouse がクエリの処理を終えると、`uk_price_paid` テーブルにデータセット全体が格納されます。
+
+<div id="query-creation">
+  #### クエリの作成
+</div>
+
+自然言語を使ってクエリを作成してみましょう。
+
+1. **uk&#95;price&#95;paid** テーブルを選択し、**Create Query** をクリックします。
+
+2. **Generate SQL** をクリックします。クエリが Chat-GPT に送信されることへの同意を求められる場合があります。続行するには **I agree** を選択する必要があります。
+
+3. これで、このプロンプトに自然言語でクエリを入力すると、ChatGPT が SQL クエリに変換します。この例では、次のように入力します。
+
+   > 年ごとに、uk&#95;price&#95;paid のすべてのトランザクションについて合計価格と総件数を表示してください。
+
+4. コンソールによって目的のクエリが生成され、新しいタブに表示されます。この例では、GenAI は次のクエリを作成しました。
+
+   ```sql
+   -- 年ごとに、uk_price_paid のすべてのトランザクションについて合計価格と総件数を表示してください。
+   SELECT year(date), sum(price) as total_price, Count(*) as total_transactions
+   FROM uk_price_paid
+   GROUP BY year(date)
+   ```
+
+5. クエリが正しいことを確認したら、**Run** をクリックして実行します。
+
+<div id="debugging">
+  ### デバッグ
+</div>
+
+では、GenAI のクエリデバッグ機能を試してみましょう。
+
+1. *+* アイコンをクリックして新しいクエリを作成し、次のコードを貼り付けます。
+
+   ```sql
+   -- 年ごとの uk_price_paid の全取引について、合計価格と総件数を表示します。
+   SELECT year(date), sum(pricee) as total_price, Count(*) as total_transactions
+   FROM uk_price_paid
+   GROUP BY year(date)
+   ```
+
+2. **Run** をクリックします。`price` ではなく `pricee` を参照しようとしているため、クエリは失敗します。
+
+3. **Fix Query** をクリックします。
+
+4. GenAI がクエリの修正を試みます。この場合、`pricee` を `price` に変更します。また、このケースでは `toYear` のほうが適切な関数であることも判断します。
+
+5. **Apply** を選択して提案された変更をクエリに反映し、**Run** をクリックします。
+
+GenAI は実験的な機能である点に注意してください。GenAI が生成したクエリをデータセットに対して実行する際は、注意して使用してください。
+
+<div id="advanced-querying-features">
+  ## 高度なクエリ機能
+</div>
+
+<div id="searching-query-results">
+  ### クエリ結果の検索
+</div>
+
+クエリを実行すると、結果ペインの検索入力を使って、返された結果セットをすばやく検索できます。この機能は、追加の `WHERE` 句の結果をプレビューしたり、特定のデータが結果セットに含まれていることを確認したりするのに役立ちます。検索入力に値を入力すると、結果ペインが更新され、入力した値に一致するエントリを含むレコードが表示されます。この例では、`ClickHouse` を含むコメントのうち、`hackernews` テーブル内で `breakfast` が含まれる箇所をすべて探します (大文字と小文字は区別されません) :
+
+<Image img="/images/cloud/sqlconsole/search-hn.webp" size="lg" border alt="Hacker News のデータを検索" />
+
+注: 入力した値に一致するフィールドがあれば、そのレコードが表示されます。たとえば、上のスクリーンショットの 3 件目のレコードは `by` フィールドでは &#39;breakfast&#39; に一致していませんが、`text` フィールドでは一致しています:
+
+<Image img="/images/cloud/sqlconsole/match-in-body.webp" size="lg" border alt="ボディ内で一致" />
+
+<div id="adjusting-pagination-settings">
+  ### ページネーション設定の調整
+</div>
+
+既定では、クエリの結果ペインにはすべての結果レコードが1ページに表示されます。結果セットが大きい場合は、見やすくするために結果をページ分けして表示したほうがよいことがあります。これは、結果ペインの右下にあるページネーションセレクターで設定できます。
+
+<Image img="/images/cloud/sqlconsole/pagination.webp" size="lg" border alt="ページネーション オプション" />
+
+ページサイズを選択すると、結果セットにすぐにページネーションが適用され、結果ペインのフッター中央にページ移動用のオプションが表示されます
+
+<Image img="/images/cloud/sqlconsole/pagination-nav.webp" size="lg" border alt="ページネーション ナビゲーション" />
+
+<div id="exporting-query-result-data">
+  ### クエリ結果データのエクスポート
+</div>
+
+クエリの結果セットは、SQLコンソールから直接CSV形式で簡単にエクスポートできます。その場合は、結果ペインのツールバー右側にある `•••` メニューを開き、&#39;Download as CSV&#39; を選択します。
+
+<Image img="/images/cloud/sqlconsole/download-as-csv.webp" size="lg" border alt="CSVとしてダウンロード" />
+
+<div id="visualizing-query-data">
+  ## クエリデータの可視化
+</div>
+
+一部のデータは、グラフ形式で表示するとより理解しやすくなります。SQLコンソール から数回クリックするだけで、クエリ結果データから直接可視化をすばやく作成できます。例として、NYC のタクシー乗車の週次統計を計算するクエリを使用します。
+
+```sql
+SELECT
+   toStartOfWeek(pickup_datetime) AS week,
+   sum(total_amount) AS fare_total,
+   sum(trip_distance) AS distance_total,
+   count(*) AS trip_total
+FROM
+   nyc_taxi
+GROUP BY
+   1
+ORDER BY
+   1 ASC
+```
+
+<Image img="/images/cloud/sqlconsole/tabular-query-results.webp" size="lg" border alt="表形式のクエリ結果" />
+
+可視化しないと、これらの結果は解釈しづらくなります。チャートにしてみましょう。
+
+<div id="creating-charts">
+  ### グラフの作成
+</div>
+
+可視化の作成を始めるには、クエリ結果ペインのツールバーから「Chart」オプションを選択します。チャート設定ペインが表示されます。
+
+<Image img="/images/cloud/sqlconsole/switch-from-query-to-chart.webp" size="lg" border alt="クエリからグラフへの切り替え" />
+
+まずは、`week` ごとの `trip_total` を追跡するシンプルな棒グラフを作成します。そのため、`week` フィールドを x 軸に、`trip_total` フィールドを y 軸にドラッグします。
+
+<Image img="/images/cloud/sqlconsole/trip-total-by-week.webp" size="lg" border alt="週ごとの trip total" />
+
+ほとんどのグラフタイプでは、数値軸に複数のフィールドを設定できます。これを示すため、`fare_total` フィールドを y 軸にドラッグします。
+
+<Image img="/images/cloud/sqlconsole/bar-chart.webp" size="lg" border alt="棒グラフ" />
+
+<div id="customizing-charts">
+  ### チャートのカスタマイズ
+</div>
+
+SQLコンソールでは 10 種類のチャートを利用でき、チャート設定ペインのチャートタイプセレクターから選択できます。たとえば、前のチャートタイプを棒グラフからエリアチャートに簡単に変更できます。
+
+<Image img="/images/cloud/sqlconsole/change-from-bar-to-area.webp" size="lg" border alt="棒グラフからエリアチャートに変更" />
+
+チャートのタイトルは、データを提供するクエリ名に対応しています。クエリ名を更新すると、チャートのタイトルも更新されます。
+
+<Image img="/images/cloud/sqlconsole/update-query-name.webp" size="lg" border alt="クエリ名を更新" />
+
+より高度なチャートの設定も、チャート設定ペインの「Advanced」セクションで調整できます。まずは、次の設定を変更します。
+
+* サブタイトル
+* 軸タイトル
+* x 軸ラベルの向き
+
+チャートは次のように更新されます。
+
+<Image img="/images/cloud/sqlconsole/update-subtitle-etc.webp" size="lg" border alt="サブタイトルなどを更新" />
+
+状況によっては、各フィールドの軸スケールを個別に調整する必要があります。これも、チャート設定ペインの「Advanced」セクションで軸の範囲の最小値と最大値を指定することで行えます。たとえば、上のチャートは見やすいものの、`trip_total` フィールドと `fare_total` フィールドの相関関係を示すには、軸の範囲を少し調整する必要があります。
+
+<Image img="/images/cloud/sqlconsole/adjust-axis-scale.webp" size="lg" border alt="軸スケールを調整" />
+
+<div id="sharing-queries">
+  ## クエリの共有
+</div>
+
+SQLコンソールでは、チームとクエリを共有できます。クエリを共有すると、チームの全メンバーがそのクエリを表示・編集できるようになります。共有クエリは、チームで共同作業するのに便利です。
+
+クエリを共有するには、クエリツールバーの「Share」ボタンをクリックします。
+
+<Image img="/images/cloud/sqlconsole/sql-console-share.webp" size="lg" border alt="クエリツールバー内の「Share」ボタン" />
+
+ダイアログが開き、チームの全メンバーとクエリを共有できるようになります。複数のチームに所属している場合は、どのチームとクエリを共有するかを選択できます。
+
+<Image img="/images/cloud/sqlconsole/sql-console-edit-access.webp" size="lg" border alt="共有クエリのアクセス権を編集するためのダイアログ" />
+
+<Image img="/images/cloud/sqlconsole/sql-console-add-team.webp" size="lg" border alt="共有クエリにチームを追加するためのインターフェイス" />
+
+<Image img="/images/cloud/sqlconsole/sql-console-edit-member.webp" size="lg" border alt="共有クエリに対するメンバーのアクセス権を編集するためのインターフェイス" />
+
+状況によっては、各フィールドの軸スケールを個別に調整する必要があります。これも、チャート設定ペインの「Advanced」セクションで、軸の範囲の最小値と最大値を指定することで行えます。たとえば、上のチャートは見た目には問題ありませんが、`trip_total` と `fare_total` フィールドの相関関係を示すには、軸の範囲を多少調整する必要があります。
+
+<Image img="/images/cloud/sqlconsole/sql-console-access-queries.webp" size="lg" border alt="クエリ一覧内の「Shared with me」セクション" />

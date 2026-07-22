@@ -1,0 +1,106 @@
+---
+sidebarTitle: 'Draxlr'
+slug: /integrations/draxlr
+keywords: ['clickhouse', 'Draxlr', 'connecter', 'intégrer', 'ui']
+description: 'Draxlr est un outil de business intelligence offrant des fonctionnalités de visualisation et d’analyse de données.'
+title: 'Connecter Draxlr à ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/fr/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+Draxlr offre une interface intuitive pour se connecter à votre base de données ClickHouse, permettant à votre équipe d’explorer, de visualiser et de publier des insights en quelques minutes. Ce guide vous présente les étapes à suivre pour établir correctement la connexion.
+
+<div id="1-get-your-clickhouse-credentials">
+  ## 1. Récupérez vos identifiants ClickHouse
+</div>
+
+<ConnectionDetails />
+
+<div id="2--connect-draxlr-to-clickhouse">
+  ## 2.  Connecter Draxlr à ClickHouse
+</div>
+
+1. Cliquez sur le bouton **Connect a Database** dans la barre de navigation.
+
+2. Sélectionnez **ClickHouse** dans la liste des bases de données disponibles, puis cliquez sur **Next**.
+
+3. Choisissez l&#39;un des services d&#39;hébergement, puis cliquez sur **Next**.
+
+4. Saisissez le nom de votre choix dans le champ **Connection Name**.
+
+5. Renseignez les informations de connexion dans le formulaire.
+
+<Image size="md" img="/images/integrations/data-visualization/draxlr_01.webp" alt="Formulaire de connexion Draxlr affichant les options de configuration de la base de données ClickHouse" border />
+
+6. Cliquez sur le bouton **Next** et attendez que la connexion soit établie. Si la connexion réussit, la page des tables s&#39;affiche.
+
+<div id="4-explore-your-data">
+  ## 4. Explorez vos données
+</div>
+
+1. Cliquez sur l’une des tables de la liste.
+
+2. Vous serez redirigé vers la page Explore pour afficher les données de la table.
+
+3. Vous pouvez ensuite ajouter des filtres, effectuer des jointures et trier vos données.
+
+<Image size="md" img="/images/integrations/data-visualization/draxlr_02.webp" alt="Interface d’exploration des données Draxlr affichant des filtres et des options de tri" border />
+
+4. Vous pouvez également utiliser le bouton **Graph** et sélectionner le type de graphique pour visualiser les données.
+
+<Image size="md" img="/images/integrations/data-visualization/draxlr_05.webp" alt="Options de visualisation de graphiques Draxlr pour les données ClickHouse" border />
+
+<div id="4-using-sql-queries">
+  ## 4. Utiliser des requêtes SQL
+</div>
+
+1. Cliquez sur le bouton Explore dans la barre de navigation.
+
+2. Cliquez sur le bouton **Raw Query**, puis saisissez votre requête dans la zone de texte.
+
+<Image size="md" img="/images/integrations/data-visualization/draxlr_03.webp" alt="Interface de requête SQL de Draxlr pour ClickHouse" border />
+
+3. Cliquez sur le bouton **Execute Query** pour afficher les résultats.
+
+<div id="4-saving-you-query">
+  ## 4. Enregistrer votre requête
+</div>
+
+1. Après avoir exécuté votre requête, cliquez sur le bouton **Save Query**.
+
+<Image size="md" img="/images/integrations/data-visualization/draxlr_04.webp" alt="Boîte de dialogue d’enregistrement de requête Draxlr avec options de tableau de bord" border />
+
+2. Vous pouvez nommer la requête dans le champ **Query Name** et sélectionner un dossier pour la classer.
+
+3. Vous pouvez également utiliser l’option **Add to dashboard** pour ajouter le résultat au tableau de bord.
+
+4. Cliquez sur le bouton **Save** pour enregistrer la requête.
+
+<div id="5-building-dashboards">
+  ## 5. Créer des tableaux de bord
+</div>
+
+1. Cliquez sur le bouton **Dashboards** dans la barre de navigation.
+
+<Image size="md" img="/images/integrations/data-visualization/draxlr_06.webp" alt="Interface de gestion des tableaux de bord Draxlr" border />
+
+2. Vous pouvez ajouter un nouveau tableau de bord en cliquant sur le bouton **Add +** dans la barre latérale de gauche.
+
+3. Pour ajouter un nouveau widget, cliquez sur le bouton **Add** dans l’angle supérieur droit.
+
+4. Vous pouvez sélectionner une requête dans la liste des requêtes enregistrées et choisir le type de visualisation, puis cliquer sur le bouton **Add Dashboard Item**.
+
+<div id="learn-more">
+  ## En savoir plus
+</div>
+
+Pour en savoir plus sur Draxlr, vous pouvez consulter la [documentation Draxlr](https://draxlr.notion.site/draxlr/Draxlr-Docs-d228b23383f64d00a70836ff9643a928).

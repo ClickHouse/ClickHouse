@@ -155,9 +155,11 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
             auto kind = table_join.kind();
             auto strictness = table_join.strictness();
             /// Grace hash join scatters rows into buckets by hash, destroying the input order.
+            /// PartialMergeJoin re-sorts left blocks by the join key, so it does not keep the left
+            /// stream's original order either (preservesLeftBlockOrder() == false).
             /// We must not propagate read-in-order through joins that reorder rows.
             if ((strictness == JoinStrictness::Any || strictness == JoinStrictness::All) && isInnerOrLeft(kind)
-                && !join_ptr->hasDelayedBlocks())
+                && !join_ptr->hasDelayedBlocks() && join_ptr->preservesLeftBlockOrder())
             {
                 auto * reading_step = findReadingStep(*node.children.front(), data);
                 if (auto * join_step = typeid_cast<JoinStep *>(step); reading_step && join_step)
@@ -1155,7 +1157,12 @@ InputOrder buildInputOrderFromUnorderedKeys(
     return order_info;
 }
 
-InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtual_row, QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
+InputOrderInfoPtr buildInputOrderInfo(
+    SortingStep & sorting,
+    bool & apply_virtual_row,
+    ReadFromMergeTree *& virtual_row_reader,
+    QueryPlan::Node & node,
+    const QueryPlanOptimizationSettings & optimization_settings)
 {
     FindReadingStepContext find_reading_ctx{
         .allow_existing_order = false,
@@ -1195,11 +1202,14 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
         if (order_info.input_order)
         {
-            apply_virtual_row = order_info.virtual_row_conversion != std::nullopt;
+            apply_virtual_row = apply_virtual_row && order_info.virtual_row_conversion != std::nullopt;
 
             bool uses_virtual_row = false;
             if (order_info.virtual_row_conversion)
+            {
                 uses_virtual_row = reading->setVirtualRowConversions(std::move(*order_info.virtual_row_conversion));
+                virtual_row_reader = reading;
+            }
 
             if (!uses_virtual_row)
             {
@@ -1616,7 +1626,8 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     if (sorting->hasPartitions() && !optimization_settings.reuse_storage_ordering_for_window_functions)
         return;
 
-    bool apply_virtual_row = false;
+    bool apply_virtual_row = true;
+    ReadFromMergeTree * virtual_row_reader = nullptr;
 
     if (auto * union_step = typeid_cast<UnionStep *>(node.children.front()->step.get()))
     {
@@ -1638,9 +1649,13 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
                 return;
         }
 
+        std::vector<ReadFromMergeTree *> virtual_row_readers;
         for (auto * child : union_node->children)
         {
-            infos.push_back(buildInputOrderInfo(*sorting, apply_virtual_row, *child, optimization_settings));
+            ReadFromMergeTree * child_virtual_row_reader = nullptr;
+            infos.push_back(buildInputOrderInfo(*sorting, apply_virtual_row, child_virtual_row_reader, *child, optimization_settings));
+            if (child_virtual_row_reader)
+                virtual_row_readers.push_back(child_virtual_row_reader);
 
             if (infos.back())
             {
@@ -1689,15 +1704,23 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
                 sort_node.step = std::move(additional_sorting);
                 sort_node.children.push_back(child);
                 child = &sort_node;
+                apply_virtual_row = false;
             }
+        }
+
+        /// Virtual rows were enabled per child before the union-wide decision, undo them if the merge cannot use them.
+        if (!apply_virtual_row)
+        {
+            for (auto * reader : virtual_row_readers)
+                reader->resetVirtualRowConversions();
         }
 
         /// FinishSorting's `MergingSortedTransform` requires every input stream of the union
         /// to be sorted by `max_sort_descr`; the union must not concatenate (narrow) them.
         union_step->disableNarrowing();
-        sorting->convertToFinishSorting(*max_sort_descr, use_buffering, false);
+        sorting->convertToFinishSorting(*max_sort_descr, use_buffering, apply_virtual_row);
     }
-    else if (auto order_info = buildInputOrderInfo(*sorting, apply_virtual_row, *node.children.front(), optimization_settings))
+    else if (auto order_info = buildInputOrderInfo(*sorting, apply_virtual_row, virtual_row_reader, *node.children.front(), optimization_settings))
     {
         /// Use buffering only if have filter or don't have limit.
         bool use_buffering = order_info->limit == 0;

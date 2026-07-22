@@ -1,0 +1,37 @@
+---
+sidebarTitle: 'Templates'
+slug: /integrations/google-dataflow/templates
+description: 'Vous pouvez ingérer des données dans ClickHouse à l’aide des templates Google Dataflow'
+title: 'Templates Google Dataflow'
+doc_type: 'guide'
+keywords: ['google dataflow', 'gcp', 'pipeline de données', 'templates', 'traitement par lots']
+---
+
+import ClickHouseSupportedBadge from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Les Dataflow templates de Google offrent un moyen pratique d’exécuter des pipelines de données prédéfinis et prêts à l’emploi, sans avoir à écrire de code personnalisé. Ces templates sont conçus pour simplifier les tâches courantes de traitement des données et s’appuient sur [Apache Beam](https://beam.apache.org/), en utilisant des connecteurs tels que `ClickHouseIO` pour une intégration fluide avec les bases de données ClickHouse. En exécutant ces templates sur Google Dataflow, vous pouvez mettre en œuvre un traitement des données distribué et hautement évolutif avec un minimum d’effort.
+
+<div id="why-use-dataflow-templates">
+  ## Pourquoi utiliser Dataflow templates ?
+</div>
+
+* **Facilité d&#39;utilisation** : les templates évitent d&#39;avoir à écrire du code en proposant des pipelines préconfigurés adaptés à des cas d&#39;usage spécifiques.
+* **Évolutivité** : Dataflow permet à votre pipeline de monter en charge efficacement et de traiter de grands volumes de données grâce au traitement distribué.
+* **Rentabilité** : ne payez que pour les ressources que vous consommez, avec la possibilité d&#39;optimiser les coûts d&#39;exécution du pipeline.
+
+<div id="how-to-run-dataflow-templates">
+  ## Comment exécuter Dataflow templates
+</div>
+
+À ce jour, le template officiel de ClickHouse est disponible via la Google Cloud Console, le CLI ou l&#39;API REST de Dataflow.
+Pour des instructions détaillées étape par étape, consultez le [guide Google Dataflow « Exécuter un pipeline à partir d’un template »](https://cloud.google.com/dataflow/docs/templates/provided-templates).
+
+<div id="list-of-clickhouse-templates">
+  ## Liste des templates ClickHouse
+</div>
+
+* [BigQuery vers ClickHouse](/fr/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse)
+* [Pub/Sub vers ClickHouse](/fr/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse)
+* [GCS vers ClickHouse](https://github.com/ClickHouse/DataflowTemplates/issues/3) (à venir !)

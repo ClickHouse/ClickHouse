@@ -1,0 +1,64 @@
+---
+slug: /use-cases/observability/clickstack/deployment/local-mode-only
+title: '仅使用本地模式'
+description: '以纯本地模式部署 ClickStack - ClickHouse 可观测性技术栈'
+doc_type: 'guide'
+keywords: ['clickstack', '部署', '设置', '配置', '可观测性']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import JSONSupport from '/snippets/zh/_json_support.mdx';
+
+与[一体化镜像](/zh/clickstack/deployment/docker-compose)类似，这个完整的 Docker 镜像集成了所有 ClickStack 组件：
+
+* **ClickHouse**
+* **HyperDX**
+* **OpenTelemetry (OTel) 收集器** (通过端口 `4317` 和 `4318` 提供 OTLP)
+* **MongoDB** (用于持久化应用状态)
+
+**不过，此 HyperDX 发行版已禁用用户身份验证功能**
+
+<div id="suitable-for">
+  ### 适用场景
+</div>
+
+* 演示
+* 调试
+* 使用 HyperDX 的开发场景
+
+<div id="deployment-steps">
+  ## 部署步骤
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### 使用 Docker 部署
+
+    本地模式会在 8080 端口部署 HyperDX UI。
+
+    ```shell
+    docker run -p 8080:8080 clickhouse/clickstack-local:latest
+    ```
+  </Step>
+
+  <Step>
+    ### 访问 HyperDX UI
+
+    访问 [http://localhost:8080](http://localhost:8080) 即可打开 HyperDX UI。
+
+    **你不会被提示创建用户，因为此部署模式未启用身份验证。**
+
+    连接到你自己的外部 ClickHouse 集群，例如 ClickHouse Cloud。
+
+    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="创建登录" size="md" />
+
+    创建一个数据源，保留所有默认值，并在 `Table` 字段中填入 `otel_logs`。其他设置应会自动检测，你可以直接点击 `Save New Source`。
+
+    <Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="创建日志数据源" size="md" />
+  </Step>
+</Steps>
+
+<JSONSupport />

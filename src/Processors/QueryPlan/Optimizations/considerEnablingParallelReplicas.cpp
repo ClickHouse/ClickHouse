@@ -290,6 +290,22 @@ void considerEnablingParallelReplicas(
     if (!source_reading_step)
         return;
 
+    /// If the matched node is the reading step itself (e.g. a window function over a bare table scan:
+    /// replicas would execute only the reading, everything above is computed on the initiator), we cannot
+    /// estimate the number of bytes replicas would send to the initiator: the reading step records only
+    /// input bytes (see `RuntimeDataflowStatisticsCacheUpdater::recordInputColumns`), while output bytes
+    /// are recorded by the transforms of the steps above it. Proceeding would feed `output_bytes = 0` into
+    /// the cost model, i.e. treat shipping the whole read result over the network as free, and could enable
+    /// parallel replicas for plans that are cheaper to execute locally. Skip the optimization instead.
+    if (corresponding_node_in_single_replica_plan->step.get() == source_reading_step)
+    {
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "The matched node is the reading step itself, cannot estimate the amount of data sent to the initiator. "
+            "Skipping optimization");
+        return;
+    }
+
     const auto analysis
         = source_reading_step->getAnalyzedResult() ? source_reading_step->getAnalyzedResult() : source_reading_step->selectRangesToRead();
     if (!analysis)
@@ -363,7 +379,8 @@ void considerEnablingParallelReplicas(
                 ReadFromMergeTree * local_replica_plan_reading_step = findReadingStep(*final_node_in_replica_plan);
                 if (!local_replica_plan_reading_step)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find ReadFromMergeTree step in local parallel replicas plan");
-                chassert(local_replica_plan_reading_step->getAnalyzedResult() == nullptr);
+                /// The step may already carry an analysis (planner runs index analysis on it when
+                /// parallel_replicas_min_number_of_rows_per_replica > 0); overwrite it to reuse the single-replica one.
                 local_replica_plan_reading_step->setAnalyzedResult(analysis);
                 moveSetsFromLocalPlanToReplicasPlan(query_plan, *plan_with_parallel_replicas);
                 query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));

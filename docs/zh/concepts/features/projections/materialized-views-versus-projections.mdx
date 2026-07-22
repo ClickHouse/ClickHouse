@@ -1,0 +1,92 @@
+---
+slug: /managing-data/materialized-views-versus-projections
+sidebarTitle: 'materialized views 与投影'
+title: 'materialized views 与投影对比'
+hide_title: false
+description: '本文比较 ClickHouse 中的 materialized views 和投影，包括它们的适用场景、性能和局限性。'
+doc_type: 'reference'
+keywords: ['materialized views', 'projections', 'differences']
+---
+
+> 用户常问的一个问题是：什么时候该使用 materialized views，什么时候该使用
+> 投影。本文将探讨两者之间的关键区别，以及在某些场景下
+> 为什么你可能会选择其中一种而不是另一种。
+
+<div id="key-differences">
+  ## 关键差异总结
+</div>
+
+下表总结了 materialized view 与投影在各个考量方面的关键差异。
+
+| 方面                                                                                      | Materialized views                                                                                                                                | Projections                                                                                      |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| 数据存储与位置                                                                                 | 将结果存储在**单独、显式指定的目标表**中，并在向源表执行 `INSERT` 时充当插入触发器。                                                                                                 | 投影会创建优化的数据布局，并在物理上**与主表数据一同存储**，对用户不可见。                                                          |
+| 更新机制                                                                                    | 对源表的 `INSERT` **同步**执行 (对于增量materialized view) 。注意：也可以通过可刷新materialized view 按计划**定期刷新**。                                                         | 在向主表 `INSERT` 后于后台进行**异步**更新。                                                                    |
+| 查询交互                                                                                    | 使用 Materialized Views 时，需要**直接查询目标表**，这意味着你在编写查询时必须知道 materialized view 的存在。                                                                      | 投影由 ClickHouse 的查询优化器**自动选择**，也就是说对用户是透明的；用户无需修改针对带有投影的表的查询即可利用它。从 25.6 版本开始，还可以按多个投影进行过滤。       |
+| 处理 `UPDATE` / `DELETE`                                                                  | 对源表上的 `UPDATE` 或 `DELETE` 操作**不会自动响应**，因为 materialized view 并不了解源表，只会在向源表插入时充当插入触发器。这可能导致源表与目标表之间的数据变陈旧，并需要变通方案或定期全量刷新 (通过可刷新materialized view) 。 | 默认情况下，与**已 `DELETED` 的行不兼容** (尤其是轻量级删除) 。`lightweight_mutation_projection_mode` (v24.7+) 可启用兼容性。 |
+| `JOIN` 支持                                                                               | 是。可刷新materialized view 可用于复杂的反规范化。增量materialized view 仅会在最左侧表插入时触发。                                                                               | 否。投影定义中不支持用 `JOIN` 操作过滤已 materialized 的数据。不过，连接带有投影的表的查询仍可正常工作——投影优化的是各个表的访问。                    |
+| 定义中的 `WHERE` 子句                                                                         | 是。可以包含 `WHERE` 子句，以便在 materialization 之前过滤数据。                                                                                                     | 否。投影定义中不支持用 `WHERE` 子句过滤已 materialized 的数据。                                                      |
+| 链式能力                                                                                    | 是。一个 materialized view 的目标表可以作为另一个 materialized view 的源，从而支持多阶段管道。                                                                                | 否。投影不能链式使用。                                                                                      |
+| 适用的表引擎                                                                                  | 可用于多种源表引擎，但目标表通常属于 `MergeTree` 家族。                                                                                                                | **仅**适用于 `MergeTree` 家族表引擎。                                                                      |
+| 故障处理                                                                                    | 数据插入期间发生故障意味着目标表中的数据会丢失，从而可能导致不一致。                                                                                                                | 故障会在后台被**静默**处理。查询可以无缝混合已 materialized 和未 materialized 的 parts。                                  |
+| 运维开销                                                                                    | 需要显式创建目标表，而且通常需要手动回填。维护与 `UPDATE`/`DELETE` 相关的一致性会增加复杂性。                                                                                          | 投影会自动维护并保持同步，通常运维负担更低。                                                                           |
+| `FINAL` 查询兼容性                                                                           | 通常兼容，但往往需要在目标表上使用 `GROUP BY`。                                                                                                                     | **不适用于** `FINAL` 查询。                                                                             |
+| 延迟 materialization                                                                      | 是。                                                                                                                                                | 使用 materialization 功能时，请注意投影兼容性问题。你可能需要设置 `query_plan_optimize_lazy_materialization = false`     |
+| 并行副本                                                                                    | 是。                                                                                                                                                | 否。                                                                                               |
+| [`optimize_read_in_order`](/zh/reference/settings/session-settings#optimize_read_in_order) | 是。                                                                                                                                                | 是。                                                                                               |
+| 轻量级更新和删除                                                                                | 是。                                                                                                                                                | 否。                                                                                               |
+
+<div id="choose-between">
+  ## 比较 materialized views 与 投影
+</div>
+
+<div id="choosing-materialized-views">
+  ### 何时选择 materialized views
+</div>
+
+在以下情况下，你应考虑使用 materialized views：
+
+* 处理 **实时 ETL 和多阶段数据管道** 时：你需要在数据到达时执行复杂的转换、聚合，或对数据进行路由，并且可能需要通过串联视图跨多个阶段处理。
+* 你需要 **复杂的反规范化**：你需要将来自多个来源 (表、子查询或字典) 的数据预先 JOIN 到一张针对查询优化的单一表中，尤其是在可以接受使用可刷新materialized view定期执行全量刷新的情况下。
+* 你希望 **显式控制 schema**：你需要为预计算结果使用一张独立且明确的目标表，并拥有其自身的 schema 和 engine，从而为数据建模提供更大的灵活性。
+* 你希望在 **摄取时进行过滤**：你需要在数据被 materialized *之前* 进行过滤，从而减少写入目标表的数据量。
+
+<div id="avoid-materialized-views">
+  ### 何时应避免使用 materialized views
+</div>
+
+在以下情况下，应考虑避免使用 materialized views：
+
+* **源数据经常更新或删除**：如果没有额外策略来处理源表与目标表之间的一致性，增量materialized view 可能会变得陈旧，从而导致数据不一致。
+* **更看重简洁性和自动优化**：如果你希望避免管理单独的目标表。
+
+<div id="choosing-projections">
+  ### 何时选择 投影
+</div>
+
+在以下情况下，你应考虑使用 投影：
+
+* **优化单个表的查询**：你的主要目标是通过提供替代排序顺序、优化主键之外列上的过滤条件，或为单个表预先计算聚合，来加速单个基表上的查询。
+* 你希望具备**查询透明性**：也就是说，你希望查询无需修改即可直接针对原始表执行，并依赖 ClickHouse 为给定查询选择最佳的数据布局。
+
+<div id="avoid-projections">
+  ### 何时应避免使用投影
+</div>
+
+在以下情况下，应考虑避免使用投影：
+
+* **需要复杂的数据转换或多阶段 ETL**：投影定义不支持 `JOIN` 操作，无法串联形成多步骤管道，也无法处理某些 SQL 功能，例如窗口函数或复杂的 `CASE` 语句。虽然对包含投影的表进行查询时可以自由使用 join，但投影本身并不适合复杂的数据转换。
+* **需要对 materialized 数据进行显式过滤**：投影定义中不支持 `WHERE` 子句，因此无法过滤将被 materialized 到投影中的数据。
+* **使用非 MergeTree 表引擎**：投影仅适用于使用 `MergeTree` 引擎家族的表。
+* `FINAL` 查询必不可少：投影无法与 `FINAL` 查询配合使用，而后者有时会用于去重。
+* 如果需要[并行副本](/zh/products/cloud/features/infrastructure/parallel-replicas)，也应避免使用投影，因为投影不支持该功能。
+
+<div id="summary">
+  ## 总结
+</div>
+
+materialized views 和 投影 都是优化查询和转换数据的强大工具。通常，我们不建议把它们视为非此即彼的选择。相反，两者可以互为补充，结合使用，以充分发挥查询性能。因此，在 ClickHouse 中选择 materialized views 还是 投影，实际上取决于你的具体使用场景和访问模式。
+
+一般来说，如果你需要将一个或多个源表中的数据聚合到目标表，或者在大规模场景下执行复杂转换，就应考虑使用 materialized views。materialized views 非常适合将高成本聚合的工作从查询时前移到写入时。对于按日或按月的 rollup、实时仪表盘或数据汇总，它们都是很好的选择。
+
+另一方面，如果你需要优化那些按与表主键不同的列进行过滤的查询，则应使用 投影。主键决定了数据在磁盘上的物理排序。尤其是在无法再更改表主键，或者你的访问模式比主键所能覆盖的场景更多样时，投影 会特别有用。

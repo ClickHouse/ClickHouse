@@ -1,0 +1,424 @@
+---
+slug: /use-cases/observability/clickstack/integrations/redis
+title: 'مراقبة سجلات Redis باستخدام ClickStack'
+sidebarTitle: 'سجلات Redis'
+description: 'مراقبة سجلات Redis باستخدام ClickStack'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **باختصار**
+
+  اجمع سجلات خادم Redis واستعرضها بصريًا في ClickStack باستخدام receiver ‏OTel ‏`filelog`. يتضمن ذلك مجموعة بيانات تجريبية ولوحة معلومات جاهزة مسبقًا.
+</Info>
+
+<div id="existing-redis">
+  ## التكامل مع Redis الحالي
+</div>
+
+يتناول هذا القسم كيفية تهيئة تثبيت Redis الحالي لديك لإرسال السجلات إلى ClickStack، وذلك من خلال تعديل إعداد ClickStack OTel collector.
+إذا أردت اختبار تكامل Redis قبل تهيئة إعدادك الحالي، فيمكنك استخدام الإعداد المهيأ مسبقًا وبيانات العينة في قسم [&quot;مجموعة البيانات التجريبية&quot;](/ar/clickstack/integration-examples/redis-logs#demo-dataset).
+
+<div id="prerequisites">
+  ### المتطلبات الأساسية
+</div>
+
+* مثيل ClickStack قيد التشغيل
+* وجود Redis مثبّت (الإصدار 3.0 أو أحدث)
+* الوصول إلى ملفات سجل Redis
+
+<Steps>
+  <Step>
+    #### تحقّق من إعدادات تسجيل Redis
+
+    أولاً، تحقّق من إعدادات تسجيل Redis لديك. اتصل بـ Redis وتحقّق من مسار ملف السجل:
+
+    ```bash
+    redis-cli CONFIG GET logfile
+    ```
+
+    مواقع ملفات سجل Redis الشائعة:
+
+    * **Linux (apt/yum)**: `/var/log/redis/redis-server.log`
+    * **macOS (Homebrew)**: `/usr/local/var/log/redis.log`
+    * **Docker**: غالبًا ما تُسجَّل السجلات في `stdout`، لكن يمكن تهيئته للكتابة إلى `/data/redis.log`
+
+    إذا كان Redis يكتب سجلاته إلى `stdout`، فقم بتهيئته للكتابة إلى ملف عبر تحديث `redis.conf`:
+
+    ```bash
+    # Log to file instead of stdout
+    logfile /var/log/redis/redis-server.log
+
+    # Set log level (options: debug, verbose, notice, warning)
+    loglevel notice
+    ```
+
+    بعد تغيير الإعدادات، أعد تشغيل Redis:
+
+    ```bash
+    # For systemd
+    sudo systemctl restart redis
+
+    # For Docker
+    docker restart <redis-container>
+    ```
+  </Step>
+
+  <Step>
+    #### أنشئ تهيئة مخصصة لـ OTel collector
+
+    يتيح لك ClickStack توسيع تهيئة OpenTelemetry Collector الأساسية عبر إرفاق ملف تهيئة مخصص وتعيين متغير بيئة. وتُدمَج هذه التهيئة المخصصة مع التهيئة الأساسية التي يديرها HyperDX عبر OpAMP.
+
+    أنشئ ملفًا باسم `redis-monitoring.yaml` بالتكوين التالي:
+
+    ```yaml
+    receivers:
+      filelog/redis:
+        include:
+          - /var/log/redis/redis-server.log
+        start_at: beginning
+        operators:
+          - type: regex_parser
+            regex: '^(?P\d+):(?P\w+) (?P\d{2} \w+ \d{4} \d{2}:\d{2}:\d{2})\.\d+ (?P[.\-*#]) (?P.*)$'
+            parse_from: body
+            parse_to: attributes
+          
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout: '%d %b %Y %H:%M:%S'
+          
+          - type: add
+            field: attributes.source
+            value: "redis"
+          
+          - type: add
+            field: resource["service.name"]
+            value: "redis-production"
+
+    service:
+      pipelines:
+        logs/redis:
+          receivers: [filelog/redis]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    ```
+
+    هذا الإعداد:
+
+    * يقرأ سجلات Redis من موقعها القياسي
+    * يحلّل تنسيق سجلات Redis باستخدام Regex لاستخراج الحقول المنظَّمة (`pid`, `role`, `timestamp`, `log_level`, `message`)
+    * يضيف السمة `source: redis` لتسهيل التصفية في HyperDX
+    * يوجّه السجلات إلى مُصدِّر ClickHouse عبر خط أنابيب مخصّص
+
+    <Note>
+      - ما عليك سوى تعريف receivers وخطوط الأنابيب الجديدة في الإعداد المخصّص
+      - إن المعالجات (`memory_limiter`, `transform`, `batch`) والمُصدِّرات (`clickhouse`) معرّفة مسبقًا في إعداد ClickStack الأساسي، وما عليك إلا الإشارة إليها بالاسم
+      - يستخرج المشغّل `time_parser` الطوابع الزمنية من سجلات Redis للحفاظ على توقيتها الأصلي
+      - يستخدم هذا الإعداد `start_at: beginning` لقراءة جميع السجلات الموجودة عند بدء تشغيل المُجمِّع، ما يتيح لك رؤية السجلات فورًا. أمّا في عمليات النشر في بيئات الإنتاج، حيث تريد تجنّب إعادة إدخال السجلات عند إعادة تشغيل المُجمِّع، فغيّره إلى `start_at: end`.
+    </Note>
+  </Step>
+
+  <Step>
+    #### تهيئة ClickStack لتحميل إعدادات مخصّصة
+
+    لتمكين إعدادات المجمِّع المخصّصة في عملية نشر ClickStack الحالية لديك، يجب عليك:
+
+    1. تحميل ملف الإعدادات المخصّص إلى `/etc/otelcol-contrib/custom.config.yaml`
+    2. تعيين متغيّر البيئة `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`
+    3. تحميل دليل سجلات Redis لديك حتى يتمكّن المجمِّع من قراءتها
+
+    ##### الخيار 1: Docker Compose
+
+    حدّث إعدادات نشر ClickStack لديك:
+
+    ```yaml
+    services:
+      clickstack:
+        # ... existing configuration ...
+        environment:
+          - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
+          # ... other environment variables ...
+        volumes:
+          - ./redis-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+          - /var/log/redis:/var/log/redis:ro
+          # ... other volumes ...
+    ```
+
+    ##### الخيار 2: Docker Run (الصورة الشاملة)
+
+    إذا كنت تستخدم الصورة الشاملة مع Docker، فشغّل:
+
+    ```bash
+    docker run --name clickstack \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/redis-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v /var/log/redis:/var/log/redis:ro \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    <Note>
+      تأكد من أن مجمّع ClickStack لديه الأذونات المناسبة لقراءة ملفات سجلات Redis. في بيئة الإنتاج، استخدم نقاط تركيب للقراءة فقط (`:ro`) واتبع مبدأ أقل الصلاحيات.
+    </Note>
+  </Step>
+
+  <Step>
+    #### التحقق من السجلات في HyperDX
+
+    بعد إكمال الإعداد، سجّل الدخول إلى HyperDX وتحقّق من أن السجلات تصل كما ينبغي:
+
+    <Image img="/images/clickstack/redis/redis-log-view.webp" alt="عرض السجلات" />
+
+    <Image img="/images/clickstack/redis/redis-log.webp" alt="سجل" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## مجموعة البيانات التجريبية
+</div>
+
+للمستخدمين الذين يريدون اختبار تكامل Redis قبل تهيئة أنظمة production الخاصة بهم، نوفر مجموعة بيانات تجريبية من سجلات Redis مُولَّدة مسبقًا بأنماط واقعية.
+
+<Steps>
+  <Step>
+    #### تنزيل مجموعة البيانات التجريبية
+
+    نزّل ملف السجل التجريبي:
+
+    ```bash
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/redis/redis-server.log
+    ```
+  </Step>
+
+  <Step>
+    #### إنشاء إعداد أداة التجميع للاختبار
+
+    أنشئ ملفًا باسم `redis-demo.yaml` بالإعداد التالي:
+
+    ```yaml
+    cat > redis-demo.yaml << 'EOF'
+    receivers:
+      filelog/redis:
+        include:
+          - /tmp/redis-demo/redis-server.log
+        start_at: beginning  # اقرأ من البداية للبيانات التجريبية
+        operators:
+          - type: regex_parser
+            regex: '^(?P<pid>\d+):(?P<role>\w+) (?P<timestamp>\d{2} \w+ \d{4} \d{2}:\d{2}:\d{2})\.\d+ (?P<log_level>[.\-*#]) (?P<message>.*)$'
+            parse_from: body
+            parse_to: attributes
+          
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout: '%d %b %Y %H:%M:%S'
+          
+          - type: add
+            field: attributes.source
+            value: "redis-demo"
+          
+          - type: add
+            field: resource["service.name"]
+            value: "redis-demo"
+
+    service:
+      pipelines:
+        logs/redis-demo:
+          receivers: [filelog/redis]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    EOF
+    ```
+  </Step>
+
+  <Step>
+    #### تشغيل ClickStack باستخدام الإعداد التجريبي
+
+    شغّل ClickStack باستخدام السجلات والإعداد التجريبي:
+
+    ```bash
+    docker run --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/redis-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/redis-server.log:/tmp/redis-demo/redis-server.log:ro" \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    <Note>
+      **يؤدي ذلك إلى ربط ملف السجل مباشرةً داخل الحاوية. ويُستخدم هذا لأغراض الاختبار مع بيانات تجريبية ثابتة.**
+
+    </Note>
+
+    ## التحقق من السجلات في HyperDX
+
+    بعد تشغيل ClickStack:
+
+    1. افتح [HyperDX](http://localhost:8080/) وسجّل الدخول إلى حسابك (قد تحتاج أولًا إلى إنشاء حساب)
+    2. انتقل إلى Search view واضبط source على `Logs`
+    3. اضبط time range على **2025-10-26 10:00:00 - 2025-10-29 10:00:00**
+
+    <Info>
+      **عرض المنطقة الزمنية**
+
+      يعرض HyperDX الطوابع الزمنية بحسب المنطقة الزمنية المحلية في متصفحك. تمتد البيانات التجريبية عبر **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)**. يضمن النطاق الزمني الواسع ظهور السجلات التجريبية بغض النظر عن موقعك. وبعد ظهور السجلات، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على مرئيات أوضح.
+    </Info>
+
+    <Image img="/images/clickstack/redis/redis-log-view.webp" alt="عرض السجل" />
+
+    <Image img="/images/clickstack/redis/redis-log.webp" alt="سجل" />
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## لوحات المعلومات والتصورات
+</div>
+
+لمساعدتك على بدء مراقبة Redis باستخدام ClickStack، نوفر التصورات الأساسية لسجلات Redis.
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-logs-dashboard.json'} download="redis-logs-dashboard.json" eventName="docs.redis_logs_monitoring.dashboard_download">نزّل</TrackedLink> إعدادات لوحة المعلومات
+  </Step>
+
+  <Step>
+    #### استيراد لوحة معلومات مُعدّة مسبقًا
+
+    1. افتح HyperDX وانتقل إلى قسم لوحات المعلومات.
+    2. انقر على &quot;استيراد لوحة معلومات&quot; في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث.
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="استيراد لوحة معلومات" />
+
+    3. ارفع ملف redis-logs-dashboard.json ثم انقر على إنهاء الاستيراد.
+
+    <Image img="/images/clickstack/redis/redis-import-dashboard.webp" alt="إنهاء الاستيراد" />
+  </Step>
+
+  <Step>
+    #### ستُنشأ لوحة المعلومات مع تهيئة جميع التصورات مسبقًا
+
+    <Note>
+      بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني على **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)** (عدّله وفقًا لمنطقتك الزمنية المحلية). لن تتضمن لوحة المعلومات المستوردة نطاقًا زمنيًا محددًا افتراضيًا.
+    </Note>
+
+    <Image img="/images/clickstack/redis/redis-logs-dashboard.webp" alt="لوحة معلومات نموذجية" />
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## استكشاف الأخطاء وإصلاحها
+</div>
+
+<div id="troubleshooting-not-loading">
+  ### عدم تحميل إعدادات مخصّصة
+</div>
+
+**تحقّق من ضبط متغيّر البيئة بشكل صحيح:**
+
+```bash
+docker exec <container-name> printenv CUSTOM_OTELCOL_CONFIG_FILE
+# Expected output: /etc/otelcol-contrib/custom.config.yaml
+```
+
+**تأكد من تحميل ملف الإعدادات المخصّص:**
+
+```bash
+docker exec <container-name> ls -lh /etc/otelcol-contrib/custom.config.yaml
+# Expected output: Should show file size and permissions
+```
+
+**اعرض محتوى التهيئة المخصصة:**
+
+```bash
+docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml
+# Should display your redis-monitoring.yaml content
+```
+
+**تحقّق من أن التهيئة الفعّالة تتضمّن مستقبِل filelog الخاص بك:**
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 filelog
+# Should show your filelog/redis receiver configuration
+```
+
+<div id="no-logs">
+  ### عدم ظهور سجلات في HyperDX
+</div>
+
+**تأكد من أن Redis يكتب السجلات إلى ملف:**
+
+```bash
+redis-cli CONFIG GET logfile
+# Expected output: Should show a file path, not empty string
+# Example: 1) "logfile" 2) "/var/log/redis/redis-server.log"
+```
+
+**تحقق من أن Redis يسجّل السجلات بالفعل:**
+
+```bash
+tail -f /var/log/redis/redis-server.log
+# Should show recent log entries in Redis format
+```
+
+**تحقق من أن أداة التجميع يمكنها قراءة السجلات:**
+
+```bash
+docker exec <container> cat /var/log/redis/redis-server.log
+# Should display Redis log entries
+```
+
+**تحقّق من وجود أخطاء في سجلات أداة التجميع:**
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/agent.log
+# Look for any error messages related to filelog or Redis
+```
+
+**إذا كنت تستخدم docker-compose، فتحقّق من وحدات التخزين المشتركة:**
+
+```bash
+# Check both containers are using the same volume
+docker volume inspect <volume-name>
+# Verify both containers have the volume mounted
+```
+
+<div id="logs-not-parsing">
+  ### السجلات لا تُحلَّل على نحو صحيح
+</div>
+
+**تحقق من أن تنسيق سجلات Redis يطابق النمط المتوقع:**
+
+```bash
+# Redis Logs should look like:
+# 12345:M 28 Oct 2024 14:23:45.123 * Server started
+tail -5 /var/log/redis/redis-server.log
+```
+
+إذا كانت سجلات Redis لديك بتنسيق مختلف، فقد تحتاج إلى تعديل نمط Regex في المعامل `regex_parser`. التنسيق القياسي هو:
+
+* `pid:role timestamp level message`
+* مثال: `12345:M 28 Oct 2024 14:23:45.123 * Server started`
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* أعدّ [التنبيهات](/ar/clickstack/features/alerts) للمقاييس المهمة (معدلات الخطأ، عتبات زمن الاستجابة)
+* أنشئ [لوحات معلومات](/ar/clickstack/features/dashboards/overview) إضافية لحالات استخدام محددة (مراقبة واجهة برمجة التطبيقات، أحداث الأمان)
+
+<div id="going-to-production">
+  ## الانتقال إلى بيئة الإنتاج
+</div>
+
+يستفيد هذا الدليل من OpenTelemetry Collector المدمج في ClickStack لتوفير إعداد سريع. أما لعمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات الإنتاج.

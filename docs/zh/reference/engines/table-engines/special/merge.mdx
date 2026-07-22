@@ -1,0 +1,122 @@
+---
+description: '`Merge` 引擎（不要与 `MergeTree` 混淆）本身不存储数据，
+  但允许同时从任意数量的其他表读取数据。'
+sidebarTitle: 'Merge'
+slug: /engines/table-engines/special/merge
+title: 'Merge 表引擎'
+doc_type: 'reference'
+---
+
+`Merge` 引擎 (不要与 `MergeTree` 混淆) 本身不存储数据，但允许同时从任意数量的其他表读取数据。
+
+读取会自动并行执行。不支持向该表写入数据。读取时，如果实际读取的表存在索引，则会使用这些表的索引。
+
+<div id="creating-a-table">
+  ## 创建表
+</div>
+
+```sql
+CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
+```
+
+<div id="engine-parameters">
+  ## 引擎参数
+</div>
+
+<div id="db_name">
+  ### `db_name`
+</div>
+
+`db_name` — 可能的值：
+
+* 数据库名称，
+  * 返回数据库名称字符串的常量表达式，例如 `currentDatabase()`，
+  * `REGEXP(expression)`，其中 `expression` 是用于匹配 DB 名称的正则表达式。
+
+<div id="tables_regexp">
+  ### `tables_regexp`
+</div>
+
+`tables_regexp` — 用于匹配指定 DB 或多个 DB 中表名的 正则表达式。
+
+Regular expressions — [re2](https://github.com/google/re2) (支持 PCRE 的子集) ，区分大小写。
+请参阅“match”部分中关于在 正则表达式 里转义符号的说明。
+
+<div id="usage">
+  ## 用法
+</div>
+
+在选择要读取的表时，即使 `Merge` 表本身匹配该正则表达式，也不会被选中，以避免出现循环。
+可以创建两个 `Merge` 表，让它们无限期地尝试读取对方的数据，但这并不是个好主意。
+
+`Merge` 引擎的典型用法，是将大量 `TinyLog` 表当作一张表来使用。
+
+<div id="examples">
+  ## 示例
+</div>
+
+**示例 1**
+
+假设有两个数据库 `ABC_corporate_site` 和 `ABC_store`。`all_visitors` 表将包含这两个数据库中 `visitors` 表里的 ID。
+
+```sql
+CREATE TABLE all_visitors (id UInt32) ENGINE=Merge(REGEXP('ABC_*'), 'visitors');
+```
+
+**示例 2**
+
+假设你有一个旧表 `WatchLog_old`，并决定在不将数据迁移到新表 `WatchLog_new` 的情况下修改分区方式，同时还需要查看这两个表中的数据。
+
+```sql
+CREATE TABLE WatchLog_old(
+    date Date,
+    UserId Int64,
+    EventType String,
+    Cnt UInt64
+)
+ENGINE=MergeTree
+ORDER BY (date, UserId, EventType);
+
+INSERT INTO WatchLog_old VALUES ('2018-01-01', 1, 'hit', 3);
+
+CREATE TABLE WatchLog_new(
+    date Date,
+    UserId Int64,
+    EventType String,
+    Cnt UInt64
+)
+ENGINE=MergeTree
+PARTITION BY date
+ORDER BY (UserId, EventType)
+SETTINGS index_granularity=8192;
+
+INSERT INTO WatchLog_new VALUES ('2018-01-02', 2, 'hit', 3);
+
+CREATE TABLE WatchLog AS WatchLog_old ENGINE=Merge(currentDatabase(), '^WatchLog');
+
+SELECT * FROM WatchLog;
+```
+
+```text
+┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
+│ 2018-01-01 │      1 │ hit       │   3 │
+└────────────┴────────┴───────────┴─────┘
+┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
+│ 2018-01-02 │      2 │ hit       │   3 │
+└────────────┴────────┴───────────┴─────┘
+```
+
+<div id="virtual-columns">
+  ## 虚拟列
+</div>
+
+* `_table` — 读取数据所来自的表名。类型：[String](/zh/reference/data-types/string)。
+
+  如果对 `_table` 进行过滤 (例如 `WHERE _table='xyz'`) ，则只会读取满足过滤条件的表。
+
+* `_database` — 包含读取数据所来自的数据库名称。类型：[String](/zh/reference/data-types/string)。
+
+**另请参见**
+
+* [虚拟列](/zh/reference/engines/table-engines/index#table_engines-virtual_columns)
+* [merge](/zh/reference/functions/table-functions/merge) 表函数

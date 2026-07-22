@@ -1,0 +1,89 @@
+---
+slug: /guides/developer/alternative-query-languages
+sidebarTitle: '其他查询语言'
+title: '其他查询语言'
+description: '在 ClickHouse 中使用其他查询语言'
+keywords: ['其他查询语言', '查询方言', 'MySQL 方言', 'PostgreSQL 方言', '开发者指南']
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+除标准 SQL 外，ClickHouse 还支持多种可用于数据查询的其他查询语言。
+
+当前支持的 dialect 如下：
+
+* `clickhouse`：ClickHouse 默认的 [SQL 方言](/zh/products/chdb/reference/sql-reference)
+* `prql`：[管道式关系查询语言 (PRQL)](https://prql-lang.org/)
+* `kusto`：[Kusto 查询语言 (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
+
+使用哪种查询语言由 `dialect` 设置控制。
+
+<div id="standard-sql">
+  ## 标准 SQL
+</div>
+
+标准 SQL 是 ClickHouse 的默认查询语言。
+
+```sql
+SET dialect = 'clickhouse'
+```
+
+<div id="pipelined-relational-query-language-prql">
+  ## 管道式关系查询语言 (PRQL)
+</div>
+
+<ExperimentalBadge />
+
+要启用 PRQL：
+
+```sql
+SET allow_experimental_prql_dialect = 1; -- 此 SET 语句仅在 ClickHouse v25.1 及以上版本中需要
+SET dialect = 'prql'
+```
+
+PRQL 查询示例：
+
+```prql
+from trips
+aggregate {
+    ct = count this
+    total_days = sum days
+}
+```
+
+ClickHouse 在底层通过将 PRQL 转译为 SQL 来运行 PRQL 查询。
+
+<div id="kusto-query-language-kql">
+  ## Kusto 查询语言 (KQL)
+</div>
+
+<ExperimentalBadge />
+
+如需启用 KQL：
+
+```sql
+SET allow_experimental_kusto_dialect = 1; -- 此 SET 语句仅适用于 ClickHouse 版本 >= 25.1
+SET dialect = 'kusto'
+```
+
+```kql title="Query"
+numbers(10) | project number
+```
+
+```response title="Response"
+┌─number─┐
+│      0 │
+│      1 │
+│      2 │
+│      3 │
+│      4 │
+│      5 │
+│      6 │
+│      7 │
+│      8 │
+│      9 │
+└────────┘
+```
+
+请注意，KQL 查询可能无法调用 ClickHouse 中定义的所有函数。

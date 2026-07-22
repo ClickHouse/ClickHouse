@@ -1,0 +1,557 @@
+---
+slug: /guides/developer/deduplicating-inserts-on-retries
+title: '对重试插入进行去重'
+description: '防止在重试插入操作时产生重复数据'
+keywords: ['去重', '去重处理', '插入重试', '插入操作']
+doc_type: 'guide'
+---
+
+插入操作有时会因超时等错误而失败。插入失败时，数据可能已经成功写入，也可能尚未写入。本指南介绍如何在重试插入时启用去重，确保相同数据不会被重复插入。
+
+重试插入时，ClickHouse 会尝试判断数据是否已成功插入。如果待插入的数据被标记为重复，ClickHouse 就不会再将其插入目标端表。不过，用户仍会收到成功状态，就像数据已正常插入一样。
+
+<div id="limitations">
+  ## 局限
+</div>
+
+<div id="uncertain-insert-status">
+  ### 插入状态不确定
+</div>
+
+用户必须持续重试插入操作，直到成功为止。如果所有重试都失败，就无法判断数据是否已插入。当涉及 materialized views 时，也无法确定数据可能写入了哪些表。materialized views 可能与源表不同步。
+
+<div id="deduplication-window-limit">
+  ### 去重窗口限制
+</div>
+
+如果在重试过程中发生了超过 `*_deduplication_window` 次其他插入操作，去重可能无法按预期生效。在这种情况下，相同的数据可能会被多次插入。
+
+<div id="enabling-insert-deduplication-on-retries">
+  ## 在重试场景中启用插入去重
+</div>
+
+<div id="insert-deduplication-for-tables">
+  ### 表的插入去重
+</div>
+
+**只有 `*MergeTree` 引擎支持插入时去重。**
+
+对于 `*ReplicatedMergeTree` 引擎，插入去重默认处于启用状态，由 [`replicated_deduplication_window`](/zh/reference/settings/merge-tree-settings#replicated_deduplication_window) 和 [`replicated_deduplication_window_seconds`](/zh/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds) 设置控制。对于非复制表 `*MergeTree` 引擎，去重由 [`non_replicated_deduplication_window`](/zh/reference/settings/merge-tree-settings#non_replicated_deduplication_window) 设置控制。
+
+上述设置决定了表的去重日志参数。去重日志会存储有限数量的 `block_id`，而这些 `block_id` 会决定去重的实现方式 (见下文) 。
+
+<div id="query-level-insert-deduplication">
+  ### 查询级插入去重
+</div>
+
+设置 `insert_deduplicate=1` 会在查询级别启用去重。请注意，如果使用 `insert_deduplicate=0` 插入数据，那么即使随后使用 `insert_deduplicate=1` 重试插入，这些数据也无法去重。这是因为在使用 `insert_deduplicate=0` 进行插入时，系统不会为这些块写入 `block_id`。
+
+<div id="how-insert-deduplication-works">
+  ## insert 去重的工作原理
+</div>
+
+当数据插入 ClickHouse 时，系统会根据行数和字节数将数据拆分为块。
+
+对于使用 `*MergeTree` 引擎的表，每个块都会分配一个唯一的 `block_id`，它是该块中数据的哈希值。这个 `block_id` 会作为插入操作的唯一键使用。如果在去重日志中发现相同的 `block_id`，则该块会被视为重复块，不会插入表中。
+
+这种方法在 inserts 包含不同数据的场景下效果很好。但是，如果你有意多次插入相同的数据，就需要使用 `insert_deduplication_token` 设置来控制去重过程。该设置允许你为每次 insert 指定一个唯一的标记，ClickHouse 会据此判断数据是否重复。
+
+对于 `INSERT ... VALUES` 查询，插入数据被拆分为块的方式是确定性的，并且由相关设置决定。因此，重试插入时应使用与初始操作相同的设置值。
+
+对于 `INSERT ... SELECT` 查询，关键在于查询中的 `SELECT` 部分在每次执行时都返回相同的数据且顺序一致。注意，这在实践中很难做到。为了确保重试时数据顺序稳定，请在查询的 `SELECT` 部分中定义 `ORDER BY ALL` 子句。目前，你必须在查询中精确使用 `ORDER BY ALL`。对 `ORDER BY` 的支持尚未实现，因此查询中的 `SELECT` 部分不会被视为稳定。还要注意，在两次重试之间，被查询的表可能已经发生更新——结果数据可能已发生变化，因此不会进行去重。另外，在插入大量数据时，插入后的块数也可能超出去重日志窗口，此时 ClickHouse 将无法识别这些块需要去重。
+目前，`INSERT ... SELECT` 的行为由 `insert_select_deduplicate` 设置控制。该设置决定是否对通过 `INSERT ... SELECT` 查询插入的数据应用去重。有关详细信息和使用示例，请参阅链接文档。
+
+<div id="insert-deduplication-with-materialized-views">
+  ## 使用 materialized view 的插入去重
+</div>
+
+当一个表具有一个或多个 materialized view 时，插入的数据也会在经过定义的转换后写入这些视图的目标端。转换后的数据在重试时也会进行去重。ClickHouse 对 materialized view 执行去重的方式，与其对插入目标表的数据进行去重的方式相同。
+
+你可以使用源表的以下设置来控制此过程：
+
+* [`replicated_deduplication_window`](/zh/reference/settings/merge-tree-settings#replicated_deduplication_window)
+* [`replicated_deduplication_window_seconds`](/zh/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)
+* [`non_replicated_deduplication_window`](/zh/reference/settings/merge-tree-settings#non_replicated_deduplication_window)
+
+你还必须启用用户 profile 设置 [`deduplicate_blocks_in_dependent_materialized_views`](/zh/reference/settings/session-settings#deduplicate_blocks_in_dependent_materialized_views)。
+启用 `insert_deduplicate=1` 后，插入的数据会在源表中去重。设置 `deduplicate_blocks_in_dependent_materialized_views=1` 还会在依赖表中启用去重。如果希望实现完整去重，则必须同时启用这两项设置。
+
+当向 materialized view 下游的表中插入块时，ClickHouse 会通过对一个字符串进行哈希来计算 `block_id`，该字符串由源表中的 `block_id` 和其他附加标识符组合而成。这可确保 materialized view 中的去重准确无误，使系统能够根据数据的原始插入情况对其进行区分，而不受数据到达 materialized view 下游目标表之前所执行转换的影响。
+
+<div id="examples">
+  ## 示例
+</div>
+
+<div id="identical-blocks-after-materialized-view-transformations">
+  ### materialized view 转换后生成的相同数据块
+</div>
+
+在 materialized view 中转换过程中生成的相同数据块不会被去重，因为它们基于不同的插入数据。
+
+下面是一个示例：
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE MATERIALIZED VIEW mv_dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+```
+
+```sql
+SET max_block_size=1;
+SET min_insert_block_size_rows=0;
+SET min_insert_block_size_bytes=0;
+```
+
+上述设置使我们能够从一个由一系列每块仅包含一行的块组成的表中进行查询。这些较小的块不会被合并，在插入表之前会一直保持不变。
+
+```sql
+SET deduplicate_blocks_in_dependent_materialized_views=1;
+```
+
+我们需要为 materialized view 启用去重：
+
+```sql
+INSERT INTO dst SELECT
+    number + 1 AS key,
+    IF(key = 0, 'A', 'B') AS value
+FROM numbers(2);
+
+SELECT
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   1 │ B     │ all_0_0_0 │
+│   2 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+这里我们可以看到，两个 parts 已插入 `dst` 表。select 产生了 2 个块——插入时生成 2 个 parts。这些 parts 包含的数据不同。
+
+```sql
+SELECT
+    *,
+    _part
+FROM mv_dst
+ORDER BY all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   0 │ B     │ all_0_0_0 │
+│   0 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+这里我们可以看到，已有 2 个 parts 被插入到 `mv_dst` 表中。这两个 parts 包含相同的数据，但并未被去重。
+
+```sql
+INSERT INTO dst SELECT
+    number + 1 AS key,
+    IF(key = 0, 'A', 'B') AS value
+FROM numbers(2);
+
+SELECT
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   1 │ B     │ all_0_0_0 │
+│   2 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   0 │ B     │ all_0_0_0 │
+│   0 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+这里可以看到，当我们重试这些插入操作时，所有数据都会被去重。去重对 `dst` 和 `mv_dst` 表都生效。
+
+<div id="identical-blocks-on-insertion">
+  ### 插入时的相同数据块
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+SET max_block_size=1;
+SET min_insert_block_size_rows=0;
+SET min_insert_block_size_bytes=0;
+```
+
+插入：
+
+```sql
+INSERT INTO dst SELECT
+    0 AS key,
+    'A' AS value
+FROM numbers(2);
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+使用上述设置后，`select` 会产生两个块——因此，插入到表 `dst` 中的也应该是两个块。然而，我们看到只有一个块被插入了表 `dst`。这是因为第二个块被去重了。它的数据相同，而且用于去重的键 `block_id` 也是一样的；`block_id` 是根据插入的数据计算出的哈希值。这种行为并不符合预期。这类情况虽然很少见，但理论上是可能发生的。为了正确处理这类情况，用户必须提供 `insert_deduplication_token`。下面的示例将说明如何修正这个问题：
+
+<div id="identical-blocks-in-insertion-with-insert_deduplication_token">
+  ### 使用 `insert_deduplication_token` 插入时的相同数据块
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+SET max_block_size=1;
+SET min_insert_block_size_rows=0;
+SET min_insert_block_size_bytes=0;
+```
+
+插入：
+
+```sql
+INSERT INTO dst SELECT
+    0 AS key,
+    'A' AS value
+FROM numbers(2)
+SETTINGS insert_deduplication_token='some_user_token';
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_2_2_0 │
+│ from dst   │   0 │ A     │ all_3_3_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+两个相同的块都已按预期插入。
+
+```sql
+SELECT 'second attempt';
+
+INSERT INTO dst SELECT
+    0 AS key,
+    'A' AS value
+FROM numbers(2)
+SETTINGS insert_deduplication_token='some_user_token';
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_2_2_0 │
+│ from dst   │   0 │ A     │ all_3_3_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+重试后的插入操作会按预期被去重。
+
+```sql
+SELECT 'third attempt';
+
+INSERT INTO dst SELECT
+    1 AS key,
+    'b' AS value
+FROM numbers(2)
+SETTINGS insert_deduplication_token='some_user_token';
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_2_2_0 │
+│ from dst   │   0 │ A     │ all_3_3_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+该插入操作也会被去重，即使其中插入的数据不同。请注意，`insert_deduplication_token` 的优先级更高：提供 `insert_deduplication_token` 时，ClickHouse 不会使用数据的哈希值。
+
+<div id="different-insert-operations-generate-the-same-data-after-transformation-in-the-underlying-table-of-the-materialized-view">
+  ### 不同的插入操作经过转换后，会在 materialized view 的底层表中生成相同的数据
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE MATERIALIZED VIEW mv_dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+
+SET deduplicate_blocks_in_dependent_materialized_views=1;
+
+select 'first attempt';
+
+INSERT INTO dst VALUES (1, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER by all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+select 'second attempt';
+
+INSERT INTO dst VALUES (2, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER by all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+│ from dst   │   2 │ A     │ all_1_1_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+│ from mv_dst   │   0 │ A     │ all_1_1_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+我们每次插入的数据都不同。但插入到 `mv_dst` 表中的数据却相同。由于源数据不同，因此不会发生去重。
+
+<div id="different-materialized-view-inserts-into-one-underlying-table-with-equivalent-data">
+  ### 不同 materialized view 向同一底层表插入等效数据
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE TABLE mv_dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE MATERIALIZED VIEW mv_first
+TO mv_dst
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+
+CREATE MATERIALIZED VIEW mv_second
+TO mv_dst
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+
+SET deduplicate_blocks_in_dependent_materialized_views=1;
+
+select 'first attempt';
+
+INSERT INTO dst VALUES (1, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER by all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+│ from mv_dst   │   0 │ A     │ all_1_1_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+两个相同的块已插入表 `mv_dst` (符合预期) 。
+
+```sql
+SELECT 'second attempt';
+
+INSERT INTO dst VALUES (1, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+│ from mv_dst   │   0 │ A     │ all_1_1_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+该次重试操作在 `dst` 和 `mv_dst` 两个表上都会被去重。

@@ -1,0 +1,45 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/local-file
+title: 'Источник словаря Local File'
+sidebarTitle: 'Local File'
+description: 'Настройте локальный файл как источник словаря в ClickHouse.'
+doc_type: 'reference'
+---
+
+Источник словаря Local File загружает данные словаря из файла в локальной файловой системе. Это полезно для небольших статических таблиц соответствий, которые можно хранить как плоские файлы в форматах TSV, CSV или любом другом [поддерживаемом формате](/ru/reference/formats/index).
+
+Пример настроек:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
+    ```
+  </Tab>
+
+  <Tab title="Файл конфигурации">
+    ```xml
+    <source>
+      <file>
+        <path>/opt/dictionaries/os.tsv</path>
+        <format>TabSeparated</format>
+      </file>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Поля настроек:
+
+| Настройка | Описание                                                                                           |
+| --------- | -------------------------------------------------------------------------------------------------- |
+| `path`    | Абсолютный путь к файлу.                                                                           |
+| `format`  | Формат файла. Поддерживаются все форматы, описанные в разделе [Formats](/ru/reference/formats/index). |
+
+Когда словарь с источником `FILE` создаётся с помощью DDL-команды (`CREATE DICTIONARY ...`), файл-источник должен находиться в каталоге `user_files`, чтобы пользователи базы данных не могли получать доступ к произвольным файлам на узле ClickHouse.
+
+**См. также**
+
+* [Функция dictionary](/ru/reference/functions/table-functions/dictionary)
