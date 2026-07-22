@@ -6,6 +6,8 @@
 
 #include <gtest/gtest.h>
 
+#include <Common/SilkSchedulerOptions.h>
+
 #include <silk/fibers/fiber.h>
 #include <silk/util/init.h>
 
@@ -22,9 +24,10 @@ public:
     void SetUp() override
     {
         silk::initialize();
-        silk::FiberScheduler::Options options;
-        /// OpenSSL handshakes run on fiber stacks and need more room than the silk default.
-        options.fiberStackSize = 320 * 1024;
+        /// Reuse the server's options (stack size + the ThreadGroup fiber-switch
+        /// hooks) so the hooks get exercised by the existing gtests instead of only
+        /// running against a bare `Options` that never wires them.
+        silk::FiberScheduler::Options options = makeServerSilkSchedulerOptions();
         silk::FiberScheduler::initialize(&options);
     }
 
