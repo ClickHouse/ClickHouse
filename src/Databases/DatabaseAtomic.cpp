@@ -7,6 +7,7 @@
 #include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Disks/IDisk.h>
 #include <Disks/IStoragePolicy.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -32,6 +33,42 @@ namespace Setting
 {
     extern const SettingsBool check_referential_table_dependencies;
     extern const SettingsBool check_table_dependencies;
+    extern const SettingsBool fsync_metadata;
+}
+
+namespace
+{
+    /// Opens directory sync guards for the given (deduplicated) disk-relative directory paths.
+    /// A metadata rename only changes a directory entry, which is durable on the storage device
+    /// only once the directory itself is fsync'd; without that an acknowledged Atomic DDL can
+    /// silently revert after a power loss (see #111348). The caller holds the returned guards
+    /// across the rename; each fdatasyncs its directory on destruction. The fds are opened here
+    /// (before the rename, and before any ZooKeeper commit) so an open failure surfaces before
+    /// the commit point rather than after it. Same primitive the part-commit path uses for
+    /// `fsync_part_directory` (`DataPartStorageOnDiskBase::doRename`). Returns an empty vector
+    /// (no-op) for disks without directory sync support (e.g. object storage).
+    std::vector<SyncGuardPtr> makeDirectorySyncGuards(const DiskPtr & disk, const std::vector<String> & dirs)
+    {
+        std::vector<SyncGuardPtr> guards;
+        std::vector<String> unique_dirs;
+        for (const auto & dir : dirs)
+        {
+            if (std::find(unique_dirs.begin(), unique_dirs.end(), dir) == unique_dirs.end())
+                unique_dirs.push_back(dir);
+        }
+        guards.reserve(unique_dirs.size());
+        for (const auto & dir : unique_dirs)
+        {
+            if (auto guard = disk->getDirectorySyncGuard(dir))
+                guards.push_back(std::move(guard));
+        }
+        return guards;
+    }
+
+    String parentDir(const String & path)
+    {
+        return fs::path(path).parent_path();
+    }
 }
 
 namespace ErrorCodes
@@ -210,12 +247,28 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
     String table_metadata_path_drop;
     StoragePtr table;
     auto db_disk = getDisk();
+    const bool fsync_metadata = local_context->getSettingsRef()[Setting::fsync_metadata];
     {
         std::lock_guard lock(mutex);
         table = getTableUnlocked(table_name);
         table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
 
-        db_disk->createDirectories(fs::path(table_metadata_path_drop).parent_path());
+        const String dropped_dir = parentDir(table_metadata_path_drop);
+        db_disk->createDirectories(dropped_dir);
+
+        /// Sync every directory whose entry the rename changes so DROP survives a power loss
+        /// (see #111348): the source directory (loses the table `.sql`), the target
+        /// `metadata_dropped` (gains it), and `metadata_dropped`'s own parent -- the latter
+        /// because on a custom metadata disk `metadata_dropped` may have been created without
+        /// its directory entry being fsync'd (e.g. by an earlier `fsync_metadata = 0` drop),
+        /// so making only its contents durable could still lose the directory itself.
+        /// Guards are opened before the rename (and before the ZooKeeper commit, so a rare
+        /// directory-open failure does not widen the local-vs-ZooKeeper desync window the
+        /// NOTE below warns about) and fsync on scope exit.
+        std::vector<SyncGuardPtr> dir_sync_guards;
+        if (fsync_metadata)
+            dir_sync_guards = makeDirectorySyncGuards(
+                db_disk, {parentDir(table_metadata_path), dropped_dir, parentDir(dropped_dir)});
 
         auto txn = local_context->getZooKeeperMetadataTransaction();
         if (txn && !local_context->isInternalSubquery())
@@ -361,14 +414,22 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     }
 
     /// Table renaming actually begins here
+    auto db_disk = getDisk();
+
+    /// Make the RENAME/EXCHANGE commit durable: sync the source and target directories (see
+    /// makeDirectorySyncGuards). Same-database renames dedup to one directory; cross-database
+    /// ones sync both.
+    std::vector<SyncGuardPtr> dir_sync_guards;
+    if (local_context->getSettingsRef()[Setting::fsync_metadata])
+        dir_sync_guards = makeDirectorySyncGuards(db_disk, {parentDir(old_metadata_path), parentDir(new_metadata_path)});
+
     auto txn = local_context->getZooKeeperMetadataTransaction();
     if (txn && !local_context->isInternalSubquery())
         txn->commit();     /// Commit point (a sort of) for Replicated database
 
-    auto db_disk = getDisk();
-
     /// NOTE: replica will be lost if server crashes before the following rename
     /// TODO better detection and recovery
+
     if (exchange)
         db_disk->renameExchange(old_metadata_path, new_metadata_path);
     else
@@ -415,6 +476,14 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         assertDetachedTableNotInUse(query.uuid);
         chassert(DatabaseCatalog::instance().hasUUIDMapping(query.uuid));
 
+        /// The file content is already fsynced by the writer; make the .tmp -> .sql commit
+        /// rename durable too (see makeDirectorySyncGuards; tmp and final share one directory).
+        /// Opened before the ZooKeeper commit so an open failure is cleaned up by the catch
+        /// below without having committed to ZooKeeper.
+        std::vector<SyncGuardPtr> dir_sync_guards;
+        if (query_context->getSettingsRef()[Setting::fsync_metadata])
+            dir_sync_guards = makeDirectorySyncGuards(db_disk, {parentDir(table_metadata_path)});
+
         auto txn = query_context->getZooKeeperMetadataTransaction();
         if (txn && !query_context->isInternalSubquery())
             txn->commit();     /// Commit point (a sort of) for Replicated database
@@ -452,6 +521,14 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
 
     if (table_id.uuid != actual_table_id.uuid)
         throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER, "Cannot alter table because it was renamed");
+
+    /// As in commitCreateTable: make the .tmp -> .sql commit rename durable (see
+    /// makeDirectorySyncGuards; tmp and final share one directory). Opened before the ZooKeeper
+    /// commit so an open failure is cleaned up by the SCOPE_EXIT above without having committed
+    /// to ZooKeeper.
+    std::vector<SyncGuardPtr> dir_sync_guards;
+    if (query_context->getSettingsRef()[Setting::fsync_metadata])
+        dir_sync_guards = makeDirectorySyncGuards(db_disk, {parentDir(table_metadata_path)});
 
     auto txn = query_context->getZooKeeperMetadataTransaction();
     if (txn && !query_context->isInternalSubquery())

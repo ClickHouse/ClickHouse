@@ -767,7 +767,9 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         db_disk,
         /*file_path=*/table_metadata_tmp_path,
         /*content=*/statement,
-        /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
+        /// Use the query context so the content fsync and the directory fsync in
+        /// commitAlterTable observe the same `fsync_metadata` value (matches the createTable path).
+        /*fsync_metadata=*/local_context->getSettingsRef()[Setting::fsync_metadata]);
 
     /// The create query of the table has been just changed, we need to update dependencies too.
     DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});

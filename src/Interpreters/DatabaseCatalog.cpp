@@ -1454,7 +1454,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
         (*drop_task)->schedule();
 }
 
-void DatabaseCatalog::undropTable(StorageID table_id)
+void DatabaseCatalog::undropTable(StorageID table_id, bool fsync_metadata)
 {
     auto db_disk = getDatabase(table_id.database_name)->getDisk();
 
@@ -1491,6 +1491,21 @@ void DatabaseCatalog::undropTable(StorageID table_id)
                 table_id.getNameForLogs());
         latest_metadata_dropped_path = it_dropped_table->metadata_path;
         String table_metadata_path = getPathForMetadata(it_dropped_table->table_id);
+
+        /// UNDROP is the inverse of the DROP commit rename: make it durable too, so the table
+        /// does not silently revert to the dropped state after a power loss (see #111348). Sync
+        /// the source (`metadata_dropped`) and target (the database metadata) directories; the
+        /// guards fsync on scope exit, after the move below.
+        std::vector<SyncGuardPtr> dir_sync_guards;
+        if (fsync_metadata)
+        {
+            for (const auto & dir : {fs::path(latest_metadata_dropped_path).parent_path().string(),
+                                     fs::path(table_metadata_path).parent_path().string()})
+            {
+                if (auto guard = db_disk->getDirectorySyncGuard(dir))
+                    dir_sync_guards.push_back(std::move(guard));
+            }
+        }
 
         /// a table is successfully marked undropped,
         /// if and only if its metadata file was moved to a database.
