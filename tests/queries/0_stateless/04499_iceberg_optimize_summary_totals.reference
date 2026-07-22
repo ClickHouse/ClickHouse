@@ -1,13 +1,14 @@
 --- count before OPTIMIZE ---
-6
+5
+--- delete statistics before OPTIMIZE ---
+1	1	0
 --- count after OPTIMIZE ---
-6
+5
 --- rows after OPTIMIZE ---
 1	a
-2	b
 3	c
 4	d
 5	e
 6	f
---- total-records of the current snapshot ---
-6
+--- totals of the current snapshot ---
+5	3	0	0	0
