@@ -44,11 +44,10 @@ std::chrono::seconds saturatedSeconds(T seconds)
 }
 
 /// A future deadline `base + seconds(count)` that saturates at time_point::max() instead of overflowing
-/// the integer rep. Unlike saturatedSeconds() (a 1-year cap for a wait_for() timeout, where a huge wait is
-/// meaningless), this keeps any representable future instant, so it suits long-lived expiry timestamps such
-/// as a cache TTL: `count` is only clamped when the resulting instant would exceed the representable range
-/// (~292000 years on a microsecond system_clock), which no legitimate TTL reaches. All arithmetic stays in
-/// the clock's integer rep and every step saturates, so no intermediate can overflow for any base or count.
+/// the clock's integer rep. Unlike saturatedSeconds() (a 1-year cap for a wait_for() timeout), it preserves
+/// any representable future instant, so it suits long-lived expiry timestamps such as a cache TTL. The whole
+/// base + count sum is done in a 128-bit intermediate that no valid (base, count) can overflow, then clamped
+/// once, so the result is exact for every base (including pre-epoch) and every count.
 template <std::integral T>
 std::chrono::system_clock::time_point saturatedSecondsFrom(std::chrono::system_clock::time_point base, T count)
 {
@@ -61,18 +60,14 @@ std::chrono::system_clock::time_point saturatedSecondsFrom(std::chrono::system_c
     if (std::cmp_less_equal(count, 0))
         return base;
 
-    /// count seconds -> ticks, saturating (count * ticks_per_second may exceed the rep).
-    Rep offset_ticks = rep_max;
-    if (std::cmp_less_equal(count, rep_max / ticks_per_second))
-        offset_ticks = static_cast<Rep>(count) * ticks_per_second;
-
-    /// base_ticks + offset_ticks, saturating. offset_ticks >= 0, so the sum can only overflow the positive
-    /// end, and only when base_ticks > 0 (then rep_max - base_ticks is a safe non-negative bound). For a
-    /// zero or pre-epoch base the sum is <= offset_ticks <= rep_max, so it cannot overflow.
-    const Rep base_ticks = base.time_since_epoch().count();
-    if (base_ticks > 0 && offset_ticks > rep_max - base_ticks)
+    /// Widest operands (count up to ~1.8e19 seconds * 1e6 ticks/s, base_ticks up to ~9.2e18) reach ~1.8e25,
+    /// far inside __int128 (~1.7e38), so the sum never overflows for any base sign. Since count > 0 here the
+    /// deadline can only pass the positive end, so a single max() clamp suffices.
+    using Wide = __int128;
+    const Wide deadline = static_cast<Wide>(base.time_since_epoch().count()) + static_cast<Wide>(count) * ticks_per_second;
+    if (deadline >= static_cast<Wide>(rep_max))
         return TimePoint::max();
-    return TimePoint(Duration(base_ticks + offset_ticks));
+    return TimePoint(Duration(static_cast<Rep>(deadline)));
 }
 
 }

@@ -132,3 +132,18 @@ GTEST_TEST(SaturatedSecondsFrom, HandlesBoundaryBasesWithoutOverflow)
     // A base at the ceiling saturates for any positive count rather than wrapping.
     ASSERT_EQ(saturatedSecondsFrom(sys_max, 1), sys_max);
 }
+
+GTEST_TEST(SaturatedSecondsFrom, PreEpochBaseWithLargeCountIsExactOrSaturates)
+{
+    // Regression: a count past rep_max / ticks_per_second combined with a pre-epoch (negative) base must
+    // still be handled exactly. The whole base + count sum is evaluated in a 128-bit intermediate, so the
+    // result is the exact instant when representable and time_point::max() only when it truly overflows.
+    static constexpr Int64 count_over_threshold = 9223372036855LL; // smallest count whose ticks exceed rep_max
+
+    // base = -1us: the true sum (9223372036854999999us) exceeds the representable max, so it saturates.
+    ASSERT_EQ(saturatedSecondsFrom(SysTimePoint(std::chrono::microseconds(-1)), count_over_threshold), sys_max);
+
+    // base = -300000us: the true sum (9223372036854700000us) is still representable, so it is returned exactly.
+    ASSERT_EQ(saturatedSecondsFrom(SysTimePoint(std::chrono::microseconds(-300000)), count_over_threshold),
+              SysTimePoint(std::chrono::microseconds(Int64(9223372036854700000LL))));
+}
