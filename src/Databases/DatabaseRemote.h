@@ -70,6 +70,9 @@ public:
     /// remote error, returns an empty list instead of throwing.
     VectorWithMemoryTracking<String> getAllTableNames(ContextPtr context) const override;
 
+    /// Answers from the table names only, without resolving the structure, so a table that exists
+    /// but cannot be described still reports `1`. A transport/authentication failure is propagated
+    /// as the real remote error instead of being reported as "does not exist".
     bool isTableExist(const String & name, ContextPtr context) const override;
 
     /// Returns `nullptr` only for a genuinely missing table; a transport/authentication failure is
@@ -112,8 +115,10 @@ private:
     /// rejecting a database that refers to itself.
     DatabasePtr tryGetLocalDatabase() const;
 
-    /// Fetch the names of the tables of `remote_database` from the remote server.
-    Strings fetchTablesList(ContextPtr local_context) const;
+    /// Fetch the names of the tables of `remote_database` from the remote server. When `only_table`
+    /// is set, fetches only that name (the cheap existence check of `isTableExist`, which must not
+    /// resolve the structure of the table).
+    Strings fetchTablesList(ContextPtr local_context, const String * only_table = nullptr) const;
 
     /// Infer the column structure of `remote_database.table_name`, from the local catalog for a local
     /// shard (without the name-hint machinery of `DatabaseCatalog::getTable`, which would recurse back

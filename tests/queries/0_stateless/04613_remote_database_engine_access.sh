@@ -47,12 +47,29 @@ ${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "DESCRIBE TABLE ${REMOTE_DB}.
 echo '-- SHOW TABLES does not leak the underlying table name without SHOW TABLES on the underlying database (prints nothing)'
 ${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "SHOW TABLES FROM ${REMOTE_DB}"
 
+echo '-- EXISTS TABLE does not leak the existence of the underlying table either (prints 0)'
+${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "EXISTS TABLE ${REMOTE_DB}.t"
+
 echo '-- SHOW TABLES lists the table once SHOW TABLES on the underlying database is granted, even without SHOW COLUMNS'
 ${CLICKHOUSE_CLIENT} --query "GRANT SHOW TABLES ON ${CLICKHOUSE_DATABASE}.* TO ${TEST_USER}"
 ${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "SHOW TABLES FROM ${REMOTE_DB}"
 
+echo '-- EXISTS TABLE answers from the name only, so it works without SHOW COLUMNS as well (prints 1)'
+${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "EXISTS TABLE ${REMOTE_DB}.t"
+
 echo '-- ...but DESCRIBE is still rejected without SHOW COLUMNS on the underlying table (prints 1 if rejected)'
 ${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "DESCRIBE TABLE ${REMOTE_DB}.t" 2>&1 | grep -c -m1 "ACCESS_DENIED"
+
+echo '-- a Remote database over another Remote database lists the names without resolving the structure'
+# The outer database enumerates the inner (also `Remote`) one through the lightweight name-only
+# iterator; going through the structure-resolving iterator instead would hide `t` here, because the
+# user has no `SHOW COLUMNS` on the underlying table.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE DATABASE ${REMOTE_DB}_outer ENGINE = Remote('127.0.0.1', '${REMOTE_DB}', 'default', '');
+    GRANT SHOW TABLES ON ${REMOTE_DB}_outer.* TO ${TEST_USER};
+"
+${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "SHOW TABLES FROM ${REMOTE_DB}_outer"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${REMOTE_DB}_outer"
 
 ${CLICKHOUSE_CLIENT} --query "
     DROP USER ${TEST_USER};

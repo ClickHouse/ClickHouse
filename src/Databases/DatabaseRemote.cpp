@@ -124,13 +124,17 @@ DatabasePtr DatabaseRemote::tryGetLocalDatabase() const
 }
 
 
-Strings DatabaseRemote::fetchTablesList(ContextPtr local_context) const
+Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String * only_table) const
 {
     auto sample_block = std::make_shared<const Block>(Block{
         {ColumnString::create(), std::make_shared<DataTypeString>(), "name"},
     });
 
-    const String query = fmt::format("SELECT name FROM system.tables WHERE database = {}", quoteString(remote_database));
+    String query = fmt::format("SELECT name FROM system.tables WHERE database = {}", quoteString(remote_database));
+
+    /// An existence check (`EXISTS TABLE`) needs a single name, so do not pull the whole list.
+    if (only_table)
+        query += fmt::format(" AND name = {}", quoteString(*only_table));
 
     /// This is a service query, not a real user query, so it must not fail because of the user's
     /// result-size limits (e.g. `max_result_rows` set for the current query).
@@ -158,21 +162,38 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context) const
             /// The local database may be another `Remote` database that (indirectly) refers back
             /// to this one; the guard rejects such a cycle instead of recursing forever.
             LocalTraversalGuard guard(this);
-            /// `getTablesIterator` returns every attached table regardless of the caller's grants, so
-            /// filter by the caller's own `SHOW TABLES` right on the underlying local table, exactly
-            /// like `system.tables` does. Otherwise a user with `SHOW TABLES` on the proxy database
-            /// but no grants on the underlying local database could enumerate all of its table names
+            /// The underlying tables are enumerated regardless of the caller's grants, so filter by
+            /// the caller's own `SHOW TABLES` right on the underlying local table, exactly like
+            /// `system.tables` does. Otherwise a user with `SHOW TABLES` on the proxy database but
+            /// no grants on the underlying local database could enumerate all of its table names
             /// through `Remote('127.0.0.1', ...)`.
             const auto access = local_context->getAccess();
-            const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES, remote_database);
-            Strings tables;
-            for (auto it = local_database->getTablesIterator(query_context); it->isValid(); it->next())
+
+            if (only_table)
             {
-                if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, remote_database, it->name()))
-                    continue;
-                tables.push_back(it->name());
+                /// Existence is a property of the name, so it must not depend on whether the table
+                /// can be described. A table invisible to the caller is reported as missing, like in
+                /// the listing below. When the local replica does not have the table, fall through to
+                /// the remote-replica fallback, mirroring `fetchTableStructure`.
+                if (local_database->isTableExist(*only_table, query_context))
+                    return access->isGranted(AccessType::SHOW_TABLES, remote_database, *only_table) ? Strings{*only_table} : Strings{};
             }
-            return tables;
+            else
+            {
+                /// Enumerate through the lightweight iterator: only the names are needed here, and the
+                /// underlying database may itself be an external one (e.g. another `Remote` database),
+                /// whose plain `getTablesIterator` resolves the structure of every table and drops
+                /// those that fail.
+                const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES, remote_database);
+                Strings tables;
+                for (const auto & table : local_database->getLightweightTablesIterator(query_context))
+                {
+                    if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, remote_database, table.name))
+                        continue;
+                    tables.push_back(table.name);
+                }
+                return tables;
+            }
         }
 
         /// The local replica does not have the database, but it may still exist on the remote
@@ -187,7 +208,6 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context) const
         break;
     }
 
-    Strings tables;
     std::string fail_messages;
     for (const auto & shard_info : remote_cluster->getShardsInfo())
     {
@@ -196,6 +216,9 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context) const
             RemoteQueryExecutor executor(shard_info.pool, query, sample_block, query_context);
             executor.setPoolMode(PoolMode::GET_ONE);
 
+            /// Accumulate per attempt: names read before a mid-stream failure must not leak into
+            /// the next attempt, or a retried listing would return a mixed or duplicated result.
+            Strings tables;
             for (Block block = executor.readBlock(); !block.empty(); block = executor.readBlock())
             {
                 const IColumn & name_column = *block.getByName("name").column;
@@ -440,10 +463,13 @@ VectorWithMemoryTracking<String> DatabaseRemote::getAllTableNames(ContextPtr loc
 bool DatabaseRemote::isTableExist(const String & table_name, ContextPtr local_context) const
 {
     /// `isTableExist` is user-visible: `EXISTS TABLE` reaches it through `InterpreterExistsQuery`.
-    /// Resolve with `throw_on_error = true` (like `tryGetTable`) so that only a genuinely missing
-    /// table yields `false`, while a transport/authentication failure on an existing remote table is
-    /// propagated as the real error instead of being reported as "does not exist".
-    return static_cast<bool>(fetchTable(table_name, local_context, /* throw_on_error = */ true));
+    /// Existence is a property of the name, so answer it from the table names rather than by
+    /// resolving the structure through `fetchTable`: a table that exists but cannot be described
+    /// (e.g. the caller lacks `SHOW_COLUMNS` on the underlying local table, or its `DESC TABLE`
+    /// fails transiently) must still be reported as existing. Only a genuinely missing (or
+    /// invisible) table yields `false`; a transport/authentication failure is propagated as the
+    /// real error (like `tryGetTable`) instead of being reported as "does not exist".
+    return !fetchTablesList(local_context, &table_name).empty();
 }
 
 

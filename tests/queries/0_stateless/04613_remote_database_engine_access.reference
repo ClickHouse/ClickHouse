@@ -10,7 +10,13 @@ id	UInt64
 -- resolution is rejected without SHOW COLUMNS on the underlying local table (prints 1 if rejected)
 1
 -- SHOW TABLES does not leak the underlying table name without SHOW TABLES on the underlying database (prints nothing)
+-- EXISTS TABLE does not leak the existence of the underlying table either (prints 0)
+0
 -- SHOW TABLES lists the table once SHOW TABLES on the underlying database is granted, even without SHOW COLUMNS
 t
+-- EXISTS TABLE answers from the name only, so it works without SHOW COLUMNS as well (prints 1)
+1
 -- ...but DESCRIBE is still rejected without SHOW COLUMNS on the underlying table (prints 1 if rejected)
 1
+-- a Remote database over another Remote database lists the names without resolving the structure
+t
