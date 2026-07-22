@@ -3,6 +3,7 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -53,9 +54,19 @@ void ASTProjectionDeclaration::readJSON(const Poco::JSON::Object & json)
     if (query_child)
         set(query, query_child);
 
-    auto index_child = r.readChild("index");
+    /// `index` is produced by the parser only as a non-empty `ASTExpressionList`
+    /// (`ParserProjectionDeclaration` uses `ParserNotEmptyExpressionList`). With `TYPE commit_order`,
+    /// `ProjectionIndexCommitOrder::fillProjectionDescription` clones `index` straight into the
+    /// projection SELECT slot, and `ASTProjectionSelectQuery::cloneToASTSelect` throws a logical
+    /// error unless that slot is an `ASTExpressionList` — so reject any other shape at the boundary.
+    auto index_child = r.readChildOfType<ASTExpressionList>("index");
     if (index_child)
+    {
+        if (index_child->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`ProjectionDeclaration` INDEX must be a non-empty expression list during AST JSON deserialization");
         set(index, index_child);
+    }
 
     /// `projection_type` and `with_settings` are typed members (`ASTFunction *` / `ASTSetQuery *`);
     /// restoring them through the generic child path would let a wrong node type reach `IAST::set`
