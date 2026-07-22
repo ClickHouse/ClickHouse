@@ -132,7 +132,8 @@ Enable logging for the table via the table setting `enable_logging_to_queue_log=
 Introspection capabilities are the same as the [S3Queue table engine](/engines/table-engines/integrations/s3queue#introspection) with several distinct differences:
 
 1. Use the `system.azure_queue_metadata_cache` for the in-memory state of the queue for server versions >= 25.1. For older versions use the `system.s3queue_metadata_cache` (it would contain information for `azure` tables as well).
-2. Enable the `system.azure_queue_log` via the main ClickHouse configuration e.g.
+2. Use the [`system.azure_queue_metadata`](/operations/system-tables/azure_queue_metadata) table to inspect the state stored in keeper directly: the number of `processed`, `processing` and `failed` nodes per metadata object, and, on demand, their contents. This is the `AzureQueue` counterpart of `system.s3_queue_metadata`.
+3. Enable the `system.azure_queue_log` via the main ClickHouse configuration e.g.
 
   ```xml
   <azure_queue_log>
