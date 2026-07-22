@@ -11,7 +11,6 @@
 #include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/FailPoint.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <IO/ReadPipeline.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
@@ -59,11 +58,6 @@ namespace ErrorCodes
     extern const int INCORRECT_DISK_INDEX;
     extern const int CANNOT_RMDIR;
     extern const int DIRECTORY_ALREADY_EXISTS;
-}
-
-namespace FailPoints
-{
-    extern const char plain_rewritable_create_directories_pause_before_commit[];
 }
 
 namespace
@@ -441,17 +435,15 @@ void DiskObjectStorage::createDirectories(const String & path)
     }
     else
     {
-        /// Non-transactional metadata (plain-rewritable) commits once and surfaces a lost mkdir-p
-        /// race as `DIRECTORY_ALREADY_EXISTS`. Re-check existence and retry, mirroring the
-        /// transactional branch above; other errors (e.g. a file on the path) propagate.
-        while (!metadata_storage->existsDirectory(path))
+        /// Non-transactional metadata (plain-rewritable) commits once. Always run the transaction, so an
+        /// ancestor that currently exists only virtually is materialized; the commit is an idempotent no-op
+        /// for an already-materialized directory. A concurrent creation in the commit window surfaces as
+        /// DIRECTORY_ALREADY_EXISTS; the directory then exists as intended (mkdir-p), so retry until the
+        /// commit succeeds or the path is present. Other errors (e.g. a file on the path) propagate.
+        while (true)
         {
             auto transaction = createObjectStorageTransaction();
             transaction->createDirectories(path);
-
-            /// Test-only pause point: lets a regression test create the same directory
-            /// concurrently in the window between building the transaction and committing it.
-            FailPointInjection::pauseFailPoint(FailPoints::plain_rewritable_create_directories_pause_before_commit);
 
             try
             {
@@ -462,7 +454,9 @@ void DiskObjectStorage::createDirectories(const String & path)
             {
                 if (e.code() != ErrorCodes::DIRECTORY_ALREADY_EXISTS)
                     throw;
-                /// Lost the race to create the same directory; loop re-checks existence.
+                /// Benign lost race; stop once the directory is present, otherwise retry.
+                if (metadata_storage->existsDirectory(path))
+                    break;
             }
         }
     }

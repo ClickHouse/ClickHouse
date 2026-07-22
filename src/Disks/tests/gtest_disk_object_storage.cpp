@@ -19,8 +19,6 @@
 #include <Common/FailPoint.h>
 #include <Common/thread_local_rng.h>
 
-#include <base/scope_guard.h>
-
 #include <Core/Defines.h>
 #include <Core/ServerUUID.h>
 
@@ -30,8 +28,10 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <latch>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -148,7 +148,6 @@ namespace FailPoints
 {
     extern const char disk_object_storage_fail_commit_metadata_transaction[];
     extern const char write_file_operation_fail_on_read[];
-    extern const char plain_rewritable_create_directories_pause_before_commit[];
 }
 
 }
@@ -772,6 +771,27 @@ TEST_F(DiskObjectStorageTest, CreateDirectoriesIsIdempotentOnPlainRewritable)
     EXPECT_TRUE(disk->existsDirectory(dir));
 }
 
+TEST_F(DiskObjectStorageTest, CreateDirectoriesMaterializesVirtualAncestorOnPlainRewritable)
+{
+    /// Creating a deeper path leaves intermediate ancestors virtual. An explicit createDirectories on
+    /// such an ancestor must materialize it, not no-op, so it survives removal of the sibling subtree.
+    auto disk = getDiskObjectStorage("local_plain_rewritable_disk");
+
+    const std::string parent = getTestName() + "_dir";
+    const std::string child = parent + "/child";
+
+    disk->createDirectories(child);
+    EXPECT_TRUE(disk->existsDirectory(parent));
+
+    /// Explicitly (re)create the still-virtual parent: it must be materialized.
+    disk->createDirectories(parent);
+
+    /// Removing the child must not trim the explicitly created parent.
+    disk->removeDirectory(child);
+    EXPECT_FALSE(disk->existsDirectory(child));
+    EXPECT_TRUE(disk->existsDirectory(parent));
+}
+
 TEST_F(DiskObjectStorageTest, CreateDirectoriesRejectsFileOnPathOnPlainRewritable)
 {
     /// A file occupying the target path is a genuine conflict, not a concurrent-create race:
@@ -795,54 +815,66 @@ TEST_F(DiskObjectStorageTest, CreateDirectoriesRejectsFileOnPathOnPlainRewritabl
 
 TEST_F(DiskObjectStorageTest, ConcurrentCreateDirectoriesIsIdempotentOnPlainRewritable)
 {
-    /// Regression test for https://github.com/ClickHouse/ClickHouse/issues/111289: a directory
-    /// created concurrently in the commit window must be treated as success (mkdir-p), not as an error.
+    /// Concurrent createDirectories on the same path must all succeed (mkdir-p), not abort a loser with
+    /// DIRECTORY_ALREADY_EXISTS. See https://github.com/ClickHouse/ClickHouse/issues/111289.
+    /// A std::latch (not a sleep, and no fail point) herds the threads so they build their transactions
+    /// before the first commit lands; the test then links and runs against both the pre-fix and fixed binary.
     auto disk = getDiskObjectStorage("local_plain_rewritable_disk");
 
-    std::string dir = getTestName() + "_dir/sub";
+    constexpr size_t num_threads = 8;
+    constexpr size_t num_rounds = 32;
 
-    /// Thread A builds a createDirectories transaction and pauses just before commit, so we can
-    /// deterministically slip a concurrent creation of the same directory into the commit window.
-    DB::FailPointInjection::enableFailPoint(DB::FailPoints::plain_rewritable_create_directories_pause_before_commit);
-
-    std::exception_ptr thread_a_error;
-    std::thread thread_a([&]
+    for (size_t round = 0; round < num_rounds; ++round)
     {
-        try
+        /// A fresh, never-created path per round so every thread's snapshot sees it missing and builds a real
+        /// transaction; an already-existing path would short-circuit the retry loop and never race.
+        const std::string dir = getTestName() + "_r" + std::to_string(round) + "/sub";
+
+        std::latch start{num_threads};
+        std::vector<std::thread> threads;
+        std::vector<std::exception_ptr> errors(num_threads);
+        threads.reserve(num_threads);
+
+        for (size_t i = 0; i < num_threads; ++i)
         {
-            disk->createDirectories(dir);
+            threads.emplace_back([&, i]
+            {
+                /// Release all threads together so they build their transactions before the first commit
+                /// lands, maximizing the overlap that triggers the lost-race conflict.
+                start.arrive_and_wait();
+                try
+                {
+                    disk->createDirectories(dir);
+                }
+                catch (...)
+                {
+                    errors[i] = std::current_exception();
+                }
+            });
         }
-        catch (...)
+
+        for (auto & thread : threads)
+            thread.join();
+
+        /// mkdir-p end state: the directory exists and no racing thread failed. Without the fix at least one
+        /// loser rethrows DIRECTORY_ALREADY_EXISTS here.
+        for (auto & error : errors)
         {
-            thread_a_error = std::current_exception();
+            if (error)
+            {
+                try
+                {
+                    std::rethrow_exception(error);
+                }
+                catch (const DB::Exception & e)
+                {
+                    FAIL() << "Concurrent createDirectories lost the mkdir-p race: " << e.message();
+                }
+            }
         }
-    });
 
-    /// Always resume and join Thread A, even if an assertion or exception aborts the body below:
-    /// leaving a paused, joinable thread would trigger std::terminate on scope exit. disableFailPoint
-    /// resumes threads blocked on the failpoint, so it doubles as the release for Thread A.
-    SCOPE_EXIT({
-        DB::FailPointInjection::disableFailPoint(DB::FailPoints::plain_rewritable_create_directories_pause_before_commit);
-        if (thread_a.joinable())
-            thread_a.join();
-    });
-
-    /// Wait until Thread A has built its transaction and paused before committing.
-    DB::FailPointInjection::waitForPause(DB::FailPoints::plain_rewritable_create_directories_pause_before_commit);
-
-    /// The concurrent winner creates the same directory and commits.
-    disk->createDirectories(dir);
-    EXPECT_TRUE(disk->existsDirectory(dir));
-
-    /// Resume Thread A: its commit now hits the concurrent-creation conflict and must retry to success.
-    DB::FailPointInjection::notifyFailPoint(DB::FailPoints::plain_rewritable_create_directories_pause_before_commit);
-    thread_a.join();
-
-    /// With the fix Thread A swallows the lost race and returns normally; without it, it rethrows.
-    if (thread_a_error)
-        std::rethrow_exception(thread_a_error);
-
-    EXPECT_TRUE(disk->existsDirectory(dir));
+        EXPECT_TRUE(disk->existsDirectory(dir));
+    }
 }
 
 TEST_F(DiskObjectStorageTest, TruncateFileToZero)
