@@ -160,21 +160,26 @@ def determine_merge_base(info):
 SUBMODULE_MARKER = "contrib/sysroot/README.md"
 
 
-def gitmodules_shape_violation():
-    """Return an error string if the PR's `.gitmodules` has an unsafe submodule entry
-    (a URL that is not a plain `https://github.com/...`, or a name that differs from its
-    path); return None if it is clean.
+def gitmodules_shape_violation(gitmodules=".gitmodules"):
+    """Return an error string if `gitmodules` has an unsafe submodule entry (a URL that is
+    not a plain `https://github.com/...`, or a name that differs from its path); return
+    None if it is clean. Defaults to the cwd `.gitmodules` (the PR checkout); pass the
+    merge-base worktree's file to validate it before fetching from it.
 
-    SECURITY: this job populates submodules over the network from the PR-controlled
-    `.gitmodules`, inside the privileged binary-builder container, and — because it now
-    starts early — BEFORE the regular `check_submodules.sh` (run in build_arm_tidy) would
-    reject bad metadata. Validating the URL/path shape here, before any `git submodule`
-    network access, stops a PR from pointing a submodule at an arbitrary URL and having
-    the self-hosted runner fetch it. Mirrors the URL/name rules of
+    SECURITY: this job populates submodules over the network from a `.gitmodules` file,
+    inside the privileged binary-builder container, and — because it now starts early —
+    BEFORE the regular `check_submodules.sh` (run in build_arm_tidy) would reject bad
+    metadata. Validating the URL/path shape here, before any `git submodule` network
+    access, stops a PR from pointing a submodule at an arbitrary URL and having the
+    self-hosted runner fetch it. This must cover BOTH the PR's `.gitmodules` AND the
+    merge-base's (the drift path fetches using the merge-base file, which is equally
+    attacker-influenced — an older merge-base can carry a non-GitHub URL or unsafe path
+    even when the PR's current file is clean). Mirrors the URL/name rules of
     ci/jobs/scripts/check_style/check_submodules.sh.
     """
+    q_file = shlex.quote(gitmodules)
     for line in Shell.get_output(
-        "git config --file .gitmodules --get-regexp 'submodule\\..+\\.url'"
+        f"git config --file {q_file} --get-regexp 'submodule\\..+\\.url'"
     ).splitlines():
         line = line.strip()
         if not line:
@@ -184,7 +189,7 @@ def gitmodules_shape_violation():
             name = key.removeprefix("submodule.").removesuffix(".url")
             return f"submodule '{name}' has a non-github URL '{url}'"
     for line in Shell.get_output(
-        "git config --file .gitmodules --get-regexp 'submodule\\..+\\.path'"
+        f"git config --file {q_file} --get-regexp 'submodule\\..+\\.path'"
     ).splitlines():
         line = line.strip()
         if not line:
@@ -267,6 +272,18 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
     # The primary checkout must have populated submodule working trees before we can
     # hardlink them across (see ensure_primary_submodules).
     ensure_primary_submodules()
+
+    # SECURITY: the drift path below fetches submodules using the merge-base's own
+    # `.gitmodules`, so it must satisfy the same URL/path allow-list as the PR's
+    # `.gitmodules` (checked in main()). An older merge-base can carry a non-GitHub URL or
+    # an unsafe path even when the PR's current file is clean. Validate before any fetch;
+    # a violation is a fail-close infra stop, never a reproduction.
+    mb_gitmodules_error = gitmodules_shape_violation(f"{BEFORE_SRC}/.gitmodules")
+    if mb_gitmodules_error:
+        return (
+            False,
+            f"merge-base .gitmodules is unsafe: {mb_gitmodules_error}",
+        )
 
     # Populate the submodules the merge-base needs. Iterate the merge-base's own
     # `.gitmodules` (the set the before-binary actually builds against), NOT the primary's

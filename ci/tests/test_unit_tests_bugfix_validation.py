@@ -282,6 +282,23 @@ def test_gitmodules_shape_rejects_traversal_path(tmp_path, monkeypatch, path):
     assert violation and "unsafe path" in violation
 
 
+def test_gitmodules_shape_validates_an_explicit_file(tmp_path, monkeypatch):
+    # The merge-base worktree's `.gitmodules` is validated by passing its path explicitly;
+    # a non-github URL there must be rejected just like the cwd file. Guards against a
+    # clean PR file but an unsafe merge-base file driving the drift fetch.
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".gitmodules").write_text(_GOOD_GITMODULES)  # cwd is clean
+    mb = tmp_path / "before_src"
+    mb.mkdir()
+    (mb / ".gitmodules").write_text(
+        '[submodule "contrib/evil"]\n\tpath = contrib/evil\n'
+        "\turl = git@example.com:evil/repo.git\n"
+    )
+    assert gitmodules_shape_violation() is None  # PR file clean
+    violation = gitmodules_shape_violation(str(mb / ".gitmodules"))
+    assert violation and "non-github URL" in violation
+
+
 # --------------------------------------------------------------------------
 # determine_merge_base: must anchor on the PR head (info.sha), not `git HEAD`,
 # because the default checkout is the base+PR merge commit.
@@ -357,13 +374,20 @@ def test_before_run_started_a_test_handles_no_files():
 # cmake wrappers.
 # --------------------------------------------------------------------------
 def _drive_prepare_before_worktree(
-    monkeypatch, want_by_path, have_by_path, fail_update_for=(), git_only_dirs=()
+    monkeypatch,
+    want_by_path,
+    have_by_path,
+    fail_update_for=(),
+    git_only_dirs=(),
+    mb_bad_url=None,
 ):
     """Run prepare_before_worktree with Shell + os stubbed, returning `((ok, detail),
     calls)`. `want_by_path` = merge-base gitlink SHA per submodule; `have_by_path` =
     primary checked-out SHA per submodule ("" = primary lacks it). `fail_update_for` =
     paths whose `submodule update` should return False. `git_only_dirs` = before-worktree
-    dst paths that contain only a `.git` entry (a failed-update remnant)."""
+    dst paths that contain only a `.git` entry (a failed-update remnant). `mb_bad_url` =
+    when set, the merge-base `.gitmodules` reports this non-github URL (so the merge-base
+    shape guard must reject before any fetch)."""
     import ci.jobs.unit_tests_bugfix_validation_job as job
 
     calls = []
@@ -376,7 +400,15 @@ def _drive_prepare_before_worktree(
 
     def fake_get_output(cmd, **kwargs):
         calls.append(cmd)
-        # merge-base .gitmodules path listing
+        # gitmodules_shape_violation URL query (merge-base file, quoted before_src path)
+        if "--get-regexp" in cmd and ".url" in cmd:
+            if mb_bad_url and "before_src" in cmd:
+                return f"submodule.contrib/evil.url {mb_bad_url}"
+            return ""
+        # gitmodules_shape_violation path query (name==path shape)
+        if "--get-regexp" in cmd and "\\.path'" in cmd:
+            return "\n".join(f"submodule.{p}.path {p}" for p in want_by_path)
+        # merge-base .gitmodules path listing (awk '{print $2}' form)
         if "--get-regexp" in cmd and ".gitmodules" in cmd:
             return "\n".join(want_by_path)
         # want: `git -C before_src rev-parse ... HEAD:<path>`
@@ -456,6 +488,23 @@ def test_prepare_before_worktree_repopulates_drifted_submodule(monkeypatch):
     assert any(
         "submodule update --init" in c and "contrib/abseil-cpp" in c for c in calls
     ), "drifted submodule must be populated at the merge-base pin"
+
+
+def test_prepare_before_worktree_rejects_unsafe_merge_base_gitmodules(monkeypatch):
+    # SECURITY: an unsafe URL in the MERGE-BASE .gitmodules (even if the PR's current file
+    # is clean) must fail closed before any submodule fetch — the drift path fetches using
+    # the merge-base file.
+    (ok, detail), calls = _drive_prepare_before_worktree(
+        monkeypatch,
+        want_by_path={"contrib/abseil-cpp": "forkpin"},
+        have_by_path={"contrib/abseil-cpp": "upstreampin"},
+        mb_bad_url="git@evil.example.com:x/y.git",
+    )
+    assert ok is False
+    assert "merge-base" in detail and "unsafe" in detail
+    assert not any("submodule update" in c for c in calls), (
+        "must not fetch any submodule when the merge-base .gitmodules is unsafe"
+    )
 
 
 def test_prepare_before_worktree_fails_closed_on_failed_update(monkeypatch):
