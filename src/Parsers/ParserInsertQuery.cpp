@@ -87,6 +87,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr table_function;
     ASTPtr settings_ast;
     ASTPtr source_select_settings_ast;
+    ASTPtr source_select_pre_returning_settings_ast;
     ASTPtr source_select_settings_runtime_ast;
     ASTPtr source_select_settings_global_ast;
     ASTPtr returning_select;
@@ -256,7 +257,16 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         tryGetIdentifierNameInto(format, format_str);
 
-        /// For INSERT SELECT, RETURNING appears after the source SELECT.
+        /// Some SELECT shapes (notably certain set-op trees) may leave a source-level
+        /// trailing SETTINGS right before RETURNING unconsumed by ParserSelectWithUnionQuery.
+        if (s_settings.ignore(pos, expected))
+        {
+            ParserSetQuery parser_settings(true);
+            if (!parser_settings.parse(pos, source_select_pre_returning_settings_ast, expected))
+                return false;
+        }
+
+        /// For INSERT SELECT, RETURNING appears after the source SELECT / source SETTINGS.
         const bool has_returning = try_parse_returning_subquery();
 
         /// A query-level SETTINGS clause normally trails the source SELECT and is absorbed by
@@ -270,8 +280,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             ParserSetQuery parser_settings(true);
             if (!parser_settings.parse(pos, source_select_settings_ast, expected))
                 return false;
-
-            source_select_settings_runtime_ast = source_select_settings_ast->clone();
         }
     }
     else if (!infile)
@@ -515,12 +523,16 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (returning_select)
         {
+            if (source_select_pre_returning_settings_ast)
+                source_select_settings_runtime_ast = source_select_pre_returning_settings_ast->clone();
+            merge_settings_ast_with_override(source_select_settings_runtime_ast, source_select_settings_ast);
+
             /// For INSERT ... RETURNING we need recursive collection of source settings to reject unsupported
             /// query-global settings and to restore query settings before RETURNING planning.
             InsertQuerySettingsPushDownVisitor::Data visitor_data{source_select_settings_runtime_ast};
             InsertQuerySettingsPushDownVisitor(visitor_data).visit(select);
 
-            ASTPtr source_top_level_settings_ast;
+            ASTPtr source_top_level_settings_ast = source_select_pre_returning_settings_ast ? source_select_pre_returning_settings_ast->clone() : ASTPtr{};
             collect_top_level_source_settings(source_top_level_settings_ast);
 
             /// Trailing source SETTINGS after RETURNING must keep precedence over source SELECT settings.
@@ -531,7 +543,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             /// For plain INSERT ... SELECT keep historical top-level-only pushdown semantics:
             /// nested source subquery SETTINGS stay local and must not leak into outer planning/execution.
-            ASTPtr source_top_level_settings_ast;
+            ASTPtr source_top_level_settings_ast = source_select_pre_returning_settings_ast ? source_select_pre_returning_settings_ast->clone() : ASTPtr{};
             collect_top_level_source_settings(source_top_level_settings_ast);
             merge_settings_ast(settings_ast, source_top_level_settings_ast);
         }
