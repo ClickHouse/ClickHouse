@@ -3,6 +3,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/scope_guard_safe.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -23,7 +24,7 @@ struct Settings;
 
 ColumnPtr createSingleCountStateColumn(const AggregateFunctionPtr & count_function, UInt64 num_rows)
 {
-    std::vector<char> state(count_function->sizeOfData());
+    VectorWithMemoryTracking<char> state(count_function->sizeOfData());
     AggregateDataPtr place = state.data();
     count_function->create(place);
     SCOPE_EXIT_MEMORY_SAFE(count_function->destroy(place));
