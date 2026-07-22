@@ -1,0 +1,4 @@
+count on:  1000
+count off: 1000
+restore with fsync_after_insert=1, all part files fsynced: 	1
+restore with fsync_after_insert=0, all part files fsynced: 	0

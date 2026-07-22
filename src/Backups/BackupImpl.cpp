@@ -988,18 +988,18 @@ String BackupImpl::getObjectKey(const String & file_name) const
 }
 
 size_t BackupImpl::copyFileToDisk(const String & file_name,
-                                  DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const
+                                  DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, bool sync) const
 {
 #if CLICKHOUSE_CLOUD
     String object_key = getObjectKey(file_name);
     if (!object_key.empty())
         return copyFileToDiskByObjectKey(object_key, destination_disk, destination_path, write_mode);
 #endif
-    return copyFileToDisk(getFileSizeAndChecksum(file_name), destination_disk, destination_path, write_mode);
+    return copyFileToDisk(getFileSizeAndChecksum(file_name), destination_disk, destination_path, write_mode, sync);
 }
 
 size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
-                                  DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const
+                                  DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, bool sync) const
 {
     if (open_mode == OpenMode::WRITE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
@@ -1042,13 +1042,17 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
 
     bool file_copied = false;
 
-    if (info.size && !info.base_size && !use_archive)
+    /// When `sync` is requested we must copy through a live destination buffer so we can fsync its
+    /// contents below. The optimized delegate paths (reader->copyFileToDisk / base backup) may use
+    /// fs::copy or an object-storage copy and expose no buffer, so skip them and take the buffered
+    /// branch, which is already correct for every source (this backup, base backup, archive).
+    if (!sync && info.size && !info.base_size && !use_archive)
     {
         /// Data comes completely from this backup.
         reader->copyFileToDisk(info.data_file_name, info.size, info.encrypted_by_disk, destination_disk, destination_path, write_mode);
         file_copied = true;
     }
-    else if (info.size && (info.size == info.base_size))
+    else if (!sync && info.size && (info.size == info.base_size))
     {
         /// Data comes completely from the base backup (nothing comes from this backup).
         getBaseBackup()->copyFileToDisk(std::pair{info.base_size, info.base_checksum}, destination_disk, destination_path, write_mode);
@@ -1066,7 +1070,7 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
     {
         /// Use the generic way to copy data. `readFile()` will update `num_read_files`.
         auto read_buffer = readFileImpl(info.file_name, size_and_checksum, /* read_encrypted= */ info.encrypted_by_disk);
-        std::unique_ptr<WriteBuffer> write_buffer;
+        std::unique_ptr<WriteBufferFromFileBase> write_buffer;
         size_t buf_size = std::min<size_t>(info.size, reader->getWriteBufferSize());
         if (info.encrypted_by_disk)
             write_buffer = destination_disk->writeEncryptedFile(destination_path, buf_size, write_mode, reader->getWriteSettings());
@@ -1074,6 +1078,10 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
             write_buffer = destination_disk->writeFile(destination_path, buf_size, write_mode, reader->getWriteSettings());
         copyData(*read_buffer, *write_buffer, info.size);
         write_buffer->finalize();
+        /// fdatasync the contents so a restored part survives power loss, matching the durability
+        /// an inserted part gets from fsync_after_insert (the caller passes `sync` accordingly).
+        if (sync)
+            write_buffer->sync();
     }
 
     return info.size;
