@@ -57,7 +57,8 @@ RabbitMQSource::RabbitMQSource(
     bool nack_broken_messages_,
     bool ack_in_suffix_,
     LoggerPtr log_,
-    std::optional<UInt64> cancel_epoch_)
+    std::optional<UInt64> cancel_epoch_,
+    bool wait_for_first_message_)
     : RabbitMQSource(
         storage_,
         storage_snapshot_,
@@ -70,7 +71,8 @@ RabbitMQSource::RabbitMQSource(
         nack_broken_messages_,
         ack_in_suffix_,
         log_,
-        cancel_epoch_)
+        cancel_epoch_,
+        wait_for_first_message_)
 {
 }
 
@@ -86,7 +88,8 @@ RabbitMQSource::RabbitMQSource(
     bool nack_broken_messages_,
     bool ack_in_suffix_,
     LoggerPtr log_,
-    std::optional<UInt64> cancel_epoch_)
+    std::optional<UInt64> cancel_epoch_,
+    bool wait_for_first_message_)
     : ISource(std::make_shared<const Block>(getSampleBlock(headers.first, headers.second)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -96,6 +99,7 @@ RabbitMQSource::RabbitMQSource(
     , handle_error_mode(handle_error_mode_)
     , ack_in_suffix(ack_in_suffix_)
     , nack_broken_messages(nack_broken_messages_)
+    , wait_for_first_message(wait_for_first_message_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
     , cancel_epoch(cancel_epoch_.value_or(storage_.currentCancelEpoch()))
@@ -352,6 +356,27 @@ Chunk RabbitMQSource::generateImpl()
         }
         else if (total_rows == 0)
         {
+            /// Wait once for the first delivery before giving up on an empty buffer (single-shot: the flag is
+            /// cleared, so the cycle stays bounded and a genuinely empty queue does not spin).
+            if (wait_for_first_message && !consumer->isConsumerStopped())
+            {
+                wait_for_first_message = false;
+                auto is_cancelled = [this]{ return storage.isConsumeCancelRequested(cancel_epoch); };
+                if (max_execution_time_ms)
+                {
+                    uint64_t elapsed_time_ms = total_stopwatch.elapsedMilliseconds();
+                    if (max_execution_time_ms > elapsed_time_ms)
+                    {
+                        consumer->waitForMessages(max_execution_time_ms - elapsed_time_ms, is_cancelled);
+                        continue;
+                    }
+                }
+                else
+                {
+                    consumer->waitForMessages(std::nullopt, is_cancelled);
+                    continue;
+                }
+            }
             break;
         }
 

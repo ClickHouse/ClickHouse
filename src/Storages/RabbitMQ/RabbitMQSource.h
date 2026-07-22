@@ -26,7 +26,8 @@ public:
             bool nack_broken_messages_,
             bool ack_in_suffix,
             LoggerPtr log_,
-            std::optional<UInt64> cancel_epoch_ = {});
+            std::optional<UInt64> cancel_epoch_ = {},
+            bool wait_for_first_message_ = false);
 
     ~RabbitMQSource() override;
 
@@ -56,6 +57,9 @@ private:
 
     bool is_finished = false;
     bool consumption_aborted = false;
+    /// Wait once for the first delivery instead of returning an empty cycle (set only for a
+    /// REFRESH-while-stopped background cycle; see StorageRabbitMQ::streamToViews).
+    bool wait_for_first_message = false;
     const Block non_virtual_header;
     const Block virtual_header;
     const UInt64 cancel_epoch;
@@ -80,7 +84,8 @@ private:
         bool nack_broken_messages_,
         bool ack_in_suffix,
         LoggerPtr log_,
-        std::optional<UInt64> cancel_epoch_ = {});
+        std::optional<UInt64> cancel_epoch_ = {},
+        bool wait_for_first_message_ = false);
 
     Chunk generateImpl();
 };
