@@ -316,7 +316,21 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
         /// consistent with how `changes` are applied here and with how top-level query settings are
         /// handled by `InterpreterSetQuery`.
         if (!set_query.default_settings.empty())
+        {
             updated_context->resetSettingsToDefaultValue(set_query.default_settings);
+
+            /// `limit` and `offset` were saved into the local variables above (from the inherited
+            /// context settings) to be materialized as LIMIT/OFFSET nodes of this query tree.
+            /// Resetting them to their default value (0) must clear the local copies as well,
+            /// otherwise the inherited value would still be injected into the tree.
+            for (const auto & setting_name : set_query.default_settings)
+            {
+                if (setting_name == "limit")
+                    limit = 0;
+                else if (setting_name == "offset")
+                    offset = 0;
+            }
+        }
     }
 
     const auto enable_order_by_all = updated_context->getSettingsRef()[Setting::enable_order_by_all];

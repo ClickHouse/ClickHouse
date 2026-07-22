@@ -1,0 +1,24 @@
+limit reset
+0
+1
+2
+3
+4
+limit kept without reset
+0
+1
+offset reset
+0
+1
+2
+3
+4
+offset kept without reset
+3
+4
+both reset
+0
+1
+2
+3
+4
