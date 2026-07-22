@@ -28,8 +28,8 @@ OUTPUT_DIR = Path(__file__).parent
 PUFFIN_MAGIC = b"PFA1"
 DELETION_VECTOR_MAGIC = bytes([0xD1, 0xD3, 0x39, 0x64])
 INFLATED_CONTENT_SIZE = 0x40000000
-# Must stay in sync with PUFFIN_FOOTER_LZ4_MAX_DECOMPRESSED_SIZE in PuffinBlockInputFormat.cpp.
-FOOTER_LZ4_ABSOLUTE_DECOMPRESSED_LIMIT = 16 * 1024 * 1024
+# Must stay in sync with PUFFIN_FOOTER_MAX_PAYLOAD_SIZE in PuffinBlockInputFormat.cpp.
+FOOTER_MAX_PAYLOAD_SIZE = 16 * 1024 * 1024
 FOOTER_LZ4_MAX_RATIO = 255
 INVALID_KEY = 0x7FFFFFFF
 LARGE_KEY = 1_000_000
@@ -197,7 +197,7 @@ def generate_lz4_content_size_within_ratio_over_absolute_cap(source: Path) -> No
     """
     puffin = source.read_bytes()
     blob, footer_json = extract_blob_and_footer_json(puffin)
-    forged_content_size = FOOTER_LZ4_ABSOLUTE_DECOMPRESSED_LIMIT + 1
+    forged_content_size = FOOTER_MAX_PAYLOAD_SIZE + 1
     min_payload_for_ratio = (forged_content_size + FOOTER_LZ4_MAX_RATIO - 1) // FOOTER_LZ4_MAX_RATIO
     footer_payload = bytearray(
         set_lz4_content_size(lz4.frame.compress(footer_json, store_size=True), forged_content_size)
@@ -290,6 +290,7 @@ def generate_missing_required_fields() -> None:
 
     dv_property_cases = {
         "missing_properties.puffin": None,
+        "null_properties.puffin": "null",
         "missing_referenced_data_file.puffin": {"cardinality": "0"},
         "missing_cardinality.puffin": {"referenced-data-file": DEFAULT_REFERENCED_DATA_FILE},
         "invalid_properties_array.puffin": [],
@@ -299,6 +300,8 @@ def generate_missing_required_fields() -> None:
         case_payload = json.loads(footer_json.decode("utf-8"))
         if properties is None:
             del case_payload["blobs"][0]["properties"]
+        elif properties == "null":
+            case_payload["blobs"][0]["properties"] = None
         else:
             case_payload["blobs"][0]["properties"] = properties
         write_fixture(
@@ -601,6 +604,7 @@ def generate_invalid_non_dv_properties() -> None:
     non_dv_property_cases = {
         "invalid_non_dv_properties_array.puffin": [],
         "invalid_non_dv_properties_string.puffin": "not-an-object",
+        "null_non_dv_properties.puffin": None,
     }
     for name, properties in non_dv_property_cases.items():
         case_payload = json.loads(json.dumps(footer_template))
@@ -669,6 +673,7 @@ def generate_invalid_file_metadata_properties() -> None:
         "invalid_file_properties_array.puffin": [],
         "invalid_file_properties_string.puffin": "not-an-object",
         "invalid_file_property_number.puffin": {"created-by": "ok", "ndv": 5},
+        "null_file_properties.puffin": None,
     }
     for name, properties in cases.items():
         payload = json.loads(json.dumps(base))

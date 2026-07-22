@@ -50,6 +50,8 @@ Cannot parse Puffin footer JSON
 field 'properties' must be an object
 --- invalid_non_dv_properties_string.puffin ---
 field 'properties' must be an object
+--- null_non_dv_properties.puffin ---
+field 'properties' must be an object
 --- dv_with_compression_codec.puffin ---
 must omit 'compression-codec'
 --- dv_nonzero_snapshot_id.puffin ---

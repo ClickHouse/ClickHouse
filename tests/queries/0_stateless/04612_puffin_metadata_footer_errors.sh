@@ -44,13 +44,13 @@ do
     id=$((id + 1))
 done
 
-for f in invalid_properties_array invalid_properties_string
+for f in invalid_properties_array invalid_properties_string null_properties
 do
     launch "$id" meta "$DATA/$f.puffin" "field 'properties' must be an object"
     id=$((id + 1))
 done
 
-for f in invalid_file_properties_array invalid_file_properties_string
+for f in invalid_file_properties_array invalid_file_properties_string null_file_properties
 do
     launch "$id" meta "$DATA/$f.puffin" "Puffin footer field 'properties' must be an object"
     id=$((id + 1))
@@ -60,6 +60,28 @@ launch "$id" meta "$DATA/invalid_file_property_number.puffin" "Puffin footer pro
 id=$((id + 1))
 
 launch "$id" meta "$DATA/missing_footer_leading_magic.puffin" 'Invalid Puffin footer length'
+id=$((id + 1))
+
+# Oversized raw footer is generated at runtime (sparse) to avoid committing a 16 MiB fixture.
+OVERSIZE_FOOTER="$TMP/oversized_raw_footer.puffin"
+python3 - "$OVERSIZE_FOOTER" <<'PY'
+import struct
+import sys
+
+path = sys.argv[1]
+magic = b"PFA1"
+footer_length = 16 * 1024 * 1024 + 1
+flags = b"\x00\x00\x00\x00"
+with open(path, "wb") as f:
+    f.write(magic)
+    f.write(magic)
+    f.seek(footer_length - 1, 1)
+    f.write(b"{")
+    f.write(struct.pack("<i", footer_length))
+    f.write(flags)
+    f.write(magic)
+PY
+launch "$id" meta "$OVERSIZE_FOOTER" 'exceeds absolute limit'
 id=$((id + 1))
 
 finish_puffin_errors

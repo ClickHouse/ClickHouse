@@ -48,9 +48,9 @@ constexpr UInt8 PUFFIN_MAGIC[4] = {0x50, 0x46, 0x41, 0x31};
 constexpr UInt8 PUFFIN_FOOTER_COMPRESSED_FLAG = 0x01;
 constexpr size_t PUFFIN_FOOTER_TRAILER_SIZE = 12;
 constexpr size_t PUFFIN_FOOTER_LZ4_MAX_RATIO = 255;
-/// Absolute cap on declared LZ4 footer content size. The ratio guard alone still allows
-/// a few-MiB compressed payload to request ~GiB allocations via a forged contentSize.
-constexpr size_t PUFFIN_FOOTER_LZ4_MAX_DECOMPRESSED_SIZE = 16 * 1024 * 1024;
+/// Absolute cap on footer payload size (uncompressed JSON bytes, or declared LZ4 contentSize).
+/// Prevents crafted FooterPayloadSize / contentSize values from forcing huge allocations.
+constexpr size_t PUFFIN_FOOTER_MAX_PAYLOAD_SIZE = 16 * 1024 * 1024;
 /// Absolute cap on materialized deleted positions (~800 MiB of UInt64s at this limit).
 constexpr UInt64 PUFFIN_DV_MAX_MATERIALIZED_POSITIONS = 100'000'000;
 constexpr UInt8 DELETION_VECTOR_MAGIC[4] = {0xD1, 0xD3, 0x39, 0x64};
@@ -133,15 +133,15 @@ String decompressPuffinFooterPayload(const char * data, size_t size)
     if (frame_info.contentSize == 0)
         throw Exception(ErrorCodes::LZ4_DECODER_FAILED, "Puffin footer LZ4 frame must declare content size");
 
-    const size_t max_decompressed_size = std::min(max_by_ratio, PUFFIN_FOOTER_LZ4_MAX_DECOMPRESSED_SIZE);
+    const size_t max_decompressed_size = std::min(max_by_ratio, PUFFIN_FOOTER_MAX_PAYLOAD_SIZE);
     if (frame_info.contentSize > max_decompressed_size)
     {
-        if (max_decompressed_size == PUFFIN_FOOTER_LZ4_MAX_DECOMPRESSED_SIZE)
+        if (max_decompressed_size == PUFFIN_FOOTER_MAX_PAYLOAD_SIZE)
             throw Exception(
                 ErrorCodes::LZ4_DECODER_FAILED,
                 "Puffin footer LZ4 content size {} exceeds absolute decompression limit {}",
                 frame_info.contentSize,
-                PUFFIN_FOOTER_LZ4_MAX_DECOMPRESSED_SIZE);
+                PUFFIN_FOOTER_MAX_PAYLOAD_SIZE);
 
         throw Exception(
             ErrorCodes::LZ4_DECODER_FAILED,
@@ -311,12 +311,15 @@ void parseStringValuedProperties(
 
 void parseBlobProperties(const Poco::JSON::Object::Ptr & blob_obj, PuffinBlob & blob, size_t blob_index, bool required)
 {
-    if (!blob_obj->has("properties") || blob_obj->isNull("properties"))
+    if (!blob_obj->has("properties"))
     {
         if (required)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: missing required field 'properties'", blob_index);
         return;
     }
+
+    if (blob_obj->isNull("properties"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: field 'properties' must be an object", blob_index);
 
     auto props_obj = blob_obj->getObject("properties");
     if (!props_obj)
@@ -326,10 +329,14 @@ void parseBlobProperties(const Poco::JSON::Object::Ptr & blob_obj, PuffinBlob & 
 }
 
 /// Optional FileMetadata.properties: JSON object with string values (Iceberg Puffin spec).
+/// Absent is allowed; present null / non-object is rejected.
 void validateFileMetadataProperties(const Poco::JSON::Object::Ptr & footer_obj)
 {
-    if (!footer_obj->has("properties") || footer_obj->isNull("properties"))
+    if (!footer_obj->has("properties"))
         return;
+
+    if (footer_obj->isNull("properties"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin footer field 'properties' must be an object");
 
     auto props_obj = footer_obj->getObject("properties");
     if (!props_obj)
@@ -459,6 +466,13 @@ std::vector<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBuffer & seekab
     /// file header Magic (payload_start == 4 would reuse the header Magic when blobs is empty).
     if (payload_start < 2 * sizeof(PUFFIN_MAGIC))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Puffin footer length: {}", footer_length_signed);
+
+    if (footer_length > PUFFIN_FOOTER_MAX_PAYLOAD_SIZE)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Puffin footer payload size {} exceeds absolute limit {}",
+            footer_length,
+            PUFFIN_FOOTER_MAX_PAYLOAD_SIZE);
 
     seekable.seek(static_cast<off_t>(payload_start - sizeof(PUFFIN_MAGIC)), SEEK_SET);
     char leading_magic_buf[4];

@@ -38,11 +38,17 @@ missing required property
 field 'properties' must be an object
 --- invalid_properties_string.puffin ---
 field 'properties' must be an object
+--- null_properties.puffin ---
+field 'properties' must be an object
 --- invalid_file_properties_array.puffin ---
 Puffin footer field 'properties' must be an object
 --- invalid_file_properties_string.puffin ---
+Puffin footer field 'properties' must be an object
+--- null_file_properties.puffin ---
 Puffin footer field 'properties' must be an object
 --- invalid_file_property_number.puffin ---
 Puffin footer property
 --- missing_footer_leading_magic.puffin ---
 Invalid Puffin footer length
+--- oversized_raw_footer.puffin ---
+exceeds absolute limit

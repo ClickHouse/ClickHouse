@@ -48,7 +48,7 @@ do
     id=$((id + 1))
 done
 
-for f in invalid_non_dv_properties_array invalid_non_dv_properties_string
+for f in invalid_non_dv_properties_array invalid_non_dv_properties_string null_non_dv_properties
 do
     launch "$id" meta "$DATA/$f.puffin" "field 'properties' must be an object"
     id=$((id + 1))
