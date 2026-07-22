@@ -1009,7 +1009,12 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
                     /// so we check the state under the parts lock to make the decision free of a race with the cleanup.
                     auto parts_lock = storage.lockParts();
                     if (part->getState() == MergeTreeDataPartState::PreActive)
+                    {
+                        /// The Keeper commit may have succeeded, so `writeExistingPart` must not
+                        /// move the preserved part back to its original directory.
+                        part->new_part_was_committed_to_zookeeper_after_rename_on_disk = true;
                         transaction.commit(parts_lock);
+                    }
                     else
                     {
                         /// The cleanup already committed the part storage transaction and moved the part
