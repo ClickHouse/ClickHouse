@@ -155,6 +155,14 @@ struct Settings
     void set(std::string_view name, const Field & value);
     void setDefaultValue(std::string_view name);
 
+    /// Whether any setting currently holds a value that was set by the `compatibility` setting.
+    bool hasSettingsChangedByCompatibility() const;
+
+    /// Reset settings whose value was set only by the `compatibility` setting back to their defaults (and forget
+    /// they were compatibility-derived). Used before transmitting settings so the receiver re-derives them from
+    /// `compatibility` itself instead of being forced to the sender's derived values.
+    void resetSettingsChangedByCompatibility();
+
     VectorWithMemoryTracking<String> getHints(const String & name) const;
     String toString() const;
 
@@ -167,7 +175,6 @@ struct Settings
 
     void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToMapColumn(IColumn * column, bool changed_only = true) const;
-    NameToNameMap toNameToNameMap() const;
 
     void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
     void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);
@@ -190,4 +197,11 @@ struct Settings
 private:
     std::unique_ptr<SettingsImpl> impl;
 };
+
+/// Query parameters are transported as raw (name, value) string pairs using the Custom-setting
+/// wire encoding (SettingsWriteFormat::STRINGS_WITH_FLAGS), but bypassing Settings::set/read and
+/// the builtin-setting accessor entirely, so a parameter name colliding with a builtin setting or
+/// alias can never be value-normalized, alias-resolved, or misquoted (issue #85768).
+void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out);
+NameToNameMap readQueryParameters(ReadBuffer & in);
 }

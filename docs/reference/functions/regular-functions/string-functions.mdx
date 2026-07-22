@@ -340,6 +340,7 @@ SELECT base58Encode('ClickHouse');
 Introduced in: v18.16.0
 
 Decodes a string from [Base64](https://en.wikipedia.org/wiki/Base64) representation, according to RFC 4648.
+Since version 26.7, the whitespace characters space, tab (`\t`), line feed (`\n`), carriage return (`\r`), and form feed (`\f`) in the input are ignored (earlier versions rejected input containing them). Vertical tab (`\v`) and any other characters outside the Base64 alphabet are rejected.
 Throws an exception in case of error.
 
 **Syntax**
@@ -413,6 +414,8 @@ SELECT base64Encode('clickhouse')
 Introduced in: v24.6.0
 
 Decodes a string from [Base64](https://en.wikipedia.org/wiki/Base64) representation using URL-safe alphabet, according to RFC 4648.
+The standard alphabet (`+` and `/`) is also accepted on decode.
+Since version 26.7, the whitespace characters space, tab (`\t`), line feed (`\n`), carriage return (`\r`), and form feed (`\f`) in the input are ignored (earlier versions rejected input containing them). Vertical tab (`\v`) and any other characters outside the Base64 alphabet are rejected.
 Throws an exception in case of error.
 
 **Syntax**
@@ -607,8 +610,8 @@ SELECT caseFoldUTF8('Straße')
 
 ```response title=Response
 ┌─caseFoldUTF8('Straße')─┐
-│ strasse                 │
-└─────────────────────────┘
+│ strasse                │
+└────────────────────────┘
 ```
 
 ## compareSubstrings {#compareSubstrings}
@@ -1108,13 +1111,13 @@ Returns the edit distance between the two UTF8 strings. [`UInt64`](/reference/da
 **Usage example**
 
 ```sql title=Query
-SELECT editDistanceUTF8('我是谁', '我是我')
+SELECT editDistanceUTF8('我是谁', '我是我') AS distance
 ```
 
 ```response title=Response
-┌─editDistanceUTF8('我是谁', '我是我')──┐
-│                                   1 │
-└─────────────────────────────────────┘
+┌─distance─┐
+│        1 │
+└──────────┘
 ```
 
 ## encodeXMLComponent {#encodeXMLComponent}
@@ -1991,7 +1994,7 @@ SELECT s FROM t ORDER BY naturalSortKey(s)
 ```response title=Response
 ┌─s───┐
 │ a1  │
-| a02 │
+│ a02 │
 └─────┘
 ```
 
@@ -2103,7 +2106,7 @@ SELECT
 
 ```response title=Response
 ┌─original─┬─nfkc_normalized─┐
-│ ① ② ③  │ 1 2 3           │
+│ ① ② ③    │ 1 2 3           │
 └──────────┴─────────────────┘
 ```
 
@@ -2383,8 +2386,8 @@ SELECT removeDiacriticsUTF8('café résumé naïve')
 
 ```response title=Response
 ┌─removeDiacriticsUTF8('café résumé naïve')─┐
-│ cafe resume naive                          │
-└────────────────────────────────────────────┘
+│ cafe resume naive                         │
+└───────────────────────────────────────────┘
 ```
 
 ## repeat {#repeat}
@@ -3125,13 +3128,13 @@ Returns the Jaccard similarity index between the two UTF8 strings. [`Float64`](/
 **Usage example**
 
 ```sql title=Query
-SELECT stringJaccardIndexUTF8('我爱你', '我也爱你')
+SELECT stringJaccardIndexUTF8('我爱你', '我也爱你') AS jaccard_index
 ```
 
 ```response title=Response
-┌─stringJaccardIndexUTF8('我爱你', '我也爱你')─┐
-│                                       0.75 │
-└─────────────────────────────────────────────┘
+┌─jaccard_index─┐
+│          0.75 │
+└───────────────┘
 ```
 
 ## substring {#substring}
@@ -3144,6 +3147,8 @@ Byte counting starts from 1 with the following logic:
 - If `offset` is negative, the substring starts `offset` characters from the end of the string, rather than from the beginning.
 
 An optional argument `length` specifies the maximum number of bytes the returned substring may have.
+
+See also the [`digits`](/reference/functions/regular-functions/other-functions#digits) function, which performs the analogous operation on the digits of a number.
 
 **Syntax**
 
