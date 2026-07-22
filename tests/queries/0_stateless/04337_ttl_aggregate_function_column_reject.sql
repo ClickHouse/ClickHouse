@@ -716,3 +716,95 @@ ORDER BY key
 TTL d + INTERVAL 1 DAY DELETE WHERE isNotNull(finalizeAggregation(dyn));
 
 DROP TABLE test_ttl_agg_dynamic_finalize_suspicious;
+
+SET allow_suspicious_ttl_expressions = 0;
+
+-- A Variant/Dynamic carrier nested inside a container argument (Array/Tuple/Map) must be probed too:
+-- the container's default value is empty, so a consumer that processes the elements (e.g. the `equals`
+-- built inside `arrayRemove`) never sees a payload during a default-value probe, yet still rebuilds per
+-- stored payload during TTL execution and throws on the first element carrying an AggregateFunction state.
+CREATE TABLE test_ttl_agg_array_dynamic
+(
+    key UInt64,
+    arr Array(Dynamic),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE notEmpty(arrayRemove(arr, 0)); -- { serverError BAD_TTL_EXPRESSION }
+
+-- The same through a Map value.
+CREATE TABLE test_ttl_agg_map_dynamic
+(
+    key UInt64,
+    m Map(String, Dynamic),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE notEmpty(arrayRemove(mapValues(m), 0)); -- { serverError BAD_TTL_EXPRESSION }
+
+-- The same through a Tuple element.
+CREATE TABLE test_ttl_agg_tuple_dynamic
+(
+    key UInt64,
+    tup Tuple(UInt32, Dynamic),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE notEmpty(arrayRemove([tup], (0, 0)::Tuple(UInt32, Dynamic))); -- { serverError BAD_TTL_EXPRESSION }
+
+-- A Variant with an AggregateFunction alternative nested inside an Array is probed per alternative too.
+CREATE TABLE test_ttl_agg_array_variant
+(
+    key UInt64,
+    arr Array(Variant(AggregateFunction(max, UInt32), UInt32)),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE notEmpty(arrayRemove(arr, 0)); -- { serverError BAD_TTL_EXPRESSION }
+
+-- Valid: a consumer that does not touch the elements is accepted.
+CREATE TABLE test_ttl_agg_array_dynamic_agnostic
+(
+    key UInt64,
+    arr Array(Dynamic),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE length(arr) > 3;
+
+DROP TABLE test_ttl_agg_array_dynamic_agnostic;
+
+-- Valid: a nested carrier that is not referenced in the TTL is accepted.
+CREATE TABLE test_ttl_agg_array_dynamic_not_referenced
+(
+    key UInt64,
+    arr Array(Dynamic),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY;
+
+DROP TABLE test_ttl_agg_array_dynamic_not_referenced;
+
+-- The escape hatch also covers the nested-carrier case.
+SET allow_suspicious_ttl_expressions = 1;
+
+CREATE TABLE test_ttl_agg_array_dynamic_suspicious
+(
+    key UInt64,
+    arr Array(Dynamic),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE notEmpty(arrayRemove(arr, 0));
+
+DROP TABLE test_ttl_agg_array_dynamic_suspicious;
+
+SET allow_suspicious_ttl_expressions = 0;
