@@ -27,7 +27,7 @@ cat ${CUR_DIR}/wasm/faulty.wasm | ${CLICKHOUSE_CLIENT} --query "INSERT INTO syst
 
 # Create the infinite_loop_04613 function
 ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q "
-    CREATE OR REPLACE FUNCTION infinite_loop_04613 LANGUAGE WASM ABI ROW_DIRECT FROM 'faulty_04613' ARGUMENTS (UInt32) RETURNS UInt32;
+    CREATE OR REPLACE FUNCTION infinite_loop_04613 LANGUAGE WASM ABI ROW_DIRECT FROM 'faulty_04613' :: 'infinite_loop' ARGUMENTS (UInt32) RETURNS UInt32;
 "
 
 # Start a query that uses infinite_loop in WHERE with unlimited fuel
