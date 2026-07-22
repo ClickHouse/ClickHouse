@@ -2099,6 +2099,28 @@ struct ConvertImpl
             return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToTimeImpl<date_time_overflow_behavior>>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
+        /// Conversion of Time64 to Time: both store local seconds since midnight, so drop the fractional part.
+        else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
+            && std::is_same_v<ToDataType, DataTypeTime>)
+        {
+            using ColVecFrom = typename FromDataType::ColumnType;
+            using ColVecTo = typename ToDataType::ColumnType;
+
+            const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get());
+            auto col_to = ColVecTo::create();
+            auto & vec_to = col_to->getData();
+            const auto & vec_from = col_from->getData();
+            vec_to.resize(input_rows_count);
+
+            const auto scale_mult = DecimalUtils::scaleMultiplier<Time64>(col_from->getScale());
+            for (size_t i = 0; i < input_rows_count; ++i)
+                vec_to[i] = static_cast<Int32>(vec_from[i].value / scale_mult);
+
+            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                return ColumnNullable::create(std::move(col_to), ColumnUInt8::create(input_rows_count, false));
+            else
+                return col_to;
+        }
         /// Conversion of Date or DateTime to DateTime64: add zero sub-second part.
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeDate>
