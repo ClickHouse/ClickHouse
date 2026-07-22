@@ -356,16 +356,22 @@ def test_before_run_started_a_test_handles_no_files():
 # master's content — which would break configure against the merge-base
 # cmake wrappers.
 # --------------------------------------------------------------------------
-def _drive_prepare_before_worktree(monkeypatch, want_by_path, have_by_path):
-    """Run prepare_before_worktree with Shell + os stubbed, returning the issued
-    commands. `want_by_path` = merge-base gitlink SHA per submodule; `have_by_path`
-    = primary checked-out SHA per submodule ("" = primary lacks it)."""
+def _drive_prepare_before_worktree(
+    monkeypatch, want_by_path, have_by_path, fail_update_for=(), git_only_dirs=()
+):
+    """Run prepare_before_worktree with Shell + os stubbed, returning `((ok, detail),
+    calls)`. `want_by_path` = merge-base gitlink SHA per submodule; `have_by_path` =
+    primary checked-out SHA per submodule ("" = primary lacks it). `fail_update_for` =
+    paths whose `submodule update` should return False. `git_only_dirs` = before-worktree
+    dst paths that contain only a `.git` entry (a failed-update remnant)."""
     import ci.jobs.unit_tests_bugfix_validation_job as job
 
     calls = []
 
     def fake_check(cmd, **kwargs):
         calls.append(cmd)
+        if "submodule update" in cmd:
+            return not any(p in cmd for p in fail_update_for)
         return True
 
     def fake_get_output(cmd, **kwargs):
@@ -387,26 +393,28 @@ def _drive_prepare_before_worktree(monkeypatch, want_by_path, have_by_path):
             return ""
         return ""
 
+    def fake_listdir(p):
+        # A dst path listed in git_only_dirs holds only a `.git` remnant.
+        if any(p.endswith(d) for d in git_only_dirs):
+            return [".git"]
+        return ["x"]
+
     monkeypatch.setattr(job.Shell, "check", staticmethod(fake_check))
     monkeypatch.setattr(job.Shell, "get_output", staticmethod(fake_get_output))
     monkeypatch.setattr(job, "ensure_primary_submodules", lambda: None)
-    # Primary has a populated dir iff it recorded a "have" SHA; the before-worktree
-    # dst dir is treated as populated after the loop (fail-close check passes).
     monkeypatch.setattr(job.os.path, "realpath", lambda p: "/abs/" + p)
-    monkeypatch.setattr(
-        job.os.path, "isdir", lambda p: True
-    )  # both primary paths and before_src dsts exist
+    monkeypatch.setattr(job.os.path, "isdir", lambda p: True)
     monkeypatch.setattr(job.os.path, "isfile", lambda p: True)  # SUBMODULE_MARKER present
-    monkeypatch.setattr(job.os, "listdir", lambda p: ["x"])  # never-empty
+    monkeypatch.setattr(job.os, "listdir", fake_listdir)
 
-    ok = job.prepare_before_worktree("mb_sha", "pr_sha", ["src/X/tests/gtest_x.cpp"])
-    return ok, calls
+    result = job.prepare_before_worktree("mb_sha", "pr_sha", ["src/X/tests/gtest_x.cpp"])
+    return result, calls
 
 
 def test_prepare_before_worktree_hardlinks_when_pin_matches(monkeypatch):
     # A submodule whose merge-base pin equals the primary's checked-out SHA is
     # content-correct to hardlink.
-    ok, calls = _drive_prepare_before_worktree(
+    (ok, _detail), calls = _drive_prepare_before_worktree(
         monkeypatch,
         want_by_path={"contrib/sysroot": "samesha"},
         have_by_path={"contrib/sysroot": "samesha"},
@@ -424,7 +432,7 @@ def test_prepare_before_worktree_repopulates_drifted_submodule(monkeypatch):
     # abseil-cpp drift: the merge-base pins the fork commit, master has upstream
     # checked out. Hardlinking master content breaks the merge-base wrapper, so the
     # before-worktree's own copy must be fetched at the merge-base pin.
-    ok, calls = _drive_prepare_before_worktree(
+    (ok, _detail), calls = _drive_prepare_before_worktree(
         monkeypatch,
         want_by_path={
             "contrib/sysroot": "samesha",
@@ -450,10 +458,38 @@ def test_prepare_before_worktree_repopulates_drifted_submodule(monkeypatch):
     ), "drifted submodule must be populated at the merge-base pin"
 
 
+def test_prepare_before_worktree_fails_closed_on_failed_update(monkeypatch):
+    # A failed `submodule update` for a drifted submodule can leave only a `.git`
+    # remnant (nonempty dir). The function must fail closed (ok=False) and name the
+    # submodule, never report success on a known-incomplete tree.
+    (ok, detail), _calls = _drive_prepare_before_worktree(
+        monkeypatch,
+        want_by_path={"contrib/abseil-cpp": "forkpin"},
+        have_by_path={"contrib/abseil-cpp": "upstreampin"},
+        fail_update_for=("contrib/abseil-cpp",),
+        git_only_dirs=("contrib/abseil-cpp",),
+    )
+    assert ok is False
+    assert "contrib/abseil-cpp" in detail
+
+
+def test_prepare_before_worktree_fails_closed_on_git_only_dir(monkeypatch):
+    # Even if the update command reports success, a dst holding only `.git` (no sources)
+    # must not count as populated — the final fail-close check catches it.
+    (ok, detail), _calls = _drive_prepare_before_worktree(
+        monkeypatch,
+        want_by_path={"contrib/sysroot": "samesha"},
+        have_by_path={"contrib/sysroot": "samesha"},
+        git_only_dirs=("contrib/sysroot",),
+    )
+    assert ok is False
+    assert "contrib/sysroot" in detail
+
+
 def test_prepare_before_worktree_repopulates_when_primary_lacks_submodule(monkeypatch):
     # A submodule the merge-base needs but the primary lacks (master removed it) must
     # be populated from the before-worktree's own pin, not silently skipped.
-    ok, calls = _drive_prepare_before_worktree(
+    (ok, _detail), calls = _drive_prepare_before_worktree(
         monkeypatch,
         want_by_path={"contrib/removed_on_master": "mbpin"},
         have_by_path={"contrib/removed_on_master": ""},

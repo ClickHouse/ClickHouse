@@ -241,8 +241,9 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
     submodule at its own merge-base pin when they differ (drift). Hardlinking master's
     content for a drifted submodule is content-incorrect: the before-worktree uses the
     merge-base cmake wrappers, which reference the merge-base submodule's file layout.
-    Returns True iff every submodule the merge-base needs ended up populated at that pin;
-    the caller must fail close otherwise.
+    Returns `(ok, detail)`: `ok` is True iff every submodule the merge-base needs ended up
+    populated at that pin; on failure `detail` names the offending submodule so the caller
+    can fail close with a specific infrastructure error.
     """
     Shell.check(f"git worktree remove --force {BEFORE_SRC} ||:", verbose=True)
     Shell.check(f"rm -rf {BEFORE_SRC}", verbose=True)
@@ -343,10 +344,14 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
                 retries=3,
                 verbose=True,
             )
+            # Fail close: a failed update can leave the path containing only a `.git`
+            # gitlink (nonempty, but no sources), so the final populated-check below would
+            # not catch it. Stop here with the specific submodule.
             if not ok:
-                print(
-                    f"WARNING: failed to populate drifted submodule '{path}' at its "
-                    f"merge-base pin '{want}'; before-binary configure may fail."
+                return (
+                    False,
+                    f"failed to populate drifted submodule '{path}' at its merge-base "
+                    f"pin '{want}'",
                 )
 
     if drifted:
@@ -355,22 +360,24 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
             f"merge-base pin instead of hardlinking master content: {drifted}"
         )
 
-    # Fail close: every submodule the merge-base needs must be populated with a working
-    # tree, else the before-binary cannot configure/build. Checking only SUBMODULE_MARKER
-    # (a single unrelated submodule) would miss a drifted submodule that failed to
-    # repopulate. Report the first missing one so the caller's ERROR verdict is specific.
+    # Fail close: every submodule the merge-base needs must be populated with a real
+    # working tree, else the before-binary cannot configure/build. Checking only
+    # SUBMODULE_MARKER (a single unrelated submodule) would miss a drifted submodule that
+    # failed to repopulate. `.git` alone does not count as populated — require at least one
+    # non-`.git` entry. Return the first missing path so the caller's ERROR is specific.
     for path in sub_paths:
         path = path.strip()
         if not path:
             continue
         dst = os.path.join(BEFORE_SRC, path)
-        if not os.path.isdir(dst) or not os.listdir(dst):
-            print(
-                f"ERROR: submodule '{path}' is not populated in the before-worktree; "
-                "cannot build the before-binary."
+        if not os.path.isdir(dst) or not [e for e in os.listdir(dst) if e != ".git"]:
+            return (
+                False,
+                f"submodule '{path}' is not populated in the before-worktree",
             )
-            return False
-    return os.path.isfile(os.path.join(BEFORE_SRC, SUBMODULE_MARKER))
+    if not os.path.isfile(os.path.join(BEFORE_SRC, SUBMODULE_MARKER)):
+        return (False, f"submodule marker '{SUBMODULE_MARKER}' is missing")
+    return (True, "")
 
 
 def configure_before_binary(info):
@@ -563,7 +570,9 @@ def main():
         )
         return
 
-    submodules_ok = prepare_before_worktree(merge_base, pr_sha, test_files)
+    submodules_ok, submodules_detail = prepare_before_worktree(
+        merge_base, pr_sha, test_files
+    )
 
     # Fail close: building unit_tests_dbms needs submodules. If they are missing, cmake
     # aborts with a generic "Submodules are not initialized" error that must NOT be
@@ -575,8 +584,8 @@ def main():
                     name="Bugfix validation (unit tests)",
                     status=Result.Status.ERROR,
                     info=(
-                        f"Submodules were not populated in the before-worktree (missing "
-                        f"'{SUBMODULE_MARKER}'); cannot build the before-binary. This is "
+                        f"Could not populate the before-worktree submodules "
+                        f"({submodules_detail}); cannot build the before-binary. This is "
                         "an infrastructure error — NOT a reproduction."
                     ),
                 )
