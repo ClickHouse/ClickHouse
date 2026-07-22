@@ -1174,8 +1174,13 @@ UInt64 estimateNeededMemoryForMerge(
             const auto physical_names = output_columns.getNameSet();
             const auto insert_storage_name = [&](const String & name)
             {
-                merging_names.insert(
-                    physical_names.contains(name) ? name : String(Nested::getColumnFromSubcolumn(name, physical_names)));
+                /// A required name may not resolve to a written column at all: a projection or a skip
+                /// index can reference a column this merge does not write - a fully expired TTL column
+                /// with no default was erased from output_columns above (its files are gone from every
+                /// source part, see 04492_projection_ttl_default_divergence). A column the merge does not
+                /// write cannot be classified as merging or gathering, so skip it instead of throwing.
+                if (const auto storage_name = Nested::tryGetColumnNameInStorage(name, physical_names))
+                    merging_names.insert(*storage_name);
             };
             for (const auto & name : metadata_snapshot->getColumnsRequiredForSortingKey())
                 insert_storage_name(name);
