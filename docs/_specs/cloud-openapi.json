@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-909740",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-910487",
       "email": "support@clickhouse.com"
     }
   },
@@ -16958,6 +16958,7 @@
               "ap-south-1",
               "ap-southeast-1",
               "ap-southeast-2",
+              "ca-central-1",
               "eu-central-1",
               "eu-west-1",
               "eu-west-2",
@@ -17368,6 +17369,7 @@
               "ap-south-1",
               "ap-southeast-1",
               "ap-southeast-2",
+              "ca-central-1",
               "eu-central-1",
               "eu-west-1",
               "eu-west-2",
@@ -17528,6 +17530,7 @@
               "ap-south-1",
               "ap-southeast-1",
               "ap-southeast-2",
+              "ca-central-1",
               "eu-central-1",
               "eu-west-1",
               "eu-west-2",
@@ -17578,6 +17581,7 @@
               "ap-south-1",
               "ap-southeast-1",
               "ap-southeast-2",
+              "ca-central-1",
               "eu-central-1",
               "eu-west-1",
               "eu-west-2",
@@ -17685,6 +17689,7 @@
               "ap-south-1",
               "ap-southeast-1",
               "ap-southeast-2",
+              "ca-central-1",
               "eu-central-1",
               "eu-west-1",
               "eu-west-2",
@@ -24038,7 +24043,7 @@
             "format": "date-time"
           },
           "usedAt": {
-            "description": "Timestamp the key was used last time. If not present the key was never used. ISO-8601.",
+            "description": "Timestamp the key was used last time, with one-minute precision. If not present the key was never used. ISO-8601.",
             "type": "string",
             "format": "date-time"
           },
@@ -24819,7 +24824,7 @@
             "$ref": "#/components/schemas/pgIsPrimaryProperty"
           },
           "connectionString": {
-            "description": "Connection string to the Postgres service",
+            "description": "Connection string to the Postgres service. Embeds the service password, so it is only returned when the service is created or its password is reset. Omitted from every other response when Postgres credential redaction is enabled for the organization. Not guaranteed to be present — treat as optional.",
             "type": "string"
           },
           "username": {
@@ -24827,7 +24832,7 @@
             "type": "string"
           },
           "password": {
-            "description": "Password for the Postgres service",
+            "description": "Password for the Postgres service. Only returned when the service is created or its password is reset. Omitted from every other response when Postgres credential redaction is enabled for the organization. Not guaranteed to be present — treat as optional.",
             "type": "string"
           },
           "hostname": {
@@ -25610,6 +25615,7 @@
               "ap-south-1",
               "ap-southeast-1",
               "ap-southeast-2",
+              "ca-central-1",
               "eu-central-1",
               "eu-west-1",
               "eu-west-2",
@@ -25942,6 +25948,7 @@
               "ap-south-1",
               "ap-southeast-1",
               "ap-southeast-2",
+              "ca-central-1",
               "eu-central-1",
               "eu-west-1",
               "eu-west-2",
@@ -26662,6 +26669,7 @@
               "ap-south-1",
               "ap-southeast-1",
               "ap-southeast-2",
+              "ca-central-1",
               "eu-central-1",
               "eu-west-1",
               "eu-west-2",

@@ -71,6 +71,7 @@
 
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsQuirks.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -481,6 +482,12 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
 {
     auto read_method = context->getSettingsRef()[Setting::storage_file_read_method];
 
+    /// `doSettingsSanityCheckClamp` bounds the setting at apply time for the server and clickhouse-local,
+    /// but it does not run for `ApplicationType::CLIENT`, and this code is reachable in clickhouse-client
+    /// via `INSERT ... FROM INFILE`. Clamp here as well so that an out-of-range value is not passed
+    /// to the allocator.
+    size_t read_buffer_size = std::min<UInt64>(context->getSettingsRef()[Setting::max_read_buffer_size], MAX_SANE_READ_BUFFER_SIZE);
+
     /** Using mmap on server-side is unsafe for the following reasons:
       * - concurrent modifications of a file will result in SIGBUS;
       * - IO error from the device will result in SIGBUS;
@@ -520,9 +527,9 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     if (S_ISREG(file_stat.st_mode) && (read_method == LocalFSReadMethod::pread || read_method == LocalFSReadMethod::mmap))
     {
         if (use_table_fd)
-            res = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd, context->getSettingsRef()[Setting::max_read_buffer_size]);
+            res = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd, read_buffer_size);
         else
-            res = std::make_unique<ReadBufferFromFilePRead>(current_path, context->getSettingsRef()[Setting::max_read_buffer_size]);
+            res = std::make_unique<ReadBufferFromFilePRead>(current_path, read_buffer_size);
 
         ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
     }
@@ -531,7 +538,7 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
 #if USE_LIBURING
         auto & reader = getIOUringReaderOrThrow(context);
         res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
-            reader, Priority{}, current_path, context->getSettingsRef()[Setting::max_read_buffer_size]);
+            reader, Priority{}, current_path, read_buffer_size);
 #else
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Read method io_uring is only supported in Linux");
 #endif
@@ -539,9 +546,9 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     else
     {
         if (use_table_fd)
-            res = std::make_unique<ReadBufferFromFileDescriptor>(table_fd, context->getSettingsRef()[Setting::max_read_buffer_size]);
+            res = std::make_unique<ReadBufferFromFileDescriptor>(table_fd, read_buffer_size);
         else
-            res = std::make_unique<ReadBufferFromFile>(current_path, context->getSettingsRef()[Setting::max_read_buffer_size]);
+            res = std::make_unique<ReadBufferFromFile>(current_path, read_buffer_size);
 
         ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
     }

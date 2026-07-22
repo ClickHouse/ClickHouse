@@ -95,17 +95,7 @@ Both approaches ensure the ClickHouse connector is available in your Spark envir
 </dependency>
 ```
 
-Add the following repository if you want to use SNAPSHOT version.
-
-```maven
-<repositories>
-  <repository>
-    <id>sonatype-oss-snapshots</id>
-    <name>Sonatype OSS Snapshots Repository</name>
-    <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
-  </repository>
-</repositories>
-```
+To use a SNAPSHOT version, follow Sonatype's [instructions for consuming SNAPSHOT releases](https://central.sonatype.org/publish/publish-portal-snapshots/#consuming-snapshot-releases-for-your-project) with Maven.
 
 </Tab>
 <Tab title="Gradle">
@@ -117,13 +107,7 @@ dependencies {
 }
 ```
 
-Add the following repository if you want to use the SNAPSHOT version:
-
-```gradle
-repositries {
-  maven { url = "https://s01.oss.sonatype.org/content/repositories/snapshots" }
-}
-```
+To use a SNAPSHOT version, follow Sonatype's [instructions for consuming SNAPSHOT releases](https://central.sonatype.org/publish/publish-portal-snapshots/#consuming-snapshot-releases-for-your-project) with Gradle.
 
 </Tab>
 <Tab title="SBT">
@@ -166,8 +150,8 @@ clickhouse-spark-runtime-${spark_binary_version}_${scala_binary_version}-${versi
 ```
 
 You can find all available released JAR files
-in the [Maven Central Repository](https://repo1.maven.org/maven2/com/clickhouse/spark/)
-and all daily build SNAPSHOT JAR files in the [Sonatype OSS Snapshots Repository](https://s01.oss.sonatype.org/content/repositories/snapshots/com/clickhouse/).
+in the [Maven Central Repository](https://repo1.maven.org/maven2/com/clickhouse/spark/).
+Daily build SNAPSHOT JAR files are available through the Sonatype snapshots repository configured above.
 
 <Warning>
 It's essential to include the [clickhouse-jdbc JAR](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc)
