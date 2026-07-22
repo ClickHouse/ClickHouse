@@ -55,6 +55,7 @@
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/CollectTableExpressionData.h>
+#include <Planner/CollectSets.h>
 #include <Planner/Utils.h>
 #include <Interpreters/Context.h>
 #include <Parsers/makeASTForLogicalFunction.h>
@@ -1747,7 +1748,8 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             auto planner_context = std::make_shared<PlannerContext>(
                 execution_context, global_planner_context, SelectQueryOptions{});
 
-            collectSetsAndSourceColumns(expression, planner_context, /*keep_alias_columns=*/true);
+            collectSourceColumns(expression, planner_context, /*keep_alias_columns=*/true);
+            collectSets(expression, *planner_context);
 
             /// 3. Build input columns from all available columns plus any
             /// virtual columns actually referenced by the expression
@@ -1893,7 +1895,8 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                 auto update_tree = buildQueryTree(update_expr_list, execution_context);
                 QueryAnalyzer update_analyzer(/*only_analyze=*/!execute_scalar_subqueries);
                 update_analyzer.resolve(update_tree, table_node, execution_context);
-                collectSetsAndSourceColumns(update_tree, planner_context, true);
+                collectSourceColumns(update_tree, planner_context, true);
+                collectSets(update_tree, *planner_context);
 
                 auto update_actions = std::make_shared<ActionsAndProjectInputsFlag>();
                 update_actions->dag = ActionsDAG(available_columns_for_step);
