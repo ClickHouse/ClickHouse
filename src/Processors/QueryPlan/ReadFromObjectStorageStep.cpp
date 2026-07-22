@@ -22,6 +22,12 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
 
+#include "config.h"
+
+#if USE_AWS_S3
+#include <IO/S3/Client.h>
+#endif
+
 
 namespace DB
 {
@@ -218,11 +224,24 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
     ///   - the data files are immutable by the format's contract — a data lake never overwrites a
     ///     data file in place, so a file identified by path is always the same generation; or
     ///   - the backend pins the actual read to the captured generation — S3 with
-    ///     `s3_validate_etag_on_read` issues the GET with an `If-Match` on the captured ETag (see
-    ///     `ReadBufferFromS3`), which is atomic with respect to an overwrite.
+    ///     `s3_validate_etag_on_read` issues the GET with an `If-Match` on the captured ETag and
+    ///     rejects a response whose ETag drifted from it (see `ReadBufferFromS3`), which is atomic
+    ///     with respect to an overwrite.
+    /// The pin only takes effect when the captured metadata actually carries a non-empty `ETag`
+    /// (see `createReadBuffer`), and `GCS` accessed through the S3 API is documented to legitimately
+    /// return objects without one — so a `GCS`-provider client is not pinned even with the setting
+    /// on. Any other provider that unexpectedly yields an empty `ETag` at read time fails close in
+    /// `LazyRowsObjectIterator::validateObjectGeneration` instead of degrading to an unpinned read.
     /// For a mutable file on a backend that cannot pin the read, keep the single-pass plan.
-    const bool reread_is_generation_pinned = object_storage->getType() == ObjectStorageType::S3
-        && getContext()->getSettingsRef()[Setting::s3_validate_etag_on_read];
+    bool reread_is_generation_pinned = false;
+#if USE_AWS_S3
+    if (object_storage->getType() == ObjectStorageType::S3
+        && getContext()->getSettingsRef()[Setting::s3_validate_etag_on_read])
+    {
+        const auto s3_client = object_storage->tryGetS3StorageClient();
+        reread_is_generation_pinned = s3_client && s3_client->getProviderType() != S3::ProviderType::GCS;
+    }
+#endif
     if (!configuration->dataFilesAreImmutable() && !reread_is_generation_pinned)
         return false;
 

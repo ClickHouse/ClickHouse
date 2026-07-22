@@ -30,10 +30,12 @@ public:
     LazyRowsObjectIterator(
         std::vector<ObjectStorageLazyMaterializingRows::FileRows> files_,
         ObjectStoragePtr object_storage_,
-        bool etag_validated_on_read_)
+        bool etag_validated_on_read_,
+        bool data_files_are_immutable_)
         : files(std::move(files_))
         , object_storage(std::move(object_storage_))
         , etag_validated_on_read(etag_validated_on_read_)
+        , data_files_are_immutable(data_files_are_immutable_)
     {
     }
 
@@ -70,6 +72,20 @@ private:
         /// (see `ReadBufferFromS3`), which is race-free; an extra HEAD here would buy nothing.
         if (etag_validated_on_read && !captured->etag.empty())
             return;
+
+        /// A mutable file is only admitted to the lazy plan when the reread is pinned to the
+        /// captured ETag (see `ReadFromObjectStorageStep::canUseLazyMaterialization`). Reaching
+        /// this point means the storage returned no ETag for the object, so the GET cannot be
+        /// pinned, and a metadata probe below cannot close the probe-to-read race for a file that
+        /// may be overwritten in place — fail close instead of degrading to an unpinned read.
+        /// (For immutable data lake files the probe is a sufficient defensive check: a data file
+        /// identified by path is never overwritten, so there is no race to close.)
+        if (!data_files_are_immutable)
+            throw Exception(ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                "Lazy materialization: file {} cannot be pinned to the generation seen by the main reading pass "
+                "(the storage returned no ETag for it). "
+                "Rerun the query, or disable the query_plan_optimize_lazy_materialization_for_object_storage setting",
+                object.getPath());
 
         const auto & seen = *captured;
 
@@ -120,6 +136,7 @@ private:
     const std::vector<ObjectStorageLazyMaterializingRows::FileRows> files;
     const ObjectStoragePtr object_storage;
     const bool etag_validated_on_read;
+    const bool data_files_are_immutable;
     std::atomic<size_t> index = 0;
 };
 
@@ -201,7 +218,7 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
     const bool etag_validated_on_read = object_storage->getType() == ObjectStorageType::S3
         && context->getSettingsRef()[Setting::s3_validate_etag_on_read];
     auto iterator = std::make_shared<LazyRowsObjectIterator>(
-        std::move(rows->rows_in_files), object_storage, etag_validated_on_read);
+        std::move(rows->rows_in_files), object_storage, etag_validated_on_read, configuration->dataFilesAreImmutable());
 
     /// The rows of a file must be returned in ascending order, otherwise LazyMaterializingTransform
     /// would restore the original row order incorrectly.
