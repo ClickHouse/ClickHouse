@@ -28,3 +28,7 @@ full order head
 full order tail
 0
 3
+no limit, monotonic DESC, analyzer
+1
+no limit, monotonic DESC, old analyzer
+1

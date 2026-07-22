@@ -54,6 +54,14 @@ run "SELECT * FROM (SELECT w FROM merge_t ORDER BY w DESC LIMIT 2) SETTINGS enab
 echo 'full order tail'
 run "SELECT * FROM (SELECT w FROM merge_t ORDER BY w ASC LIMIT 2) SETTINGS enable_analyzer = 1"
 
+# Unbounded ORDER BY: no LIMIT means the SortingStep keeps no sort limit, a distinct code path.
+# 1 = the whole result is globally descending; a per-shard concatenation would break it because
+# shard 0 (max 297) sorts before shard 1 (min 1000) under narrowPipe.
+echo 'no limit, monotonic DESC, analyzer'
+run "SELECT arraySort(x -> -x, groupArray(w)) = groupArray(w) FROM (SELECT w FROM merge_t ORDER BY w DESC) SETTINGS enable_analyzer = 1"
+echo 'no limit, monotonic DESC, old analyzer'
+run "SELECT arraySort(x -> -x, groupArray(w)) = groupArray(w) FROM (SELECT w FROM merge_t ORDER BY w DESC) SETTINGS enable_analyzer = 0"
+
 ${CLICKHOUSE_CLIENT} --query "
 DROP TABLE merge_t;
 DROP TABLE dist;
