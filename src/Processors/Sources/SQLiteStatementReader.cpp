@@ -263,8 +263,12 @@ void SQLiteStatementReader::insertValue(IColumn & column, const ColumnReadInfo &
             assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(sqlite3_column_int64(statement, idx)));
             break;
         case ValueType::vtUInt64:
-            /// There is no uint64 in sqlite3, only int and int64.
-            assert_cast<ColumnUInt64 &>(column).insertValue(sqlite3_column_int64(statement, idx));
+            /// SQLite has no unsigned 64-bit integer type, so the sink writes `UInt64` as text to preserve
+            /// values above the signed 64-bit range (see `bindSQLiteValue`). `sqlite3_column_int64` would
+            /// clamp such a cell to `INT64_MAX`, so read it back as text and parse the whole unsigned range.
+            /// A value that fit in signed 64-bit and was stored as INTEGER still renders as its decimal text
+            /// here, so this path round-trips both cases.
+            insertTextValue(column, info, statement, idx);
             break;
         case ValueType::vtInt8:
             assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(sqlite3_column_int(statement, idx)));

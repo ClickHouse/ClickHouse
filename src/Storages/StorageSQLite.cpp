@@ -273,12 +273,25 @@ Pipe StorageSQLite::read(
         query = buildQueryForExternalDatabaseSubquery(remote_table_or_query.getQuery(), column_names, IdentifierQuotingStyle::DoubleQuotesStandard);
     }
     else
+    {
+        /// Use all physical columns (ordinary + the MATERIALIZED generated columns) as the pushdown-eligible
+        /// set: SQLite can filter on generated columns too, so a `WHERE` over them is still pushed down.
+        ///
+        /// `UInt64` is the exception. SQLite has no unsigned 64-bit integer type, so the sink writes `UInt64`
+        /// as text to preserve values above the signed 64-bit range (see `bindSQLiteValue`). SQLite then
+        /// compares such a text-stored number lexicographically and orders every text value after every
+        /// numeric one, so a numeric predicate pushed down verbatim would match the wrong rows: `WHERE u = 5`
+        /// never matches the text cell `'5'`, and `WHERE u > 2` treats `'10'` as smaller than `'2'`. Exclude
+        /// `UInt64` columns from the eligible set so ClickHouse applies those predicates locally instead.
+        NamesAndTypesList pushdown_columns;
+        for (const auto & column : storage_snapshot->metadata->getColumns().getAllPhysical())
+            if (!WhichDataType(removeLowCardinalityAndNullable(column.type)).isUInt64())
+                pushdown_columns.push_back(column);
+
         query = transformQueryForExternalDatabase(
             query_info,
             column_names,
-            /// Use all physical columns (ordinary + the MATERIALIZED generated columns) as the pushdown-eligible
-            /// set: SQLite can filter on generated columns too, so a `WHERE` over them is still pushed down.
-            storage_snapshot->metadata->getColumns().getAllPhysical(),
+            pushdown_columns,
             /// SQLite has no escape sequences inside quoted identifiers or string literals: an embedded quote
             /// is doubled and every other byte - a backslash or a control character such as `\n`/`\t` - stays
             /// literal. The ClickHouse-style backslash escaping of `DoubleQuotes`/`Regular` (and even the
@@ -290,6 +303,7 @@ Pipe StorageSQLite::read(
             "",
             remote_table_or_query.getTableName(),
             context_);
+    }
     LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;
