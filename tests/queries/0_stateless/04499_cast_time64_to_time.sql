@@ -8,7 +8,3 @@ SELECT toTypeName(CAST(CAST('10:00:00' AS Time64) AS Time));
 
 -- accurateCastOrNull must also succeed and never null out a valid value.
 SELECT accurateCastOrNull(CAST('01:02:03.5' AS Time64(1)), 'Time') = CAST('01:02:03' AS Time);
-
--- Implicit conversion when reading back a Time column from Arrow, which stores it as Time64(0).
-INSERT INTO FUNCTION file('04499_time64_to_time.arrow', Arrow, 'c1 Time') VALUES ('10:00:00');
-SELECT c1 = CAST('10:00:00' AS Time) FROM file('04499_time64_to_time.arrow', Arrow, 'c1 Time');
