@@ -5,7 +5,9 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVariant.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Settings.h>
@@ -33,6 +35,7 @@
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -107,8 +110,8 @@ constexpr size_t max_probe_combinations = 256;
 /// The carriers do not have to be the argument's top-level type: a consumer over `Array(Dynamic)` or
 /// `Tuple(UInt32, Variant(...))` builds fine (the container's default value is empty/NULL, so the nested
 /// consumer never runs) yet still rebuilds its inner functions per stored payload during TTL execution.
-/// So the materialization recurses through `Array`/`Tuple`/`Map` (and `Variant` alternatives), wrapping
-/// each nested payload back into a single-row container column.
+/// So the materialization recurses through `Array`/`Tuple`/`Map`/`Nullable` (and `Variant` alternatives),
+/// wrapping each nested payload back into a single-row container column.
 std::vector<ColumnPtr> collectSuspectMaterializations(const DataTypePtr & type, std::string_view expression_kind)
 {
     WhichDataType which(type);
@@ -268,6 +271,19 @@ std::vector<ColumnPtr> collectSuspectMaterializations(const DataTypePtr & type, 
         return result;
     }
 
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        /// A carrier can hide under a Nullable wrapper too (e.g. `Nullable(Tuple(UInt32, Dynamic))` with
+        /// `enable_nullable_tuple_type`). The default Nullable row is NULL, so a consumer over it
+        /// short-circuits and never sees the nested payload; wrap each of them into a non-NULL row instead.
+        auto nested = collectSuspectMaterializations(nullable_type->getNestedType(), expression_kind);
+        std::vector<ColumnPtr> result;
+        result.reserve(nested.size());
+        for (const auto & payload : nested)
+            result.push_back(ColumnNullable::create(IColumn::mutate(payload), ColumnUInt8::create(1, UInt8(0))));
+        return result;
+    }
+
     return {};
 }
 
@@ -306,7 +322,8 @@ std::vector<ColumnPtr> collectSuspectMaterializations(const DataTypePtr & type, 
 /// `allow_suspicious_ttl_expressions` setting and ATTACH remain available as escape hatches.
 ///
 /// Both carriers can also sit *inside* a container argument - `Array(Dynamic)`, `Tuple(Dynamic)`,
-/// `Map(String, Dynamic)`, or a `Variant` nested in any of them. The container's default value is empty
+/// `Map(String, Dynamic)`, `Nullable(Tuple(..., Dynamic))`, or a `Variant` nested in any of them. The
+/// container's default value is empty
 /// (or NULL), so a consumer that processes the elements (e.g. the `equals` built inside `arrayRemove`)
 /// never sees a payload during a default-value probe, yet still rebuilds per stored payload during TTL
 /// execution. The suspect materializations therefore recurse through the container types and wrap each
