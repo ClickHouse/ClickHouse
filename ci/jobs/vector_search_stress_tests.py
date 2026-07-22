@@ -272,7 +272,7 @@ test_params_hackernews_10m_rabitq = {
     HNSW_M: None,
     HNSW_EF_CONSTRUCTION: None,
     HNSW_EF_SEARCH: None,
-    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: 1,  # rescoring multiplier
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: 5,  # rescoring multiplier
     TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
     GENERATE_TRUTH_SET: False,
     NEW_TRUTH_SET_FILE: None,
@@ -294,7 +294,7 @@ test_params_cohere_wiki_20m_rabitq = {
     HNSW_M: None,
     HNSW_EF_CONSTRUCTION: None,
     HNSW_EF_SEARCH: None,
-    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: 1,  # rescoring multiplier
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: 5,  # rescoring multiplier
     TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_VECTOR,
     GENERATE_TRUTH_SET: False,
     NEW_TRUTH_SET_FILE: None,
