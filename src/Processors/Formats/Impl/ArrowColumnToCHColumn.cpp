@@ -2503,7 +2503,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         auto nullable_type = makeNullableAllowingArray(nested_column.type);
         auto nullable_column = ColumnNullable::create(nested_column.column, nullmap_column);
 
-        return {std::move(nullable_column), std::move(nullable_type), column_name};
+        return {nullable_column, nullable_type, column_name};
     }
 
     return readNonNullableColumnFromArrowColumn(arrow_column,

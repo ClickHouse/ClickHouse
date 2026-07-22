@@ -162,7 +162,7 @@ String buildStructuredSubstreamNameSuffix(const SubstreamPath & path)
 
     if (last_type == Substream::NullMap || last_type == Substream::NullMapHidden)
     {
-        const String path_context = getStructuredPathPrefixInRange(path, 0, path_size - 1);
+        String path_context = getStructuredPathPrefixInRange(path, 0, path_size - 1);
 
         if (array_elements_count == 0)
             return path_context + ".null";
@@ -374,20 +374,20 @@ bool needsStructuredSubstreamNamesForPath(const SubstreamPath & path)
     bool has_dynamic_or_object_prefix = false;
     bool has_array_elements = false;
 
-    for (size_t i = 0; i < path.size(); ++i)
+    for (const auto & element : path)
     {
-        if (path[i].type == Substream::DynamicData
-            || path[i].type == Substream::ObjectTypedPath
-            || path[i].type == Substream::ObjectDynamicPath)
+        if (element.type == Substream::DynamicData
+            || element.type == Substream::ObjectTypedPath
+            || element.type == Substream::ObjectDynamicPath)
         {
             has_dynamic_or_object_prefix = true;
             has_array_elements = false;
         }
-        else if (path[i].type == Substream::ArrayElements)
+        else if (element.type == Substream::ArrayElements)
         {
             has_array_elements = true;
         }
-        else if (path[i].type == Substream::NullMap && has_array_elements && has_dynamic_or_object_prefix)
+        else if (element.type == Substream::NullMap && has_array_elements && has_dynamic_or_object_prefix)
         {
             return true;
         }

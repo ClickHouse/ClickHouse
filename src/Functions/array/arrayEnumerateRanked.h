@@ -287,7 +287,8 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     {
         if (!row_null_map)
             row_null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
-        return ColumnNullable::create(std::move(result_nested_array), std::move(row_null_map));
+        ColumnPtr row_null_map_column = std::move(row_null_map);
+        return ColumnNullable::create(result_nested_array, row_null_map_column);
     }
     return result_nested_array;
 }

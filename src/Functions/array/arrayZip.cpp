@@ -162,7 +162,8 @@ public:
             {
                 if (!null_map)
                     null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
-                return ColumnNullable::create(std::move(result), std::move(null_map));
+                ColumnPtr null_map_column = std::move(null_map);
+                return ColumnNullable::create(result, null_map_column);
             }
             return result;
         }
@@ -173,7 +174,8 @@ public:
             {
                 if (!null_map)
                     null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
-                return ColumnNullable::create(std::move(result), std::move(null_map));
+                ColumnPtr null_map_column = std::move(null_map);
+                return ColumnNullable::create(result, null_map_column);
             }
             return result;
         }
