@@ -91,23 +91,28 @@ def push_with_pat(
     strict: bool = True,
     retries: int = 3,
 ) -> bool:
-    """Push `refspec` to `origin` as robot-clickhouse using the robot PAT.
+    """Push `refspec` to `origin` as robot-clickhouse using the robot commit PAT.
 
     This restores how the pre-Praktika `tests/ci/create_release.py` pushed
-    release refs: a `git push origin` authenticated by the robot PAT that the
-    `ClickHouse/checkout` step persisted as `origin`'s
+    release refs: a `git push origin` authenticated by the robot-clickhouse
+    commit PAT that the `ClickHouse/checkout` step persisted as `origin`'s
     `http.https://github.com/.extraheader` (from `ROBOT_CLICKHOUSE_COMMIT_TOKEN`).
-    The robot identity is allowed to push to the protected release branches and
-    the release tag.
+    That PAT carries the `workflow` scope and is the identity allowed to push to
+    the protected release branches and the release tag.
 
     On master `release_job.py` drops that extraheader and hands git the `gh`
     credential helper, whose Praktika session authenticates as the GitHub App
-    -- which branch protection rejects on release refs. So push the release refs
-    with the robot PAT explicitly: `$GH_TOKEN` is the robot PAT
-    (`release_job.py` sources it from the SSM parameter `/github-tokens/robot-1`).
-    Unlike `Git.push`, there is deliberately no `$(gh auth token)` App fallback:
-    if the PAT is not exported the push fails closed (`${GH_TOKEN:?...}`) rather
-    than silently pushing as the App. The inherited http extraheader is cleared
+    -- which the release-branch rules reject. So push the release refs with the
+    robot commit PAT explicitly, taken from `$ROBOT_CLICKHOUSE_COMMIT_TOKEN`:
+    the workflow injects it as a job env var from the `robot_token_secret`
+    GH secret (see `ci/workflows/create_release.py`). This is deliberately NOT
+    `$GH_TOKEN`, which `release_job.py` sets to a generic robot token from the
+    SSM parameter `/github-tokens/robot-1` (used for `gh` API calls) -- a
+    different identity that need not carry the release-push permissions.
+
+    There is deliberately no fallback: if the PAT is not exported the push
+    fails closed (`${ROBOT_CLICKHOUSE_COMMIT_TOKEN:?...}`) rather than silently
+    pushing as another identity. The inherited http extraheader is cleared
     per-command so the tokenized URL is what authenticates; the token expands at
     runtime and git redacts URL credentials, so it never reaches the log.
 
@@ -120,7 +125,7 @@ def push_with_pat(
     )
     force_flag = "--force " if force else ""
     push_cmd = (
-        'token="${GH_TOKEN:?GH_TOKEN (robot-clickhouse PAT) must be set to push protected release refs}" && '
+        'token="${ROBOT_CLICKHOUSE_COMMIT_TOKEN:?ROBOT_CLICKHOUSE_COMMIT_TOKEN must be set to push protected release refs}" && '
         "git -c http.https://github.com/.extraheader= push "
         f"{force_flag}{repo_url} {refspec}"
     )
