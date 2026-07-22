@@ -346,3 +346,113 @@ def test_ambiguous_zk_commit_kill_preserves_data(started_cluster):
         pool.close()
         pool.join()
         node1.query("DROP TABLE IF EXISTS amb_kill SYNC")
+
+
+def test_ambiguous_zk_commit_attach_keeps_part_in_table_path(started_cluster):
+    try:
+        node1.query(
+            "CREATE TABLE amb_attach (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/amb_attach', '0') ORDER BY tuple()"
+        )
+        node1.query("INSERT INTO amb_attach VALUES (1, '1'), (2, '2'), (3, '3')")
+        part_name = node1.query(
+            "SELECT name FROM system.parts WHERE table = 'amb_attach' AND active"
+        ).strip()
+        node1.query(f"ALTER TABLE amb_attach DETACH PART '{part_name}'")
+
+        node1.query(
+            "SYSTEM ENABLE FAILPOINT replicated_merge_tree_commit_zk_fail_after_op"
+        )
+        node1.query(
+            "SYSTEM ENABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
+        )
+
+        error = node1.query_and_get_error(
+            f"ALTER TABLE amb_attach ATTACH PART '{part_name}'",
+            settings={"insert_keeper_max_retries": 0},
+        )
+        assert "UNKNOWN_STATUS_OF_INSERT" in error
+
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
+        )
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_after_op"
+        )
+
+        assert node1.query("SELECT count() FROM amb_attach") == "3\n"
+        active_part_path = node1.query(
+            "SELECT path FROM system.parts WHERE table = 'amb_attach' AND active"
+        )
+        assert "/detached/" not in active_part_path
+        assert (
+            node1.query(
+                "SELECT count() FROM system.detached_parts WHERE table = 'amb_attach'"
+            )
+            == "0\n"
+        )
+        assert (
+            node1.query(
+                "SELECT lost_part_count FROM system.replicas WHERE table = 'amb_attach'"
+            )
+            == "0\n"
+        )
+    finally:
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
+        )
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_after_op"
+        )
+        node1.query("DROP TABLE IF EXISTS amb_attach SYNC")
+
+
+def test_ambiguous_zk_commit_restore_keeps_part_in_table_path(started_cluster):
+    backup_name = f"Memory('amb_restore_{uuid.uuid4().hex}')"
+
+    try:
+        node1.query(
+            "CREATE TABLE amb_restore (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/amb_restore', '0') ORDER BY tuple()"
+        )
+        node1.query("INSERT INTO amb_restore VALUES (1, '1'), (2, '2'), (3, '3')")
+        node1.query(f"BACKUP TABLE amb_restore TO {backup_name}")
+        node1.query("TRUNCATE TABLE amb_restore")
+
+        node1.query(
+            "SYSTEM ENABLE FAILPOINT replicated_merge_tree_commit_zk_fail_after_op"
+        )
+        node1.query(
+            "SYSTEM ENABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
+        )
+
+        error = node1.query_and_get_error(
+            f"RESTORE TABLE amb_restore FROM {backup_name}",
+            settings={"backup_restore_keeper_max_retries": 0},
+        )
+        assert "UNKNOWN_STATUS_OF_INSERT" in error
+
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
+        )
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_after_op"
+        )
+
+        assert node1.query("SELECT count() FROM amb_restore") == "3\n"
+        active_part_path = node1.query(
+            "SELECT path FROM system.parts WHERE table = 'amb_restore' AND active"
+        )
+        assert "tmp_restore_" not in active_part_path
+        assert (
+            node1.query(
+                "SELECT lost_part_count FROM system.replicas WHERE table = 'amb_restore'"
+            )
+            == "0\n"
+        )
+    finally:
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
+        )
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_after_op"
+        )
+        node1.query("DROP TABLE IF EXISTS amb_restore SYNC")
