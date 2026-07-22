@@ -610,17 +610,14 @@ SortingInputOrder buildInputOrderFromSortDescription(
             }
             else if (fixed_key_columns.contains(sort_column_node))
             {
-
-                if (next_sort_key == 0)
-                {
-                    // Disable virtual row optimization.
-                    // For example, when pk is (a,b), a = 1, order by b, virtual row should be
-                    // disabled in the following case:
-                    // 1st part (0, 100), (1, 2), (1, 3), (1, 4)
-                    // 2nd part (0, 100), (1, 2), (1, 3), (1, 4).
-
-                    can_optimize_virtual_row = false;
-                }
+                // Disable virtual row optimization: the key column is skipped without a matching
+                // ORDER BY column, so the later ORDER BY columns are no longer a contiguous key
+                // prefix and the virtual row DAG below would map them onto wrong key columns.
+                // A fixed first key is additionally ambiguous across parts, e.g. for pk (a, b),
+                // a = 1, order by b:
+                // 1st part (0, 100), (1, 2), (1, 3), (1, 4)
+                // 2nd part (0, 100), (1, 2), (1, 3), (1, 4).
+                can_optimize_virtual_row = false;
 
                 //std::cerr << "+++++++++ Found fixed key by match" << std::endl;
                 ++next_sort_key;

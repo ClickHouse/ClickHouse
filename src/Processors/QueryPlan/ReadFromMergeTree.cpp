@@ -3106,6 +3106,12 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     if (direction != 1 && query_info.isFinal())
         return false;
 
+    /// The virtual row conversion is built for the previously requested key prefix. If a later
+    /// optimization (e.g. distinct-in-order) requests a different prefix, the columns not covered
+    /// by the conversion would be filled with defaults, announcing a wrong merge boundary.
+    if (virtual_row_conversion && virtual_row_conversion->getRequiredColumnsWithTypes().size() != prefix_size)
+        virtual_row_conversion = nullptr;
+
     query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, read_limit);
     query_task_size_limit = query_limit ? query_limit : read_limit;
     reader_settings.read_in_order = true;
