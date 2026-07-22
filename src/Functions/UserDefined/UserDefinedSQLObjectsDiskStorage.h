@@ -38,7 +38,7 @@ private:
         const String & object_name,
         bool throw_if_not_exists) override;
 
-    void createDirectory();
+    void createDirectory(bool fsync);
     void loadObjectsImpl();
     ASTPtr tryLoadObject(UserDefinedSQLObjectType object_type, const String & object_name);
     ASTPtr tryLoadObject(UserDefinedSQLObjectType object_type, const String & object_name, const String & file_path, bool check_file_exists);

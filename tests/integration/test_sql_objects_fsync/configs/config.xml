@@ -1,0 +1,9 @@
+<clickhouse>
+    <!-- On-disk stores for all three SQL-object families, so their disk
+         storages (not the <memory/>-style overrides used elsewhere) are exercised. -->
+    <user_defined_path>/var/lib/clickhouse/user_defined/</user_defined_path>
+    <workload_path>/var/lib/clickhouse/workload/</workload_path>
+    <named_collections_storage>
+        <type>local</type>
+    </named_collections_storage>
+</clickhouse>

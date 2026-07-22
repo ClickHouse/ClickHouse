@@ -1,5 +1,8 @@
 #include <filesystem>
+#include <optional>
+#include <vector>
 #include <Core/Settings.h>
+#include <Disks/LocalDirectorySyncGuard.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
@@ -43,6 +46,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int SYNTAX_ERROR;
 }
 
 static const std::string named_collections_storage_config_path = "named_collections_storage";
@@ -52,6 +56,41 @@ namespace
     std::string getFileName(const std::string & collection_name)
     {
         return escapeForFileName(collection_name) + ".sql";
+    }
+
+    /// fsync the directory that holds `path` so a create/rename/remove of `path`
+    /// survives a power loss: an fsync of the file alone does not persist the
+    /// directory entry. A relative `path` with no directory part lives in the current
+    /// directory, so sync "." in that case rather than the empty string.
+    void fsyncParentDirectory(const std::string & path)
+    {
+        auto parent = fs::path(path).parent_path();
+        LocalDirectorySyncGuard sync_guard(parent.empty() ? "." : parent.string());
+    }
+
+    /// Creates `dir` (and any missing ancestors) and, when `fsync` is set, persists
+    /// every newly-created directory's entry in its parent so the first acknowledged
+    /// collection survives a power loss.
+    void createDirectoriesAndSync(const std::string & dir, bool fsync)
+    {
+        /// Strip a trailing separator so parent_path() walks real components.
+        fs::path normalized = dir;
+        if (!normalized.has_filename())
+            normalized = normalized.parent_path();
+
+        /// Collect the not-yet-existing components, deepest first, before creating them.
+        std::vector<fs::path> to_create;
+        if (fsync)
+            for (fs::path p = normalized; !p.empty() && p != p.parent_path() && !fs::exists(p); p = p.parent_path())
+                to_create.push_back(p);
+
+        fs::create_directories(normalized);
+        if (!fsync)
+            return;
+
+        /// Persist each new component's entry in its parent, shallowest first.
+        for (auto it = to_create.rbegin(); it != to_create.rend(); ++it)
+            fsyncParentDirectory(it->string());
     }
 }
 
@@ -73,6 +112,11 @@ public:
     virtual bool removeIfExists(const std::string & path) = 0;
 
     virtual bool isReplicated() const = 0;
+
+    /// Whether stored files are encrypted. When true, a parse failure while loading a
+    /// collection is treated as a wrong-key/corruption signal that must surface, rather
+    /// than a torn-plaintext-file to be skipped at startup.
+    virtual bool isEncrypted() const { return false; }
 
     virtual bool waitUpdate(size_t /* timeout */) { return false; }
 };
@@ -148,7 +192,9 @@ public:
                 file_name);
         }
 
-        fs::create_directories(root_path);
+        const bool fsync = getContext()->getSettingsRef()[Setting::fsync_metadata];
+
+        createDirectoriesAndSync(root_path, fsync);
 
         auto tmp_path = getPath(file_name + ".tmp");
         auto write_data = writeHook(data);
@@ -156,11 +202,21 @@ public:
         writeString(write_data, out);
 
         out.next();
-        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+        if (fsync)
             out.sync();
         out.close();
 
-        fs::rename(tmp_path, getPath(file_name));
+        /// Open the parent directory before the rename so its fd is guaranteed; the guard's
+        /// destructor fsyncs it after the rename, so the new directory entry survives a power
+        /// loss (an fsync of the file content alone does not persist the directory entry).
+        /// Opening before the mutation avoids committing the rename and then reporting a
+        /// failed DDL if the directory open were to fail.
+        const auto final_path = getPath(file_name);
+        std::optional<LocalDirectorySyncGuard> dir_sync_guard;
+        if (fsync)
+            dir_sync_guard.emplace(fs::path(final_path).parent_path().string());
+
+        fs::rename(tmp_path, final_path);
     }
 
     virtual std::string writeHook(const std::string & data) const
@@ -180,7 +236,18 @@ public:
 
     bool removeIfExists(const std::string & file_name) override
     {
-        return fs::remove(getPath(file_name));
+        const auto path = getPath(file_name);
+
+        /// Open the parent directory before the unlink so its fd is guaranteed; the guard's
+        /// destructor fsyncs it after the removal, so the deleted directory entry survives a
+        /// power loss (otherwise an acknowledged DROP could revert and resurrect the collection).
+        /// Opening before the unlink avoids committing the removal and then reporting a failed
+        /// DROP if the directory open were to fail.
+        std::optional<LocalDirectorySyncGuard> dir_sync_guard;
+        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+            dir_sync_guard.emplace(fs::path(path).parent_path().string());
+
+        return fs::remove(path);
     }
 
 protected:
@@ -393,6 +460,8 @@ public:
         algorithm = FileEncryption::parseAlgorithmFromString(config.getString("named_collections_storage.algorithm", "aes_128_ctr"));
     }
 
+    bool isEncrypted() const override { return true; }
+
     std::string readHook(const std::string & data) const override
     {
         ReadBufferFromString in(data);
@@ -497,6 +566,23 @@ NamedCollectionsMap NamedCollectionsMetadataStorage::getAll() const
                 continue;
             }
             throw;
+        }
+        catch (const Exception & e)
+        {
+            /// A single corrupt/torn local `.sql` file (e.g. a zero-byte file left by a power
+            /// loss with fsync_metadata=0) parses to a SYNTAX_ERROR. Skip and log it for plain
+            /// local storage instead of failing server startup, matching the UDF and workload
+            /// disk storages. Only unparseable content of plain local files is treated as
+            /// corruption: operational errors (I/O), every error on replicated storage, and
+            /// anything on encrypted storage (where a parse failure signals a wrong key, since
+            /// the key fingerprint is not validated before decryption) still propagate, so we
+            /// never silently drop a collection that is actually present.
+            if (storage->isReplicated() || storage->isEncrypted() || e.code() != ErrorCodes::SYNTAX_ERROR)
+                throw;
+            LOG_ERROR(getLogger("NamedCollectionsMetadataStorage"),
+                "Skipping named collection '{}': failed to parse, {}",
+                collection_name, e.message());
+            continue;
         }
     }
     return result;
