@@ -59,6 +59,11 @@ struct QueryPlanSerializationSettings
     /// Read settings updating only those present in the stream; missing ones keep defaults.
     void readBinary(ReadBuffer & in);
 
+    /// The minimum query plan serialization version required to serialize these settings without
+    /// loss, i.e. the version below which `writeChangedBinary` would silently drop a changed setting.
+    /// Returns the baseline version 1 when no version-gated setting differs from its default.
+    UInt64 getMinRequiredVersion() const;
+
     /// Generated operator[] overloads for each supported type category.
     QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 

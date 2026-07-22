@@ -78,7 +78,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool distributed_plan_execute_locally;
-    extern const SettingsBool enable_join_in_memory_compression;
 }
 
 namespace ErrorCodes
@@ -599,21 +598,23 @@ ExchangeLookupPtr createExchangeLookup(
 }
 
 
-static String serializeQueryPlan(const QueryPlan & query_plan, const Settings & settings)
+static String serializeQueryPlan(const QueryPlan & query_plan)
 {
     WriteBufferFromOwnString out;
     /// The stateless-worker task protocol carries no query-plan version negotiation, so the plan is
     /// serialized at the pinned version every deployed worker understands, not at this server's newest
     /// DBMS_QUERY_PLAN_SERIALIZATION_VERSION: a not-yet-upgraded worker in a rolling upgrade would
     /// reject a newer-versioned stream in QueryPlan::deserialize before executing the task.
-    /// Exception: version 3 cannot carry the in-memory join compression settings (writeChangedBinary
-    /// omits them), so when the query has explicitly opted into `enable_join_in_memory_compression`,
-    /// the plan is serialized at version 4 rather than silently dropping the feature on this path;
-    /// a not-yet-upgraded worker then fails closed with a clear unsupported-version error in
-    /// QueryPlan::deserialize instead of running the join without the requested compression.
-    UInt64 version = settings[Setting::enable_join_in_memory_compression]
-        ? DBMS_QUERY_PLAN_SERIALIZATION_VERSION
-        : DBMS_STATELESS_WORKER_QUERY_PLAN_SERIALIZATION_VERSION;
+    /// Exception: a fragment that carries a version-gated setting (e.g. the in-memory join compression
+    /// settings, which the pinned version's writeChangedBinary would otherwise silently drop) is
+    /// serialized at the higher version it requires, so the feature is not lost on this path. The
+    /// version is derived from the fragment itself, not from a session setting: a fragment with no
+    /// hash join (or none that changed a gated setting) stays at the pinned version and remains
+    /// byte-compatible for a not-yet-upgraded worker, while one that needs the newer version makes
+    /// such a worker fail closed with a clear unsupported-version error in QueryPlan::deserialize
+    /// instead of running the join without the requested compression.
+    UInt64 version = std::max<UInt64>(
+        DBMS_STATELESS_WORKER_QUERY_PLAN_SERIALIZATION_VERSION, query_plan.getRequiredSerializationVersion());
     query_plan.serialize(out, version);
     return out.str();
 }
@@ -862,7 +863,7 @@ protected:
         started_tasks.reserve(stage.tasks.size());
         started_threads.reserve(stage.tasks.size());
         DistributedQueryTaskDescription task_description;
-        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context->getSettingsRef());
+        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
 
         for (const auto & task : stage.tasks)
@@ -1512,7 +1513,7 @@ protected:
     {
         DistributedQueryTaskDescription task_description;
         task_description.initial_query_id = context->getCurrentQueryId();
-        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context->getSettingsRef());
+        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = context->getSettingsRef().changes();
 

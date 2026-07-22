@@ -169,6 +169,14 @@ void QueryPlanSerializationSettings::readBinary(ReadBuffer & in)
     impl->readBinary(in);
 }
 
+UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
+{
+    for (const auto & name : settings_since_version_4)
+        if (impl->isChanged(name))
+            return 4;
+    return 1;
+}
+
 QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
 }

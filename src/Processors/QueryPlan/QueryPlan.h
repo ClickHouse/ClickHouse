@@ -107,6 +107,12 @@ public:
 
     void serialize(WriteBuffer & out, size_t max_supported_version) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data = false);
+
+    /// The minimum query plan serialization version that serializes this plan without dropping any
+    /// version-gated step setting. Callers on a task path without version negotiation (e.g. the
+    /// stateless-worker path) can pin to a low baseline version and raise it to this value only for
+    /// fragments that actually carry a newer-versioned setting.
+    UInt64 getRequiredSerializationVersion() const;
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
 
     /// Serializes the query plan and store the result

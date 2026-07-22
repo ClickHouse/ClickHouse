@@ -65,3 +65,36 @@ TEST(QueryPlanSerializationSettings, JoinCompressionSettingsOmittedForOlderVersi
         EXPECT_EQ(old[QueryPlanSerializationSetting::join_decompressed_columns_cache_bytes].value, 128ull * 1024 * 1024);
     }
 }
+
+/// getMinRequiredVersion reports the lowest serialization version that keeps every changed setting.
+/// It drives the stateless-worker path, which has no version negotiation: only settings that a step
+/// actually changed away from their defaults raise the version above the baseline, so a fragment that
+/// touches no version-4 setting stays serializable for an older worker.
+TEST(QueryPlanSerializationSettings, MinRequiredVersion)
+{
+    /// Nothing changed, or only pre-version-4 settings changed: the baseline version is enough.
+    {
+        QueryPlanSerializationSettings settings;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
+
+        settings[QueryPlanSerializationSetting::max_bytes_in_join] = 777;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
+    }
+
+    /// Each version-4 setting, when changed from its default, requires version 4.
+    {
+        QueryPlanSerializationSettings settings;
+        settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = true;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+    }
+    {
+        QueryPlanSerializationSettings settings;
+        settings[QueryPlanSerializationSetting::max_memory_usage] = 12345;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+    }
+    {
+        QueryPlanSerializationSettings settings;
+        settings[QueryPlanSerializationSetting::join_decompressed_columns_cache_bytes] = 4096;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+    }
+}
