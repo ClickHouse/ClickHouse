@@ -653,14 +653,20 @@ void DatabaseMaterializedPostgreSQL::beforeDropDatabase(ContextPtr)
     /// replicated data, so the last-replica teardown of the shared slot/publication/marker has to be decided
     /// here - while the nested tables still exist - not after they are gone.
     ///
+    /// Only coordinated databases have anything to do here. Return before touching the startup task: in
+    /// non-coordinated mode this hook has no teardown to run, and `onDropDatabaseFailed` does not reactivate the
+    /// task for non-coordinated databases - so deactivating it here would leave a plain MaterializedPostgreSQL
+    /// database whose background startup had not run yet (attach/restart window) mounted but permanently not
+    /// synchronizing if the drop is then refused for an unrelated reason.
+    if (!isCoordinated())
+        return;
+
     /// Stop the background startup task first (outside `handler_mutex`, which `startSynchronization` also takes)
     /// so it can neither build the handler / create the nested tables concurrently with this teardown nor
     /// recreate them after it.
     startup_task->deactivate();
 
     std::lock_guard lock(handler_mutex);
-    if (!isCoordinated())
-        return;
 
     /// `coordinatedTeardownBeforeDataDrop` makes the last-replica decision fail-close: if Keeper is unreachable
     /// it throws, aborting the drop before any nested table is removed (retry once Keeper is reachable again); if
