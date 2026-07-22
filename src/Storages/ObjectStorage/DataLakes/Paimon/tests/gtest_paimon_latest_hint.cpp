@@ -207,6 +207,7 @@ TEST(PaimonLatestHint, ConcurrentSchemaZeroRewriteDoesNotCrash)
             }
             catch (...)
             {
+                /// Ok: a torn read throws a normal parse exception; the test only requires no abort.
             }
         }
     }
@@ -274,6 +275,7 @@ TEST(PaimonLatestHint, ConcurrentSnapshotRewriteDoesNotCrash)
             }
             catch (...)
             {
+                /// Ok: a torn read throws a normal parse exception; the test only requires no abort.
             }
         }
     }
