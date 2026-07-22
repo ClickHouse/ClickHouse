@@ -85,7 +85,8 @@ UInt64 QueryPlan::getRequiredSerializationVersion() const
     /// step on the receiver (see QueryPlanSerializationSettings::getMinRequiredVersion). This lets
     /// a caller on a path without version negotiation raise the version only for plans that
     /// actually need it, instead of keying off a session setting that may not correspond to
-    /// anything in this fragment.
+    /// anything in this fragment, and lets the negotiated path (serializeForReceiver) refuse a
+    /// receiver that is too old for this plan instead of silently dropping the newer settings.
     UInt64 version = 1;
     for (const auto & node : nodes)
     {
@@ -187,6 +188,20 @@ bool QueryPlan::isSerialized() const
 
 void QueryPlan::serializeForReceiver(WriteBuffer & out, size_t receiver_version) const
 {
+    /// Fail closed when the receiver is too old for this plan. Down-negotiating would omit the newer
+    /// settings from the stream (see QueryPlanSerializationSettings::writeChangedBinary) and silently
+    /// change the behavior of some step on the receiver - e.g. run a hash join without the requested
+    /// in-memory compression on a not-yet-upgraded shard - so refuse instead and let the caller retry
+    /// on another replica or the user disable the feature until the rolling upgrade finishes.
+    UInt64 required_version = getRequiredSerializationVersion();
+    if (receiver_version < required_version)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "The query plan requires serialization version {}, but the receiving server supports only version {}. "
+            "This can happen during a rolling upgrade of a cluster. "
+            "Disable the query features that require the newer version (e.g. `enable_join_in_memory_compression`) "
+            "or upgrade the receiving server",
+            required_version, receiver_version);
+
     /// Reuse the cached serialization only when the receiver understands the version it was cached at.
     /// Otherwise re-serialize on the fly at the receiver's (lower) version: a not-yet-upgraded replica
     /// in a rolling upgrade supports only an older plan serialization version and must receive a stream

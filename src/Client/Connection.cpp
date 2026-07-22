@@ -1127,6 +1127,9 @@ void Connection::sendQueryPlan(const QueryPlan & query_plan)
     /// the fly. In a mixed-version (rolling-upgrade) cluster, a receiver that only understands an older
     /// version must never get a newer-versioned stream (it would reject it), even when the plan was
     /// pre-serialized once at the local version and shared across connections (parallel replicas).
+    /// If the plan genuinely needs a version newer than the receiver supports (a step opted into a
+    /// feature the receiver does not know), serializeForReceiver throws instead of silently dropping
+    /// the feature on that receiver.
     query_plan.serializeForReceiver(*out, server_query_plan_serialization_version);
 }
 
