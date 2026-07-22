@@ -53,3 +53,21 @@ SELECT
     is_compiled AS IS_COMPILED,
     sortlen AS SORTLEN,
     pad_attribute AS PAD_ATTRIBUTE
+UNION ALL
+-- The `binary` pseudo-collation stamped on numeric and other non-string columns in the MySQL wire
+-- protocol result-set metadata (`getColumnDefinition`) and enumerated by `SHOW COLLATION`
+SELECT
+    'binary' AS collation_name,
+    collation_name AS COLLATION_NAME,
+    'binary' AS character_set_name,
+    63 AS id,
+    'Yes' AS is_default,
+    'Yes' AS is_compiled,
+    1 AS sortlen,
+    'NO PAD' AS pad_attribute,
+    character_set_name AS CHARACTER_SET_NAME,
+    id AS ID,
+    is_default AS IS_DEFAULT,
+    is_compiled AS IS_COMPILED,
+    sortlen AS SORTLEN,
+    pad_attribute AS PAD_ATTRIBUTE

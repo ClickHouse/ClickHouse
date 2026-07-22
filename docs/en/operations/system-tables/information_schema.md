@@ -392,7 +392,7 @@ Provides information about table indexes. Currently returns an empty result (no 
 
 ## COLLATIONS {#collations}
 
-Provides information about available collations. Contains the collations from [system.collations](../../operations/system-tables/collations.md) plus one MySQL-compatibility row for `utf8mb4_0900_ai_ci` — the collation that the MySQL protocol advertises in the handshake, in `SCHEMATA.DEFAULT_COLLATION_NAME`, and in `TABLES.TABLE_COLLATION` — so that a MySQL-aware client following the advertised collation into this view finds it.
+Provides information about available collations. Contains the collations from [system.collations](../../operations/system-tables/collations.md) plus two MySQL-compatibility rows: `utf8mb4_0900_ai_ci` — the collation that the MySQL protocol advertises in the handshake, in `SCHEMATA.DEFAULT_COLLATION_NAME`, and in `TABLES.TABLE_COLLATION` — and `binary` — the pseudo-collation that the MySQL protocol stamps on numeric and other non-string columns in result-set metadata — so that a MySQL-aware client following the advertised collations into this view finds them.
 
 Columns:
 

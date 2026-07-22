@@ -52,4 +52,9 @@ SELECT collation_name, character_set_name, id, is_default, is_compiled, sortlen,
 FROM information_schema.collations
 WHERE collation_name = 'utf8mb4_0900_ai_ci';
 
+SELECT '-- collations: the binary pseudo-collation stamped on non-string columns is discoverable';
+SELECT COLLATION_NAME, CHARACTER_SET_NAME, ID, IS_DEFAULT, IS_COMPILED, SORTLEN, PAD_ATTRIBUTE
+FROM INFORMATION_SCHEMA.COLLATIONS
+WHERE COLLATION_NAME = 'binary';
+
 DROP TABLE test_infoschema_compat;

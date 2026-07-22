@@ -18,3 +18,5 @@ s				\N
 utf8mb4_0900_ai_ci	utf8mb4	255	Yes	Yes	0	NO PAD
 -- collations: lowercase aliases resolve too
 utf8mb4_0900_ai_ci	utf8mb4	255	Yes	Yes	0	NO PAD
+-- collations: the binary pseudo-collation stamped on non-string columns is discoverable
+binary	binary	63	Yes	Yes	1	NO PAD

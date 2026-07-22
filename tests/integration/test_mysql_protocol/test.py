@@ -886,8 +886,12 @@ def test_collation_consistency(started_cluster):
 
     cursor = client.cursor(pymysql.cursors.DictCursor)
 
-    # SHOW COLLATION enumerates the advertised collation.
+    # SHOW COLLATION enumerates every collation the server stamps on the wire:
+    # the advertised one for strings and the binary pseudo-collation for non-string
+    # columns. Connector/NET builds its charset-id dictionary from this result, so
+    # a charset id missing here breaks reading any result set that uses it.
     cursor.execute("SHOW COLLATION")
+    collations = cursor.fetchall()
     assert {
         "Collation": "utf8mb4_0900_ai_ci",
         "Charset": "utf8mb4",
@@ -896,7 +900,16 @@ def test_collation_consistency(started_cluster):
         "Compiled": "Yes",
         "Sortlen": 0,
         "Pad_attribute": "NO PAD",
-    } in cursor.fetchall()
+    } in collations
+    assert {
+        "Collation": "binary",
+        "Charset": "binary",
+        "Id": 63,
+        "Default": "Yes",
+        "Compiled": "Yes",
+        "Sortlen": 1,
+        "Pad_attribute": "NO PAD",
+    } in collations
 
     # INFORMATION_SCHEMA.COLLATIONS contains it with the same charset and id.
     cursor.execute(

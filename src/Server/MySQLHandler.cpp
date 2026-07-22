@@ -259,10 +259,12 @@ static String killConnectionIdReplacementQuery(const String & query)
     return query;
 }
 
-/// Replace "SHOW COLLATION" with a response enumerating the collation the server actually
-/// advertises in the handshake and in result-set metadata (`CharacterSet::utf8mb4_0900_ai_ci`),
-/// in the shape MySQL uses for this statement. Previously this returned an empty set, so a client
-/// that followed the advertised collation into `SHOW COLLATION` got "not found".
+/// Replace "SHOW COLLATION" with a response enumerating every collation the server actually
+/// puts on the wire, in the shape MySQL uses for this statement: `utf8mb4_0900_ai_ci` (advertised
+/// in the handshake and stamped on string columns in result-set metadata) and `binary` (stamped on
+/// numeric and other non-string columns). The set must be complete: MySQL Connector/NET builds its
+/// charset-id dictionary from this result and fails on any `ColumnDefinition41.character_set` id
+/// missing from it (an empty result makes it skip the lookup, a partial one makes it throw).
 static String showCollationsReplacementQuery(const String & /*query*/)
 {
     return
@@ -273,6 +275,14 @@ static String showCollationsReplacementQuery(const String & /*query*/)
         " 'Yes' AS `Default`,"
         " 'Yes' AS `Compiled`,"
         " 0 AS `Sortlen`,"
+        " 'NO PAD' AS `Pad_attribute`"
+        " UNION ALL SELECT"
+        " 'binary' AS `Collation`,"
+        " 'binary' AS `Charset`,"
+        " 63 AS `Id`,"
+        " 'Yes' AS `Default`,"
+        " 'Yes' AS `Compiled`,"
+        " 1 AS `Sortlen`,"
         " 'NO PAD' AS `Pad_attribute`";
 }
 
@@ -567,11 +577,15 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr(session_context, false);
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
-        /// The charset must match the collation advertised in the handshake (`CharacterSet::utf8mb4_0900_ai_ci`):
-        /// every field is reported as `MYSQL_TYPE_STRING` here, and drivers that validate
-        /// `ColumnDefinition41.character_set` reject a session that mixes charset ids across packet types.
+        /// Report the same type, charset and flags as result-set metadata (`getColumnDefinition`) does
+        /// for this column, so `COM_FIELD_LIST` and a plain `SELECT` describe the column identically:
+        /// string columns as `utf8mb4_0900_ai_ci` strings (matching the handshake collation),
+        /// numeric and other non-string columns as `binary` with their native wire types.
+        ColumnDefinition type_definition = getColumnDefinition(column.name, column.type);
         ColumnDefinition column_definition(
-            database, packet.table, packet.table, column.name, column.name, CharacterSet::utf8mb4_0900_ai_ci, 100, ColumnType::MYSQL_TYPE_STRING, 0, 0, true
+            database, packet.table, packet.table, column.name, column.name,
+            type_definition.character_set, type_definition.column_length, type_definition.column_type,
+            type_definition.flags, type_definition.decimals, true
         );
         packet_endpoint->sendPacket(column_definition);
     }
