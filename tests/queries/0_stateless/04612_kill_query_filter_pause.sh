@@ -38,6 +38,6 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT filter_transform_pause"
 wait
 
 # Assert cancellation was detected, not normal completion
-grep -oF "QUERY_WAS_CANCELLED" "$output_file" || { echo "FAIL: query was not cancelled"; exit 1; }
+grep -qF "QUERY_WAS_CANCELLED" "$output_file" || { echo "FAIL: query was not cancelled"; exit 1; }
 
 echo "OK"

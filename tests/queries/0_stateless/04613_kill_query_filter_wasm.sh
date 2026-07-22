@@ -47,7 +47,7 @@ ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query
 wait
 
 # Assert cancellation was detected, not timeout
-grep -oF "QUERY_WAS_CANCELLED" "$output_file" || { echo "FAIL: query was not cancelled"; exit 1; }
+grep -qF "QUERY_WAS_CANCELLED" "$output_file" || { echo "FAIL: query was not cancelled"; exit 1; }
 
 # Clean up
 ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q "DROP FUNCTION IF EXISTS infinite_loop"
