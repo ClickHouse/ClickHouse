@@ -131,7 +131,7 @@ void applyParentNullMapToExtractedSubcolumn(
     /// promote it to `LowCardinality(Nullable(T))` in place. The extracted subcolumn's type is
     /// `LowCardinality(Nullable(T))` (see `create(DataTypePtr)`), so this keeps the (type, column) pair
     /// consistent even for ranges that contain no parent NULLs (handled before the early-out below).
-    if (auto * low_cardinality_to_promote = typeid_cast<ColumnLowCardinality *>(column.get());
+    if (auto * low_cardinality_to_promote = typeid_cast<ColumnLowCardinality *>(&column);
         low_cardinality_to_promote && !low_cardinality_to_promote->nestedIsNullable())
         low_cardinality_to_promote->convertDictionaryToNullableInplace();
 
