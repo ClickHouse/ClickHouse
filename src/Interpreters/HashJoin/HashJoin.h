@@ -523,6 +523,17 @@ public:
     /// `max_bytes_in_join` trigger is aggregated across slots via `setLogicalJoinTotalBytesCounter`.
     void setSharedMemoryUsageBaseline(std::atomic<Int64> * baseline) { shared_memory_usage_before_adding_blocks = baseline; }
 
+    /// When this HashJoin (or the `ConcurrentHashJoin` it is a slot of) is wrapped by a
+    /// `SpillingHashJoin` and `enable_join_in_memory_compression` is on, holds the wrapper's
+    /// effective spill threshold (`max_bytes_before_external_join`, with the ratio setting already
+    /// folded in). It arms the compression trigger in `shrinkStoredBlocksToFit` at the same point
+    /// the wrapper would otherwise switch to `GraceHashJoin` (`total * 2 >= threshold`): the wrapper
+    /// checks before each insert while compression runs at the end of the insert that crosses the
+    /// point, so a compressible build side shrinks below the threshold before the next insert's
+    /// switch check sees it - compression genuinely acts as the intermediate step before spilling
+    /// even when this threshold is the only configured memory budget.
+    void setExternalJoinThresholdForCompression(size_t threshold) { external_join_threshold_for_compression = threshold; }
+
     /// Streams the stored right-side blocks out of the join, one block per `next` call.
     /// Each call decompresses (when `enable_join_in_memory_compression` compressed the stored
     /// columns) and materializes a single block, destroying its stored source before returning,
@@ -651,6 +662,10 @@ private:
     /// See setSharedMemoryUsageBaseline. Null unless this instance is a `ConcurrentHashJoin` slot
     /// with `enable_join_in_memory_compression` on.
     std::atomic<Int64> * shared_memory_usage_before_adding_blocks = nullptr;
+
+    /// See setExternalJoinThresholdForCompression. Zero unless wrapped by a `SpillingHashJoin`
+    /// with `enable_join_in_memory_compression` on.
+    size_t external_join_threshold_for_compression = 0;
 
     std::vector<Sizes> key_sizes;
 

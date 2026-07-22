@@ -234,6 +234,12 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                     {
                         inner_hash_join->data->setLogicalJoinTotalBytesCounter(&global_total_bytes);
                         inner_hash_join->data->setSharedMemoryUsageBaseline(&shared_memory_usage_before_adding_blocks);
+                        /// When a `SpillingHashJoin` wraps us, arm the compression trigger at its
+                        /// spill threshold too, so a compressible build side compresses before the
+                        /// wrapper switches to `GraceHashJoin`. The trigger compares the logical
+                        /// join's total (via the counter above), matching the wrapper's own check.
+                        if (external_join_threshold_ > 0)
+                            inner_hash_join->data->setExternalJoinThresholdForCompression(external_join_threshold_);
                     }
                     inner_hash_join->local_total_bytes = inner_hash_join->data->getTotalByteCount();
                     global_total_bytes.fetch_add(inner_hash_join->local_total_bytes, std::memory_order_relaxed);

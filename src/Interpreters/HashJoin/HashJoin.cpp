@@ -1090,7 +1090,14 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
         if (logical_join_total_bytes)
             observed_bytes_in_join = std::max(observed_bytes_in_join, logical_join_total_bytes->load(std::memory_order_relaxed));
 
+        /// The `SpillingHashJoin` wrapper switches to `GraceHashJoin` (spills) when the stored size
+        /// reaches half of `max_bytes_before_external_join`, checking before each insert. With
+        /// `enable_join_in_memory_compression`, compression must get its chance first, so its trigger
+        /// uses the same comparison: it fires at the end of the insert that crosses the point, before
+        /// the next insert's switch check observes the (now reduced) size. Zero unless wrapped by a
+        /// `SpillingHashJoin` with compression on (see setExternalJoinThresholdForCompression).
         shrink_blocks = (max_total_bytes_in_join && observed_bytes_in_join > max_total_bytes_in_join / 2)
+            || (external_join_threshold_for_compression && observed_bytes_in_join * 2 >= external_join_threshold_for_compression)
             || (max_total_bytes_for_query && query_memory_usage_delta > max_total_bytes_for_query / 2);
         if (!shrink_blocks)
             return;

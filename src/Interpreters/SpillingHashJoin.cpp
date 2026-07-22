@@ -37,6 +37,13 @@ SpillingHashJoin::SpillingHashJoin(
     hash_join = std::make_shared<HashJoin>(
         table_join, right_sample_block_, any_take_last_row, /*reserve_num_=*/0, /*instance_id_=*/"",
         /*use_two_level_maps_=*/false, stats_collecting_params_);
+
+    /// With `enable_join_in_memory_compression`, compression must act as the intermediate step
+    /// before spilling: arm its trigger at this wrapper's spill threshold, so the stored blocks
+    /// compress at the end of the insert that reaches half of `max_bytes_before_external_join` -
+    /// before the pre-insert check in `addBlockToJoin` would switch to `GraceHashJoin`.
+    if (table_join->enableJoinInMemoryCompression())
+        hash_join->setExternalJoinThresholdForCompression(max_bytes_before_external_join);
 }
 
 SpillingHashJoin::SpillingHashJoin(
