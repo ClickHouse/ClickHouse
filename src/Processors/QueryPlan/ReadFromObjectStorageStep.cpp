@@ -29,6 +29,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool parallelize_output_from_storages;
+    extern const SettingsBool s3_validate_etag_on_read;
 }
 
 
@@ -207,6 +208,22 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
     /// time — e.g. a web origin) would fail close on that reread even without any concurrent
     /// overwrite, so keep it on the single-pass plan.
     if (!object_storage->supportsObjectGenerationComparison())
+        return false;
+
+    /// Even when the two generations are comparable, on most backends the second pass opens an
+    /// unconditional read: `AzureObjectStorage`, `HDFSObjectStorage` and the local disk ignore
+    /// `StoredObject::etag`, so a concurrent in-place overwrite between the metadata probe and the
+    /// read could still stitch together rows of two versions of the file. The reread is only
+    /// generation-safe when either:
+    ///   - the data files are immutable by the format's contract — a data lake never overwrites a
+    ///     data file in place, so a file identified by path is always the same generation; or
+    ///   - the backend pins the actual read to the captured generation — S3 with
+    ///     `s3_validate_etag_on_read` issues the GET with an `If-Match` on the captured ETag (see
+    ///     `ReadBufferFromS3`), which is atomic with respect to an overwrite.
+    /// For a mutable file on a backend that cannot pin the read, keep the single-pass plan.
+    const bool reread_is_generation_pinned = object_storage->getType() == ObjectStorageType::S3
+        && getContext()->getSettingsRef()[Setting::s3_validate_etag_on_read];
+    if (!configuration->dataFilesAreImmutable() && !reread_is_generation_pinned)
         return false;
 
 #if CLICKHOUSE_CLOUD

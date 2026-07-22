@@ -54,10 +54,14 @@ SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT k, s, arr FROM ${TABLE_FN}
 
 # `enable_analyzer` is pinned because lazy materialization requires the analyzer
 # (see `QueryPlanOptimizationSettings`), and some CI configurations run with the old analyzer.
+# `s3_validate_etag_on_read` is pinned because for plain (non-data-lake) object storage the lazy
+# reread is only generation-safe on `S3` with the ETag-pinned GET, so the optimization applies to
+# this Minio-backed `s3(...)` battery only with the ETag validation on.
 for enabled in 1 0; do
     echo "-- query_plan_optimize_lazy_materialization_for_object_storage = $enabled"
     ${CLICKHOUSE_CLIENT} \
         --enable_analyzer=1 \
+        --s3_validate_etag_on_read=1 \
         --query_plan_optimize_lazy_materialization=1 \
         --query_plan_max_limit_for_lazy_materialization=0 \
         --query_plan_optimize_lazy_materialization_for_object_storage="$enabled" \
