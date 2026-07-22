@@ -133,11 +133,6 @@ struct ProjectionDescription
     bool operator==(const ProjectionDescription & other) const;
     bool operator!=(const ProjectionDescription & other) const { return !(*this == other); }
 
-    /// One-line canonical form of this single projection used for backward-compatible equality
-    /// checks. Strips the redundant parentheses #92340 preserves in the projection's WITH/SELECT/
-    /// WHERE/GROUP BY/ORDER BY elements and INDEX key. See ProjectionsDescription::formatBackwardCompatibleOneLine.
-    String formatBackwardCompatibleOneLine() const;
-
     bool isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
 
     /**
@@ -179,14 +174,6 @@ struct ProjectionsDescription : public IHints<>
 
     /// Convert description to string
     String toString() const;
-
-    /// One-line canonical form used for backward-compatible equality checks. #92340 started
-    /// preserving redundant parentheses in projection expressions (`PROJECTION p (SELECT (b) ...)`,
-    /// `PROJECTION p INDEX (b) ...`), so the same projection stored by different versions formats to
-    /// different strings. This strips the artificial parentheses around the projection's WITH,
-    /// SELECT, WHERE, GROUP BY, ORDER BY elements and INDEX key so equal projections compare equal.
-    String formatBackwardCompatibleOneLine() const;
-
     /// Parse description from string
     static ProjectionsDescription parse(
         const String & str,

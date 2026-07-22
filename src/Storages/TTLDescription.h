@@ -140,18 +140,6 @@ struct TTLTableDescription
 
     /// Parse description from string
     static TTLTableDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_attach);
-
-    /// One-line canonical form of the whole TTL definition used for backward-compatible equality
-    /// checks. #92340 started preserving redundant parentheses (`TTL (d + INTERVAL 10 YEAR)`), so
-    /// the same TTL stored by different versions formats to different strings. This strips the
-    /// artificial parentheses from each TTL element's expression so `TTL d + ...` and
-    /// `TTL (d + ...)` compare equal, while genuinely different TTLs still differ.
-    String formatBackwardCompatibleOneLine() const;
-
-    /// Same canonicalization as `formatBackwardCompatibleOneLine`, but for an arbitrary TTL
-    /// definition AST (an `ASTExpressionList` of `ASTTTLElement`). Reused where the comparison
-    /// happens on a raw AST rather than a `TTLTableDescription` (e.g. `AlterCommand::isTTLAlter`).
-    static String formatDefinitionBackwardCompatibleOneLine(const ASTPtr & definition_ast);
 };
 
 }

@@ -12,7 +12,6 @@
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -420,9 +419,6 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
     {
         if (!primary_key_p.parse(pos, new_node, expected))
             return false;
-
-        /// The same canonical form as for the storage-level `PRIMARY KEY` clause.
-        ParserStorage::stripKeyClauseParentheses(new_node);
     }
     else if (s_foreign_key.ignore(pos, expected))
     {
@@ -594,28 +590,6 @@ bool ParserStorageOrderByClause::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     return true;
 }
 
-void ParserStorage::stripKeyClauseParentheses(const ASTPtr & clause)
-{
-    if (!clause)
-        return;
-
-    auto strip_element = [](const ASTPtr & element)
-    {
-        stripParenthesesUnlessAliased(element);
-        /// `ORDER BY (x) DESC` keeps the expression inside `ASTStorageOrderByElement`.
-        if (const auto * order_element = element->as<ASTStorageOrderByElement>(); order_element && !order_element->children.empty())
-            stripParenthesesUnlessAliased(order_element->children.front());
-    };
-
-    strip_element(clause);
-
-    /// A parenthesized key list is a `tuple` function whose arguments become the elements of the
-    /// key expression list, so parentheses around individual elements are redundant as well.
-    if (const auto * function = clause->as<ASTFunction>(); function && function->name == "tuple" && function->arguments)
-        for (const auto & argument : function->arguments->children)
-            strip_element(argument);
-}
-
 bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_engine(Keyword::ENGINE);
@@ -734,15 +708,6 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     // If any part of storage definition is found create storage node
     if (!storage_like)
         return false;
-
-    /// Parentheses around a whole storage key clause carry no meaning (`PARTITION BY (a)` is the
-    /// same as `PARTITION BY a`, and a parenthesized list is already a `tuple` function). Drop them
-    /// at parse time so SHOW CREATE displays the canonical form that older versions stored, keeping
-    /// cross-version metadata interchangeable. TTL and column expressions are canonicalized by their
-    /// metadata structures' backward-compatible comparison instead (see TTLTableDescription and
-    /// ColumnsDescription), so they are intentionally not stripped here.
-    for (const auto & key_clause : {partition_by, primary_key, order_by, sample_by, unique_key})
-        stripKeyClauseParentheses(key_clause);
 
     if (engine)
     {

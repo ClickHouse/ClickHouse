@@ -85,15 +85,4 @@ void ASTWithAlias::appendColumnNameWithoutAlias(WriteBuffer & ostr) const
     appendColumnNameImpl(ostr);
 }
 
-void stripParenthesesUnlessAliased(const ASTPtr & node)
-{
-    if (!node)
-        return;
-
-    if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(node.get()); with_alias && !with_alias->alias.empty())
-        return;
-
-    node->setParenthesized(false);
-}
-
 }

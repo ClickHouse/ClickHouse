@@ -5,6 +5,7 @@
 #include <shared_mutex>
 #include <Compression/CompressionFactory.h>
 #include <algorithm>
+#include <ranges>
 #include <functional>
 #include <unordered_map>
 #include <Core/Defines.h>
@@ -34,7 +35,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -138,15 +138,23 @@ ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) ///
 
 bool ColumnDescription::operator==(const ColumnDescription & other) const
 {
-    auto ast_to_str = [](const ASTPtr & ast) { return ast ? ast->formatWithSecretsOneLine() : String{}; };
-
+    /// The expressions are compared as ASTs (`sameAST`), not as formatted text, so a column
+    /// definition read back from stored metadata compares equal to the same definition written
+    /// by a server version with different formatting (e.g. `TTL (d + 1)` vs `TTL d + 1`).
+    /// Only explicit statistics are compared: implicit ones (and the auxiliary `data_type` of the
+    /// statistics description) exist only in memory and are not part of the stored definition.
     return name == other.name
         && type->equals(*other.type)
         && default_desc == other.default_desc
-        && statistics == other.statistics
-        && ast_to_str(codec) == ast_to_str(other.codec)
+        && statistics.hasSameExplicitStatistics(other.statistics)
+        && sameAST(codec, other.codec)
         && settings == other.settings
-        && ast_to_str(ttl) == ast_to_str(other.ttl);
+        && sameAST(ttl, other.ttl);
+}
+
+bool ColumnsDescription::operator==(const ColumnsDescription & other) const
+{
+    return std::ranges::equal(columns, other.columns);
 }
 
 static String formatASTStateAware(IAST & ast, IAST::FormatState & state)
@@ -1025,37 +1033,6 @@ String ColumnsDescription::toString(bool include_comments) const
 
     for (const ColumnDescription & column : columns)
         column.writeText(buf, ast_format_state, include_comments);
-
-    return buf.str();
-}
-
-String ColumnsDescription::formatBackwardCompatibleForComparison() const
-{
-    WriteBufferFromOwnString buf;
-    IAST::FormatState ast_format_state;
-
-    writeCString("columns format version: 1\n", buf);
-    DB::writeText(columns.size(), buf);
-    writeCString(" columns:\n", buf);
-
-    for (const ColumnDescription & column : columns)
-    {
-        /// Serialize a copy whose DEFAULT/MATERIALIZED/ALIAS/EPHEMERAL and per-column TTL
-        /// expressions have their redundant top-level parentheses stripped, so a column stored by a
-        /// version that preserved them (#92340) compares equal to the canonical form.
-        ColumnDescription canonical = column;
-        if (canonical.default_desc.expression)
-        {
-            canonical.default_desc.expression = canonical.default_desc.expression->clone();
-            stripParenthesesUnlessAliased(canonical.default_desc.expression);
-        }
-        if (canonical.ttl)
-        {
-            canonical.ttl = canonical.ttl->clone();
-            stripParenthesesUnlessAliased(canonical.ttl);
-        }
-        canonical.writeText(buf, ast_format_state, /* include_comment = */ false);
-    }
 
     return buf.str();
 }

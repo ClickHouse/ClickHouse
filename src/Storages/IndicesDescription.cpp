@@ -7,7 +7,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/extractKeyExpressionList.h>
@@ -240,39 +239,6 @@ String IndicesDescription::allToString() const
     ASTExpressionList list;
     for (const auto & index : *this)
         list.children.push_back(index.definition_ast);
-
-    return list.formatWithSecretsOneLine();
-}
-
-/// Strip the redundant parentheses around a single index expression (`INDEX ix (b * c)`) on a
-/// clone, so the same index stored by a version that preserved them (#92340) compares equal to
-/// the canonical form. Shared by the per-item and whole-collection canonical formatters.
-static ASTPtr strippedIndexDefinitionAST(const IndexDescription & index)
-{
-    auto cloned = index.definition_ast->clone();
-    if (auto * index_decl = cloned->as<ASTIndexDeclaration>())
-        stripParenthesesUnlessAliased(index_decl->getExpression());
-    return cloned;
-}
-
-String IndexDescription::formatBackwardCompatibleOneLine() const
-{
-    return strippedIndexDefinitionAST(*this)->formatWithSecretsOneLine();
-}
-
-String IndicesDescription::formatBackwardCompatibleOneLine(bool only_explicit) const
-{
-    if (empty())
-        return {};
-
-    ASTExpressionList list;
-    for (const auto & index : *this)
-    {
-        if (only_explicit && index.isImplicitlyCreated())
-            continue;
-
-        list.children.push_back(strippedIndexDefinitionAST(index));
-    }
 
     return list.formatWithSecretsOneLine();
 }

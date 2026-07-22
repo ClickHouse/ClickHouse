@@ -1,5 +1,6 @@
 #include <Parsers/ASTIndexDeclaration.h>
 
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
@@ -45,6 +46,16 @@ ASTPtr ASTIndexDeclaration::clone() const
     res->granularity = granularity;
 
     return res;
+}
+
+void ASTIndexDeclaration::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// `name` and `granularity` are not children, so the default implementation does not see them.
+    /// `part_of_create_index_query` only affects formatting and is deliberately not hashed.
+    hash_state.update(name.size());
+    hash_state.update(name);
+    hash_state.update(granularity);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 ASTPtr ASTIndexDeclaration::getExpression() const

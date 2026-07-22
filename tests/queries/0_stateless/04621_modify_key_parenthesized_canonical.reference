@@ -1,3 +1,0 @@
-CREATE TABLE default.t_modify_order_by_parens\n(\n    `x` UInt64,\n    `a` UInt64\n)\nENGINE = MergeTree\nPRIMARY KEY tuple()\nORDER BY a\nSETTINGS index_granularity = 8192
-CREATE TABLE default.t_modify_order_by_list_parens\n(\n    `a` UInt64,\n    `b` UInt64\n)\nENGINE = MergeTree\nPRIMARY KEY a\nORDER BY (a, b)\nSETTINGS index_granularity = 8192
-CREATE TABLE default.t_modify_sample_by_parens\n(\n    `a` UInt64\n)\nENGINE = MergeTree\nORDER BY a\nSAMPLE BY a\nSETTINGS index_granularity = 8192

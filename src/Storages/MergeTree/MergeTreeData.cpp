@@ -10190,25 +10190,23 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (my_snapshot->getColumns().getAllPhysical().sizeOfDifference(src_snapshot->getColumns().getAllPhysical()))
         throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Tables have different structure");
 
-    /// Compare keys by their backward-compatible canonical form, not the raw definition AST.
-    /// `a`, `(a)` and `tuple(a)` are the same key but format to different strings, so a syntactic
-    /// compare rejects them across versions that serialize the single-column form differently
-    /// (see #92340). formatBackwardCompatibleOneLine unwraps the tuple, strips redundant
-    /// parentheses, and keeps the per-column sort direction so `ORDER BY a` and `ORDER BY a DESC`
-    /// still differ.
-    if (my_snapshot->getSortingKey().formatBackwardCompatibleOneLine()
-        != src_snapshot->getSortingKey().formatBackwardCompatibleOneLine())
+    /// The definitions are compared as ASTs (`sameAST`, i.e. by `getTreeHash`), not as formatted
+    /// text, so equal keys whose stored form differs only in formatting are interchangeable:
+    /// versions with #92340 keep the redundant parentheses the user wrote (`PARTITION BY (a)`),
+    /// while older versions store the canonical `PARTITION BY a`. `extractKeyExpressionList`
+    /// additionally unwraps the optional `tuple(...)`, so `a` and `tuple(a)` are the same key,
+    /// while an explicit direction (`b DESC`) stays significant.
+
+    if (!sameAST(*extractKeyExpressionList(my_snapshot->getSortingKeyAST()), *extractKeyExpressionList(src_snapshot->getSortingKeyAST())))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different ordering");
 
-    if (my_snapshot->getPartitionKey().formatBackwardCompatibleOneLine()
-        != src_snapshot->getPartitionKey().formatBackwardCompatibleOneLine())
+    if (!sameAST(*extractKeyExpressionList(my_snapshot->getPartitionKeyAST()), *extractKeyExpressionList(src_snapshot->getPartitionKeyAST())))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different partition key");
 
     if (format_version != src_data->format_version)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different format_version");
 
-    if (my_snapshot->getPrimaryKey().formatBackwardCompatibleOneLine()
-        != src_snapshot->getPrimaryKey().formatBackwardCompatibleOneLine())
+    if (!sameAST(my_snapshot->getPrimaryKey().expression_list_ast, src_snapshot->getPrimaryKey().expression_list_ast))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different primary key");
 
     const auto check_definitions = [this](const auto & my_descriptions, const auto & src_descriptions)
@@ -10218,16 +10216,12 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
             (strict_match && my_descriptions.size() != src_descriptions.size()))
             return false;
 
-        /// Compare by the backward-compatible canonical form, not the raw definition AST: `(a)`,
-        /// `INDEX ix (b * c)` and `PROJECTION p (SELECT (b) ...)` are the same as their unparenthesized
-        /// form but format to different strings, so a syntactic compare rejects a semantically-equal
-        /// index/projection stored by a version that serializes the parentheses differently (#92340).
-        std::unordered_set<std::string> my_query_strings;
+        std::set<IASTHash> my_definition_hashes;
         for (const auto & description : my_descriptions)
-            my_query_strings.insert(description.formatBackwardCompatibleOneLine());
+            my_definition_hashes.insert(description.definition_ast->getTreeHash(/*ignore_aliases=*/ false));
 
         for (const auto & src_description : src_descriptions)
-            if (!my_query_strings.contains(src_description.formatBackwardCompatibleOneLine()))
+            if (!my_definition_hashes.contains(src_description.definition_ast->getTreeHash(/*ignore_aliases=*/ false)))
                 return false;
 
         return true;

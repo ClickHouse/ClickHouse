@@ -37,13 +37,6 @@ public:
     bool empty() const { return constraints.empty(); }
     String toString() const;
 
-    /// One-line canonical form used for backward-compatible equality checks. #92340 started
-    /// preserving redundant parentheses (`CONSTRAINT cc CHECK (a > 0)`), so the same constraint
-    /// stored by different versions formats to different strings. This strips the artificial
-    /// parentheses around each constraint expression so `CHECK a > 0` and `CHECK (a > 0)` compare
-    /// equal.
-    String formatBackwardCompatibleOneLine() const;
-
     static ConstraintsDescription parse(const String & str);
 
     enum class ConstraintType : UInt8

@@ -487,4 +487,17 @@ private:
     friend void intrusive_ptr_release(const IAST * p) noexcept;
 };
 
+/** Whether two expressions are the same, compared by their ASTs with `getTreeHash` (aliases are
+  * significant). Use this instead of comparing formatted text: the formatting logic can change for
+  * unrelated (e.g. aesthetic) reasons, and purely cosmetic AST state that does not participate in
+  * the tree hash — such as the `parenthesized` flag that remembers redundant parentheses around an
+  * expression — must not make equal definitions compare as different ones. This matters everywhere
+  * serialized, stored expressions (table metadata in ZooKeeper, `.sql` files) are compared to check
+  * whether a table definition was altered or changed unexpectedly.
+  */
+bool sameAST(const IAST & lhs, const IAST & rhs);
+
+/// Same, tolerating absent expressions: two absent expressions are equal.
+bool sameAST(const ASTPtr & lhs, const ASTPtr & rhs);
+
 }

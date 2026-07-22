@@ -167,6 +167,19 @@ void IAST::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases*/) con
 }
 
 
+bool sameAST(const IAST & lhs, const IAST & rhs)
+{
+    return lhs.getTreeHash(/*ignore_aliases=*/ false) == rhs.getTreeHash(/*ignore_aliases=*/ false);
+}
+
+bool sameAST(const ASTPtr & lhs, const ASTPtr & rhs)
+{
+    if (!lhs || !rhs)
+        return !lhs && !rhs;
+    return sameAST(*lhs, *rhs);
+}
+
+
 size_t IAST::checkDepthImpl(size_t max_depth) const
 {
     std::vector<std::pair<ASTPtr, size_t>> stack;

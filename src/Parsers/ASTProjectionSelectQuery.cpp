@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <IO/Operators.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTFunction.h>
@@ -46,6 +47,23 @@ ASTPtr ASTProjectionSelectQuery::clone() const
 #undef CLONE
 
     return res;
+}
+
+
+void ASTProjectionSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// The children carry different roles (SELECT list, GROUP BY, ...) recorded only in `positions`.
+    /// Without hashing the roles, `SELECT a GROUP BY b` and `SELECT a ORDER BY b` would hash equally.
+    for (auto expr : {Expression::WITH, Expression::SELECT, Expression::WHERE, Expression::GROUP_BY, Expression::ORDER_BY})
+    {
+        auto it = positions.find(expr);
+        if (it != positions.end())
+        {
+            hash_state.update(expr);
+            hash_state.update(it->second);
+        }
+    }
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 

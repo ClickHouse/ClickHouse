@@ -1780,7 +1780,7 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
         metadata_snapshot->add_minmax_index_for_numeric_columns,
         metadata_snapshot->add_minmax_index_for_string_columns,
         getContext());
-    bool is_metadata_equal = old_metadata.checkEquals(metadata_from_zk, metadata_snapshot->columns, metadata_snapshot->virtuals, getStorageID().getNameForLogs(), getContext(), /*check_index_granularity*/ true, strict_check, log.load());
+    bool is_metadata_equal = old_metadata.checkEquals(metadata_from_zk, getStorageID().getNameForLogs(), /*check_index_granularity*/ true, strict_check, log.load());
 
     if (metadata_version)
         *metadata_version = metadata_stat.version;
@@ -1789,12 +1789,7 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
     auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_prefix) / "columns", &columns_stat));
 
     const ColumnsDescription & old_columns = metadata_snapshot->getColumns();
-    /// Compare by the backward-compatible canonical form so that a column stored by an older version
-    /// (canonical `DEFAULT a + 1`) stays compatible with the parenthesized form (`DEFAULT (a + 1)`)
-    /// that #92340 started to preserve.
-    bool columns_equal = columns_from_zk == old_columns
-        || columns_from_zk.formatBackwardCompatibleForComparison() == old_columns.formatBackwardCompatibleForComparison();
-    if (columns_equal && is_metadata_equal)
+    if (columns_from_zk == old_columns && is_metadata_equal)
         return true;
 
     if (!strict_check && metadata_stat.version != 0)
@@ -6721,12 +6716,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
 
         const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, current_metadata);
-        /// `checkAndFindDiff` parses the metadata coming from the log entry, so it must resolve
-        /// expressions against the entry's columns (`columns_from_entry`), not the local ones. On a
-        /// combined `ALTER ADD COLUMN c ..., MODIFY ORDER BY (..., c)` the new key references a column
-        /// that is only present in the entry's columns; parsing it against the stale local columns
-        /// would throw `UNKNOWN_IDENTIFIER` and the metadata alter would retry forever.
-        auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, columns_from_entry, current_metadata->virtuals, getStorageID().getNameForLogs(), getContext());
+        auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, getStorageID().getNameForLogs());
         setTableStructure(table_id, alter_context, std::move(columns_from_entry), metadata_diff, entry.alter_version);
 
         auto applied_metadata_snapshot = getInMemoryMetadataPtr(getContext(), true);
@@ -6929,40 +6919,72 @@ void StorageReplicatedMergeTree::alter(
         auto current_metadata = getInMemoryMetadataPtr(query_context, false);
 
         ReplicatedMergeTreeTableMetadata future_metadata_in_zk(*this, current_metadata);
-        /// Each changed field below must be serialized to the same backward-compatible canonical form
-        /// the constructor above writes for unchanged fields, otherwise an ALTER would persist the
-        /// parenthesized form that #92340 preserves (`CHECK (a > 0)`, `SAMPLE BY (a)`, ...) while an
-        /// older replica stores and compares the canonical form (`CHECK a > 0`), causing METADATA_MISMATCH.
-        if (ast_to_str(future_metadata.sorting_key.definition_ast) != ast_to_str(current_metadata->sorting_key.definition_ast))
+
+        /// Whether an `ALTER` changed each field is decided by comparing the ASTs (`sameAST`),
+        /// not the formatted text, so restating the same definition in a differently formatted
+        /// form (e.g. with the redundant parentheses #92340 preserves) is not a change.
+        auto key_changed = [](const KeyDescription & lhs, const KeyDescription & rhs)
+        {
+            return !sameAST(extractKeyExpressionList(lhs.definition_ast), extractKeyExpressionList(rhs.definition_ast));
+        };
+
+        if (key_changed(future_metadata.sorting_key, current_metadata->sorting_key))
         {
             /// We serialize definition_ast as list, because code which apply ALTER (setTableStructure) expect serialized non empty expression
             /// list here and we cannot change this representation for compatibility. Also we have preparsed AST `sorting_key.expression_list_ast`
             /// in KeyDescription, but it contain version column for VersionedCollapsingMergeTree, which shouldn't be defined as a part of key definition AST.
             /// So the best compatible way is just to convert definition_ast to list and serialize it. In all other places key.expression_list_ast should be used.
-            future_metadata_in_zk.sorting_key = ReplicatedMergeTreeTableMetadata::formattedASTNormalized(extractKeyExpressionList(future_metadata.sorting_key.definition_ast));
+            future_metadata_in_zk.sorting_key = extractKeyExpressionList(future_metadata.sorting_key.definition_ast)->formatWithSecretsOneLine();
         }
 
-        if (ast_to_str(future_metadata.sampling_key.definition_ast) != ast_to_str(current_metadata->sampling_key.definition_ast))
-            future_metadata_in_zk.sampling_expression = ReplicatedMergeTreeTableMetadata::formattedASTNormalized(extractKeyExpressionList(future_metadata.sampling_key.definition_ast));
+        if (key_changed(future_metadata.sampling_key, current_metadata->sampling_key))
+            future_metadata_in_zk.sampling_expression = extractKeyExpressionList(future_metadata.sampling_key.definition_ast)->formatWithSecretsOneLine();
 
-        if (ast_to_str(future_metadata.partition_key.definition_ast) != ast_to_str(current_metadata->partition_key.definition_ast))
-            future_metadata_in_zk.partition_key = ReplicatedMergeTreeTableMetadata::formattedASTNormalized(extractKeyExpressionList(future_metadata.partition_key.definition_ast));
+        if (key_changed(future_metadata.partition_key, current_metadata->partition_key))
+            future_metadata_in_zk.partition_key = extractKeyExpressionList(future_metadata.partition_key.definition_ast)->formatWithSecretsOneLine();
 
-        if (ast_to_str(future_metadata.table_ttl.definition_ast) != ast_to_str(current_metadata->table_ttl.definition_ast))
-            /// formatBackwardCompatibleOneLine() already returns "" when the TTL was removed.
-            future_metadata_in_zk.ttl_table = future_metadata.getTableTTLs().formatBackwardCompatibleOneLine();
+        if (!sameAST(future_metadata.table_ttl.definition_ast, current_metadata->table_ttl.definition_ast))
+        {
+            if (future_metadata.table_ttl.definition_ast)
+                future_metadata_in_zk.ttl_table = future_metadata.table_ttl.definition_ast->formatWithSecretsOneLine();
+            else /// TTL was removed
+                future_metadata_in_zk.ttl_table = "";
+        }
 
-        String new_indices_str = future_metadata.secondary_indices.formatBackwardCompatibleOneLine(/* only_explicit = */ true);
-        if (new_indices_str != current_metadata->secondary_indices.formatBackwardCompatibleOneLine(/* only_explicit = */ true))
-            future_metadata_in_zk.skip_indices = new_indices_str;
+        auto explicit_index_definitions = [](const IndicesDescription & indices)
+        {
+            auto list = make_intrusive<ASTExpressionList>();
+            for (const auto & index : indices)
+                if (!index.isImplicitlyCreated())
+                    list->children.push_back(index.definition_ast);
+            return list;
+        };
 
-        String new_projections_str = future_metadata.projections.formatBackwardCompatibleOneLine();
-        if (new_projections_str != current_metadata->projections.formatBackwardCompatibleOneLine())
-            future_metadata_in_zk.projections = new_projections_str;
+        if (!sameAST(*explicit_index_definitions(future_metadata.secondary_indices),
+                     *explicit_index_definitions(current_metadata->secondary_indices)))
+            future_metadata_in_zk.skip_indices = future_metadata.secondary_indices.explicitToString();
 
-        String new_constraints_str = future_metadata.constraints.formatBackwardCompatibleOneLine();
-        if (new_constraints_str != current_metadata->constraints.formatBackwardCompatibleOneLine())
-            future_metadata_in_zk.constraints = new_constraints_str;
+        auto projection_definitions = [](const ProjectionsDescription & projections_description)
+        {
+            auto list = make_intrusive<ASTExpressionList>();
+            for (const auto & projection : projections_description)
+                list->children.push_back(projection.definition_ast);
+            return list;
+        };
+
+        if (!sameAST(*projection_definitions(future_metadata.projections), *projection_definitions(current_metadata->projections)))
+            future_metadata_in_zk.projections = future_metadata.projections.toString();
+
+        auto constraint_definitions = [](const ConstraintsDescription & constraints_description)
+        {
+            auto list = make_intrusive<ASTExpressionList>();
+            for (const auto & constraint : constraints_description.getConstraints())
+                list->children.push_back(constraint);
+            return list;
+        };
+
+        if (!sameAST(*constraint_definitions(future_metadata.constraints), *constraint_definitions(current_metadata->constraints)))
+            future_metadata_in_zk.constraints = future_metadata.constraints.toString();
 
         Coordination::Requests ops;
         size_t alter_path_idx = std::numeric_limits<size_t>::max();
@@ -11706,10 +11728,7 @@ void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(cons
             current_metadata->add_minmax_index_for_string_columns,
             getContext());
         const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, current_metadata);
-        /// Parse the ZooKeeper metadata against the columns that were stored together with it (see the
-        /// note at the other `checkAndFindDiff` call site), so a key/TTL/index/projection expression
-        /// that references a column only present in the ZooKeeper columns does not throw.
-        auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, columns_from_entry, current_metadata->virtuals, getStorageID().getNameForLogs(), getContext());
+        auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, getStorageID().getNameForLogs());
         auto adjusted_metadata = metadata_diff.getNewMetadata(columns_from_entry, current_metadata->virtuals, getContext(), *current_metadata);
         applyMetadataChangesToCreateQuery(create_query, adjusted_metadata, getContext(), false);
     }

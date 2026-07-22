@@ -21,6 +21,7 @@ public:
     String getID(char) const override { return "Projection"; }
 
     ASTPtr clone() const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {

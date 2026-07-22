@@ -36,6 +36,7 @@ public:
     String getID(char) const override { return "TTLElement"; }
 
     ASTPtr clone() const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     ASTPtr ttl() const { return getExpression(ttl_expr_pos); }
     ASTPtr where() const { return getExpression(where_expr_pos); }

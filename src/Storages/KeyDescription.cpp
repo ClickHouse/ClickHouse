@@ -224,33 +224,6 @@ ASTPtr KeyDescription::getOriginalExpressionList() const
     return expr_list;
 }
 
-namespace
-{
-    /// Drop the `parenthesized` flag from a key element and its children. The flag is set for
-    /// `PARTITION BY (a)` but not `PARTITION BY a`, so keeping it makes equal keys format
-    /// differently. Recurses into `ASTStorageOrderByElement` (from getOriginalExpressionList),
-    /// whose child holds the actual expression.
-    void stripArtificialParens(const ASTPtr & node)
-    {
-        if (!node)
-            return;
-        node->setParenthesized(false);
-        if (node->as<ASTExpressionList>() || node->as<ASTStorageOrderByElement>())
-            for (const auto & child : node->children)
-                stripArtificialParens(child);
-    }
-}
-
-String KeyDescription::formatBackwardCompatibleOneLine() const
-{
-    auto expr_list = getOriginalExpressionList();
-    if (!expr_list)
-        return "";
-    auto cloned = expr_list->clone();
-    stripArtificialParens(cloned);
-    return cloned->formatWithSecretsOneLine();
-}
-
 KeyDescription KeyDescription::buildEmptyKey()
 {
     KeyDescription result;
@@ -277,10 +250,9 @@ KeyDescription KeyDescription::parse(
     /// The artificial "(" + str + ")" wrapping above causes the parser to mark
     /// the resulting expression as parenthesized when there is exactly one element.
     /// Strip that flag so the formatter does not produce spurious parentheses
-    /// (e.g. `x` round-tripping as `(x)` in metadata comparisons). Metadata written by
-    /// versions that preserved user parentheses may also contain parenthesized key list
-    /// elements, so canonicalize them as well.
-    ParserStorage::stripKeyClauseParentheses(ast);
+    /// (e.g. `x` round-tripping as `(x)` in metadata comparisons).
+    if (ast)
+        ast->setParenthesized(false);
 
     return getKeyFromAST(ast, columns, virtuals, context);
 }

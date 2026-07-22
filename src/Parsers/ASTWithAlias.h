@@ -65,16 +65,5 @@ inline ASTPtr setAlias(ASTPtr ast, const String & alias)
     return ast;
 }
 
-/// Drops the top-level `parenthesized` flag from an expression unless the expression has an alias.
-///
-/// Used for expressions in DDL definition clauses (`PARTITION BY (a)`, `DEFAULT (a + 1)`,
-/// `CHECK (a > 0)`, `TTL (d + 1)`, ...) where parentheses around the whole expression are
-/// syntactically redundant and historically were dropped by the parser. Stored table metadata and
-/// its comparisons (between tables in `ATTACH PARTITION FROM`, between replicas in ZooKeeper)
-/// rely on that canonical form, so preserving the parentheses makes equal definitions compare as
-/// different ones. An aliased expression keeps the flag: without parentheses the alias could
-/// change the meaning of the surrounding clause, and formatters of these clauses emit the
-/// parentheses for aliased expressions regardless of the flag.
-void stripParenthesesUnlessAliased(const ASTPtr & node);
 
 }

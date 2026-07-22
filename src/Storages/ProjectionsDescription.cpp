@@ -23,7 +23,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
-#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -132,7 +131,8 @@ ProjectionsDescription ProjectionsDescription::clone() const
 
 bool ProjectionDescription::operator==(const ProjectionDescription & other) const
 {
-    return name == other.name && definition_ast->formatWithSecretsOneLine() == other.definition_ast->formatWithSecretsOneLine();
+    /// Compared as ASTs, not as formatted text (see `sameAST`).
+    return name == other.name && sameAST(definition_ast, other.definition_ast);
 }
 
 namespace
@@ -805,88 +805,6 @@ String ProjectionsDescription::toString() const
     ASTExpressionList list;
     for (const auto & projection : projections)
         list.children.push_back(projection.definition_ast);
-
-    return list.formatWithSecretsOneLine();
-}
-
-namespace
-{
-    /// Drop the redundant top-level parentheses of a projection SELECT / WITH element even when it
-    /// carries an alias. `stripParenthesesUnlessAliased` leaves aliased nodes untouched to keep the
-    /// `(expr) AS alias` round-trip stable, but older versions (pre-#92340) stored the alias without
-    /// the redundant parens (`b + 1 AS y`, not `(b + 1) AS y`), so for the backward-compatible
-    /// comparison form we clear the flag on the element's own node. This is safe: `decideParensEmission`
-    /// gates the redundant parens on `isParenthesized()`, while a subquery emits its own `(SELECT ...)`
-    /// and an operator chain keeps its inner precedence parens regardless of this flag.
-    void stripElementParensKeepingAlias(const ASTPtr & element)
-    {
-        if (element)
-            element->setParenthesized(false);
-    }
-
-    /// Strip the redundant top-level parentheses from every whole expression of a projection
-    /// definition (its WITH/SELECT/WHERE/GROUP BY/ORDER BY elements and, for a minmax projection, its
-    /// INDEX key list). Mirrors the parse-time canonicalization done for ordinary key clauses so
-    /// projections written by a version that preserved the parentheses (#92340) compare equal.
-    void stripProjectionParens(const ASTPtr & definition_ast)
-    {
-        auto * projection = definition_ast->as<ASTProjectionDeclaration>();
-        if (!projection)
-            return;
-
-        if (auto * select = projection->query ? projection->query->as<ASTProjectionSelectQuery>() : nullptr)
-        {
-            /// WITH and SELECT elements are always aliased (`(expr) AS name`), so
-            /// `stripParenthesesUnlessAliased` would be a no-op on them; clear the redundant parens
-            /// on the element itself while keeping the alias.
-            if (auto with_list = select->with())
-                for (const auto & element : with_list->children)
-                    stripElementParensKeepingAlias(element);
-
-            if (auto select_list = select->select())
-                for (const auto & element : select_list->children)
-                    stripElementParensKeepingAlias(element);
-
-            stripParenthesesUnlessAliased(select->where());
-
-            if (auto group_by = select->groupBy())
-                for (const auto & element : group_by->children)
-                    ParserStorage::stripKeyClauseParentheses(element);
-
-            /// ORDER BY is stored as a single expression (the element itself for one key, a `tuple`
-            /// function for several), so strip it as a whole key clause rather than per child.
-            ParserStorage::stripKeyClauseParentheses(select->orderBy());
-        }
-
-        /// `PROJECTION p INDEX (b) TYPE basic` keeps the key list in `index`.
-        if (projection->index)
-            for (const auto & element : projection->index->children)
-                stripParenthesesUnlessAliased(element);
-    }
-}
-
-String ProjectionDescription::formatBackwardCompatibleOneLine() const
-{
-    auto cloned = definition_ast->clone();
-    stripProjectionParens(cloned);
-    return cloned->formatWithSecretsOneLine();
-}
-
-String ProjectionsDescription::formatBackwardCompatibleOneLine() const
-{
-    if (empty())
-        return {};
-
-    ASTExpressionList list;
-    std::vector<ASTPtr> cloned_defs;
-    cloned_defs.reserve(projections.size());
-    for (const auto & projection : projections)
-    {
-        auto cloned = projection.definition_ast->clone();
-        stripProjectionParens(cloned);
-        cloned_defs.push_back(std::move(cloned));
-        list.children.push_back(cloned_defs.back());
-    }
 
     return list.formatWithSecretsOneLine();
 }

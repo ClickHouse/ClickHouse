@@ -44,12 +44,6 @@ struct ReplicatedMergeTreeTableMetadata
     ReplicatedMergeTreeTableMetadata() = default;
     explicit ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot);
 
-    /// Serializes a key expression to the canonical one-line form stored in ZooKeeper: normalizes
-    /// function names and strips the redundant `parenthesized` flag (`(a)` -> `a`). Exposed so the
-    /// ALTER metadata write path produces byte-identical key strings to this constructor, keeping
-    /// the form comparable with older replicas (see #92340).
-    static String formattedASTNormalized(const ASTPtr & ast);
-
     void read(ReadBuffer & in);
     /// Pure deserialization without any backward-compatibility normalization.
     static ReplicatedMergeTreeTableMetadata parseRaw(const String & s);
@@ -96,31 +90,28 @@ struct ReplicatedMergeTreeTableMetadata
         StorageInMemoryMetadata getNewMetadata(const ColumnsDescription & new_columns, const VirtualColumnsDescription & virtuals, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const;
     };
 
+    /// The comparisons below compare the serialized expression fields as ASTs (`sameAST`, i.e.
+    /// by `getTreeHash`), not as text: the stored form may have been written by a server version
+    /// whose formatting differs (e.g. versions with #92340 keep the redundant parentheses the
+    /// user wrote: `sorting key: (b)`). The fields are parsed purely syntactically and are not
+    /// resolved against any column set.
+
     bool checkEquals(
         const ReplicatedMergeTreeTableMetadata & from_zk,
-        const ColumnsDescription & columns,
-        const VirtualColumnsDescription & virtuals,
         const std::string & table_name_for_error_message,
-        ContextPtr context,
         bool check_index_granularity = true,
         bool strict_check = true,
         LoggerPtr logger = nullptr) const;
 
     Diff checkAndFindDiff(
         const ReplicatedMergeTreeTableMetadata & from_zk,
-        const ColumnsDescription & columns,
-        const VirtualColumnsDescription & virtuals,
         const std::string & table_name_for_error_message,
-        ContextPtr context,
         bool check_index_granularity = true) const;
 
 private:
     void checkImmutableFieldsEquals(
         const ReplicatedMergeTreeTableMetadata & from_zk,
-        const ColumnsDescription & columns,
-        const VirtualColumnsDescription & virtuals,
         const std::string & table_name_for_error_message,
-        ContextPtr context,
         bool check_index_granularity = true) const;
 
     bool index_granularity_bytes_found_in_zk = false;

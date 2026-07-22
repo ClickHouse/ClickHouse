@@ -109,6 +109,19 @@ bool ColumnStatisticsDescription::operator==(const ColumnStatisticsDescription &
     return types_to_desc == other.types_to_desc && data_type->equals(*other.data_type);
 }
 
+bool ColumnStatisticsDescription::hasSameExplicitStatistics(const ColumnStatisticsDescription & other) const
+{
+    auto explicit_types = [](const ColumnStatisticsDescription & desc)
+    {
+        std::vector<StatisticsType> types;
+        for (const auto & [type, single_description] : desc.types_to_desc)
+            if (!single_description.is_implicit)
+                types.push_back(type);
+        return types;
+    };
+    return explicit_types(*this) == explicit_types(other);
+}
+
 bool ColumnStatisticsDescription::empty() const
 {
     return types_to_desc.empty();

@@ -31,7 +31,6 @@
 #include <Storages/StorageDummy.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -43,6 +42,7 @@
 #include <Parsers/ASTSQLSecurity.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/extractKeyExpressionList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/typeid_cast.h>
@@ -1288,31 +1288,20 @@ bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
     {
         if (!metadata.table_ttl.definition_ast)
             return true;
-        /// If TTL had not been changed, do not require mutations. Compare in the backward-compatible
-        /// canonical form so a parentheses-only rewrite of a TTL stored by a version affected by
-        /// #92340 (`TTL (d + ...)` vs `TTL d + ...`) is not treated as a real change that would
+        /// If TTL had not been changed, do not require mutations. The expressions are compared
+        /// as ASTs, so restating the same TTL in a differently formatted form (e.g. with the
+        /// redundant parentheses #92340 preserves: `TTL (d + 1)` vs `TTL d + 1`) does not
         /// schedule an unnecessary `MATERIALIZE TTL` mutation.
-        return TTLTableDescription::formatDefinitionBackwardCompatibleOneLine(metadata.table_ttl.definition_ast)
-            != TTLTableDescription::formatDefinitionBackwardCompatibleOneLine(ttl);
+        return !sameAST(metadata.table_ttl.definition_ast, ttl);
     }
 
     if (!ttl || type != MODIFY_COLUMN)
         return false;
 
-    /// Column TTL expressions are compared with the same redundant top-level parentheses stripped
-    /// (`TTL (d + ...)` vs `TTL d + ...`), for the same #92340 backward-compatibility reason.
-    auto column_ttl_canonical = [] (const ASTPtr & ttl_ast)
-    {
-        auto cloned = ttl_ast->clone();
-        stripParenthesesUnlessAliased(cloned);
-        return cloned->formatWithSecretsOneLine();
-    };
-
     bool column_ttl_changed = true;
-    const auto new_column_ttl = column_ttl_canonical(ttl);
     for (const auto & [name, ttl_ast] : metadata.columns.getColumnTTLs())
     {
-        if (name == column_name && new_column_ttl == column_ttl_canonical(ttl_ast))
+        if (name == column_name && sameAST(ttl, ttl_ast))
         {
             column_ttl_changed = false;
             break;
@@ -1529,13 +1518,6 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
     auto columns = metadata.columns;
     std::unordered_set<String> columns_with_full_type_modify;
 
-    auto ast_to_str = [](const ASTPtr & query) -> String
-    {
-        if (!query)
-            return "";
-        return query->formatWithSecretsOneLine();
-    };
-
     for (size_t i = 0; i < size(); ++i)
     {
         auto & command = (*this)[i];
@@ -1675,7 +1657,9 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
         }
         else if (command.type == AlterCommand::MODIFY_ORDER_BY)
         {
-            if (ast_to_str(command.order_by) == ast_to_str(metadata.sorting_key.definition_ast))
+            /// Compared as ASTs of the extracted key expression lists, so `MODIFY ORDER BY (a)`
+            /// and `MODIFY ORDER BY tuple(a)` are no-ops on a table with `ORDER BY a`.
+            if (sameAST(extractKeyExpressionList(command.order_by), extractKeyExpressionList(metadata.sorting_key.definition_ast)))
                 command.ignore = true;
         }
     }

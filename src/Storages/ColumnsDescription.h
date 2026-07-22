@@ -160,7 +160,10 @@ public:
     /// NOTE Must correspond with Nested::flatten function.
     void flattenNested(); /// TODO: remove, insert already flattened Nested columns.
 
-    bool operator==(const ColumnsDescription & other) const { return toString(false) == other.toString(false); }
+    /// Column-by-column comparison (`ColumnDescription::operator==` compares the expressions as
+    /// ASTs, not as formatted text). Comments are not compared, matching the previous behavior
+    /// of comparing `toString(false)`.
+    bool operator==(const ColumnsDescription & other) const;
     bool operator!=(const ColumnsDescription & other) const { return !(*this == other); }
 
     auto begin() const { return columns.begin(); }
@@ -245,15 +248,6 @@ public:
     bool hasCompressionCodec(const String & column_name) const;
 
     String toString(bool include_comments) const;
-
-    /// One-line canonical form used for backward-compatible equality checks against metadata stored
-    /// by older versions. #92340 started preserving redundant parentheses in column DEFAULT/
-    /// MATERIALIZED/ALIAS/EPHEMERAL and per-column TTL expressions (`DEFAULT (a + 1)`), so the same
-    /// column stored by different versions serializes to different strings. This strips those
-    /// artificial parentheses so `DEFAULT a + 1` and `DEFAULT (a + 1)` compare equal. It is only for
-    /// comparison; the on-disk / SHOW CREATE form produced by toString() is intentionally unchanged.
-    String formatBackwardCompatibleForComparison() const;
-
     static ColumnsDescription parse(const String & str);
 
     size_t size() const
