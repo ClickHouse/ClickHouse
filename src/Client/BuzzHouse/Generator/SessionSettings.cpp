@@ -1699,8 +1699,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          },
          {},
          false)},
-    {"snappy_mode",
-     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return rg.nextBool() ? "'basic'" : "'framed'"; }, {"'basic'", "'framed'"}, false)},
     {"splitby_max_substrings_includes_remaining_string", trueOrFalseSettingNoOracle},
     {"stop_refreshable_materialized_views_on_startup", trueOrFalseSettingNoOracle},
     {"storage_file_read_method",
@@ -1914,6 +1912,18 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     if (fc.allow_transactions)
     {
         serverSettings.insert({{"implicit_transaction", trueOrFalseSettingNoOracle}});
+    }
+    if (!fc.dolor_server.has_value())
+    {
+        /// Dolor writes whole-file snappy File tables in the basic/Hadoop framing (the server
+        /// default), so flipping the decode mode would fail every read of them. Randomize only
+        /// when dolor is not in use; the oracle values would flip it behind the tables' back too.
+        serverSettings.insert(
+            {{"snappy_mode",
+              CHSetting(
+                  [](RandomGenerator & rg, FuzzConfig &) { return rg.nextBool() ? "'basic'" : "'framed'"; },
+                  {"'basic'", "'framed'"},
+                  false)}});
     }
 
     /// NonZeroUInt64 byte-size settings — must not receive 0
