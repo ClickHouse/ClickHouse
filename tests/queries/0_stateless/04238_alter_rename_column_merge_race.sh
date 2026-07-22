@@ -11,22 +11,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-# The race is deterministic here, not probabilistic. The `mt_select_parts_to_mutate_no_free_threads`
-# failpoint keeps the RENAME mutation from ever being selected, so the source parts stay physically
-# at the old column name while the metadata already carries the new one. `alter_sync = 0` returns
-# right after the metadata commit, and OPTIMIZE FINAL then merges the still-old parts under the new
-# metadata, applying the rename on-fly. That is exactly the window that dropped the renamed column.
-# The failpoint is disabled afterwards so the pending mutation can materialize before the final read
-# (reading the renamed column while its mutation is still pending returns NULL regardless of the fix,
-# because the merged part physically holds the new name while the read maps new->old). Same idiom as
-# 03830_vertical_merge_inject_column_after_drop.
+# The race is deterministic: the `mt_select_parts_to_mutate_no_free_threads` failpoint keeps the
+# RENAME mutation from being selected, so the source parts stay at the old column name while the
+# metadata already carries the new one, and OPTIMIZE FINAL merges them, applying the rename on-fly
+# - exactly the window that dropped the renamed column. The failpoint is disabled afterwards so the
+# pending mutation can materialize before the final read.
 
-# The final SELECT is only meaningful after the pending RENAME COLUMN mutation has materialized:
-# reading the renamed column while its mutation is still pending returns NULL regardless of the
-# fix. If the mutation does not finish within the budget (for example on a very busy worker),
-# report it as a timeout (print the still-pending rows and return 1) so it surfaces as such
-# instead of falling through to the pre-materialization NULL, which would look like a false
-# data-loss regression.
+# The final SELECT is meaningful only after the pending RENAME mutation has materialized (reading
+# the renamed column while it is still pending returns NULL regardless of the fix), so report a
+# timeout explicitly instead of falling through to a false data-loss failure.
 wait_mutation() {
     local table="$1"
     for _ in $(seq 1 200); do
@@ -38,9 +31,8 @@ wait_mutation() {
     return 1
 }
 
-# mt_select_parts_to_mutate_no_free_threads is server-global; clear it on every exit path so a
-# failure under `set -e` before an in-flow disable cannot leave it armed for the rest of the run.
-# The in-flow disables stay: the pending mutation only materializes once the failpoint is off.
+# The failpoint is server-global; clear it on every exit path so a failure under `set -e`
+# cannot leave it armed for the rest of the run.
 disable_failpoint() {
     ${CLICKHOUSE_CLIENT} --query="SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads" 2>/dev/null || true
 }
@@ -71,10 +63,9 @@ if [ "$count" != "6" ]; then
     exit 1
 fi
 
-# Phase 2: a Dynamic column with NO default (the residual facet this fix closes). The merge sees the
-# new name in metadata, finds it absent from the parts (they still hold the old name), and without
-# the fix expires and drops it from the merged part, so every value reads back as NULL. A default
-# would have refilled it (Phase 1); a Dynamic column has nothing to refill from.
+# Phase 2: a column with NO default (here Dynamic, but any type reproduces it). The merge finds the
+# new name absent from the parts and without the fix expires and drops it, so every value reads back
+# as NULL; with no default there is nothing to refill from (unlike Phase 1).
 ${CLICKHOUSE_CLIENT} --query="
     DROP TABLE IF EXISTS t_rename_merge_race_dynamic;
     SET allow_experimental_dynamic_type = 1;
@@ -104,12 +95,9 @@ if [ "$count" != "8" ]; then
     exit 1
 fi
 
-# Phase 3: the old name is re-added before the pending RENAME materializes. RENAME COLUMN a -> b is
-# a barrier, but a later non-barrier ADD COLUMN a does not wait for it, so the metadata can carry
-# both a and b while the parts still physically store only the pre-rename a. The merge must keep the
-# physical a bound to b only (its rename target) and default the re-added a; it must not bind the old
-# bytes to both names. Doing so would make the merged part carry both a and b off one physical column
-# and the pending rename mutation, finding b already present, aborts with a LOGICAL_ERROR.
+# Phase 3: the old name is re-added (ADD COLUMN a) before the pending RENAME a -> b materializes,
+# so the metadata carries both a and b while the parts still store only the pre-rename a. The merge
+# must bind the physical a to b only and default the re-added a, not bind the old bytes to both.
 ${CLICKHOUSE_CLIENT} --query="
     DROP TABLE IF EXISTS t_rename_merge_race_reuse;
     CREATE TABLE t_rename_merge_race_reuse (id UInt64, a String)
@@ -138,13 +126,10 @@ ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_rename_merge_race"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_rename_merge_race_dynamic"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_rename_merge_race_reuse"
 
-# Phase 4: mixed generations. Same setup as Phase 3, but a fresh insert lands after the RENAME and
-# the re-ADD, so a new part already physically stores b (and the re-added a) while the old part
-# still stores only the pre-rename a. A single merge can never see such a mix: parts on different
-# sides of a pending mutation have different current mutation versions and every merge predicate
-# refuses to merge them, so OPTIMIZE FINAL must be refused while the rename is pending. Once the
-# rename materializes, the merge must combine both generations without misbinding the old physical
-# a bytes to the re-added a.
+# Phase 4: mixed generations. Same as Phase 3, but a fresh insert after the RENAME and the re-ADD
+# creates a part that already stores b physically. Parts on different sides of a pending mutation
+# have different mutation versions, so OPTIMIZE FINAL must be refused while the rename is pending,
+# and the merge after materialization must not misbind the old physical a bytes to the re-added a.
 ${CLICKHOUSE_CLIENT} --query="
     DROP TABLE IF EXISTS t_rename_merge_race_mixed;
     CREATE TABLE t_rename_merge_race_mixed (id UInt64, a String)
@@ -186,12 +171,9 @@ fi
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_rename_merge_race_mixed"
 
-# Phase 5: a patch part (lightweight update) on the rename target. Same setup as Phase 3, plus a
-# lightweight UPDATE of b after the RENAME and the re-ADD, so a patch part carrying the new value of
-# b exists while the source parts still physically store only the pre-rename a. The merge under the
-# pending rename must not consume (and thereby not lose) that patch: patch selection is version-gated
-# in getPatchesToApplyOnMerge, so a post-rename patch is never applied to a merge over pre-rename
-# parts; it stays alive, is applied on read, and materializes only after the rename does.
+# Phase 5: a patch part (lightweight update) on the rename target. Same as Phase 3, plus a
+# lightweight UPDATE of b while the rename is pending. The merge must not consume (and lose) the
+# post-rename patch: patch selection is version-gated, so it survives and materializes later.
 ${CLICKHOUSE_CLIENT} --query="
     DROP TABLE IF EXISTS t_rename_merge_race_patch;
     CREATE TABLE t_rename_merge_race_patch (id UInt64, a String)

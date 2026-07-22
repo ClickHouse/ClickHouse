@@ -646,9 +646,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
 
-    /// Snapshot of pending mutations for the source parts. Fetched once here (the expired-columns
-    /// check below needs it) and reused when building `alter_conversions` later, so both observe the
-    /// same set of mutations. On-fly `RENAME COLUMN` is carried by this snapshot.
+    /// Snapshot of pending mutations for the source parts, fetched once and reused for
+    /// `alter_conversions` below, so the expired-columns check observes the same mutations.
     auto parts_info = MergeTreeData::getPartsSnapshotInfo(global_ctx->future_part->parts);
 
     MergeTreeData::IMutationsSnapshot::Params params
@@ -694,35 +693,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         for (const auto & storage_column : global_ctx->storage_columns)
             storage_column_names.emplace(storage_column.name);
 
-        /// A pending `RENAME COLUMN old -> new` is applied on-fly at read time: the metadata
-        /// (and therefore `storage_columns`) already carries `new`, while the source parts still
-        /// physically store `old`. Treat `new` as present whenever a part holds the matching
-        /// `old` name, so the merge does not wrongly expire and drop a renamed-but-not-yet-
-        /// materialized column. Without this, a merge that races an `ALTER RENAME COLUMN` on a
-        /// column with no default (e.g. `Dynamic`) silently loses its data (see #80648).
-        ///
-        /// Skip this when the source name `old` is itself a live storage column, which happens when
-        /// `old` was re-added by a later non-barrier `ADD COLUMN old` while the rename mutation is
-        /// still pending. In that case the physical `old` bytes belong to `new`, not to the re-added
-        /// column, and keeping `new` alive here would make the merged part carry both `old` and
-        /// `new` off the same physical column. The pending rename mutation then tries to rename
-        /// `old -> new` on a part that already has `new` and aborts. Falling back to the default
-        /// behavior (expire `new`) lets the rename mutation re-derive it and defaults the re-added
-        /// `old`, matching the pre-fix result for this case.
-        ///
-        /// A merge never sees a mix of parts from before and after the pending rename: all source
-        /// parts of one merge must have the same current mutation version (enforced by `canMergeParts`
-        /// in every merge predicate), so a part inserted after the rename — physically holding `new`
-        /// (and possibly the re-added `old`) — can only be merged with the pre-rename parts once the
-        /// rename mutation has materialized in all of them. Hence either every source part still
-        /// stores `old` (handled here), or none does and the rename map is empty.
-        ///
-        /// Patch parts (lightweight updates) cannot be dropped by this decision either: a patch
-        /// that updates the rename target is created after the pending rename mutation, so its
-        /// data version exceeds the rename's, and `getPatchesToApplyOnMerge` applies a patch to
-        /// a merge only when `max_patch_version <= next_mutation_version` of the source parts.
-        /// A merge over pre-rename parts therefore never consumes a post-rename patch; the patch
-        /// stays alive, is applied on read, and materializes only after the rename does.
+        /// A pending `RENAME COLUMN old -> new` is applied on-fly at read time: `storage_columns`
+        /// already carries `new`, while the source parts still physically store `old`. Treat `new`
+        /// as present whenever a part holds the matching `old` name, so the merge does not wrongly
+        /// expire and drop a not-yet-materialized rename target of a column with no default
+        /// expression (see #80648). If `old` is itself a live storage column (re-added while the
+        /// rename is pending), the physical data will belong to `new` only after the rename
+        /// materializes, so fall back to expiring `new` and let the rename mutation re-derive it.
         NameSet renamed_column_targets;
         for (const auto & part : global_ctx->future_part->parts)
         {
@@ -827,8 +804,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
     }
 
-    /// `parts_info`, `params` and `mutations_snapshot` are computed once above (before the
-    /// expired-columns check) and reused here for patches and `alter_conversions`.
     if (!patch_parts.empty())
     {
         LOG_DEBUG(ctx->log, "Will apply {} patches up to version {}", patch_parts.size(), global_ctx->future_part->part_info.getMutationVersion());
