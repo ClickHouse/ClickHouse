@@ -1185,7 +1185,6 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
             /// Per-entry isolation: log as `FlushError` (not `ParsingError`) with a real
             /// `flush_time`, via the `is_flush_error` path in `add_to_async_insert_log`.
             const auto exception_msg = getCurrentExceptionMessage(/*with_stacktrace=*/ false);
-            LOG_ERROR(logger, "Failed conversion for insert query id {}. {}", entry->query_id, exception_msg);
             add_to_async_insert_log(entry, exception_msg, /*num_rows=*/ 0, block->bytes(), /*is_flush_error=*/ true);
             entry->finish(std::current_exception());
             entry->resetChunk();
