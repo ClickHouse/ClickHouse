@@ -2384,17 +2384,6 @@ private:
                     }
                 }
 
-                if (format_settings.try_infer_ipv4)
-                {
-                    IPv4 ipv4_value;
-                    if (IPv4Node<JSONParser>::tryParse(ipv4_value, data))
-                    {
-                        encodeDataType(getDataTypesCache().getType("IPv4"), buf);
-                        writeBinary(ipv4_value, buf);
-                        return true;
-                    }
-                }
-
                 if (format_settings.try_infer_ipv6 && data.find(':') != std::string_view::npos)
                 {
                     IPv6 ipv6_value;
