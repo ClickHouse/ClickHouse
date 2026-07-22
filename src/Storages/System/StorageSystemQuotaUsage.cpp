@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemQuotaUsage.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -12,7 +11,6 @@
 #include <Access/QuotaUsage.h>
 #include <Access/Common/AccessFlags.h>
 #include <base/range.h>
-#include <algorithm>
 
 
 namespace DB
@@ -100,11 +98,11 @@ void StorageSystemQuotaUsage::fillData(MutableColumns & res_columns, ContextPtr 
     if (!access_control.doesSelectFromSystemDatabaseRequireGrant())
         context->checkAccess(AccessType::SHOW_QUOTAS);
 
-    auto usages = context->getQuotaUsages();
-    if (usages.empty())
+    auto usage = context->getQuotaUsage();
+    if (!usage)
         return;
 
-    fillDataImpl(res_columns, context, /* add_column_is_current = */ false, usages);
+    fillDataImpl(res_columns, context, /* add_column_is_current = */ false, {std::move(usage).value()});
 }
 
 
@@ -142,13 +140,11 @@ void StorageSystemQuotaUsage::fillDataImpl(
         column_max_null_map[quota_type_i] = &assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
     }
 
-    /// A user may be governed by several quotas at once, so `is_current` is set for every
-    /// quota enforced for the current user/context, not just one.
-    std::vector<UUID> current_quota_ids;
+    std::optional<UUID> current_quota_id;
     if (add_column_is_current)
     {
-        for (const auto & current_usage : context->getQuotaUsages())
-            current_quota_ids.push_back(current_usage.quota_id);
+        if (auto current_usage = context->getQuotaUsage())
+            current_quota_id = current_usage->quota_id;
     }
 
     auto add_row = [&](const String & quota_name, const UUID & quota_id, const String & quota_key, const QuotaUsage::Interval * interval)
@@ -157,8 +153,7 @@ void StorageSystemQuotaUsage::fillDataImpl(
         column_quota_key.insertData(quota_key.data(), quota_key.length());
 
         if (add_column_is_current)
-            column_is_current->push_back(
-                std::find(current_quota_ids.begin(), current_quota_ids.end(), quota_id) != current_quota_ids.end());
+            column_is_current->push_back(quota_id == current_quota_id);
 
         if (!interval)
         {
@@ -214,6 +209,3 @@ void StorageSystemQuotaUsage::fillDataImpl(
         add_rows(usage.quota_name, usage.quota_id, usage.quota_key, usage.intervals);
 }
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemQuotaUsage) }

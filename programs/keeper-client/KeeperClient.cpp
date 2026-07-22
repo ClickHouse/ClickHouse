@@ -745,7 +745,6 @@ int KeeperClient::main(const std::vector<String> & /* args */)
 }
 
 
-int mainEntryClickHouseKeeperClient(int argc, char ** argv);
 int mainEntryClickHouseKeeperClient(int argc, char ** argv)
 {
     try

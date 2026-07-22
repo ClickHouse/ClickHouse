@@ -364,28 +364,10 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         IMergeTreeDataPart::Checksums projection_checksums;
         try
         {
-            bool noop = false;
-            auto projection_storage = data_part_storage.getProjection(projection_file);
-
-            /// A projection part that failed to load before its columns were set (e.g. because of a
-            /// corrupted serialization.json) has an empty column list. Checking against it would
-            /// report a misleading "columns don't match" error and hide the real corruption, so
-            /// read the expected columns from the part's own columns.txt in that case. The current
-            /// projection metadata would not do: existing parts can legitimately lag behind it
-            /// after an ALTER (readable through alter conversions). If
-            /// columns.txt itself is unreadable, this throws the actual problem into the catch
-            /// below.
-            NamesAndTypesList projection_columns = projection->getColumns();
-            if (projection_columns.empty())
-            {
-                auto buf = projection_storage->readFile("columns.txt", read_settings, std::nullopt);
-                projection_columns.readText(*buf);
-                assertEOF(*buf);
-            }
-
+            bool noop;
             projection_checksums = checkDataPart(
-                projection, *projection_storage,
-                projection_columns, projection->getType(),
+                projection, *data_part_storage.getProjection(projection_file),
+                projection->getColumns(), projection->getType(),
                 projection->getFileNamesWithoutChecksums(),
                 read_settings, require_checksums, is_cancelled, noop, /* throw_on_broken_projection */false);
         }
@@ -498,9 +480,15 @@ IMergeTreeDataPart::Checksums checkDataPart(
         }
 
         ReadSettings read_settings;
-        read_settings.disableCaches();
-        read_settings.remote_fs_settings.prefetch = false;
-        read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+        read_settings.read_through_distributed_cache = false;
+        read_settings.enable_filesystem_cache = false;
+        read_settings.enable_filesystem_cache_log = false;
+        read_settings.enable_filesystem_read_prefetches_log = false;
+        read_settings.page_cache = nullptr;
+        read_settings.remote_fs_prefetch = false;
+        read_settings.page_cache_inject_eviction = false;
+        read_settings.use_page_cache_for_disks_without_file_cache = false;
+        read_settings.local_fs_method = LocalFSReadMethod::pread;
 
         try
         {

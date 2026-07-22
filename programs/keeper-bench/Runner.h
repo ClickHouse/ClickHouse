@@ -22,6 +22,14 @@ using Strings = std::vector<std::string>;
 struct BenchmarkContext
 {
 public:
+    void initializeFromConfig(const Poco::Util::AbstractConfiguration & config);
+
+    void startup(Coordination::ZooKeeper & zookeeper);
+    void cleanup(Coordination::ZooKeeper & zookeeper);
+
+    const TaggedPaths & getTaggedPaths() const { return tagged_paths; }
+
+private:
     struct Node
     {
         StringGetter name;
@@ -41,17 +49,6 @@ public:
         void dumpTree(int level = 0) const;
     };
 
-    void initializeFromConfig(const Poco::Util::AbstractConfiguration & config);
-
-    void startup(Coordination::ZooKeeper & zookeeper);
-    void cleanup(Coordination::ZooKeeper & zookeeper);
-
-    const TaggedPaths & getTaggedPaths() const { return tagged_paths; }
-    TaggedPaths & getTaggedPaths() { return tagged_paths; }
-    const std::vector<std::shared_ptr<Node>> & getRootNodes() const { return root_nodes; }
-    const Coordination::ACLs & getDefaultAcls() const { return default_acls; }
-
-private:
     static std::shared_ptr<Node> parseNode(const std::string & key, const Poco::Util::AbstractConfiguration & config);
 
     std::vector<std::shared_ptr<Node>> root_nodes;
@@ -65,7 +62,7 @@ class Runner
 private:
     struct alignas(DB::CH_CACHE_LINE_SIZE) ThreadState
     {
-        size_t thread_idx = 0;
+        size_t thread_idx;
         Stats thread_info;
     };
 

@@ -1,0 +1,11 @@
+<clickhouse>
+  <nb_models>
+    <model>
+      <name>zero_length_model</name>
+      <path>/etc/clickhouse-server/config.d/zero_length.bin</path>
+      <mode>byte</mode>
+      <n>1</n>
+      <alpha>1</alpha>
+    </model>
+  </nb_models>
+</clickhouse>

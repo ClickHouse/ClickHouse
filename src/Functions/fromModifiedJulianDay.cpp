@@ -23,7 +23,7 @@ namespace DB
     }
 
     template <typename Name, typename FromDataType, bool nullOnErrors>
-    class ExecutableFunctionFromModifiedJulianDay final : public IExecutableFunction
+    class ExecutableFunctionFromModifiedJulianDay : public IExecutableFunction
     {
     public:
         String getName() const override
@@ -82,7 +82,7 @@ namespace DB
     };
 
     template <typename Name, typename FromDataType, bool nullOnErrors>
-    class FunctionBaseFromModifiedJulianDay final : public IFunctionBase
+    class FunctionBaseFromModifiedJulianDay : public IFunctionBase
     {
     public:
         explicit FunctionBaseFromModifiedJulianDay(DataTypes argument_types_, DataTypePtr return_type_)
@@ -146,7 +146,7 @@ namespace DB
     };
 
     template <typename Name, bool nullOnErrors>
-    class FromModifiedJulianDayOverloadResolver final : public IFunctionOverloadResolver
+    class FromModifiedJulianDayOverloadResolver : public IFunctionOverloadResolver
     {
     public:
         static constexpr auto name = Name::name;

@@ -31,7 +31,7 @@ struct ParseDataTypeTestCase
     FieldVector expected_values;
 };
 
-static std::ostream & operator<<(std::ostream & ostr, const ParseDataTypeTestCase & test_case)
+std::ostream & operator<<(std::ostream & ostr, const ParseDataTypeTestCase & test_case)
 {
     return ostr << "ParseDataTypeTestCase{\"" << test_case.type_name << "\", " << test_case.values << "}";
 }
