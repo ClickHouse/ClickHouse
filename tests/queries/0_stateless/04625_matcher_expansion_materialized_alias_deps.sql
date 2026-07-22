@@ -64,11 +64,12 @@ SELECT count() FROM t_mat_chain WHERE m1 != a + 1000 OR m2 != a + 1001 OR m3 != 
 
 DROP TABLE t_mat_chain;
 
--- 3. An explicit `MATERIALIZE COLUMN` also recalculates its dependents. An explicit
---    `MODIFY COLUMN ... MATERIALIZED` is metadata-only, so old parts keep `m1 = a + 1`,
---    `m2 = (a + 1) * 10`; the subsequent `MATERIALIZE COLUMN m1` rewrites `m1 = a + 2`
---    and must bring `m2` along to `(a + 2) * 10`.
-SELECT '-- explicit MATERIALIZE COLUMN: dependents recalculated';
+-- 3. An explicit `MATERIALIZE COLUMN` rewrites only the named column; the user controls
+--    which columns to backfill and when. `MODIFY COLUMN ... MATERIALIZED` is metadata-only,
+--    so old parts keep `m1 = a + 1`, `m2 = (a + 1) * 10`; `MATERIALIZE COLUMN m1` rewrites
+--    `m1 = a + 2` and leaves `m2` untouched. Materializing both in one ALTER recalculates
+--    `m2` from the already recalculated `m1`.
+SELECT '-- explicit MATERIALIZE COLUMN: only the named column';
 DROP TABLE IF EXISTS t_mat_explicit;
 CREATE TABLE t_mat_explicit
 (
@@ -80,6 +81,10 @@ CREATE TABLE t_mat_explicit
 INSERT INTO t_mat_explicit (a) SELECT number FROM numbers(3);
 ALTER TABLE t_mat_explicit MODIFY COLUMN m1 UInt64 MATERIALIZED a + 2;
 ALTER TABLE t_mat_explicit MATERIALIZE COLUMN m1;
+
+SELECT a, m1, m2 FROM t_mat_explicit ORDER BY a;
+
+ALTER TABLE t_mat_explicit MATERIALIZE COLUMN m1, MATERIALIZE COLUMN m2;
 
 SELECT a, m1, m2 FROM t_mat_explicit ORDER BY a;
 

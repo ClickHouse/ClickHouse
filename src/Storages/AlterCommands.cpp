@@ -49,6 +49,7 @@
 #include <Common/randomSeed.h>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 
 #include <ranges>
 
@@ -2373,7 +2374,22 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
 
     /// Rematerializing a column changes its values, so `MATERIALIZED` columns that read it
     /// (directly or through an `ALIAS`) must be rematerialized as well. Close the set over
-    /// such dependents; the loop terminates because the set only grows.
+    /// such dependents; the loop terminates because the set only grows. Columns explicitly
+    /// modified or dropped by this ALTER are excluded for the same reason as above: an
+    /// explicit `MODIFY COLUMN ... MATERIALIZED` keeps the ordinary metadata-only semantics
+    /// even when its expression reads a rematerialized column. The closure runs over the new
+    /// metadata, so map the explicitly modified names through the renames of the same ALTER.
+    NameSet modified_new_names;
+    for (String name : modified_or_dropped)
+    {
+        for (const auto & [from, to] : renames)
+        {
+            if (name == from)
+                name = to;
+        }
+        modified_new_names.insert(name);
+    }
+
     NameSet changed(res.begin(), res.end());
     bool progress = true;
     while (progress)
@@ -2382,7 +2398,7 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
         for (const auto & column : new_metadata.columns)
         {
             if (column.default_desc.kind != ColumnDefaultKind::Materialized || !column.default_desc.expression
-                || changed.contains(column.name))
+                || changed.contains(column.name) || modified_new_names.contains(column.name))
                 continue;
 
             ASTPtr expanded = cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, new_metadata.columns, context);
@@ -2391,12 +2407,49 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
             if (!dependencies.empty())
             {
                 changed.insert(column.name);
-                res.push_back(column.name);
                 progress = true;
             }
         }
     }
-    return res;
+
+    /// Order the result topologically by dependencies: the generated `MATERIALIZE COLUMN`
+    /// mutation commands execute in separate sequential stages, so a column reading another
+    /// rematerialized column must come after it to see the recalculated values.
+    std::unordered_map<String, NameSet> deps_in_closure;
+    for (const auto & name : changed)
+    {
+        const auto & column = new_metadata.columns.get(name);
+        ASTPtr expanded = cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, new_metadata.columns, context);
+        NameSet dependencies;
+        collectAliasDependenciesFromAST(expanded, changed, dependencies);
+        dependencies.erase(name);
+        deps_in_closure[name] = std::move(dependencies);
+    }
+
+    Names ordered;
+    NameSet done;
+    while (ordered.size() < changed.size())
+    {
+        bool ordering_progress = false;
+        for (const auto & column : new_metadata.columns)
+        {
+            if (!changed.contains(column.name) || done.contains(column.name))
+                continue;
+
+            const auto & dependencies = deps_in_closure.at(column.name);
+            if (std::all_of(dependencies.begin(), dependencies.end(), [&](const String & dep) { return done.contains(dep); }))
+            {
+                ordered.push_back(column.name);
+                done.insert(column.name);
+                ordering_progress = true;
+            }
+        }
+
+        /// Cyclic default expressions are rejected when the metadata is created.
+        if (!ordering_progress)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cyclic dependency between MATERIALIZED columns {}", fmt::join(changed, ", "));
+    }
+    return ordered;
 }
 
 MutationCommands AlterCommands::getMutationCommands(

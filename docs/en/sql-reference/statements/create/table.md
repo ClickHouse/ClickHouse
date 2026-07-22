@@ -152,7 +152,7 @@ SELECT b FROM test;
 └─────────┘
 ```
 
-Matchers in stored expressions are re-expanded when the table schema changes. If an `ALTER` (for example, `ADD COLUMN`) changes the expansion of a matcher in the expression of an existing `MATERIALIZED` column, ClickHouse rematerializes that column with a `MATERIALIZE COLUMN` mutation, so values in existing parts do not diverge from newly inserted ones. Similarly, if the change affects the effective expression of a data skipping index (through an `ALIAS` column referenced by the index), the index is rebuilt, cleared, or the `ALTER` is rejected according to the `alter_column_secondary_index_mode` MergeTree setting.
+Matchers in stored expressions are re-expanded when the table schema changes. If an `ALTER` (for example, `ADD COLUMN`) changes the expansion of a matcher in the expression of an existing `MATERIALIZED` column, ClickHouse rematerializes that column with a `MATERIALIZE COLUMN` mutation, so values in existing parts do not diverge from newly inserted ones. Other `MATERIALIZED` columns that read a rematerialized column are rematerialized as well, except columns explicitly modified or dropped by the same `ALTER` — an explicit `MODIFY COLUMN ... MATERIALIZED` keeps the ordinary metadata-only semantics. Similarly, if the change affects the effective expression of a data skipping index (through an `ALIAS` column referenced by the index), the index is rebuilt, cleared, or the `ALTER` is rejected according to the `alter_column_secondary_index_mode` MergeTree setting.
 
 ### DEFAULT {#default}
 
