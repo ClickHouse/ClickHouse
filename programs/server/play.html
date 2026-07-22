@@ -8623,6 +8623,23 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun) {
     scheduleSave();
 }
 
+/// Order-insensitive equality of two parameter-value maps. A parameter's identity is its NAME;
+/// a map's key insertion order merely reflects which pipeline produced it — the placeholder
+/// order of the launched text (`pickRunParams`), the rebuilt inputs (`getParamValues` follows
+/// `currentQueryParams`, whose async rebuild can lag a reorder edit) or a saved snapshot — so
+/// reordering `SELECT {x:Int32}, {y:Int32}` placeholders must not read as a change of bindings.
+/// A `JSON.stringify` comparison would: it is sensitive to key insertion order, and the spurious
+/// mismatch drops `run=1` from a clean run's entry and keeps a clean tab looking dirty in
+/// `tabReflectsRun`.
+function sameParamValues(a, b)
+{
+    a = a || {};
+    b = b || {};
+    const a_names = Object.keys(a);
+    if (a_names.length !== Object.keys(b).length) return false;
+    return a_names.every(name => Object.prototype.hasOwnProperty.call(b, name) && a[name] === b[name]);
+}
+
 /// True when the tab's editor (query + params) still exactly matches the query/params that
 /// produced its current result, i.e. re-running the editor would reproduce what is shown. The
 /// editor-only history writers use it to decide whether to keep `run=1` on the entry: a shared
@@ -8647,7 +8664,7 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun) {
 function tabReflectsRun(tab) {
     return !!(tab && tab.result && tab.result.ran
         && tab.query === tab.result.query
-        && JSON.stringify(tab.params || {}) === JSON.stringify(tab.result.params || {})
+        && sameParamValues(tab.params, tab.result.params)
         && effectiveDatabase(selected_database) === effectiveDatabase(tab.result.database));
 }
 
@@ -8714,7 +8731,29 @@ function saveHistory(stateData, titleForDoc, tab) {
     /// shared link rerun different bindings than the result currently shown. `stateData.params`
     /// is the launch-time snapshot the run actually executed with (same comparison as
     /// `tabReflectsRun` uses against `result.params`).
-    const params_unchanged = JSON.stringify(tab.params || {}) === JSON.stringify(stateData.params || {});
+    ///
+    /// A bookkeeping artifact must not read as such an edit, though: `tab.params` can still carry
+    /// a binding for a placeholder a PRE-launch edit removed from the text (`updateQueryParams`'s
+    /// rebuild folds the surviving inputs into `tab.params`, but a rebuild racing the launch may
+    /// not have landed, and nothing else rewrites the map). While the editor still shows the
+    /// launched text (`query_unchanged`), the run's own derivation of that text (`stateData.params`,
+    /// see `pickRunParams`) is authoritative for which names exist, so prune the leftovers: they
+    /// must neither drop `run=1` from a clean rerun here nor leak stale `param_*` values into the
+    /// entry/URL written from `tab.params` below. A genuine mid-flight edit of a still-existing
+    /// input keeps its divergent VALUE in `tab.params` and still reads as changed. When the run
+    /// fell back to `param_sources` (no lexer / text too large) that snapshot is a superset of
+    /// `tab.params`, so the prune is a no-op — nothing is dropped on the fallback path.
+    if (query_unchanged && tab.params)
+    {
+        const launched = stateData.params || {};
+        const pruned = {};
+        for (const name of Object.keys(tab.params))
+        {
+            if (Object.prototype.hasOwnProperty.call(launched, name)) pruned[name] = tab.params[name];
+        }
+        tab.params = pruned;
+    }
+    const params_unchanged = sameParamValues(tab.params, stateData.params);
     /// The entry may be auto-runnable only when this run executed the FULL editor content its URL
     /// hash will carry ("Run" on a single-statement editor, "Run all", or a selection spanning
     /// every statement). A partial run — one statement of a multi-statement editor — writes the
@@ -11405,6 +11444,35 @@ function pickRunParams(params, sources)
     return values;
 }
 
+/// Fold the just-rebuilt `param_*` inputs into the ACTIVE tab's own parameter snapshot after a
+/// query edit changed the placeholder set (`updateQueryParams`'s rebuild and empty-query paths).
+/// `tab.params` is otherwise rewritten only by a trusted `param_*` edit, a capture, or a restore
+/// commit — none of which fire on a query edit — so without this a binding for a placeholder the
+/// edit REMOVED lingers in the map indefinitely and leaks into the entry/URL the next
+/// `saveHistory`/`writeHistoryEntry` writes from `tab.params` (e.g. `param_x=1` under a
+/// `SELECT 1` draft that no longer has `{x:Int32}`). When the map actually changed, also refresh
+/// the tab's current history entry in place: a placeholder-set change is a structural change to
+/// the parameter panel — the analogue of a `param_*` value edit, whose input handler writes
+/// history too — and it is what repairs an entry a completing run wrote from the stale map while
+/// this rebuild was still awaiting tokenization. Ordinary typing that leaves the placeholder set
+/// unchanged never reaches this (the rebuild is skipped), so the per-keystroke history contract
+/// is unaffected.
+///
+/// Skipped while a tab restore owns the inputs (`params_restore_pending_token`: the values still
+/// belong to the tab being left; the restore commits `tab.params` itself) and until startup
+/// reconciliation has settled (`bootstrap_settled`: `reconcileStartup` owns parameter restoration
+/// and the deferred `run=1`, and an early entry write here would cancel that run).
+function syncParamsAfterRebuild()
+{
+    if (params_restore_pending_token !== null || !bootstrap_settled) return;
+    const tab = getActiveTab();
+    if (!tab) return;
+    const rebuilt = getParamValues();
+    if (sameParamValues(tab.params, rebuilt)) return;
+    tab.params = rebuilt;
+    refreshCurrentHistoryEntry(tab);
+}
+
 /// Rebuild the syntax highlighting, run buttons and query-parameter inputs from the current
 /// editor text. Returns `true` when `currentQueryParams` now reflects that text (tokenized
 /// successfully, or the query is empty), and `false` when it could not be rebuilt (WASM lexer
@@ -11433,6 +11501,7 @@ async function updateQueryParams()
         currentQueryParams = [];
         updateRunButtons(false);
         updateQueryBackdrop('', [], []);
+        syncParamsAfterRebuild();
         return true;   /// the empty list correctly reflects a query with no parameters
     }
 
@@ -11536,6 +11605,7 @@ async function updateQueryParams()
         /// Trigger resize after the element is in the DOM so scrollWidth is valid.
         input.dispatchEvent(new Event('input'));
     }
+    syncParamsAfterRebuild();
     return true;   /// `currentQueryParams` now reflects the current query
 }
 

@@ -70,7 +70,7 @@ function extractTopLevel(header_re, name)
 /// DOM rendering, the per-tab run path and persistence I/O are stubbed below.
 const FUNCS = ['toBase64', 'fromBase64', 'nextDefaultTitle', 'uniqueTitle', 'tabRuntimeDefaults',
     'makeTab', 'nextRunId', 'getActiveTab', 'captureActiveTab', 'buildHistoryParams',
-    'writeHistoryEntry', 'tabReflectsRun', 'liveDivergedFromRun', 'effectiveDatabase',
+    'writeHistoryEntry', 'sameParamValues', 'tabReflectsRun', 'liveDivergedFromRun', 'effectiveDatabase',
     'sameServerAddress', 'effectiveConnectionUser', 'stampSelectedDatabaseConnection',
     'refreshCurrentHistoryEntry', 'saveHistory', 'syncHistory', 'resolveTabForState',
     'markBootstrapDirty', 'switchToTab', 'addTab', 'closeTab', 'scheduleSave', 'loadFromDb',
@@ -268,6 +268,28 @@ function setParam(name, value)
     if (tab) { tab.params = sandbox.getParamValues(); sandbox.syncHistory(); }
 }
 
+/// Bind a run's launch-time parameters the way the real run path does: `postOne`/`postAll`
+/// derive the parameter NAMES from the run's own tokenization of the launched text
+/// (`extractRunParamNames`, so the map follows the TEXT's placeholder set and order) and bind
+/// them to the values known for the launching tab (`pickRunParams` over the live inputs / the
+/// tab's saved params). A placeholder whose input was never touched still contributes '' (the
+/// rebuilt input exists and is empty), so a name is never silently dropped from the launch
+/// snapshot just because no value was typed. The full pipeline (real tokenizer,
+/// `updateQueryParams` rebuild, `resolveRunParams`) is pinned by the companion parameter test;
+/// here the same binding is modelled over the stub inputs so the snapshots `saveHistory`
+/// receives have the real shape.
+function launchParams(q)
+{
+    const values = {};
+    for (const m of q.matchAll(/\{([a-zA-Z_][a-zA-Z0-9_]*):/g))
+    {
+        const name = m[1];
+        if (values[name] === undefined)
+            values[name] = sandbox.param_inputs[name] !== undefined ? sandbox.param_inputs[name] : '';
+    }
+    return values;
+}
+
 /// A successful run: the editor holds the query, and `saveHistory` records the result snapshot and
 /// the history entry, as the run path does. `postOne`/`postAll` snapshot the launched editor into
 /// `tab.launchQuery` (and a fresh `launchRunId`) before the request, which `saveHistory` compares
@@ -278,7 +300,7 @@ async function run(q)
     const tab = active();
     tab.launchQuery = q;
     tab.launchRunId = sandbox.nextRunId();
-    await sandbox.saveHistory({ query: q, resultQuery: q, params: sandbox.getParamValues(), fullEditor: true, format: 'JSONCompact', ok: true, data: 'result of ' + q, elapsed_ns: 1,
+    await sandbox.saveHistory({ query: q, resultQuery: q, params: launchParams(q), fullEditor: true, format: 'JSONCompact', ok: true, data: 'result of ' + q, elapsed_ns: 1,
         /// Stamp the live connection the run executed against, exactly as `postSingle`/`postMulti` do,
         /// so the snapshot is recognized as reproducible on the current connection (`liveDivergedFromRun`
         /// false) and the entry keeps `run=1`; an unstamped snapshot is treated as diverged (fail closed).
@@ -295,7 +317,7 @@ async function runSelected(editorText, selectedStatement)
     const tab = active();
     tab.launchQuery = editorText;
     tab.launchRunId = sandbox.nextRunId();
-    await sandbox.saveHistory({ query: editorText, resultQuery: selectedStatement, params: sandbox.getParamValues(), fullEditor: false, format: 'JSONCompact', ok: true, data: 'result of ' + selectedStatement, elapsed_ns: 1,
+    await sandbox.saveHistory({ query: editorText, resultQuery: selectedStatement, params: launchParams(editorText), fullEditor: false, format: 'JSONCompact', ok: true, data: 'result of ' + selectedStatement, elapsed_ns: 1,
         database: sandbox.selected_database, url: sandbox.url_elem.value, user: sandbox.user_elem.value });
     await drain();
 }
@@ -310,7 +332,7 @@ function startRun(q)
     const tab = active();
     tab.launchQuery = q;
     tab.launchRunId = sandbox.nextRunId();
-    return { query: q, params: sandbox.getParamValues() };
+    return { query: q, params: launchParams(q) };
 }
 
 /// Complete a run started with `startRun`: `saveHistory` receives the LAUNCH-TIME snapshot, never

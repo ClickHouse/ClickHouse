@@ -1,0 +1,27 @@
+param run: the clean parameterized run carries run=1
+param run: the URL carries the binding
+removal edit: the removed placeholder leaves tab.params
+removal edit: the refreshed entry drops the stale param
+removal edit: the diverged editor drops run=1
+clean rerun after removal: run=1 is kept
+clean rerun after removal: no stale param_x in the URL
+clean rerun after removal: the entry params are empty
+reorder baseline: the clean run carries run=1
+reordered clean run: run=1 is kept
+reordered clean run: x keeps its value
+reordered clean run: y keeps its value
+reordered clean run: the tab still reflects its run
+reordered clean run: an editor-only rewrite keeps run=1
+immediate reordered run: run=1 is kept
+immediate reordered run: the tab reads clean once the rebuild lands
+mid-flight removal: tab.params follows the draft
+mid-flight removal: the draft entry has no stale param_x
+mid-flight removal: the draft entry has no run=1
+mid-flight removal: the completed result is kept
+completion before rebuild: the raced entry has no run=1
+completion before rebuild: the landing rebuild folds tab.params
+completion before rebuild: the landing rebuild repairs the entry
+completion before rebuild: the repaired entry still has no run=1
+completion before rebuild: the draft is intact
+completion before rebuild: the completed result is kept
+OK
