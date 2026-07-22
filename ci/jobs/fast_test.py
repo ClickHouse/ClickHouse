@@ -194,6 +194,7 @@ def main():
                 "clickhouse-format",
                 "clickhouse-obfuscator",
                 "clickhouse-su",
+                "ch",
             ):
                 Utils.link(resolved_clickhouse_bin_path, resolved_clickhouse_bin_path.parent / tool)
             Shell.check(f"chmod +x {resolved_clickhouse_bin_path}", strict=True)
