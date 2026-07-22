@@ -9426,7 +9426,8 @@ bool MergeTreeData::isPartInTTLDestination(const TTLDescription & ttl, const IMe
     return false;
 }
 
-CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_compressed, const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const
+CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(
+    size_t part_size_compressed, const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time, size_t part_size_not_yet_active) const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
 
@@ -9445,7 +9446,9 @@ CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_c
         /// turn `part_size / total` into `NaN` and make every `<compression>` case fail the
         /// `part_size_ratio >= min_part_size_ratio` check inside `CompressionCodecSelector`.
         /// Use a ratio of `0` in that case so the configuration with `min_part_size_ratio = 0` still applies.
-        auto total_active_size = getTotalActiveSizeInBytes();
+        /// A part on the metadata-load path is not counted in the total yet; add its size back so
+        /// the ratio matches what an ordinary write of this part would see once it is active.
+        auto total_active_size = getTotalActiveSizeInBytes() + part_size_not_yet_active;
         double part_size_ratio = total_active_size > 0
             ? static_cast<double>(part_size_compressed) / static_cast<double>(total_active_size)
             : 0.0;

@@ -1662,7 +1662,9 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
     /// the smallest-part case a zero size would always match. The part's TTL infos are deliberately not
     /// passed: resolving a matching `RECOMPRESS` codec into the part default would make the part look
     /// already recompressed (see `PartProperties::buildRecompressTTLInfo`) and suppress the recompression
-    /// merge.
+    /// merge. The part is not counted as active yet while its metadata loads, so its size is also
+    /// added to the active total (the last argument) to evaluate a `min_part_size_ratio` selector
+    /// case as if the part were already active — e.g. a lone attached part must get ratio `1`, not `0`.
     if (default_codec->requiresColumnTypeToCompress() || default_codec->isExperimental())
     {
         LOG_WARNING(
@@ -1670,7 +1672,7 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
             "Part {} has a default compression codec that cannot be used for untyped streams (it requires a column "
             "type or is experimental); falling back to the table's default codec.",
             name);
-        default_codec = storage.getCompressionCodecForPart(getBytesOnDisk(), {}, time(nullptr));
+        default_codec = storage.getCompressionCodecForPart(getBytesOnDisk(), {}, time(nullptr), getBytesOnDisk());
 
         /// The selection above never returns a codec unsafe for untyped data; this is a fail-safe for
         /// a future drift of that invariant, because such a codec would corrupt data at the next write.
