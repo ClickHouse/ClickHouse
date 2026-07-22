@@ -272,29 +272,21 @@ Restaurarás tus datos en un nuevo servicio de Cloud.
 Sigue estos pasos para crear un nuevo servicio de Cloud.
 
 <Steps>
-  <Step>
-    #### Abre Cloud Console
-
+  <Step title="Abre Cloud Console" id="open-cloud-console">
     Ve a [https://console.clickhouse.cloud/](https://console.clickhouse.cloud/)
   </Step>
 
-  <Step>
-    #### Crea un nuevo servicio
-
+  <Step title="Crea un nuevo servicio" id="create-new-service">
     <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp" size="md" alt="crear un nuevo servicio" />
   </Step>
 
-  <Step>
-    #### Configura y crea un servicio
-
+  <Step title="Configura y crea un servicio" id="configure-and-create">
     Elige la región y la configuración que prefieras y, a continuación, haz clic en `Create service`
 
     <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp" size="md" alt="configurar las preferencias del servicio" />
   </Step>
 
-  <Step>
-    #### Crea un rol de acceso
-
+  <Step title="Crea un rol de acceso" id="create-an-access-role">
     Abre SQL Console
 
     <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp" size="md" alt="configurar las preferencias del servicio" />
@@ -335,7 +327,7 @@ Sigue estos pasos para crear un nuevo servicio de Cloud.
 
     La política incluye ambos ARN:
 
-    * **Usuario de IAM** (`docs-s3-user`): Permite que tu cluster de ClickHouse autogestionado haga copias de seguridad en S3
+    * **Usuario de IAM** (`docs-s3-user`): Permite que tu clúster de ClickHouse autogestionado haga copias de seguridad en S3
     * **Rol de ClickHouse Cloud** (`ClickHouseAccess-001`): Permite que tu servicio de Cloud restaure desde S3
   </Step>
 </Steps>
@@ -443,8 +435,8 @@ BACKUP DATABASE my_database
 TO S3('https://your-bucket.s3.amazonaws.com/backup.zip', 'key', 'secret')
 ASYNC;
        
--- Retorna inmediatamente con el ID del backup
--- Resultado de ejemplo:
+-- Returns immediately with backup ID
+-- Example result:
 -- ┌─id──────────────────────────────────┬─status────────────┐
 -- │ abc123-def456-789                   │ CREATING_BACKUP   │
 -- └─────────────────────────────────────┴───────────────────┘

@@ -179,7 +179,7 @@ LIMIT 5;
   ## ClickHouse への接続
 </div>
 
-1. dbt プロジェクトを作成します。この例では、`imdb` ソースにちなんで名前を付けます。プロンプトが表示されたら、データベースとして `clickhouse` を選択します。
+1. dbt プロジェクトを作成します。この例では、`imdb` ソースにちなんで名前を付けます。プロンプトが表示されたら、データベースソースとして `clickhouse` を選択します。
 
    ```bash
    clickhouse-user@clickhouse:~$ dbt init imdb
@@ -665,14 +665,14 @@ LIMIT 5;
   ### 内部
 </div>
 
-上記の増分更新を実現するために実行されたステートメントは、ClickHouseのクエリログを照会することで特定できます。
+上記のインクリメンタル更新を実現するために実行されたステートメントは、ClickHouseのクエリログを照会することで特定できます。
 
 ```sql
 SELECT event_time, query  FROM system.query_log WHERE type='QueryStart' AND query LIKE '%dbt%'
 AND event_time > subtractMinutes(now(), 15) ORDER BY event_time LIMIT 100;
 ```
 
-上記のクエリは、実行する期間に合わせて調整してください。結果の確認はユーザーに委ねますが、増分更新を行うためにアダプターが使用する一般的な戦略を以下に示します。
+上記のクエリは、実行する期間に合わせて調整してください。結果の確認はユーザーに委ねますが、インクリメンタル更新を行うためにアダプターが使用する一般的な戦略を以下に示します。
 
 1. アダプターは一時テーブル `actor_sumary__dbt_tmp` を作成します。変更された行はこのテーブルに書き込まれます。
 2. 次に、新しいテーブル `actor_summary_new,` が作成されます。続いて、古いテーブルの行が古いテーブルから新しいテーブルへ書き込まれますが、その際、一時テーブルに行 ID が存在しないことを確認します。これにより、更新と重複を効果的に処理できます。
@@ -681,7 +681,7 @@ AND event_time > subtractMinutes(now(), 15) ORDER BY event_time LIMIT 100;
 
 これは以下の図のようになります。
 
-<Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_05.webp" size="lg" alt="dbt の増分更新" />
+<Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_05.webp" size="lg" alt="dbt のインクリメンタル更新" />
 
 この戦略は、非常に大規模なモデルでは課題が生じる可能性があります。詳細については、[制限事項](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/index#limitations) を参照してください。
 
@@ -802,7 +802,7 @@ ClickHouse 22.8 では [論理削除](/ja/reference/statements/delete)、ClickHo
 {{ config(order_by='(updated_at, id, name)', engine='MergeTree()', materialized='incremental', unique_key='id', incremental_strategy='delete+insert') }}
 ```
 
-この戦略は対象の model のテーブルを直接操作するため、処理中に問題が発生すると、incremental model 内のデータが無効な状態になる可能性があります。つまり、atomic な更新ではありません。
+この戦略は対象の model のテーブルを直接操作するため、処理中に問題が発生すると、インクリメンタル model 内のデータが無効な状態になる可能性があります。つまり、atomic な更新ではありません。
 
 要約すると、このアプローチでは次の処理を行います。
 
@@ -820,7 +820,7 @@ ClickHouse 22.8 では [論理削除](/ja/reference/statements/delete)、ClickHo
 
 次の手順を実行します。
 
-1. incremental モデルのリレーションと同じ構造を持つステージング (一時) テーブルを作成します: `CREATE TABLE {staging} AS {target}`。
+1. インクリメンタル モデルのリレーションと同じ構造を持つステージング (一時) テーブルを作成します: `CREATE TABLE {staging} AS {target}`。
 2. 新しいレコード (SELECT によって生成されたもの) のみをステージングテーブルに挿入します。
 3. 新しいパーティション (ステージングテーブルに存在するもの) のみをターゲットテーブル内で置き換えます。
 

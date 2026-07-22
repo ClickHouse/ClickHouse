@@ -19,26 +19,24 @@ import PartnerBadge from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx"
 
 Omni peut se connecter à ClickHouse Cloud ou à un déploiement sur site via la source de données ClickHouse officielle.
 
-<div id="1-gather-your-connection-details">
-  ## 1. Rassemblez vos informations de connexion
-</div>
+<Steps>
+  <Step title="Rassemblez vos informations de connexion" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Créer une source de données ClickHouse" id="2-create-a-clickhouse-data-source">
+    Accédez à Admin -&gt; Connections et cliquez sur le bouton &quot;Add Connection&quot; en haut à droite.
 
-<div id="2-create-a-clickhouse-data-source">
-  ## 2. Créer une source de données ClickHouse
-</div>
+    <Image size="lg" img="/images/integrations/data-visualization/omni_01.webp" alt="Interface d'administration Omni affichant le bouton Add Connection dans la section Connections" border />
 
-Accédez à Admin -&gt; Connections, puis cliquez sur le bouton &quot;Add Connection&quot; en haut à droite.
+    <br />
 
-<Image size="lg" img="/images/integrations/data-visualization/omni_01.webp" alt="Interface d’administration d’Omni montrant le bouton Add Connection dans la section Connections" border />
+    Sélectionnez `ClickHouse`. Saisissez vos identifiants dans le formulaire.
 
-<br />
+    <Image size="lg" img="/images/integrations/data-visualization/omni_02.webp" alt="Interface de configuration de connexion Omni pour ClickHouse affichant les champs du formulaire d'identifiants" border />
 
-Sélectionnez `ClickHouse`. Saisissez vos identifiants dans le formulaire.
+    <br />
 
-<Image size="lg" img="/images/integrations/data-visualization/omni_02.webp" alt="Interface de configuration de la connexion Omni pour ClickHouse, avec les champs du formulaire d’identification" border />
-
-<br />
-
-Vous devriez maintenant pouvoir interroger et visualiser les données ClickHouse dans Omni.
+    Vous pouvez désormais interroger et visualiser les données de ClickHouse dans Omni.
+  </Step>
+</Steps>

@@ -101,7 +101,7 @@ psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/post
 
 CA 인증서는 각 Managed Postgres 인스턴스마다 고유하므로 다른 인스턴스에서는 작동하지 않습니다.
 
-검증된 TLS 연결을 사용하려면 `sslmode=verify-full`과 다운로드한 인증서의 경로를 추가하십시오:
+검증된 TLS 연결을 사용하려면 `sslmode=verify-full`과 다운로드한 인증서 경로를 추가하십시오:
 
 ```bash
 psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=/path/to/ca-certificate.pem'

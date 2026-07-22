@@ -30,21 +30,15 @@ import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.
 * **Docker**, если у вас ещё нет коллектора и вы хотите воспользоваться приведённым ниже вариантом с новым коллектором.
 
 <Steps>
-  <Step>
-    ## Подготовьте учетные данные
-
+  <Step title="Подготовьте учетные данные" id="gather-credentials">
     <GatherCredentials />
   </Step>
 
-  <Step>
-    ## Создайте пользователя для ингестии
-
+  <Step title="Создайте пользователя для ингестии" id="create-ingestion-user">
     <CreateIngestionUser />
   </Step>
 
-  <Step>
-    ## Развёртывание коллектора
-
+  <Step title="Развёртывание коллектора" id="deploy-collector">
     Выберите вариант, соответствующий вашей ситуации.
 
     <Info>
@@ -199,9 +193,7 @@ import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.
     </Tabs>
   </Step>
 
-  <Step>
-    ## Клонирование и запуск приложения
-
+  <Step title="Клонирование и запуск приложения" id="clone-and-run-the-application">
     Клонируйте репозиторий, установите зависимости и создайте файл `.env`:
 
     ```bash
@@ -224,9 +216,7 @@ import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.
     На этом этапе приложение запущено, но в него еще не добавлен сбор телеметрии. ClickStack не показывает данных: он ждет телеметрии. Это состояние &quot;до&quot;.
   </Step>
 
-  <Step>
-    ## Подключите приложение к вашему коллектору
-
+  <Step title="Подключите приложение к вашему коллектору" id="connect-the-application">
     Приложению нужны два значения, чтобы подключиться к коллектору, который вы развернули выше:
 
     * `OTEL_EXPORTER_OTLP_ENDPOINT`: конечная точка OTLP, которую предоставляет ваш коллектор (обычно это порт `4318` для OTLP по HTTPS).
@@ -243,9 +233,7 @@ import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.
     SDK использует `OTEL_EXPORTER_OTLP_HEADERS` для задания заголовка авторизации для всех трёх сигналов: трассировок, метрик и журналов. Если коллектор запущен локально и не требует аутентификации, значение можно оставить пустым (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`), но сама переменная должна быть задана; если она не задана или полностью пуста, SDK вообще пропускает инициализацию. Наконец, если коллектор запущен без TLS, убедитесь, что используете правильный HTTP-протокол (например, `http://localhost:4318`).
   </Step>
 
-  <Step>
-    ## Настройте инструментирование приложения
-
+  <Step title="Настройте инструментирование приложения" id="instrument-the-application">
     Инструментирование включает три этапа: установку SDK, изменение команды запуска и включение браузерного SDK. Ничто из этого не меняет бизнес-логику приложения.
 
     ### Установите SDK
@@ -298,9 +286,7 @@ import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.
     </Warning>
   </Step>
 
-  <Step>
-    ## Сгенерируйте трафик
-
+  <Step title="Сгенерируйте трафик" id="generate-traffic">
     Перезапустите приложение, чтобы новая команда запуска и только что собранный браузерный бандл вступили в силу:
 
     ```bash
@@ -311,9 +297,7 @@ import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.
     Перезагрузите вкладку браузера, чтобы Vite подхватил обновлённую сборку, затем несколько раз обновите приложение, переключайтесь между годами и открывайте истории, чтобы сгенерировать трафик. При каждом таком действии журналы, метрики, трейсы и события воспроизведения сеанса отправляются через ваш коллектор в ClickStack.
   </Step>
 
-  <Step>
-    ## Запустите ClickStack и изучите свою телеметрию
-
+  <Step title="Запустите ClickStack и изучите свою телеметрию" id="launch-clickstack">
     Откройте свой сервис в [консоли ClickHouse Cloud](https://console.clickhouse.cloud), выберите **ClickStack** в меню слева, затем **Start Ingestion**.
 
     <Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="Запуск ClickStack" border />
@@ -356,8 +340,8 @@ import CreateIngestionUser from '/snippets/ru/clickstack/_create_ingestion_user.
   ## Дополнительные материалы
 </div>
 
-* [Мониторинг Kubernetes](/ru/clickstack/managed-onboarding/monitoring-kubernetes): собирайте журналы, метрики инфраструктуры и события Kubernetes из кластера.
-* [Мониторинг логов AWS CloudWatch](/ru/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): пересылайте логи CloudWatch через приёмник CloudWatch OpenTelemetry.
-* [Настройка Управляемого ClickStack](/ru/clickstack/managed-onboarding/tuning-clickstack-schema): оптимизируйте схему для повышения производительности запросов и эффективности хранения.
-* [Защита коллектора](/ru/clickstack/ingesting-data/collector#securing-the-collector) с использованием TLS для конечной точки OTLP и пользователей ингестии с минимально необходимыми привилегиями.
-* [Переход в продакшн](/ru/clickstack/managing/production): рекомендации по подготовке к работе в продакшне.
+* [Мониторинг Kubernetes](/ru/clickstack/managed-onboarding/monitoring-kubernetes): собирайте журналы, инфраструктурные метрики и события Kubernetes из кластера.
+* [Мониторинг журналов AWS CloudWatch](/ru/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): пересылайте журналы CloudWatch через приёмник CloudWatch OpenTelemetry.
+* [Тонкая настройка Управляемого ClickStack](/ru/clickstack/managed-onboarding/tuning-clickstack-schema): настройте схему для повышения производительности запросов и эффективности хранения.
+* [Защита коллектора](/ru/clickstack/ingesting-data/collector#securing-the-collector) с TLS на конечной точке OTLP и пользователями для ингестии с минимально необходимыми привилегиями.
+* [Переход в продакшн](/ru/clickstack/managing/production) — рекомендации по переходу в продакшн.

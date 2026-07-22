@@ -1,8 +1,8 @@
 ---
 sidebarTitle: 'Luzmo'
 slug: /integrations/luzmo
-keywords: ['clickhouse', 'Luzmo', 'подключение', 'интеграция', 'интерфейс', 'встроенная']
-description: 'Luzmo — платформа встроенной аналитики с нативной интеграцией с ClickHouse, созданная специально для программных продуктов и SaaS-приложений.'
+keywords: ['clickhouse', 'Luzmo', 'подключить', 'интегрировать', 'интерфейс', 'встроенный']
+description: 'Luzmo — это платформа встроенной аналитики с нативной интеграцией с ClickHouse, разработанная специально для программных и SaaS-приложений.'
 title: 'Интеграция Luzmo с ClickHouse'
 sidebar: 'integrations'
 doc_type: 'guide'
@@ -17,36 +17,34 @@ import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintaine
 
 <CommunityMaintainedBadge />
 
-<div id="1-setup-a-clickhouse-connection">
-  ## 1. Настройка подключения к ClickHouse
-</div>
+<Steps>
+  <Step title="Настройка подключения к ClickHouse" id="1-setup-a-clickhouse-connection">
+    Чтобы подключиться к ClickHouse, перейдите на страницу **Connections**, выберите **New Connection**, затем выберите ClickHouse в модальном окне New Connection.
 
-Чтобы подключиться к ClickHouse, перейдите на страницу **Connections**, выберите **New Connection**, затем выберите ClickHouse в модальном окне New Connection.
+    <Image img="/images/integrations/data-visualization/luzmo_01.webp" size="md" alt="Интерфейс Luzmo с диалоговым окном Create a New Connection, в котором выбран ClickHouse" border />
 
-<Image img="/images/integrations/data-visualization/luzmo_01.webp" size="md" alt="Интерфейс Luzmo с диалоговым окном Create a New Connection, в котором выбран ClickHouse" border />
+    Вам будет предложено указать **host**, **username** и **password**:
 
-Вам будет предложено указать **host**, **username** и **password**:
+    <Image img="/images/integrations/data-visualization/luzmo_02.webp" size="md" alt="Форма настройки подключения Luzmo с полями host, username и password для ClickHouse" border />
 
-<Image img="/images/integrations/data-visualization/luzmo_02.webp" size="md" alt="Форма настройки подключения Luzmo с полями host, username и password для ClickHouse" border />
+    * **Host**: хост, на котором доступна ваша база данных ClickHouse. Обратите внимание, что здесь допускается только `https`, чтобы безопасно передавать данные по сети. URL хоста должен иметь следующую структуру: `https://url-to-clickhouse-db:port/database`
+      По умолчанию плагин подключается к базе данных `default` через порт 443. Если указать базу данных после символа `/`, можно настроить, к какой базе данных выполнять подключение.
+    * **Username**: имя пользователя, которое будет использоваться для подключения к вашему кластеру ClickHouse.
+    * **Password**: пароль для подключения к вашему кластеру ClickHouse
 
-* **Host**: хост, на котором доступна ваша база данных ClickHouse. Обратите внимание, что здесь допускается только `https`, чтобы безопасно передавать данные по сети. URL хоста должен иметь следующую структуру: `https://url-to-clickhouse-db:port/database`
-  По умолчанию плагин подключается к базе данных `default` через порт 443. Если указать базу данных после символа `/`, можно настроить, к какой базе данных выполнять подключение.
-* **Username**: имя пользователя, которое будет использоваться для подключения к вашему кластеру ClickHouse.
-* **Password**: пароль для подключения к вашему кластеру ClickHouse
+    Примеры см. в нашей документации для разработчиков, где описано, как [создать подключение к ClickHouse](https://developer.luzmo.com/api/createAccount?exampleSection=AccountCreateClickhouseRequestBody) через наш API.
+  </Step>
 
-Примеры см. в нашей документации для разработчиков, где описано, как [создать подключение к ClickHouse](https://developer.luzmo.com/api/createAccount?exampleSection=AccountCreateClickhouseRequestBody) через наш API.
+  <Step title="Добавление датасетов" id="2-add-datasets">
+    После подключения к ClickHouse вы можете добавить датасеты, как описано [здесь](https://academy.luzmo.com/article/ldx3iltg). Вы можете выбрать один или несколько датасетов, доступных в ClickHouse, и [связать](https://academy.luzmo.com/article/gkrx48x5) их в Luzmo, чтобы использовать вместе на панели мониторинга. Также рекомендуем ознакомиться с этой статьёй о [подготовке данных для аналитики](https://academy.luzmo.com/article/u492qov0).
 
-<div id="2-add-datasets">
-  ## 2. Добавьте наборы данных
-</div>
+    Чтобы узнать, как добавлять датасеты с помощью нашего API, обратитесь к [этому примеру в нашей документации для разработчиков](https://developer.luzmo.com/api/createDataprovider?exampleSection=DataproviderCreateClickhouseRequestBody).
 
-После подключения ClickHouse вы можете добавить наборы данных, как описано [здесь](https://academy.luzmo.com/article/ldx3iltg). Вы можете выбрать один или несколько наборов данных, доступных в ClickHouse, и [связать](https://academy.luzmo.com/article/gkrx48x5) их в Luzmo, чтобы использовать вместе в одной панели мониторинга. Также рекомендуем ознакомиться со статьёй о [подготовке данных для аналитики](https://academy.luzmo.com/article/u492qov0).
+    Теперь вы можете использовать свои датасеты для создания красивых встраиваемых панелей мониторинга или даже для работы ИИ-аналитика данных ([Luzmo IQ](https://luzmo.com/iq)), который может отвечать на вопросы ваших клиентов.
 
-Чтобы узнать, как добавлять наборы данных с помощью нашего API, см. [этот пример в документации для разработчиков](https://developer.luzmo.com/api/createDataprovider?exampleSection=DataproviderCreateClickhouseRequestBody).
-
-Теперь вы можете использовать свои наборы данных, чтобы создавать красивые (встраиваемые) панели мониторинга или даже использовать ИИ-аналитика данных ([Luzmo IQ](https://luzmo.com/iq)), который может отвечать на вопросы ваших клиентов.
-
-<Image img="/images/integrations/data-visualization/luzmo_03.webp" size="md" alt="Пример панели мониторинга Luzmo с несколькими визуализациями данных из ClickHouse" border />
+    <Image img="/images/integrations/data-visualization/luzmo_03.webp" size="md" alt="Пример панели мониторинга Luzmo с несколькими визуализациями данных из ClickHouse" border />
+  </Step>
+</Steps>
 
 <div id="usage-notes">
   ## Примечания по использованию

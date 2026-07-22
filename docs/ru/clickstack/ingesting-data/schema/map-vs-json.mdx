@@ -113,13 +113,9 @@ docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e O
 Чтобы перейти со [схем на основе Map по умолчанию](/ru/clickstack/ingesting-data/schemas), выполните следующие шаги:
 
 <Steps>
-  <Step>
-    ### Остановите OTel коллектор
-  </Step>
+  <Step title="Остановите OTel collector" id="stop-the-collector" />
 
-  <Step>
-    ### Переименуйте существующие таблицы и обновите источники данных
-
+  <Step title="Переименуйте существующие таблицы и обновите источники данных" id="rename-existing-tables-sources">
     Переименуйте существующие таблицы и обновите источники данных в HyperDX.
 
     Например:
@@ -130,23 +126,17 @@ docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e O
     ```
   </Step>
 
-  <Step>
-    ### Разверните коллектор
-
+  <Step title="Разверните коллектор" id="deploy-the-collector">
     Разверните коллектор, задав `OTEL_AGENT_FEATURE_GATE_ARG`.
   </Step>
 
-  <Step>
-    ### Перезапустите контейнер HyperDX с поддержкой схемы JSON
-
+  <Step title="Перезапустите контейнер HyperDX с поддержкой схемы JSON" id="restart-the-hyperdx-container">
     ```shell
     export BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true
     ```
   </Step>
 
-  <Step>
-    ### Создайте новые источники данных
-
+  <Step title="Создайте новые источники данных" id="create-new-data-sources">
     Создайте в HyperDX новые источники данных, указывающие на таблицы JSON.
   </Step>
 </Steps>

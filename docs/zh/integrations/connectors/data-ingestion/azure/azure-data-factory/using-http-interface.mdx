@@ -129,33 +129,33 @@ Data Factory 实例了。
   ## 创建新的基于 REST 的链接服务
 </div>
 
-1. 登录 Microsoft Azure 门户并打开你的 Data Factory 实例。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp" size="lg" alt="包含 Data Factory 的 Azure 门户主页" border />
+1. 登录 Microsoft Azure 门户，并打开你的 Data Factory 实例。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp" size="lg" alt="带有 Data Factory 的 Azure 门户主页" border />
 
 2. 在 Data Factory 概述页面中，点击 **Launch Studio**。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp" size="lg" alt="Azure 门户中的 Data Factory 页面" border />
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp" size="lg" alt="Azure 门户 Data Factory 页面" border />
 
 3. 在左侧菜单中，选择 **Manage**，然后进入 **Linked services**，
    再点击 **+ New** 创建新的链接服务。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp" size="lg" alt="Azure Data Factory 的新建链接服务按钮" border />
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp" size="lg" alt="Azure Data Factory 新建链接服务按钮" border />
 
-4. 在 **New linked service search bar** 中，输入 **REST**，选择 **REST**，然后点击 **Continue**，
-   创建一个 [REST connector](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest)
+4. 在 **New linked service** 搜索栏中，输入 **REST**，选择 **REST**，然后点击 **Continue**
+   以创建一个 [REST 连接器](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest)
    实例。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp" size="lg" alt="Azure Data Factory 的新建链接服务搜索" border />
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp" size="lg" alt="Azure Data Factory 新建链接服务搜索" border />
 
-5. 在链接服务配置面板中，为新服务输入名称，
-   点击 **Base URL** 字段，然后点击 **Add dynamic content** (该链接仅在
-   选中此字段时显示) 。
+5. 在链接服务配置面板中，为你的新服务输入一个名称，
+   点击 **Base URL** 字段，然后点击 **Add dynamic content** (只有在
+   选中该字段后才会显示此链接) 。
    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp" size="lg" alt="新建链接服务面板" border />
 
 6. 在动态内容面板中，你可以创建参数化 URL，
-   这样便可在稍后为不同
-   表创建数据集时再定义查询——从而让该链接服务可重复使用。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp" size="lg" alt="新建链接服务的 Base URL 为空" border />
+   这样稍后为不同
+   表创建数据集时即可定义查询——从而让该链接服务能够复用。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp" size="lg" alt="新建链接服务 Base URL 为空" border />
 
 7. 点击过滤器输入框旁边的 **&quot;+&quot;**，添加一个新参数，并将其命名为
-   `pQuery`，将类型设置为 String，将默认值设置为 `SELECT 1`。
+   `pQuery`，将类型设置为 String，并将默认值设置为 `SELECT 1`。
    点击 **Save**。
    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp" size="lg" alt="新建链接服务参数" border />
 
@@ -165,18 +165,18 @@ Data Factory 实例了。
    ```text
    @{concat('https://your-clickhouse-url.com:8443/?query=', encodeUriComponent(linkedService().pQuery))}
    ```
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp" size="lg" alt="已填写表达式字段的新建链接服务" border />
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp" size="lg" alt="已填写的新建链接服务表达式字段" border />
 
-9. 返回主表单后，选择基本身份验证，输入用于连接 ClickHouse HTTP 接口的用户名和
-   密码，然后点击 **Test
-   connection**。如果配置无误，你将看到成功
+9. 返回主表单后，选择 basic authentication，输入用于连接到 ClickHouse HTTP 接口的
+   用户名和密码，然后点击 **Test
+   connection**。如果配置正确，你将看到一条成功
    消息。
    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp" size="lg" alt="新建链接服务检查连接" border />
 
 10. 点击 **Create** 完成设置。
     <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp" size="lg" alt="链接服务列表" border />
 
-现在，你应该能在列表中看到新创建的基于 REST 的链接服务。
+现在，你应该可以在列表中看到新注册的基于 REST 的链接服务。
 
 <div id="creating-a-new-dataset-for-the-clickhouse-http-interface">
   ## 为 ClickHouse HTTP 接口创建新数据集

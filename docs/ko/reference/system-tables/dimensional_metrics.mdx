@@ -68,6 +68,30 @@ FORMAT Prometheus
 
 파트 상태, 파트 유형, 프로젝션 파트 여부를 레이블로 구분한 MergeTree 데이터 파트 수입니다.
 
+<div id="filesystem-cache-evictions-total">
+  ### `filesystem_cache_evictions_total`
+</div>
+
+파일 시스템 캐시에서 축출된 파일 세그먼트 수로, 캐시 이름별로 레이블이 지정됩니다. 기본적으로 비활성화되어 있으며, `expose_prometheus_eviction_metrics`를 사용해 활성화할 수 있습니다.
+
+<div id="filesystem-cache-evicted-bytes-total">
+  ### `filesystem_cache_evicted_bytes_total`
+</div>
+
+파일 시스템 캐시에서 축출된 파일 세그먼트의 총 바이트 수이며, 캐시 이름별로 레이블이 지정됩니다. 기본적으로 비활성화되어 있으며 `expose_prometheus_eviction_metrics`로 활성화할 수 있습니다.
+
+<div id="filesystem-cache-evictions-by-user-total">
+  ### `filesystem_cache_evictions_by_user_total`
+</div>
+
+파일 시스템 캐시에서 축출된 파일 세그먼트 수를 나타내는 메트릭으로, 캐시 이름과 사용자 ID별로 레이블이 지정됩니다. 기본적으로 비활성화되어 있으며, `expose_prometheus_eviction_metrics` 및 `expose_prometheus_eviction_metrics_per_user`를 사용해 활성화할 수 있습니다.
+
+<div id="filesystem-cache-evicted-bytes-by-user-total">
+  ### `filesystem_cache_evicted_bytes_by_user_total`
+</div>
+
+파일 시스템 캐시에서 축출된 파일 세그먼트의 총 바이트 수로, 캐시 이름과 사용자 ID를 레이블로 구분합니다. 기본적으로 비활성화되어 있으므로 `expose_prometheus_eviction_metrics` 및 `expose_prometheus_eviction_metrics_per_user`를 사용해 활성화하십시오.
+
 <div id="see-also">
   ## 관련 항목
 </div>

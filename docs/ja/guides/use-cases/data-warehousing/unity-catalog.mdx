@@ -14,7 +14,11 @@ import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 ClickHouse は、複数のカタログ (Unity、Glue、Polaris など) とのインテグレーションをサポートしています。このガイドでは、ClickHouse と [Unity Catalog](https://www.databricks.com/product/unity-catalog) を使用して、Databricks で管理されているデータをクエリする手順を説明します。
 
-Databricks は、その lakehouse で複数のデータフォーマットをサポートしています。ClickHouse を使用すると、Unity Catalog のテーブルを Delta と Iceberg の両方の形式でクエリできます。
+Databricks は、その lakehouse で複数のデータフォーマットをサポートしています。ClickHouse を使用すると、外部ストレージロケーションを使用する Unity Catalog の Delta Lake テーブルおよび Iceberg テーブルをクエリできます。
+
+<Note>
+  Unity Catalog は、[Databricks managed storage](https://docs.databricks.com/aws/en/data-governance/unity-catalog/managed-versus-external) に保存された Delta Lake テーブルまたは Iceberg テーブルに対して [credential vending](https://docs.databricks.com/aws/en/external-access/credential-vending) を提供しません。ClickHouse は、Unity Catalog からテーブルデータを読み取るために credential vending に依存しています。
+</Note>
 
 <Note>
   この機能は実験的であるため、以下を使用して有効にする必要があります。
@@ -59,7 +63,7 @@ SETTINGS warehouse = 'CATALOG_NAME', catalog_credential = '<PAT>', catalog_type 
   ### Iceberg を読み取る
 </div>
 
-管理対象の Iceberg テーブルにアクセスするには：
+外部 Iceberg テーブルにアクセスするには：
 
 ```sql
 CREATE DATABASE unity

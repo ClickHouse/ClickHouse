@@ -7,7 +7,7 @@ doc_type: 'guide'
 keywords: ['ClickHouse Kafka Connect Sink', 'ClickHouse 向け Kafka コネクタ', 'ClickHouse 公式コネクタ', 'ClickHouse Kafka インテグレーション']
 ---
 
-import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
+import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
 
 <Note>
   サポートが必要な場合は、[リポジトリで issue を報告](https://github.com/ClickHouse/clickhouse-kafka-connect/issues)するか、[ClickHouse の公開 Slack](https://clickhouse.com/slack) で質問してください。
@@ -264,12 +264,8 @@ Sink に送信する前にメッセージを変換する必要がある場合は
 }
 ```
 
-<div id="using-with-different-data-formats">
-  #### さまざまなデータフォーマットでの使用
-</div>
-
 <div id="avro-schema-support">
-  ##### Avro スキーマの対応
+  ### Avro スキーマ対応
 </div>
 
 ```json
@@ -286,7 +282,7 @@ Sink に送信する前にメッセージを変換する必要がある場合は
 ```
 
 <div id="avro-type-mapping">
-  ###### Avro 型マッピング
+  #### Avro 型マッピング
 </div>
 
 以下の型マッピングは、Kafka Connect における公式の Avro シリアライザー/デシリアライザー実装である `io.confluent.connect.avro.AvroConverter` で定義されています。変換ロジックの詳細については、Kafka Connect の[ドキュメント](https://docs.confluent.io/platform/current/connect/userguide.html#avro)を参照してください。
@@ -297,27 +293,27 @@ Sink に送信する前にメッセージを変換する必要がある場合は
 
 ️⚠️: 一部サポート
 
-| Avro Type | Kafka Connect Type | Supported | Notes                                                                                                                                                                                                                                                               |
-| --------- | ------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| null      | *N/A*              | ❌         | 単独の型としてはサポートされていませんが、ユニオン内では使用できます                                                                                                                                                                                                                                  |
-| boolean   | BOOLEAN            | ✅         |                                                                                                                                                                                                                                                                     |
-| int       | INT8/INT16/INT32   | ✅         | デフォルトは INT32 です。スキーマにプロパティ `connect.type=int8` がある場合は INT8 として扱われます (`connect.type=int16` の場合は同様に INT16)                                                                                                                                                            |
-| long      | INT64              | ✅         |                                                                                                                                                                                                                                                                     |
-| float     | FLOAT32            | ✅         |                                                                                                                                                                                                                                                                     |
-| double    | FLOAT64            | ✅         |                                                                                                                                                                                                                                                                     |
-| bytes     | BYTES              | ✅         |                                                                                                                                                                                                                                                                     |
-| string    | STRING             | ✅         |                                                                                                                                                                                                                                                                     |
-| record    | STRUCT             | ✅         |                                                                                                                                                                                                                                                                     |
-| enum      | STRING             | ✅         |                                                                                                                                                                                                                                                                     |
-| array     | ARRAY/MAP          | ✅         | デフォルトは ARRAY です。フィールドがもともと `AvroData.fromConnectSchema` によって構築されていた場合は、MAP として扱われます ([source](https://github.com/confluentinc/schema-registry/blob/174907bfc0d9424e8d02e788f450f4afcdda1750/avro-data/src/main/java/io/confluent/connect/avro/AvroData.java#L943))  |
-| map       | MAP                | ✅         |                                                                                                                                                                                                                                                                     |
-| union     | STRUCT/`<T>`       | ⚠️        | デフォルトは STRUCT です。`flatten.singleton.unions=true` の場合は、ユニオン定義内の単一型 `T` として扱われます ([docs](https://docs.confluent.io/cloud/current/connectors/reference/connector-configuration.html#value-converter-flatten-singleton-unions)を参照)                                      |
-| fixed     | BYTES              | ⚠️        | fixed `decimal` 論理型はサポートされていません (詳細は以下を参照)                                                                                                                                                                                                                          |
+| Avro Type | Kafka Connect Type | Supported | Notes                                                                                                                                                                                                                                                              |
+| --------- | ------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| null      | *N/A*              | ❌         | 単独の型としてはサポートされていませんが、ユニオン内では使用できます                                                                                                                                                                                                                                 |
+| boolean   | BOOLEAN            | ✅         |                                                                                                                                                                                                                                                                    |
+| int       | INT8/INT16/INT32   | ✅         | デフォルトは INT32 です。スキーマにプロパティ `connect.type=int8` がある場合は INT8 として扱われます (`connect.type=int16` の場合は同様に INT16)                                                                                                                                                           |
+| long      | INT64              | ✅         |                                                                                                                                                                                                                                                                    |
+| float     | FLOAT32            | ✅         |                                                                                                                                                                                                                                                                    |
+| double    | FLOAT64            | ✅         |                                                                                                                                                                                                                                                                    |
+| bytes     | BYTES              | ✅         |                                                                                                                                                                                                                                                                    |
+| string    | STRING             | ✅         |                                                                                                                                                                                                                                                                    |
+| record    | STRUCT             | ✅         |                                                                                                                                                                                                                                                                    |
+| enum      | STRING             | ✅         |                                                                                                                                                                                                                                                                    |
+| array     | ARRAY/MAP          | ✅         | デフォルトは ARRAY です。フィールドがもともと `AvroData.fromConnectSchema` によって構築されていた場合は、MAP として扱われます ([source](https://github.com/confluentinc/schema-registry/blob/174907bfc0d9424e8d02e788f450f4afcdda1750/avro-data/src/main/java/io/confluent/connect/avro/AvroData.java#L943)) |
+| map       | MAP                | ✅         |                                                                                                                                                                                                                                                                    |
+| union     | STRUCT/`<T>`       | ⚠️        | デフォルトは STRUCT です。`flatten.singleton.unions=true` の場合は、ユニオン定義内の単一型 `T` として扱われます ([docs](https://docs.confluent.io/cloud/current/connectors/reference/connector-configuration.html#value-converter-flatten-singleton-unions)を参照)                                     |
+| fixed     | BYTES              | ⚠️        | fixed `decimal` 論理型はサポートされていません (詳細は以下を参照)                                                                                                                                                                                                                         |
 
 Kafka Connect の型と ClickHouse の型の対応については、[サポートされているデータ型](#supported-data-types)を参照してください。
 
 <div id="unsupported-avro-schemas">
-  ###### サポートされていない Avro スキーマ
+  #### サポートされていない Avro スキーマ
 </div>
 
 次の Avro スキーマは、コネクタではサポートされていません。
@@ -365,7 +361,7 @@ Kafka Connect の型と ClickHouse の型の対応については、[サポー�
 ```
 
 <div id="protobuf-schema-support">
-  ##### Protobuf スキーマ対応
+  ### Protobuf スキーマ対応
 </div>
 
 ```json
@@ -384,56 +380,59 @@ Kafka Connect の型と ClickHouse の型の対応については、[サポー�
 ご注意ください: クラスが見つからない問題が発生した場合、protobuf converter はすべての環境に含まれているわけではないため、依存関係をバンドルした別リリースの jar が必要になることがあります。
 
 <div id="proto-type-mapping">
-  ###### Protobuf 型マッピング
+  #### Protobuf 型マッピング
 </div>
 
-以下の型マッピングは、Kafka Connect における公式の Protobuf シリアライザー/デシリアライザー実装である `io.confluent.connect.protobuf.ProtobufConverter` で定義されています。変換ロジックの詳細については、Kafka Connect の[ドキュメント](https://docs.confluent.io/platform/current/connect/userguide.html#json-schema-and-protobuf)を参照してください。
+以下の型マッピングは、Kafka Connect の公式 Protobuf シリアライザー/デシリアライザー実装である `io.confluent.connect.protobuf.ProtobufConverter` で定義されています。変換ロジックの詳細については、Kafka Connect の[ドキュメント](https://docs.confluent.io/platform/current/connect/userguide.html#json-schema-and-protobuf)を参照してください。
 
-✅: サポートあり
+✅: サポート対象
 
-❌: サポートなし
+❌: サポート対象外
 
 ️⚠️: 一部サポート
 
-| Protobuf Type                           | Kafka Connect Type                      | Supported | Notes                                                                                                                                                             |
-| --------------------------------------- | --------------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| double                                  | FLOAT64                                 | ✅         |                                                                                                                                                                   |
-| float                                   | FLOAT32                                 | ✅         |                                                                                                                                                                   |
-| int32                                   | INT8/INT16/INT32                        | ✅         | デフォルトは INT32 です。スキーマにオプション `connect.type=int8` がある場合は INT8 になります (`connect.type=int16` の場合も同様に INT16)                                                             |
-| sint32                                  | INT8/INT16/INT32                        | ✅         | デフォルトは INT32 です。スキーマにオプション `connect.type=int8` がある場合は INT8 になります (`connect.type=int16` の場合も同様に INT16)                                                             |
-| sfixed32                                | INT8/INT16/INT32                        | ✅         | デフォルトは INT32 です。スキーマにオプション `connect.type=int8` がある場合は INT8 になります (`connect.type=int16` の場合も同様に INT16)                                                             |
-| uint32                                  | INT64                                   | ✅         |                                                                                                                                                                   |
-| fixed32                                 | INT64                                   | ✅         |                                                                                                                                                                   |
-| int64                                   | INT64                                   | ✅         |                                                                                                                                                                   |
-| uint64                                  | INT64                                   | ✅         |                                                                                                                                                                   |
-| sint64                                  | INT64                                   | ✅         |                                                                                                                                                                   |
-| fixed64                                 | INT64                                   | ✅         |                                                                                                                                                                   |
-| sfixed64                                | INT64                                   | ✅         |                                                                                                                                                                   |
-| bool                                    | BOOLEAN                                 | ✅         |                                                                                                                                                                   |
-| string                                  | STRING                                  | ✅         |                                                                                                                                                                   |
-| bytes                                   | BYTES                                   | ✅         |                                                                                                                                                                   |
-| enum                                    | INT32/STRING                            | ✅         | デフォルトは STRING です。`int.for.enums=true` の場合は INT32 になります ([スキーマレジストリのドキュメント](https://docs.confluent.io/platform/current/schema-registry/connect.html#protobuf)を参照)  |
-| message                                 | STRUCT                                  | ⚠️        | 以下の未サポートのスキーマのセクションを参照                                                                                                                                            |
-| repeated T (where T is not a map entry) | ARRAY                                   | ✅         |                                                                                                                                                                   |
-| `map<K, V>`                             | MAP                                     | ✅         |                                                                                                                                                                   |
-| oneof                                   | STRUCT                                  | ⚠️        | oneof を ClickHouse スキーマに変換する方法については、以下のセクションを参照                                                                                                                   |
-| google.protobuf.DoubleValue             | FLOAT64                                 | ✅         |                                                                                                                                                                   |
-| google.protobuf.FloatValue              | FLOAT32                                 | ✅         |                                                                                                                                                                   |
-| google.protobuf.Int64Value              | INT64                                   | ✅         |                                                                                                                                                                   |
-| google.protobuf.UInt64Value             | INT64                                   | ✅         |                                                                                                                                                                   |
-| google.protobuf.UInt32Value             | INT64                                   | ✅         |                                                                                                                                                                   |
-| google.protobuf.Int32Value              | INT32                                   | ✅         |                                                                                                                                                                   |
-| google.protobuf.BoolValue               | BOOLEAN                                 | ✅         |                                                                                                                                                                   |
-| google.protobuf.StringValue             | STRING                                  | ✅         |                                                                                                                                                                   |
-| google.protobuf.BytesValue              | BYTES                                   | ✅         |                                                                                                                                                                   |
-| google.protobuf.Timestamp               | org.apache.kafka.connect.data.Timestamp | ✅         |                                                                                                                                                                   |
-| google.type.Date                        | org.apache.kafka.connect.data.Date      | ✅         |                                                                                                                                                                   |
-| google.type.TimeOfDay                   | org.apache.kafka.connect.data.Time      | ✅         |                                                                                                                                                                   |
+| Protobuf Type                           | Kafka Connect Type                      | ClickHouse 型                                 | Supported | Notes                                                                                                                                                                |
+| :-------------------------------------- | :-------------------------------------- | :--------------------------------------------- | :-------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| double                                  | FLOAT64                                 | Float64                                        | ✅         |                                                                                                                                                                      |
+| float                                   | FLOAT32                                 | Float32                                        | ✅         |                                                                                                                                                                      |
+| int32                                   | INT8/INT16/INT32                        | Int32                                          | ✅         | デフォルトは INT32 です。スキーマにオプション `connect.type=int8` がある場合は INT8 として扱われます (`connect.type=int16` の場合も同様に INT16)                                                             |
+| sint32                                  | INT8/INT16/INT32                        | Int32                                          | ✅         | デフォルトは INT32 です。スキーマにオプション `connect.type=int8` がある場合は INT8 として扱われます (`connect.type=int16` の場合も同様に INT16)                                                             |
+| sfixed32                                | INT8/INT16/INT32                        | Int32                                          | ✅         | デフォルトは INT32 です。スキーマにオプション `connect.type=int8` がある場合は INT8 として扱われます (`connect.type=int16` の場合も同様に INT16)                                                             |
+| uint32                                  | INT64                                   | UInt32                                         | ✅         |                                                                                                                                                                      |
+| fixed32                                 | INT64                                   | UInt32                                         | ✅         |                                                                                                                                                                      |
+| int64                                   | INT64                                   | Int64                                          | ✅         |                                                                                                                                                                      |
+| uint64                                  | INT64                                   | UInt64                                         | ✅         |                                                                                                                                                                      |
+| sint64                                  | INT64                                   | Int64                                          | ✅         |                                                                                                                                                                      |
+| fixed64                                 | INT64                                   | UInt64                                         | ✅         |                                                                                                                                                                      |
+| sfixed64                                | INT64                                   | Int64                                          | ✅         |                                                                                                                                                                      |
+| bool                                    | BOOLEAN                                 | Bool                                           | ✅         |                                                                                                                                                                      |
+| string                                  | STRING                                  | String                                         | ✅         |                                                                                                                                                                      |
+| bytes                                   | BYTES                                   | String                                         | ✅         |                                                                                                                                                                      |
+| enum                                    | INT32/STRING                            | Int32                                          | ✅         | デフォルトは STRING です。`int.for.enums=true` の場合は INT32 として扱われます ([スキーマレジストリのドキュメント](https://docs.confluent.io/platform/current/schema-registry/connect.html#protobuf)を参照)  |
+| message                                 | STRUCT                                  | Tuple / JSON                                   | ⚠️        | 下記の未サポートのスキーマのセクションを参照してください                                                                                                                                         |
+| repeated T (where T is not a map entry) | ARRAY                                   | Array(T)                                       | ✅         |                                                                                                                                                                      |
+| `map<K, V>`                             | MAP                                     | Map(K, V)                                      | ✅         |                                                                                                                                                                      |
+| oneof                                   | STRUCT                                  | Tuple / Variant                                | ⚠️        | oneof を ClickHouse スキーマに変換する方法については、以下のセクションを参照してください                                                                                                                |
+| google.protobuf.DoubleValue             | FLOAT64                                 | Nullable(Float64)                              | ✅         |                                                                                                                                                                      |
+| google.protobuf.FloatValue              | FLOAT32                                 | Nullable(Float32)                              | ✅         |                                                                                                                                                                      |
+| google.protobuf.Int64Value              | INT64                                   | Nullable(Int64)                                | ✅         |                                                                                                                                                                      |
+| google.protobuf.UInt64Value             | INT64                                   | Nullable(UInt64)                               | ✅         |                                                                                                                                                                      |
+| google.protobuf.UInt32Value             | INT64                                   | Nullable(UInt32)                               | ✅         |                                                                                                                                                                      |
+| google.protobuf.Int32Value              | INT32                                   | Nullable(Int32)                                | ✅         |                                                                                                                                                                      |
+| google.protobuf.BoolValue               | BOOLEAN                                 | Nullable(Bool)                                 | ✅         |                                                                                                                                                                      |
+| google.protobuf.StringValue             | STRING                                  | Nullable(String)                               | ✅         |                                                                                                                                                                      |
+| google.protobuf.BytesValue              | BYTES                                   | Nullable(String)                               | ✅         |                                                                                                                                                                      |
+| google.protobuf.Timestamp               | org.apache.kafka.connect.data.Timestamp | DateTime64(3)                                  | ✅         |                                                                                                                                                                      |
+| google.type.Date                        | org.apache.kafka.connect.data.Date      | Date                                           | ✅         |                                                                                                                                                                      |
+| google.type.TimeOfDay                   | org.apache.kafka.connect.data.Time      | Int32 / Int64                                  | ✅         |                                                                                                                                                                      |
+| google.protobuf.Duration                | STRUCT                                  | Tuple(`seconds` Int64, `nano` Nullable(Int32)) | ✅         |                                                                                                                                                                      |
+| google.protobuf.Any                     | *N/A*                                   | *N/A*                                          | ❌         |                                                                                                                                                                      |
+| google.protobuf.Empty                   | *N/A*                                   | *N/A*                                          | ❌         |                                                                                                                                                                      |
 
-Kafka Connect の型と ClickHouse の型の対応については、[サポートされているデータ型](#supported-data-types)を参照してください。
+Kafka Connect の型と ClickHouse の型マッピングについては、[サポートされているデータ型](#supported-data-types)を参照してください。
 
 <div id="oneof-translation">
-  ###### `oneof` フィールドを ClickHouse のカラムに変換する際の注意
+  #### `oneof` フィールドを ClickHouse のカラムに変換する際の注意
 </div>
 
 このコネクタは、Protobuf のユニオン (`oneof`) を ClickHouse の Variant 型に変換することをサポートしていません。代わりに、ClickHouse テーブルのスキーマでは、`oneof` フィールドを個別の Nullable フィールドとして列挙してください。
@@ -465,7 +464,7 @@ CREATE TABLE IF NOT EXISTS `StringIntUnion`
 ```
 
 <div id="unsupported-proto-schemas">
-  ###### サポートされていない Protobuf スキーマ
+  #### サポートされていない Protobuf スキーマ
 </div>
 
 コネクタでは、以下の Protobuf スキーマはサポートされていません。
@@ -483,12 +482,12 @@ message TwoRecords {
     TypeB type_b = 3;
   }
 
-  // ClickHouse の Nullable(Tuple(label String)) に変換されますが、サポートされていません
+  // translates to Nullable(Tuple(label String)) in ClickHouse, which is unsupported
   message TypeA {
     string label = 1;
   }
 
-  // ClickHouse の Nullable(Tuple(count Int32)) に変換されますが、サポートされていません
+  // translates to Nullable(Tuple(count Int32)) in ClickHouse, which is unsupported
   message TypeB {
     int32 count = 1;
   }
@@ -498,7 +497,7 @@ message TwoRecords {
 CH バージョン 26.1 以降では、`allow_experimental_nullable_tuple_type=1` を設定すると、このスキーマがサポートされます ([こちらのドキュメントページ](/ja/reference/settings/session-settings#allow_experimental_nullable_tuple_type)を参照) 。
 
 <div id="json-schema-support">
-  ##### JSON スキーマのサポート
+  ### JSON スキーマ対応
 </div>
 
 ```json
@@ -513,7 +512,7 @@ CH バージョン 26.1 以降では、`allow_experimental_nullable_tuple_type=1
 ```
 
 <div id="string-support">
-  ##### Stringのサポート
+  ### Stringのサポート
 </div>
 
 このコネクタは、ClickHouse のさまざまなフォーマットで String Converter をサポートしています：[JSON](/ja/reference/formats/JSON/JSONEachRow)、[CSV](/ja/reference/formats/CSV/CSV)、および [TSV](/ja/reference/formats/TabSeparated/TabSeparated)。

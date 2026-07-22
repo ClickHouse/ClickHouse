@@ -131,21 +131,15 @@ scrape_configs:
 </div>
 
 <Steps>
-  <Step>
-    #### Скачайте JSON панели мониторинга
-
+  <Step title="Скачайте JSON панели мониторинга" id="download">
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">Скачать JSON панели мониторинга</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Откройте импорт в Grafana
-
+  <Step title="Откройте импорт в Grafana" id="open-import">
     Перейдите в **Dashboards → New → Import**. Загрузите JSON‑файл или вставьте его содержимое.
   </Step>
 
-  <Step>
-    #### Выберите источник данных Prometheus
-
+  <Step title="Выберите источник данных Prometheus" id="pick-datasource">
     Когда появится запрос для `DS_PROMETHEUS`, выберите источник данных Prometheus, который собирает метрики с конечной точки, настроенной в [предыдущем разделе](#configuring-prometheus).
   </Step>
 </Steps>

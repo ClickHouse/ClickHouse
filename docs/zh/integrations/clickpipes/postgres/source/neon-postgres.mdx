@@ -59,7 +59,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` publication 将包含指定表生成的一组变更事件，后续将用于摄取复制 stream。
+`clickpipes` publication 定义了将流式传输到 ClickPipes 的那组表的变更事件。除非您打算复制每一张表，否则我们不建议使用 `FOR ALL TABLES`，因为包含不必要的表会增加从 Postgres 到 ClickPipes 的 WAL 流量，并降低整体复制效率。
 
 <div id="enable-logical-replication">
   ## 启用逻辑复制
@@ -77,9 +77,9 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 接下来，请验证您的 Neon Postgres 实例中的以下设置：
 
 ```sql
-SHOW wal_level; -- 应为 logical
-SHOW max_wal_senders; -- 应为 10
-SHOW max_replication_slots; -- 应为 10
+SHOW wal_level; -- should be logical
+SHOW max_wal_senders; -- should be 10
+SHOW max_replication_slots; -- should be 10
 ```
 
 <div id="ip-whitelisting-for-neon-enterprise-plan">

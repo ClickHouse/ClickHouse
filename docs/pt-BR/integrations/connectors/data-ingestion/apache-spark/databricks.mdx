@@ -53,9 +53,9 @@ No entanto, se você desativar o Unity Catalog criando um cluster com o modo de 
    * Selecione **DBFS** ou **Workspace** → navegue até o arquivo JAR enviado
    * Clique em **Install**
 
-<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp')} alt="Guia Libraries do Databricks" />
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp" alt="Guia Libraries do Databricks" />
 
-<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp')} alt="Instalando a biblioteca a partir do volume do workspace" />
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp" alt="Instalando a biblioteca a partir do volume do workspace" />
 
 4. Reinicie o cluster para carregar a biblioteca
 
@@ -90,7 +90,7 @@ databricks libraries install \
 com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
 ```
 
-<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp')} alt="Configuração das bibliotecas Maven no Databricks" />
+<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp" alt="Configuração das bibliotecas Maven no Databricks" />
 
 3. Clique em **Install** e reinicie o cluster para carregar a biblioteca
 
@@ -334,6 +334,6 @@ Ao se conectar ao ClickHouse Cloud pelo Databricks:
   ## Documentação relacionada
 </div>
 
-* [Guia do conector nativo do Spark](/pt-BR/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - Documentação completa do conector
-* [Documentação da TableProvider API](/pt-BR/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#using-the-tableprovider-api) - Detalhes do acesso baseado em formato
-* [Documentação da Catalog API](/pt-BR/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required) - Detalhes do acesso baseado em catálogo
+* [Guia do Spark Native Connector](/pt-BR/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - Documentação completa do conector
+* [Documentação da TableProvider API](/pt-BR/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#using-the-tableprovider-api) - Detalhes sobre o acesso baseado em formato
+* [Documentação da Catalog API](/pt-BR/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required) - Detalhes sobre o acesso baseado em catálogo

@@ -2,7 +2,7 @@
 sidebarTitle: 'Ingesta de datos de Postgres a ClickHouse'
 description: 'Conecte fácilmente su Postgres a ClickHouse Cloud.'
 slug: /integrations/clickpipes/postgres
-title: 'Ingesta de datos de Postgres a ClickHouse (mediante CDC)'
+title: 'Ingesta de datos de Postgres a ClickHouse (usando CDC)'
 keywords: ['PostgreSQL', 'ClickPipes', 'CDC', 'captura de cambios en los datos', 'replicación de bases de datos']
 doc_type: 'guide'
 integration:
@@ -13,6 +13,7 @@ integration:
 import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/es/components/Image.jsx";
+import ChangingTLSSettings from '/snippets/es/clickpipes/_changing_tls_settings.mdx';
 
 Puede usar ClickPipes para ingestar datos desde su base de datos Postgres de origen a ClickHouse Cloud. La base de datos Postgres de origen puede estar alojada en sus instalaciones o en la nube, incluidos Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase y otros.
 
@@ -88,6 +89,12 @@ Asegúrate de haber iniciado sesión en tu cuenta de ClickHouse Cloud. Si aún n
 Puede usar AWS Private Link para conectarse a su base de datos Postgres de origen si está alojada en AWS. Esto resulta útil si
 quiere mantener privada la transferencia de datos.
 Puede seguir la [guía de configuración para establecer la conexión](/es/integrations/clickpipes/aws-privatelink).
+
+<div id="optional-changing-tls-settings">
+  #### (Opcional) Modificar la configuración de TLS
+</div>
+
+<ChangingTLSSettings />
 
 <div id="optional-setting-up-ssh-tunneling">
   #### (Opcional) Configuración del túnel SSH

@@ -13,9 +13,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## واجهة برمجة تطبيقات عناوين IP الثابتة
 </div>
 
-إذا كنت بحاجة إلى استرجاع قائمة عناوين IP الثابتة، فيمكنك استخدام نقطة نهاية ClickHouse Cloud API التالية: [`https://api.clickhouse.cloud/static-ips.json`](https://api.clickhouse.cloud/static-ips.json). توفّر واجهة برمجة التطبيقات هذه نقاط النهاية لخدمات ClickHouse Cloud، مثل عناوين IP الواردة/الصادرة ونقاط نهاية S3 بحسب كل Region وCloud.
+إذا كنت بحاجة إلى استرجاع قائمة عناوين IP الثابتة، فيمكنك استخدام نقطة نهاية واجهة برمجة تطبيقات ClickHouse Cloud التالية: [`https://api.clickhouse.cloud/static-ips.json`](https://api.clickhouse.cloud/static-ips.json). توفّر واجهة برمجة تطبيقات هذه نقاط النهاية لخدمات ClickHouse Cloud، مثل عناوين IP الواردة/الصادرة ونقاط نهاية S3 بحسب كل Region وCloud.
 
-إذا كنت تستخدم تكاملًا مثل MySQL أو PostgreSQL Engine، فقد تحتاج إلى تفويض ClickHouse Cloud للوصول إلى المثيلات الخاصة بك. يمكنك استخدام واجهة برمجة التطبيقات هذه لاسترجاع عناوين IP العامة وتهيئتها في `firewalls` أو `Authorized networks` في GCP أو `Security Groups` في Azure أو AWS، أو في أي نظام آخر تستخدمه لإدارة حركة egress ضمن البنية التحتية.
+إذا كنت تستخدم تكاملًا مثل MySQL أو PostgreSQL Engine، فقد تحتاج إلى تفويض ClickHouse Cloud للوصول إلى المثيلات الخاصة بك. يمكنك استخدام واجهة برمجة تطبيقات هذه لاسترجاع عناوين IP العامة وتهيئتها في `firewalls` أو `Authorized networks` في GCP أو `Security Groups` في Azure أو AWS، أو في أي نظام آخر تستخدمه لإدارة حركة egress ضمن البنية التحتية.
 
 على سبيل المثال، للسماح بالوصول من خدمة ClickHouse Cloud مستضافة على AWS في Region ‏`ap-south-1`، يمكنك إضافة عناوين `egress_ips` الخاصة بتلك المنطقة:
 
@@ -46,4 +46,4 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 وبالنسبة إلى خدمة ClickHouse Cloud نفسها التي تعمل في `us-east-2`، ولكنها هذه المرة متصلة بـ MySQL على GCP، فيجب أن تبدو `Authorized networks` كما يلي:
 
-<Image img="/images/_snippets/gcp-authorized-network.webp" size="md" alt="الشبكات المصرح بها في GCP" border />
+<Image img="/images/_snippets/gcp-authorized-network.webp" size="md" alt="GCP Authorized networks" border />

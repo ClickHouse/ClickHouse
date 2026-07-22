@@ -20,29 +20,21 @@ import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintaine
 <a href="https://nifi.apache.org/" target="_blank">Apache NiFi</a> は、ソフトウェアシステム間のデータフローを自動化するために設計されたオープンソースのワークフロー管理ソフトウェアです。ETL データパイプラインを作成でき、300 を超えるデータプロセッサがあらかじめ用意されています。このステップバイステップのチュートリアルでは、Apache NiFi をデータソースおよび宛先の両方として ClickHouse に接続し、サンプルデータセットを読み込む方法を説明します。
 
 <Steps>
-  <Step>
-    ## 接続情報を確認する
-
+  <Step title="接続情報を確認する" id="1-gather-your-connection-details">
     <ConnectionDetails />
   </Step>
 
-  <Step>
-    ## Apache NiFi をダウンロードして実行する
-
-    新規セットアップの場合は、https://nifi.apache.org/download.html からバイナリをダウンロードし、`./bin/nifi.sh start` を実行して起動します
+  <Step title="Apache NiFi をダウンロードして実行する" id="2-download-and-run-apache-nifi">
+    新規セットアップの場合は、[https://nifi.apache.org/download.html](https://nifi.apache.org/download.html) からバイナリをダウンロードし、`./bin/nifi.sh start` を実行して起動します
   </Step>
 
-  <Step>
-    ## ClickHouse JDBCドライバーをダウンロードする
-
+  <Step title="ClickHouse JDBCドライバーをダウンロードする" id="3-download-the-clickhouse-jdbc-driver">
     1. GitHub の<a href="https://github.com/ClickHouse/clickhouse-java/releases" target="_blank">ClickHouse JDBCドライバーのリリースページ</a>にアクセスし、最新の JDBC リリースを確認します
     2. 該当するリリースで &quot;Show all xx assets&quot; をクリックし、&quot;shaded&quot; または &quot;all&quot; を含む JAR ファイルを探します (例: `clickhouse-jdbc-0.5.0-all.jar`)
     3. その JAR ファイルを Apache NiFi からアクセスできるフォルダーに配置し、絶対パスを控えておきます
   </Step>
 
-  <Step>
-    ## `DBCPConnectionPool` Controller Service を追加し、そのプロパティを設定する
-
+  <Step title={<>`DBCPConnectionPool` Controller Service を追加し、そのプロパティを設定する</>} id="4-add-dbcpconnectionpool-controller-service-and-configure-its-properties">
     1. Apache NiFi で Controller Service を設定するには、&quot;gear&quot; ボタンをクリックして NiFi Flow Configuration ページを開きます
 
        <Image img="/images/integrations/data-ingestion/etl-tools/nifi_01.webp" size="sm" border alt="gear ボタンが強調表示された NiFi Flow Configuration ページ" />
@@ -61,13 +53,13 @@ import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintaine
 
     5. &quot;Properties&quot; セクションで、以下の値を入力します
 
-    | プロパティ                      | 値                                                                  | 備考                                   |
-    | -------------------------- | ------------------------------------------------------------------ | ------------------------------------ |
-    | Database Connection URL    | jdbc:ch:https://HOSTNAME:8443/default?ssl=true                     | 接続 URL 内の HOSTNAME を適宜置き換えてください      |
-    | Database Driver Class Name | com.clickhouse.jdbc.ClickHouseDriver                               |                                      |
-    | Database Driver Locations  | /etc/nifi/nifi-X.XX.X/lib/clickhouse-jdbc-0.X.X-patchXX-shaded.jar | ClickHouse JDBCドライバーの JAR ファイルへの絶対パス |
-    | Database User              | default                                                            | ClickHouse のユーザー名                    |
-    | Password                   | password                                                           | ClickHouse のパスワード                    |
+    | プロパティ                      | 値                                                                                        | 備考                                   |
+    | -------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------ |
+    | Database Connection URL    | jdbc[https://HOSTNAME:8443/default?ssl=true](https://HOSTNAME:8443/default?ssl=true)true | 接続 URL 内の HOSTNAME を適宜置き換えてください      |
+    | Database Driver Class Name | com.clickhouse.jdbc.ClickHouseDriver                                                     |                                      |
+    | Database Driver Locations  | /etc/nifi/nifi-X.XX.X/lib/clickhouse-jdbc-0.X.X-patchXX-shaded.jar                       | ClickHouse JDBCドライバーの JAR ファイルへの絶対パス |
+    | Database User              | default                                                                                  | ClickHouse のユーザー名                    |
+    | Password                   | password                                                                                 | ClickHouse のパスワード                    |
 
     6. Settings セクションで、識別しやすいように Controller Service の名前を &quot;ClickHouse JDBC&quot; に変更します
 
@@ -86,19 +78,17 @@ import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintaine
        <Image img="/images/integrations/data-ingestion/etl-tools/nifi_08.webp" size="lg" border alt="有効になった ClickHouse JDBC service が表示された Controller Services 一覧" />
   </Step>
 
-  <Step>
-    ## `ExecuteSQL` プロセッサを使用してテーブルから読み取る
-
+  <Step title={<><code>ExecuteSQL</code> プロセッサを使用してテーブルから読み取る</>} id="5-read-from-a-table-using-the-executesql-processor">
     1. 適切な上流側および下流側のプロセッサとともに、`ExecuteSQL` プロセッサを追加します
 
        <Image img="/images/integrations/data-ingestion/etl-tools/nifi_09.webp" size="md" border alt="ワークフロー内の ExecuteSQL プロセッサを示す NiFi キャンバス" />
 
     2. `ExecuteSQL` プロセッサの &quot;Properties&quot; セクションで、次の値を入力します
 
-       | プロパティ                               | 値                            | 備考                                          |
-       | ----------------------------------- | ---------------------------- | ------------------------------------------- |
-       | Database Connection Pooling Service | ClickHouse JDBC              | ClickHouse 用に設定した Controller Service を選択します |
-       | SQL select query                    | SELECT * FROM system.metrics | ここにクエリを入力します                                |
+       | プロパティ                               | 値                                | 備考                                          |
+       | ----------------------------------- | -------------------------------- | ------------------------------------------- |
+       | Database Connection Pooling Service | ClickHouse JDBC                  | ClickHouse 用に設定した Controller Service を選択します |
+       | SQL select query                    | SELECT &#42; FROM system.metrics | ここにクエリを入力します                                |
 
     3. `ExecuteSQL` プロセッサを開始します
 
@@ -113,9 +103,7 @@ import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintaine
        <Image img="/images/integrations/data-ingestion/etl-tools/nifi_12.webp" size="lg" border alt="整形表示でクエリ結果を示す FlowFile コンテンツビューア" />
   </Step>
 
-  <Step>
-    ## `MergeRecord` と `PutDatabaseRecord` プロセッサを使用してテーブルに書き込む
-
+  <Step title={<>`MergeRecord` と `PutDatabaseRecord` プロセッサを使用してテーブルに書き込む</>} id="6-write-to-a-table-using-mergerecord-and-putdatabaserecord-processor">
     1. 1 回の insert で複数の行を書き込むには、まず複数のレコードを 1 つのレコードにマージする必要があります。これは `MergeRecord` プロセッサを使用して行えます
 
     2. `MergeRecord` プロセッサの &quot;Properties&quot; セクションで、以下の値を入力します

@@ -507,7 +507,7 @@ Registre métricas comparativas antes de la migración para poder verificar la c
 
 4. Opcional, pero recomendable: identifique el nodo líder de ZooKeeper, inícielo y vuelva a detenerlo. Esto obliga a ZooKeeper a escribir una instantánea coherente en disco antes de la conversión.
 
-5. Ejecute `clickhouse-keeper-converter` en el nodo líder. Si tiene instalado el binario completo de ClickHouse, use en su lugar el subcomando `keeper-converter` (`clickhouse keeper-converter`). Si no dispone de ninguno de los dos, [descargue el binario](/getting-started/quick-start/oss#install-clickhouse).
+5. Ejecute `clickhouse-keeper-converter` en el nodo líder. Si tiene instalado el binario completo de ClickHouse, use en su lugar el subcomando `keeper-converter` (`clickhouse keeper-converter`). Si no dispone de ninguno de los dos, [descargue el binario](/es/get-started/setup/self-managed/quick-install#install-clickhouse-using-curl).
 
 ```bash
 clickhouse-keeper-converter \
@@ -779,270 +779,266 @@ Consulte también la [integración de Prometheus](/es/products/cloud/features/mo
 
 Esta guía proporciona una configuración sencilla y mínima para ClickHouse Keeper, con un ejemplo de cómo probar operaciones distribuidas. Este ejemplo se realiza con 3 nodos en Linux.
 
-<div id="1-configure-nodes-with-keeper-settings">
-  ### 1. Configure los nodos con los ajustes de Keeper
-</div>
+<Steps>
+  <Step title="Configure los nodos con la configuración de Keeper" id="1-configure-nodes-with-keeper-settings">
+    1. Instale 3 instancias de ClickHouse en 3 hosts (`chnode1`, `chnode2`, `chnode3`). (Consulte la [Quick Start](/es/get-started/setup/install) para obtener más información sobre cómo instalar ClickHouse.)
 
-1. Instale 3 instancias de ClickHouse en 3 hosts (`chnode1`, `chnode2`, `chnode3`). (Consulte la [Quick Start](/es/get-started/setup/install) para obtener más información sobre cómo instalar ClickHouse.)
+    2. En cada nodo, agregue la siguiente entrada para permitir la comunicación externa a través de la interfaz de red.
+       ```xml
+       <listen_host>0.0.0.0</listen_host>
+       ```
 
-2. En cada nodo, agregue la siguiente entrada para permitir la comunicación externa a través de la interfaz de red.
-   ```xml
-   <listen_host>0.0.0.0</listen_host>
-   ```
+    3. Añada la siguiente configuración de ClickHouse Keeper a los tres servidores y actualice el parámetro `<server_id>` en cada uno; para `chnode1` sería `1`, `chnode2` sería `2`, etc.
 
-3. Añada la siguiente configuración de ClickHouse Keeper a los tres servidores y actualice el parámetro `<server_id>` en cada uno; para `chnode1` sería `1`, `chnode2` sería `2`, etc.
+       ```xml
+       <keeper_server>
+           <tcp_port>9181</tcp_port>
+           <server_id>1</server_id>
+           <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+           <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
 
-   ```xml
-   <keeper_server>
-       <tcp_port>9181</tcp_port>
-       <server_id>1</server_id>
-       <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
-       <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+           <coordination_settings>
+               <operation_timeout_ms>10000</operation_timeout_ms>
+               <session_timeout_ms>30000</session_timeout_ms>
+               <raft_logs_level>warning</raft_logs_level>
+           </coordination_settings>
 
-       <coordination_settings>
-           <operation_timeout_ms>10000</operation_timeout_ms>
-           <session_timeout_ms>30000</session_timeout_ms>
-           <raft_logs_level>warning</raft_logs_level>
-       </coordination_settings>
+           <raft_configuration>
+               <server>
+                   <id>1</id>
+                   <hostname>chnode1.domain.com</hostname>
+                   <port>9234</port>
+               </server>
+               <server>
+                   <id>2</id>
+                   <hostname>chnode2.domain.com</hostname>
+                   <port>9234</port>
+               </server>
+               <server>
+                   <id>3</id>
+                   <hostname>chnode3.domain.com</hostname>
+                   <port>9234</port>
+               </server>
+           </raft_configuration>
+       </keeper_server>
+       ```
 
-       <raft_configuration>
-           <server>
-               <id>1</id>
-               <hostname>chnode1.domain.com</hostname>
-               <port>9234</port>
-           </server>
-           <server>
-               <id>2</id>
-               <hostname>chnode2.domain.com</hostname>
-               <port>9234</port>
-           </server>
-           <server>
-               <id>3</id>
-               <hostname>chnode3.domain.com</hostname>
-               <port>9234</port>
-           </server>
-       </raft_configuration>
-   </keeper_server>
-   ```
+       Estos son los ajustes básicos utilizados más arriba:
 
-   Estos son los ajustes básicos utilizados más arriba:
+       | Parámetro                 | Descripción                                                                           | Ejemplo                                                     |
+       | ------------------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+       | tcp&#95;port              | puerto que usarán los clientes de Keeper                                              | 9181, equivalente predeterminado de 2181, como en ZooKeeper |
+       | server&#95;id             | identificador de cada servidor de ClickHouse Keeper usado en la configuración de raft | 1                                                           |
+       | coordination&#95;settings | sección para parámetros como los tiempos de espera                                    | timeouts: 10000, log level: trace                           |
+       | server                    | definición del servidor participante                                                  | lista con la definición de cada servidor                    |
+       | raft&#95;configuration    | ajustes para cada servidor del clúster de Keeper                                      | servidor y ajustes para cada uno                            |
+       | id                        | identificador numérico del servidor para los servicios de Keeper                      | 1                                                           |
+       | hostname                  | nombre de host, IP o FQDN de cada servidor en el clúster de Keeper                    | `chnode1.domain.com`                                        |
+       | port                      | puerto de escucha para las conexiones entre servidores de Keeper                      | 9234                                                        |
 
-   | Parámetro                 | Descripción                                                                           | Ejemplo                                                     |
-   | ------------------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-   | tcp&#95;port              | puerto que usarán los clientes de Keeper                                              | 9181, equivalente predeterminado de 2181, como en ZooKeeper |
-   | server&#95;id             | identificador de cada servidor de ClickHouse Keeper usado en la configuración de raft | 1                                                           |
-   | coordination&#95;settings | sección para parámetros como los tiempos de espera                                    | timeouts: 10000, log level: trace                           |
-   | server                    | definición del servidor participante                                                  | lista con la definición de cada servidor                    |
-   | raft&#95;configuration    | ajustes para cada servidor del clúster de Keeper                                      | servidor y ajustes para cada uno                            |
-   | id                        | identificador numérico del servidor para los servicios de Keeper                      | 1                                                           |
-   | hostname                  | nombre de host, IP o FQDN de cada servidor en el clúster de Keeper                    | `chnode1.domain.com`                                        |
-   | port                      | puerto de escucha para las conexiones entre servidores de Keeper                      | 9234                                                        |
+    4. Habilite el componente Zookeeper. Utilizará el motor ClickHouse Keeper:
 
-4. Habilite el componente Zookeeper. Utilizará el motor ClickHouse Keeper:
+       ```xml
+           <zookeeper>
+               <node>
+                   <host>chnode1.domain.com</host>
+                   <port>9181</port>
+               </node>
+               <node>
+                   <host>chnode2.domain.com</host>
+                   <port>9181</port>
+               </node>
+               <node>
+                   <host>chnode3.domain.com</host>
+                   <port>9181</port>
+               </node>
+           </zookeeper>
+       ```
 
-   ```xml
-       <zookeeper>
-           <node>
-               <host>chnode1.domain.com</host>
-               <port>9181</port>
-           </node>
-           <node>
-               <host>chnode2.domain.com</host>
-               <port>9181</port>
-           </node>
-           <node>
-               <host>chnode3.domain.com</host>
-               <port>9181</port>
-           </node>
-       </zookeeper>
-   ```
+       Estos son los ajustes básicos utilizados más arriba:
 
-   Estos son los ajustes básicos utilizados anteriormente:
+       | Parámetro | Descripción                                                 | Ejemplo                                     |
+       | --------- | ----------------------------------------------------------- | ------------------------------------------- |
+       | node      | lista de nodos para las conexiones a ClickHouse Keeper      | entrada de configuración para cada servidor |
+       | host      | nombre de host, IP o FQDN de cada nodo de ClickHouse Keeper | `chnode1.domain.com`                        |
+       | port      | puerto del cliente de ClickHouse Keeper                     | 9181                                        |
 
-   | Parámetro | Descripción                                                 | Ejemplo                                     |
-   | --------- | ----------------------------------------------------------- | ------------------------------------------- |
-   | node      | lista de nodos para las conexiones a ClickHouse Keeper      | entrada de configuración para cada servidor |
-   | host      | nombre de host, IP o FQDN de cada nodo de ClickHouse Keeper | `chnode1.domain.com`                        |
-   | port      | puerto del cliente de ClickHouse Keeper                     | 9181                                        |
+    5. Reinicie ClickHouse y verifique que cada instancia de Keeper esté en funcionamiento. Ejecute el siguiente comando en cada servidor. El comando `ruok` devuelve `imok` si Keeper se está ejecutando y está en buen estado:
+       ```bash
+       # echo ruok | nc localhost 9181; echo
+       imok
+       ```
 
-5. Reinicie ClickHouse y verifique que cada instancia de Keeper esté en funcionamiento. Ejecute el siguiente comando en cada servidor. El comando `ruok` devuelve `imok` si Keeper se está ejecutando y está en buen estado:
-   ```bash
-   # echo ruok | nc localhost 9181; echo
-   imok
-   ```
+    6. La base de datos `system` tiene una tabla llamada `zookeeper` que contiene los detalles de las instancias de ClickHouse Keeper. Veamos la tabla:
 
-6. La base de datos `system` tiene una tabla llamada `zookeeper` que contiene los detalles de las instancias de ClickHouse Keeper. Veamos la tabla:
+       ```sql
+       SELECT *
+       FROM system.zookeeper
+       WHERE path IN ('/', '/clickhouse')
+       ```
 
-   ```sql
-   SELECT *
-   FROM system.zookeeper
-   WHERE path IN ('/', '/clickhouse')
-   ```
+       La tabla se ve así:
 
-   La tabla se ve así:
+       ```response
+       ┌─name───────┬─value─┬─czxid─┬─mzxid─┬───────────────ctime─┬───────────────mtime─┬─version─┬─cversion─┬─aversion─┬─ephemeralOwner─┬─dataLength─┬─numChildren─┬─pzxid─┬─path────────┐
+       │ clickhouse │       │   124 │   124 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        2 │        0 │              0 │          0 │           2 │  5693 │ /           │
+       │ task_queue │       │   125 │   125 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        1 │        0 │              0 │          0 │           1 │   126 │ /clickhouse │
+       │ tables     │       │  5693 │  5693 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        3 │        0 │              0 │          0 │           3 │  6461 │ /clickhouse │
+       └────────────┴───────┴───────┴───────┴─────────────────────┴─────────────────────┴─────────┴──────────┴──────────┴────────────────┴────────────┴─────────────┴───────┴─────────────┘
+       ```
+  </Step>
 
-   ```response
-   ┌─name───────┬─value─┬─czxid─┬─mzxid─┬───────────────ctime─┬───────────────mtime─┬─version─┬─cversion─┬─aversion─┬─ephemeralOwner─┬─dataLength─┬─numChildren─┬─pzxid─┬─path────────┐
-   │ clickhouse │       │   124 │   124 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        2 │        0 │              0 │          0 │           2 │  5693 │ /           │
-   │ task_queue │       │   125 │   125 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        1 │        0 │              0 │          0 │           1 │   126 │ /clickhouse │
-   │ tables     │       │  5693 │  5693 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        3 │        0 │              0 │          0 │           3 │  6461 │ /clickhouse │
-   └────────────┴───────┴───────┴───────┴─────────────────────┴─────────────────────┴─────────┴──────────┴──────────┴────────────────┴────────────┴─────────────┴───────┴─────────────┘
-   ```
+  <Step title="Configurar un clúster en ClickHouse" id="2--configure-a-cluster-in-clickhouse">
+    1. Configuremos un clúster simple con 2 segmentos y solo una réplica en 2 de los nodos. El tercer nodo se utilizará para alcanzar el quórum requerido en ClickHouse Keeper. Actualice la configuración en `chnode1` y `chnode2`. El siguiente clúster define 1 segmento en cada nodo, para un total de 2 segmentos sin replicación. En este ejemplo, parte de los datos estará en un nodo y otra parte estará en el otro nodo:
 
-<div id="2--configure-a-cluster-in-clickhouse">
-  ### 2.  Configurar un clúster en ClickHouse
-</div>
+       ```xml
+           <remote_servers>
+               <cluster_2S_1R>
+                   <shard>
+                       <replica>
+                           <host>chnode1.domain.com</host>
+                           <port>9000</port>
+                           <user>default</user>
+                           <password>ClickHouse123!</password>
+                       </replica>
+                   </shard>
+                   <shard>
+                       <replica>
+                           <host>chnode2.domain.com</host>
+                           <port>9000</port>
+                           <user>default</user>
+                           <password>ClickHouse123!</password>
+                       </replica>
+                   </shard>
+               </cluster_2S_1R>
+           </remote_servers>
+       ```
 
-1. Configuremos un clúster simple con 2 segmentos y solo una réplica en 2 de los nodos. El tercer nodo se utilizará para lograr el quorum requerido en ClickHouse Keeper. Actualiza la configuración en `chnode1` y `chnode2`. El siguiente clúster define 1 segmento en cada nodo, para un total de 2 segmentos sin replicación. En este ejemplo, parte de los datos estará en un nodo y otra parte en el otro:
+       | Parámetro | Descripción                                                                           | Ejemplo                               |
+       | --------- | ------------------------------------------------------------------------------------- | ------------------------------------- |
+       | shard     | lista de réplicas en la definición del clúster                                        | lista de réplicas para cada segmento  |
+       | replica   | lista de ajustes para cada réplica                                                    | entradas de ajustes para cada réplica |
+       | host      | nombre de host, IP o FQDN del servidor que alojará un segmento de réplica             | `chnode1.domain.com`                  |
+       | port      | puerto utilizado para comunicarse mediante el protocolo TCP nativo                    | 9000                                  |
+       | user      | nombre de usuario que se utilizará para autenticarse en las instancias del clúster    | default                               |
+       | password  | contraseña del usuario definido para permitir conexiones a las instancias del clúster | `ClickHouse123!`                      |
 
-   ```xml
-       <remote_servers>
-           <cluster_2S_1R>
-               <shard>
-                   <replica>
-                       <host>chnode1.domain.com</host>
-                       <port>9000</port>
-                       <user>default</user>
-                       <password>ClickHouse123!</password>
-                   </replica>
-               </shard>
-               <shard>
-                   <replica>
-                       <host>chnode2.domain.com</host>
-                       <port>9000</port>
-                       <user>default</user>
-                       <password>ClickHouse123!</password>
-                   </replica>
-               </shard>
-           </cluster_2S_1R>
-       </remote_servers>
-   ```
+    2. Reinicie ClickHouse y verifique que el clúster se haya creado:
 
-   | Parámetro | Descripción                                                                           | Ejemplo                               |
-   | --------- | ------------------------------------------------------------------------------------- | ------------------------------------- |
-   | segmento  | lista de réplicas en la definición del clúster                                        | lista de réplicas para cada segmento  |
-   | réplica   | lista de ajustes para cada réplica                                                    | entradas de ajustes para cada réplica |
-   | host      | hostname, IP o FQDN del servidor que alojará un segmento de réplica                   | `chnode1.domain.com`                  |
-   | port      | puerto utilizado para comunicarse mediante el protocolo TCP nativo                    | 9000                                  |
-   | user      | nombre de usuario que se utilizará para autenticarse en las instancias del clúster    | default                               |
-   | password  | contraseña del usuario definido para permitir conexiones a las instancias del clúster | `ClickHouse123!`                      |
+       ```sql
+       SHOW clusters;
+       ```
 
-2. Reinicia ClickHouse y verifica que el clúster se haya creado:
+       Debería ver su clúster:
 
-   ```sql
-   SHOW clusters;
-   ```
+       ```response
+       ┌─cluster───────┐
+       │ cluster_2S_1R │
+       └───────────────┘
+       ```
+  </Step>
 
-   Deberías ver tu clúster:
+  <Step title="Crear y probar una tabla distribuida" id="3-create-and-test-distributed-table">
+    1. Cree una nueva base de datos en el nuevo clúster con ClickHouse client en `chnode1`. La cláusula `ON CLUSTER` crea automáticamente la base de datos en ambos nodos.
+       ```sql
+       CREATE DATABASE db1 ON CLUSTER 'cluster_2S_1R';
+       ```
 
-   ```response
-   ┌─cluster───────┐
-   │ cluster_2S_1R │
-   └───────────────┘
-   ```
+    2. Cree una nueva tabla en la base de datos `db1`. Una vez más, `ON CLUSTER` crea la tabla en ambos nodos.
+       ```sql
+       CREATE TABLE db1.table1 on cluster 'cluster_2S_1R'
+       (
+           `id` UInt64,
+           `column1` String
+       )
+       ENGINE = MergeTree
+       ORDER BY column1
+       ```
 
-<div id="3-create-and-test-distributed-table">
-  ### 3. Crear y probar una tabla distribuida
-</div>
+    3. En el nodo `chnode1`, agregue un par de filas:
+       ```sql
+       INSERT INTO db1.table1
+           (id, column1)
+       VALUES
+           (1, 'abc'),
+           (2, 'def')
+       ```
 
-1. Cree una nueva base de datos en el nuevo clúster con el cliente de ClickHouse en `chnode1`. La cláusula `ON CLUSTER` crea automáticamente la base de datos en ambos nodos.
-   ```sql
-   CREATE DATABASE db1 ON CLUSTER 'cluster_2S_1R';
-   ```
+    4. Agregue un par de filas en el nodo `chnode2`:
+       ```sql
+       INSERT INTO db1.table1
+           (id, column1)
+       VALUES
+           (3, 'ghi'),
+           (4, 'jkl')
+       ```
 
-2. Cree una nueva tabla en la base de datos `db1`. Una vez más, `ON CLUSTER` crea la tabla en ambos nodos.
-   ```sql
-   CREATE TABLE db1.table1 on cluster 'cluster_2S_1R'
-   (
-       `id` UInt64,
-       `column1` String
-   )
-   ENGINE = MergeTree
-   ORDER BY column1
-   ```
+    5. Tenga en cuenta que ejecutar una instrucción `SELECT` en cada nodo solo muestra los datos de ese nodo. Por ejemplo, en `chnode1`:
 
-3. En el nodo `chnode1`, agregue un par de filas:
-   ```sql
-   INSERT INTO db1.table1
-       (id, column1)
-   VALUES
-       (1, 'abc'),
-       (2, 'def')
-   ```
+       ```sql
+       SELECT *
+       FROM db1.table1
+       ```
 
-4. Agregue un par de filas en el nodo `chnode2`:
-   ```sql
-   INSERT INTO db1.table1
-       (id, column1)
-   VALUES
-       (3, 'ghi'),
-       (4, 'jkl')
-   ```
+       ```response
+       Query id: 7ef1edbc-df25-462b-a9d4-3fe6f9cb0b6d
 
-5. Tenga en cuenta que, al ejecutar una instrucción `SELECT` en cada nodo, solo se muestran los datos de ese nodo. Por ejemplo, en `chnode1`:
+       ┌─id─┬─column1─┐
+       │  1 │ abc     │
+       │  2 │ def     │
+       └────┴─────────┘
 
-   ```sql
-   SELECT *
-   FROM db1.table1
-   ```
+       2 rows in set. Elapsed: 0.006 sec.
+       ```
 
-   ```response
-   Query id: 7ef1edbc-df25-462b-a9d4-3fe6f9cb0b6d
+       En `chnode2`:
 
-   ┌─id─┬─column1─┐
-   │  1 │ abc     │
-   │  2 │ def     │
-   └────┴─────────┘
+    6. ```sql
+       SELECT *
+       FROM db1.table1
+       ```
 
-   2 rows in set. Elapsed: 0.006 sec.
-   ```
+       ```response
+       Query id: c43763cc-c69c-4bcc-afbe-50e764adfcbf
 
-   En `chnode2`:
+       ┌─id─┬─column1─┐
+       │  3 │ ghi     │
+       │  4 │ jkl     │
+       └────┴─────────┘
+       ```
 
-6. ```sql
-   SELECT *
-   FROM db1.table1
-   ```
+    7. Puede crear una tabla `Distributed` para representar los datos de los dos segmentos. Las tablas con el motor de tabla `Distributed` no almacenan datos propios, pero permiten el procesamiento distribuido de consultas en varios servidores. Las lecturas abarcan todos los segmentos, y las escrituras pueden distribuirse entre ellos. Ejecute la siguiente consulta en `chnode1`:
+       ```sql
+       CREATE TABLE db1.dist_table (
+           id UInt64,
+           column1 String
+       )
+       ENGINE = Distributed(cluster_2S_1R,db1,table1)
+       ```
 
-   ```response
-   Query id: c43763cc-c69c-4bcc-afbe-50e764adfcbf
+    8. Observe que consultar `dist_table` devuelve las cuatro filas de datos de los dos segmentos:
 
-   ┌─id─┬─column1─┐
-   │  3 │ ghi     │
-   │  4 │ jkl     │
-   └────┴─────────┘
-   ```
+       ```sql
+       SELECT *
+       FROM db1.dist_table
+       ```
 
-7. Puede crear una tabla `Distributed` para representar los datos de los dos segmentos. Las tablas con el engine de tabla `Distributed` no almacenan datos propios, pero permiten el procesamiento distribuido de consultas en varios servidores. Las lecturas acceden a todos los segmentos, y las escrituras pueden distribuirse entre ellos. Ejecute la siguiente consulta en `chnode1`:
-   ```sql
-   CREATE TABLE db1.dist_table (
-       id UInt64,
-       column1 String
-   )
-   ENGINE = Distributed(cluster_2S_1R,db1,table1)
-   ```
+       ```response
+       Query id: 495bffa0-f849-4a0c-aeea-d7115a54747a
 
-8. Tenga en cuenta que consultar `dist_table` devuelve las cuatro filas de datos de los dos segmentos:
+       ┌─id─┬─column1─┐
+       │  1 │ abc     │
+       │  2 │ def     │
+       └────┴─────────┘
+       ┌─id─┬─column1─┐
+       │  3 │ ghi     │
+       │  4 │ jkl     │
+       └────┴─────────┘
 
-   ```sql
-   SELECT *
-   FROM db1.dist_table
-   ```
-
-   ```response
-   Query id: 495bffa0-f849-4a0c-aeea-d7115a54747a
-
-   ┌─id─┬─column1─┐
-   │  1 │ abc     │
-   │  2 │ def     │
-   └────┴─────────┘
-   ┌─id─┬─column1─┐
-   │  3 │ ghi     │
-   │  4 │ jkl     │
-   └────┴─────────┘
-
-   4 rows in set. Elapsed: 0.018 sec.
-   ```
+       4 rows in set. Elapsed: 0.018 sec.
+       ```
+  </Step>
+</Steps>
 
 <div id="summary">
   ### Resumen

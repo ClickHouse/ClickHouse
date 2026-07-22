@@ -22,152 +22,148 @@ import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/Experim
 </Note>
 
 <div id="connecting-clickhouse-to-mysql-using-the-mysql-table-engine">
-  ## ربط ClickHouse بـ MySQL باستخدام محرك جدول MySQL
+  ## ربط ClickHouse بـ MySQL باستخدام محرك الجدول `MySQL`
 </div>
 
-يمكّنك محرك الجدول `MySQL` من ربط ClickHouse بـ MySQL. ويمكن تنفيذ عبارات **SELECT** و**INSERT** إما في ClickHouse أو في جدول MySQL. توضّح هذه المقالة الأساليب الأساسية لاستخدام محرك الجدول `MySQL`.
+يتيح لك محرك الجدول `MySQL` ربط ClickHouse بـ MySQL. ويمكن تنفيذ عبارات **SELECT** و**INSERT** في ClickHouse أو في جدول MySQL. توضّح هذه المقالة الطرق الأساسية لاستخدام محرك الجدول `MySQL`.
 
-<div id="1-configure-mysql">
-  ### 1. إعداد MySQL
-</div>
+<Steps>
+  <Step title="تهيئة MySQL" id="1-configure-mysql">
+    1. أنشئ قاعدة بيانات في MySQL:
 
-1. أنشئ قاعدة بيانات في MySQL:
+    ```sql
+    CREATE DATABASE db1;
+    ```
 
-```sql
-  CREATE DATABASE db1;
-```
+    2. أنشئ جدولًا:
 
-2. أنشئ جدولًا:
+    ```sql
+    CREATE TABLE db1.table1 (
+      id INT,
+      column1 VARCHAR(255)
+    );
+    ```
 
-```sql
-  CREATE TABLE db1.table1 (
-    id INT,
-    column1 VARCHAR(255)
-  );
-```
+    3. أدرِج صفوفًا تجريبية:
 
-3. أدرِج بعض الصفوف النموذجية:
+    ```sql
+    INSERT INTO db1.table1
+      (id, column1)
+    VALUES
+      (1, 'abc'),
+      (2, 'def'),
+      (3, 'ghi');
+    ```
 
-```sql
-  INSERT INTO db1.table1
-    (id, column1)
-  VALUES
-    (1, 'abc'),
-    (2, 'def'),
-    (3, 'ghi');
-```
+    4. أنشئ مستخدمًا للاتصال من ClickHouse:
 
-4. أنشئ مستخدمًا للاتصال من خلال ClickHouse:
+    ```sql
+    CREATE USER 'mysql_clickhouse'@'%' IDENTIFIED BY 'Password123!';
+    ```
 
-```sql
-  CREATE USER 'mysql_clickhouse'@'%' IDENTIFIED BY 'Password123!';
-```
+    5. امنح الامتيازات حسب الحاجة. (لأغراض العرض التوضيحي، مُنح المستخدم `mysql_clickhouse` امتيازات المسؤول.)
 
-5. امنح الامتيازات حسب الحاجة. (لأغراض التوضيح، يُمنَح المستخدم `mysql_clickhouse` امتيازات المسؤول.)
+    ```sql
+    GRANT ALL PRIVILEGES ON *.* TO 'mysql_clickhouse'@'%';
+    ```
 
-```sql
-  GRANT ALL PRIVILEGES ON *.* TO 'mysql_clickhouse'@'%';
-```
+    <Note>
+      إذا كنت تستخدم هذه الميزة في ClickHouse Cloud، فقد تحتاج إلى السماح لعناوين IP الخاصة بـ ClickHouse Cloud بالوصول إلى مثيل MySQL لديك.
+      تحقق من [Cloud Endpoints API](/ar/products/cloud/guides/sql-console/query-endpoints) في ClickHouse للحصول على تفاصيل زيارات egress.
+    </Note>
+  </Step>
 
-<Note>
-  إذا كنت تستخدم هذه الميزة في ClickHouse Cloud، فقد تحتاج إلى السماح لعناوين IP الخاصة بـ ClickHouse Cloud بالوصول إلى مثيل MySQL لديك.
-  راجع [واجهة برمجة تطبيقات Cloud Endpoints](/ar/products/cloud/guides/sql-console/query-endpoints) للاطلاع على تفاصيل حركة المرور الصادرة.
-</Note>
+  <Step title="تعريف جدول في ClickHouse" id="2-define-a-table-in-clickhouse">
+    1. الآن لننشئ جدول ClickHouse يستخدم محرك الجدول `MySQL`:
 
-<div id="2-define-a-table-in-clickhouse">
-  ### 2. عرّف جدولًا في ClickHouse
-</div>
+    ```sql
+    CREATE TABLE mysql_table1 (
+      id UInt64,
+      column1 String
+    )
+    ENGINE = MySQL('mysql-host.domain.com','db1','table1','mysql_clickhouse','Password123!')
+    ```
 
-1. لنُنشئ الآن جدولًا في ClickHouse يستخدم محرك الجدول `MySQL`:
+    الحد الأدنى من المَعلمات هو:
 
-```sql
-  CREATE TABLE mysql_table1 (
-    id UInt64,
-    column1 String
-  )
-  ENGINE = MySQL('mysql-host.domain.com','db1','table1','mysql_clickhouse','Password123!')
-```
+    | parameter | Description                   | example               |
+    | --------- | ----------------------------- | --------------------- |
+    | host      | اسم المضيف أو عنوان IP        | mysql-host.domain.com |
+    | database  | اسم قاعدة بيانات MySQL        | db1                   |
+    | table     | اسم جدول MySQL                | table1                |
+    | user      | اسم المستخدم للاتصال بـ MySQL | mysql&#95;clickhouse  |
+    | password  | كلمة المرور للاتصال بـ MySQL  | Password123!          |
 
-الحد الأدنى من المَعلمات هو:
+    <Note>
+      اطّلع على صفحة توثيق [محرك الجدول `MySQL`](/ar/reference/engines/table-engines/integrations/mysql) للحصول على قائمة كاملة بالمَعلمات.
+    </Note>
+  </Step>
 
-| parameter | الوصف                         | example               |
-| --------- | ----------------------------- | --------------------- |
-| host      | اسم المضيف أو عنوان IP        | mysql-host.domain.com |
-| database  | اسم قاعدة بيانات MySQL        | db1                   |
-| table     | اسم جدول MySQL                | table1                |
-| user      | اسم المستخدم للاتصال بـ MySQL | mysql&#95;clickhouse  |
-| password  | كلمة المرور للاتصال بـ MySQL  | Password123!          |
+  <Step title="اختبر التكامل" id="3-test-the-integration">
+    1. في MySQL، أدرِج صفًا تجريبيًا:
 
-<Note>
-  راجع صفحة توثيق [محرك الجدول `MySQL`](/ar/reference/engines/table-engines/integrations/mysql) للحصول على القائمة الكاملة للمَعلمات.
-</Note>
+    ```sql
+    INSERT INTO db1.table1
+      (id, column1)
+    VALUES
+      (4, 'jkl');
+    ```
 
-<div id="3-test-the-integration">
-  ### 3. اختبر التكامل
-</div>
+    2. لاحظ أن الصفوف الموجودة أصلًا في جدول MySQL أصبحت الآن في جدول ClickHouse، إلى جانب الصف الجديد الذي أضفته للتو:
 
-1. في MySQL، أدرِج صفًا تجريبيًا:
+    ```sql
+    SELECT
+        id,
+        column1
+    FROM mysql_table1
+    ```
 
-```sql
-  INSERT INTO db1.table1
-    (id, column1)
-  VALUES
-    (4, 'jkl');
-```
+    من المفترض أن ترى 4 صفوف:
 
-2. لاحظ أن الصفوف الموجودة أصلًا في جدول MySQL أصبحت الآن في جدول ClickHouse، إلى جانب الصف الجديد الذي أضفته للتو:
+    ```response
+    Query id: 6d590083-841e-4e95-8715-ef37d3e95197
 
-```sql
-  SELECT
-      id,
-      column1
-  FROM mysql_table1
-```
+    ┌─id─┬─column1─┐
+    │  1 │ abc     │
+    │  2 │ def     │
+    │  3 │ ghi     │
+    │  4 │ jkl     │
+    └────┴─────────┘
 
-من المفترض أن ترى 4 صفوف:
+    4 rows in set. Elapsed: 0.044 sec.
+    ```
 
-```response
-  Query id: 6d590083-841e-4e95-8715-ef37d3e95197
+    3. لنُضِف صفًا إلى جدول ClickHouse:
 
-  ┌─id─┬─column1─┐
-  │  1 │ abc     │
-  │  2 │ def     │
-  │  3 │ ghi     │
-  │  4 │ jkl     │
-  └────┴─────────┘
+    ```sql
+    INSERT INTO mysql_table1
+      (id, column1)
+    VALUES
+      (5,'mno')
+    ```
 
-  4 rows in set. Elapsed: 0.044 sec.
-```
+    4. لاحظ ظهور الصف الجديد في MySQL:
 
-3. لنُضِف صفًا إلى جدول ClickHouse:
+    ```bash
+    mysql> select id,column1 from db1.table1;
+    ```
 
-```sql
-  INSERT INTO mysql_table1
-    (id, column1)
-  VALUES
-    (5,'mno')
-```
+    يجب أن يظهر لك الصف الجديد:
 
-4. لاحظ ظهور الصف الجديد في MySQL:
-
-```bash
-  mysql> select id,column1 from db1.table1;
-```
-
-يجب أن يظهر لك الصف الجديد:
-
-```response
-  +------+---------+
-  | id   | column1 |
-  +------+---------+
-  |    1 | abc     |
-  |    2 | def     |
-  |    3 | ghi     |
-  |    4 | jkl     |
-  |    5 | mno     |
-  +------+---------+
-  5 rows in set (0.01 sec)
-```
+    ```response
+    +------+---------+
+    | id   | column1 |
+    +------+---------+
+    |    1 | abc     |
+    |    2 | def     |
+    |    3 | ghi     |
+    |    4 | jkl     |
+    |    5 | mno     |
+    +------+---------+
+    5 rows in set (0.01 sec)
+    ```
+  </Step>
+</Steps>
 
 <div id="summary">
   ### الملخص

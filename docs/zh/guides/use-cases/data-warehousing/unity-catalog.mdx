@@ -14,7 +14,11 @@ import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 ClickHouse 支持与多个目录 (如 Unity、Glue、Polaris 等) 集成。本指南将逐步说明如何使用 ClickHouse 和 [Unity Catalog](https://www.databricks.com/product/unity-catalog) 查询由 Databricks 管理的数据。
 
-Databricks 的湖仓支持多种数据格式。借助 ClickHouse，您可以以 Delta 和 Iceberg 两种方式查询 Unity Catalog 表。
+Databricks 的湖仓支持多种数据格式。借助 ClickHouse，您可以查询使用外部存储位置的 Unity Catalog Delta 和 Iceberg 表。
+
+<Note>
+  对于存储在 [Databricks 托管存储](https://docs.databricks.com/aws/en/data-governance/unity-catalog/managed-versus-external) 上的 Delta Lake 或 Iceberg 表，Unity Catalog 不提供 [credential vending](https://docs.databricks.com/aws/en/external-access/credential-vending)。ClickHouse 依赖 credential vending 从 Unity Catalog 读取表数据。
+</Note>
 
 <Note>
   由于此功能仍处于 Experimental 阶段，您需要使用以下命令启用它：
@@ -59,7 +63,7 @@ SETTINGS warehouse = 'CATALOG_NAME', catalog_credential = '<PAT>', catalog_type 
   ### 读取 Iceberg 表
 </div>
 
-要访问托管的 Iceberg 表：
+要访问外部 Iceberg 表：
 
 ```sql
 CREATE DATABASE unity

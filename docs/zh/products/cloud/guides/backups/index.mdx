@@ -4,10 +4,19 @@ title: '备份'
 description: '备份目录页。'
 keywords: ['备份', '可配置备份', '将备份导出到您自己的云账户']
 doc_type: 'landing-page'
+mode: wide
 ---
 
-| 页面                                                                                                        | 描述                                              |
-| --------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| [概述](/zh/products/cloud/guides/backups/review-and-restore-backups)                                           | 备份概述页面。                                         |
-| [可配置备份](/zh/products/cloud/guides/backups/configurable-backups)                                              | 了解如何在 Scale 和 Enterprise 层级中，根据您的具体业务需求自定义备份计划。 |
-| [将备份导出到您自己的云账户](/zh/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) | 了解如何将备份导出到您自己的云账户。                              |
+<CardGroup cols={2}>
+  <Card title="查看并恢复备份" icon="clock-rotate-left" href="/zh/products/cloud/guides/backups/review-and-restore-backups">
+    提供 ClickHouse Cloud 备份概述。
+  </Card>
+
+  <Card title="配置备份计划" icon="calendar-days" href="/zh/products/cloud/guides/backups/configurable-backups">
+    在 Scale 和 Enterprise 层级中，根据您的具体业务需求自定义备份计划。
+  </Card>
+
+  <Card title="自带备份" icon="box-archive" href="/zh/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account">
+    将备份导出到您自己的云账户，并通过 UI 或命令使用您自己的存储桶执行备份或恢复操作。
+  </Card>
+</CardGroup>

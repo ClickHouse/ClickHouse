@@ -24,7 +24,7 @@ Kinesis ClickPipes можно развертывать и настраивать
   ## Создание первого ClickPipe
 </div>
 
-1. Откройте консоль SQL для своего сервиса ClickHouse Cloud.
+1. Откройте SQL Console для вашего сервиса ClickHouse Cloud.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="Сервис ClickPipes" size="lg" border />
 
@@ -36,31 +36,31 @@ Kinesis ClickPipes можно развертывать и настраивать
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="Выбор типа источника данных" size="lg" border />
 
-4. Заполните форму: укажите имя ClickPipe, описание (необязательно), роль IAM или учетные данные, а также другие сведения о подключении.
+4. Заполните форму: укажите имя ClickPipe, описание (необязательно), роль IAM или учётные данные, а также другие сведения о подключении.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="Заполнение сведений о подключении" size="lg" border />
 
-5. Выберите Kinesis Stream и начальное смещение. Интерфейс покажет пример документа из выбранного источника (топик Kafka и т. д.). Вы также можете включить Enhanced Fan-out для потоков Kinesis, чтобы повысить производительность и стабильность ClickPipe (подробнее об Enhanced Fan-out можно узнать [здесь](https://aws.amazon.com/blogs/aws/kds-enhanced-fanout))
+5. Выберите Kinesis Stream и начальное смещение. В интерфейсе отобразится образец документа из выбранного источника (топика Kafka и т. д.). Вы также можете включить Enhanced Fan-out для потоков Kinesis, чтобы повысить производительность и стабильность ClickPipe (подробнее об Enhanced Fan-out читайте [здесь](https://aws.amazon.com/blogs/aws/kds-enhanced-fanout))
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="Настройка формата данных и топика" size="lg" border />
 
-6. На следующем шаге вы можете выбрать, выполнять ли приём данных в новую таблицу ClickHouse или использовать существующую. Следуйте инструкциям на экране, чтобы изменить имя таблицы, схему и настройки. Вверху страницы отображается предварительный просмотр изменений в реальном времени на примере таблицы.
+6. На следующем шаге можно выбрать, куда выполнять приём данных: в новую таблицу ClickHouse или в существующую. Следуйте инструкциям на экране, чтобы изменить имя таблицы, схему и настройки. Вверху страницы доступен предварительный просмотр изменений в образце таблицы в реальном времени.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="Настройка таблицы, схемы и параметров" size="lg" border />
 
-Вы также можете настроить дополнительные параметры с помощью доступных элементов управления
+Вы также можете изменить расширенные настройки с помощью доступных элементов управления
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="Настройка дополнительных элементов управления" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="Настройка дополнительных параметров" size="lg" border />
 
-7. Кроме того, можно выбрать приём данных в существующую таблицу ClickHouse. В этом случае интерфейс позволит сопоставить поля источника с полями ClickHouse в выбранной целевой таблице.
+7. Либо можно настроить приём данных в существующую таблицу ClickHouse. В этом случае интерфейс позволит сопоставить поля источника с полями ClickHouse в выбранной целевой таблице.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="Использование существующей таблицы" size="lg" border />
 
 8. Наконец, вы можете настроить разрешения для внутреннего пользователя ClickPipes.
 
-**Разрешения:** ClickPipes создаст отдельного пользователя для записи данных в целевую таблицу. Для этого внутреннего пользователя можно выбрать пользовательскую роль или одну из предопределенных ролей:
+**Разрешения:** ClickPipes создаст отдельного пользователя для записи данных в целевую таблицу. Для этого внутреннего пользователя можно выбрать пользовательскую роль или одну из предопределённых ролей:
 
-* `Full access`: полный доступ к кластеру. Это может быть полезно, если вы используете materialized view или словарь с целевой таблицей.
+* `Full access`: полный доступ к кластеру. Это может быть полезно, если вы используете materialized view или словарь вместе с целевой таблицей.
   * `Only destination table`: только разрешения `INSERT` для целевой таблицы.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Разрешения" border />
@@ -71,15 +71,15 @@ Kinesis ClickPipes можно развертывать и настраивать
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="Уведомление об удалении" size="lg" border />
 
-Сводная таблица содержит элементы управления для просмотра примеров данных из источника или из целевой таблицы в ClickHouse
+В сводной таблице есть элементы управления для просмотра примеров данных из источника или из целевой таблицы в ClickHouse
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="Просмотр пункта назначения" size="lg" border />
 
-А также элементы управления для удаления ClickPipe и просмотра сводки по задаче приёма.
+А также элементы управления для удаления ClickPipe и просмотра сводки задания приёма.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="Просмотр обзора" size="lg" border />
 
-10. **Поздравляем!** Вы успешно настроили свой первый ClickPipe. Если это стриминговый ClickPipe, он будет работать непрерывно и выполнять приём данных в реальном времени из удаленного источника. В противном случае он выполнит приём батча и завершит работу.
+10. **Поздравляем!** Вы успешно настроили свой первый ClickPipe. Если это стриминговый ClickPipe, он будет непрерывно работать и выполнять ингестию данных в реальном времени из удалённого источника. В противном случае он обработает батч и завершит работу.
 
 <div id="supported-data-formats">
   ## Поддерживаемые форматы данных
@@ -225,4 +225,4 @@ ClickPipe автоматически перезапустит потребите
   ## Аутентификация
 </div>
 
-Для доступа к потокам Amazon Kinesis можно использовать [учетные данные IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) или [роль IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html). Подробнее о настройке роли IAM см. [в этом руководстве](/ru/integrations/clickpipes/kinesis/auth), где описано, как настроить роль для работы с ClickHouse Cloud
+Для доступа к потокам Amazon Kinesis можно использовать [учетные данные IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) или [роль IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html). Подробнее о настройке роли IAM см. в [этом руководстве](/ru/integrations/clickpipes/kinesis/auth), где описано, как настроить роль для работы с ClickHouse Cloud

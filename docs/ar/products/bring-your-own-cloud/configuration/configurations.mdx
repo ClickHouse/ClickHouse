@@ -64,13 +64,36 @@ doc_type: 'مرجع'
   ## اتصال خاص بواجهة Kubernetes API
 </div>
 
-بشكل افتراضي، تكون نقطة نهاية Kubernetes API server الخاصة بعنقود BYOC لديك متاحة عبر الإنترنت العام، لكن الوصول إليها يكون مقيّدًا عبر تصفية عناوين IP بحيث يُسمح فقط بعناوين IP الخاصة ببوابة ClickHouse NAT Gateway. ولمزيد من الأمان، يمكنك تقييد Kubernetes API server بحيث لا يمكن الوصول إليه إلا عبر اتصالات الشبكة الخاصة باستخدام Tailscale.
+بشكل افتراضي، تكون نقطة نهاية خادم API لـ Kubernetes الخاصة بعنقود BYOC لديك متاحة عبر الإنترنت العام، لكن الوصول إليها يكون مقيّدًا عبر تصفية عناوين IP بحيث يُسمح فقط بعناوين IP الخاصة ببوابة ClickHouse NAT Gateway. ولمزيد من الأمان، يمكنك تقييد خادم API لـ Kubernetes بحيث لا يمكن الوصول إليه إلا عبر اتصالات الشبكة الخاصة.
+
+يتوفر خياران للاتصال الخاص:
+
+<div id="k8s-api-private-connection-tailscale">
+  ### Tailscale (default)
+</div>
+
+عند تمكين نقطة نهاية خاصة لواجهة برمجة التطبيقات، تتصل خدمات الإدارة في ClickHouse بخادم Kubernetes API عبر شبكة Tailscale عديمة الثقة نفسها المستخدمة لأغراض استكشاف الأخطاء وإصلاحها. راجع [Tailscale Private Network](/ar/products/bring-your-own-cloud/reference/network-security#tailscale-private-network) للاطلاع على تفاصيل آلية عمل هذا الاتصال.
 
 <Note>
   إذا كنت تعتمد فقط على Tailscale للاتصال الخاص، فهناك احتمال أن يفقد ClickHouse Support إمكانية الوصول إلى بيئتك إذا أصبح وكيل Tailscale غير متاح. وقد يؤدي ذلك إلى تأخير استكشاف الأخطاء وإصلاحها أو إطالة أوقات استجابة الدعم.
 </Note>
 
-**تواصل مع ClickHouse Support** لطلب إعداد نقطة نهاية API خاصة.
+<div id="k8s-api-private-connection-vpc-lattice">
+  ### AWS VPC Lattice
+</div>
+
+<Info>
+  إمكانية الاتصال عبر VPC Lattice متاحة حاليًا ضمن معاينة خاصة. تواصل مع ClickHouse Support لتمكينها لعملية النشر الخاصة بك.
+</Info>
+
+بالنسبة إلى عمليات النشر على AWS، يمكن بدلًا من ذلك الوصول إلى خادم API الخاص بـ Kubernetes بشكل خاص عبر [AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/)، من دون أي مكونات تابعة لجهة خارجية:
+
+* يوفّر ClickHouse Cloud تلقائيًا VPC Lattice Resource Gateway وResource Configuration تستهدف endpoint الخاص بـ خادم API لـ EKS داخل VPC الخاص بـ BYOC لديك، ويشارك Resource Configuration مع حساب إدارة ClickHouse Cloud عبر AWS Resource Access Manager ‏(RAM).
+* تبقى حركة البيانات بين management services في ClickHouse وخادم API الخاص بـ Kubernetes لديك بالكامل داخل private network الخاصة بـ AWS.
+* يتم إنشاء مشاركة RAM من حسابك وتكون محصورة في cluster واحد من نوع BYOC؛ ويؤدي حذفها إلى إلغاء مسار الوصول الخاص فورًا.
+* ولأن هذا الوصول لا يعتمد على agent يعمل داخل Kubernetes cluster لديك، يحتفظ ClickHouse Support بإمكانية الوصول لأغراض Troubleshooting حتى إذا أصبحت المكونات داخل الـ cluster غير متاحة.
+
+**تواصل مع ClickHouse Support** لطلب تهيئة نقطة نهاية واجهة برمجة التطبيقات خاصة.
 
 <div id="node-groups">
   ## مجموعات العُقد

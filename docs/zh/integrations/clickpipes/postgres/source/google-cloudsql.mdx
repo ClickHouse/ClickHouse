@@ -82,9 +82,9 @@ Postgres 12 及更高版本
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` publication 将包含从指定表生成的一组变更事件，后续将用于摄取复制流。
+`clickpipes` publication 定义了将流式传输到 ClickPipes 的表的变更事件集合。除非您打算复制所有表，否则我们不建议使用 `FOR ALL TABLES`，因为包含不必要的表会增加从 Postgres 到 ClickPipes 的 WAL 流量，并降低整体复制效率。
 
-[//]: # "TODO Add SSH Tunneling"
+[//]: # "TODO 添加 SSH 隧道"
 
 <div id="add-clickpipes-ips-to-firewall">
   ## 将 ClickPipes IP 添加到防火墙

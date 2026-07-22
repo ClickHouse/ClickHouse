@@ -239,7 +239,9 @@ Arguments :
 * `--echo [ <bool> ]` — affiche chaque requête avant son exécution. Accepte une valeur booléenne facultative. Activé par défaut en mode interactif et désactivé en mode batch. Remarque : comme `--echo` accepte désormais une valeur facultative, une requête positionnelle placée immédiatement après un `--echo` seul est interprétée comme sa valeur ; utilisez plutôt `--echo --query "..."`, `--echo -q "..."`, `--echo=false` ou `stdin` redirigé.
 * `--echo-formatted [ <bool> ]` — formate les requêtes affichées en écho. Accepte une valeur booléenne facultative. Activé par défaut en mode interactif et désactivé en mode batch.
 * `--echo-query-id [ <bool> ]` — affiche le `query_id` avant exécution. Accepte une valeur booléenne facultative. Activé par défaut en mode interactif et désactivé en mode batch.
+* `--echo-query-separator <string>` — affiche ce séparateur avant la requête affichée en écho et formatée (nécessite `--echo-formatted`), ce qui permet de distinguer plus facilement la requête saisie de sa version réaffichée après reformatage. Vide par défaut (désactivé).
 * `--highlight`, `--hilite` `<bool>` — active ou désactive la coloration syntaxique de l&#39;invite de commande et des requêtes affichées en écho. Activée par défaut. La coloration n&#39;est appliquée que lors de l&#39;écriture dans un terminal.
+* `--hints <bool>` — affiche, pendant la saisie, des indications d&#39;autocomplétion (texte « fantôme » intégré) pour la suggestion la plus pertinente lorsque le curseur se trouve à la fin de la saisie. Naviguez parmi les indications avec Haut/Bas (ou Ctrl-Haut/Ctrl-Bas) ; acceptez l&#39;indication intégrée avec Tab ou Droite ; `Enter` n&#39;accepte une indication qu&#39;après qu&#39;elle a été explicitement sélectionnée et, sinon, exécute la requête ; `Tab` ouvre également la liste classique de complétion. Nécessite `--highlight` (les indications ont besoin de couleur) ainsi que le mécanisme de suggestion (donc `--disable_suggestion` les désactive également). Activé par défaut.
 * `--verbose` — affiche plus de détails sur l&#39;exécution des requêtes.
 * `--logger.console` — journalise dans la console.
 * `--logger.log` — nom du fichier de log.
@@ -371,6 +373,36 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ├──────────┼──────────┤
 ...
 ```
+
+<div id="starting-listeners">
+  ## Démarrer les écouteurs TCP et HTTP
+</div>
+
+`clickhouse-local` peut être utilisé comme un serveur léger qui accepte les connexions TCP (protocole natif) et HTTP. C&#39;est utile si vous souhaitez permettre à d&#39;autres outils ou applications ClickHouse d&#39;accéder aux bases de données et aux tables d&#39;une instance `clickhouse-local` active. Notez que chaque connexion entrante dispose de sa propre session : les tables temporaires et les paramètres de session de la session interactive `clickhouse-local` ne sont pas visibles depuis les connexions externes.
+
+Utilisez `SYSTEM START LISTEN` pour ouvrir un écouteur et `SYSTEM STOP LISTEN` pour le fermer :
+
+```bash
+clickhouse-local \
+    --listen_host 127.0.0.1 \
+    --tcp_port 9000 \
+    --http_port 8123 \
+    --query "
+        SYSTEM START LISTEN TCP;
+        SYSTEM START LISTEN HTTP;
+        SELECT * FROM url('http://127.0.0.1:8123/?query=SELECT+42', LineAsString);
+        SYSTEM STOP LISTEN TCP;
+        SYSTEM STOP LISTEN HTTP;
+    "
+```
+
+Les options `--listen_host`, `--tcp_port` et `--http_port` configurent l’adresse de liaison et les ports. Les ports par défaut sont `9000` pour TCP et `8123` pour HTTP.
+
+<Warning>
+  **Sécurité**
+
+  Par défaut, `clickhouse-local` s’exécute avec une configuration temporaire des utilisateurs ; tout port d’écoute qu’il ouvre est donc non authentifié. Utilisez une adresse de bouclage (`127.0.0.1` ou `::1`), sauf si vous avez explicitement configuré des utilisateurs et le contrôle d’accès en faisant pointer le paramètre `users_config` vers un fichier `users.xml` personnalisé (par exemple via `--config-file`). Écouter sur une adresse autre que de bouclage sans authentification expose les données de l’instance locale à toute personne pouvant atteindre le port choisi.
+</Warning>
 
 <div id="related-content-1">
   ## Contenus associés

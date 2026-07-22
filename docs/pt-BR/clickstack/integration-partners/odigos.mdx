@@ -82,9 +82,7 @@ Implantar o OpenTelemetry em muitos serviços costuma ser demorado e oferece ape
 {/* vale on */}
 
 <Steps>
-  <Step>
-    #### Implante o Odigos com Helm
-
+  <Step title="Implante o Odigos com Helm" id="deploy-odigos">
     O Odigos Enterprise requer um token de licença on-prem. Exporte-o no shell:
 
     ```bash
@@ -114,9 +112,7 @@ Implantar o OpenTelemetry em muitos serviços costuma ser demorado e oferece ape
     ```
   </Step>
 
-  <Step>
-    #### Adicione fontes na UI do Odigos
-
+  <Step title="Adicione fontes na UI do Odigos" id="add-sources">
     1. Faça o redirecionamento de porta para o serviço da UI do Odigos:
 
     ```bash
@@ -129,9 +125,7 @@ Implantar o OpenTelemetry em muitos serviços costuma ser demorado e oferece ape
     5. Verifique se as cargas de trabalho foram instrumentadas com sucesso na coluna Sources.
   </Step>
 
-  <Step>
-    #### Adicione o ClickStack como destino na UI do Odigos
-
+  <Step title="Adicione o ClickStack como destino na UI do Odigos" id="add-destination-ui">
     Para enviar telemetria para o ClickStack, adicione um destino **OTLP HTTP** no Odigos. A configuração exata depende de como o ClickStack foi implantado. Com o Open Source ClickStack, o OpenTelemetry Collector já vem incluído e a API key de ingestão é gerada para você na UI do HyperDX. Com o Managed ClickStack, você executa seu próprio coletor do ClickStack em modo standalone e escolhe o token de authentication ao iniciar o contêiner.
 
     <Tip>
@@ -193,9 +187,7 @@ Implantar o OpenTelemetry em muitos serviços costuma ser demorado e oferece ape
     </Tabs>
   </Step>
 
-  <Step>
-    #### Verifique a telemetria no ClickStack
-
+  <Step title="Verifique a telemetria no ClickStack" id="verify-telemetry">
     1. Abra a interface do ClickStack (HyperDX):
        * **Open source ClickStack**: por exemplo, `http://<host>:8080` na imagem all-in-one.
        * **Managed ClickStack**: abra seu serviço no [console do ClickHouse Cloud](https://console.clickhouse.cloud) e clique em **Launch ClickStack**. Consulte [Acesse a UI do ClickStack](/pt-BR/clickstack/getting-started/managed#navigate-to-clickstack-ui-cloud) para mais detalhes.

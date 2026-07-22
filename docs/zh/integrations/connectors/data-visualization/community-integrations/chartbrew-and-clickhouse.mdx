@@ -32,93 +32,85 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   如果你还没有可用的数据集，可以添加一个示例数据集。本指南使用 [UK Price Paid](/zh/get-started/sample-datasets/uk-price-paid) 数据集。
 </Tip>
 
-<div id="1-gather-your-connection-details">
-  ## 1. 获取您的连接信息
-</div>
+<Steps>
+  <Step title="收集连接详细信息" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="将 Chartbrew 连接到 ClickHouse" id="2-connect-chartbrew-to-clickhouse">
+    1. 登录 [Chartbrew](https://chartbrew.com/login)，然后前往 **Connections** 选项卡。
 
-<div id="2-connect-chartbrew-to-clickhouse">
-  ## 2. 将 Chartbrew 连接到 ClickHouse
-</div>
+    2. 点击 **Create connection**，然后在可用的数据库选项中选择 **ClickHouse**。
 
-1. 登录 [Chartbrew](https://chartbrew.com/login)，然后转到 **Connections** 选项卡。
+       <Image img="/images/integrations/data-visualization/chartbrew_02.webp" size="lg" alt="在 Chartbrew 中选择 ClickHouse 连接" />
 
-2. 点击 **Create connection**，然后在可用的数据库选项中选择 **ClickHouse**。
+    3. 输入你的 ClickHouse 数据库的连接详细信息：
 
-   <Image img="/images/integrations/data-visualization/chartbrew_02.webp" size="lg" alt="在 Chartbrew 中选择 ClickHouse 连接" />
+       * **Display Name**：用于在 Chartbrew 中标识该连接的名称。
+       * **Host**：你的 ClickHouse server 的主机名或 IP 地址。
+       * **Port**：HTTPS 连接通常使用 `8443`。
+       * **Database Name**：要连接的数据库。
+       * **Username**：你的 ClickHouse 用户名。
+       * **Password**：你的 ClickHouse 密码。
 
-3. 输入 ClickHouse 数据库的连接详细信息：
+       <Image img="/images/integrations/data-visualization/chartbrew_03.webp" size="lg" alt="Chartbrew 中的 ClickHouse 连接设置" />
 
-   * **Display Name**：用于在 Chartbrew 中标识该连接的名称。
-   * **Host**：ClickHouse server 的主机名或 IP 地址。
-   * **Port**：HTTPS 连接通常使用 `8443`。
-   * **Database Name**：要连接的数据库。
-   * **Username**：你的 ClickHouse 用户名。
-   * **Password**：你的 ClickHouse 密码。
+    4. 点击 **Test connection**，验证 Chartbrew 是否可以连接到 ClickHouse。
 
-   <Image img="/images/integrations/data-visualization/chartbrew_03.webp" size="lg" alt="Chartbrew 中的 ClickHouse 连接设置" />
+    5. 如果测试成功，点击 **Save connection**。Chartbrew 会自动从 ClickHouse 检索 schema。
 
-4. 点击 **Test connection**，验证 Chartbrew 是否能够连接到 ClickHouse。
+       <Image img="/images/integrations/data-visualization/chartbrew_04.webp" size="lg" alt="Chartbrew 中的 ClickHouse JSON schema" />
+  </Step>
 
-5. 如果测试成功，点击 **Save connection**。Chartbrew 会自动从 ClickHouse 检索 schema。
+  <Step title="创建数据集并运行 SQL 查询" id="3-create-a-dataset-and-run-a-sql-query">
+    1. 点击 **Create dataset** 按钮，或前往 **Datasets** 选项卡创建数据集。
+    2. 选择你之前创建的 ClickHouse 连接。
 
-   <Image img="/images/integrations/data-visualization/chartbrew_04.webp" size="lg" alt="Chartbrew 中的 ClickHouse JSON schema" />
+    <Image img="/images/integrations/data-visualization/chartbrew_05.webp" size="lg" alt="为数据集选择 ClickHouse 连接" />
 
-<div id="3-create-a-dataset-and-run-a-sql-query">
-  ## 3. 创建数据集并运行 SQL 查询
-</div>
+    编写一个 SQL 查询来获取你想要可视化的数据。例如，以下查询会计算 `uk_price_paid` 数据集中每年的平均成交价格：
 
-1. 点击 **Create dataset** 按钮，或前往 **Datasets** 选项卡创建数据集。
-2. 选择你之前创建的 ClickHouse 连接。
+    ```sql
+    SELECT toYear(date) AS year, avg(price) AS avg_price
+    FROM uk_price_paid
+    GROUP BY year
+    ORDER BY year;
+    ```
 
-<Image img="/images/integrations/data-visualization/chartbrew_05.webp" size="lg" alt="为数据集选择 ClickHouse 连接" />
+    <Image img="/images/integrations/data-visualization/chartbrew_07.webp" size="lg" alt="Chartbrew 中的 ClickHouse SQL 查询" />
 
-编写一条 SQL 查询，以获取要可视化的数据。例如，以下查询会计算 `uk_price_paid` 数据集中每年已支付价格的平均值：
+    点击 **Run query** 获取数据。
 
-```sql
-  SELECT toYear(date) AS year, avg(price) AS avg_price
-  FROM uk_price_paid
-  GROUP BY year
-  ORDER BY year;
-```
+    如果你不确定该如何编写查询，可以使用 **Chartbrew&#39;s AI assistant** 根据数据库 schema 生成 SQL 查询。
 
-<Image img="/images/integrations/data-visualization/chartbrew_07.webp" size="lg" alt="Chartbrew 中的 ClickHouse SQL 查询" />
+    <Image img="/images/integrations/data-visualization/chartbrew_06.webp" size="lg" alt="Chartbrew 中的 ClickHouse AI SQL 助手" />
 
-点击 **Run query** 获取数据。
+    获取数据后，点击 **Configure dataset** 设置可视化参数。
+  </Step>
 
-如果你不确定如何编写查询，可以使用 **Chartbrew 的 AI 助手** 根据你的数据库 schema 生成 SQL 查询。
+  <Step title="创建可视化" id="4-create-a-visualization">
+    1. 为可视化定义一个指标 (数值) 和维度 (分类值) 。
+    2. 预览数据集，确保查询结果的结构正确。
+    3. 选择一种图表类型 (例如折线图、柱状图、饼图) ，并将其添加到仪表盘。
+    4. 点击 **Complete dataset** 完成设置。
 
-<Image img="/images/integrations/data-visualization/chartbrew_06.webp" size="lg" alt="Chartbrew 中的 ClickHouse AI SQL 助手" />
+    <Image img="/images/integrations/data-visualization/chartbrew_08.webp" size="lg" alt="包含 ClickHouse 数据的 Chartbrew 仪表盘" />
 
-获取到数据后，点击 **Configure dataset** 配置可视化参数。
+    你可以根据需要创建任意数量的数据集，以可视化数据的不同方面。利用这些数据集，你可以创建多个仪表盘来跟踪不同的指标。
 
-<div id="4-create-a-visualization">
-  ## 4. 创建可视化
-</div>
+    <Image img="/images/integrations/data-visualization/chartbrew_01.webp" size="lg" alt="包含 ClickHouse 数据的 Chartbrew 仪表盘" />
+  </Step>
 
-1. 为可视化定义指标 (数值) 和维度 (分类值) 。
-2. 预览数据集，确保查询结果结构正确。
-3. 选择一种图表类型 (如折线图、柱状图、饼图) ，并将其添加到仪表盘。
-4. 点击 **Complete dataset** 完成设置。
+  <Step title="自动更新数据" id="5-automate-data-updates">
+    为了让仪表盘保持最新，你可以设置自动更新数据：
 
-<Image img="/images/integrations/data-visualization/chartbrew_08.webp" size="lg" alt="包含 ClickHouse 数据的 Chartbrew 仪表盘" />
+    1. 点击数据集刷新按钮旁边的日历图标。
+    2. 配置更新间隔 (例如每小时、每天) 。
+    3. 保存设置以启用自动刷新。
 
-你可以根据需要创建任意数量的数据集，以可视化数据的不同方面。借助这些数据集，你可以创建多个仪表盘来跟踪不同的指标。
-
-<Image img="/images/integrations/data-visualization/chartbrew_01.webp" size="lg" alt="包含 ClickHouse 数据的 Chartbrew 仪表盘" />
-
-<div id="5-automate-data-updates">
-  ## 5. 自动更新数据
-</div>
-
-要让您的仪表盘保持最新状态，您可以设置自动更新数据：
-
-1. 点击数据集刷新按钮旁边的日历图标。
-2. 配置更新时间间隔 (例如每小时一次、每天一次) 。
-3. 保存设置以启用自动刷新。
-
-<Image img="/images/integrations/data-visualization/chartbrew_09.webp" size="lg" alt="Chartbrew 数据集刷新设置" />
+    <Image img="/images/integrations/data-visualization/chartbrew_09.webp" size="lg" alt="Chartbrew 数据集刷新设置" />
+  </Step>
+</Steps>
 
 <div id="learn-more">
   ## 了解更多

@@ -102,97 +102,87 @@ module "clickhouse_onboarding" {
   ### 可选：配置 VPC 对等连接
 </div>
 
-如需为 ClickHouse BYOC 创建或删除 VPC 对等连接，请按以下步骤操作：
+要为 ClickHouse BYOC 创建或删除 VPC 对等连接，请按以下步骤操作：
 
-<div id="step-1-enable-private-load-balancer-for-clickhouse-byoc">
-  #### 步骤 1：为 ClickHouse BYOC 启用私有负载均衡器
-</div>
+<Steps>
+  <Step title="为 ClickHouse BYOC 启用私有负载均衡器" id="step-1-enable-private-load-balancer-for-clickhouse-byoc">
+    联系 ClickHouse 支持团队以启用私有负载均衡器。
+  </Step>
 
-请联系 ClickHouse 支持团队，启用私有负载均衡器。
+  <Step title="创建对等连接" id="step-2-create-a-peering-connection">
+    1. 在 ClickHouse BYOC 账户中，前往 VPC 仪表板。
+    2. 选择 Peering Connections。
+    3. 单击 Create Peering Connection。
+    4. 将 VPC Requester 设置为 ClickHouse VPC ID。
+    5. 将 VPC Accepter 设置为目标 VPC ID。 (如果适用，请选择另一个账户) 
+    6. 单击 Create Peering Connection。
 
-<div id="step-2-create-a-peering-connection">
-  #### 第 2 步：创建对等连接
-</div>
+    <br />
 
-1. 在 ClickHouse BYOC 账户中进入 VPC 仪表板。
-2. 选择 Peering Connections。
-3. 点击 Create Peering Connection。
-4. 将 VPC Requester 设置为 ClickHouse VPC ID。
-5. 将 VPC Accepter 设置为目标 VPC ID。 (如适用，选择另一个账户。)
-6. 点击 Create Peering Connection。
+    <img src="/images/cloud/reference/byoc-vpcpeering-1.webp" alt="BYOC 创建对等连接" />
 
-<br />
+    <br />
+  </Step>
 
-<img src="/images/cloud/reference/byoc-vpcpeering-1.webp" alt="BYOC 创建对等连接" />
+  <Step title="接受对等连接请求" id="step-3-accept-the-peering-connection-request">
+    前往对等账户，在 (VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request) 页面中批准此 VPC 对等连接请求。
 
-<br />
+    <br />
 
-<div id="step-3-accept-the-peering-connection-request">
-  #### 步骤 3 接受对等连接请求
-</div>
+    <img src="/images/cloud/reference/byoc-vpcpeering-2.webp" alt="BYOC 接受对等连接" />
 
-前往对等账户，在 (VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request) 页面，客户即可批准此 VPC 对等连接请求。
+    <br />
+  </Step>
 
-<br />
+  <Step title="向 ClickHouse VPC 路由表添加目标" id="step-4-add-destination-to-clickhouse-vpc-route-tables">
+    在 ClickHouse BYOC 账户中，
 
-<img src="/images/cloud/reference/byoc-vpcpeering-2.webp" alt="BYOC 接受对等连接" />
+    1. 在 VPC 仪表板中选择 Route Tables。
+    2. 搜索 ClickHouse VPC ID。编辑与私有子网关联的每个路由表。
+    3. 在 Routes 选项卡下单击 Edit 按钮。
+    4. 单击 Add another route。
+    5. 在 Destination 中输入目标 VPC 的 CIDR 范围。
+    6. 在 Target 中选择 “Peering Connection” 和该对等连接的 ID。
 
-<br />
+    <br />
 
-<div id="step-4-add-destination-to-clickhouse-vpc-route-tables">
-  #### 步骤 4 将目标端添加到 ClickHouse VPC 路由表中
-</div>
+    <img src="/images/cloud/reference/byoc-vpcpeering-3.webp" alt="BYOC 添加路由表" />
 
-在 ClickHouse BYOC 账户中：
+    <br />
+  </Step>
 
-1. 在 VPC 仪表板中选择 Route Tables。
-2. 搜索 ClickHouse VPC ID，然后编辑关联到私有子网的每个路由表。
-3. 在 Routes 选项卡下，点击 Edit 按钮。
-4. 点击 Add another route。
-5. 在 Destination 中输入目标 VPC 的 CIDR 范围。
-6. 在 Target 中选择“Peering Connection”以及对应的对等连接 ID。
+  <Step title="向目标 VPC 路由表添加目标" id="step-5-add-destination-to-the-target-vpc-route-tables">
+    在对等 AWS 账户中，
 
-<br />
+    1. 在 VPC 仪表板中选择 Route Tables。
+    2. 搜索目标 VPC ID。
+    3. 在 Routes 选项卡下单击 Edit 按钮。
+    4. 单击 Add another route。
+    5. 在 Destination 中输入 ClickHouse VPC 的 CIDR 范围。
+    6. 在 Target 中选择 “Peering Connection” 和该对等连接的 ID。
 
-<img src="/images/cloud/reference/byoc-vpcpeering-3.webp" alt="BYOC 添加路由表" />
+    <br />
 
-<br />
+    <img src="/images/cloud/reference/byoc-vpcpeering-4.webp" alt="BYOC 添加路由表" />
 
-<div id="step-5-add-destination-to-the-target-vpc-route-tables">
-  #### 步骤 5 将目标路由添加到目标 VPC 的路由表中
-</div>
+    <br />
+  </Step>
 
-在建立对等连接的 AWS 账户中，
+  <Step title="编辑安全组 (Security Group) ，允许来自对等 VPC 的访问" id="step-6-edit-security-group-to-allow-peered-vpc-access">
+    在 ClickHouse BYOC 账户中，您需要更新安全组 (Security Group) 设置，以允许来自对等 VPC 的流量。请联系 ClickHouse 支持团队，申请添加入站规则，并将您的对等 VPC 的 CIDR 范围包含在内。
 
-1. 在 VPC 仪表板中选择 Route Tables。
-2. 搜索目标 VPC ID。
-3. 在 Routes 选项卡下点击 Edit 按钮。
-4. 点击 Add another route。
-5. 在 Destination 中输入 ClickHouse VPC 的 CIDR 范围。
-6. 在 Target 中选择“Peering Connection”以及该对等连接的 ID。
+    ***
 
-<br />
+    现在应该已可从对等 VPC 访问 ClickHouse 服务。
 
-<img src="/images/cloud/reference/byoc-vpcpeering-4.webp" alt="BYOC 添加路由表" />
+    要以私有方式访问 ClickHouse，系统会预配一个私有负载均衡器和端点，以便从用户的对等 VPC 安全连接。私网端点遵循公网端点的格式，并带有 `-private` 后缀。例如：
 
-<br />
+    * **公网端点**：`h5ju65kv87.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
+    * **私网端点**：`h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
 
-<div id="step-6-edit-security-group-to-allow-peered-vpc-access">
-  #### 第 6 步：编辑安全组 (Security Group) ，允许来自对等 VPC 的访问
-</div>
-
-在 ClickHouse BYOC 账户中，您需要更新安全组 (Security Group) 设置，以允许来自对等 VPC 的流量。请联系 ClickHouse 支持团队，申请添加入站规则，并将您的对等 VPC 的 CIDR 范围包含在内。
-
-***
-
-现在应该已可从对等 VPC 访问 ClickHouse 服务。
-
-要以私有方式访问 ClickHouse，系统会预配一个私有负载均衡器和端点，以便从用户的对等 VPC 安全连接。私有端点遵循公共端点的格式，并带有 `-private` 后缀。例如：
-
-* **公共端点**：`h5ju65kv87.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
-* **私有端点**：`h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
-
-可选：在确认对等连接正常工作后，您可以申请移除 ClickHouse BYOC 的公共负载均衡器。
+    可选：在确认对等连接正常工作后，您可以申请移除 ClickHouse BYOC 的公共负载均衡器。
+  </Step>
+</Steps>
 
 <div id="upgrade-process">
   ## 升级流程

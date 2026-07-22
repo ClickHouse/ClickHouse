@@ -326,7 +326,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
   ##### Вариант 1: консоль ClickHouse Cloud
 </div>
 
-В консоли ClickHouse Cloud перейдите в раздел **Настройки**. Нажмите кнопку **Set up private endpoint**. На открывшейся выдвижной панели скопируйте **имя DNS**.
+В консоли ClickHouse Cloud перейдите в раздел **Настройки**. Нажмите кнопку **Set up private endpoint**. На открывшейся выдвижной панели скопируйте **DNS-имя**.
 
 <Image img="/images/cloud/security/aws-privatelink-pe-dns-name.webp" size="md" alt="DNS-имя частной конечной точки" border />
 
@@ -419,10 +419,10 @@ jq .result.privateEndpointIds
   ### Подключение к удалённой базе данных
 </div>
 
-Предположим, вы хотите использовать табличные функции [MySQL](/ru/reference/functions/table-functions/mysql) или [PostgreSQL](/ru/reference/functions/table-functions/postgresql) в ClickHouse Cloud и подключиться к своей базе данных, размещённой в VPC Amazon Web Services (AWS). AWS PrivateLink нельзя использовать для безопасной организации такого подключения. PrivateLink — это одностороннее, однонаправленное подключение. Он позволяет вашей внутренней сети или Amazon VPC безопасно подключаться к ClickHouse Cloud, но не позволяет ClickHouse Cloud подключаться к вашей внутренней сети.
+Предположим, вы хотите использовать табличные функции [MySQL](/ru/reference/functions/table-functions/mysql) или [PostgreSQL](/ru/reference/functions/table-functions/postgresql) в ClickHouse Cloud и подключиться к базе данных, размещённой в VPC Amazon Web Services (AWS). Для безопасной организации такого подключения AWS PrivateLink использовать нельзя. PrivateLink — это одностороннее, однонаправленное соединение. Он позволяет вашей внутренней сети или Amazon VPC безопасно подключаться к ClickHouse Cloud, но не позволяет ClickHouse Cloud подключаться к вашей внутренней сети.
 
 Согласно [документации AWS PrivateLink](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html):
 
-> Используйте AWS PrivateLink, если у вас настроена клиент-серверная архитектура и вы хотите предоставить одной или нескольким VPC-потребителям однонаправленный доступ к определённому сервису или набору экземпляров в VPC поставщика сервиса. Только клиенты в VPC-потребителе могут инициировать подключение к сервису в VPC поставщика сервиса.
+> Используйте AWS PrivateLink, если у вас есть клиент-серверная архитектура и вы хотите предоставить одной или нескольким VPC-потребителям однонаправленный доступ к определённому сервису или набору экземпляров в VPC поставщика сервиса. Только клиенты в VPC-потребителе могут инициировать подключение к сервису в VPC поставщика сервиса.
 
-Для этого настройте свои группы безопасности AWS так, чтобы разрешить подключения из ClickHouse Cloud к вашему внутреннему/приватному сервису базы данных. Проверьте [исходящие IP-адреса по умолчанию для регионов ClickHouse Cloud](/ru/products/cloud/guides/data-sources/cloud-endpoints-api), а также [доступные статические IP-адреса](https://api.clickhouse.cloud/static-ips.json).
+Для этого настройте AWS Security Groups так, чтобы разрешить подключения из ClickHouse Cloud к вашему внутреннему или частному сервису базы данных. См. [IP-адреса egress по умолчанию для регионов ClickHouse Cloud](/ru/products/cloud/guides/data-sources/cloud-endpoints-api), а также [доступные статические IP-адреса](https://api.clickhouse.cloud/static-ips.json).

@@ -140,6 +140,8 @@ PRIMARY KEY field1, field2
 
 بالنسبة إلى استعلام للدالة `dictGet*`، تُمرَّر قيمة tuple كمفتاح. مثال: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
+عندما يتكوّن المفتاح المركب من سمة واحدة، يمكن تمرير قيمة المفتاح مباشرةً، من دون تغليفها داخل `tuple`. على سبيل المثال، كلٌّ من `dictGetString('dict_name', 'attr_name', 'key')` و `dictGetString('dict_name', 'attr_name', tuple('key'))` صحيح.
+
 <div id="attributes">
   ## السمات
 </div>

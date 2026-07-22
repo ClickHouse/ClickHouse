@@ -24,33 +24,25 @@ Esta guía está dirigida a los usuarios que tienen el rol de Admin en ClickHous
 Los administradores pueden invitar a varios usuarios a la vez y asignarles uno o varios roles al enviar la invitación.
 
 <Steps>
-  <Step>
-    ### Accede a la configuración de la organización y selecciona Users and roles
-
+  <Step title="Accede a la configuración de la organización y selecciona Users and roles" id="users-and-roles-1">
     En la página de servicios, selecciona el nombre de tu organización. En el menú emergente, selecciona la opción `Users and roles`.
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### Selecciona &#39;Invite members&#39; en la esquina superior izquierda
-
+  <Step title="Selecciona 'Invite members' en la esquina superior izquierda" id="invite-members">
     Haz clic en el botón `Invite members` en la esquina superior izquierda.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/2_invite_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### Introduce la dirección de correo electrónico de los nuevos miembros y asigna roles
-
+  <Step title="Introduce la dirección de correo electrónico de los nuevos miembros y asigna roles" id="add-email-and-roles">
     Introduce las direcciones de correo electrónico de los nuevos miembros en la parte superior de la pantalla de invitación. Selecciona uno o varios roles para asignárselos a los usuarios.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/3_invite_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### Haz clic en `Send invites`
-
+  <Step title={<>Haz clic en <code>Send invites</code></>} id="send-invites">
     Haz clic en `Send invites` en la parte inferior de la pantalla. Los usuarios recibirán un correo electrónico a través del cual podrán unirse a la organización. Para obtener más información sobre cómo aceptar invitaciones, consulta [Manage my account](/es/products/cloud/guides/security/cloud-access-management/manage-my-account).
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/4_invite_user.webp" size="lg" />
@@ -82,33 +74,25 @@ Una vez que tenga al menos un usuario de SAML en la organización asignado al ro
 Los usuarios con el rol de Admin pueden actualizar los permisos de otros usuarios en cualquier momento.
 
 <Steps>
-  <Step>
-    ### Accede a configuración de la organización y selecciona Users and roles
-
+  <Step title="Accede a configuración de la organización y selecciona Users and roles" id="users-and-roles-2">
     En la página de servicios, selecciona el nombre de tu organización. En el menú emergente, selecciona la opción `Users and roles`.
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### Selecciona el usuario que deseas actualizar y selecciona Edit
-
+  <Step title="Selecciona el usuario que deseas actualizar y selecciona Edit" id="select-user-to-update">
     Selecciona la opción de menú al final de la fila del usuario cuyo acceso deseas modificar. En el menú emergente, selecciona `edit`.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/5_edit_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### Actualiza los permisos
-
+  <Step title="Actualiza los permisos" id="update-permissions">
     Haz clic en el cuadro `Roles` para desplegar el menú. Selecciona las casillas para agregar o quitar roles del usuario. Consulta [Console roles and permissions](/es/products/cloud/reference/security/console-roles) para ver la lista de roles y permisos asociados.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/6_edit_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### Guarda tus cambios
-
+  <Step title="Guarda tus cambios" id="save-changes">
     Guarda tus cambios con el botón `Save changes` en la parte inferior de la pestaña.
   </Step>
 </Steps>

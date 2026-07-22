@@ -6,7 +6,7 @@ doc_type: 'guide'
 keywords: ['clickstack', 'chrome 확장 프로그램', '세션 리플레이', 'browser sdk', 'rum', '관측성', 'hyperdx']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
+import { Image } from "/snippets/components/Image.jsx";
 
 <Info>
   **요약**
@@ -41,18 +41,14 @@ SDK는 확장 프로그램 내부에 번들되어 있으므로(~480 KB) 페이�
 </div>
 
 <Steps>
-  <Step>
-    ### 확장 프로그램 리포지토리 복제
-
+  <Step title="확장 프로그램 리포지토리 복제" id="clone-extension">
     ```shell
     git clone https://github.com/kyreddie/hyperdx-chrome-extension
     cd hyperdx-chrome-extension
     ```
   </Step>
 
-  <Step>
-    ### 확장 프로그램 설치
-
+  <Step title="확장 프로그램 설치" id="install-extension">
     1. Chrome을 열고 `chrome://extensions`로 이동합니다.
     2. **개발자 모드**를 활성화합니다(오른쪽 상단).
     3. **압축해제된 확장 프로그램을 로드**를 클릭합니다.
@@ -61,9 +57,7 @@ SDK는 확장 프로그램 내부에 번들되어 있으므로(~480 KB) 페이�
     확장 프로그램은 도구 모음에 **HyperDX Browser Extension**으로 표시됩니다.
   </Step>
 
-  <Step>
-    ### ClickStack 시작
-
+  <Step title="ClickStack 시작" id="start-clickstack">
     이미 ClickStack 또는 HyperDX 수집 엔드포인트가 있으면 [확장 프로그램 구성](#configure-extension)으로 건너뛰십시오.
 
     로컬 ClickStack 스택의 경우 OpenTelemetry collector를 시작합니다. `{{CLICKHOUSE_ENDPOINT}}`와 `{{CLICKHOUSE_PASSWORD}}`를 ClickHouse 연결 정보로 바꾸십시오:
@@ -87,30 +81,26 @@ SDK는 확장 프로그램 내부에 번들되어 있으므로(~480 KB) 페이�
     ClickHouse와 HyperDX UI를 포함한 전체 로컬 배포 방법은 [ClickStack 시작하기](/ko/clickstack/getting-started/oss)를 참조하십시오.
   </Step>
 
-  <Step>
-    ### API Key 가져오기
-
+  <Step title="API Key 가져오기" id="get-api-key">
     로컬 ClickStack의 경우 API Key가 필요하지 않을 수 있습니다 — `http://localhost:4318`의 자체 호스팅 collector로 telemetry를 보낼 때는 확장 프로그램에서 해당 필드를 비워 두십시오.
 
     ClickStack Cloud 또는 HyperDX Cloud로 수집하는 경우 HyperDX를 열고 **Team Settings → API Keys**로 이동한 다음 **Ingestion API Key**를 복사하십시오.
   </Step>
 
-  <Step>
-    ### 확장 프로그램 구성
-
+  <Step title="확장 프로그램 구성" id="configure-extension">
     Chrome 도구 모음에서 **HyperDX Browser Extension** 아이콘을 클릭하고 설정을 입력합니다:
 
-    | Field                            | Local ClickStack example              | Notes                                                          |
-    | -------------------------------- | ------------------------------------- | -------------------------------------------------------------- |
-    | **Enable HyperDX Monitoring**    | On                                    | 주입을 위한 기본 토글                                                   |
-    | **Service Name**                 | `my-frontend-app`                     | 필수 — ClickStack에서 서비스를 식별합니다                                   |
-    | **API Key**                      | *(empty)*                             | Cloud 수집에는 필수이며, 일부 자체 호스팅 구성에서는 선택 사항입니다                      |
-    | **Collector URL**                | `http://localhost:4318`               | OTLP HTTP 엔드포인트입니다. Cloud 기본값은 `https://in-otel.hyperdx.io`입니다 |
-    | **Environment**                  | `development`                         | 선택 사항 — `deployment.environment` 리소스 속성을 설정합니다                 |
-    | **Trace Propagation Targets**    | `/api\.myapp\.domain/i, /localhost/i` | 선택 사항 — 추적 header 전파를 위한 쉼표로 구분된 JavaScript 정규식 패턴입니다          |
-    | **일치하는 URL에만 삽입** | Off                                   | 계측할 사이트를 제한하려면 활성화합니다                                          |
-    | **Capture console logs**         | Off                                   | 브라우저 콘솔 출력을 전달하려면 활성화합니다                                       |
-    | **Advanced network capture**     | Off                                   | 상세한 네트워크 요청 캡처를 위해 활성화합니다                                      |
+    | Field                         | Local ClickStack example              | Notes                                                          |
+    | ----------------------------- | ------------------------------------- | -------------------------------------------------------------- |
+    | **Enable HyperDX Monitoring** | On                                    | 주입을 위한 기본 토글                                                   |
+    | **Service Name**              | `my-frontend-app`                     | 필수 — ClickStack에서 서비스를 식별합니다                                   |
+    | **API Key**                   | *(empty)*                             | Cloud 수집에는 필수이며, 일부 자체 호스팅 구성에서는 선택 사항입니다                      |
+    | **Collector URL**             | `http://localhost:4318`               | OTLP HTTP 엔드포인트입니다. Cloud 기본값은 `https://in-otel.hyperdx.io`입니다 |
+    | **Environment**               | `development`                         | 선택 사항 — `deployment.environment` 리소스 속성을 설정합니다                 |
+    | **Trace Propagation Targets** | `/api\.myapp\.domain/i, /localhost/i` | 선택 사항 — 추적 header 전파를 위한 쉼표로 구분된 JavaScript 정규식 패턴입니다          |
+    | **일치하는 URL에만 삽입**             | Off                                   | 계측할 사이트를 제한하려면 활성화합니다                                          |
+    | **Capture console logs**      | Off                                   | 브라우저 콘솔 출력을 전달하려면 활성화합니다                                       |
+    | **Advanced network capture**  | Off                                   | 상세한 네트워크 요청 캡처를 위해 활성화합니다                                      |
 
     **Save Configuration**을 클릭한 다음 계측하려는 탭을 다시 로드합니다.
 
@@ -119,17 +109,13 @@ SDK는 확장 프로그램 내부에 번들되어 있으므로(~480 KB) 페이�
     위 스크린샷은 일반적인 로컬 설정을 보여줍니다. 모니터링이 활성화되어 있고 서비스 이름이 설정되어 있으며 collector는 `http://localhost:4318`을 가리키고, 추적 전파는 API 및 localhost URL로 제한되어 있습니다.
   </Step>
 
-  <Step>
-    ### 사이트를 둘러보고 세션 생성
-
+  <Step title="사이트를 둘러보고 세션 생성" id="browse-site">
     Chrome에서 웹사이트나 로컬 애플리케이션을 엽니다 — 예를 들어 프런트엔드 개발 서버라면 [http://localhost:3000](http://localhost:3000)입니다.
 
     페이지에서 평소처럼 상호작용합니다. 링크를 클릭하고, 양식을 제출하고, 오류를 발생시키고, 화면 간에 이동하십시오. 구성이 올바르면 확장 프로그램이 페이지를 로드할 때마다 Browser SDK를 자동으로 주입합니다.
   </Step>
 
-  <Step>
-    ### 세션 리플레이 보기
-
+  <Step title="세션 리플레이 보기" id="view-session-replay">
     [http://localhost:8080](http://localhost:8080)의 HyperDX로 돌아가 왼쪽 사이드바에서 **Client Sessions**로 이동합니다.
 
     세션이 지속 시간과 이벤트 수와 함께 목록에 표시됩니다. ▶️ 버튼을 클릭해 리플레이합니다.

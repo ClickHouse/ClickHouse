@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
+import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 يمكنك استخدام [AWS PrivateLink](https://aws.amazon.com/privatelink/) لإنشاء اتصال آمن بين شبكات VPC،
 وخدمات AWS، وأنظمتك داخل بيئتك المحلية، وClickHouse Cloud، من دون تعريض حركة المرور إلى الإنترنت العام.
@@ -65,9 +66,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 3. أنشئ مشاركة مورد
 
 <Steps>
-  <Step>
-    #### إنشاء بوابة موارد
-
+  <Step title="إنشاء بوابة موارد" id="create-resource-gateway">
     بوابة الموارد هي النقطة التي تستقبل حركة المرور للموارد المحددة داخل VPC لديك.
 
     <Note>
@@ -98,9 +97,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    #### إنشاء Resource-Configuration لمورد VPC
-
+  <Step title="إنشاء Resource-Configuration لمورد VPC" id="create-resource-configuration">
     يتم ربط Resource-Configuration ببوابة المورد لإتاحة الوصول إلى موردك.
 
     يمكنك إنشاء Resource-Configuration من [وحدة تحكم AWS](https://docs.aws.amazon.com/vpc/latest/privatelink/create-resource-configuration.html) أو باستخدام الأمر التالي:
@@ -136,9 +133,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     سيحتوي الناتج على ARN لتهيئة المورد، وستحتاج إليه في الخطوة التالية. وسيحتوي أيضًا على معرّف تهيئة المورد، والذي ستحتاج إليه لإعداد اتصال ClickPipe باستخدام مورد VPC.
   </Step>
 
-  <Step>
-    #### إنشاء Resource-Share
-
+  <Step title="إنشاء Resource-Share" id="create-resource-share">
     لمشاركة المورد الخاص بك، يلزم إنشاء Resource-Share. ويتم ذلك من خلال Resource Access Manager (RAM).
 
     <Note>
@@ -193,16 +188,22 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </div>
 
 تُعد [VPC endpoint service](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html) طريقةً أخرى لمشاركة مصدر البيانات لديك مع ClickPipes.
-ويتطلب ذلك إعداد NLB ‏(Network Load Balancer) أمام مصدر البيانات لديك،
+ويتطلب ذلك إعداد NLB ‏(Network Load Balancer) أمام مصدر البيانات لديك
 وتهيئة VPC endpoint service لاستخدام NLB.
 
 يمكن [تهيئة VPC endpoint service باستخدام private DNS](https://docs.aws.amazon.com/vpc/latest/privatelink/manage-dns-names.html)، بحيث تكون متاحة داخل VPC الخاصة بـ ClickPipes.
+لا يكون private DNS المُدار من AWS PrivateLink خيارًا مناسبًا دائمًا:
 
-وهي الخيار المفضل في الحالات التالية:
+* أنت لا تملك domain name الخاص بمصدر البيانات لديك، لذلك لا يمكنك التحقق منه عبر AWS
+* يتطلب المزوّد من المستهلكين إدارة DNS resolution، كما تفعل Confluent Cloud
+  في هذه الحالات، راجع [DNS خاص مخصص](#custom-private-dns).
+
+It&#39;s a preferred choice for:
 
 * أي إعداد Kafka محلي يتطلب دعم private DNS
+* [الاتصال الخاص بـ Confluent Cloud](/ar/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes)
 * [الاتصال عبر المناطق لـ Postgres CDC](/ar/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)
-* الاتصال عبر المناطق لـ عنقود MSK. يُرجى التواصل مع فريق دعم ClickHouse للحصول على المساعدة.
+* [الاتصال عبر المناطق لعناقيد MSK](/ar/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster)
 
 راجع دليل [البدء](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html) لمزيد من التفاصيل.
 
@@ -212,73 +213,131 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Info>
 
 <Info>
-  يمكن تهيئة [الوصول عبر المناطق](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html#endpoint-service-cross-region)
-  لـ ClickPipes. أضِف [منطقة ClickPipe الخاصة بك](#aws-privatelink-regions) إلى المناطق المسموح بها في VPC endpoint service الخاصة بك.
+  [الوصول عبر المناطق](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html#endpoint-service-cross-region)
+  يمكن تهيئته لـ ClickPipes. أضِف [منطقة ClickPipe الخاصة بك](#aws-privatelink-regions) إلى المناطق المسموح بها في VPC endpoint service الخاصة بك.
 </Info>
+
+بالنسبة إلى عناقيد MSK، راجع [AWS PrivateLink VPC endpoint service for MSK cluster](/ar/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster)
+للاطلاع على إعداد broker لكل endpoint service يستخدم أسماء DNS خاصة مخصصة.
+
+<div id="custom-private-dns">
+  ## DNS خاص مخصص
+</div>
+
+<PrivatePreviewBadge />
+
+<Info>
+  ميزة DNS خاص مخصص ما تزال في **Private Preview**. تواصل مع [فريق دعم ClickHouse](https://clickhouse.com/support/program) لتمكينها لخدمتك.
+</Info>
+
+يوفّر AWS PrivateLink [private DNS مُدارًا](https://docs.aws.amazon.com/vpc/latest/privatelink/manage-dns-names.html)
+لخدمات VPC endpoint service ذات النطاق الذي تم التحقق منه. وتتطلب بعض الخدمات من كل مستهلك إدارة DNS resolution داخل VPC الخاصة به؛ فعلى سبيل المثال، تتطلب Confluent Cloud من المستهلكين حل أسماء مضيفي broker إلى PrivateLink endpoint.
+
+في هذه الحالات، يدعم ClickPipes إرفاق أسماء DNS خاص مخصص بـ نقطة نهاية خاصة عكسية.
+ويقوم ClickPipes بحل هذه الأسماء إلى العناوين الخاصة بـ endpoint، بحيث يمكن الوصول إلى مصدر
+البيانات لديك باستخدام اسم المضيف الخاص به عبر اتصال خاص.
+
+يُكمل DNS خاص مخصص private DNS المُدار — ولا يحل محله. وإذا كانت خدمة
+PrivateLink لديك توفّر بالفعل أسماء private DNS، فلست بحاجة إلى أسماء مخصصة.
+
+تتوفّر أسماء DNS خاص مخصص لنوعي endpoint [VPC endpoint service](#vpc-endpoint-service)
+و[VPC resource](#vpc-resource). ويوفّر MSK multi-VPC private DNS مُدارًا
+بشكل افتراضي، ولا يدعم الأسماء المخصصة.
+
+<Note>
+  تدعم وحدة تحكم ClickHouse Cloud حاليًا اسم DNS خاص مخصص واحدًا لكل نقطة نهاية خاصة عكسية.
+  إذا كنت بحاجة إلى إدارة عدة أسماء DNS خاص مخصص على نقطة النهاية نفسها، فاستخدم OpenAPI أو Terraform.
+</Note>
+
+تنطبق القواعد التالية على أسماء DNS خاص مخصص:
+
+* الأسماء المطابقة تمامًا (`kafka.internal.example.com`) وأسماء wildcard (`*.example.com`) مدعومة.
+  ويطابق wildcard تسمية DNS واحدة — على سبيل المثال،
+  `*.abcde12345.us-east-1.aws.confluent.cloud` يطابق
+  `b0-lkc123.abcde12345.us-east-1.aws.confluent.cloud`.
+* يجب أن تكون الأسماء فريدة على مستوى جميع نقاط نهاية خاصة عكسية التابعة لخدمة ClickHouse،
+  بما في ذلك حالات التداخل بين أسماء wildcard والأسماء المطابقة تمامًا.
+* تُرفض الأسماء الواقعة ضمن اللاحقات المحجوزة (مثل `local` و`localhost` و`internal` و`corp`
+  و`private`).
+
+لتهيئة أسماء DNS خاص مخصص:
+
+* في وحدة تحكم ClickHouse Cloud، املأ الحقل `Custom private DNS name` عند
+  [إنشاء نقطة نهاية خاصة عكسية](#creating-clickpipe). يظهر هذا الحقل بمجرد
+  تمكين الميزة لخدمتك.
+* باستخدام [OpenAPI](https://clickhouse.com/docs/cloud/manage/api/swagger)، عيّن
+  `customPrivateDnsMappings` عند إنشاء نقطة نهاية خاصة عكسية، أو حدّث
+  endpoint موجودًا باستخدام طلب `PATCH`. تستبدل التحديثات القائمة الكاملة لعمليات الربط؛ وتؤدي القائمة الفارغة
+  إلى إزالة جميع الأسماء المخصصة.
+* باستخدام Terraform، استخدم المورد
+  [`clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint_custom_private_dns)
+  لإدارة عمليات الربط على نقطة نهاية خاصة عكسية موجودة.
 
 <div id="creating-clickpipe">
   ## إنشاء ClickPipe باستخدام نقطة نهاية خاصة عكسية
 </div>
 
-1. انتقل إلى SQL Console الخاصة بـ ClickHouse Cloud Service.
+1. افتح SQL Console الخاصة بخدمة ClickHouse Cloud.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="خدمة ClickPipes" size="md" border />
 
-2. حدّد زر `Data Sources` من القائمة الجانبية اليسرى، ثم انقر على &quot;Set up a ClickPipe&quot;
+2. حدِّد زر `Data Sources` من القائمة الجانبية اليسرى، ثم انقر على &quot;Set up a ClickPipe&quot;
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="تحديد الواردات" size="lg" border />
 
-3. حدّد Kafka أو Postgres كمصدر بيانات.
+3. حدِّد Kafka أو Postgres كمصدر بيانات.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp" alt="تحديد مصدر البيانات" size="lg" border />
 
-4. حدّد خيار `Reverse private endpoint`.
+4. حدِّد خيار `Reverse private endpoint`.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp" alt="تحديد نقطة نهاية خاصة عكسية" size="lg" border />
 
-5. حدّد أي نقطة نهاية خاصة عكسية موجودة أو أنشئ واحدة جديدة.
+5. حدِّد أيًّا من نقاط نهاية خاصة عكسية الموجودة، أو أنشئ واحدة جديدة.
 
 <Info>
-  إذا كان الوصول عبر المناطق مطلوبًا لـ RDS، فستحتاج إلى إنشاء VPC endpoint service، ويمكن أن يكون
-  [هذا الدليل](/ar/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) نقطة بداية جيدة لإعدادها.
+  إذا كان الوصول عبر مناطق متعددة مطلوبًا لـ RDS، فستحتاج إلى إنشاء VPC endpoint service، ويفترض أن يوفّر
+  [هذا الدليل](/ar/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) نقطة انطلاق جيدة لإعداده.
 
   أما للوصول ضمن المنطقة نفسها، فإن إنشاء مورد VPC هو النهج الموصى به.
 </Info>
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp" alt="تحديد نقطة نهاية خاصة عكسية" size="lg" border />
 
-6. أدخل المعلمات المطلوبة لنوع endpoint المحدد.
+6. أدخِل Required parameters لنوع endpoint المحدد.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp" alt="تحديد نقطة نهاية خاصة عكسية" size="lg" border />
 
-* بالنسبة إلى مورد VPC، أدخل configuration share ARN وconfiguration ID.
-  * بالنسبة إلى MSK multi-VPC، أدخل cluster ARN وطريقة المصادقة المستخدمة مع endpoint الذي أنشأته.
-  * بالنسبة إلى VPC endpoint service، أدخل اسم الخدمة.
+* بالنسبة إلى مورد VPC، أدخِل configuration share ARN وconfiguration ID.
+  * بالنسبة إلى MSK multi-VPC، أدخِل cluster ARN وauthentication method المستخدمة مع endpoint التي تم إنشاؤها.
+  * بالنسبة إلى VPC endpoint service، أدخِل service name.
+  * اختياريًا، أدخِل اسم [DNS خاص مخصص](#custom-private-dns).
 
 7. انقر على `Create` وانتظر حتى تصبح نقطة نهاية خاصة عكسية جاهزة.
 
-   إذا كنت تُنشئ endpoint جديدًا، فسيستغرق إعداده بعض الوقت.
-   ستُحدَّث الصفحة تلقائيًا بمجرد أن يصبح endpoint جاهزًا.
-   قد يتطلب VPC endpoint service قبول طلب الاتصال في وحدة تحكم AWS.
+   إذا كنت تنشئ endpoint جديدة، فسيستغرق إعدادها بعض الوقت.
+   ستُحدَّث الصفحة تلقائيًا بمجرد أن تصبح endpoint جاهزة.
+   قد يتطلب VPC endpoint service قبول connection request في AWS console الخاصة بك.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp" alt="تحديد نقطة نهاية خاصة عكسية" size="lg" border />
 
-8. بعد أن يصبح endpoint جاهزًا، يمكنك استخدام اسم DNS للاتصال بمصدر البيانات.
+8. بمجرد أن تصبح endpoint جاهزة، يمكنك استخدام DNS name للاتصال بمصدر البيانات.
 
-   في قائمة endpoints، يمكنك رؤية اسم DNS الخاص بالـ endpoint المتاح.
-   وقد يكون هذا إما اسم DNS وفّرته ClickPipes داخليًا أو اسم DNS خاصًا توفّره خدمة PrivateLink.
-   اسم DNS ليس عنوان شبكة كاملًا.
-   أضف Port وفقًا لمصدر البيانات.
+   في قائمة endpoints، يمكنك رؤية DNS name الخاصة بـ endpoint المتاحة.
+   وقد تكون هذه DNS name اسم DNS وفّرته ClickPipes داخليًا، أو private DNS name مقدَّمًا من خدمة PrivateLink،
+   أو [اسم DNS خاص مخصص](#custom-private-dns).
+   لا تُعد DNS name عنوان شبكة كاملًا.
+   أضِف Port وفقًا لمصدر البيانات.
 
-   يمكن العثور على connection string الخاص بـ MSK في وحدة تحكم AWS.
+   يمكن الوصول إلى MSK connection string من AWS console.
 
-   للاطلاع على القائمة الكاملة لأسماء DNS، انتقل إليها من إعدادات الخدمة السحابية.
+   للاطلاع على القائمة الكاملة لأسماء DNS، انتقل إليها من إعدادات cloud service.
 
 <div id="managing-existing-endpoints">
-  ## إدارة نقاط النهاية الخاصة العكسية الحالية
+  ## إدارة نقاط نهاية خاصة عكسية الحالية
 </div>
 
-يمكنك إدارة نقاط النهاية الخاصة العكسية الحالية في إعدادات خدمة ClickHouse Cloud:
+يمكنك إدارة نقاط نهاية خاصة عكسية الحالية في إعدادات خدمة ClickHouse Cloud:
 
 1. في الشريط الجانبي، ابحث عن زر `Settings` وانقر عليه.
 
@@ -288,7 +347,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
    <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp" alt="إعدادات ClickHouse Cloud" size="md" border />
 
-   تُعرض المعلومات التفصيلية الخاصة بنقطة النهاية الخاصة العكسية في اللوحة المنبثقة.
+   تُعرض المعلومات التفصيلية الخاصة بنقطة نهاية خاصة عكسية في اللوحة المنبثقة.
 
    يمكن إزالة نقطة النهاية من هنا. سيؤثر ذلك على أي ClickPipes تستخدم نقطة النهاية هذه.
 

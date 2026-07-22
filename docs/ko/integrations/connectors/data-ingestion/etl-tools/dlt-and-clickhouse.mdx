@@ -30,9 +30,7 @@ pip install "dlt[clickhouse]"
 </div>
 
 <Steps>
-  <Step>
-    ### dlt 프로젝트 초기화
-
+  <Step title="dlt 프로젝트 초기화" id="1-initialize-the-dlt-project">
     다음과 같이 새 `dlt` 프로젝트를 초기화합니다:
 
     ```bash
@@ -43,18 +41,16 @@ pip install "dlt[clickhouse]"
       이 명령은 소스로 chess를, 대상으로 ClickHouse를 사용하도록 파이프라인을 초기화합니다.
     </Note>
 
-    위 명령은 `.dlt/secrets.toml`과 ClickHouse용 requirements 파일을 비롯한 여러 파일과 디렉터리를 생성합니다. requirements 파일에 지정된 필수 종속성은 다음과 같이 설치할 수 있습니다:
+    위 명령은 `.dlt/secrets.toml`과 ClickHouse용 requirements 파일을 비롯한 여러 파일과 디렉터리를 생성합니다. requirements 파일에 지정된 필수 의존성은 다음과 같이 설치할 수 있습니다:
 
     ```bash
     pip install -r requirements.txt
     ```
 
-    또는 `pip install dlt[clickhouse]`를 사용할 수 있습니다. 이 명령은 `dlt` 라이브러리와 ClickHouse를 대상으로 사용할 때 필요한 종속성을 설치합니다.
+    또는 `pip install dlt[clickhouse]`를 사용할 수 있습니다. 이 명령은 `dlt` 라이브러리와 ClickHouse를 대상으로 사용할 때 필요한 의존성을 설치합니다.
   </Step>
 
-  <Step>
-    ### ClickHouse 데이터베이스 설정
-
+  <Step title="ClickHouse 데이터베이스 설정" id="2-setup-clickhouse-database">
     데이터를 ClickHouse에 적재하려면 ClickHouse 데이터베이스를 생성해야 합니다. 대략적인 절차는 다음과 같습니다:
 
     1. 기존 ClickHouse 데이터베이스를 사용하거나 새로 생성할 수 있습니다.
@@ -72,9 +68,7 @@ pip install "dlt[clickhouse]"
     ```
   </Step>
 
-  <Step>
-    ### 자격 증명 추가
-
+  <Step title="자격 증명 추가" id="3-add-credentials">
     다음으로, 아래와 같이 `.dlt/secrets.toml` 파일에 ClickHouse 자격 증명을 설정합니다:
 
     ```bash
@@ -96,7 +90,7 @@ pip install "dlt[clickhouse]"
 
       `http_port` 매개변수는 ClickHouse 서버의 HTTP 인터페이스에 연결할 때 사용할 포트 번호를 지정합니다. 이는 네이티브 TCP 프로토콜에 사용되는 기본 포트 9000과 다릅니다.
 
-      외부 스테이징을 사용하지 않는 경우(즉, 파이프라인에서 스테이징 매개변수를 설정하지 않는 경우) `http_port`를 반드시 설정해야 합니다. 내장된 ClickHouse 로컬 스토리지 스테이징은 HTTP를 통해 ClickHouse와 통신하는 <a href="https://github.com/ClickHouse/clickhouse-connect">clickhouse-connect</a> 라이브러리를 사용하기 때문입니다.
+      외부 스테이징을 사용하지 않는 경우(즉, 파이프라인에서 스테이징 매개변수를 설정하지 않는 경우) `http_port`를 반드시 설정해야 합니다. 내장된 ClickHouse 로컬 스토리지 스테이징은 HTTP를 통해 ClickHouse와 통신하는 <a href="https://github.com/ClickHouse/clickhouse-connect">clickhouse content</a> 라이브러리를 사용하기 때문입니다.
 
       ClickHouse 서버가 `http_port`에 지정한 포트에서 HTTP 연결을 수락하도록 구성되어 있는지 확인하십시오. 예를 들어 `http_port = 8443`으로 설정했다면 ClickHouse는 8443 포트에서 HTTP 요청을 수신해야 합니다. 외부 스테이징을 사용하는 경우에는 `clickhouse-connect`가 사용되지 않으므로 `http_port` 매개변수를 생략할 수 있습니다.
     </Info>

@@ -71,9 +71,7 @@ Bindplane은 다음 기능으로 이 문제를 해결합니다.
 </div>
 
 <Steps>
-  <Step>
-    #### 대상으로 사용할 ClickStack 구성
-
+  <Step title="대상으로 사용할 ClickStack 구성" id="configure-destination">
     1. Bindplane 계정에 로그인합니다
     2. **Library**로 이동합니다
     3. **Add Destination**을 클릭합니다
@@ -93,9 +91,7 @@ Bindplane은 다음 기능으로 이 문제를 해결합니다.
     </Tip>
   </Step>
 
-  <Step>
-    #### 구성 생성
-
+  <Step title="구성 생성" id="create-configuration">
     ClickStack 대상 구성이 완료되면 텔레메트리를 처리하고 라우팅할 구성을 생성합니다:
 
     1. **Configurations** → **Create Configuration**으로 이동합니다
@@ -117,23 +113,19 @@ Bindplane은 다음 기능으로 이 문제를 해결합니다.
     </Tip>
   </Step>
 
-  <Step>
-    #### 프로세서 추가(선택 사항)
-
+  <Step title="프로세서 추가(선택 사항)" id="add-processors">
     Bindplane은 pipeline intelligence와 프로세서 권장 사항을 제공합니다. 프로세서를 추가하여 다음 작업을 수행할 수 있습니다:
 
     * **Filter**: 불필요한 텔레메트리를 제외해 데이터 양을 줄입니다
     * **Sample**: 대용량 traces에 샘플링 전략을 적용합니다
-    * **Enrich**: resource 속성, 레이블 또는 메타데이터를 추가합니다
+    * **Enrich**: 리소스 속성, 레이블 또는 메타데이터를 추가합니다
     * **Transform**: 텔레메트리 구조 또는 내용을 수정합니다
     * **Batch**: 효율적인 전송을 위해 배치 크기를 최적화합니다
 
     이러한 프로세서는 데이터가 ClickStack에 도달하기 전에 collector fleet 전체에 일관되게 적용됩니다.
   </Step>
 
-  <Step>
-    #### collector 배포 및 롤아웃 시작
-
+  <Step title="collector 배포 및 롤아웃 시작" id="deploy-collectors">
     1. 구성에 collector(BDOT Collector)를 추가합니다:
        * Bindplane의 **Agents**로 이동합니다
        * 대상 시스템에 Bindplane collector를 설치합니다([Bindplane 설치 지침](https://docs.bindplane.com/readme/install-your-first-collector) 참조)
@@ -157,10 +149,8 @@ Bindplane은 다음 기능으로 이 문제를 해결합니다.
     <Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="Bindplane을 통해 ClickStack으로 들어오는 텔레메트리 신호" size="lg" />
   </Step>
 
-  <Step>
-    #### ClickStack에서 텔레메트리 확인
-
-    구성이 롤아웃되면 관리되는 collector fleet에서 ClickStack으로 텔레메트리가 유입되기 시작합니다:
+  <Step title="ClickStack에서 텔레메트리 확인" id="verify-telemetry">
+    구성이 롤아웃되면 관리형 collector fleet에서 ClickStack으로 텔레메트리가 유입되기 시작합니다:
 
     1. ClickStack 인스턴스(HyperDX UI)에 로그인합니다
     2. **Logs**, **Metrics** 또는 **Traces** 탐색기로 이동합니다

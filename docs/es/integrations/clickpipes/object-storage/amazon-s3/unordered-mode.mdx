@@ -23,10 +23,14 @@ En este modo, el ClickPipe de S3 realiza una carga inicial de **todos los archiv
 Pueden producirse varios tipos de fallos al ingestar datos, lo que puede dar lugar a inserciones parciales o a datos duplicados. Object Storage ClickPipes tolera los fallos de inserción y proporciona semántica exactly-once mediante tablas temporales de staging. Los datos se insertan primero en una tabla de staging; si algo sale mal, la tabla de staging se trunca y la inserción se reintenta desde un estado limpio. Las particiones solo se mueven a la tabla de destino una vez que la inserción se ha completado correctamente.
 
 <Steps>
-  <Step>
-    ## Crear una cola de Amazon SQS
-
+  <Step title="Crear una cola de Amazon SQS" id="create-sqs-queue">
     **1.** En la AWS Console, navegue a **Simple Queue Service &gt; Create queue**. Utilice los valores predeterminados para crear una nueva cola estándar.
+
+    <Warning>
+      **Una cola por ClickPipe**
+
+      Cada ClickPipe necesita su propia cola de SQS exclusiva. SQS entrega cada mensaje a un único consumidor: si dos o más ClickPipes (o cualquier otra aplicación) consumen la misma cola, cada evento lo recibe solo uno de ellos, y los archivos se omiten sin avisar en los pipes que nunca reciben el evento. Esto se aplica incluso si los ClickPipes usan distintos patrones de ruta: un pipe que recibe un evento de un archivo que no coincide con el patrón lo descarta, y ningún otro pipe llegará a verlo. Para ingestar desde el mismo bucket con varios ClickPipes, cree una cola por ClickPipe y use reglas de EventBridge para enrutar los eventos a cada cola.
+    </Warning>
 
     <Tip>
       Recomendamos encarecidamente configurar una **Dead-Letter-Queue (DLQ)** para la cola de SQS, para facilitar la depuración y el reintento de los mensajes fallidos. Si se configura una DLQ, los mensajes fallidos se volverán a encolar y se reprocesarán hasta alcanzar el número de intentos configurado en el parámetro `maxReceiveCount` de la DLQ.
@@ -119,7 +123,7 @@ Pueden producirse varios tipos de fallos al ingestar datos, lo que puede dar lug
         }
         ```
 
-        **b.** En las propiedades del bucket de S3, habilita **Event notifications** para los eventos `ObjectCreated` y configura la cola de SQS como destino. Opcionalmente, especifica un prefijo o sufijo para filtrar qué objetos activan las notificaciones; si lo haces, asegúrate de que coincida con la ruta configurada para el ClickPipe.
+        **b.** En las propiedades del bucket de S3, habilita **Event notifications**, selecciona **All object create events** (`s3:ObjectCreated:*`) como tipo de evento y configura la cola de SQS como destino. No selecciones tipos de evento individuales: las cargas pueden emitir distintos eventos `ObjectCreated` según cómo se realicen (por ejemplo, las cargas multiparte emiten `CompleteMultipartUpload` en lugar de `Put`), y los archivos cuyo tipo de evento no esté seleccionado nunca se entregarán a la cola. Opcionalmente, especifica un prefijo o sufijo para filtrar qué objetos activan las notificaciones; si lo haces, asegúrate de que coincida con la ruta configurada para el ClickPipe.
 
         <Note>
           S3 no permite varias reglas de notificación superpuestas para los mismos tipos de eventos en un mismo bucket. Si ya tienes una regla de notificación para eventos `ObjectCreated` en este bucket, usa en su lugar el enfoque con EventBridge.
@@ -128,9 +132,7 @@ Pueden producirse varios tipos de fallos al ingestar datos, lo que puede dar lug
     </Tabs>
   </Step>
 
-  <Step>
-    ## Configurar un rol de IAM
-
+  <Step title="Configurar un rol de IAM" id="configure-iam-role">
     **1.** En la consola de ClickHouse Cloud, ve a **Settings &gt; Network security information** y copia el **ARN del rol de IAM** de tu servicio.
 
     **2.** En la consola de AWS, ve a **IAM &gt; Roles &gt; Create role**. Elige **Custom trust policy** y pega lo siguiente, sustituyendo `<ch-cloud-arn>` por el ARN del rol de IAM que copiaste en el paso anterior:
@@ -191,12 +193,10 @@ Pueden producirse varios tipos de fallos al ingestar datos, lo que puede dar lug
     ```
   </Step>
 
-  <Step>
-    ## Crear un ClickPipe con modo no ordenado
-
+  <Step title="Crear un ClickPipe con modo no ordenado" id="create-clickpipe">
     **1.** En la consola de ClickHouse Cloud, vaya a **Data Sources &gt; Create ClickPipe** y seleccione **Amazon S3**. Introduzca la información necesaria para conectarse a su bucket de S3. En **Authentication method**, elija **IAM role** y proporcione el ARN del rol que creó en el paso anterior.
 
-    **2.** En **Incoming data**, active **Continuous ingestion**. Seleccione **Any order** como modo de ingestión y proporcione la **SQS queue URL** de la cola conectada a su bucket.
+    **2.** En **Incoming data**, active **Continuous ingestion**. Seleccione **Any order** como modo de ingestión y proporcione la **SQS queue URL** de la cola conectada a su bucket. La cola debe utilizarse exclusivamente para este ClickPipe; consulte [Crear una cola de Amazon SQS](#create-sqs-queue).
 
     **3.** En **Parse information**, defina una **Sorting key** para la tabla de destino. Haga los ajustes necesarios en el esquema asignado y, a continuación, configure un rol para el usuario de la base de datos de ClickPipes.
 

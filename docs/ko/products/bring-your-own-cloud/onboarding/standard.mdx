@@ -42,15 +42,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 조직 아래에 새로운 AWS 계정, GCP 프로젝트 또는 Azure subscription을 준비합니다.
 
 <Steps>
-  <Step>
-    ### 클라우드 제공업체 선택
-
+  <Step title="클라우드 제공업체 선택" id="choose-cloud-provider">
     <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC choose CSP" background="black" />
   </Step>
 
-  <Step>
-    ### 계정/프로젝트/subscription 설정
-
+  <Step title="계정/프로젝트/subscription 설정" id="account-setup">
     초기 BYOC 설정은 [CloudFormation template (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml), [Terraform module (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) 또는 [Terraform module (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure)을 사용해 수행할 수 있습니다. 이 과정에서는 권한 수준이 높은 아이덴티티(IAM 역할/서비스 계정/서비스 주체)를 생성하며, 이를 통해 ClickHouse Cloud의 BYOC 컨트롤러가 인프라를 관리할 수 있습니다.
 
     <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="BYOC initialize account" background="black" />
@@ -73,9 +69,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ### BYOC 인프라 설정
-
+  <Step title="BYOC 인프라 설정" id="setup-byoc-infrastructure">
     ClickHouse Cloud 콘솔에서 객체 스토리지 버킷, VPC/VNet, Kubernetes 클러스터를 포함한 인프라를 설정하라는 안내가 표시됩니다. 일부 구성은 이 단계에서 결정해야 하며, 이후에는 변경할 수 없습니다. 구체적으로는 다음과 같습니다.
 
     * **Region**: BYOC 배포에서는 [supported regions](/ko/products/cloud/reference/supported-regions) 문서에 나열된 모든 **public regions**를 사용할 수 있습니다. 프라이빗 리전은 현재 지원되지 않습니다.

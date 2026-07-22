@@ -27,7 +27,7 @@ Apache Polaris 支持 Iceberg 表和 Delta Tables (通过 Generic Tables) 。目
 
 要连接到 Polaris 目录，您需要具备：
 
-* Snowflake Open Catalog (托管的 Polaris) 或自托管的 Polaris Catalog
+* Snowflake Open Catalog (托管的 Polaris) 或自托管的 Polaris 目录
 * 您的 Polaris 目录 URI (例如，`https://<account-id>.<region>.aws.snowflakecomputing.com/polaris/api/catalog/v1` 或 `http://polaris:8181/api/catalog/v1/oauth/tokens`) 
 * Catalog 凭据 (client ID 和 client secret) 
 * 您的 Polaris 实例的 OAuth 令牌 URI
@@ -37,9 +37,7 @@ Apache Polaris 支持 Iceberg 表和 Delta Tables (通过 Generic Tables) 。目
 对于 Open Catalog (Snowflake 托管的 Polaris 服务) ，URI 会包含 `/polaris`；而对于自托管部署，则可能不包含。
 
 <Steps>
-  <Step>
-    ## 在 Polaris 和 ClickHouse 之间创建连接
-
+  <Step title="在 Polaris 和 ClickHouse 之间创建连接" id="connecting">
     创建一个数据库，将 ClickHouse 连接到您的 Polaris 目录：
 
     ```sql
@@ -55,9 +53,7 @@ Apache Polaris 支持 Iceberg 表和 Delta Tables (通过 Generic Tables) 。目
     ```
   </Step>
 
-  <Step>
-    ## 使用 ClickHouse 查询 Polaris 目录
-
+  <Step title="使用 ClickHouse 查询 Polaris 目录" id="query-polaris-catalog">
     连接建立后，您可以查询 Polaris：
 
     ```sql title="查询"
@@ -82,10 +78,8 @@ Apache Polaris 支持 Iceberg 表和 Delta Tables (通过 Generic Tables) 。目
     ```
   </Step>
 
-  <Step>
-    ## 将 Polaris 中的数据加载到 ClickHouse
-
-    要将 Polaris 中的数据加载到 ClickHouse 表中，请先按照所需的 schema 创建目标表，然后从 Polaris 表中插入数据：
+  <Step title="将 Polaris 中的数据加载到 ClickHouse" id="loading-data-into-clickhouse">
+    要将 Polaris 中的数据加载到 ClickHouse 表中，请先按所需的 schema 创建目标表，然后从 Polaris 表中插入数据：
 
     ```sql title="查询"
     CREATE TABLE my_clickhouse_table

@@ -25,149 +25,145 @@ import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/Experim
   ## Подключение ClickHouse к MySQL с помощью движка таблицы MySQL
 </div>
 
-Движок таблицы `MySQL` позволяет подключить ClickHouse к MySQL. Команды **SELECT** и **INSERT** можно выполнять как в ClickHouse, так и в таблице MySQL. В этой статье рассматриваются основные способы работы с движком таблицы `MySQL`.
+Движок таблицы `MySQL` позволяет подключить ClickHouse к MySQL. Операторы **SELECT** и **INSERT** можно выполнять как в ClickHouse, так и в таблице MySQL. В этой статье показаны основные способы использования движка таблицы `MySQL`.
 
-<div id="1-configure-mysql">
-  ### 1. Настройте MySQL
-</div>
+<Steps>
+  <Step title="Настройка MySQL" id="1-configure-mysql">
+    1. Создайте базу данных в MySQL:
 
-1. Создайте базу данных в MySQL:
+    ```sql
+    CREATE DATABASE db1;
+    ```
 
-```sql
-  CREATE DATABASE db1;
-```
+    2. Создайте таблицу:
 
-2. Создайте таблицу:
+    ```sql
+    CREATE TABLE db1.table1 (
+      id INT,
+      column1 VARCHAR(255)
+    );
+    ```
 
-```sql
-  CREATE TABLE db1.table1 (
-    id INT,
-    column1 VARCHAR(255)
-  );
-```
+    3. Вставьте тестовые строки:
 
-3. Вставьте строки с примерными данными:
+    ```sql
+    INSERT INTO db1.table1
+      (id, column1)
+    VALUES
+      (1, 'abc'),
+      (2, 'def'),
+      (3, 'ghi');
+    ```
 
-```sql
-  INSERT INTO db1.table1
-    (id, column1)
-  VALUES
-    (1, 'abc'),
-    (2, 'def'),
-    (3, 'ghi');
-```
+    4. Создайте пользователя для подключения из ClickHouse:
 
-4. Создайте пользователя, через которого ClickHouse будет подключаться:
+    ```sql
+    CREATE USER 'mysql_clickhouse'@'%' IDENTIFIED BY 'Password123!';
+    ```
 
-```sql
-  CREATE USER 'mysql_clickhouse'@'%' IDENTIFIED BY 'Password123!';
-```
+    5. Выдайте необходимые привилегии. (В демонстрационных целях пользователю `mysql_clickhouse` выдаются привилегии администратора.)
 
-5. Назначьте необходимые привилегии. (В демонстрационных целях пользователю `mysql_clickhouse` назначаются права администратора.)
+    ```sql
+    GRANT ALL PRIVILEGES ON *.* TO 'mysql_clickhouse'@'%';
+    ```
 
-```sql
-  GRANT ALL PRIVILEGES ON *.* TO 'mysql_clickhouse'@'%';
-```
+    <Note>
+      Если вы используете эту возможность в ClickHouse Cloud, вам может потребоваться разрешить IP-адресам ClickHouse Cloud доступ к вашему экземпляру MySQL.
+      Подробную информацию об исходящем трафике см. в ClickHouse [Cloud Endpoints API](/ru/products/cloud/guides/sql-console/query-endpoints).
+    </Note>
+  </Step>
 
-<Note>
-  Если вы используете эту возможность в ClickHouse Cloud, вам может потребоваться разрешить доступ к вашему экземпляру MySQL с IP-адресов ClickHouse Cloud.
-  Подробные сведения об исходящем трафике см. в ClickHouse [Cloud Endpoints API](/ru/products/cloud/guides/sql-console/query-endpoints).
-</Note>
+  <Step title="Определение таблицы в ClickHouse" id="2-define-a-table-in-clickhouse">
+    1. Теперь создадим таблицу ClickHouse, использующую движок таблицы `MySQL`:
 
-<div id="2-define-a-table-in-clickhouse">
-  ### 2. Создайте таблицу в ClickHouse
-</div>
+    ```sql
+    CREATE TABLE mysql_table1 (
+      id UInt64,
+      column1 String
+    )
+    ENGINE = MySQL('mysql-host.domain.com','db1','table1','mysql_clickhouse','Password123!')
+    ```
 
-1. Теперь создадим таблицу в ClickHouse, использующую движок таблицы `MySQL`:
+    Минимальные параметры:
 
-```sql
-  CREATE TABLE mysql_table1 (
-    id UInt64,
-    column1 String
-  )
-  ENGINE = MySQL('mysql-host.domain.com','db1','table1','mysql_clickhouse','Password123!')
-```
+    | параметр | Описание                                 | пример                |
+    | -------- | ---------------------------------------- | --------------------- |
+    | host     | имя хоста или IP-адрес                   | mysql-host.domain.com |
+    | database | имя базы данных MySQL                    | db1                   |
+    | table    | имя таблицы MySQL                        | table1                |
+    | user     | имя пользователя для подключения к MySQL | mysql&#95;clickhouse  |
+    | password | пароль для подключения к MySQL           | Password123!          |
 
-Минимальные параметры:
+    <Note>
+      Полный список параметров см. на странице документации [движок таблицы MySQL](/ru/reference/engines/table-engines/integrations/mysql).
+    </Note>
+  </Step>
 
-| параметр | Описание                                 | пример                |
-| -------- | ---------------------------------------- | --------------------- |
-| host     | имя хоста или IP-адрес                   | mysql-host.domain.com |
-| database | имя базы данных MySQL                    | db1                   |
-| table    | имя таблицы MySQL                        | table1                |
-| user     | имя пользователя для подключения к MySQL | mysql&#95;clickhouse  |
-| password | пароль для подключения к MySQL           | Password123!          |
+  <Step title="Протестируйте интеграцию" id="3-test-the-integration">
+    1. В MySQL вставьте тестовую строку:
 
-<Note>
-  Полный список параметров см. на странице документации [движка таблицы MySQL](/ru/reference/engines/table-engines/integrations/mysql).
-</Note>
+    ```sql
+    INSERT INTO db1.table1
+      (id, column1)
+    VALUES
+      (4, 'jkl');
+    ```
 
-<div id="3-test-the-integration">
-  ### 3. Протестируйте интеграцию
-</div>
+    2. Обратите внимание: в таблице ClickHouse уже есть существующие строки из таблицы MySQL, а также новая строка, которую вы только что добавили:
 
-1. В MySQL вставьте тестовую строку:
+    ```sql
+    SELECT
+        id,
+        column1
+    FROM mysql_table1
+    ```
 
-```sql
-  INSERT INTO db1.table1
-    (id, column1)
-  VALUES
-    (4, 'jkl');
-```
+    Вы должны увидеть 4 строки:
 
-2. Обратите внимание: в таблице ClickHouse уже есть существующие строки из таблицы MySQL, а также новая строка, которую вы только что добавили:
+    ```response
+    Query id: 6d590083-841e-4e95-8715-ef37d3e95197
 
-```sql
-  SELECT
-      id,
-      column1
-  FROM mysql_table1
-```
+    ┌─id─┬─column1─┐
+    │  1 │ abc     │
+    │  2 │ def     │
+    │  3 │ ghi     │
+    │  4 │ jkl     │
+    └────┴─────────┘
 
-Вы должны увидеть 4 строки:
+    4 rows in set. Elapsed: 0.044 sec.
+    ```
 
-```response
-  Query id: 6d590083-841e-4e95-8715-ef37d3e95197
+    3. Добавим строку в таблицу ClickHouse:
 
-  ┌─id─┬─column1─┐
-  │  1 │ abc     │
-  │  2 │ def     │
-  │  3 │ ghi     │
-  │  4 │ jkl     │
-  └────┴─────────┘
+    ```sql
+    INSERT INTO mysql_table1
+      (id, column1)
+    VALUES
+      (5,'mno')
+    ```
 
-  4 rows in set. Elapsed: 0.044 sec.
-```
+    4. Обратите внимание, что в MySQL появилась новая строка:
 
-3. Добавим строку в таблицу ClickHouse:
+    ```bash
+    mysql> select id,column1 from db1.table1;
+    ```
 
-```sql
-  INSERT INTO mysql_table1
-    (id, column1)
-  VALUES
-    (5,'mno')
-```
+    Вы увидите новую строку:
 
-4. Обратите внимание, что в MySQL появилась новая строка:
-
-```bash
-  mysql> select id,column1 from db1.table1;
-```
-
-Вы увидите новую строку:
-
-```response
-  +------+---------+
-  | id   | column1 |
-  +------+---------+
-  |    1 | abc     |
-  |    2 | def     |
-  |    3 | ghi     |
-  |    4 | jkl     |
-  |    5 | mno     |
-  +------+---------+
-  5 rows in set (0.01 sec)
-```
+    ```response
+    +------+---------+
+    | id   | column1 |
+    +------+---------+
+    |    1 | abc     |
+    |    2 | def     |
+    |    3 | ghi     |
+    |    4 | jkl     |
+    |    5 | mno     |
+    +------+---------+
+    5 rows in set (0.01 sec)
+    ```
+  </Step>
+</Steps>
 
 <div id="summary">
   ### Краткое описание

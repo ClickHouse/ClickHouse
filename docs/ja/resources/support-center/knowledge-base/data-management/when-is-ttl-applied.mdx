@@ -10,7 +10,7 @@ keywords: ['有効期限 (TTL)']
   ## 有効期限 (TTL) ルールと制御
 </div>
 
-有効期限 (TTL) &#x306F;***最終的には***&#x9069;用されます。これはどういう意味でしょうか。`MergeTree` テーブル設定の [`merge_with_ttl_timeout`](/ja/reference/engines/table-engines/mergetree-family/mergetree#merge_with_ttl_timeout) は、delete 有効期限 (TTL) を伴うマージを再実行するまでの最短待機時間を秒単位で設定します。デフォルト値は 14400 秒 (4 時間) です。ただし、これはあくまで最短の待機時間であり、delete 有効期限 (TTL) のマージがトリガーされるまでには、さらに時間がかかることがあります。
+有効期限 (TTL) &#x306F;***最終的には***&#x9069;用されます。これはどういう意味でしょうか。`MergeTree` テーブル設定の [`merge_with_ttl_timeout`](/ja/reference/settings/merge-tree-settings#merge_with_ttl_timeout) は、delete 有効期限 (TTL) を伴うマージを再実行するまでの最短待機時間を秒単位で設定します。デフォルト値は 14400 秒 (4 時間) です。ただし、これはあくまで最短の待機時間であり、delete 有効期限 (TTL) のマージがトリガーされるまでには、さらに時間がかかることがあります。
 
 次のクエリを使うと、現在の 有効期限 (TTL) 設定 (`merge_with_ttl_timeout` など) をすべて確認できます。
 

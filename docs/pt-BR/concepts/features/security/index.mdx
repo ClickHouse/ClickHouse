@@ -4,9 +4,23 @@ title: 'Segurança e autenticação'
 description: 'Página inicial de Segurança e autenticação'
 doc_type: 'landing-page'
 keywords: ['segurança e autenticação', 'controle de acesso', 'RBAC', 'gerenciamento de usuários', 'guia de SRE']
+mode: wide
 ---
 
-| Página                                                                               | Descrição                                                                                                                      |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| [Usuários e papéis](/pt-BR/concepts/features/security/access-rights)                       | Saiba mais sobre como o ClickHouse oferece suporte ao gerenciamento de controle de acesso com base em RBAC.                    |
-| [Autenticadores externos](/pt-BR/concepts/features/security/external-authenticators/index) | Saiba mais sobre como o ClickHouse OSS oferece suporte à autenticação e ao gerenciamento de usuários usando serviços externos. |
+<CardGroup cols={2}>
+  <Card title="Usuários e papéis" icon="users" href="/pt-BR/concepts/features/security/access-rights">
+    Saiba mais sobre como o ClickHouse oferece suporte ao gerenciamento de controle de acesso com base em RBAC.
+  </Card>
+
+  <Card title="Portas de rede" icon="ethernet" href="/pt-BR/concepts/features/security/network-ports">
+    Referência das portas de rede usadas pelo ClickHouse.
+  </Card>
+
+  <Card title="TLS" icon="lock" href="/pt-BR/concepts/features/security/tls/index">
+    Configure TLS para conexões seguras com o ClickHouse.
+  </Card>
+
+  <Card title="Autenticadores externos" icon="id-badge" href="/pt-BR/concepts/features/security/external-authenticators/index">
+    Saiba mais sobre como o ClickHouse OSS oferece suporte à autenticação e ao gerenciamento de usuários usando serviços externos.
+  </Card>
+</CardGroup>

@@ -33,7 +33,7 @@ O Looker Studio pode se conectar ao ClickHouse pela interface MySQL usando a fon
 <MySQLOnPremiseSetup />
 
 <div id="connecting-looker-studio-to-clickhouse">
-  ## Conectando o Looker Studio ao ClickHouse
+  ## Como conectar o Looker Studio ao ClickHouse
 </div>
 
 Primeiro, faça login em https://lookerstudio.google.com com sua conta do Google e crie uma nova fonte de dados:
@@ -48,8 +48,8 @@ Procure o conector oficial do MySQL fornecido pelo Google (chamado simplesmente 
 
 <br />
 
-Informe os detalhes da conexão. Observe que a porta da interface MySQL é 9004 por padrão
-e pode variar dependendo da configuração do servidor.
+Informe os detalhes da sua conexão. Observe que a porta da interface MySQL é 9004 por padrão
+e pode ser diferente, dependendo da configuração do seu servidor.
 
 <Image size="md" img="/images/integrations/data-visualization/looker_studio_03.webp" alt="Especificando os detalhes da conexão MySQL do ClickHouse no Looker Studio" border />
 
@@ -61,7 +61,7 @@ Agora, você tem duas opções para buscar os dados do ClickHouse. Primeiro, pod
 
 <br />
 
-Como alternativa, você pode especificar uma consulta personalizada para buscar seus dados:
+Como alternativa, você pode especificar uma consulta SQL personalizada para buscar os dados:
 
 <Image size="md" img="/images/integrations/data-visualization/looker_studio_05.webp" alt="Usando uma consulta SQL personalizada para buscar dados do ClickHouse no Looker Studio" border />
 
@@ -69,7 +69,7 @@ Como alternativa, você pode especificar uma consulta personalizada para buscar 
 
 Por fim, você deverá conseguir ver a estrutura da tabela identificada automaticamente e ajustar os tipos de dados, se necessário.
 
-<Image size="md" img="/images/integrations/data-visualization/looker_studio_06.webp" alt="Visualizando a estrutura da tabela identificada automaticamente no Looker Studio" border />
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_06.webp" alt="Visualizando a estrutura da tabela do ClickHouse identificada automaticamente no Looker Studio" border />
 
 <br />
 

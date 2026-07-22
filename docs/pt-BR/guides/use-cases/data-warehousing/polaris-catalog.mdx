@@ -39,9 +39,7 @@ Para se conectar ao catálogo Polaris, você precisará de:
 Para o Open Catalog, a oferta gerenciada Polaris da Snowflake, seu URI incluirá `/polaris`, enquanto na versão self-hosted isso pode não ocorrer.
 
 <Steps>
-  <Step>
-    ## Criando uma conexão entre Polaris e ClickHouse
-
+  <Step title="Criando uma conexão entre Polaris e ClickHouse" id="connecting">
     Crie um banco de dados que conecte o ClickHouse ao seu catálogo Polaris:
 
     ```sql
@@ -57,9 +55,7 @@ Para o Open Catalog, a oferta gerenciada Polaris da Snowflake, seu URI incluirá
     ```
   </Step>
 
-  <Step>
-    ## Consulte o catálogo Polaris usando o ClickHouse
-
+  <Step title="Consulte o catálogo Polaris usando o ClickHouse" id="query-polaris-catalog">
     Depois que a conexão estiver estabelecida, você poderá consultar o Polaris:
 
     ```sql title="Consulta"
@@ -84,9 +80,7 @@ Para o Open Catalog, a oferta gerenciada Polaris da Snowflake, seu URI incluirá
     ```
   </Step>
 
-  <Step>
-    ## Carregando dados do Polaris para o ClickHouse
-
+  <Step title="Carregando dados do Polaris para o ClickHouse" id="loading-data-into-clickhouse">
     Para carregar dados do Polaris em uma tabela do ClickHouse, crie a tabela de destino com o schema desejado e depois faça a inserção a partir da tabela do Polaris:
 
     ```sql title="Consulta"

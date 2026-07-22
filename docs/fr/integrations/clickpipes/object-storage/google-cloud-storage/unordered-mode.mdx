@@ -21,10 +21,14 @@ Dans ce mode, le ClickPipe GCS effectue un chargement initial de **tous les fich
 Divers types d’échecs peuvent survenir lors de l’ingestion de données, ce qui peut entraîner des insertions partielles ou des doublons. Les Object Storage ClickPipes tolèrent les échecs d’insertion et offrent une sémantique exactly-once à l’aide de tables de staging temporaires. Les données sont d’abord insérées dans une table de staging ; si un problème survient, la table de staging est tronquée et l’insertion est relancée depuis un état propre. Les partitions ne sont déplacées vers la table cible qu’une fois l’insertion terminée avec succès.
 
 <Steps>
-  <Step>
-    ## Créer un topic Google Cloud Pub/Sub
-
+  <Step title="Créer un topic Google Cloud Pub/Sub" id="create-pubsub-topic">
     **1.** Dans la Google Cloud Console, accédez à **Pub/Sub &gt; Topics &gt; Create topic**. Créez un nouveau topic avec un abonnement par défaut et notez le **nom du topic**.
+
+    <Warning>
+      **Un abonnement par ClickPipe**
+
+      Chaque ClickPipe a besoin de son propre abonnement Pub/Sub dédié. Au sein d’un même abonnement, Pub/Sub ne distribue chaque message qu’à un seul abonné : si deux ClickPipes ou plus (ou toute autre application) consomment le même abonnement, chaque notification n’est reçue que par l’un d’eux, et les fichiers sont ignorés silencieusement par les pipes qui ne la reçoivent jamais. Cela s’applique même si les ClickPipes utilisent des motifs de chemin différents — un pipe qui reçoit une notification pour un fichier ne correspondant pas au motif l’ignore, et aucun autre pipe ne la verra jamais. Pour ingérer depuis le même bucket avec plusieurs ClickPipes, créez un abonnement distinct sur le topic pour chaque ClickPipe.
+    </Warning>
 
     **2.** Configurez une notification de bucket GCS qui publie les [événements `OBJECT_FINALIZE`](https://docs.cloud.google.com/storage/docs/pubsub-notifications) vers le topic Pub/Sub créé ci-dessus.
 
@@ -42,9 +46,7 @@ Divers types d’échecs peuvent survenir lors de l’ingestion de données, ce 
     ```
   </Step>
 
-  <Step>
-    ## Configurer un compte de service
-
+  <Step title="Configurer un compte de service" id="configure-service-account">
     **1.** Configurez un [compte de service](http://docs.cloud.google.com/iam/docs/keys-create-delete) avec les [permissions requises](/fr/integrations/clickpipes/object-storage/google-cloud-storage/overview#permissions) pour permettre à ClickPipes de lister et de récupérer les objets dans le bucket spécifié, ainsi que de consommer et surveiller les notifications de l’abonnement Pub/Sub.
 
     **1.1.** Cette étape peut être effectuée dans la Google Cloud Console, à l’aide du client `gcloud` ou de l’interface programmatique Google Cloud de votre choix. Par exemple, avec `gcloud` :
@@ -67,12 +69,10 @@ Divers types d’échecs peuvent survenir lors de l’ingestion de données, ce 
     ```
   </Step>
 
-  <Step>
-    ## Créer un ClickPipe avec le mode non ordonné
-
+  <Step title="Créer un ClickPipe avec le mode non ordonné" id="create-clickpipe">
     **1.** Dans la console ClickHouse Cloud, accédez à **Data Sources &gt; Create ClickPipe** et sélectionnez **Google Cloud Storage**. Saisissez les informations nécessaires pour vous connecter à votre bucket GCS. Sous **Authentication method**, choisissez **compte de service** et fournissez la clé `.json` du compte de service.
 
-    **2.** Activez **Continuous ingestion**, puis sélectionnez **Any order** comme mode d’ingestion et indiquez le nom de l’**abonnement Pub/Sub** correspondant à l’abonnement connecté à votre bucket. Le nom de l’abonnement doit respecter le format suivant :
+    **2.** Activez **Continuous ingestion**, puis sélectionnez **Any order** comme mode d’ingestion et indiquez le nom de l’**abonnement Pub/Sub** correspondant à l’abonnement connecté à votre bucket. Cet abonnement doit être utilisé exclusivement par ce ClickPipe — voir [Créer un topic Google Cloud Pub/Sub](#create-pubsub-topic). Le nom de l’abonnement doit respecter le format suivant :
 
     ```text
     projects/${YOUR_PROJECT_ID}/subscriptions/${YOUR_SUBSCRIPTION_NAME}

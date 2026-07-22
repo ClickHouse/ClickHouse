@@ -88,7 +88,7 @@ import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupporte
           .config("spark.sql.catalog.clickhouse.user", "default")
           .config("spark.sql.catalog.clickhouse.password", "<your-password>")
           .config("spark.sql.catalog.clickhouse.database", "default")
-          // 用于 ClickHouse Cloud
+          // for ClickHouse cloud
           .config("spark.sql.catalog.clickhouse.option.ssl", "true")
           .config("spark.sql.catalog.clickhouse.option.ssl_mode", "NONE")
           .getOrCreate
@@ -121,10 +121,10 @@ import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupporte
           .schema(schema)
           .csv(url)
 
-        // 写入 ClickHouse
+        // Write to ClickHouse
         df.writeTo("clickhouse.default.cell_towers").append()
 
-        // 从 ClickHouse 读取
+        // Read from ClickHouse
         val dfRead = spark.sql("select * from clickhouse.default.cell_towers")
         Job.commit()
       }
@@ -161,18 +161,18 @@ import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupporte
     spark.conf.set("spark.sql.catalog.clickhouse.database", "default")
     spark.conf.set("spark.clickhouse.write.format", "json")
     spark.conf.set("spark.clickhouse.read.format", "arrow")
-    # 适用于 ClickHouse Cloud
+    # for ClickHouse cloud
     spark.conf.set("spark.sql.catalog.clickhouse.option.ssl", "true")
     spark.conf.set("spark.sql.catalog.clickhouse.option.ssl_mode", "NONE")
 
-    # 创建 DataFrame
+    # Create DataFrame
     data = [Row(id=11, name="John"), Row(id=12, name="Doe")]
     df = spark.createDataFrame(data)
 
-    # 将 DataFrame 写入 ClickHouse
+    # Write DataFrame to ClickHouse
     df.writeTo("clickhouse.default.example_table").append()
 
-    # 从 ClickHouse 读取 DataFrame
+    # Read DataFrame from ClickHouse
     df_read = spark.sql("select * from clickhouse.default.example_table")
     logger.info(str(df.take(10)))
 
@@ -181,4 +181,3 @@ import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupporte
   </Tab>
 </Tabs>
 
-更多详情，请参阅我们的 [Spark 文档](/zh/integrations/connectors/data-ingestion/apache-spark/index)。

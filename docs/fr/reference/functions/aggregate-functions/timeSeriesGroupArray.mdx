@@ -13,7 +13,7 @@ doc_type: 'reference'
 
 Introduit dans : v25.8.0
 
-Trie les séries temporelles par horodatage dans l’ordre croissant.
+Trie les données de séries temporelles par horodatage dans l’ordre croissant.
 
 <Note>
   Cette fonction est expérimentale ; activez-la en définissant `allow_experimental_ts_to_grid_aggregate_function=true`.
@@ -39,6 +39,7 @@ Renvoie un tableau de tuples `(timestamp, value)` triés par horodatage dans l�
 **Utilisation de base avec des valeurs individuelles**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values
@@ -61,6 +62,7 @@ FROM
 **Passage de plusieurs échantillons d’horodatages et de valeurs sous forme de tableaux de même taille**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values

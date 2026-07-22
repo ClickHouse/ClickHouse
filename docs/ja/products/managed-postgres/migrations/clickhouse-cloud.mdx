@@ -28,111 +28,103 @@ ClickHouse Cloud には、外部 PostgreSQL データベースを Managed Postgr
 
 * **DDL の伝播**: 継続的レプリケーション (CDC (変更データキャプチャ) ) では、DML 操作と `ADD COLUMN` がキャプチャされます。`DROP COLUMN` や `ALTER COLUMN` などのその他の DDL 変更は伝播されないため、ターゲット側で手動で適用する必要があります。
 
-<div id="step-1-connect">
-  ## ステップ 1: ソースデータベースに接続する
-</div>
+<Steps>
+  <Step title="ソースデータベースに接続する" id="step-1-connect">
+    [ClickHouse Cloud コンソール](https://clickhouse.cloud) を開き、Managed Postgres サービスを選択します。
 
-[ClickHouse Cloud コンソール](https://clickhouse.cloud) を開き、Managed Postgres サービスを選択します。
+    <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="ClickHouse Cloud のサービス一覧にある Managed Postgres サービスカード" size="lg" border />
 
-<Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="ClickHouse Cloud のサービス一覧にある Managed Postgres サービスカード" size="lg" border />
+    左側のサイドバーで **Data sources** をクリックします。
 
-左側のサイドバーで **Data sources** をクリックします。
+    <Image img="/images/managed-postgres/pgpg/overview.webp" alt="Managed Postgres サービスのサイドバーにある Data sources エントリ" size="lg" border />
 
-<Image img="/images/managed-postgres/pgpg/overview.webp" alt="Managed Postgres サービスのサイドバーにある Data sources エントリ" size="lg" border />
+    **Start import** をクリックします。
 
-**Start import** をクリックします。
+    <Image img="/images/managed-postgres/pgpg/startimport.webp" alt="Start import ボタンがある Data sources ページ" size="lg" border />
 
-<Image img="/images/managed-postgres/pgpg/startimport.webp" alt="Start import ボタンがある Data sources ページ" size="lg" border />
+    ソース PostgreSQL データベースの接続情報 (ホスト、ポート、ユーザー名、パスワード、データベース名) を入力します。必要に応じて **TLS** を有効にします。
 
-ソース PostgreSQL データベースの接続情報 (ホスト、ポート、ユーザー名、パスワード、データベース名) を入力します。必要に応じて **TLS** を有効にします。
+    ソースデータベースへのプライベート接続が必要な場合は、**SSH tunneling** を選択し、必要な SSH 情報を入力できます。これにより、公開されていないデータベースにも移行プロセスから安全に接続できます。
 
-ソースデータベースへのプライベート接続が必要な場合は、**SSH tunneling** を選択し、必要な SSH 情報を入力できます。これにより、公開されていないデータベースにも移行プロセスから安全に接続できます。
+    インジェスト方法を選択します。
 
-インジェスト方法を選択します。
+    * **初期ロード + CDC (変更データキャプチャ)&#x20;**&#x20;— 既存のデータをコピーした後、以降の変更を継続的に同期します。
+    * **初期ロードのみ** — 一回限りのコピーで、継続的なレプリケーションは行いません。
+    * **CDC (変更データキャプチャ) のみ** — 初期コピーをスキップし、この時点以降の新しい変更のみをレプリケートします。
 
-* **初期ロード + CDC (変更データキャプチャ)&#x20;**&#x20;— 既存のデータをコピーした後、以降の変更を継続的に同期します。
-* **初期ロードのみ** — 一回限りのコピーで、継続的なレプリケーションは行いません。
-* **CDC (変更データキャプチャ)  のみ** — 初期コピーをスキップし、この時点以降の新しい変更のみをレプリケートします。
+    <Image img="/images/managed-postgres/pgpg/migrationform.webp" alt="ステップ 1: インジェスト方法のオプションを含むソースデータベース接続フォーム" size="lg" border />
 
-<Image img="/images/managed-postgres/pgpg/migrationform.webp" alt="ステップ 1: インジェスト方法のオプションを含むソースデータベース接続フォーム" size="lg" border />
+    **Next** をクリックします。
+  </Step>
 
-**Next** をクリックします。
+  <Step title="データベーススキーマをエクスポートする" id="step-2-export-schema">
+    ウィザードには、ソースの接続情報があらかじめ入力された `pg_dump` コマンドが表示されます。これをターミナルで実行します。
 
-<div id="step-2-export-schema">
-  ## ステップ 2: データベーススキーマをエクスポートする
-</div>
+    <Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="ステップ 2: スキーマのエクスポート用 `pg_dump` コマンド" size="lg" border />
 
-ウィザードには、ソースの接続情報があらかじめ入力された `pg_dump` コマンドが表示されます。これをターミナルで実行してください。
+    ```shell
+    pg_dump \
+      -h <source_host> \
+      -U <source_user> \
+      -d <source_database> \
+      --schema-only \
+      -f pg.sql
+    ```
 
-<Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="ステップ 2: スキーマのエクスポート用 `pg_dump` コマンド" size="lg" border />
+    これにより、`pg.sql` が現在のディレクトリに作成されます。
 
-```shell
-pg_dump \
-  -h <source_host> \
-  -U <source_user> \
-  -d <source_database> \
-  --schema-only \
-  -f pg.sql
-```
+    <Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="pg_dump 実行後のターミナル出力" size="lg" border />
 
-これにより、現在のディレクトリに `pg.sql` が作成されます。
+    **Next** をクリックします。
+  </Step>
 
-<Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="pg_dump 実行後のターミナル出力" size="lg" border />
+  <Step title="Managed Postgres サービスにスキーマをインポートする" id="step-3-import-schema">
+    ドロップダウンから宛先データベースを選択するか、**Create a new database** をクリックして新しく作成します。
 
-**Next** をクリックします。
+    ウィザードには、スキーマダンプを Managed Postgres サービスに適用するための `psql` コマンドが表示されます。これをターミナルで実行します。
 
-<div id="step-3-import-schema">
-  ## ステップ 3: スキーマを Managed Postgres サービスにインポートする
-</div>
+    <Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="ステップ 3: スキーマのインポート用 `psql` コマンド" size="lg" border />
 
-ドロップダウンから宛先データベースを選択するか、**Create a new database** をクリックして新しいデータベースをプロビジョニングします。
+    ```shell
+    psql \
+      -h <target_host> \
+      -p 5432 \
+      -U <target_user> \
+      -d <target_database> \
+      -f pg.sql
+    ```
 
-ウィザードには、スキーマダンプを Managed Postgres サービスに適用するための `psql` コマンドが表示されます。これをターミナルで実行します。
+    <Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="psql によるスキーマインポート実行後のターミナル出力" size="lg" border />
 
-<Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="ステップ 3: スキーマのインポート用 `psql` コマンド" size="lg" border />
+    **Next** をクリックします。
+  </Step>
 
-```shell
-psql \
-  -h <target_host> \
-  -p 5432 \
-  -U <target_user> \
-  -d <target_database> \
-  -f pg.sql
-```
+  <Step title="インジェスト設定を構成する" id="step-4-ingestion-settings">
+    論理レプリケーションに使用する publication を指定します。空欄のままにすると、publication が自動的に作成されます。
 
-<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="psql でスキーマをインポートした後のターミナル出力" size="lg" border />
+    **Advanced replication settings** を展開して、スループットを調整します。
 
-**Next** をクリックします。
+    | 設定                   | デフォルト   | 説明                             |
+    | -------------------- | ------- | ------------------------------ |
+    | 同期間隔 (秒)             | 10      | replication slot をポーリングする頻度    |
+    | 初期ロードの並列スレッド数        | 4       | 一括コピーフェーズで使用するスレッド数            |
+    | Pull バッチサイズ          | 100,000 | レプリケーションの各バッチで取得する行数           |
+    | パーティションごとのスナップショット行数 | 100000  | 大規模テーブルのスナップショットにおけるパーティションサイズ |
+    | 並列にスナップショットするテーブル数   | 1       | 同時にスナップショットするテーブル数             |
 
-<div id="step-4-ingestion-settings">
-  ## Step 4: インジェスト設定を構成する
-</div>
+    <Image img="/images/managed-postgres/pgpg/advancedsettings.webp" alt="ステップ 4: publication と高度なレプリケーションオプションを含むインジェスト設定フォーム" size="lg" border />
 
-論理レプリケーションに使用する publication を指定します。空欄のままにすると、publication が自動的に作成されます。
+    **Next** をクリックします。
+  </Step>
 
-スループットを調整するには、**高度なレプリケーション設定** を展開します。
+  <Step title="テーブルを選択する" id="step-5-select-tables">
+    レプリケートするテーブルを選択します。テーブルはスキーマごとにグループ化されています。個々のテーブルを選択するか、スキーマを展開してその中のすべてを選択します。
 
-| 設定                    | デフォルト   | 説明                              |
-| --------------------- | ------- | ------------------------------- |
-| 同期間隔 (秒)              | 10      | replication slot をポーリングする頻度     |
-| 初期ロードの並列スレッド数         | 4       | bulk copy フェーズで使用するスレッド数        |
-| Pull バッチサイズ           | 100,000 | レプリケーションバッチごとに取得する行数            |
-| スナップショットのパーティションごとの行数 | 100000  | 大規模なテーブルのスナップショットにおけるパーティションサイズ |
-| 並列にスナップショットを取得するテーブル数 | 1       | 同時にスナップショットを取得するテーブル数           |
+    <Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="ステップ 5: スキーマごとにグループ化されたテーブルピッカーと Create migration ボタン" size="lg" border />
 
-<Image img="/images/managed-postgres/pgpg/advancedsettings.webp" alt="Step 4: publication と高度なレプリケーションオプションを含むインジェスト設定フォーム" size="lg" border />
-
-**Next** をクリックします。
-
-<div id="step-5-select-tables">
-  ## ステップ 5: テーブルを選択
-</div>
-
-レプリケートするテーブルを選択します。テーブルはスキーマごとにまとめられています。個別のテーブルを選択することも、スキーマを展開してその配下をすべて選択することもできます。
-
-<Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="ステップ 5: スキーマごとにまとめられたテーブル選択画面と移行を作成ボタン" size="lg" border />
-
-**移行を作成** をクリックします。
+    **Create migration** をクリックします。
+  </Step>
+</Steps>
 
 <div id="monitor">
   ## 移行を監視する

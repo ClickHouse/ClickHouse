@@ -832,7 +832,7 @@ Essa abordagem tem as seguintes vantagens:
 * É mais segura do que outras estratégias porque não modifica a tabela original até que a operação INSERT seja concluída com sucesso: em caso de falha intermediária, a tabela original não é modificada.
 * Implementa a prática recomendada de engenharia de dados de &quot;imutabilidade das partições&quot;, o que simplifica o processamento de dados incremental e paralelo, rollbacks etc.
 
-<Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_07.webp" size="lg" alt="incremental insert overwrite" />
+<Image img="/images/integrations/data-ingestion/etl-tools/dbt/dbt_07.webp" size="lg" alt="insert overwrite incremental" />
 
 <div id="creating-a-snapshot">
   ## Criando um snapshot

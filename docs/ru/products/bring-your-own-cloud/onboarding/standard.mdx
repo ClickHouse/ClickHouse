@@ -42,16 +42,12 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Подготовьте новую учетную запись AWS, проект GCP или подписку Azure в своей организации.
 
 <Steps>
-  <Step>
-    ### Выберите облачного провайдера
-
+  <Step title="Выберите облачного провайдера" id="choose-cloud-provider">
     <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC choose CSP" background="black" />
   </Step>
 
-  <Step>
-    ### Настройка учетной записи/проекта/подписки
-
-    Первичную настройку BYOC можно выполнить с помощью [CloudFormation template (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml), [Terraform module (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) или [Terraform module (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). При этом создается высокопривилегированная учетная запись (роль IAM/сервисная учетная запись/сервисный субъект), которая позволяет контроллерам BYOC из ClickHouse Cloud управлять вашей инфраструктурой.
+  <Step title="Настройка учетной записи/проекта/подписки" id="account-setup">
+    Первичную настройку BYOC можно выполнить с помощью [CloudFormation template (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml), [модуль Terraform (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) или [модуль Terraform (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). При этом создается высокопривилегированная учетная запись (роль IAM/сервисная учетная запись/сервисный субъект), которая позволяет контроллерам BYOC из ClickHouse Cloud управлять вашей инфраструктурой.
 
     <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="BYOC initialize account" background="black" />
 
@@ -73,9 +69,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ### Настройте инфраструктуру BYOC
-
+  <Step title="Настройте инфраструктуру BYOC" id="setup-byoc-infrastructure">
     Вам будет предложено настроить инфраструктуру, включая бакеты хранилища, VPC/VNet и кластер Kubernetes, из консоли ClickHouse Cloud. Некоторые параметры необходимо определить на этом этапе, так как позже их уже нельзя будет изменить. В частности:
 
     * **Регион**: Для развертываний BYOC доступны все **общедоступные регионы**, перечисленные в нашей документации [поддерживаемые регионы](/ru/products/cloud/reference/supported-regions). Частные регионы в настоящее время не поддерживаются.

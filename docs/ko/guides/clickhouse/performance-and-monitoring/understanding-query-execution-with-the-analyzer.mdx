@@ -72,10 +72,10 @@ EXPLAIN AST SELECT min(timestamp), max(timestamp) FROM session_events;
   ## 분석기
 </div>
 
-ClickHouse에는 현재 분석기에 두 가지 아키텍처가 있습니다. `enable_analyzer=0`으로 설정하면 기존 아키텍처를 사용할 수 있습니다. 새 아키텍처는 기본적으로 활성화되어 있습니다. 기존 아키텍처는 새 분석기가 일반 제공되면 더 이상 권장되지 않을 예정이므로, 여기서는 새 아키텍처만 설명하겠습니다.
+ClickHouse에는 현재 분석기에 두 가지 아키텍처가 있습니다. `enable_analyzer=0`으로 설정하면 기존 아키텍처를 사용할 수 있습니다. 현재 아키텍처는 ClickHouse `24.3`부터 기본적으로 활성화되어 있습니다. 기존 아키텍처는 더 이상 권장되지 않으며 이전 버전과의 호환성을 위해서만 유지되므로, 여기서는 현재 아키텍처만 설명하겠습니다.
 
 <Note>
-  새 아키텍처는 ClickHouse 성능을 개선하기 위한 더 나은 기반을 제공합니다. 다만 쿼리 처리 과정의 핵심 구성 요소이기 때문에 일부 쿼리에 부정적인 영향을 줄 수 있으며, [알려진 비호환성](/ko/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities)도 있습니다. 쿼리 수준 또는 사용자 수준에서 `enable_analyzer` 설정을 변경하면 기존 분석기로 되돌릴 수 있습니다.
+  현재 아키텍처는 ClickHouse 성능을 개선하기 위한 더 나은 기반을 제공합니다. 다만 쿼리 처리 과정의 핵심 구성 요소이기 때문에 일부 쿼리에 부정적인 영향을 줄 수 있으며, [알려진 비호환성](/ko/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities)도 있습니다. 쿼리 수준 또는 사용자 수준에서 `enable_analyzer` 설정을 변경하면 기존 아키텍처로 되돌릴 수 있습니다.
 </Note>
 
 분석기는 쿼리 실행의 중요한 단계입니다. 분석기는 AST를 받아 쿼리 트리로 변환합니다. AST와 비교했을 때 쿼리 트리의 가장 큰 장점은 예를 들어 스토리지와 같은 많은 요소가 해석된다는 점입니다. 또한 어느 테이블에서 읽어야 하는지도 알 수 있고, alias도 해석되며, 트리는 사용되는 다양한 데이터 타입도 파악합니다. 이러한 장점 덕분에 분석기는 최적화를 적용할 수 있습니다. 이러한 최적화는 &quot;패스&quot;를 통해 이루어집니다. 각 패스는 서로 다른 최적화를 찾습니다. 모든 패스는 [여기](https://github.com/ClickHouse/ClickHouse/blob/76578ebf92af3be917cd2e0e17fea2965716d958/src/Analyzer/QueryTreePassManager.cpp#L249)에서 확인할 수 있습니다. 이전 쿼리를 예로 들어 실제로 어떻게 동작하는지 살펴보겠습니다:

@@ -39,9 +39,7 @@ Apache Polaris поддерживает таблицы Iceberg и таблицы
 В случае Open Catalog, управляемого сервиса Polaris от Snowflake, ваш URI будет содержать `/polaris`, а в самоуправляемом варианте — может не содержать.
 
 <Steps>
-  <Step>
-    ## Создание соединения между Polaris и ClickHouse
-
+  <Step title="Создание соединения между Polaris и ClickHouse" id="connecting">
     Создайте базу данных для подключения ClickHouse к вашему каталогу Polaris:
 
     ```sql
@@ -57,9 +55,7 @@ Apache Polaris поддерживает таблицы Iceberg и таблицы
     ```
   </Step>
 
-  <Step>
-    ## Выполнение запросов к каталогу Polaris с помощью ClickHouse
-
+  <Step title="Выполнение запросов к каталогу Polaris с помощью ClickHouse" id="query-polaris-catalog">
     После настройки подключения вы можете выполнять запросы к Polaris:
 
     ```sql title="Запрос"
@@ -84,9 +80,7 @@ Apache Polaris поддерживает таблицы Iceberg и таблицы
     ```
   </Step>
 
-  <Step>
-    ## Загрузка данных из Polaris в ClickHouse
-
+  <Step title="Загрузка данных из Polaris в ClickHouse" id="loading-data-into-clickhouse">
     Чтобы загрузить данные из Polaris в таблицу ClickHouse, создайте целевую таблицу с нужной схемой, а затем вставьте в нее данные из таблицы Polaris:
 
     ```sql title="Запрос"

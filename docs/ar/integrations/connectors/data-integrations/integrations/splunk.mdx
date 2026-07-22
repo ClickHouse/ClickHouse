@@ -39,7 +39,7 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
 
 <Image img="/images/integrations/tools/data-integration/splunk/splunk_003.webp" size="lg" alt="مربع حوار تثبيت تطبيق Splunk لتحميل إضافة ClickHouse" border />
 
-إذا سار كل شيء كما ينبغي، فمن المفترض أن ترى الآن تطبيق سجلات تدقيق ClickHouse وقد تم تثبيته. وإذا لم يحدث ذلك، فراجع سجلات Splunkd بحثًا عن أي أخطاء.
+إذا سار كل شيء كما ينبغي، فمن المفترض أن ترى الآن تطبيق سجلات تدقيق ClickHouse مثبّتًا. وإذا لم يحدث ذلك، فراجع سجلات Splunkd بحثًا عن أي أخطاء.
 
 <div id="modular-input-configuration">
   # إعداد المُدخل المعياري
@@ -56,21 +56,21 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
 
 سجّل الدخول إلى [ClickHouse Cloud console](https://console.clickhouse.cloud/).
 
-انتقل إلى Organization -&gt; Organization details في مؤسستك. هناك يمكنك نسخ Organization ID.
+انتقل إلى Organization -&gt; Organization details في مؤسستك. ومن هناك يمكنك نسخ معرّف المؤسسة.
 
-<Image img="/images/integrations/tools/data-integration/splunk/splunk_004.webp" size="lg" alt="تعرض ClickHouse Cloud console صفحة Organization details التي تتضمن Organization ID" border />
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_004.webp" size="lg" alt="تعرض ClickHouse Cloud console صفحة Organization details التي تتضمن معرّف المؤسسة" border />
 
-بعد ذلك، انتقل إلى مفاتيح واجهة برمجة التطبيقات من القائمة الجانبية اليسرى.
+بعد ذلك، انتقل إلى API Keys من القائمة الجانبية اليسرى.
 
-<Image img="/images/integrations/tools/data-integration/splunk/splunk_005.webp" size="lg" alt="تعرض ClickHouse Cloud console قسم مفاتيح واجهة برمجة التطبيقات في قائمة التنقل اليسرى" border />
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_005.webp" size="lg" alt="تعرض ClickHouse Cloud console قسم API Keys في قائمة التنقل اليسرى" border />
 
-أنشئ مفتاح واجهة برمجة تطبيقات، وامنحه اسمًا واضحًا، وحدد صلاحيات `Admin`. ثم انقر على Generate مفتاح واجهة برمجة تطبيقات.
+أنشئ مفتاح واجهة برمجة التطبيقات، وامنحه اسمًا ذا معنى، وحدد صلاحيات `Admin`. ثم انقر على Generate مفتاح واجهة برمجة التطبيقات.
 
-<Image img="/images/integrations/tools/data-integration/splunk/splunk_006.webp" size="lg" alt="تعرض ClickHouse Cloud console واجهة إنشاء مفتاح واجهة برمجة تطبيقات مع تحديد صلاحيات Admin" border />
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_006.webp" size="lg" alt="تعرض ClickHouse Cloud console واجهة إنشاء مفتاح واجهة برمجة التطبيقات مع تحديد صلاحيات Admin" border />
 
-احفظ مفتاح واجهة برمجة تطبيقات وsecret في مكان آمن.
+احفظ الـ مفتاح واجهة برمجة التطبيقات والقيمة السرية في مكان آمن.
 
-<Image img="/images/integrations/tools/data-integration/splunk/splunk_007.webp" size="lg" alt="تعرض ClickHouse Cloud console مفتاح واجهة برمجة تطبيقات وsecret اللذين تم إنشاؤهما ليتم حفظهما" border />
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_007.webp" size="lg" alt="تعرض ClickHouse Cloud console الـ مفتاح واجهة برمجة التطبيقات والقيمة السرية اللذين تم إنشاؤهما لحفظهما" border />
 
 <div id="configure-data-input-in-splunk">
   ## تكوين إدخال البيانات في Splunk
@@ -98,6 +98,6 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
   # الاستخدام
 </div>
 
-يخزّن الإدخال المعياري البيانات في Splunk. لعرض هذه البيانات، يمكنك استخدام واجهة البحث العامة في Splunk.
+يخزّن المدخل المعياري البيانات في Splunk. لعرض هذه البيانات، يمكنك استخدام واجهة البحث العامة في Splunk.
 
 <Image img="/images/integrations/tools/data-integration/splunk/splunk_012.webp" size="lg" alt="واجهة البحث في Splunk تعرض بيانات سجلات تدقيق ClickHouse" border />

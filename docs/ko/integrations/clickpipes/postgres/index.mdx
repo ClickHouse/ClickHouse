@@ -12,7 +12,8 @@ integration:
 
 import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/ko/components/Image.jsx";
+import { Image } from "/snippets/components/Image.jsx";
+import ChangingTLSSettings from '/snippets/ko/clickpipes/_changing_tls_settings.mdx';
 
 ClickPipes를 사용하여 소스 Postgres 데이터베이스의 데이터를 ClickHouse Cloud로 수집할 수 있습니다. 소스 Postgres 데이터베이스는 온프레미스 환경이나 Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase 등을 포함한 클라우드 환경에서 호스팅될 수 있습니다.
 
@@ -88,6 +89,12 @@ ClickHouse Cloud 계정에 로그인했는지 확인하십시오. 아직 계정�
 소스 Postgres 데이터베이스가 AWS에서 호스팅되는 경우 AWS Private Link를 사용해 연결할 수 있습니다. 데이터 전송을
 비공개로 유지하려는 경우에 유용합니다.
 [연결 설정 가이드](/ko/integrations/clickpipes/aws-privatelink)를 따르십시오.
+
+<div id="optional-changing-tls-settings">
+  #### (선택 사항) TLS 설정 변경하기
+</div>
+
+<ChangingTLSSettings />
 
 <div id="optional-setting-up-ssh-tunneling">
   #### (선택 사항) SSH 터널링 설정

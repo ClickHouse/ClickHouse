@@ -1,35 +1,31 @@
 ---
-description: '사용자 정의 함수(UDF) 문서'
+description: '사용자 정의 함수(UDFs) 문서'
 sidebarTitle: 'UDF'
 slug: /sql-reference/functions/udf
 title: '사용자 정의 함수(UDFs)'
 doc_type: 'reference'
 ---
 
-import PrivatePreviewBadge from "/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import ExperimentalBadge from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
-
-<div id="udfs-user-defined-functions">
-  # UDFs 사용자 정의 함수
-</div>
 
 ClickHouse는 여러 유형의 사용자 정의 함수(UDF)를 지원합니다.
 
 * [실행형 UDFs](#executable-user-defined-functions)는 외부 프로그램이나 스크립트(Python, Bash 등)를 시작한 뒤, STDIN / STDOUT을 통해 데이터 블록을 해당 프로그램으로 스트리밍합니다. ClickHouse를 다시 컴파일하지 않고도 기존 코드나 도구를 통합할 때 사용할 수 있습니다. 프로세스 내부 옵션보다 호출당 오버헤드가 크므로, 더 무거운 로직을 처리하거나 다른 런타임이 필요한 경우에 가장 적합합니다.
 * [SQL UDFs](#sql-user-defined-functions)는 `CREATE FUNCTION`을 사용해 SQL만으로 정의합니다. 쿼리 계획에 인라인되어 확장되므로(프로세스 경계 없음) 가볍고, 표현식 로직을 재사용하거나 복잡한 계산 컬럼을 단순화하는 데 적합합니다.
 * [Experimental WebAssembly UDFs](#webassembly-user-defined-functions)는 서버 프로세스 내 샌드박스에서 WebAssembly로 컴파일된 코드를 실행합니다. 외부 실행형보다 호출당 오버헤드가 낮고 네이티브 확장 기능보다 격리 수준이 높아, WASM을 대상으로 할 수 있는 언어(예: C/C++/Rust)로 작성한 사용자 정의 알고리즘에 적합합니다.
+* [Experimental driver-based executable UDFs](#driver-based-executable-user-defined-functions)는 연산자가 제공하는 &quot;드라이버&quot;가 `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'`에 제공된 코드 스니펫을 함수 생성 시점에 실행형 UDF로 변환하도록 합니다(예를 들어 컴파일을 통해). 이는 실행형 UDFs를 기반으로 하며, 서버 측 드라이버 구성이 필요합니다.
 
 <div id="executable-user-defined-functions">
   ## 실행형 사용자 정의 함수
 </div>
 
-<PrivatePreviewBadge />
+<BetaBadge />
 
 <Note>
-  이 기능은 ClickHouse Cloud에서 비공개 프리뷰로 제공됩니다.
-  이용하려면 https://clickhouse.cloud/support 에서 ClickHouse 지원팀에 문의하십시오.
+  ClickHouse Cloud에서 실행형 UDF는 퍼블릭 베타로 제공되며 Cloud Console UI를 통해 생성됩니다. Cloud 전용 절차는 [User-defined functions in Cloud](/ko/products/cloud/features/sql-console-features/user-defined-functions)를 참조하십시오.
 </Note>
 
 ClickHouse는 데이터를 처리하기 위해 외부 실행 프로그램이나 스크립트를 호출할 수 있습니다.
@@ -526,6 +522,144 @@ SELECT my_function(10, 20);
 </div>
 
 자세한 내용은 [WebAssembly 사용자 정의 함수](/ko/reference/functions/regular-functions/wasm_udf) 문서를 참고하십시오.
+
+<div id="driver-based-executable-user-defined-functions">
+  ## 드라이버 기반 실행형 사용자 정의 함수
+</div>
+
+<CloudNotSupportedBadge />
+
+<ExperimentalBadge />
+
+<Note>
+  이 기능은 실험적 기능이며, 향후 릴리스에서 하위 호환되지 않는 방식으로 변경될 수 있습니다. [`allow_experimental_executable_udf_drivers`](/ko/reference/settings/server-settings/settings#allow_experimental_executable_udf_drivers) 서버 설정으로 활성화하십시오.
+</Note>
+
+*드라이버*는 사용자 코드 조각을 실행 가능한 [실행형 UDF](#executable-user-defined-functions)로 변환하는 운영자 제공 어댑터입니다. 함수를 `ENGINE = DriverName(...)`으로 생성하면 ClickHouse는 드라이버의 `create_command`를 실행하면서 함수 시그니처와 코드 본문을 전달합니다. 그러면 드라이버는 본문을 컴파일하거나 다른 방식으로 처리한 뒤 실행형 UDF 구성 정보를 출력하고, ClickHouse는 이를 저장한 후 로드합니다.
+
+이를 통해 관리자는 사용자에게 서버의 설정 파일이나 파일 시스템에 대한 접근 권한을 부여하지 않고도, 임의의 언어(예: 샌드박스된 컨테이너 내부에서 컴파일한 C)로 함수를 정의할 수 있는 안전하고 제한된 방식을 제공할 수 있습니다. 사용 가능한 드라이버는 전적으로 운영자가 제어합니다.
+
+<div id="enabling-drivers">
+  ### 드라이버 활성화
+</div>
+
+드라이버 기반 실행형 UDF는 기본적으로 비활성화되어 있습니다. 이를 활성화하려면 다음을 수행하십시오.
+
+1. 서버 구성에서 experimental gate를 설정합니다.
+
+   ```xml
+   <clickhouse>
+       <allow_experimental_executable_udf_drivers>true</allow_experimental_executable_udf_drivers>
+   </clickhouse>
+   ```
+
+2. `user_defined_executable_function_drivers_config`이 하나 이상의 드라이버 설정 파일(glob 지원)을 가리키도록 설정하고, 필요에 따라 생성된 실행형 UDF 구성이 저장되는 디렉터리인 [`dynamic_user_defined_executable_functions_path`](/ko/reference/settings/server-settings/settings#dynamic_user_defined_executable_functions_path)도 설정합니다.
+
+   ```xml
+   <clickhouse>
+       <user_defined_executable_function_drivers_config>user_defined_executable_function_drivers_config.d/*_driver.xml</user_defined_executable_function_drivers_config>
+       <dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_user_defined_executable_functions/</dynamic_user_defined_executable_functions_path>
+   </clickhouse>
+   ```
+
+드라이버 레지스트리는 서버 시작 시 로드되고 `SYSTEM RELOAD CONFIG` 시 갱신되므로, 서버를 재시작하지 않고도 드라이버를 추가, 변경 또는 제거할 수 있습니다.
+
+<div id="driver-configuration">
+  ### 드라이버 구성
+</div>
+
+드라이버는 최상위 `<driver>` 요소를 포함하는 XML(또는 YAML) 파일로 정의됩니다. 지원되는 필드는 다음과 같습니다.
+
+| Field              | Description                                                                                                       | Required |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------- | -------- |
+| `name`             | `CREATE FUNCTION ... ENGINE = <name>(...)`에 사용되는 드라이버 이름입니다.                                                      | 예        |
+| `create_command`   | 코드 스니펫에서 UDF를 생성하기 위해 호출되는 프로그램의 경로입니다. 상대 경로는 드라이버 설정 파일을 기준으로 해석됩니다.                                            | 예        |
+| `drop_command`     | 이 드라이버를 기반으로 하는 함수가 삭제될 때 호출되는 프로그램의 경로입니다.                                                                       | 아니요      |
+| `engine_arguments` | `ENGINE = DriverName(...)` 내에서 허용되는 인수를 선언합니다. 각 하위 요소는 인수 이름이며, `<required>true</required>` 하위 요소로 필수 여부를 표시합니다. | 아니요      |
+| `env`              | 드라이버 명령을 호출할 때 내보내는 환경 변수입니다.                                                                                     | 아니요      |
+
+예시 드라이버 구성:
+
+```xml
+<clickhouse>
+    <driver>
+        <name>DockerC</name>
+        <create_command>../user_defined_executable_function_drivers/docker_c_create.sh</create_command>
+        <drop_command>../user_defined_executable_function_drivers/docker_c_drop.sh</drop_command>
+        <engine_arguments>
+            <opt_level><required>false</required></opt_level>
+        </engine_arguments>
+        <env>
+            <CLICKHOUSE_C_DRIVER_MEMORY>256m</CLICKHOUSE_C_DRIVER_MEMORY>
+            <CLICKHOUSE_C_DRIVER_CPUS>1.0</CLICKHOUSE_C_DRIVER_CPUS>
+        </env>
+    </driver>
+</clickhouse>
+```
+
+<div id="driver-invocation-contract">
+  #### Driver 호출 규약
+</div>
+
+`CREATE FUNCTION`이 실행되면, 구성된 `env` 변수가 설정된 상태에서 `create_command`가 다음 인수와 함께 호출됩니다.
+
+* `--name <function_name>`
+* `--return <return_type>` (`RETURNS` 절이 있는 경우)
+* `--args <signature>` (`ARGUMENTS` 절이 있는 경우). 여기서 시그니처는 선언된 인수 목록이며, 예를 들면 `x UInt8, y DateTime`입니다.
+* `ENGINE = DriverName(key = value)`에 제공된 선언된 각 엔진 인수마다 `--<key> <value>`
+
+사용자 코드 본문(`AS` 뒤의 텍스트)은 명령의 표준 입력으로 전달됩니다. 명령은 실행형 UDF의 구성을 표준 출력에 출력해야 합니다. 포맷은 자동으로 감지됩니다. 출력이 `<`로 시작하면 XML로 처리되고, 그렇지 않으면 YAML로 처리됩니다. 생성된 구성에 정의된 함수 이름은 생성 중인 이름과 일치해야 합니다. `create_command`가 0이 아닌 종료 상태로 끝나면 종료 코드와 드라이버의 표준 오류를 포함한 예외와 함께 구문이 실패합니다.
+
+`drop_command`가 있으면 함수가 삭제될 때도 동일한 방식으로 호출됩니다(stdin에는 코드 본문이 없음).
+
+<div id="creating-a-function-with-a-driver">
+  ### 함수 생성
+</div>
+
+```sql
+CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name [ON CLUSTER cluster]
+    ARGUMENTS (a UInt8, b String) RETURNS UInt64
+    ENGINE = DriverName(key1 = 'value1', key2 = 42)
+    AS '...code body...'
+```
+
+ClickHouse는 드라이버의 `create_command`를 실행하고, 생성된 구성을 [`dynamic_user_defined_executable_functions_path`](/ko/reference/settings/server-settings/settings#dynamic_user_defined_executable_functions_path)에 기록한 뒤 기존 실행형 UDF 로더가 이를 읽어들입니다. 이후 이 함수는 다른 함수와 동일하게 호출할 수 있습니다.
+
+<div id="dropping-a-function-with-a-driver">
+  ### 함수 삭제
+</div>
+
+```sql
+DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
+```
+
+`DROP FUNCTION`은 드라이버의 `drop_command`(있는 경우)를 호출한 다음, 생성된 동적 구성과 함수별 작업 디렉터리를 제거하고, 실행형 UDF 로더를 다시 로드하며, 영구 저장된 쿼리를 삭제합니다.
+
+<div id="driver-persistence-and-restart">
+  ### 영속성 및 재시작
+</div>
+
+원본 쿼리는 사용자 정의 SQL 객체 디렉터리에 `ATTACH FUNCTION ...` 구문으로 저장되므로, 서버를 재시작해도 함수가 유지됩니다. 시작 시에는 [`dynamic_user_defined_executable_functions_path`](/ko/reference/settings/server-settings/settings#dynamic_user_defined_executable_functions_path)에 생성된 구성이 드라이버를 다시 실행하지 않고 직접 로드됩니다. 저장된 `ATTACH FUNCTION`에 해당하는 생성된 구성이 없으면(예: 동적 디렉터리가 손실된 경우) 이를 다시 만들기 위해 드라이버를 다시 실행합니다.
+
+<div id="driver-limitations">
+  ### 제한 사항
+</div>
+
+* 이 기능은 실험 단계 기능이며, `allow_experimental_executable_udf_drivers`를 활성화해야 사용할 수 있습니다.
+* 드라이버 기반 함수는 복제된 사용자 정의 함수 저장소(`ON CLUSTER` 및 `<user_defined_zookeeper_path>`)와 함께 사용할 수 없습니다. 생성된 artifact는 복제되지 않고, 원래 쿼리만 복제되기 때문입니다.
+* 백업된 드라이버 기반 함수를 `RESTORE`하면 쿼리는 유지되지만 드라이버는 다시 실행되지 않습니다. 생성된 구성은 이후 재시작 복구 과정에서 구체화됩니다.
+
+<div id="example-c-drivers">
+  ### 예시 C 드라이버
+</div>
+
+소스 트리에는 C 함수 본문을 컴파일하고 실행하는 개념 증명용 드라이버가 `programs/server/user_defined_executable_function_drivers_config.d/` 아래에 제공됩니다. 이들은 예시이며 **패키지로는 설치되지 않습니다**:
+
+* `DockerC` - 격리된 Docker 컨테이너 내부에서 코드를 컴파일하고 실행하며 (`--network=none --read-only --cap-drop=ALL --security-opt=no-new-privileges`와 메모리/CPU/PID 제한 사용), `executable_pool` UDF를 생성합니다.
+* `GVisorC` - 컴파일된 바이너리를 [gVisor](https://gvisor.dev/) `runsc` 런타임에서 실행하는 변형입니다.
+* `UnsafeC` - 샌드박스 없이 호스트에서 직접 코드를 컴파일하고 실행합니다. 이름에서 알 수 있듯이 격리를 전혀 제공하지 않으며, 신뢰할 수 있는 환경과 테스트 용도로만 사용하도록 설계되었습니다.
+
+이 예시 드라이버는 출발점으로 삼기 위한 것입니다. 신뢰할 수 없는 사용자에게 노출하기 전에 환경에 맞게 샌드박스 구성을 검토하고 강화하십시오.
 
 <div id="related-content">
   ## 관련 콘텐츠

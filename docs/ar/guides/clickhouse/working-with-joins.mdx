@@ -20,18 +20,18 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 كما أن مجموعة البيانات متاحة أيضًا في [Playground](https://sql.clickhouse.com?query_id=AACTS8ZBT3G7SSGN8ZJBJY) إذا كنت لا تريد إنشاء
 الجداول وتحميلها محليًا.
 
-ستستخدم الجداول الأربع التالية من مجموعة البيانات التجريبية:
+ستستخدم الجداول الأربع التالية من مجموعة البيانات النموذجية:
 
 <Image img="/images/starter_guides/joins/imdb_schema.webp" alt="مخطط IMDB" />
 
 تمثل البيانات في هذه الجداول الأربع أفلامًا يمكن أن تنتمي إلى نوع واحد أو عدة أنواع.
-ويؤدي الممثلون الأدوار في الفيلم.
+ويؤدي الممثلون الأدوار في هذه الأفلام.
 
 تمثل الأسهم في المخطط أعلاه [علاقات المفتاح الأجنبي بالمفتاح الأساسي](https://en.wikipedia.org/wiki/Foreign_key). على سبيل المثال، يحتوي العمود `movie_id` في صف من جدول `genres` على القيمة `id` من صف في جدول `movies`.
 
-توجد [علاقة متعدد إلى متعدد](https://en.wikipedia.org/wiki/Many-to-many_\(data_model\)) بين الأفلام والممثلين.
-وتُطبَّع هذه العلاقة متعددة-إلى-متعددة إلى [علاقتين من واحد إلى متعدد](https://en.wikipedia.org/wiki/One-to-many_\(data_model\)) باستخدام جدول `roles`.
-ويحتوي كل صف في جدول `roles` على قيمتي العمود `id` من جدولي `movies` و`actors`.
+توجد [علاقة متعددة إلى متعددة](https://en.wikipedia.org/wiki/Many-to-many_\(data_model\)) بين الأفلام والممثلين.
+وتُطبَّع هذه العلاقة متعددة إلى متعددة إلى [علاقتين من واحد إلى متعدد](https://en.wikipedia.org/wiki/One-to-many_\(data_model\)) باستخدام جدول `roles`.
+ويحتوي كل صف في جدول `roles` على قيم العمود `id` من جدولي `movies` و`actors`.
 
 <div id="join-types-supported-in-clickhouse">
   ## أنواع JOIN التي يدعمها ClickHouse
@@ -457,5 +457,5 @@ final_price:        9645
   ## الملخص
 </div>
 
-يوضح هذا الدليل كيف يدعم ClickHouse جميع أنواع JOIN القياسية في SQL، بالإضافة إلى أنواع JOIN المتخصصة التي تُستخدم في الاستعلامات التحليلية.
-راجِع وثائق عبارة [JOIN](/ar/reference/statements/select/join) لمزيد من التفاصيل حول عمليات JOIN.
+يوضح هذا الدليل كيف يدعم ClickHouse جميع أنواع JOIN القياسية في SQL، بالإضافة إلى أنواع JOIN متخصصة تدعم الاستعلامات التحليلية.
+راجع وثائق عبارة [JOIN](/ar/reference/statements/select/join) لمزيد من التفاصيل حول JOIN.

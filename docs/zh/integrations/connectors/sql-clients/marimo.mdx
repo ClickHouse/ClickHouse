@@ -20,105 +20,101 @@ import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintaine
 
 <Image img="/images/integrations/sql-clients/marimo/clickhouse-connect.webp" size="md" border alt="连接到 ClickHouse" />
 
-<div id="install-marimo-sql">
-  ## 1. 安装支持 SQL 的 marimo
-</div>
+<Steps>
+  <Step title="安装带 SQL 支持的 marimo" id="install-marimo-sql">
+    ```shell
+    pip install "marimo[sql]" clickhouse_connect
+    marimo edit clickhouse_demo.py
+    ```
 
-```shell
-pip install "marimo[sql]" clickhouse_connect
-marimo edit clickhouse_demo.py
-```
+    这会打开一个在 localhost 上运行的 Web 浏览器。
+  </Step>
 
-这应该会在本机 (localhost) 上打开一个 Web 浏览器。
+  <Step title="连接到 ClickHouse。" id="connect-to-clickhouse">
+    前往 marimo 编辑器左侧的数据源面板，然后点击“Add database”。
 
-<div id="connect-to-clickhouse">
-  ## 2. 连接到 ClickHouse。
-</div>
+    <Image img="/images/integrations/sql-clients/marimo/panel-arrow.webp" size="sm" border alt="添加新数据库" />
 
-在 marimo 编辑器左侧的数据源面板中，点击“Add database”。
+    系统会提示你填写数据库详细信息。
 
-<Image img="/images/integrations/sql-clients/marimo/panel-arrow.webp" size="sm" border alt="添加新数据库" />
+    <Image img="/images/integrations/sql-clients/marimo/add-db-details.webp" size="md" border alt="填写数据库详细信息" />
 
-系统会提示你填写数据库信息。
+    随后，你会看到一个可运行的单元格，用于建立连接。
 
-<Image img="/images/integrations/sql-clients/marimo/add-db-details.webp" size="md" border alt="填写数据库信息" />
+    <Image img="/images/integrations/sql-clients/marimo/run-cell.webp" size="md" border alt="运行该单元格以连接到 ClickHouse" />
+  </Step>
 
-随后，你会看到一个可运行的单元格，用于建立连接。
+  <Step title="运行 SQL" id="run-sql">
+    设置好连接后，您可以新建一个 SQL 单元格，并选择 ClickHouse 引擎。
 
-<Image img="/images/integrations/sql-clients/marimo/run-cell.webp" size="md" border alt="运行单元格以连接到 ClickHouse" />
+    <Image img="/images/integrations/sql-clients/marimo/choose-sql-engine.webp" size="md" border alt="选择 SQL 引擎" />
 
-<div id="run-sql">
-  ## 3. 运行 SQL
-</div>
+    本指南将使用 New York Taxi 数据集。
 
-设置好连接后，您可以新建一个 SQL 单元格，并选择 ClickHouse 引擎。
+    ```sql
+    CREATE TABLE trips (
+        trip_id             UInt32,
+        pickup_datetime     DateTime,
+        dropoff_datetime    DateTime,
+        pickup_longitude    Nullable(Float64),
+        pickup_latitude     Nullable(Float64),
+        dropoff_longitude   Nullable(Float64),
+        dropoff_latitude    Nullable(Float64),
+        passenger_count     UInt8,
+        trip_distance       Float32,
+        fare_amount         Float32,
+        extra               Float32,
+        tip_amount          Float32,
+        tolls_amount        Float32,
+        total_amount        Float32,
+        payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+        pickup_ntaname      LowCardinality(String),
+        dropoff_ntaname     LowCardinality(String)
+    )
+    ENGINE = MergeTree
+    PRIMARY KEY (pickup_datetime, dropoff_datetime);
+    ```
 
-<Image img="/images/integrations/sql-clients/marimo/choose-sql-engine.webp" size="md" border alt="选择 SQL 引擎" />
+    ```sql
+    INSERT INTO trips
+    SELECT
+        trip_id,
+        pickup_datetime,
+        dropoff_datetime,
+        pickup_longitude,
+        pickup_latitude,
+        dropoff_longitude,
+        dropoff_latitude,
+        passenger_count,
+        trip_distance,
+        fare_amount,
+        extra,
+        tip_amount,
+        tolls_amount,
+        total_amount,
+        payment_type,
+        pickup_ntaname,
+        dropoff_ntaname
+    FROM gcs(
+        'https://storage.googleapis.com/clickhouse-public-datasets/nyc-taxi/trips_0.gz',
+        'TabSeparatedWithNames'
+    );
+    ```
 
-本指南将使用 New York Taxi 数据集。
+    ```sql
+    SELECT * FROM trips LIMIT 1000;
+    ```
 
-```sql
-CREATE TABLE trips (
-    trip_id             UInt32,
-    pickup_datetime     DateTime,
-    dropoff_datetime    DateTime,
-    pickup_longitude    Nullable(Float64),
-    pickup_latitude     Nullable(Float64),
-    dropoff_longitude   Nullable(Float64),
-    dropoff_latitude    Nullable(Float64),
-    passenger_count     UInt8,
-    trip_distance       Float32,
-    fare_amount         Float32,
-    extra               Float32,
-    tip_amount          Float32,
-    tolls_amount        Float32,
-    total_amount        Float32,
-    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
-    pickup_ntaname      LowCardinality(String),
-    dropoff_ntaname     LowCardinality(String)
-)
-ENGINE = MergeTree
-PRIMARY KEY (pickup_datetime, dropoff_datetime);
-```
+    <Image img="/images/integrations/sql-clients/marimo/results.webp" size="lg" border alt="DataFrame 中的结果" />
 
-```sql
-INSERT INTO trips
-SELECT
-    trip_id,
-    pickup_datetime,
-    dropoff_datetime,
-    pickup_longitude,
-    pickup_latitude,
-    dropoff_longitude,
-    dropoff_latitude,
-    passenger_count,
-    trip_distance,
-    fare_amount,
-    extra,
-    tip_amount,
-    tolls_amount,
-    total_amount,
-    payment_type,
-    pickup_ntaname,
-    dropoff_ntaname
-FROM gcs(
-    'https://storage.googleapis.com/clickhouse-public-datasets/nyc-taxi/trips_0.gz',
-    'TabSeparatedWithNames'
-);
-```
+    现在，你已经可以在 DataFrame 中查看结果了。接下来，我想将某个给定上车地点对应的最高费用下车点可视化。marimo 提供了多个 UI 组件来帮助你实现这一点。我会使用下拉菜单选择地点，并用 Altair 绘制图表。
 
-```sql
-SELECT * FROM trips LIMIT 1000;
-```
+    <Image img="/images/integrations/sql-clients/marimo/dropdown-cell-chart.webp" size="lg" border alt="下拉菜单、表和图表的组合" />
 
-<Image img="/images/integrations/sql-clients/marimo/results.webp" size="lg" border alt="DataFrame 中的结果" />
+    marimo 的响应式执行模型也扩展到了 SQL 查询中，因此你对 SQL 的更改会自动触发依赖单元的后续计算 (对于开销较大的计算，也可以选择仅将单元标记为已过时) 。因此，查询一更新，图表和表也会随之变化。
 
-现在，你已经可以在 DataFrame 中查看结果了。接下来，我想将某个给定上车地点对应的最高费用下车点可视化。marimo 提供了多个 UI 组件来帮助你实现这一点。我会使用下拉菜单选择地点，并用 Altair 绘制图表。
+    你还可以切换到 App View，以获得一个更简洁的数据探索界面。
 
-<Image img="/images/integrations/sql-clients/marimo/dropdown-cell-chart.webp" size="lg" border alt="下拉菜单、表和图表的组合" />
-
-marimo 的反应式执行模型也扩展到了 SQL 查询中，因此你对 SQL 的更改会自动触发依赖单元的后续计算 (对于开销较大的计算，也可以选择仅将单元标记为过时) 。因此，查询一更新，图表和表也会随之变化。
-
-你还可以切换到 App View，以获得一个更简洁的数据探索界面。
-
-<Image img="/images/integrations/sql-clients/marimo/run-app-view.webp" size="md" border alt="运行 App View" />
+    <Image img="/images/integrations/sql-clients/marimo/run-app-view.webp" size="md" border alt="运行 App View" />
+  </Step>
+</Steps>

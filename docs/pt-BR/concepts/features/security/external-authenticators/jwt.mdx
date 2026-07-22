@@ -110,8 +110,10 @@ Cada usuário JWT recebe um UUID determinístico calculado a partir das claims `
 O nome de usuário, no entanto, é **volátil**. Ele é construído da seguinte forma:
 
 ```text
-JWT::<issuer>::<audience>::<subject>::<claims_hash>
+JWT::<subject>::<claims_hash>
 ```
+
+O `<claims_hash>` é um hash derivado das claims `iss`, `sub` e `aud`, em conjunto com as claims `clickhouse:roles` e `clickhouse:grants`. As claims `iss` e `aud` participam **apenas** por meio desse hash; elas não são mais incorporadas diretamente ao prefixo visível do nome de usuário. Isso mantém o nome compacto e legível quando `iss`/`aud` são URLs longas e opacas do IdP (por exemplo, Microsoft Entra ou Okta), ao mesmo tempo em que garante que tuplas distintas de `(iss, sub, aud)` e conjuntos distintos de `clickhouse:roles` / `clickhouse:grants` sejam mapeados para nomes distintos e estáveis. Claims que não entram no hash (por exemplo, `iat`, `exp`, `nbf` ou claims personalizadas não relacionadas) não alteram o nome de usuário.
 
 A parte `<claims_hash>` muda sempre que as claims `clickhouse:roles` ou `clickhouse:grants` são alteradas. Isso significa que tokens com diferentes conjuntos de roles ou grants geram nomes de usuário diferentes, mesmo quando a identidade é a mesma.
 
@@ -145,19 +147,19 @@ Entre as execuções do GC, usuários expirados ainda podem aparecer em `system.
   ### Atribuições persistentes de acesso
 </div>
 
-Como o UUID é estável, você pode atribuir perfis de configurações, cotas, políticas de linha e políticas de mascaramento de coluna a um usuário JWT usando instruções SQL. Essas atribuições permanecem no armazenamento de controle de acesso (em disco ou no ZooKeeper) e persistem após a expiração do token e uma nova autenticação.
+Como o UUID é estável, você pode atribuir perfis de configuração, cotas, políticas de linha e políticas de mascaramento de coluna a um usuário JWT usando instruções SQL. Essas atribuições permanecem no armazenamento de controle de acesso (em disco ou no ZooKeeper) e persistem após a expiração do token e uma nova autenticação.
 
 Faça referência ao usuário pelo nome de usuário atual:
 
 ```sql
-ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::ClickHouse::my-service-id::jane.doe::<claims-hash>';
+ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::jane.doe::<claims_hash>';
 ```
 
 <Note>
   O nome de usuário e o UUID de uma determinada identidade podem ser encontrados nas colunas `name` e `id` de `system.users` enquanto o usuário estiver ativo.
 </Note>
 
-Observe que `ALTER USER` não funciona diretamente com usuários JWT, pois eles são somente leitura. Para atribuir perfis de configurações, quotas ou políticas, use as instruções `ALTER SETTINGS PROFILE`, `ALTER QUOTA` ou `ALTER ROW POLICY`, como mostrado acima.
+Observe que `ALTER USER` não funciona diretamente com usuários JWT, pois eles são somente leitura. Para atribuir perfis de configuração, cotas ou políticas, use as instruções `ALTER SETTINGS PROFILE`, `ALTER QUOTA` ou `ALTER ROW POLICY`, como mostrado acima.
 
 <div id="differences-from-regular-users">
   ## Diferenças em relação aos usuários regulares

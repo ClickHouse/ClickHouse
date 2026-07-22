@@ -21,10 +21,14 @@ doc_type: 'guide'
 摄取数据时可能会发生多种故障，从而导致部分插入或数据重复。对象存储 ClickPipes 能够处理插入失败，并通过临时暂存表提供精确一次语义。数据会先插入暂存表；如果出现问题，暂存表会被清空，并在干净状态下重新尝试插入。只有当插入成功完成后，分区才会被移动到目标表。
 
 <Steps>
-  <Step>
-    ## 创建 Google Cloud Pub/Sub 主题
-
+  <Step title="创建 Google Cloud Pub/Sub 主题" id="create-pubsub-topic">
     **1.** 在 Google Cloud Console 中，导航到 **Pub/Sub &gt; Topics &gt; Create topic**。创建一个带默认订阅的新主题，并记下其 **Topic Name**。
+
+    <Warning>
+      **每个 ClickPipe 一个订阅**
+
+      每个 ClickPipe 都需要自己专用的 Pub/Sub 订阅。在单个订阅中，Pub/Sub 只会将每条消息投递给一个订阅者：如果两个或更多 ClickPipes (或任何其他应用程序) 消费同一个订阅，则每个通知只会被其中一个接收，而从未收到该通知的管道会静默跳过相应文件。即使 ClickPipes 使用不同的路径模式，这一点也同样适用——接收到不匹配文件通知的管道会将其丢弃，而其他管道将永远看不到该通知。若要使用多个 ClickPipes 从同一个存储桶进行摄取，请在该主题上为每个 ClickPipe 创建单独的订阅。
+    </Warning>
 
     **2.** 配置一个 GCS 存储桶通知，将 [`OBJECT_FINALIZE` 事件](https://docs.cloud.google.com/storage/docs/pubsub-notifications)发布到上面创建的 Pub/Sub 主题。
 
@@ -42,9 +46,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 配置服务账号
-
+  <Step title="配置服务账号" id="configure-service-account">
     **1.** 配置一个具有[所需权限](/zh/integrations/clickpipes/object-storage/google-cloud-storage/overview#permissions)的[服务账号](http://docs.cloud.google.com/iam/docs/keys-create-delete)，以允许 ClickPipes 列出并拉取指定存储桶中的对象，以及消费和监控来自 Pub/Sub 订阅的通知。
 
     **1.1.** 此步骤可以在 Google Cloud Console 中完成，也可以使用 `gcloud` 客户端或你偏好的 Google Cloud 编程接口完成。例如，使用 `gcloud`：
@@ -67,12 +69,10 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 以无序模式创建 ClickPipe
-
+  <Step title="以无序模式创建 ClickPipe" id="create-clickpipe">
     **1.** 在 ClickHouse Cloud 控制台中，导航到 **Data Sources &gt; Create ClickPipe**，然后选择 **Google Cloud Storage**。输入连接到你的 GCS 存储桶所需的详细信息。在 **Authentication method** 下，选择 **服务账号** 并提供 `.json` 服务账号密钥。
 
-    **2.** 打开 **Continuous ingestion**，然后选择 **Any order** 作为摄取模式，并提供与你的存储桶关联的 **Pub/Sub subscription** 名称。订阅名称必须符合以下格式：
+    **2.** 打开 **持续摄取**，然后选择 **Any order** 作为摄取模式，并提供与你的存储桶关联的 **Pub/Sub subscription** 名称。该订阅必须由此 ClickPipe 独占使用——请参见[创建 Google Cloud Pub/Sub 主题](#create-pubsub-topic)。订阅名称必须符合以下格式：
 
     ```text
     projects/${YOUR_PROJECT_ID}/subscriptions/${YOUR_SUBSCRIPTION_NAME}

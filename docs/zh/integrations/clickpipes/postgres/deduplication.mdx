@@ -68,9 +68,9 @@ ORDER BY id;
 
 **步骤 1** 展示了 PostgreSQL 中 2 行数据的初始快照，以及 ClickPipes 将这 2 行数据初始加载到 ClickHouse 的过程。可以看到，这两行数据都会原样复制到 ClickHouse。
 
-**步骤 2** 展示了对 `users` 表执行的三个操作：插入一行新数据、更新一行现有数据，以及删除另一行数据。
+**步骤 2** 展示了对 users 表执行的三个操作：插入一行新数据、更新一行现有数据，以及删除另一行数据。
 
-**步骤 3** 展示了 ClickPipes 如何将 INSERT、UPDATE 和 DELETE 操作以带版本的插入方式复制到 ClickHouse。UPDATE 会表现为 ID 2 对应行的一个新版本，而 DELETE 会表现为 ID 1 的一个新版本，并通过 `_is_deleted` 标记为 true。因此，与 PostgreSQL 相比，ClickHouse 中会多出三行数据。
+**步骤 3** 展示了 ClickPipes 如何将 INSERT、UPDATE 和 DELETE 操作以版本化插入方式复制到 ClickHouse。UPDATE 会表现为 ID 2 对应行的一个新版本，而 DELETE 会表现为 ID 1 的一个新版本，并通过 `_is_deleted` 标记为 true。因此，与 PostgreSQL 相比，ClickHouse 中会多出三行数据。
 
 因此，运行类似 `SELECT count(*) FROM users;` 这样的简单查询时，ClickHouse 和 PostgreSQL 中的结果可能会不同。根据 [ClickHouse merge 文档](/zh/concepts/core-concepts/merges#replacing-merges)，过期的行版本最终会在合并过程中被丢弃。但是，合并发生的时机无法预测，这意味着在合并完成之前，ClickHouse 中的查询可能会返回不一致的结果。
 

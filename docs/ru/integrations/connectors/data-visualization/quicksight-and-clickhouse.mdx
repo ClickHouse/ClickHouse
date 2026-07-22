@@ -116,50 +116,50 @@ Read 4 rows, 603.00 B in 0.00156 sec., 2564 rows/sec., 377.48 KiB/sec.
   ## Подключение QuickSight к ClickHouse
 </div>
 
-Прежде всего перейдите на [https://quicksight.aws.amazon.com](https://quicksight.aws.amazon.com), откройте раздел Datasets и нажмите &quot;New dataset&quot;:
+Прежде всего, перейдите на [https://quicksight.aws.amazon.com](https://quicksight.aws.amazon.com), откройте раздел Datasets и нажмите &quot;New dataset&quot;:
 
 <Image size="md" img="/images/integrations/data-visualization/quicksight_01.webp" alt="Панель мониторинга Amazon QuickSight с кнопкой New dataset в разделе Datasets" border />
 
 <br />
 
-Найдите официальный коннектор MySQL, встроенный в QuickSight (он называется просто **MySQL**):
+Найдите официальный коннектор MySQL, входящий в состав QuickSight (он называется просто **MySQL**):
 
 <Image size="md" img="/images/integrations/data-visualization/quicksight_02.webp" alt="Экран выбора источника данных в QuickSight, где в результатах поиска выделен MySQL" border />
 
 <br />
 
-Укажите сведения о подключении. Обратите внимание, что порт интерфейса MySQL по умолчанию — 9004,
+Укажите свои сведения о подключении. Обратите внимание, что порт интерфейса MySQL по умолчанию — 9004,
 и он может отличаться в зависимости от конфигурации сервера.
 
 <Image size="md" img="/images/integrations/data-visualization/quicksight_03.webp" alt="Форма настройки подключения MySQL в QuickSight с полями hostname, port, database и учетных данных" border />
 
 <br />
 
-Теперь у вас есть два варианта получения данных из ClickHouse. Во-первых, вы можете выбрать таблицу из списка:
+Теперь у вас есть два варианта получения данных из ClickHouse. Во-первых, можно выбрать таблицу из списка:
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_04.webp" alt="Интерфейс выбора таблицы в QuickSight, показывающий таблицы базы данных, доступные из ClickHouse" border />
-
-<br />
-
-Либо вы можете указать собственный SQL-запрос для получения данных:
-
-<Image size="md" img="/images/integrations/data-visualization/quicksight_05.webp" alt="Редактор пользовательского SQL-запроса в QuickSight для получения данных из ClickHouse" border />
+<Image size="md" img="/images/integrations/data-visualization/quicksight_04.webp" alt="Интерфейс выбора таблицы в QuickSight со списком таблиц базы данных, доступных из ClickHouse" border />
 
 <br />
 
-Нажав &quot;Edit/Preview data&quot;, вы сможете увидеть автоматически определённую структуру таблицы или скорректировать свой SQL-запрос, если выбрали именно такой способ доступа к данным:
+Либо можно указать custom SQL для получения данных:
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_06.webp" alt="Предпросмотр данных в QuickSight, показывающий структуру таблицы со столбцами и примером данных" border />
+<Image size="md" img="/images/integrations/data-visualization/quicksight_05.webp" alt="Редактор custom SQL в QuickSight для получения данных из ClickHouse" border />
+
+<br />
+
+Нажав &quot;Edit/Preview data&quot;, вы сможете увидеть автоматически определённую структуру таблицы или изменить свой custom SQL, если выбрали такой способ доступа к данным:
+
+<Image size="md" img="/images/integrations/data-visualization/quicksight_06.webp" alt="Предварительный просмотр данных в QuickSight, показывающий структуру таблицы со столбцами и примерами данных" border />
 
 <br />
 
 Убедитесь, что в левом нижнем углу интерфейса выбран режим &quot;Direct Query&quot;:
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_07.webp" alt="Интерфейс QuickSight с выделенным в нижнем углу режимом Direct Query" border />
+<Image size="md" img="/images/integrations/data-visualization/quicksight_07.webp" alt="Интерфейс QuickSight, где в нижнем углу выделен режим Direct Query" border />
 
 <br />
 
-Теперь вы можете опубликовать набор данных и создать новую визуализацию!
+Теперь можно перейти к публикации датасета и созданию новой визуализации!
 
 <div id="known-limitations">
   ## Известные ограничения

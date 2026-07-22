@@ -42,7 +42,7 @@ dotProduct(vector1, vector2)
 
 **戻り値**
 
-2つのベクトルの内積を返します。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal`](/ja/reference/data-types/decimal)
+2つのベクトルの内積を返します。2つの `BFloat16` 配列は `Float32` として累積され、戻り値も `Float32` になります。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal`](/ja/reference/data-types/decimal)
 
 **例**
 
@@ -187,16 +187,16 @@ tupleDivide(t1, t2[, tN, ...])
 
 **引数**
 
-* `t1` — 最初の入力Tuple。[`Tuple((U)Int*)`](/ja/reference/data-types/tuple) または [`Tuple(Float*)`](/ja/reference/data-types/tuple) または [`Tuple(Decimal)`](/ja/reference/data-types/tuple)
-* `t2, ..., tN` — 追加の入力Tupleを1つ以上指定します。すべてのTupleは同じサイズである必要があります。[`Tuple((U)Int*)`](/ja/reference/data-types/tuple) または [`Tuple(Float*)`](/ja/reference/data-types/tuple) または [`Tuple(Decimal)`](/ja/reference/data-types/tuple)
+* `t1` — 最初の入力タプル。[`Tuple((U)Int*)`](/ja/reference/data-types/tuple) または [`Tuple(Float*)`](/ja/reference/data-types/tuple) または [`Tuple(Decimal)`](/ja/reference/data-types/tuple)
+* `t2, ..., tN` — 追加の入力タプルを1つ以上指定します。すべてのタプルは同じサイズである必要があります。[`Tuple((U)Int*)`](/ja/reference/data-types/tuple) または [`Tuple(Float*)`](/ja/reference/data-types/tuple) または [`Tuple(Decimal)`](/ja/reference/data-types/tuple)
 
 **戻り値**
 
-要素ごとの商を含むTupleを返します。[`Tuple((U)Int*)`](/ja/reference/data-types/tuple) または [`Tuple(Float*)`](/ja/reference/data-types/tuple) または [`Tuple(Decimal)`](/ja/reference/data-types/tuple)
+要素ごとの商を含むタプルを返します。[`Tuple((U)Int*)`](/ja/reference/data-types/tuple) または [`Tuple(Float*)`](/ja/reference/data-types/tuple) または [`Tuple(Decimal)`](/ja/reference/data-types/tuple)
 
 **例**
 
-**2つのTuple**
+**2つのタプル**
 
 ```sql title=Query
 SELECT tupleDivide((1, 2), (2, 3))

@@ -14,7 +14,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 من منظور مثيل ClickHouse، يمكنك إما:
 
-1. **[PUSH](#push-data-from-redshift-to-clickhouse)** دفع البيانات إلى ClickHouse باستخدام أداة أو خدمة ETL/ELT من جهة خارجية
+1. **[إرسال](#push-data-from-redshift-to-clickhouse)** دفع البيانات إلى ClickHouse باستخدام أداة أو خدمة ETL/ELT من جهة خارجية
 
 2. **[PULL](#pull-data-from-redshift-to-clickhouse)** سحب البيانات من Redshift بالاستفادة من ClickHouse JDBC Bridge
 
@@ -73,15 +73,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Note>
 
 <div id="tutorial">
-  ### البرنامج التعليمي
+  ### دليل عملي
 </div>
 
-لاستخدام هذا الخيار، تحتاج إلى إعداد ClickHouse JDBC Bridge. وClickHouse JDBC Bridge هو تطبيق Java مستقل يتولى اتصال JDBC ويعمل كوسيط بين مثيل ClickHouse ومصادر البيانات. في هذا البرنامج التعليمي، استخدمنا مثيل Redshift مملوءًا مسبقًا بالبيانات مع [قاعدة بيانات نموذجية](https://docs.aws.amazon.com/redshift/latest/dg/c_sampledb.html).
+لاستخدام هذا الخيار، تحتاج إلى إعداد ClickHouse JDBC Bridge. وClickHouse JDBC Bridge هو تطبيق Java مستقل يتولى اتصال JDBC ويعمل كوسيط بين مثيل ClickHouse ومصادر البيانات. في هذا الدليل العملي، استخدمنا مثيل Redshift مملوءًا مسبقًا بالبيانات مع [قاعدة بيانات نموذجية](https://docs.aws.amazon.com/redshift/latest/dg/c_sampledb.html).
 
 <Steps>
-  <Step>
-    #### نشر ClickHouse JDBC Bridge
-
+  <Step title="نشر ClickHouse JDBC Bridge" id="deploy-clickhouse-jdbc-bridge">
     انشر ClickHouse JDBC Bridge. لمزيد من التفاصيل، راجع دليل المستخدم الخاص بنا حول [JDBC لمصادر البيانات الخارجية](/ar/integrations/connectors/data-ingestion/jdbc-with-clickhouse)
 
     <Note>
@@ -89,9 +87,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     </Note>
   </Step>
 
-  <Step>
-    #### تهيئة مصدر بيانات Redshift الخاص بك
-
+  <Step title="تهيئة مصدر بيانات Redshift الخاص بك" id="configure-your-redshift-datasource">
     هيّئ مصدر بيانات Redshift لاستخدامه مع ClickHouse JDBC Bridge. على سبيل المثال: `/etc/clickhouse-jdbc-bridge/config/datasources/redshift.json `
 
     ```json
@@ -113,10 +109,8 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    #### الاستعلام عن مثيل Redshift الخاص بك من ClickHouse
-
-    بعد نشر ClickHouse JDBC Bridge وتشغيله، يمكنك البدء في الاستعلام عن مثيل Redshift الخاص بك من ClickHouse
+  <Step title="الاستعلام عن مثيل Redshift الخاص بك من ClickHouse" id="query-your-redshift-instance-from-clickhouse">
+    بمجرد نشر ClickHouse JDBC Bridge وتشغيله، يمكنك البدء في الاستعلام عن مثيل Redshift الخاص بك من ClickHouse
 
     ```sql
     SELECT *
@@ -153,9 +147,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    #### استيراد البيانات من Redshift إلى ClickHouse
-
+  <Step title="استيراد البيانات من Redshift إلى ClickHouse" id="import-data-from-redshift-to-clickhouse">
     فيما يلي، نعرض كيفية استيراد البيانات باستخدام عبارة `INSERT INTO ... SELECT`
 
     ```sql
@@ -217,13 +209,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * خطوتان في العملية (تفريغ البيانات من Redshift ثم تحميلها إلى ClickHouse).
 
 <div id="tutorial">
-  ### البرنامج التعليمي
+  ### دليل عملي
 </div>
 
 <Steps>
-  <Step>
-    #### تصدير البيانات إلى حاوية S3 باستخدام UNLOAD
-
+  <Step title="تصدير البيانات إلى حاوية S3 باستخدام UNLOAD" id="export-data-into-an-s3-bucket-using-unload">
     باستخدام ميزة [UNLOAD](https://docs.aws.amazon.com/redshift/latest/dg/r_UNLOAD.html) في Redshift، صدِّر البيانات إلى حاوية S3 خاصة موجودة:
 
     <Image img="/images/integrations/data-ingestion/redshift/s3-1.webp" size="md" alt="UNLOAD من Redshift إلى S3" background="white" />
@@ -233,9 +223,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     <Image img="/images/integrations/data-ingestion/redshift/s3-2.webp" size="md" alt="البيانات في S3" background="white" />
   </Step>
 
-  <Step>
-    #### إنشاء الجدول في ClickHouse
-
+  <Step title="إنشاء الجدول في ClickHouse" id="create-the-table-in-clickhouse">
     أنشئ الجدول في ClickHouse:
 
     ```sql
@@ -261,10 +249,8 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     يعمل هذا بشكل جيد خصوصًا عندما تكون البيانات بتنسيق يتضمن معلومات عن أنواع البيانات، مثل Parquet.
   </Step>
 
-  <Step>
-    #### تحميل ملفات S3 إلى ClickHouse
-
-    حمّل ملفات S3 إلى ClickHouse باستخدام عبارة `INSERT INTO ... SELECT`:
+  <Step title="تحميل ملفات S3 إلى ClickHouse" id="load-s3-files-into-clickhouse">
+    حمّل ملفات S3 إلى ClickHouse باستخدام تعليمة `INSERT INTO ... SELECT`:
 
     ```sql
     INSERT INTO users SELECT *

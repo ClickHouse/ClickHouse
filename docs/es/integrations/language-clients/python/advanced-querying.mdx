@@ -468,7 +468,7 @@ Las consultas de ClickHouse pueden aceptar datos externos en cualquier formato d
 | file&#95;path | str               | Ruta a un archivo en el sistema local desde la que se leerán los datos externos. Se requiere `file_path` o `data`                                           |
 | file&#95;name | str               | El nombre del &quot;archivo&quot; de datos externos. Si no se proporciona, se determinará a partir de `file_path` (sin extensiones)                         |
 | data          | bytes             | Los datos externos en formato binario (en lugar de leerse desde un archivo). Se requiere `data` o `file_path`                                               |
-| fmt           | str               | El [formato de entrada](/es/reference/formats/index) de ClickHouse para los datos. El valor predeterminado es `TSV`                                            |
+| fmt           | str               | El [formato de entrada](/es/reference/formats) de ClickHouse para los datos. El valor predeterminado es `TSV`                                                  |
 | types         | str or seq of str | Una lista de tipos de datos de las columnas de los datos externos. Si es una cadena, los tipos deben separarse por comas. Se requiere `types` o `structure` |
 | structure     | str or seq of str | Una lista de nombres de columna + tipo de dato de los datos (consulte los ejemplos). Se requiere `structure` o `types`                                      |
 | mime&#95;type | str               | Tipo MIME opcional de los datos del archivo. Actualmente ClickHouse ignora este subencabezado HTTP                                                          |

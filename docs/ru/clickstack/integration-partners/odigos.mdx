@@ -82,9 +82,7 @@ import PartnerBadge from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx"
 {/* vale on */}
 
 <Steps>
-  <Step>
-    #### Разверните Odigos с помощью Helm
-
+  <Step title="Разверните Odigos с помощью Helm" id="deploy-odigos">
     Для Odigos Enterprise требуется токен on-prem-лицензии. Экспортируйте его в оболочке:
 
     ```bash
@@ -114,9 +112,7 @@ import PartnerBadge from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx"
     ```
   </Step>
 
-  <Step>
-    #### Добавьте источники в интерфейсе Odigos
-
+  <Step title="Добавьте источники в интерфейсе Odigos" id="add-sources">
     1. Выполните проброс порта для сервиса интерфейса Odigos:
 
     ```bash
@@ -129,9 +125,7 @@ import PartnerBadge from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx"
     5. Убедитесь, что инструментация для рабочих нагрузок успешно включена в столбце Sources.
   </Step>
 
-  <Step>
-    #### Добавьте ClickStack как пункт назначения в интерфейсе Odigos
-
+  <Step title="Добавьте ClickStack как пункт назначения в интерфейсе Odigos" id="add-destination-ui">
     Чтобы отправлять телеметрию в ClickStack, добавьте в Odigos пункт назначения **OTLP HTTP**. Точная конфигурация зависит от способа развертывания ClickStack. В ClickStack с открытым исходным кодом OpenTelemetry Collector входит в комплект, а ключ для ингестии генерируется для вас в интерфейсе HyperDX. В Управляемом ClickStack вы запускаете собственный автономный коллектор ClickStack и сами задаёте токен аутентификации при запуске контейнера.
 
     <Tip>
@@ -193,9 +187,7 @@ import PartnerBadge from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx"
     </Tabs>
   </Step>
 
-  <Step>
-    #### Проверьте телеметрию в ClickStack
-
+  <Step title="Проверьте телеметрию в ClickStack" id="verify-telemetry">
     1. Откройте интерфейс ClickStack (HyperDX):
        * **ClickStack с открытым исходным кодом**: например, `http://<host>:8080` в образе all-in-one.
        * **Управляемый ClickStack**: откройте свой сервис в [консоли ClickHouse Cloud](https://console.clickhouse.cloud), затем нажмите **Launch ClickStack**. Подробнее см. в разделе [Переход к интерфейсу ClickStack](/ru/clickstack/getting-started/managed#navigate-to-clickstack-ui-cloud).

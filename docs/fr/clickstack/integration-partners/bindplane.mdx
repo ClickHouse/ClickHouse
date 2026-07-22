@@ -71,9 +71,7 @@ Bindplane répond à ce besoin en offrant :
 </div>
 
 <Steps>
-  <Step>
-    #### Configurer ClickStack comme destination
-
+  <Step title="Configurer ClickStack comme destination" id="configure-destination">
     1. Connectez-vous à votre compte Bindplane
     2. Accédez à **Library**
     3. Cliquez sur **Add Destination**
@@ -93,9 +91,7 @@ Bindplane répond à ce besoin en offrant :
     </Tip>
   </Step>
 
-  <Step>
-    #### Créer une configuration
-
+  <Step title="Créer une configuration" id="create-configuration">
     Une fois votre destination ClickStack configurée, créez une configuration pour traiter et acheminer la télémétrie :
 
     1. Accédez à **Configurations** → **Create Configuration**
@@ -117,9 +113,7 @@ Bindplane répond à ce besoin en offrant :
     </Tip>
   </Step>
 
-  <Step>
-    #### Ajouter des processeurs (facultatif)
-
+  <Step title="Ajouter des processeurs (facultatif)" id="add-processors">
     Bindplane fournit des fonctionnalités de pipeline intelligence ainsi que des recommandations de processeurs. Vous pouvez ajouter des processeurs pour :
 
     * **Filter** : réduire le volume de données en excluant la télémétrie inutile
@@ -131,9 +125,7 @@ Bindplane répond à ce besoin en offrant :
     Ces processeurs sont appliqués de manière cohérente à l’ensemble de votre flotte de collecteurs avant que les données n’atteignent ClickStack.
   </Step>
 
-  <Step>
-    #### Déployer les collecteurs et lancer le déploiement progressif sécurisé
-
+  <Step title="Déployer les collecteurs et lancer le déploiement progressif sécurisé" id="deploy-collectors">
     1. Ajoutez un collecteur (BDOT Collector) à votre configuration :
        * Accédez à **Agents** dans Bindplane
        * Installez le collecteur Bindplane sur vos systèmes cibles [en suivant les instructions d’installation de Bindplane](https://docs.bindplane.com/readme/install-your-first-collector)
@@ -157,9 +149,7 @@ Bindplane répond à ce besoin en offrant :
     <Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="Signaux de télémétrie dans ClickStack via Bindplane" size="lg" />
   </Step>
 
-  <Step>
-    #### Vérifier la télémétrie dans ClickStack
-
+  <Step title="Vérifier la télémétrie dans ClickStack" id="verify-telemetry">
     Une fois la configuration déployée, la télémétrie commence à affluer vers ClickStack depuis votre flotte de collecteurs gérés :
 
     1. Connectez-vous à votre instance ClickStack (HyperDX UI)

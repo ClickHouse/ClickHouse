@@ -23,45 +23,41 @@ import CommunityMaintainedBadge from "/snippets/fr/components/CommunityMaintaine
 
 DbVisualizer est disponible à l’adresse https://www.dbvis.com/download/
 
-<div id="1-gather-your-connection-details">
-  ## 1. Rassemblez vos informations de connexion
-</div>
+<Steps>
+  <Step title="Rassemblez vos informations de connexion" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Gestion intégrée du pilote JDBC" id="2-built-in-jdbc-driver-management">
+    DbVisualizer inclut les pilotes JDBC ClickHouse les plus récents. Il intègre un gestionnaire de pilotes JDBC complet, qui donne accès aux dernières versions ainsi qu’aux versions antérieures des pilotes.
 
-<div id="2-built-in-jdbc-driver-management">
-  ## 2. Gestion intégrée des pilotes JDBC
-</div>
+    <Image img="/images/integrations/sql-clients/dbvisualizer-driver-manager.webp" size="lg" border alt="Interface du gestionnaire de pilotes DbVisualizer affichant la configuration du pilote JDBC ClickHouse" />
+  </Step>
 
-DbVisualizer inclut les pilotes JDBC ClickHouse les plus récents. Il intègre un gestionnaire complet des pilotes JDBC, qui donne accès aux dernières versions publiées ainsi qu&#39;aux versions antérieures des pilotes.
+  <Step title="Se connecter à ClickHouse" id="3-connect-to-clickhouse">
+    Pour connecter une base de données avec DbVisualizer, vous devez d’abord créer et configurer une connexion à la base de données.
 
-<Image img="/images/integrations/sql-clients/dbvisualizer-driver-manager.webp" size="lg" border alt="Interface du gestionnaire de pilotes de DbVisualizer affichant la configuration du pilote JDBC ClickHouse" />
+    1. Créez une nouvelle connexion depuis **Database-&gt;Create Database Connection** et sélectionnez un pilote pour votre base de données dans le menu contextuel.
 
-<div id="3-connect-to-clickhouse">
-  ## 3. Se connecter à ClickHouse
-</div>
+    2. Un onglet **Object View** s’ouvre pour la nouvelle connexion.
 
-Pour connecter une base de données avec DbVisualizer, vous devez d’abord créer et configurer une connexion à la base de données.
+    3. Saisissez un nom pour la connexion dans le champ **Name** et, si vous le souhaitez, une description dans le champ **Notes**.
 
-1. Créez une nouvelle connexion depuis **Database-&gt;Create Database Connection** et sélectionnez un pilote pour votre base de données dans le menu contextuel.
+    4. Laissez **Database Type** sur **Auto Detect**.
 
-2. Un onglet **Object View** s’ouvre pour la nouvelle connexion.
+    5. Si le pilote sélectionné dans **Driver Type** est marqué d’une coche verte, il est prêt à être utilisé. Dans le cas contraire, vous devrez peut-être le configurer dans le **Driver Manager**.
 
-3. Saisissez un nom pour la connexion dans le champ **Name** et, si vous le souhaitez, une description dans le champ **Notes**.
+    6. Saisissez les informations sur le serveur de base de données dans les champs restants.
 
-4. Laissez **Database Type** sur **Auto Detect**.
+    7. Vérifiez qu’une connexion réseau peut être établie à l’adresse et au port spécifiés en cliquant sur le bouton **Ping Server**.
 
-5. Si le pilote sélectionné dans **Driver Type** est marqué d’une coche verte, il est prêt à être utilisé. Dans le cas contraire, vous devrez peut-être le configurer dans le **Driver Manager**.
+    8. Si le résultat de **Ping Server** indique que le serveur est joignable, cliquez sur **Connect** pour vous connecter au serveur de base de données.
 
-6. Saisissez les informations sur le serveur de base de données dans les champs restants.
-
-7. Vérifiez qu’une connexion réseau peut être établie à l’adresse et au port spécifiés en cliquant sur le bouton **Ping Server**.
-
-8. Si le résultat de **Ping Server** indique que le serveur est joignable, cliquez sur **Connect** pour vous connecter au serveur de base de données.
-
-<Tip>
-Consultez [Résoudre les problèmes de connexion](https://www.dbvis.com/docs/ug/troubleshooting/fixing-connection-issues/) pour obtenir quelques conseils si vous rencontrez des problèmes pour vous connecter à la base de données.
-</Tip>
+    <Tip>
+      Consultez [Résoudre les problèmes de connexion](https://www.dbvis.com/docs/ug/troubleshooting/fixing-connection-issues/) pour obtenir quelques conseils si vous rencontrez des problèmes pour vous connecter à la base de données.
+    </Tip>
+  </Step>
+</Steps>
 
 <div id="learn-more">
   ## En savoir plus

@@ -43,9 +43,7 @@ import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintaine
 * Роль выполнения AWS Lambda с разрешениями на добавление слоёв
 
 <Steps>
-  <Step>
-    #### Выберите подходящий слой расширения Rotel Lambda
-
+  <Step title="Выберите подходящий слой расширения Rotel Lambda" id="choose-layer">
     Выберите слой Lambda, соответствующий архитектуре среды выполнения вашей Lambda-функции. Поле `{version}`
     зависит от региона AWS, в который выполняется развертывание. Актуальные номера версий для вашего региона
     смотрите на странице [релизов](https://github.com/streamfold/rotel-lambda-extension/releases).
@@ -65,9 +63,7 @@ import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintaine
     * sa-east-1
   </Step>
 
-  <Step>
-    #### Добавьте слой Rotel в функцию Lambda
-
+  <Step title="Добавьте слой Rotel в функцию Lambda" id="add-layer">
     *В этих примерах замените `{arch}`, `{region}` и `{version}` на соответствующие значения, указанные выше.*
 
     ##### Вариант 1: консоль AWS
@@ -97,15 +93,13 @@ import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintaine
       MyFunction:
         Type: AWS::Serverless::Function
         Properties:
-          # ... другие настройки ...
+          # ... other configuration ...
           Layers:
             - arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
     ```
   </Step>
 
-  <Step>
-    #### Настройте расширение для экспорта в ClickStack
-
+  <Step title="Настройте расширение для экспорта в ClickStack" id="configure-extension">
     Rotel Lambda Extension настраивается с помощью переменных окружения. Вам нужно настроить конечную точку экспортера OTLP так, чтобы она указывала на ваш экземпляр ClickStack. В примерах предполагается, что ваша функция AWS Lambda может обращаться к экземпляру ClickStack.
 
     ##### Базовая конфигурация (переменные окружения)
@@ -113,13 +107,13 @@ import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintaine
     Добавьте эти переменные окружения в функцию Lambda:
 
     ```bash
-    # Обязательно: конечная точка OTLP ClickStack
+    # Required: ClickStack OTLP endpoint
     ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
 
-    # Необязательно: заголовки аутентификации
+    # Optional: Authentication headers
     ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=<YOUR_INGESTION_API_KEY>"
 
-    # Необязательно: имя сервиса (по умолчанию — имя лямбда-функции)
+    # Optional: Service name (defaults to Lambda function name)
     ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,service.version=1.0.0"
     ```
 
@@ -203,9 +197,7 @@ import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintaine
     </Note>
   </Step>
 
-  <Step>
-    #### Проверьте интеграцию
-
+  <Step title="Проверьте интеграцию" id="test-integration">
     Вызовите свою Lambda-функцию, чтобы убедиться, что журналы отправляются в ClickStack:
 
     ```bash
@@ -222,9 +214,7 @@ import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintaine
     ```
   </Step>
 
-  <Step>
-    #### Проверьте логи в HyperDX
-
+  <Step title="Проверьте логи в HyperDX" id="verify-logs">
     После настройки войдите в HyperDX (интерфейс ClickStack) и убедитесь, что логи поступают:
 
     <Image img="/images/clickstack/lambda/lambda-log-view.webp" alt="Представление логов Lambda" />
@@ -248,9 +238,7 @@ import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintaine
 По умолчанию AWS Lambda отправляет все журналы в CloudWatch Logs, и при большом масштабе это может быть дорого. После того как вы убедитесь, что журналы поступают в ClickStack, можно отключить логирование в CloudWatch, чтобы сократить затраты.
 
 <Steps>
-  <Step>
-    #### Удалите разрешения CloudWatch из роли выполнения
-
+  <Step title="Удалите разрешения CloudWatch из роли выполнения" id="remove-permissions">
     1. Откройте консоль AWS и перейдите в **AWS Lambda**
     2. Перейдите к нужной функции Lambda
     3. Выберите **Configuration** → **Permissions**
@@ -261,9 +249,7 @@ import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintaine
     6. Сохраните роль
   </Step>
 
-  <Step>
-    #### Убедитесь, что логирование в CloudWatch отключено
-
+  <Step title="Убедитесь, что логирование в CloudWatch отключено" id="verify-disabled">
     Снова вызовите функцию и убедитесь, что:
 
     1. Новые потоки журналов в CloudWatch не создаются
@@ -287,9 +273,7 @@ import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintaine
 Rotel Lambda Extension без проблем работает со слоями автоинструментирования OpenTelemetry, собирая распределённые трейсы и метрики в дополнение к журналам.
 
 <Steps>
-  <Step>
-    #### Выберите слой инструментирования для вашего языка
-
+  <Step title="Выберите слой инструментирования для вашего языка" id="choose-instrumentation">
     AWS предоставляет слои автоинструментирования OpenTelemetry для нескольких языков:
 
     | Язык    | Шаблон ARN слоя                                                                       |
@@ -301,9 +285,7 @@ Rotel Lambda Extension без проблем работает со слоями 
     Последние версии доступны в [репозитории AWS OpenTelemetry Lambda](https://github.com/aws-observability/aws-otel-lambda).
   </Step>
 
-  <Step>
-    #### Добавьте оба слоя в функцию
-
+  <Step title="Добавьте оба слоя в функцию" id="add-both-layers">
     Добавьте **оба** слоя: слой расширения Rotel и слой инструментирования:
 
     ```bash
@@ -315,9 +297,7 @@ Rotel Lambda Extension без проблем работает со слоями 
     ```
   </Step>
 
-  <Step>
-    #### Настройте автоинструментирование
-
+  <Step title="Настройте автоинструментирование" id="configure-instrumentation">
     Установите переменную окружения `AWS_LAMBDA_EXEC_WRAPPER`, чтобы включить автоинструментирование:
 
     **Для Node.js:**
@@ -339,9 +319,7 @@ Rotel Lambda Extension без проблем работает со слоями 
     ```
   </Step>
 
-  <Step>
-    #### Проверьте трейсы в HyperDX
-
+  <Step title="Проверьте трейсы в HyperDX" id="verify-traces">
     После вызова функции:
 
     1. Перейдите в представление **Traces** в HyperDX

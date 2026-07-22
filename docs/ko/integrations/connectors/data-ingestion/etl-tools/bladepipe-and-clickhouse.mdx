@@ -35,9 +35,7 @@ ClickHouse는 BladePipe에서 제공하는 사전 구축된 connector 중 하나
 추후 더 많은 소스를 지원할 예정입니다.
 
 <Steps>
-  <Step>
-    ## BladePipe 다운로드 및 실행
-
+  <Step title="BladePipe 다운로드 및 실행" id="1-run-bladepipe">
     1. <a href="https://www.bladepipe.com/" target="_blank">BladePipe Cloud</a>에 로그인합니다.
 
     2. <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_docker" target="_blank">Worker 설치(Docker)</a> 또는 <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_binary" target="_blank">Worker 설치(Binary)</a>의 안내에 따라 BladePipe Worker를 다운로드하고 설치합니다.
@@ -47,9 +45,7 @@ ClickHouse는 BladePipe에서 제공하는 사전 구축된 connector 중 하나
     </Note>
   </Step>
 
-  <Step>
-    ## ClickHouse를 대상으로 추가
-
+  <Step title="ClickHouse를 대상으로 추가" id="2-add-clickhouse-as-a-target">
     <Note>
       1. BladePipe는 ClickHouse 버전 `20.12.3.3` 이상을 지원합니다.
       2. ClickHouse를 대상으로 사용하려면 사용자에게 SELECT, INSERT 및 일반 DDL 권한이 있어야 합니다.
@@ -64,9 +60,7 @@ ClickHouse는 BladePipe에서 제공하는 사전 구축된 connector 중 하나
     3. 하단의 &quot;Add DataSource&quot;를 클릭하면 ClickHouse 인스턴스가 추가됩니다.
   </Step>
 
-  <Step>
-    ## MySQL을 소스로 추가하기
-
+  <Step title="MySQL을 소스로 추가하기" id="3-add-mysql-as-a-source">
     이 튜토리얼에서는 MySQL 인스턴스를 소스로 사용하여 MySQL 데이터를 ClickHouse로 적재하는 과정을 설명합니다.
 
     <Note>
@@ -75,16 +69,14 @@ ClickHouse는 BladePipe에서 제공하는 사전 구축된 connector 중 하나
 
     1. BladePipe에서 &quot;DataSource&quot; &gt; &quot;Add DataSource&quot;를 클릭하십시오.
 
-    2. `MySQL`을 선택한 다음 MySQL 호스트와 포트, 사용자 이름, 비밀번호를 입력하여 설정을 완료하고 &quot;Test Connection&quot;을 클릭하십시오.
+    2. `MySQL`를 선택한 다음 MySQL 호스트와 포트, 사용자 이름, 비밀번호를 입력하여 설정을 완료하고 &quot;Test Connection&quot;을 클릭하십시오.
 
        <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_2.webp" size="lg" border alt="MySQL을 소스로 추가하기" />
 
     3. 하단의 &quot;Add DataSource&quot;를 클릭하면 MySQL 인스턴스가 추가됩니다.
   </Step>
 
-  <Step>
-    ## 파이프라인 생성
-
+  <Step title="파이프라인 생성" id="4-create-a-pipeline">
     1. BladePipe에서 &quot;DataJob&quot; &gt; &quot;Create DataJob&quot;을 클릭합니다.
 
     2. 추가한 MySQL 및 ClickHouse 인스턴스를 선택한 다음 &quot;Test Connection&quot;을 클릭하여 BladePipe가 해당 인스턴스에 연결되어 있는지 확인합니다. 그런 다음 옮길 데이터베이스를 선택합니다.
@@ -103,9 +95,7 @@ ClickHouse는 BladePipe에서 제공하는 사전 구축된 connector 중 하나
        <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp" size="lg" border alt="DataJob 실행 중" />
   </Step>
 
-  <Step>
-    ## 데이터 검증
-
+  <Step title="데이터 검증" id="5-verify-the-data">
     1. MySQL 인스턴스의 데이터 쓰기를 중지하고 ClickHouse에서 데이터가 머지될 때까지 기다리십시오.
 
     <Note>

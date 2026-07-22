@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'إدراج البيانات باستخدام clickhouse-client'
 title: 'إدراج البيانات في ClickHouse Cloud باستخدام clickhouse-client'
-useCases: ['All']
+useCases: ['الكل']
 products: ['Cloud']
 description: 'تعرّف على كيفية استخدام clickhouse-client لإدراج بيانات من ملفات CSV وParquet المحلية في خدمة ClickHouse Cloud عبر سطر الأوامر.'
 ---
@@ -16,8 +16,8 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 <div className="mt-2 flex flex-wrap gap-2">
   <Badge size="lg" color="blue">التحليلات اللحظية</Badge>
   <Badge size="lg" color="blue">مستودعات البيانات</Badge>
-  <Badge size="lg" color="blue">قابلية الرصد</Badge>
-  <Badge size="lg" color="blue">الذكاء الاصطناعي/تعلّم الآلة</Badge>
+  <Badge size="lg" color="blue">Observability</Badge>
+  <Badge size="lg" color="blue">AI/ML</Badge>
   <Badge size="lg" color="orange">Cloud</Badge>
 </div>
 
@@ -41,9 +41,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 وفي نهاية هذا الدليل، ستعرف كيفية استخدام clickhouse-client لتحميل الملفات المحلية إلى ClickHouse Cloud، وهو سير عمل يدعم CSV وParquet وJSON والعديد من التنسيقات الأخرى.
 
 <Steps titleSize="h3">
-  <Step>
-    ### تثبيت clickhouse-client
-
+  <Step title="تثبيت clickhouse-client" id="install-clickhouse-client">
     يُعد `clickhouse-client` واجهة CLI الرسمية للاتصال بـ ClickHouse، وهو مُضمَّن في الملف التنفيذي لـ ClickHouse.
 
     ثبّته باستخدام المُثبّت العام:
@@ -61,9 +59,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     من المفترض أن يظهر لك ناتج يعرض رقم إصدار ClickHouse، مما يؤكد أن `clickhouse-client` جاهز للاستخدام.
   </Step>
 
-  <Step>
-    ### جهّز ملف CSV نموذجيًا صغيرًا
-
+  <Step title="جهّز ملف CSV نموذجيًا صغيرًا" id="prepare-a-sample-csv-file">
     أنشئ ملف CSV نموذجيًا صغيرًا حتى يكون هذا الدليل التمهيدي السريع مكتفيًا بذاته. شغّل ما يلي في الطرفية:
 
     ```bash
@@ -83,9 +79,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     ```
   </Step>
 
-  <Step>
-    ### اتصل بخدمة Cloud الخاصة بك
-
+  <Step title="اتصل بخدمة Cloud الخاصة بك" id="connect-to-your-cloud-service">
     تفترض الأوامر أدناه أنك صدّرت `CLICKHOUSE_HOST` و`CLICKHOUSE_USER` و`CLICKHOUSE_PASSWORD` كمتغيرات بيئة، كما هو موضح في الدليل السريع [الحصول على تفاصيل اتصال Cloud الخاصة بك](/ar/get-started/quickstarts/obtain-your-cloud-connection-details). وإذا لم تكن قد فعلت ذلك، فيمكنك استبدالها بقيمك مباشرةً.
 
     اختبر الاتصال من خلال تشغيل استعلام بسيط على خدمة Cloud الخاصة بك:
@@ -107,9 +101,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     </Note>
   </Step>
 
-  <Step>
-    ### أنشئ جدولًا مستهدفًا وأدرج البيانات
-
+  <Step title="أنشئ جدولًا مستهدفًا وأدرج البيانات" id="create-a-target-table-and-insert-data">
     أولًا، أنشئ جدولًا على خدمة Cloud لديك لاستقبال البيانات:
 
     ```bash
@@ -147,9 +139,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     يرسل `clickhouse-client` محتويات ملف CSV مباشرةً إلى خدمة Cloud الخاصة بك. ويُخبر تنسيق `CSVWithNames` ClickHouse بأن الصف الأول يحتوي على أسماء الأعمدة.
   </Step>
 
-  <Step>
-    ### تحقّق من أنه تم إدراج البيانات
-
+  <Step title="تحقّق من أنه تم إدراج البيانات" id="verify-the-data-was-inserted">
     نفّذ استعلامًا على خدمة Cloud الخاصة بك للتأكد من وصول الصفوف:
 
     ```bash
@@ -180,7 +170,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   </Step>
 </Steps>
 
-## الخطوات التالية
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
 
 في هذا الدليل السريع، ثبّت `clickhouse-client`، ووصلته بخدمة ClickHouse Cloud، واستخدمته لتمرير البيانات من ملف CSV محلي إلى Cloud. وتعمل هذه الطريقة نفسها مع Parquet وJSON وعشرات التنسيقات الأخرى.
 

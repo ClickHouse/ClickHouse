@@ -26,9 +26,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 이 올인원 이미지를 사용하면 단일 명령으로 전체 스택을 실행할 수 있으므로, 테스트, 실험, 빠른 로컬 배포에 적합합니다.
 
 <Steps>
-  <Step>
-    ## docker로 스택 배포
-
+  <Step title="docker로 스택 배포" id="deploy-stack-with-docker">
     다음 명령은 OpenTelemetry collector(포트 4317 및 4318), HyperDX UI(포트 8080), ClickHouse(8123)를 실행합니다.
 
     ```shell
@@ -64,9 +62,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     </Tip>
   </Step>
 
-  <Step>
-    ## ClickStack UI로 이동
-
+  <Step title="ClickStack UI로 이동" id="navigate-to-hyperdx-ui">
     ClickStack UI(HyperDX)에 액세스하려면 [http://localhost:8080](http://localhost:8080)에 접속하십시오.
 
     복잡성 요구 사항을 충족하는 사용자 이름과 비밀번호를 입력해 사용자를 생성하십시오.
@@ -76,9 +72,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     HyperDX는 로컬 클러스터에 자동으로 연결하고 로그, trace, 메트릭, 세션용 데이터 소스를 생성하므로 즉시 제품을 탐색할 수 있습니다.
   </Step>
 
-  <Step>
-    ## 제품 탐색
-
+  <Step title="제품 탐색" id="explore-the-product">
     스택 배포가 완료되면, 다음 데이터셋 중 하나를 사용해 보십시오.
 
     로컬 클러스터를 계속 사용하려면:
@@ -114,16 +108,14 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   ### 호스팅 버전
 </div>
 
-[play-clickstack.clickhouse.com](https://play-clickstack.clickstack.com)에서 로컬 모드로 제공되는 ClickStack 호스팅 버전을 사용할 수 있습니다.
+[play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)에서 로컬 모드로 제공되는 ClickStack 호스팅 버전을 사용할 수 있습니다.
 
 <div id="self-hosted-version">
   ### 자체 호스팅 버전
 </div>
 
 <Steps>
-  <Step>
-    ### Docker로 실행
-
+  <Step title="Docker로 실행" id="run-local-with-docker">
     자체 호스팅 로컬 모드 이미지는 OpenTelemetry collector, ClickStack UI, 그리고 사전 구성된 ClickHouse 서버를 함께 제공합니다. 따라서 외부 설정을 최소화한 상태로 애플리케이션의 텔레메트리 데이터를 쉽게 수집하고 시각화할 수 있습니다. 자체 호스팅 버전을 시작하려면 적절한 포트를 포워딩하여 다음과 같이 Docker 컨테이너를 실행하십시오.
 
     ```shell
@@ -133,9 +125,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     &quot;All in one&quot; 이미지와 달리 **로컬 모드에는 인증이 포함되지 않으므로** 사용자를 생성하라는 메시지가 표시되지 않습니다.
   </Step>
 
-  <Step>
-    ### 연결 자격 증명 입력
-
+  <Step title="연결 자격 증명 입력" id="complete-connection-credentials">
     자체 **외부 ClickHouse 클러스터**에 연결하려면 연결 자격 증명을 수동으로 입력할 수 있습니다.
 
     또는 제품을 빠르게 둘러보려면 **Connect to Demo Server**를 클릭하여 미리 로드된 데이터셋에 접속하고 별도 설정 없이 ClickStack을 사용해 볼 수도 있습니다.

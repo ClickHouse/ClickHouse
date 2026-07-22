@@ -48,17 +48,13 @@ Le chart prend en charge les bonnes pratiques Kubernetes standard, notamment :
 <br />
 
 <Steps>
-  <Step>
-    ### Prérequis
-
+  <Step title="Prérequis" id="prerequisites">
     * [Helm](https://helm.sh/) v3+
     * cluster Kubernetes (v1.20+ recommandé)
     * `kubectl` configuré pour communiquer avec votre cluster
   </Step>
 
-  <Step>
-    ### Ajouter le dépôt Helm de ClickStack
-
+  <Step title="Ajouter le dépôt Helm de ClickStack" id="add-the-clickstack-helm-repository">
     Ajoutez le dépôt Helm de ClickStack :
 
     ```shell
@@ -67,9 +63,7 @@ Le chart prend en charge les bonnes pratiques Kubernetes standard, notamment :
     ```
   </Step>
 
-  <Step>
-    ### Installation de ClickStack
-
+  <Step title="Installation de ClickStack" id="installing-clickstack">
     Pour installer le chart ClickStack avec les valeurs par défaut :
 
     ```shell
@@ -77,9 +71,7 @@ Le chart prend en charge les bonnes pratiques Kubernetes standard, notamment :
     ```
   </Step>
 
-  <Step>
-    ### Vérifier l’installation
-
+  <Step title="Vérifier l’installation" id="verify-the-installation">
     Vérifiez l’installation :
 
     ```shell
@@ -89,9 +81,7 @@ Le chart prend en charge les bonnes pratiques Kubernetes standard, notamment :
     Une fois que tous les pods sont prêts, poursuivez.
   </Step>
 
-  <Step>
-    ### Redirection de ports
-
+  <Step title="Redirection de ports" id="forward-ports">
     La redirection de ports permet d’accéder à HyperDX et de le configurer. Pour un déploiement en production, il est préférable d’exposer le service via un Ingress ou un répartiteur de charge afin de garantir un accès réseau approprié, la terminaison TLS et une bonne montée en charge. La redirection de ports convient surtout au développement local ou à des tâches administratives ponctuelles, et non à des environnements durables ou à haute disponibilité.
 
     ```shell
@@ -107,9 +97,7 @@ Le chart prend en charge les bonnes pratiques Kubernetes standard, notamment :
     </Tip>
   </Step>
 
-  <Step>
-    ### Accéder à l’interface
-
+  <Step title="Accéder à l’interface" id="navigate-to-the-ui">
     Rendez-vous sur [http://localhost:8080](http://localhost:8080) pour accéder à l’HyperDX UI.
 
     Créez un utilisateur en indiquant un nom d’utilisateur et un mot de passe conformes aux exigences.
@@ -125,9 +113,7 @@ Le chart prend en charge les bonnes pratiques Kubernetes standard, notamment :
     </Info>
   </Step>
 
-  <Step>
-    ### Personnaliser les valeurs (facultatif)
-
+  <Step title="Personnaliser les valeurs (facultatif)" id="customizing-values">
     Vous pouvez personnaliser la configuration à l’aide des options `--set`. Par exemple :
 
     ```shell
@@ -167,9 +153,7 @@ Le chart prend en charge les bonnes pratiques Kubernetes standard, notamment :
     ```
   </Step>
 
-  <Step>
-    ### Utilisation des secrets (facultatif)
-
+  <Step title="Utilisation des secrets (facultatif)" id="using-secrets">
     Pour gérer des données sensibles telles que des clés API ou des identifiants de base de données, utilisez des secrets Kubernetes. Les charts Helm de HyperDX fournissent des fichiers de secrets par défaut que vous pouvez modifier et appliquer à votre cluster.
 
     #### Utilisation de secrets préconfigurés

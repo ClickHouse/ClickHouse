@@ -20,29 +20,21 @@ import CommunityMaintainedBadge from "/snippets/es/components/CommunityMaintaine
 <a href="https://nifi.apache.org/" target="_blank">Apache NiFi</a> es un software de gestión de flujos de trabajo de código abierto diseñado para automatizar el flujo de datos entre sistemas de software. Permite crear pipelines de datos ETL e incluye más de 300 procesadores de datos. Este tutorial paso a paso muestra cómo conectar Apache NiFi a ClickHouse tanto como origen como destino, y cómo cargar un conjunto de datos de ejemplo.
 
 <Steps>
-  <Step>
-    ## Recopila los datos de conexión
-
+  <Step title="Recopila los datos de conexión" id="1-gather-your-connection-details">
     <ConnectionDetails />
   </Step>
 
-  <Step>
-    ## Descargar y ejecutar Apache NiFi
-
-    Para una instalación nueva, descargue el binario desde https://nifi.apache.org/download.html y ejecútelo con `./bin/nifi.sh start`
+  <Step title="Descargar y ejecutar Apache NiFi" id="2-download-and-run-apache-nifi">
+    Para una instalación nueva, descargue el binario desde [https://nifi.apache.org/download.html](https://nifi.apache.org/download.html) y ejecútelo con `./bin/nifi.sh start`
   </Step>
 
-  <Step>
-    ## Descargar el controlador JDBC de ClickHouse
-
+  <Step title="Descargar el controlador JDBC de ClickHouse" id="3-download-the-clickhouse-jdbc-driver">
     1. Ve a la <a href="https://github.com/ClickHouse/clickhouse-java/releases" target="_blank">página de versiones del controlador JDBC de ClickHouse</a> en GitHub y busca la versión más reciente
     2. En esa versión, haz clic en &quot;Show all xx assets&quot; y busca el archivo JAR que contenga la palabra clave &quot;shaded&quot; o &quot;all&quot;, por ejemplo, `clickhouse-jdbc-0.5.0-all.jar`
     3. Coloca el archivo JAR en una carpeta a la que Apache NiFi pueda acceder y toma nota de la ruta absoluta
   </Step>
 
-  <Step>
-    ## Agregue el servicio de controlador `DBCPConnectionPool` y configure sus propiedades
-
+  <Step title={<>Agregue el servicio de controlador <code>DBCPConnectionPool</code> y configure sus propiedades</>} id="4-add-dbcpconnectionpool-controller-service-and-configure-its-properties">
     1. Para configurar un servicio de controlador en Apache NiFi, vaya a la página de configuración del flujo de NiFi haciendo clic en el botón de &quot;engranaje&quot;
 
        <Image img="/images/integrations/data-ingestion/etl-tools/nifi_01.webp" size="sm" border alt="Página de configuración del flujo de NiFi con el botón de engranaje resaltado" />
@@ -61,13 +53,13 @@ import CommunityMaintainedBadge from "/snippets/es/components/CommunityMaintaine
 
     5. En la sección &quot;Properties&quot;, introduzca los siguientes valores
 
-    | Propiedad                                         | Valor                                                              | Observación                                                |
-    | ------------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------- |
-    | URL de conexión de la base de datos               | jdbc:ch:https://HOSTNAME:8443/default?ssl=true                     | Reemplace HOSTNAME en la URL de conexión según corresponda |
-    | Nombre de la clase del driver de la base de datos | com.clickhouse.jdbc.ClickHouseDriver                               |                                                            |
-    | Ubicación del driver de la base de datos          | /etc/nifi/nifi-X.XX.X/lib/clickhouse-jdbc-0.X.X-patchXX-shaded.jar | Ruta absoluta al archivo JAR del driver JDBC de ClickHouse |
-    | Usuario de la base de datos                       | default                                                            | Nombre de usuario de ClickHouse                            |
-    | Contraseña                                        | password                                                           | Contraseña de ClickHouse                                   |
+    | Propiedad                                         | Valor                                                                                    | Observación                                                |
+    | ------------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+    | URL de conexión de la base de datos               | jdbc[https://HOSTNAME:8443/default?ssl=true](https://HOSTNAME:8443/default?ssl=true)true | Reemplace HOSTNAME en la URL de conexión según corresponda |
+    | Nombre de la clase del driver de la base de datos | com.clickhouse.jdbc.ClickHouseDriver                                                     |                                                            |
+    | Ubicación del driver de la base de datos          | /etc/nifi/nifi-X.XX.X/lib/clickhouse-jdbc-0.X.X-patchXX-shaded.jar                       | Ruta absoluta al archivo JAR del driver JDBC de ClickHouse |
+    | Usuario de la base de datos                       | default                                                                                  | Nombre de usuario de ClickHouse                            |
+    | Contraseña                                        | password                                                                                 | Contraseña de ClickHouse                                   |
 
     6. En la sección Settings, cambie el nombre del servicio de controlador a &quot;ClickHouse JDBC&quot; para poder identificarlo fácilmente
 
@@ -86,19 +78,17 @@ import CommunityMaintainedBadge from "/snippets/es/components/CommunityMaintaine
        <Image img="/images/integrations/data-ingestion/etl-tools/nifi_08.webp" size="lg" border alt="Lista de servicios de controlador que muestra el servicio ClickHouse JDBC habilitado" />
   </Step>
 
-  <Step>
-    ## Leer datos de una tabla con el procesador `ExecuteSQL`
-
+  <Step title={<>Leer datos de una tabla con el procesador <code>ExecuteSQL</code></>} id="5-read-from-a-table-using-the-executesql-processor">
     1. Añade un procesador `​ExecuteSQL`, junto con los procesadores upstream y downstream correspondientes
 
        <Image img="/images/integrations/data-ingestion/etl-tools/nifi_09.webp" size="md" border alt="Lienzo de NiFi que muestra el procesador ExecuteSQL en un flujo de trabajo" />
 
     2. En la sección &quot;Properties&quot; del procesador `​ExecuteSQL`, introduce los siguientes valores
 
-       | Propiedad                           | Valor                        | Observación                                                  |
-       | ----------------------------------- | ---------------------------- | ------------------------------------------------------------ |
-       | Database Connection Pooling Service | ClickHouse JDBC              | Selecciona el Controller Service configurado para ClickHouse |
-       | SQL select query                    | SELECT * FROM system.metrics | Introduce aquí tu consulta                                   |
+       | Propiedad                           | Valor                            | Observación                                                  |
+       | ----------------------------------- | -------------------------------- | ------------------------------------------------------------ |
+       | Database Connection Pooling Service | ClickHouse JDBC                  | Selecciona el Controller Service configurado para ClickHouse |
+       | SQL select query                    | SELECT &#42; FROM system.metrics | Introduce aquí tu consulta                                   |
 
     3. Inicia el procesador `​​ExecuteSQL`
 
@@ -113,9 +103,7 @@ import CommunityMaintainedBadge from "/snippets/es/components/CommunityMaintaine
        <Image img="/images/integrations/data-ingestion/etl-tools/nifi_12.webp" size="lg" border alt="Visor de contenido de FlowFile que muestra los resultados de la consulta en la vista con formato" />
   </Step>
 
-  <Step>
-    ## Escribir en una tabla con el procesador `MergeRecord` y `PutDatabaseRecord`
-
+  <Step title={<>Escribir en una tabla con el procesador <code>MergeRecord</code> y <code>PutDatabaseRecord</code></>} id="6-write-to-a-table-using-mergerecord-and-putdatabaserecord-processor">
     1. Para escribir varias filas en una sola inserción, primero debemos fusionar varios registros en uno solo. Esto puede hacerse con el procesador `MergeRecord`
 
     2. En la sección &quot;Properties&quot; del procesador `MergeRecord`, introduzca los siguientes valores

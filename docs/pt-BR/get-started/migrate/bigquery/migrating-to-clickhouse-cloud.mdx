@@ -56,7 +56,7 @@ O BigQuery oferece suporte à exportação de dados para o armazenamento de obje
 Essa abordagem tem várias vantagens:
 
 * A funcionalidade de exportação do BigQuery oferece suporte a um filtro para exportar um subconjunto dos dados.
-* O BigQuery oferece suporte à exportação nos formatos [Parquet, Avro, JSON e CSV](https://cloud.google.com/bigquery/docs/exporting-data) e a vários [tipos de compressão](https://cloud.google.com/bigquery/docs/exporting-data) — todos compatíveis com o ClickHouse.
+* O BigQuery oferece suporte à exportação nos formatos [Parquet, Avro, JSON e CSV](https://cloud.google.com/bigquery/docs/exporting-data) e a vários [tipos de compressão](https://cloud.google.com/bigquery/docs/exporting-data) - todos compatíveis com o ClickHouse.
 * O GCS oferece suporte ao [gerenciamento do ciclo de vida de objetos](https://cloud.google.com/storage/docs/lifecycle), permitindo que dados já exportados e importados para o ClickHouse sejam excluídos após um período especificado.
 * [O Google permite exportar até 50 TB por dia para o GCS gratuitamente](https://cloud.google.com/bigquery/quotas#export_jobs). Os usuários pagam apenas pelo armazenamento no GCS.
 * As exportações geram vários arquivos automaticamente, limitando cada um a no máximo 1 GB de dados da tabela. Isso é benéfico para o ClickHouse, pois permite paralelizar as importações.

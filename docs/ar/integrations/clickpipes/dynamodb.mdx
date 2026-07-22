@@ -22,133 +22,121 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * [التقاط بيانات التغيير (CDC) باستخدام PostgreSQL وClickHouse - الجزء 1](https://clickhouse.com/blog/clickhouse-postgresql-change-data-capture-cdc-part-1?loc=docs-rockest-migrations)
 * [التقاط بيانات التغيير (CDC) باستخدام PostgreSQL وClickHouse - الجزء 2](https://clickhouse.com/blog/clickhouse-postgresql-change-data-capture-cdc-part-2?loc=docs-rockest-migrations)
 
-<div id="1-set-up-kinesis-stream">
-  ## 1. إعداد دفق Kinesis
-</div>
+<Steps>
+  <Step title="إعداد Kinesis Stream" id="1-set-up-kinesis-stream">
+    أولاً، ستحتاج إلى تمكين Kinesis Stream على جدول DynamoDB لديك لالتقاط التغييرات في الوقت الفعلي. نريد القيام بذلك قبل إنشاء اللقطة حتى لا نفقد أي بيانات.
+    اطّلع على دليل AWS [هنا](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/kds.html).
 
-أولاً، ستحتاج إلى تمكين دفق Kinesis على جدول DynamoDB لالتقاط التغييرات في الوقت الفعلي. نريد تنفيذ ذلك قبل إنشاء اللقطة لتجنّب فقدان أي بيانات.
-يمكنك العثور على دليل AWS [هنا](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/kds.html).
+    <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp" size="lg" alt="DynamoDB Kinesis Stream" border />
+  </Step>
 
-<Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp" size="lg" alt="دفق Kinesis في DynamoDB" border />
+  <Step title="أنشئ اللقطة" id="2-create-the-snapshot">
+    بعد ذلك، سننشئ لقطة من جدول DynamoDB. ويمكن إجراء ذلك عبر تصدير من AWS إلى S3. يمكنك العثور على دليل AWS [هنا](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/S3DataExport.HowItWorks.html).
+    **ستحتاج إلى إجراء &quot;تصدير كامل&quot; بتنسيق DynamoDB JSON.**
 
-<div id="2-create-the-snapshot">
-  ## 2. إنشاء اللقطة
-</div>
+    <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp" size="md" alt="تصدير DynamoDB إلى S3" border />
+  </Step>
 
-بعد ذلك، سننشئ لقطة من جدول DynamoDB. ويمكن تحقيق ذلك عبر تصدير من AWS إلى S3. يمكنك الاطلاع على دليل AWS [هنا](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/S3DataExport.HowItWorks.html).
-**ستحتاج إلى إجراء &quot;Full export&quot; بتنسيق DynamoDB JSON.**
+  <Step title="حمّل بيانات اللقطة إلى ClickHouse" id="3-load-the-snapshot-into-clickhouse">
+    ### أنشئ الجداول اللازمة
 
-<Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp" size="md" alt="تصدير DynamoDB إلى S3" border />
+    ستبدو بيانات اللقطة من DynamoDB على النحو التالي:
 
-<div id="3-load-the-snapshot-into-clickhouse">
-  ## 3. تحميل اللقطة إلى ClickHouse
-</div>
+    ```json
+    {
+      "age": {
+        "N": "26"
+      },
+      "first_name": {
+        "S": "sally"
+      },
+      "id": {
+        "S": "0A556908-F72B-4BE6-9048-9E60715358D4"
+      }
+    }
+    ```
 
-<div id="create-necessary-tables">
-  ### أنشئ الجداول اللازمة
-</div>
+    لاحظ أن البيانات بتنسيق متداخل. سنحتاج إلى تسطيح هذه البيانات قبل تحميلها إلى ClickHouse. ويمكن إجراء ذلك باستخدام الدالة `JSONExtract` في ClickHouse داخل عرض مادي.
 
-ستبدو بيانات اللقطة من DynamoDB على النحو التالي:
+    سنحتاج إلى إنشاء ثلاثة جداول:
 
-```json
-{
-  "age": {
-    "N": "26"
-  },
-  "first_name": {
-    "S": "sally"
-  },
-  "id": {
-    "S": "0A556908-F72B-4BE6-9048-9E60715358D4"
-  }
-}
-```
+    1. جدول لتخزين البيانات الخام من DynamoDB
+    2. جدول لتخزين البيانات النهائية بعد تسطيحها (جدول الوجهة)
+    3. عرض مادي لتسطيح البيانات
 
-لاحظ أن البيانات بتنسيق متداخل. سنحتاج إلى تسطيح هذه البيانات قبل تحميلها إلى ClickHouse. ويمكن إجراء ذلك باستخدام الدالة `JSONExtract` في ClickHouse داخل عرض مادي.
+    بالنسبة إلى بيانات DynamoDB الواردة في المثال أعلاه، ستبدو جداول ClickHouse على النحو التالي:
 
-سنحتاج إلى إنشاء ثلاثة جداول:
+    ```sql
+    /* Snapshot table */
+    CREATE TABLE IF NOT EXISTS "default"."snapshot"
+    (
+        `item` String
+    )
+    ORDER BY tuple();
 
-1. جدول لتخزين البيانات الخام من DynamoDB
-2. جدول لتخزين البيانات النهائية بعد تسطيحها (جدول الوجهة)
-3. عرض مادي لتسطيح البيانات
+    /* Table for final flattened data */
+    CREATE MATERIALIZED VIEW IF NOT EXISTS "default"."snapshot_mv" TO "default"."destination" AS
+    SELECT
+        JSONExtractString(item, 'id', 'S') AS id,
+        JSONExtractInt(item, 'age', 'N') AS age,
+        JSONExtractString(item, 'first_name', 'S') AS first_name
+    FROM "default"."snapshot";
 
-بالنسبة إلى بيانات DynamoDB الواردة في المثال أعلاه، ستبدو جداول ClickHouse على النحو التالي:
+    /* Table for final flattened data */
+    CREATE TABLE IF NOT EXISTS "default"."destination" (
+        "id" String,
+        "first_name" String,
+        "age" Int8,
+        "version" Int64
+    )
+    ENGINE ReplacingMergeTree("version")
+    ORDER BY id;
+    ```
 
-```sql
-/* Snapshot table */
-CREATE TABLE IF NOT EXISTS "default"."snapshot"
-(
-    `item` String
-)
-ORDER BY tuple();
+    توجد بعض المتطلبات لجدول الوجهة:
 
-/* Table for final flattened data */
-CREATE MATERIALIZED VIEW IF NOT EXISTS "default"."snapshot_mv" TO "default"."destination" AS
-SELECT
-    JSONExtractString(item, 'id', 'S') AS id,
-    JSONExtractInt(item, 'age', 'N') AS age,
-    JSONExtractString(item, 'first_name', 'S') AS first_name
-FROM "default"."snapshot";
+    * يجب أن يكون هذا الجدول من نوع `ReplacingMergeTree`
+    * يجب أن يحتوي الجدول على عمود `version`
+      * في الخطوات اللاحقة، سنربط الحقل `ApproximateCreationDateTime` من Kinesis Stream بالعمود `version`.
+    * ينبغي أن يستخدم الجدول مفتاح التقسيم بوصفه مفتاح الترتيب (المحدَّد بواسطة `ORDER BY`)
+      * ستُزال تكرارات الصفوف ذات مفتاح الترتيب نفسه استنادًا إلى العمود `version`.
 
-/* Table for final flattened data */
-CREATE TABLE IF NOT EXISTS "default"."destination" (
-    "id" String,
-    "first_name" String,
-    "age" Int8,
-    "version" Int64
-)
-ENGINE ReplacingMergeTree("version")
-ORDER BY id;
-```
+    ### أنشئ ClickPipe الخاص باللقطة
 
-توجد بعض المتطلبات لجدول الوجهة:
+    يمكنك الآن إنشاء ClickPipe لتحميل بيانات اللقطة من S3 إلى ClickHouse. اتبع دليل S3 ClickPipe من [هنا](/ar/integrations/clickpipes/object-storage/amazon-s3/overview)، ولكن استخدم الإعدادات التالية:
 
-* يجب أن يكون هذا الجدول من نوع `ReplacingMergeTree`
-* يجب أن يحتوي الجدول على عمود `version`
-  * في الخطوات اللاحقة، سنربط الحقل `ApproximateCreationDateTime` من Kinesis Stream بالعمود `version`.
-* ينبغي أن يستخدم الجدول مفتاح التقسيم بوصفه مفتاح الترتيب (المحدَّد بواسطة `ORDER BY`)
-  * ستُزال تكرارات الصفوف ذات مفتاح الترتيب نفسه استنادًا إلى العمود `version`.
+    * **مسار الاستيعاب**: ستحتاج إلى تحديد مسار ملفات json المُصدَّرة في S3. سيبدو المسار على النحو التالي تقريبًا:
 
-<div id="create-the-snapshot-clickpipe">
-  ### أنشئ ClickPipe للّقطة
-</div>
+    ```text
+    https://{bucket}.s3.amazonaws.com/{prefix}/AWSDynamoDB/{export-id}/data/*
+    ```
 
-يمكنك الآن إنشاء ClickPipe لتحميل بيانات اللقطة من S3 إلى ClickHouse. اتبع دليل S3 ClickPipe [هنا](/ar/integrations/clickpipes/object-storage/amazon-s3/overview)، ولكن استخدم الإعدادات التالية:
+    * **التنسيق**: JSONEachRow
+    * **الجدول**: جدول اللقطة لديك (مثل `default.snapshot` في المثال أعلاه)
 
-* **مسار الاستيعاب**: ستحتاج إلى تحديد مسار ملفات JSON المُصدَّرة في S3. سيبدو المسار على النحو التالي تقريبًا:
+    بمجرد إنشاء الجداول، ستبدأ البيانات بالتدفّق إلى جدولَي اللقطة والوجهة. لا تحتاج إلى انتظار اكتمال تحميل اللقطة قبل الانتقال إلى الخطوة التالية.
+  </Step>
 
-```text
-https://{bucket}.s3.amazonaws.com/{prefix}/AWSDynamoDB/{export-id}/data/*
-```
+  <Step title="أنشئ ClickPipe لـ Kinesis" id="4-create-the-kinesis-clickpipe">
+    الآن يمكننا إعداد Kinesis ClickPipe لالتقاط التغييرات في الوقت الفعلي من Kinesis Stream. اتبع دليل Kinesis ClickPipe [هنا](/ar/integrations/clickpipes/kinesis/overview)، ولكن استخدم الإعدادات التالية:
 
-* **التنسيق**: JSONEachRow
-* **الجدول**: جدول اللقطة الخاص بك (مثل `default.snapshot` في المثال أعلاه)
+    * **Stream**: Kinesis Stream المستخدم في الخطوة 1
+    * **Table**: جدول الوجهة لديك (مثل `default.destination` في المثال أعلاه)
+    * **Flatten object**: true
+    * **Column mappings**:
+      * `ApproximateCreationDateTime`: `version`
+      * اربط الحقول الأخرى بأعمدة الوجهة المناسبة كما هو موضح أدناه
 
-بمجرد إنشائه، ستبدأ البيانات بالتدفق إلى جدول اللقطة وجدول الوجهة. لا تحتاج إلى انتظار اكتمال تحميل اللقطة قبل الانتقال إلى الخطوة التالية.
+    <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp" size="md" alt="ربط أعمدة DynamoDB" border />
+  </Step>
 
-<div id="4-create-the-kinesis-clickpipe">
-  ## 4. إنشاء Kinesis ClickPipe
-</div>
+  <Step title="التنظيف (اختياري)" id="5-cleanup-optional">
+    بمجرد اكتمال ClickPipe الخاص باللقطة، يمكنك حذف جدول اللقطة والعرض المادي.
 
-يمكننا الآن إعداد Kinesis ClickPipe لالتقاط التغييرات الآنية من دفق Kinesis. اتبع دليل Kinesis ClickPipe [هنا](/ar/integrations/clickpipes/kinesis/overview)، ولكن استخدم الإعدادات التالية:
-
-* **Stream**: دفق Kinesis المستخدم في الخطوة 1
-* **Table**: جدول الوجهة (مثل `default.destination` في المثال أعلاه)
-* **Flatten object**: true
-* **Column mappings**:
-  * `ApproximateCreationDateTime`: `version`
-  * عيّن الحقول الأخرى إلى أعمدة الوجهة المناسبة كما هو موضح أدناه
-
-<Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp" size="md" alt="تعيين أعمدة DynamoDB" border />
-
-<div id="5-cleanup-optional">
-  ## 5. التنظيف (اختياري)
-</div>
-
-بعد انتهاء ClickPipe الخاصة باللقطة، يمكنك حذف جدول اللقطة والعرض المادي.
-
-```sql
-DROP TABLE IF EXISTS "default"."snapshot";
-DROP TABLE IF EXISTS "default"."snapshot_clickpipes_error";
-DROP VIEW IF EXISTS "default"."snapshot_mv";
-```
+    ```sql
+    DROP TABLE IF EXISTS "default"."snapshot";
+    DROP TABLE IF EXISTS "default"."snapshot_clickpipes_error";
+    DROP VIEW IF EXISTS "default"."snapshot_mv";
+    ```
+  </Step>
+</Steps>

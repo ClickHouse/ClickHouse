@@ -98,7 +98,7 @@ On peut voir que
 * ① ClickHouse doit lire 3 609 granules (indiquées comme des marks dans les logs de trace) sur 3 plages de données.
 * ② Avec 59 cœurs CPU, il répartit ce travail sur 59 flux de traitement parallèles — un par voie de traitement.
 
-Autrement, on peut utiliser la clause [EXPLAIN](/fr/reference/statements/explain#explain-pipeline) pour examiner le [plan physique des opérateurs](/fr/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization) — également appelé « query pipeline » — de la requête d’agrégation :
+Autrement, on peut utiliser la clause [EXPLAIN](/fr/reference/statements/explain#explain-pipeline) pour examiner le [plan physique des opérateurs](/fr/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization) — également appelé « pipeline de requête » — de la requête d’agrégation :
 
 ```sql
 EXPLAIN PIPELINE

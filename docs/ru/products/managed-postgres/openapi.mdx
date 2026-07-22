@@ -450,23 +450,23 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 
 [API keys]: /products/cloud/features/admin-features/api/openapi "Управление ключами API"
 
-[pg-openapi]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres "Спецификация OpenAPI для ClickHouse Cloud: Postgres"
+[pg-openapi]: /products/cloud/api-reference/postgres/postgres-service-create "Справочник ClickHouse Cloud API: Postgres"
 
-[list API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceGetList "Получить список сервисов Postgres организации"
+[list API]: /products/cloud/api-reference/postgres/postgres-service-get-list "Получить список сервисов Postgres организации"
 
-[create API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceCreate "Создать новый сервис Postgres"
+[create API]: /products/cloud/api-reference/postgres/postgres-service-create "Создать новый сервис Postgres"
 
 [psql]: https://www.postgresql.org/docs/current/app-psql.html "PostgreSQL Docs: psql — интерактивный терминал PostgreSQL"
 
-[patch API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServicePatch "Обновить сервис PostgreSQL"
+[patch API]: /products/cloud/api-reference/postgres/postgres-service-patch "Обновить сервис PostgreSQL"
 
 [RFC 7396]: https://www.rfc-editor.org/rfc/rfc7396 "RFC 7396: JSON Merge Patch"
 
 [Postgres configuration]: https://www.postgresql.org/docs/18/runtime-config.html "PostgreSQL Docs: конфигурация сервера"
 
-[config API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceSetConfig "Обновить конфигурацию сервиса Postgres"
+[config API]: /products/cloud/api-reference/postgres/postgres-instance-config-post "Заменить конфигурацию сервиса Postgres"
 
-[delete API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceDelete "Удалить сервис PostgreSQL"
+[delete API]: /products/cloud/api-reference/postgres/postgres-service-delete "Удалить сервис PostgreSQL"
 
 [Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "Конечная точка Prometheus для Managed Postgres"
 
@@ -478,6 +478,6 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 
 [счётчики по каждому выполнению]: /products/managed-postgres/monitoring/query-insights#counters "Счётчики Query Insights по каждому выполнению"
 
-[slow patterns API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList "Список шаблонов медленных запросов в Postgres"
+[slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "Список шаблонов медленных запросов Postgres"
 
-[slow pattern API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet "Получить шаблон медленного запроса в Postgres с недавними выполнениями"
+[slow pattern API]: /products/cloud/api-reference/postgres/slow-query-pattern-get "Получить шаблон медленного запроса Postgres с последними выполнениями"

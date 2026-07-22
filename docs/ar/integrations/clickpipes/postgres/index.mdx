@@ -12,7 +12,8 @@ integration:
 
 import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/ar/components/Image.jsx";
+import { Image } from "/snippets/components/Image.jsx";
+import ChangingTLSSettings from '/snippets/ar/clickpipes/_changing_tls_settings.mdx';
 
 يمكنك استخدام ClickPipes لاستيراد البيانات من قاعدة بيانات Postgres المصدر لديك إلى ClickHouse Cloud. ويمكن استضافة قاعدة بيانات Postgres المصدر ضمن بنيتك التحتية المحلية أو في السحابة، بما في ذلك Amazon RDS وGoogle Cloud SQL وAzure Database for Postgres وSupabase وغيرها.
 
@@ -88,6 +89,12 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يمكنك استخدام AWS Private Link للاتصال بقاعدة بيانات Postgres المصدر إذا كانت مستضافة على AWS. ويكون ذلك مفيدًا إذا كنت
 ترغب في الحفاظ على خصوصية نقل البيانات.
 يمكنك اتباع [دليل الإعداد لإعداد الاتصال](/ar/integrations/clickpipes/aws-privatelink).
+
+<div id="optional-changing-tls-settings">
+  #### (اختياري) تعديل إعدادات TLS
+</div>
+
+<ChangingTLSSettings />
 
 <div id="optional-setting-up-ssh-tunneling">
   #### (اختياري) إعداد نفق SSH

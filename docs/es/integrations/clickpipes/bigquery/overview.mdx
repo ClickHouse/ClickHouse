@@ -71,7 +71,7 @@ CDC **no está disponible** en la vista previa privada, pero será compatible en
   #### Credenciales de la cuenta de servicio
 </div>
 
-ClickPipes se autentica en tu proyecto de Google Cloud mediante una [clave de cuenta de servicio](https://docs.cloud.google.com/iam/docs/keys-create-delete). Recomendamos crear una cuenta de servicio dedicada con el mínimo de [permisos](#permissions) necesarios para que ClickPipes pueda exportar datos desde BigQuery, cargarlos en el bucket de GCS de staging y leerlos en ClickHouse.
+ClickPipes se autentica en tu proyecto de Google Cloud mediante una [clave de cuenta de servicio](https://docs.cloud.google.com/iam/docs/keys-create-delete). Recomendamos crear una cuenta de servicio dedicada con el conjunto mínimo de [permisos](#permissions) necesarios para permitir que ClickPipes exporte datos desde BigQuery, los cargue en el bucket de GCS de staging y los lea en ClickHouse.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="Creación de una clave de cuenta de servicio con permisos de BigQuery y Cloud Storage" size="lg" border />
 

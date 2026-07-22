@@ -28,9 +28,7 @@ doc_type: 'guide'
 | 总计                                                                                      | 82.6 亿        | 23,577 | 3.982TB | 8 分 3 秒     | &gt; 6 天 5 小时 | 53 分 45 秒     |
 
 <Steps>
-  <Step>
-    ## 将表数据导出到 GCS
-
+  <Step title="将表数据导出到 GCS" id="1-export-table-data-to-gcs">
     在此步骤中，我们使用 [BigQuery SQL 工作区](https://cloud.google.com/bigquery/docs/bigquery-web-ui) 来执行 SQL 命令。下面，我们将使用 [`EXPORT DATA`](https://cloud.google.com/bigquery/docs/reference/standard-sql/other-statements) 语句，把名为 `mytable` 的 BigQuery 表导出到 GCS 存储桶。
 
     ```sql
@@ -66,9 +64,7 @@ doc_type: 'guide'
     * Parquet 作为一种列式格式，是更理想的交换格式，因为它原生支持压缩，而且 BigQuery 导出更快，ClickHouse 查询也更高效
   </Step>
 
-  <Step>
-    ## 将数据从 GCS 导入到 ClickHouse
-
+  <Step title="将数据从 GCS 导入到 ClickHouse" id="2-importing-data-into-clickhouse-from-gcs">
     导出完成后，我们就可以将这些数据导入到 ClickHouse 表中。你可以使用 [ClickHouse SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console) 或 [`clickhouse-client`](/zh/concepts/features/interfaces/cli) 执行以下命令。
 
     你必须先在 ClickHouse 中[创建表](/zh/reference/statements/create/table)：
@@ -121,9 +117,7 @@ doc_type: 'guide'
     </Info>
   </Step>
 
-  <Step>
-    ## 测试数据是否已成功导出
-
+  <Step title="测试数据是否已成功导出" id="3-testing-successful-data-export">
     若要验证数据是否已成功插入，只需对新表运行一条 `SELECT` 查询：
 
     ```sql

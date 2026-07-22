@@ -32,6 +32,11 @@
   "fonts": {
     "family": "Inter"
   },
+  "integrations": {
+    "clarity": {
+      "projectId": "xgummrwgj9"
+    }
+  },
   "interaction": {
     "drilldown": false
   },
@@ -57,10 +62,18 @@
           },
           {
             "menu": [
-              { "$ref": "./get-started/navigation.json" },
-              { "$ref": "./concepts/navigation.json" },
-              { "$ref": "./guides/navigation.json" },
-              { "$ref": "./reference/navigation.json" }
+              {
+                "$ref": "./get-started/navigation.json"
+              },
+              {
+                "$ref": "./concepts/navigation.json"
+              },
+              {
+                "$ref": "./guides/navigation.json"
+              },
+              {
+                "$ref": "./reference/navigation.json"
+              }
             ],
             "tab": "Database"
           },
@@ -71,9 +84,15 @@
                 "icon": "/images/icons/section-header.svg",
                 "item": "ClickHouse Cloud"
               },
-              { "$ref": "./products/cloud/navigation.json" },
-              { "$ref": "./products/managed-postgres/navigation.json" },
-              { "$ref": "./clickstack/navigation.json" },
+              {
+                "$ref": "./products/cloud/navigation.json"
+              },
+              {
+                "$ref": "./products/managed-postgres/navigation.json"
+              },
+              {
+                "$ref": "./clickstack/navigation.json"
+              },
               {
                 "href": "https://langfuse.com/docs",
                 "icon": "/images/icons/logo-langfuse.svg",
@@ -84,10 +103,18 @@
                 "icon": "/images/icons/section-header.svg",
                 "item": "Open source"
               },
-              { "$ref": "./products/agentic-data-stack/navigation.json" },
-              { "$ref": "./chdb/navigation.json" },
-              { "$ref": "./products/kubernetes-operator/navigation.json" },
-              { "$ref": "./products/clickhouse-private/navigation.json" }
+              {
+                "$ref": "./products/agentic-data-stack/navigation.json"
+              },
+              {
+                "$ref": "./chdb/navigation.json"
+              },
+              {
+                "$ref": "./products/kubernetes-operator/navigation.json"
+              },
+              {
+                "$ref": "./products/clickhouse-private/navigation.json"
+              }
             ],
             "tab": "Solutions"
           },
@@ -99,18 +126,32 @@
                   "integrations/home"
                 ]
               },
-              { "$ref": "./integrations/clickpipes/navigation.json" },
-              { "$ref": "./integrations/language-clients/navigation.json" },
-              { "$ref": "./integrations/connectors/navigation.json" }
+              {
+                "$ref": "./integrations/clickpipes/navigation.json"
+              },
+              {
+                "$ref": "./integrations/language-clients/navigation.json"
+              },
+              {
+                "$ref": "./integrations/connectors/navigation.json"
+              }
             ],
             "tab": "Integrations"
           },
           {
             "menu": [
-              { "$ref": "./resources/support-center/navigation.json" },
-              { "$ref": "./resources/develop-contribute/navigation.json" },
-              { "$ref": "./resources/changelogs/navigation.json" },
-              { "$ref": "./resources/about/navigation.json" }
+              {
+                "$ref": "./resources/support-center/navigation.json"
+              },
+              {
+                "$ref": "./resources/develop-contribute/navigation.json"
+              },
+              {
+                "$ref": "./resources/changelogs/navigation.json"
+              },
+              {
+                "$ref": "./resources/about/navigation.json"
+              }
             ],
             "tab": "Resources"
           }
@@ -150,7 +191,9 @@
       }
     ]
   },
-  "redirects": { "$ref": "./_site/redirects.json" },
+  "redirects": {
+    "$ref": "./_site/redirects.json"
+  },
   "scripts": [
     {
       "src": "/_site/customizations/galaxy.js"
@@ -191,11 +234,6 @@
   ],
   "styling": {
     "eyebrows": "breadcrumbs"
-  },
-  "integrations": {
-    "clarity": {
-      "projectId": "xgummrwgj9"
-    }
   },
   "theme": "maple"
 }

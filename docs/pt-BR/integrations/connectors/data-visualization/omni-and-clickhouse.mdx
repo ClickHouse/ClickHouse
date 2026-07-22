@@ -19,26 +19,24 @@ import PartnerBadge from "/snippets/pt-BR/components/PartnerBadge/PartnerBadge.j
 
 O Omni pode se conectar ao ClickHouse Cloud ou a uma implantação local por meio da fonte de dados oficial do ClickHouse.
 
-<div id="1-gather-your-connection-details">
-  ## 1. Reúna seus dados de conexão
-</div>
+<Steps>
+  <Step title="Reúna os detalhes da sua conexão" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Crie uma fonte de dados do ClickHouse" id="2-create-a-clickhouse-data-source">
+    Navegue até Admin -&gt; Connections e clique no botão &quot;Add Connection&quot; no canto superior direito.
 
-<div id="2-create-a-clickhouse-data-source">
-  ## 2. Criar uma fonte de dados do ClickHouse
-</div>
+    <Image size="lg" img="/images/integrations/data-visualization/omni_01.webp" alt="Interface de administração do Omni mostrando o botão Add Connection na seção Connections" border />
 
-Navegue até Admin -&gt; Connections e clique no botão &quot;Add Connection&quot; no canto superior direito.
+    <br />
 
-<Image size="lg" img="/images/integrations/data-visualization/omni_01.webp" alt="Interface de administração do Omni mostrando o botão Add Connection na seção Connections" border />
+    Selecione `ClickHouse`. Insira suas credenciais no formulário.
 
-<br />
+    <Image size="lg" img="/images/integrations/data-visualization/omni_02.webp" alt="Interface de configuração de conexão do Omni para ClickHouse mostrando os campos do formulário de credenciais" border />
 
-Selecione `ClickHouse`. Insira suas credenciais no formulário.
+    <br />
 
-<Image size="lg" img="/images/integrations/data-visualization/omni_02.webp" alt="Interface de configuração de conexão do Omni para ClickHouse mostrando os campos de credenciais do formulário" border />
-
-<br />
-
-Agora você já pode consultar e visualizar dados do ClickHouse no Omni.
+    Agora você já pode fazer consultas e visualizar dados do ClickHouse no Omni.
+  </Step>
+</Steps>

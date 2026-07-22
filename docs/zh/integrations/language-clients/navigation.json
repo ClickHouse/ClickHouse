@@ -1,0 +1,44 @@
+{
+  "groups": [
+    {
+      "group": "首页",
+      "icon": "house",
+      "pages": [],
+      "root": "zh/integrations/language-clients/index"
+    },
+    {
+      "$ref": "js/navigation.json"
+    },
+    {
+      "$ref": "python/navigation.json"
+    },
+    {
+      "$ref": "go/navigation.json"
+    },
+    {
+      "$ref": "java/navigation.json"
+    },
+    {
+      "$ref": "csharp/navigation.json"
+    },
+    {
+      "$ref": "rust/navigation.json"
+    },
+    {
+      "$ref": "cpp/navigation.json"
+    },
+    {
+      "$ref": "c/navigation.json"
+    },
+    {
+      "group": "第三方客户端",
+      "icon": "users",
+      "pages": [
+        "zh/integrations/language-clients/third-party/moose-olap",
+        "zh/integrations/language-clients/third-party/client-libraries"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-language-clients.svg",
+  "item": "多语言客户端"
+}

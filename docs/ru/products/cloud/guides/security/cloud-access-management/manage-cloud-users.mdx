@@ -24,33 +24,25 @@ import EnterprisePlanFeatureBadge from "/snippets/ru/components/EnterprisePlanFe
 Администраторы могут приглашать сразу нескольких пользователей и при приглашении назначать им одну или несколько ролей.
 
 <Steps>
-  <Step>
-    ### Откройте настройки организации и выберите Users and roles
-
+  <Step title="Откройте настройки организации и выберите Users and roles" id="users-and-roles-1">
     На странице сервисов выберите название своей организации. Во всплывающем меню выберите пункт `Users and roles`.
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### Выберите &#39;Invite members&#39; в левом верхнем углу
-
+  <Step title="Выберите 'Invite members' в левом верхнем углу" id="invite-members">
     Нажмите кнопку `Invite members` в левом верхнем углу.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/2_invite_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### Введите адреса электронной почты новых участников и назначьте роли
-
+  <Step title="Введите адреса электронной почты новых участников и назначьте роли" id="add-email-and-roles">
     Введите адреса электронной почты в верхней части экрана приглашения. Выберите одну или несколько ролей для назначения пользователям.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/3_invite_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### Нажмите `Send invites`
-
+  <Step title={<>Нажмите <code>Send invites</code></>} id="send-invites">
     Нажмите `Send invites` в нижней части экрана. Пользователи получат электронное письмо, из которого смогут перейти к присоединению к организации. Подробнее о принятии приглашений см. в разделе [Управление моей учетной записью](/ru/products/cloud/guides/security/cloud-access-management/manage-my-account).
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/4_invite_user.webp" size="lg" />
@@ -82,33 +74,25 @@ import EnterprisePlanFeatureBadge from "/snippets/ru/components/EnterprisePlanFe
 Пользователи с ролью Admin могут в любое время изменять разрешения других пользователей.
 
 <Steps>
-  <Step>
-    ### Откройте настройки организации и выберите Users and roles
-
+  <Step title="Откройте настройки организации и выберите Users and roles" id="users-and-roles-2">
     На странице сервисов выберите название вашей организации. Во всплывающем меню выберите пункт `Users and roles`.
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### Выберите пользователя, данные которого нужно изменить, и нажмите Edit
-
+  <Step title="Выберите пользователя, данные которого нужно изменить, и нажмите Edit" id="select-user-to-update">
     Выберите пункт меню в конце строки нужного пользователя. Во всплывающем меню выберите `Edit`.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/5_edit_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### Обновите разрешения
-
+  <Step title="Обновите разрешения" id="update-permissions">
     Нажмите на поле `Roles`, чтобы развернуть меню. Установите или снимите флажки, чтобы назначить пользователю роли или удалить их. Список ролей и связанных с ними разрешений см. в разделе [Роли и разрешения в консоли](/ru/products/cloud/reference/security/console-roles).
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/6_edit_user.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### Сохраните изменения
-
+  <Step title="Сохраните изменения" id="save-changes">
     Сохраните изменения с помощью кнопки `Save changes` в нижней части вкладки.
   </Step>
 </Steps>

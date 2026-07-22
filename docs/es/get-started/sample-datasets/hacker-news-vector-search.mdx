@@ -30,9 +30,7 @@ Recomendamos a los usuarios realizar primero un ejercicio de dimensionamiento pa
 </div>
 
 <Steps>
-  <Step>
-    ### Crear la tabla
-
+  <Step title="Crear la tabla" id="create-table">
     Cree la tabla `hackernews` para almacenar las publicaciones &amp; sus embeddings, así como los atributos asociados:
 
     ```sql
@@ -63,9 +61,7 @@ Recomendamos a los usuarios realizar primero un ejercicio de dimensionamiento pa
     la búsqueda por similitud vectorial combinada con posfiltrado/prefiltrado, como se explica en la [documentación](/es/reference/engines/table-engines/mergetree-family/annindexes)
   </Step>
 
-  <Step>
-    ### Cargar datos
-
+  <Step title="Cargar datos" id="load-table">
     Para cargar los datos desde el archivo `Parquet`, ejecute la siguiente sentencia SQL:
 
     ```sql
@@ -75,9 +71,7 @@ Recomendamos a los usuarios realizar primero un ejercicio de dimensionamiento pa
     Insertar 28,74 millones de filas en la tabla llevará unos minutos.
   </Step>
 
-  <Step>
-    ### Crear un índice de similitud vectorial
-
+  <Step title="Crear un índice de similitud vectorial" id="build-vector-similarity-index">
     Ejecute la siguiente instrucción SQL para definir y crear un índice de similitud vectorial en la columna `vector` de la tabla `hackernews`:
 
     ```sql
@@ -94,9 +88,7 @@ Recomendamos a los usuarios realizar primero un ejercicio de dimensionamiento pa
     La construcción y el almacenamiento del índice podrían tardar incluso unos minutos o hasta una hora para el conjunto de datos completo de 28,74 millones, según la cantidad de núcleos de CPU disponibles y el ancho de banda del almacenamiento.
   </Step>
 
-  <Step>
-    ### Realizar una búsqueda ANN
-
+  <Step title="Realizar una búsqueda ANN" id="perform-ann-search">
     Una vez creado el índice de similitud vectorial, las consultas de búsqueda vectorial usarán automáticamente el índice:
 
     ```sql title="Query"
@@ -110,9 +102,7 @@ Recomendamos a los usuarios realizar primero un ejercicio de dimensionamiento pa
     La primera carga del índice vectorial en memoria podría tardar unos segundos o minutos.
   </Step>
 
-  <Step>
-    ### Generar embeddings para la consulta de búsqueda
-
+  <Step title="Generar embeddings para la consulta de búsqueda" id="generating-embeddings-for-search-query">
     [Sentence Transformers](https://www.sbert.net/) ofrece modelos de embedding locales y fáciles de usar para capturar el significado semántico de oraciones y párrafos.
 
     El conjunto de datos de HackerNews contiene embeddings vectoriales generados con el modelo
@@ -134,12 +124,12 @@ Recomendamos a los usuarios realizar primero un ejercicio de dimensionamiento pa
     chclient = clickhouse_connect.get_client() # ClickHouse credentials here
 
     while True:
-        # Obtener la consulta de búsqueda del usuario
+        # Take the search query from user
         print("Enter a search query :")
         input_query = sys.stdin.readline();
         texts = [input_query]
 
-        # Ejecutar el modelo y obtener el vector de búsqueda
+        # Run the model and obtain search vector
         print("Generating the embedding for ", input_query);
         embeddings = model.encode(texts)
 
@@ -150,22 +140,23 @@ Recomendamos a los usuarios realizar primero un ejercicio de dimensionamiento pa
         for row in result.result_rows:
             print(row[0], row[2][:100])
             print("---------")
+
     ```
 
     A continuación se muestra un ejemplo de la ejecución del script de Python anterior junto con los resultados de búsqueda por similitud
     (solo se imprimen 100 caracteres de cada uno de los 20 posts principales):
 
     ```text
-    Inicializando...
+    Initializing...
 
-    Ingrese una consulta de búsqueda :
+    Enter a search query :
     Are OLAP cubes useful
 
-    Generando el embedding para  "Are OLAP cubes useful"
+    Generating the embedding for  "Are OLAP cubes useful"
 
-    Consultando ClickHouse...
+    Querying ClickHouse...
 
-    Resultados :
+    Results :
 
     27742647 smartmic:
     slt2021: OLAP Cube is not dead, as long as you use some form of:<p>1. GROUP BY multiple fi
@@ -295,15 +286,15 @@ Recomendamos a los usuarios realizar primero un ejercicio de dimensionamiento pa
 
     model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
 
-    chclient = clickhouse_connect.get_client(compress=False) # Credenciales de ClickHouse aquí
+    chclient = clickhouse_connect.get_client(compress=False) # ClickHouse credentials here
 
     while True:
-        # Obtener la consulta de búsqueda del usuario
+        # Take the search query from user
         print("Enter a search topic :")
         input_query = sys.stdin.readline();
         texts = [input_query]
 
-        # Ejecutar el modelo y obtener el vector de búsqueda o de referencia
+        # Run the model and obtain search or reference vector
         print("Generating the embedding for ----> ", input_query);
         embeddings = model.encode(texts)
 
@@ -311,7 +302,7 @@ Recomendamos a los usuarios realizar primero un ejercicio de dimensionamiento pa
         params = {'v1':list(embeddings[0]), 'v2':100}
         result = chclient.query("SELECT id,title,text FROM hackernews ORDER BY cosineDistance(vector, %(v1)s) LIMIT %(v2)s", parameters=params)
 
-        # Concatenar todos los resultados de búsqueda
+        # Just join all the search results
         doc_results = ""
         for row in result.result_rows:
             doc_results = doc_results + "\n" + row[2]

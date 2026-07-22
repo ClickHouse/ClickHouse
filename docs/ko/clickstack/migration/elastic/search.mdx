@@ -15,13 +15,13 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 ClickHouse는 SQL 네이티브 엔진으로, 고성능 분석 워크로드를 위해 처음부터 설계되었습니다. 반면 Elasticsearch는 SQL과 유사한 인터페이스를 제공하며, SQL을 내부 Elasticsearch 쿼리 DSL로 변환합니다. 즉, SQL이 핵심 기능으로 직접 지원되는 것은 아니며 [기능 대응 범위](https://www.elastic.co/docs/explore-analyze/query-filter/languages/sql-limitations)도 제한적입니다.
 
-ClickHouse는 완전한 SQL을 지원할 뿐만 아니라, [&#96;argMax&#96;](/ko/reference/functions/aggregate-functions/argMax), [&#96;histogram&#96;](/ko/reference/functions/aggregate-functions/parametric-functions#histogram), [&#96;quantileTiming&#96;](/ko/reference/functions/aggregate-functions/quantileTiming)과 같은 관측성 중심 함수를 폭넓게 제공하여 구조화된 로그, 메트릭, 트레이스에 대한 쿼리를 단순화합니다.
+ClickHouse는 완전한 SQL을 지원할 뿐만 아니라, [`argMax`](/ko/reference/functions/aggregate-functions/argMax), [`histogram`](/ko/reference/functions/aggregate-functions/parametric-functions#histogram), [`quantileTiming`](/ko/reference/functions/aggregate-functions/quantileTiming)과 같은 관측성 중심 함수를 폭넓게 제공하여 구조화된 로그, 메트릭, 트레이스에 대한 쿼리를 단순화합니다.
 
 간단한 로그 및 트레이스 탐색을 위해 ClickStack UI(HyperDX)는 필드-값 쿼리, 범위, 와일드카드 등에 대해 직관적인 텍스트 기반 필터링을 지원하는 [Lucene 스타일 구문](/ko/clickstack/features/search)을 제공합니다. 이는 Elasticsearch의 [Lucene 구문](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) 및 [Kibana Query Language](https://www.elastic.co/docs/reference/query-languages/kql)의 일부 요소와 유사합니다.
 
 <Image img="/images/use-cases/observability/hyperdx-search.webp" alt="검색" size="lg" />
 
-검색 인터페이스는 이러한 익숙한 구문을 지원하면서도, 내부적으로는 이를 효율적인 SQL &#96;WHERE&#96; 절로 변환합니다. 따라서 Kibana 사용자에게 익숙한 사용 경험을 제공하는 동시에, 필요할 때 SQL의 강력한 기능도 활용할 수 있습니다. 이를 통해 ClickHouse의 [문자열 검색 함수](/ko/reference/functions/regular-functions/string-search-functions), [유사도 함수](/ko/reference/functions/regular-functions/string-functions#stringJaccardIndex), [date time 함수](/ko/reference/functions/regular-functions/date-time-functions)를 폭넓게 활용할 수 있습니다.
+검색 인터페이스는 이러한 익숙한 구문을 지원하면서도, 내부적으로는 이를 효율적인 SQL `WHERE` 절로 변환합니다. 따라서 Kibana 사용자에게 익숙한 사용 경험을 제공하는 동시에, 필요할 때 SQL의 강력한 기능도 활용할 수 있습니다. 이를 통해 ClickHouse의 [string search functions](/ko/reference/functions/regular-functions/string-search-functions), [similarity functions](/ko/reference/functions/regular-functions/string-functions#stringJaccardIndex), [date time functions](/ko/reference/functions/regular-functions/date-time-functions)를 폭넓게 활용할 수 있습니다.
 
 <Image img="/images/use-cases/observability/hyperdx-sql.webp" alt="SQL" size="lg" />
 

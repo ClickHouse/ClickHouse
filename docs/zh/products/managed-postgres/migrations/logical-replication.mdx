@@ -39,7 +39,7 @@ dig +short <your-managed-postgres-hostname>
   ```sql
   GRANT rds_replication TO <your-username>;
   ```
-* 你用于目标数据库的角色必须对目标数据库对象具有写权限：
+* 你用于目标数据库的角色必须对目标数据库对象具有写入权限：
   ```sql
   GRANT USAGE ON SCHEMA <schema_i> TO subscriber_user;
   GRANT CREATE ON DATABASE destination_db TO subscriber_user;
@@ -162,6 +162,6 @@ PUBLICATION <pub_name_you_entered_above>;
   ## 后续步骤
 </div>
 
-恭喜！您已成功使用 pg&#95;dump 和 pg&#95;restore 将 PostgreSQL 数据库迁移到 ClickHouse Managed Postgres。现在，您可以进一步了解 Managed Postgres 的各项功能，以及它与 ClickHouse 的集成方式。以下这份 10 分钟快速入门可帮助您快速上手：
+恭喜！您已成功使用 pg&#95;dump 和 pg&#95;restore 将 PostgreSQL 数据库迁移到 ClickHouse Managed Postgres。现在，您可以开始了解 Managed Postgres 的功能及其与 ClickHouse 的集成。以下这份 10 分钟快速入门指南可帮助您快速上手：
 
 * [Managed Postgres 快速入门指南](/zh/products/managed-postgres/quickstart)

@@ -25,51 +25,47 @@ keywords: ['向量搜索']
 
 下面是一个关于如何使用 ClickHouse 进行向量搜索的简要教程。
 
-<div id="1-create-embeddings">
-  ## 1. 创建嵌入向量
-</div>
+<Steps>
+  <Step title="创建嵌入向量">
+    你的数据 (文档、图像或结构化数据) 必须转换为 *嵌入向量*。我们建议使用 [OpenAI Embeddings API](https://platform.openai.com/docs/api-reference/embeddings) 创建嵌入向量，或使用开源 Python 库 [SentenceTransformers](https://www.sbert.net/)。
 
-你的数据 (文档、图像或结构化数据) 必须转换为 *嵌入向量*。我们建议使用 [OpenAI Embeddings API](https://platform.openai.com/docs/api-reference/embeddings) 创建嵌入向量，或使用开源 Python 库 [SentenceTransformers](https://www.sbert.net/)。
+    你可以将嵌入向量视为由大量浮点数组成的数组，用来表示你的数据。[查看 OpenAI 的这份指南，进一步了解嵌入向量](https://developers.openai.com/api/docs/guides/embeddings)。
+  </Step>
 
-你可以将嵌入向量理解为一个包含大量浮点数的数组，用来表示你的数据。[查看 OpenAI 的这份指南，进一步了解嵌入向量](https://platform.openai.com/docs/guides/embeddings/what-are-embeddings)。
+  <Step title="存储嵌入向量">
+    生成嵌入向量后，你需要将其存储到 ClickHouse 中。每个嵌入向量都应存储在单独的一行中，并且可以包含用于过滤、聚合或分析的元数据。以下是一个可用于存储带标题说明图像的表示例：
 
-<div id="2-store-the-embeddings">
-  ## 2. 存储嵌入向量
-</div>
+    ```sql
+    CREATE TABLE images
+    (
+    	`_file` LowCardinality(String),
+    	`caption` String,
+    	`image_embedding` Array(Float32)
+    )
+    ENGINE = MergeTree;
+    ```
+  </Step>
 
-生成嵌入向量后，您需要将其存入 ClickHouse。每个嵌入向量都应存储在单独的一行中，并可包含用于过滤、聚合或分析的元数据。以下是一个可用于存储带说明文字图像的表示例：
+  <Step title="搜索相关嵌入向量">
+    假设你想在数据集中搜索狗的图片。你可以使用 `cosineDistance` 这样的距离函数，基于一张狗图片的嵌入向量来查找相关图像：
 
-```sql
-CREATE TABLE images
-(
-	`_file` LowCardinality(String),
-	`caption` String,
-	`image_embedding` Array(Float32)
-)
-ENGINE = MergeTree;
-```
+    ```sql
+    SELECT
+        _file,
+    	caption,
+    	cosineDistance(
+            -- 你的“输入”狗图片的嵌入向量
+            [0.5736801028251648, 0.2516217529773712, ...,  -0.6825592517852783],
+            image_embedding
+        ) AS score
+    FROM images
+    ORDER BY score ASC
+    LIMIT 10
+    ```
 
-<div id="3-search-for-related-embeddings">
-  ## 3. 搜索相关嵌入向量
-</div>
-
-假设你想在数据集中搜索狗的图片。你可以使用 `cosineDistance` 这样的距离函数，传入一张狗图片的嵌入向量来查找相关图片：
-
-```sql
-SELECT
-    _file,
-	caption,
-	cosineDistance(
-        -- 您"输入"的狗图片的 嵌入向量 向量
-        [0.5736801028251648, 0.2516217529773712, ...,  -0.6825592517852783],
-        image_embedding
-    ) AS score
-FROM images
-ORDER BY score ASC
-LIMIT 10
-```
-
-此查询会返回与您提供的狗图片最可能相关的前 10 张图片的 `_file` 名称和 `caption`。
+    此查询会返回与你提供的狗图片最相关的 10 张图像的 `_file` 名称和 `caption`。
+  </Step>
+</Steps>
 
 <div id="further-reading">
   ## 延伸阅读

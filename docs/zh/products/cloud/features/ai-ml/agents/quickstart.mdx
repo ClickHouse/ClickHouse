@@ -26,17 +26,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ### 启动 ClickHouse 智能体
-
+  <Step title="启动 ClickHouse 智能体" id="launch-agents">
     在你的 Cloud 服务中，点击左侧边栏中的 **ClickHouse 智能体**，打开智能体启动页。点击 **Launch ClickHouse 智能体** 以打开智能体构建器。
 
     <Image img="/images/cloud/agent-builder/launch-ch-agents.webp" alt="Cloud 服务导航中已选中 ClickHouse 智能体（Beta），显示带有 Launch ClickHouse 智能体 按钮的启动页" size="lg" />
   </Step>
 
-  <Step>
-    ### 创建智能体
-
+  <Step title="创建智能体" id="create-the-agent">
     在智能体构建器中，点击左侧面板顶部的 **Create New Agent**。填写以下核心字段：
 
     * **Name** - 智能体的简短标识。
@@ -48,16 +44,14 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     <Image img="/images/cloud/agent-builder/agent-builder.webp" alt="智能体构建器面板，显示 Create New Agent 下拉菜单、表单字段（Name、Description、Category、Instructions、Model）以及 Capabilities 部分" size="lg" />
   </Step>
 
-  <Step>
-    ### 附加能力和工具
-
+  <Step title="附加能力和工具" id="attach-tools">
     智能体的能力和工具分布在两个位置。
 
-    **Capabilities** 在主面板中 —— 第一方功能，例如 [Run Code](/zh/products/cloud/features/ai-ml/agents/builder/code-interpreter)、[Web Search](/zh/products/cloud/features/ai-ml/agents/builder/web-search)、File Context、Artifacts、[MCP Servers](/zh/products/cloud/features/ai-ml/agents/builder/mcp-servers) 和 [Skills](/zh/products/cloud/features/ai-ml/agents/builder/skills)。打开智能体所需的开关。
+    主面板中的 **Capabilities** —— 包括第一方功能，例如 [Run Code](/zh/products/cloud/features/ai-ml/agents/builder/code-interpreter)、[Web Search](/zh/products/cloud/features/ai-ml/agents/builder/web-search)、File Context、Artifacts、[MCP Servers](/zh/products/cloud/features/ai-ml/agents/builder/mcp-servers) 和 [Skills](/zh/products/cloud/features/ai-ml/agents/builder/skills)。打开智能体所需的开关。
 
     <Image img="/images/cloud/agent-builder/capabilities.webp" alt="智能体构建器面板中的 Capabilities 部分，显示 Run Code、Web Search、File Context、Artifacts、MCP Servers 和 Skills 开关" size="sm" />
 
-    **Tools** 在面板底部的 **Add Tools** 按钮后 —— 第三方集成，例如 [image generation](/zh/products/cloud/features/ai-ml/agents/builder/image-generation)、[vision](/zh/products/cloud/features/ai-ml/agents/builder/vision)、搜索 API 和外部服务等。
+    面板底部 **Add Tools** 按钮中的 **Tools** —— 包括第三方集成，例如 [image generation](/zh/products/cloud/features/ai-ml/agents/builder/image-generation)、[vision](/zh/products/cloud/features/ai-ml/agents/builder/vision)、搜索 API 和外部服务。
 
     <Image img="/images/cloud/agent-builder/tools-button.webp" alt="智能体构建器面板底部，突出显示 Add Tools 按钮" size="sm" />
 
@@ -70,12 +64,10 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     你可以随时更改已附加的能力和工具。
   </Step>
 
-  <Step>
-    ### 运行查询
+  <Step title="运行查询" id="run-a-query">
+    保存智能体，打开一个新对话，然后从智能体选择器中选择你的智能体。输入一个问题——例如，*&quot;本周按行数统计，排在前 10 的表有哪些？&quot;*——智能体会先进行规划，再按需调用工具并返回答案。
 
-    保存智能体，打开一个新对话，然后从智能体选择器中选择你的智能体。输入一个问题 — 例如，*&quot;本周按行数统计，排在前 10 的表有哪些？&quot;* — 智能体会先进行规划，再按需调用工具并返回答案。
-
-    <Image img="/images/cloud/agent-builder/chat-query.webp" alt="聊天记录显示问题“本周按行数统计，排在前 10 的表有哪些？”以及智能体的响应——一个按行数对各服务前 10 张表进行排名的 Markdown 表格，下方还有 Key Observations" size="lg" />
+    <Image img="/images/cloud/agent-builder/chat-query.webp" alt="聊天记录显示问题“What are my top 10 tables by row count this week?”以及智能体的响应——一个按行数对各服务前 10 张表进行排名的 Markdown 表格，下方还有 Key Observations" size="lg" />
   </Step>
 </Steps>
 
@@ -83,5 +75,5 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   ## 后续步骤
 </div>
 
-* 与队友共享[该智能体](/zh/products/cloud/features/ai-ml/agents/sharing-and-access)。
-* 该智能体达到稳定版本后，将其发布到[市场](/zh/products/cloud/features/ai-ml/agents/marketplace)。
+* [将该智能体共享给队友](/zh/products/cloud/features/ai-ml/agents/sharing-and-access)。
+* 该智能体进入稳定版本后，将其发布到[市场](/zh/products/cloud/features/ai-ml/agents/marketplace)。

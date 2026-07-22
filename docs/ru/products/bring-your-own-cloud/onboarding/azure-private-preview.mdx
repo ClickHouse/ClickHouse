@@ -35,17 +35,13 @@ BYOC в Azure позволяет запускать ClickHouse в собстве
 </div>
 
 <Steps>
-  <Step>
-    ### 1. Примените модуль Terraform
-
+  <Step title="1. Примените модуль Terraform" id="apply-terraform-module">
     Чтобы начать онбординг BYOC в Azure, примените [модуль Terraform для Azure](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure), предоставленный ClickHouse, в вашем **целевом тенанте и подписке**.
 
     Сведения об обязательных переменных и шагах применения см. в документации модуля. После применения модуль настроит в вашей среде Azure необходимые identity и разрешения.
   </Step>
 
-  <Step>
-    ### 2. Передайте ID в ClickHouse
-
+  <Step title="2. Передайте ID в ClickHouse" id="provide-ids">
     Передайте команде ClickHouse следующие данные:
 
     * **Идентификатор целевой подписки** — подписка Azure, в которой будут созданы ресурсы BYOC

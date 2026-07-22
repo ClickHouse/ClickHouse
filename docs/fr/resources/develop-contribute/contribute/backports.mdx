@@ -123,76 +123,62 @@ Pour chaque numéro de PR d’origine `N` et chaque branche de release `release/
   ### Procédure étape par étape
 </div>
 
-<div id="discover-active-releases">
-  #### 1. Découvrir les releases actives
-</div>
+<Steps>
+  <Step title="Détecter les versions actives" id="discover-active-releases">
+    `BackportPRs.receive_release_prs` interroge GitHub pour toutes les PR ouvertes portant le label `release`. Les références head de ces PR correspondent aux noms des branches de release (par exemple `release/25.3`). À partir de celles-ci, il déduit l’ensemble des labels spécifiques à la version à rechercher : chaque label `v{VER}-must-backport` qui existe dans le dépôt et dont la version n’est pas plus récente que la release active la plus récente. Les labels plus anciens sont inclus même lorsque leur release n’est plus active (un label plus récent que toutes les releases actives est ignoré, puisqu’il ne pourrait s’étendre à aucune branche active), de sorte qu’une PR portant un label pour une release en fin de vie est tout de même trouvée tant qu’une release plus récente est active.
+  </Step>
 
-`BackportPRs.receive_release_prs` interroge GitHub pour récupérer toutes les PR ouvertes portant le label `release`. Les références `head` de ces PR correspondent aux noms des branches de release (par ex. `release/25.3`). À partir de là, il déduit l’ensemble des labels spécifiques à une version à rechercher : chaque label `v{VER}-must-backport` présent dans le dépôt dont la version n’est pas plus récente que la release active la plus récente. Les labels plus anciens sont inclus même lorsque leur release n’est plus active (un label plus récent que toutes les releases actives est ignoré, puisqu’il ne pourrait s’appliquer à aucune branche active), de sorte qu’une PR étiquetée pour une release en fin de vie est tout de même trouvée tant qu’une release plus récente est active.
+  <Step title="Identifier les PR à backporter" id="find-prs-to-backport">
+    `BackportPRs.receive_prs_for_backport` utilise l’API de recherche GitHub pour trouver les PR fusionnées qui :
 
-<div id="find-prs-to-backport">
-  #### 2. Trouver les PR à backporter
-</div>
+    * portent au moins un label de backport (`pr-must-backport`, `pr-must-backport-force`, `pr-critical-bugfix` ou un label spécifique à la version), et
+    * n’ont **pas** déjà le label `pr-backports-created`, et
+    * ont été fusionnées après la date du commit le plus ancien trouvée sur une branche de release, et
+    * ont été mises à jour au cours des 90 derniers jours (afin de préserver l’efficacité de la query de recherche).
+  </Step>
 
-`BackportPRs.receive_prs_for_backport` utilise l’API de recherche de GitHub pour trouver les PR fusionnées qui :
+  <Step title="Gestion des branches pendant le déploiement" id="rolling-out-branch-handling">
+    Lorsqu’une PR de release porte le label `rolling-out`, les labels de backport généraux (`pr-must-backport`, `pr-critical-bugfix`) ignorent cette branche. Le bot ferme toutes les PR de cherry-pick ou de backport précédemment créées pour cette branche en y ajoutant un commentaire explicatif. Un label spécifique à la version (par exemple `v25.3-must-backport`) prévaut toujours sur ce comportement — pour la release ainsi nommée comme pour chaque branche de release active plus récente à laquelle il s’étend. `pr-must-backport-force` contourne la vérification `rolling-out` pour toutes les branches.
+  </Step>
 
-* portent au moins un label de backport (`pr-must-backport`, `pr-must-backport-force`, `pr-critical-bugfix` ou un label spécifique à une version), et
-* ne portent **pas** déjà `pr-backports-created`, et
-* ont été fusionnées après la date du commit le plus ancien trouvé sur l’une des branches de release, et
-* ont été mises à jour au cours des 90 derniers jours (afin de conserver l’efficacité de la requête de recherche).
+  <Step title={<>Étape de cherry-pick (<code>ReleaseBranch.create_cherrypick</code>)</>} id="cherry-pick-stage">
+    Pour chaque paire (PR d’origine, branche de release) pour laquelle aucune PR de cherry-pick n’existe encore :
 
-<div id="rolling-out-branch-handling">
-  #### 3. Gestion des branches de release `rolling-out`
-</div>
+    1. Placez-vous sur la branche de release et créez une **branche de backport** (`backport/release/X.Y/N`) à partir de celle-ci.
+    2. Exécutez `git merge -s ours` sur le premier parent du commit de fusion afin de créer une base de fusion synthétique sans modification de contenu.
+    3. Créez de force une **branche de cherry-pick** (`cherrypick/release/X.Y/N`) pointant directement vers le commit de fusion de la PR d’origine.
+    4. Tentez un `git merge --no-commit --no-ff` de la branche de cherry-pick dans la branche de backport :
+       * Si tout est déjà à jour, cela signifie que la modification est déjà présente dans la branche de release — marquez l’opération comme terminée et passez à la suite.
+       * Sinon (avec ou sans conflits), réinitialisez et poussez les deux branches.
+    5. Créez la PR de cherry-pick ciblant `backport/release/X.Y/N` depuis `cherrypick/release/X.Y/N`, avec les labels `pr-cherrypick` et `do not test`.
+    6. Propagez `pr-bugfix` ou `pr-critical-bugfix` depuis la PR d’origine, le cas échéant.
+    7. Les assignés ne sont **pas** définis à ce stade ; ils ne sont ajoutés qu’en cas de conflits détectés.
+  </Step>
 
-Lorsqu’une release PR porte le label `rolling-out`, les labels de backport généraux (`pr-must-backport`, `pr-critical-bugfix`) ignorent cette branche. Le bot ferme toutes les PR de cherry-pick ou de backport précédemment créées pour cette branche en y ajoutant un commentaire explicatif. Un label spécifique à une version (par ex. `v25.3-must-backport`) prévaut toujours sur cette règle — pour la release indiquée ainsi que pour chaque branche de release active plus récente à laquelle il s’applique. `pr-must-backport-force` contourne la vérification `rolling-out` pour toutes les branches.
+  <Step title="Fusion automatique des PR de cherry-pick sans conflit" id="auto-merge-conflict-free-cherry-pick-prs">
+    Si la PR de cherry-pick est fusionnable (sans conflits), le bot la fusionne automatiquement via l’API GitHub et passe immédiatement à l’étape de backport.
+  </Step>
 
-<div id="cherry-pick-stage">
-  #### 4. Étape de cherry-pick (`ReleaseBranch.create_cherrypick`)
-</div>
+  <Step title={<>Étape de backport (<code>ReleaseBranch.create_backport</code>)</>} id="backport-stage">
+    Après la fusion de la PR de cherry-pick :
 
-Pour chaque paire (PR d’origine, branche de release) pour laquelle aucune PR de cherry-pick n’existe encore :
+    1. Placez-vous sur la branche de backport et récupérez les dernières modifications.
+    2. Trouvez la base de fusion entre la branche de release et la branche de backport.
+    3. Exécutez `git reset --soft` jusqu’à la base de fusion afin de regrouper tous les commits cherry-pickés en un seul.
+    4. Effectuez un commit en utilisant le titre de la PR de backport comme message.
+    5. Force-poussez la branche de backport et ouvrez une PR de backport ciblant la branche de release réelle.
+    6. Ajoutez à la PR le label `pr-backport` (ainsi que `pr-bugfix` / `pr-critical-bugfix`, le cas échéant).
+    7. Assignez la PR à l’auteur de la PR d’origine, à la personne qui l’a fusionnée et aux assignés existants (hors comptes robotisés).
+  </Step>
 
-1. Placez-vous sur la branche de release et créez une **branche de backport** (`backport/release/X.Y/N`) à partir de celle-ci.
-2. Exécutez `git merge -s ours` sur le premier parent du commit de fusion afin de créer une base de fusion synthétique sans modification de contenu.
-3. Créez de force une **branche de cherry-pick** (`cherrypick/release/X.Y/N`) pointant directement vers le commit de fusion de la PR d’origine.
-4. Tentez un `git merge --no-commit --no-ff` de la branche de cherry-pick dans la branche de backport :
-   * Si tout est déjà à jour, cela signifie que la modification est déjà présente dans la branche de release — marquez l’opération comme terminée et passez à la suite.
-   * Sinon (avec ou sans conflits), réinitialisez et poussez les deux branches.
-5. Créez la PR de cherry-pick ciblant `backport/release/X.Y/N` depuis `cherrypick/release/X.Y/N`, avec les labels `pr-cherrypick` et `do not test`.
-6. Propagez `pr-bugfix` ou `pr-critical-bugfix` depuis la PR d’origine, le cas échéant.
-7. Les assignés ne sont **pas** définis à ce stade ; ils ne sont ajoutés qu’en cas de conflits détectés.
+  <Step title="Finalisation" id="completion">
+    Lorsque toutes les branches de release associées à une PR d’origine donnée ont fait l’objet d’un backport, le bot ajoute `pr-backports-created` à la PR d’origine.
+  </Step>
 
-<div id="auto-merge-conflict-free-cherry-pick-prs">
-  #### 5. Fusion automatique des PR de cherry-pick sans conflit
-</div>
-
-Si la PR de cherry-pick est fusionnable (sans conflit), le bot la fusionne automatiquement via l’API GitHub et passe immédiatement à l’étape de backport.
-
-<div id="backport-stage">
-  #### 6. Étape de backport (`ReleaseBranch.create_backport`)
-</div>
-
-Après la fusion de la PR de cherry-pick :
-
-1. Basculez sur la branche de backport et récupérez les dernières modifications.
-2. Déterminez le merge-base entre la branche de release et la branche de backport.
-3. Effectuez un `git reset --soft` jusqu&#39;au merge-base afin de regrouper tous les commits cherry-pickés en un seul.
-4. Créez un commit en utilisant le titre de la PR de backport comme message.
-5. Force-pushez la branche de backport et ouvrez une PR de backport vers la véritable branche de release.
-6. Ajoutez à la PR le label `pr-backport` (ainsi que `pr-bugfix` / `pr-critical-bugfix` le cas échéant).
-7. Assignez la PR à l&#39;auteur de la PR d&#39;origine, à la personne qui l&#39;a fusionnée et aux assignees existants (hors comptes robot).
-
-<div id="completion">
-  #### 7. Finalisation
-</div>
-
-Lorsque toutes les branches de release associées à une PR d’origine donnée ont été backportées, le bot ajoute `pr-backports-created` à la PR d’origine.
-
-<div id="pre-check">
-  #### 8. Vérification préalable
-</div>
-
-Avant d’entamer tout travail sur une PR, `ReleaseBranch.pre_check` exécute `git merge-base --is-ancestor` pour vérifier que le commit de fusion n’est pas déjà atteignable depuis la branche de release. Si c’est le cas, la PR est considérée comme déjà backportée et est ignorée.
+  <Step title="Vérification préalable" id="pre-check">
+    Avant d’entamer tout travail sur une PR, `ReleaseBranch.pre_check` exécute `git merge-base --is-ancestor` afin de vérifier que le commit de fusion n’est pas déjà présent dans l’historique de la branche de release. Si c’est le cas, la PR est considérée comme déjà backportée et ignorée.
+  </Step>
+</Steps>
 
 <div id="stale-cherry-pick-pr-handling">
   ### Gestion des cherry-pick PR obsolètes

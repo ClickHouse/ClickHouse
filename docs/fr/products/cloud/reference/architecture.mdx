@@ -70,6 +70,6 @@ Pour GCP et Azure, les services bénéficient d’une isolation du stockage obje
   ## Limites de concurrence
 </div>
 
-Il n’existe aucune limite au nombre de requêtes par seconde (QPS) dans votre service ClickHouse Cloud. Il existe toutefois une limite de 1 000 requêtes concurrentes par réplique. Le QPS dépend au final du temps d’exécution moyen de vos requêtes et du nombre de répliques dans votre service.
+Il n’y a pas de limite au nombre de requêtes par seconde (QPS) dans votre service ClickHouse Cloud. Il existe toutefois une limite de 1000 requêtes simultanées par réplique. Le QPS dépend en pratique du temps d’exécution moyen des requêtes et du nombre de répliques de votre service.
 
-L’un des principaux avantages de ClickHouse Cloud par rapport à une instance ClickHouse autogérée ou à d’autres bases de données/entrepôts de données est que vous pouvez facilement augmenter la concurrence en [ajoutant plus de répliques (mise à l’échelle horizontale)](/fr/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling).
+L’un des principaux avantages de ClickHouse Cloud par rapport à une instance ClickHouse autohébergée ou à d’autres bases de données/entrepôts de données est que vous pouvez facilement accroître la concurrence en [ajoutant davantage de répliques (mise à l’échelle horizontale)](/fr/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling).

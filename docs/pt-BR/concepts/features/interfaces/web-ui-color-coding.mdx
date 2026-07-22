@@ -1,0 +1,55 @@
+---
+description: 'Documentação dos modos de codificação por cores por coluna na interface web SQL integrada (`/play`)'
+sidebarTitle: 'Codificação por cores na interface web'
+slug: /interfaces/web-ui-color-coding
+title: 'Codificação por cores na interface web'
+doc_type: 'reference'
+sidebar: false
+---
+
+A interface web SQL integrada (`play.html`, disponibilizada no caminho [`/play`](/pt-BR/concepts/features/interfaces/http) de qualquer porta HTTP do ClickHouse) pode colorir as células de resultado para facilitar a identificação visual de padrões em uma coluna. Cada coluna tem seu próprio modo de codificação por cores, que pode ser alternado de forma independente.
+
+<div id="switching-the-mode">
+  ## Alternando o modo
+</div>
+
+Um ícone 🌈 aparece à direita de cada cabeçalho de coluna. Clique nele para alternar a coluna entre os modos disponíveis. Em dispositivos com ponteiro com suporte a hover (como um mouse), o ícone é exibido apenas quando o cursor está sobre o cabeçalho, para não atrapalhar; em dispositivos touch e outros dispositivos com ponteiro de baixa precisão, que não têm hover, o ícone é sempre exibido para que possa ser tocado diretamente.
+
+O conjunto de modos que uma coluna oferece depende do seu tipo:
+
+* Colunas numéricas e colunas `Date`/`DateTime`/`Date32`/`DateTime64` alternam ciclicamente entre `bar` → `heatmap` → `categorical` → `none`.
+* Todas as outras colunas alternam entre `none` e `categorical`.
+
+O modo padrão é `bar` para colunas numéricas e `none` para todas as demais colunas, incluindo colunas de data e hora.
+
+<div id="modes">
+  ## Modos
+</div>
+
+* **`bar`** — desenha uma barra horizontal na célula, proporcional ao valor. Para colunas numéricas, a barra cresce a partir de uma base zero; para colunas `Date`/`DateTime`, ela cobre o intervalo `min`..`max` da coluna, já que uma base zero não faz sentido para timestamps.
+* **`heatmap`** — preenche todo o plano de fundo da célula com uma cor que representa o valor, escalado entre o valor mínimo e máximo da coluna.
+* **`categorical`** — preenche o plano de fundo da célula com uma cor derivada do hash do valor da célula, de modo que valores iguais recebam a mesma cor e valores diferentes recebam cores diferentes. Isso funciona para qualquer tipo de coluna.
+* **`none`** — sem codificação por cores.
+
+As colunas `Date`, `DateTime`, `Date32` e `DateTime64` são coloridas com base no seu valor temporal, interpretado em UTC para que a escala seja independente do fuso horário do navegador do visualizador.
+
+As cores de plano de fundo de `heatmap` e `categorical` usam o espaço de cores `oklch`, variando apenas o matiz e mantendo a luminosidade e o croma fixos por tema, para que o texto da célula continue legível tanto no tema claro quanto no escuro. O plano de fundo preenche a célula inteira mesmo quando uma linha é exibida em mais de uma linha.
+
+<div id="categorical-emphasis">
+  ## Ênfase categórica na seleção
+</div>
+
+No modo `categorical`, selecionar uma célula dá destaque às outras células que compartilham o mesmo valor, exibindo-as com uma fonte mais grossa e uma cor de texto com contraste total (branco puro no tema escuro, preto puro no tema claro). A própria célula selecionada permanece sem destaque. Isso facilita ver em que outros pontos um determinado valor ocorre na coluna.
+
+<div id="persistence">
+  ## Persistência
+</div>
+
+Os modos escolhidos ficam salvos por coluna na URL da página e no histórico do navegador, de modo que recarregar a página, compartilhar o link ou voltar e avançar na navegação os preserva. Apenas as escolhas diferentes do padrão são armazenadas, para manter a URL e o estado do histórico compactos.
+
+<div id="limitations">
+  ## Limitações
+</div>
+
+* O layout vertical (transposto) de uma única linha não exibe codificação por cores.
+* Diferenças em `DateTime64(9)` inferiores a um microssegundo não são distinguidas na escala de cores, o que não faz sentido visualmente em um gradiente.

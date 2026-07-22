@@ -6,216 +6,113 @@ title: '워크로드 스케줄링'
 doc_type: 'reference'
 ---
 
-ClickHouse가 여러 쿼리를 동시에 실행할 때는 디스크와 CPU 코어 같은 공유 리소스를 사용할 수 있습니다. 서로 다른 워크로드 간에 리소스가 사용되고 공유되는 방식을 제어하기 위해 스케줄링 제약 조건과 정책을 적용할 수 있습니다. 모든 리소스에 대해 공통 스케줄링 계층을 구성할 수 있습니다. 계층의 루트는 공유 리소스를 나타내며, 리프 노드는 리소스 용량을 초과하는 요청을 보유하는 개별 워크로드를 나타냅니다.
+ClickHouse가 여러 쿼리를 동시에 실행할 때는 공유 리소스(CPU, 메모리, IO)를 사용합니다. 서로 다른 워크로드 간에 리소스가 사용되고 공유되는 방식을 제어하기 위해 스케줄링 제약 조건과 정책을 적용할 수 있습니다. 모든 리소스에 대해 공통 스케줄링 계층을 구성할 수 있습니다. 계층의 루트는 공유 리소스를 나타내며, 리프 노드는 특정 쿼리와 백그라운드 작업의 리소스 요청 및 할당을 보유하는 개별 워크로드를 나타냅니다.
 
-<Note>
-  현재는 이 방법을 사용해 [원격 디스크 I/O](#disk_config)와 [CPU](#cpu_scheduling)를 스케줄링할 수 있습니다. 유연한 메모리 제한에 대해서는 [Memory overcommit](/ko/concepts/features/configuration/settings/memory-overcommit)을 참조하십시오.
-</Note>
-
-<div id="disk_config">
-  ## 디스크 구성
+<div id="resources">
+  ## 리소스
 </div>
 
-특정 디스크의 IO 워크로드 스케줄링을 활성화하려면 WRITE 및 READ 액세스용 읽기 및 쓰기 리소스를 생성해야 합니다:
+기본적으로 워크로드 스케줄링은 비활성화되어 있습니다. 이를 활성화하려면 스케줄링에 사용할 리소스와 최소 1개의 워크로드를 생성해야 합니다. 모든 리소스는 서로 독립적이므로 어떤 조합으로든 사용할 수 있습니다.
+
+CPU 스케줄링을 활성화하려면 MASTER 또는 WORKER 스레드에 대한 CPU 리소스를 생성해야 합니다(자세한 내용은 [CPU 스케줄링](#cpu_scheduling)을 참조하십시오):
+
+```sql
+CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+```
+
+워크로드에서 메모리 예약을 활성화하려면 MEMORY 리소스를 생성해야 합니다(자세한 내용은 [메모리 예약](#memory-reservations)을 참조하십시오):
+
+```sql
+CREATE RESOURCE memory (MEMORY RESERVATION)
+```
+
+쿼리 슬롯 스케줄링을 활성화하려면 QUERY 리소스를 생성해야 합니다(자세한 내용은 [쿼리 슬롯 스케줄링](#query_scheduling)을 참조하십시오):
+
+```sql
+CREATE RESOURCE query (QUERY)
+```
+
+특정 디스크에서 IO scheduling을 활성화하려면 WRITE 및 READ 액세스용 읽기 및 쓰기 리소스를 생성해야 합니다:
 
 ```sql
 CREATE RESOURCE resource_name (WRITE DISK disk_name, READ DISK disk_name)
--- 또는
+-- or
 CREATE RESOURCE read_resource_name (WRITE DISK write_disk_name)
 CREATE RESOURCE write_resource_name (READ DISK read_disk_name)
 ```
 
-리소스는 READ, WRITE 또는 READ와 WRITE 모두에 대해 여러 디스크에서 사용할 수 있습니다. 모든 디스크에 동일한 리소스를 적용할 수 있는 구문도 있습니다:
+하나의 리소스는 여러 개의 디스크에서 READ, WRITE 또는 READ와 WRITE 모두에 사용할 수 있습니다. 모든 디스크에 리소스를 사용할 수 있게 하는 구문이 있습니다:
 
 ```sql
 CREATE RESOURCE all_io (READ ANY DISK, WRITE ANY DISK);
 ```
 
-리소스에서 어떤 디스크를 사용하는지 지정하는 또 다른 방법은 server의 `storage_configuration`입니다:
+리소스는 공유 모드에 따라 분류됩니다:
 
-<Warning>
-  ClickHouse 구성 기반 워크로드 스케줄링은 더 이상 권장되지 않습니다. 대신 SQL 구문을 사용해야 합니다.
-</Warning>
-
-특정 디스크에 대해 IO 스케줄링을 활성화하려면 storage configuration에서 `read_resource` 및/또는 `write_resource`를 지정해야 합니다. 이렇게 하면 지정된 디스크의 각 읽기 및 쓰기 요청에 어떤 리소스를 사용할지 ClickHouse에 알려줄 수 있습니다. 읽기 리소스와 쓰기 리소스는 동일한 리소스 이름을 참조할 수 있으며, 이는 로컬 SSD 또는 HDD에서 유용합니다. 여러 서로 다른 디스크가 동일한 리소스를 참조할 수도 있으며, 이는 원격 디스크에서 유용합니다. 예를 들어 &quot;production&quot; 워크로드와 &quot;development&quot; 워크로드 간에 네트워크 대역폭을 공정하게 분배하려는 경우에 유용합니다.
-
-예시:
-
-```xml
-<clickhouse>
-    <storage_configuration>
-        ...
-        <disks>
-            <s3>
-                <type>s3</type>
-                <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
-                <access_key_id>your_access_key_id</access_key_id>
-                <secret_access_key>your_secret_access_key</secret_access_key>
-                <read_resource>network_read</read_resource>
-                <write_resource>network_write</write_resource>
-            </s3>
-        </disks>
-        <policies>
-            <s3_main>
-                <volumes>
-                    <main>
-                        <disk>s3</disk>
-                    </main>
-                </volumes>
-            </s3_main>
-        </policies>
-    </storage_configuration>
-</clickhouse>
-```
-
-리소스를 정의하는 SQL 방식보다 서버 구성 옵션이 우선 적용된다는 점에 유의하십시오.
-
-<div id="workload_markup">
-  ## 워크로드 마킹
-</div>
-
-서로 다른 워크로드를 구분하기 위해 쿼리에 설정 `workload`를 지정할 수 있습니다. `workload`가 설정되지 않으면 &quot;default&quot; 값이 사용됩니다. 설정 프로필을 사용하면 다른 값으로 지정할 수도 있습니다. 특정 사용자의 모든 쿼리에 `workload` 설정의 고정값이 적용되게 하려면 설정 제약 조건을 사용해 `workload`를 상수로 만들 수 있습니다.
-
-백그라운드 작업에도 `workload` 설정을 할당할 수 있습니다. 머지와 뮤테이션은 각각 `merge_workload` 및 `mutation_workload` 서버 설정을 사용합니다. 이 값은 특정 테이블에 대해 `merge_workload` 및 `mutation_workload` MergeTree 설정으로 재정의할 수도 있습니다.
-
-&quot;production&quot;과 &quot;development&quot;라는 두 가지 서로 다른 워크로드가 있는 시스템의 예시를 살펴보겠습니다.
-
-```sql
-SELECT count() FROM my_table WHERE value = 42 SETTINGS workload = 'production'
-SELECT count() FROM my_table WHERE value = 13 SETTINGS workload = 'development'
-```
-
-<div id="hierarchy">
-  ## 리소스 스케줄링 계층 구조
-</div>
-
-스케줄링 하위 시스템의 관점에서 리소스는 스케줄링 노드로 이루어진 계층 구조를 의미합니다.
-
-```mermaid
-graph TD
-    subgraph 네트워크 읽기
-    nr_root(("/"))
-    -->|동시 요청 100개| nr_fair("균등")
-    -->|75% 대역폭| nr_prod["prod"]
-    nr_fair
-    -->|25% 대역폭| nr_dev["dev"]
-    end
-
-    subgraph 네트워크 쓰기
-    nw_root(("/"))
-    -->|동시 요청 100개| nw_fair("균등")
-    -->|75% 대역폭| nw_prod["prod"]
-    nw_fair
-    -->|25% 대역폭| nw_dev["dev"]
-    end
-```
-
-<Warning>
-  ClickHouse 구성을 사용하는 워크로드 스케줄링은 더 이상 권장되지 않습니다. 대신 SQL 구문을 사용해야 합니다. SQL 구문은 필요한 모든 스케줄링 노드를 자동으로 생성하며, 아래의 스케줄링 노드 설명은 하위 수준의 구현 세부 사항으로 보아야 합니다. 이러한 내용은 [system.scheduler](/ko/reference/system-tables/scheduler) 테이블을 통해 확인할 수 있습니다.
-</Warning>
-
-**가능한 노드 타입:**
-
-* `inflight_limit` (제약) - 동시에 처리 중인 요청 수가 `max_requests`를 초과하거나 총 비용이 `max_cost`를 초과하면 차단합니다. 단일 자식만 가질 수 있습니다.
-* `bandwidth_limit` (제약) - 현재 대역폭이 `max_speed`를 초과하거나(`0`은 무제한 의미), 버스트가 `max_burst`를 초과하면 차단합니다(기본값은 `max_speed`와 같음). 단일 자식만 가질 수 있습니다.
-* `fair` (정책) - max-min 공정성에 따라 자식 노드 중 하나에서 다음에 처리할 요청을 선택합니다. 자식 노드는 `weight`를 지정할 수 있습니다(기본값은 1).
-* `priority` (정책) - 정적 우선순위에 따라 자식 노드 중 하나에서 다음에 처리할 요청을 선택합니다(값이 낮을수록 우선순위가 높음). 자식 노드는 `priority`를 지정할 수 있습니다(기본값은 0).
-* `fifo` (큐) - 리소스 용량을 초과한 요청을 보관할 수 있는 계층 구조의 리프 노드입니다.
-
-기반 리소스의 전체 용량을 활용하려면 `inflight_limit`를 사용해야 합니다. `max_requests` 또는 `max_cost` 값이 너무 낮으면 리소스를 충분히 활용하지 못할 수 있습니다. 반대로 값이 너무 높으면 스케줄러 내부의 큐가 비게 될 수 있고, 그 결과 하위 트리에서 정책이 무시될 수 있습니다(공정성이 깨지거나 우선순위가 무시됨). 한편 리소스를 과도한 사용으로부터 보호하려면 `bandwidth_limit`를 사용해야 합니다. 이 노드는 `duration`초 동안 소비된 리소스 양이 `max_burst + max_speed * duration`바이트를 초과하면 스로틀링합니다. 동일한 리소스에 두 개의 `bandwidth_limit` 노드를 사용하면, 짧은 인터벌의 최대 대역폭과 더 긴 인터벌의 평균 대역폭을 각각 제한할 수 있습니다.
-
-다음 예시는 그림에 표시된 IO 스케줄링 계층을 정의하는 방법을 보여줍니다:
-
-```xml
-<clickhouse>
-    <resources>
-        <network_read>
-            <node path="/">
-                <type>inflight_limit</type>
-                <max_requests>100</max_requests>
-            </node>
-            <node path="/fair">
-                <type>fair</type>
-            </node>
-            <node path="/fair/prod">
-                <type>fifo</type>
-                <weight>3</weight>
-            </node>
-            <node path="/fair/dev">
-                <type>fifo</type>
-            </node>
-        </network_read>
-        <network_write>
-            <node path="/">
-                <type>inflight_limit</type>
-                <max_requests>100</max_requests>
-            </node>
-            <node path="/fair">
-                <type>fair</type>
-            </node>
-            <node path="/fair/prod">
-                <type>fifo</type>
-                <weight>3</weight>
-            </node>
-            <node path="/fair/dev">
-                <type>fifo</type>
-            </node>
-        </network_write>
-    </resources>
-</clickhouse>
-```
-
-<div id="workload_classifiers">
-  ## 워크로드 분류기
-</div>
-
-<Warning>
-  ClickHouse 구성을 사용하는 워크로드 스케줄링은 더 이상 권장되지 않습니다. 대신 SQL 구문을 사용해야 합니다. SQL 구문을 사용하면 분류기가 자동으로 생성됩니다.
-</Warning>
-
-워크로드 분류기는 쿼리에서 지정된 `workload`를 특정 리소스에 사용할 리프 큐에 매핑하는 방식을 정의하는 데 사용됩니다. 현재 워크로드 분류는 단순하며, 정적 매핑만 지원됩니다.
-
-예시:
-
-```xml
-<clickhouse>
-    <workload_classifiers>
-        <production>
-            <network_read>/fair/prod</network_read>
-            <network_write>/fair/prod</network_write>
-        </production>
-        <development>
-            <network_read>/fair/dev</network_read>
-            <network_write>/fair/dev</network_write>
-        </development>
-        <default>
-            <network_read>/fair/dev</network_read>
-            <network_write>/fair/dev</network_write>
-        </default>
-    </workload_classifiers>
-</clickhouse>
-```
+* **시간 공유 리소스** (CPU, IO, 쿼리 슬롯) - 스케줄링 계층 구조의 리프 노드에서 큐에 들어가는 리소스 요청을 관리합니다. 요청은 계층 구조에 정의된 정책과 제약 조건에 따라 스케줄링됩니다. 쿼리가 해당 리소스를 사용할 때 리소스 요청이 생성됩니다. 예를 들어, 쿼리가 디스크에서 데이터를 읽거나 처리 작업을 위해 CPU를 사용할 때, 수행된 작업의 각 quantum 또는 소켓을 통해 송수신된 바이트 수에 따라 리소스 요청이 생성됩니다.
+* **공간 공유 리소스** (메모리) - 스케줄링 계층 구조의 리프 노드에서 리소스 할당을 관리합니다. 할당은 실행 중이거나 대기 중일 수 있습니다. 대기 중인 할당은 충분한 공간이 확보되거나 다른 할당이 축출(강제 종료)될 때까지 차단됩니다. 판단은 계층 구조에 정의된 한도와 정책에 따라 이루어집니다. 할당과 쿼리(또는 백그라운드 활동) 사이에는 일대일 대응 관계가 있습니다. 할당은 쿼리 실행이 시작될 때 생성되고, 실행이 끝나면 해제됩니다. 실행 중인 할당은 크기가 동적으로 늘어나거나 줄어들 수 있습니다.
 
 <div id="workloads">
   ## 워크로드 계층 구조
 </div>
 
-ClickHouse는 스케줄링 계층 구조를 정의할 수 있는 편리한 SQL 구문을 제공합니다. `CREATE RESOURCE`로 생성된 모든 리소스는 동일한 계층 구조를 공유하지만, 일부 측면에서는 서로 다를 수 있습니다. `CREATE WORKLOAD`로 생성된 각 워크로드에는 각 리소스마다 자동으로 생성되는 몇 개의 스케줄링 노드가 유지됩니다. 하위 워크로드는 다른 상위 워크로드 내부에 생성할 수 있습니다. 다음은 위의 XML 구성과 정확히 동일한 계층 구조를 정의하는 예시입니다:
+ClickHouse는 스케줄링 계층 구조를 정의할 수 있는 편리한 SQL 구문을 제공합니다. 모든 리소스는 공통 WORKLOAD 계층 구조 전체에 분산됩니다. 분산 규칙은 특정 리소스에 따라 일부 측면이 달라질 수 있지만, 계층 구조 자체는 동일합니다. 각 WORKLOAD는 모든 리소스에 필요한 스케줄링 노드를 유지합니다. 하위 워크로드는 계층 구조를 이루도록 임의의 워크로드 내부에 생성할 수 있습니다. ClickHouse는 워크로드 계층 구조에 특정하거나 사전 정의된 구조를 강제하지 않습니다.
+
+다음은 모든 리소스를 각각 90%와 10%가 보장되는 &quot;user&quot; 워크로드와 &quot;system&quot; 워크로드로 나누는 계층 구조의 예시입니다. 워크로드에 정의된 가중치는 최대-최소 공정성(max-min fairness)에 사용되므로 아래에서 보장되는 최선 노력형 보장만 제공하며(위에서 제한하는 한도나 QUOTA는 아님), 모든 스케줄링은 각 host에서 독립적으로 수행되므로 `max_*` 설정으로 정의된 한도는 host별로 적용된다는 점에 유의하십시오. &quot;user&quot; 워크로드는 자신의 리소스를 다시 &quot;development&quot; 워크로드와 &quot;production&quot; 워크로드로 나누며, &quot;production&quot;은 &quot;development&quot;보다 3배 더 많은 리소스를 가집니다:
 
 ```sql
-CREATE RESOURCE network_write (WRITE DISK s3)
-CREATE RESOURCE network_read (READ DISK s3)
-CREATE WORKLOAD all SETTINGS max_io_requests = 100
-CREATE WORKLOAD development IN all
-CREATE WORKLOAD production IN all SETTINGS weight = 3
+CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+CREATE RESOURCE memory (MEMORY RESERVATION)
+CREATE RESOURCE s3_read (READ DISK s3)
+CREATE RESOURCE s3_write (WRITE DISK s3)
+CREATE WORKLOAD all SETTINGS max_concurrent_threads_ratio_to_cores = 2, max_memory_ratio = 0.8, max_bytes_per_second = '2Gi'
+CREATE WORKLOAD user IN all SETTINGS weight = 9
+CREATE WORKLOAD system IN all
+CREATE WORKLOAD development IN user
+CREATE WORKLOAD production IN user SETTINGS weight = 3
 ```
 
-자식이 없는 리프 워크로드의 이름은 쿼리 설정 `SETTINGS workload = 'name'`에서 사용할 수 있습니다.
+```mermaid
+graph LR
+  subgraph Resources
+    cpu["cpu"]
+    mem["memory"]
+    nr["s3_read"]
+    nw["s3_write"]
+    mem["memory"]
+    oth["..."]
+  end
+
+  subgraph Workloads
+    all["all"]
+    usr["user"]
+    sys["system"]
+    wl1["..."]
+    dev["development"]
+    prd["production"]
+    wl2["..."]
+    all --> |≥90%| usr
+    all --> |≥10%| sys
+    all --> wl1
+    usr --> |≥25%| dev
+    usr --> |≥75%| prd
+    usr --> wl2
+  end
+
+  cpu --> |2xCores| all
+  mem --> |0.8xRAM| all
+  nr --> |2GBps| all
+  nw --> |2GBps| all
+  oth --> all
+```
+
+자식이 없는 리프 워크로드의 이름은 쿼리 설정 `SETTINGS workload = 'name'`에서 사용할 수 있습니다. 자세한 내용은 [워크로드 마크업](#workload-markup)을 참조하십시오.
 
 워크로드를 사용자 지정하려면 다음 설정을 사용할 수 있습니다.
 
-* `priority` - 형제 워크로드는 정적 우선순위 값에 따라 처리됩니다(값이 낮을수록 우선순위가 높습니다).
-* `weight` - 동일한 정적 우선순위를 가진 형제 워크로드는 가중치에 따라 리소스를 공유합니다.
+* `priority` - (time-shared 전용) 형제 워크로드는 정적 값에 따라 처리됩니다(값이 낮을수록 우선순위가 높습니다). 선점을 제어합니다.
+* `precedence` - (space-shared 전용) 형제 워크로드는 정적 값에 따라 허용됩니다(값이 낮을수록 precedence가 높습니다). 축출 및 승인을 제어합니다.
+* `weight` - 동일한 정적 우선순위 또는 precedence를 가진 형제 워크로드는 가중치에 따라 공정하게 리소스를 공유합니다. 선점, 축출, 승인에 영향을 줍니다.
 * `max_io_requests` - 이 워크로드에서 동시 IO 요청 수의 한도입니다.
 * `max_bytes_inflight` - 이 워크로드에서 동시 요청의 진행 중인 총 바이트 수 한도입니다.
 * `max_bytes_per_second` - 이 워크로드의 바이트 읽기 또는 쓰기 속도 한도입니다.
@@ -225,13 +122,14 @@ CREATE WORKLOAD production IN all SETTINGS weight = 3
 * `max_cpus` - 이 워크로드의 쿼리를 처리하는 데 사용할 수 있는 CPU 코어 수 한도입니다.
 * `max_cpu_share` - `max_cpus`와 동일하지만, 사용 가능한 CPU 코어 수를 기준으로 정규화됩니다.
 * `max_burst_cpu_seconds` - `max_cpus`로 인해 스로틀링되지 않고 워크로드가 소비할 수 있는 최대 CPU 초 수입니다.
+* `max_memory` - 이 워크로드에 예약된 총 메모리 한도입니다.
 
-워크로드 설정을 통해 지정한 모든 한도는 각 리소스별로 서로 독립적입니다. 예를 들어 `max_bytes_per_second = 10485760`인 워크로드는 각 읽기 및 쓰기 리소스에 대해 각각 10 MB/s의 대역폭 한도를 가집니다. 읽기와 쓰기에 공통 한도가 필요하다면 READ 및 WRITE 액세스에 동일한 리소스를 사용하는 것을 고려하십시오.
+워크로드 설정을 통해 지정한 모든 한도는 각 리소스별로 서로 독립적입니다. 예를 들어 `max_bytes_per_second = '10Mi'`인 워크로드는 각 읽기 및 쓰기 리소스에 대해 각각 10 MB/s의 대역폭 한도를 가집니다. 읽기와 쓰기에 공통 한도가 필요하다면 READ 및 WRITE 액세스에 동일한 리소스를 사용하는 것을 고려하십시오.
 
 리소스별로 서로 다른 워크로드 계층 구조를 지정하는 방법은 없습니다. 하지만 특정 리소스에 대해서는 다른 워크로드 설정 값을 지정할 수 있습니다:
 
 ```sql
-CREATE OR REPLACE WORKLOAD all SETTINGS max_io_requests = 100, max_bytes_per_second = 1000000 FOR network_read, max_bytes_per_second = 2000000 FOR network_write
+CREATE OR REPLACE WORKLOAD all SETTINGS max_io_requests = 100, max_bytes_per_second = '1Mi' FOR network_read, max_bytes_per_second = '2Mi' FOR network_write
 ```
 
 또한 다른 워크로드에서 참조하고 있는 경우에는 워크로드나 리소스를 삭제할 수 없다는 점에 유의하십시오. 워크로드 정의를 업데이트하려면 `CREATE OR REPLACE WORKLOAD` 쿼리를 사용하십시오.
@@ -239,6 +137,23 @@ CREATE OR REPLACE WORKLOAD all SETTINGS max_io_requests = 100, max_bytes_per_sec
 <Note>
   워크로드 설정은 적절한 스케줄링 노드 집합으로 변환됩니다. 더 하위 수준의 세부 사항은 스케줄링 노드 [타입과 옵션](#hierarchy) 설명을 참조하십시오.
 </Note>
+
+<div id="workload-markup">
+  ## 워크로드 마크업
+</div>
+
+서로 다른 워크로드를 구분하기 위해 쿼리에 설정 `workload`를 지정할 수 있습니다. `workload`가 설정되지 않으면 &quot;default&quot; 값이 사용됩니다. 설정 프로필을 사용하면 다른 값으로 지정할 수도 있습니다. 특정 사용자의 모든 쿼리에 `workload` 설정의 고정값이 적용되게 하려면 설정 제약 조건을 사용해 `workload`를 상수로 만들 수 있습니다.
+
+<Warning>
+  쿼리 설정 `workload`는 리프 워크로드(즉, 하위 워크로드가 없는 워크로드)만 참조할 수 있습니다.
+</Warning>
+
+```sql
+SELECT count() FROM my_table WHERE value = 42 SETTINGS workload = 'production'
+SELECT count() FROM my_table WHERE value = 13 SETTINGS workload = 'development'
+```
+
+백그라운드 작업에도 `workload` 설정을 할당할 수 있습니다. 머지와 뮤테이션은 각각 `merge_workload` 및 `mutation_workload` 서버 설정을 사용합니다. 이 값은 특정 테이블에 대해 `merge_workload` 및 `mutation_workload` MergeTree 설정으로 재정의할 수도 있습니다.
 
 <div id="cpu_scheduling">
   ## CPU 스케줄링
@@ -306,13 +221,13 @@ CPU 스케줄링은 아직 머지와 뮤테이션을 지원하지 않습니다.
 * 스레드 수 제한: `max_concurrent_threads` 및 `max_concurrent_threads_ratio_to_cores`
 * CPU 스로틀링: `max_cpus`, `max_cpu_share`, `max_burst_cpu_seconds`
 
-첫 번째 방법은 현재 서버 부하에 따라 쿼리에 대해 생성되는 스레드 수를 동적으로 제어할 수 있게 합니다. 이는 사실상 `max_threads` 쿼리 설정이 지정하는 값을 낮추는 효과가 있습니다. 두 번째 방법은 토큰 버킷 알고리즘을 사용해 워크로드의 CPU 활용을 스로틀링합니다. 이 방법은 스레드 수에 직접 영향을 주지는 않지만, 워크로드에 속한 모든 스레드의 총 CPU 활용을 스로틀링합니다.
-
-`max_cpus` 및 `max_burst_cpu_seconds`를 사용하는 토큰 버킷 스로틀링은 다음을 의미합니다. `delta`초의 임의의 인터벌 동안 워크로드 내 모든 쿼리의 총 CPU 사용량은 `max_cpus * delta + max_burst_cpu_seconds` CPU 초를 초과할 수 없습니다. 장기적으로는 평균 활용을 `max_cpus`로 제한하지만, 단기적으로는 이 제한을 초과할 수 있습니다. 예를 들어 `max_burst_cpu_seconds = 60` 및 `max_cpus=0.001`인 경우, 스로틀링 없이 스레드 1개를 60초 동안 실행하거나, 스레드 2개를 30초 동안 실행하거나, 스레드 60개를 1초 동안 실행할 수 있습니다. `max_burst_cpu_seconds`의 기본값은 1초입니다. 동시 실행되는 스레드가 많은 경우 값이 너무 낮으면 허용된 `max_cpus` 코어를 충분히 활용하지 못할 수 있습니다.
-
 <Warning>
   CPU 스로틀링 설정은 `cpu_slot_preemption` 서버 설정이 활성화된 경우에만 적용되며, 그렇지 않으면 무시됩니다.
 </Warning>
+
+첫 번째 방법은 현재 서버 부하에 따라 쿼리에 대해 생성되는 스레드 수를 동적으로 제어할 수 있게 합니다. 이는 사실상 `max_threads` 쿼리 설정이 지정하는 값을 낮추는 효과가 있습니다. 두 번째 방법은 토큰 버킷 알고리즘을 사용해 워크로드의 CPU 활용을 스로틀링합니다. 이 방법은 스레드 수에 직접 영향을 주지는 않지만, 워크로드에 속한 모든 스레드의 총 CPU 활용을 스로틀링합니다.
+
+`max_cpus` 및 `max_burst_cpu_seconds`를 사용하는 토큰 버킷 스로틀링은 다음을 의미합니다. `delta`초의 임의의 인터벌 동안 워크로드 내 모든 쿼리의 총 CPU 사용량은 `max_cpus * delta + max_burst_cpu_seconds` CPU 초를 초과할 수 없습니다. 장기적으로는 평균 활용을 `max_cpus`로 제한하지만, 단기적으로는 이 제한을 초과할 수 있습니다. 예를 들어 `max_burst_cpu_seconds = 60` 및 `max_cpus=0.001`인 경우, 스로틀링 없이 스레드 1개를 60초 동안 실행하거나, 스레드 2개를 30초 동안 실행하거나, 스레드 60개를 1초 동안 실행할 수 있습니다. `max_burst_cpu_seconds`의 기본값은 1초입니다. 동시 실행되는 스레드가 많은 경우 값이 너무 낮으면 허용된 `max_cpus` 코어를 충분히 활용하지 못할 수 있습니다.
 
 CPU 슬롯을 보유하는 동안 스레드는 다음 세 가지 주요 상태 중 하나에 있을 수 있습니다.
 
@@ -338,6 +253,87 @@ CREATE WORKLOAD development IN all SETTINGS max_cpu_share = 0.3
   ClickHouse 서버에서 CPU 활용률을 최대화하려면 루트 워크로드 `all`에 `max_cpus`와 `max_cpu_share`를 사용하지 마십시오. 대신 `max_concurrent_threads`를 더 큰 값으로 설정하십시오. 예를 들어 CPU가 8개인 시스템에서는 `max_concurrent_threads = 16`으로 설정하십시오. 이렇게 하면 8개의 스레드는 CPU 작업을 실행하고, 나머지 8개의 스레드는 I/O 작업을 처리할 수 있습니다. 추가 스레드는 CPU 부하를 발생시켜 스케줄링 규칙이 적용되도록 합니다. 반대로 `max_cpus = 8`로 설정하면 서버가 사용 가능한 8개의 CPU를 초과할 수 없으므로 CPU 부하가 발생하지 않습니다.
 </Note>
 
+<div id="memory-reservations">
+  ## 메모리 예약
+</div>
+
+<Note>
+  메모리 예약 스케줄링은 실험적 기능입니다. `MEMORY RESERVATION` 리소스가 있을 때만 적용되며, SQL 인터페이스와 동작은 향후 릴리스에서 변경될 수 있습니다. 아직 머지 및 뮤테이션은 지원되지 않으며, 실행 중인 쿼리의 축출은 best-effort 방식으로만 처리됩니다. 즉시 적용되지 않고, 해당 쿼리의 다음 메모리 동기화 지점에서 적용됩니다.
+</Note>
+
+워크로드에 메모리 예약을 활성화하려면 `MEMORY RESERVATION` 리소스를 생성하고, workload setting을 사용해 예약되는 총 메모리에 대해 하나 이상의 제한을 설정하십시오:
+
+```sql
+CREATE RESOURCE memory (MEMORY RESERVATION)
+CREATE WORKLOAD all SETTINGS max_memory = '2Gi'
+```
+
+ClickHouse는 모든 쿼리와 백그라운드 작업의 메모리 할당을 추적합니다. 할당된 바이트 수는 스케줄링 계층 구조를 따라 루트까지 집계됩니다. 각 쿼리에는 해당 쿼리가 속한 리프 워크로드의 메모리 할당이 연결됩니다. 쿼리의 `reserve_memory` 설정이 0보다 크면 해당 할당은 pending 상태로 생성됩니다. Pending 할당은 워크로드 계층 구조에서 요청된 메모리 양을 예약합니다. 사용 가능한 메모리가 충분하지 않으면, 충분한 메모리가 해제되거나 다른 할당이 축출(강제 종료)될 때까지 해당 할당은 pending 상태로 유지됩니다. 할당이 승인되면 running 상태가 됩니다. Running 할당은 쿼리의 메모리 사용량에 따라 크기가 동적으로 증가하거나 감소할 수 있습니다. 할당의 수명 주기는 다음 상태 다이어그램으로 나타낼 수 있습니다.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Pending: init [reserve_memory > 0]
+    [*] --> Running: init [reserve_memory == 0]
+
+    Pending --> Running: admit
+
+    state Running {
+        %% Region 1: increase flow
+        NotIncreasing --> Increasing: request
+        Increasing --> NotIncreasing: approve
+
+        --
+
+        %% Region 2: decrease flow
+        NotDecreasing --> Decreasing: request
+        Decreasing --> NotDecreasing: approve
+    }
+
+    Running --> Killed: evict
+    Running --> Released: finish
+```
+
+리프 workload의 대기 중인 allocation은 FIFO 순서에 따라 승인됩니다. 여러 workload에 대기 중인 allocation이 있으면 precedence 및 weight 설정에 따라 승인됩니다. precedence가 더 높은 workload가 먼저 처리됩니다. 동일한 precedence를 가진 형제 workload는 max-min 공정 방식으로 weight에 따라 메모리를 공유하며, 이는 정규화된 memory usage(현재 사용량에 요청된 증가분을 더한 값을 weight로 나눈 값)가 더 낮은 workload가 먼저 처리된다는 뜻입니다. 축출 중에는 반대 로직이 적용됩니다. 메모리를 확보해야 할 때는 precedence가 더 낮고 정규화된 memory usage가 더 높은 workload가 먼저 제거됩니다.
+
+시간 공유 리소스는 priority를 사용하고 공간 공유 리소스는 precedence를 사용한다는 점에 유의하십시오. 두 설정은 서로 독립적이므로 서로 다른 값으로 설정할 수 있습니다. 더 높은 priority는 비파괴적 선점(지연 또는 스로틀링)을 의미하는 반면, 더 높은 precedence는 파괴적 축출(오류와 함께 중지)을 의미할 수 있습니다. 예를 들어 workload는 CPU scheduling에는 높은 priority를 사용하되, 메모리 예약에는 동일한 precedence를 사용하여 다른 workload를 축출하거나 이미 수행된 작업이 손실되는 상황을 피할 수 있습니다.
+
+`max_memory` 제한이 있는 모든 workload는 해당 서브트리에서 할당된 전체 메모리가 이 제한을 초과하지 않도록 보장합니다. 대기 중이거나 증가하는 allocation으로 인해 제한을 초과하게 되면 메모리를 확보하기 위해 축출 절차가 시작됩니다. 축출 절차에서는 축출할 victim을 선택합니다. killer와 victim의 최소 공통 조상 workload는 다음과 같은 상황에서 축출을 막습니다.
+
+* 대기 중인 allocation은 동일한 workload에서 실행 중인 allocation을 축출할 수 없습니다. (Killer와 victim workload가 같습니다).
+* 더 낮은 precedence의 대기 중인 allocation은 더 높은 precedence의 workload를 절대 종료하지 않습니다.
+* 대기 중인 allocation은 동일한 precedence의 allocation을 종료할 수 없습니다. 동일한 precedence의 실행 중인 allocation은 정규화된 memory usage를 기준으로 서로를 축출할 수 있다는 점에 유의하십시오.
+  축출이 방지되거나 충분한 메모리를 확보하지 못하면 새 allocation은 충분한 메모리가 확보될 때까지 차단됩니다. 이러한 규칙을 통해 메모리 압박에 따라 과도한 쿼리를 큐에 대기시킬 수 있으며, MEMORY&#95;LIMIT&#95;EXCEEDED 오류를 피하는 편리한 방법을 제공합니다.
+
+<Note>
+  Workload 제한은 [max&#95;memory&#95;usage](/ko/reference/settings/session-settings#max_memory_usage) 쿼리 설정과 같은 다른 메모리 활용 제한 방식과는 독립적입니다. 메모리 활용을 더 세밀하게 제어하기 위해 함께 사용할 수 있습니다. users 기준으로(workload 기준이 아님) 독립적인 메모리 제한을 설정할 수도 있습니다. 이 방식은 유연성이 떨어지며 메모리 예약이나 대기 중인 쿼리의 큐잉 같은 기능은 제공하지 않습니다. [Memory overcommit](/ko/concepts/features/configuration/settings/memory-overcommit)을 참조하십시오.
+</Note>
+
+Workload setting `max_waiting_queries`는 해당 workload의 대기 중인 allocation 수를 제한합니다. 제한에 도달하면 server는 `SERVER_OVERLOADED` 오류를 반환합니다. `max_waiting_queries`는 하위 workload에 상속되지 않으며 리프 workload에만 의미가 있다는 점에 유의하십시오.
+
+Memory reservation scheduling은 아직 merges 및 뮤테이션에서는 지원되지 않습니다.
+
+`reserve_memory` 설정이 0보다 큰 쿼리만 메모리 예약을 기다리는 동안 대기 상태가 됩니다. 하지만 `reserve_memory`가 0인 쿼리도 해당 workload의 메모리 사용량에 포함되며, 다른 대기 중이거나 증가하는 allocations를 위해 메모리를 확보해야 하는 경우 필요에 따라 축출될 수 있습니다. 적절한 workload 마크업이 없는 쿼리는 메모리 예약 scheduling의 대상이 아니며 scheduler에 의해 축출될 수 없습니다.
+
+쿼리에 비탄력적 메모리 예약을 제공하려면 `reserve_memory`와 `max_memory_usage` 쿼리 설정을 동일한 값으로 지정하십시오. 이 경우 쿼리는 고정된 양의 메모리를 예약하며, 할당량을 동적으로 늘릴 수 없습니다. 탄력적 메모리 예약은 메모리 압박이 없는 한 `reserve_memory`를 초과해 `max_memory_usage`까지 증가할 수 있으며, 이 때문에 종료되지 않습니다. 하지만 실제 메모리 사용량이 더 적더라도 `reserve_memory` 아래로 줄일 수는 없습니다.
+
+구성 예시를 살펴보겠습니다:
+
+```sql
+CREATE RESOURCE memory (MEMORY RESERVATION)
+CREATE WORKLOAD all SETTINGS max_memory = '10Gi'
+CREATE WORKLOAD system IN all SETTINGS weight = 1
+CREATE WORKLOAD user IN all SETTINGS weight = 9
+CREATE WORKLOAD production IN user SETTINGS precedence = 1, weight = 3
+CREATE WORKLOAD staging IN user SETTINGS precedence = 1, weight = 1
+CREATE WORKLOAD testing IN user SETTINGS precedence = 2
+```
+
+이 예시에서는 모든 쿼리와 백그라운드 활동이 예약하는 총 메모리가 10 GiB를 초과할 수 없습니다. system 워크로드는 최소 1 GiB(10 GiB의 10%)를 보장받고, user 워크로드는 최소 9 GiB(10 GiB의 90%)를 보장받습니다. user 워크로드 내부에서는 production 및 staging 워크로드가 동일한 precedence 1에서 가중치(3:1)에 따라 메모리를 공유합니다. testing 워크로드의 precedence는 2이며, production 및 staging보다 낮습니다. 따라서 testing 워크로드는 production 및 staging에서 사용하지 않는 메모리만 사용할 수 있습니다.
+
+메모리 압박이 발생하면 testing 워크로드의 메모리 할당이 먼저 축출됩니다. 그다음 더 많은 메모리를 확보해야 하면, 보장량을 초과한 경우 staging 워크로드의 메모리 할당이 production 워크로드의 메모리 할당보다 먼저 축출됩니다. production 및 staging에서 대기 중인 쿼리는 메모리를 확보하기 위해 testing 워크로드에서 실행 중인 메모리 할당을 축출할 수 있지만, 서로는 precedence가 같으므로 축출할 수 없습니다. 메모리 압박이 발생하면 이들은 큐에서 대기하며, 이를 통해 동시에 실행되는 쿼리가 너무 많아 발생하는 MEMORY&#95;LIMIT&#95;EXCEEDED 오류를 시스템이 방지할 수 있습니다.
+
+system 워크로드의 precedence는 0(default)이며, 이는 production, staging, testing 워크로드보다 높지만 서로 형제 워크로드 관계는 아닙니다. 최소 공통 상위 항목은 all 워크로드이며, 그 아래 두 자식은 동일한 precedence를 가집니다. 따라서 대기 중인 system 워크로드는 이들 어느 쪽도 축출할 수 없고, 반대의 경우도 마찬가지입니다. 이를 통해 system 활동이 쉽게 축출되지 않도록 보장합니다.
+
 <div id="query_scheduling">
   ## 쿼리 슬롯 스케줄링
 </div>
@@ -353,7 +349,7 @@ CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_secon
 
 워크로드 설정 `max_queries_per_second`와 `max_burst_queries`는 토큰 버킷 throttler를 사용해 해당 워크로드의 쿼리 수를 제한합니다. 이 설정은 임의의 시간 인터벌 `T` 동안 새로 실행을 시작하는 쿼리 수가 `max_queries_per_second * T + max_burst_queries`를 넘지 않도록 보장합니다.
 
-워크로드 설정 `max_waiting_queries`는 해당 워크로드의 대기 중인 쿼리 수를 제한합니다. 이 한도에 도달하면 서버는 오류 `SERVER_OVERLOADED`를 반환합니다.
+워크로드 설정 `max_waiting_queries`는 해당 워크로드의 대기 중인 쿼리 수를 제한합니다. 이 한도에 도달하면 서버는 오류 `SERVER_OVERLOADED`를 반환합니다. `max_waiting_queries`는 하위 워크로드에 상속되지 않으며 리프 워크로드에서만 의미가 있습니다.
 
 <Note>
   차단된 쿼리는 모든 제약 조건이 충족될 때까지 무기한 대기하며, 그전까지는 `SHOW PROCESSLIST`에 표시되지 않습니다.
@@ -378,9 +374,10 @@ SQL 기반 정의 외에도 워크로드와 리소스는 서버 설정 파일에
 ```xml
 <clickhouse>
     <resources_and_workloads>
+        CREATE RESOURCE memory (MEMORY RESERVATION);
         CREATE RESOURCE s3disk_read (READ DISK s3);
         CREATE RESOURCE s3disk_write (WRITE DISK s3);
-        CREATE WORKLOAD all SETTINGS max_io_requests = 500 FOR s3disk_read, max_io_requests = 1000 FOR s3disk_write, max_bytes_per_second = 1342177280 FOR s3disk_read, max_bytes_per_second = 3355443200 FOR s3disk_write;
+        CREATE WORKLOAD all SETTINGS max_memory = '2Gi', max_io_requests = 500 FOR s3disk_read, max_io_requests = 1000 FOR s3disk_write, max_bytes_per_second = '1280Mi' FOR s3disk_read, max_bytes_per_second = '3200Mi' FOR s3disk_write;
         CREATE WORKLOAD production IN all SETTINGS weight = 3;
     </resources_and_workloads>
 </clickhouse>
@@ -412,6 +409,97 @@ SQL 기반 정의 외에도 워크로드와 리소스는 서버 설정 파일에
 <Note>
   `CREATE WORKLOAD default`를 실행하지 않았다면 `throw_on_unknown_workload`를 `true`로 설정하지 마십시오. 시작 중에 `workload`를 명시적으로 설정하지 않은 쿼리가 실행되면 server 시작에 문제가 발생할 수 있습니다.
 </Note>
+
+<div id="hierarchy">
+  ### 스케줄링 노드 계층 구조
+</div>
+
+스케줄링 하위 시스템의 관점에서 각 리소스는 스케줄링 노드의 계층 구조로 구성됩니다. ClickHouse는 WORKLOAD 및 RESOURCE 정의에 따라 필요한 모든 스케줄링 노드를 자동으로 생성합니다. 스케줄링 노드는 저수준 구현 세부 사항이며, [system.scheduler](/ko/reference/system-tables/scheduler) 테이블을 통해 확인할 수 있습니다.
+
+```sql
+CREATE RESOURCE network_write (WRITE DISK s3)
+CREATE RESOURCE memory (MEMORY RESERVATION)
+CREATE WORKLOAD all SETTINGS max_io_requests = 100, max_memory = '2Gi'
+CREATE WORKLOAD development IN all
+CREATE WORKLOAD production IN all SETTINGS weight = 3
+```
+
+```mermaid
+graph TD
+    nw_root(["network_write"])
+    -->nw_all{{"all"}}
+    -->nw_semp[\"semaphore"/]
+    -->|100 concurrent requests| nw_fair("p0_fair")
+    -->|75% bandwidth| nw_prod{{"production"}}
+    -->nw_prod_q["fifo"]
+    nw_fair
+    -->|25% bandwidth| nw_dev{{"development"}}
+    -->nw_dev_q["fifo"]
+
+    mem_root(["memory"])
+    -->mem_all{{"all"}}
+    -->mem_semp[\"limit"/]
+    -->|2Gi RAM| mem_fair("p0_fair")
+    -->|75% RAM| mem_prod{{"production"}}
+    -->mem_prod_q["queue"]
+    mem_fair
+    -->|25% RAM| mem_dev{{"development"}}
+    -->mem_dev_q["queue"]
+```
+
+**시간 공유 노드 유형:**
+
+* `inflight_limit` (constraint) - 동시에 처리 중인 요청 수가 `max_requests`를 초과하거나 총 비용이 `max_cost`를 초과하면 차단합니다. 단일 자식이 있어야 합니다.
+* `bandwidth_limit` (constraint) - 현재 대역폭이 `max_speed`를 초과하거나(0은 무제한), 버스트가 `max_burst`를 초과하면 차단합니다(`max_burst`의 기본값은 `max_speed`). 단일 자식이 있어야 합니다.
+* `fair` (policy) - max-min 공정성에 따라 자식 노드 중 하나에서 다음에 처리할 요청을 선택합니다. 자식 노드는 `weight`를 지정할 수 있습니다(기본값은 1).
+* `priority` (policy) - 정적 우선순위에 따라 자식 노드 중 하나에서 다음에 처리할 요청을 선택합니다(값이 낮을수록 우선순위가 높음). 자식 노드는 `priority`를 지정해야 합니다(기본값은 0).
+* `fifo` (queue) - 리소스 용량을 초과한 요청을 보관할 수 있는 계층 구조의 리프 노드입니다.
+
+**공간 공유 노드 유형:**
+
+* `limit` - 자식의 총 할당량이 한도를 넘지 않도록 보장하며, 필요하면 하위 트리에서 축출 절차를 시작합니다. 단일 자식이 있어야 합니다.
+* `fair_allocation` - max-min 공정성에 따라 축출을 적용합니다. 대기 중인 할당은 실행 중인 할당을 축출하지 않습니다. 자식 노드는 `weight`를 지정할 수 있습니다(기본값은 1).
+* `precedence_allocation` - 정적 precedence에 따라 축출을 적용합니다(값이 낮을수록 precedence가 높음). precedence가 더 높은 대기 중인 할당은 precedence가 더 낮은 할당을 축출합니다. 자식 노드는 `precedence`를 지정해야 합니다(기본값은 0).
+* `queue` - 실행 중인 할당과 대기 중인 할당을 보관할 수 있는 계층 구조의 리프 노드입니다.
+
+<div id="deprecated-configuration">
+  ## 더 이상 권장되지 않는 XML 구성
+</div>
+
+리소스에서 어떤 디스크를 사용하는지 지정하는 또 다른 방법은 server의 `storage_configuration`입니다:
+
+특정 디스크에 대해 IO 스케줄링을 활성화하려면 storage configuration에서 `read_resource` 및/또는 `write_resource`를 지정해야 합니다. 이렇게 하면 지정된 디스크의 각 읽기 및 쓰기 요청에 어떤 리소스를 사용할지 ClickHouse에 알려줄 수 있습니다. 읽기 리소스와 쓰기 리소스는 동일한 리소스 이름을 참조할 수 있으며, 이는 로컬 SSD 또는 HDD에서 유용합니다. 여러 서로 다른 디스크가 동일한 리소스를 참조할 수도 있으며, 이는 원격 디스크에서 유용합니다. 예를 들어 &quot;production&quot; 워크로드와 &quot;development&quot; 워크로드 간에 네트워크 대역폭을 공정하게 분배하려는 경우에 유용합니다.
+
+예시:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        ...
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
+                <access_key_id>your_access_key_id</access_key_id>
+                <secret_access_key>your_secret_access_key</secret_access_key>
+                <read_resource>network_read</read_resource>
+                <write_resource>network_write</write_resource>
+            </s3>
+        </disks>
+        <policies>
+            <s3_main>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3_main>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+리소스를 정의하는 SQL 방식보다 서버 구성 옵션이 우선 적용된다는 점에 유의하십시오.
 
 <div id="see-also">
   ## 관련 항목

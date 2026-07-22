@@ -194,11 +194,11 @@ Ve a la [pestaña Dataflow Jobs](https://console.cloud.google.com/dataflow/jobs)
 
 La plantilla también emite las siguientes métricas personalizadas en el espacio de nombres `PubSubToClickHouse`, visibles desde la página del trabajo de Dataflow:
 
-| Métrica                 | Tipo         | Descripción                                                                            |
-| ----------------------- | ------------ | -------------------------------------------------------------------------------------- |
-| `messages-received`     | Contador     | Total de mensajes de Pub/Sub recibidos por el paso de análisis.                        |
-| `rows-parsed-ok`        | Contador     | Mensajes convertidos correctamente en una fila y enviados a la salida principal.       |
-| `rows-parse-failed`     | Contador     | Mensajes cuyo análisis o mapeo del esquema falló y que se redirigieron a dead-letter.  |
+| Métrica                 | Tipo         | Descripción                                                                               |
+| ----------------------- | ------------ | ----------------------------------------------------------------------------------------- |
+| `messages-received`     | Contador     | Total de mensajes de Pub/Sub recibidos por el paso de análisis.                           |
+| `rows-parsed-ok`        | Contador     | Mensajes convertidos correctamente en una fila y enviados a la salida principal.          |
+| `rows-parse-failed`     | Contador     | Mensajes cuyo análisis o mapeo del esquema falló y que se redirigieron a dead-letter.     |
 | `message-payload-bytes` | Distribución | Distribución de los tamaños de carga útil de los mensajes entrantes de Pub/Sub, en bytes. |
 
 <div id="troubleshooting">

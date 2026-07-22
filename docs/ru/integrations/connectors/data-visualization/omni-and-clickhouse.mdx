@@ -19,26 +19,24 @@ import PartnerBadge from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx"
 
 Omni может подключаться к ClickHouse Cloud или ClickHouse в собственной инфраструктуре через официальный источник данных ClickHouse.
 
-<div id="1-gather-your-connection-details">
-  ## 1. Подготовьте сведения о подключении
-</div>
+<Steps>
+  <Step title="Соберите сведения о подключении" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Создайте источник данных ClickHouse" id="2-create-a-clickhouse-data-source">
+    Перейдите в Admin -&gt; Connections и нажмите кнопку &quot;Add Connection&quot; в правом верхнем углу.
 
-<div id="2-create-a-clickhouse-data-source">
-  ## 2. Создайте источник данных ClickHouse
-</div>
+    <Image size="lg" img="/images/integrations/data-visualization/omni_01.webp" alt="Интерфейс администратора Omni с кнопкой Add Connection в разделе Connections" border />
 
-Перейдите в Admin -&gt; Connections и нажмите кнопку «Add Connection» в правом верхнем углу.
+    <br />
 
-<Image size="lg" img="/images/integrations/data-visualization/omni_01.webp" alt="Интерфейс администратора Omni с кнопкой Add Connection в разделе Connections" border />
+    Выберите `ClickHouse`. Введите учетные данные в форму.
 
-<br />
+    <Image size="lg" img="/images/integrations/data-visualization/omni_02.webp" alt="Интерфейс настройки подключения Omni для ClickHouse с полями формы для учетных данных" border />
 
-Выберите `ClickHouse`. Введите свои учетные данные в форме.
+    <br />
 
-<Image size="lg" img="/images/integrations/data-visualization/omni_02.webp" alt="Интерфейс настройки подключения Omni к ClickHouse с полями для ввода учетных данных" border />
-
-<br />
-
-Теперь вы можете запрашивать и визуализировать данные из ClickHouse в Omni.
+    Теперь вы можете выполнять запросы к данным ClickHouse и визуализировать их в Omni.
+  </Step>
+</Steps>

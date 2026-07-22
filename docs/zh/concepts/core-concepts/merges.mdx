@@ -9,16 +9,16 @@ doc_type: 'guide'
 import { Image } from "/snippets/zh/components/Image.jsx";
 
 <div id="what-are-part-merges-in-clickhouse">
-  ## ClickHouse 中的 part 合并是什么？
+  ## ClickHouse 中的分片合并是什么？
 </div>
 
 <br />
 
 ClickHouse [速度很快](/zh/get-started/about/why-clickhouse-is-so-fast)，不仅查询快，插入也快，这要归功于其[存储层](https://www.vldb.org/pvldb/vol17/p3731-schulze.pdf)。它的工作方式与 [LSM trees](https://en.wikipedia.org/wiki/Log-structured_merge-tree) 类似：
 
-① 插入到 [MergeTree 引擎](/zh/reference/engines/table-engines/mergetree-family/index)家族的表中时，会创建经过排序且不可变的[数据分区片段](/zh/concepts/core-concepts/parts)。
+① 插入到 [MergeTree 引擎](/zh/reference/engines/table-engines/mergetree-family/index) 家族的表中时，会创建经过排序且不可变的[数据分区片段](/zh/concepts/core-concepts/parts)。
 
-② 所有数据处理都会交由**后台 part 合并**完成。
+② 所有数据处理都会交由**后台分片合并**完成。
 
 这使得数据写入开销很低，而且[效率极高](/zh/get-started/about/why-clickhouse-is-so-fast#storage-layer-concurrent-inserts-are-isolated-from-each-other)。
 
@@ -26,7 +26,7 @@ ClickHouse [速度很快](/zh/get-started/about/why-clickhouse-is-so-fast)，不
 
 下图概述了这一后台合并过程：
 
-<Image img="/images/managing-data/core-concepts/merges_01.webp" size="lg" alt="PART MERGES" />
+<Image img="/images/managing-data/core-concepts/merges_01.webp" size="lg" alt="part 合并" />
 
 <br />
 
@@ -67,9 +67,9 @@ ORDER BY name ASC;
    └────────────┴───────┴──────────┘
 ```
 
-在 ClickHouse 24.10 中，内置的[监控仪表盘](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards)新增了一个[合并仪表盘](https://presentations.clickhouse.com/2024-release-24.10/index.html#17)。在 OSS 和 Cloud 中都可通过 `/merges` HTTP handler 访问，我们可以用它来可视化示例表中的所有 part 合并：
+在 ClickHouse 24.10 中，内置的[监控仪表盘](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards)新增了一个[合并仪表盘](https://presentations.clickhouse.com/2024-release-24.10/index.html#17)。在 OSS 和 Cloud 中都可通过 `/merges` HTTP handler 访问，我们可以用它来可视化示例表中的所有分片合并：
 
-<Image img="/images/managing-data/core-concepts/merges-dashboard.webp" size="lg" alt="PART 合并" />
+<Image img="/images/managing-data/core-concepts/merges-dashboard.webp" size="lg" alt="part 合并" />
 
 <br />
 
@@ -77,7 +77,7 @@ ORDER BY name ASC;
 
 ① 活跃分片的数量。
 
-② part 合并，以方框形式展示 (大小反映分片的大小) 。
+② 分片合并，以方框形式展示 (大小反映分片的大小) 。
 
 ③ [写入放大](https://en.wikipedia.org/wiki/Write_amplification)。
 
@@ -85,9 +85,9 @@ ORDER BY name ASC;
   ## 并发合并
 </div>
 
-单个 ClickHouse server 会使用多个后台[合并线程](/zh/reference/settings/server-settings/settings#background_pool_size)并发执行 part 合并：
+单个 ClickHouse server 会使用多个后台[合并线程](/zh/reference/settings/server-settings/settings#background_pool_size)并发执行分片合并：
 
-<Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="PART MERGES" />
+<Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="part 合并" />
 
 <br />
 
@@ -115,11 +115,11 @@ ClickHouse 不一定会像[前面的示例](/zh/concepts/core-concepts/merges#co
 
 下图说明了 ClickHouse 中单个后台[合并线程](/zh/concepts/core-concepts/merges#concurrent-merges)如何合并分片 (默认情况下，不使用[垂直合并](/zh/concepts/core-concepts/merges#memory-optimized-merges)) ：
 
-<Image img="/images/managing-data/core-concepts/merges_03.webp" size="lg" alt="part 合并" />
+<Image img="/images/managing-data/core-concepts/merges_03.webp" size="lg" alt="分片 合并" />
 
 <br />
 
-part 合并分为以下几个步骤：
+分片合并分为以下几个步骤：
 
 **① 解压与加载**：待合并分片中的[压缩二进制列文件](/zh/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)会先解压并加载到内存中。
 
@@ -141,7 +141,7 @@ part 合并分为以下几个步骤：
 
 下图说明了标准 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 表中的分片是如何合并的：
 
-<Image img="/images/managing-data/core-concepts/merges_04.webp" size="lg" alt="数据分片合并" />
+<Image img="/images/managing-data/core-concepts/merges_04.webp" size="lg" alt="part 合并" />
 
 <br />
 
@@ -153,9 +153,9 @@ part 合并分为以下几个步骤：
   ### Replacing 合并
 </div>
 
-在 [ReplacingMergeTree](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree) 表中，part 合并的工作方式与[标准合并](/zh/concepts/core-concepts/merges#standard-merges)类似，但每一行只会保留最新版本，旧版本会被丢弃：
+在 [ReplacingMergeTree](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree) 表中，分片合并的工作方式与[标准合并](/zh/concepts/core-concepts/merges#standard-merges)类似，但每一行只会保留最新版本，旧版本会被丢弃：
 
-<Image img="/images/managing-data/core-concepts/merges_05.webp" size="lg" alt="PART MERGES" />
+<Image img="/images/managing-data/core-concepts/merges_05.webp" size="lg" alt="part 合并" />
 
 <br />
 
@@ -171,9 +171,9 @@ part 合并分为以下几个步骤：
   ### 求和合并
 </div>
 
-在 [SummingMergeTree](/zh/reference/engines/table-engines/mergetree-family/summingmergetree) 表的 part 合并期间，数值数据会被自动汇总：
+在 [SummingMergeTree](/zh/reference/engines/table-engines/mergetree-family/summingmergetree) 表的 分片合并期间，数值数据会被自动汇总：
 
-<Image img="/images/managing-data/core-concepts/merges_06.webp" size="lg" alt="part 合并" />
+<Image img="/images/managing-data/core-concepts/merges_06.webp" size="lg" alt="分片 合并" />
 
 <br />
 
@@ -185,7 +185,7 @@ part 合并分为以下几个步骤：
   ### 聚合合并
 </div>
 
-上面的 `SummingMergeTree` 表示例是 [AggregatingMergeTree](/zh/reference/engines/table-engines/mergetree-family/aggregatingmergetree) 表的一种特化变体，它支持在part 合并期间应用 [90+](/zh/reference/functions/aggregate-functions/reference-index) 种聚合函数中的任意一种，从而实现[自动增量数据转换](https://www.youtube.com/watch?v=QDAJTKZT8y4)：
+上面的 `SummingMergeTree` 表示例是 [AggregatingMergeTree](/zh/reference/engines/table-engines/mergetree-family/aggregatingmergetree) 表的一种特化变体，它支持在 分片合并期间应用 [90+](/zh/reference/functions/aggregate-functions/reference-index) 种聚合函数中的任意一种，从而实现[自动增量数据转换](https://www.youtube.com/watch?v=QDAJTKZT8y4)：
 
 <Image img="/images/managing-data/core-concepts/merges_07.webp" size="lg" alt="part 合并" />
 
@@ -193,4 +193,4 @@ part 合并分为以下几个步骤：
 
 上图中的 DDL 语句创建了一个以 `town` 作为排序键的 `AggregatingMergeTree` 表，确保数据在磁盘上按该列排序，并生成相应的稀疏主索引。
 
-在 ② 合并过程中，ClickHouse 会将所有排序键相同的行合并为一行，并存储[部分聚合状态](https://clickhouse.com/blog/clickhouse_vs_elasticsearch_mechanics_of_count_aggregations#-multi-core-parallelization) (例如，对 `avg()` 来说会存储一个 `sum` 和一个 `count`) 。这些状态可通过增量后台合并确保结果的准确性。
+在 ② 合并过程中，ClickHouse 会将所有排序键相同的行替换为一行，并存储[部分聚合状态](https://clickhouse.com/blog/clickhouse_vs_elasticsearch_mechanics_of_count_aggregations#-multi-core-parallelization) (例如，对 `avg()` 来说会存储一个 `sum` 和一个 `count`) 。这些状态可通过增量后台合并确保结果的准确性。

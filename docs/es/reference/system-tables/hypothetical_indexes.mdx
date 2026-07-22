@@ -1,0 +1,56 @@
+---
+description: 'Tabla del sistema que enumera los índices hipotéticos (what-if) definidos en la sesión actual'
+keywords: ['tabla del sistema', 'hypothetical_indexes', 'what-if']
+sidebarTitle: 'hypothetical_indexes'
+slug: /operations/system-tables/hypothetical_indexes
+title: 'system.hypothetical_indexes'
+doc_type: 'referencia'
+---
+
+Enumera todos los índices de salto hipotéticos (what-if) definidos en la sesión actual. Consulte [`CREATE HYPOTHETICAL INDEX`](/es/reference/statements/hypothetical-index#create-hypothetical-index) y [`EXPLAIN WHATIF`](/es/reference/statements/explain#explain-whatif).
+
+El contenido tiene ámbito de sesión: cada conexión solo ve sus propios índices hipotéticos, y la tabla está vacía cuando no se ha creado ningún índice en la sesión actual.
+
+Los valores actuales de `(database, table)` se resuelven por UUID en tiempo de consulta, por lo que reflejan `RENAME TABLE` y ocultan automáticamente las entradas de las tablas eliminadas.
+
+<div id="columns">
+  ## Columnas
+</div>
+
+| Columna       | Tipo     | Descripción                                                                           |
+| ------------- | -------- | ------------------------------------------------------------------------------------- |
+| `database`    | `String` | Base de datos de destino.                                                             |
+| `table`       | `String` | Tabla de destino.                                                                     |
+| `name`        | `String` | Nombre del índice.                                                                    |
+| `type`        | `String` | Tipo de índice (`minmax`, `set`, `bloom_filter`, etc.).                               |
+| `type_full`   | `String` | Expresión del tipo de índice, incluidos los argumentos, p. ej., `bloom_filter(0.01)`. |
+| `expression`  | `String` | Expresión del índice tal como aparece en `CREATE HYPOTHETICAL INDEX`.                 |
+| `granularity` | `UInt64` | Número de gránulos de datos por gránulo de índice.                                    |
+
+<div id="example">
+  ## Ejemplo
+</div>
+
+```sql
+CREATE HYPOTHETICAL INDEX i1 ON t (b) TYPE bloom_filter(0.01)  GRANULARITY 1;
+CREATE HYPOTHETICAL INDEX i2 ON t (b) TYPE bloom_filter(0.001) GRANULARITY 1;
+
+SELECT database, table, name, type, type_full, expression, granularity
+FROM system.hypothetical_indexes;
+```
+
+```text
+┌─database─┬─table─┬─name─┬─type─────────┬─type_full───────────┬─expression─┬─granularity─┐
+│ default  │ t     │ i1   │ bloom_filter │ bloom_filter(0.01)  │ b          │           1 │
+│ default  │ t     │ i2   │ bloom_filter │ bloom_filter(0.001) │ b          │           1 │
+└──────────┴───────┴──────┴──────────────┴─────────────────────┴────────────┴─────────────┘
+```
+
+`type` es el nombre del tipo base y `type_full` incluye los argumentos, por lo que los usuarios pueden distinguir entre variantes con parámetros como `bloom_filter(0.01)` y `bloom_filter(0.001)`.
+
+<div id="see-also">
+  ## Véase también
+</div>
+
+* [`CREATE HYPOTHETICAL INDEX`](/es/reference/statements/hypothetical-index#create-hypothetical-index)
+* [`EXPLAIN WHATIF`](/es/reference/statements/explain#explain-whatif)

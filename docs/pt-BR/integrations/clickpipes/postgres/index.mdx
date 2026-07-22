@@ -12,7 +12,8 @@ integration:
 
 import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
+import { Image } from "/snippets/components/Image.jsx";
+import ChangingTLSSettings from '/snippets/pt-BR/clickpipes/_changing_tls_settings.mdx';
 
 Você pode usar o ClickPipes para fazer a ingestão de dados do seu banco de dados Postgres de origem no ClickHouse Cloud. O banco de dados Postgres de origem pode ser hospedado no local ou na nuvem, incluindo Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase e outros.
 
@@ -88,6 +89,12 @@ Certifique-se de estar conectado à sua conta do ClickHouse Cloud. Se ainda não
 Você pode usar o AWS Private Link para se conectar ao seu banco de dados Postgres de origem se ele estiver hospedado na AWS. Isso é útil se você
 quiser manter a transferência de dados privada.
 Você pode seguir o [guia de configuração para configurar a conexão](/pt-BR/integrations/clickpipes/aws-privatelink).
+
+<div id="optional-changing-tls-settings">
+  #### (Opcional) Alterando as configurações de TLS
+</div>
+
+<ChangingTLSSettings />
 
 <div id="optional-setting-up-ssh-tunneling">
   #### (Opcional) Configuração do tunelamento SSH

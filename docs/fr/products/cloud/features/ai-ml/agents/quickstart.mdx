@@ -26,17 +26,13 @@ Créez un agent personnalisé dans la console Cloud et exécutez une requête en
 </div>
 
 <Steps>
-  <Step>
-    ### Lancer ClickHouse Agents
-
+  <Step title="Lancer ClickHouse Agents" id="launch-agents">
     Depuis votre service Cloud, cliquez sur **ClickHouse agents** dans la barre latérale gauche pour ouvrir la page de lancement des agents. Cliquez sur **Launch ClickHouse agents** pour ouvrir l’Agent Builder.
 
     <Image img="/images/cloud/agent-builder/launch-ch-agents.webp" alt="Navigation du service Cloud avec ClickHouse agents (Beta) sélectionné, affichant la page de lancement avec le bouton Launch ClickHouse agents" size="lg" />
   </Step>
 
-  <Step>
-    ### Créer l’agent
-
+  <Step title="Créer l’agent" id="create-the-agent">
     Dans l’Agent Builder, cliquez sur **Create New Agent** en haut du panneau de gauche. Renseignez les champs principaux :
 
     * **Name** - un identifiant court pour votre agent.
@@ -48,9 +44,7 @@ Créez un agent personnalisé dans la console Cloud et exécutez une requête en
     <Image img="/images/cloud/agent-builder/agent-builder.webp" alt="Panneau Agent Builder affichant le menu déroulant Create New Agent, les champs du formulaire (Name, Description, Category, Instructions, Model) et la section Capabilities" size="lg" />
   </Step>
 
-  <Step>
-    ### Ajouter des capacités et des outils
-
+  <Step title="Ajouter des capacités et des outils" id="attach-tools">
     Les capacités et les outils de l’agent se trouvent à deux endroits.
 
     Les **Capabilities** du panneau principal — des fonctionnalités natives comme [Run Code](/fr/products/cloud/features/ai-ml/agents/builder/code-interpreter), [Web Search](/fr/products/cloud/features/ai-ml/agents/builder/web-search), File Context, Artifacts, [MCP Servers](/fr/products/cloud/features/ai-ml/agents/builder/mcp-servers) et [Skills](/fr/products/cloud/features/ai-ml/agents/builder/skills). Activez celles dont l’agent a besoin.
@@ -70,9 +64,7 @@ Créez un agent personnalisé dans la console Cloud et exécutez une requête en
     Vous pouvez modifier les capacités et les outils associés à tout moment.
   </Step>
 
-  <Step>
-    ### Exécuter une requête
-
+  <Step title="Exécuter une requête" id="run-a-query">
     Enregistrez l’agent, ouvrez une nouvelle conversation et sélectionnez votre agent dans le sélecteur d’agents. Saisissez une question — par exemple, *&quot;Quelles sont mes 10 principales tables par nombre de lignes cette semaine ?&quot;* — et l’agent planifie, appelle des outils si nécessaire, puis fournit une réponse.
 
     <Image img="/images/cloud/agent-builder/chat-query.webp" alt="Échange dans le chat affichant la question 'Quelles sont mes 10 principales tables par nombre de lignes cette semaine ?' et la réponse de l’agent — un tableau Markdown classant les 10 principales tables de tous les services par nombre de lignes, avec Key Observations en dessous" size="lg" />
@@ -83,5 +75,5 @@ Créez un agent personnalisé dans la console Cloud et exécutez une requête en
   ## Étapes suivantes
 </div>
 
-* [Partagez l’agent](/fr/products/cloud/features/ai-ml/agents/sharing-and-access) avec vos collègues.
-* Publiez-le dans le [Marketplace](/fr/products/cloud/features/ai-ml/agents/marketplace) une fois l’agent stable.
+* [Partager l’agent](/fr/products/cloud/features/ai-ml/agents/sharing-and-access) avec vos collègues.
+* Publiez-le dans le [marketplace](/fr/products/cloud/features/ai-ml/agents/marketplace) une fois l’agent stable.

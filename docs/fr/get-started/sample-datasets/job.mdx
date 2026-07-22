@@ -24,7 +24,7 @@ Les 113 requêtes sont organisées en 33 familles (`1`–`33`). Les requêtes d�
 
 Le jeu de données JOB est un instantané d’IMDb comprenant 21 tables. Les définitions des tables sont disponibles dans [`init_cloud.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/init_cloud.sql) du dépôt ClickHouse.
 
-Chaque table utilise le moteur [`MergeTree`](/engines/table-engines/mergetree-family/mergetree), avec un tri sur sa colonne de clé primaire `id`, en miroir du schéma PostgreSQL d’origine dans lequel chaque table déclare `id integer NOT NULL PRIMARY KEY`. Les colonnes PostgreSQL pouvant contenir des valeurs NULL sont mappées sur des types `Nullable(...)`.
+Chaque table utilise le moteur [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/mergetree), avec un tri sur sa colonne de clé primaire `id`, en miroir du schéma PostgreSQL d’origine dans lequel chaque table déclare `id integer NOT NULL PRIMARY KEY`. Les colonnes PostgreSQL pouvant contenir des valeurs NULL sont mappées sur des types `Nullable(...)`.
 
 Créez les tables :
 

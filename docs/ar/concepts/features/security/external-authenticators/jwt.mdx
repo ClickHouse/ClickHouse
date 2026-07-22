@@ -105,13 +105,15 @@ import CloudOnlyBadge from "/snippets/ar/components/CloudOnlyBadge/CloudOnlyBadg
   ### الهوية والتسمية
 </div>
 
-يتلقى كل مستخدم JWT معرّف UUID حتميًا يُحتسب من مطالبات `iss` و`sub` و`aud`. ويظل هذا المعرّف **ثابتًا** عبر عمليات تسجيل الدخول. لذا فإن المستخدم الذي يسجّل الدخول عدة مرات باستخدام رموز مميزة مختلفة (ولكن مع issuer وsubject وaudience نفسها) يحصل دائمًا على معرّف UUID نفسه.
+يتلقى كل مستخدم JWT معرّف UUID حتميًا يُحتسب من مطالبات `iss` و`sub` و`aud`. ويظل هذا المعرّف **ثابتًا** عبر عمليات تسجيل الدخول. لذا فإن المستخدم الذي يسجّل الدخول عدة مرات باستخدام رموز مميزة مختلفة (ولكن مع الجهة المُصدِرة والمعرّف والجمهور المستهدف نفسها) يحصل دائمًا على معرّف UUID نفسه.
 
 أما اسم المستخدم فهو **غير ثابت**. ويُنشأ على النحو التالي:
 
 ```text
-JWT::<issuer>::<audience>::<subject>::<claims_hash>
+JWT::<subject>::<claims_hash>
 ```
+
+يشير `<claims_hash>` إلى قيمة تجزئة مشتقة من مطالبات `iss` و`sub` و`aud` إلى جانب المطالبتين `clickhouse:roles` و`clickhouse:grants`. ولا تدخل المطالبتان `iss` و`aud` **إلا** من خلال هذه القيمة؛ إذ لم تعودا تُدرجان مباشرةً ضمن بادئة اسم المستخدم الظاهرة. وهذا يُبقي الاسم موجزًا وسهل القراءة عندما تكون عناوين URL الخاصة بـ IdP في `iss`/`aud` طويلة وغير واضحة (على سبيل المثال، Microsoft Entra أو Okta)، مع ضمان أن الثلاثيات المختلفة `(iss, sub, aud)` ومجموعات `clickhouse:roles` / `clickhouse:grants` المختلفة تُنتِج أسماء مختلفة وثابتة. أما المطالبات التي لا تدخل في حساب قيمة التجزئة (مثل `iat` أو `exp` أو `nbf` أو المطالبات المخصصة غير المرتبطة) فلا تغيّر اسم المستخدم.
 
 يتغيّر الجزء `<claims_hash>` كلما تغيّرت المطالبات `clickhouse:roles` أو `clickhouse:grants`. وهذا يعني أن الرموز المميّزة ذات مجموعات الأدوار أو الامتيازات المختلفة تُنتِج أسماء مستخدمين مختلفة حتى للهوية نفسها.
 
@@ -150,7 +152,7 @@ effective_rights = permission_limit ∩ (token_grants ∪ token_roles)
 استخدم اسم المستخدم الحالي للإشارة إلى المستخدم:
 
 ```sql
-ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::ClickHouse::my-service-id::jane.doe::<claims-hash>';
+ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::jane.doe::<claims_hash>';
 ```
 
 <Note>

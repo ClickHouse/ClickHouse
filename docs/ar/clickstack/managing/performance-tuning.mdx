@@ -680,9 +680,7 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
 يوضح المثال أدناه طريقة بسيطة لإنشاء جدول سجلات جديد بالمخطط الحالي، ولكن بمفتاح أساسي جديد يتضمن العمود `SeverityText` قبل `ServiceName`.
 
 <Steps>
-  <Step>
-    #### إنشاء جدول جديد
-
+  <Step title="إنشاء جدول جديد" id="create-new-table-with-key">
     ```sql
     CREATE TABLE otel_logs_temp AS otel_logs
     PRIMARY KEY (SeverityText, ServiceName, Timestamp)
@@ -699,9 +697,7 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
     </Info>
   </Step>
 
-  <Step>
-    #### EXCHANGE وحذف الجدول
-
+  <Step title="EXCHANGE وحذف الجدول" id="exhange-and-drop-table">
     تُستخدم عبارة `EXCHANGE` لتبديل أسماء الجداول [بشكل ذري](/ar/concepts/core-concepts/glossary#atomicity). بعد ذلك، يمكن حذف الجدول المؤقت (الذي أصبح الآن الجدول الافتراضي القديم).
 
     ```sql
@@ -713,7 +709,7 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
 
 ومع ذلك، **لا يمكن تعديل المفتاح الأساسي في جدول موجود**. فتغييره يتطلب إنشاء جدول جديد.
 
-يمكن استخدام العملية التالية لضمان الاحتفاظ بالبيانات القديمة مع استمرار الاستعلام عنها بشفافية (باستخدام مفتاحها الحالي في ClickStack UI، إذا لزم الأمر)، مع إتاحة البيانات الجديدة عبر جدول جديد مُحسَّن وفقًا لأنماط وصول المستخدمين. ويضمن هذا النهج عدم الحاجة إلى تعديل مسارات إدخال البيانات، إذ تظل البيانات تُرسل إلى أسماء الجداول الافتراضية، وتبقى جميع التغييرات شفافة للمستخدمين.
+يمكن استخدام العملية التالية لضمان الاحتفاظ بالبيانات القديمة مع استمرار الاستعلام عنها بشفافية (باستخدام مفتاحها الحالي في واجهة ClickStack، إذا لزم الأمر)، مع إتاحة البيانات الجديدة عبر جدول جديد مُحسَّن وفقًا لأنماط وصول المستخدمين. ويضمن هذا النهج عدم الحاجة إلى تعديل مسارات إدخال البيانات، إذ تظل البيانات تُرسل إلى أسماء الجداول الافتراضية، وتبقى جميع التغييرات شفافة للمستخدمين.
 
 <Note>
   نادرًا ما تكون إعادة تحميل البيانات التاريخية الموجودة إلى جدول جديد مجدية على نطاق واسع. فعادةً ما تكون تكلفة المعالجة وعمليات IO مرتفعة، ولا تبرر مكاسب الأداء. وبدلًا من ذلك، اترك البيانات الأقدم تنتهي صلاحيتها [عبر TTL](/ar/clickstack/managing/ttl)، بينما تستفيد البيانات الأحدث من المفتاح المُحسَّن.
@@ -722,10 +718,8 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
 يُستخدم أدناه المثال نفسه، حيث يُجعل `SeverityText` العمود الأول في المفتاح الأساسي. وفي هذه الحالة، يُنشأ جدول للبيانات الجديدة مع الاحتفاظ بالجدول القديم لأغراض التحليل التاريخي.
 
 <Steps>
-  <Step>
-    #### إنشاء جدول جديد
-
-    أنشئ الجدول الجديد بالمفتاح الأساسي المطلوب. لاحظ اللاحقة `_23_01_2025` — عدّلها لتكون التاريخ الحالي. على سبيل المثال:
+  <Step title="إنشاء جدول جديد" id="create-new-table-with-key-2">
+    Create the new table with the desired مفتاح أساسي. Note the `_23_01_2025` suffix - adapt this to be the current date. e.g.
 
     ```sql
     CREATE TABLE otel_logs_23_01_2025 AS otel_logs
@@ -734,10 +728,8 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
     ```
   </Step>
 
-  <Step>
-    #### إنشاء جدول Merge
-
-    لا يخزّن [محرك Merge](/ar/reference/engines/table-engines/special/merge) (ويجب عدم الخلط بينه وبين MergeTree) البيانات بنفسه، لكنه يتيح القراءة من أي عدد من الجداول الأخرى في الوقت نفسه.
+  <Step title="Create a Merge table" id="create-merge-table">
+    The [Merge engine](/ar/reference/engines/table-engines/special/merge) (not to be confused with MergeTree) doesn&#39;t store data itself, but allows reading from any number of other tables simultaneously.
 
     ```sql
     CREATE TABLE otel_logs_merge
@@ -746,45 +738,39 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
     ```
 
     <Note>
-      تفترض `currentDatabase()` أن الأمر يُشغَّل في قاعدة البيانات الصحيحة. وإلا، فحدّد اسم قاعدة البيانات صراحةً.
+      `currentDatabase()` assumes the command is run in the correct database. Otherwise, specify the database name explicitly.
     </Note>
 
-    يمكنك الآن تنفيذ استعلام على هذا الجدول للتأكد من أنه يعيد بيانات من `otel_logs`.
+    You can now query this table to confirm it returns data from `otel_logs`.
   </Step>
 
-  <Step>
-    #### تحديث ClickStack UI للقراءة من جدول Merge
+  <Step title="Update the واجهة ClickStack to read from the merge table" id="update-clickstack-ui-to-read-from-merge-tree">
+    Configure the واجهة ClickStack to use `otel_logs_merge` as the table for the logs data source.
 
-    اضبط ClickStack UI لاستخدام `otel_logs_merge` بصفته الجدول الخاص بمصدر بيانات السجلات.
+    <Image img="/images/clickstack/performance_guide/select_merge_table.webp" size="lg" alt="Select Merge Table" />
 
-    <Image img="/images/clickstack/performance_guide/select_merge_table.webp" size="lg" alt="اختر جدول Merge" />
-
-    في هذه المرحلة، تستمر عمليات الكتابة إلى `otel_logs` باستخدام المفتاح الأساسي الأصلي، بينما تستخدم عمليات القراءة جدول Merge. لا يوجد أي تغيير مرئي للمستخدمين أو أي تأثير على استيعاب البيانات.
+    At this point, writes continue to `otel_logs` with the original مفتاح أساسي, while reads use the merge table. There is no visible change for users or impact on ingestion.
   </Step>
 
-  <Step>
-    #### تبديل الجداول
-
-    تُستخدم الآن عبارة `EXCHANGE` لتبديل اسمي الجدولين `otel_logs` و`otel_logs_23_01_2025` تبديلًا ذريًا.
+  <Step title="Exchange the tables" id="exchange-the-tables">
+    تُستخدم عبارة `EXCHANGE` الآن لتبديل أسماء الجدولين `otel_logs` و`otel_logs_23_01_2025` بشكل ذري.
 
     ```sql
     EXCHANGE TABLES otel_logs AND otel_logs_23_01_2025
     ```
 
-    تتجه عمليات الكتابة الآن إلى جدول `otel_logs` الجديد بالمفتاح الأساسي المحدّث. وتبقى البيانات الحالية في `otel_logs_23_01_2025`، ولا تزال متاحة عبر جدول Merge. وتشير اللاحقة إلى تاريخ تطبيق التغيير، وتمثّل أحدث `timestamp` موجود في ذلك الجدول.
+    Writes now go to the new `otel_logs` table with the updated مفتاح أساسي. Existing data remains in `otel_logs_23_01_2025` and is still accessible via the merge table. The suffix indicates the date the change was applied and represents the latest timestamp contained in that table.
 
-    تتيح هذه العملية تغيير المفتاح الأساسي من دون انقطاع في استيعاب البيانات ومن دون أي تأثير مرئي للمستخدمين.
+    This process allows مفتاح أساسي changes with no ingest interruption and no user-visible impact.
   </Step>
 </Steps>
 
-يمكن تكييف هذه العملية إذا لزم إجراء مزيد من التغييرات على المفاتيح الأساسية. على سبيل المثال، إذا قررت بعد أسبوع أن `SeverityNumber` يجب أن يكون جزءًا من المفتاح الأساسي بدلًا من `SeverityText`. ويمكن تكرار العملية التالية كلما دعت الحاجة إلى تغيير المفتاح الأساسي.
+This process can be adapted should further changes be required to مفاتيح أساسية. For example, if you decide that actually the `SeverityNumber` should be part of the مفتاح أساسي one week later, rather than the `SeverityText`. The following process can be adapted as many times as مفتاح أساسي changes are required.
 
 <Steps>
-  <Step>
-    #### إنشاء جدول جديد
-
-    أنشئ الجدول الجديد بالمفتاح الأساسي المطلوب.
-    في المثال أدناه، استُخدم `30_01_2025` بوصفه لاحقة للدلالة على تاريخ الجدول. على سبيل المثال:
+  <Step title="Create new table" id="create-new-table-with-key-3">
+    Create the new table with the desired مفتاح أساسي.
+    In the example below `30_01_2025` is used as our suffix to denote the date of the table. e.g.
 
     ```sql
     CREATE TABLE otel_logs_30_01_2025 AS otel_logs
@@ -793,23 +779,21 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
     ```
   </Step>
 
-  <Step>
-    #### تبديل الجداول
-
-    تُستخدم الآن عبارة `EXCHANGE` لتبديل اسمي الجدولين `otel_logs` و`otel_logs_30_01_2025` تبديلًا ذريًا.
+  <Step title="Exchange the tables" id="exchange-the-tables-v2">
+    تُستخدم عبارة `EXCHANGE` الآن لتبديل أسماء الجدولين `otel_logs` و`otel_logs_30_01_2025` بشكل ذري.
 
     ```sql
     EXCHANGE TABLES otel_logs AND otel_logs_30_01_2025
     ```
 
-    تتجه عمليات الكتابة الآن إلى جدول `otel_logs` الجديد بالمفتاح الأساسي المحدّث. وتبقى البيانات القديمة في `otel_logs_30_01_2025`، ويمكن الوصول إليها عبر جدول Merge.
+    Writes now go to the new `otel_logs` table with the updated مفتاح أساسي. The old data remains in `otel_logs_30_01_2025`, accessible via the merge table.
   </Step>
 </Steps>
 
 <Info>
-  **الجداول الزائدة**
+  **Redundant tables**
 
-  إذا كانت سياسات TTL مطبّقة، وهو ما يُنصح به، فإن الجداول ذات المفاتيح الأساسية الأقدم التي لم تعد تستقبل عمليات كتابة ستفرغ تدريجيًا مع انتهاء صلاحية البيانات. ويجب مراقبتها وتنظيفها دوريًا بمجرد أن تصبح خالية من البيانات. وحتى الآن، تتم عملية التنظيف هذه يدويًا.
+  If TTL policies are in place, which is recommended, tables with older مفاتيح أساسية that are no longer receiving writes will gradually empty as data expires. They should be monitored and periodically cleaned up once they contain no data. At present, this cleanup process is manual.
 </Info>
 
 <div id="row-lookup-block-columns">
@@ -987,10 +971,10 @@ ORDER BY t;
 * [شرح وأمثلة في المدوّنة](https://clickhouse.com/blog/projections-secondary-indices#example-combining-multiple-projection-indexes)
 
 <div id="projection-alternatives">
-  ### البدائل
+  ### بدائل
 </div>
 
-إذا كنت بحاجة إلى مفاتيح `ORDER BY` متعددة، فليست الإسقاطات الخيار الوحيد. وبحسب القيود التشغيلية والطريقة التي تريد أن يوجّه بها ClickStack الاستعلامات، ضع في اعتبارك ما يلي:
+إذا كنت بحاجة إلى عدة مفاتيح ترتيب، فليست الإسقاطات الخيار الوحيد. وبحسب القيود التشغيلية والطريقة التي تريد أن يوجّه بها ClickStack الاستعلامات، فكّر في الخيارات التالية:
 
-* تهيئة مجمّع OpenTelemetry لديك للكتابة إلى جدولين بمفاتيح `ORDER BY` مختلفة، وإنشاء مصادر ClickStack منفصلة لكل جدول.
-* إنشاء عرض مُجسَّد كمسار نسخ؛ أي إرفاق عرض مُجسَّد بالجدول الرئيسي بحيث يحدّد الصفوف الخام ويكتبها إلى جدول ثانوي بمفتاح `ORDER BY` مختلف (كنمط لإزالة التطبيع أو التوجيه). أنشئ مصدرًا لهذا الجدول الهدف. يمكن العثور على أمثلة [هنا](/ar/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation).
+* تهيئة OpenTelemetry Collector للكتابة إلى جدولين بمفتاحي `ORDER BY` مختلفين، ثم إنشاء مصادر ClickStack منفصلة لكل جدول.
+* إنشاء عرض مُجسَّد كمسار نسخ؛ أي إرفاق عرض مُجسَّد بالجدول الرئيسي بحيث ينسخ الصفوف الخام إلى جدول ثانوي بمفتاح ترتيب مختلف (كنمط لإلغاء التطبيع أو التوجيه). أنشئ مصدرًا لهذا الجدول الهدف. يمكن العثور على أمثلة [هنا](/ar/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation).

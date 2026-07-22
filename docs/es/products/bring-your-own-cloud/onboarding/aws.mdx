@@ -99,100 +99,90 @@ Crea un ticket de soporte con la siguiente información:
 * Las zonas de disponibilidad en las que se encuentran estas subredes
 
 <div id="optional-setup-vpc-peering">
-  ### Opcional: Configurar el peering de VPC
+  ### Opcional: Configurar peering de VPC
 </div>
 
-Para crear o eliminar el peering de VPC para ClickHouse BYOC, siga estos pasos:
+Para crear o eliminar el peering de VPC para ClickHouse BYOC, sigue estos pasos:
 
-<div id="step-1-enable-private-load-balancer-for-clickhouse-byoc">
-  #### Paso 1: Habilite el balanceador de carga privado para ClickHouse BYOC
-</div>
+<Steps>
+  <Step title="Habilitar el balanceador de carga privado para ClickHouse BYOC" id="step-1-enable-private-load-balancer-for-clickhouse-byoc">
+    Ponte en contacto con soporte de ClickHouse para habilitar el balanceador de carga privado.
+  </Step>
 
-Póngase en contacto con el soporte de ClickHouse para habilitar el balanceador de carga privado.
+  <Step title="Crear una conexión de peering" id="step-2-create-a-peering-connection">
+    1. Ve al VPC Dashboard de la cuenta de ClickHouse BYOC.
+    2. Selecciona Peering Connections.
+    3. Haz clic en Create Peering Connection.
+    4. Establece VPC Requester con el VPC ID de ClickHouse.
+    5. Establece VPC Accepter con el VPC ID de destino. (Selecciona otra cuenta si corresponde)
+    6. Haz clic en Create Peering Connection.
 
-<div id="step-2-create-a-peering-connection">
-  #### Paso 2 Crear una conexión de peering
-</div>
+    <br />
 
-1. Vaya al panel de VPC en la cuenta BYOC de ClickHouse.
-2. Seleccione Peering Connections.
-3. Haga clic en Create Peering Connection
-4. Establezca VPC Requester como el ID de la VPC de ClickHouse.
-5. Establezca VPC Accepter como el ID de la VPC de destino. (Seleccione otra cuenta si corresponde)
-6. Haga clic en Create Peering Connection.
+    <img src="/images/cloud/reference/byoc-vpcpeering-1.webp" alt="BYOC Crear conexión de peering" />
 
-<br />
+    <br />
+  </Step>
 
-<img src="/images/cloud/reference/byoc-vpcpeering-1.webp" alt="BYOC Crear una conexión de peering" />
+  <Step title="Aceptar la solicitud de conexión de peering" id="step-3-accept-the-peering-connection-request">
+    Ve a la cuenta de peering; en la página (VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request), el cliente puede aprobar esta solicitud de peering de VPC.
 
-<br />
+    <br />
 
-<div id="step-3-accept-the-peering-connection-request">
-  #### Paso 3: Aceptar la solicitud de conexión de peering
-</div>
+    <img src="/images/cloud/reference/byoc-vpcpeering-2.webp" alt="BYOC Aceptar conexión de peering" />
 
-Ve a la cuenta de peering; en la página (VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request), el cliente puede aprobar esta solicitud de peering de la VPC.
+    <br />
+  </Step>
 
-<br />
+  <Step title="Agregar el destino a las tablas de rutas de la VPC de ClickHouse" id="step-4-add-destination-to-clickhouse-vpc-route-tables">
+    En la cuenta de ClickHouse BYOC,
 
-<img src="/images/cloud/reference/byoc-vpcpeering-2.webp" alt="BYOC Aceptar conexión de peering" />
+    1. Selecciona Route Tables en el VPC Dashboard.
+    2. Busca el VPC ID de ClickHouse. Edita cada tabla de rutas asociada a las subredes privadas.
+    3. Haz clic en el botón Edit en la pestaña Routes.
+    4. Haz clic en Add another route.
+    5. Introduce el rango CIDR de la VPC de destino en Destination.
+    6. Selecciona “Peering Connection” y el ID de la conexión de peering en Target.
 
-<br />
+    <br />
 
-<div id="step-4-add-destination-to-clickhouse-vpc-route-tables">
-  #### Paso 4 Añada el destino a las tablas de enrutamiento de la VPC de ClickHouse
-</div>
+    <img src="/images/cloud/reference/byoc-vpcpeering-3.webp" alt="BYOC Agregar tabla de rutas" />
 
-En la cuenta BYOC de ClickHouse,
+    <br />
+  </Step>
 
-1. Seleccione Route Tables en el panel de VPC.
-2. Busque el ID de la VPC de ClickHouse. Edite cada tabla de enrutamiento asociada a las subredes privadas.
-3. Haga clic en el botón Edit en la pestaña Routes.
-4. Haga clic en Add another route.
-5. Introduzca el rango CIDR de la VPC de destino en Destination.
-6. Seleccione “Peering Connection” y el ID de la conexión de emparejamiento en Target.
+  <Step title="Agregar el destino a las tablas de rutas de la VPC de destino" id="step-5-add-destination-to-the-target-vpc-route-tables">
+    En la cuenta de AWS de peering,
 
-<br />
+    1. Selecciona Route Tables en el VPC Dashboard.
+    2. Busca el VPC ID de destino.
+    3. Haz clic en el botón Edit en la pestaña Routes.
+    4. Haz clic en Add another route.
+    5. Introduce el rango CIDR de la VPC de ClickHouse en Destination.
+    6. Selecciona “Peering Connection” y el ID de la conexión de peering en Target.
 
-<img src="/images/cloud/reference/byoc-vpcpeering-3.webp" alt="BYOC Añadir tabla de enrutamiento" />
+    <br />
 
-<br />
+    <img src="/images/cloud/reference/byoc-vpcpeering-4.webp" alt="BYOC Agregar tabla de rutas" />
 
-<div id="step-5-add-destination-to-the-target-vpc-route-tables">
-  #### Paso 5 Añadir el destino a las tablas de rutas de la VPC de destino
-</div>
+    <br />
+  </Step>
 
-En la cuenta de AWS del peering,
+  <Step title="Edita el Security Group para permitir el acceso desde la VPC emparejada" id="step-6-edit-security-group-to-allow-peered-vpc-access">
+    En la cuenta de ClickHouse BYOC, debes actualizar la configuración del Security Group para permitir el tráfico desde tu VPC emparejada. Ponte en contacto con Soporte de ClickHouse para solicitar que se agreguen reglas de entrada que incluyan los rangos CIDR de tu VPC emparejada.
 
-1. Seleccione Route Tables en el panel de VPC.
-2. Busque el ID de la VPC de destino.
-3. Haga clic en el botón Edit en la pestaña Routes.
-4. Haga clic en Add another route.
-5. Introduzca el rango CIDR de la VPC de ClickHouse en Destination.
-6. Seleccione “Peering Connection” y el ID de la conexión de peering en Target.
+    ***
 
-<br />
+    El servicio de ClickHouse ya debería ser accesible desde la VPC emparejada.
 
-<img src="/images/cloud/reference/byoc-vpcpeering-4.webp" alt="BYOC Añadir tabla de rutas" />
+    Para acceder a ClickHouse de forma privada, se aprovisionan un balanceador de carga privado y un endpoint para proporcionar conectividad segura desde la VPC emparejada del usuario. El endpoint privado sigue el formato del endpoint público con el sufijo `-private`. Por ejemplo:
 
-<br />
+    * **Endpoint público**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
+    * **Endpoint privado**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
 
-<div id="step-6-edit-security-group-to-allow-peered-vpc-access">
-  #### Paso 6: Edita el Security Group para permitir el acceso desde la VPC emparejada
-</div>
-
-En la cuenta de ClickHouse BYOC, debes actualizar la configuración del Security Group para permitir el tráfico desde tu VPC emparejada. Ponte en contacto con Soporte de ClickHouse para solicitar que se agreguen reglas de entrada que incluyan los rangos CIDR de tu VPC emparejada.
-
-***
-
-El servicio de ClickHouse ya debería ser accesible desde la VPC emparejada.
-
-Para acceder a ClickHouse de forma privada, se aprovisionan un balanceador de carga privado y un endpoint para proporcionar conectividad segura desde la VPC emparejada del usuario. El endpoint privado sigue el formato del endpoint público con el sufijo `-private`. Por ejemplo:
-
-* **Endpoint público**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
-* **Endpoint privado**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
-
-Opcionalmente, después de verificar que el emparejamiento funciona, puedes solicitar la eliminación del balanceador de carga público de ClickHouse BYOC.
+    Opcionalmente, después de verificar que el emparejamiento funciona, puedes solicitar la eliminación del balanceador de carga público de ClickHouse BYOC.
+  </Step>
+</Steps>
 
 <div id="upgrade-process">
   ## Proceso de actualización

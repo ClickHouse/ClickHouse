@@ -41,13 +41,11 @@ import DemoArchitecture from '/snippets/ko/_demo.mdx';
 애플리케이션 트래픽을 시뮬레이션하려면 [**OpenTelemetry Demo Application**](https://github.com/ClickHouse/opentelemetry-demo)의 ClickStack 포크를 선택적으로 배포할 수 있습니다. 이렇게 하면 로그, 메트릭, 트레이스를 포함한 텔레메트리 데이터가 생성됩니다. 이미 클러스터에서 워크로드를 실행 중이라면 이 단계는 건너뛰고 기존 파드, 노드, 컨테이너를 모니터링할 수 있습니다.
 
 <Steps>
-  <Step>
-    ### cert-manager 설치(선택 사항)
-
+  <Step title="cert-manager 설치(선택 사항)" id="install-cert-manager">
     설정에 TLS 인증서가 필요하면 Helm을 사용해 [cert-manager](https://cert-manager.io/)를 설치하십시오:
 
     ```shell
-    # Cert manager 저장소 추가 
+    # Add Cert manager repo 
 
     helm repo add jetstack https://charts.jetstack.io 
 
@@ -55,9 +53,7 @@ import DemoArchitecture from '/snippets/ko/_demo.mdx';
     ```
   </Step>
 
-  <Step>
-    ### OpenTelemetry Demo 배포(선택 사항)
-
+  <Step title="OpenTelemetry Demo 배포(선택 사항)" id="deploy-otel-demo">
     이 **단계는 선택 사항이며, 모니터링할 기존 파드가 없는 경우에 사용합니다**. Kubernetes 환경에 이미 배포된 서비스가 있다면 이 단계는 건너뛸 수 있지만, 이 데모에는 트레이스와 세션 리플레이 데이터를 생성하는 계측된 마이크로서비스가 포함되어 있어 ClickStack의 모든 기능을 살펴볼 수 있습니다.
 
     다음은 관측성 테스트 및 계측 시연에 맞게 조정된 ClickStack 포크의 OpenTelemetry Demo Application 스택을 Kubernetes 클러스터에 배포하는 과정입니다. 여기에는 백엔드 마이크로서비스, 부하 생성기, 텔레메트리 파이프라인, 지원 인프라(Kafka, Redis 등), 그리고 ClickStack과의 SDK 통합이 포함됩니다.
@@ -69,9 +65,9 @@ import DemoArchitecture from '/snippets/ko/_demo.mdx';
     * 환경 변수 `OTEL_RESOURCE_ATTRIBUTES`를 통해 로그, 메트릭, 트레이스를 연관시킬 수 있도록 하는 [리소스 태그 전달](/ko/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods).
 
     ```shell
-    ## 데모 Kubernetes 매니페스트 파일 다운로드
+    ## download demo Kubernetes manifest file
     curl -O https://raw.githubusercontent.com/ClickHouse/opentelemetry-demo/refs/heads/main/kubernetes/opentelemetry-demo.yaml
-    # wget 대체 명령어
+    # wget alternative
     # wget https://raw.githubusercontent.com/ClickHouse/opentelemetry-demo/refs/heads/main/kubernetes/opentelemetry-demo.yaml
     kubectl apply --namespace otel-demo -f opentelemetry-demo.yaml
     ```
@@ -107,9 +103,7 @@ import DemoArchitecture from '/snippets/ko/_demo.mdx';
     <DemoArchitecture />
   </Step>
 
-  <Step>
-    ### ClickStack Helm 차트 리포지토리 추가
-
+  <Step title="ClickStack Helm 차트 리포지토리 추가" id="add-helm-clickstack">
     ClickStack을 배포하려면 [공식 Helm 차트](/ko/clickstack/deployment/helm)를 사용합니다.
 
     이를 위해 HyperDX Helm 리포지토리를 추가해야 합니다:
@@ -120,9 +114,7 @@ import DemoArchitecture from '/snippets/ko/_demo.mdx';
     ```
   </Step>
 
-  <Step>
-    ### ClickStack 배포
-
+  <Step title="ClickStack 배포" id="deploy-clickstack">
     Helm 차트가 설치되면 클러스터에 ClickStack을 배포할 수 있습니다. Kubernetes 환경 내에서 ClickHouse와 HyperDX를 포함한 모든 구성 요소를 실행할 수도 있고, collector만 배포한 뒤 ClickHouse와 HyperDX UI는 Managed ClickStack을 사용할 수도 있습니다.
 
     <br />
@@ -175,7 +167,7 @@ import DemoArchitecture from '/snippets/ko/_demo.mdx';
       ```
     </Accordion>
 
-    배포 상태를 확인하려면 다음 명령을 실행한 뒤 모든 구성 요소가 `Running` 상태인지 확인하세요. Managed ClickStack을 사용하는 경우 ClickHouse는 표시되지 않습니다.
+    배포 상태를 확인하려면 다음 명령을 실행한 뒤 모든 구성 요소가 `Running` 상태인지 확인하세요. Managed ClickStack을 사용하는 경우 ClickHouse는 표시되지 않습니다:
 
     ```shell
     kubectl get pods -l "app.kubernetes.io/name=hdx-oss-v2" -n otel-demo
@@ -188,9 +180,7 @@ import DemoArchitecture from '/snippets/ko/_demo.mdx';
     ```
   </Step>
 
-  <Step>
-    ### HyperDX UI에 접속하기
-
+  <Step title="HyperDX UI에 접속하기" id="access-the-hyperdx-ui">
     <Note>
       Managed ClickStack을 사용하는 경우에도 Kubernetes 클러스터에 배포된 로컬 HyperDX 인스턴스는 여전히 필요합니다. 이 인스턴스는 HyperDX에 번들로 포함된 OpAMP 서버가 관리하는 수집 키를 제공하며, 배포된 OTel collector를 통해 수집을 안전하게 수행할 수 있도록 합니다. 이 기능은 현재 Managed ClickStack에서는 사용할 수 없습니다.
     </Note>
@@ -213,9 +203,7 @@ import DemoArchitecture from '/snippets/ko/_demo.mdx';
     <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
   </Step>
 
-  <Step>
-    ### 수집 API key 가져오기
-
+  <Step title="수집 API key 가져오기" id="retrieve-ingestion-api-key">
     ClickStack collector가 배포한 OTel collector로의 수집은 수집 키로 보호됩니다.
 
     [`Team Settings`](http://localhost:8080/team)로 이동한 다음 `API Keys` 섹션에서 `Ingestion API Key`를 복사하세요. 이 API key는 OpenTelemetry collector를 통한 데이터 수집을 안전하게 보호합니다.
@@ -223,22 +211,20 @@ import DemoArchitecture from '/snippets/ko/_demo.mdx';
     <Image img="/images/use-cases/observability/copy_api_key.webp" alt="API key 복사" size="lg" />
   </Step>
 
-  <Step>
-    ### API Key용 Kubernetes 시크릿 생성
-
+  <Step title="API Key용 Kubernetes 시크릿 생성" id="create-api-key-kubernetes-secret">
     수집 API Key를 담은 새 Kubernetes 시크릿과 ClickStack Helm 차트로 배포된 OTel collector의 위치를 포함하는 구성 맵을 생성합니다. 이후 구성 요소는 이를 사용하여 ClickStack Helm 차트로 배포된 collector로 데이터를 수집할 수 있습니다:
 
     ```shell
-    # 수집 API key로 시크릿 생성
+    # create secret with the ingestion API key
     kubectl create secret generic hyperdx-secret \
     --from-literal=HYPERDX_API_KEY=<ingestion_api_key> \
     -n otel-demo
 
-    # 위에서 배포한 ClickStack OTel collector를 가리키는 ConfigMap 생성
+    # create a ConfigMap pointing to the ClickStack OTel collector deployed above
     kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=http://my-hyperdx-hdx-oss-v2-otel-collector:4318
     ```
 
-    수집 API key를 적용하려면 OpenTelemetry Demo Application 파드를 다시 시작하세요.
+    수집 API key가 반영되도록 OpenTelemetry Demo Application 파드를 다시 시작하세요.
 
     ```shell
     kubectl rollout restart deployment -n otel-demo -l app.kubernetes.io/part-of=opentelemetry-demo
@@ -249,22 +235,18 @@ import DemoArchitecture from '/snippets/ko/_demo.mdx';
     <Image img="/images/use-cases/observability/hyperdx-kubernetes-data.webp" alt="HyperDX Kubernetes 데이터" size="lg" />
   </Step>
 
-  <Step>
-    ### OpenTelemetry Helm 저장소 추가
-
+  <Step title="OpenTelemetry Helm 저장소 추가" id="add-otel-helm-repo">
     Kubernetes 메트릭을 수집하기 위해 표준 OTel collector를 배포하고, 앞서 생성한 수집 API key를 사용해 데이터를 ClickStack collector로 안전하게 전송하도록 구성합니다.
 
     이를 위해 OpenTelemetry Helm 저장소를 설치해야 합니다:
 
     ```shell
-    # OTel Helm repo 추가
+    # Add Otel Helm repo
     helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts 
     ```
   </Step>
 
-  <Step>
-    ### Kubernetes collector 컴포넌트 배포
-
+  <Step title="Kubernetes collector 컴포넌트 배포" id="deploy-kubernetes-collector-components">
     클러스터 자체와 각 노드에서 로그와 메트릭을 수집하려면, 각각 별도의 매니페스트를 사용하는 두 개의 OpenTelemetry Collector를 배포해야 합니다. 제공되는 두 매니페스트인 `k8s_deployment.yaml`과 `k8s_daemonset.yaml`은 함께 동작하여 Kubernetes 클러스터의 포괄적인 텔레메트리 데이터를 수집합니다.
 
     * `k8s_deployment.yaml`은 **클러스터 전반의 이벤트와 메타데이터**를 수집하는 **단일 OpenTelemetry Collector 인스턴스**를 배포합니다. 이 collector는 Kubernetes 이벤트와 클러스터 메트릭을 수집하고, 파드 레이블과 어노테이션을 사용해 텔레메트리 데이터를 보강합니다. 중복 데이터를 방지하기 위해 이 collector는 단일 레플리카를 사용하는 독립형 배포로 실행됩니다.
@@ -276,9 +258,9 @@ import DemoArchitecture from '/snippets/ko/_demo.mdx';
     먼저, collector를 배포(Deployment)로 설치하십시오:
 
     ```shell
-    # 매니페스트 파일 다운로드
+    # download manifest file
     curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_deployment.yaml
-    # Helm 차트 설치
+    # install the helm chart
     helm install --namespace otel-demo k8s-otel-deployment open-telemetry/opentelemetry-collector -f k8s_deployment.yaml
     ```
 
@@ -291,26 +273,26 @@ import DemoArchitecture from '/snippets/ko/_demo.mdx';
         repository: otel/opentelemetry-collector-contrib
         tag: 0.123.0
        
-      # 이 collector는 하나만 필요합니다 - 더 많으면 중복 데이터가 생성됩니다
+      # We only want one of these collectors - any more and we'd produce duplicate data
       replicaCount: 1
        
       presets:
         kubernetesAttributes:
           enabled: true
-          # 활성화하면 프로세서가 연결된 파드의 모든 레이블을 추출하여 리소스 속성으로 추가합니다.
-          # 레이블의 정확한 이름이 키가 됩니다.
+          # When enabled, the processor will extract all labels for an associated pod and add them as resource attributes.
+          # The label's exact name will be the key.
           extractAllPodLabels: true
-          # 활성화하면 프로세서가 연결된 파드의 모든 어노테이션을 추출하여 리소스 속성으로 추가합니다.
-          # 어노테이션의 정확한 이름이 키가 됩니다.
+          # When enabled, the processor will extract all annotations for an associated pod and add them as resource attributes.
+          # The annotation's exact name will be the key.
           extractAllPodAnnotations: true
-        # Kubernetes 이벤트를 수집하도록 collector를 구성합니다.
-        # 로그 파이프라인에 k8sobject receiver를 추가하고 기본적으로 Kubernetes 이벤트를 수집합니다.
-        # 자세한 정보: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
+        # Configures the collector to collect Kubernetes events.
+        # Adds the k8sobject receiver to the logs pipeline and collects Kubernetes events by default.
+        # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
         kubernetesEvents:
           enabled: true
-        # 클러스터 수준 메트릭을 수집하도록 Kubernetes Cluster Receiver를 구성합니다.
-        # 메트릭 파이프라인에 k8s_cluster receiver를 추가하고 ClusterRole에 필요한 규칙을 추가합니다.
-        # 자세한 정보: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
+        # Configures the Kubernetes Cluster Receiver to collect cluster-level metrics.
+        # Adds the k8s_cluster receiver to the metrics pipeline and adds the necessary rules to ClusteRole.
+        # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
         clusterMetrics:
           enabled: true
 
@@ -348,9 +330,9 @@ import DemoArchitecture from '/snippets/ko/_demo.mdx';
     다음으로, 노드 및 파드 수준의 메트릭과 로그를 수집하기 위해 collector를 데몬셋으로 배포하세요:
 
     ```shell
-    # 매니페스트 파일 다운로드
+    # download manifest file
     curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_daemonset.yaml
-    # Helm 차트 설치
+    # install the helm chart
     helm install --namespace otel-demo k8s-otel-daemonset open-telemetry/opentelemetry-collector -f k8s_daemonset.yaml
     ```
 
@@ -363,7 +345,7 @@ import DemoArchitecture from '/snippets/ko/_demo.mdx';
         repository: otel/opentelemetry-collector-contrib
         tag: 0.123.0
          
-      # kubeletstats cpu/memory 사용률 메트릭을 사용하는 데 필요합니다
+      # Required to use the kubeletstats cpu/memory utilization metrics
       clusterRole:
         create: true
         rules:
@@ -379,20 +361,20 @@ import DemoArchitecture from '/snippets/ko/_demo.mdx';
           enabled: true
         hostMetrics:
           enabled: true
-        # Kubernetes 메타데이터를 추가하도록 Kubernetes Processor를 구성합니다.
-        # 모든 파이프라인에 k8sattributes processor를 추가하고 클러스터 역할에 필요한 규칙을 추가합니다.
-        # 자세한 정보: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
+        # Configures the Kubernetes Processor to add Kubernetes metadata.
+        # Adds the k8sattributes processor to all the pipelines and adds the necessary rules to ClusterRole.
+        # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
         kubernetesAttributes:
           enabled: true
-          # 활성화하면 processor가 연결된 파드의 모든 레이블을 추출하여 리소스 속성으로 추가합니다.
-          # 레이블의 정확한 이름이 키가 됩니다.
+          # When enabled, the processor will extract all labels for an associated pod and add them as resource attributes.
+          # The label's exact name will be the key.
           extractAllPodLabels: true
-          # 활성화하면 processor가 연결된 파드의 모든 어노테이션을 추출하여 리소스 속성으로 추가합니다.
-          # 어노테이션의 정확한 이름이 키가 됩니다.
+          # When enabled, the processor will extract all annotations for an associated pod and add them as resource attributes.
+          # The annotation's exact name will be the key.
           extractAllPodAnnotations: true
-        # 큐블릿의 API 서버에서 노드, 파드, 컨테이너 메트릭을 수집하도록 collector를 구성합니다.
-        # 메트릭 파이프라인에 kubeletstats 수신기를 추가하고 클러스터 역할에 필요한 규칙을 추가합니다.
-        # 자세한 정보: https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
+        # Configures the collector to collect node, pod, and container metrics from the API server on a kubelet..
+        # Adds the kubeletstats receiver to the metrics pipeline and adds the necessary rules to ClusterRole.
+        # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
         kubeletMetrics:
           enabled: true
 
@@ -411,7 +393,7 @@ import DemoArchitecture from '/snippets/ko/_demo.mdx';
 
       config:
         receivers:
-          # 추가 큐블릿 메트릭을 구성합니다
+          # Configures additional kubelet metrics
           kubeletstats:
             collection_interval: 20s
             auth_type: 'serviceAccount'
@@ -460,9 +442,7 @@ import DemoArchitecture from '/snippets/ko/_demo.mdx';
     </Accordion>
   </Step>
 
-  <Step>
-    ### HyperDX에서 Kubernetes 데이터 살펴보기
-
+  <Step title="HyperDX에서 Kubernetes 데이터 살펴보기" id="explore-kubernetes-data-hyperdx">
     Kubernetes에 배포한 인스턴스 또는 Managed ClickStack을 통해 HyperDX UI로 이동합니다.
 
     <p />
@@ -503,4 +483,4 @@ import DemoArchitecture from '/snippets/ko/_demo.mdx';
   </Step>
 </Steps>
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp" alt="Kubernetes용 ClickHouse" size="lg" />
+<Image img="/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp" alt="Kubernetes의 ClickHouse" size="lg" />

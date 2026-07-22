@@ -70,6 +70,6 @@ GCP と Azure では、サービスごとにオブジェクトストレージレ
   ## 同時実行数の制限
 </div>
 
-ClickHouse Cloud サービスでは、1 秒あたりのクエリ数 (QPS) に制限はありません。ただし、レプリカごとの同時実行クエリ数には 1000 件という上限があります。QPS は、最終的には平均クエリ実行時間とサービス内のレプリカ数によって決まります。
+お使いの ClickHouse Cloud サービスでは、1 秒あたりのクエリ数 (QPS) に制限はありません。ただし、レプリカごとに同時実行できるクエリ数の上限は 1000 件です。QPS は最終的に、平均クエリ実行時間とサービス内のレプリカ数によって決まります。
 
-セルフマネージドの ClickHouse インスタンスや他のデータベース／データウェアハウスと比べた場合の ClickHouse Cloud の大きな利点の 1 つは、[レプリカを追加する (水平スケーリング) ](/ja/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling)ことで同時実行性を簡単に高められる点です。
+セルフマネージドの ClickHouse インスタンスや他のデータベース／データウェアハウスと比べた ClickHouse Cloud の大きな利点は、[レプリカを追加する (horizontal scaling) ](/ja/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling)ことで、同時実行性を容易に高められる点です。

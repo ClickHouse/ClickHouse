@@ -1,0 +1,230 @@
+---
+sidebarTitle: 'Apache Airflow'
+slug: /integrations/airflow
+description: 'ClickHouse provider를 사용해 Apache Airflow에서 ClickHouse 쿼리와 데이터 적재를 오케스트레이션합니다'
+title: 'Apache Airflow를 ClickHouse에 연결하기'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+  - website: 'https://airflow.apache.org/'
+keywords: ['Apache Airflow', '오케스트레이션', 'DAG', 'clickhouse-connect', 'SQLExecuteQueryOperator', 'ClickHouseHook', 'workflow', 'scheduler']
+---
+
+import ClickHouseSupportedBadge from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+[Apache Airflow](https://airflow.apache.org/)는 워크플로를 코드로 작성하고, 스케줄링하고, 모니터링할 수 있는 오픈 소스 플랫폼입니다. 워크플로는 Python으로 작성된 작업의 방향성 비순환 그래프(DAG)로 정의됩니다.
+
+`apache-airflow-providers-clickhousedb` 프로바이더는 Airflow를 ClickHouse에 연결하여 DAG의 일부로 쿼리를 실행하고, 테이블을 생성하고, 데이터를 적재할 수 있게 합니다. 이 프로바이더는 [`clickhouse-connect`](/ko/integrations/language-clients/python/index) 클라이언트를 사용해 [HTTP 인터페이스](/ko/concepts/features/interfaces/http)를 통해 연결되며, Airflow의 공통 SQL 프레임워크에서 ClickHouse를 사용할 수 있도록 제공합니다. 따라서 표준 `SQLExecuteQueryOperator`로 DDL, DML 및 분석 쿼리를 처리할 수 있으므로 ClickHouse 전용 연산자는 필요하지 않습니다.
+
+<div id="install-the-provider">
+  ## 프로바이더 설치
+</div>
+
+Airflow 스케줄러와 워커가 실행되는 환경에 해당 프로바이더를 설치합니다:
+
+```bash
+pip install apache-airflow-providers-clickhousedb
+```
+
+이 프로바이더는 `apache-airflow-providers-common-sql` 및 `clickhouse-connect`에 의존하며, 함께 설치됩니다. 쿼리 결과를 pandas 또는 polars DataFrame으로 전달하려면 선택적 추가 기능(extras)을 설치하세요:
+
+```bash
+pip install 'apache-airflow-providers-common-sql[pandas,polars]'
+```
+
+<div id="create-a-clickhouse-connection">
+  ## ClickHouse 연결 생성
+</div>
+
+이 프로바이더는 `clickhouse` 연결 유형을 등록합니다. Airflow UI의 **Admin &gt; Connections**에서 연결을 생성하거나, CLI 또는 환경 변수를 통해 정의할 수 있습니다.
+
+UI에서 연결 유형으로 **ClickHouse**를 선택하고 다음 필드를 입력하십시오:
+
+| 필드           | 설명                                                                                             | 기본값                       |
+| ------------ | ---------------------------------------------------------------------------------------------- | ------------------------- |
+| **Host**     | ClickHouse 서버 호스트명(예: `abc123.clickhouse.cloud`)                                               | `localhost`               |
+| **Port**     | HTTP(S) 포트                                                                                     | `8123` (일반), `8443` (TLS) |
+| **Login**    | ClickHouse 사용자 이름                                                                              | `default`                 |
+| **Password** | ClickHouse 사용자 비밀번호                                                                            | (비어 있음)                   |
+| **Database** | 연결의 기본 데이터베이스입니다. UI에서는 이 필드가 **Database**로 표시되며, URI 또는 JSON으로 연결을 정의할 때는 `schema` 필드에 해당합니다. | `default`                 |
+
+[ClickHouse Cloud](/ko/products/cloud/getting-started/intro) 또는 TLS가 활성화된 자체 호스팅 클러스터를 사용하는 경우 **Extra** 필드에서 `secure`를 `true`로 설정하고 TLS 포트(`8443`)를 사용하십시오.
+
+<div id="extra-connection-options">
+  ### 추가 연결 옵션
+</div>
+
+프로바이더는 연결 폼에 추가 옵션을 전용 필드로 제공합니다. 연결을 UI 대신 URI, JSON 또는 환경 변수로 정의할 때는 이 옵션들을 `extra` JSON 객체의 키로 지정하십시오. 모두 선택 사항입니다:
+
+| `extra` 키              | UI 필드               | 기본값     | 설명                                                                                                                                  |
+| ---------------------- | ------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `secure`               | TLS 사용 (HTTPS)      | `false` | HTTPS/TLS를 활성화합니다.                                                                                                                  |
+| `verify`               | SSL 인증서 확인          | `true`  | `secure`가 `true`일 때 서버 TLS 인증서를 검증합니다. 자체 서명 인증서를 사용하는 경우 `false`로 설정하십시오.                                                          |
+| `connect_timeout`      | 연결 타임아웃 (초)         | `10`    | HTTP 연결 타임아웃(초)입니다.                                                                                                                 |
+| `send_receive_timeout` | 쿼리 타임아웃 (초)         | `300`   | 쿼리 읽기/쓰기 타임아웃(초)입니다. 오래 실행되는 분석용 쿼리에는 이 값을 늘리십시오.                                                                                   |
+| `compress`             | LZ4 압축 활성화          | `true`  | LZ4 결과 압축을 활성화합니다.                                                                                                                  |
+| `client_name`          | 클라이언트 이름            | (비어 있음) | ClickHouse `User-Agent`와 [`system.query_log`](/ko/reference/system-tables/query_log)의 `client_name` 컬럼에 있는 Airflow 버전 식별자에 덧붙는 레이블입니다. |
+| `session_settings`     | 세션 설정 (JSON)        | (비어 있음) | 연결의 모든 쿼리에 적용되는 [ClickHouse 세션 설정](/ko/reference/settings/session-settings)입니다. 예: `{"max_execution_time": 300, "max_threads": 8}`     |
+| `client_kwargs`        | 클라이언트 kwargs (JSON) | (비어 있음) | `clickhouse_connect.get_client()`에 전달되는 추가 키워드 인수입니다. 예를 들어 `http_proxy`가 있습니다.                                                     |
+
+<div id="define-a-connection-without-the-ui">
+  ### UI 없이 연결 정의하기
+</div>
+
+환경 변수로 연결을 설정합니다. URI 형식에는 호스트, 자격 증명, 데이터베이스가 포함됩니다:
+
+```bash
+export AIRFLOW_CONN_CLICKHOUSE_DEFAULT='clickhouse://default:password@localhost:8123/my_database'
+```
+
+URI의 모든 구성 요소는 URL 인코딩해야 합니다. TLS, timeout 또는 세션 설정에는 **Extra** 필드를 제공하는 JSON 형식을 사용하십시오:
+
+```bash
+export AIRFLOW_CONN_CLICKHOUSE_DEFAULT='{
+    "conn_type": "clickhouse",
+    "host": "abc123.clickhouse.cloud",
+    "port": 8443,
+    "login": "default",
+    "password": "secret",
+    "schema": "my_database",
+    "extra": {
+        "secure": true,
+        "session_settings": {
+            "max_execution_time": 300,
+            "max_memory_usage": 10000000000
+        }
+    }
+}'
+```
+
+모든 후크과 연산자는 별도로 지정하지 않는 한 connection ID `clickhouse_default`를 사용합니다.
+
+<div id="run-queries">
+  ## SQLExecuteQueryOperator로 쿼리 실행
+</div>
+
+연산자의 `conn_id`를 ClickHouse 연결로 설정합니다. 다음 DAG는 테이블(table)을 생성하고, 행을 삽입한 뒤 다시 읽고, 마지막으로 테이블을 삭제합니다:
+
+```python
+from datetime import datetime
+
+from airflow import DAG
+from airflow.providers.common.sql.hooks.sql import fetch_all_handler
+from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
+
+CLICKHOUSE_CONN_ID = "clickhouse_default"
+CLICKHOUSE_TABLE = "airflow_example"
+
+with DAG(
+    dag_id="example_clickhouse",
+    start_date=datetime(2021, 1, 1),
+    default_args={"conn_id": CLICKHOUSE_CONN_ID},
+    schedule="@once",
+    catchup=False,
+) as dag:
+    create_table = SQLExecuteQueryOperator(
+        task_id="create_table",
+        sql=f"""
+            CREATE TABLE IF NOT EXISTS {CLICKHOUSE_TABLE} (
+                id   UInt32,
+                name String,
+                ts   DateTime DEFAULT now()
+            ) ENGINE = MergeTree()
+            ORDER BY id
+        """,
+    )
+
+    insert_rows = SQLExecuteQueryOperator(
+        task_id="insert_rows",
+        sql=f"""
+            INSERT INTO {CLICKHOUSE_TABLE} (id, name) VALUES
+                (1, 'Alice'),
+                (2, 'Bob'),
+                (3, 'Charlie')
+        """,
+    )
+
+    read_rows = SQLExecuteQueryOperator(
+        task_id="read_rows",
+        sql=f"SELECT id, name FROM {CLICKHOUSE_TABLE} ORDER BY id",
+        handler=fetch_all_handler,
+    )
+
+    drop_table = SQLExecuteQueryOperator(
+        task_id="drop_table",
+        sql=f"DROP TABLE IF EXISTS {CLICKHOUSE_TABLE}",
+    )
+
+    create_table >> insert_rows >> read_rows >> drop_table
+```
+
+쿼리 결과는 기본 `handler`(`fetch_all_handler`)를 사용해 가져옵니다. 전체 결과 집합이 아닌 다른 값을 반환하려면 다른 handler를 전달하십시오. 예를 들어 첫 번째 행만 반환하려면 `fetch_one_handler`를 사용합니다.
+
+<div id="target-a-different-database">
+  ### 작업별로 서로 다른 데이터베이스 지정하기
+</div>
+
+하나의 connection이 클러스터를 가리키고 개별 작업이 서로 다른 데이터베이스를 쿼리하는 경우, 별도의 connection을 만들지 말고 `hook_params`를 통해 데이터베이스를 재정의하십시오:
+
+```python
+read_rows = SQLExecuteQueryOperator(
+    task_id="read_rows",
+    conn_id=CLICKHOUSE_CONN_ID,
+    sql="SELECT count() FROM events",
+    hook_params={"database": "analytics"},
+)
+```
+
+<div id="use-the-hook-directly">
+  ## 후크 직접 사용하기
+</div>
+
+대량 삽입, 스트리밍 또는 ClickHouse 전용 클라이언트 호출처럼 SQL 연산자로 처리하기 어려운 작업에는 Python 작업 내에서 `ClickHouseHook`을 사용하십시오.
+
+후크의 `bulk_insert_rows` 메서드는 `clickhouse-connect`의 네이티브 열 지향 삽입 경로를 사용하므로, 대규모 데이터셋에서는 행별 삽입보다 훨씬 빠릅니다. 매우 큰 입력에서 최대 메모리 사용량을 제한하려면 `batch_size`를 설정하세요:
+
+```python
+from airflow.providers.clickhousedb.hooks.clickhouse import ClickHouseHook
+
+hook = ClickHouseHook(clickhouse_conn_id="clickhouse_default")
+
+hook.bulk_insert_rows(
+    table="events",
+    rows=[("user1", "click"), ("user2", "view")],
+    column_names=["user_id", "action"],
+    batch_size=1000,
+)
+```
+
+후크가 직접 노출하지 않는 기능에 접근하려면 기본 `clickhouse-connect` 클라이언트용 `get_client()`를 호출하세요:
+
+```python
+client = hook.get_client()
+total = client.query("SELECT count() FROM events").result_rows[0][0]
+```
+
+<div id="apply-session-settings">
+  ### 세션 설정 적용
+</div>
+
+후크을 구성할 때 [세션 설정](/ko/reference/settings/session-settings)을 직접 전달하거나 연산자의 `hook_params`를 통해 전달하십시오. 생성자에 전달된 설정은 연결의 **Extra** 필드에 정의된 `session_settings`에 추가로 머지되며, 동일한 키가 충돌할 경우 생성자 값이 우선합니다:
+
+```python
+hook = ClickHouseHook(
+    clickhouse_conn_id="clickhouse_default",
+    session_settings={"max_execution_time": 60, "max_threads": 4},
+)
+```
+
+<div id="related-content">
+  ## 관련 콘텐츠
+</div>
+
+* [`clickhouse-connect` Python 클라이언트](/ko/integrations/language-clients/python/index)
+* [ClickHouse HTTP 인터페이스](/ko/concepts/features/interfaces/http)
+* [ClickHouse 세션 설정 참고 문서](/ko/reference/settings/session-settings)
+* [`apache-airflow-providers-clickhousedb` 참고 문서](https://airflow.apache.org/docs/apache-airflow-providers-clickhousedb/)
+* [PyPI의 프로바이더 패키지](https://pypi.org/project/apache-airflow-providers-clickhousedb/)

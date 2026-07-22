@@ -39,12 +39,12 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 أولًا، نحتاج إلى إنشاء نظراء لكلٍّ من قاعدة البيانات المصدر وقاعدة البيانات الهدف. ويمثّل الـ نظير اتصالًا بقاعدة بيانات. في واجهة PeerDB، انتقل إلى قسم &quot;Peers&quot; بالنقر على &quot;Peers&quot; في الشريط الجانبي. ولإنشاء نظير جديد، انقر على الزر `+ New peer`.
 
 <div id="migration-peerdb-source-peer">
-  ### إنشاء source نظير
+  ### إنشاء النظير المصدر
 </div>
 
-أنشئ نظير لقاعدة بيانات PostgreSQL المصدر لديك عبر إدخال تفاصيل الاتصال، مثل المضيف والمنفذ واسم قاعدة البيانات واسم المستخدم وكلمة المرور. بعد إدخال التفاصيل، انقر على الزر `Create peer` لحفظ الـ نظير.
+أنشئ نظيرًا لقاعدة بيانات PostgreSQL المصدر لديك عبر إدخال تفاصيل الاتصال، مثل المضيف والمنفذ واسم قاعدة البيانات واسم المستخدم وكلمة المرور. بعد إدخال التفاصيل، انقر على الزر `Create peer` لحفظ النظير.
 
-<Image img="/images/managed-postgres/peerdb/source-peer.webp" alt="إنشاء Source نظير" size="md" border />
+<Image img="/images/managed-postgres/peerdb/source-peer.webp" alt="إنشاء النظير المصدر" size="md" border />
 
 <div id="migration-peerdb-target-peer">
   ### إنشاء نظير الهدف
@@ -314,6 +314,6 @@ END $$;
   ## الخطوات التالية
 </div>
 
-تهانينا! لقد نجحت في ترحيل قاعدة بيانات PostgreSQL إلى ClickHouse Managed Postgres باستخدام pg&#95;dump وpg&#95;restore. أصبحت الآن جاهزًا تمامًا لاستكشاف ميزات Managed Postgres وتكامله مع ClickHouse. إليك دليل بدء سريع مدته 10 دقائق للانطلاق:
+تهانينا! لقد نجحت في ترحيل قاعدة بيانات PostgreSQL الخاصة بك إلى ClickHouse Managed Postgres باستخدام pg&#95;dump وpg&#95;restore. وأنت الآن جاهز لاستكشاف ميزات Managed Postgres وتكامله مع ClickHouse. إليك دليل بدء سريع مدته 10 دقائق لتبدأ:
 
 * [دليل البدء السريع لـ Managed Postgres](/ar/products/managed-postgres/quickstart)

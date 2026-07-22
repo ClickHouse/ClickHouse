@@ -67,7 +67,7 @@ Postgres 12 فما بعده
 4. أنشئ [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html) يتضمن الجداول التي تريد نسخها متماثلًا. نوصي بشدة بأن تقتصر الـ publication على الجداول التي تحتاج إليها فقط لتجنّب الأعباء الإضافية على الأداء.
 
 <Warning>
-  يجب أن يحتوي أي table مُدرج في الـ publication إما على **مفتاح أساسي** معرّف، *أو* أن تكون **هوية النسخة المتماثلة** له مضبوطة على `FULL`. راجع [الأسئلة الشائعة حول Postgres](/ar/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) للحصول على إرشادات حول تحديد النطاق.
+  يجب أن يحتوي أي table مُدرج في الـ publication إما على **مفتاح أساسي** معرّف *أو* أن تكون **هوية النسخة المتماثلة** له مضبوطة على `FULL`. راجع [الأسئلة الشائعة حول Postgres](/ar/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) للحصول على إرشادات حول تحديد النطاق.
 </Warning>
 
 * لإنشاء publication لجداول محددة:
@@ -82,7 +82,7 @@ Postgres 12 فما بعده
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-ستحتوي الـ publication المسماة `clickpipes` على مجموعة أحداث التغيير الناتجة عن الجداول المحددة، وستُستخدم لاحقًا لاستقبال تدفق النسخ المتماثل.
+تحدّد الـ publication المسماة `clickpipes` مجموعة الجداول التي ستُبثّ أحداث التغيير الخاصة بها إلى ClickPipes. نوصي بعدم استخدام `FOR ALL TABLES` إلا إذا كنت تنوي نسخ جميع الجداول متماثلًا، لأن تضمين جداول غير ضرورية يزيد من حركة WAL من Postgres إلى ClickPipes ويقلّل الكفاءة الإجمالية للنسخ المتماثل.
 
 [//]: # "TODO Add SSH Tunneling"
 

@@ -51,7 +51,7 @@ Terraform の例は、ClickHouse の [Terraform プロバイダー リポジト�
   ### オプション 1: ClickHouse Cloud console
 </div>
 
-ClickHouse Cloud consoleで、PrivateLink経由で接続する対象のサービスを開き、**Settings** メニューを開きます。**Set up private endpoint** ボタンをクリックします。PrivateLinkの設定に使用する `Service name` と `DNS name` を控えておきます。
+ClickHouse Cloud consoleで、PrivateLink経由で接続する対象のサービスを開き、**Settings** メニューを開きます。**Set up private endpoint** ボタンをクリックします。Private Linkの設定に使用する `Service name` と `DNS name` を控えておきます。
 
 <Image img="/images/cloud/security/azure-privatelink-pe-create.webp" size="lg" alt="プライベート エンドポイント" border />
 
@@ -122,13 +122,13 @@ Azure Portal で、**Private Link Center → Private Endpoints** を開きます
 
 ***
 
-次の画面で、以下のオプションを指定します。
+次の画面で、以下のオプションを設定します。
 
 * **Subscription** / **Resource Group**: プライベート エンドポイント用の Azure サブスクリプションとリソース グループを選択します。
 * **Name**: **プライベート エンドポイント** の名前を設定します。
-* **Region**: プライベートリンク経由で ClickHouse Cloud に接続する、デプロイ済み VNet のリージョンを選択します。
+* **Region**: プライベートリンク経由で ClickHouse Cloud に接続する VNet がデプロイされているリージョンを選択します。
 
-上記の手順を完了したら、**Next: Resource** ボタンをクリックします。
+上記の設定が完了したら、**Next: Resource** ボタンをクリックします。
 
 <Image img="/images/cloud/security/azure-pe-create-basic.webp" size="md" alt="プライベート エンドポイントの基本設定を作成" border />
 
@@ -136,7 +136,7 @@ Azure Portal で、**Private Link Center → Private Endpoints** を開きます
 
 **Connect to an Azure resource by resource ID or alias** オプションを選択します。
 
-**Resource ID or alias** には、[Private Link の Azure connection alias を取得する](#obtain-azure-connection-alias-for-private-link) 手順で取得した `endpointServiceId` を使用します。
+**Resource ID or alias** には、[Private Link 用の Azure connection alias を取得する](#obtain-azure-connection-alias-for-private-link) 手順で取得した `endpointServiceId` を使用します。
 
 **Next: Virtual Network** ボタンをクリックします。
 
@@ -149,7 +149,7 @@ Azure Portal で、**Private Link Center → Private Endpoints** を開きます
 
 任意:
 
-* **Application security group**: ASG をプライベート エンドポイントに関連付けることで、Network Security Groups でプライベート エンドポイントとの送受信ネットワーク トラフィックをフィルタリングできます。
+* **Application security group**: ASG をプライベート エンドポイントに関連付け、ネットワーク セキュリティ グループでプライベート エンドポイントとの間のネットワーク トラフィックをフィルタリングするために使用できます。
 
 **Next: DNS** ボタンをクリックします。
 
@@ -173,9 +173,9 @@ Azure Portal で、**Private Link Center → Private Endpoints** を開きます
 
 <Image img="/images/cloud/security/azure-pe-create-review.webp" size="md" alt="プライベート エンドポイントの確認" border />
 
-作成したプライベート エンドポイントの **Connection status** は **Pending** 状態になります。このプライベート エンドポイントを service allow list に追加すると、**Approved** 状態に変わります。
+作成したプライベート エンドポイントの **Connection status** は **Pending** 状態になります。このプライベート エンドポイントをサービスの 許可リスト に追加すると、**Approved** 状態に変わります。
 
-プライベート エンドポイントに関連付けられたネットワーク インターフェイスを開き、**Private IPv4 address** (この例では 10.0.0.4) をコピーします。この情報は次の手順で必要になります。
+プライベート エンドポイントに関連付けられているネットワーク インターフェイスを開き、**Private IPv4 address** (この例では 10.0.0.4) をコピーします。この情報は次の手順で必要になります。
 
 <Image img="/images/cloud/security/azure-pe-ip.webp" size="lg" alt="プライベート エンドポイントの IP アドレス" border />
 

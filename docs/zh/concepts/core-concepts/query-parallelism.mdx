@@ -66,7 +66,7 @@ ClickHouse [专为速度而打造](/zh/get-started/about/why-clickhouse-is-so-fa
 <Info>
   **ClickHouse Cloud 使用并行副本，而不是分片**
 
-  在 ClickHouse Cloud 中，同样的并行能力是通过[并行副本](/zh/products/cloud/features/infrastructure/parallel-replicas)实现的，其工作方式与无共享集群中的分片类似。每个 ClickHouse Cloud 副本——也就是一个无状态计算节点——都会并行处理一部分数据，并像独立分片一样共同形成最终结果。
+  在 ClickHouse Cloud 中，同样的并行能力是通过[并行副本](/zh/products/cloud/features/infrastructure/parallel-replicas)实现的，其工作方式与shared-nothing 集群中的分片类似。每个 ClickHouse Cloud 副本——也就是一个无状态计算节点——都会并行处理一部分数据，并像独立分片一样共同形成最终结果。
 </Info>
 
 <div id="monitoring-query-parallelism">

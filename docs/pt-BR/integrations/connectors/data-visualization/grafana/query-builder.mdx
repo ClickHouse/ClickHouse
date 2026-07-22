@@ -37,22 +37,22 @@ A configuração *Tipo de consulta* altera o layout do construtor de consultas p
 O tipo de consulta também determina qual painel é usado para visualizar os dados.
 
 <div id="table">
-  ### Tabela
+  ### Table
 </div>
 
-O tipo de consulta mais flexível é a consulta de tabela. Ela funciona como uma categoria genérica para os outros construtores de consulta, projetada para lidar com consultas simples e de agregação.
+O tipo de consulta mais flexível é a consulta de Table. Ela funciona como uma categoria genérica para os outros construtores de consulta, projetada para lidar com consultas simples e de agregação.
 
-| Campo              | Descrição                                                                                                                                                                                                                   |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Modo do construtor | Consultas simples não incluem Aggregates nem Group By, enquanto consultas de agregação incluem essas opções.                                                                                                                |
-| Colunas            | As colunas selecionadas. É possível digitar SQL puro neste campo para usar funções e aliases de coluna.                                                                                                                     |
+| Campo              | Descrição                                                                                                                                                                                                                         |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Modo do construtor | Consultas simples não incluem Aggregates nem Group By, enquanto consultas de agregação incluem essas opções.                                                                                                                      |
+| Colunas            | As colunas selecionadas. É possível digitar SQL puro neste campo para usar funções e aliases de coluna.                                                                                                                           |
 | Agregações         | Uma lista de [funções de agregação](/pt-BR/reference/functions/aggregate-functions/index). Permite valores personalizados para função e coluna. Visível apenas no modo Aggregate.                                                 |
 | Agrupar por        | Uma lista de expressões [GROUP BY](/pt-BR/reference/statements/select/group-by). Visível apenas no modo Aggregate.                                                                                                                |
 | ORDER BY           | Uma lista de expressões [ORDER BY](/pt-BR/reference/statements/select/order-by).                                                                                                                                                  |
 | Limite             | Adiciona uma instrução [LIMIT](/pt-BR/reference/statements/select/limit) ao final da consulta. Se definido como `0`, será omitido. Algumas visualizações podem exigir que isso seja definido como `0` para exibir todos os dados. |
-| Filtros            | Uma lista de filtros a serem aplicados na cláusula `WHERE`.                                                                                                                                                                 |
+| Filtros            | Uma lista de filtros a serem aplicados na cláusula `WHERE`.                                                                                                                                                                       |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_table_query.webp" alt="Exemplo de consulta de tabela agregada" border />
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_table_query.webp" alt="Exemplo de consulta de Table agregada" border />
 
 Esse tipo de consulta exibirá os dados como uma tabela.
 
@@ -70,17 +70,17 @@ O filtro **Level** é excluído do SQL por padrão; ao alterá-lo da opção `IS
 
 O tipo de consulta de logs oferece suporte a [links de dados](#data-links).
 
-| Campo              | Descrição                                                                                                                                                                                |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Usar OTel          | Habilita colunas do OpenTelemetry. Substitui as colunas selecionadas para usar as colunas definidas pela versão do esquema OTel selecionada (desabilita a seleção de colunas).            |
-| Colunas            | Colunas extras a serem adicionadas às linhas de log. É possível digitar SQL bruto neste campo para permitir funções e aliases de colunas.                                                |
-| Time               | A coluna de timestamp principal do log. Exibe tipos semelhantes a tempo, mas permite valores/funções personalizados.                                                                     |
-| Nível do log       | Opcional. O *level* ou *severity* do log. Os valores normalmente são como `INFO`, `error`, `Debug` etc.                                                                                  |
-| Mensagem           | O conteúdo da mensagem de log.                                                                                                                                                           |
+| Campo              | Descrição                                                                                                                                                                                      |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Usar OTel          | Habilita colunas do OpenTelemetry. Substitui as colunas selecionadas para usar as colunas definidas pela versão do esquema OTel selecionada (desabilita a seleção de colunas).                 |
+| Colunas            | Colunas extras a serem adicionadas às linhas de log. É possível digitar SQL bruto neste campo para permitir funções e aliases de colunas.                                                      |
+| Time               | A coluna de timestamp principal do log. Exibe tipos semelhantes a tempo, mas permite valores/funções personalizados.                                                                           |
+| Nível do log       | Opcional. O *level* ou *severity* do log. Os valores normalmente são como `INFO`, `error`, `Debug` etc.                                                                                        |
+| Mensagem           | O conteúdo da mensagem de log.                                                                                                                                                                 |
 | Order By           | Uma lista de expressões [ORDER BY](/pt-BR/reference/statements/select/order-by).                                                                                                               |
 | Limite             | Anexa uma instrução [LIMIT](/pt-BR/reference/statements/select/limit) ao final da consulta. Se definido como `0`, ele será excluído, mas isso não é recomendado para grandes datasets de logs. |
-| Filtros            | Uma lista de filtros a serem aplicados na cláusula `WHERE`.                                                                                                                              |
-| Filtro de mensagem | Um campo de texto para filtrar logs de forma prática usando `LIKE %value%`. Excluído quando a entrada estiver vazia.                                                                     |
+| Filtros            | Uma lista de filtros a serem aplicados na cláusula `WHERE`.                                                                                                                                    |
+| Filtro de mensagem | Um campo de texto para filtrar logs de forma prática usando `LIKE %value%`. Excluído quando a entrada estiver vazia.                                                                           |
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query.webp" alt="Exemplo de consulta de logs OTel" border />
 
@@ -115,7 +115,7 @@ As duas visualizações são, em grande parte, iguais, com estas diferenças imp
 
 | Campo              | Descrição                                                                                                                                                                                                                                           |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| modo do construtor | Consultas simples não incluem agregações nem Agrupar por, enquanto consultas agregadas incluem essas opções.                                                                                                                                       |
+| modo do construtor | Consultas simples não incluem agregações nem Agrupar por, enquanto consultas agregadas incluem essas opções.                                                                                                                                        |
 | Time               | A coluna de tempo principal da consulta. Exibe tipos de dados temporais, mas permite valores/funções personalizados.                                                                                                                                |
 | coluna             | As colunas selecionadas. É possível digitar SQL bruto neste campo para permitir funções e aliases de coluna. Visível apenas no modo Simple.                                                                                                         |
 | agregação          | Uma lista de [funções de agregação](/pt-BR/reference/functions/aggregate-functions/index). Permite valores personalizados para função e coluna. Visível apenas no modo Aggregate.                                                                         |
@@ -129,11 +129,11 @@ As duas visualizações são, em grande parte, iguais, com estas diferenças imp
 Esse tipo de consulta exibirá os dados no painel de séries temporais.
 
 <div id="traces">
-  ### Rastreamentos
+  ### Traces
 </div>
 
-O tipo de consulta de rastreamento oferece um construtor de consultas para pesquisar e visualizar rastreamentos com facilidade.
-Ele foi projetado para dados do OpenTelemetry, mas é possível selecionar colunas para renderizar rastreamentos de um esquema diferente.
+O tipo de consulta de trace oferece um construtor de consultas para pesquisar e visualizar Traces com facilidade.
+Ele foi projetado para dados do OpenTelemetry, mas é possível selecionar colunas para renderizar Traces de um esquema diferente.
 Os padrões podem ser configurados na [configuração de rastreamento](/pt-BR/integrations/connectors/data-visualization/grafana/config#traces) da fonte de dados para permitir que o construtor de consultas seja pré-carregado com um banco de dados/tabela e colunas padrão. Se houver padrões configurados, a seleção de colunas ficará recolhida por padrão.
 O OpenTelemetry também pode ser ativado para selecionar automaticamente as colunas de acordo com uma versão do esquema.
 
@@ -142,30 +142,30 @@ Também é incluído um ORDER BY para as colunas Time e Duration Time.
 Esses filtros estão vinculados aos respectivos campos e serão atualizados conforme as colunas forem alteradas.
 O filtro **Service Name** é excluído do SQL por padrão; ao alterá-lo da opção `IS ANYTHING`, ele será ativado.
 
-O tipo de consulta de rastreamento oferece suporte a [links de dados](#data-links).
+O tipo de consulta de trace oferece suporte a [links de dados](#data-links).
 
-| Field                 | Description                                                                                                                                                                                           |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Trace Mode            | Altera a consulta de Trace Search para Trace ID lookup.                                                                                                                                               |
-| Use OTel              | Ativa colunas do OpenTelemetry. Substitui as colunas selecionadas para usar as colunas definidas pela versão de esquema OTel selecionada (desativa a seleção de colunas).                             |
-| Trace ID Column       | O ID do rastreamento.                                                                                                                                                                                 |
-| Span ID Column        | ID do span.                                                                                                                                                                                           |
-| Parent Span ID Column | ID do span pai. Geralmente fica vazio em rastreamentos de nível superior.                                                                                                                             |
-| Service Name Column   | Nome do serviço.                                                                                                                                                                                      |
-| Operation Name Column | Nome da operação.                                                                                                                                                                                     |
-| Start Time Column     | A coluna de tempo principal do trace span. O momento em que o span foi iniciado.                                                                                                                      |
-| Duration Time Column  | A duração do span. Por padrão, o Grafana espera que seja um float em milissegundos. Uma conversão é aplicada automaticamente por meio do menu suspenso `Duration Unit`.                               |
-| Duration Unit         | A unidade de tempo usada para a duração. O padrão é nanossegundos. A unidade selecionada será convertida em um float em milissegundos, conforme exigido pelo Grafana.                                 |
-| Tags Column           | Tags do span. Exclua esta coluna se não estiver usando um esquema baseado em OTel, pois é esperado um tipo específico de coluna map.                                                                  |
-| Service Tags Column   | Tags do serviço. Exclua esta coluna se não estiver usando um esquema baseado em OTel, pois é esperado um tipo específico de coluna map.                                                               |
+| Field                 | Description                                                                                                                                                                                                 |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Trace Mode            | Altera a consulta de Trace Search para Trace ID lookup.                                                                                                                                                     |
+| Use OTel              | Ativa colunas do OpenTelemetry. Substitui as colunas selecionadas para usar as colunas definidas pela versão de esquema OTel selecionada (desativa a seleção de colunas).                                   |
+| Trace ID Column       | O ID do rastreamento.                                                                                                                                                                                       |
+| Span ID Column        | ID do span.                                                                                                                                                                                                 |
+| Parent Span ID Column | ID do span pai. Geralmente fica vazio em rastreamentos de nível superior.                                                                                                                                   |
+| Service Name Column   | Nome do serviço.                                                                                                                                                                                            |
+| Operation Name Column | Nome da operação.                                                                                                                                                                                           |
+| Start Time Column     | A coluna de tempo principal do trace span. O momento em que o span foi iniciado.                                                                                                                            |
+| Duration Time Column  | A duração do span. Por padrão, o Grafana espera que seja um float em milissegundos. Uma conversão é aplicada automaticamente por meio do menu suspenso `Duration Unit`.                                     |
+| Duration Unit         | A unidade de tempo usada para a duração. O padrão é nanossegundos. A unidade selecionada será convertida em um float em milissegundos, conforme exigido pelo Grafana.                                       |
+| Tags Column           | Tags do span. Exclua esta coluna se não estiver usando um esquema baseado em OTel, pois é esperado um tipo específico de coluna map.                                                                        |
+| Service Tags Column   | Tags do serviço. Exclua esta coluna se não estiver usando um esquema baseado em OTel, pois é esperado um tipo específico de coluna map.                                                                     |
 | Order By              | Uma lista de expressões [ORDER BY](/pt-BR/reference/statements/select/order-by).                                                                                                                            |
-| Limit                 | Acrescenta uma instrução [LIMIT](/pt-BR/reference/statements/select/limit) ao final da consulta. Se definido como `0`, ele será excluído, mas isso não é recomendado para grandes datasets de rastreamento. |
-| Filters               | Uma lista de filtros a serem aplicados na cláusula `WHERE`.                                                                                                                                           |
-| Trace ID              | O Trace ID pelo qual filtrar. Usado apenas no modo Trace ID e ao abrir um [link de dados](#data-links) de Trace ID.                                                                                   |
+| Limit                 | Acrescenta uma instrução [LIMIT](/pt-BR/reference/statements/select/limit) ao final da consulta. Se definido como `0`, ele será excluído, mas isso não é recomendado para grandes datasets de trace. |
+| Filters               | Uma lista de filtros a serem aplicados na cláusula `WHERE`.                                                                                                                                                 |
+| Trace ID              | O Trace ID pelo qual filtrar. Usado apenas no modo Trace ID e ao abrir um [link de dados](#data-links) de Trace ID.                                                                                         |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_trace_query.webp" alt="Exemplo de consulta de rastreamento OTel" border />
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_trace_query.webp" alt="Exemplo de consulta de Traces OTel" border />
 
-Esse tipo de consulta renderiza os dados na visualização de tabela no modo Trace Search e no painel de rastreamento no modo Trace ID.
+Esse tipo de consulta renderiza os dados na visualização de tabela no modo Trace Search e no painel de trace no modo Trace ID.
 
 <div id="sql-editor">
   ## SQL Editor
@@ -217,12 +217,12 @@ Ao incluir uma coluna de trace ID, os links &quot;**View Trace**&quot; e &quot;*
   ### Recursos de vinculação
 </div>
 
-Com os links de dados disponíveis, você pode abrir rastreamento e logs usando o trace ID fornecido.
+Com os links de dados disponíveis, você pode abrir Traces e logs usando o trace ID fornecido.
 
 &quot;**View Trace**&quot; abrirá um painel dividido com o trace, e &quot;**View Logs**&quot; abrirá uma consulta de logs filtrada pelo trace ID.
 Se o link for clicado em um dashboard em vez da visualização Explore, ele será aberto em uma nova aba na visualização Explore.
 
-É necessário ter padrões configurados tanto para [logs](/pt-BR/integrations/connectors/data-visualization/grafana/config#logs) quanto para [rastreamento](/pt-BR/integrations/connectors/data-visualization/grafana/config#traces) ao alternar entre tipos de consulta (de logs para rastreamento e de rastreamento para logs). Os padrões não são necessários ao abrir um link do mesmo tipo de consulta, já que a consulta pode ser simplesmente copiada.
+É necessário ter padrões configurados tanto para [logs](/pt-BR/integrations/connectors/data-visualization/grafana/config#logs) quanto para [Traces](/pt-BR/integrations/connectors/data-visualization/grafana/config#traces) ao alternar entre tipos de consulta (de logs para Traces e de Traces para logs). Os padrões não são necessários ao abrir um link do mesmo tipo de consulta, já que a consulta pode ser simplesmente copiada.
 
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   Exemplo de visualização de um trace (painel direito) a partir de uma consulta de logs (painel esquerdo)

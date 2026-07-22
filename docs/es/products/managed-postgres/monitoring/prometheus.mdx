@@ -112,37 +112,27 @@ Establece `honor_labels: true` para que se conserven las labels `postgres_servic
 Para recopilar un solo servicio, añade `/<PG_ID>` a `metrics_path`.
 
 <div id="grafana-dashboard">
-  ## Dashboard de Grafana preconfigurado
+  ## dashboard de Grafana preconfigurado
 </div>
 
-Un panel de Grafana listo para usar visualiza todas las métricas que expone el endpoint:
-una tabla de servicios ordenable, uso de CPU y memoria, uso de disco
-con alertas por umbral, conexiones por estado, transacciones y proporción de
-reversiones, actividad de tuplas, E/S, almacenamiento por base de datos e
-interbloqueos.
+Un dashboard de Grafana listo para usar visualiza todas las métricas que expone el endpoint: una tabla de servicios ordenable, uso de CPU y memoria, uso de disco con alertas por umbral, conexiones por estado, transacciones y proporción de reversiones, actividad de tuplas, E/S, almacenamiento por base de datos e interbloqueos.
 
-<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="Dashboard de Grafana de los servicios de Managed Postgres" size="md" border />
+<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="dashboard de Grafana de los servicios de Managed Postgres" size="md" border />
 
 <div id="import-dashboard">
   ### Importación del dashboard
 </div>
 
 <Steps>
-  <Step>
-    #### Descargar el JSON del dashboard
-
+  <Step title="Descargar el JSON del dashboard" id="download">
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">Descargar el JSON del dashboard</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Abrir el asistente de importación en Grafana
-
+  <Step title="Abrir el asistente de importación en Grafana" id="open-import">
     Ve a **Dashboards → New → Import**. Sube el archivo JSON o pega su contenido.
   </Step>
 
-  <Step>
-    #### Elige tu origen de datos de Prometheus
-
+  <Step title="Elige tu origen de datos de Prometheus" id="pick-datasource">
     Cuando se te pida el valor de `DS_PROMETHEUS`, selecciona el origen de datos de Prometheus que recopila métricas del endpoint configurado en la [sección anterior](#configuring-prometheus).
   </Step>
 </Steps>

@@ -125,7 +125,7 @@ ResourceAttributes['k8s.pod.name'] = 'checkout-675775c4cc-f2p9c'
 
 これは Map のキーにアクセスするため、ClickHouse は一致した各行について `ResourceAttributes` カラム全体を読み取る必要があります。Map に多くのキーが含まれている場合、このカラムは非常に大きくなる可能性があります。
 
-この属性を頻繁にクエリする場合は、トップレベルのカラムとしてマテリアライズする必要があります。
+この属性を頻繁にクエリする場合は、トップレベルのカラムとしてマテリアライズドされる必要があります。
 
 挿入時にポッド名を抽出するには、マテリアライズドカラムを追加します:
 
@@ -143,7 +143,7 @@ MATERIALIZED ResourceAttributes['k8s.pod.name']
 
 新たに挿入されるデータでは、これにより map へのアクセスが不要になり、I/O も大幅に削減されます。
 
-ただし、ユーザーが元の属性パス、たとえば `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"` を使って引き続きクエリする場合でも、**ClickStack はクエリを内部で自動的に書き換え**、マテリアライズされた `PodName` カラムを使用します。つまり、次の述語が使われます:
+ただし、ユーザーが元の属性パス、たとえば `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"` を使って引き続きクエリする場合でも、**ClickStack はクエリを内部で自動的に書き換え**、マテリアライズド `PodName` カラムを使用します。つまり、次の述語が使われます:
 
 ```sql
 PodName = 'checkout-675775c4cc-f2p9c'
@@ -667,9 +667,7 @@ Map 添字形式にフォールバックします。
 以下の例は、既存のスキーマを使いながら、`ServiceName` の前に `SeverityText` カラムを含む新しい主キーを持つログテーブルを簡単に作成する方法を示しています。
 
 <Steps>
-  <Step>
-    #### 新しいテーブルを作成する
-
+  <Step title="新しいテーブルを作成する" id="create-new-table-with-key">
     ```sql
     CREATE TABLE otel_logs_temp AS otel_logs
     PRIMARY KEY (SeverityText, ServiceName, Timestamp)
@@ -686,9 +684,7 @@ Map 添字形式にフォールバックします。
     </Info>
   </Step>
 
-  <Step>
-    #### テーブルを入れ替えて削除する
-
+  <Step title="テーブルを入れ替えて削除する" id="exhange-and-drop-table">
     `EXCHANGE` ステートメントは、テーブル名を[アトミックに](/ja/concepts/core-concepts/glossary#atomicity)入れ替えるために使用します。一時テーブル (この時点では以前のデフォルトテーブル) は削除できます。
 
     ```sql
@@ -709,9 +705,7 @@ Map 添字形式にフォールバックします。
 以下でも、主キーの先頭カラムとして `SeverityText` を導入する同じ例を使用します。この場合は、新しいデータ用のテーブルを作成し、履歴分析のために古いテーブルは保持します。
 
 <Steps>
-  <Step>
-    #### 新しいテーブルを作成する
-
+  <Step title="新しいテーブルを作成する" id="create-new-table-with-key-2">
     必要な主キーで新しいテーブルを作成します。接尾辞 `_23_01_2025` に注目してください。これは現在の日付に合わせて変更してください。例:
 
     ```sql
@@ -721,10 +715,8 @@ Map 添字形式にフォールバックします。
     ```
   </Step>
 
-  <Step>
-    #### Merge テーブルを作成する
-
-    [Merge engine](/ja/reference/engines/table-engines/special/merge) は (MergeTree と混同しないでください) 、それ自体ではデータを保存しませんが、複数の他のテーブルを同時に読み取ることができます。
+  <Step title="Merge テーブルを作成する" id="create-merge-table">
+    [Merge engine](/ja/reference/engines/table-engines/special/merge) は (MergeTree と混同しないでください)、それ自体ではデータを保存しませんが、複数の他のテーブルを同時に読み取ることができます。
 
     ```sql
     CREATE TABLE otel_logs_merge
@@ -739,9 +731,7 @@ Map 添字形式にフォールバックします。
     このテーブルにクエリを実行して、`otel_logs` のデータが返されることを確認できます。
   </Step>
 
-  <Step>
-    #### Merge テーブルを読み取るように ClickStack UI を更新する
-
+  <Step title="Merge テーブルを読み取るように ClickStack UI を更新する" id="update-clickstack-ui-to-read-from-merge-tree">
     ログのログソースで使用するテーブルとして `otel_logs_merge` を設定するよう、ClickStack UI を更新します。
 
     <Image img="/images/clickstack/performance_guide/select_merge_table.webp" size="lg" alt="Select Merge Table" />
@@ -749,9 +739,7 @@ Map 添字形式にフォールバックします。
     この時点では、書き込みは引き続き元の主キーを持つ `otel_logs` に対して行われ、読み取りには Merge テーブルが使用されます。ユーザーに見える変更はなく、インジェストへの影響もありません。
   </Step>
 
-  <Step>
-    #### テーブルを入れ替える
-
+  <Step title="テーブルを入れ替える" id="exchange-the-tables">
     ここでは、`EXCHANGE` ステートメントを使用して、`otel_logs` テーブルと `otel_logs_23_01_2025` テーブルの名前をアトミックに入れ替えます。
 
     ```sql
@@ -767,9 +755,7 @@ Map 添字形式にフォールバックします。
 この手順は、主キーをさらに変更する必要が生じた場合にも応用できます。たとえば、1 週間後に、`SeverityText` ではなく `SeverityNumber` を主キーに含めるべきだと判断した場合です。以下の手順は、主キーの変更が必要になるたびに何度でも繰り返し応用できます。
 
 <Steps>
-  <Step>
-    #### 新しいテーブルを作成する
-
+  <Step title="新しいテーブルを作成する" id="create-new-table-with-key-3">
     必要な主キーで新しいテーブルを作成します。
     以下の例では、テーブルの日付を表す接尾辞として `30_01_2025` を使用しています。例:
 
@@ -780,9 +766,7 @@ Map 添字形式にフォールバックします。
     ```
   </Step>
 
-  <Step>
-    #### テーブルを入れ替える
-
+  <Step title="テーブルを入れ替える" id="exchange-the-tables-v2">
     ここでは、`EXCHANGE` ステートメントを使用して、`otel_logs` テーブルと `otel_logs_30_01_2025` テーブルの名前をアトミックに入れ替えます。
 
     ```sql
@@ -796,7 +780,7 @@ Map 添字形式にフォールバックします。
 <Info>
   **不要になったテーブル**
 
-  有効期限 (TTL) ポリシーを設定している場合 (推奨) 、書き込みを受けなくなった古い主キーのテーブルは、データの有効期限切れに伴って徐々に空になります。これらのテーブルは監視し、データがなくなった段階で定期的にクリーンアップする必要があります。現時点では、このクリーンアップは手動で行います。
+  有効期限 (TTL) ポリシーを設定している場合 (推奨)、書き込みを受けなくなった古い主キーのテーブルは、データの有効期限切れに伴って徐々に空になります。これらのテーブルは監視し、データがなくなった段階で定期的にクリーンアップする必要があります。現時点では、このクリーンアップは手動で行います。
 </Info>
 
 <div id="row-lookup-block-columns">
@@ -974,10 +958,10 @@ ORDER BY t;
 * [ブログでの説明と例](https://clickhouse.com/blog/projections-secondary-indices#example-combining-multiple-projection-indexes)
 
 <div id="projection-alternatives">
-  ### 代替手段
+  ### 代替案
 </div>
 
-複数のソートキーが必要な場合、選択肢はプロジェクションだけではありません。運用上の制約や、ClickStack でクエリをどのように振り分けたいかに応じて、次の方法を検討してください。
+複数のソートキーが必要な場合、PROJECTIONだけが選択肢ではありません。運用上の制約や、ClickStack でクエリをどのようにルーティングしたいかに応じて、次を検討してください。
 
-* OpenTelemetry collector を設定し、異なる `ORDER BY` キーを持つ 2 つのテーブルに書き込むようにして、各テーブルに対して個別の ClickStack ログソースを作成する。
-* materialized view をコピーパイプラインとして作成する。つまり、メインテーブルに materialized view をアタッチし、生の行を別のソートキーを持つ secondary table にそのまま SELECT する (非正規化またはルーティングのパターン) 。このターゲットテーブル用のログソースを作成します。例は [こちら](/ja/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation) を参照してください。
+* OpenTelemetry collector が異なる `ORDER BY` キーを持つ 2 つのテーブルに書き込むように設定し、各テーブルに対して個別の ClickStack ログソースを作成します。
+* materialized view をコピーパイプラインとして作成します。つまり、メインテーブルに materialized view をアタッチし、生の行を異なるソートキーを持つセカンダリテーブルに `SELECT` するようにします (非正規化またはルーティングのパターン) 。このターゲットテーブル用のログソースを作成します。例は[こちら](/ja/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation)を参照してください。

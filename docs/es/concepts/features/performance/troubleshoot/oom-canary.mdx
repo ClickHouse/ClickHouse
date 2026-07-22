@@ -1,0 +1,125 @@
+---
+description: 'Un proceso hijo de sacrificio que atrae al Linux OOM killer antes que
+  el servidor de ClickHouse, dándole al servidor la oportunidad de reducir la carga y sobrevivir.'
+slug: /operations/settings/oom-canary
+title: 'Canario OOM'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge />
+
+<Note>
+  El canario OOM es experimental y está desactivado por defecto. Su comportamiento puede cambiar
+  entre versiones de ClickHouse hasta que se complete la validación en producción.
+</Note>
+
+<div id="overview">
+  ## Descripción general
+</div>
+
+Cuando un host o un cgroup de memoria se quedan sin memoria, el OOM killer (out-of-memory)
+de Linux termina un proceso con `SIGKILL`, normalmente el mayor consumidor, que
+en un host dedicado es el propio `clickhouse-server`. Se pierde todo
+el servidor en lugar de darle la oportunidad de recuperarse.
+
+El canario OOM cambia quién muere primero. Ejecuta un pequeño proceso hijo
+*de sacrificio* que se convierte en el objetivo OOM más atractivo, para que el kernel lo mate
+a él en lugar del servidor. Luego, el servidor detecta la muerte, confirma que fue un evento
+de OOM y alivia la presión de memoria para poder sobrevivir.
+
+El canario no aumenta ningún límite de memoria ni sustituye unos
+límites correctos (consulta [Memory overcommit](/es/concepts/features/configuration/settings/memory-overcommit) y
+`max_server_memory_usage`). Es una última línea de defensa que intercambia una cantidad pequeña
+y fija de memoria por la posibilidad de sobrevivir a un pico de uso de memoria.
+
+<div id="how-it-works">
+  ## Cómo funciona
+</div>
+
+El canario es un proceso `clickhouse oom-canary` independiente. Ajusta su propio
+`oom_score_adj` al máximo (`1000`) para que el kernel lo seleccione primero; luego
+reserva, accede a y aplica `mlock` sobre `oom_canary_size` bytes (100 MB de forma predeterminada) para que
+su conjunto residente sea real. Se termina automáticamente si el servidor se detiene.
+
+En el servidor, un hilo de monitorización observa al canario (mediante `pidfd`) y reacciona cuando
+muere:
+
+* Lo mata `SIGKILL` **con** evidencia de OOM en el cgroup → ejecuta la respuesta ante OOM y luego
+  relanza un canario nuevo.
+* Lo mata **sin** evidencia de OOM (por ejemplo, con un `kill -9` manual), o termina
+  por un fallo transitorio → solo se relanza; no hay respuesta.
+* Fallo permanente durante la configuración, o apagado del servidor → el canario se desactiva.
+
+La evidencia de OOM proviene únicamente del contador `oom_kill` de `memory.events.local` en cgroup v2.
+Es intencionadamente local al cgroup: los contadores jerárquicos o de todo el host pueden
+incrementarse por procesos no relacionados y provocar respuestas falsas.
+
+Ante un OOM confirmado, la respuesta ejecuta estos pasos independientes: registrar un mensaje `FATAL`,
+purgar las arenas del asignador (jemalloc), intentar cancelar todas las
+consultas en ejecución, cancelar todas las fusiones y mutaciones, y encolar un evento en
+[`system.crash_log`](/es/reference/system-tables/crash_log). Los registros del sistema no se
+vacían de forma síncrona, porque forzar E/S bajo presión de memoria puede empeorar las cosas.
+
+<div id="requirements">
+  ## Requisitos
+</div>
+
+* **Linux ≥ 5.3.** El monitor controla el canario mediante `pidfd_open`; en kernels más antiguos
+  el canario se desactiva al arrancar. No tiene efecto en plataformas que no son Linux.
+* **cgroup v2 con `memory.events.local`** para la respuesta ante OOM. Sin ello, el
+  canario sigue relanzándose después de un `SIGKILL`, pero no puede confirmar un OOM, por lo que la
+  respuesta nunca se ejecuta (se registra una advertencia al arrancar).
+* **capacidad `mlock` (opcional).** Bloquear la memoria del canario requiere
+  `CAP_IPC_LOCK` o un `RLIMIT_MEMLOCK` suficiente; si falla, el canario registra una
+  advertencia y su memoria puede enviarse a swap, lo que debilita su función como objetivo de OOM.
+
+<Warning>
+  **memory.oom.group**
+
+  Si `memory.oom.group` de cgroup v2 está habilitado para el cgroup del servidor, el kernel
+  termina todo el cgroup como una sola unidad en un OOM — el servidor muere junto con el
+  canario y la respuesta nunca se ejecuta. El canario no puede proteger al servidor en este
+  modo; se registra una advertencia al arrancar.
+</Warning>
+
+<div id="configuration">
+  ## Configuración
+</div>
+
+El canario se controla mediante [parámetros del servidor](/es/reference/settings/server-settings/settings),
+configurados como elementos de nivel superior de la configuración del servidor y aplicados al reiniciar.
+
+| Ajuste                               | Predeterminado       | Descripción                                                                                                                                                                                                                               |
+| ------------------------------------ | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `oom_canary_enable`                  | `false`              | Habilita el canario OOM.                                                                                                                                                                                                                  |
+| `oom_canary_size`                    | `104857600` (100 MB) | Cantidad de bytes que el canario reserva y toca. Los valores más altos hacen que sea un objetivo OOM más probable.                                                                                                                        |
+| `oom_canary_relaunch`                | `true`               | Vuelve a iniciar el canario después de que termine (a menos que se haya producido un error permanente de configuración inicial o un apagado), sujeto a los límites que se indican a continuación.                                         |
+| `oom_canary_max_rapid_relaunches`    | `10`                 | Número máximo de reinicios consecutivos *rápidos* antes de deshabilitar el reinicio automático, para evitar ciclos de reinicio continuos. Se restablece cuando un canario permanece en ejecución más de `oom_canary_max_backoff_seconds`. |
+| `oom_canary_initial_backoff_seconds` | `1`                  | Retraso inicial entre reinicios; se duplica cada vez hasta alcanzar el máximo.                                                                                                                                                            |
+| `oom_canary_max_backoff_seconds`     | `60`                 | Retraso máximo entre reinicios.                                                                                                                                                                                                           |
+
+```xml
+<clickhouse>
+    <oom_canary_enable>1</oom_canary_enable>
+    <oom_canary_size>104857600</oom_canary_size>
+</clickhouse>
+```
+
+<div id="observability">
+  ## Observabilidad
+</div>
+
+Un OOM confirmado genera una fila en
+[`system.crash_log`](/es/reference/system-tables/crash_log) con `signal = 9` y una
+`signal_description` que menciona `OOM Canary`:
+
+```sql
+SELECT event_time, signal, signal_description
+FROM system.crash_log
+WHERE signal = 9 AND signal_description LIKE '%OOM Canary%'
+ORDER BY event_time DESC;
+```
+
+El ciclo de vida del canario y cada paso de la respuesta ante OOM también se registran en el log del servidor.

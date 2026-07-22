@@ -25,22 +25,20 @@ Apache Polaris は Iceberg テーブルと Delta Tables (Generic Tables 経由) 
   ## 前提条件
 </div>
 
-Polarisカタログに接続するには、次のものが必要です。
+Polaris カタログに接続するには、次のものが必要です。
 
-* Snowflake Open Catalog (ホスト型の Polaris) またはセルフホストの Polaris Catalog
-* Polarisカタログの URI (例: `https://<account-id>.<region>.aws.snowflakecomputing.com/polaris/api/catalog/v1` または `http://polaris:8181/api/catalog/v1/oauth/tokens`) 
-* カタログの認証情報 (client ID と client secret) 
+* Snowflake Open Catalog (ホスト型の Polaris) またはセルフホストの Polaris カタログ
+* Polaris カタログの URI (例: `https://<account-id>.<region>.aws.snowflakecomputing.com/polaris/api/catalog/v1` または `http://polaris:8181/api/catalog/v1/oauth/tokens`)
+* カタログの認証情報 (client ID と client secret)
 * Polaris インスタンスの OAuth トークン URI
-* Iceberg データが保存されているオブジェクトストアのストレージエンドポイント (例: S3) 
+* Iceberg データが保存されているオブジェクトストアのストレージエンドポイント (例: S3)
 * ClickHouse 26.1 以降
 
 Snowflake のマネージド Polaris である Open Catalog では、URI に `/polaris` が含まれます。一方、セルフホストの場合は含まれないことがあります。
 
 <Steps>
-  <Step>
-    ## Polaris と ClickHouse の接続を作成する
-
-    ClickHouse を Polarisカタログに接続するデータベースを作成します。
+  <Step title="Polaris と ClickHouse の接続を作成する" id="connecting">
+    ClickHouse を Polaris カタログに接続するデータベースを作成します。
 
     ```sql
     CREATE DATABASE polaris_catalog
@@ -55,9 +53,7 @@ Snowflake のマネージド Polaris である Open Catalog では、URI に `/p
     ```
   </Step>
 
-  <Step>
-    ## ClickHouse を使って Polarisカタログをクエリする
-
+  <Step title="ClickHouse を使って Polaris カタログをクエリする" id="query-polaris-catalog">
     接続が確立されたら、Polaris に対してクエリを実行できます。
 
     ```sql title="クエリ"
@@ -82,9 +78,7 @@ Snowflake のマネージド Polaris である Open Catalog では、URI に `/p
     ```
   </Step>
 
-  <Step>
-    ## Polaris から ClickHouse にデータを読み込む
-
+  <Step title="Polaris から ClickHouse にデータを読み込む" id="loading-data-into-clickhouse">
     Polaris から ClickHouse のテーブルにデータを読み込むには、まず必要なスキーマでターゲットテーブルを作成し、その後 Polaris のテーブルから INSERT します。
 
     ```sql title="クエリ"

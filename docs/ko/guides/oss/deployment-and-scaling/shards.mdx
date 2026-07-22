@@ -89,7 +89,7 @@ ENGINE = Distributed('test_cluster', 'uk', 'uk_price_paid_simple', rand())
   ## ClickHouse의 테이블 레플리카란 무엇입니까?
 </div>
 
-ClickHouse의 복제는 여러 서버에 **세그먼트 데이터의 복사본**을 유지함으로써 **데이터 무결성**과 **장애 조치**를 보장합니다. 하드웨어 장애는 피할 수 없으므로, 복제는 각 세그먼트에 여러 레플리카를 두어 데이터 손실을 방지합니다. 쓰기 작업은 직접 또는 작업에 사용할 레플리카를 선택하는 [분산 테이블](#distributed-table-creation)을 통해 어느 레플리카로든 보낼 수 있습니다. 변경 사항은 다른 레플리카로 자동으로 전파됩니다. 장애가 발생하거나 유지 관리 중인 경우에도 데이터는 다른 레플리카에서 계속 사용할 수 있으며, 장애가 발생한 호스트가 복구되면 최신 상태를 유지하도록 자동으로 동기화됩니다.
+ClickHouse의 복제는 여러 서버에 **세그먼트 데이터의 복사본**을 유지함으로써 **데이터 무결성**과 **장애 조치**를 보장합니다. 하드웨어 장애는 피할 수 없으므로, 복제는 각 세그먼트에 여러 레플리카를 두어 데이터 손실을 방지합니다. 쓰기 작업은 직접 또는 작업에 사용할 레플리카를 선택하는 [분산 테이블](#distributed-table-creation)을 통해 어느 레플리카로든 보낼 수 있습니다. 변경 사항은 다른 레플리카로 자동으로 전파됩니다. 장애가 발생하거나 유지 관리를 수행하는 동안에도 데이터는 다른 레플리카에서 계속 사용할 수 있으며, 장애가 발생한 호스트가 복구되면 최신 상태를 유지하도록 자동으로 동기화됩니다.
 
 복제를 사용하려면 [클러스터 아키텍처](/ko/guides/oss/deployment-and-scaling/examples/2-shards-1-replica)에 [Keeper](https://clickhouse.com/clickhouse/keeper) 구성 요소가 필요합니다.
 
@@ -107,9 +107,9 @@ ClickHouse의 복제는 여러 서버에 **세그먼트 데이터의 복사본**
 
 ② 분산 테이블은 쿼리를 각 세그먼트의 레플리카 하나로 전달하며, 선택된 레플리카를 호스팅하는 각 ClickHouse 서버는 병렬로 로컬 쿼리 결과를 계산합니다.
 
-나머지 과정은 레플리카가 없는 구성과 [동일하므로](#select-forwarding) 위 다이어그램에는 표시하지 않았습니다. 처음 대상으로 지정된 분산 테이블을 호스팅하는 ClickHouse 서버는 모든 로컬 결과를 수집하고, 이를 머지하여 최종 전역 결과를 만든 다음 쿼리 요청자에게 반환합니다.
+나머지 과정은 레플리카가 없는 구성과 [동일하므로](#select-forwarding) 위 다이어그램에는 표시하지 않았습니다. 처음 대상으로 지정된 분산 테이블을 호스팅하는 ClickHouse 서버는 모든 로컬 결과를 수집하고, 이를 머지하여 최종 전역 결과를 만든 다음 쿼리 전송자에게 반환합니다.
 
-ClickHouse에서는 ②의 쿼리 전달 전략을 구성할 수 있습니다. 기본적으로는 — 위 다이어그램과 달리 — 분산 테이블이 가능하면 로컬 레플리카를 [우선 사용](/ko/reference/settings/session-settings#prefer_localhost_replica)하지만, 다른 로드 밸런싱 [전략](/ko/reference/settings/session-settings#load_balancing)도 사용할 수 있습니다.
+ClickHouse에서는 ②의 쿼리 전달 전략을 구성할 수 있습니다. 기본적으로는—위 다이어그램과 달리—분산 테이블이 가능하면 로컬 레플리카를 [우선 사용](/ko/reference/settings/session-settings#prefer_localhost_replica)하지만, 다른 로드 밸런싱 [전략](/ko/reference/settings/session-settings#load_balancing)도 사용할 수 있습니다.
 
 <div id="where-to-find-more-information">
   ## 더 많은 정보를 확인할 수 있는 곳

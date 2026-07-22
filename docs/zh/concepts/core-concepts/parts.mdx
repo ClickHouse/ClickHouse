@@ -53,16 +53,16 @@ ORDER BY (town, street);
 数据分区片段是自包含的，包含了解释其内容所需的全部元数据，无需依赖中心目录。除稀疏主索引外，数据分区片段还包含其他元数据，例如二级[数据跳过索引](/zh/concepts/features/performance/skip-indexes/skipping-indexes)、[列统计信息](https://clickhouse.com/blog/clickhouse-release-23-11#column-statistics-for-prewhere)、校验和、最小-最大索引 (如果使用了[分区](/zh/concepts/core-concepts/partitions)) 以及[更多](https://github.com/ClickHouse/ClickHouse/blob/a065b11d591f22b5dd50cb6224fab2ca557b4989/src/Storages/MergeTree/MergeTreeData.h#L104)。
 
 <div id="part-merges">
-  ## parts 合并
+  ## 分片 合并
 </div>
 
-为了控制每个表中的 parts 数量，[后台合并](/zh/concepts/core-concepts/merges)任务会定期将较小的 parts 合并成较大的 parts，直到其达到[可配置](/zh/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)的压缩大小 (通常约为 150 GB) 。合并后的 parts 会被标记为非活动，并在经过一个[可配置](/zh/reference/settings/merge-tree-settings#old_parts_lifetime)的时间间隔后删除。随着时间推移，这一过程会形成合并后 parts 的层级结构，这也正是它被称为 MergeTree 表的原因：
+为了控制每个表中的 分片 数量，[后台合并](/zh/concepts/core-concepts/merges)任务会定期将较小的 分片 合并成较大的 分片，直到其达到[可配置](/zh/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)的压缩大小 (通常约为 150 GB) 。合并后的 分片 会被标记为非活动，并在经过一个[可配置](/zh/reference/settings/merge-tree-settings#old_parts_lifetime)的时间间隔后删除。随着时间推移，这一过程会形成合并后 分片 的层级结构，这也正是它被称为 MergeTree 表的原因：
 
 <Image img="/images/managing-data/core-concepts/merges.webp" size="lg" />
 
 <br />
 
-为尽量减少初始 parts 的数量以及合并带来的开销，建议数据库客户端[批量](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance)插入 Tuple，例如一次插入 20,000 行，或者使用[asynchronous insert 模式](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)。在这种模式下，ClickHouse 会将写入同一表的多个传入 INSERT 中的行缓存在一起，只有当缓冲区大小超过可配置阈值或发生 timeout 时，才会创建新的 part。
+为尽量减少初始 分片 的数量以及合并带来的开销，建议数据库客户端[批量](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance)插入 Tuple，例如一次插入 20,000 行，或者使用[asynchronous insert 模式](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)。在这种模式下，ClickHouse 会将写入同一表的多个传入 INSERT 中的行缓存在一起，只有当缓冲区大小超过可配置阈值或发生 timeout 时，才会创建新的 分片。
 
 <div id="monitoring-table-parts">
   ## 监控表 parts

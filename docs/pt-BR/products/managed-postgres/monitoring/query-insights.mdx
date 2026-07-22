@@ -124,7 +124,7 @@ instância realmente executou.
 
 Abaixo da tabela de padrões, o painel **Consultas recentes** lista execuções
 individuais em ordem cronológica inversa — uma linha por
-comando executado, não uma linha por padrão. Use-o quando quiser o fluxo bruto de
+instrução executada, não uma linha por padrão. Use-o quando quiser o fluxo bruto de
 eventos em vez de um agregado, por exemplo para conferir se uma correção
 foi aplicada ou para encontrar o momento exato em que um erro ocorreu.
 
@@ -188,12 +188,12 @@ Tudo de que você precisa para diagnosticar um padrão lento está em um só lug
   ## API do Query Insights
 </div>
 
-A mesma telemetria também está disponível programaticamente por meio da
+A mesma telemetria está disponível programaticamente por meio da
 [OpenAPI do ClickHouse Cloud](/pt-BR/products/managed-postgres/openapi#query-insights).
 A tabela [Padrões lentos](#slow-patterns) corresponde ao
-endpoint de [listar padrões de consultas lentas](/pt-BR/api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList),
+endpoint de [listar padrões de consultas lentas](/pt-BR/products/cloud/api-reference/postgres/slow-query-patterns-get-list),
 e o [painel lateral de detalhes](#detail) corresponde ao
-endpoint de [obter um padrão de consulta lenta](/pt-BR/api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet),
+endpoint de [obter um padrão de consulta lenta](/pt-BR/products/cloud/api-reference/postgres/slow-query-pattern-get),
 que retorna as métricas agregadas de um padrão junto com suas
 execuções recentes.
 

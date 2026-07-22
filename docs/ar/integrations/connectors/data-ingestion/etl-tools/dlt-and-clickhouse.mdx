@@ -30,9 +30,7 @@ pip install "dlt[clickhouse]"
 </div>
 
 <Steps>
-  <Step>
-    ### تهيئة مشروع dlt
-
+  <Step title="تهيئة مشروع dlt" id="1-initialize-the-dlt-project">
     ابدأ بتهيئة مشروع `dlt` جديد كما يلي:
 
     ```bash
@@ -43,7 +41,7 @@ pip install "dlt[clickhouse]"
       سيُهيّئ هذا الأمر مسار البيانات لديك باستخدام chess كمصدر وClickHouse كوجهة.
     </Note>
 
-    يُنشئ الأمر أعلاه عدة ملفات ومجلدات، بما في ذلك `.dlt/secrets.toml` وملف متطلبات خاص بـ ClickHouse. يمكنك تثبيت التبعيات اللازمة المحددة في ملف المتطلبات بتنفيذ الأمر التالي:
+    يُنشئ الأمر أعلاه عدة ملفات ودلائل، بما في ذلك `.dlt/secrets.toml` وملف متطلبات خاص بـ ClickHouse. يمكنك تثبيت التبعيات اللازمة المحددة في ملف المتطلبات بتنفيذ الأمر التالي:
 
     ```bash
     pip install -r requirements.txt
@@ -52,9 +50,7 @@ pip install "dlt[clickhouse]"
     أو باستخدام `pip install dlt[clickhouse]`، والذي يثبّت مكتبة `dlt` والتبعيات اللازمة للعمل مع ClickHouse كوجهة.
   </Step>
 
-  <Step>
-    ### إعداد قاعدة بيانات ClickHouse
-
+  <Step title="إعداد قاعدة بيانات ClickHouse" id="2-setup-clickhouse-database">
     لتحميل البيانات إلى ClickHouse، تحتاج إلى إنشاء قاعدة بيانات ClickHouse. في ما يلي مخطط عام لما ينبغي عليك فعله:
 
     1. يمكنك استخدام قاعدة بيانات ClickHouse موجودة أو إنشاء قاعدة بيانات جديدة.
@@ -72,9 +68,7 @@ pip install "dlt[clickhouse]"
     ```
   </Step>
 
-  <Step>
-    ### إضافة بيانات الاعتماد
-
+  <Step title="إضافة بيانات الاعتماد" id="3-add-credentials">
     بعد ذلك، أضف بيانات اعتماد ClickHouse في ملف `.dlt/secrets.toml` كما هو موضح أدناه:
 
     ```bash
@@ -83,12 +77,12 @@ pip install "dlt[clickhouse]"
     username = "dlt"                         # اسم مستخدم ClickHouse، وعادةً ما يكون الاسم الافتراضي هو "default"
     password = "Dlt*12345789234567"          # كلمة مرور ClickHouse إن وجدت
     host = "localhost"                       # مضيف خادم ClickHouse
-    port = 9000                              # منفذ ClickHouse، والقيمة الافتراضية هي 9000
+    port = 9000                              # منفذ HTTP في ClickHouse، والقيمة الافتراضية هي 9000
     http_port = 8443                         # منفذ HTTP للاتصال بواجهة HTTP الخاصة بخادم ClickHouse. القيمة الافتراضية هي 8443.
     secure = 1                               # اضبطه على 1 عند استخدام HTTPS، وإلا فاضبطه على 0.
 
     [destination.clickhouse]
-    dataset_table_separator = "___"          # الفاصل المستخدم في أسماء جداول مجموعة بيانات المشتقة من مجموعة بيانات.
+    dataset_table_separator = "___"          # الفاصل المستخدم في أسماء جداول dataset المشتقة من dataset.
     ```
 
     <Info>
@@ -96,9 +90,9 @@ pip install "dlt[clickhouse]"
 
       تحدد المعلمة `http_port` رقم المنفذ الذي سيُستخدم عند الاتصال بواجهة HTTP الخاصة بخادم ClickHouse. وهذا يختلف عن المنفذ الافتراضي 9000، الذي يُستخدم للبروتوكول native TCP.
 
-      يجب عليك تعيين `http_port` إذا كنت لا تستخدم تخزينًا مرحليًا خارجيًا (أي إذا كنت لا تعيّن معلمة تخزين مرحلي في مسار البيانات لديك). ويعود ذلك إلى أن التخزين المرحلي المدمج للتخزين المحلي في ClickHouse يستخدم مكتبة <a href="https://github.com/ClickHouse/clickhouse-connect">clickhouse-connect</a>، التي تتواصل مع ClickHouse عبر HTTP.
+      يجب عليك تعيين `http_port` إذا كنت لا تستخدم التخزين المرحلي خارجيًا (أي إذا كنت لا تعيّن المعلمة التخزين المرحلي في مسار البيانات لديك). ويعود ذلك إلى أن التخزين المرحلي المدمج للتخزين المحلي في ClickHouse يستخدم مكتبة <a href="https://github.com/ClickHouse/clickhouse-connect">clickhouse content</a>، التي تتواصل مع ClickHouse عبر HTTP.
 
-      تأكد من أن خادم ClickHouse لديك مُعدّ لقبول اتصالات HTTP على المنفذ المحدد بواسطة `http_port`. على سبيل المثال، إذا عيّنت `http_port = 8443`، فيجب أن يكون ClickHouse في وضع الاستماع لطلبات HTTP على المنفذ 8443. وإذا كنت تستخدم تخزينًا مرحليًا خارجيًا، يمكنك حذف المعلمة `http_port`، لأن clickhouse-connect لن يُستخدم في هذه الحالة.
+      تأكد من أن خادم ClickHouse لديك مُعدّ لقبول اتصالات HTTP على المنفذ المحدد بواسطة `http_port`. على سبيل المثال، إذا عيّنت `http_port = 8443`، فيجب أن يكون ClickHouse في وضع الاستماع لطلبات HTTP على المنفذ 8443. وإذا كنت تستخدم التخزين المرحلي خارجيًا، يمكنك حذف المعلمة `http_port`، لأن clickhouse-connect لن يُستخدم في هذه الحالة.
     </Info>
 
     يمكنك تمرير connection string لقاعدة البيانات مماثلًا لذلك الذي تستخدمه مكتبة `clickhouse-driver`. ستبدو بيانات الاعتماد أعلاه كما يلي:

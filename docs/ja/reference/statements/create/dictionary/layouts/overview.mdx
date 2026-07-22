@@ -32,6 +32,9 @@ Dictionary をメモリ内に格納する方法は複数あり、それぞれ CP
 | [direct](/ja/reference/statements/create/dictionary/layouts/direct)                                                              | メモリ内には格納せず、リクエストごとにソースへ直接クエリします。                                                        |
 | [complex&#95;key&#95;direct](/ja/reference/statements/create/dictionary/layouts/direct#complex_key_direct)                       | `direct` と同様ですが、複合キーに対応します。                                                             |
 | [ip&#95;trie](/ja/reference/statements/create/dictionary/layouts/ip-trie)                                                        | IP プレフィックスを高速にルックアップするための Trie 構造です (CIDR ベース) 。                                        |
+| [hierarchical](/ja/reference/statements/create/dictionary/layouts/hierarchical)                                                  | 親子関係を表す数値キーを使用した階層構造をサポートします。                                                           |
+| [polygon](/ja/reference/statements/create/dictionary/layouts/polygon)                                                            | 効率的な point-in-polygon ルックアップ (逆ジオコーディング) を提供します。                                        |
+| [regexp&#95;tree](/ja/reference/statements/create/dictionary/layouts/regexp-tree)                                                | キーを正規表現のツリー構造に照合します。                                                                    |
 
 <Tip>
   **推奨レイアウト**

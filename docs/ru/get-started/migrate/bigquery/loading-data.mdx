@@ -28,9 +28,7 @@ doc_type: 'guide'
 | Итого                                                                                             | 8.26 млрд     | 23,577                | 3.982TB      | 8 мин 3 сек         | &gt; 6 дн 5 ч | 53 мин 45 сек       |
 
 <Steps>
-  <Step>
-    ## Экспорт данных таблицы в GCS
-
+  <Step title="Экспорт данных таблицы в GCS" id="1-export-table-data-to-gcs">
     На этом шаге мы используем [рабочее пространство SQL в BigQuery](https://cloud.google.com/bigquery/docs/bigquery-web-ui) для выполнения SQL-команд. Ниже показано, как экспортировать таблицу BigQuery `mytable` в бакет GCS с помощью оператора [`EXPORT DATA`](https://cloud.google.com/bigquery/docs/reference/standard-sql/other-statements).
 
     ```sql
@@ -66,9 +64,7 @@ doc_type: 'guide'
     * Parquet как столбцово-ориентированный формат лучше подходит для обмена данными, поскольку он изначально сжат и позволяет BigQuery быстрее выполнять экспорт, а ClickHouse — запросы
   </Step>
 
-  <Step>
-    ## Импорт данных из GCS в ClickHouse
-
+  <Step title="Импорт данных из GCS в ClickHouse" id="2-importing-data-into-clickhouse-from-gcs">
     После завершения экспорта эти данные можно импортировать в таблицу ClickHouse. Для выполнения приведённых ниже команд можно использовать [консоль ClickHouse SQL](/ru/integrations/connectors/sql-clients/sql-console) или [`clickhouse-client`](/ru/concepts/features/interfaces/cli).
 
     Сначала необходимо [создать таблицу](/ru/reference/statements/create/table) в ClickHouse:
@@ -121,9 +117,7 @@ doc_type: 'guide'
     </Info>
   </Step>
 
-  <Step>
-    ## Проверка успешного экспорта данных
-
+  <Step title="Проверка успешного экспорта данных" id="3-testing-successful-data-export">
     Чтобы проверить, что данные были успешно вставлены, просто выполните запрос `SELECT` к новой таблице:
 
     ```sql

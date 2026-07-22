@@ -8,7 +8,7 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
+import { Image } from "/snippets/components/Image.jsx";
 
 ClickHouse는 매우 다양한 조인 유형과 알고리즘을 지원하며, 최근 릴리스에서 조인 성능도 크게 개선되었습니다. 그러나 조인은 본질적으로 단일 비정규화 테이블에서 쿼리하는 것보다 비용이 더 많이 듭니다. 비정규화는 계산 작업을 쿼리 시점에서 삽입 또는 전처리 시점으로 옮기므로, 런타임 지연 시간을 크게 줄이는 경우가 많습니다. 실시간 또는 지연 시간에 민감한 분석 쿼리에는 **비정규화를 강력히 권장합니다**.
 
@@ -62,7 +62,7 @@ ClickHouse는 속도와 메모리 사용량 사이의 절충이 서로 다른 �
   각 알고리즘이 지원하는 조인 유형은 서로 다릅니다. 각 알고리즘에서 지원하는 조인 유형의 전체 목록은 [여기](/ko/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)에서 확인할 수 있습니다.
 </Note>
 
-`join_algorithm = 'auto'`(기본값)로 설정하면 ClickHouse가 최적의 알고리즘을 선택하도록 할 수 있으며, 워크로드에 따라 명시적으로 제어할 수도 있습니다. 성능이나 메모리 오버헤드를 최적화하기 위해 조인 알고리즘을 선택해야 한다면, [이 가이드](/ko/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)를 권장합니다.
+`join_algorithm = 'auto'`로 설정하면 ClickHouse가 최적의 알고리즘을 선택하도록 할 수 있으며, 워크로드에 따라 명시적으로 제어할 수도 있습니다. 기본값은 `direct,parallel_hash,hash`이므로, 오른쪽이 딕셔너리 또는 키-값 엔진인 경우 ClickHouse는 direct 조인을 사용하고, 그렇지 않으면 parallel hash, 그다음 hash로 대체합니다. 성능이나 메모리 오버헤드를 최적화하기 위해 조인 알고리즘을 선택해야 한다면, [이 가이드](/ko/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)를 권장합니다.
 
 최적의 성능을 위해:
 

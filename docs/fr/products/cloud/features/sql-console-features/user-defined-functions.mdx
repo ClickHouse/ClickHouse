@@ -76,9 +76,7 @@ Dans cet exemple, nous allons créer la même fonction définie par l&#39;utilis
 Nous l&#39;avons précédemment créée en SQL, mais cette fois, nous allons la créer en Python et la configurer via l&#39;UI.
 
 <Steps>
-  <Step>
-    ### Créer le fichier Python
-
+  <Step title="Créer le fichier Python" id="create-python-file">
     Créez un nouveau fichier `main.py` localement :
 
     ```python
@@ -107,9 +105,7 @@ Nous l&#39;avons précédemment créée en SQL, mais cette fois, nous allons la 
     </Note>
   </Step>
 
-  <Step>
-    ### Dépendances regroupées et fichiers locaux
-
+  <Step title="Dépendances regroupées et fichiers locaux" id="bundle-dependencies">
     Pour inclure les paquets de dépendances et tout autre fichier local (par exemple, des fichiers wheel, des fichiers de configuration ou des fichiers de données), placez-les dans le même répertoire que `main.py` et `requirements.txt`. Lorsque vous créez l’archive ZIP, incluez tous les fichiers :
 
     ```bash
@@ -145,9 +141,7 @@ Nous l&#39;avons précédemment créée en SQL, mais cette fois, nous allons la 
     </Warning>
   </Step>
 
-  <Step>
-    ### Créer une UDF via l’UI
-
+  <Step title="Créer une UDF via l’UI" id="create-udf-via-ui">
     1. Depuis la page d’accueil de la console Cloud, cliquez sur le nom de votre organisation dans le menu en bas à gauche.
     2. Sélectionnez **Fonctions définies par l’utilisateur** dans le menu.
     3. Sur la page des fonctions définies par l’utilisateur, cliquez sur **Configurer une UDF**. Un panneau de configuration s’ouvre sur la droite de l’écran.
@@ -165,9 +159,7 @@ Nous l&#39;avons précédemment créée en SQL, mais cette fois, nous allons la 
         * Une fois l’opération terminée, l’état devient **deployed**.
   </Step>
 
-  <Step>
-    ### Testez votre UDF
-
+  <Step title="Testez votre UDF" id="test-your-udf">
     1. revenez à la page d’accueil de la SQL Console en cliquant sur **Settings - return to your service view** dans le coin supérieur gauche de la page
     2. cliquez sur **SQL Console** dans le menu de gauche
     3. saisissez la requête suivante :
@@ -183,9 +175,7 @@ Nous l&#39;avons précédemment créée en SQL, mais cette fois, nous allons la 
     ```
   </Step>
 
-  <Step>
-    ### Créer une nouvelle version
-
+  <Step title="Créer une nouvelle version" id="create-new-version">
     Pour modifier le code d’une UDF, créez une nouvelle version. Le panneau **Edit** sert uniquement à gérer les services auxquels une UDF est affectée ; y téléverser un fichier ne remplacera pas le code déployé.
 
     1. Depuis la page d’accueil de la console Cloud, cliquez sur le nom de votre organisation dans le menu en bas à gauche.

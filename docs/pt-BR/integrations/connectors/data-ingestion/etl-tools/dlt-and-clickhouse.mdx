@@ -30,9 +30,7 @@ pip install "dlt[clickhouse]"
 </div>
 
 <Steps>
-  <Step>
-    ### Inicialize o projeto `dlt`
-
+  <Step title="Inicialize o projeto `dlt`" id="1-initialize-the-dlt-project">
     Comece inicializando um novo projeto `dlt` da seguinte forma:
 
     ```bash
@@ -52,9 +50,7 @@ pip install "dlt[clickhouse]"
     ou `pip install dlt[clickhouse]`, que instala a biblioteca `dlt` e as dependências necessárias para trabalhar com o ClickHouse como destino.
   </Step>
 
-  <Step>
-    ### Configure o banco de dados do ClickHouse
-
+  <Step title="Configure o banco de dados do ClickHouse" id="2-setup-clickhouse-database">
     Para carregar dados no ClickHouse, você precisa criar um banco de dados no ClickHouse. Aqui está uma visão geral do que deve ser feito:
 
     1. Você pode usar um banco de dados ClickHouse existente ou criar um novo.
@@ -72,9 +68,7 @@ pip install "dlt[clickhouse]"
     ```
   </Step>
 
-  <Step>
-    ### Adicione as credenciais
-
+  <Step title="Adicione as credenciais" id="3-add-credentials">
     Em seguida, configure as credenciais do ClickHouse no arquivo `.dlt/secrets.toml`, como mostrado abaixo:
 
     ```bash
@@ -88,7 +82,7 @@ pip install "dlt[clickhouse]"
     secure = 1                               # Defina como 1 se estiver usando HTTPS; caso contrário, 0.
 
     [destination.clickhouse]
-    dataset_table_separator = "___"          # Separador para os nomes das tabelas do dataset.
+    dataset_table_separator = "___"          # Separador para os nomes das tabelas do conjunto de dados.
     ```
 
     <Info>

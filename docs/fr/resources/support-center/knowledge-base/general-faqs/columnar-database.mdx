@@ -38,8 +38,8 @@ Voici une illustration de la différence entre les systèmes traditionnels orien
 
 <Image img="/images/row-oriented.webp" alt="Illustration du stockage traditionnel d'une base de données orientée lignes" size="md" />
 
-**En colonnes**
+**Colonnaire**
 
 <Image img="/images/column-oriented.webp" alt="Illustration du stockage d'une base de données colonnaire" size="md" />
 
-Une base de données colonnaire est le choix privilégié pour les applications analytiques, car elle permet d&#39;avoir de nombreuses colonnes dans une table si nécessaire, sans supporter le coût des colonnes inutilisées lors de l&#39;exécution des requêtes en lecture (une base de données OLTP traditionnelle lit toutes les données pendant les requêtes, car les données y sont stockées par lignes et non par colonnes). Les bases de données orientées colonnes sont conçues pour le traitement de grands volumes de données et l&#39;entreposage de données. Elles passent souvent nativement à l&#39;échelle à l&#39;aide de clusters distribués reposant sur du matériel peu coûteux afin d&#39;augmenter le débit. ClickHouse le fait grâce à une combinaison de tables [distributed](/fr/reference/engines/table-engines/special/distributed) et [replicated](/fr/reference/engines/table-engines/mergetree-family/replication).
+Une base de données colonnaire est le choix privilégié pour les applications analytiques, car elle permet d’avoir de nombreuses colonnes dans une table au cas où, sans en payer le coût sur le temps d’exécution des requêtes de lecture lorsqu’elles ne sont pas utilisées (une base de données OLTP traditionnelle lit toutes les données lors des requêtes, car elles y sont stockées par lignes et non par colonnes). Les bases de données orientées colonnes sont conçues pour le traitement de grands volumes de données et l’entreposage de données. Elles montent souvent nativement en charge à l’aide de clusters distribués reposant sur du matériel peu coûteux afin d’augmenter le débit. ClickHouse le fait grâce à une combinaison de tables [distributed](/fr/reference/engines/table-engines/special/distributed) et [replicated](/fr/reference/engines/table-engines/mergetree-family/replication).

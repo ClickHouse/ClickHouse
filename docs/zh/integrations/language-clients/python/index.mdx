@@ -2,7 +2,8 @@
 keywords: ['clickhouse', 'python', 'client', 'connect', 'integrate']
 slug: /integrations/python
 description: '用于连接 Python 与 ClickHouse 的 ClickHouse Connect 项目套件'
-title: '使用 ClickHouse Connect 的 Python 集成'
+title: 简介
+sidebarTitle: '简介'
 doc_type: 'guide'
 integration:
   - support_level: 'core'
@@ -10,11 +11,7 @@ integration:
   - website: 'https://github.com/ClickHouse/clickhouse-connect'
 ---
 
-import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
-
-<div id="introduction">
-  ## 简介
-</div>
+import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
 
 ClickHouse Connect 是一个核心数据库驱动，可与广泛的 Python 应用程序实现互操作。
 
@@ -27,7 +24,7 @@ ClickHouse Connect 是一个核心数据库驱动，可与广泛的 Python 应�
 本文档内容截至 clickhouse-connect 0.9.2 版本。
 
 <Note>
-  官方 ClickHouse Connect Python 驱动使用 HTTP 协议与 ClickHouse 服务器通信。因此，它支持 HTTP 负载均衡器，并且在使用防火墙和代理的企业环境中也能良好运行；但与基于 native TCP 的 协议 相比，其压缩率和性能略低，并且不支持某些高级功能，例如取消查询。对于某些用例，你也可以考虑使用采用基于 native TCP 的 协议 的 [Community Python drivers](/zh/integrations/language-clients/third-party/client-libraries)。
+  官方 ClickHouse Connect Python 驱动使用 HTTP 协议与 ClickHouse 服务器通信。因此，它支持 HTTP 负载均衡器，并且在使用防火墙和代理的企业环境中也能良好运行；但与基于 native TCP 的 protocol 相比，其压缩率和性能略低，并且不支持某些高级功能，例如取消查询。对于某些用例，你也可以考虑使用采用基于 native TCP 的 protocol 的 [Community Python drivers](/zh/integrations/language-clients/third-party/client-libraries)。
 </Note>
 
 <div id="requirements-and-compatibility">

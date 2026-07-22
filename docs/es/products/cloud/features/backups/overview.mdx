@@ -89,18 +89,14 @@ Consulta [&quot;Exportar copias de seguridad a tu propia cuenta de Cloud&quot;](
 Para exportar copias de seguridad a su propia cuenta en la nube, tiene dos opciones:
 
 <Steps>
-  <Step>
-    ##### A través de la interfaz de usuario de Cloud Console
-
+  <Step title="A través de la UI de Cloud Console" id="via-ui">
     Las copias de seguridad externas pueden [configurarse en la UI](/es/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui).
-    De forma predeterminada, las copias de seguridad se realizarán a diario (como se especifica en la [política de copias de seguridad predeterminada](/es/products/cloud/features/backups/overview#default-backup-policy)).
+    De forma predeterminada, las copias de seguridad se realizarán a diario (como se especifica en la [política predeterminada de copias de seguridad](/es/products/cloud/features/backups/overview#default-backup-policy)).
     Sin embargo, también admitimos copias de seguridad [configurables](/es/products/cloud/guides/backups/configurable-backups) en su propia cuenta en la nube, lo que permite establecer una programación personalizada.
     Es importante tener en cuenta que todas las copias de seguridad en su bucket son copias de seguridad completas, sin relación con otras copias de seguridad anteriores o futuras.
   </Step>
 
-  <Step>
-    ##### Mediante comandos SQL
-
+  <Step title="Mediante comandos SQL" id="using-commands">
     Puede usar [comandos SQL](/es/products/cloud/guides/backups/bring-your-own-backup/backup-restore-using-commands) para exportar copias de seguridad a su bucket.
   </Step>
 </Steps>

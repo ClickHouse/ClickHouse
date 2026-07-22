@@ -29,14 +29,17 @@ Esta tabela pode ser usada para monitoramento. A tabela contém uma linha para c
 * `type` ([String](/pt-BR/reference/data-types/index)) — Tipo de um nó de agendamento.
 * `weight` ([Float64](/pt-BR/reference/data-types/index)) — Peso de um nó, usado por um nó pai do tipo `fair`.
 * `priority` ([Int64](/pt-BR/reference/data-types/index)) — Prioridade de um nó, usada por um nó pai do tipo &#39;priority&#39; (um valor menor significa prioridade mais alta).
-* `is_active` ([UInt8](/pt-BR/reference/data-types/index)) — Indica se este nó está ativo no momento — se tem solicitações de recurso para serem removidas da fila e restrições atendidas.
-* `active_children` ([UInt64](/pt-BR/reference/data-types/index)) — O número de filhos em estado ativo.
-* `dequeued_requests` ([UInt64](/pt-BR/reference/data-types/index)) — O número total de solicitações de recurso removidas da fila deste nó.
-* `canceled_requests` ([UInt64](/pt-BR/reference/data-types/index)) — O número total de solicitações de recurso canceladas deste nó.
-* `dequeued_cost` ([Int64](/pt-BR/reference/data-types/index)) — A soma dos custos (por exemplo, tamanho em bytes) de todas as solicitações removidas da fila deste nó.
-* `throughput` ([Float64](/pt-BR/reference/data-types/index)) — Taxa de transferência média atual (custo removido da fila por segundo).
-* `canceled_cost` ([Int64](/pt-BR/reference/data-types/index)) — A soma dos custos (por exemplo, tamanho em bytes) de todas as solicitações canceladas deste nó.
-* `busy_periods` ([UInt64](/pt-BR/reference/data-types/index)) — O número total de desativações deste nó.
+* `precedence` ([Int64](/pt-BR/reference/data-types/index)) — Precedência de um nó, usada por nós pais com compartilhamento de espaço (memória) para ordenar a admissão e a remoção por eviction (um valor menor significa precedência mais alta).
+* `is_active` ([Nullable(UInt8)](/pt-BR/reference/data-types/index)) — Indica se este nó está ativo no momento — se tem solicitações de recurso para serem removidas da fila e restrições atendidas.
+* `active_children` ([Nullable(UInt64)](/pt-BR/reference/data-types/index)) — O número de filhos em estado ativo.
+* `dequeued_requests` ([Nullable(UInt64)](/pt-BR/reference/data-types/index)) — O número total de solicitações de recurso removidas da fila deste nó.
+* `canceled_requests` ([Nullable(UInt64)](/pt-BR/reference/data-types/index)) — O número total de solicitações de recurso canceladas deste nó.
+* `rejected_requests` ([Nullable(UInt64)](/pt-BR/reference/data-types/index)) — O número total de solicitações de recurso rejeitadas deste nó.
+* `dequeued_cost` ([Nullable(Int64)](/pt-BR/reference/data-types/index)) — A soma dos custos (por exemplo, tamanho em bytes) de todas as solicitações removidas da fila deste nó.
+* `canceled_cost` ([Nullable(Int64)](/pt-BR/reference/data-types/index)) — A soma dos custos (por exemplo, tamanho em bytes) de todas as solicitações canceladas deste nó.
+* `rejected_cost` ([Nullable(Int64)](/pt-BR/reference/data-types/index)) — A soma dos custos (por exemplo, tamanho em bytes) de todas as solicitações rejeitadas deste nó.
+* `busy_periods` ([Nullable(UInt64)](/pt-BR/reference/data-types/index)) — O número total de desativações deste nó.
+* `throughput` ([Nullable(Float64)](/pt-BR/reference/data-types/index)) — Taxa de transferência média atual (custo removido da fila por segundo).
 * `vruntime` ([Nullable(Float64)](/pt-BR/reference/data-types/index)) — Apenas para filhos de nós `fair`. Tempo de execução virtual de um nó, usado pelo algoritmo SFQ para selecionar o próximo filho a ser processado de forma max-min justa.
 * `system_vruntime` ([Nullable(Float64)](/pt-BR/reference/data-types/index)) — Apenas para nós `fair`. Tempo de execução virtual que mostra o `vruntime` da última solicitação de recurso processada. Usado durante a ativação do filho como o novo valor de `vruntime`.
 * `queue_length` ([Nullable(UInt64)](/pt-BR/reference/data-types/index)) — Apenas para nós `fifo`. Número atual de solicitações de recurso presentes na fila.
@@ -51,6 +54,17 @@ Esta tabela pode ser usada para monitoramento. A tabela contém uma linha para c
 * `max_burst` ([Nullable(Float64)](/pt-BR/reference/data-types/index)) — Apenas para nós `bandwidth_limit`. Limite superior de tokens disponíveis no limitador token-bucket.
 * `throttling_us` ([Nullable(Int64)](/pt-BR/reference/data-types/index)) — Apenas para nós `bandwidth_limit`. Número total de microssegundos em que este nó esteve em estado de limitação.
 * `tokens` ([Nullable(Float64)](/pt-BR/reference/data-types/index)) — Apenas para nós `bandwidth_limit`. Número de tokens disponíveis atualmente no limitador token-bucket.
+* `allocated` ([Nullable(Int64)](/pt-BR/reference/data-types/index)) — Apenas para nós `space-shared`. A quantidade de recurso atualmente alocada sob este nó.
+* `allocations` ([Nullable(UInt64)](/pt-BR/reference/data-types/index)) — Apenas para nós `space-shared`. O número atual de alocações de recurso em execução sob este nó.
+* `updates` ([Nullable(UInt64)](/pt-BR/reference/data-types/index)) — Apenas para nós `space-shared`. O número total de atualizações propagadas por este nó.
+* `increases` ([Nullable(UInt64)](/pt-BR/reference/data-types/index)) — Apenas para nós `space-shared`. O número total de solicitações de aumento aprovadas por este nó.
+* `decreases` ([Nullable(UInt64)](/pt-BR/reference/data-types/index)) — Apenas para nós `space-shared`. O número total de solicitações de redução aprovadas por este nó.
+* `admits` ([Nullable(UInt64)](/pt-BR/reference/data-types/index)) — Apenas para nós `space-shared`. O número total de alocações admitidas por este nó.
+* `removes` ([Nullable(UInt64)](/pt-BR/reference/data-types/index)) — Apenas para nós `space-shared`. O número total de alocações removidas deste nó.
+* `killers` ([Nullable(UInt64)](/pt-BR/reference/data-types/index)) — Apenas para nós `space-shared`. O número total de evacuações iniciadas por este nó devido a solicitações de aumento.
+* `victims` ([Nullable(UInt64)](/pt-BR/reference/data-types/index)) — Apenas para nós `space-shared`. O número total de alocações evacuadas deste nó.
+* `rejects` ([Nullable(UInt64)](/pt-BR/reference/data-types/index)) — Apenas para nós `allocation_queue`. O número total de alocações de recurso rejeitadas por este nó.
+* `pending` ([Nullable(UInt64)](/pt-BR/reference/data-types/index)) — Apenas para nós `allocation_queue`. O número atual de alocações de recurso pendentes neste nó.
 
 {/*AUTOGENERATED_END*/}
 

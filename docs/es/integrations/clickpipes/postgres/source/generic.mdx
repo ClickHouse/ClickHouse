@@ -105,7 +105,7 @@ Conéctese a su instancia de Postgres como usuario administrador y ejecute los s
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-La publicación `clickpipes` contendrá el conjunto de eventos de cambio generados a partir de las tablas especificadas y posteriormente se utilizará para ingestar el flujo de replicación.
+La publicación `clickpipes` define el conjunto de tablas cuyos eventos de cambio se transmitirán a ClickPipes. Recomendamos no usar `FOR ALL TABLES` a menos que tenga la intención de replicar todas las tablas, ya que incluir tablas innecesarias incrementa el tráfico WAL de Postgres a ClickPipes y reduce la eficiencia general de la replicación.
 
 <div id="enabling-connections-in-pg_hbaconf-to-the-clickpipes-user">
   ## Habilitar conexiones en pg_hba.conf para el usuario de ClickPipes

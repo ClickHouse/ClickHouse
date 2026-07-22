@@ -19,26 +19,24 @@ import PartnerBadge from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx"
 
 Omni 可通过官方 ClickHouse 数据源连接到 ClickHouse Cloud 或本地自建部署。
 
-<div id="1-gather-your-connection-details">
-  ## 1. 获取连接信息
-</div>
+<Steps>
+  <Step title="收集您的连接详细信息" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="创建 ClickHouse 数据源" id="2-create-a-clickhouse-data-source">
+    前往 Admin -&gt; Connections，然后点击右上角的 &quot;Add Connection&quot; 按钮。
 
-<div id="2-create-a-clickhouse-data-source">
-  ## 2. 创建 ClickHouse 数据源
-</div>
+    <Image size="lg" img="/images/integrations/data-visualization/omni_01.webp" alt="Omni 管理界面，显示 Connections 部分中的 Add Connection 按钮" border />
 
-前往 Admin -&gt; Connections，然后点击右上角的“Add Connection”按钮。
+    <br />
 
-<Image size="lg" img="/images/integrations/data-visualization/omni_01.webp" alt="Omni 管理界面，显示 Connections 部分中的 Add Connection 按钮" border />
+    选择 `ClickHouse`，然后在表单中输入您的凭据。
 
-<br />
+    <Image size="lg" img="/images/integrations/data-visualization/omni_02.webp" alt="Omni 中用于 ClickHouse 的连接配置界面，显示凭据表单字段" border />
 
-选择 `ClickHouse`，然后在表单中输入凭据。
+    <br />
 
-<Image size="lg" img="/images/integrations/data-visualization/omni_02.webp" alt="Omni 中 ClickHouse 的连接配置界面，显示凭据表单字段" border />
-
-<br />
-
-现在，您应该可以在 Omni 中查询并可视化 ClickHouse 中的数据。
+    现在，您应该已经可以在 Omni 中查询并可视化 ClickHouse 中的数据了。
+  </Step>
+</Steps>

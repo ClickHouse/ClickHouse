@@ -42,9 +42,7 @@ ClickHouse Cloud 使用与 Google Cloud 服务账号关联的 HMAC (基于哈希
 </div>
 
 <Steps>
-  <Step>
-    ### 创建 Google Cloud 服务账号
-
+  <Step title="创建 Google Cloud 服务账号" id="create-gcs-account">
     1. 在 Google Cloud Console 中，前往 IAM &amp; Admin → Service Accounts
 
     <Image img="/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp" size="md" alt="" />
@@ -82,9 +80,7 @@ ClickHouse Cloud 使用与 Google Cloud 服务账号关联的 HMAC (基于哈希
     <Image img="/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp" size="md" alt="" />
   </Step>
 
-  <Step>
-    ### 向服务账号授予存储桶访问权限
-
+  <Step title="向服务账号授予存储桶访问权限" id="grant-bucket-access-to-service-account">
     您可以在项目级别或单个存储桶级别授予访问权限。
 
     #### 选项 1：向特定存储桶授予访问权限 (推荐)
@@ -117,9 +113,7 @@ ClickHouse Cloud 使用与 Google Cloud 服务账号关联的 HMAC (基于哈希
     </Warning>
   </Step>
 
-  <Step>
-    ### 为服务账号生成 HMAC 密钥
-
+  <Step title="为服务账号生成 HMAC 密钥" id="generate-hmac-keys-for-service-account">
     前往 `Cloud Storage` → `Settings` → `Interoperability`：
 
     <Image img="/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp" size="sm" alt="" />

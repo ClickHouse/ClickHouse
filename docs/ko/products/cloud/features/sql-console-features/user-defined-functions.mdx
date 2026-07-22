@@ -76,9 +76,7 @@ ClickHouse Cloud는 UI를 통해 사용자 정의 함수를 생성할 수 있는
 이전에는 SQL로 이를 생성했지만, 이번에는 Python으로 작성하고 UI를 통해 구성합니다.
 
 <Steps>
-  <Step>
-    ### Python 파일 생성
-
+  <Step title="Python 파일 생성" id="create-python-file">
     로컬에 새 파일 `main.py`를 만드세요:
 
     ```python
@@ -107,9 +105,7 @@ ClickHouse Cloud는 UI를 통해 사용자 정의 함수를 생성할 수 있는
     </Note>
   </Step>
 
-  <Step>
-    ### 번들 종속성 및 로컬 파일
-
+  <Step title="번들 종속성 및 로컬 파일" id="bundle-dependencies">
     종속성 패키지와 추가 로컬 파일(예: wheel 파일, 설정 파일, 데이터 파일)을 포함하려면 `main.py` 및 `requirements.txt`와 같은 디렉터리에 배치하십시오. ZIP 아카이브를 만들 때는 모든 파일을 포함하십시오:
 
     ```bash
@@ -145,14 +141,12 @@ ClickHouse Cloud는 UI를 통해 사용자 정의 함수를 생성할 수 있는
     </Warning>
   </Step>
 
-  <Step>
-    ### UI를 통해 UDF 만들기
-
+  <Step title="UI를 통해 UDF 만들기" id="create-udf-via-ui">
     1. Cloud Console 홈 페이지에서 왼쪽 하단 메뉴의 조직 이름을 클릭합니다.
     2. 메뉴에서 **사용자 정의 함수**를 선택합니다.
     3. 사용자 정의 함수 페이지에서 **UDF 설정**을 클릭합니다. 화면 오른쪽에 구성 패널이 열립니다.
     4. 함수 이름을 입력합니다. 이 예시에서는 `isBusinessHours`를 사용합니다.
-    5. 함수 유형으로 **실행형 풀** 또는 **실행형** 중 하나를 선택합니다.
+    5. 함수 유형으로 **실행형 풀** 또는 **실행형** 중 하나를 선택합니다:
        * **실행형 풀**: 지속적으로 유지되는 프로세스 풀이 관리되며, 읽기 시 풀에서 프로세스를 가져와 사용합니다.
        * **실행형**: 모든 쿼리마다 스크립트가 실행됩니다.
     6. 이 예시에서는 기본 설정을 사용합니다. 전체 구성 매개변수 목록은 [Executable user-defined functions](/ko/reference/functions/regular-functions/udf#executable-user-defined-functions)를 참조하십시오.
@@ -165,9 +159,7 @@ ClickHouse Cloud는 UI를 통해 사용자 정의 함수를 생성할 수 있는
         * 완료되면 상태가 **배포됨**으로 변경됩니다。
   </Step>
 
-  <Step>
-    ### UDF를 테스트해 보세요
-
+  <Step title="UDF를 테스트해 보세요" id="test-your-udf">
     1. 페이지 왼쪽 상단의 **Settings - return to your service view**를 클릭하여 SQL 콘솔의 홈 페이지로 돌아가세요
     2. 왼쪽 메뉴에서 **SQL 콘솔**을 클릭하세요
     3. 다음 쿼리를 작성하세요:
@@ -183,9 +175,7 @@ ClickHouse Cloud는 UI를 통해 사용자 정의 함수를 생성할 수 있는
     ```
   </Step>
 
-  <Step>
-    ### 새 버전 만들기
-
+  <Step title="새 버전 만들기" id="create-new-version">
     UDF의 코드를 변경하려면 새 버전을 만드십시오. **Edit** 패널은 UDF가 할당된 서비스를 관리하는 용도로만 사용되며, 여기에서 파일을 업로드해도 배포된 코드가 교체되지는 않습니다.
 
     1. Cloud Console 홈페이지에서 왼쪽 하단 메뉴의 조직 이름을 클릭합니다.

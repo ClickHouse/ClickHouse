@@ -79,9 +79,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 要使用此选项，您需要先设置 ClickHouse JDBC Bridge。ClickHouse JDBC Bridge 是一个独立的 Java 应用程序，负责处理 JDBC 连接，并充当 ClickHouse 实例与数据源之间的代理。在本教程中，我们使用了一个预先填充好的 Redshift 实例和一个[样本数据库](https://docs.aws.amazon.com/redshift/latest/dg/c_sampledb.html)。
 
 <Steps>
-  <Step>
-    #### 部署 ClickHouse JDBC Bridge
-
+  <Step title="部署 ClickHouse JDBC Bridge" id="deploy-clickhouse-jdbc-bridge">
     部署 ClickHouse JDBC Bridge。更多详情，请参阅我们的用户指南：[用于外部数据源的 JDBC](/zh/integrations/connectors/data-ingestion/jdbc-with-clickhouse)
 
     <Note>
@@ -89,9 +87,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     </Note>
   </Step>
 
-  <Step>
-    #### 配置您的 Redshift 数据源
-
+  <Step title="配置您的 Redshift 数据源" id="configure-your-redshift-datasource">
     为 ClickHouse JDBC Bridge 配置 Redshift 数据源。例如：`/etc/clickhouse-jdbc-bridge/config/datasources/redshift.json `
 
     ```json
@@ -113,9 +109,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    #### 从 ClickHouse 查询您的 Redshift 实例
-
+  <Step title="从 ClickHouse 查询您的 Redshift 实例" id="query-your-redshift-instance-from-clickhouse">
     在 ClickHouse JDBC Bridge 部署并运行后，您就可以开始从 ClickHouse 查询 Redshift 实例了
 
     ```sql
@@ -153,9 +147,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    #### 将数据从 Redshift 导入 ClickHouse
-
+  <Step title="将数据从 Redshift 导入 ClickHouse" id="import-data-from-redshift-to-clickhouse">
     下面演示如何使用 `INSERT INTO ... SELECT` 语句导入数据
 
     ```sql
@@ -221,21 +213,17 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    #### 使用 UNLOAD 将数据导出到 S3 存储桶
-
+  <Step title="使用 UNLOAD 将数据导出到 S3 存储桶" id="export-data-into-an-s3-bucket-using-unload">
     使用 Redshift 的 [UNLOAD](https://docs.aws.amazon.com/redshift/latest/dg/r_UNLOAD.html) 功能，将数据导出到现有的私有 S3 存储桶：
 
     <Image img="/images/integrations/data-ingestion/redshift/s3-1.webp" size="md" alt="从 Redshift UNLOAD 到 S3" background="white" />
 
-    它会在 S3 中生成包含原始数据的分片文件。
+    它会在 S3 中生成包含原始数据的分片文件
 
     <Image img="/images/integrations/data-ingestion/redshift/s3-2.webp" size="md" alt="S3 中的数据" background="white" />
   </Step>
 
-  <Step>
-    #### 在 ClickHouse 中创建表
-
+  <Step title="在 ClickHouse 中创建表" id="create-the-table-in-clickhouse">
     在 ClickHouse 中创建表：
 
     ```sql
@@ -261,9 +249,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     当数据采用包含数据类型信息的格式 (如 Parquet) 时，这种方式尤其有效。
   </Step>
 
-  <Step>
-    #### 将 S3 文件加载到 ClickHouse 中
-
+  <Step title="将 S3 文件加载到 ClickHouse 中" id="load-s3-files-into-clickhouse">
     使用 `INSERT INTO ... SELECT` 语句将 S3 文件加载到 ClickHouse 中：
 
     ```sql

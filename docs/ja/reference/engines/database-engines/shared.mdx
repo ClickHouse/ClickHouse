@@ -1,5 +1,5 @@
 ---
-description: 'ClickHouse Cloud で利用できる `Shared` データベースエンジンを説明するページ'
+description: 'ClickHouse Cloud で利用可能な 共有データベースエンジンを解説するページ'
 sidebarTitle: 'Shared'
 slug: /engines/database-engines/shared
 title: 'Shared'
@@ -10,14 +10,10 @@ import CloudOnlyBadge from "/snippets/ja/components/CloudOnlyBadge/CloudOnlyBadg
 
 <CloudOnlyBadge />
 
-<div id="shared-database-engine">
-  # 共有データベースエンジン
-</div>
-
-`Shared` データベースエンジンは、[`SharedMergeTree`](/ja/products/cloud/features/infrastructure/shared-merge-tree) などのステートレスなテーブルエンジンを使用するテーブルを持つデータベースを管理するために、Shared Catalog と連携して動作します。
+共有データベースエンジンは、[`SharedMergeTree`](/ja/products/cloud/features/infrastructure/shared-merge-tree) などのステートレスなテーブルエンジンを使用するテーブルを持つデータベースを管理するために、Shared Catalog と連携して動作します。
 これらのテーブルエンジンは永続的な状態をディスクに書き込まず、動的なコンピュート環境に対応しています。
 
-Cloud の `Shared` データベースエンジンは、ローカルディスクへの依存を排除します。
+Cloud の 共有データベースエンジンは、ローカルディスクへの依存を排除します。
 これは完全なインメモリエンジンであり、必要なのは CPU とメモリだけです。
 
 <div id="how-it-works">

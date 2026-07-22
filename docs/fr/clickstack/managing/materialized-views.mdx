@@ -226,25 +226,19 @@ Une fois les vues matérialisées créées dans ClickHouse, elles doivent être 
 Les vues matérialisées doivent être enregistrées pour la **source** dans HyperDX qui correspond à la **table source d’origine** à partir de laquelle la vue a été dérivée.
 
 <Steps>
-  <Step>
-    #### Modifier la source
-
+  <Step title="Modifier la source" id="edit-the-source">
     Accédez à la **source** concernée dans HyperDX et ouvrez la boîte de dialogue **Edit configuration**. Faites défiler jusqu’à la section des vues matérialisées.
 
     <Image img="/images/clickstack/materialized_views/edit_source.webp" size="lg" alt="Modifier les sources" />
   </Step>
 
-  <Step>
-    #### Ajouter la vue matérialisée
-
+  <Step title="Ajouter la vue matérialisée" id="add-the-materialized-view">
     Sélectionnez **Add materialized view**, puis choisissez la base de données et la table cible sur lesquelles repose la vue matérialisée.
 
     <Image img="/images/clickstack/materialized_views/add_view.webp" size="lg" alt="Modifier les sources" />
   </Step>
 
-  <Step>
-    #### Sélectionner les métriques
-
+  <Step title="Sélectionner les métriques" id="select-metrics">
     Dans la plupart des cas, les colonnes d’horodatage, de dimension et de métrique seront déduites automatiquement. Sinon, spécifiez-les manuellement.
 
     Pour les métriques, vous devez faire correspondre :
@@ -257,17 +251,13 @@ Les vues matérialisées doivent être enregistrées pour la **source** dans Hyp
     <Image img="/images/clickstack/materialized_views/select_metrics.webp" size="lg" alt="Sélectionner les métriques" />
   </Step>
 
-  <Step>
-    #### Sélectionner la granularité temporelle
-
+  <Step title="Sélectionner la granularité temporelle" id="select-time-granularity">
     Sélectionnez la **granularité temporelle** de la vue matérialisée, par exemple une minute.
 
     <Image img="/images/clickstack/materialized_views/select_time_granularity.webp" size="lg" alt="Sélectionner la granularité temporelle" />
   </Step>
 
-  <Step>
-    #### Sélectionner la date minimale
-
+  <Step title="Sélectionner la date minimale" id="specify-the-minimum-date">
     Spécifiez la date minimale pour laquelle la vue matérialisée contient des données. Cela correspond à l’horodatage le plus ancien disponible dans la vue et, en général, au moment où la vue a été créée, en supposant que l’ingestion a été continue.
 
     <Note>
@@ -284,9 +274,7 @@ Les vues matérialisées doivent être enregistrées pour la **source** dans Hyp
     ```
   </Step>
 
-  <Step>
-    #### Enregistrer la source
-
+  <Step title="Enregistrer la source" id="save-the-source">
     Enregistrez la configuration de la source.
 
     <Image img="/images/clickstack/materialized_views/save_source.webp" size="lg" alt="Enregistrer la source" />
@@ -299,7 +287,7 @@ Une fois une vue matérialisée enregistrée, ClickStack l’utilise automatique
   ### Vérifier l&#39;accélération dans les tableaux de bord et les visualisations
 </div>
 
-Il est important de garder à l&#39;esprit que les vues matérialisées incrémentielles ne contiennent que les données insérées **après la création de la vue**. Elles ne sont pas automatiquement remplies avec les données historiques, ce qui les rend légères et peu coûteuses à maintenir. Pour cette raison, les utilisateurs doivent spécifier explicitement l&#39;intervalle de temps valide d&#39;une vue lors de son enregistrement.
+Il est important de garder à l&#39;esprit que les vues matérialisées incrémentielles ne contiennent que les données insérées **après la création de la vue**. Elles ne sont pas automatiquement rétroremplies, ce qui les rend légères et peu coûteuses à maintenir. Pour cette raison, les utilisateurs doivent spécifier explicitement l&#39;intervalle de temps valide d&#39;une vue lors de son enregistrement.
 
 <Note>
   ClickStack n&#39;utilisera une vue matérialisée que si son horodatage minimum est inférieur ou égal au début de l&#39;intervalle de temps de la requête, ce qui garantit que la vue contient toutes les données requises. Bien que les requêtes soient divisées en interne en sous-requêtes basées sur le temps, les vues matérialisées sont appliquées soit à l&#39;ensemble de la requête, soit pas du tout. De futures améliorations pourraient permettre d&#39;utiliser les vues de manière sélective pour les sous-requêtes admissibles.
@@ -314,7 +302,7 @@ ClickStack fournit des indicateurs visuels clairs pour confirmer si une vue mat�
 
 <Image img="/images/clickstack/materialized_views/accelerated_visual.webp" size="lg" alt="Visualisation accélérée" />
 
-2. **Inspectez les détails de l&#39;optimisation** Cliquez sur l&#39;icône en forme d&#39;éclair pour ouvrir un panneau de détails affichant :
+2. **Inspectez les détails de l&#39;optimisation**  Cliquez sur l&#39;icône en forme d&#39;éclair pour ouvrir un panneau de détails affichant :
 
 * **Vue matérialisée active** : la vue sélectionnée pour la requête, y compris son nombre estimé de lignes.
 * **Vues matérialisées ignorées** : les vues compatibles qui n&#39;ont pas été sélectionnées, ainsi que leurs tailles d&#39;analyse estimées.
@@ -481,9 +469,7 @@ Comme indiqué précédemment, les vues matérialisées incrémentielles ne sont
 Cette approche convient le mieux aux **jeux de données de petite taille** ou aux **requêtes d’agrégation relativement légères**, lorsque le rétroremplissage complet peut être effectué dans un délai raisonnable sans épuiser les ressources du cluster. Elle est généralement adaptée lorsque la requête de rétroremplissage s’exécute en quelques minutes, ou tout au plus en quelques heures, et que des hausses temporaires de l’utilisation du CPU et des E/S sont acceptables. Pour des jeux de données plus volumineux ou des agrégations plus coûteuses, privilégiez plutôt les approches de rétroremplissage incrémental ou par blocs ci-dessous.
 
 <Steps>
-  <Step>
-    ##### Déterminer la couverture actuelle de la vue
-
+  <Step title="Déterminer la couverture actuelle de la vue" id="determine-current-coverage-of-view">
     Avant de tenter un rétroremplissage, commencez par déterminer quelles données la vue matérialisée contient déjà. Pour cela, interrogez le timestamp minimal présent dans la table cible :
 
     ```sql
@@ -494,9 +480,7 @@ Cette approche convient le mieux aux **jeux de données de petite taille** ou au
     Ce timestamp représente le point le plus ancien à partir duquel la vue peut répondre aux requêtes. Toute requête ClickStack demandant des données antérieures à ce timestamp basculera sur la table de base.
   </Step>
 
-  <Step>
-    ##### Décider si un rétroremplissage est nécessaire
-
+  <Step title="Décider si un rétroremplissage est nécessaire" id="decide-whether-backfilling-is-neccessary">
     Dans la plupart des déploiements ClickStack, les requêtes portent sur des données récentes, par exemple celles des dernières 24 heures. Dans ce cas, les vues nouvellement créées deviennent pleinement exploitables peu après leur création, et le rétroremplissage n’est pas nécessaire.
 
     Si le timestamp renvoyé à l’étape précédente est suffisamment ancien pour vos cas d’usage, aucun rétroremplissage n’est nécessaire. Le rétroremplissage ne doit être envisagé que dans les cas suivants :
@@ -506,9 +490,7 @@ Cette approche convient le mieux aux **jeux de données de petite taille** ou au
     * La taille du jeu de données et le coût de l’agrégation rendent le rétroremplissage faisable.
   </Step>
 
-  <Step>
-    ##### Rétroremplir les données historiques manquantes
-
+  <Step title="Rétroremplir les données historiques manquantes" id="backfill-missing-historical-data">
     Si un rétroremplissage est nécessaire, alimentez la table cible de la vue matérialisée pour les timestamps antérieurs au minimum actuel en utilisant la requête de la vue, modifiée pour ne lire que les données plus anciennes que le timestamp relevé ci-dessus. Comme la table cible utilise AggregatingMergeTree, la requête de rétroremplissage **doit insérer des états d’agrégation, et non des valeurs finales**.
 
     <Warning>
@@ -557,9 +539,7 @@ Cette approche est appropriée lorsque :
 L’idée clé consiste à utiliser une [**table Null**](/fr/reference/engines/table-engines/special/null) comme tampon d’ingestion. Bien que la table Null ne stocke pas les données, toutes les vues matérialisées qui y sont rattachées s’exécuteront tout de même, ce qui permet de calculer les états d’agrégation de façon incrémentale au fil du passage des données.
 
 <Steps>
-  <Step>
-    ##### Créer une table Null pour le rétroremplissage
-
+  <Step title="Créer une table Null pour le rétroremplissage" id="create-null-table">
     Créez une table Null légère qui ne contient que les colonnes requises par l’agrégation de la vue matérialisée. Cela minimise les E/S et l’utilisation mémoire.
 
     ```sql
@@ -574,9 +554,7 @@ L’idée clé consiste à utiliser une [**table Null**](/fr/reference/engines/t
     ```
   </Step>
 
-  <Step>
-    ##### Attacher une vue matérialisée à la table Null
-
+  <Step title="Attacher une vue matérialisée à la table Null" id="attach-mv-to-null-table">
     Créez ensuite une vue matérialisée sur la table Null qui cible la même table d’agrégation que votre vue matérialisée principale.
 
     ```sql
@@ -601,9 +579,7 @@ L’idée clé consiste à utiliser une [**table Null**](/fr/reference/engines/t
     Cette vue matérialisée s’exécutera de façon incrémentale à mesure que des lignes seront insérées dans la table Null, en produisant des états d’agrégation par petits blocs.
   </Step>
 
-  <Step>
-    ##### Charger les données de façon incrémentale
-
+  <Step title="Charger les données de façon incrémentale" id="incremental-backfill">
     Enfin, insérez les données historiques dans la table Null. La vue matérialisée traitera les données bloc par bloc, en envoyant les états d’agrégation vers la table cible sans stocker les lignes brutes.
 
     ```sql

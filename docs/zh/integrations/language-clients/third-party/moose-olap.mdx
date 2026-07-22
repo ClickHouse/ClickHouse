@@ -43,9 +43,7 @@ Moose OLAP 提供面向开发者的抽象层和类 ORM 功能，专为 ClickHous
 * **macOS/Linux** - Windows 可通过 WSL2 运行
 
 <Steps>
-  <Step>
-    ### 安装 Moose
-
+  <Step title="安装 Moose" id="step-1-install-moose">
     将 Moose CLI 全局安装到系统中：
 
     ```bash
@@ -53,9 +51,7 @@ Moose OLAP 提供面向开发者的抽象层和类 ORM 功能，专为 ClickHous
     ```
   </Step>
 
-  <Step>
-    ### 设置项目
-
+  <Step title="设置项目" id="step-2-set-up-project">
     #### 选项 A：使用你现有的 ClickHouse 部署
 
     **重要**：你的生产 ClickHouse 不会受到影响。此操作只会初始化一个新的 Moose OLAP 项目，并基于 ClickHouse 表生成数据模型。
@@ -87,9 +83,7 @@ Moose OLAP 提供面向开发者的抽象层和类 ORM 功能，专为 ClickHous
     ```
   </Step>
 
-  <Step>
-    ### 安装依赖
-
+  <Step title="安装依赖" id="step-3-install-dependencies">
     ```bash
     # TypeScript
     cd my-project
@@ -105,17 +99,13 @@ Moose OLAP 提供面向开发者的抽象层和类 ORM 功能，专为 ClickHous
     你应该会看到：`Successfully generated X models from ClickHouse tables`
   </Step>
 
-  <Step>
-    ### 查看生成的模型
-
+  <Step title="查看生成的模型" id="step-4-explore-models">
     Moose CLI 会根据你现有的 ClickHouse 表自动生成 TypeScript 接口或 Python Pydantic 模型。
 
     可在 `app/index.ts` 文件中查看新的数据模型。
   </Step>
 
-  <Step>
-    ### 开始开发
-
+  <Step title="开始开发" id="step-5-start-development">
     启动开发服务器，拉起一个本地 ClickHouse 实例，并根据代码定义自动重建所有生产表：
 
     ```bash
@@ -125,9 +115,7 @@ Moose OLAP 提供面向开发者的抽象层和类 ORM 功能，专为 ClickHous
     **重要**：你的生产 ClickHouse 不会受到影响。此操作会创建一个本地开发环境。
   </Step>
 
-  <Step>
-    ### 向本地数据库填充数据
-
+  <Step title="向本地数据库填充数据" id="step-6-seed-database">
     将数据填充到本地 ClickHouse 实例中：
 
     #### 来自你自己的 ClickHouse
@@ -143,9 +131,7 @@ Moose OLAP 提供面向开发者的抽象层和类 ORM 功能，专为 ClickHous
     ```
   </Step>
 
-  <Step>
-    ### 使用 Moose OLAP 构建
-
+  <Step title="使用 Moose OLAP 构建" id="step-7-building-with-moose-olap">
     现在你已经在代码中定义了表，因此可以获得与 Web 应用中 ORM 数据模型类似的优势——在基于分析数据构建 API 和 materialized views 时，具备类型安全和自动补全能力。接下来，你可以尝试：
 
     * 使用 [Moose API](https://docs.fiveonefour.com/moosestack/apis) 构建 REST API

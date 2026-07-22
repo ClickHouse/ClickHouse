@@ -46,7 +46,7 @@ Todos os testes de desempenho foram realizados em uma VM cliente com a mesma cap
 
 * **TPS 345% maior** (4,5x mais rápido)
 
-**Análise**: Cargas de trabalho mistas de leitura/escrita evidenciam os ganhos de desempenho mais expressivos do armazenamento NVMe e representam o **cenário mais realista para cargas de trabalho impulsionadas por IA em rápido crescimento** que exigem tanto ingestão de dados com alta taxa de transferência quanto leituras de baixa latência. **Postgres managed by ClickHouse atingiu 19,8 mil TPS com maior concorrência**, demonstrando como o armazenamento NVMe escala de forma eficaz sob carga. Isso é **4,3-4,5x mais rápido que RDS e Aurora**. As soluções de armazenamento conectado à rede tiveram dificuldades com operações com uso intensivo de escrita, com RDS e Aurora atingindo no máximo 4,4 mil-4,6 mil TPS apesar da capacidade provisionada e mesmo com a configuração IO Optimized do Aurora.
+**Análise**: Cargas de trabalho mistas de leitura/escrita evidenciam os ganhos de desempenho mais expressivos do armazenamento NVMe e representam o **cenário mais realista para cargas de trabalho impulsionadas por IA em rápido crescimento** que exigem tanto ingestão de dados com alta taxa de transferência quanto leituras de baixa latência. **Postgres managed by ClickHouse atingiu 19,8 mil TPS com maior concorrência**, demonstrando como o armazenamento NVMe escala de forma eficaz sob carga. Isso é **4,3-4,5x mais rápido que RDS e Aurora**. As soluções de armazenamento conectado via rede tiveram dificuldades com operações com uso intensivo de escrita, com RDS e Aurora atingindo no máximo 4,4 mil-4,6 mil TPS apesar da capacidade provisionada e mesmo com a configuração IO Optimized do Aurora.
 
 <div id="test1-setup">
   #### Setup
@@ -84,7 +84,7 @@ pgbench -c 256 -j 16 -T 600 -M prepared -P 30
 
 * **TPS 802% maior** (9,0x mais rápido)
 
-**Análise**: A diferença de desempenho aumenta drasticamente em workloads intensivas em leitura e limitadas por E/S. **Postgres managed by ClickHouse entregou 84,8 mil TPS**, enquanto o RDS com 16.000 IOPS provisionadas alcançou apenas 9,4 mil TPS, apesar de contar com capacidade computacional equivalente. A principal diferença: o armazenamento NVMe do ClickHouse escala com níveis mais altos de concorrência, enquanto o armazenamento em rede continua limitado pelos limites de IOPS provisionadas. Mesmo com IOPS provisionadas, o RDS ainda foi 9x mais lento que o ClickHouse, demonstrando a importância crítica da arquitetura de armazenamento para workloads intensivas em E/S.
+**Análise**: A diferença de desempenho aumenta drasticamente em workloads intensivas em leitura e limitadas por E/S. **Postgres managed by ClickHouse entregou 84,8 mil TPS**, enquanto o RDS com 16.000 IOPS provisionadas alcançou apenas 9,4 mil TPS, apesar de contar com capacidade computacional equivalente. A principal diferença: o armazenamento NVMe do ClickHouse escala com níveis mais altos de concorrência, enquanto o armazenamento conectado via rede continua limitado pelos limites de IOPS provisionadas. Mesmo com IOPS provisionadas, o RDS ainda foi 9x mais lento que o ClickHouse, demonstrando a importância crítica da arquitetura de armazenamento para workloads intensivas em E/S.
 
 <div id="test1-setup">
   #### Setup
@@ -219,4 +219,4 @@ Os dados completos do benchmark, as configurações e as métricas detalhadas es
 * [PeerDB: Comparando serviços gerenciados de Postgres](https://blog.peerdb.io/comparing-postgres-managed-services-aws-azure-gcp-and-supabase)
 * [Documentação do pgbench](https://www.postgresql.org/docs/current/pgbench.html)
 * [Visão geral do Managed Postgres](/pt-BR/products/managed-postgres/overview)
-* [Escalando sua instância do Postgres](/pt-BR/products/managed-postgres/scaling)
+* [Escalonando sua instância do Postgres](/pt-BR/products/managed-postgres/scaling)

@@ -22,9 +22,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Note>
 
 <Steps>
-  <Step>
-    ## إنشاء عملية نشر لـ ClickHouse
-
+  <Step title="إنشاء عملية نشر لـ ClickHouse" id="1-create-a-clickhouse-deployment">
     أُعدّ هذا الدليل باستخدام Ubuntu 20.04، وتم تثبيت ClickHouse على المضيفات التالية باستخدام حزمة DEB (عبر apt). اسم النطاق هو `marsnet.local`:
 
     | المضيف    | عنوان IP      |
@@ -38,9 +36,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     </Note>
   </Step>
 
-  <Step>
-    ## أنشئ شهادات TLS
-
+  <Step title="أنشئ شهادات TLS" id="2-create-tls-certificates">
     <Note>
       يُستخدم الاعتماد على الشهادات الموقَّعة ذاتيًا لأغراض العرض التوضيحي فقط، ولا ينبغي استخدامها في بيئة الإنتاج. يجب إنشاء طلبات الشهادات بحيث تُوقَّع من المؤسسة ويجري التحقق منها باستخدام سلسلة CA التي ستُضبط في الإعدادات. ومع ذلك، يمكن استخدام هذه الخطوات لتهيئة الإعدادات واختبارها، ثم استبدالها بالشهادات الفعلية التي ستُستخدم.
     </Note>
@@ -90,9 +86,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
        ```
   </Step>
 
-  <Step>
-    ## أنشئ واضبط دليلاً لتخزين الشهادات والمفاتيح.
-
+  <Step title="أنشئ واضبط دليلاً لتخزين الشهادات والمفاتيح." id="3-create-and-configure-a-directory-to-store-certificates-and-keys">
     <Note>
       يجب تنفيذ ذلك على كل عقدة. استخدم الشهادات والمفاتيح المناسبة على كل مضيف.
     </Note>
@@ -123,9 +117,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
        ```
   </Step>
 
-  <Step>
-    ## تهيئة البيئة بمجموعات أساسية باستخدام ClickHouse Keeper
-
+  <Step title="تهيئة البيئة بمجموعات أساسية باستخدام ClickHouse Keeper" id="4-configure-the-environment-with-basic-clusters-using-clickhouse-keeper">
     في بيئة النشر هذه، تُستخدم إعدادات ClickHouse Keeper التالية في كل عقدة. سيكون لكل خادم معرّفه الخاص `<server_id>`. (مثلاً، `<server_id>1</server_id>` للعقدة `chnode1`، وهكذا دواليك.)
 
     <Note>
@@ -203,7 +195,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     3. حدِّث وأضِف إعدادات العنقود التالية إلى `chnode1` و`chnode2`. سيُستخدم `chnode3` لاستكمال النصاب لـ ClickHouse Keeper.
 
     <Note>
-      في هذا الإعداد، تم تكوين cluster مثالي واحد فقط. يجب إما إزالة عناقيد الاختبار النموذجية، أو تحويلها إلى تعليقات، أو إذا كان هناك cluster موجود بالفعل قيد الاختبار، فيجب تحديث المنفذ وإضافة الخيار `<secure>`. ويجب تعيين `<user` و`<password>` إذا كان المستخدم `default` قد جرى تكوينه في الأصل بكلمة مرور أثناء التثبيت أو في ملف `users.xml`.
+      في هذا الإعداد، جرى تكوين عنقود تجريبي واحد فقط. يجب إما إزالة عناقيد الاختبار النموذجية، أو تحويلها إلى تعليقات، أو—إذا كان هناك عنقود موجود بالفعل ويجري اختباره—فيجب تحديث المنفذ وإضافة الخيار `<secure>`. ويجب تعيين `<user` و`<password>` إذا كان المستخدم `default` قد ضُبط في الأصل بكلمة مرور أثناء التثبيت أو في ملف `users.xml`.
     </Note>
 
     يُنشئ ما يلي مجموعةً (cluster) بنسخة مكررة (replica) واحدة لكل شريحة (shard) موزَّعة على خادمَين (خادم على كل عقدة).
@@ -250,9 +242,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
        ```
   </Step>
 
-  <Step>
-    ## تكوين واجهات TLS على عُقد ClickHouse
-
+  <Step title="تكوين واجهات TLS على عُقد ClickHouse" id="5-configure-tls-interfaces-on-clickhouse-nodes">
     تُكوَّن الإعدادات التالية في ملف `config.xml` الخاص بخادم ClickHouse
 
     1. عيّن اسم العرض لعملية النشر (اختياري):
@@ -359,9 +349,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
        ```
   </Step>
 
-  <Step>
-    ## الاختبار
-
+  <Step title="الاختبار" id="6-testing">
     1. شغِّل جميع العقد، واحدةً تلو الأخرى:
        ```bash
        service clickhouse-server start

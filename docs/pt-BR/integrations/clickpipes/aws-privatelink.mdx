@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
+import PrivatePreviewBadge from "/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 Você pode usar o [AWS PrivateLink](https://aws.amazon.com/privatelink/) para estabelecer conectividade segura entre VPCs,
 serviços da AWS, seus sistemas on-premises e o ClickHouse Cloud sem expor o tráfego à internet pública.
@@ -65,9 +66,7 @@ Para configurar o PrivateLink com recurso da VPC:
 3. Crie um compartilhamento de recurso
 
 <Steps>
-  <Step>
-    #### Criar um gateway de recursos
-
+  <Step title="Criar um gateway de recursos" id="create-resource-gateway">
     O gateway de recursos é o ponto que recebe tráfego para os recursos especificados na sua VPC.
 
     <Note>
@@ -98,9 +97,7 @@ Para configurar o PrivateLink com recurso da VPC:
     ```
   </Step>
 
-  <Step>
-    #### Crie uma configuração de recurso da VPC
-
+  <Step title="Crie uma configuração de recurso da VPC" id="create-resource-configuration">
     Uma configuração de recurso é associada a um gateway de recursos para tornar seu recurso acessível.
 
     Você pode criar uma configuração de recurso pelo [console da AWS](https://docs.aws.amazon.com/vpc/latest/privatelink/create-resource-configuration.html) ou com o seguinte comando:
@@ -136,9 +133,7 @@ Para configurar o PrivateLink com recurso da VPC:
     A saída incluirá um ARN da configuração de recurso, que será necessário para a próxima etapa. Ela também incluirá um ID da configuração de recurso, necessário para configurar uma conexão do ClickPipe com VPC resource.
   </Step>
 
-  <Step>
-    #### Criar um Resource-Share
-
+  <Step title="Criar um Resource-Share" id="create-resource-share">
     Para compartilhar seu recurso, é necessário ter um Resource-Share. Isso é feito por meio do Resource Access Manager (RAM).
 
     <Note>
@@ -197,12 +192,18 @@ Ela exige a configuração de um NLB (Network Load Balancer) em frente à sua fo
 e a configuração do VPC endpoint service para usar esse NLB.
 
 O VPC endpoint service pode ser [configurado com DNS privado](https://docs.aws.amazon.com/vpc/latest/privatelink/manage-dns-names.html), que ficará acessível em uma VPC do ClickPipes.
+O DNS privado gerenciado pelo AWS PrivateLink nem sempre é uma opção viável:
+
+* você não é proprietário do nome de domínio da sua fonte de dados, portanto não pode verificá-lo com a AWS
+* o provedor exige que os consumidores gerenciem a resolução de DNS, como no caso do Confluent Cloud
+  Nesses casos, consulte [DNS privado personalizado](#custom-private-dns).
 
 É a opção preferida para:
 
 * Qualquer configuração de Kafka on-premise que exija suporte a DNS privado
+* [Conectividade privada do Confluent Cloud](/pt-BR/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes)
 * [Conectividade entre regiões para Postgres CDC](/pt-BR/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)
-* Conectividade entre regiões para cluster MSK. Entre em contato com o suporte do ClickHouse para obter assistência.
+* [Conectividade entre regiões para clusters MSK](/pt-BR/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster)
 
 Consulte o guia de [primeiros passos](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html) para mais detalhes.
 
@@ -212,9 +213,65 @@ Consulte o guia de [primeiros passos](https://docs.aws.amazon.com/vpc/latest/pri
 </Info>
 
 <Info>
-  O [acesso entre regiões](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html#endpoint-service-cross-region)
+  [acesso entre regiões](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html#endpoint-service-cross-region)
   pode ser configurado para o ClickPipes. Adicione [a região do seu ClickPipe](#aws-privatelink-regions) às regiões permitidas no seu VPC endpoint service.
 </Info>
+
+Para clusters MSK, consulte [AWS PrivateLink VPC endpoint service for MSK cluster](/pt-BR/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster)
+para uma configuração de um broker por endpoint service que usa DNS names privados personalizados.
+
+<div id="custom-private-dns">
+  ## DNS privado personalizado
+</div>
+
+<PrivatePreviewBadge />
+
+<Info>
+  O DNS privado personalizado está em **Private Preview**. Entre em contato com o [suporte do ClickHouse](https://clickhouse.com/support/program) para habilitá-lo no seu serviço.
+</Info>
+
+O AWS PrivateLink fornece [DNS privado gerenciado](https://docs.aws.amazon.com/vpc/latest/privatelink/manage-dns-names.html)
+para serviços de endpoint da VPC com um domínio verificado. Alguns serviços exigem que cada consumidor gerencie a resolução de DNS na própria VPC; por exemplo, o Confluent Cloud exige que os consumidores resolvam os hostnames dos brokers para o endpoint do PrivateLink.
+
+Nesses casos, o ClickPipes oferece suporte à associação de nomes de DNS privado personalizados a um endpoint privado
+reverso. O ClickPipes resolve esses nomes para os endereços privados do endpoint, para que sua fonte de dados
+possa ser acessada pelo próprio hostname por meio de conectividade privada.
+
+O DNS privado personalizado complementa o DNS privado gerenciado — não o substitui. Se o seu
+serviço PrivateLink já fornece nomes de DNS privados, você não precisa de nomes personalizados.
+
+Os nomes de DNS privado personalizados são compatíveis com os tipos de endpoint [VPC endpoint service](#vpc-endpoint-service)
+e [recurso da VPC](#vpc-resource). O MSK multi-VPC fornece DNS privado gerenciado
+pronto para uso e não oferece suporte a nomes personalizados.
+
+<Note>
+  Atualmente, o console do ClickHouse Cloud oferece suporte a um nome de DNS privado personalizado por endpoint privado reverso.
+  Se você precisar gerenciar vários nomes de DNS privado personalizados no mesmo endpoint, use OpenAPI ou Terraform.
+</Note>
+
+As regras a seguir se aplicam aos nomes de DNS privado personalizados:
+
+* Nomes exatos (`kafka.internal.example.com`) e nomes curinga (`*.example.com`) são
+  compatíveis. Um curinga corresponde a um único rótulo DNS — por exemplo,
+  `*.abcde12345.us-east-1.aws.confluent.cloud` corresponde a
+  `b0-lkc123.abcde12345.us-east-1.aws.confluent.cloud`.
+* Os nomes devem ser exclusivos em todos os endpoints privados reversos de um serviço ClickHouse,
+  inclusive em casos de sobreposição entre nomes curinga e nomes exatos.
+* Nomes sob sufixos reservados (por exemplo, `local`, `localhost`, `internal`, `corp`,
+  `private`) são rejeitados.
+
+Para configurar nomes de DNS privado personalizados:
+
+* No console do ClickHouse Cloud, preencha o campo `Custom private DNS name` ao
+  [criar um endpoint privado reverso](#creating-clickpipe). O campo é exibido assim que o
+  recurso é habilitado no seu serviço.
+* Com [OpenAPI](https://clickhouse.com/docs/cloud/manage/api/swagger), defina
+  `customPrivateDnsMappings` ao criar um endpoint privado reverso ou atualize um endpoint
+  existente com uma solicitação `PATCH`. As atualizações substituem a lista completa de mapeamentos; uma lista vazia
+  remove todos os nomes personalizados.
+* Com Terraform, use o recurso
+  [`clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint_custom_private_dns)
+  para gerenciar mapeamentos em um endpoint privado reverso existente.
 
 <div id="creating-clickpipe">
   ## Criando um ClickPipe com endpoint privado reverso
@@ -222,7 +279,7 @@ Consulte o guia de [primeiros passos](https://docs.aws.amazon.com/vpc/latest/pri
 
 1. Acesse o SQL Console do seu serviço do ClickHouse Cloud.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="Serviço do ClickPipes" size="md" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="Serviço ClickPipes" size="md" border />
 
 2. Selecione o botão `Data Sources` no menu à esquerda e clique em &quot;Set up a ClickPipe&quot;
 
@@ -239,8 +296,8 @@ Consulte o guia de [primeiros passos](https://docs.aws.amazon.com/vpc/latest/pri
 5. Selecione um dos endpoints privados reversos existentes ou crie um novo.
 
 <Info>
-  Se for necessário acesso entre regiões para o RDS, você precisará criar um VPC endpoint service, e
-  [este guia é um bom ponto de partida](/pt-BR/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) para configurá-lo.
+  Se o acesso entre regiões for necessário para o RDS, você precisará criar um VPC endpoint service, e
+  [este guia pode servir](/pt-BR/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) como um bom ponto de partida para a configuração.
 
   Para acesso na mesma região, a abordagem recomendada é criar um recurso da VPC.
 </Info>
@@ -251,28 +308,30 @@ Consulte o guia de [primeiros passos](https://docs.aws.amazon.com/vpc/latest/pri
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp" alt="Selecionar endpoint privado reverso" size="lg" border />
 
-* Para recurso da VPC, forneça o ARN de compartilhamento da configuração e o ID da configuração.
-  * Para MSK multi-VPC, forneça o ARN do cluster e o método de autenticação usado com o endpoint criado.
+* Para recurso da VPC, forneça o ARN do compartilhamento de configuração e o ID da configuração.
+  * Para MSK multi-VPC, forneça o ARN do cluster e o método de autenticação usado com um endpoint criado.
   * Para VPC endpoint service, forneça o nome do serviço.
+  * Opcionalmente, forneça um [DNS privado personalizado](#custom-private-dns).
 
 7. Clique em `Create` e aguarde até que o endpoint privado reverso esteja pronto.
 
-   Se você estiver criando um novo endpoint, a configuração dele levará algum tempo.
+   Se você estiver criando um novo endpoint, a configuração levará algum tempo.
    A página será atualizada automaticamente assim que o endpoint estiver pronto.
-   O VPC endpoint service pode exigir que você aceite a solicitação de conexão no console da AWS.
+   O VPC endpoint service pode exigir que a solicitação de conexão seja aceita no console da AWS.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp" alt="Selecionar endpoint privado reverso" size="lg" border />
 
-8. Quando o endpoint estiver pronto, você poderá usar um nome DNS para se conectar à fonte de dados.
+8. Quando o endpoint estiver pronto, você poderá usar um DNS name para se conectar à fonte de dados.
 
-   Na lista de endpoints, você pode ver o nome DNS do endpoint disponível.
-   Ele pode ser um nome DNS provisionado internamente pelo ClickPipes ou um nome DNS privado fornecido por um serviço PrivateLink.
-   O nome DNS não é um endereço de rede completo.
+   Na lista de endpoints, você pode ver o DNS name do endpoint disponível.
+   Ele pode ser um DNS name provisionado internamente pelo ClickPipes, um DNS privado fornecido por um serviço PrivateLink
+   ou um [nome DNS privado personalizado](#custom-private-dns).
+   O DNS name não é um endereço de rede completo.
    Adicione a porta de acordo com a fonte de dados.
 
-   A string de conexão do MSK pode ser acessada no console da AWS.
+   A connection string do MSK pode ser acessada no console da AWS.
 
-   Para ver a lista completa de nomes DNS, acesse as configurações do serviço na Cloud.
+   Para ver a lista completa de DNS names, acesse as configurações do serviço do ClickHouse Cloud.
 
 <div id="managing-existing-endpoints">
   ## Gerenciando endpoints privados reversos existentes

@@ -7,12 +7,12 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Event deltas', 'heatmap', '속성 분포', '트레이스 분석', '관측성']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
+import { Image } from "/snippets/components/Image.jsx";
 
 Event deltas는 쿼리를 작성하지 않고도 지연 시간 히트맵과 자동 속성 분석을 결합해 트레이스 데이터의 양상을 파악하고, 느린 스팬이 왜 다른지 확인할 수 있게 해줍니다. 사용하는 방법은 세 가지입니다:
 
 * **분포 모드 (항상 켜짐)**: 히트맵에서 선택한 영역이 없으면 현재 스팬 집합에 대한 각 속성의 값 분포가 표시됩니다. 지배적인 값이나 유난히 드문 값(cardinality 이상치)을 찾는 데 유용합니다.
-* **비교 모드**: 히트맵에서 사각형을 드래그해 내부의 스팬(선택 영역)과 외부의 모든 스팬(배경)을 비교합니다. 편차를 분리해 파악하는 데 유용합니다.
+* **비교 모드**: 히트맵에서 사각형을 드래그해 내부의 스팬(Selection)과 외부의 모든 스팬(Background)을 비교합니다. 편차를 분리해 파악하는 데 유용합니다.
 * **반복적 드릴다운**: 막대를 클릭해 해당 값으로 필터링하거나 제외합니다. 그러면 필터링된 집합을 기준으로 히트맵이 다시 렌더링되므로, 원인이 분명해질 때까지 범위를 계속 좁혀갈 수 있습니다.
 
 <Image img="/images/clickstack/event-deltas/overview.webp" alt="payment service의 Event deltas 개요. 화면 중간으로 갈수록 밝은 띠가 위로 올라가며, 화면 내에서는 회복되지 않은 상태" size="lg" />
@@ -90,7 +90,7 @@ Event deltas는 **Results Table** 및 **Event Patterns**와 나란히 제공되�
 
 <Image img="/images/clickstack/event-deltas/slow-vs-fast.webp" alt="frontend-proxy에서의 느림과 빠름 비교. rectangle은 조밀한 대다수 집단과 충분히 떨어진, 선명하게 분리된 위쪽 밴드만 덮고 있습니다" size="lg" />
 
-rectangle은 위쪽 밴드에 딱 맞게 그리되, 해당 밴드와 조밀한 대다수 집단 사이에 눈에 띄는 수평 간격이 남도록 하십시오. 빠른 집단까지 번져 들어가는 느슨한 rectangle은 차이를 희석시킵니다.
+rectangle은 위쪽 밴드에 딱 맞게 그리되, 해당 밴드와 조밀한 대다수 집단 사이에 눈에 띄는 수평 간격이 남도록 하십시오. 빠른 집단까지 번져 들어가는 느슨한 rectangle은 차이를 흐리게 만듭니다.
 
 100 s 상한선 자체도 중요한 단서입니다. 둥근 값에서 일정하게 유지되는 수평선은 고정된 timeout의 전형적인 신호입니다. 두 집단을 구분해 주는 스팬 속성이 없다면, 그것 또한 유용한 결과입니다. 이는 원인이 스팬 속성이 아니라 호스트 및 런타임 수준의 메트릭(GC 일시 중지, I/O 경합, 스케줄러 지연 시간, 콜드 캐시 효과, noisy neighbor)에 있음을 시사합니다.
 

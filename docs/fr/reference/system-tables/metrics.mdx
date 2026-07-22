@@ -720,6 +720,18 @@ Nombre d’opérations de décompression avec les codecs de compression internes
 
 Nombre de requêtes INSERT dont le débit est limité en raison du nombre élevé de data parts actives dans une partition d’une table MergeTree.
 
+<div id="deletebitmapcachebytes">
+  ### DeleteBitmapCacheBytes
+</div>
+
+Taille totale, en octets, du cache des bitmaps de suppression de UNIQUE KEY
+
+<div id="deletebitmapcacheentries">
+  ### DeleteBitmapCacheEntries
+</div>
+
+Nombre total de bitmaps de suppression de UNIQUE KEY mis en cache
+
 <div id="deltalakesnapshotcachesizeelements">
   ### DeltaLakeSnapshotCacheSizeElements
 </div>
@@ -1037,6 +1049,24 @@ Nombre de jobs en attente ou actifs dans le pool de threads de handshake du serv
 </div>
 
 Éléments du cache du système de fichiers (segments de fichier)
+
+<div id="filesystemcacheevictionthreads">
+  ### FilesystemCacheEvictionThreads
+</div>
+
+Nombre de threads du pool d’éviction (suppression) en arrière-plan du cache du système de fichiers
+
+<div id="filesystemcacheevictionthreadsactive">
+  ### FilesystemCacheEvictionThreadsActive
+</div>
+
+Nombre de threads du pool d’éviction en arrière-plan du cache du système de fichiers qui exécutent une tâche
+
+<div id="filesystemcacheevictionthreadsscheduled">
+  ### FilesystemCacheEvictionThreadsScheduled
+</div>
+
+Nombre de jobs en file d’attente ou en cours d’exécution dans le pool d’éviction en arrière-plan du cache du système de fichiers
 
 <div id="filesystemcacheholdfilesegments">
   ### FilesystemCacheHoldFileSegments
@@ -1482,6 +1512,12 @@ Nombre de threads actifs dans le threadpool dédié aux lectures du serveur Keep
 
 Nombre de jobs en file d’attente ou actifs dans le threadpool pour les lectures du serveur Keeper. Metric dénuée de sens : les tâches de lecture réelles de ce thread pool sont planifiées par un autre mécanisme.
 
+<div id="keeperttlnodes">
+  ### KeeperTTLNodes
+</div>
+
+Nombre de nœuds avec un TTL défini actuellement stockés dans Keeper.
+
 <div id="licenseremainingseconds">
   ### LicenseRemainingSeconds
 </div>
@@ -1571,6 +1607,18 @@ Entrée DDL maximale traitée par DDLWorker.
 </div>
 
 Entrée DDL maximale de DDLWorker envoyée à ZooKeeper.
+
+<div id="memoryreservationapproved">
+  ### Réservations mémoire approuvées
+</div>
+
+Nombre total d’octets actuellement alloués pour des réservations mémoire approuvées
+
+<div id="memoryreservationdemand">
+  ### MemoryReservationDemand
+</div>
+
+Nombre total d’octets des demandes d’augmentation de réservation de mémoire en attente
 
 <div id="memorytracking">
   ### MemoryTracking
@@ -2087,6 +2135,24 @@ Parts au format wide.
 </div>
 
 Nombre d’insertions asynchrones en attente de flush.
+
+<div id="pointinpolygoncachebytes">
+  ### PointInPolygonCacheBytes
+</div>
+
+Taille en octets du cache de polygones constants prétraités pour la fonction `pointInPolygon`
+
+<div id="pointinpolygoncachecells">
+  ### PointInPolygonCacheCells
+</div>
+
+Nombre de polygones constants prétraités en cache pour la fonction `pointInPolygon`
+
+<div id="pointinpolygoncachesizelimit">
+  ### PointInPolygonCacheSizeLimit
+</div>
+
+Taille maximale, en octets, du cache des polygones constants prétraités pour la fonction `pointInPolygon` (valeur appliquée du paramètre serveur `point_in_polygon_cache_size`)
 
 <div id="polygondictionarythreads">
   ### PolygonDictionaryThreads
@@ -2927,6 +2993,24 @@ Nombre de threads en attente dans l’OvercommitTracker
 </div>
 
 Nombre de fichiers temporaires créés
+
+<div id="udfdriverinvokerthreads">
+  ### UDFDriverInvokerThreads
+</div>
+
+Nombre de threads dans les pools de threads qui traitent les pipes des commandes du driver UDF exécutable.
+
+<div id="udfdriverinvokerthreadsactive">
+  ### UDFDriverInvokerThreadsActive
+</div>
+
+Nombre de threads actifs dans les pools de threads qui traitent les pipes des commandes du driver UDF exécutable.
+
+<div id="udfdriverinvokerthreadsscheduled">
+  ### UDFDriverInvokerThreadsScheduled
+</div>
+
+Nombre de jobs en file d’attente ou actifs dans les pools de threads qui traitent les pipes des commandes du driver UDF exécutable.
 
 <div id="uncompressedcachebytes">
   ### UncompressedCacheBytes

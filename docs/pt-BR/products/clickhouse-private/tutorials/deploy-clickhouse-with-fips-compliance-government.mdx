@@ -45,9 +45,7 @@ Use as tags de imagem específicas para FIPS abaixo ao copiar artefatos:
 ***
 
 <Steps>
-  <Step>
-    ## Fase 1: Criar certificados compatíveis com FIPS
-
+  <Step title="Fase 1: Criar certificados compatíveis com FIPS" id="phase-1-create-fips-certificates">
     A conformidade com FIPS exige certificados TLS gerados com algoritmos aprovados pelo FIPS em um ambiente com FIPS habilitado. Você precisará de três conjuntos de certificados:
 
     | Certificate | Private Key  | Public Key   | SAN Required                                                                                                                                    |
@@ -65,9 +63,7 @@ Use as tags de imagem específicas para FIPS abaixo ao copiar artefatos:
     ***
   </Step>
 
-  <Step>
-    ## Fase 2: Instalar os pré-requisitos do Kubernetes
-
+  <Step title="Fase 2: Instalar os pré-requisitos do Kubernetes" id="phase-2-install-kubernetes-prerequisites">
     ### Instalar VolumeSnapshot CRDs
 
     ```bash
@@ -96,9 +92,7 @@ Use as tags de imagem específicas para FIPS abaixo ao copiar artefatos:
     ***
   </Step>
 
-  <Step>
-    ## Fase 3: Instalar o Operator
-
+  <Step title="Fase 3: Instalar o Operator" id="phase-3-install-operator">
     Observe que o endpoint FIPS do ECR usa o seguinte formato: `0000000000.dkr-ecr-fips.us-west-2.on.aws` (não o endpoint padrão `.amazonaws.com`).
 
     ```text
@@ -130,9 +124,7 @@ Use as tags de imagem específicas para FIPS abaixo ao copiar artefatos:
     ***
   </Step>
 
-  <Step>
-    ## Fase 4: Criar Secrets de certificados
-
+  <Step title="Fase 4: Criar Secrets de certificados" id="phase-4-create-certificate-secrets">
     Os Secrets devem ser instalados no mesmo espaço de nomes do Kubernetes em que o cluster do ClickHouse será executado. Se o nome do seu cluster for `default-xx-01`, o espaço de nomes será `ns-default-xx-01`.
 
     Verifique se o espaço de nomes existe e, em seguida, crie os Secrets. **Não altere os nomes dos Secrets nem os nomes das chaves.**
@@ -159,9 +151,7 @@ Use as tags de imagem específicas para FIPS abaixo ao copiar artefatos:
     ***
   </Step>
 
-  <Step>
-    ## Fase 5: Implantar o Cluster ClickHouse
-
+  <Step title="Fase 5: Implantar o Cluster ClickHouse" id="phase-5-deploy-clickhouse-cluster">
     Use a versão correta dos endpoints FIPS para ECR e S3. Os endpoints FIPS estão disponíveis em [https://aws.amazon.com/compliance/fips/](https://aws.amazon.com/compliance/fips/).
 
     ```text expandable
@@ -264,9 +254,7 @@ Use as tags de imagem específicas para FIPS abaixo ao copiar artefatos:
     ***
   </Step>
 
-  <Step>
-    ## Fase 6: Verificar a instalação
-
+  <Step title="Fase 6: Verificar a instalação" id="phase-6-verify-installation">
     ### Redirecionamento de porta pela porta TLS
 
     Com o modo FIPS, o ClickHouse usa TLS na porta **9440** em vez da porta padrão 9000.

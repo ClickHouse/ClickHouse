@@ -16,9 +16,7 @@ As atividades do Console são registradas no log de auditoria. Se você tiver a 
 </div>
 
 <Steps>
-  <Step>
-    ## Selecione a organização
-
+  <Step title="Selecione a organização" id="select-org">
     No ClickHouse Cloud, navegue até os detalhes da sua organização.
 
     <Image img="/images/cloud/security/activity_log1.webp" size="md" alt="Aba de atividade do ClickHouse Cloud" border />
@@ -26,9 +24,7 @@ As atividades do Console são registradas no log de auditoria. Se você tiver a 
     <br />
   </Step>
 
-  <Step>
-    ## Selecione Audit
-
+  <Step title="Selecione Audit" id="select-audit">
     Selecione a aba **Audit** no menu à esquerda para ver quais alterações foram feitas na sua organização do ClickHouse Cloud, incluindo quem fez a alteração e quando ela ocorreu.
 
     A página **Activity** exibe uma tabela com uma lista de eventos registrados sobre a sua organização. Por padrão, essa lista é exibida em ordem cronológica inversa (com o evento mais recente no topo). Altere a ordenação da tabela clicando nos cabeçalhos das colunas. Cada item da tabela contém os seguintes campos:
@@ -43,9 +39,7 @@ As atividades do Console são registradas no log de auditoria. Se você tiver a 
     <br />
   </Step>
 
-  <Step>
-    ## Use a barra de busca
-
+  <Step title="Use a barra de busca" id="use-search-bar">
     Você pode usar a barra de busca para filtrar eventos com base em alguns critérios, como nome do serviço ou endereço IP. Você também pode exportar essas informações em formato CSV para compartilhamento ou análise em uma ferramenta externa.
   </Step>
 </Steps>
@@ -59,12 +53,12 @@ As atividades do Console são registradas no log de auditoria. Se você tiver a 
 </div>
 
 Você pode usar o endpoint `activity` da ClickHouse Cloud API para exportar
-eventos de auditoria. Mais detalhes podem ser encontrados na [referência da API](/pt-BR/api-reference/organization/get-list-of-available-organizations).
+eventos de auditoria. Mais detalhes podem ser encontrados na [referência da API](/pt-BR/products/cloud/api-reference/organization/get-list-of-available-organizations).
 
 <div id="log-integrations">
   ## Integrações de logs
 </div>
 
-Você pode usar a API para integrar uma plataforma de logging de sua escolha. Os conectores abaixo têm suporte pronto para uso:
+Você pode usar a API para fazer integração com a plataforma de logging de sua escolha. As opções a seguir contam com conectores compatíveis prontos para uso:
 
-* [Add-on de auditoria do ClickHouse Cloud para Splunk](/pt-BR/integrations/connectors/data-integrations/integrations/splunk)
+* [add-on Audit do ClickHouse Cloud para Splunk](/pt-BR/integrations/connectors/data-integrations/integrations/splunk)

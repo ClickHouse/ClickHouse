@@ -17,7 +17,7 @@ ClickHouse 提供表函数，可直接查询存储在对象存储中的开放表
 <Info>
   **Server、local 或 chDB**
 
-  本指南中的步骤可以通过现有的 ClickHouse server 安装来执行。对于即席查询，你也可以改用 [clickhouse-local](/zh/concepts/features/tools-and-utilities/clickhouse-local)，无需运行 server 即可完成相同的工作流。稍作调整后，也可以使用 ClickHouse 的进程内发行版 [chDB](/zh/products/chdb/index) 完成这一过程。
+  本指南中的步骤可以通过现有的 ClickHouse server 安装来执行。对于即席查询，你也可以改用 [clickhouse-local](/zh/concepts/features/tools-and-utilities/clickhouse-local)，无需运行 server 即可完成相同的工作流。稍作调整后，也可以使用 ClickHouse 的进程内发行版 [chDB](/zh/chdb/index) 完成这一过程。
 </Info>
 
 以下示例使用存储在 S3 上各种湖仓格式中的 [hits](/zh/get-started/sample-datasets/star-schema) 数据集。对于每种湖格式，针对各个对象存储提供商都提供了专用函数。

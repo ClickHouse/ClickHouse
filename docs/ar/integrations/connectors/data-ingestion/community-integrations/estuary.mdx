@@ -30,9 +30,7 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
 * حساب ClickHouse Cloud مع أذونات ClickPipe
 
 <Steps>
-  <Step>
-    ### إنشاء materialization في Estuary
-
+  <Step title="إنشاء materialization في Estuary" id="1-create-an-estuary-materialization">
     لنقل البيانات من مجموعات المصدر في Estuary إلى ClickHouse، ستحتاج أولاً إلى إنشاء **materialization**.
 
     1. في لوحة معلومات Estuary، انتقل إلى صفحة [Destinations](https://dashboard.estuary.dev/materializations).
@@ -56,9 +54,7 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
     ستبدأ Estuary في بث مجموعات البيانات المحددة كرسائل Kafka. ويمكن لـ ClickHouse الوصول إلى هذه البيانات عبر Kafka ClickPipe باستخدام تفاصيل broker الخاصة بـ Estuary وauth token التي أدخلتها.
   </Step>
 
-  <Step>
-    ### إدخال تفاصيل اتصال Kafka
-
+  <Step title="إدخال تفاصيل اتصال Kafka" id="2-enter-kafka-connection-details">
     أنشئ Kafka ClickPipe جديدة في ClickHouse وأدخِل تفاصيل الاتصال:
 
     1. في لوحة معلومات ClickHouse Cloud، اختر **Data sources**.
@@ -82,9 +78,7 @@ import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx"
        * سيكون secret هو نفسه password الخاص بـ broker (auth token الخاصة بك)
   </Step>
 
-  <Step>
-    ### تهيئة البيانات الواردة
-
+  <Step title="تهيئة البيانات الواردة" id="3-configure-incoming-data">
     1. اختر أحد Kafka **topics** لديك (إحدى مجموعات البيانات من Estuary).
 
     2. اختر **offset**.

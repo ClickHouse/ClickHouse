@@ -71,7 +71,7 @@ ou nul, et des latences par percentile qui restent proches les unes des autres.
 </div>
 
 Lorsque la vue d’ensemble signale un problème, c’est dans ce tableau que
-l’analyse commence. Une ligne par pattern de requête normalisé, avec les
+l’analyse commence. Une ligne par query pattern normalisé, avec les
 littéraux supprimés pour que les exécutions d’une même instruction SQL se regroupent
 sur une seule et même ligne.
 
@@ -132,7 +132,7 @@ le moment exact où une erreur s’est produite.
 <Image img="/images/managed-postgres/monitoring/query-insights-recent-queries.webp" alt="Table Recent Queries avec des menus déroulants de filtre Database, User, Operation et Application, et des colonnes pour Time, Operation, Query, Duration, Rows, Database, User et Blks read" size="lg" border />
 
 Les colonnes par défaut sont Time, Operation, Query, Duration, Rows,
-Database, User et Blks read. Ouvrez le sélecteur **Columns** pour afficher
+Database, User et Blks read. Ouvrez le sélecteur **colonne** pour afficher
 Application, Blks hit, CPU user, CPU sys et PID. Le tableau accepte
 les mêmes filtres Database, User, Operation et Application que le
 tableau des patterns, et peut être trié par Time, Duration, Rows, Blks read et
@@ -155,7 +155,7 @@ Le volet se présente sous la forme d’une vue unique à défilement comportant
 * **Modèle de requête** — le SQL normalisé avec les littéraux remplacés par `$1`,
   `$2`, … et un bouton pour copier dans le presse-papiers.
 * **Utilisation agrégée des ressources** — une grille de 13 cartes de statistiques couvrant le nombre total
-  d’appels, la latence moy/P95/P99/max, le temps d’exécution total, les lignes renvoyées, le ratio de succès du cache,
+  d’appels, la latence moy/P95/P99/max, le temps d’exécution total, les lignes renvoyées, le taux de réussite du cache,
   les blocs lus, les blocs touchés, le temps CPU, les octets WAL et les erreurs.
 * **Contexte de la requête** — la base de données, l’utilisateur, l’opération et l’application
   dont provient ce pattern.
@@ -164,7 +164,7 @@ Le volet se présente sous la forme d’une vue unique à défilement comportant
 * **Exécutions récentes** — les exécutions individuelles du même pattern,
   avec des compteurs par exécution.
 
-<Image img="/images/managed-postgres/monitoring/query-insights-detail-aggregate.webp" alt="Volet de détail de la requête montrant le bloc de code Modèle de requête et la grille Utilisation agrégée des ressources avec treize cartes de statistiques, notamment le nombre total d’appels, les percentiles de latence, le temps d’exécution total, les lignes renvoyées, le ratio de succès du cache, les blocs lus, les blocs touchés, le temps CPU, les octets WAL et les erreurs" size="md" border />
+<Image img="/images/managed-postgres/monitoring/query-insights-detail-aggregate.webp" alt="Volet de détail de la requête montrant le bloc de code Modèle de requête et la grille Utilisation agrégée des ressources avec treize cartes de statistiques, notamment le nombre total d’appels, les percentiles de latence, le temps d’exécution total, les lignes renvoyées, le taux de réussite du cache, les blocs lus, les blocs touchés, le temps CPU, les octets WAL et les erreurs" size="md" border />
 
 <Image img="/images/managed-postgres/monitoring/query-insights-detail-recent.webp" alt="Suite du volet de détail de la requête, montrant la section Contexte de la requête avec la base de données, l’utilisateur, l’opération et l’application, ainsi qu’une carte Exécutions récentes avec l’horodatage, le statut OK, le rôle du serveur, l’identifiant de l’hôte et des compteurs par exécution pour la durée, les lignes, les accès au cache réussis, le CPU, les blocs partagés lus et les blocs partagés touchés" size="md" border />
 
@@ -196,9 +196,9 @@ se trouve au même endroit, sur un seul écran.
 La même télémétrie est également disponible via
 [ClickHouse Cloud OpenAPI](/fr/products/managed-postgres/openapi#query-insights).
 La table [requête lente récurrente](#slow-patterns) correspond à l’endpoint
-[lister les patterns de requêtes lentes](/fr/api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList),
+[lister les patterns de requêtes lentes](/fr/products/cloud/api-reference/postgres/slow-query-patterns-get-list),
 et le [volet de détail](#detail) correspond à l’endpoint
-[récupérer un pattern de requête lente](/fr/api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet),
+[récupérer un pattern de requête lente](/fr/products/cloud/api-reference/postgres/slow-query-pattern-get),
 qui renvoie les métriques agrégées d’un pattern ainsi que ses
 exécutions récentes.
 

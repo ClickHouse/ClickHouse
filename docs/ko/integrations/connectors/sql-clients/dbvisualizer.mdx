@@ -21,47 +21,43 @@ import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintaine
   ## DbVisualizer 시작 또는 다운로드
 </div>
 
-DbVisualizer는 https://www.dbvis.com/download/에서 다운로드할 수 있습니다.
+DbVisualizer는 https://www.dbvis.com/download/ 에서 다운로드할 수 있습니다.
 
-<div id="1-gather-your-connection-details">
-  ## 1. 연결 정보 수집
-</div>
+<Steps>
+  <Step title="연결 세부 정보 수집" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="내장 JDBC 드라이버 관리" id="2-built-in-jdbc-driver-management">
+    DbVisualizer에는 ClickHouse용 최신 JDBC 드라이버가 포함되어 있습니다. 최신 릴리스는 물론 이전 버전의 드라이버까지 제공하는 완전한 JDBC 드라이버 관리 기능이 기본으로 내장되어 있습니다.
 
-<div id="2-built-in-jdbc-driver-management">
-  ## 2. 기본 제공 JDBC 드라이버 관리
-</div>
+    <Image img="/images/integrations/sql-clients/dbvisualizer-driver-manager.webp" size="lg" border alt="ClickHouse JDBC 드라이버 구성을 보여주는 DbVisualizer 드라이버 관리자 인터페이스" />
+  </Step>
 
-DbVisualizer에는 ClickHouse용 최신 JDBC 드라이버가 포함되어 있습니다. 또한 최신 릴리스와 이전 버전의 드라이버를 가리키는 JDBC 드라이버 관리 기능이 기본으로 완전히 내장되어 있습니다.
+  <Step title="ClickHouse에 연결하기" id="3-connect-to-clickhouse">
+    DbVisualizer로 데이터베이스에 연결하려면 먼저 데이터베이스 연결을 생성하고 설정해야 합니다.
 
-<Image img="/images/integrations/sql-clients/dbvisualizer-driver-manager.webp" size="lg" border alt="ClickHouse JDBC 드라이버 구성을 보여주는 DbVisualizer Driver Manager 인터페이스" />
+    1. **Database-&gt;Create Database Connection**에서 새 연결을 만들고 팝업 메뉴에서 데이터베이스에 맞는 드라이버를 선택합니다.
 
-<div id="3-connect-to-clickhouse">
-  ## 3. ClickHouse에 연결하기
-</div>
+    2. 새 연결에 대한 **Object View** 탭이 열립니다.
 
-DbVisualizer로 데이터베이스에 연결하려면 먼저 데이터베이스 연결을 생성하고 설정해야 합니다.
+    3. **Name** 필드에 연결 이름을 입력하고, 필요하면 **Notes** 필드에 연결 설명을 입력합니다.
 
-1. **Database-&gt;Create Database Connection**에서 새 연결을 만들고 팝업 메뉴에서 데이터베이스에 맞는 드라이버를 선택합니다.
+    4. **Database Type**은 **Auto Detect**로 그대로 둡니다.
 
-2. 새 연결에 대한 **Object View** 탭이 열립니다.
+    5. **Driver Type**에서 선택한 드라이버에 녹색 체크 표시가 있으면 바로 사용할 수 있습니다. 녹색 체크 표시가 없다면 **Driver Manager**에서 드라이버를 구성해야 할 수 있습니다.
 
-3. **Name** 필드에 연결 이름을 입력하고, 필요하면 **Notes** 필드에 연결 설명을 입력합니다.
+    6. 나머지 필드에 데이터베이스 서버 정보를 입력합니다.
 
-4. **Database Type**은 **Auto Detect**로 그대로 둡니다.
+    7. **Ping Server** 버튼을 클릭하여 지정한 주소와 포트로 네트워크 연결을 설정할 수 있는지 확인합니다.
 
-5. **Driver Type**에서 선택한 드라이버에 녹색 체크 표시가 있으면 바로 사용할 수 있습니다. 녹색 체크 표시가 없다면 **Driver Manager**에서 드라이버를 구성해야 할 수 있습니다.
+    8. Ping Server 결과에서 서버에 연결할 수 있다고 표시되면 **Connect**를 클릭하여 데이터베이스 서버에 연결합니다.
 
-6. 나머지 필드에 데이터베이스 서버 정보를 입력합니다.
-
-7. **Ping Server** 버튼을 클릭하여 지정한 주소와 포트로 네트워크 연결을 설정할 수 있는지 확인합니다.
-
-8. Ping Server 결과에서 서버에 연결할 수 있다고 표시되면 **Connect**를 클릭하여 데이터베이스 서버에 연결합니다.
-
-<Tip>
-데이터베이스 연결에 문제가 있으면 몇 가지 팁을 제공하는 [Fixing Connection Issues](https://www.dbvis.com/docs/ug/troubleshooting/fixing-connection-issues/)를 참조하십시오.
-</Tip>
+    <Tip>
+      데이터베이스 연결에 문제가 있으면 몇 가지 팁을 제공하는 [Fixing Connection Issues](https://www.dbvis.com/docs/ug/troubleshooting/fixing-connection-issues/)를 참조하십시오.
+    </Tip>
+  </Step>
+</Steps>
 
 <div id="learn-more">
   ## 더 알아보기

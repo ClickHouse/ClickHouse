@@ -19,85 +19,75 @@ import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintaine
 
 Draxlr는 ClickHouse 데이터베이스에 손쉽게 연결할 수 있는 직관적인 인터페이스를 제공하므로, 팀에서 몇 분 안에 데이터를 탐색하고 시각화하며 인사이트를 공유할 수 있습니다. 이 가이드에서는 연결을 성공적으로 설정하는 방법을 단계별로 안내합니다.
 
-<div id="1-get-your-clickhouse-credentials">
-  ## 1. ClickHouse 자격 증명 가져오기
-</div>
+<Steps>
+  <Step title="ClickHouse 자격 증명 가져오기" id="1-get-your-clickhouse-credentials">
+    <ConnectionDetails />
+  </Step>
 
-<ConnectionDetails />
+  <Step title="Draxlr를 ClickHouse에 연결하기" id="2--connect-draxlr-to-clickhouse">
+    1. 탐색 모음에서 **Connect a Database** 버튼을 클릭합니다.
 
-<div id="2--connect-draxlr-to-clickhouse">
-  ## 2.  Draxlr를 ClickHouse에 연결
-</div>
+    2. 사용 가능한 데이터베이스 목록에서 **ClickHouse**를 선택한 다음 **다음**을 클릭합니다.
 
-1. 내비게이션 바에서 **Connect a Database** 버튼을 클릭합니다.
+    3. 호스팅 서비스 중 하나를 선택한 다음 **다음**을 클릭합니다.
 
-2. 사용 가능한 데이터베이스 목록에서 **ClickHouse**를 선택한 다음 **다음**을 클릭합니다.
+    4. **Connection Name** 필드에 원하는 이름을 입력합니다.
 
-3. 호스팅 서비스 중 하나를 선택한 다음 **다음**을 클릭합니다.
+    5. 양식에 연결 정보를 입력합니다.
 
-4. **Connection Name** 필드에 원하는 이름을 입력합니다.
+    <Image size="md" img="/images/integrations/data-visualization/draxlr_01.webp" alt="ClickHouse 데이터베이스 구성 옵션이 표시된 Draxlr 연결 양식" border />
 
-5. 양식에 연결 정보를 입력합니다.
+    6. **다음** 버튼을 클릭하고 연결이 설정될 때까지 기다립니다. 연결에 성공하면 테이블 페이지가 표시됩니다.
+  </Step>
 
-<Image size="md" img="/images/integrations/data-visualization/draxlr_01.webp" alt="ClickHouse 데이터베이스 구성 옵션이 표시된 Draxlr 연결 양식" border />
+  <Step title="데이터 탐색하기" id="4-explore-your-data">
+    1. 목록에서 테이블 중 하나를 클릭합니다.
 
-6. **다음** 버튼을 클릭하고 연결이 설정될 때까지 기다립니다. 연결에 성공하면 테이블 페이지가 표시됩니다.
+    2. 그러면 탐색 페이지로 이동하여 테이블의 데이터를 볼 수 있습니다.
 
-<div id="4-explore-your-data">
-  ## 4. 데이터 탐색
-</div>
+    3. 필터를 추가하고, 조인을 수행하고, 데이터에 정렬을 적용할 수 있습니다.
 
-1. 목록에서 테이블 하나를 클릭합니다.
+    <Image size="md" img="/images/integrations/data-visualization/draxlr_02.webp" alt="필터 및 정렬 옵션이 표시된 Draxlr 데이터 탐색 인터페이스" border />
 
-2. 그러면 테이블의 데이터를 확인할 수 있는 Explore 페이지로 이동합니다.
+    4. **Graph** 버튼을 사용하고 그래프 유형을 선택하여 데이터를 시각화할 수도 있습니다.
 
-3. 필터를 추가하고, 데이터를 조인하고, 정렬할 수 있습니다.
+    <Image size="md" img="/images/integrations/data-visualization/draxlr_05.webp" alt="ClickHouse 데이터용 Draxlr 그래프 시각화 옵션" border />
+  </Step>
 
-<Image size="md" img="/images/integrations/data-visualization/draxlr_02.webp" alt="필터 및 정렬 옵션을 보여주는 Draxlr 데이터 탐색 인터페이스" border />
+  <Step title="SQL 쿼리 사용하기" id="4-using-sql-queries">
+    1. 탐색 모음에서 **Explore** 버튼을 클릭합니다.
 
-4. **Graph** 버튼을 사용해 그래프 유형을 선택하면 데이터를 시각화할 수도 있습니다.
+    2. **Raw Query** 버튼을 클릭하고 텍스트 영역에 쿼리를 입력합니다.
 
-<Image size="md" img="/images/integrations/data-visualization/draxlr_05.webp" alt="ClickHouse 데이터용 Draxlr 그래프 시각화 옵션" border />
+    <Image size="md" img="/images/integrations/data-visualization/draxlr_03.webp" alt="ClickHouse용 Draxlr SQL 쿼리 인터페이스" border />
 
-<div id="4-using-sql-queries">
-  ## 4. SQL 쿼리 사용하기
-</div>
+    3. 결과를 확인하려면 **Execute Query** 버튼을 클릭합니다.
+  </Step>
 
-1. 내비게이션 바에서 Explore 버튼을 클릭하세요.
+  <Step title="쿼리 저장하기" id="4-saving-you-query">
+    1. 쿼리를 실행한 후 **Save Query** 버튼을 클릭합니다.
 
-2. **Raw Query** 버튼을 클릭한 다음 텍스트 영역에 쿼리를 입력하세요.
+    <Image size="md" img="/images/integrations/data-visualization/draxlr_04.webp" alt="dashboard 옵션이 있는 Draxlr 쿼리 저장 대화상자" border />
 
-<Image size="md" img="/images/integrations/data-visualization/draxlr_03.webp" alt="ClickHouse용 Draxlr SQL 쿼리 인터페이스" border />
+    2. **Query Name** 텍스트 상자에서 쿼리 이름을 입력하고 분류할 폴더를 선택할 수 있습니다.
 
-3. **Execute Query** 버튼을 클릭하여 결과를 확인하세요.
+    3. **Add to dashboard** 옵션을 사용하여 결과를 dashboard에 추가할 수도 있습니다.
 
-<div id="4-saving-you-query">
-  ## 4. 쿼리 저장하기
-</div>
+    4. 쿼리를 저장하려면 **Save** 버튼을 클릭합니다.
+  </Step>
 
-1. 쿼리를 실행한 후 **Save Query** 버튼을 클릭합니다.
+  <Step title="dashboard 만들기" id="5-building-dashboards">
+    1. 탐색 모음에서 **Dashboards** 버튼을 클릭합니다.
 
-<Image size="md" img="/images/integrations/data-visualization/draxlr_04.webp" alt="대시보드 옵션이 표시된 Draxlr 쿼리 저장 대화 상자" border />
+    <Image size="md" img="/images/integrations/data-visualization/draxlr_06.webp" alt="Draxlr dashboard 관리 인터페이스" border />
 
-2. **Query Name** 텍스트 상자에 쿼리 이름을 입력하고 저장할 폴더를 선택할 수 있습니다.
+    2. 왼쪽 사이드바에서 **Add +** 버튼을 클릭하여 새 dashboard를 추가할 수 있습니다.
 
-3. **Add to dashboard** 옵션을 사용해 결과를 대시보드에 추가할 수도 있습니다.
+    3. 새 위젯을 추가하려면 오른쪽 상단에 있는 **Add** 버튼을 클릭합니다.
 
-4. 쿼리를 저장하려면 **Save** 버튼을 클릭합니다.
-
-<div id="5-building-dashboards">
-  ## 5. 대시보드 만들기
-</div>
-
-1. 내비게이션 바에서 **Dashboards** 버튼을 클릭합니다.
-
-<Image size="md" img="/images/integrations/data-visualization/draxlr_06.webp" alt="Draxlr 대시보드 관리 인터페이스" border />
-
-2. 왼쪽 사이드바에서 **Add +** 버튼을 클릭해 새 대시보드를 추가할 수 있습니다.
-
-3. 새 위젯을 추가하려면 오른쪽 상단의 **Add** 버튼을 클릭합니다.
-
-4. 저장된 쿼리 목록에서 쿼리를 선택하고 시각화 유형을 고른 후 **Add Dashboard Item** 버튼을 클릭합니다.
+    4. 저장된 쿼리 목록에서 쿼리를 선택하고 시각화 유형을 선택한 다음 **Add Dashboard Item** 버튼을 클릭할 수 있습니다.
+  </Step>
+</Steps>
 
 <div id="learn-more">
   ## 자세히 알아보기

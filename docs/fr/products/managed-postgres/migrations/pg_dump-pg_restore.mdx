@@ -40,7 +40,7 @@ Voici ce que nous avons :
   ## Créer un dump de la base de données source
 </div>
 
-Utilisons maintenant `pg_dump` pour générer un fichier de dump des objets ci-dessus. C&#39;est une commande simple :
+Utilisons maintenant `pg_dump` pour générer un fichier dump des objets ci-dessus. C&#39;est une commande simple :
 
 ```shell
 pg_dump \
@@ -57,7 +57,7 @@ Ici :
 * Vous pouvez également paralléliser le processus de dump en ajoutant l’option `--jobs`, suivie du nombre de tâches parallèles que vous souhaitez exécuter. Pour plus de détails, consultez la [documentation de pg&#95;dump](https://www.postgresql.org/docs/current/app-pgdump.html).
 
 <Tip>
-  Vous pouvez tester ce processus une première fois pour vous faire une idée du temps nécessaire et de la taille du dump.
+  Vous pouvez tester ce processus une première fois pour vous faire une idée du temps nécessaire et de la taille du fichier dump.
 </Tip>
 
 Voici à quoi ressemble l’exécution de cette commande :
@@ -111,7 +111,7 @@ Voici à quoi ressemble notre configuration Managed Postgres après la migration
 
 <Image img="/images/managed-postgres/pg_dump_restore/target-setup.webp" alt="Configuration cible de la base de données Managed Postgres" size="xl" border />
 
-Nous voyons que toutes nos tables, tous nos index, toutes nos vues et toutes nos séquences sont bien présents, et que les volumes de données correspondent.
+Nous constatons que toutes nos tables, tous nos index, toutes nos vues et toutes nos séquences sont bien présents, et que les volumes de données correspondent.
 
 <div id="migration-pgdump-pg-restore-considerations">
   ## Points à prendre en compte
@@ -125,9 +125,9 @@ Nous voyons que toutes nos tables, tous nos index, toutes nos vues et toutes nos
   Cela inclut les rôles et les appartenances à des rôles, les slots de réplication, la configuration au niveau du serveur (par ex. postgresql.conf, pg&#95;hba.conf), les tablespaces et les statistiques d&#39;exécution.
 
 <div id="migration-pgdump-pg-restore-next-steps">
-  ## Prochaines étapes
+  ## Étapes suivantes
 </div>
 
-Félicitations ! Vous avez migré avec succès votre base de données PostgreSQL vers ClickHouse Managed Postgres à l’aide de pg&#95;dump et pg&#95;restore. Vous êtes maintenant prêt à découvrir les fonctionnalités de Managed Postgres et son intégration avec ClickHouse. Voici un guide de démarrage rapide de 10 minutes pour bien démarrer :
+Félicitations ! Vous avez migré avec succès votre base de données PostgreSQL vers ClickHouse Managed Postgres à l’aide de pg&#95;dump et pg&#95;restore. Vous êtes désormais prêt à découvrir les fonctionnalités de Managed Postgres et son intégration avec ClickHouse. Voici un guide de démarrage rapide de 10 minutes pour bien commencer :
 
 * [Guide de démarrage rapide de Managed Postgres](/fr/products/managed-postgres/quickstart)

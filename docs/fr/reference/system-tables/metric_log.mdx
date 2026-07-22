@@ -111,7 +111,7 @@ Contient l’historique des valeurs des métriques des tables `system.metrics` e
 * `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de fois où les métadonnées Parquet n&#39;ont pas été trouvées dans le cache et ont dû être lues depuis le disque.
 * `ProfileEvent_ParquetMetadataCacheWeightLost` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre approximatif d&#39;octets évincés du cache de métadonnées Parquet.
 * `ProfileEvent_IcebergIteratorInitializationMicroseconds` ([UInt64](/fr/reference/data-types/int-uint)) — Temps total consacré à l&#39;initialisation synchrone des itérateurs de données Iceberg.
-* `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/fr/reference/data-types/int-uint)) — Temps total consacré à l&#39;initialisation synchrone des itérateurs de données Iceberg.
+* `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/fr/reference/data-types/int-uint)) — Temps total consacré à la mise à jour des métadonnées de stockage Iceberg à partir de l’état (buildStorageMetadataFromState).
 * `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre total d&#39;informations d&#39;objet renvoyées par l&#39;itérateur Iceberg.
 * `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre total de paires fichier de données–fichier de suppression par position retenues par l&#39;analyse min-max parmi les paires admissibles selon le partitionnement et le numéro de séquence.
 * `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre total de paires fichier de données–fichier de suppression par position retenues par l&#39;analyse min-max parmi les paires admissibles selon le partitionnement et le numéro de séquence.
@@ -532,8 +532,6 @@ Contient l’historique des valeurs des métriques des tables `system.metrics` e
   9. Des paramètres liés au format des parts, comme &#39;enable&#95;mixed&#95;granularity&#95;parts&#39;, diffèrent d’une réplique à l’autre.
      Le serveur a bien détecté cette situation et téléchargera la part fusionnée depuis la réplique afin d’obtenir un résultat identique octet pour octet.
 * `ProfileEvent_DataAfterMutationDiffersFromReplica` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de fois où les données après mutation ne sont pas identiques, octet pour octet, à celles des autres répliques. En plus des raisons décrites dans &#39;DataAfterMergeDiffersFromReplica&#39;, cela peut aussi être dû à une mutation non déterministe.
-* `ProfileEvent_PolygonsAddedToPool` ([UInt64](/fr/reference/data-types/int-uint)) — Un polygone a été ajouté au cache (pool) de la fonction &#39;pointInPolygon&#39;.
-* `ProfileEvent_PolygonsInPoolAllocatedBytes` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’octets alloués aux polygones ajoutés au cache (pool) de la fonction &#39;pointInPolygon&#39;.
 * `ProfileEvent_NaiveBayesClassifierModelsLoaded` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de modèles de classifieur Naive Bayes chargés.
 * `ProfileEvent_NaiveBayesClassifierModelsAllocatedBytes` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre d’octets alloués aux modèles de classifieur Naive Bayes.
 * `ProfileEvent_USearchAddCount` ([UInt64](/fr/reference/data-types/int-uint)) — Nombre de vecteurs ajoutés aux index usearch.

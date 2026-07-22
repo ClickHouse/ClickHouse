@@ -30,9 +30,7 @@ description: "本教程将指导您使用 Google Kubernetes Engine (GKE) 在 Goo
 ***
 
 <Steps>
-  <Step stepNumber={0}>
-    ## 第 0 步：服务账号设置
-
+  <Step stepNumber={0} title="第 0 步：服务账号设置" id="step-0-service-account-setup">
     在限制直接用户身份验证的 FedRAMP 环境中，请创建一个用于模拟的服务账号。
 
     ### 选项 1：通过 GCP 控制台
@@ -109,9 +107,7 @@ description: "本教程将指导您使用 Google Kubernetes Engine (GKE) 在 Goo
     ***
   </Step>
 
-  <Step stepNumber={1}>
-    ## 第一步：设置环境变量 (`00-env.sh`)
-
+  <Step stepNumber={1} title={<>第 1 步：设置环境变量 (<code>00-env.sh</code>)</>} id="step-1-set-environment-variables-00-envsh">
     创建此文件，并在运行其他脚本之前将其加载到环境中。请根据您的实际环境更新所有配置值。
 
     ```bash expandable
@@ -225,9 +221,7 @@ description: "本教程将指导您使用 Google Kubernetes Engine (GKE) 在 Goo
     ***
   </Step>
 
-  <Step stepNumber={2}>
-    ## 第 2 步：创建 Artifact Registry (`01-artifact-registry.sh`)
-
+  <Step stepNumber={2} title={<>第 2 步：创建 Artifact Registry (<code>01-artifact-registry.sh</code>)</>} id="step-2-create-artifact-registry-01-artifact-registrysh">
     ```bash expandable
     #!/bin/bash
     set -e
@@ -269,9 +263,7 @@ description: "本教程将指导您使用 Google Kubernetes Engine (GKE) 在 Goo
     ***
   </Step>
 
-  <Step stepNumber={3}>
-    ## 第 3 步：复制容器镜像 (`02-copy-images.sh`)
-
+  <Step stepNumber={3} title={<>第 3 步：复制容器镜像 (<code>02-copy-images.sh</code>)</>} id="step-3-copy-container-images-02-copy-imagessh">
     需要使用 [skopeo](https://github.com/containers/skopeo) 才能保留所有架构。
 
     ```bash expandable
@@ -348,9 +340,7 @@ description: "本教程将指导您使用 Google Kubernetes Engine (GKE) 在 Goo
     ***
   </Step>
 
-  <Step stepNumber={4}>
-    ## 步骤 4：配置 VPC 和子网 (`03-vpc-subnet.sh`)
-
+  <Step stepNumber={4} title={<>步骤 4：配置 VPC 和子网 (<code>03-vpc-subnet.sh</code>)</>} id="step-4-configure-vpc-and-subnet-03-vpc-subnetsh">
     此脚本假定您已有一个带堡垒机的现有 VPC。它会使用所需的次级范围创建或更新 GKE 子网。
 
     **重要：CIDR 边界要求** - `/14` 块：第三个八位字节必须可被 4 整除 (例如：`10.244.0.0`，不是 `10.245.0.0`)  - `/20` 块：第四个八位字节必须为 0，第三个八位字节必须位于 16 的边界上 (例如：`10.252.0.0`)
@@ -433,9 +423,7 @@ description: "本教程将指导您使用 Google Kubernetes Engine (GKE) 在 Goo
     ***
   </Step>
 
-  <Step stepNumber={5}>
-    ## 第 5 步：创建 Cloud NAT (`04-cloud-nat.sh`)
-
+  <Step stepNumber={5} title={<>第 5 步：创建 Cloud NAT (<code>04-cloud-nat.sh</code>)</>} id="step-5-create-cloud-nat-04-cloud-natsh">
     私网 GKE 节点需要通过 Cloud NAT 才能访问出站互联网。
 
     ```bash expandable
@@ -489,9 +477,7 @@ description: "本教程将指导您使用 Google Kubernetes Engine (GKE) 在 Goo
     ***
   </Step>
 
-  <Step stepNumber={6}>
-    ## 步骤 6：创建 GCP 服务账号 (`05-service-account.sh`)
-
+  <Step stepNumber={6} title={<>步骤 6：创建 GCP 服务账号 (<code>05-service-account.sh</code>)</>} id="step-6-create-gcp-service-account-05-service-accountsh">
     ```bash
     #!/bin/bash
     set -e
@@ -522,9 +508,7 @@ description: "本教程将指导您使用 Google Kubernetes Engine (GKE) 在 Goo
     ***
   </Step>
 
-  <Step stepNumber={7}>
-    ## 步骤 7：创建 GCS 存储桶 (`06-gcs-bucket.sh`)
-
+  <Step stepNumber={7} title={<>步骤 7：创建 GCS 存储桶 (<code>06-gcs-bucket.sh</code>)</>} id="step-7-create-gcs-bucket-06-gcs-bucketsh">
     ```bash expandable
     #!/bin/bash
     set -e
@@ -573,9 +557,7 @@ description: "本教程将指导您使用 Google Kubernetes Engine (GKE) 在 Goo
     ***
   </Step>
 
-  <Step stepNumber={8}>
-    ## 第 8 步：创建 GKE 集群 (`07-gke-cluster.sh`)
-
+  <Step stepNumber={8} title={<>第 8 步：创建 GKE 集群 (<code>07-gke-cluster.sh</code>)</>} id="step-8-create-gke-cluster-07-gke-clustersh">
     创建一个**完全私有的 GKE 集群**——工作节点仅使用内部 IP，control plane 没有公网端点，且所有访问都必须通过堡垒机从 VPC 内部进行。
 
     ```bash expandable
@@ -655,9 +637,7 @@ description: "本教程将指导您使用 Google Kubernetes Engine (GKE) 在 Goo
     ***
   </Step>
 
-  <Step stepNumber={9}>
-    ## 步骤 9：创建节点池 (`08-node-pools.sh`)
-
+  <Step stepNumber={9} title={<>步骤 9：创建节点池 (<code>08-node-pools.sh</code>)</>} id="step-9-create-node-pools-08-node-poolssh">
     | 节点池    | 机器类型                                        | 磁盘                           | 标签                       | 污点                                          |
     | ------ | ------------------------------------------- | ---------------------------- | ------------------------ | ------------------------------------------- |
     | Keeper | n2-standard-4 (dev) / n2-standard-8 (prod)  | 20GB pd-ssd                  | `clickhouseGroup=keeper` | `clickhouse.com/do-not-schedule:NoSchedule` |
@@ -732,9 +712,7 @@ description: "本教程将指导您使用 Google Kubernetes Engine (GKE) 在 Goo
     ***
   </Step>
 
-  <Step stepNumber={10}>
-    ## 步骤 10：部署 Local SSD DaemonSet 守护进程集 (`09-local-ssd-daemonset.sh`)
-
+  <Step stepNumber={10} title={<>步骤 10：部署用于 Local SSD 的 DaemonSet 守护进程集 (<code>09-local-ssd-daemonset.sh</code>)</>} id="step-10-deploy-local-ssd-daemonset-09-local-ssd-daemonsetsh">
     GKE Container-Optimized OS 的根文件系统是只读的，因此无法创建 `/nvme`。该 DaemonSet 守护进程集会将本地 SSD 格式化并挂载到 `/mnt/disks/ssd0`。
 
     **重要：** 请务必在部署 ClickHouse 集群**之前**先部署此项，以避免竞态条件。
@@ -834,9 +812,7 @@ description: "本教程将指导您使用 Google Kubernetes Engine (GKE) 在 Goo
     ***
   </Step>
 
-  <Step stepNumber={11}>
-    ## 第 11 步：添加拓扑标签 (`10-topology-labels.sh`)
-
+  <Step stepNumber={11} title={<>第 11 步：添加拓扑标签 (<code>10-topology-labels.sh</code>)</>} id="step-11-add-topology-labels-10-topology-labelssh">
     ```bash
     #!/bin/bash
     set -e
@@ -871,9 +847,7 @@ description: "本教程将指导您使用 Google Kubernetes Engine (GKE) 在 Goo
     ***
   </Step>
 
-  <Step stepNumber={12}>
-    ## 第 12 步：安装 Kubernetes 前置条件
-
+  <Step stepNumber={12} title="第 12 步：安装 Kubernetes 前置条件" id="step-12-install-kubernetes-prerequisites">
     ### 安装 VolumeSnapshot CRD 资源定义 (`11-volumesnapshot-crds.sh`)
 
     ```bash
@@ -1027,9 +1001,7 @@ description: "本教程将指导您使用 Google Kubernetes Engine (GKE) 在 Goo
     ***
   </Step>
 
-  <Step stepNumber={13}>
-    ## 第 13 步：FIPS 步骤 (条件执行)
-
+  <Step stepNumber={13} title="第 13 步：FIPS 步骤 (条件执行)" id="step-13-fips-steps-conditional">
     如果 `ENABLE_FIPS=false`，请跳过本节。
 
     ### 创建 FIPS 证书 (`14-create-fips-certs.sh`)
@@ -1099,9 +1071,7 @@ description: "本教程将指导您使用 Google Kubernetes Engine (GKE) 在 Goo
     ***
   </Step>
 
-  <Step stepNumber={14}>
-    ## 步骤 14：安装 Operator (`16-install-operator.sh`)
-
+  <Step stepNumber={14} title={<>步骤 14：安装 Operator (<code>16-install-operator.sh</code>)</>} id="step-14-install-operator-16-install-operatorsh">
     ```bash expandable
     #!/bin/bash
     set -e
@@ -1154,9 +1124,7 @@ description: "本教程将指导您使用 Google Kubernetes Engine (GKE) 在 Goo
     ***
   </Step>
 
-  <Step stepNumber={15}>
-    ## 第 15 步：部署 ClickHouse 集群 (`17-install-cluster.sh`)
-
+  <Step stepNumber={15} title={<>第 15 步：部署 ClickHouse 集群 (<code>17-install-cluster.sh</code>)</>} id="step-15-deploy-clickhouse-cluster-17-install-clustersh">
     ```bash expandable
     #!/bin/bash
     set -e
@@ -1270,9 +1238,7 @@ description: "本教程将指导您使用 Google Kubernetes Engine (GKE) 在 Goo
     ***
   </Step>
 
-  <Step stepNumber={16}>
-    ## 第 16 步：绑定 Workload Identity (`18-bind-helm-workload-identity.sh`)
-
+  <Step stepNumber={16} title={<>第 16 步：绑定 Workload Identity (<code>18-bind-helm-workload-identity.sh</code>)</>} id="step-16-bind-workload-identity-18-bind-helm-workload-identitysh">
     Helm 图表会创建自己的服务账号 (`ch-${CLUSTER_NAME}-sa`) 。你必须将 Workload Identity 绑定到此 SA，才能访问 GCS。
 
     **重要：** 第 15 步中创建的 Keeper 和 server Pod (容器组) 会在完成此绑定之前启动，因此会因 GCS 403 错误而失败。此脚本会在绑定完成后重启这些 Pod (容器组) 。
@@ -1373,9 +1339,7 @@ description: "本教程将指导您使用 Google Kubernetes Engine (GKE) 在 Goo
     ***
   </Step>
 
-  <Step stepNumber={17}>
-    ## 第 17 步：验证安装
-
+  <Step stepNumber={17} title="第 17 步：验证安装" id="step-17-verify-installation">
     ### 标准模式 (不使用 TLS)
 
     ```text

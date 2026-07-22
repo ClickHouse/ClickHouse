@@ -129,21 +129,15 @@ scrape_configs:
 </div>
 
 <Steps>
-  <Step>
-    #### 대시보드 JSON 다운로드
-
+  <Step title="대시보드 JSON 다운로드" id="download">
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">대시보드 JSON 다운로드</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Grafana에서 가져오기 화면 열기
-
+  <Step title="Grafana에서 가져오기 화면 열기" id="open-import">
     **Dashboards → New → Import**로 이동하세요. JSON 파일을 업로드하거나 내용을 붙여넣으세요.
   </Step>
 
-  <Step>
-    #### Prometheus 데이터 소스 선택
-
+  <Step title="Prometheus 데이터 소스 선택" id="pick-datasource">
     `DS_PROMETHEUS` 입력 항목이 표시되면 [이전 섹션](#configuring-prometheus)에서 구성한 엔드포인트를 스크레이프하는 Prometheus 데이터 소스를 선택하세요.
   </Step>
 </Steps>

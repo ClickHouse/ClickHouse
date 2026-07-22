@@ -8,22 +8,75 @@ doc_type: 'guide'
 ---
 
 import CommunityMonitoring from '/snippets/zh/_community_monitoring.mdx';
+import PrivatePreviewBadge from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 <div id="direct-datadog">
-  ## 直接集成 Datadog
+  ## Datadog 集成
 </div>
 
-Datadog 为其 agent 提供了一个 ClickHouse Monitoring 插件，可直接查询系统表。该集成通过 `clusterAllReplicas` 功能提供具备集群感知能力的全面数据库监控。
+要在 Datadog 中监控您的 ClickHouse 部署，ClickHouse 提供了多种适用于不同部署模式的集成方案。每种方案各有权衡，其中一些由 ClickHouse 维护，另一些由 Datadog 维护。以下按推荐顺序列出这些集成。
 
-<Warning>
-  **不推荐用于 ClickHouse Cloud**
+| 集成                                                                                  | 文档                                                                                             | 部署          | 信号                   |
+| ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------- | -------------------- |
+| [ClickHouse Cloud Datadog API 集成](#clickhouse-cloud-datadog-api-integration) *(推荐)* | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse-cloud/)                | Cloud       | 指标                   |
+| [ClickHouse Cloud Prometheus 集成](#clickhouse-cloud-prometheus-integration)          | [clickhouse.com/docs](/zh/integrations/prometheus)                                                | Cloud       | 指标                   |
+| [ClickHouse Datadog Agent 集成](#clickhouse-datadog-agent-integration)                | [docs.datadoghq.com](https://docs.datadoghq.com/integrations/clickhouse/?tab=host)             | OSS / Cloud | 日志、指标                |
+| [ClickHouse Datadog DBM](#clickhouse-datadog-dbm)                                   | [datadoghq.com](https://www.datadoghq.com/product-preview/database-monitoring-for-clickhouse/) | OSS / Cloud | 日志、指标、Query Insights |
 
-  由于这种直接查询系统表的 Datadog agent 集成与成本优化的空闲行为不兼容，并且受到云代理层的运行限制，因此不建议在 ClickHouse Cloud 部署中使用。
-</Warning>
+<div id="clickhouse-cloud-datadog-api-integration">
+  ### ClickHouse Cloud Datadog API 集成
+</div>
 
-建议改用 Datadog [Agent](https://docs.datadoghq.com/agent/?tab=Linux) 和 [OpenMetrics integration](https://docs.datadoghq.com/integrations/openmetrics/)，从 ClickHouse Cloud 的 Prometheus 端点收集指标。这种方法既能适应服务的空闲行为，也能保持监控工作负载与生产工作负载之间的运行隔离。有关配置说明，请参阅 [Datadog 的 Prometheus 和 OpenMetrics integration 文档](https://docs.datadoghq.com/integrations/openmetrics/)。
+<PrivatePreviewBadge />
 
-有关 Prometheus 端点设置的详细信息，请参阅 [Prometheus integration 页面](/zh/products/cloud/features/monitoring/prometheus#integrating-with-datadog)。
+这是在 Datadog 中提供 ClickHouse Cloud 服务级指标的推荐方式。
+
+你可以通过 OAuth 握手将 Datadog 账户连接到 ClickHouse Cloud (在 Datadog 集成卡片中点击 **Connect Accounts**) 。随后，ClickHouse Cloud 会将服务级指标推送到 Datadog，而不是由 Datadog 直接轮询该服务。
+
+* **仅限 Cloud** — 不适用于 OSS ClickHouse
+* Datadog **不会** 将这些指标视为自定义指标
+* **不会** 阻止该服务进入空闲状态
+* 附带一组预先配置的仪表盘和监视器
+
+有关引导设置步骤，请参阅 [Datadog 的 ClickHouse Cloud 集成指南](https://docs.datadoghq.com/integrations/clickhouse-cloud/)。
+
+<div id="clickhouse-cloud-prometheus-integration">
+  ### ClickHouse Cloud Prometheus 集成
+</div>
+
+这是从 ClickHouse Cloud 收集服务级和组织级遥测数据最常见、最通用的方式。
+
+你可以通过 [OpenMetrics 集成](https://docs.datadoghq.com/integrations/openmetrics/) 配置 Datadog Agent，使其定期轮询 ClickHouse Cloud API 并收集指标。有关配置详情，请参见 [Prometheus 集成页面](/zh/integrations/prometheus#integrating-with-datadog)。
+
+* **仅限 Cloud** — 不适用于 OSS ClickHouse
+* Datadog 会将这些指标视为 **自定义指标**
+* **不会** 阻止服务进入空闲状态
+
+<div id="clickhouse-datadog-agent-integration">
+  ### ClickHouse Datadog Agent 集成
+</div>
+
+这是将数据从 OSS ClickHouse 服务接入 Datadog 的最常见方式。它也适用于 ClickHouse Cloud，但有一些注意事项。
+
+Datadog Agent 会定期轮询 ClickHouse 实例，并收集指标和日志。此集成附带一组预配置的仪表盘。
+
+**OSS ClickHouse：**日志和指标均完全支持。
+
+**ClickHouse Cloud (部分支持) ：**
+
+* 仅支持指标——不支持日志
+* 需要使用 `datadog-cluster-agent`，而不是 `datadog-agent`
+* **会导致服务无法进入空闲状态**
+
+<div id="clickhouse-datadog-dbm">
+  ### ClickHouse Datadog DBM
+</div>
+
+ClickHouse 的数据库监控 (DBM) 由 Datadog 开发和维护。其工作原理是配置 Datadog Agent，从 ClickHouse 实例收集系统表数据，从而提供类似 ClickHouse Cloud 控制台原生提供的查询级性能洞察。ClickHouse 不参与此集成——如有任何问题，请联系 Datadog，而不是 ClickHouse。
+
+* 指标免费；日志和系统表数据摄取需额外付费
+* **OSS ClickHouse：** 完全支持
+* **ClickHouse Cloud (部分支持) ：** 需要使用 `datadog-cluster-agent` 而不是 `datadog-agent`；**会导致服务无法进入空闲状态**
 
 <CommunityMonitoring />
 
@@ -33,4 +86,4 @@ Datadog 为其 agent 提供了一个 ClickHouse Monitoring 插件，可直接查
 
 Billing &amp; Usage API 可用于以编程方式访问您的 Cloud 组织的计费和使用记录。这对于构建自定义成本监控仪表盘，或将计费数据集成到现有财务报告工作流中非常有用。
 
-如需完整的 API 参考文档，请参阅[计费 API 文档](/zh/api-reference/organization/get-list-of-available-organizations#tag/Billing)。
+如需完整的 API 参考文档，请参阅[计费 API 文档](/zh/products/cloud/api-reference/billing/get-organization-usage-costs)。

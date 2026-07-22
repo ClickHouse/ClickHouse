@@ -18,22 +18,16 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 </Frame>
 
 <Steps>
-  <Step>
-    ## uvをインストールする
-
+  <Step title="uvをインストールする" id="install-uv">
     このガイドの手順に従うには、[uv](https://docs.astral.sh/uv/) をインストールする必要があります。
     uv を使わない場合は、別のパッケージマネージャーを使うように MCPサーバーの設定を更新する必要があります。
   </Step>
 
-  <Step>
-    ## Claude Desktopをダウンロードする
-
+  <Step title="Claude Desktopをダウンロードする" id="download-claude-desktop">
     Claude Desktop アプリもインストールする必要があります。これは [Claude Desktop website](https://claude.ai/desktop) からダウンロードできます。
   </Step>
 
-  <Step>
-    ## ClickHouse MCPサーバーを設定する
-
+  <Step title="ClickHouse MCPサーバーを設定する" id="configure-clickhouse-mcp-server">
     Claude Desktop をインストールしたら、次は [ClickHouse MCPサーバー](https://github.com/ClickHouse/mcp-clickhouse) を設定します。
     これは [Claude Desktop configuration file](https://claude.ai/docs/configuration) で行えます。
 
@@ -95,9 +89,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     </Warning>
   </Step>
 
-  <Step>
-    ## ClickHouse MCPサーバーを使う
-
+  <Step title="ClickHouse MCPサーバーを使う" id="using-clickhouse-mcp-server">
     Claude Desktop を再起動したら、`Search and tools` アイコンをクリックして ClickHouse MCPサーバーを見つけられます。
 
     <Image img="/images/use-cases/AI_ML/MCP/find-mcp-servers.webp" alt="MCPサーバーを見つける" size="md" />

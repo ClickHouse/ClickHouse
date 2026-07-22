@@ -51,7 +51,7 @@ pg_dump \
 
 다음과 같습니다:
 
-* `<user>`, `<password>`, `<host>`, `<port>`, `<database>`를 소스 데이터베이스의 자격 증명으로 바꾸십시오. 대부분의 Postgres provider는 바로 사용할 수 있는 connection string을 제공합니다.
+* `<user>`, `<password>`, `<host>`, `<port>`, `<database>`를 원본 데이터베이스의 자격 증명으로 바꾸십시오. 대부분의 Postgres provider는 바로 사용할 수 있는 connection string을 제공합니다.
 * `--format directory`는 덤프를 디렉터리 포맷으로 생성하도록 지정하며, 이 포맷은 `pg_restore`에 적합합니다.
 * `-f rds-dump`는 덤프 파일의 출력 디렉터리를 지정합니다. 이 디렉터리는 자동으로 생성되므로 미리 존재하지 않아야 합니다.
 * `--jobs` 플래그 뒤에 실행할 병렬 job 수를 지정하면 덤프 프로세스를 병렬로 수행할 수도 있습니다. 자세한 내용은 [pg&#95;dump documentation](https://www.postgresql.org/docs/current/app-pgdump.html)을 참조하십시오.
@@ -128,6 +128,6 @@ Managed Postgres 인스턴스의 connection string은 ClickHouse Cloud 콘솔에
   ## 다음 단계
 </div>
 
-축하합니다! `pg_dump`와 `pg_restore`를 사용하여 PostgreSQL 데이터베이스를 ClickHouse Managed Postgres로 성공적으로 마이그레이션했습니다. 이제 Managed Postgres의 기능과 ClickHouse와의 통합을 살펴볼 준비가 되었습니다. 아래 10분짜리 퀵스타트로 바로 시작해 보세요:
+축하합니다! `pg_dump` 및 `pg_restore`를 사용해 PostgreSQL 데이터베이스를 ClickHouse Managed Postgres로 성공적으로 마이그레이션했습니다. 이제 Managed Postgres의 기능과 ClickHouse 통합을 살펴볼 준비가 되었습니다. 시작하는 데 도움이 되는 10분 분량의 quickstart는 다음과 같습니다.
 
-* [Managed Postgres 퀵스타트 가이드](/ko/products/managed-postgres/quickstart)
+* [Managed Postgres quickstart 가이드](/ko/products/managed-postgres/quickstart)

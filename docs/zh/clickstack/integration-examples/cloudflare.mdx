@@ -60,17 +60,13 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
 * Cloudflare 写入日志所在的 S3 存储桶 名称和区域
 
 <Steps>
-  <Step>
-    #### 配置 S3 身份验证
-
+  <Step title="配置 S3 身份验证" id="configure-auth">
     ClickPipes 需要具备从您的 S3 bucket 读取数据的权限。请按照[安全访问 S3 数据](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)指南，配置基于 IAM 角色的访问或基于凭证的访问。
 
     有关 ClickPipes S3 身份验证和权限的完整详细信息，请参阅 [S3 ClickPipes 参考文档](/zh/integrations/clickpipes/object-storage/amazon-s3/overview#access-control)。
   </Step>
 
-  <Step>
-    #### 创建 ClickPipes 作业
-
+  <Step title="创建 ClickPipes 作业" id="create-clickpipes">
     1. ClickHouse Cloud 控制台 → **数据源** → **创建 ClickPipe**
     2. **源**：Amazon S3
 
@@ -107,9 +103,7 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
     </Note>
   </Step>
 
-  <Step>
-    #### 配置 HyperDX 数据源
-
+  <Step title="配置 HyperDX 数据源" id="configure-source">
     ClickPipes 会将 Cloudflare 日志摄取到一张扁平化表中，并使用 Cloudflare 的原生字段名。要在 HyperDX 中查看这些日志，请配置一个自定义数据源，将 Cloudflare 的列映射到 HyperDX 的日志视图。
 
     1. 打开 HyperDX → **Team Settings** → **Sources**
@@ -142,9 +136,7 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
     这样就能将 Cloudflare 的原生列直接映射到 HyperDX 的日志查看器中，无需进行任何数据转换或重复存储。**Body** 会显示类似 `GET /api/v1/users 200` 的请求摘要，同时所有 Cloudflare 字段都可作为可搜索属性使用。
   </Step>
 
-  <Step>
-    #### 在 HyperDX 中验证数据
-
+  <Step title="在 HyperDX 中验证数据" id="verify-hyperdx">
     前往 **搜索视图**，然后选择 **Cloudflare 日志** 数据源。将时间范围设置为覆盖你的数据所在时间段。你应该会看到包含以下内容的日志条目：
 
     * Body 列中的请求摘要 (例如 `GET /api/v1/users 200`)
@@ -164,9 +156,7 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
 对于想要在配置生产环境 Cloudflare Logpush 之前先测试集成的用户，我们提供了一个包含逼真 HTTP 请求日志的演示数据集。
 
 <Steps>
-  <Step>
-    #### 使用演示数据集创建 ClickPipe
-
+  <Step title="使用演示数据集启动 ClickPipes" id="start-demo">
     1. ClickHouse Cloud 控制台 → **数据源** → **Create ClickPipe**
     2. **Source**: Amazon S3
     3. **身份验证**: Public
@@ -180,15 +170,11 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
     该数据集包含 5,000 条跨越 24 小时的 HTTP 请求日志，模式贴近真实场景，包括来自多个国家/地区的流量、缓存命中与未命中、API 和静态资源请求、错误响应以及安全事件。
   </Step>
 
-  <Step>
-    #### 配置 HyperDX 数据源
-
+  <Step title="配置 HyperDX 数据源" id="configure-demo-source">
     按照[数据源配置步骤](#configure-source)创建一个指向 `cloudflare_http_logs` 表的 HyperDX 数据源。如果你已在生产集成部分配置过该数据源，则无需执行此步骤。
   </Step>
 
-  <Step>
-    #### 验证演示数据
-
+  <Step title="验证演示数据" id="verify-demo">
     ```sql
     SELECT count() FROM cloudflare_http_logs;
     -- 应返回 5000
@@ -215,13 +201,11 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
 </div>
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudflare-logs-dashboard.json'} download="cloudflare-logs-dashboard.json" eventName="docs.cloudflare_logs_monitoring.dashboard_download">下载</TrackedLink> 仪表盘配置
+  <Step title="下载仪表盘配置" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudflare-logs-dashboard.json'} download="cloudflare-logs-dashboard.json" eventName="docs.cloudflare_logs_monitoring.dashboard_download">下载仪表盘配置文件</TrackedLink>。
   </Step>
 
-  <Step>
-    #### 导入仪表盘
-
+  <Step title="导入仪表盘" id="import-dashboard">
     1. HyperDX → **仪表盘** → **导入仪表盘**
 
     <Image img="/images/clickstack/cloudflare/import-dashboard.webp" alt="导入仪表盘" />
@@ -231,9 +215,7 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
     <Image img="/images/clickstack/cloudflare/finish-import.webp" alt="导入仪表盘" />
   </Step>
 
-  <Step>
-    #### 查看仪表盘
-
+  <Step title="查看仪表盘" id="view-dashboard">
     <Image img="/images/clickstack/cloudflare/example-dashboard.webp" alt="示例仪表盘" />
 
     <Note>
@@ -278,9 +260,9 @@ SELECT count() FROM cloudflare_http_logs;
 * 为特定用例创建更多仪表盘 (API 性能、缓存优化、地域流量分析)
 
 <div id="going-to-production">
-  ## 生产环境配置
+  ## 生产环境部署
 </div>
 
-本指南演示了如何使用公开的演示数据集摄取 Cloudflare 日志。对于生产环境部署，请配置 Cloudflare Logpush，将数据写入您自己的 S3 存储桶，并结合 [基于 IAM 角色的身份验证](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely) 配置 ClickPipes，以确保访问安全。仅选择所需的 [Logpush 字段](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/)，以降低存储成本和摄取量。在 Logpush 中启用按天划分的子文件夹，以便更好地组织文件，并在 ClickPipes 路径模式中使用 `**/*` 来匹配各级子目录中的文件。
+本指南演示如何使用公开的演示数据集摄取 Cloudflare 日志。对于生产环境部署，请将 Cloudflare Logpush 配置为写入您自己的 S3 存储桶，并通过 [基于 IAM role 的身份验证](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely) 配置 ClickPipes 以确保安全访问。仅选择所需的 [Logpush 字段](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/)，以降低存储成本和摄取量。在 Logpush 中启用按日分组的子文件夹，以便更好地组织文件，并在 ClickPipes 路径模式中使用 `**/*` 以匹配各级子目录中的文件。
 
-有关高级配置选项 (包括用于处理历史回填和乱序文件的 [基于 SQS 的无序摄取](/zh/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-any-order)) ，请参阅 [S3 ClickPipes 文档](/zh/integrations/clickpipes/object-storage/amazon-s3/overview)。
+有关高级配置选项 (包括用于处理回填和乱序文件的[基于 SQS 的无序摄取](/zh/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-any-order)) ，请参阅 [S3 ClickPipes 文档](/zh/integrations/clickpipes/object-storage/amazon-s3/overview)。

@@ -1,0 +1,271 @@
+{
+  "groups": [
+    {
+      "group": "ClickHouse 指南",
+      "pages": [
+        {
+          "group": "数据格式",
+          "pages": [
+            "zh/guides/clickhouse/data-formats/csv-tsv",
+            "zh/guides/clickhouse/data-formats/parquet",
+            "zh/guides/clickhouse/data-formats/arrow-avro-orc",
+            "zh/guides/clickhouse/data-formats/binary",
+            "zh/guides/clickhouse/data-formats/sql",
+            "zh/guides/clickhouse/data-formats/templates-regex",
+            {
+              "group": "JSON",
+              "pages": [
+                "zh/guides/clickhouse/data-formats/json/loading",
+                "zh/guides/clickhouse/data-formats/json/inference",
+                "zh/guides/clickhouse/data-formats/json/schema",
+                "zh/guides/clickhouse/data-formats/json/formats",
+                "zh/guides/clickhouse/data-formats/json/exporting",
+                "zh/guides/clickhouse/data-formats/json/other"
+              ],
+              "root": "zh/guides/clickhouse/data-formats/json/intro"
+            }
+          ],
+          "root": "zh/guides/clickhouse/data-formats/intro"
+        },
+        {
+          "group": "数据建模",
+          "pages": [
+            "zh/guides/clickhouse/data-modelling/schema-design",
+            "zh/guides/clickhouse/data-modelling/sparse-primary-indexes",
+            "zh/guides/clickhouse/data-modelling/denormalization",
+            "zh/guides/clickhouse/data-modelling/backfilling",
+            "zh/guides/clickhouse/data-modelling/merge-table-function",
+            "zh/guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements",
+            "zh/guides/clickhouse/data-modelling/generating-test-data",
+            {
+              "expanded": false,
+              "group": "压缩",
+              "pages": [
+                "zh/guides/clickhouse/data-modelling/compression/compression-in-clickhouse",
+                "zh/guides/clickhouse/data-modelling/compression/compression-modes"
+              ]
+            },
+            "zh/guides/clickhouse/working-with-arrays",
+            "zh/guides/clickhouse/working-with-joins"
+          ],
+          "root": "zh/guides/clickhouse/data-modelling/index"
+        },
+        {
+          "group": "性能和监控",
+          "pages": [
+            "zh/guides/clickhouse/performance-and-monitoring/query-optimization",
+            "zh/guides/clickhouse/performance-and-monitoring/analyzer",
+            "zh/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer",
+            "zh/guides/clickhouse/performance-and-monitoring/dynamic-column-selection"
+          ]
+        },
+        {
+          "expanded": false,
+          "group": "聚合组合器示例",
+          "pages": [
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/anyIf",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/argMaxIf",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/argMinIf",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/avgIf",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/avgMap",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/avgMerge",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/avgMergeState",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/avgResample",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/avgState",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/countIf",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/countResample",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/groupArrayDistinct",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/groupArrayResample",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/maxMap",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/maxSimpleState",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/minMap",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/minSimpleState",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/quantilesTimingArrayIf",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/quantilesTimingIf",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/sumArray",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/sumForEach",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/sumIf",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/sumMap",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/sumSimpleState",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/uniqArray",
+            "zh/guides/clickhouse/examples/aggregate-function-combinators/uniqArrayIf"
+          ]
+        },
+        "zh/guides/oss/update",
+        {
+          "group": "OSS 最佳实践",
+          "pages": [
+            "zh/guides/oss/best-practices/sizing-and-hardware-recommendations",
+            "zh/guides/oss/best-practices/tips"
+          ]
+        },
+        {
+          "expanded": false,
+          "group": "部署和扩缩容",
+          "pages": [
+            "zh/guides/oss/deployment-and-scaling/terminology",
+            "zh/guides/oss/deployment-and-scaling/shards",
+            "zh/guides/oss/deployment-and-scaling/scaling-clusters",
+            "zh/guides/oss/deployment-and-scaling/separation-storage-compute",
+            "zh/guides/oss/deployment-and-scaling/cluster-discovery",
+            {
+              "expanded": false,
+              "group": "Keeper",
+              "pages": [
+                "zh/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper"
+              ],
+              "root": "zh/guides/oss/deployment-and-scaling/keeper/index"
+            },
+            {
+              "expanded": false,
+              "group": "监控",
+              "pages": [
+                "zh/guides/oss/deployment-and-scaling/monitoring/monitoring",
+                "zh/guides/oss/deployment-and-scaling/monitoring/opentelemetry"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "示例",
+              "pages": [
+                "zh/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas",
+                "zh/guides/oss/deployment-and-scaling/examples/2-shards-1-replica",
+                "zh/guides/oss/deployment-and-scaling/examples/2-shards-2-replicas"
+              ]
+            }
+          ],
+          "root": "zh/guides/oss/deployment-and-scaling/index"
+        }
+      ],
+      "root": "zh/guides/clickhouse/index"
+    },
+    {
+      "expanded": true,
+      "group": "用例指南",
+      "pages": [
+        {
+          "group": "实时分析",
+          "pages": [
+            {
+              "expanded": false,
+              "group": "时间序列",
+              "pages": [
+                "zh/guides/use-cases/real-time-analytics/time-series/date-time-data-types",
+                "zh/guides/use-cases/real-time-analytics/time-series/basic-operations",
+                "zh/guides/use-cases/real-time-analytics/time-series/analysis-functions",
+                "zh/guides/use-cases/real-time-analytics/time-series/storage-efficiency",
+                "zh/guides/use-cases/real-time-analytics/time-series/query-performance",
+                "zh/guides/use-cases/real-time-analytics/time-series/materialized-view-rollup",
+                "zh/guides/use-cases/real-time-analytics/time-series/time-series-filling-gaps"
+              ],
+              "root": "zh/guides/use-cases/real-time-analytics/time-series/index"
+            }
+          ]
+        },
+        {
+          "group": "可观测性",
+          "pages": [
+            "zh/guides/use-cases/observability/cloud-monitoring",
+            "zh/guides/use-cases/observability/self-managed-monitoring",
+            {
+              "group": "自行搭建",
+              "pages": [
+                "zh/guides/use-cases/observability/build-your-own/introduction",
+                "zh/guides/use-cases/observability/build-your-own/schema-design",
+                "zh/guides/use-cases/observability/build-your-own/integrating-opentelemetry",
+                "zh/guides/use-cases/observability/build-your-own/managing-data",
+                "zh/guides/use-cases/observability/build-your-own/grafana",
+                "zh/guides/use-cases/observability/build-your-own/demo-application"
+              ],
+              "root": "zh/guides/use-cases/observability/build-your-own/index"
+            }
+          ],
+          "root": "zh/guides/use-cases/observability/index"
+        },
+        {
+          "group": "数据仓库",
+          "pages": [
+            {
+              "group": "快速开始",
+              "pages": [
+                "zh/guides/use-cases/data-warehousing/getting-started/querying-directly",
+                "zh/guides/use-cases/data-warehousing/getting-started/connecting-catalogs",
+                "zh/guides/use-cases/data-warehousing/getting-started/accelerating-analytics",
+                "zh/guides/use-cases/data-warehousing/getting-started/writing-data",
+                "zh/guides/use-cases/data-warehousing/getting-started/best-practices"
+              ],
+              "root": "zh/guides/use-cases/data-warehousing/getting-started/overview"
+            },
+            {
+              "group": "目录",
+              "pages": [
+                "zh/guides/use-cases/data-warehousing/glue-catalog",
+                "zh/guides/use-cases/data-warehousing/lakekeeper-catalog",
+                "zh/guides/use-cases/data-warehousing/nessie-catalog",
+                "zh/guides/use-cases/data-warehousing/onelake-catalog",
+                "zh/guides/use-cases/data-warehousing/polaris-catalog",
+                "zh/guides/use-cases/data-warehousing/rest-catalog",
+                "zh/guides/use-cases/data-warehousing/unity-catalog",
+                "zh/guides/use-cases/data-warehousing/biglake-catalog"
+              ],
+              "root": "zh/guides/use-cases/data-warehousing/reference/index"
+            },
+            "zh/guides/use-cases/data-warehousing/support-matrix"
+          ],
+          "root": "zh/guides/use-cases/data-warehousing/index"
+        },
+        {
+          "group": "AI/ML",
+          "pages": [
+            "zh/guides/use-cases/ai-ml/vector-search",
+            "zh/guides/use-cases/ai-ml/ai-powered-sql-generation",
+            {
+              "group": "数据探索",
+              "pages": [
+                "zh/guides/use-cases/ai-ml/data-exploration/jupyter-notebook",
+                "zh/guides/use-cases/ai-ml/data-exploration/marimo-notebook"
+              ]
+            },
+            {
+              "group": "MCP",
+              "pages": [
+                "zh/guides/use-cases/ai-ml/MCP/claude-desktop",
+                "zh/guides/use-cases/ai-ml/MCP/librechat",
+                "zh/guides/use-cases/ai-ml/MCP/anythingllm",
+                "zh/guides/use-cases/ai-ml/MCP/open-webui",
+                "zh/guides/use-cases/ai-ml/MCP/ollama",
+                "zh/guides/use-cases/ai-ml/MCP/janai",
+                {
+                  "group": "AI 智能体库",
+                  "pages": [
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai",
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot",
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/agno",
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/chainlit",
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/claude-agent-sdk",
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/copilotkit",
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/crewai",
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/dspy",
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/mcp-agent",
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/microsoft-agent-framework",
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic",
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents"
+                  ],
+                  "root": "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/index"
+                }
+              ],
+              "root": "zh/guides/use-cases/ai-ml/MCP/index"
+            }
+          ],
+          "root": "zh/guides/use-cases/ai-ml/index"
+        }
+      ],
+      "root": "zh/guides/use-cases/index"
+    }
+  ],
+  "icon": "/images/icons/icon-guides.svg",
+  "item": "指南"
+}

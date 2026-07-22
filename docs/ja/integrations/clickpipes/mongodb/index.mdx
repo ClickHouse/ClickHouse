@@ -13,11 +13,12 @@ integration:
 import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/ja/components/Image.jsx";
+import ChangingTLSSettings from '/snippets/ja/clickpipes/_changing_tls_settings.mdx';
 
 <BetaBadge />
 
 <Info>
-  MongoDB から ClickHouse Cloud への ClickPipes を介したデータ取り込みは公開ベータです。
+  MongoDB から ClickHouse Cloud への ClickPipes を介したデータのインジェストは公開ベータです。
 </Info>
 
 <Note>
@@ -72,6 +73,12 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 </Info>
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp" alt="接続情報を入力" size="lg" border />
+
+<div id="optional-changing-tls-settings">
+  #### &#x20;(任意) TLS設定の変更
+</div>
+
+<ChangingTLSSettings />
 
 <div id="optional-set-up-ssh-tunneling">
   #### &#x20;(任意) SSHトンネリングを設定する

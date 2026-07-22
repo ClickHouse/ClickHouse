@@ -122,44 +122,44 @@ Read 4 rows, 603.00 B in 0.00156 sec., 2564 rows/sec., 377.48 KiB/sec.
 
 <br />
 
-QuickSight に付属する公式の MySQL コネクタ (名前は **MySQL**) を検索します。
+QuickSight に含まれている公式の MySQL コネクタ (名前は **MySQL**) を検索します。
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_02.webp" alt="検索結果で MySQL がハイライト表示されている QuickSight のデータソース選択画面" border />
-
-<br />
-
-接続情報を指定します。MySQL インターフェイスのポートはデフォルトでは 9004 ですが、
-サーバー設定によって異なる場合がある点に注意してください。
-
-<Image size="md" img="/images/integrations/data-visualization/quicksight_03.webp" alt="hostname、ポート、データベース、認証情報のフィールドを含む QuickSight の MySQL 接続設定フォーム" border />
+<Image size="md" img="/images/integrations/data-visualization/quicksight_02.webp" alt="検索結果で MySQL が強調表示されている QuickSight のデータソース選択画面" border />
 
 <br />
 
-次に、ClickHouse からデータを取得する方法は 2 つあります。1 つ目は、一覧からテーブルを選択する方法です。
+接続情報を指定します。MySQL インターフェイスのポートはデフォルトで 9004 ですが、
+サーバー設定によって異なる場合があるので注意してください。
+
+<Image size="md" img="/images/integrations/data-visualization/quicksight_03.webp" alt="hostname、ポート、データベース、認証情報のフィールドがある QuickSight の MySQL 接続設定フォーム" border />
+
+<br />
+
+ここで、ClickHouse からデータを取得する方法は 2 つあります。1 つ目は、一覧からテーブルを選択する方法です。
 
 <Image size="md" img="/images/integrations/data-visualization/quicksight_04.webp" alt="ClickHouse で利用可能なデータベーステーブルが表示されている QuickSight のテーブル選択インターフェイス" border />
 
 <br />
 
-また、データを取得するためのカスタム SQL を指定することもできます。
+また、データを取得するために custom SQL を指定することもできます。
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_05.webp" alt="ClickHouse からデータを取得するための QuickSight のカスタム SQL クエリエディター" border />
+<Image size="md" img="/images/integrations/data-visualization/quicksight_05.webp" alt="ClickHouse からデータを取得するための QuickSight の custom SQL クエリエディタ" border />
 
 <br />
 
-「Edit/Preview data」をクリックすると、解析されたテーブル構造を確認したり、必要に応じてカスタム SQL を調整したりできます。
+「Edit/Preview data」をクリックすると、取得したテーブル構造を確認したり、custom SQL でデータにアクセスする場合はその内容を調整したりできます。
 
 <Image size="md" img="/images/integrations/data-visualization/quicksight_06.webp" alt="カラムとサンプルデータを含むテーブル構造が表示されている QuickSight のデータプレビュー" border />
 
 <br />
 
-UI の左下隅で「Direct Query」モードが選択されていることを確認してください。
+UI の左下で「Direct Query」モードが選択されていることを確認してください。
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_07.webp" alt="左下隅で Direct Query モードのオプションがハイライト表示されている QuickSight インターフェイス" border />
+<Image size="md" img="/images/integrations/data-visualization/quicksight_07.webp" alt="下隅で Direct Query モードのオプションが強調表示されている QuickSight インターフェイス" border />
 
 <br />
 
-これで、データセットを公開し、新しい可視化を作成できます。
+これで、dataset を公開して新しい visualization を作成できます。
 
 <div id="known-limitations">
   ## 既知の制限

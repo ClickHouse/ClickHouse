@@ -1,19 +1,41 @@
 ---
 slug: /managing-data/core-concepts
 title: '核心概念'
-description: '了解 ClickHouse 工作原理的核心概念'
-keywords: ['核心概念', 'part', '分区', '主索引']
+description: '了解 ClickHouse 工作原理中的核心概念'
+keywords: ['概念', 'part', '分区', '主索引']
 doc_type: 'guide'
+mode: wide
 ---
 
-在本节中，
-你将了解 ClickHouse 工作原理的一些核心概念。
+在本节文档中，
+你将了解 ClickHouse 工作原理中的一些核心概念。
 
-| Page                                                | Description                                                                                        |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| [表 parts](/zh/concepts/core-concepts/parts)            | 了解 ClickHouse 中的表 parts 是什么。                                                                       |
-| [表分区](./partitions.mdx)                             | 了解表分区是什么，以及它们的用途。                                                                                  |
-| [表 parts 合并](./merges.mdx)                          | 了解表 parts 合并是什么，以及它们的用途。                                                                           |
-| [表分片和副本](/zh/guides/oss/deployment-and-scaling/shards) | 了解表分片和副本是什么，以及它们的用途。                                                                               |
-| [主索引](./primary-indexes.mdx)                        | 介绍 ClickHouse 的稀疏主索引，以及它如何在查询执行过程中高效跳过不必要的数据。解释该索引的构建和使用方式，并提供用于观察其效果的示例和工具。还链接到适用于高级用例和最佳实践的深入解析。 |
-| [架构概览](/zh/concepts/core-concepts/academic-overview)   | 基于我们 2024 年 VLDB 科学论文，对 ClickHouse 架构各组成部分的简明学术概览。                                                 |
+<CardGroup cols={2}>
+  <Card title="术语表" icon="book-open" href="/zh/concepts/core-concepts/glossary">
+    常用的 ClickHouse 术语和短语及其定义。
+  </Card>
+
+  <Card title="表 parts" icon="cubes" href="/zh/concepts/core-concepts/parts">
+    了解 ClickHouse 中的表 parts 是什么。
+  </Card>
+
+  <Card title="表分区" icon="table-cells-large" href="/zh/concepts/core-concepts/partitions">
+    了解表分区是什么，以及它们的用途。
+  </Card>
+
+  <Card title="表 part 合并" icon="code-merge" href="/zh/concepts/core-concepts/merges">
+    了解表 part 合并是什么，以及它们的用途。
+  </Card>
+
+  <Card title="主索引" icon="key" href="/zh/concepts/core-concepts/primary-indexes">
+    了解 ClickHouse 的稀疏主索引如何在查询执行期间高效跳过不必要的数据。
+  </Card>
+
+  <Card title="查询并行度" icon="bolt" href="/zh/concepts/core-concepts/query-parallelism">
+    了解 ClickHouse 如何利用处理通道和 `max_threads` 设置并行执行查询。
+  </Card>
+
+  <Card title="架构概览" icon="graduation-cap" href="/zh/concepts/core-concepts/academic-overview">
+    基于我们发表于 VLDB 2024 的科学论文，对 ClickHouse 架构各个组件的简明学术概览。
+  </Card>
+</CardGroup>

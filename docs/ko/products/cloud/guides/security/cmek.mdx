@@ -159,6 +159,6 @@ CMEK를 사용하는 경우 제공된 KMS 키의 유효성을 10분마다 확인
   ## 성능
 </div>
 
-데이터베이스 암호화는 ClickHouse에 내장된 [데이터 암호화용 가상 파일 시스템 기능](/ko/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system)을 활용해 데이터를 암호화하고 보호합니다. 이 기능에서 사용하는 알고리즘은 `AES_256_CTR`이며, 워크로드에 따라 5~15%의 성능 저하가 발생할 수 있습니다.
+데이터베이스 암호화는 ClickHouse에 내장된 [데이터 암호화용 가상 파일 시스템 기능](/ko/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system)을 활용해 데이터를 암호화하고 보호합니다. 이 기능에 사용되는 알고리즘은 `AES_256_CTR`이며, 워크로드에 따라 5~15%의 성능 저하가 발생할 수 있습니다.
 
 <Image img="/images/_snippets/cmek-performance.webp" size="lg" alt="CMEK 성능 저하" />

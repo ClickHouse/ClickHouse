@@ -64,13 +64,36 @@ BYOC デプロイメントでプライベートロードバランサーを使用
   ## Kubernetes API のプライベート接続
 </div>
 
-デフォルトでは、BYOC クラスターの Kubernetes API サーバーのエンドポイントはパブリックインターネットからアクセス可能ですが、IP フィルタリングにより、ClickHouse NAT ゲートウェイの IP からのアクセスのみに制限されています。より強固なセキュリティを実現するには、Kubernetes API サーバーを、Tailscale を使用したプライベートネットワーク接続経由でのみアクセスできるように制限できます。
+デフォルトでは、BYOC クラスターの Kubernetes API サーバーのエンドポイントはパブリックインターネットからアクセス可能ですが、IP フィルタリングにより、ClickHouse NAT ゲートウェイの IP からのアクセスのみに制限されています。より強固なセキュリティを実現するには、Kubernetes API サーバーを、プライベートネットワーク接続経由でのみアクセスできるように制限できます。
+
+利用可能なプライベート接続オプションは 2 つあります:
+
+<div id="k8s-api-private-connection-tailscale">
+  ### Tailscale (デフォルト)
+</div>
+
+プライベート API エンドポイントが有効になっている場合、ClickHouse 管理サービスは、トラブルシューティングアクセスに使用されるものと同じ Tailscale のゼロトラストネットワークを介して Kubernetes API サーバーに接続します。この接続の仕組みの詳細については、[Tailscale Private Network](/ja/products/bring-your-own-cloud/reference/network-security#tailscale-private-network) を参照してください。
 
 <Note>
   プライベート接続を Tailscale のみに依存している場合、Tailscale エージェントが利用できなくなると、ClickHouse Support がお使いの環境にアクセスできなくなるリスクがあります。その結果、トラブルシューティングやサポート対応に時間がかかる可能性があります。
 </Note>
 
-プライベート API エンドポイントの設定をリクエストするには、**ClickHouse Support にお問い合わせください**。
+<div id="k8s-api-private-connection-vpc-lattice">
+  ### AWS VPC Lattice
+</div>
+
+<Info>
+  VPC Lattice 接続は現在プライベートプレビューです。お使いのデプロイメントで有効にするには、ClickHouse Support にお問い合わせください。
+</Info>
+
+AWS のデプロイメントでは、サードパーティ製コンポーネントを使わずに、[AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/) 経由で Kubernetes API サーバーにプライベート接続することもできます。
+
+* ClickHouse Cloud は、BYOC VPC 内の EKS API サーバーのエンドポイントを対象とする VPC Lattice Resource Gateway と Resource Configuration を自動的にプロビジョニングし、AWS Resource Access Manager (RAM) を通じて、その Resource Configuration を ClickHouse Cloud の管理アカウントと共有します。
+* ClickHouse の管理サービスとお使いの Kubernetes API サーバーとの間のトラフィックは、すべて AWS のプライベートネットワーク内にとどまります。
+* RAM 共有はお使いのアカウントから作成され、単一の BYOC クラスターに限定されます。これを削除すると、プライベートアクセス経路はただちに無効になります。
+* Kubernetes クラスター内で動作するエージェントにアクセスが依存しないため、クラスター内コンポーネントが利用できない場合でも、ClickHouse Support はトラブルシューティングのためのアクセスを維持できます。
+
+プライベート API エンドポイントの設定を依頼するには、**ClickHouse Support にお問い合わせください**。
 
 <div id="node-groups">
   ## ノードグループ

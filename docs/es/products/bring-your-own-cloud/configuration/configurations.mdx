@@ -64,13 +64,36 @@ Para obtener instrucciones de configuración paso a paso, consulte la [guía de 
   ## Conexión privada a la API de Kubernetes
 </div>
 
-De forma predeterminada, el endpoint del servidor de la API de Kubernetes de tu clúster BYOC es accesible desde la Internet pública, pero el acceso está restringido mediante filtrado de IP para permitir solo las IP del gateway NAT de ClickHouse. Para mayor seguridad, puedes restringir el servidor de la API de Kubernetes para que sea accesible exclusivamente a través de conexiones de red privadas mediante Tailscale.
+De forma predeterminada, el endpoint del servidor de la API de Kubernetes de tu clúster BYOC es accesible desde la Internet pública, pero el acceso está restringido mediante filtrado de IP para permitir solo las IP del gateway NAT de ClickHouse. Para mayor seguridad, puedes restringir el servidor de la API de Kubernetes para que sea accesible exclusivamente a través de conexiones de red privadas.
+
+Hay dos opciones de conexión privada disponibles:
+
+<div id="k8s-api-private-connection-tailscale">
+  ### Tailscale (predeterminado)
+</div>
+
+Cuando se habilita un endpoint privado de la API, el servicio de administración de ClickHouse se conecta al servidor de la API de Kubernetes a través de la misma red de confianza cero de Tailscale utilizada para el acceso de resolución de problemas. Consulta [Red privada de Tailscale](/es/products/bring-your-own-cloud/reference/network-security#tailscale-private-network) para obtener detalles sobre cómo funciona esta conexión.
 
 <Note>
   Si dependes únicamente de Tailscale para la conectividad privada, existe el riesgo de que el soporte de ClickHouse pierda el acceso a tu entorno si el agente de Tailscale deja de estar disponible. Esto podría retrasar la resolución de problemas o los tiempos de respuesta del soporte.
 </Note>
 
-**Contacta con el soporte de ClickHouse** para solicitar la configuración de un endpoint de API privado.
+<div id="k8s-api-private-connection-vpc-lattice">
+  ### AWS VPC Lattice
+</div>
+
+<Info>
+  La conectividad de VPC Lattice se encuentra actualmente en vista previa privada. Ponte en contacto con el soporte de ClickHouse para habilitarla en tu implementación.
+</Info>
+
+Para las implementaciones en AWS, también se puede acceder al servidor de la API de Kubernetes de forma privada a través de [AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/), sin intervención de componentes de terceros:
+
+* ClickHouse Cloud aprovisiona automáticamente un VPC Lattice Resource Gateway y una Resource Configuration dirigidos al endpoint del servidor de la API de EKS dentro de tu BYOC VPC, y comparte la Resource Configuration con la cuenta de administración de ClickHouse Cloud mediante AWS Resource Access Manager (RAM).
+* El tráfico entre el servicio de administración de ClickHouse y tu servidor de la API de Kubernetes permanece por completo en la red privada de AWS.
+* El recurso compartido de RAM se crea desde tu cuenta y se limita a un único clúster de BYOC; al eliminarlo, se revoca inmediatamente la ruta de acceso privada.
+* Dado que el acceso no depende de un agente que se ejecute dentro de tu clúster de Kubernetes, el soporte de ClickHouse mantiene el acceso para la resolución de problemas incluso si los componentes dentro del clúster no están disponibles.
+
+**Ponte en contacto con el soporte de ClickHouse** para solicitar la configuración de un endpoint privado de la API.
 
 <div id="node-groups">
   ## Grupos de nodos

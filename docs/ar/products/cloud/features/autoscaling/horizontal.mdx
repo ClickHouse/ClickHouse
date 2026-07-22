@@ -17,7 +17,7 @@ import ScalePlanFeatureBadge from "/snippets/ar/components/ScalePlanFeatureBadge
 
 <ScalePlanFeatureBadge feature="التوسيع الأفقي اليدوي" />
 
-يمكنك استخدام [واجهات برمجة التطبيقات العامة](/api-reference/organization/get-list-of-available-organizations#/paths/~1v1~1organizations~1:organizationId~1services~1:serviceId~1scaling/patch) في ClickHouse Cloud لتوسيع خدمتك من خلال تحديث إعدادات التوسيع الخاصة بالخدمة، أو تعديل عدد النسخ المتماثلة من Cloud Console.
+يمكنك استخدام [واجهات برمجة التطبيقات العامة](/ar/products/cloud/api-reference/service/instance-scaling-update) في ClickHouse Cloud لتوسيع خدمتك من خلال تحديث إعدادات التوسيع الخاصة بالخدمة، أو تعديل عدد النسخ المتماثلة من Cloud Console.
 
 كما تدعم الفئتَان **Scale** و**Enterprise** الخدمات ذات النسخة المتماثلة الواحدة. وبعد توسيع الخدمات أفقيًا، يمكن تقليصها مجددًا إلى حد أدنى يبلغ نسخة متماثلة واحدة. لاحظ أن الخدمات ذات النسخة المتماثلة الواحدة تكون أقل توافراً، ولا يُنصح باستخدامها في بيئات الإنتاج.
 
@@ -26,7 +26,7 @@ import ScalePlanFeatureBadge from "/snippets/ar/components/ScalePlanFeatureBadge
 </Note>
 
 <div id="horizontal-scaling-via-api">
-  ### التوسع الأفقي عبر API
+  ### التوسيع الأفقي عبر API
 </div>
 
 لتوسيع عنقود أفقيًا، أرسل طلب `PATCH` عبر API لتعديل عدد النسخ المتماثلة. تُظهر لقطات الشاشة أدناه استدعاءً إلى API لتوسيع عنقود من `3` نسخ متماثلة إلى `6` نسخ متماثلة، بالإضافة إلى الاستجابة المقابلة.

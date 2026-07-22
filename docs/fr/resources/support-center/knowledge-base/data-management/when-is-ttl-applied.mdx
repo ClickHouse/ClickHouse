@@ -10,7 +10,7 @@ keywords: ['TTL']
   ## Règles TTL et contrôle
 </div>
 
-Le TTL finira ***bien*** par être appliqué. Qu&#39;est-ce que cela signifie ? Le paramètre de table `MergeTree` [`merge_with_ttl_timeout`](/fr/reference/engines/table-engines/mergetree-family/mergetree#merge_with_ttl_timeout) définit le délai minimal, en secondes, avant de répéter une fusion avec TTL de suppression. La valeur par défaut est de 14400 secondes (4 heures). Mais ce n&#39;est que le délai minimal : le déclenchement d&#39;une fusion pour un TTL de suppression peut prendre plus de temps.
+Le TTL finira ***bien*** par être appliqué. Qu&#39;est-ce que cela signifie ? Le paramètre de table `MergeTree` [`merge_with_ttl_timeout`](/fr/reference/settings/merge-tree-settings#merge_with_ttl_timeout) définit le délai minimal, en secondes, avant de répéter une fusion avec TTL de suppression. La valeur par défaut est de 14400 secondes (4 heures). Mais ce n&#39;est que le délai minimal : le déclenchement d&#39;une fusion pour un TTL de suppression peut prendre plus de temps.
 
 Vous pouvez afficher tous vos paramètres TTL actuels (comme `merge_with_ttl_timeout`) avec cette requête :
 

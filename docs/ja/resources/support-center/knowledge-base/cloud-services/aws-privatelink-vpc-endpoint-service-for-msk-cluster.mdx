@@ -1,0 +1,204 @@
+---
+title: MSK クラスター用 AWS PrivateLink VPC エンドポイントサービス
+description: AWS PrivateLink VPC エンドポイントサービスを介して MSK クラスターを ClickPipes から利用できるようにするための Setup 手順。
+date: 2026-07-09
+tags: ['セキュリティと認証', 'Cloud の管理']
+keywords: ['AWS PrivateLink', 'VPC エンドポイントサービス', 'MSK', 'Kafka', 'ClickPipes']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="overview">
+  ## 概要
+</div>
+
+このガイドでは、[AWS PrivateLink VPC endpoint services](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html) を使って、Amazon MSK クラスターを ClickPipes から利用できるように公開する方法を説明します。
+
+この方法は、[MSK multi-VPC connectivity](/ja/integrations/clickpipes/aws-privatelink#msk-multi-vpc) が利用できない場合や、それだけでは不十分な場合に使用します。たとえば、次のようなケースです。
+
+* ClickPipes から MSK へのクロスリージョン接続。
+* MSK Express クラスター。
+* プライベート接続でもブローカーのホスト名を維持する必要がある Kafka 構成。
+
+同一リージョンの標準的な MSK クラスターでは、通常は MSK multi-VPC connectivity のほうがシンプルで、推奨される選択肢です。
+
+同じ PrivateLink パターンは、AWS を介して公開されるセルフマネージドまたはオンプレミスの Kafka クラスターにも使用できますが、この記事の例では MSK を使用します。
+
+<div id="how-the-setup-works">
+  ## セットアップの仕組み
+</div>
+
+Kafkaクライアントはまずブートストラップブローカーに接続してクラスターのメタデータを取得し、その後、そのメタデータで通知されたブローカーのホスト名に直接接続します。
+
+そのため、すべてのブローカーの前段に単一のロードバランサーを配置するだけでは、信頼性の高い MSK PrivateLink のセットアップとしては不十分です。代わりに、ブローカーごとに 1 つの PrivateLink パスを作成してください:
+
+```text
+MSK broker hostname
+  -> ClickPipes reverse private endpoint with custom private DNS
+  -> VPC endpoint service
+  -> Network Load Balancer
+  -> MSK broker private IP
+```
+
+各ブローカーには、それぞれ次のものが必要です:
+
+* 内部向け Network Load Balancer (NLB) 。
+* ブローカーのプライベート IP を対象とする IP ターゲットグループ。
+* その NLB をバックエンドとする VPC エンドポイントサービス。
+* ClickPipes のリバースプライベートエンドポイント (RPE) 。
+* そのブローカーのホスト名に一致するカスタム private DNS 名。
+
+NLB では TCP パススルーを使用する必要があります。これにより、Kafka クライアントは TLS の SNI と証明書の検証で、元の MSK ブローカーのホスト名を引き続き使用できます。
+
+<div id="requirements">
+  ## 要件
+</div>
+
+* プライベートサブネット内の MSK クラスター。
+* MSK クラスターの broker のホスト名とプライベート IP アドレス。
+* MSK VPC で NLB、ターゲットグループ、listener、VPC エンドポイントサービスを作成するための権限。
+* 各 VPC エンドポイントサービスで許可される ClickPipes の AWS account principal: `arn:aws:iam::072088201116:root`。
+* ClickHouse Cloud service で custom private DNS 機能が有効になっていること。リバースプライベートエンドポイントの作成時に `Custom private DNS name` フィールドが表示されない場合は、ClickHouse Support に連絡してください。
+
+<div id="get-broker-hostnames-and-private-ips">
+  ## ブローカーのホスト名とプライベート IP を取得する
+</div>
+
+AWS CLI を使用して、MSK ブローカーノードを一覧表示します:
+
+```bash
+aws kafka list-nodes \
+    --cluster-arn <MSK_CLUSTER_ARN> \
+    --query 'NodeInfoList[].BrokerNodeInfo.{BrokerId:BrokerId,Host:Endpoints[0],PrivateIp:ClientVpcIpAddress}' \
+    --output table
+```
+
+各 broker の hostname、プライベート IP アドレス、Kafka ポートをそれぞれ記録します。MSK IAM 認証の場合、ポートは通常 `9098` です。
+
+ClickPipe は、これらの broker hostname を Kafka broker として使用します。この UI ベースのセットアップでは、MSK の bootstrap broker string は使用しないでください。
+
+<div id="create-one-endpoint-service-per-broker">
+  ## broker ごとに endpoint service を 1 つずつ作成する
+</div>
+
+MSK の各 broker に対して、以下の手順を繰り返します。
+
+<div id="create-an-internal-nlb">
+  ### 内部 NLB を作成する
+</div>
+
+MSK VPC 内に内部向けの Network Load Balancer を作成します。NLB はプライベートサブネットを使用し、インターネット向けにしてはいけません。
+
+NLB にセキュリティグループがアタッチされている場合は、`Enforce Security Group Inbound Rules on Private Link Traffic` を無効にします。これは、ClickPipes の VPC エンドポイントからのトラフィックが NLB に到達できるようにするために必要です。
+
+<div id="create-an-ip-target-group">
+  ### IPターゲットグループを作成する
+</div>
+
+次の設定でターゲットグループを作成します。
+
+* ターゲットタイプ: `IP`。
+* プロトコル: `TCP`。
+* ポート: broker の Kafka ポート。たとえば、MSK IAM の場合は `9098`。
+* ターゲット: 1 つの broker のプライベート IP アドレスを指定します。
+
+トラフィックポートに対して TCP ヘルスチェックを使用します。
+
+<div id="create-a-tcp-listener">
+  ### TCP リスナーを作成する
+</div>
+
+ブローカーの Kafka ポートに NLB リスナーを作成し、トラフィックをブローカー固有のターゲットグループに転送します。
+
+<div id="create-the-vpc-endpoint-service">
+  ### VPC エンドポイントサービスを作成する
+</div>
+
+ブローカー固有の NLB をバックエンドとする VPC エンドポイントサービスを作成します。
+
+許可対象の principal に ClickPipes の AWS principal を追加します：
+
+```text
+arn:aws:iam::072088201116:root
+```
+
+MSK クラスターと ClickPipes が異なる AWS リージョンにある場合は、エンドポイントサービスのサポート対象リージョンに ClickPipes のリージョンを追加して、[クロスリージョンアクセス](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html#endpoint-service-cross-region)を有効にします。
+
+エンドポイントサービス名を控えておきます。以下のような形式です。
+
+```text
+com.amazonaws.vpce.<region>.vpce-svc-0123456789abcdef0
+```
+
+<div id="create-clickpipes-reverse-private-endpoints">
+  ## ClickPipes のリバースプライベートエンドポイントを作成する
+</div>
+
+ClickHouse Cloud console で、各ブローカーの VPC エンドポイントサービスごとに 1 つのリバースプライベートエンドポイントを作成します。
+
+1. 対象の ClickHouse Cloud サービスに移動します。
+2. ClickPipe の作成を開始します。
+3. `Reverse private endpoint` を選択します。
+4. VPC エンドポイントのタイプとして `VPC endpoint service` を選択します。
+5. ブローカー固有の VPC エンドポイントサービス名を入力します。
+6. `Custom private DNS name` に、そのブローカーの元の MSK ブローカー hostname を入力します。
+7. エンドポイントを作成します。
+8. エンドポイントが承認待ちの場合は、AWS の VPC エンドポイントサービス console でエンドポイントの接続リクエストを承認します。
+
+すべてのブローカー hostname に対応する RPE が作成されるまで、この手順を繰り返します。
+
+カスタム private DNS の動作、命名規則、API/Terraform のオプションについては、以下を参照してください。
+[Custom private DNS](/ja/integrations/clickpipes/aws-privatelink#custom-private-dns)。
+
+リバースプライベートエンドポイントは、[OpenAPI](/ja/products/cloud/api-reference/clickpipes/create-reverse-private-endpoint) または Terraform を使って作成することもできます。
+
+OpenAPI では、各ブローカーに対して 1 つのリバースプライベートエンドポイントを作成し、`type` を `VPC_ENDPOINT_SERVICE` に設定したうえで、ブローカー固有の VPC エンドポイントサービス名と、そのブローカー hostname 用のカスタム private DNS マッピングを 1 つ指定します。
+
+```json
+{
+  "description": "MSK broker 1",
+  "type": "VPC_ENDPOINT_SERVICE",
+  "vpcEndpointServiceName": "com.amazonaws.vpce.eu-central-1.vpce-svc-0123456789abcdef0",
+  "customPrivateDnsMappings": [
+    {
+      "privateDnsName": "b-1.example-cluster.abcde.c2.kafka.eu-central-1.amazonaws.com"
+    }
+  ]
+}
+```
+
+Terraform を使用する場合は、エンドポイントの作成に [`clickhouse_clickpipes_reverse_private_endpoint`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint) を使用し、ブローカーのホスト名マッピングの構成に [`clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint_custom_private_dns) を使用します。
+
+<div id="create-the-kafka-clickpipe">
+  ## Kafka ClickPipe を作成する
+</div>
+
+リバース プライベート エンドポイントを使用して ClickPipe を作成するには、[ClickPipes AWS PrivateLink ガイド](/ja/integrations/clickpipes/aws-privatelink#creating-clickpipe)
+に従ってください。
+
+Kafka ClickPipe を作成する際は、次の点に注意してください。
+
+* ブローカー一覧には、元の MSK ブローカーのホスト名を使用し、MSK リスナーと認証方式に対応するポートも含めてください。
+* MSK の bootstrap broker string は使用しないでください。
+* ブローカーごとのリバース プライベート エンドポイントをすべて選択またはアタッチしてください。
+* IAM ロール認証など、MSK クラスターで必要な認証方式を設定してください。
+
+ポートは MSK リスナーによって異なります。たとえば、IAM 認証では一般に `9098`、SASL/SCRAM では一般に `9096`、TLS では一般に `9094` を使用します。正しいポートは、MSK クラスターの設定または bootstrap broker output で確認してください。
+
+ブローカー一覧の例:
+
+```text
+b-1.example-cluster.abcde.c2.kafka.eu-central-1.amazonaws.com:9098,b-2.example-cluster.abcde.c2.kafka.eu-central-1.amazonaws.com:9098,b-3.example-cluster.abcde.c2.kafka.eu-central-1.amazonaws.com:9098
+```
+
+ブローカー一覧内の各ホスト名は、いずれかのRPEに設定された`Custom private DNS name`と一致している必要があります。
+
+<div id="terraform-automation">
+  ## Terraform の自動化
+</div>
+
+[aws-msk-vpc-endpoint-service Terraform module](https://github.com/ClickHouse/clickpipes-terraform-modules/tree/main/modules/aws-msk-vpc-endpoint-service) では、このセットアップを自動化する方法を紹介しています。このモジュールは、broker ごとの NLB、ターゲットグループ、VPC エンドポイントサービス、ClickPipes RPE、カスタム private DNS マッピングを作成します。
+
+この Terraform module では、bootstrap と broker の hostname の両方を含め、RPE ごとに複数のカスタム private DNS マッピングを管理できます。この記事では、手動で ClickPipes UI を使うワークフローに焦点を当てており、各 RPE はカスタム private DNS 名として 1 つの broker hostname を使用します。

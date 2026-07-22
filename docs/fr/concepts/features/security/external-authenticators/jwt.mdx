@@ -107,13 +107,15 @@ Les utilisateurs JWT se distinguent des utilisateurs ClickHouse classiques à pl
 
 Chaque utilisateur JWT se voit attribuer un UUID déterministe calculé à partir des claims `iss`, `sub` et `aud`. Cet UUID est **stable** d’une connexion à l’autre. Un utilisateur qui se connecte plusieurs fois avec des jetons différents (mais avec le même émetteur, le même sujet et la même audience) obtient toujours le même UUID.
 
-Le username, en revanche, est **volatile**. Il est construit comme suit :
+Le nom d’utilisateur, en revanche, est **volatile**. Il est construit comme suit :
 
 ```text
-JWT::<issuer>::<audience>::<subject>::<claims_hash>
+JWT::<subject>::<claims_hash>
 ```
 
-La partie `<claims_hash>` change chaque fois que les claims `clickhouse:roles` ou `clickhouse:grants` changent. Cela signifie que des tokens avec des ensembles de rôles ou de grants différents produisent des noms d&#39;utilisateur différents, même pour la même identité.
+Le `<claims_hash>` est un hash dérivé des claims `iss`, `sub` et `aud`, ainsi que des claims `clickhouse:roles` et `clickhouse:grants`. Les claims `iss` et `aud` n’interviennent **que** via ce hash ; ils ne sont plus intégrés directement dans le préfixe visible du nom d’utilisateur. Cela permet de conserver un nom compact et lisible lorsque `iss`/`aud` sont de longues URL opaques d’IdP (par exemple, Microsoft Entra ou Okta), tout en garantissant que des tuples `(iss, sub, aud)` distincts et des ensembles `clickhouse:roles` / `clickhouse:grants` distincts correspondent à des noms distincts et stables. Les claims qui n’entrent pas dans le calcul du hash (par exemple `iat`, `exp`, `nbf` ou des claims personnalisés sans rapport) ne modifient pas le nom d’utilisateur.
+
+La partie `<claims_hash>` change chaque fois que les claims `clickhouse:roles` ou `clickhouse:grants` changent. Cela signifie que des jetons avec des ensembles de rôles ou de grants différents produisent des noms d&#39;utilisateur différents, même pour la même identité.
 
 <div id="access-rights">
   ### Droits d’accès
@@ -150,7 +152,7 @@ Comme l’UUID est stable, vous pouvez attribuer des profils de paramètres, des
 Identifiez l’utilisateur par son nom d’utilisateur actuel :
 
 ```sql
-ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::ClickHouse::my-service-id::jane.doe::<claims-hash>';
+ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::jane.doe::<claims_hash>';
 ```
 
 <Note>

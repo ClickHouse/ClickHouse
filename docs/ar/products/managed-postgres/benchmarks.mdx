@@ -84,7 +84,7 @@ pgbench -c 256 -j 16 -T 600 -M prepared -P 30
 
 * **زيادة بنسبة 802% في TPS** (أسرع بمقدار 9.0x)
 
-**التحليل**: تتسع فجوة الأداء بشكل كبير في أعباء العمل كثيفة القراءة والمقيّدة بعمليات الإدخال/الإخراج. **حقق Postgres managed by ClickHouse ‏84.8K TPS**، بينما لم يحقق RDS مع 16,000 IOPS مخصصة سوى ‏9.4K TPS رغم امتلاكه موارد حوسبة مماثلة. ويكمن الفرق الأساسي في أن **تخزين NVMe** لدى ClickHouse يتوسع مع زيادة التزامن، بينما يظل **التخزين المتصل بالشبكة** مقيّدًا بحدود IOPS المخصصة. وحتى مع IOPS المخصصة، ظل RDS أبطأ بتسع مرات من ClickHouse، ما يبرز الأهمية الحاسمة لبنية التخزين في أعباء العمل كثيفة الإدخال/الإخراج.
+**التحليل**: تتسع فجوة الأداء بشكل كبير في أعباء العمل كثيفة القراءة والمقيّدة بعمليات الإدخال/الإخراج. **حقق Postgres managed by ClickHouse ‏84.8K TPS**، بينما لم يحقق RDS مع 16,000 IOPS مخصصة سوى ‏9.4K TPS رغم امتلاكه موارد حوسبة مماثلة. ويكمن الفرق الأساسي في أن **تخزين NVMe** لدى ClickHouse يتوسع مع زيادة التزامن، بينما يظل **التخزين المتصل بالشبكة** مقيّدًا بحدود IOPS المخصصة. وحتى مع IOPS المخصصة، ظل RDS أبطأ بتسع مرات من ClickHouse، مما يبرز الأهمية الحاسمة لمعمارية التخزين في أعباء العمل كثيفة الإدخال/الإخراج.
 
 <div id="test1-setup">
   #### الإعداد
@@ -219,4 +219,4 @@ pgbench -c 32 -j 16 -T 300 -S -M prepared -P 30
 * [PeerDB: مقارنة خدمات Postgres المُدارة](https://blog.peerdb.io/comparing-postgres-managed-services-aws-azure-gcp-and-supabase)
 * [وثائق pgbench](https://www.postgresql.org/docs/current/pgbench.html)
 * [نظرة عامة على Managed Postgres](/ar/products/managed-postgres/overview)
-* [تحجيم مثيل Postgres الخاص بك](/ar/products/managed-postgres/scaling)
+* [توسيع نطاق مثيل Postgres لديك](/ar/products/managed-postgres/scaling)

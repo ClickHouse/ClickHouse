@@ -41,9 +41,7 @@ GRANT SELECT ON system.* TO holistics_user;
 ```
 
 <Steps>
-  <Step>
-    ## Rassembler les détails de connexion
-
+  <Step title="Rassembler les détails de connexion" id="step-1-gather-connection-details">
     Pour vous connecter à ClickHouse via HTTP(S), vous aurez besoin des informations suivantes :
 
     | **Paramètre**     | **Description**                                                                                                         |
@@ -59,9 +57,7 @@ GRANT SELECT ON system.* TO holistics_user;
     <Image size="md" img="/images/integrations/data-visualization/holistics_01.webp" alt="Emplacement du bouton Connect dans la console ClickHouse Cloud" border />
   </Step>
 
-  <Step>
-    ## Configurer l’accès réseau
-
+  <Step title="Configurer l’accès réseau" id="step-2-configure-network-access">
     Comme Holistics est une application cloud, ses serveurs doivent pouvoir accéder à votre base de données. Vous avez deux options :
 
     1. **Connexion directe (recommandée) :** autorisez les adresses IP de Holistics dans votre firewall ou dans l’IP Access List de ClickHouse Cloud. Vous trouverez la liste des IP dans le [guide IP Whitelisting](https://docs.holistics.io/docs/connect/ip-whitelisting).
@@ -71,14 +67,12 @@ GRANT SELECT ON system.* TO holistics_user;
     2. **Tunnel SSH inversé :** si votre base de données se trouve dans un private network (VPC) et ne peut pas être exposée publiquement, utilisez un [Reverse SSH Tunnel](https://docs.holistics.io/docs/connect/connect-tunnel).
   </Step>
 
-  <Step>
-    ## Ajouter une source de données dans Holistics
-
+  <Step title="Ajouter une source de données dans Holistics" id="step-3-add-data-source-in-holistics">
     1. Dans Holistics, accédez à **Settings → sources de données**.
 
        <Image size="md" img="/images/integrations/data-visualization/holistics_03.webp" alt="Accès à sources de données dans les paramètres de Holistics" border />
 
-    2. Cliquez sur **New Data Source** et sélectionnez **ClickHouse**.
+    2. Cliquez sur **New source de données** et sélectionnez **ClickHouse**.
 
        <Image size="md" img="/images/integrations/data-visualization/holistics_04.webp" alt="Sélection de ClickHouse dans la liste des nouvelles sources de données" border />
 

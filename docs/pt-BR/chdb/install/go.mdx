@@ -1,0 +1,269 @@
+---
+title: 'chDB para Go'
+sidebarTitle: 'Go'
+slug: /chdb/install/go
+description: 'Como instalar e usar chDB com Go'
+keywords: ['chdb', 'go', 'golang', 'embutido', 'clickhouse', 'sql', 'olap']
+doc_type: 'guide'
+---
+
+O chDB-go fornece bindings para Go do chDB, permitindo executar consultas do ClickHouse diretamente nas suas aplicações Go, sem dependências externas.
+
+<div id="installation">
+  ## Instalação
+</div>
+
+<Steps>
+  <Step title="Instalar o libchdb" id="install-libchdb">
+    Primeiro, instale a biblioteca chDB:
+
+    ```bash
+    curl -sL https://lib.chdb.io | bash
+    ```
+  </Step>
+
+  <Step title="Instalar o chdb-go" id="install-chdb-go">
+    Instale o pacote Go:
+
+    ```bash
+    go install github.com/chdb-io/chdb-go@latest
+    ```
+
+    Ou adicione-o ao arquivo `go.mod`:
+
+    ```bash
+    go get github.com/chdb-io/chdb-go
+    ```
+  </Step>
+</Steps>
+
+<div id="usage">
+  ## Uso
+</div>
+
+<div id="cli">
+  ### Interface de linha de comando
+</div>
+
+chDB-go inclui uma CLI para consultas rápidas:
+
+```bash
+# Simple query
+./chdb-go "SELECT 123"
+
+# Interactive mode
+./chdb-go
+
+# Interactive mode with persistent storage
+./chdb-go --path /tmp/chdb
+```
+
+<div id="quick-start">
+  ### Biblioteca Go - início rápido
+</div>
+
+<div id="stateless-queries">
+  #### Consultas sem estado
+</div>
+
+Para consultas simples e pontuais:
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/chdb-io/chdb-go/chdb"
+)
+
+func main() {
+    // Execute a simple query
+    result, err := chdb.Query("SELECT version()", "CSV")
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println(result)
+}
+```
+
+<div id="stateful-queries">
+  #### Consultas com estado via sessão
+</div>
+
+Para consultas complexas com estado persistente:
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/chdb-io/chdb-go/chdb"
+)
+
+func main() {
+    // Create a session with persistent storage
+    session, err := chdb.NewSession("/tmp/chdb-data")
+    if err != nil {
+        panic(err)
+    }
+    defer session.Cleanup()
+
+    // Create database and table
+    _, err = session.Query(`
+        CREATE DATABASE IF NOT EXISTS testdb;
+        CREATE TABLE IF NOT EXISTS testdb.test_table (
+            id UInt32,
+            name String
+        ) ENGINE = MergeTree() ORDER BY id
+    `, "")
+    
+    if err != nil {
+        panic(err)
+    }
+
+    // Insert data
+    _, err = session.Query(`
+        INSERT INTO testdb.test_table VALUES 
+        (1, 'Alice'), (2, 'Bob'), (3, 'Charlie')
+    `, "")
+    
+    if err != nil {
+        panic(err)
+    }
+
+    // Query data
+    result, err := session.Query("SELECT * FROM testdb.test_table ORDER BY id", "Pretty")
+    if err != nil {
+        panic(err)
+    }
+    
+    fmt.Println(result)
+}
+```
+
+<div id="sql-driver">
+  #### Interface de driver SQL
+</div>
+
+O chDB-go implementa a interface `database/sql` do Go:
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    _ "github.com/chdb-io/chdb-go/chdb/driver"
+)
+
+func main() {
+    // Open database connection
+    db, err := sql.Open("chdb", "")
+    if err != nil {
+        panic(err)
+    }
+    defer db.Close()
+
+    // Query with standard database/sql interface
+    rows, err := db.Query("SELECT COUNT(*) FROM url('https://datasets.clickhouse.com/hits/hits.parquet')")
+    if err != nil {
+        panic(err)
+    }
+    defer rows.Close()
+
+    for rows.Next() {
+        var count int
+        err := rows.Scan(&count)
+        if err != nil {
+            panic(err)
+        }
+        fmt.Printf("Count: %d\n", count)
+    }
+}
+```
+
+<div id="query-streaming">
+  #### Consultas em streaming para grandes conjuntos de dados
+</div>
+
+Para processar grandes conjuntos de dados que não cabem na memória, use consultas em streaming:
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+    "github.com/chdb-io/chdb-go/chdb"
+)
+
+func main() {
+    // Create a session for streaming queries
+    session, err := chdb.NewSession("/tmp/chdb-stream")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer session.Cleanup()
+
+    // Execute a streaming query for large dataset
+    streamResult, err := session.QueryStreaming(
+        "SELECT number, number * 2 as double FROM system.numbers LIMIT 1000000", 
+        "CSV",
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer streamResult.Free()
+
+    rowCount := 0
+    
+    // Process data in chunks
+    for {
+        chunk := streamResult.GetNext()
+        if chunk == nil {
+            // No more data
+            break
+        }
+        
+        // Check for streaming errors
+        if err := streamResult.Error(); err != nil {
+            log.Printf("Streaming error: %v", err)
+            break
+        }
+        
+        rowsRead := chunk.RowsRead()
+        // You can process the chunk data here
+        // For example, write to file, send over network, etc.
+        fmt.Printf("Processed chunk with %d rows\n", rowsRead)
+        rowCount += int(rowsRead)
+        if rowCount%100000 == 0 {
+            fmt.Printf("Processed %d rows so far...\n", rowCount)
+        }
+    }
+    
+    fmt.Printf("Total rows processed: %d\n", rowCount)
+}
+```
+
+**Benefícios do streaming de consultas:**
+
+* **Uso eficiente de memória** - Processe grandes conjuntos de dados sem carregar tudo na memória
+* **Processamento em tempo real** - Comece a processar os dados assim que o primeiro fragmento chegar
+* **Suporte a cancelamento** - É possível cancelar consultas de longa duração com `Cancel()`
+* **Tratamento de erros** - Verifique se há erros durante o streaming com `Error()`
+
+<div id="api-documentation">
+  ## Documentação da API
+</div>
+
+chDB-go fornece APIs de alto e baixo nível:
+
+* **[Documentação da API de Alto Nível](https://github.com/chdb-io/chdb-go/blob/main/chdb.md)** - Recomendada para a maioria dos casos de uso
+* **[Documentação da API de Baixo Nível](https://github.com/chdb-io/chdb-go/blob/main/lowApi.md)** - Para casos de uso avançados que exigem controle mais detalhado
+
+<div id="requirements">
+  ## Requisitos do sistema
+</div>
+
+* Go 1.21 ou superior
+* Compatível com Linux, macOS

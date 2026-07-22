@@ -43,9 +43,7 @@ import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintaine
 * **macOS/Linux** - يعمل Windows عبر WSL2
 
 <Steps>
-  <Step>
-    ### تثبيت Moose
-
+  <Step title="تثبيت Moose" id="step-1-install-moose">
     ثبّت Moose CLI على مستوى النظام:
 
     ```bash
@@ -53,9 +51,7 @@ import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintaine
     ```
   </Step>
 
-  <Step>
-    ### إعداد مشروعك
-
+  <Step title="إعداد مشروعك" id="step-2-set-up-project">
     #### الخيار A: استخدم عملية نشر ClickHouse الحالية لديك
 
     **مهم**: سيظل ClickHouse الإنتاجي لديك دون أي تغيير. سيؤدي هذا فقط إلى تهيئة مشروع Moose OLAP جديد مع نماذج بيانات مشتقة من جداول ClickHouse لديك.
@@ -87,9 +83,7 @@ import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintaine
     ```
   </Step>
 
-  <Step>
-    ### تثبيت التبعيات
-
+  <Step title="تثبيت التبعيات" id="step-3-install-dependencies">
     ```bash
     # TypeScript
     cd my-project
@@ -105,17 +99,13 @@ import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintaine
     يجب أن ترى: `Successfully generated X models from ClickHouse tables`
   </Step>
 
-  <Step>
-    ### استعرض النماذج التي تم إنشاؤها
-
+  <Step title="استعرض النماذج التي تم إنشاؤها" id="step-4-explore-models">
     يُنشئ Moose CLI تلقائيًا واجهات TypeScript أو نماذج Python Pydantic من جداول ClickHouse الحالية لديك.
 
     ألقِ نظرة على نماذج البيانات الجديدة في الملف `app/index.ts`.
   </Step>
 
-  <Step>
-    ### ابدأ التطوير
-
+  <Step title="ابدأ التطوير" id="step-5-start-development">
     شغّل خادم التطوير لتشغيل مثيل ClickHouse محلي، مع إعادة إنشاء جميع جداول الإنتاج تلقائيًا من تعريفات الشيفرة لديك:
 
     ```bash
@@ -125,9 +115,7 @@ import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintaine
     **مهم**: سيظل ClickHouse الإنتاجي لديك دون أي تغيير. يؤدي هذا إلى إنشاء بيئة تطوير محلية.
   </Step>
 
-  <Step>
-    ### املأ قاعدة بياناتك المحلية ببيانات أولية
-
+  <Step title="املأ قاعدة بياناتك المحلية ببيانات أولية" id="step-6-seed-database">
     حمّل بياناتك إلى مثيل ClickHouse المحلي لديك:
 
     #### من ClickHouse الخاص بك
@@ -143,9 +131,7 @@ import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintaine
     ```
   </Step>
 
-  <Step>
-    ### البناء باستخدام Moose OLAP
-
+  <Step title="البناء باستخدام Moose OLAP" id="step-7-building-with-moose-olap">
     الآن بعد أن أصبحت جداولك معرّفة في الشيفرة، ستحصل على المزايا نفسها التي توفرها نماذج بيانات ORM في تطبيقات الويب — أمان الأنواع والإكمال التلقائي عند بناء واجهات برمجة التطبيقات والعروض المادية فوق بياناتك التحليلية. وكخطوة تالية، يمكنك تجربة:
 
     * بناء واجهة برمجة تطبيقات REST باستخدام [Moose API](https://docs.fiveonefour.com/moosestack/apis)

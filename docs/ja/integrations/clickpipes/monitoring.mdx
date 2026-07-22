@@ -26,7 +26,7 @@ ClickPipes のメトリクスでは、[標準のサービスレベルラベル](
   ### レスポンス例
 </div>
 
-以下は、Prometheus のスクレイプレスポンスにおける ClickPipes のメトリクスの例です。
+以下は、Kafka ClickPipe の Prometheus のスクレイプレスポンスにおける ClickPipes のメトリクスの例です。公開されるメトリクスはパイプタイプによって異なります。どのメトリクスがどのパイプタイプに適用されるかについては、[利用可能なメトリクス](#available-metrics)を参照してください。
 
 ```response
 # HELP ClickPipes_Info 常に1に等しい。ラベル "clickpipe_state" にはパイプの現在の状態が含まれる: Stopped/Provisioning/Running/Paused/Failed
@@ -62,66 +62,83 @@ ClickPipes_Latency{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickho
   ## 利用可能なメトリクス
 </div>
 
+すべてのパイプタイプで、すべてのメトリクスが出力されるわけではありません。特に、CDC ClickPipes で公開されるメトリクスのサブセットは、ストリーミング、オブジェクトストレージ ClickPipes とは異なります。
+
+* **ストリーミング、オブジェクトストレージ** — Kafka, Kinesis, Pub/Sub, S3, and GCS
+* **CDC** — Postgres, MySQL, MongoDB and BigQuery
+* **All** — すべてのパイプタイプ
+
 <div id="metrics-data-transfer">
   ### データ転送
 </div>
 
-| メトリクス                                     | Type  | Description                                                              |
-| ------------------------------------------ | ----- | ------------------------------------------------------------------------ |
-| `ClickPipes_FetchedBytes_Total`            | カウンター | ソースから取得した非圧縮バイト数の合計。                                                     |
-| `ClickPipes_FetchedBytesCompressed_Total`  | カウンター | ソースから取得した圧縮バイト数の合計。ソースデータが非圧縮の場合は、`ClickPipes_FetchedBytes_Total` と同じです。 |
-| `ClickPipes_FetchedBytesInitialLoad_Total` | カウンター | **CDC ClickPipes** 初期ロードフェーズ中に取得した非圧縮バイト数の合計。                            |
-| `ClickPipes_FetchedBytesResync_Total`      | カウンター | **CDC ClickPipes** 再同期処理中に取得した非圧縮バイト数の合計。                                |
-| `ClickPipes_SentBytes_Total`               | カウンター | ClickHouse に送信した非圧縮バイト数の合計。                                              |
-| `ClickPipes_SentBytesCompressed_Total`     | カウンター | ClickHouse に送信した圧縮バイト数の合計。                                               |
+| メトリクス                                      | 種類    | 利用可能対象              | 説明                                                                                                                                                                                                 |
+| ------------------------------------------ | ----- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ClickPipes_FetchedBytes_Total`            | カウンター | ストリーミング、オブジェクトストレージ | ソースから取得した非圧縮バイト数の合計。                                                                                                                                                                               |
+| `ClickPipes_FetchedBytesCompressed_Total`  | カウンター | すべて                 | ソースから取得したバイト数の合計です。通信上で読み取られた時点のバイト数を表します。ソースデータが非圧縮の場合は、`ClickPipes_FetchedBytes_Total` と同じです。CDC ClickPipes では、初期ロード中に取得したバイト数は含まれず、それらは `ClickPipes_FetchedBytesInitialLoad_Total` として別途出力されます。 |
+| `ClickPipes_FetchedBytesInitialLoad_Total` | カウンター | CDC                 | 初期ロードフェーズ中に取得したバイト数の合計です。再同期も含まれます。                                                                                                                                                                |
+| `ClickPipes_SentBytes_Total`               | カウンター | ストリーミング、オブジェクトストレージ | ClickHouse に送信した非圧縮バイト数の合計。                                                                                                                                                                        |
+| `ClickPipes_SentBytesCompressed_Total`     | カウンター | ストリーミング、オブジェクトストレージ | ClickHouse に送信した圧縮バイト数の合計。                                                                                                                                                                         |
 
 <div id="metrics-events">
   ### イベントとレコード
 </div>
 
-| メトリクス                               | タイプ   | 説明                                                                                                |
-| ----------------------------------- | ----- | ------------------------------------------------------------------------------------------------- |
-| `ClickPipes_FetchedEvents_Total`    | カウンター | ソースから取得したレコードの総数。                                                                                 |
-| `ClickPipes_SentEvents_Total`       | カウンター | ClickHouse に送信されたレコードの総数。                                                                         |
-| `ClickPipes_FetchedEvents_PerTable` | Gauge | **CDC ClickPipes** 宛先テーブルおよびイベントタイプごとに取得したレコード数。追加の `destination_table` と `event_type` ラベルを使用します。 |
+| メトリクス                               | タイプ   | 利用可能対象                    | 説明                                                                             |
+| ----------------------------------- | ----- | ------------------------- | ------------------------------------------------------------------------------ |
+| `ClickPipes_FetchedEvents_Total`    | カウンター | ストリーミング、オブジェクトストレージ | ソースから取得したレコードの総数。                                                              |
+| `ClickPipes_SentEvents_Total`       | カウンター | ストリーミング、オブジェクトストレージ | ClickHouse に送信されたレコードの総数。                                                      |
+| `ClickPipes_FetchedEvents_PerTable` | Gauge | CDC                       | 宛先テーブルおよびイベントタイプごとに取得したレコード数。追加の `destination_table` と `event_type` ラベルを使用します。 |
 
 <div id="metrics-errors">
   ### エラー
 </div>
 
-| メトリクス                     | 型     | 説明                                                                   |
-| ------------------------- | ----- | -------------------------------------------------------------------- |
-| `ClickPipes_Errors_Total` | カウンター | インジェスト中に発生した[エラー](/ja/integrations/clickpipes/home#error-reporting)の総数。 |
+| メトリクス                     | 型     | 利用対象 | 説明                                                                   |
+| ------------------------- | ----- | ---- | -------------------------------------------------------------------- |
+| `ClickPipes_Errors_Total` | カウンター | すべて  | インジェスト中に発生した[エラー](/ja/integrations/clickpipes/home#error-reporting)の総数。 |
 
 <div id="metrics-latency">
   ### レイテンシ
 </div>
 
-| メトリクス                                     | 型             | 説明                                                                                            |
-| ----------------------------------------- | ------------- | --------------------------------------------------------------------------------------------- |
-| `ClickPipes_Latency`                      | Gauge (*avg*) | レコードがソースで生成されてから ClickHouse に書き込まれるまでの時間 (ミリ秒) 。                                              |
-| `ClickPipes_SourceReplicationLatency_MiB` | Gauge (*avg*) | **CDC ClickPipes** におけるソース側のレプリケーションラグ (MiB) 。Postgres ClickPipes では、これはレプリケーションスロットのラグを表します。 |
+| メトリクス                                     | 型             | 利用可能対象              | 説明                                                         |
+| ----------------------------------------- | ------------- | ------------------- | ---------------------------------------------------------- |
+| `ClickPipes_Latency`                      | Gauge (*avg*) | ストリーミング、オブジェクトストレージ | レコードがソースで生成されてから ClickHouse に書き込まれるまでの時間 (ミリ秒) 。           |
+| `ClickPipes_SourceReplicationLatency_MiB` | Gauge (*avg*) | CDC (Postgres のみ)   | ソース側のレプリケーションスロットのラグ (MiB) 。Postgres ClickPipes でのみ出力されます。 |
 
 <div id="metrics-resources">
-  ### リソース使用量
+  ### リソース使用状況
 </div>
 
-| メトリクス                            | 型              | 説明                                  |
-| -------------------------------- | -------------- | ----------------------------------- |
-| `ClickPipes_Replica_CPUUsage`    | Gauge (*avg*)  | インジェスト用レプリカの平均 CPU 使用量 (ミリコア単位) 。   |
-| `ClickPipes_Replica_CPULimit`    | Gauge (*last*) | インジェスト用レプリカに設定された CPU 制限 (ミリコア単位) 。 |
-| `ClickPipes_Replica_MemoryUsage` | Gauge (*avg*)  | インジェスト用レプリカの平均メモリ使用量 (バイト単位) 。      |
-| `ClickPipes_Replica_MemoryLimit` | Gauge (*last*) | インジェスト用レプリカに設定されたメモリ制限 (バイト単位) 。    |
+`ClickPipes_Replica_*` メトリクスは、ストリーミングおよびオブジェクトストレージ向け ClickPipes のリソース使用状況を示します。各 ClickPipe には**専用のコンピュート**が割り当てられているため、これらの値は個々の ClickPipes の使用状況を反映します。
+
+| Metric                           | Type           | Available for             | Description                        |
+| -------------------------------- | -------------- | ------------------------- | ---------------------------------- |
+| `ClickPipes_Replica_CPUUsage`    | Gauge (*avg*)  | ストリーミング、オブジェクトストレージ | インジェスト用レプリカの平均 CPU 使用量 (ミリコア単位) 。  |
+| `ClickPipes_Replica_CPULimit`    | Gauge (*last*) | ストリーミング、オブジェクトストレージ | インジェスト用レプリカの設定済み CPU 制限 (ミリコア単位) 。 |
+| `ClickPipes_Replica_MemoryUsage` | Gauge (*avg*)  | ストリーミング、オブジェクトストレージ | インジェスト用レプリカの平均メモリ使用量 (バイト単位) 。     |
+| `ClickPipes_Replica_MemoryLimit` | Gauge (*last*) | ストリーミング、オブジェクトストレージ | インジェスト用レプリカの設定済みメモリ制限 (バイト単位) 。    |
+
+`ClickPipes_CDC_*` メトリクスは、CDC ClickPipes のリソース使用状況を示します。同じサービス内のすべての CDC ClickPipes は**コンピュートを共有**するため、これらの値はそのサービス内のすべての CDC ClickPipe を合わせた使用状況を反映します。
+
+| Metric                               | Type           | Available for | Description                                                             |
+| ------------------------------------ | -------------- | ------------- | ----------------------------------------------------------------------- |
+| `ClickPipes_CDC_CPUUsage`            | Gauge (*avg*)  | CDC           | 平均 CPU 使用量 (ミリコア単位) 。サービス内のすべての CDC ClickPipes で共有されます。                 |
+| `ClickPipes_CDC_CPULimit`            | Gauge (*last*) | CDC           | 設定済み CPU 制限 (ミリコア単位) 。サービス内のすべての CDC ClickPipes で共有されます。                |
+| `ClickPipes_CDC_MemoryUsage`         | Gauge (*avg*)  | CDC           | 平均メモリ使用量 (バイト単位) 。サービス内のすべての CDC ClickPipes で共有されます。                    |
+| `ClickPipes_CDC_MemoryLimit`         | Gauge (*last*) | CDC           | 設定済みメモリ制限 (バイト単位) 。サービス内のすべての CDC ClickPipes で共有されます。                   |
+| `ClickPipes_CDC_NetworkReceiveBytes` | Gauge          | CDC           | 受信ネットワーク帯域幅 (バイト単位、スクレイプウィンドウごとの差分) 。サービス内のすべての CDC ClickPipes で共有されます。 |
 
 <div id="metrics-state">
   ### 状態と進捗
 </div>
 
-| メトリクス                           | 型     | 説明                                                              |
-| ------------------------------- | ----- | --------------------------------------------------------------- |
-| `ClickPipes_Info`               | Gauge | 常に `1` です。`clickpipe_state` ラベルを使用して、パイプの状態に基づいて絞り込みやアラートを行います。 |
-| `ClickPipes_LastFetchedBatchId` | Gauge | ソースから最後に取得されたバッチの ID。                                           |
-| `ClickPipes_LastSentBatchId`    | Gauge | ClickHouse に最後に送信されたバッチの ID。                                    |
+| メトリクス                           | 型     | 利用可能対象 | 説明                                                              |
+| ------------------------------- | ----- | ------ | --------------------------------------------------------------- |
+| `ClickPipes_Info`               | Gauge | All    | 常に `1` です。`clickpipe_state` ラベルを使用して、パイプの状態に基づいて絞り込みやアラートを行います。 |
+| `ClickPipes_LastFetchedBatchId` | Gauge | CDC    | ソースから最後に取得されたバッチの ID。                                           |
+| `ClickPipes_LastSentBatchId`    | Gauge | CDC    | ClickHouse に最後に送信されたバッチの ID。                                    |
 
 <div id="related">
   ## 関連ページ

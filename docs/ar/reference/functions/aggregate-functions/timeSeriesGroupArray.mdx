@@ -28,7 +28,7 @@ timeSeriesGroupArray(timestamp, value)
 **المعاملات**
 
 * `timestamp` — الطابع الزمني للعينة. [`DateTime`](/ar/reference/data-types/datetime) أو [`UInt32`](/ar/reference/data-types/int-uint) أو [`UInt64`](/ar/reference/data-types/int-uint)
-* `value` — قيمة السلسلة الزمنية المقابلة للطابع الزمني. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal`](/ar/reference/data-types/decimal)
+* `value` — قيمة السلاسل الزمنية المقابلة للطابع الزمني. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal`](/ar/reference/data-types/decimal)
 
 **القيمة المُعادة**
 
@@ -39,6 +39,7 @@ timeSeriesGroupArray(timestamp, value)
 **الاستخدام الأساسي مع القيم الفردية**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values
@@ -61,6 +62,7 @@ FROM
 **تمرير عينات متعددة من الطوابع الزمنية والقيم في صورة مصفوفات متساوية الحجم**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values

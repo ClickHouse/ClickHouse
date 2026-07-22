@@ -17,64 +17,58 @@ import CommunityMaintainedBadge from "/snippets/fr/components/CommunityMaintaine
 <CommunityMaintainedBadge />
 
 <div id="open-the-tablumio-startup-page">
-  ## Ouvrez la page d’accueil de TABLUM.IO
+  ## Ouvrir la page de démarrage de TABLUM.IO
 </div>
 
 <Note>
   Vous pouvez installer une version auto-hébergée de TABLUM.IO sur votre serveur Linux avec Docker.
 </Note>
 
-<div id="1-sign-up-or-sign-in-to-the-service">
-  ## 1. Inscrivez-vous ou connectez-vous au service
-</div>
+<Steps>
+  <Step title="S’inscrire ou se connecter au service" id="1-sign-up-or-sign-in-to-the-service">
+    Commencez par vous inscrire à TABLUM.IO avec votre e-mail, ou utilisez la connexion rapide via vos comptes Google ou Facebook.
 
-Commencez par vous inscrire à TABLUM.IO avec votre adresse e-mail, ou utilisez la connexion rapide via vos comptes Google ou Facebook.
+    <Image img="/images/integrations/sql-clients/tablum-ch-0.webp" size="md" border alt="Page de connexion à TABLUM.IO" />
+  </Step>
 
-<Image img="/images/integrations/sql-clients/tablum-ch-0.webp" size="md" border alt="Page de connexion à TABLUM.IO" />
+  <Step title="Ajouter un connecteur ClickHouse" id="2-add-a-clickhouse-connector">
+    Rassemblez vos informations de connexion à ClickHouse, accédez à l’onglet **Connector**, puis renseignez l’URL de l’hôte, le port, le nom d’utilisateur, le mot de passe, le nom de la base de données et le nom du connecteur. Une fois ces champs remplis, cliquez sur le bouton **Test connection** pour valider les informations, puis sur **Save connector for me** pour l’enregistrer de façon permanente.
 
-<div id="2-add-a-clickhouse-connector">
-  ## 2. Ajouter un connecteur ClickHouse
-</div>
+    <Tip>
+      Assurez-vous d’indiquer le bon port **HTTP** et d’activer ou non le mode **SSL** selon vos informations de connexion.
+    </Tip>
 
-Rassemblez vos informations de connexion à ClickHouse, accédez à l’onglet **Connector**, puis renseignez l’URL de l’hôte, le port, le nom d’utilisateur, le mot de passe, le nom de la base de données et le nom du connecteur. Une fois ces champs remplis, cliquez sur le bouton **Test connection** pour valider les informations, puis sur **Save connector for me** pour l’enregistrer de façon permanente.
+    <Tip>
+      En général, le port est 8443 lorsque TLS est utilisé, ou 8123 lorsqu’il ne l’est pas.
+    </Tip>
 
-<Tip>
-  Assurez-vous d’indiquer le bon port **HTTP** et d’activer ou non le mode **SSL** selon vos informations de connexion.
-</Tip>
+    <Image img="/images/integrations/sql-clients/tablum-ch-1.webp" size="lg" border alt="Ajout d’un connecteur ClickHouse dans TABLUM.IO" />
+  </Step>
 
-<Tip>
-  En général, le port est 8443 lorsque TLS est utilisé, ou 8123 lorsqu’il ne l’est pas.
-</Tip>
+  <Step title="Sélectionner le connecteur" id="3-select-the-connector">
+    Accédez à l’onglet **Dataset**. Sélectionnez le connecteur ClickHouse que vous venez de créer dans le menu déroulant. Dans le panneau de droite, vous verrez la liste des tables et des schémas disponibles.
 
-<Image img="/images/integrations/sql-clients/tablum-ch-1.webp" size="lg" border alt="Ajout d’un connecteur ClickHouse dans TABLUM.IO" />
+    <Image img="/images/integrations/sql-clients/tablum-ch-2.webp" size="lg" border alt="Sélection du connecteur ClickHouse dans TABLUM.IO" />
+  </Step>
 
-<div id="3-select-the-connector">
-  ## 3. Sélectionnez le connecteur
-</div>
+  <Step title="Saisir une requête SQL et l’exécuter" id="4-input-a-sql-query-and-run-it">
+    Saisissez une requête dans la SQL Console et cliquez sur **Run Query**. Les résultats s’afficheront sous forme de feuille de calcul.
 
-Accédez à l’onglet **Dataset**. Dans la liste déroulante, sélectionnez le connecteur ClickHouse que vous venez de créer. Dans le panneau de droite, vous verrez la liste des tables et des schémas disponibles.
+    <Tip>
+      Cliquez avec le bouton droit sur le nom de la colonne pour ouvrir le menu déroulant avec les options de tri, de filtrage et d’autres actions.
+    </Tip>
 
-<Image img="/images/integrations/sql-clients/tablum-ch-2.webp" size="lg" border alt="Sélection du connecteur ClickHouse dans TABLUM.IO" />
+    <Image img="/images/integrations/sql-clients/tablum-ch-3.webp" size="lg" border alt="Exécution d’une requête SQL dans TABLUM.IO" />
 
-<div id="4-input-a-sql-query-and-run-it">
-  ## 4. Saisissez une requête SQL et exécutez-la
-</div>
+    <Note>
+      Avec TABLUM.IO, vous pouvez
 
-Saisissez une requête dans la SQL Console et cliquez sur **Run Query**. Les résultats s’afficheront sous forme de tableau.
-
-<Tip>
-  Cliquez avec le bouton droit sur le nom de la colonne pour ouvrir le menu déroulant proposant des options de tri, de filtrage et d’autres actions.
-</Tip>
-
-<Image img="/images/integrations/sql-clients/tablum-ch-3.webp" size="lg" border alt="Exécution d’une requête SQL dans TABLUM.IO" />
-
-<Note>
-  Avec TABLUM.IO, vous pouvez
-
-  * créer et utiliser plusieurs connecteurs ClickHouse dans votre compte TABLUM.IO,
-  * exécuter des requêtes sur toutes les données chargées, quelle que soit la source de données,
-  * partager les résultats sous la forme d’une nouvelle base de données ClickHouse.
-</Note>
+      * créer et utiliser plusieurs connecteurs ClickHouse dans votre compte TABLUM.IO,
+      * exécuter des requêtes sur toutes les données chargées, quelle que soit la source de données,
+      * partager les résultats sous la forme d’une nouvelle base de données ClickHouse.
+    </Note>
+  </Step>
+</Steps>
 
 <div id="learn-more">
   ## Pour en savoir plus
