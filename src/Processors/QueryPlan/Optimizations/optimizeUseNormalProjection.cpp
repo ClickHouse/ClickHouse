@@ -689,11 +689,15 @@ std::optional<String> optimizeUseNormalProjections(
         reading->isParallelReadingEnabled(),
         reading->getParallelReadingExtension());
 
-    /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
-    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
-
-    /// Only the initiator should read the projection to avoid potential data duplication.
-    bool has_parent_parts = !parent_reading_select_result->parts_with_ranges.empty();
+    /// filterPartsByProjection keeps only the parts served by the regular read (best_candidate->parent_parts)
+    /// and drops those served by the projection, mutating parent_reading_select_result in place. We must run
+    /// the header check below BEFORE that (irreversible) mutation, so that skipping the projection on a
+    /// structure mismatch leaves the regular read (which shares this analysis result) seeing every part.
+    /// Compute whether any such parent parts exist without mutating, for the decisions that need it now.
+    bool has_parent_parts = std::any_of(
+        parent_reading_select_result->parts_with_ranges.begin(),
+        parent_reading_select_result->parts_with_ranges.end(),
+        [&](const auto & part) { return best_candidate->parent_parts.contains(part.data_part.get()); });
     bool should_skip_projection_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !optimization_settings.is_parallel_replicas_initiator_with_projection_support
         && has_parent_parts;
     if (!projection_reading || should_skip_projection_reading_on_remote_replicas)
@@ -718,15 +722,6 @@ std::optional<String> optimizeUseNormalProjections(
     if (has_parent_parts && optimization_settings.is_parallel_replicas_initiator_with_projection_support)
         fallbackToLocalProjectionReading(projection_reading);
 
-    if (!query_info.is_internal && context->hasQueryContext())
-    {
-        context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName
-        {
-            .storage_id = reading->getMergeTreeData().getStorageID(),
-            .projection_name = best_candidate->projection->name,
-        });
-    }
-
     projection_reading->setStepDescription(best_candidate->projection->name, optimization_settings.max_step_description_length);
 
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
@@ -740,6 +735,51 @@ std::optional<String> optimizeUseNormalProjections(
         next_node = &expr_or_filter_node;
     }
 
+    /// The rewritten projection stream must keep the same structure as the subplan it replaces:
+    /// columns from `required_columns` that `query.dag` does not consume survive as pass-throughs
+    /// (ActionsDAG::updateHeader appends every un-consumed input) and would otherwise widen the
+    /// output header, breaking the parent step's header contract. This protects both replacement
+    /// branches below: the all-parts branch (which splices next_node directly) and the Union branch.
+    /// Materialize constants if needed and require equal structure, else skip (regular read stays correct).
+    const auto & main_stream = iter->node->children[iter->next_child - 1]->step->getOutputHeader();
+    const auto * proj_stream = &next_node->step->getOutputHeader();
+
+    if (auto materializing = makeMaterializingDAG(**proj_stream, *main_stream))
+    {
+        auto converting = std::make_unique<ExpressionStep>(*proj_stream, std::move(*materializing));
+        proj_stream = &converting->getOutputHeader();
+        auto & expr_node = nodes.emplace_back();
+        expr_node.step = std::move(converting);
+        expr_node.children.push_back(next_node);
+        next_node = &expr_node;
+    }
+
+    /// Skip the projection (keep the correct regular read) when the rewritten stream cannot match the
+    /// structure it replaces. This runs before filterPartsByProjection mutates the analysis result and
+    /// before query access info is recorded, so a skipped projection neither drops parts from the
+    /// regular read nor is reported as selected in system.query_log. Rewrite the candidate's stat
+    /// description so EXPLAIN projections = 1 reflects the rejection instead of the earlier "selected".
+    if (!blocksHaveEqualStructure(*main_stream, **proj_stream))
+    {
+        if (best_candidate->stat)
+            best_candidate->stat->description = fmt::format(
+                "Projection {} is usable but its rewritten output does not match the structure it replaces, so it is not used",
+                best_candidate->projection->name);
+        return {};
+    }
+
+    if (!query_info.is_internal && context->hasQueryContext())
+    {
+        context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName
+        {
+            .storage_id = reading->getMergeTreeData().getStorageID(),
+            .projection_name = best_candidate->projection->name,
+        });
+    }
+
+    /// Filter out parts served by the projection; the remaining parts stay with the regular read.
+    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
+
     if (parent_reading_select_result->parts_with_ranges.empty())
     {
         /// All parts are taken from projection
@@ -747,25 +787,6 @@ std::optional<String> optimizeUseNormalProjections(
     }
     else
     {
-        const auto & main_stream = iter->node->children[iter->next_child - 1]->step->getOutputHeader();
-        const auto * proj_stream = &next_node->step->getOutputHeader();
-
-        if (auto materializing = makeMaterializingDAG(**proj_stream, *main_stream))
-        {
-            auto converting = std::make_unique<ExpressionStep>(*proj_stream, std::move(*materializing));
-            proj_stream = &converting->getOutputHeader();
-            auto & expr_node = nodes.emplace_back();
-            expr_node.step = std::move(converting);
-            expr_node.children.push_back(next_node);
-            next_node = &expr_node;
-        }
-
-        /// Verify headers are compatible before creating the Union.
-        /// If they differ (e.g., different columns due to different query DAGs being applied),
-        /// skip this optimization to avoid "Block structure mismatch" errors.
-        if (!blocksHaveEqualStructure(*main_stream, **proj_stream))
-            return {};
-
         auto & union_node = nodes.emplace_back();
         SharedHeaders input_headers = {main_stream, *proj_stream};
         union_node.step = std::make_unique<UnionStep>(std::move(input_headers));
