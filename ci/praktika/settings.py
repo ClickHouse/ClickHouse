@@ -73,7 +73,6 @@ class _Settings:
     ENVIRONMENT_VAR_FILE: str = f"{TEMP_DIR}/environment.json"
     RUN_LOG: str = f"{TEMP_DIR}/job.log"
 
-    USE_CUSTOM_GH_AUTH: bool = False
     SECRET_GH_APP: str = "gh-app"
     GH_AUTH_LAMBDA_NAME: str = ""
     GH_AUTH_LAMBDA_REGION: str = ""
@@ -190,7 +189,6 @@ _USER_DEFINED_SETTINGS = [
     "KEEPER_STRESS_METRICS_DB_NAME",
     "KEEPER_STRESS_METRICS_TABLE_NAME",
     "CI_DB_INSERT_TIMEOUT_SEC",
-    "USE_CUSTOM_GH_AUTH",
     "GH_AUTH_LAMBDA_NAME",
     "GH_AUTH_LAMBDA_REGION",
     "MAIN_BRANCH",

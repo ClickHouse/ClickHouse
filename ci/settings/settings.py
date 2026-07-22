@@ -51,7 +51,6 @@ CI_DB_TABLE_NAME = "checks"
 # {"url": ..., "user": ..., "password": ...}
 SECRET_CI_DB_CONNECTION = "clickhouse-test-stat-connection"
 
-USE_CUSTOM_GH_AUTH = True
 # Use the project's native token minter (deployed via github_token_minters);
 # its "{slug}-gh-token" name matches the orchestrator role's InvokeFunction grant.
 GH_AUTH_LAMBDA_NAME = f"{PROJECT_SLUG}-gh-token"

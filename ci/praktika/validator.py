@@ -124,12 +124,6 @@ class Validator:
                     f"Setting ENABLED_WORKFLOWS has non-existing workflow file [{file}]",
                 )
 
-        if Settings.USE_CUSTOM_GH_AUTH:
-            cls.evaluate_check_simple(
-                bool(Settings.SECRET_GH_APP or Settings.GH_AUTH_LAMBDA_NAME),
-                "Setting SECRET_GH_APP or GH_AUTH_LAMBDA_NAME must be provided with USE_CUSTOM_GH_AUTH == True",
-            )
-
         # NOTE: disabled — this is deploy-time validation (infra project-name
         # uniqueness) and requires ./ci/infrastructure/projects.py to exist.
         # Pipeline/settings validation also runs on runners, whose checkout may
@@ -181,14 +175,13 @@ class Validator:
             #         ".enable_commit_status_on_failure is redundant for Praktika engine workflows: the GitHub Checks API is used and always publishes workflow/job check status",
             #         workflow.name,
             #     )
-            if Settings.USE_CUSTOM_GH_AUTH and workflow.enable_report:
-                if not Settings.GH_AUTH_LAMBDA_NAME:
-                    secret = workflow.get_secret(Settings.SECRET_GH_APP)
-                    cls.evaluate_check(
-                        bool(secret),
-                        f"Secret [{Settings.SECRET_GH_APP}] must be configured for workflow",
-                        workflow.name,
-                    )
+            if workflow.enable_report and not Settings.GH_AUTH_LAMBDA_NAME:
+                secret = workflow.get_secret(Settings.SECRET_GH_APP)
+                cls.evaluate_check(
+                    bool(secret),
+                    f"Secret [{Settings.SECRET_GH_APP}] must be configured for workflow",
+                    workflow.name,
+                )
 
             for job in workflow.jobs:
                 cls.evaluate_check(
