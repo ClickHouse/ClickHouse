@@ -19,6 +19,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 namespace
@@ -34,15 +35,18 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionCoalesce>(context, context->getSettingsRef()[Setting::use_variant_as_common_type]);
+        const auto & settings = context->getSettingsRef();
+        return std::make_shared<FunctionCoalesce>(
+            context, settings[Setting::use_variant_as_common_type], settings[Setting::allow_lossy_numeric_supertype]);
     }
 
-    explicit FunctionCoalesce(ContextPtr context, bool use_variant_as_common_type_)
+    explicit FunctionCoalesce(ContextPtr context, bool use_variant_as_common_type_, bool allow_lossy_numeric_supertype_)
         : is_not_null(FunctionFactory::instance().get("isNotNull", context))
         , assume_not_null(FunctionFactory::instance().get("assumeNotNull", context))
         , if_function(FunctionFactory::instance().get("if", context))
         , multi_if_function(FunctionFactory::instance().get("multiIf", context))
         , use_variant_as_common_type(use_variant_as_common_type_)
+        , allow_lossy_numeric_supertype(allow_lossy_numeric_supertype_)
     {
     }
 
@@ -145,8 +149,8 @@ public:
         /// is already a Variant, even if `use_variant_as_common_type` is off.
         const bool has_variant = std::any_of(filtered_types.begin(), filtered_types.end(), [](const auto & t) { return isVariant(t); });
         return (use_variant_as_common_type || has_variant)
-            ? getLeastSupertypeOrVariant(filtered_types)
-            : getLeastSupertype(filtered_types);
+            ? getLeastSupertypeOrVariant(filtered_types, allow_lossy_numeric_supertype)
+            : getLeastSupertype(filtered_types, allow_lossy_numeric_supertype);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -246,6 +250,7 @@ private:
     FunctionOverloadResolverPtr if_function;
     FunctionOverloadResolverPtr multi_if_function;
     bool use_variant_as_common_type = false;
+    bool allow_lossy_numeric_supertype = false;
 };
 
 }

@@ -31,12 +31,15 @@ namespace Setting
 {
     extern const SettingsBool allow_execute_multiif_columnar;
     extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -60,12 +63,16 @@ public:
     {
         const auto & settings = context_->getSettingsRef();
         return std::make_shared<FunctionMultiIf>(
-            settings[Setting::allow_execute_multiif_columnar], settings[Setting::use_variant_as_common_type]);
+            settings[Setting::allow_execute_multiif_columnar],
+            settings[Setting::use_variant_as_common_type],
+            settings[Setting::allow_lossy_numeric_supertype]);
     }
 
-    explicit FunctionMultiIf(bool allow_execute_multiif_columnar_, bool use_variant_as_common_type_)
+    explicit FunctionMultiIf(
+        bool allow_execute_multiif_columnar_, bool use_variant_as_common_type_, bool allow_lossy_numeric_supertype_ = false)
         : allow_execute_multiif_columnar(allow_execute_multiif_columnar_)
         , use_variant_as_common_type(use_variant_as_common_type_)
+        , allow_lossy_numeric_supertype(allow_lossy_numeric_supertype_)
     {}
 
     String getName() const override { return name; }
@@ -103,6 +110,82 @@ public:
         if (use_variant_as_common_type)
             return "(MaybeNullable(UInt8) | Nothing, V1, ..., E) -> leastSupertypeOrVariant(V1, ..., E)";
         return "(MaybeNullable(UInt8) | Nothing, V1, ..., E) -> leastSupertype(V1, ..., E)";
+    }
+
+    /// The declarative signature cannot express `allow_lossy_numeric_supertype` (the `leastSupertype`
+    /// type-function always uses the strict mode), so when that setting is enabled, compute the common
+    /// type explicitly, mirroring the legacy implementation. Otherwise the signature stays authoritative.
+    /// The `ColumnsWithTypeAndName` overload is overridden too so both analysis paths agree.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (!allow_lossy_numeric_supertype)
+            return FunctionIfBase::getReturnTypeImpl(arguments);
+
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (const auto & arg : arguments)
+            types.push_back(arg.type);
+        return getReturnTypeImpl(types);
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
+    {
+        if (!allow_lossy_numeric_supertype)
+            return FunctionIfBase::getReturnTypeImpl(args);
+
+        /// Arguments are the following: cond1, then1, cond2, then2, ... condN, thenN, else.
+
+        auto for_conditions = [&args](auto && f)
+        {
+            size_t conditions_end = args.size() - 1;
+            for (size_t i = 0; i < conditions_end; i += 2)
+                f(args[i]);
+        };
+
+        auto for_branches = [&args](auto && f)
+        {
+            size_t branches_end = args.size();
+            for (size_t i = 1; i < branches_end; i += 2)
+                f(args[i]);
+            f(args.back());
+        };
+
+        if (!(args.size() >= 3 && args.size() % 2 == 1))
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Invalid number of arguments for function {}", getName());
+
+        for_conditions([&](const DataTypePtr & arg)
+        {
+            const IDataType * nested_type = nullptr;
+            if (arg->isNullable())
+            {
+                if (arg->onlyNull())
+                    return;
+
+                const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*arg);
+                nested_type = nullable_type.getNestedType().get();
+            }
+            else
+            {
+                nested_type = arg.get();
+            }
+
+            if (!WhichDataType(nested_type).isUInt8())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument (condition) of function {}. "
+                    "Must be UInt8.", arg->getName(), getName());
+        });
+
+        DataTypes types_of_branches;
+        types_of_branches.reserve(args.size() / 2 + 1);
+
+        for_branches([&](const DataTypePtr & arg)
+        {
+            types_of_branches.emplace_back(arg);
+        });
+
+        if (use_variant_as_common_type)
+            return getLeastSupertypeOrVariant(types_of_branches, allow_lossy_numeric_supertype);
+
+        return getLeastSupertype(types_of_branches, allow_lossy_numeric_supertype);
     }
 
     struct Instruction
@@ -489,6 +572,7 @@ private:
 
     const bool allow_execute_multiif_columnar;
     const bool use_variant_as_common_type;
+    const bool allow_lossy_numeric_supertype;
 };
 
 }
@@ -553,9 +637,9 @@ FROM LEFT_RIGHT;
     factory.registerAlias("caseWithoutExpression", "multiIf");
 }
 
-FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_execute_multiif_columnar, bool use_variant_as_common_type)
+FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_execute_multiif_columnar, bool use_variant_as_common_type, bool allow_lossy_numeric_supertype)
 {
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(allow_execute_multiif_columnar, use_variant_as_common_type));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(allow_execute_multiif_columnar, use_variant_as_common_type, allow_lossy_numeric_supertype));
 }
 
 }
