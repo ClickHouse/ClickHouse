@@ -384,17 +384,13 @@ ChainedBuffers DiskCacheWriter::read(ByteRange sub)
 
 CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
 {
-    /// `window` is FILE-space, clamped per segment. For each held segment overlapping it:
-    /// a DOWNLOADED segment is already cached (`sibling_led`: serve from cache, a wait on
-    /// it returns immediately); for an undownloaded one, `getOrSetDownloader` either makes
-    /// us the downloader (`to_fetch`: fetch+write it on this thread while the claim is open)
-    /// or a sibling leads it (`sibling_led`). Only roles NEWLY won here enter the claim's
-    /// release set: a nested claim over segments this thread already leads (a tile write
-    /// inside a window-long claim) must not release the outer claim's roles. The release
-    /// completes-and-resets exactly those segments - a claim whose fetch never reached a
-    /// segment would otherwise leak it DOWNLOADING, and the foreground teardown cannot reset
-    /// a foreign (this worker's) downloader, aborting the holder dtor on
-    /// `chassert(!is_last_holder)`.
+    /// Classify each held segment overlapping `window` (file-space). A "sibling" is another
+    /// concurrent reader of the same segment; FileCache elects a single downloader per segment:
+    ///   - already cached (DOWNLOADED)     -> `sibling_led` (read it, no wait);
+    ///   - won the downloader here          -> `to_fetch`   (this thread fetches and writes it);
+    ///   - a sibling holds the downloader   -> `sibling_led` (wait for it, then read from cache).
+    /// Only roles won here go in the release set (a nested claim must not release the outer claim's);
+    /// the release completes-and-resets them, so a claimed segment is never left DOWNLOADING.
     FillClaim c;
     if (!holder)
     {
@@ -585,15 +581,9 @@ DiskCacheView::DiskCacheView(
 
 DiskCacheView::~DiskCacheView()
 {
-    /// Deferred LRU bump: raise the priority of each segment this view actually
-    /// read, so a hit next to fresh inserts isn't aged below them. Bump directly
-    /// on the held `read_holder` — it pins exactly the segments the readers read
-    /// from, so there is no need to re-`cache->get` them (which would re-take the
-    /// per-key metadata lock and re-hash the key). A sequential run records many
-    /// contiguous sub-ranges over the same few segments; sorting the records lets
-    /// the linear sweep below bump each touched segment exactly once. No write
-    /// buffers live in this view, so no finalize-before-bump ordering is needed —
-    /// the executor orders write-buffer destruction before view destruction.
+    /// Deferred LRU bump: raise the priority of each segment the view read, so a hit next to fresh
+    /// inserts is not aged below them. Bump on the held `read_holder` (it pins those segments, so no
+    /// re-`get` is needed); sorting the recorded ranges lets the sweep below touch each segment once.
     if (hits_to_touch.empty() || !read_holder)
         return;
 
@@ -682,10 +672,8 @@ CacheViewPtr DiskCacheProvider::planResidencyView(
     /// in-object portion.
     const size_t req_obj_end = std::min<size_t>(req_obj_start + range_in_file.size, object.bytes_size);
 
-    /// `cache_settings.boundary_alignment` is optional; an unset value means
-    /// "use the cache's configured alignment" — exactly how `getOrSet` resolves
-    /// it. Resolve here so the miss-range alignment math below matches what
-    /// `openWriteBuffers`' `getOrSet` will produce.
+    /// Resolve the boundary alignment as `getOrSet` does, so the miss alignment below matches what
+    /// `openWriteBuffers` produces.
     const size_t boundary_alignment = cache_settings.boundary_alignment.value_or(cache->getBoundaryAlignment());
     const size_t object_size = object.bytes_size;
 
@@ -728,11 +716,8 @@ CacheViewPtr DiskCacheProvider::planResidencyView(
         view->hit_entries.push_back(HitEntry{hit_file, std::move(reader)});
     };
 
-    /// Walk segments in ascending order with prefix/tail gap logic. `cache->get`
-    /// returns a contiguous tiling padded with EMPTY/DETACHED placeholders for
-    /// gaps, but stay defensive about gaps. `existing_obj` collects the FULL
-    /// extents of real (metadata-backed) segments - the tiling pass below must
-    /// not cut inside one.
+    /// Walk segments ascending, classifying gaps as misses. `existing_obj` collects the full extents
+    /// of real (metadata-backed) segments, so the tiling pass below never cuts inside one.
     VectorWithMemoryTracking<ByteRange> existing_obj;
     size_t cursor = req_obj_start;
     for (const auto & segment : *read_holder)
@@ -743,9 +728,7 @@ CacheViewPtr DiskCacheProvider::planResidencyView(
         if (seg_range.left > cursor)
             add_miss_obj(cursor, seg_range.left);
 
-        /// Everything except a DETACHED hole placeholder is metadata-backed with a
-        /// fixed extent - including an EMPTY segment another reader created but has
-        /// not written yet.
+        /// Everything but a DETACHED hole placeholder is metadata-backed with a fixed extent.
         const auto state = segment->state();
         if (state != FileSegmentState::DETACHED)
             existing_obj.push_back(ByteRange{seg_range.left, seg_range.right + 1 - seg_range.left});
@@ -787,16 +770,9 @@ CacheViewPtr DiskCacheProvider::planResidencyView(
     if (cursor < req_obj_end)
         add_miss_obj(cursor, req_obj_end);
 
-    /// Align each raw miss to the cache boundary (clamped to the object end) and
-    /// merge adjacent/overlapping aligned ranges in a single pass. The raw misses already arrive in
-    /// ascending offset order from the forward segment walk (`cursor` advances
-    /// monotonically), and `roundDownToMultiple` is monotonic, so the aligned
-    /// offsets are non-decreasing — no separate sort is needed. Merge in
-    /// OBJECT-LOCAL space, then translate to file-level when emitting; merging
-    /// against the file-level offsets would mix coordinate spaces and corrupt the
-    /// merge whenever `object_file_offset > 0`. Emit file-level
-    /// `MissEntry{aligned, /*writer=*/nullptr}` — `planResidencyView` never opens
-    /// writers.
+    /// Align each raw miss to the cache boundary (clamped to the object end) and merge adjacent runs.
+    /// The misses arrive in ascending order (the walk is forward) and alignment is monotonic, so no
+    /// sort is needed. Merge in OBJECT-LOCAL space -- file-level offsets would mix coordinate spaces.
     VectorWithMemoryTracking<ByteRange> merged_obj;
     for (const auto & m : raw_miss_obj)
     {
@@ -815,11 +791,8 @@ CacheViewPtr DiskCacheProvider::planResidencyView(
             merged_obj.push_back(ByteRange{a_off, a_end - a_off});
     }
 
-    /// Tile each merged run into optimal fill cells on the ABSOLUTE grid - each
-    /// emitted range is ONE cell, the unit the executor's fetch shaping works in.
-    /// A cut falling inside an EXISTING segment is pushed past it - one range per
-    /// real cell, so two writers never hold the same segment. Cuts advance
-    /// monotonically, so a single forward index over `existing_obj` suffices.
+    /// Tile each merged run into optimal fill cells (one emitted range = one cell). A cut that would
+    /// fall inside an existing segment is pushed past it, so two writers never share a segment.
     const size_t opt_cell = optimalFillCell();
     VectorWithMemoryTracking<ByteRange> tiled_obj;
     size_t next_existing = 0;
