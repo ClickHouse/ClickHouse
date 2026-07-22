@@ -706,9 +706,9 @@ Force initialize omitted fields with null values
 
 <SettingsInfoBlock type="GeoJSONUnsupportedGeometryHandling" default_value="throw" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "throw"},{"label": "New setting that controls handling of GeoJSON geometry types that cannot be represented in the Geometry type (GeometryCollection, MultiPoint)"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "throw"},{"label": "New setting that controls handling of GeoJSON geometry types that cannot be represented in the Geometry type (such as GeometryCollection)"}]}]}/>
 
-Controls what happens when a valid `GeoJSON` geometry type that cannot be represented in ClickHouse's `Geometry` type (such as `GeometryCollection` or `MultiPoint`) must be stored in the `geometry` column while reading `GeoJSON` input.
+Controls what happens when a valid `GeoJSON` geometry type that cannot be represented in ClickHouse's `Geometry` type (such as `GeometryCollection`) must be stored in the `geometry` column while reading `GeoJSON` input.
 
 Possible values:
 - `'throw'` (default) — throw an exception.
