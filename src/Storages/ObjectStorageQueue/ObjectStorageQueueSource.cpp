@@ -164,6 +164,9 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
 
 bool ObjectStorageQueueSource::FileIterator::isFinished()
 {
+    if (bucket_lock_refresh_failed)
+        return true;
+
     std::lock_guard lock(mutex);
     LOG_TEST(log, "Iterator finished: {}, objects to retry: {}", iterator_finished.load(), objects_to_retry.size());
     return iterator_finished
@@ -500,6 +503,15 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
             refreshExpiringBucketLocks();
 
             std::lock_guard lock(mutex);
+
+            /// The iterator was invalidated by a failed bucket lock refresh (the detecting
+            /// thread has thrown). Checked under the mutex (the flag is set under it), so no
+            /// thread can keep draining cached keys for a bucket possibly owned by another server.
+            if (bucket_lock_refresh_failed)
+            {
+                LOG_WARNING(log, "Bucket lock refresh failed, stopping the file iterator");
+                return {};
+            }
             auto result = getNextKeyFromAcquiredBucket(processor);
             object_info = result.object_info;
             file_metadata = result.file_metadata;
@@ -601,15 +613,35 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
 
 void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks()
 {
+    /// Already invalidated (possibly by another thread), nothing to refresh.
+    if (bucket_lock_refresh_failed)
+        return;
+
     const size_t ttl_seconds = metadata->getPersistentProcessingNodeTTLSeconds();
     if (!ttl_seconds)
         return;
 
     std::lock_guard lock(mutex);
     for (auto & [processor, holders] : bucket_holders)
+    {
         for (auto & holder : *holders)
+        {
             if (holder->getAgeSeconds() >= static_cast<double>(ttl_seconds) / 4)
-                holder->refresh();
+            {
+                try
+                {
+                    holder->refresh();
+                }
+                catch (...)
+                {
+                    /// Fail closed: the bucket could be acquired by another server,
+                    /// so the iterator must not continue draining keys cached for it.
+                    bucket_lock_refresh_failed = true;
+                    throw;
+                }
+            }
+        }
+    }
 }
 
 void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
@@ -637,7 +669,17 @@ void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
                 chassert(holder->isFinished());
 
             /// Release bucket lock.
-            holder->release();
+            try
+            {
+                holder->release();
+            }
+            catch (...)
+            {
+                /// Fail closed, same as in refreshExpiringBucketLocks: release
+                /// throws on lost lock ownership detected at release time.
+                bucket_lock_refresh_failed = true;
+                throw;
+            }
             ++released_holders;
 
             /// Reset bucket processor in cached state.

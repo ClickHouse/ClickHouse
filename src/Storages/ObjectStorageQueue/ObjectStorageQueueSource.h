@@ -131,6 +131,10 @@ public:
         /// Is glob_iterator finished?
         std::atomic_bool iterator_finished = false;
 
+        /// Set when a bucket lock refresh fails (e.g. lost ownership). Invalidates the
+        /// iterator: next stops returning keys, isFinished returns true.
+        std::atomic_bool bucket_lock_refresh_failed = false;
+
         bool is_path_with_hive_partitioning = false;
 
         /// Only for processing without buckets.
