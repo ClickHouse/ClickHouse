@@ -13,7 +13,11 @@
 #include <Common/SipHash.h>
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/proxyConfigurationToPocoProxyConfig.h>
+#include <Common/SilkScheduler.h>
 #include <base/scope_guard.h>
+
+#include <IO/SilkFiberStreamSocketImpl.h>
+#include <IO/SilkSecureFiberStreamSocketImpl.h>
 
 #include <Poco/Net/HTTPChunkedStream.h>
 #include <Poco/Net/HTTPClientSession.h>
@@ -29,6 +33,7 @@
 #include <sys/stat.h>
 
 #include <queue>
+#include <type_traits>
 #include <unordered_set>
 #include <unordered_map>
 
@@ -37,6 +42,7 @@
 #if USE_SSL
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/SSLException.h>
+#include <Poco/Net/SSLManager.h>
 #endif
 
 
@@ -65,6 +71,8 @@ namespace ProfileEvents
     extern const Event HTTPConnectionsExpired;
     extern const Event HTTPConnectionsErrors;
     extern const Event HTTPConnectionsElapsedMicroseconds;
+
+    extern const Event SilkSocketsCreated;
 }
 
 
@@ -223,6 +231,18 @@ public:
         return socket_buffer_sizes;
     }
 
+    void setUseSilkSockets(bool value)
+    {
+        std::lock_guard lock(mutex);
+        use_silk_sockets = value;
+    }
+
+    bool getUseSilkSockets() const
+    {
+        std::lock_guard lock(mutex);
+        return use_silk_sockets;
+    }
+
     bool isSoftLimitReached() const
     {
         std::lock_guard lock(mutex);
@@ -314,6 +334,7 @@ private:
     size_t total_connections_in_group TSA_GUARDED_BY(mutex) = 0;
     size_t mute_warning_until TSA_GUARDED_BY(mutex) = 0;
     HTTPConnectionPools::SocketBufferSizes socket_buffer_sizes TSA_GUARDED_BY(mutex);
+    bool use_silk_sockets TSA_GUARDED_BY(mutex) = false;
     std::unordered_map<Poco::Net::HTTPClientSession *, uint64_t> live_connections TSA_GUARDED_BY(mutex);
 };
 
@@ -636,8 +657,29 @@ private:
             }
         }
 
+        /// Replaces the plain OS socket with a Silk fiber socket before the connection is
+        /// established, if the group has Silk sockets enabled and the scheduler is running.
+        /// Must only be called for a freshly-created connection: an already-connected socket
+        /// must never be swapped out from under live keep-alive reuse.
+        void attachSilkSocketIfEnabled()
+        {
+#if USE_SILK
+            if (!group->getUseSilkSockets() || !isSilkSchedulerInitialized())
+                return;
+#if USE_SSL
+            if constexpr (std::is_same_v<Session, Poco::Net::HTTPSClientSession>)
+                this->attachSocket(Poco::Net::StreamSocket(
+                    new Silk::SecureFiberStreamSocketImpl(Poco::Net::SSLManager::instance().defaultClientContext())));
+            else
+#endif
+                this->attachSocket(Poco::Net::StreamSocket(new Silk::FiberStreamSocketImpl));
+            ProfileEvents::increment(ProfileEvents::SilkSocketsCreated);
+#endif
+        }
+
         void doConnect(UInt64 * connect_time)
         {
+            attachSilkSocketIfEnabled();
             Session::reconnect(connect_time);
             notifySocketInode();
         }
@@ -1246,6 +1288,13 @@ public:
         http_group->setSocketBufferSizes(std::move(http));
     }
 
+    void setUseSilkSockets(bool disk, bool storage, bool http)
+    {
+        disk_group->setUseSilkSockets(disk);
+        storage_group->setUseSilkSockets(storage);
+        http_group->setUseSilkSockets(http);
+    }
+
     HTTPConnectionPools::SocketBufferSizes getSocketBufferSizes(HTTPConnectionGroupType type) const
     {
         /// ConnectionGroup has its own mutex, no need for Impl::mutex here.
@@ -1369,6 +1418,11 @@ void HTTPConnectionPools::setLimits(HTTPConnectionPools::Limits disk, HTTPConnec
 void HTTPConnectionPools::setSocketBufferSizes(HTTPConnectionPools::SocketBufferSizes disk, HTTPConnectionPools::SocketBufferSizes storage, HTTPConnectionPools::SocketBufferSizes http)
 {
     impl->setSocketBufferSizes(std::move(disk), std::move(storage), std::move(http));
+}
+
+void HTTPConnectionPools::setUseSilkSockets(bool disk, bool storage, bool http)
+{
+    impl->setUseSilkSockets(disk, storage, http);
 }
 
 HTTPConnectionPools::SocketBufferSizes HTTPConnectionPools::getSocketBufferSizes(HTTPConnectionGroupType type) const

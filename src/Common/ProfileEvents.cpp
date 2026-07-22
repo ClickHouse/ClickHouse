@@ -1403,6 +1403,7 @@ The server successfully detected this situation and will download merged part fr
     M(HTTPConnectionsExpired, "Number of expired client HTTP connections", ValueType::Number) \
     M(HTTPConnectionsErrors, "Number of cases when creation of a client HTTP connection failed", ValueType::Number) \
     M(HTTPConnectionsElapsedMicroseconds, "Total time spend on creating client HTTP connections", ValueType::Microseconds) \
+    M(SilkSocketsCreated, "Number of HTTP connections created on Silk fiber sockets.", ValueType::Number) \
     \
     M(HTTPServerConnectionsCreated, "Number of created server HTTP connections", ValueType::Number) \
     M(HTTPServerConnectionsReused, "Number of reused server HTTP connections", ValueType::Number) \
