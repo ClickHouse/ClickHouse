@@ -5,6 +5,7 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1")
 node2 = cluster.add_instance("node2")
+node3 = cluster.add_instance("node3")
 
 
 @pytest.fixture(scope="module")
@@ -84,6 +85,69 @@ def test_replica_fallback_needs_no_local_grants(started_cluster):
     node1.query("DROP USER restricted_user")
     node1.query("DROP DATABASE grants_proxy")
     node2.query("DROP DATABASE grants_src")
+
+
+def test_all_remote_shards_must_have_the_table(started_cluster):
+    # `Remote('node1,node2', db)` on node3 describes two remote shards, and the proxy table queries
+    # both of them, so a table is exposed only when every shard has it. Here `only_on_node2` exists
+    # on one shard only: exposing it would advertise a proxy whose `SELECT` then fails on node1, so
+    # it must be reported as missing instead. A table present on both shards is served, aggregating
+    # over both.
+    node1.query("CREATE DATABASE sharded_src")
+    node1.query("CREATE TABLE sharded_src.both (x UInt64) ENGINE = MergeTree ORDER BY x")
+    node1.query("INSERT INTO sharded_src.both VALUES (1)")
+    node2.query("CREATE DATABASE sharded_src")
+    node2.query("CREATE TABLE sharded_src.both (x UInt64) ENGINE = MergeTree ORDER BY x")
+    node2.query("INSERT INTO sharded_src.both VALUES (2)")
+    node2.query(
+        "CREATE TABLE sharded_src.only_on_node2 (x UInt64) ENGINE = MergeTree ORDER BY x"
+    )
+
+    node3.query(
+        "CREATE DATABASE sharded_proxy ENGINE = Remote('node1,node2', 'sharded_src', 'default', '')"
+    )
+
+    assert node3.query("SHOW TABLES FROM sharded_proxy") == "both\n"
+    assert node3.query("EXISTS TABLE sharded_proxy.both") == "1\n"
+    assert node3.query("EXISTS TABLE sharded_proxy.only_on_node2") == "0\n"
+    assert node3.query("SELECT count(), sum(x) FROM sharded_proxy.both") == "2\t3\n"
+    assert "UNKNOWN_TABLE" in node3.query_and_get_error(
+        "SELECT * FROM sharded_proxy.only_on_node2"
+    )
+
+    node3.query("DROP DATABASE sharded_proxy")
+    node1.query("DROP DATABASE sharded_src")
+    node2.query("DROP DATABASE sharded_src")
+
+
+def test_local_shard_does_not_hide_a_missing_remote_shard(started_cluster):
+    # The symmetric case: `Remote('node1,node2', db)` on node1 resolves the first shard through the
+    # local catalog, but the second shard must still be consulted. A table that only the local shard
+    # has must be reported as missing rather than exposed as a proxy that fails on node2.
+    node1.query("CREATE DATABASE partial_src")
+    node1.query(
+        "CREATE TABLE partial_src.only_local (x UInt64) ENGINE = MergeTree ORDER BY x"
+    )
+    node1.query("CREATE TABLE partial_src.both (x UInt64) ENGINE = MergeTree ORDER BY x")
+    node1.query("INSERT INTO partial_src.both VALUES (10)")
+    node2.query("CREATE DATABASE partial_src")
+    node2.query("CREATE TABLE partial_src.both (x UInt64) ENGINE = MergeTree ORDER BY x")
+    node2.query("INSERT INTO partial_src.both VALUES (20)")
+
+    node1.query(
+        "CREATE DATABASE partial_proxy ENGINE = Remote('node1,node2', 'partial_src', 'default', '')"
+    )
+
+    assert node1.query("SHOW TABLES FROM partial_proxy") == "both\n"
+    assert node1.query("EXISTS TABLE partial_proxy.only_local") == "0\n"
+    assert "UNKNOWN_TABLE" in node1.query_and_get_error(
+        "SELECT * FROM partial_proxy.only_local"
+    )
+    assert node1.query("SELECT count(), sum(x) FROM partial_proxy.both") == "2\t30\n"
+
+    node1.query("DROP DATABASE partial_proxy")
+    node1.query("DROP DATABASE partial_src")
+    node2.query("DROP DATABASE partial_src")
 
 
 def test_local_replica_preferred(started_cluster):

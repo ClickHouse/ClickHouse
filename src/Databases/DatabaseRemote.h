@@ -117,14 +117,18 @@ private:
 
     /// Fetch the names of the tables of `remote_database` from the remote server. When `only_table`
     /// is set, fetches only that name (the cheap existence check of `isTableExist`, which must not
-    /// resolve the structure of the table).
+    /// resolve the structure of the table). The proxy tables query every configured shard, so the
+    /// result is the intersection of the per-shard lists: a table missing on some shard is not
+    /// listed, because the proxy could not serve it.
     Strings fetchTablesList(ContextPtr local_context, const String * only_table = nullptr) const;
 
     /// Infer the column structure of `remote_database.table_name`, from the local catalog for a local
     /// shard (without the name-hint machinery of `DatabaseCatalog::getTable`, which would recurse back
     /// into this database) and via `DESC TABLE` on the remote server otherwise. When the local replica
     /// does not have the database or the table, falls back to the remote replicas, like the
-    /// `Distributed` read path does. Returns an empty set when the table does not exist, and sets
+    /// `Distributed` read path does. With more than one shard, the table must be present on every
+    /// shard (established via `fetchTablesList`) before the structure is inferred from a single one.
+    /// Returns an empty set when the table does not exist, and sets
     /// `table_cluster` to the cluster through which the table should be accessed (`remote_only_cluster`
     /// when the structure came from the fallback, `cluster` otherwise).
     ColumnsDescription fetchTableStructure(const String & table_name, ContextPtr local_context, ClusterPtr & table_cluster) const;
