@@ -1,0 +1,45 @@
+---
+description: 'ClickHouse에 연결하기 위한 네트워크 인터페이스, 드라이버 및 도구 개요'
+keywords: ['clickhouse', '네트워크', '인터페이스', 'http', 'tcp', 'grpc', 'command-line',
+  'client', 'jdbc', 'odbc', 'driver']
+sidebarTitle: '개요'
+slug: /interfaces/overview
+title: '드라이버 및 인터페이스'
+doc_type: 'reference'
+---
+
+ClickHouse는 2개의 네트워크 인터페이스를 제공합니다(추가 보안을 위해 필요에 따라 TLS로 보호할 수 있습니다):
+
+* [HTTP](/ko/concepts/features/interfaces/http): 문서가 잘 갖춰져 있어 직접 사용하기 쉽습니다.
+* [Native TCP](/ko/concepts/features/interfaces/tcp): 오버헤드가 더 적습니다.
+
+대부분의 경우 이러한 인터페이스를 직접 사용하기보다는 적절한 도구나 라이브러리를 사용하는 것이 좋습니다. 다음은 ClickHouse에서 공식적으로 지원하는 항목입니다:
+
+* [Command-line client](/ko/concepts/features/interfaces/cli)
+* [JDBC 드라이버](/ko/concepts/features/interfaces/jdbc)
+* [ODBC 드라이버](/ko/concepts/features/interfaces/odbc)
+* [C++ client library](/ko/concepts/features/interfaces/cpp)
+
+ClickHouse는 또한 2개의 RPC 프로토콜을 지원합니다:
+
+* [gRPC protocol](/ko/concepts/features/interfaces/grpc): ClickHouse용으로 특별히 설계되었습니다.
+* [Apache Arrow Flight](/ko/concepts/features/interfaces/arrowflight).
+
+ClickHouse 서버는 고급 사용자를 위해 내장된 시각적 인터페이스도 제공합니다:
+
+* 실행 UI: 브라우저에서 `/play`를 여십시오;
+* Advanced Dashboard: 브라우저에서 `/dashboard`를 여십시오;
+* ClickHouse 엔지니어를 위한 바이너리 심볼 뷰어: 브라우저에서 `/binary`를 여십시오;
+* 관측성을 위한 ClickStack UI: 브라우저에서 `/clickstack`를 여십시오;
+
+<Info>
+  **ClickStack**
+
+  이 버전의 ClickStack은 로컬 디버깅과 빠른 조사에 적합하지만, 프로덕션 환경용은 아닙니다. 프로덕션 환경에서 사용할 수 있는 완전한 기능의 ClickStack은 [Open Source ClickStack](/ko/clickstack/getting-started/oss)을 참조하십시오.
+</Info>
+
+ClickHouse와 함께 사용할 수 있는 다양한 타사 라이브러리도 있습니다:
+
+* [클라이언트 라이브러리](/ko/integrations/language-clients/third-party/client-libraries)
+* [Integrations](/ko/integrations/connectors/tools/third-party-libraries)
+* [시각적 인터페이스](/ko/integrations/connectors/tools/gui)

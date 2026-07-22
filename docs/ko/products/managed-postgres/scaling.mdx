@@ -1,0 +1,170 @@
+---
+slug: /cloud/managed-postgres/scaling
+sidebarTitle: '스케일링'
+title: '스케일링'
+description: '유연한 VM 유형과 독립적인 리소스 스케일링을 통해 ClickHouse가 관리하는 Postgres 인스턴스를 수직으로 확장합니다'
+keywords: ['postgres scaling', 'vertical scaling', 'vm types', 'nvme scaling', 'instance types', 'performance scaling']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
+
+Managed Postgres는 워크로드 요구 사항에 맞는 유연한 스케일링 옵션을 제공합니다. 50개가 넘는 NVMe 기반 인스턴스 유형 중에서 선택할 수 있으며, CPU, 메모리, 스토리지를 각각 독립적으로 스케일링해 사용 사례에 맞게 성능과 비용을 최적화할 수 있습니다.
+
+<div id="instance-types">
+  ## 인스턴스 유형 및 유연성
+</div>
+
+Managed Postgres는 다양한 워크로드 특성에 맞게 각각 최적화된 폭넓은 인스턴스 유형을 제공합니다.
+
+* **50개 이상의 인스턴스 유형**을 제공하며, 컴퓨트, 메모리, 스토리지 최적화 구성 전반에서 선택할 수 있습니다
+* **모든 인스턴스 유형에서 NVMe 기반 스토리지**를 제공해 일관된 고성능 디스크 I/O를 지원합니다
+* **리소스를 독립적으로 스케일링**: 워크로드에 따라 CPU, 메모리, 스토리지 간 적절한 균형을 선택할 수 있습니다
+
+<Image img="/images/managed-postgres/instance-types.webp" alt="인스턴스 유형" size="md" border />
+
+<div id="choosing-instance">
+  ### 적합한 인스턴스 유형 선택
+</div>
+
+워크로드 유형에 따라 적합한 리소스 구성이 다릅니다:
+
+| 워크로드 유형                         | CPU | 메모리 | 스토리지 | 권장 인스턴스                  |
+| ------------------------------- | --- | --- | ---- | ------------------------ |
+| **컴퓨트 최적화**                     | 높음  | 중간  | 중간   | 컴퓨트 최적화(높은 vCPU 수)       |
+| **메모리 최적화** (대규모 작업 집합)         | 중간  | 높음  | 중간   | 메모리 최적화(높은 메모리 대 CPU 비율) |
+| **스토리지 최적화** (대규모 데이터셋, 높은 I/O) | 중간  | 중간  | 높음   | 스토리지 최적화(높은 NVMe 용량)     |
+
+<Tip>
+  안전상의 이유로 현재 사용 중인 스토리지 용량에 근접한 스토리지를 가진 인스턴스 유형으로는 전환하지 못할 수 있습니다. 문제를 방지하려면 현재 사용 용량보다 여유 공간이 있는 인스턴스 유형을 항상 선택하십시오.
+</Tip>
+
+<div id="how-scaling-works">
+  ## 스케일링 작동 방식
+</div>
+
+인스턴스 유형을 변경하면 Managed Postgres는 새 인프라를 프로비저닝하고 데이터베이스를 마이그레이션하는 수직 스케일링을 수행하며, 이 과정에서 다운타임은 최소화됩니다.
+
+<Image img="/images/managed-postgres/scaling-settings.webp" alt="스케일링 설정" size="md" border />
+
+<div id="scaling-process">
+  ### 스케일링 프로세스
+</div>
+
+스케일링 워크플로는 백업에서 새 대기 인스턴스를 준비하고 제어된 페일오버를 수행합니다.
+
+1. **대기 인스턴스 프로비저닝**: 대상 인스턴스 유형(CPU, 메모리, 스토리지 구성)으로 새 대기 인스턴스를 생성합니다.
+
+2. **S3 백업에서 복원**: S3에 저장된 최신 백업에서 복원하여 대기 인스턴스를 초기화합니다.
+
+3. **병렬 WAL 리플레이**: 대기 인스턴스는 [WAL-G](https://github.com/wal-g/wal-g) 기반의 병렬 복원 메커니즘을 사용해 백업 이후의 모든 Write-Ahead Log(WAL) 변경 사항을 적용합니다.
+   * WAL-G는 빠른 병렬 복원 작업을 지원합니다.
+   * WAL-G 개발자는 파트너십을 맺고 있는 Ubicloud 팀 소속으로, 이를 통해 높은 수준의 전문성과 최적화가 보장됩니다.
+
+4. **복제 따라잡기**: 대기 인스턴스는 진행 중인 WAL 변경 사항을 스트리밍으로 받아 적용하여 프라이머리와의 차이를 해소합니다.
+
+5. **페일오버**: 대기 인스턴스가 완전히 동기화되면 제어된 페일오버를 통해 새 프라이머리로 승격됩니다.
+   * **다운타임이 발생하는 유일한 단계는 이 단계입니다**(~30초)
+   * 페일오버 중에는 모든 활성 연결이 중단됩니다.
+   * 페일오버가 완료되면 클라이언트는 다시 연결해야 합니다.
+
+6. **기존 인스턴스 서비스 해제**: 페일오버가 완료되면 원래 인스턴스를 서비스 해제합니다.
+
+<div id="scaling-duration">
+  ### 스케일링 소요 시간
+</div>
+
+스케일링에 필요한 총 시간은 주로 데이터베이스 크기와 백업에서 리플레이해야 하는 WAL 데이터 양에 따라 달라집니다.
+
+* **백업 복원**: S3에서 새 인스턴스로 가장 최근의 전체 백업을 복원하는 데 걸리는 시간
+* **WAL 리플레이**: 마지막 전체 백업 이후의 증분 WAL 변경 사항을 리플레이하는 데 걸리는 시간
+* **병렬 복원**: WAL-G의 병렬 복원 메커니즘은 이 과정을 크게 단축합니다
+
+복원 시간은 몇 분에서 몇 시간까지 걸릴 수 있지만, 유지보수/다운타임은 매우 짧습니다(약 30초).
+
+<Warning>
+  **최소 다운타임**
+
+  전체 스케일링 프로세스에 걸리는 시간과 관계없이, 애플리케이션은 페일오버 중 약 30초간 다운타임을 겪습니다. 모든 복원 및 후속 동기화 작업은 대기 인스턴스에서 백그라운드로 수행됩니다.
+</Warning>
+
+<div id="parallel-restore">
+  ### WAL-G를 사용한 병렬 복원
+</div>
+
+Managed Postgres는 스케일링 작업 중 백업 복원을 가속하기 위해 [WAL-G](https://github.com/wal-g/wal-g)를 사용합니다. 특히 WAL-G 개발자가 협력 관계에 있는 Ubicloud 팀의 일원이라서 복원 과정에 깊은 전문성이 반영됩니다.
+
+WAL-G는 다음과 같은 이점을 제공합니다.
+
+* **병렬 다운로드 및 압축 해제**: 여러 백업 세그먼트를 S3에서 가져와 동시에 압축 해제합니다
+* **효율적인 WAL 재생**: 증분 WAL 변경 사항을 가능한 범위에서 병렬로 적용합니다
+* **최적화된 스트리밍**: 중간 복사본 없이 S3 storage에서 직접 스트리밍합니다
+* **빠른 복원**: 전체 소요 시간은 데이터 크기에 따라 달라지지만, 병렬화된 방식 덕분에 복원이 상당히 빠르게 진행됩니다
+
+이러한 최적화는 새 대기 인스턴스를 기동하는 데 필요한 시간을 크게 줄여 줍니다. 무엇보다 중요한 점은 복원이 전적으로 백그라운드에서 수행된다는 것입니다. 즉, 애플리케이션은 약 30초 내외의 짧은 failover 구간에서만 다운타임을 겪습니다.
+
+<div id="initiating-scaling">
+  ### 스케일링 시작하기
+</div>
+
+Managed Postgres 인스턴스를 스케일링하려면:
+
+1. 인스턴스의 **설정** 탭으로 이동합니다
+2. **스케일링** 섹션에서 아래로 스크롤하여 **서비스 크기**로 이동합니다
+3. 대상 인스턴스 유형을 선택합니다
+4. 변경 사항을 검토한 후 &quot;변경 사항 적용&quot;을 클릭합니다
+
+<div id="scaling-strategies">
+  ## 스케일링 전략
+</div>
+
+<div id="vertical-scaling">
+  ### 수직 스케일링
+</div>
+
+수직 스케일링(인스턴스 유형 변경)은 Managed Postgres에서 리소스를 조정하는 주된 방법입니다. 이 방식은 다음과 같은 이점을 제공합니다.
+
+* **세밀한 제어**: 50개가 넘는 인스턴스 유형 중에서 선택하여 CPU, 메모리, 스토리지를 세부적으로 조정할 수 있습니다
+* **워크로드 최적화**: 특정 워크로드에 맞게 최적화된 구성(컴퓨트, 메모리 또는 스토리지 집약형)을 선택할 수 있습니다
+* **비용 효율성**: 과도한 프로비저닝 없이 필요한 리소스에 대해서만 비용을 지불하면 됩니다
+
+<div id="read-replicas">
+  ### 수평 스케일링을 위한 읽기 레플리카
+</div>
+
+읽기 비중이 높은 워크로드에서는 읽기 처리 용량을 수평 스케일링하기 위해 [읽기 레플리카](/ko/products/managed-postgres/read-replicas) 사용을 고려하십시오:
+
+* 읽기 쿼리를 전용 읽기 레플리카 인스턴스로 분산합니다
+* 각 읽기 레플리카는 자체 컴퓨트와 메모리를 갖춘 완전히 독립적인 Postgres 인스턴스입니다
+* 읽기 레플리카는 효율적인 복제를 위해 객체 스토리지에서 WAL 변경 사항을 스트리밍합니다
+
+이 방식은 리포팅 대시보드, 분석 쿼리, 읽기 집약적인 API 엔드포인트처럼 읽기 대비 쓰기 비율이 높은 애플리케이션에 적합합니다.
+
+<div id="cdc-scaling">
+  ### ClickHouse integration의 CDC 스케일링
+</div>
+
+[ClickPipes](/ko/products/managed-postgres/clickhouse-integration)를 사용해 데이터를 ClickHouse로 복제하는 경우, CDC(Change Data Capture) 파이프라인을 독립적으로 스케일링할 수 있습니다:
+
+* CDC 워커를 1~24 CPU 코어까지 스케일링
+* 메모리는 CPU 코어 수의 4배에 맞춰 자동으로 스케일링
+* [ClickPipes OpenAPI](/ko/integrations/clickpipes/postgres/scaling)를 통해 스케일링 조정
+
+이를 통해 Postgres 인스턴스 리소스와 별도로 복제 처리량을 최적화할 수 있습니다.
+
+<div id="autoscaling">
+  ## 자동 스케일링
+</div>
+
+디스크 사용량이 90%에 도달하면 더 큰 인스턴스 유형으로 조정됩니다.
+
+<div id="resources">
+  ## 추가 리소스
+</div>
+
+* [설정 및 구성](/ko/products/managed-postgres/settings)
+* [읽기 레플리카](/ko/products/managed-postgres/read-replicas)
+* [고가용성](/ko/products/managed-postgres/high-availability)

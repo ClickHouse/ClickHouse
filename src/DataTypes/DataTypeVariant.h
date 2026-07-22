@@ -45,6 +45,7 @@ public:
     bool isComparable() const override { return true; }
     bool haveSubtypes() const override { return true; }
     bool textCanContainOnlyValidUTF8() const override;
+    bool hasDynamicStructure() const override;
     bool haveMaximumSizeOfValue() const override;
     size_t getMaximumSizeOfValueInMemory() const override;
 

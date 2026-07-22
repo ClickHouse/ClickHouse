@@ -8,8 +8,6 @@ title: 'deltaLake'
 doc_type: 'reference'
 ---
 
-# deltaLake table function
-
 Provides a table-like interface to [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3, Azure Blob Storage, or a locally mounted file system, supporting both reads and writes (from v25.10)
 
 ## Syntax {#syntax}
@@ -63,10 +61,10 @@ LIMIT 2
 ### Inserting data {#inserting-data}
 
 Consider a table in S3 storage at `s3://ch-docs-s3-bucket/people_10k/`.
-To insert data into the table, first enable the experimental feature:
+Delta Lake writes are a Beta feature disabled by default. Enable them with the following (`allow_delta_lake_writes` is available from version 26.7; on earlier versions use `allow_experimental_delta_lake_writes`):
 
-```sql
-SET allow_experimental_delta_lake_writes=1
+```sql title="Query"
+SET allow_delta_lake_writes=1
 ```
 
 Then write:
@@ -109,5 +107,5 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
 
 ## Related {#related}
 
-- [DeltaLake engine](engines/table-engines/integrations/deltalake.md)
-- [DeltaLake cluster table function](sql-reference/table-functions/deltalakeCluster.md)
+- [DeltaLake engine](/engines/table-engines/integrations/deltalake.md)
+- [DeltaLake cluster table function](/sql-reference/table-functions/deltalakeCluster.md)

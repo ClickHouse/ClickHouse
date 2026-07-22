@@ -7,6 +7,7 @@ namespace DB
 
 template <typename T> using AggregateFunctionThirdMoment = AggregateFunctionVarianceSimple<StatFuncOneArg<T, 3>>;
 
+void registerAggregateFunctionsStatisticsThirdMoment(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsStatisticsThirdMoment(AggregateFunctionFactory & factory)
 {
 

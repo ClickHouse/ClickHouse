@@ -1,0 +1,56 @@
+---
+title: Como verificar o estado do seu serviço do ClickHouse Cloud
+description: Aprenda a usar a ClickHouse Cloud API para verificar se o seu serviço está parado, inativo ou em execução sem ativá-lo.
+date: 2023-11-16
+tags: ['Gerenciamento de Cloud']
+keywords: ['Estado do serviço na Cloud']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="how-to-check-your-clickhouse-cloud-service-state">
+  ## Como verificar o estado do seu serviço do ClickHouse Cloud
+</div>
+
+Como faço para verificar o estado do meu serviço do ClickHouse Cloud? Quero saber se o serviço está parado, inativo ou em execução, mas sem ativá-lo nesse processo.
+
+<div id="answer">
+  ## Resposta
+</div>
+
+A [ClickHouse Cloud API](/pt-BR/products/cloud/features/admin-features/api/api-overview) é excelente para verificar o status de um serviço na nuvem. Você precisa criar uma API Key no seu serviço antes de poder usar a Cloud API. Você pode fazer isso no ClickHouse Cloud [clickhouse.cloud](https://console.clickhouse.cloud):
+
+* [Visão geral da API](/pt-BR/products/cloud/features/admin-features/api/api-overview)
+* [Swagger](/pt-BR/api-reference/organization/get-list-of-available-organizations)
+
+1. Para verificar o status de um serviço, execute o comando a seguir. Certifique-se de substituir `Key-ID` e `Key-Secret` pelos respectivos valores:
+
+   ```shell
+   curl --user '[Key-ID]:[Key-Secret]' https://api.clickhouse.cloud/v1/organizations/[Org-ID]/services/[Service-ID]
+   ```
+
+   Isso retornará algo como:
+
+   ```json
+   result":{"id":"[Service-ID]","name":"[Service-Name]","provider":"aws","region":"us-east-1","state":"**idle**","endpoints":[{"protocol":"nativesecure","host":"[Connect-URL]","port":9440},{"protocol":"https","host":"[Connect-URL]","port":8443}],"tier":"development","idleScaling":true,"idleTimeoutMinutes":15,"ipAccessList":[{"source":"[my-IP]","description":"[my-IP-name]"}],"createdAt":"2023-04-13T23:47:47Z"},"status":200}
+   ```
+
+2. Você pode usar o [utilitário JQ](https://jqlang.github.io/jq/) para extrair a chave `state`:
+
+   ```shell
+   curl --user '[Key-ID]:[Key-Secret]' https://api.clickhouse.cloud/v1/organizations/[Org-ID]/services/[Service-ID] | jq '.state'
+   ```
+
+   Isso retornará algo como:
+
+   ```json
+   **idle**
+   ```
+
+3. Ao executar o mesmo comando em um serviço em execução, a saída será:
+
+   ```json
+   **running**
+   ```

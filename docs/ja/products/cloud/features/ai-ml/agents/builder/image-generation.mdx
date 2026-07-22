@@ -1,0 +1,42 @@
+---
+sidebarTitle: '画像生成'
+slug: /cloud/features/ai-ml/agents/builder/image-generation
+title: '画像生成'
+description: 'ClickHouse Agents 内で画像を生成・編集'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', '画像生成', 'DALL-E', 'Flux', 'Stable Diffusion']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<BetaBadge />
+
+画像生成では、エージェントがテキストのプロンプトから新しい画像を生成したり、ユーザーがアップロードした画像を編集したりできます。エージェントは、求められた内容と利用可能なコンテキストに応じて、生成と編集のどちらを行うかを選択します。
+
+<div id="enable-it">
+  ## 画像生成を有効にする
+</div>
+
+画像生成は、エージェントビルダーの **Add Tools** モーダル (Capabilities セクションではなく) から追加します。エージェントビルダーパネルの下部にある **Add Tools** をクリックし、画像モデル用ツールを 1 つ追加します。たとえば、**OpenAI Image Tools**、**DALL-E-3**、**Stable Diffusion** などです。エージェントはリクエストに応じて適切なものを選択しますが、指示で使用するツールを限定することもできます。
+
+<Image img="/images/cloud/agent-builder/tools-modal.webp" alt="OpenAI Image Tools、DALL-E-3、Stable Diffusion などの画像モデルのインテグレーションが、ほかのサードパーティーツールとともに表示された Agent Tools モーダル" size="md" />
+
+<div id="generation">
+  ## 生成
+</div>
+
+ユーザーが画像を求めると、エージェントはプロンプトを指定して生成ツールを呼び出し、生成された画像をインラインで返します。エージェントはその画像への参照を自身のコンテキストに保持するため、同じ会話内でその画像を説明したり再利用したりできます。
+
+<div id="editing">
+  ## 編集
+</div>
+
+ユーザーが画像をアップロードし、色の変更、オブジェクトの追加、構図の拡張などの修正を依頼した場合、エージェントはツールの編集用バリアントを呼び出します。出力では、該当する部分を置き換えるか、依頼に応じて元の画像を拡張します。
+
+<div id="notes">
+  ## 注意事項
+</div>
+
+* 生成された画像は、自動的に別途ビジョン解析には渡されません。エージェントに画像を*解釈*させる必要がある場合は、ユーザーがアップロードした画像で [ビジョン](/ja/products/cloud/features/ai-ml/agents/builder/vision) を使用してください。
+* プロバイダーのコンテンツポリシーが適用されます。プロバイダーのポリシーに違反するプロンプトは、画像ではなくエラーを返します。

@@ -1,0 +1,53 @@
+---
+description: 'SQLite データベースに格納されているデータに対してクエリを実行できます。'
+sidebarTitle: 'sqlite'
+slug: /sql-reference/table-functions/sqlite
+title: 'sqlite'
+doc_type: 'reference'
+---
+
+[SQLite](/ja/reference/engines/database-engines/sqlite) データベースに格納されているデータに対してクエリを実行できます。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+sqlite('db_path', 'table_name')
+```
+
+<div id="arguments">
+  ## 引数
+</div>
+
+* `db_path` — SQLite データベースを含むファイルへのパス。[String](/ja/reference/data-types/string)。
+* `table_name` — SQLite データベース内のテーブル名。[String](/ja/reference/data-types/string)。
+
+<div id="returned_value">
+  ## 戻り値
+</div>
+
+* 元の`SQLite`テーブルと同じカラムを持つテーブルオブジェクト。
+
+<div id="example">
+  ## 例
+</div>
+
+```sql title="Query"
+SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
+```
+
+```text title="Response"
+┌─col1──┬─col2─┐
+│ line1 │    1 │
+│ line2 │    2 │
+│ line3 │    3 │
+└───────┴──────┘
+```
+
+<div id="related">
+  ## 関連
+</div>
+
+* [SQLite](/ja/reference/engines/table-engines/integrations/sqlite) テーブルエンジン
+* [SQLite database engine](/ja/reference/engines/database-engines/sqlite) — データ型サポートのセクション

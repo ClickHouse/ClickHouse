@@ -1,0 +1,191 @@
+---
+description: 'ClickHouse 中枚举数据类型的文档，该类型表示一组已命名的常量值'
+sidebarTitle: '枚举'
+slug: /sql-reference/data-types/enum
+title: '枚举'
+doc_type: 'reference'
+---
+
+由命名值组成的枚举类型。
+
+命名值可以声明为 `'string' = integer` 对，也可以只声明 `'string'` 名称。ClickHouse 仅存储数字，但支持通过名称对这些值进行操作。
+
+ClickHouse 支持：
+
+* 8 位 `Enum`。最多可包含 256 个值，枚举范围为 `[-128, 127]`。
+* 16 位 `Enum`。最多可包含 65536 个值，枚举范围为 `[-32768, 32767]`。
+
+插入数据时，ClickHouse 会自动选择 `Enum` 的类型。你也可以使用 `Enum8` 或 `Enum16` 类型，以确保存储大小符合预期。
+
+<div id="usage-examples">
+  ## 用法示例
+</div>
+
+这里我们创建一个表，其中包含一个类型为 `Enum8('hello' = 1, 'world' = 2)` 的列：
+
+```sql
+CREATE TABLE t_enum
+(
+    x Enum('hello' = 1, 'world' = 2)
+)
+ENGINE = TinyLog
+```
+
+同样，你也可以省略编号。ClickHouse 会自动按顺序分配编号。默认从 1 开始分配。
+
+```sql
+CREATE TABLE t_enum
+(
+    x Enum('hello', 'world')
+)
+ENGINE = TinyLog
+```
+
+你还可以为第一个名称指定允许的起始数字。
+
+```sql
+CREATE TABLE t_enum
+(
+    x Enum('hello' = 1, 'world')
+)
+ENGINE = TinyLog
+```
+
+```sql
+CREATE TABLE t_enum
+(
+    x Enum8('hello' = -129, 'world')
+)
+ENGINE = TinyLog
+```
+
+```text
+Exception on server:
+Code: 69. DB::Exception: Value -129 for element 'hello' exceeds range of Enum8.
+```
+
+列 `x` 只能存储类型定义中列出的值：`'hello'` 或 `'world'`。如果你尝试保存任何其他值，ClickHouse 将抛出异常。此 `Enum` 会自动选择 8 位的存储大小。
+
+```sql
+INSERT INTO t_enum VALUES ('hello'), ('world'), ('hello')
+```
+
+```text
+Ok.
+```
+
+```sql
+INSERT INTO t_enum VALUES('a')
+```
+
+```text
+Exception on client:
+Code: 49. DB::Exception: Unknown element 'a' for type Enum('hello' = 1, 'world' = 2)
+```
+
+从表中查询数据时，ClickHouse 会输出 `Enum` 中的字符串值。
+
+```sql
+SELECT * FROM t_enum
+```
+
+```text
+┌─x─────┐
+│ hello │
+│ world │
+│ hello │
+└───────┘
+```
+
+如果需要查看这些行对应的数值，必须将 `Enum` 值强制转换为整数类型。
+
+```sql
+SELECT CAST(x, 'Int8') FROM t_enum
+```
+
+```text
+┌─CAST(x, 'Int8')─┐
+│               1 │
+│               2 │
+│               1 │
+└─────────────────┘
+```
+
+要在查询中创建枚举值，还需要使用 `CAST`。
+
+```sql
+SELECT toTypeName(CAST('a', 'Enum(\'a\' = 1, \'b\' = 2)'))
+```
+
+```text
+┌─toTypeName(CAST('a', 'Enum(\'a\' = 1, \'b\' = 2)'))─┐
+│ Enum8('a' = 1, 'b' = 2)                             │
+└─────────────────────────────────────────────────────┘
+```
+
+<div id="general-rules-and-usage">
+  ## 一般规则和用法
+</div>
+
+每个值都会分配一个数字：`Enum8` 的取值范围为 `-128 ... 127`，`Enum16` 的取值范围为 `-32768 ... 32767`。所有字符串和数字都必须互不相同。允许使用空字符串。如果指定了这种类型 (在表定义中) ，数字可以按任意顺序排列。不过，顺序并不重要。
+
+`Enum` 中的字符串和数值都不能为 [NULL](/zh/reference/syntax)。
+
+`Enum` 可以包含在 [Nullable](/zh/reference/data-types/nullable) 类型中。因此，如果你使用以下查询创建一个表
+
+```sql
+CREATE TABLE t_enum_nullable
+(
+    x Nullable( Enum8('hello' = 1, 'world' = 2) )
+)
+ENGINE = TinyLog
+```
+
+它不仅可以存储 `'hello'` 和 `'world'`，还可以存储 `NULL`。
+
+```sql
+INSERT INTO t_enum_nullable VALUES('hello'),('world'),(NULL)
+```
+
+在 RAM 中，`Enum` 列的存储方式与其对应数值的 `Int8` 或 `Int16` 相同。
+
+以文本形式读取时，ClickHouse 会将该值解析为字符串，并在 枚举 值集合中查找对应的字符串。如果找不到，则会抛出异常。以文本格式读取时，会读取该字符串并查找对应的数值；如果找不到，也会抛出异常。
+以文本形式写入时，会将该值写成对应的字符串。如果列数据包含无效内容 (即不在有效集合中的数字) ，则会抛出异常。以二进制形式读写时，其行为与 Int8 和 Int16 数据类型相同。
+隐式默认值为编号最小的值。
+
+在 `ORDER BY`、`GROUP BY`、`IN`、`DISTINCT` 等操作中，枚举 的行为与对应的数字相同。例如，ORDER BY 会按数值顺序对其排序。相等运算符和比较运算符作用于 枚举 时，与作用于其底层数值时的行为相同。
+
+枚举 值不能与数字比较。枚举 可以与常量字符串比较。如果参与比较的字符串不是该 `Enum` 的有效值，则会抛出异常。支持左侧为 枚举、右侧为字符串集合的 IN 运算符。这些字符串就是相应 枚举 的值。
+
+大多数数值和字符串操作都没有为 枚举 值定义，例如给 枚举 加上一个数字，或将字符串拼接到 枚举 上。
+不过，枚举 原生提供了 `toString` 函数，用于返回其字符串值。
+
+枚举 值也可以使用 `toT` 函数转换为数值类型，其中 T 是某种数值类型。当 T 对应于该枚举的底层数值类型时，这种转换是零成本的。
+如果仅修改值集合，则可以使用 ALTER 零成本更改 枚举 类型。可以使用 ALTER 为 枚举 添加或删除成员 (只有当被删除的值从未在表中使用过时，删除才是安全的) 。为避免误操作，修改先前已定义的 枚举 成员的数值会抛出异常。
+
+使用 ALTER，可以将 Enum8 改为 Enum16，反之亦然，就像将 Int8 改为 Int16 一样。
+
+<div id="add-enum-values">
+  ## 添加枚举值
+</div>
+
+可以使用 ALTER [MODIFY COLUMN ADD ENUM VALUES](/zh/reference/statements/alter/column#modify-column-add-enum-values) 这一语法简写为枚举添加新值
+
+```sql
+CREATE TABLE enum
+(
+    x Enum('One' = 1, 'Two', 'Three')
+) ENGINE = Memory;
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES ('Zero' = 0, 'Four' = 4);
+SHOW CREATE TABLE enum;
+```
+
+```text
+┌─statement────────────────────────────────────────────────────────────────┐
+│CREATE TABLE default.enum                                                 │
+│(                                                                         │
+│    `x` Enum8('Zero' = 0, 'One' = 1, 'Two' = 2, 'Three' = 3, 'Four' = 4)  │
+│)                                                                         │
+│ENGINE = Memory                                                           │
+└──────────────────────────────────────────────────────────────────────────┘
+```

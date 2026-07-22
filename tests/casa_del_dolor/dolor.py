@@ -256,6 +256,12 @@ parser.add_argument(
     help="Add 'distributed_ddl' settings",
 )
 parser.add_argument(
+    "--without-distributed-query",
+    action="store_false",
+    dest="add_distributed_query",
+    help="Add 'distributed_query' settings",
+)
+parser.add_argument(
     "--without-shared-catalog",
     action="store_false",
     dest="add_shared_catalog",
@@ -428,7 +434,7 @@ if args.with_minio:
     os.environ["MINIO_SECRET_KEY"] = minio_secret_key
     with open(credentials_file.name, "w+") as file:
         file.write(
-            f"[default]\naws_access_key_id = testing\naws_secret_access_key = testing\naws_session_token = testing\naws_region = us-east-1\naws_endpoint_url = http://localhost:3000\n"
+            "[default]\naws_access_key_id = testing\naws_secret_access_key = testing\naws_session_token = testing\naws_region = us-east-1\naws_endpoint_url = http://localhost:3000\n"
         )
     os.environ["AWS_CONFIG_FILE"] = credentials_file.name
     os.environ["AWS_SHARED_CREDENTIALS_FILE"] = credentials_file.name
@@ -504,7 +510,7 @@ for i in range(0, len(args.replica_values)):
 server_versions = {}
 for server in servers:
     server_versions[server.name] = first_server
-cluster.start()
+cluster.start(300)
 logger.info(
     f"Starting cluster with {len(servers)} server(s) and server binary {first_server}"
 )
@@ -535,7 +541,7 @@ if args.with_postgresql:
         ip=cluster.postgres_ip, port=cluster.postgres_port
     )
     cursor = postgres_conn.cursor()
-    cursor.execute(f"CREATE DATABASE test")
+    cursor.execute("CREATE DATABASE test")
     cursor.close()
     postgres_conn.close()
 
@@ -620,8 +626,6 @@ if args.with_redis:
     integrations.append("redis")
 if args.with_kafka:
     integrations.append("kafka")
-if args.with_sqlite:
-    integrations.append("sqlite")
 if args.with_arrowflight:
     integrations.append("arrowflight")
 
@@ -777,7 +781,6 @@ while all_running and (not reached_limit):
             "mongo": ["mongo1", "mongo_no_cred", "mongo_secure"],
             "redis": ["redis1"],
             "kafka": ["kafka1"],
-            "sqlite": ["sqlite1"],
             "arrowflight": ["flight_server"],
         }
 

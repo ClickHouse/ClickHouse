@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Backups/BackupOperationInfo.h>
 #include <Storages/ColumnsDescription.h>

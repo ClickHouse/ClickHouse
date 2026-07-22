@@ -1,0 +1,219 @@
+---
+alias: []
+description: 'GeoJSONのFeatureCollectionを読み込み、各地物ごとにid、geometry、propertiesの各カラムを持つ1行を生成する入力フォーマットです。'
+input_format: true
+output_format: false
+keywords: ['GeoJSON']
+sidebarTitle: 'GeoJSON'
+slug: /interfaces/formats/GeoJSON
+title: 'GeoJSON'
+doc_type: 'reference'
+---
+
+| 入力 | 出力 | エイリアス |
+| -- | -- | ----- |
+| ✔  | ✗  |       |
+
+<div id="description">
+  ## 説明
+</div>
+
+[GeoJSON](https://geojson.org/) の `FeatureCollection` ドキュメントを読み取り、地物 ごとに 1 行を生成します。各行のスキーマは次の固定スキーマです。
+
+| Column       | Type             | Description                                                                                            |
+| ------------ | ---------------- | ------------------------------------------------------------------------------------------------------ |
+| `id`         | `String`         | 地物 の `id` メンバー (JSON 文字列または数値) です。テキストとして格納され、`id` が存在しないか `null` の場合は空文字列になります。                  |
+| `geometry`   | `Geometry`       | 地物 のジオメトリです。`Geometry` の `Variant` 型として格納されます。                                                    |
+| `properties` | `Nullable(JSON)` | 地物 の `properties` オブジェクトです。半構造化 `JSON` カラムとして格納されます。明示的な `"properties": null` は `NULL` として保持されます。 |
+
+各ジオメトリは ClickHouse の `Geometry` 型 (`Variant`) に格納されます。サポートされる GeoJSON ジオメトリ型は `Point`、`LineString`、`MultiLineString`、`Polygon`、`MultiPolygon` です。これ以外の 2 つの GeoJSON ジオメトリ型である `GeometryCollection` と `MultiPoint` は `Geometry` 型では表現できません。これらを `geometry` カラムに読み込むと、既定では例外が発生しますが、代わりに `NULL` を挿入 するように変更することもできます。詳しくは下記の [サポートされないジオメトリ型の処理](#unsupported-geometry) を参照してください。既定では、`geometry` カラムが `NULL` になるのは、地物 のジオメトリが明示的な JSON `null` の場合だけです。`input_format_geojson_unsupported_geometry_handling = 'null'` を指定すると、サポートされないジオメトリ型の場合も `NULL` になります。
+
+ドキュメントの構造は検証されます。最上位の `type` は `FeatureCollection` でなければならず、`features` の各要素は `type` が `Feature` でなければなりません。座標は GeoJSON の shape に関する不変条件を満たす必要があります。`LineString` (および `MultiLineString` の各 line) は少なくとも 2 つの位置を持たなければならず、`Polygon` の ring (および `MultiPolygon` の各 ring) は閉じていて、少なくとも 4 つの位置を持たなければなりません。不正な形式のドキュメントは黙って読み込まれることはなく、拒否されます。
+
+`FeatureCollection` オブジェクト内の他のキー (`name` や `crs` など) や、各 `Feature` オブジェクト内の他のキー (`bbox` など) は無視されます。
+
+キーの順序は柔軟です。最上位の `type` は `features` 配列の前でも後でもよく、ジオメトリオブジェクト内でも `coordinates` は `type` の前でも後でもかまいません。
+
+スキーマ推論では上記の固定スキーマが返されるため、テーブル定義がなくても `DESCRIBE` や `SELECT ... FROM format(...)` を使用できます。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+複数のジオメトリ型が含まれる、次の GeoJSON ファイル `london.geojson` を例にします。
+
+```json
+{
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "id": "1",
+            "geometry": {"type": "Point", "coordinates": [-0.0761, 51.5081]},
+            "properties": {"name": "Tower of London", "feature_type": "landmark", "year_built": 1078}
+        },
+        {
+            "type": "Feature",
+            "id": "2",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[-0.2500, 51.4700], [-0.1800, 51.4900], [-0.1200, 51.5060], [-0.0700, 51.5050], [0.0000, 51.5100]]
+            },
+            "properties": {"name": "River Thames", "feature_type": "river", "length_km": 346}
+        },
+        {
+            "type": "Feature",
+            "id": "3",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[[-0.1880, 51.5074], [-0.1533, 51.5074], [-0.1533, 51.5153], [-0.1880, 51.5153], [-0.1880, 51.5074]]]
+            },
+            "properties": {"name": "Hyde Park", "feature_type": "park", "area_km2": 1.42}
+        }
+    ]
+}
+```
+
+ファイルに対してクエリを実行し、ジオメトリ型を確認できます。
+
+```sql title="Query"
+SELECT id, properties.name AS name, variantType(geometry) AS geo_type
+FROM file('london.geojson', GeoJSON);
+```
+
+```response title="Response"
+┌─id─┬─name────────────┬─geo_type───┐
+│ 1  │ Tower of London │ Point      │
+│ 2  │ River Thames    │ LineString │
+│ 3  │ Hyde Park       │ Polygon    │
+└────┴─────────────────┴────────────┘
+```
+
+ファイル拡張子 `.geojson` は自動的に検出されるため、フォーマット引数は省略できます。
+
+```sql title="Query"
+SELECT id, properties.name AS name, variantType(geometry) AS geo_type
+FROM file('london.geojson');
+```
+
+各 Geometry object の基になる型は、`variantType` で確認できます:
+
+```sql title="Query"
+SELECT properties.name AS name, geometry, variantType(geometry)
+FROM file('london.geojson', GeoJSON);
+```
+
+```response title="Response"
+Row 1:
+──────
+name:                  Tower of London
+geometry:              (-0.0761,51.5081)
+variantType(geometry): Point
+
+Row 2:
+──────
+name:                  River Thames
+geometry:              [(-0.25,51.47),(-0.18,51.49),(-0.12,51.506),(-0.07,51.505),(0,51.51)]
+variantType(geometry): LineString
+
+Row 3:
+──────
+name:                  Hyde Park
+geometry:              [[(-0.188,51.5074),(-0.1533,51.5074),(-0.1533,51.5153),(-0.188,51.5153),(-0.188,51.5074)]]
+variantType(geometry): Polygon
+```
+
+基になるデータは次のように抽出できます:
+
+```sql title="Query"
+SELECT properties.name AS name, variantType(geometry), geometry.Point, geometry.LineString, geometry.Polygon
+FROM file('london.geojson', GeoJSON);
+```
+
+```response title="Response"
+Row 1:
+──────
+name:                  Tower of London
+variantType(geometry): Point
+geometry.Point:        (-0.0761,51.5081)
+geometry.LineString:   []
+geometry.Polygon:      []
+
+Row 2:
+──────
+name:                  River Thames
+variantType(geometry): LineString
+geometry.Point:        (0,0)
+geometry.LineString:   [(-0.25,51.47),(-0.18,51.49),(-0.12,51.506),(-0.07,51.505),(0,51.51)]
+geometry.Polygon:      []
+
+Row 3:
+──────
+name:                  Hyde Park
+variantType(geometry): Polygon
+geometry.Point:        (0,0)
+geometry.LineString:   []
+geometry.Polygon:      [[(-0.188,51.5074),(-0.1533,51.5074),(-0.1533,51.5153),(-0.188,51.5153),(-0.188,51.5074)]]
+```
+
+`Geometry` のサブカラムにアクセスすると、その行にその型の値が入っている場合はその値が返され、そうでない場合はその型のデフォルト値 — `Point` では `(0,0)`、配列ベースの型では `[]` — が返されます。どの型が設定されているかを判別するには、`variantType(geometry)` を使用します。
+
+GeoJSON データをテーブルに取り込むこともできます。
+
+```sql title="Query"
+CREATE TABLE london
+(
+    id           String,
+    geometry     Geometry,
+    properties   Nullable(JSON),
+    name         String MATERIALIZED properties.name,
+    feature_type String MATERIALIZED properties.feature_type
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO london
+SELECT id, geometry, properties
+FROM file('london.geojson', GeoJSON);
+```
+
+次に、地物タイプでクエリを実行します:
+
+```sql title="Query"
+SELECT name, feature_type, variantType(geometry) AS geo_type
+FROM london
+ORDER BY id;
+```
+
+```response title="Response"
+┌─name────────────┬─feature_type─┬─geo_type───┐
+│ Tower of London │ landmark     │ Point      │
+│ River Thames    │ river        │ LineString │
+│ Hyde Park       │ park         │ Polygon    │
+└─────────────────┴──────────────┴────────────┘
+```
+
+テーブル定義がなくても、GeoJSONデータのスキーマを推論できます。
+
+```sql title="Query"
+DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
+```
+
+```response title="Response"
+┌─name───────┬─type───────────┐
+│ id         │ String         │
+│ geometry   │ Geometry       │
+│ properties │ Nullable(JSON) │
+└────────────┴────────────────┘
+```
+
+<div id="unsupported-geometry">
+  ## サポートされていないジオメトリ型の処理
+</div>
+
+`GeometryCollection` や `MultiPoint` など、一部の有効な GeoJSON ジオメトリ型は、ClickHouse の `Geometry` 型では表現できません。そのようなジオメトリを `geometry` カラムに格納する必要がある場合の動作は、`input_format_geojson_unsupported_geometry_handling` 設定で制御できます。設定可能な値は次のとおりです。
+
+* `'throw'` — 例外をスローする (デフォルト) 
+* `'null'` — `geometry` カラムに `NULL` 値を挿入し、パースを続行する
+
+この処理が適用されるのは、`geometry` カラムが読み取られる場合に限られます。`geometry` が要求された出力カラムに含まれていない場合 (たとえば `SELECT id FROM ...`) 、サポートされていないジオメトリであっても形式が正しいかどうかの検証は行われますが、この処理はトリガーされません。つまり、ジオメトリ値は実体化されないため、例外はスローされず、`NULL` も挿入されません。

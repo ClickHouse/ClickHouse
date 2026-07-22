@@ -1,0 +1,121 @@
+---
+description: 'Renvoie la table connectée via ODBC.'
+sidebarTitle: 'odbc'
+slug: /sql-reference/table-functions/odbc
+title: 'odbc'
+doc_type: 'reference'
+---
+
+Renvoie la table connectée via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
+
+<div id="syntax">
+  ## Syntaxe
+</div>
+
+```sql
+odbc(datasource, external_database, external_table)
+odbc(datasource, external_table)
+odbc(named_collection)
+```
+
+<div id="arguments">
+  ## Arguments
+</div>
+
+| Argument            | Description                                                                         |
+| ------------------- | ----------------------------------------------------------------------------------- |
+| `datasource`        | Nom de la section contenant les paramètres de connexion dans le fichier `odbc.ini`. |
+| `external_database` | Nom d&#39;une base de données dans un SGBD externe.                                 |
+| `external_table`    | Nom d&#39;une table dans `external_database`.                                       |
+
+Ces paramètres peuvent également être transmis à l&#39;aide de [collections nommées](/fr/concepts/features/configuration/server-config/named-collections).
+
+Pour implémenter les connexions ODBC de manière sûre, ClickHouse utilise un programme distinct, `clickhouse-odbc-bridge`. Si le pilote ODBC est chargé directement par `clickhouse-server`, des problèmes liés au pilote peuvent faire planter le serveur ClickHouse. ClickHouse démarre automatiquement `clickhouse-odbc-bridge` lorsque cela est nécessaire. Le programme de pont ODBC est installé à partir du même paquet que `clickhouse-server`.
+
+Les champs de la table externe contenant des valeurs `NULL` sont convertis en valeurs par défaut du type de données sous-jacent. Par exemple, si un champ d&#39;une table MySQL distante a le type `INT NULL`, il est converti en 0 (la valeur par défaut du type de données ClickHouse `Int32`).
+
+<div id="usage-example">
+  ## Exemple d&#39;utilisation
+</div>
+
+**Récupération des données depuis l&#39;installation locale de MySQL via ODBC**
+
+Cet exemple a été testé sur Ubuntu Linux 18.04 et MySQL server 5.7.
+
+Assurez-vous qu&#39;unixODBC et MySQL Connector sont installés.
+
+Par défaut (s&#39;il est installé à partir de paquets), ClickHouse démarre sous l&#39;utilisateur `clickhouse`. Vous devez donc créer et configurer cet utilisateur sur le MySQL server.
+
+```bash
+$ sudo mysql
+```
+
+```sql
+mysql> CREATE USER 'clickhouse'@'localhost' IDENTIFIED BY 'clickhouse';
+mysql> GRANT ALL PRIVILEGES ON *.* TO 'clickhouse'@'clickhouse' WITH GRANT OPTION;
+```
+
+Configurez ensuite la connexion dans `/etc/odbc.ini`.
+
+```bash
+$ cat /etc/odbc.ini
+[mysqlconn]
+DRIVER = /usr/local/lib/libmyodbc5w.so
+SERVER = 127.0.0.1
+PORT = 3306
+DATABASE = test
+USERNAME = clickhouse
+PASSWORD = clickhouse
+```
+
+Vous pouvez vérifier la connexion à l’aide de l’utilitaire `isql` fourni par l’installation unixODBC.
+
+```bash
+$ isql -v mysqlconn
++-------------------------+
+| Connected!                            |
+|                                       |
+...
+```
+
+Table MySQL :
+
+```text
+mysql> CREATE TABLE `test`.`test` (
+    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+    ->   `int_nullable` INT NULL DEFAULT NULL,
+    ->   `float` FLOAT NOT NULL,
+    ->   `float_nullable` FLOAT NULL DEFAULT NULL,
+    ->   PRIMARY KEY (`int_id`));
+Query OK, 0 rows affected (0,09 sec)
+
+mysql> insert into test (`int_id`, `float`) VALUES (1,2);
+Query OK, 1 row affected (0,00 sec)
+
+mysql> select * from test;
++------+----------+-----+----------+
+| int_id | int_nullable | float | float_nullable |
++------+----------+-----+----------+
+|      1 |         NULL |     2 |           NULL |
++------+----------+-----+----------+
+1 row in set (0,00 sec)
+```
+
+Récupération des données de la table MySQL dans ClickHouse :
+
+```sql
+SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
+```
+
+```text
+┌─int_id─┬─int_nullable─┬─float─┬─float_nullable─┐
+│      1 │            0 │     2 │              0 │
+└────────┴──────────────┴───────┴────────────────┘
+```
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [Dictionnaires ODBC](/fr/reference/statements/create/dictionary/sources/odbc)
+* [Moteur de table ODBC](/fr/reference/engines/table-engines/integrations/odbc).

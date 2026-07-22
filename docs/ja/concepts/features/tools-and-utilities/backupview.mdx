@@ -1,0 +1,53 @@
+---
+description: '[BACKUP](/concepts/features/backup-restore/overview) コマンドで作成されたバックアップを解析するための clickhouse_backupview のドキュメント {#clickhouse_backupview}'
+slug: /operations/utilities/backupview
+title: 'clickhouse_backupview'
+doc_type: 'reference'
+---
+
+[BACKUP](/ja/concepts/features/backup-restore/overview) コマンドで作成されたバックアップの解析を支援する Python モジュールです。
+主な目的は、実際に復元しなくてもバックアップから必要な情報を取得できるようにすることです。
+
+このモジュールは、次のための関数を提供します。
+
+* バックアップに含まれるファイルを列挙する
+* バックアップからファイルを読み取る
+* バックアップに含まれるデータベース、テーブル、パーツに関する有用な情報を読みやすい形式で取得する
+* バックアップの整合性を確認する
+
+<div id="example">
+  ## 例:
+</div>
+
+```python
+from clickhouse_backupview import open_backup, S3, FileInfo
+
+# バックアップを開く。ローカルパスを使用することもできる:
+# backup = open_backup("/backups/my_backup_1/")
+backup = open_backup(S3("uri", "access_key_id", "secret_access_key"))
+
+# バックアップ内のデータベース一覧を取得する。
+print(backup.get_databases()))
+
+# バックアップ内のテーブル一覧を取得し、
+# 各テーブルのcreate queryおよびパーツとパーティションの一覧を取得する。
+for db in backup.get_databases():
+    for tbl in backup.get_tables(database=db):
+        print(backup.get_create_query(database=db, table=tbl))
+        print(backup.get_partitions(database=db, table=tbl))
+        print(backup.get_parts(database=db, table=tbl))
+
+# バックアップからすべてを展開する。
+backup.extract_all(table="mydb.mytable", out='/tmp/my_backup_1/all/')
+
+# 特定のテーブルのデータを展開する。
+backup.extract_table_data(table="mydb.mytable", out='/tmp/my_backup_1/mytable/')
+
+# 単一のパーティションを展開する。
+backup.extract_table_data(table="mydb.mytable", partition="202201", out='/tmp/my_backup_1/202201/')
+
+# 単一のパーツを展開する。
+backup.extract_table_data(table="mydb.mytable", part="202201_100_200_3", out='/tmp/my_backup_1/202201_100_200_3/')
+```
+
+さらに多くの例については、[test](https://github.com/ClickHouse/ClickHouse/blob/master/utils/backupview/test/test.py)を参照してください。

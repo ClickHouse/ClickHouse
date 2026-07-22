@@ -28,6 +28,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace Setting
+{
+    extern const SettingsFileLikeEngineDefaultPartitionStrategy file_like_engine_default_partition_strategy;
+}
+
 void StorageObjectStorageConfiguration::update( ///NOLINT
     ObjectStoragePtr object_storage_ptr,
     ContextPtr context)
@@ -122,15 +127,14 @@ void StorageObjectStorageConfiguration::initialize(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `partition_strategy` argument is incompatible with data lakes");
         }
     }
-    else if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE)
+    else if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
+        && configuration_to_initialize.getRawPath().hasPartitionWildcard()
+        && local_context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value
+            == FileLikeEngineDefaultPartitionStrategy::WILDCARD)
     {
-        if (configuration_to_initialize.getRawPath().hasPartitionWildcard())
-        {
-            // Promote to wildcard in case it is not data lake to make it backwards compatible
-            configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
-        }
+        /// Backwards compatibility: promote to WILDCARD only when it is the effective default strategy.
+        configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
     }
-
     if (configuration_to_initialize.format == "auto")
     {
         if (configuration_to_initialize.isDataLakeConfiguration())
@@ -179,6 +183,54 @@ void StorageObjectStorageConfiguration::setSchemaHash(const String & hash)
 
 void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
 {
+    /// Data lake engines (Iceberg, Delta Lake, etc.) implement their own partitioning and
+    /// do not use the file-like `partition_strategy`. Skip applying a default strategy here.
+    /// Also skip when there is no `PARTITION BY` - there is no strategy to apply, but we still
+    /// fall through to `PartitionStrategyFactory::get` so that consistency checks (e.g. explicit
+    /// `partition_columns_in_data_file = 0` combined with strategy `none`) keep raising.
+    if (partition_by && partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE && !isDataLakeConfiguration())
+    {
+        if (!is_create_query)
+        {
+            /// Backward compatibility on ATTACH / server startup / RESTORE / replicated-DDL replay:
+            /// for a table loaded from existing metadata the implicit strategy is deterministically
+            /// recoverable from the path alone, because the two strategies are mutually exclusive on
+            /// path shape — wildcard REQUIRES `{_partition_id}` in the path, hive FORBIDS it. Consulting
+            /// the mutable `file_like_engine_default_partition_strategy` default here instead would
+            /// refuse to load legitimately created tables whenever the default has changed since
+            /// creation (pre-26.6 wildcard tables under the 26.6 `hive` default, or implicit-hive
+            /// tables loaded under a `wildcard` default after a downgrade), aborting server startup
+            /// and breaking upgrades. Only a user-issued `CREATE` applies the default.
+            partition_strategy_type = getRawPath().hasPartitionWildcard()
+                ? PartitionStrategyFactory::StrategyType::WILDCARD
+                : PartitionStrategyFactory::StrategyType::HIVE;
+        }
+        else
+        {
+            switch (context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value)
+            {
+                case FileLikeEngineDefaultPartitionStrategy::WILDCARD:
+                {
+                    /// Set the strategy unconditionally; `PartitionStrategyFactory::get` will raise
+                    /// `BAD_ARGUMENTS` if the path is missing the `{_partition_id}` placeholder.
+                    partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+                    break;
+                }
+                case FileLikeEngineDefaultPartitionStrategy::HIVE:
+                {
+                    partition_strategy_type = PartitionStrategyFactory::StrategyType::HIVE;
+                    break;
+                }
+            }
+        }
+
+        /// The default for `partition_columns_in_data_file` was computed at parse time against
+        /// `partition_strategy_type == NONE`. Recompute it now that the effective strategy is known,
+        /// unless the user provided an explicit value.
+        if (!partition_columns_in_data_file_was_set)
+            partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
+    }
+
     partition_strategy = PartitionStrategyFactory::get(
         partition_strategy_type,
         partition_by,
@@ -257,7 +309,11 @@ std::string StorageObjectStorageConfiguration::Path::cutGlobs(bool supports_part
 
 void StorageObjectStorageConfiguration::check(ContextPtr)
 {
-    FormatFactory::instance().checkFormatName(format);
+    /// `auto` is a sentinel meaning the format must be inferred from the data; it is not a real format
+    /// name and is resolved (and thus validated) during schema/format inference. Skipping it here lets
+    /// `check` run before inference (e.g. to enforce HTTP host/header filters first).
+    if (format != "auto")
+        FormatFactory::instance().checkFormatName(format);
 }
 
 bool StorageObjectStorageConfiguration::isNamespaceWithGlobs() const
@@ -299,6 +355,7 @@ void StorageObjectStorageConfiguration::initializeFromParsedArguments(const Stor
     structure = parsed_arguments.structure;
     partition_strategy_type = parsed_arguments.partition_strategy_type;
     partition_columns_in_data_file = parsed_arguments.partition_columns_in_data_file;
+    partition_columns_in_data_file_was_set = parsed_arguments.partition_columns_in_data_file_was_set;
     partition_strategy = parsed_arguments.partition_strategy;
 }
 }

@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
+#include <unordered_set>
 
 
 namespace DB
@@ -320,61 +321,43 @@ void AccessRightsElement::replaceDeprecated()
     if (access_flags.toAccessTypes().size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "replaceDeprecated() was called on an access element with multiple access flags: {}", access_flags.toString());
 
-    switch (const auto current_access_type = access_flags.toAccessTypes()[0])
+    static const auto deprecated_source_types = [] {
+        std::unordered_set<AccessType> result;
+        #define ADD_DEPRECATED_SOURCE_TYPE(name, alias) result.insert(AccessType::name);
+        APPLY_FOR_SOURCE(ADD_DEPRECATED_SOURCE_TYPE)
+        #undef ADD_DEPRECATED_SOURCE_TYPE
+        return result;
+    }();
+
+    const auto current_access_type = access_flags.toAccessTypes()[0];
+    if (deprecated_source_types.contains(current_access_type))
     {
-        case AccessType::FILE:
-        case AccessType::URL:
-        case AccessType::REMOTE:
-        case AccessType::MONGO:
-        case AccessType::REDIS:
-        case AccessType::MYSQL:
-        case AccessType::POSTGRES:
-        case AccessType::SQLITE:
-        case AccessType::ODBC:
-        case AccessType::JDBC:
-        case AccessType::HDFS:
-        case AccessType::S3:
-        case AccessType::HIVE:
-        case AccessType::AZURE:
-        case AccessType::KAFKA:
-        case AccessType::NATS:
-        case AccessType::RABBITMQ:
-            if (!anyDatabase())
-                /// This will leave statements like `REVOKE S3 ON system.*` untouched
-                /// These statements will be deleted afterwards with `eraseNotGrantable()`
-                break;
-            access_flags = AccessType::READ | AccessType::WRITE;
-            parameter = DB::toString(current_access_type);
-            break;
-        case AccessType::SOURCES:
-            access_flags = AccessType::READ | AccessType::WRITE;
-            break;
-        default:
-            break;
+        if (!anyDatabase())
+            /// This will leave statements like `REVOKE S3 ON system.*` untouched
+            /// These statements will be deleted afterwards with `eraseNotGrantable()`
+            return;
+        access_flags = AccessType::READ | AccessType::WRITE;
+        parameter = DB::toString(current_access_type);
+    }
+    else if (current_access_type == AccessType::SOURCES)
+    {
+        access_flags = AccessType::READ | AccessType::WRITE;
     }
 }
 
 void AccessRightsElement::makeBackwardCompatible()
 {
-    static const std::unordered_map<std::string, AccessType> string_to_accessType = {
-        {"FILE", AccessType::FILE},
-        {"URL", AccessType::URL},
-        {"REMOTE", AccessType::REMOTE},
-        {"MONGO", AccessType::MONGO},
-        {"REDIS", AccessType::REDIS},
-        {"MYSQL", AccessType::MYSQL},
-        {"POSTGRES", AccessType::POSTGRES},
-        {"SQLITE", AccessType::SQLITE},
-        {"ODBC", AccessType::ODBC},
-        {"JDBC", AccessType::JDBC},
-        {"HDFS", AccessType::HDFS},
-        {"S3", AccessType::S3},
-        {"HIVE", AccessType::HIVE},
-        {"AZURE", AccessType::AZURE},
-        {"KAFKA", AccessType::KAFKA},
-        {"NATS", AccessType::NATS},
-        {"RABBITMQ", AccessType::RABBITMQ},
-    };
+    static const auto string_to_accessType = [] {
+        std::unordered_map<std::string, AccessType> result;
+        /// Insert both the spaced form (e.g. "ARROW FLIGHT" from replaceDeprecated())
+        /// and the canonical form (e.g. "ARROW_FLIGHT" from unifySource() in the parser).
+        #define ADD_BACKWARD_COMPAT_SOURCE(name, alias) \
+            result.emplace(DB::toString(AccessType::name), AccessType::name); \
+            result.emplace(#name, AccessType::name);
+        APPLY_FOR_SOURCE(ADD_BACKWARD_COMPAT_SOURCE)
+        #undef ADD_BACKWARD_COMPAT_SOURCE
+        return result;
+    }();
 
     auto is_enabled_read_write_grants = false;
     if (const auto context = Context::getGlobalContextInstance())
@@ -457,6 +440,11 @@ String AccessRightsElements::toStringWithoutOptions() const { return toStringImp
 void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) const
 {
     bool no_output = true;
+    /// Track which access flags have already been output within the current group
+    /// to avoid duplicate keywords after backward-compatible conversion
+    /// (e.g., READ ON FILE and WRITE ON FILE both become FILE after makeBackwardCompatible).
+    AccessFlags group_flags;
+
     for (size_t i = 0; i != size(); ++i)
     {
         auto element = (*this)[i];
@@ -466,7 +454,17 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
         if (keywords.empty() || (!element.anyColumn() && element.columns.empty()))
             continue;
 
-        for (const auto & keyword : keywords)
+        /// Deduplicate keywords only for table-wide grants (anyColumn()).
+        /// Column-scoped grants (e.g., SELECT(a), SELECT(b)) must output each
+        /// keyword+column combination even when the access flag is the same.
+        auto output_keywords = keywords;
+        if (element.anyColumn())
+        {
+            output_keywords = (element.access_flags - group_flags).toKeywords();
+            group_flags |= element.access_flags;
+        }
+
+        for (const auto & keyword : output_keywords)
         {
             if (!std::exchange(no_output, false))
                 buffer << ", ";
@@ -479,7 +477,10 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
         bool next_element_on_same_db_and_table = false;
         if (i != size() - 1)
         {
-            const auto & next_element = (*this)[i + 1];
+            /// Compare backward-compatible versions of both elements so that
+            /// the parameter field (cleared by makeBackwardCompatible) matches on both sides.
+            auto next_element = (*this)[i + 1];
+            next_element.makeBackwardCompatible();
             if (element.sameDatabaseAndTableAndParameter(next_element))
             {
                 next_element_on_same_db_and_table = true;
@@ -490,6 +491,7 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
         {
             buffer << " ";
             element.formatONClause(buffer);
+            group_flags = {};
         }
     }
 

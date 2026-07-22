@@ -1,0 +1,67 @@
+---
+description: 'يعرض بيانات dictionary كجدول في ClickHouse. ويعمل بنفس طريقة
+  محرك Dictionary.'
+sidebarTitle: 'dictionary'
+slug: /sql-reference/table-functions/dictionary
+title: 'dictionary'
+doc_type: 'reference'
+---
+
+يعرض بيانات [dictionary](/ar/reference/statements/create/dictionary) كجدول في ClickHouse. ويعمل بنفس طريقة محرك [Dictionary](/ar/reference/engines/table-engines/special/dictionary).
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+```sql
+dictionary('dict')
+```
+
+<div id="arguments">
+  ## الوسيطات
+</div>
+
+* `dict` — اسم dictionary. [String](/ar/reference/data-types/string).
+
+<div id="returned_value">
+  ## القيمة المعادة
+</div>
+
+جدول في ClickHouse.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+جدول الإدخال `dictionary_source_table`:
+
+```text
+┌─id─┬─value─┐
+│  0 │     0 │
+│  1 │     1 │
+└────┴───────┘
+```
+
+أنشئ dictionary:
+
+```sql title="Query"
+CREATE DICTIONARY new_dictionary(id UInt64, value UInt64 DEFAULT 0) PRIMARY KEY id
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dictionary_source_table')) LAYOUT(DIRECT());
+```
+
+```sql title="Query"
+SELECT * FROM dictionary('new_dictionary');
+```
+
+```text title="Response"
+┌─id─┬─value─┐
+│  0 │     0 │
+│  1 │     1 │
+└────┴───────┘
+```
+
+<div id="related">
+  ## مواضيع ذات صلة
+</div>
+
+* [محرك Dictionary](/ar/reference/engines/table-engines/special/dictionary)

@@ -18,6 +18,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <boost/algorithm/hex.hpp>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/OpenSSLHelpers.h>
@@ -227,6 +228,12 @@ String FormatSchemaInfo::querySchema(const String & query)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected the schema query result to have one column");
 
         auto & column = block.getByPosition(0).column;
+        if (column->size() != 1)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Expected the schema query result to have one row, got {}",
+                column->size());
+
         if (const auto * col_str = typeid_cast<const ColumnString *>(column.get()))
         {
             result = col_str->getDataAt(0);
@@ -348,7 +355,7 @@ String FormatSchemaInfo::generateSchemaFileName(const String & hashing_content, 
 
     String content_sample;
     content_sample.resize(content_sample_len * 2);
-    boost::algorithm::hex(content_sample.begin(), content_sample.begin() + content_sample_len, content_sample.data());
+    boost::algorithm::hex(hashing_content.begin(), hashing_content.begin() + content_sample_len, content_sample.data());
 
     if (file_extention.empty())
         return fmt::format("{}-{}", content_sample, content_hash_hex);

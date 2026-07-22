@@ -1,0 +1,148 @@
+---
+title: Cómo usar ARRAY JOIN para extraer y consultar atributos variables con claves y valores de Map
+description: "Ejemplo sencillo para ilustrar cómo usar ARRAY JOIN para extraer y consultar atributos variables con claves y valores de Map"
+date: 2024-06-21
+tags: ['Funciones']
+keywords: ['arrayJoin']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="question">
+  ## Pregunta
+</div>
+
+Si tengo atributos variables en una columna que usa tipos Map, ¿cómo puedo extraerlos y utilizarlos en las consultas?
+
+<div id="answer">
+  ## Respuesta
+</div>
+
+Este es un ejemplo básico de cómo extraer claves y valores de un campo de atributos variable.
+Este método creará aparentes duplicados a partir de cada fila de la tabla source/raw. Sin embargo, como se extraen las claves y los valores, pueden incluirse en la clave primaria o en un índice secundario, como un filtro bloom.
+
+En este ejemplo, básicamente tenemos una source que crea una tabla de métricas; tiene varios atributos que pueden aplicarse en un campo de atributos que contiene valores de tipo Map. Si hay atributos que siempre van a estar presentes en los registros, es mejor extraerlos a sus propias columnas y poblarlas.
+
+Deberías poder copiar y pegar sin más para ver cuáles serían los resultados y qué hace la vista materializada en este caso.
+
+Crea una base de datos de ejemplo:
+
+```
+create database db1;
+```
+
+Cree la tabla inicial que contendrá las filas y los atributos:
+
+```
+create table db1.table1_metric_map
+(
+  id UInt32,
+  timestamp DateTime,
+  metric_name String,
+  metric_value Int32,
+  attributes Map(String, String)
+)
+engine = MergeTree()
+order by timestamp;
+```
+
+Inserte filas de ejemplo en la tabla.  El tamaño de la muestra es deliberadamente pequeño para que, cuando se cree la vista materializada, pueda ver cómo las filas se multiplican para cada atributo.
+
+```
+insert into db1.table1_metric_map
+VALUES
+(1, '2023-09-20 00:01:00', 'ABC', 10, {'env':'prod','app':'app1','server':'server1'}),
+(2, '2023-09-20 00:01:00', 'ABC', 20,{'env':'prod','app':'app2','server':'server1','dc':'dc1'}),
+(3, '2023-09-20 00:01:00', 'ABC', 30,{'env':'qa','app':'app1','server':'server1'}),
+(4, '2023-09-20 00:01:00', 'ABC', 40,{'env':'qa','app':'app2','server':'server1','dc':'dc1'}),
+(5, '2023-09-20 00:01:00', 'DEF', 50,{'env':'prod','app':'app1','server':'server2'}),
+(6, '2023-09-20 00:01:00', 'DEF', 60, {'env':'prod','app':'app2','server':'server1'}),
+(7, '2023-09-20 00:01:00', 'DEF', 70,{'env':'qa','app':'app1','server':'server1'}),
+(8, '2023-09-20 00:01:00', 'DEF', 80,{'env':'qa','app':'app2','server':'server1'}),
+(9, '2023-09-20 00:02:00', 'ABC', 90,{'env':'prod','app':'app1','server':'server1'}),
+(10, '2023-09-20 00:02:00', 'ABC', 100,{'env':'prod','app':'app1','server':'server2'}),
+(11, '2023-09-20 00:02:00', 'ABC', 110,{'env':'qa','app':'app1','server':'server1'}),
+(12, '2023-09-20 00:02:00', 'ABC', 120,{'env':'qa','app':'app1','server':'server1'}),
+(13, '2023-09-20 00:02:00', 'DEF', 130,{'env':'prod','app':'app1','server':'server1'}),
+(14, '2023-09-20 00:02:00', 'DEF', 140,{'env':'prod','app':'app2','server':'server1','dc':'dc1'}),
+(15, '2023-09-20 00:02:00', 'DEF', 150,{'env':'qa','app':'app1','server':'server2'}),
+(16, '2023-09-20 00:02:00', 'DEF', 160,{'env':'qa','app':'app1','server':'server1','dc':'dc1'}),
+(17, '2023-09-20 00:03:00', 'ABC', 170,{'env':'prod','app':'app1','server':'server1'}),
+(18, '2023-09-20 00:03:00', 'ABC', 180,{'env':'prod','app':'app1','server':'server1'}),
+(19, '2023-09-20 00:03:00', 'ABC', 190,{'env':'qa','app':'app1','server':'server1'}),
+(20, '2023-09-20 00:03:00', 'ABC', 200,{'env':'qa','app':'app1','server':'server2'}),
+(21, '2023-09-20 00:03:00', 'DEF', 210,{'env':'prod','app':'app1','server':'server1'}),
+(22, '2023-09-20 00:03:00', 'DEF', 220,{'env':'prod','app':'app1','server':'server1'}),
+(23, '2023-09-20 00:03:00', 'DEF', 230,{'env':'qa','app':'app1','server':'server1'}),
+(24, '2023-09-20 00:03:00', 'DEF', 240,{'env':'qa','app':'app1','server':'server1'});
+```
+
+Luego podemos crear una vista materializada con ARRAY JOIN para extraer los atributos de Map en columnas de claves y valores.  A modo de demostración, en el ejemplo siguiente se usa una tabla implícita (con el comando POPULATE y una tabla interna como `.inner.{uuid}...` ).  Sin embargo, la práctica recomendada es usar una tabla explícita, en la que primero se define la tabla y luego se crea una vista materializada sobre ella con el comando `TO`.
+
+```
+CREATE MATERIALIZED VIEW db1.table1_metric_map_mv
+ORDER BY id
+POPULATE AS
+select 
+  *, 
+  attributes.keys as attribute_keys, 
+  attributes.values as attribute_values
+from db1.table1_metric_map
+array join attributes
+where notEmpty(attributes.keys);
+```
+
+La nueva tabla tendrá más filas y las claves estarán extraídas, así:
+
+```
+SELECT *
+FROM db1.table1_metric_map_mv
+LIMIT 5
+
+Query id: b7384381-53af-4e3e-bc54-871f61c033a6
+
+┌─id─┬───────────timestamp─┬─metric_name─┬─metric_value─┬─attributes───────────┬─attribute_keys─┬─attribute_values─┐
+│  1 │ 2023-09-20 00:01:00 │ ABC         │           10 │ ('env','prod')       │ env            │ prod             │
+│  1 │ 2023-09-20 00:01:00 │ ABC         │           10 │ ('app','app1')       │ app            │ app1             │
+│  1 │ 2023-09-20 00:01:00 │ ABC         │           10 │ ('server','server1') │ server         │ server1          │
+│  2 │ 2023-09-20 00:01:00 │ ABC         │           20 │ ('env','prod')       │ env            │ prod             │
+│  2 │ 2023-09-20 00:01:00 │ ABC         │           20 │ ('app','app2')       │ app            │ app2             │
+└────┴─────────────────────┴─────────────┴──────────────┴──────────────────────┴────────────────┴──────────────────┘
+```
+
+A partir de aquí, para consultar las filas que tengan ciertos atributos, harías algo así:
+
+```
+SELECT
+    t1_app.id AS id,
+    timestamp,
+    metric_name,
+    metric_value
+FROM
+(
+    SELECT *
+    FROM db1.table1_metric_map_mv
+    WHERE (attribute_keys = 'app') AND (attribute_values = 'app1') AND (metric_name = 'ABC')
+) AS t1_app
+INNER JOIN
+(
+    SELECT *
+    FROM db1.table1_metric_map_mv
+    WHERE (attribute_keys = 'server') AND (attribute_values = 'server1')
+) AS t2_server ON t1_app.id = t2_server.id
+
+Query id: 72ce7f19-b02a-4b6e-81e7-a955f257436d
+
+┌─id─┬───────────timestamp─┬─metric_name─┬─metric_value─┐
+│  1 │ 2023-09-20 00:01:00 │ ABC         │           10 │
+│  3 │ 2023-09-20 00:01:00 │ ABC         │           30 │
+│  9 │ 2023-09-20 00:02:00 │ ABC         │           90 │
+│ 11 │ 2023-09-20 00:02:00 │ ABC         │          110 │
+│ 12 │ 2023-09-20 00:02:00 │ ABC         │          120 │
+│ 17 │ 2023-09-20 00:03:00 │ ABC         │          170 │
+│ 18 │ 2023-09-20 00:03:00 │ ABC         │          180 │
+│ 19 │ 2023-09-20 00:03:00 │ ABC         │          190 │
+└────┴─────────────────────┴─────────────┴──────────────┘
+```

@@ -1,0 +1,74 @@
+---
+title: 'Azure Prévia privada'
+slug: /cloud/reference/byoc/onboarding/azure-private-preview
+sidebarTitle: 'Azure (Prévia privada)'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'azure']
+description: 'Faça o onboarding do ClickHouse BYOC no Azure usando o módulo Terraform e a autenticação entre tenants'
+doc_type: 'referência'
+---
+
+import PrivatePreviewBadge from "/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+<PrivatePreviewBadge />
+
+<Note>
+  O BYOC no Azure está em **prévia privada**. Para participar, [entre em contato com a equipe da ClickHouse](https://clickhouse.com/cloud/bring-your-own-cloud).
+</Note>
+
+<div id="overview">
+  ## Visão geral
+</div>
+
+O BYOC no Azure permite executar o ClickHouse na sua própria assinatura do Azure. A configuração inicial usa um módulo do Terraform que provisiona a autenticação entre tenants necessária para que o provisionador do ClickHouse Cloud crie e gerencie recursos do Azure no seu tenant e na sua assinatura.
+
+Outros aspectos da implantação — como [arquitetura](/pt-BR/products/bring-your-own-cloud/overview/architecture), [segurança de rede](/pt-BR/products/bring-your-own-cloud/reference/network-security), [recursos](/pt-BR/products/cloud/guides/infrastructure/deployment-options/byoc/overview#features) e [conectividade](/pt-BR/products/bring-your-own-cloud/configuration/connect) — são, em linhas gerais, semelhantes às ofertas de BYOC na AWS e no GCP; consulte essas páginas para mais detalhes.
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+* Uma **assinatura** e um **tenant** do Azure em que você deseja hospedar a implantação BYOC
+* O **ID da assinatura** e o **ID do tenant** para compartilhar com a equipe da ClickHouse
+
+<div id="onboarding">
+  ## Onboarding
+</div>
+
+<Steps>
+  <Step>
+    ### 1. Aplique o módulo Terraform
+
+    Para iniciar o onboarding de BYOC no Azure, aplique o [módulo Terraform para Azure](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) fornecido pela ClickHouse no seu **tenant e assinatura de destino**.
+
+    Consulte a documentação do módulo para ver as variáveis obrigatórias e as etapas de aplicação. Depois de aplicado, o módulo terá configurado a identidade e as permissões necessárias no seu ambiente Azure.
+  </Step>
+
+  <Step>
+    ### 2. Forneça os IDs à ClickHouse
+
+    Compartilhe o seguinte com a equipe da ClickHouse:
+
+    * **ID da assinatura de destino** — A assinatura do Azure onde os recursos de BYOC serão criados
+    * **ID do tenant de destino** — O tenant do Azure AD (Entra) responsável por essa assinatura
+    * **Região** — As regiões do Azure onde você deseja implantar seus serviços ClickHouse.
+    * **Faixa CIDR da VNet** — A faixa de endereços IP que você gostaria que fosse usada para a VNet de BYOC.
+
+    A equipe da ClickHouse usará essas informações para criar a infraestrutura de BYOC e concluir o onboarding
+  </Step>
+</Steps>
+
+<div id="cross-tenant-auth">
+  ### Como funciona a autenticação entre tenants
+</div>
+
+Seguindo as [orientações da Azure para autenticação entre tenants](https://learn.microsoft.com/en-us/entra/identity-platform/single-and-multi-tenant-apps), o módulo Terraform:
+
+1. **Provisiona um aplicativo multilocatário** como um **Aplicativo Empresarial** (service principal) no tenant de destino
+2. **Atribui as permissões necessárias** a esse aplicativo, com escopo para a assinatura de destino
+
+Isso permite que o Control Plane do ClickHouse Cloud crie e gerencie recursos do Azure (como grupos de recursos, AKS, armazenamento e rede) na sua assinatura, sem armazenar suas credenciais do Azure no ClickHouse.
+
+Para mais detalhes sobre aplicativos multilocatários e cenários entre tenants no Azure, consulte:
+
+* [Aplicativos de tenant único e multilocatário no Microsoft Entra ID](https://learn.microsoft.com/en-us/entra/identity-platform/single-and-multi-tenant-apps)
+* [Autorizar acesso entre tenants (exemplo do Azure SignalR)](https://learn.microsoft.com/en-us/azure/azure-signalr/signalr-howto-authorize-cross-tenant)

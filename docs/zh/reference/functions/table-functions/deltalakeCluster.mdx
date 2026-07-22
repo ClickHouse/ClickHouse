@@ -1,0 +1,59 @@
+---
+description: '这是 deltaLake 表函数的扩展。'
+sidebarTitle: 'deltaLakeCluster'
+slug: /sql-reference/table-functions/deltalakeCluster
+title: 'deltaLakeCluster'
+doc_type: 'reference'
+---
+
+这是 [deltaLake](/zh/reference/functions/table-functions/deltalake) 表函数的扩展。
+
+它允许在指定集群中由多个节点并行处理 Amazon S3 中 [Delta Lake](https://github.com/delta-io/delta) 表的文件。发起节点会与集群中的所有节点建立连接，并动态分发各个文件。工作线程所在节点会向发起节点请求下一个要处理的任务并执行处理。此过程会持续重复，直到所有任务都处理完成。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+deltaLakeCluster(cluster_name, named_collection[, option=value [,..]])
+
+deltaLakeS3Cluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+deltaLakeS3Cluster(cluster_name, named_collection[, option=value [,..]])
+
+deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+deltaLakeAzureCluster(cluster_name, named_collection[, option=value [,..]])
+```
+
+`deltaLakeS3Cluster` 是 `deltaLakeCluster` 的别名，二者都用于 S3。
+
+<div id="arguments">
+  ## 参数
+</div>
+
+* `cluster_name` — 用于构建远程和本地服务器的地址集合及连接参数的集群名称。
+* 其他所有参数的说明与等效的 [deltaLake](/zh/reference/functions/table-functions/deltalake) 表函数中的参数说明一致。
+* 可选的 `extra_credentials` 参数可用于传递 `role_arn`，以便在 ClickHouse Cloud 中实现基于角色的访问。有关配置步骤，请参见 [Secure S3](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。
+
+<div id="returned_value">
+  ## 返回值
+</div>
+
+一个具有指定结构的表，用于从集群中 S3 上指定的 Delta Lake 表读取数据。
+
+<div id="virtual-columns">
+  ## 虚拟列
+</div>
+
+* `_path` — 文件路径。类型：`LowCardinality(String)`。
+* `_file` — 文件名。类型：`LowCardinality(String)`。
+* `_size` — 文件大小 (单位为字节) 。类型：`Nullable(UInt64)`。如果文件大小未知，则值为 `NULL`。
+* `_time` — 文件的最后修改时间。类型：`Nullable(DateTime)`。如果时间未知，则值为 `NULL`。
+* `_etag` — 文件的 ETag。类型：`LowCardinality(String)`。如果 ETag 未知，则值为 `NULL`。
+
+<div id="related">
+  ## 相关内容
+</div>
+
+* [deltaLake 引擎](/zh/reference/engines/table-engines/integrations/deltalake)
+* [deltaLake 表函数](/zh/reference/functions/table-functions/deltalake)

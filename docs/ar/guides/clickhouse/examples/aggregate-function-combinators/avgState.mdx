@@ -1,0 +1,150 @@
+---
+slug: '/examples/aggregate-function-combinators/avgState'
+title: 'avgState'
+description: 'مثال على استخدام المُركِّب avgState'
+keywords: ['avg', 'state', 'combinator', 'examples', 'avgState']
+sidebarTitle: 'avgState'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## الوصف
+</div>
+
+يمكن تطبيق المُركِّب [`State`](/ar/reference/functions/aggregate-functions/combinators#-state)
+على الدالة [`avg`](/ar/reference/functions/aggregate-functions/avg)
+لإنتاج حالة وسيطة من النوع `AggregateFunction(avg, T)`، حيث
+يكون `T` هو النوع المحدد للمتوسط.
+
+<div id="example-usage">
+  ## مثال على الاستخدام
+</div>
+
+في هذا المثال، سنستعرض كيفية استخدام النوع `AggregateFunction`
+مع الدالة `avgState` لتجميع بيانات حركة مرور الموقع الإلكتروني.
+
+أولاً، أنشئ الجدول المصدر لبيانات حركة مرور الموقع:
+
+```sql
+CREATE TABLE raw_page_views
+(
+    page_id UInt32,
+    page_name String,
+    response_time_ms UInt32,  -- Page response time in milliseconds
+    viewed_at DateTime DEFAULT now()
+)
+ENGINE = MergeTree()
+ORDER BY (page_id, viewed_at);
+```
+
+أنشئ جدول التجميع الذي سيخزّن متوسطات أوقات الاستجابة. تجدر الإشارة إلى أن
+`avg` لا يمكنه استخدام النوع `SimpleAggregateFunction` لأنه يستلزم حالةً معقدة
+(مجموعًا وعددًا). لذا نستخدم النوع `AggregateFunction`:
+
+```sql
+CREATE TABLE page_performance
+(
+    page_id UInt32,
+    page_name String,
+    avg_response_time AggregateFunction(avg, UInt32)  -- Stores the state needed for avg calculation
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY page_id;
+```
+
+أنشئ incremental materialized view ستعمل كـ insert trigger للبيانات الجديدة وتخزّن بيانات الحالة الوسيطة في الجدول الهدف المحدد أعلاه:
+
+```sql
+CREATE MATERIALIZED VIEW page_performance_mv
+TO page_performance
+AS SELECT
+    page_id,
+    page_name,
+    avgState(response_time_ms) AS avg_response_time  -- Using -State combinator
+FROM raw_page_views
+GROUP BY page_id, page_name;
+```
+
+أدرج بعض البيانات الأولية في جدول المصدر، مما يُنشئ جزءًا على القرص:
+
+```sql
+INSERT INTO raw_page_views (page_id, page_name, response_time_ms) VALUES
+    (1, 'Homepage', 120),
+    (1, 'Homepage', 135),
+    (2, 'Products', 95),
+    (2, 'Products', 105),
+    (3, 'About', 80),
+    (3, 'About', 90);
+```
+
+أدرج المزيد من البيانات لإنشاء جزء ثانٍ على القرص:
+
+```sql
+INSERT INTO raw_page_views (page_id, page_name, response_time_ms) VALUES
+(1, 'Homepage', 150),
+(2, 'Products', 110),
+(3, 'About', 70),
+(4, 'Contact', 60),
+(4, 'Contact', 65);
+```
+
+افحص الجدول الهدف `page_performance`:
+
+```sql
+SELECT 
+    page_id,
+    page_name,
+    avg_response_time,
+    toTypeName(avg_response_time)
+FROM page_performance
+```
+
+```response
+┌─page_id─┬─page_name─┬─avg_response_time─┬─toTypeName(avg_response_time)──┐
+│       1 │ Homepage  │ �                 │ AggregateFunction(avg, UInt32) │
+│       2 │ Products  │ �                 │ AggregateFunction(avg, UInt32) │
+│       3 │ About     │ �                 │ AggregateFunction(avg, UInt32) │
+│       1 │ Homepage  │ �                 │ AggregateFunction(avg, UInt32) │
+│       2 │ Products  │ n                 │ AggregateFunction(avg, UInt32) │
+│       3 │ About     │ F                 │ AggregateFunction(avg, UInt32) │
+│       4 │ Contact   │ }                 │ AggregateFunction(avg, UInt32) │
+└─────────┴───────────┴───────────────────┴────────────────────────────────┘
+```
+
+لاحظ أن العمود `avg_response_time` من النوع `AggregateFunction(avg, UInt32)`
+ويخزّن معلومات الحالة الوسيطة. لاحظ أيضاً أن بيانات الصف الخاصة بـ
+`avg_response_time` ليست ذات فائدة لنا، إذ نرى أحرفاً غريبة مثل
+`‌، n، F، }`. هذه محاولة من الطرفية لعرض البيانات الثنائية على شكل نص.
+والسبب في ذلك أن أنواع `AggregateFunction` تخزّن حالتها بتنسيق ثنائي
+مُحسَّن للتخزين الفعّال والمعالجة، لا للقراءة البشرية. تحتوي هذه الحالة الثنائية على جميع المعلومات اللازمة
+لحساب المتوسط.
+
+للاستفادة منه، استخدم المُجمِّع `Merge`:
+
+```sql
+SELECT
+    page_id,
+    page_name,
+    avgMerge(avg_response_time) AS average_response_time_ms
+FROM page_performance
+GROUP BY page_id, page_name
+ORDER BY page_id;
+```
+
+الآن نرى المتوسطات الصحيحة:
+
+```response
+┌─page_id─┬─page_name─┬─average_response_time_ms─┐
+│       1 │ Homepage  │                      135 │
+│       2 │ Products  │       103.33333333333333 │
+│       3 │ About     │                       80 │
+│       4 │ Contact   │                     62.5 │
+└─────────┴───────────┴──────────────────────────┘
+```
+
+<div id="see-also">
+  ## راجع أيضًا
+</div>
+
+* [`avg`](/ar/reference/functions/aggregate-functions/avg)
+* [`State`](/ar/reference/functions/aggregate-functions/combinators#-state)

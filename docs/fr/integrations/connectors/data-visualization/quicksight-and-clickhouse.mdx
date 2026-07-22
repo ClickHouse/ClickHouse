@@ -1,0 +1,168 @@
+---
+sidebarTitle: 'QuickSight'
+slug: /integrations/quicksight
+keywords: ['clickhouse', 'aws', 'amazon', 'QuickSight', 'mysql', 'connecter', 'intégrer', 'UI']
+description: "Amazon QuickSight offre aux organisations axées sur les données une solution de business intelligence (BI) unifiée."
+title: 'QuickSight'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+QuickSight peut se connecter à une installation ClickHouse on-premise (23.11+) via l’interface MySQL, à l’aide de la source de données MySQL officielle et du mode Direct Query.
+
+<div id="on-premise-clickhouse-server-setup">
+  ## Configuration d’un serveur ClickHouse on-premise
+</div>
+
+Veuillez consulter [la documentation officielle](/fr/concepts/features/interfaces/mysql) pour savoir comment configurer un serveur ClickHouse avec l’interface MySQL activée.
+
+Outre l’ajout d’une entrée dans le `config.xml` du serveur
+
+```xml
+<clickhouse>
+    <mysql_port>9004</mysql_port>
+</clickhouse>
+```
+
+il est également *obligatoire* d’utiliser le [hachage de mot de passe Double SHA1](/fr/concepts/features/configuration/settings/settings-users#user-namepassword) pour l’utilisateur qui utilisera l’interface MySQL.
+
+Génération, depuis le shell, d’un mot de passe aléatoire haché avec Double SHA1 :
+
+```shell
+PASSWORD=$(base64 < /dev/urandom | head -c16); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
+```
+
+Le résultat devrait être semblable à ce qui suit :
+
+```text
+LZOQYnqQN4L/T6L0
+fbc958cc745a82188a51f30de69eebfc67c40ee4
+```
+
+La première ligne correspond au mot de passe généré, et la deuxième au hash que nous pouvons utiliser pour configurer ClickHouse.
+
+Voici un exemple de configuration pour `mysql_user` utilisant le hash généré :
+
+`/etc/clickhouse-server/users.d/mysql_user.xml`
+
+```xml
+<users>
+    <mysql_user>
+        <password_double_sha1_hex>fbc958cc745a82188a51f30de69eebfc67c40ee4</password_double_sha1_hex>
+        <networks>
+            <ip>::/0</ip>
+        </networks>
+        <profile>default</profile>
+        <quota>default</quota>
+    </mysql_user>
+</users>
+```
+
+Remplacez l’entrée `password_double_sha1_hex` par votre propre hash double SHA1 généré.
+
+QuickSight nécessite plusieurs paramètres supplémentaires dans le profile de l’utilisateur MySQL.
+
+`/etc/clickhouse-server/users.d/mysql_user.xml`
+
+```xml
+<profiles>
+    <default>
+        <prefer_column_name_to_alias>1</prefer_column_name_to_alias>
+        <mysql_map_string_to_text_in_show_columns>1</mysql_map_string_to_text_in_show_columns>
+        <mysql_map_fixed_string_to_text_in_show_columns>1</mysql_map_fixed_string_to_text_in_show_columns>
+    </default>
+</profiles>
+```
+
+Cependant, il est recommandé de l’affecter à un autre profil, que votre utilisateur MySQL pourra utiliser à la place du profil par défaut.
+
+Enfin, configurez le serveur ClickHouse pour qu’il écoute sur la ou les adresses IP souhaitées.
+Dans `config.xml`, décommentez ce qui suit pour écouter sur toutes les adresses :
+
+```bash
+<listen_host>::</listen_host>
+```
+
+Si vous disposez du binaire `mysql`, vous pouvez tester la connexion en ligne de commande.
+En utilisant le nom d’utilisateur d’exemple (`mysql_user`) et le mot de passe (`LZOQYnqQN4L/T6L0`) indiqués ci-dessus, la commande serait :
+
+```bash
+mysql --protocol tcp -h localhost -u mysql_user -P 9004 --password=LZOQYnqQN4L/T6L0
+```
+
+```response
+mysql> show databases;
++--------------------+
+| name               |
++--------------------+
+| INFORMATION_SCHEMA |
+| default            |
+| information_schema |
+| system             |
++--------------------+
+4 rows in set (0.00 sec)
+Read 4 rows, 603.00 B in 0.00156 sec., 2564 rows/sec., 377.48 KiB/sec.
+```
+
+<div id="connecting-quicksight-to-clickhouse">
+  ## Connecter QuickSight à ClickHouse
+</div>
+
+Tout d&#39;abord, rendez-vous sur [https://quicksight.aws.amazon.com](https://quicksight.aws.amazon.com), accédez à Datasets, puis cliquez sur &quot;New dataset&quot; :
+
+<Image size="md" img="/images/integrations/data-visualization/quicksight_01.webp" alt="Tableau de bord Amazon QuickSight affichant le bouton New dataset dans la section Datasets" border />
+
+<br />
+
+Recherchez le connecteur MySQL officiel fourni avec QuickSight (simplement nommé **MySQL**) :
+
+<Image size="md" img="/images/integrations/data-visualization/quicksight_02.webp" alt="Écran de sélection de la source de données QuickSight avec MySQL mis en évidence dans les résultats de recherche" border />
+
+<br />
+
+Indiquez vos informations de connexion. Veuillez noter que le port de l&#39;interface MySQL est 9004 par défaut,
+mais qu&#39;il peut être différent selon la configuration du serveur.
+
+<Image size="md" img="/images/integrations/data-visualization/quicksight_03.webp" alt="Formulaire de configuration de connexion MySQL QuickSight avec les champs hostname, port, base de données et identifiants" border />
+
+<br />
+
+Vous avez maintenant deux possibilités pour récupérer les données depuis ClickHouse. Vous pouvez d&#39;abord sélectionner une table dans la liste :
+
+<Image size="md" img="/images/integrations/data-visualization/quicksight_04.webp" alt="Interface de sélection de table QuickSight affichant les tables de la base de données disponibles depuis ClickHouse" border />
+
+<br />
+
+Vous pouvez également saisir une requête SQL personnalisée pour récupérer vos données :
+
+<Image size="md" img="/images/integrations/data-visualization/quicksight_05.webp" alt="Éditeur de requête SQL personnalisée QuickSight pour récupérer des données depuis ClickHouse" border />
+
+<br />
+
+En cliquant sur &quot;Edit/Preview data&quot;, vous devriez pouvoir voir la structure de la table détectée ou ajuster votre requête SQL personnalisée, si c&#39;est le mode d&#39;accès que vous avez choisi :
+
+<Image size="md" img="/images/integrations/data-visualization/quicksight_06.webp" alt="Aperçu des données QuickSight affichant la structure de la table avec des colonnes et des exemples de données" border />
+
+<br />
+
+Assurez-vous que le mode &quot;Direct Query&quot; est sélectionné dans le coin inférieur gauche de l&#39;interface utilisateur :
+
+<Image size="md" img="/images/integrations/data-visualization/quicksight_07.webp" alt="Interface QuickSight avec l'option du mode Direct Query mise en évidence dans le coin inférieur" border />
+
+<br />
+
+Vous pouvez maintenant publier votre jeu de données et créer une nouvelle visualisation !
+
+<div id="known-limitations">
+  ## Limitations connues
+</div>
+
+* L’importation SPICE ne fonctionne pas comme prévu ; veuillez utiliser le mode Direct Query à la place. Voir [#58553](https://github.com/ClickHouse/ClickHouse/issues/58553).

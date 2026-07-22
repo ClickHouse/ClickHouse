@@ -1,7 +1,11 @@
 #include <Storages/System/StorageSystemOne.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -14,17 +18,26 @@ namespace DB
 
 
 StorageSystemOne::StorageSystemOne(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     /// This column doesn't have a comment, because otherwise it will be added to all tables created via:
     /// CREATE TABLE test (dummy UInt8) ENGINE = Distributed(`default`, `system.one`)
     storage_metadata.setColumns(ColumnsDescription({{"dummy", std::make_shared<DataTypeUInt8>()}}));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
+VirtualColumnsDescription StorageSystemOne::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
 
-void StorageSystemOne::read(
+
+void StorageSystemOne::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -61,3 +74,6 @@ void ReadFromSystemOneStep::initializePipeline(QueryPipelineBuilder & pipeline, 
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemOne) }

@@ -1,0 +1,85 @@
+---
+sidebarTitle: 'Configurer le mode non ordonné'
+title: 'Configurer le mode non ordonné pour l’ingestion continue'
+slug: /integrations/clickpipes/object-storage/gcs/unordered-mode
+description: 'Guide étape par étape pour configurer le mode non ordonné pour l’ingestion continue dans ClickPipes pour GCS.'
+doc_type: 'guide'
+---
+
+Par défaut, le ClickPipe GCS suppose que les fichiers sont ajoutés à un bucket dans un [ordre lexicographique](/fr/integrations/clickpipes/object-storage/google-cloud-storage/overview#continuous-ingestion-lexicographical-order). Il est possible de configurer un ClickPipe GCS pour ingérer des fichiers qui n’ont pas d’ordre implicite en configurant un abonnement [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) connecté au bucket. Cela permet à ClickPipes d’écouter les notifications `OBJECT_FINALIZE` et d’ingérer tout nouveau fichier, quelle que soit la convention de nommage utilisée.
+
+<Note>
+  Le mode non ordonné n’est **pas** pris en charge pour les buckets publics. Il nécessite une authentification par **compte de service** ainsi qu’un abonnement [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) connecté au bucket.
+</Note>
+
+<div id="how-it-works">
+  ## Comment cela fonctionne
+</div>
+
+Dans ce mode, le ClickPipe GCS effectue un chargement initial de **tous les fichiers** dans le chemin sélectionné, puis surveille, via l’abonnement Pub/Sub, les notifications d’objets correspondant au chemin spécifié. Tout message concernant un fichier déjà traité, un fichier ne correspondant pas au chemin ou un événement d’un autre type sera **ignoré**. Il est **impossible** de démarrer l’ingestion à partir d’un fichier précis ou d’un instant donné — ClickPipes chargera toujours tous les fichiers du chemin sélectionné.
+
+Divers types d’échecs peuvent survenir lors de l’ingestion de données, ce qui peut entraîner des insertions partielles ou des doublons. Les Object Storage ClickPipes tolèrent les échecs d’insertion et offrent une sémantique exactly-once à l’aide de tables de staging temporaires. Les données sont d’abord insérées dans une table de staging ; si un problème survient, la table de staging est tronquée et l’insertion est relancée depuis un état propre. Les partitions ne sont déplacées vers la table cible qu’une fois l’insertion terminée avec succès.
+
+<Steps>
+  <Step>
+    ## Créer un topic Google Cloud Pub/Sub
+
+    **1.** Dans la Google Cloud Console, accédez à **Pub/Sub &gt; Topics &gt; Create topic**. Créez un nouveau topic avec un abonnement par défaut et notez le **nom du topic**.
+
+    **2.** Configurez une notification de bucket GCS qui publie les [événements `OBJECT_FINALIZE`](https://docs.cloud.google.com/storage/docs/pubsub-notifications) vers le topic Pub/Sub créé ci-dessus.
+
+    **2.1.** Cette étape ne peut pas être effectuée dans la Google Cloud Console ; vous devez donc utiliser le client `gcloud` ou l’interface programmatique Google Cloud de votre choix. Par exemple, avec `gcloud` :
+
+    ```bash
+    # Créer une notification Pub/Sub pour les nouveaux objets dans le bucket
+    gcloud storage buckets notifications create "gs://${YOUR_BUCKET_NAME}" \
+      --topic="projects/${YOUR_PROJECT_ID}/topics/${YOUR_TOPIC_NAME}" \
+      --event-types="OBJECT_FINALIZE" \
+      --payload-format="json"
+
+    # Lister les notifications Pub/Sub dans le bucket
+    gcloud storage buckets notifications describe
+    ```
+  </Step>
+
+  <Step>
+    ## Configurer un compte de service
+
+    **1.** Configurez un [compte de service](http://docs.cloud.google.com/iam/docs/keys-create-delete) avec les [permissions requises](/fr/integrations/clickpipes/object-storage/google-cloud-storage/overview#permissions) pour permettre à ClickPipes de lister et de récupérer les objets dans le bucket spécifié, ainsi que de consommer et surveiller les notifications de l’abonnement Pub/Sub.
+
+    **1.1.** Cette étape peut être effectuée dans la Google Cloud Console, à l’aide du client `gcloud` ou de l’interface programmatique Google Cloud de votre choix. Par exemple, avec `gcloud` :
+
+    ```bash
+    # 1. Accorder un accès en lecture au bucket GCS
+    gcloud storage buckets add-iam-policy-binding "gs://${YOUR_BUCKET_NAME}" \
+      --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
+      --role="roles/storage.objectViewer"
+
+    # 2. Accorder un accès en lecture à l’abonnement Pub/Sub
+    gcloud pubsub subscriptions add-iam-policy-binding "${YOUR_SUBSCRIPTION_NAME}" \
+      --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
+      --role="roles/pubsub.subscriber"
+
+    # 3. Accorder la permission de récupérer les métadonnées de l’abonnement Pub/Sub
+    gcloud pubsub subscriptions add-iam-policy-binding "${YOUR_SUBSCRIPTION_NAME}" \
+      --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
+      --role="roles/pubsub.viewer"
+    ```
+  </Step>
+
+  <Step>
+    ## Créer un ClickPipe avec le mode non ordonné
+
+    **1.** Dans la console ClickHouse Cloud, accédez à **Data Sources &gt; Create ClickPipe** et sélectionnez **Google Cloud Storage**. Saisissez les informations nécessaires pour vous connecter à votre bucket GCS. Sous **Authentication method**, choisissez **compte de service** et fournissez la clé `.json` du compte de service.
+
+    **2.** Activez **Continuous ingestion**, puis sélectionnez **Any order** comme mode d’ingestion et indiquez le nom de l’**abonnement Pub/Sub** correspondant à l’abonnement connecté à votre bucket. Le nom de l’abonnement doit respecter le format suivant :
+
+    ```text
+    projects/${YOUR_PROJECT_ID}/subscriptions/${YOUR_SUBSCRIPTION_NAME}
+    ```
+
+    **3.** Cliquez sur **Incoming data**. Définissez une **Sorting key** pour la table cible. Apportez les ajustements nécessaires au schéma mappé, puis configurez un rôle pour l’utilisateur de base de données ClickPipes.
+
+    **4.** Vérifiez la configuration et cliquez sur **Create ClickPipe**. ClickPipes effectuera une analyse initiale de votre bucket pour charger tous les fichiers existants correspondant au chemin spécifié, puis commencera à traiter les fichiers à mesure que de nouveaux événements `OBJECT_FINALIZE` arriveront dans le topic.
+  </Step>
+</Steps>

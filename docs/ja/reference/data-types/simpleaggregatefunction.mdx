@@ -1,0 +1,94 @@
+---
+description: 'SimpleAggregateFunction データ型のドキュメント'
+sidebarTitle: 'SimpleAggregateFunction'
+slug: /sql-reference/data-types/simpleaggregatefunction
+title: 'SimpleAggregateFunction 型'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+`SimpleAggregateFunction` データ型は、集約関数の中間状態を保存しますが、
+[`AggregateFunction`](/ja/reference/data-types/aggregatefunction)
+型のように完全な状態を保存するわけではありません。
+
+この最適化は、次の性質
+が成り立つ関数に適用できます。
+
+> 行集合 `S1 UNION ALL S2` に関数 `f` を適用した結果は、
+> 行集合の各部分に個別に `f` を適用し、その結果に対してさらに
+> `f` を適用することで得られます: `f(S1 UNION ALL S2) = f(f(S1) UNION ALL f(S2))`。
+
+この性質により、部分的な集約結果だけで結合後の結果を計算するのに十分であることが保証されるため、
+追加のデータを保存したり処理したりする必要がありません。たとえば、
+`min` や `max` 関数の結果では、中間段階から最終結果を計算するための
+追加の手順は不要です。一方、`avg` 関数では
+合計と件数を保持しておく必要があり、これらは中間状態を結合する最終的な
+`Merge` ステップで割られて平均値が求められます。
+
+集約関数の値は通常、関数名の末尾に
+[`-SimpleState`](/ja/reference/functions/aggregate-functions/combinators#-simplestate) combinator を付けて
+集約関数を呼び出すことで生成されます。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+SimpleAggregateFunction(aggregate_function_name, types_of_arguments...)
+```
+
+**パラメータ**
+
+* `aggregate_function_name` - 集約関数の名前。
+* `Type` - 集約関数の引数の型。
+
+<div id="supported-functions">
+  ## サポートされている関数
+</div>
+
+以下の集約関数がサポートされています。
+
+* [`any`](/ja/reference/functions/aggregate-functions/any)
+* [`any_respect_nulls`](/ja/reference/functions/aggregate-functions/any)
+* [`anyLast`](/ja/reference/functions/aggregate-functions/anyLast)
+* [`anyLast_respect_nulls`](/ja/reference/functions/aggregate-functions/anyLast)
+* [`min`](/ja/reference/functions/aggregate-functions/min)
+* [`max`](/ja/reference/functions/aggregate-functions/max)
+* [`sum`](/ja/reference/functions/aggregate-functions/sum)
+* [`sumWithOverflow`](/ja/reference/functions/aggregate-functions/sumWithOverflow)
+* [`groupBitAnd`](/ja/reference/functions/aggregate-functions/groupBitAnd)
+* [`groupBitOr`](/ja/reference/functions/aggregate-functions/groupBitOr)
+* [`groupBitXor`](/ja/reference/functions/aggregate-functions/groupBitXor)
+* [`groupArrayArray`](/ja/reference/functions/aggregate-functions/groupArrayArray)
+* [`groupUniqArrayArray`](/ja/reference/functions/aggregate-functions/groupUniqArray)
+* [`groupUniqArrayArrayMap`](/ja/reference/functions/aggregate-functions/combinators#-map)
+* [`sumMap` (`sumMappedArrays`)](/ja/reference/functions/aggregate-functions/sumMap)
+* [`minMap` (`minMappedArrays`)](/ja/reference/functions/aggregate-functions/minMap)
+* [`maxMap` (`maxMappedArrays`)](/ja/reference/functions/aggregate-functions/maxMap)
+
+<Note>
+  `SimpleAggregateFunction(func, Type)` の値は同じ `Type` を持つため、
+  `AggregateFunction` 型とは異なり、
+  `-Merge`/`-State` combinator を適用する必要はありません。
+
+  `SimpleAggregateFunction` 型は、同じ集約関数に対して
+  `AggregateFunction` 型よりも高いパフォーマンスを発揮します。
+</Note>
+
+<div id="example">
+  ## 例
+</div>
+
+```sql
+CREATE TABLE simple (id UInt64, val SimpleAggregateFunction(sum, Double)) ENGINE=AggregatingMergeTree ORDER BY id;
+```
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* ブログ: [ClickHouseでAggregate Combinatorsを使う](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)    - ブログ: [ClickHouseでAggregate Combinatorsを使う](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
+* [AggregateFunction](/ja/reference/data-types/aggregatefunction) 型。

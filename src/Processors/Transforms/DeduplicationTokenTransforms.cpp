@@ -117,41 +117,32 @@ AddDeduplicationInfoTransform::AddDeduplicationInfoTransform(
     InsertDependenciesBuilderConstPtr insert_dependencies_,
     StorageIDMaybeEmpty root_view_id_,
     std::string user_token_,
-    InsertDeduplicationVersions unification_stage_,
     SharedHeader header_)
     : ISimpleTransform(header_, header_, true)
     , insert_dependencies(std::move(insert_dependencies_))
     , root_view_id(std::move(root_view_id_))
     , user_token(std::move(user_token_))
-    , unification_stage(unification_stage_)
 {
 }
 
 
 void AddDeduplicationInfoTransform::transform(Chunk & chunk)
 {
-    if (!chunk.getChunkInfos().has<DeduplicationInfo>())
+    const bool has_deduplication_info = chunk.getChunkInfos().has<DeduplicationInfo>();
+    if (!has_deduplication_info)
     {
-        auto info = DeduplicationInfo::create(false, unification_stage);
+        auto info = DeduplicationInfo::create(false);
         info->setUserToken(user_token, chunk.getNumRows());
         chunk.getChunkInfos().add(info);
     }
 
     auto info = chunk.getChunkInfos().getSafe<DeduplicationInfo>();
     info->setInsertDependencies(insert_dependencies);
-    info->setRootViewID(root_view_id);
-    info->setSourceBlockNumber(block_number++);
+    if (info->getVisitedViews().empty())
+    {
+        info->setRootViewID(root_view_id);
+        info->setSourceBlockNumber(block_number++);
+    }
     info->updateOriginalBlock(chunk, getInputPort().getSharedHeader());
-}
-
-RedefineDeduplicationInfoWithDataHashTransform::RedefineDeduplicationInfoWithDataHashTransform(SharedHeader header_)
-    : ISimpleTransform(header_, header_, true)
-{
-}
-
-void RedefineDeduplicationInfoWithDataHashTransform::transform(Chunk & chunk)
-{
-    auto info = chunk.getChunkInfos().getSafe<DeduplicationInfo>();
-    info->redefineTokensWithDataHash(getOutputPort().getSharedHeader()->cloneWithColumns(chunk.getColumns()));
 }
 }

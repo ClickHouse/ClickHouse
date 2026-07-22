@@ -1,0 +1,26 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <!-- Disk for test 04070_s3_disk_settings_override.
+                 Uses a small max_single_part_upload_size to force multipart upload.
+                 The global <s3> section sets a large value for this endpoint;
+                 the test verifies that disk config wins. -->
+            <s3_disk_04070>
+                <type>s3</type>
+                <endpoint>http://localhost:11111/test/04070_s3_disk_settings_override/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <s3_max_single_part_upload_size>10000</s3_max_single_part_upload_size>
+            </s3_disk_04070>
+        </disks>
+        <policies>
+            <s3_04070>
+                <volumes>
+                    <main>
+                        <disk>s3_disk_04070</disk>
+                    </main>
+                </volumes>
+            </s3_04070>
+        </policies>
+    </storage_configuration>
+</clickhouse>

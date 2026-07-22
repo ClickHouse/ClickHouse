@@ -1,0 +1,75 @@
+---
+title: 'MySQL ClickPipe의 병렬 스냅샷'
+description: 'MySQL ClickPipe의 병렬 스냅샷을 설명하는 문서'
+slug: /integrations/clickpipes/mysql/parallel_initial_load
+sidebarTitle: '병렬 스냅샷이 작동하는 방식'
+doc_type: 'guide'
+keywords: ['ClickPipes', 'MySQL', 'CDC', '데이터 수집', '실시간 동기화']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+이 문서에서는 MySQL ClickPipe의 병렬 스냅샷/초기 적재가 어떻게 작동하는지 설명하고, 이를 제어하는 데 사용할 수 있는 스냅샷 매개변수도 다룹니다.
+
+<div id="overview-mysql-snapshot">
+  ## 개요
+</div>
+
+초기 적재는 CDC ClickPipe의 첫 번째 단계입니다. 이 단계에서는 ClickPipe가 CDC를 시작하기 전에 원본 데이터베이스의 테이블에 있는 기존 데이터를 ClickHouse로 동기화합니다. 많은 경우 개발자는 이 작업을 단일 스레드 방식으로 수행합니다.
+하지만 MySQL ClickPipe는 이 과정을 병렬로 처리할 수 있으므로 초기 적재 속도를 크게 높일 수 있습니다.
+
+<div id="key-mysql-snapshot">
+  ### 파티션 키 컬럼
+</div>
+
+기능 플래그를 활성화하면 ClickPipe 테이블 선택기에서 아래 설정을 확인할 수 있습니다(ClickPipe 생성 시와 편집 시 모두).
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/partition_key.webp" alt="파티션 키 컬럼" size="md" />
+
+MySQL ClickPipe는 원본 테이블을 논리적으로 파티션으로 나누기 위해 원본 테이블의 한 컬럼을 사용합니다. 이 컬럼을 **파티션 키 컬럼**이라고 합니다. 이 컬럼은 원본 테이블을 여러 파티션으로 분할하는 데 사용되며, 분할된 파티션은 ClickPipe에서 병렬로 처리할 수 있습니다.
+
+<Warning>
+  성능 향상 효과를 충분히 얻으려면 원본 테이블에서 파티션 키 컬럼에 인덱스가 있어야 합니다. 이는 MySQL에서 `SHOW INDEX FROM <table_name>`를 실행하여 확인할 수 있습니다.
+</Warning>
+
+<div id="logical-partitioning-mysql-snapshot">
+  ### 논리적 파티셔닝
+</div>
+
+다음 설정을 살펴보겠습니다:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/snapshot_params.webp" alt="스냅샷 매개변수" size="md" />
+
+<div id="numrows-mysql-snapshot">
+  #### 파티션당 스냅샷 행 수
+</div>
+
+이 설정은 하나의 파티션을 구성하는 행 수를 제어합니다. ClickPipe는 원본 테이블을 이 크기의 청크로 읽고, 청크는 설정된 초기 적재 병렬성에 따라 병렬로 처리됩니다. 기본값은 파티션당 100,000행입니다.
+
+<div id="parallelism-mysql-snapshot">
+  #### 초기 적재 병렬 처리
+</div>
+
+이 설정은 몇 개의 파티션을 병렬로 처리할지 결정합니다. 기본값은 4이며, 이는 ClickPipe가 원본 테이블의 4개 파티션을 동시에 읽는다는 뜻입니다. 초기 적재 속도를 높이기 위해 이 값을 늘릴 수 있지만, 원본 데이터베이스에 과도한 부하가 걸리지 않도록 원본 인스턴스 사양에 맞는 적절한 값으로 유지하는 것이 좋습니다. ClickPipe는 원본 테이블의 크기와 파티션당 행 수를 기준으로 파티션 수를 자동으로 조정합니다.
+
+<div id="tables-parallel-mysql-snapshot">
+  #### 병렬로 스냅샷할 테이블 수
+</div>
+
+병렬 스냅샷과 직접적인 관련은 없지만, 이 설정은 초기 적재 중 테이블을 몇 개까지 병렬로 처리할지 제어합니다. 기본값은 1입니다. 이는 파티션 병렬성에 추가로 적용되므로, 파티션이 4개이고 테이블이 2개이면 ClickPipe는 총 8개의 파티션을 병렬로 읽습니다.
+
+<div id="monitoring-parallel-mysql-snapshot">
+  ### MySQL에서 병렬 스냅샷 모니터링
+</div>
+
+MySQL에서 **SHOW processlist**를 실행하면 병렬 스냅샷이 실제로 어떻게 동작하는지 확인할 수 있습니다. ClickPipe는 원본 데이터베이스에 여러 개의 연결을 만들고, 각 연결은 원본 테이블의 서로 다른 파티션을 읽습니다. 서로 다른 범위를 사용하는 **SELECT** 쿼리가 보이면 ClickPipe가 원본 테이블을 읽고 있다는 뜻입니다. 이 목록에서 COUNT(*)와 파티셔닝 쿼리도 확인할 수 있습니다.
+
+<div id="limitations-parallel-mysql-snapshot">
+  ### 제한 사항
+</div>
+
+* 파이프를 생성한 후에는 스냅샷 매개변수를 수정할 수 없습니다. 변경하려면 새 ClickPipe를 생성해야 합니다.
+* 기존 ClickPipe에 테이블을 추가할 때도 스냅샷 매개변수는 변경할 수 없습니다. 새 테이블에는 기존 매개변수가 적용됩니다.

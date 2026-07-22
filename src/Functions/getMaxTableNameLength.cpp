@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-class FunctionGetMaxTableNameLengthForDatabase : public IFunction
+class FunctionGetMaxTableNameLengthForDatabase final : public IFunction
 {
 public:
     static constexpr auto name = "getMaxTableNameLengthForDatabase";
@@ -45,7 +45,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        size_t allowed_max_length;
+        size_t allowed_max_length = 0;
 
         if (!isColumnConst(*arguments[0].column.get()))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must be constant.", getName());

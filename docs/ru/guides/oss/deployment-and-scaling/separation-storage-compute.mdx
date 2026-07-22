@@ -1,0 +1,186 @@
+---
+sidebarTitle: 'Разделение хранилища и вычислительных ресурсов'
+slug: /guides/separation-storage-compute
+title: 'Разделение хранилища и вычислительных ресурсов'
+description: 'В этом руководстве рассматривается, как использовать ClickHouse и S3 для реализации архитектуры с разделением хранилища и вычислительных ресурсов.'
+doc_type: 'guide'
+keywords: ['хранение', 'вычисления', 'архитектура', 'масштабируемость', 'облако']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<div id="overview">
+  ## Обзор
+</div>
+
+В этом руководстве рассматривается, как использовать ClickHouse и S3 для реализации архитектуры с раздельными хранилищем и вычислительными ресурсами.
+
+Разделение хранилища и вычислительных ресурсов означает, что вычислительные ресурсы и ресурсы хранения управляются независимо друг от друга. В ClickHouse это обеспечивает лучшую масштабируемость, экономическую эффективность и гибкость. При необходимости вы можете масштабировать ресурсы хранения и вычислений по отдельности, оптимизируя производительность и затраты.
+
+Использование ClickHouse с S3 в качестве хранилища особенно полезно в сценариях, где производительность запросов к «холодным» данным менее критична. ClickHouse поддерживает использование S3 в качестве хранилища для движка `MergeTree` с помощью `S3BackedMergeTree`. Этот движок таблицы позволяет воспользоваться преимуществами S3 в плане масштабируемости и снижения затрат, сохраняя при этом производительность вставки и запросов движка `MergeTree`.
+
+Обратите внимание: реализация и сопровождение архитектуры с раздельными хранилищем и вычислительными ресурсами сложнее, чем стандартные развертывания ClickHouse. Хотя самоуправляемый ClickHouse позволяет разделять хранилище и вычисления, как описано в этом руководстве, мы рекомендуем использовать [ClickHouse Cloud](https://clickhouse.com/cloud), который позволяет использовать ClickHouse в такой архитектуре без дополнительной настройки с помощью [движка таблицы `SharedMergeTree`](/ru/products/cloud/features/infrastructure/shared-merge-tree).
+
+*Это руководство предполагает, что вы используете ClickHouse версии 22.8 или выше.*
+
+<Warning>
+  Не настраивайте никаких политик жизненного цикла AWS/GCS. Это не поддерживается и может привести к повреждению таблиц.
+</Warning>
+
+<div id="1-use-s3-as-a-clickhouse-disk">
+  ## 1. Используйте S3 в качестве диска ClickHouse
+</div>
+
+<div id="creating-a-disk">
+  ### Создание диска
+</div>
+
+Создайте новый файл в каталоге ClickHouse `config.d`, чтобы сохранить конфигурацию хранилища:
+
+```bash
+vim /etc/clickhouse-server/config.d/storage_config.xml
+```
+
+Скопируйте следующий XML во вновь созданный файл, заменив `BUCKET`, `ACCESS_KEY_ID`, `SECRET_ACCESS_KEY` на параметры AWS-бакета, в котором вы хотите хранить данные:
+
+```xml
+<clickhouse>
+  <storage_configuration>
+    <disks>
+      <s3_disk>
+        <type>s3</type>
+        <endpoint>$BUCKET</endpoint>
+        <access_key_id>$ACCESS_KEY_ID</access_key_id>
+        <secret_access_key>$SECRET_ACCESS_KEY</secret_access_key>
+        <metadata_path>/var/lib/clickhouse/disks/s3_disk/</metadata_path>
+      </s3_disk>
+      <s3_cache>
+        <type>cache</type>
+        <disk>s3_disk</disk>
+        <path>/var/lib/clickhouse/disks/s3_cache/</path>
+        <max_size>10Gi</max_size>
+      </s3_cache>
+    </disks>
+    <policies>
+      <s3_main>
+        <volumes>
+          <main>
+            <disk>s3_disk</disk>
+          </main>
+        </volumes>
+      </s3_main>
+    </policies>
+  </storage_configuration>
+</clickhouse>
+```
+
+Если вам нужно дополнительно настроить диск S3 — например, указать `region` или отправить пользовательский HTTP-`header`, — список соответствующих параметров можно найти [здесь](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
+
+Вы также можете заменить `access_key_id` и `secret_access_key` следующими значениями — в этом случае система попытается получить учетные данные из переменных окружения и метаданных Amazon EC2:
+
+```bash
+<use_environment_credentials>true</use_environment_credentials>
+```
+
+После создания файла конфигурации необходимо изменить владельца и группу файла на пользователя и группу clickhouse:
+
+```bash
+chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
+```
+
+Теперь можно перезапустить сервер ClickHouse, чтобы изменения применились:
+
+```bash
+service clickhouse-server restart
+```
+
+<div id="2-create-a-table-backed-by-s3">
+  ## 2. Создайте таблицу на базе S3
+</div>
+
+Чтобы проверить, что диск S3 настроен правильно, можно попробовать создать таблицу и выполнить к ней запрос.
+
+Создайте таблицу, указав новую политику хранения S3:
+
+```sql
+CREATE TABLE my_s3_table
+  (
+    `id` UInt64,
+    `column1` String
+  )
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS storage_policy = 's3_main';
+```
+
+Обратите внимание, что нам не пришлось указывать движок как `S3BackedMergeTree`. ClickHouse автоматически преобразует тип движка внутри системы, если обнаруживает, что таблица использует S3 в качестве хранилища.
+
+Убедитесь, что таблица была создана с правильной политикой:
+
+```sql
+SHOW CREATE TABLE my_s3_table;
+```
+
+Вы должны увидеть следующий результат:
+
+```response
+┌─statement────────────────────────────────────────────────────
+│ CREATE TABLE default.my_s3_table
+(
+  `id` UInt64,
+  `column1` String
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS storage_policy = 's3_main', index_granularity = 8192
+└──────────────────────────────────────────────────────────────
+```
+
+Теперь вставим несколько строк в нашу новую таблицу:
+
+```sql
+INSERT INTO my_s3_table (id, column1)
+  VALUES (1, 'abc'), (2, 'xyz');
+```
+
+Давайте проверим, что строки были вставлены:
+
+```sql
+SELECT * FROM my_s3_table;
+```
+
+```response
+┌─id─┬─column1─┐
+│  1 │ abc     │
+│  2 │ xyz     │
+└────┴─────────┘
+
+2 rows in set. Elapsed: 0.284 sec.
+```
+
+В консоли AWS, если данные были успешно записаны в S3, вы увидите, что ClickHouse создал новые файлы в указанном вами бакете.
+
+Если всё прошло успешно, значит, вы уже используете ClickHouse с разделением хранилища и вычислительных ресурсов!
+
+<Image img="/images/guides/s3_bucket_example.webp" size="md" alt="Пример S3 бакета при использовании разделения хранилища и вычислительных ресурсов" border />
+
+<div id="3-implementing-replication-for-fault-tolerance-optional">
+  ## 3. Настройка репликации для отказоустойчивости (необязательно)
+</div>
+
+<Warning>
+  Не настраивайте политики жизненного цикла AWS/GCS. Это не поддерживается и может привести к повреждению таблиц.
+</Warning>
+
+Для отказоустойчивости можно использовать несколько узлов сервера ClickHouse, распределённых по нескольким регионам AWS, с отдельным S3 бакетом для каждого узла.
+
+Репликацию с S3-дисками можно настроить с помощью движка таблицы `ReplicatedMergeTree`. Подробности см. в следующем руководстве:
+
+* [Репликация одного сегмента в двух регионах AWS с использованием объектного хранилища S3](/ru/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#s3-multi-region).
+
+<div id="further-reading">
+  ## Дополнительные материалы
+</div>
+
+* [SharedMergeTree — движок таблицы](/ru/products/cloud/features/infrastructure/shared-merge-tree)
+* [Анонс SharedMergeTree в блоге](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates)

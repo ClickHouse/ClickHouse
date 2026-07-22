@@ -26,7 +26,7 @@ namespace
 {
 
 template <typename Point>
-class FunctionPolygonsDistance : public IFunction
+class FunctionPolygonsDistance final : public IFunction
 {
 public:
     static inline const char * name;

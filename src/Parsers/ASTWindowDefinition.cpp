@@ -96,7 +96,13 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         if (need_space)
             ostr << " ";
 
-        format_frame.need_parens = true;
+        /// The frame offset grammar requires the offset to be wrapped in parentheses
+        /// when it is an aliased expression (e.g. `((1 + 1) AS x) PRECEDING`),
+        /// because `AS` would otherwise terminate the expression parser. Pass
+        /// `need_parens = true` so an aliased offset formats as `(expr AS alias)`
+        /// rather than `(expr) AS alias`, which the parser cannot accept here.
+        FormatStateStacked offset_frame = format_frame;
+        offset_frame.need_parens = true;
 
         ostr << frame_type << " BETWEEN ";
         if (frame_begin_type == WindowFrame::BoundaryType::Current)
@@ -109,7 +115,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         }
         else
         {
-            frame_begin_offset->format(ostr, settings, state, format_frame);
+            frame_begin_offset->format(ostr, settings, state, offset_frame);
             ostr << " "
                 << (!frame_begin_preceding ? "FOLLOWING" : "PRECEDING");
         }
@@ -124,7 +130,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         }
         else
         {
-            frame_end_offset->format(ostr, settings, state, format_frame);
+            frame_end_offset->format(ostr, settings, state, offset_frame);
             ostr << " "
                 << (!frame_end_preceding ? "FOLLOWING" : "PRECEDING");
         }

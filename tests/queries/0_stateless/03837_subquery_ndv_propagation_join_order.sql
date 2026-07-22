@@ -1,3 +1,5 @@
+SET explain_query_plan_default = 'legacy';
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET allow_experimental_statistics = 1;
 
 DROP TABLE IF EXISTS test_sales;
@@ -56,6 +58,7 @@ OPTIMIZE TABLE test_product_catalog FINAL;
 
 SET enable_analyzer = 1;
 SET allow_statistic_optimize = 1;
+SET use_statistics = 1; -- NDV propagation relies on statistics; runner may inject use_statistics=0
 SET enable_parallel_replicas = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_algorithm = 'dpsize,greedy';

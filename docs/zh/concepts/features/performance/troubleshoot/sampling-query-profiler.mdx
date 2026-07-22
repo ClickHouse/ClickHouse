@@ -1,0 +1,334 @@
+---
+description: 'ClickHouse 采样查询分析工具文档'
+sidebarTitle: '查询分析'
+slug: /operations/optimizing-performance/sampling-query-profiler
+title: '采样查询分析器'
+doc_type: 'reference'
+---
+
+ClickHouse 运行一个采样分析器，可用于分析查询执行情况。
+使用该分析器，您可以找出在查询执行期间最常使用的源代码例程。
+您可以跟踪所耗费的 CPU 时间和挂钟时间，包括空闲时间。
+
+在 ClickHouse Cloud 中，查询分析器默认自动启用。
+下面的示例查询会找出某个已分析查询中最常见的堆栈跟踪，并解析出函数名称和源代码位置：
+
+<Tip>
+  将 `query_id` 的值替换为您要分析的查询 ID。
+</Tip>
+
+<Tabs>
+  <Tab title="ClickHouse Cloud">
+    在 ClickHouse Cloud 中，您可以点击查询结果表上方工具栏最右侧的 **&quot;...&quot;** (位于表/图表切换按钮旁) 来获取查询 ID。这会打开一个菜单，您可以点击 **&quot;Copy query ID&quot;**。
+
+    使用 `clusterAllReplicas(default, system.trace_log)` 从集群中的所有节点查询：
+
+    ```sql
+    SELECT
+        count(),
+        arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+    FROM clusterAllReplicas(default, system.trace_log)
+    WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
+    GROUP BY trace
+    ORDER BY count() DESC
+    LIMIT 10
+    SETTINGS allow_introspection_functions = 1
+    ```
+  </Tab>
+
+  <Tab title="自管理">
+    ```sql
+    SELECT
+        count(),
+        arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+    FROM system.trace_log
+    WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
+    GROUP BY trace
+    ORDER BY count() DESC
+    LIMIT 10
+    SETTINGS allow_introspection_functions = 1
+    ```
+  </Tab>
+</Tabs>
+
+<div id="self-managed-query-profiler">
+  ## 在自管理部署中使用查询分析器
+</div>
+
+在自管理部署中，如需使用查询分析器，请按以下步骤操作：
+
+<Steps>
+  <Step>
+    ### 安装带调试信息的 ClickHouse
+
+    安装 `clickhouse-common-static-dbg` 软件包：
+
+    1. 按照步骤 [“设置 Debian 仓库”](/zh/get-started/setup/self-managed/debian-ubuntu#setup-the-debian-repository) 中的说明操作
+    2. 运行 `sudo apt-get install clickhouse-server clickhouse-client clickhouse-common-static-dbg`，安装包含调试信息的 ClickHouse 已编译二进制文件
+    3. 运行 `sudo service clickhouse-server start` 启动服务器
+    4. 运行 `clickhouse-client`。`clickhouse-common-static-dbg` 中的调试符号会被服务器自动加载，无需执行任何额外操作来启用它们
+  </Step>
+
+  <Step>
+    ### 检查服务器配置
+
+    确保 [服务器配置文件](/zh/concepts/features/configuration/server-config/configuration-files)中的 [`trace_log`](/zh/reference/settings/server-settings/settings#trace_log) 部分已配置。默认情况下它处于启用状态：
+
+    ```xml
+    <!-- Trace 日志。存储由查询分析器收集的堆栈跟踪。
+         参见 query_profiler_real_time_period_ns 和 query_profiler_cpu_time_period_ns 设置。 -->
+    <trace_log>
+        <database>system</database>
+        <table>trace_log</table>
+
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <!-- 指示发生崩溃时是否应将日志转储到磁盘 -->
+        <flush_on_crash>false</flush_on_crash>
+        <symbolize>true</symbolize>
+    </trace_log>
+    ```
+
+    此部分用于配置 [trace&#95;log](/zh/reference/system-tables/trace_log) 系统表，该表包含分析器运行的结果。
+    请注意，此表中的数据仅对当前正在运行的服务器有效。
+    服务器重启后，ClickHouse 不会清理该表，之前存储的所有虚拟内存地址都可能失效。
+  </Step>
+
+  <Step>
+    ### 配置分析器计时器
+
+    设置 [`query_profiler_cpu_time_period_ns`](/zh/reference/settings/session-settings#query_profiler_cpu_time_period_ns) 或 [`query_profiler_real_time_period_ns`](/zh/reference/settings/session-settings#query_profiler_real_time_period_ns)。
+    这两个设置可以同时使用。
+
+    这些设置可用于配置分析器计时器。
+    由于它们是会话设置，因此你可以为整个服务器、单个用户或用户 profile、当前交互式会话以及每个单独的查询设置不同的采样频率。
+
+    默认采样频率为每秒一个样本，并且 CPU 计时器和实时时间计时器均已启用。
+    该频率既能收集关于 ClickHouse cluster 的足够信息，又不会影响服务器性能。
+    如果你需要分析每个单独的查询，请使用更高的采样频率。
+  </Step>
+
+  <Step>
+    ### 分析 `trace_log` 系统表
+
+    要分析 `trace_log` 系统表，请通过 [`allow_introspection_functions`](/zh/reference/settings/session-settings#allow_introspection_functions) 设置启用内部信息函数：
+
+    ```sql
+    SET allow_introspection_functions=1
+    ```
+
+    <Note>
+      出于安全原因，默认情况下内部信息函数处于禁用状态
+    </Note>
+
+    使用 `addressToLine`、`addressToLineWithInlines`、`addressToSymbol` 和 `demangle` [内部信息函数](/zh/reference/functions/regular-functions/introspection) 获取函数名称及其在 ClickHouse 代码中的位置。
+    要获取某个查询的 profile，需要对 `trace_log` 表中的数据进行聚合。
+    你可以按单个函数或整个堆栈跟踪聚合数据。
+
+    <Tip>
+      如果需要将 `trace_log` 信息可视化，可尝试使用 [flamegraph](/zh/integrations/connectors/tools/gui#clickhouse-flamegraph) 和 [speedscope](https://www.speedscope.app)。
+    </Tip>
+  </Step>
+</Steps>
+
+<div id="flamegraph">
+  ## 使用 `flameGraph` 函数生成火焰图
+</div>
+
+ClickHouse 提供聚合函数 [`flameGraph`](/zh/reference/functions/aggregate-functions/flame_graph)，可直接根据存储在 `trace_log` 中的堆栈跟踪生成火焰图。
+输出为 String 数组，格式与 [flamegraph.pl](https://github.com/brendangregg/FlameGraph) 兼容。
+
+**语法：**
+
+```sql
+flameGraph(traces, [size = 1], [ptr = 0])
+```
+
+**参数：**
+
+* `traces` — 一条栈追踪。[`Array(UInt64)`](/zh/reference/data-types/array)。
+* `size` — 用于内存分析的分配大小。[`Int64`](/zh/reference/data-types/int-uint)。
+* `ptr` — 分配地址。[`UInt64`](/zh/reference/data-types/int-uint)。
+
+当 `ptr` 非零时，`flameGraph` 会将大小和指针相同的分配 (`size > 0`) 与释放 (`size < 0`) 对应起来。
+只显示尚未释放的分配。
+不匹配的释放会被忽略。
+
+<div id="cpu-flame-graph">
+  ### CPU 火焰图
+</div>
+
+<Note>
+  以下查询要求已安装 [flamegraph.pl](https://github.com/brendangregg/FlameGraph)。
+
+  可通过运行以下命令进行安装：
+
+  ```bash
+  git clone https://github.com/brendangregg/FlameGraph
+  # 然后像这样使用：
+  # ~/FlameGraph/flamegraph.pl
+  ```
+
+  将以下查询中的 `flamegraph.pl` 替换为你本机上 `flamegraph.pl` 的所在路径
+</Note>
+
+```sql
+SET query_profiler_cpu_time_period_ns = 10000000;
+```
+
+运行查询，然后生成火焰图：
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(arrayReverse(trace)))
+        FROM system.trace_log
+        WHERE trace_type = 'CPU' AND query_id = '<query_id>'" \
+    | flamegraph.pl > flame_cpu.svg
+```
+
+<div id="memory-flame-graph-all">
+  ### 内存火焰图——全部分配
+</div>
+
+```sql
+SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
+```
+
+运行查询，然后生成火焰图：
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, size))
+        FROM system.trace_log
+        WHERE trace_type = 'MemorySample' AND query_id = '<query_id>'" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem.svg
+```
+
+<div id="memory-flame-graph-unfreed">
+  ### 内存火焰图——未释放的内存分配
+</div>
+
+这种形式会按指针将分配与释放对应起来，并且只显示查询期间未释放的内存。
+
+```sql
+SET memory_profiler_sample_probability = 1, max_untracked_memory = 1,
+    use_uncompressed_cache = 1,
+    merge_tree_max_rows_to_use_cache = 100000000000,
+    merge_tree_max_bytes_to_use_cache = 1000000000000;
+```
+
+运行以下查询以生成火焰图：
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, size, ptr))
+        FROM system.trace_log
+        WHERE trace_type = 'MemorySample' AND query_id = '<query_id>'" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem_unfreed.svg
+```
+
+<div id="memory-flame-graph-time-point">
+  ### 内存火焰图——某一时刻的活跃分配
+</div>
+
+这种方法可帮助你找出峰值内存占用，并直观展示该时刻分配了哪些内存。
+
+```sql
+SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
+```
+
+<div id="find-memory-usage-over-time">
+  #### 查看内存使用量随时间的变化
+</div>
+
+```sql
+SELECT
+    event_time,
+    formatReadableSize(max(s)) AS m
+FROM (
+    SELECT
+        event_time,
+        sum(size) OVER (ORDER BY event_time) AS s
+    FROM system.trace_log
+    WHERE query_id = '<query_id>' AND trace_type = 'MemorySample'
+)
+GROUP BY event_time
+ORDER BY event_time;
+```
+
+<div id="find-time-point-maximum-memory-usage">
+  #### 找到内存使用量最大的时间点
+</div>
+
+```sql
+SELECT
+    argMax(event_time, s),
+    max(s)
+FROM (
+    SELECT
+        event_time,
+        sum(size) OVER (ORDER BY event_time) AS s
+    FROM system.trace_log
+    WHERE query_id = '<query_id>' AND trace_type = 'MemorySample'
+);
+```
+
+<div id="build-flame-graph">
+  #### 构建该时间点的活跃分配火焰图
+</div>
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, size, ptr))
+        FROM (
+            SELECT * FROM system.trace_log
+            WHERE trace_type = 'MemorySample'
+              AND query_id = '<query_id>'
+              AND event_time <= '<time_point>'
+            ORDER BY event_time
+        )" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_pos.svg
+```
+
+<div id="build-flame-graph-deallocations">
+  #### 生成该时间点之后的释放火焰图 (以了解后续释放了哪些内容)
+</div>
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, -size, ptr))
+        FROM (
+            SELECT * FROM system.trace_log
+            WHERE trace_type = 'MemorySample'
+              AND query_id = '<query_id>'
+              AND event_time > '<time_point>'
+            ORDER BY event_time DESC
+        )" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_neg.svg
+```
+
+<div id="example">
+  ## 示例
+</div>
+
+下面的代码片段：
+
+* 按查询标识符和当前日期过滤 `trace_log` 数据。
+* 按栈跟踪进行聚合。
+* 使用内部信息函数获取以下报告：
+  * 符号名称及其对应的源代码函数名称。
+  * 这些函数在源代码中的位置。
+
+```sql
+SELECT
+    count(),
+    arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+FROM system.trace_log
+WHERE (query_id = '<query_id>') AND (event_date = today())
+GROUP BY trace
+ORDER BY count() DESC
+LIMIT 10
+```

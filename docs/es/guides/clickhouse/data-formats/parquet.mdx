@@ -1,0 +1,212 @@
+---
+sidebarTitle: 'Parquet'
+slug: /integrations/data-formats/parquet
+title: 'Trabajar con Parquet en ClickHouse'
+description: 'Página que describe cómo trabajar con Parquet en ClickHouse'
+doc_type: 'guide'
+keywords: ['parquet', 'formato columnar', 'formato de datos', 'compresión', 'apache parquet']
+---
+
+Parquet es un formato de archivo eficiente para almacenar datos de forma orientada a columnas.
+ClickHouse admite tanto la lectura como la escritura de archivos Parquet.
+
+<Tip>
+  Cuando se hace referencia a una ruta de archivo en una consulta, el lugar desde el que ClickHouse intentará leer dependerá de la variante de ClickHouse que estés usando.
+
+  Si estás usando [`clickhouse-local`](/es/concepts/features/tools-and-utilities/clickhouse-local), leerá desde una ubicación relativa al directorio desde el que iniciaste ClickHouse Local.
+  Si estás usando ClickHouse Server o ClickHouse Cloud mediante `clickhouse client`, leerá desde una ubicación relativa al directorio `/var/lib/clickhouse/user_files/` en el servidor.
+</Tip>
+
+<div id="importing-from-parquet">
+  ## Importar desde Parquet
+</div>
+
+Antes de cargar los datos, podemos usar la función [file()](/es/reference/functions/regular-functions/files#file) para inspeccionar la estructura de un [archivo Parquet de ejemplo](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.parquet):
+
+```sql
+DESCRIBE TABLE file('data.parquet', Parquet);
+```
+
+Hemos usado [Parquet](/es/reference/formats/Parquet/Parquet) como segundo argumento para que ClickHouse conozca el formato del archivo. Esto mostrará las columnas con sus tipos:
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ path │ Nullable(String) │              │                    │         │                  │                │
+│ date │ Nullable(String) │              │                    │         │                  │                │
+│ hits │ Nullable(Int64)  │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+También podemos explorar los archivos antes de importar realmente los datos, aprovechando toda la potencia de SQL:
+
+```sql
+SELECT *
+FROM file('data.parquet', Parquet)
+LIMIT 3;
+```
+
+```response
+┌─path──────────────────────┬─date───────┬─hits─┐
+│ Akiba_Hebrew_Academy      │ 2017-08-01 │  241 │
+│ Aegithina_tiphia          │ 2018-02-01 │   34 │
+│ 1971-72_Utah_Stars_season │ 2016-10-01 │    1 │
+└───────────────────────────┴────────────┴──────┘
+```
+
+<Tip>
+  Podemos omitir la especificación explícita del formato para `file()` e `INFILE`/`OUTFILE`.
+  En ese caso, ClickHouse detectará automáticamente el formato en función de la extensión del archivo.
+</Tip>
+
+<div id="importing-to-an-existing-table">
+  ## Importación a una tabla existente
+</div>
+
+Vamos a crear una tabla en la que importaremos datos en formato Parquet:
+
+```sql
+CREATE TABLE sometable
+(
+    `path` String,
+    `date` Date,
+    `hits` UInt32
+)
+ENGINE = MergeTree
+ORDER BY (date, path);
+```
+
+Ahora podemos importar datos mediante la cláusula `FROM INFILE`:
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data.parquet' FORMAT Parquet;
+
+SELECT *
+FROM sometable
+LIMIT 5;
+```
+
+```response
+┌─path──────────────────────────┬───────date─┬─hits─┐
+│ 1988_in_philosophy            │ 2015-05-01 │   70 │
+│ 2004_Green_Bay_Packers_season │ 2015-05-01 │  970 │
+│ 24_hours_of_lemans            │ 2015-05-01 │   37 │
+│ 25604_Karlin                  │ 2015-05-01 │   20 │
+│ ASCII_ART                     │ 2015-05-01 │    9 │
+└───────────────────────────────┴────────────┴──────┘
+```
+
+Observa cómo ClickHouse convirtió automáticamente las cadenas de Parquet (en la columna `date`) al tipo `Date`. Esto se debe a que ClickHouse realiza automáticamente una conversión de tipo según los tipos de la tabla de destino.
+
+<div id="inserting-a-local-file-to-remote-server">
+  ## Insertar un archivo local en un servidor remoto
+</div>
+
+Si desea insertar un archivo Parquet local en un servidor remoto de ClickHouse, puede hacerlo redirigiendo el contenido del archivo a `clickhouse-client`, como se muestra a continuación:
+
+```sql
+clickhouse client -q "INSERT INTO sometable FORMAT Parquet" < data.parquet
+```
+
+<div id="creating-new-tables-from-parquet-files">
+  ## Crear nuevas tablas a partir de archivos Parquet
+</div>
+
+Como ClickHouse puede leer el esquema de un archivo Parquet, podemos crear tablas sobre la marcha:
+
+```sql
+CREATE TABLE imported_from_parquet
+ENGINE = MergeTree
+ORDER BY tuple() AS
+SELECT *
+FROM file('data.parquet', Parquet)
+```
+
+Esto creará y poblará automáticamente una tabla a partir de un archivo Parquet especificado:
+
+```sql
+DESCRIBE TABLE imported_from_parquet;
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ path │ Nullable(String) │              │                    │         │                  │                │
+│ date │ Nullable(String) │              │                    │         │                  │                │
+│ hits │ Nullable(Int64)  │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+De forma predeterminada, ClickHouse es estricto con los nombres de las columnas, los tipos y los valores. Pero, a veces, se pueden omitir columnas inexistentes o valores no admitidos durante la importación. Esto se puede gestionar con la [configuración de Parquet](/es/reference/formats/Parquet/Parquet#format-settings).
+
+<div id="exporting-to-parquet-format">
+  ## Exportación en formato Parquet
+</div>
+
+<Tip>
+  Al usar `INTO OUTFILE` con ClickHouse Cloud, tendrás que ejecutar los comandos en `clickhouse client` en la máquina donde se escribirá el archivo.
+</Tip>
+
+Para exportar cualquier tabla o el resultado de una consulta a un archivo Parquet, podemos usar una cláusula `INTO OUTFILE`:
+
+```sql
+SELECT *
+FROM sometable
+INTO OUTFILE 'export.parquet'
+FORMAT Parquet
+```
+
+Esto creará el archivo `export.parquet` en el directorio de trabajo.
+
+<div id="clickhouse-and-parquet-data-types">
+  ## Tipos de datos de ClickHouse y Parquet
+</div>
+
+Los tipos de datos de ClickHouse y Parquet son en su mayoría idénticos, aunque [difieren ligeramente](/es/reference/formats/Parquet/Parquet#data-types-matching-parquet). Por ejemplo, ClickHouse exporta el tipo `DateTime` como un `int64` de Parquet. Si luego lo volvemos a importar en ClickHouse, veremos números ([archivo time.parquet](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/time.parquet)):
+
+```sql
+SELECT * FROM file('time.parquet', Parquet);
+```
+
+```response
+┌─n─┬───────time─┐
+│ 0 │ 1673622611 │
+│ 1 │ 1673622610 │
+│ 2 │ 1673622609 │
+│ 3 │ 1673622608 │
+│ 4 │ 1673622607 │
+└───┴────────────┘
+```
+
+En este caso se puede usar la [conversión de tipos](/es/reference/functions/regular-functions/type-conversion-functions):
+
+```sql
+SELECT
+    n,
+    toDateTime(time)                 <--- int a tiempo
+FROM file('time.parquet', Parquet);
+```
+
+```response
+┌─n─┬────toDateTime(time)─┐
+│ 0 │ 2023-01-13 15:10:11 │
+│ 1 │ 2023-01-13 15:10:10 │
+│ 2 │ 2023-01-13 15:10:09 │
+│ 3 │ 2023-01-13 15:10:08 │
+│ 4 │ 2023-01-13 15:10:07 │
+└───┴─────────────────────┘
+```
+
+<div id="further-reading">
+  ## Más información
+</div>
+
+ClickHouse ofrece compatibilidad con numerosos formatos, tanto de texto como binarios, para adaptarse a distintos escenarios y plataformas. Consulte más formatos y formas de trabajar con ellos en los siguientes artículos:
+
+* [Formatos CSV y TSV](/es/guides/clickhouse/data-formats/csv-tsv)
+* [Avro, Arrow y ORC](/es/guides/clickhouse/data-formats/arrow-avro-orc)
+* [Formatos JSON](/es/guides/clickhouse/data-formats/json/intro)
+* [Regex y Template](/es/guides/clickhouse/data-formats/templates-regex)
+* [Formatos nativos y binarios](/es/guides/clickhouse/data-formats/binary)
+* [Formatos SQL](/es/guides/clickhouse/data-formats/sql)
+
+Consulte también [clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local), una herramienta portátil y completa para trabajar con archivos locales o remotos sin necesidad del servidor de ClickHouse.

@@ -124,7 +124,7 @@ struct StringConverter
 ///  2. after reading page header, the Encoding becomes known, and we create a PageDecoder.
 struct PageDecoderInfo
 {
-    parq::Type::type physical_type;
+    parq::Type::type physical_type{};
 
     /// Postprocessing of decoded values. Exactly one of these is set, depending on physical_type.
     std::shared_ptr<FixedSizeConverter> fixed_size_converter;
@@ -314,8 +314,10 @@ struct Int96Converter : public FixedSizeConverter
 struct GeoConverter : public StringConverter
 {
     GeoColumnMetadata geo_metadata;
+    bool precise_float_parsing = true;
 
-    explicit GeoConverter(const GeoColumnMetadata & geo_metadata_) : geo_metadata(geo_metadata_) {}
+    GeoConverter(const GeoColumnMetadata & geo_metadata_, bool precise_float_parsing_)
+        : geo_metadata(geo_metadata_), precise_float_parsing(precise_float_parsing_) {}
 
     void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
 };

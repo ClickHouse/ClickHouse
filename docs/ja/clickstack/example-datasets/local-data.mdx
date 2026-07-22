@@ -1,0 +1,303 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/local-data
+title: 'ローカルのログとメトリクス'
+toc_max_heading_level: 2
+description: 'ClickStack のローカルデータ、システムデータ、メトリクスの基本'
+doc_type: 'guide'
+keywords: ['ClickStack', '例データ', 'サンプルデータセット', 'ログ', 'オブザーバビリティ']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+この入門ガイドでは、システム上のローカルなログとメトリクスを収集し、ClickStack に送信して可視化や分析を行えます。
+
+**この例は OSX および Linux システムでのみ使用できます**
+
+<Tabs>
+  <Tab title="マネージド ClickStack">
+    このガイドは、[Managed ClickStack の入門ガイド](/ja/clickstack/deployment/managed)を完了し、[接続認証情報を手元に控えている](/ja/clickstack/getting-started/managed#next-steps)ことを前提としています。
+
+    <Steps>
+      <Step>
+        ### OpenTelemetry のカスタム設定を作成する
+
+        以下の内容で `custom-local-config.yaml` ファイルを作成します。
+
+        ```yaml
+        receivers:
+          filelog:
+            include:
+              - /host/var/log/**/*.log        # ホストの Linux ログ
+              - /host/var/log/syslog
+              - /host/var/log/messages
+              - /host/private/var/log/*.log   # ホストの macOS ログ
+            start_at: beginning
+            resource:
+              service.name: "system-logs"
+
+          hostmetrics:
+            collection_interval: 1s
+            scrapers:
+              cpu:
+                metrics:
+                  system.cpu.time:
+                    enabled: true
+                  system.cpu.utilization:
+                    enabled: true
+              memory:
+                metrics:
+                  system.memory.usage:
+                    enabled: true
+                  system.memory.utilization:
+                    enabled: true
+              filesystem:
+                metrics:
+                  system.filesystem.usage:
+                    enabled: true
+                  system.filesystem.utilization:
+                    enabled: true
+              paging:
+                metrics:
+                  system.paging.usage:
+                    enabled: true
+                  system.paging.utilization:
+                    enabled: true
+                  system.paging.faults:
+                    enabled: true
+              disk:
+              load:
+              network:
+              processes:
+
+        service:
+          pipelines:
+            logs/local:
+              receivers: [filelog]
+              processors:
+                - memory_limiter
+                - batch
+              exporters:
+                - clickhouse
+            metrics/hostmetrics:
+              receivers: [hostmetrics]
+              processors:
+                - memory_limiter
+                - batch
+              exporters:
+                - clickhouse
+        ```
+
+        この構成では、macOS および Linux システムのシステムログとメトリクスを収集し、その結果を ClickStack に送信します。この構成は、新しい receiver と pipeline を追加して ClickStack collector を拡張するものです。ベースの ClickStack collector にあらかじめ設定されている `clickhouse` エクスポーターとプロセッサ (`memory_limiter`、`batch`) を参照します。
+
+        <Info>
+          **インジェスト時のタイムスタンプ**
+
+          この構成では、インジェスト時にタイムスタンプを調整し、各イベントに更新された時刻の値を割り当てます。正確なイベント時刻を保持するため、OTel のプロセッサまたは operator を使用して、ログファイル内のタイムスタンプをできるだけ[前処理または解析](/ja/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching)することを推奨します。
+
+          この設定例では、receiver または file processor がファイルの先頭から読み取りを開始するように設定されている場合、既存のすべてのログエントリには同じ調整済みタイムスタンプ、つまり元のイベント時刻ではなく処理時刻が割り当てられます。ファイルに追記される新しいイベントには、実際の生成時刻に近いタイムスタンプが付与されます。
+
+          この動作を避けるには、receiver の構成で開始位置を `end` に設定します。これにより、新しいエントリのみが取り込まれ、実際の到着時刻に近いタイムスタンプが付与されます。
+        </Info>
+
+        OpenTelemetry (OTel) の構成構造の詳細については、[公式ガイド](https://opentelemetry.io/docs/collector/configuration/)を参照してください。
+      </Step>
+
+      <Step>
+        ### OpenTelemetry Collector を起動する
+
+        次のコマンドを実行して、スタンドアロンのcollectorを起動します。
+
+        ```shell
+        docker run -d \
+          -p 4317:4317 -p 4318:4318 \
+          --user 0:0 \
+          -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+          -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+          -e CLICKHOUSE_USER=${CLICKHOUSE_USER} \
+          -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+          -v "$(pwd)/custom-local-config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+          -v /var/log:/host/var/log:ro \
+          -v /private/var/log:/host/private/var/log:ro \
+          clickhouse/clickstack-otel-collector:latest
+        ```
+
+        collector はただちにローカルシステムのログとメトリクスの収集を開始します。
+      </Step>
+
+      <Step>
+        ### サービスを選択する
+
+        ClickHouse Cloud のメインページで、Managed ClickStack のサービスを選択します。
+
+        <Image img="/images/clickstack/select_service.webp" alt="サービスを選択" size="lg" />
+      </Step>
+
+      <Step>
+        ### システムログを確認する
+
+        左側のメニューで `ClickStack` を選択して ClickStack UI に移動すると、自動的に認証されます。
+
+        Search UI にはローカルのシステムログが表示されているはずです。フィルターを展開して `system.log` を選択します。
+
+        <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="HyperDX ローカルログ" size="lg" />
+      </Step>
+
+      <Step>
+        ### システムメトリクスを調べる
+
+        チャートを使ってメトリクスを確認できます。
+
+        左側のメニューから Chart Explorer に移動します。ログソース `Metrics` を選択し、集計タイプとして `Maximum` を選択します。
+
+        `Select a Metric` メニューでは、まず `memory` と入力してから `system.memory.utilization (Gauge)` を選択します。
+
+        `Run` ボタンを押して、メモリ使用率の推移を可視化します。
+
+        <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="時間経過に伴うメモリ使用率" size="lg" />
+
+        値は `%` の浮動小数点数として返される点に注意してください。より分かりやすく表示するには、`Set number format` を選択します。
+
+        <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="数値フォーマット" size="lg" />
+
+        続いて表示されるメニューで、`Apply` をクリックする前に `Output format` ドロップダウンから `Percentage` を選択します。
+
+        <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="時間ごとのメモリ %" size="lg" />
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    ### カスタムOpenTelemetry設定を作成する
+
+    以下の内容で `custom-local-config.yaml` ファイルを作成してください。
+
+    ```yaml
+    receivers:
+      filelog:
+        include:
+          - /host/var/log/**/*.log        # ホストからのLinuxログ
+          - /host/var/log/syslog
+          - /host/var/log/messages
+          - /host/private/var/log/*.log   # ホストからのmacOSログ
+        start_at: beginning
+        resource:
+          service.name: "system-logs"
+
+      hostmetrics:
+        collection_interval: 1s
+        scrapers:
+          cpu:
+            metrics:
+              system.cpu.time:
+                enabled: true
+              system.cpu.utilization:
+                enabled: true
+          memory:
+            metrics:
+              system.memory.usage:
+                enabled: true
+              system.memory.utilization:
+                enabled: true
+          filesystem:
+            metrics:
+              system.filesystem.usage:
+                enabled: true
+              system.filesystem.utilization:
+                enabled: true
+          paging:
+            metrics:
+              system.paging.usage:
+                enabled: true
+              system.paging.utilization:
+                enabled: true
+              system.paging.faults:
+                enabled: true
+          disk:
+          load:
+          network:
+          processes:
+
+    service:
+      pipelines:
+        logs/local:
+          receivers: [filelog]
+          processors:
+            - memory_limiter
+            - batch
+          exporters:
+            - clickhouse
+        metrics/hostmetrics:
+          receivers: [hostmetrics]
+          processors:
+            - memory_limiter
+            - batch
+          exporters:
+            - clickhouse
+    ```
+
+    この設定は、OSXおよびLinuxシステムのシステムログとメトリクスを収集し、結果をClickStackに送信します。この設定はClickStack collectorを拡張して新しいreceiversとpipelinesを追加するもので、ベースのClickStack collectorにすでに設定されている既存の`clickhouse`エクスポーターとプロセッサ (`memory_limiter`、`batch`) を参照します。
+
+    <Info>
+      **インジェスト時のタイムスタンプ**
+
+      この構成では、インジェスト時にタイムスタンプを調整し、各イベントに更新された時刻の値を割り当てます。正確なイベント時刻を保持するには、理想的にはログファイル内の OTel プロセッサまたは operator を使用して、[タイムスタンプを前処理または解析](/ja/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching)してください。
+
+      この例の構成では、receiver またはファイルプロセッサがファイルの先頭から読み取りを開始するように設定されている場合、既存のログエントリにはすべて同じ調整後のタイムスタンプ、つまり元のイベント時刻ではなく処理時刻が割り当てられます。ファイルに追記される新しいイベントには、実際の生成時刻に近いタイムスタンプが付与されます。
+
+      この挙動を避けるには、receiver の構成で開始位置を `end` に設定できます。これにより、新しいエントリのみが取り込まれ、実際の到着時刻に近いタイムスタンプが付与されます。
+    </Info>
+
+    OpenTelemetry (OTel) のconfiguration構造の詳細については、[公式ガイド](https://opentelemetry.io/docs/collector/configuration/)を参照してください。
+
+    ### カスタム設定でClickStackを起動する
+
+    次のdockerコマンドを実行して、カスタム設定のオールインワンコンテナーを起動します：
+
+    ```shell
+    docker run -d --name clickstack \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      --user 0:0 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/custom-local-config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v /var/log:/host/var/log:ro \
+      -v /private/var/log:/host/private/var/log:ro \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    <Info>
+      **root ユーザー**
+
+      collector は、すべてのシステムログにアクセスするため、root ユーザーとして実行します。これは、Linux ベースのシステムで保護されたパス上のログを収集するために必要です。ただし、この方法は本番環境には推奨されません。本番環境では、OpenTelemetry Collector は、対象のログソースにアクセスするために必要な最小限の権限だけを持つローカル agent としてデプロイする必要があります。
+
+      なお、コンテナー内でホストの `/var/log` を `/host/var/log` にマウントしているのは、コンテナー自身のログファイルとの競合を避けるためです。
+    </Info>
+
+    ### システムログを確認する
+
+    ローカルにデプロイする場合は、[http://localhost:8080](http://localhost:8080) にアクセスして ClickStack UI を開いてください。
+
+    データソースはあらかじめ作成済みです。検索UIにはローカルシステムのログが表示されているはずです。フィルターを展開して`system.log`を選択してください：
+
+    <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="HyperDXのローカルログ" size="lg" />
+
+    ### システムメトリクスを確認する
+
+    チャートを使用してメトリクスを確認できます。
+
+    左側のメニューからChart Explorerに移動します。ログソースとして`Metrics`を選択し、集計タイプに`Maximum`を選択します。
+
+    `Select a Metric` メニューでは、`system.memory.utilization (Gauge)` を選択する前に、`memory` と入力してください。
+
+    実行ボタンを押すと、時間経過によるメモリ使用率を可視化できます。
+
+    <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="Memory の推移" size="lg" />
+
+    数値は浮動小数点の `%` として返されることに注意してください。より見やすく表示するには、`Set number format` を選択してください。
+
+    <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="数値フォーマット" size="lg" />
+
+    次のメニューで、`Apply` をクリックする前に `出力フォーマット` ドロップダウンから `Percentage` を選択してください。
+
+    <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="時間ごとのメモリ使用率" size="lg" />
+  </Tab>
+</Tabs>

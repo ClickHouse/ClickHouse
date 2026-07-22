@@ -1,0 +1,65 @@
+---
+description: 'Log 엔진 계열에 대한 문서'
+sidebarTitle: 'Log 계열'
+slug: /engines/table-engines/log-family/
+title: 'Log 엔진 계열'
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="log-table-engine-family">
+  # Log 테이블 엔진 계열
+</div>
+
+<CloudNotSupportedBadge />
+
+이 엔진은 많은 수의 작은 테이블(약 100만 행 이하)에 데이터를 빠르게 쓰고, 이후 이를 전체 단위로 읽어야 하는 시나리오를 위해 개발되었습니다.
+
+이 계열의 엔진은 다음과 같습니다.
+
+| Log Engines                                                        |
+| ------------------------------------------------------------------ |
+| [StripeLog](/ko/reference/engines/table-engines/log-family/stripelog) |
+| [Log](/ko/reference/engines/table-engines/log-family/log)             |
+| [TinyLog](/ko/reference/engines/table-engines/log-family/tinylog)     |
+
+`Log` 계열 테이블 엔진은 데이터를 [HDFS](/ko/reference/engines/table-engines/integrations/hdfs) 또는 [S3](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3) 분산 파일 시스템에 저장할 수 있습니다.
+
+<Warning>
+  **이 엔진은 로그 데이터를 위한 것이 아닙니다.**
+
+  이름과는 달리 *Log 테이블 엔진은 로그 데이터 저장을 목적으로 하지 않습니다. 빠르게 기록해야 하는 소량의 데이터에만 사용해야 합니다.
+</Warning>
+
+<div id="common-properties">
+  ## 공통 속성
+</div>
+
+엔진:
+
+* 데이터를 디스크에 저장합니다.
+
+* 쓰기 시 파일 끝에 데이터를 추가합니다.
+
+* 동시 데이터 접근을 위한 잠금을 지원합니다.
+
+  `INSERT` 쿼리 중에는 테이블이 잠기며, 데이터를 읽거나 쓰는 다른 쿼리는 모두 테이블 잠금이 해제될 때까지 대기합니다. 데이터를 쓰는 쿼리가 없으면 데이터 읽기 쿼리는 여러 개를 동시에 수행할 수 있습니다.
+
+* [뮤테이션](/ko/reference/statements/alter/index#mutations)을 지원하지 않습니다.
+
+* 인덱스를 지원하지 않습니다.
+
+  즉, 데이터 범위를 대상으로 하는 `SELECT` 쿼리는 효율적이지 않습니다.
+
+* 데이터를 원자적으로 기록하지 않습니다.
+
+  예를 들어 비정상적인 server 종료처럼 쓰기 작업이 중단되면 데이터가 손상된 테이블이 생길 수 있습니다.
+
+<div id="differences">
+  ## 차이점
+</div>
+
+`TinyLog` 엔진은 이 계열에서 가장 단순하며, 기능은 가장 부족하고 효율도 가장 낮습니다. `TinyLog` 엔진은 단일 쿼리에서 여러 스레드를 통한 병렬 데이터 읽기를 지원하지 않습니다. 각 컬럼을 별도의 파일에 저장하므로, 단일 쿼리의 병렬 읽기를 지원하는 같은 계열의 다른 엔진보다 데이터 읽기 속도가 느리고, `Log` 엔진과 거의 비슷한 수의 파일 디스크립터를 사용합니다. 단순한 시나리오에서만 사용하십시오.
+
+`Log` 및 `StripeLog` 엔진은 병렬 데이터 읽기를 지원합니다. 데이터를 읽을 때 ClickHouse는 여러 스레드를 사용합니다. 각 스레드는 별도의 데이터 블록을 처리합니다. `Log` 엔진은 테이블의 각 컬럼마다 별도의 파일을 사용합니다. `StripeLog`는 모든 데이터를 하나의 파일에 저장합니다. 그 결과 `StripeLog` 엔진은 더 적은 수의 파일 디스크립터를 사용하지만, 데이터 읽기 효율은 `Log` 엔진이 더 높습니다.

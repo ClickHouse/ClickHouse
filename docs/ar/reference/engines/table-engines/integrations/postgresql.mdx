@@ -1,0 +1,248 @@
+---
+description: 'يتيح محرك PostgreSQL تنفيذ استعلامات `SELECT` و`INSERT` على البيانات المخزنة
+  على خادم PostgreSQL بعيد.'
+sidebarTitle: 'PostgreSQL'
+slug: /engines/table-engines/integrations/postgresql
+title: 'محرك جدول PostgreSQL'
+doc_type: 'guide'
+---
+
+يتيح محرك PostgreSQL تنفيذ استعلامات `SELECT` و`INSERT` على البيانات المخزنة على خادم PostgreSQL بعيد.
+
+<Note>
+  حاليًا، لا يدعم محرك جدول PostgreSQL هذا إلا PostgreSQL بالإصدار 12 فما فوق.
+</Note>
+
+<Tip>
+  اطّلع على خدمة [Managed Postgres](/ar/products/managed-postgres/overview) الخاصة بنا. فهي تعتمد على تخزين NVMe موجود فعليًا إلى جانب موارد الحوسبة، ما يوفّر أداءً أسرع حتى 10 مرات لأحمال العمل المقيّدة بأداء القرص مقارنةً بالبدائل التي تستخدم تخزينًا متصلًا بالشبكة مثل EBS، كما تتيح لك نسخ بيانات Postgres إلى ClickHouse باستخدام موصل Postgres CDC في ClickPipes.
+</Tip>
+
+<div id="creating-a-table">
+  ## إنشاء جدول
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 type1 [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 type2 [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = PostgreSQL({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]})
+```
+
+راجع وصفًا مفصلًا لاستعلام [CREATE TABLE](/ar/reference/statements/create/table).
+
+يمكن أن تختلف بنية الجدول عن بنية جدول PostgreSQL الأصلي:
+
+* يجب أن تكون أسماء الأعمدة مطابقة لما هي عليه في جدول PostgreSQL الأصلي، ولكن يمكنك استخدام بعض هذه الأعمدة فقط وبأي ترتيب.
+* قد تختلف أنواع الأعمدة عن تلك الموجودة في جدول PostgreSQL الأصلي. يحاول ClickHouse [cast](/ar/reference/engines/database-engines/postgresql#data_types-support) القيم إلى أنواع بيانات ClickHouse.
+* يحدّد الإعداد [external&#95;table&#95;functions&#95;use&#95;nulls](/ar/reference/settings/session-settings#external_table_functions_use_nulls) كيفية التعامل مع الأعمدة Nullable. القيمة الافتراضية: 1. إذا كانت القيمة 0، فلن تُنشئ دالة الجدول أعمدة Nullable، وستُدرج القيم الافتراضية بدلًا من قيم NULL. وينطبق هذا أيضًا على قيم NULL داخل المصفوفات.
+
+**معلمات المحرك**
+
+* `host:port` — عنوان خادم PostgreSQL.
+* `database` — اسم قاعدة البيانات البعيدة.
+* `table` — اسم الجدول البعيد.
+* `user` — مستخدم PostgreSQL.
+* `password` — كلمة مرور المستخدم.
+* `schema` — مخطط الجدول غير الافتراضي. اختياري.
+* `on_conflict` — استراتيجية حل التعارض. مثال: `ON CONFLICT DO NOTHING`. اختياري. ملاحظة: ستؤدي إضافة هذا الخيار إلى جعل الإدراج أقل كفاءة.
+
+يُنصح باستخدام [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections) (المتاحة منذ الإصدار 21.11) في بيئة الإنتاج. إليك مثالًا:
+
+```xml
+<named_collections>
+    <postgres_creds>
+        <host>localhost</host>
+        <port>5432</port>
+        <user>postgres</user>
+        <password>****</password>
+        <schema>schema1</schema>
+    </postgres_creds>
+</named_collections>
+```
+
+يمكن تجاوز بعض المعلمات باستخدام وسيطات المفتاح-القيمة:
+
+```sql
+SELECT * FROM postgresql(postgres_creds, table='table1');
+```
+
+<div id="implementation-details">
+  ## تفاصيل التنفيذ
+</div>
+
+تُنفَّذ استعلامات `SELECT` على جانب PostgreSQL بصيغة `COPY (SELECT ...) TO STDOUT` داخل معاملة PostgreSQL للقراءة فقط، مع تنفيذ `commit` بعد كل استعلام `SELECT`.
+
+تُنفَّذ عبارات `WHERE` البسيطة مثل `=`, `!=`, `>`, `>=`, `<`, `<=`, و`IN` على خادم PostgreSQL.
+
+تُنفَّذ جميع عمليات `JOIN`، وعمليات التجميع، والفرز، وشروط `IN [ array ]`، وقيد أخذ العينات الخاص بـ `LIMIT` في ClickHouse فقط بعد اكتمال الاستعلام إلى PostgreSQL.
+
+تُنفَّذ استعلامات `INSERT` على جانب PostgreSQL بصيغة `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` داخل معاملة PostgreSQL مع `auto-commit` بعد كل تعليمة `INSERT`.
+
+تُحوَّل أنواع `Array` في PostgreSQL إلى مصفوفات في ClickHouse.
+
+<Note>
+  انتبه: في PostgreSQL، قد تحتوي بيانات المصفوفة المُنشأة على هيئة `type_name[]` على مصفوفات متعددة الأبعاد بأعداد مختلفة من الأبعاد في صفوف مختلفة من الجدول داخل العمود نفسه. لكن في ClickHouse، لا يُسمح إلا بمصفوفات متعددة الأبعاد لها العدد نفسه من الأبعاد في جميع صفوف الجدول داخل العمود نفسه.
+</Note>
+
+يدعم عدة نسخ متماثلة يجب إدراجها باستخدام `|`. على سبيل المثال:
+
+```sql
+CREATE TABLE test_replicas (id UInt32, name String) ENGINE = PostgreSQL(`postgres{2|3|4}:5432`, 'clickhouse', 'test_replicas', 'postgres', 'mysecretpassword');
+```
+
+يتم دعم تحديد أولوية النسخ المتماثلة لمصدر قاموس PostgreSQL. وكلما زادت القيمة في `map`، انخفضت الأولوية. أعلى أولوية هي `0`.
+
+في المثال أدناه، تتمتع النسخة المتماثلة `example01-1` بأعلى أولوية:
+
+```xml
+<postgresql>
+    <port>5432</port>
+    <user>clickhouse</user>
+    <password>qwerty</password>
+    <replica>
+        <host>example01-1</host>
+        <priority>1</priority>
+    </replica>
+    <replica>
+        <host>example01-2</host>
+        <priority>2</priority>
+    </replica>
+    <db>db_name</db>
+    <table>table_name</table>
+    <where>id=10</where>
+    <invalidate_query>SQL_QUERY</invalidate_query>
+</postgresql>
+</source>
+```
+
+<div id="usage-example">
+  ## مثال استخدام
+</div>
+
+<div id="table-in-postgresql">
+  ### جدول في PostgreSQL
+</div>
+
+```text
+postgres=# CREATE TABLE "public"."test" (
+"int_id" SERIAL,
+"int_nullable" INT NULL DEFAULT NULL,
+"float" FLOAT NOT NULL,
+"str" VARCHAR(100) NOT NULL DEFAULT '',
+"float_nullable" FLOAT NULL DEFAULT NULL,
+PRIMARY KEY (int_id));
+
+CREATE TABLE
+
+postgres=# INSERT INTO test (int_id, str, "float") VALUES (1,'test',2);
+INSERT 0 1
+
+postgresql> SELECT * FROM test;
+  int_id | int_nullable | float | str  | float_nullable
+ --------+--------------+-------+------+----------------
+       1 |              |     2 | test |
+ (1 row)
+```
+
+<div id="creating-table-in-clickhouse-and-connecting-to--postgresql-table-created-above">
+  ### إنشاء جدول في ClickHouse والاتصال بجدول PostgreSQL المُنشأ أعلاه
+</div>
+
+يستخدم هذا المثال [محرك جدول PostgreSQL](/ar/reference/engines/table-engines/integrations/postgresql) لربط جدول ClickHouse بجدول PostgreSQL واستخدام عبارتي SELECT وINSERT على قاعدة بيانات PostgreSQL:
+
+```sql
+CREATE TABLE default.postgresql_table
+(
+    `float_nullable` Nullable(Float32),
+    `str` String,
+    `int_id` Int32
+)
+ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
+```
+
+<div id="inserting-initial-data-from-postgresql-table-into-clickhouse-table-using-a-select-query">
+  ### إدراج البيانات الأولية من جدول PostgreSQL إلى جدول ClickHouse باستخدام استعلام SELECT
+</div>
+
+تقوم [دالة الجدول postgresql](/ar/reference/functions/table-functions/postgresql) بنسخ البيانات من PostgreSQL إلى ClickHouse، ويُستخدم ذلك غالبًا لتحسين أداء الاستعلامات على هذه البيانات عبر الاستعلام عنها أو إجراء التحليلات في ClickHouse بدلًا من PostgreSQL، كما يمكن استخدامه أيضًا لترحيل البيانات من PostgreSQL إلى ClickHouse. وبما أننا سننسخ البيانات من PostgreSQL إلى ClickHouse، فسنستخدم محرك جدول MergeTree في ClickHouse ونسميه postgresql&#95;copy:
+
+```sql
+CREATE TABLE default.postgresql_copy
+(
+    `float_nullable` Nullable(Float32),
+    `str` String,
+    `int_id` Int32
+)
+ENGINE = MergeTree
+ORDER BY (int_id);
+```
+
+```sql
+INSERT INTO default.postgresql_copy
+SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
+```
+
+<div id="inserting-incremental-data-from-postgresql-table-into-clickhouse-table">
+  ### إدراج البيانات التزايدية من جدول PostgreSQL إلى جدول ClickHouse
+</div>
+
+إذا كنت ستُجري بعد الإدراج الأولي مزامنةً مستمرة بين جدول PostgreSQL وجدول ClickHouse، فيمكنك استخدام عبارة WHERE في ClickHouse لإدراج البيانات التي أُضيفت إلى PostgreSQL فقط استنادًا إلى طابع زمني أو معرّف تسلسلي فريد.
+
+ويتطلّب ذلك تتبّع الحد الأقصى للمعرّف أو الطابع الزمني الذي أُضيف سابقًا، كما في المثال التالي:
+
+```sql
+SELECT max(`int_id`) AS maxIntID FROM default.postgresql_copy;
+```
+
+ثم إدراج القيم من جدول PostgreSQL التي تتجاوز الحد الأقصى
+
+```sql
+INSERT INTO default.postgresql_copy
+SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password')
+WHERE int_id > (SELECT max(int_id) FROM default.postgresql_copy);
+```
+
+<div id="selecting-data-from-the-resulting-clickhouse-table">
+  ### استعلام البيانات من جدول ClickHouse الناتج
+</div>
+
+```sql
+SELECT * FROM postgresql_copy WHERE str IN ('test');
+```
+
+```text
+┌─float_nullable─┬─str──┬─int_id─┐
+│           ᴺᵁᴸᴸ │ test │      1 │
+└────────────────┴──────┴────────┘
+```
+
+<div id="using-non-default-schema">
+  ### استخدام مخطط غير افتراضي
+</div>
+
+```text
+postgres=# CREATE SCHEMA "nice.schema";
+
+postgres=# CREATE TABLE "nice.schema"."nice.table" (a integer);
+
+postgres=# INSERT INTO "nice.schema"."nice.table" SELECT i FROM generate_series(0, 99) as t(i)
+```
+
+```sql
+CREATE TABLE pg_table_schema_with_dots (a UInt32)
+        ENGINE PostgreSQL('localhost:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
+```
+
+**انظر أيضًا**
+
+* [دالة الجدول `postgresql`](/ar/reference/functions/table-functions/postgresql)
+* [استخدام PostgreSQL كمصدر للقاموس](/ar/reference/statements/create/dictionary/sources/postgresql)
+
+<div id="related-content">
+  ## محتوى مرتبط
+</div>
+
+* مدونة: [ClickHouse و PostgreSQL - ثنائي مثالي في عالم البيانات - الجزء 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
+* مدونة: [ClickHouse و PostgreSQL - ثنائي مثالي في عالم البيانات - الجزء 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

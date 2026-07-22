@@ -1,0 +1,1430 @@
+---
+description: 'Documentation du type de données JSON dans ClickHouse, qui offre une prise en charge native
+  des données JSON'
+keywords: ['json', 'type de données']
+sidebarTitle: 'JSON'
+slug: /sql-reference/data-types/newjson
+title: 'Type de données JSON'
+doc_type: 'reference'
+---
+
+import WhenToUseJson from '/snippets/fr/_when-to-use-json.mdx';
+
+<Card title="Vous cherchez un guide ?" href="/fr/concepts/best-practices/json-type" icon="book">
+  Consultez notre guide des bonnes pratiques pour JSON, avec des exemples, des fonctionnalités avancées et des points à prendre en compte lors de l’utilisation du type JSON.
+</Card>
+
+Le type `JSON` stocke des documents JavaScript Object Notation (JSON) dans une seule colonne.
+
+<Note>
+  Dans ClickHouse Open-Source, le type de données JSON est considéré comme prêt pour la production à partir de la version 25.3. Il n’est pas recommandé d’utiliser ce type en production dans les versions antérieures.
+</Note>
+
+Pour déclarer une colonne de type `JSON`, vous pouvez utiliser la syntaxe suivante :
+
+```sql
+<column_name> JSON
+(
+    max_dynamic_paths=N,
+    max_dynamic_types=M,
+    some.path TypeName,
+    SKIP path.to.skip,
+    SKIP REGEXP 'paths_regexp'
+)
+```
+
+Les paramètres de la syntaxe ci-dessus sont définis comme suit :
+
+| Paramètre                   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Valeur par défaut |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| `max_dynamic_paths`         | Paramètre facultatif indiquant combien de chemins peuvent être stockés séparément en tant que sous-colonnes dans un même block de données stocké séparément (par exemple dans une même data part pour une table MergeTree). <br /><br />Si cette limite est dépassée, tous les autres chemins sont stockés ensemble dans une structure unique appelée [données partagées](#shared-data-structure).<br /><br />Il existe également des [moyens](#controlling-the-number-of-dynamic-paths) de modifier la limite des chemins dynamiques sans changer ce paramètre. | `1024`            |
+| `max_dynamic_types`         | Paramètre facultatif compris entre `1` et `255` indiquant combien de data types différents peuvent être stockés séparément dans une même colonne de chemin de type `Dynamic` au sein d&#39;un même block de données stocké séparément (par exemple dans une même data part pour une table MergeTree). <br /><br />Si cette limite est dépassée, tous les nouveaux types sont stockés ensemble dans une structure unique appelée `shared variant`.                                                                                                            | `32`              |
+| `some.path TypeName`        | Type hint facultatif pour un chemin particulier dans le JSON. Ces chemins seront toujours stockés comme sous-colonnes avec le type spécifié.                                                                                                                                                                                                                                                                                                                                                                                                              |                   |
+| `SKIP path.to.skip`         | Indication facultative pour un chemin particulier à ignorer lors du parsing du JSON. Ces chemins ne seront jamais stockés dans la colonne JSON. Si le chemin spécifié est un objet JSON imbriqué, l&#39;objet imbriqué entier sera ignoré.                                                                                                                                                                                                                                                                                                             |                   |
+| `SKIP REGEXP 'path_regexp'` | Indication facultative avec une expression régulière utilisée pour ignorer des chemins lors du parsing du JSON. Tous les chemins qui correspondent à cette expression régulière ne seront jamais stockés dans la colonne JSON.                                                                                                                                                                                                                                                                                                                           |                   |
+
+<WhenToUseJson />
+
+<div id="creating-json">
+  ## Créer du `JSON`
+</div>
+
+Dans cette section, nous verrons les différentes façons de créer du `JSON`.
+
+<div id="using-json-in-a-table-column-definition">
+  ### Utiliser `JSON` dans la définition d’une colonne d’une table
+</div>
+
+```sql title="requête (Example 1)"
+CREATE TABLE test (json JSON) ENGINE = Memory;
+INSERT INTO test VALUES ('{"a" : {"b" : 42}, "c" : [1, 2, 3]}'), ('{"f" : "Hello, World!"}'), ('{"a" : {"b" : 43, "e" : 10}, "c" : [4, 5, 6]}');
+SELECT json FROM test;
+```
+
+```text title="réponse (Example 1)"
+┌─json────────────────────────────────────────┐
+│ {"a":{"b":"42"},"c":["1","2","3"]}          │
+│ {"f":"Hello, World!"}                       │
+│ {"a":{"b":"43","e":"10"},"c":["4","5","6"]} │
+└─────────────────────────────────────────────┘
+```
+
+```sql title="requête (Example 2)"
+CREATE TABLE test (json JSON(a.b UInt32, SKIP a.e)) ENGINE = Memory;
+INSERT INTO test VALUES ('{"a" : {"b" : 42}, "c" : [1, 2, 3]}'), ('{"f" : "Hello, World!"}'), ('{"a" : {"b" : 43, "e" : 10}, "c" : [4, 5, 6]}');
+SELECT json FROM test;
+```
+
+```text title="réponse (Example 2)"
+┌─json──────────────────────────────┐
+│ {"a":{"b":42},"c":["1","2","3"]}  │
+│ {"a":{"b":0},"f":"Hello, World!"} │
+│ {"a":{"b":43},"c":["4","5","6"]}  │
+└───────────────────────────────────┘
+```
+
+<div id="using-cast-with-json">
+  ### Utiliser CAST avec `::JSON`
+</div>
+
+Il est possible de convertir différents types à l&#39;aide de la syntaxe spéciale `::JSON`.
+
+<div id="cast-from-string-to-json">
+  #### CAST de `String` en `JSON`
+</div>
+
+```sql title="requête"
+SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON AS json;
+```
+
+```text title="réponse"
+┌─json───────────────────────────────────────────────────┐
+│ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
+└────────────────────────────────────────────────────────┘
+```
+
+<div id="cast-from-tuple-to-json">
+  #### CAST de `Tuple` en `JSON`
+</div>
+
+```sql title="requête"
+SET enable_named_columns_in_function_tuple = 1;
+SELECT (tuple(42 AS b) AS a, [1, 2, 3] AS c, 'Hello, World!' AS d)::JSON AS json;
+```
+
+```text title="réponse"
+┌─json───────────────────────────────────────────────────┐
+│ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
+└────────────────────────────────────────────────────────┘
+```
+
+<div id="cast-from-map-to-json">
+  #### CAST de `Map` en `JSON`
+</div>
+
+```sql title="requête"
+SET use_variant_as_common_type=1;
+SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
+```
+
+```text title="réponse"
+┌─json───────────────────────────────────────────────────┐
+│ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
+└────────────────────────────────────────────────────────┘
+```
+
+<Note>
+  Les chemins JSON sont stockés à plat. Cela signifie que lorsqu&#39;un objet JSON est reconstitué à partir d&#39;un chemin comme `a.b.c`,
+  il n&#39;est pas possible de savoir s&#39;il doit être construit sous la forme `{ "a.b.c" : ... }` ou `{ "a": { "b": { "c": ... } } }`.
+  Notre implémentation supposera toujours le second cas.
+
+  Par exemple :
+
+  ```sql title="Requête"
+  SELECT CAST('{"a.b.c" : 42}', 'JSON') AS json
+  ```
+
+  renverra :
+
+  ```response title="Réponse"
+     ┌─json───────────────────┐
+  1. │ {"a":{"b":{"c":"42"}}} │
+     └────────────────────────┘
+  ```
+
+  et **non** :
+
+  ```sql
+     ┌─json───────────┐
+  1. │ {"a.b.c":"42"} │
+     └────────────────┘
+  ```
+</Note>
+
+<div id="reading-json-paths-as-sub-columns">
+  ## Lecture des chemins JSON en tant que sous-colonnes
+</div>
+
+Le type `JSON` permet de lire chaque chemin comme une sous-colonne distincte.
+Si le type du chemin demandé n&#39;est pas spécifié dans la déclaration du type JSON,
+la sous-colonne correspondante aura toujours le type [Dynamic](/fr/reference/data-types/dynamic).
+
+Par exemple :
+
+```sql title="requête"
+CREATE TABLE test (json JSON(a.b UInt32, SKIP a.e)) ENGINE = Memory;
+INSERT INTO test VALUES ('{"a" : {"b" : 42, "g" : 42.42}, "c" : [1, 2, 3], "d" : "2020-01-01"}'), ('{"f" : "Hello, World!", "d" : "2020-01-02"}'), ('{"a" : {"b" : 43, "e" : 10, "g" : 43.43}, "c" : [4, 5, 6]}');
+SELECT json FROM test;
+```
+
+```text title="réponse"
+┌─json────────────────────────────────────────────────────────┐
+│ {"a":{"b":42,"g":42.42},"c":["1","2","3"],"d":"2020-01-01"} │
+│ {"a":{"b":0},"d":"2020-01-02","f":"Hello, World!"}          │
+│ {"a":{"b":43,"g":43.43},"c":["4","5","6"]}                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+```sql title="requête (Reading JSON paths as sub-columns)"
+SELECT json.a.b, json.a.g, json.c, json.d FROM test;
+```
+
+```text title="réponse (Reading JSON paths as sub-columns)"
+┌─json.a.b─┬─json.a.g─┬─json.c──┬─json.d─────┐
+│       42 │ 42.42    │ [1,2,3] │ 2020-01-01 │
+│        0 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ    │ 2020-01-02 │
+│       43 │ 43.43    │ [4,5,6] │ ᴺᵁᴸᴸ       │
+└──────────┴──────────┴─────────┴────────────┘
+```
+
+Vous pouvez également utiliser la fonction `getSubcolumn` pour lire des sous-colonnes à partir du type JSON :
+
+```sql title="requête"
+SELECT getSubcolumn(json, 'a.b'), getSubcolumn(json, 'a.g'), getSubcolumn(json, 'c'), getSubcolumn(json, 'd') FROM test;
+```
+
+```text title="réponse"
+┌─getSubcolumn(json, 'a.b')─┬─getSubcolumn(json, 'a.g')─┬─getSubcolumn(json, 'c')─┬─getSubcolumn(json, 'd')─┐
+│                        42 │ 42.42                     │ [1,2,3]                 │ 2020-01-01              │
+│                         0 │ ᴺᵁᴸᴸ                      │ ᴺᵁᴸᴸ                    │ 2020-01-02              │
+│                        43 │ 43.43                     │ [4,5,6]                 │ ᴺᵁᴸᴸ                    │
+└───────────────────────────┴───────────────────────────┴─────────────────────────┴─────────────────────────┘
+```
+
+Si le chemin demandé n’a pas été trouvé dans les données, il sera complété par des valeurs `NULL` :
+
+```sql title="requête"
+SELECT json.non.existing.path FROM test;
+```
+
+```text title="réponse"
+┌─json.non.existing.path─┐
+│ ᴺᵁᴸᴸ                   │
+│ ᴺᵁᴸᴸ                   │
+│ ᴺᵁᴸᴸ                   │
+└────────────────────────┘
+```
+
+Vérifions les types de données des sous-colonnes retournées :
+
+```sql title="requête"
+SELECT toTypeName(json.a.b), toTypeName(json.a.g), toTypeName(json.c), toTypeName(json.d) FROM test;
+```
+
+```text title="réponse"
+┌─toTypeName(json.a.b)─┬─toTypeName(json.a.g)─┬─toTypeName(json.c)─┬─toTypeName(json.d)─┐
+│ UInt32               │ Dynamic              │ Dynamic            │ Dynamic            │
+│ UInt32               │ Dynamic              │ Dynamic            │ Dynamic            │
+│ UInt32               │ Dynamic              │ Dynamic            │ Dynamic            │
+└──────────────────────┴──────────────────────┴────────────────────┴────────────────────┘
+```
+
+Comme on peut le voir, pour `a.b`, le type est `UInt32`, comme nous l’avons spécifié dans la déclaration du type JSON,
+et pour toutes les autres sous-colonnes, le type est `Dynamic`.
+
+Il est également possible de lire les sous-colonnes d’un type `Dynamic` à l’aide de la syntaxe spéciale `json.some.path.:TypeName` :
+
+```sql title="requête"
+SELECT
+    json.a.g.:Float64,
+    dynamicType(json.a.g),
+    json.d.:Date,
+    dynamicType(json.d)
+FROM test
+```
+
+```text title="réponse"
+┌─json.a.g.:`Float64`─┬─dynamicType(json.a.g)─┬─json.d.:`Date`─┬─dynamicType(json.d)─┐
+│               42.42 │ Float64               │     2020-01-01 │ Date                │
+│                ᴺᵁᴸᴸ │ None                  │     2020-01-02 │ Date                │
+│               43.43 │ Float64               │           ᴺᵁᴸᴸ │ None                │
+└─────────────────────┴───────────────────────┴────────────────┴─────────────────────┘
+```
+
+Les sous-colonnes `Dynamic` peuvent être converties dans n’importe quel type de données. Dans ce cas, une exception sera levée si le type interne de `Dynamic` ne peut pas être converti dans le type demandé :
+
+```sql title="requête"
+SELECT json.a.g::UInt64 AS uint
+FROM test;
+```
+
+```text title="réponse"
+┌─uint─┐
+│   42 │
+│    0 │
+│   43 │
+└──────┘
+```
+
+```sql title="requête"
+SELECT json.a.g::UUID AS float
+FROM test;
+```
+
+```text title="réponse"
+Received exception from server:
+Code: 48. DB::Exception: Received from localhost:9000. DB::Exception:
+Conversion between numeric types and UUID is not supported.
+Probably the passed UUID is unquoted:
+while executing 'FUNCTION CAST(__table1.json.a.g :: 2, 'UUID'_String :: 1) -> CAST(__table1.json.a.g, 'UUID'_String) UUID : 0'.
+(NOT_IMPLEMENTED)
+```
+
+<Note>
+  Pour lire efficacement les sous-colonnes à partir de parts Compact MergeTree, assurez-vous que le paramètre MergeTree [write&#95;marks&#95;for&#95;substreams&#95;in&#95;compact&#95;parts](/fr/reference/settings/merge-tree-settings#write_marks_for_substreams_in_compact_parts) est activé.
+</Note>
+
+<div id="reading-json-sub-objects-as-sub-columns">
+  ## Lecture des sous-objets JSON en tant que sous-colonnes
+</div>
+
+Le type `JSON` prend en charge la lecture d&#39;objets imbriqués en tant que sous-colonnes de type `JSON` à l&#39;aide de la syntaxe spéciale `json.^some.path` :
+
+```sql title="requête"
+CREATE TABLE test (json JSON) ENGINE = Memory;
+INSERT INTO test VALUES ('{"a" : {"b" : {"c" : 42, "g" : 42.42}}, "c" : [1, 2, 3], "d" : {"e" : {"f" : {"g" : "Hello, World", "h" : [1, 2, 3]}}}}'), ('{"f" : "Hello, World!", "d" : {"e" : {"f" : {"h" : [4, 5, 6]}}}}'), ('{"a" : {"b" : {"c" : 43, "e" : 10, "g" : 43.43}}, "c" : [4, 5, 6]}');
+SELECT json FROM test;
+```
+
+```text title="réponse"
+┌─json──────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ {"a":{"b":{"c":"42","g":42.42}},"c":["1","2","3"],"d":{"e":{"f":{"g":"Hello, World","h":["1","2","3"]}}}} │
+│ {"d":{"e":{"f":{"h":["4","5","6"]}}},"f":"Hello, World!"}                                                 │
+│ {"a":{"b":{"c":"43","e":"10","g":43.43}},"c":["4","5","6"]}                                               │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+```sql title="requête"
+SELECT json.^a.b, json.^d.e.f FROM test;
+```
+
+```text title="réponse"
+┌─json.^`a`.b───────────────────┬─json.^`d`.e.f──────────────────────────┐
+│ {"c":"42","g":42.42}          │ {"g":"Hello, World","h":["1","2","3"]} │
+│ {}                            │ {"h":["4","5","6"]}                    │
+│ {"c":"43","e":"10","g":43.43} │ {}                                     │
+└───────────────────────────────┴────────────────────────────────────────┘
+```
+
+<Note>
+  Lorsque les chemins sont stockés dans des [données partagées](#shared-data-structure) de base (`map`), la lecture des sous-colonnes de sous-objets peut être inefficace, car elle nécessite de parcourir l’ensemble de la structure de données partagées. Avec la sérialisation des données partagées `map_with_buckets` ou `advanced`, la lecture des sous-colonnes à partir des données partagées est fortement optimisée.
+</Note>
+
+<div id="reading-json-combined-sub-columns">
+  ## Lecture des sous-colonnes combinées JSON
+</div>
+
+Le type `JSON` permet de lire un chemin sous forme de **sous-colonne combinée** à l’aide de la syntaxe spéciale `json.@some.path`.
+Pour un chemin donné, une sous-colonne combinée renvoie :
+
+* La valeur littérale stockée à ce chemin sous forme de `Dynamic`, si le chemin contient une valeur littérale.
+* Un sous-objet JSON à ce chemin sous forme de `Dynamic`, si le chemin ne contient pas de valeur littérale mais comporte des sous-chemins imbriqués.
+* `NULL`, si ce chemin ne contient ni valeur littérale ni sous-chemins.
+
+Cela est utile lorsqu’un chemin peut contenir, selon les lignes, soit une valeur scalaire, soit un objet imbriqué, et c’est plus pratique que d’interroger séparément la sous-colonne littérale (`json.a`) et la sous-colonne de sous-objet (`json.^a`).
+
+L’exemple suivant compare les trois types de sous-colonnes pour le chemin `a` :
+
+```sql title="requête"
+CREATE TABLE test (json JSON) ENGINE = Memory;
+INSERT INTO test VALUES ('{"a" : 42, "b" : {"c" : 1, "d" : "Hello"}}'), ('{"a" : {"x": 1, "y": 2}, "b" : {"c" : 1}}'), ('{"c" : "World"}');
+SELECT json FROM test;
+```
+
+```text title="réponse"
+┌─json────────────────────────────┐
+│ {"a":42,"b":{"c":1,"d":"Hello"}}│
+│ {"a":{"x":1,"y":2},"b":{"c":1}}│
+│ {"c":"World"}                   │
+└─────────────────────────────────┘
+```
+
+```sql title="requête"
+SELECT
+    json.a,
+    dynamicType(json.a),
+    json.^a,
+    toTypeName(json.^a),
+    json.@a,
+    dynamicType(json.@a)
+FROM test;
+```
+
+```text title="réponse"
+┌─json.a─┬─dynamicType(json.a)─┬─json.^a───────┬─toTypeName(json.^a)─┬─json.@a───────┬─dynamicType(json.@a)─┐
+│ 42     │ Int64               │ {}            │ JSON                │ 42            │ Int64                │
+│ NULL   │ None                │ {"x":1,"y":2} │ JSON                │ {"x":1,"y":2} │ JSON                 │
+│ NULL   │ None                │ {}            │ JSON                │ NULL          │ None                 │
+└────────┴─────────────────────┴───────────────┴─────────────────────┴───────────────┴──────────────────────┘
+```
+
+* Ligne 1 : `a` contient le littéral `42`. `json.a` le renvoie comme `Dynamic(Int64)`, `json.^a` renvoie un sous-objet vide `{}` (aucune clé imbriquée sous `a`), et `json.@a` renvoie le littéral `42`.
+* Ligne 2 : `a` contient un objet imbriqué. `json.a` renvoie `NULL` (aucun littéral à ce chemin), `json.^a` renvoie le sous-objet au format `JSON`, et `json.@a` renvoie également le sous-objet comme `Dynamic(JSON)`.
+* Ligne 3 : `a` est totalement absent. `json.a` et `json.@a` renvoient tous deux `NULL`, tandis que `json.^a` renvoie un objet vide `{}`.
+
+<Note>
+  Lorsque des chemins sont stockés dans les [données partagées](#shared-data-structure) de base (`map`), la lecture des sous-colonnes combinées peut être inefficace, car elle nécessite de parcourir l’intégralité de la structure de données partagées. Avec la sérialisation des données partagées `map_with_buckets` ou `advanced`, la lecture des sous-colonnes depuis les données partagées est très optimisée.
+</Note>
+
+<div id="type-inference-for-paths">
+  ## Inférence de type pour les chemins
+</div>
+
+Lors de l’analyse de `JSON`, ClickHouse essaie de détecter le type de données le plus approprié pour chaque chemin JSON.
+Cela fonctionne de manière similaire à [l’inférence automatique du schéma à partir des données d’entrée](/fr/concepts/features/interfaces/schema-inference),
+et est contrôlé par les mêmes paramètres :
+
+* [input&#95;format&#95;try&#95;infer&#95;dates](/fr/reference/settings/formats#input_format_try_infer_dates)
+* [input&#95;format&#95;try&#95;infer&#95;datetimes](/fr/reference/settings/formats#input_format_try_infer_datetimes)
+* [schema&#95;inference&#95;make&#95;columns&#95;nullable](/fr/reference/settings/formats#schema_inference_make_columns_nullable)
+* [input&#95;format&#95;json&#95;try&#95;infer&#95;numbers&#95;from&#95;strings](/fr/reference/settings/formats#input_format_json_try_infer_numbers_from_strings)
+* [input&#95;format&#95;json&#95;infer&#95;incomplete&#95;types&#95;as&#95;strings](/fr/reference/settings/formats#input_format_json_infer_incomplete_types_as_strings)
+* [input&#95;format&#95;json&#95;read&#95;numbers&#95;as&#95;strings](/fr/reference/settings/formats#input_format_json_read_numbers_as_strings)
+* [input&#95;format&#95;json&#95;read&#95;bools&#95;as&#95;strings](/fr/reference/settings/formats#input_format_json_read_bools_as_strings)
+* [input&#95;format&#95;json&#95;read&#95;bools&#95;as&#95;numbers](/fr/reference/settings/formats#input_format_json_read_bools_as_numbers)
+* [input&#95;format&#95;json&#95;read&#95;arrays&#95;as&#95;strings](/fr/reference/settings/formats#input_format_json_read_arrays_as_strings)
+* [input&#95;format&#95;json&#95;infer&#95;array&#95;of&#95;dynamic&#95;from&#95;array&#95;of&#95;different&#95;types](/fr/reference/settings/formats#input_format_json_infer_array_of_dynamic_from_array_of_different_types)
+
+Voici quelques exemples :
+
+```sql title="requête"
+SELECT JSONAllPathsWithTypes('{"a" : "2020-01-01", "b" : "2020-01-01 10:00:00"}'::JSON) AS paths_with_types settings input_format_try_infer_dates=1, input_format_try_infer_datetimes=1;
+```
+
+```text title="réponse"
+┌─paths_with_types─────────────────┐
+│ {'a':'Date','b':'DateTime64(9)'} │
+└──────────────────────────────────┘
+```
+
+```sql title="requête"
+SELECT JSONAllPathsWithTypes('{"a" : "2020-01-01", "b" : "2020-01-01 10:00:00"}'::JSON) AS paths_with_types settings input_format_try_infer_dates=0, input_format_try_infer_datetimes=0;
+```
+
+```text title="réponse"
+┌─paths_with_types────────────┐
+│ {'a':'String','b':'String'} │
+└─────────────────────────────┘
+```
+
+```sql title="requête"
+SELECT JSONAllPathsWithTypes('{"a" : [1, 2, 3]}'::JSON) AS paths_with_types settings schema_inference_make_columns_nullable=1;
+```
+
+```text title="réponse"
+┌─paths_with_types───────────────┐
+│ {'a':'Array(Nullable(Int64))'} │
+└────────────────────────────────┘
+```
+
+```sql title="requête"
+SELECT JSONAllPathsWithTypes('{"a" : [1, 2, 3]}'::JSON) AS paths_with_types settings schema_inference_make_columns_nullable=0;
+```
+
+```text title="réponse"
+┌─paths_with_types─────┐
+│ {'a':'Array(Int64)'} │
+└──────────────────────┘
+```
+
+<div id="handling-arrays-of-json-objects">
+  ## Gestion des tableaux d’objets JSON
+</div>
+
+Les chemins JSON qui contiennent un tableau d’objets sont interprétés comme étant de type `Array(JSON)` et insérés dans une colonne `Dynamic` pour ce chemin.
+Pour lire un tableau d’objets, vous pouvez l’extraire de la colonne `Dynamic` sous forme de sous-colonne :
+
+```sql title="requête"
+CREATE TABLE test (json JSON) ENGINE = Memory;
+INSERT INTO test VALUES
+('{"a" : {"b" : [{"c" : 42, "d" : "Hello", "f" : [[{"g" : 42.42}]], "k" : {"j" : 1000}}, {"c" : 43}, {"e" : [1, 2, 3], "d" : "My", "f" : [[{"g" : 43.43, "h" : "2020-01-01"}]],  "k" : {"j" : 2000}}]}}'),
+('{"a" : {"b" : [1, 2, 3]}}'),
+('{"a" : {"b" : [{"c" : 44, "f" : [[{"h" : "2020-01-02"}]]}, {"e" : [4, 5, 6], "d" : "World", "f" : [[{"g" : 44.44}]],  "k" : {"j" : 3000}}]}}');
+SELECT json FROM test;
+```
+
+```text title="réponse"
+┌─json────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ {"a":{"b":[{"c":"42","d":"Hello","f":[[{"g":42.42}]],"k":{"j":"1000"}},{"c":"43"},{"d":"My","e":["1","2","3"],"f":[[{"g":43.43,"h":"2020-01-01"}]],"k":{"j":"2000"}}]}} │
+│ {"a":{"b":["1","2","3"]}}                                                                                                                                               │
+│ {"a":{"b":[{"c":"44","f":[[{"h":"2020-01-02"}]]},{"d":"World","e":["4","5","6"],"f":[[{"g":44.44}]],"k":{"j":"3000"}}]}}                                                │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+```sql title="requête"
+SELECT json.a.b, dynamicType(json.a.b) FROM test;
+```
+
+```text title="réponse"
+┌─json.a.b──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─dynamicType(json.a.b)────────────────────────────────────┐
+│ ['{"c":"42","d":"Hello","f":[[{"g":42.42}]],"k":{"j":"1000"}}','{"c":"43"}','{"d":"My","e":["1","2","3"],"f":[[{"g":43.43,"h":"2020-01-01"}]],"k":{"j":"2000"}}'] │ Array(JSON(max_dynamic_types=16, max_dynamic_paths=256)) │
+│ [1,2,3]                                                                                                                                                           │ Array(Nullable(Int64))                                   │
+│ ['{"c":"44","f":[[{"h":"2020-01-02"}]]}','{"d":"World","e":["4","5","6"],"f":[[{"g":44.44}]],"k":{"j":"3000"}}']                                                  │ Array(JSON(max_dynamic_types=16, max_dynamic_paths=256)) │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────┘
+```
+
+Comme vous l’avez peut-être remarqué, les paramètres `max_dynamic_types`/`max_dynamic_paths` du type `JSON` imbriqué ont été réduits par rapport aux valeurs par défaut.
+Cela est nécessaire pour éviter que le nombre de sous-colonnes n’augmente de façon incontrôlée dans des tableaux imbriqués d’objets JSON.
+
+Essayons de lire des sous-colonnes depuis une colonne `JSON` imbriquée :
+
+```sql title="requête"
+SELECT json.a.b.:`Array(JSON)`.c, json.a.b.:`Array(JSON)`.f, json.a.b.:`Array(JSON)`.d FROM test;
+```
+
+```text title="Response"
+┌─json.a.b.:`Array(JSON)`.c─┬─json.a.b.:`Array(JSON)`.f───────────────────────────────────┬─json.a.b.:`Array(JSON)`.d─┐
+│ [42,43,NULL]              │ [[['{"g":42.42}']],NULL,[['{"g":43.43,"h":"2020-01-01"}']]] │ ['Hello',NULL,'My']       │
+│ []                        │ []                                                          │ []                        │
+│ [44,NULL]                 │ [[['{"h":"2020-01-02"}']],[['{"g":44.44}']]]                │ [NULL,'World']            │
+└───────────────────────────┴─────────────────────────────────────────────────────────────┴───────────────────────────┘
+```
+
+Nous pouvons éviter d’avoir à écrire les noms des sous-colonnes `Array(JSON)` grâce à une syntaxe spéciale :
+
+```sql title="Query"
+SELECT json.a.b[].c, json.a.b[].f, json.a.b[].d FROM test;
+```
+
+```text title="Response"
+┌─json.a.b.:`Array(JSON)`.c─┬─json.a.b.:`Array(JSON)`.f───────────────────────────────────┬─json.a.b.:`Array(JSON)`.d─┐
+│ [42,43,NULL]              │ [[['{"g":42.42}']],NULL,[['{"g":43.43,"h":"2020-01-01"}']]] │ ['Hello',NULL,'My']       │
+│ []                        │ []                                                          │ []                        │
+│ [44,NULL]                 │ [[['{"h":"2020-01-02"}']],[['{"g":44.44}']]]                │ [NULL,'World']            │
+└───────────────────────────┴─────────────────────────────────────────────────────────────┴───────────────────────────┘
+```
+
+Le nombre de `[]` après le chemin indique le niveau du tableau. Par exemple, `json.path[][]` sera transformé en `json.path.:Array(Array(JSON))`
+
+Examinons les chemins et les types à l’intérieur de notre `Array(JSON)` :
+
+```sql title="Query"
+SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(arrayJoin(json.a.b[]))) FROM test;
+```
+
+```text title="Response"
+┌─arrayJoin(JSONAllPathsWithTypes(arrayJoin(json.a.b.:`Array(JSON)`)))──┐
+│ ('c','Int64')                                                         │
+│ ('d','String')                                                        │
+│ ('f','Array(Array(JSON(max_dynamic_types=8, max_dynamic_paths=64)))') │
+│ ('k.j','Int64')                                                       │
+│ ('e','Array(Nullable(Int64))')                                        │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+Lisons les sous-colonnes d’une colonne `Array(JSON)` :
+
+```sql title="Query"
+SELECT json.a.b[].c.:Int64, json.a.b[].f[][].g.:Float64, json.a.b[].f[][].h.:Date FROM test;
+```
+
+```text title="Response"
+┌─json.a.b.:`Array(JSON)`.c.:`Int64`─┬─json.a.b.:`Array(JSON)`.f.:`Array(Array(JSON))`.g.:`Float64`─┬─json.a.b.:`Array(JSON)`.f.:`Array(Array(JSON))`.h.:`Date`─┐
+│ [42,43,NULL]                       │ [[[42.42]],[],[[43.43]]]                                     │ [[[NULL]],[],[['2020-01-01']]]                            │
+│ []                                 │ []                                                           │ []                                                        │
+│ [44,NULL]                          │ [[[NULL]],[[44.44]]]                                         │ [[['2020-01-02']],[[NULL]]]                               │
+└────────────────────────────────────┴──────────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────┘
+```
+
+Nous pouvons également lire les sous-colonnes des sous-objets depuis une colonne `JSON` imbriquée :
+
+```sql title="Query"
+SELECT json.a.b[].^k FROM test
+```
+
+```text title="Response"
+┌─json.a.b.:`Array(JSON)`.^`k`─────────┐
+│ ['{"j":"1000"}','{}','{"j":"2000"}'] │
+│ []                                   │
+│ ['{}','{"j":"3000"}']                │
+└──────────────────────────────────────┘
+```
+
+<div id="handling-json-keys-with-nulls">
+  ## Gestion des clés JSON avec NULL
+</div>
+
+Dans notre implémentation de JSON, `null` et l&#39;absence de valeur sont considérés comme équivalents :
+
+```sql title="Query"
+SELECT '{}'::JSON AS json1, '{"a" : null}'::JSON AS json2, json1 = json2
+```
+
+```text title="Response"
+┌─json1─┬─json2─┬─equals(json1, json2)─┐
+│ {}    │ {}    │                    1 │
+└───────┴───────┴──────────────────────┘
+```
+
+Cela signifie qu&#39;il est impossible de déterminer si les données JSON d&#39;origine contenaient un chemin avec la valeur NULL ou si ce chemin n&#39;existait pas du tout.
+
+<div id="handling-json-keys-with-dots">
+  ## Gestion des clés JSON contenant des points
+</div>
+
+En interne, une colonne JSON stocke tous les chemins et toutes les valeurs sous une forme aplatie. Cela signifie que, par défaut, ces 2 objets sont considérés comme identiques :
+
+```json
+{"a" : {"b" : 42}}
+{"a.b" : 42}
+```
+
+Tous deux seront stockés en interne sous la forme d’une paire composée du chemin `a.b` et de la valeur `42`. Lors de la mise en forme du JSON, nous construisons toujours des objets imbriqués à partir des segments du chemin séparés par des points :
+
+```sql title="Query"
+SELECT '{"a" : {"b" : 42}}'::JSON AS json1, '{"a.b" : 42}'::JSON AS json2, JSONAllPaths(json1), JSONAllPaths(json2);
+```
+
+```text title="Response"
+┌─json1────────────┬─json2────────────┬─JSONAllPaths(json1)─┬─JSONAllPaths(json2)─┐
+│ {"a":{"b":"42"}} │ {"a":{"b":"42"}} │ ['a.b']             │ ['a.b']             │
+└──────────────────┴──────────────────┴─────────────────────┴─────────────────────┘
+```
+
+Comme vous pouvez le constater, le JSON initial `{"a.b" : 42}` est désormais formaté ainsi : `{"a" : {"b" : 42}}`.
+
+Cette limitation empêche également l’analyse d’objets JSON valides comme celui-ci :
+
+```sql title="Query"
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json;
+```
+
+```text title="Response"
+Code: 117. DB::Exception: Cannot insert data into JSON column: Duplicate path found during parsing JSON object: a.b. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert: In scope SELECT CAST('{"a.b" : 42, "a" : {"b" : "Hello, World"}}', 'JSON') AS json. (INCORRECT_DATA)
+```
+
+Si vous souhaitez conserver les clés contenant des points et éviter qu’elles soient interprétées comme des objets imbriqués, vous pouvez activer
+le paramètre [json&#95;type&#95;escape&#95;dots&#95;in&#95;keys](/fr/reference/settings/formats#json_type_escape_dots_in_keys) (disponible à partir de la version `25.8`). Dans ce cas, lors de l’analyse, tous les points dans les clés JSON seront
+échappés en `%2E`, puis restaurés lors du formatage.
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a" : {"b" : 42}}'::JSON AS json1, '{"a.b" : 42}'::JSON AS json2, JSONAllPaths(json1), JSONAllPaths(json2);
+```
+
+```text title="Response"
+┌─json1────────────┬─json2────────┬─JSONAllPaths(json1)─┬─JSONAllPaths(json2)─┐
+│ {"a":{"b":"42"}} │ {"a.b":"42"} │ ['a.b']             │ ['a%2Eb']           │
+└──────────────────┴──────────────┴─────────────────────┴─────────────────────┘
+```
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json, JSONAllPaths(json);
+```
+
+```text title="Response"
+┌─json──────────────────────────────────┬─JSONAllPaths(json)─┐
+│ {"a.b":"42","a":{"b":"Hello World!"}} │ ['a%2Eb','a.b']    │
+└───────────────────────────────────────┴────────────────────┘
+```
+
+Pour lire une clé contenant un point d’échappement en tant que sous-colonne, vous devez utiliser ce point d’échappement dans le nom de la sous-colonne :
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json, json.`a%2Eb`, json.a.b;
+```
+
+```text title="Response"
+┌─json──────────────────────────────────┬─json.a%2Eb─┬─json.a.b─────┐
+│ {"a.b":"42","a":{"b":"Hello World!"}} │ 42         │ Hello World! │
+└───────────────────────────────────────┴────────────┴──────────────┘
+```
+
+Remarque : en raison des limitations du parseur d’identifiants et de l’analyseur, la sous-colonne `` json.`a.b` `` est équivalente à la sous-colonne `json.a.b` et n’interprétera pas le chemin contenant un point d’échappement :
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json, json.`a%2Eb`, json.`a.b`, json.a.b;
+```
+
+```text title="Response"
+┌─json──────────────────────────────────┬─json.a%2Eb─┬─json.a.b─────┬─json.a.b─────┐
+│ {"a.b":"42","a":{"b":"Hello World!"}} │ 42         │ Hello World! │ Hello World! │
+└───────────────────────────────────────┴────────────┴──────────────┴──────────────┘
+```
+
+De plus, si vous voulez spécifier un indice pour un chemin JSON contenant des clés avec des points (ou l’utiliser dans les sections `SKIP`/`SKIP REGEX`), vous devez utiliser des points échappés dans l’indice :
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON(`a%2Eb` UInt8) as json, json.`a%2Eb`, toTypeName(json.`a%2Eb`);
+```
+
+```text title="Response"
+┌─json────────────────────────────────┬─json.a%2Eb─┬─toTypeName(json.a%2Eb)─┐
+│ {"a.b":42,"a":{"b":"Hello World!"}} │         42 │ UInt8                  │
+└─────────────────────────────────────┴────────────┴────────────────────────┘
+```
+
+```sql title="Query"
+SET json_type_escape_dots_in_keys=1;
+SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON(SKIP `a%2Eb`) as json, json.`a%2Eb`;
+```
+
+```text title="Response"
+┌─json───────────────────────┬─json.a%2Eb─┐
+│ {"a":{"b":"Hello World!"}} │ ᴺᵁᴸᴸ       │
+└────────────────────────────┴────────────┘
+```
+
+<div id="reading-json-type-from-data">
+  ## Lecture du type JSON à partir de données
+</div>
+
+Tous les formats texte
+([`JSONEachRow`](/fr/reference/formats/JSON/JSONEachRow),
+[`TSV`](/fr/reference/formats/TabSeparated/TabSeparated),
+[`CSV`](/fr/reference/formats/CSV/CSV),
+[`CustomSeparated`](/fr/reference/formats/CustomSeparated/CustomSeparated),
+[`Values`](/fr/reference/formats/Values), etc.) permettent de lire le type `JSON`.
+
+Exemples :
+
+```sql title="Query"
+SELECT json FROM format(JSONEachRow, 'json JSON(a.b.c UInt32, SKIP a.b.d, SKIP d.e, SKIP REGEXP \'b.*\')', '
+{"json" : {"a" : {"b" : {"c" : 1, "d" : [0, 1]}}, "b" : "2020-01-01", "c" : 42, "d" : {"e" : {"f" : ["s1", "s2"]}, "i" : [1, 2, 3]}}}
+{"json" : {"a" : {"b" : {"c" : 2, "d" : [2, 3]}}, "b" : [1, 2, 3], "c" : null, "d" : {"e" : {"g" : 43}, "i" : [4, 5, 6]}}}
+{"json" : {"a" : {"b" : {"c" : 3, "d" : [4, 5]}}, "b" : {"c" : 10}, "e" : "Hello, World!"}}
+{"json" : {"a" : {"b" : {"c" : 4, "d" : [6, 7]}}, "c" : 43}}
+{"json" : {"a" : {"b" : {"c" : 5, "d" : [8, 9]}}, "b" : {"c" : 11, "j" : [1, 2, 3]}, "d" : {"e" : {"f" : ["s3", "s4"], "g" : 44}, "h" : "2020-02-02 10:00:00"}}}
+')
+```
+
+```text title="Response"
+┌─json──────────────────────────────────────────────────────────┐
+│ {"a":{"b":{"c":1}},"c":"42","d":{"i":["1","2","3"]}}          │
+│ {"a":{"b":{"c":2}},"d":{"i":["4","5","6"]}}                   │
+│ {"a":{"b":{"c":3}},"e":"Hello, World!"}                       │
+│ {"a":{"b":{"c":4}},"c":"43"}                                  │
+│ {"a":{"b":{"c":5}},"d":{"h":"2020-02-02 10:00:00.000000000"}} │
+└───────────────────────────────────────────────────────────────┘
+```
+
+Pour les formats texte comme `CSV`/`TSV`/etc., `JSON` est analysé à partir d’une chaîne contenant l’objet JSON :
+
+```sql title="Query"
+SELECT json FROM format(TSV, 'json JSON(a.b.c UInt32, SKIP a.b.d, SKIP REGEXP \'b.*\')',
+'{"a" : {"b" : {"c" : 1, "d" : [0, 1]}}, "b" : "2020-01-01", "c" : 42, "d" : {"e" : {"f" : ["s1", "s2"]}, "i" : [1, 2, 3]}}
+{"a" : {"b" : {"c" : 2, "d" : [2, 3]}}, "b" : [1, 2, 3], "c" : null, "d" : {"e" : {"g" : 43}, "i" : [4, 5, 6]}}
+{"a" : {"b" : {"c" : 3, "d" : [4, 5]}}, "b" : {"c" : 10}, "e" : "Hello, World!"}
+{"a" : {"b" : {"c" : 4, "d" : [6, 7]}}, "c" : 43}
+{"a" : {"b" : {"c" : 5, "d" : [8, 9]}}, "b" : {"c" : 11, "j" : [1, 2, 3]}, "d" : {"e" : {"f" : ["s3", "s4"], "g" : 44}, "h" : "2020-02-02 10:00:00"}}')
+```
+
+```text title="Response"
+┌─json──────────────────────────────────────────────────────────┐
+│ {"a":{"b":{"c":1}},"c":"42","d":{"i":["1","2","3"]}}          │
+│ {"a":{"b":{"c":2}},"d":{"i":["4","5","6"]}}                   │
+│ {"a":{"b":{"c":3}},"e":"Hello, World!"}                       │
+│ {"a":{"b":{"c":4}},"c":"43"}                                  │
+│ {"a":{"b":{"c":5}},"d":{"h":"2020-02-02 10:00:00.000000000"}} │
+└───────────────────────────────────────────────────────────────┘
+```
+
+<div id="reaching-the-limit-of-dynamic-paths-inside-json">
+  ## Atteindre la limite des chemins dynamiques dans JSON
+</div>
+
+Le type de données `JSON` ne peut stocker en interne qu’un nombre limité de chemins sous forme de sous-colonnes distinctes.
+Par défaut, cette limite est fixée à `1024`, mais vous pouvez la modifier dans la déclaration du type à l’aide du paramètre `max_dynamic_paths`.
+
+Lorsque cette limite est atteinte, tous les nouveaux chemins insérés dans une colonne `JSON` sont stockés dans une structure de données partagée unique.
+Il reste possible de lire ces chemins comme des sous-colonnes,
+mais cela peut être moins efficace ([voir la section sur la structure de données partagée](#shared-data-structure)).
+Cette limite est nécessaire pour éviter d’avoir un nombre énorme de sous-colonnes différentes, ce qui pourrait rendre la table inutilisable.
+
+Voyons ce qui se passe lorsque la limite est atteinte dans différents scénarios.
+
+<div id="reaching-the-limit-during-data-parsing">
+  ### Atteinte de la limite lors de l’analyse des données
+</div>
+
+Lors de l’analyse d’objets `JSON` à partir des données, lorsque la limite est atteinte pour le bloc de données en cours,
+tous les nouveaux chemins sont stockés dans une structure de données partagée. Nous pouvons utiliser les deux fonctions d’introspection suivantes : `JSONDynamicPaths`, `JSONSharedDataPaths`
+
+```sql title="Query"
+SELECT json, JSONDynamicPaths(json), JSONSharedDataPaths(json) FROM format(JSONEachRow, 'json JSON(max_dynamic_paths=3)', '
+{"json" : {"a" : {"b" : 42}, "c" : [1, 2, 3]}}
+{"json" : {"a" : {"b" : 43}, "d" : "2020-01-01"}}
+{"json" : {"a" : {"b" : 44}, "c" : [4, 5, 6]}}
+{"json" : {"a" : {"b" : 43}, "d" : "2020-01-02", "e" : "Hello", "f" : {"g" : 42.42}}}
+{"json" : {"a" : {"b" : 43}, "c" : [7, 8, 9], "f" : {"g" : 43.43}, "h" : "World"}}
+')
+```
+
+```text title="Response"
+┌─json───────────────────────────────────────────────────────────┬─JSONDynamicPaths(json)─┬─JSONSharedDataPaths(json)─┐
+│ {"a":{"b":"42"},"c":["1","2","3"]}                             │ ['a.b','c','d']        │ []                        │
+│ {"a":{"b":"43"},"d":"2020-01-01"}                              │ ['a.b','c','d']        │ []                        │
+│ {"a":{"b":"44"},"c":["4","5","6"]}                             │ ['a.b','c','d']        │ []                        │
+│ {"a":{"b":"43"},"d":"2020-01-02","e":"Hello","f":{"g":42.42}}  │ ['a.b','c','d']        │ ['e','f.g']               │
+│ {"a":{"b":"43"},"c":["7","8","9"],"f":{"g":43.43},"h":"World"} │ ['a.b','c','d']        │ ['f.g','h']               │
+└────────────────────────────────────────────────────────────────┴────────────────────────┴───────────────────────────┘
+```
+
+Comme on peut le voir, après avoir inséré les chemins `e` et `f.g`, la limite a été atteinte,
+et ils ont été insérés dans une structure de données partagées.
+
+<div id="during-merges-of-data-parts-in-mergetree-table-engines">
+  ### Lors des fusions de parties de données dans les moteurs de table MergeTree
+</div>
+
+Lors de la fusion de plusieurs parties de données dans une table `MergeTree`, la colonne `JSON` de la partie de données résultante peut atteindre la limite de chemins dynamiques
+et ne plus pouvoir stocker tous les chemins des parties sources sous forme de sous-colonnes.
+Dans ce cas, ClickHouse choisit quels chemins seront conservés comme sous-colonnes après la fusion et quels chemins seront stockés dans la structure de données partagée.
+Dans la plupart des cas, ClickHouse essaie de conserver les chemins qui contiennent
+le plus grand nombre de valeurs non NULL et de déplacer les chemins les plus rares vers la structure de données partagée. Cela dépend toutefois de l’implémentation.
+
+Voyons un exemple d’une telle fusion.
+Commençons par créer une table avec une colonne `JSON`, définir la limite de chemins dynamiques à `3`, puis insérer des valeurs avec `5` chemins différents :
+
+```sql title="Query"
+CREATE TABLE test (id UInt64, json JSON(max_dynamic_paths=3)) ENGINE=MergeTree ORDER BY id;
+SYSTEM STOP MERGES test;
+INSERT INTO test SELECT number, formatRow('JSONEachRow', number as a) FROM numbers(5);
+INSERT INTO test SELECT number, formatRow('JSONEachRow', number as b) FROM numbers(4);
+INSERT INTO test SELECT number, formatRow('JSONEachRow', number as c) FROM numbers(3);
+INSERT INTO test SELECT number, formatRow('JSONEachRow', number as d) FROM numbers(2);
+INSERT INTO test SELECT number, formatRow('JSONEachRow', number as e) FROM numbers(1);
+```
+
+Chaque insertion créera une part de données distincte, la colonne `JSON` ne contenant qu’un seul chemin :
+
+```sql title="Query"
+SELECT
+    count(),
+    groupArrayArrayDistinct(JSONDynamicPaths(json)) AS dynamic_paths,
+    groupArrayArrayDistinct(JSONSharedDataPaths(json)) AS shared_data_paths,
+    _part
+FROM test
+GROUP BY _part
+ORDER BY _part ASC
+```
+
+```text title="Response"
+┌─count()─┬─dynamic_paths─┬─shared_data_paths─┬─_part─────┐
+│       5 │ ['a']         │ []                │ all_1_1_0 │
+│       4 │ ['b']         │ []                │ all_2_2_0 │
+│       3 │ ['c']         │ []                │ all_3_3_0 │
+│       2 │ ['d']         │ []                │ all_4_4_0 │
+│       1 │ ['e']         │ []                │ all_5_5_0 │
+└─────────┴───────────────┴───────────────────┴───────────┘
+```
+
+Maintenant, fusionnons toutes les parties en une seule et voyons ce qui va se passer :
+
+```sql title="Query"
+SELECT
+    count(),
+    groupArrayArrayDistinct(JSONDynamicPaths(json)) AS dynamic_paths,
+    groupArrayArrayDistinct(JSONSharedDataPaths(json)) AS shared_data_paths,
+    _part
+FROM test
+GROUP BY _part
+ORDER BY _part ASC
+```
+
+```text title="Response"
+┌─count()─┬─dynamic_paths─┬─shared_data_paths─┬─_part─────┐
+│      15 │ ['a','b','c'] │ ['d','e']         │ all_1_5_2 │
+└─────────┴───────────────┴───────────────────┴───────────┘
+```
+
+Comme on peut le voir, ClickHouse a conservé les chemins les plus fréquents `a`, `b` et `c`, et a déplacé les chemins `d` et `e` vers une structure de données partagée.
+
+<div id="shared-data-structure">
+  ## Structure de données partagée
+</div>
+
+Comme indiqué dans la section précédente, lorsque la limite `max_dynamic_paths` est atteinte, tous les nouveaux chemins sont stockés dans une structure de données partagée unique.
+Dans cette section, nous allons examiner en détail la structure de données partagée et la manière dont les sous-colonnes des chemins y sont lues.
+
+Voir la section [&quot;fonctions d&#39;introspection&quot;](/fr/reference/data-types/newjson#introspection-functions) pour plus de détails sur les fonctions utilisées pour inspecter le contenu d&#39;une colonne JSON.
+
+<div id="shared-data-structure-in-memory">
+  ### Structure de données partagée en mémoire
+</div>
+
+En mémoire, la structure de données partagée n’est rien d’autre qu’une sous-colonne de type `Map(String, String)` qui stocke la correspondance entre un chemin JSON aplati et une valeur encodée en binaire.
+Pour en extraire une sous-colonne de chemin, il suffit de parcourir toutes les lignes de cette colonne `Map` et d’essayer de trouver le chemin demandé ainsi que ses valeurs.
+
+<div id="shared-data-structure-in-merge-tree-parts">
+  ### Structure de données partagée dans les parts MergeTree
+</div>
+
+Dans les tables [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree), nous stockons les données dans des parts de données qui stockent tout sur disque (local ou distant). Les données sur disque peuvent être stockées différemment des données en mémoire.
+Actuellement, il existe 3 sérialisations différentes de la structure de données partagée dans les parts de données MergeTree : `map`, `map_with_buckets`
+et `advanced`.
+
+La version de sérialisation est contrôlée par les paramètres MergeTree
+[object&#95;shared&#95;data&#95;serialization&#95;version](/fr/reference/settings/merge-tree-settings#object_shared_data_serialization_version)
+et [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;zero&#95;level&#95;parts](/fr/reference/settings/merge-tree-settings#object_shared_data_serialization_version_for_zero_level_parts)
+(une part de niveau zéro est la part créée lors de l&#39;insertion de données dans la table ; lors des merges, les parts ont un niveau plus élevé).
+
+Remarque : la modification de la sérialisation de la structure de données partagée n&#39;est prise en charge que
+pour `v3`, la [version de sérialisation d&#39;objet](/fr/reference/settings/merge-tree-settings#object_serialization_version)
+
+<div id="shared-data-map">
+  #### Map
+</div>
+
+Dans la version de sérialisation `map`, les données partagées sont sérialisées sous la forme d&#39;une seule colonne de type `Map(String, String)`, de la même manière qu&#39;elles sont stockées en
+mémoire. Pour lire une sous-colonne de chemin à partir de ce type de sérialisation, ClickHouse lit l&#39;intégralité de la colonne `Map` et
+extrait en mémoire le chemin demandé.
+
+Cette sérialisation est efficace pour l&#39;écriture des données et la lecture de l&#39;ensemble de la colonne `JSON`, mais elle n&#39;est pas efficace pour la lecture des sous-colonnes de chemins.
+
+<div id="shared-data-map-with-buckets">
+  #### Map avec des buckets
+</div>
+
+Dans la version de sérialisation `map_with_buckets`, les données partagées sont sérialisées en `N` colonnes (« buckets ») de type `Map(String, String)`.
+Chaque bucket ne contient qu&#39;un sous-ensemble de chemins. Pour lire une sous-colonne de chemin à partir de ce type de sérialisation, ClickHouse
+lit l&#39;intégralité de la colonne `Map` depuis un seul bucket et extrait en mémoire le chemin demandé.
+
+Cette sérialisation est moins efficace pour l&#39;écriture des données et la lecture de l&#39;intégralité de la colonne `JSON`, mais elle est plus efficace pour la lecture des sous-colonnes de chemins,
+car elle lit uniquement les données des buckets requis.
+
+Le nombre de buckets `N` est contrôlé par les paramètres MergeTree [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/fr/reference/settings/merge-tree-settings#object_shared_data_buckets_for_compact_part) (8 par défaut)
+et [object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/fr/reference/settings/merge-tree-settings#object_shared_data_buckets_for_wide_part) (32 par défaut).
+La valeur maximale autorisée pour ces deux paramètres est de 256.
+
+<div id="shared-data-advanced">
+  #### Advanced
+</div>
+
+Dans la version de sérialisation `advanced`, les données partagées sont sérialisées dans une structure de données spéciale qui maximise les performances
+de lecture des sous-colonnes de chemins en stockant des informations supplémentaires permettant de ne lire que les données des chemins demandés.
+Cette sérialisation prend également en charge les buckets, de sorte que chaque bucket ne contient qu&#39;un sous-ensemble de chemins.
+
+Cette sérialisation est assez peu efficace en écriture (il n&#39;est donc pas recommandé de l&#39;utiliser pour les parts de niveau zéro) ; la lecture de l&#39;intégralité de la colonne `JSON` est légèrement moins efficace qu&#39;avec la sérialisation `map`, mais elle est très performante pour la lecture des sous-colonnes de chemins.
+
+Remarque : comme cette structure de données stocke des informations supplémentaires, l&#39;espace disque occupé est plus important avec cette sérialisation qu&#39;avec les sérialisations
+`map` et `map_with_buckets`.
+
+Pour un aperçu plus détaillé des nouvelles sérialisations de données partagées et de leur implémentation, consultez le [billet de blog](https://clickhouse.com/blog/json-data-type-gets-even-better).
+
+<div id="controlling-the-number-of-dynamic-paths">
+  ## Contrôle du nombre de chemins dynamiques dans JSON au sein des parts MergeTree
+</div>
+
+La principale façon de définir une limite pour les chemins dynamiques dans JSON consiste à utiliser le paramètre `max_dynamic_paths` dans la déclaration du type JSON.
+Mais modifier `max_dynamic_paths` pour des colonnes existantes nécessite d&#39;exécuter `ALTER TABLE <table> MODIFY COLUMN <column> JSON(max_dynamic_paths=K)`, ce qui déclenchera une mutation en arrière-plan réécrivant toutes les parts existantes.
+Une telle mutation peut être très lourde et affecter les performances du serveur jusqu&#39;à sa fin. Pour éviter cela, vous pouvez utiliser ces 3 paramètres, qui peuvent vous aider à modifier la limite des chemins dynamiques dans les tables MergeTree pour les nouvelles parts de données :
+
+* `merge_max_dynamic_subcolumns_in_wide_part` - un paramètre MergeTree qui limite le nombre de sous-colonnes dynamiques pour chaque colonne JSON lors d&#39;une fusion vers une part de données Wide.
+* `merge_max_dynamic_subcolumns_in_compact_part` - un paramètre MergeTree qui limite le nombre de sous-colonnes dynamiques pour chaque colonne JSON lors d&#39;une fusion vers une part de données Compact.
+* `max_dynamic_subcolumns_in_json_type_parsing` - un paramètre de session qui limite le nombre de sous-colonnes dynamiques pour chaque colonne JSON lors de l&#39;analyse des données JSON en colonne JSON.
+
+Remarque : la limite des chemins dynamiques ne peut pas dépasser la valeur spécifiée dans le paramètre `max_dynamic_paths`, même si les valeurs des paramètres décrits sont plus élevées.
+
+<div id="introspection-functions">
+  ## Fonctions d&#39;introspection
+</div>
+
+Plusieurs fonctions peuvent vous aider à inspecter le contenu de la colonne JSON :
+
+* [`JSONAllPaths`](/fr/reference/functions/regular-functions/json-functions#JSONAllPaths)
+* [`JSONAllPathsWithTypes`](/fr/reference/functions/regular-functions/json-functions#JSONAllPathsWithTypes)
+* [`JSONAllValues`](/fr/reference/functions/regular-functions/json-functions#JSONAllValues)
+* [`JSONDynamicPaths`](/fr/reference/functions/regular-functions/json-functions#JSONDynamicPaths)
+* [`JSONDynamicPathsWithTypes`](/fr/reference/functions/regular-functions/json-functions#JSONDynamicPathsWithTypes)
+* [`JSONSharedDataPaths`](/fr/reference/functions/regular-functions/json-functions#JSONSharedDataPaths)
+* [`JSONSharedDataPathsWithTypes`](/fr/reference/functions/regular-functions/json-functions#JSONSharedDataPathsWithTypes)
+* [`distinctDynamicTypes`](/fr/reference/functions/aggregate-functions/distinctDynamicTypes)
+* [`distinctJSONPaths and distinctJSONPathsAndTypes`](/fr/reference/functions/aggregate-functions/distinctJSONPaths)
+
+**Exemples**
+
+Examinons le contenu du jeu de données [GH Archive](https://www.gharchive.org/) à la date du `2020-01-01` :
+
+```sql title="Query"
+SELECT arrayJoin(distinctJSONPaths(json))
+FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject)
+```
+
+```text title="Response"
+┌─arrayJoin(distinctJSONPaths(json))─────────────────────────┐
+│ actor.avatar_url                                           │
+│ actor.display_login                                        │
+│ actor.gravatar_id                                          │
+│ actor.id                                                   │
+│ actor.login                                                │
+│ actor.url                                                  │
+│ created_at                                                 │
+│ id                                                         │
+│ org.avatar_url                                             │
+│ org.gravatar_id                                            │
+│ org.id                                                     │
+│ org.login                                                  │
+│ org.url                                                    │
+│ payload.action                                             │
+│ payload.before                                             │
+│ payload.comment._links.html.href                           │
+│ payload.comment._links.pull_request.href                   │
+│ payload.comment._links.self.href                           │
+│ payload.comment.author_association                         │
+│ payload.comment.body                                       │
+│ payload.comment.commit_id                                  │
+│ payload.comment.created_at                                 │
+│ payload.comment.diff_hunk                                  │
+│ payload.comment.html_url                                   │
+│ payload.comment.id                                         │
+│ payload.comment.in_reply_to_id                             │
+│ payload.comment.issue_url                                  │
+│ payload.comment.line                                       │
+│ payload.comment.node_id                                    │
+│ payload.comment.original_commit_id                         │
+│ payload.comment.original_position                          │
+│ payload.comment.path                                       │
+│ payload.comment.position                                   │
+│ payload.comment.pull_request_review_id                     │
+...
+│ payload.release.node_id                                    │
+│ payload.release.prerelease                                 │
+│ payload.release.published_at                               │
+│ payload.release.tag_name                                   │
+│ payload.release.tarball_url                                │
+│ payload.release.target_commitish                           │
+│ payload.release.upload_url                                 │
+│ payload.release.url                                        │
+│ payload.release.zipball_url                                │
+│ payload.size                                               │
+│ public                                                     │
+│ repo.id                                                    │
+│ repo.name                                                  │
+│ repo.url                                                   │
+│ type                                                       │
+└─arrayJoin(distinctJSONPaths(json))─────────────────────────┘
+```
+
+```sql title="Query"
+SELECT arrayJoin(distinctJSONPathsAndTypes(json))
+FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject)
+SETTINGS date_time_input_format = 'best_effort'
+```
+
+```text title="Response"
+┌─arrayJoin(distinctJSONPathsAndTypes(json))──────────────────┐
+│ ('actor.avatar_url',['String'])                             │
+│ ('actor.display_login',['String'])                          │
+│ ('actor.gravatar_id',['String'])                            │
+│ ('actor.id',['Int64'])                                      │
+│ ('actor.login',['String'])                                  │
+│ ('actor.url',['String'])                                    │
+│ ('created_at',['DateTime'])                                 │
+│ ('id',['String'])                                           │
+│ ('org.avatar_url',['String'])                               │
+│ ('org.gravatar_id',['String'])                              │
+│ ('org.id',['Int64'])                                        │
+│ ('org.login',['String'])                                    │
+│ ('org.url',['String'])                                      │
+│ ('payload.action',['String'])                               │
+│ ('payload.before',['String'])                               │
+│ ('payload.comment._links.html.href',['String'])             │
+│ ('payload.comment._links.pull_request.href',['String'])     │
+│ ('payload.comment._links.self.href',['String'])             │
+│ ('payload.comment.author_association',['String'])           │
+│ ('payload.comment.body',['String'])                         │
+│ ('payload.comment.commit_id',['String'])                    │
+│ ('payload.comment.created_at',['DateTime'])                 │
+│ ('payload.comment.diff_hunk',['String'])                    │
+│ ('payload.comment.html_url',['String'])                     │
+│ ('payload.comment.id',['Int64'])                            │
+│ ('payload.comment.in_reply_to_id',['Int64'])                │
+│ ('payload.comment.issue_url',['String'])                    │
+│ ('payload.comment.line',['Int64'])                          │
+│ ('payload.comment.node_id',['String'])                      │
+│ ('payload.comment.original_commit_id',['String'])           │
+│ ('payload.comment.original_position',['Int64'])             │
+│ ('payload.comment.path',['String'])                         │
+│ ('payload.comment.position',['Int64'])                      │
+│ ('payload.comment.pull_request_review_id',['Int64'])        │
+...
+│ ('payload.release.node_id',['String'])                      │
+│ ('payload.release.prerelease',['Bool'])                     │
+│ ('payload.release.published_at',['DateTime'])               │
+│ ('payload.release.tag_name',['String'])                     │
+│ ('payload.release.tarball_url',['String'])                  │
+│ ('payload.release.target_commitish',['String'])             │
+│ ('payload.release.upload_url',['String'])                   │
+│ ('payload.release.url',['String'])                          │
+│ ('payload.release.zipball_url',['String'])                  │
+│ ('payload.size',['Int64'])                                  │
+│ ('public',['Bool'])                                         │
+│ ('repo.id',['Int64'])                                       │
+│ ('repo.name',['String'])                                    │
+│ ('repo.url',['String'])                                     │
+│ ('type',['String'])                                         │
+└─arrayJoin(distinctJSONPathsAndTypes(json))──────────────────┘
+```
+
+<div id="alter-modify-column-to-json-type">
+  ## ALTER MODIFY COLUMN pour le type JSON
+</div>
+
+Il est possible de modifier une table existante et de convertir le type d’une colonne vers le nouveau type `JSON`. À l’heure actuelle, seul `ALTER` à partir du type `String` est pris en charge.
+
+**Exemple**
+
+```sql title="Query"
+CREATE TABLE test (json String) ENGINE=MergeTree ORDER BY tuple();
+INSERT INTO test VALUES ('{"a" : 42}'), ('{"a" : 43, "b" : "Hello"}'), ('{"a" : 44, "b" : [1, 2, 3]}'), ('{"c" : "2020-01-01"}');
+ALTER TABLE test MODIFY COLUMN json JSON;
+SELECT json, json.a, json.b, json.c FROM test;
+```
+
+```text title="Response"
+┌─json─────────────────────────┬─json.a─┬─json.b──┬─json.c─────┐
+│ {"a":"42"}                   │ 42     │ ᴺᵁᴸᴸ    │ ᴺᵁᴸᴸ       │
+│ {"a":"43","b":"Hello"}       │ 43     │ Hello   │ ᴺᵁᴸᴸ       │
+│ {"a":"44","b":["1","2","3"]} │ 44     │ [1,2,3] │ ᴺᵁᴸᴸ       │
+│ {"c":"2020-01-01"}           │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ    │ 2020-01-01 │
+└──────────────────────────────┴────────┴─────────┴────────────┘
+```
+
+<div id="lazy-type-hints">
+  ## Lazy Type Hints (Expérimental)
+</div>
+
+<Note>
+  Cette fonctionnalité est expérimentale et nécessite que le paramètre `allow_experimental_json_lazy_type_hints` soit activé.
+</Note>
+
+Lorsque vous ajoutez ou modifiez des indications de type sur une colonne JSON à l’aide de `ALTER TABLE ... MODIFY COLUMN`, ClickHouse réécrit normalement toutes les parts de données afin de matérialiser les nouvelles indications de type. Pour les tables contenant de grandes quantités de données historiques (des centaines de téraoctets), cela peut être extrêmement coûteux.
+
+Les **Lazy type hints** permettent d’ajouter des indications de type comme simple opération sur les métadonnées, sans réécrire les données existantes :
+
+* **Anciennes parts** : les indications de type sont appliquées au moment de la requête par conversion de `Dynamic` vers le type indiqué
+* **Nouvelles parts** : les indications de type sont matérialisées lors des opérations `INSERT`
+* **Fusions** : les indications de type sont matérialisées lorsque les parts sont fusionnées
+
+Cela signifie que vous pouvez ajouter des indications de type instantanément, et que les données seront converties progressivement au fil des fusions normales en arrière-plan.
+
+<div id="enabling-lazy-type-hints">
+  ### Activer les Lazy Type Hints
+</div>
+
+```sql
+SET allow_experimental_json_lazy_type_hints = 1;
+```
+
+<div id="lazy-type-hints-example">
+  ### Exemple
+</div>
+
+```sql title="Query"
+-- Create a table and insert data
+CREATE TABLE test_lazy (json JSON) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO test_lazy VALUES ('{"user_id": "123", "score": "95.5"}');
+
+-- Enable experimental setting
+SET allow_experimental_json_lazy_type_hints = 1;
+
+-- Add type hints - this completes instantly without mutation
+ALTER TABLE test_lazy MODIFY COLUMN json JSON(user_id UInt64, score Float64);
+
+-- Query the data - type hints are applied at read time
+SELECT json.user_id, toTypeName(json.user_id), json.score, toTypeName(json.score) FROM test_lazy;
+```
+
+```text title="Response"
+┌─json.user_id─┬─toTypeName(json.user_id)─┬─json.score─┬─toTypeName(json.score)─┐
+│          123 │ UInt64                   │       95.5 │ Float64                │
+└──────────────┴──────────────────────────┴────────────┴────────────────────────┘
+```
+
+<div id="verifying-no-mutation-occurred">
+  ### Vérifier qu’aucune mutation n’a été effectuée
+</div>
+
+Vous pouvez vérifier que l’`ALTER` s’est exécuté sans mutation en consultant la table `system.mutations` :
+
+```sql
+SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
+```
+
+Lorsque les Lazy Type Hints sont activés, cette requête ne renvoie aucune ligne, ce qui confirme que l’opération s’est limitée aux métadonnées.
+
+<div id="materializing-type-hints">
+  ### Matérialisation des indications de type
+</div>
+
+Pour matérialiser les indications de type dans les données existantes, vous pouvez :
+
+1. **Attendre les fusions en arrière-plan** : ClickHouse matérialisera automatiquement les indications de type lors de la fusion des parts
+2. **Forcer la fusion** : utilisez `OPTIMIZE TABLE test_lazy FINAL` pour fusionner immédiatement toutes les parts
+3. **Réécrire les parts** : utilisez `ALTER TABLE test_lazy REWRITE PARTS` pour réécrire les parts avec les nouvelles métadonnées
+
+<div id="lazy-type-hints-limitations">
+  ### Limitations
+</div>
+
+* Cette fonctionnalité est expérimentale et peut évoluer dans de futures versions
+* La conversion de types au moment de la requête peut entraîner un surcoût important en termes de performances par rapport aux types pré-matérialisés, en particulier pour les objets JSON volumineux
+* Cette fonctionnalité s&#39;applique uniquement lors de la modification de `typed_paths` (indications de type) ; les autres paramètres JSON, comme `max_dynamic_paths`, `SKIP` ou `SKIP REGEXP`, nécessitent toujours des mutations
+
+<div id="comparison-between-values-of-the-json-type">
+  ## Comparaison entre les valeurs du type JSON
+</div>
+
+Les objets JSON se comparent de la même manière que les Maps.
+
+Par exemple :
+
+```sql title="Query"
+CREATE TABLE test (json1 JSON, json2 JSON) ENGINE=Memory;
+INSERT INTO test FORMAT JSONEachRow
+{"json1" : {}, "json2" : {}}
+{"json1" : {"a" : 42}, "json2" : {}}
+{"json1" : {"a" : 42}, "json2" : {"a" : 41}}
+{"json1" : {"a" : 42}, "json2" : {"a" : 42}}
+{"json1" : {"a" : 42}, "json2" : {"a" : [1, 2, 3]}}
+{"json1" : {"a" : 42}, "json2" : {"a" : "Hello"}}
+{"json1" : {"a" : 42}, "json2" : {"b" : 42}}
+{"json1" : {"a" : 42}, "json2" : {"a" : 42, "b" : 42}}
+{"json1" : {"a" : 42}, "json2" : {"a" : 41, "b" : 42}}
+
+SELECT json1, json2, json1 < json2, json1 = json2, json1 > json2 FROM test;
+```
+
+```text title="Response"
+┌─json1──────┬─json2───────────────┬─less(json1, json2)─┬─equals(json1, json2)─┬─greater(json1, json2)─┐
+│ {}         │ {}                  │                  0 │                    1 │                     0 │
+│ {"a":"42"} │ {}                  │                  0 │                    0 │                     1 │
+│ {"a":"42"} │ {"a":"41"}          │                  0 │                    0 │                     1 │
+│ {"a":"42"} │ {"a":"42"}          │                  0 │                    1 │                     0 │
+│ {"a":"42"} │ {"a":["1","2","3"]} │                  0 │                    0 │                     1 │
+│ {"a":"42"} │ {"a":"Hello"}       │                  1 │                    0 │                     0 │
+│ {"a":"42"} │ {"b":"42"}          │                  1 │                    0 │                     0 │
+│ {"a":"42"} │ {"a":"42","b":"42"} │                  1 │                    0 │                     0 │
+│ {"a":"42"} │ {"a":"41","b":"42"} │                  0 │                    0 │                     1 │
+└────────────┴─────────────────────┴────────────────────┴──────────────────────┴───────────────────────┘
+```
+
+**Remarque :** lorsque 2 chemins contiennent des valeurs de types de données différents, elles sont comparées selon la [règle de comparaison](/fr/reference/data-types/variant#comparing-values-of-variant-data) du type de données `Variant`.
+
+<div id="data-skipping-indexes-for-json">
+  ## Index de saut de données pour JSON
+</div>
+
+Les [index de saut de données](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) peuvent être utilisés avec des colonnes `JSON` de trois façons :
+
+1. **Index sur des sous-colonnes spécifiques** — créez un index de saut standard sur un chemin JSON connu, comme pour une colonne classique. Cela indexe les *valeurs* de ce chemin.
+2. **Index basés sur les chemins avec `JSONAllPaths`** — indexez l’*ensemble des chemins* présents dans chaque granule afin d’ignorer les granules qui ne peuvent pas contenir le chemin recherché.
+3. **Index basés sur les valeurs avec `JSONAllValues`** — indexez *toutes les valeurs* de tous les chemins JSON à l’aide d’un [index textuel](/fr/reference/engines/table-engines/mergetree-family/textindexes) afin d’accélérer la recherche en texte intégral sur n’importe quelle sous-colonne JSON avec un seul index.
+
+<div id="json-indexes-on-subcolumns">
+  ### Index sur des sous-colonnes spécifiques
+</div>
+
+Vous pouvez créer un skip index sur n’importe quelle sous-colonne JSON en utilisant la même syntaxe que pour des colonnes classiques.
+Tout [type d’index pris en charge](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) fonctionne (`minmax`, `set`, `bloom_filter`, `tokenbf_v1`, `ngrambf_v1`, etc.).
+
+Il existe deux façons de faire référence à une sous-colonne JSON dans une expression d’index :
+
+* **Chemin typé** déclaré dans l’indication de type JSON — accès direct par son nom : `json.a`.
+* **Chemin dynamique** avec transtypage explicite — utilisez la syntaxe de transtypage `::` : `json.b::String`.
+
+Vous pouvez également utiliser des expressions combinant plusieurs sous-colonnes, par exemple `json.a || json.b::String`.
+
+<div id="json-indexes-on-subcolumns-example">
+  #### Exemple
+</div>
+
+```sql title="Query"
+CREATE TABLE sensor_data
+(
+    data JSON(sensor_id UInt32),
+    INDEX idx_sensor data.sensor_id TYPE minmax GRANULARITY 1,
+    INDEX idx_location data.location::String TYPE bloom_filter GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 1;
+
+INSERT INTO sensor_data SELECT toJSONString(map('sensor_id', number, 'location', 'room_' || toString(number))) FROM numbers(4);
+INSERT INTO sensor_data SELECT toJSONString(map('sensor_id', number, 'location', 'room_' || toString(number))) FROM numbers(4, 4);
+```
+
+L’index `minmax` sur la sous-colonne typée `data.sensor_id` restreint le balayage aux granules correspondants :
+
+```sql title="Query"
+EXPLAIN indexes = 1 SELECT * FROM sensor_data WHERE data.sensor_id < 2;
+```
+
+```text title="Response"
+...
+    Indexes:
+      Skip
+        Name: idx_sensor
+        Description: minmax GRANULARITY 1
+        Parts: 1/2
+        Granules: 2/8
+```
+
+L’index `bloom_filter` sur la sous-colonne `data.location::String`, obtenue par transtypage, fonctionne également :
+
+```sql title="Query"
+EXPLAIN indexes = 1 SELECT * FROM sensor_data WHERE data.location::String = 'room_5';
+```
+
+```text title="Response"
+...
+    Indexes:
+      Skip
+        Name: idx_location
+        Description: bloom_filter GRANULARITY 1
+        Parts: 1/2
+        Granules: 1/8
+```
+
+<div id="json-indexes-jsonallpaths">
+  ### Index basés sur les chemins avec JSONAllPaths
+</div>
+
+Les [index de saut de données](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) peuvent également être créés sur des colonnes `JSON` à l’aide de la fonction [`JSONAllPaths`](/fr/reference/functions/regular-functions/json-functions#JSONAllPaths).
+Le fonctionnement est similaire à celui de la création de skip indexes sur des colonnes [`Map`](/fr/reference/data-types/map) via `mapKeys` : l’index stocke l’ensemble des chemins JSON présents dans chaque granule et s’en sert pour ignorer les granules qui ne peuvent pas contenir le chemin recherché.
+
+<div id="json-indexes-jsonallpaths-supported-types">
+  #### Types d’index pris en charge
+</div>
+
+`JSONAllPaths` peut être utilisé avec les types d’index de saut suivants :
+
+* [`bloom_filter`](/fr/reference/engines/table-engines/mergetree-family/mergetree#bloom-filter) — prend en charge `equals`, `in` et `IS NOT NULL`.
+* [`tokenbf_v1`](/fr/reference/engines/table-engines/mergetree-family/mergetree#token-bloom-filter) — prend en charge `equals` et `IS NOT NULL`.
+* [`ngrambf_v1`](/fr/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) — prend en charge `equals` et `IS NOT NULL`.
+* [`text`](/fr/reference/engines/table-engines/mergetree-family/textindexes) (index inversé) — prend en charge `equals`, `in` et `IS NOT NULL`.
+
+<div id="json-indexes-on-subcolumns-example">
+  #### Exemple
+</div>
+
+```sql title="Query"
+CREATE TABLE events
+(
+    data JSON,
+    INDEX idx JSONAllPaths(data) TYPE bloom_filter GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO events VALUES ('{"user": {"name": "Alice"}, "action": "login"}');
+INSERT INTO events VALUES ('{"metric": {"cpu": 0.95}, "host": "srv1"}');
+```
+
+Vous pouvez utiliser `EXPLAIN indexes = 1` pour vérifier que le skip index est utilisé. Lorsqu’un chemin n’existe que dans une seule part, l’index évite de lire l’autre part :
+
+```sql title="Query"
+EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name = 'Alice';
+```
+
+```text title="Response"
+...
+    Indexes:
+      Skip
+        Name: idx
+        Description: bloom_filter GRANULARITY 1
+        Parts: 1/2
+        Granules: 1/2
+```
+
+Lorsqu’un chemin est absent de toutes les parts, toutes les parts et tous les granules sont ignorés :
+
+```sql title="Query"
+EXPLAIN indexes = 1 SELECT * FROM events WHERE data.nonexistent = 1;
+```
+
+```text title="Response"
+...
+    Indexes:
+      Skip
+        Name: idx
+        Description: bloom_filter GRANULARITY 1
+        Parts: 0/2
+        Granules: 0/2
+```
+
+`IS NOT NULL` utilise également l’index — il ignore les granules où le chemin est absent (puisque la valeur serait `NULL`) :
+
+```sql title="Query"
+EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name IS NOT NULL;
+```
+
+```text title="Response"
+...
+    Indexes:
+      Skip
+        Name: idx
+        Description: bloom_filter GRANULARITY 1
+        Parts: 1/2
+        Granules: 1/2
+```
+
+<div id="json-indexes-jsonallpaths-how-it-works">
+  #### Comment cela fonctionne
+</div>
+
+L’expression `JSONAllPaths(json_column)` produit un `Array(String)` contenant tous les chemins présents dans une valeur JSON.
+L’index de saut stocke ces chaînes de chemin dans sa structure de données (filtre de Bloom ou index inversé).
+Lorsqu’une requête filtre sur `json.some.path`, l’index vérifie si la chaîne `"some.path"` est présente dans l’index pour chaque granule et ignore les granules où elle est absente.
+
+<div id="json-indexes-jsonallpaths-safety-with-missing-paths">
+  #### Sécurité en cas de chemins manquants
+</div>
+
+Lorsqu’un chemin JSON est absent d’une granule, la sous-colonne prend la valeur suivante :
+
+* `NULL` pour le type `Dynamic` (par ex. `json.path`) et les sous-colonnes de type `Nullable` (par ex. `json.path.:Int64`) — les comparaisons avec `NULL` renvoient toujours false, le skipping est donc sûr.
+* La valeur par défaut du type pour les expressions `CAST` non `Nullable` (par ex. `json.path::Int64` produit `0` lorsque le chemin est absent) — le skipping n’est sûr que lorsque la valeur comparée diffère de la valeur par défaut. L’index gère automatiquement cette distinction.
+
+<div id="json-indexes-jsonallvalues">
+  ### Recherche en texte intégral avec JSONAllValues
+</div>
+
+Les [index de texte intégral](/fr/reference/engines/table-engines/mergetree-family/textindexes) peuvent être utilisés pour accélérer la recherche en texte intégral dans les colonnes JSON via la fonction [`JSONAllValues`](/fr/reference/functions/regular-functions/json-functions#JSONAllValues).
+`JSONAllValues` renvoie toutes les valeurs d&#39;une colonne JSON sous forme de `Array(String)`, qui peut être indexé par un index de texte intégral.
+Un seul index sur `JSONAllValues(json_column)` couvre tous les chemins JSON, ce qui permet d&#39;effectuer une recherche en texte intégral sur n&#39;importe quelle sous-colonne sans créer d&#39;index distinct pour chaque chemin.
+
+Voir [Index basés sur les valeurs avec JSONAllValues](/fr/reference/engines/table-engines/mergetree-family/textindexes#json-indexes-jsonallvalues) dans la documentation des index de texte intégral pour plus de détails et d&#39;exemples.
+
+<div id="tips-for-better-usage-of-the-json-type">
+  ## Conseils pour mieux utiliser le type JSON
+</div>
+
+Avant de créer une colonne `JSON` et d’y charger des données, tenez compte des conseils suivants :
+
+* Analysez vos données et indiquez autant de chemins que possible, avec leurs types. Cela rendra le stockage et la lecture bien plus efficaces.
+* Réfléchissez aux chemins dont vous aurez besoin et à ceux dont vous n’aurez jamais besoin. Indiquez les chemins inutiles dans la section `SKIP` et, si nécessaire, dans la section `SKIP REGEXP`. Cela améliorera le stockage.
+* Ne définissez pas le paramètre `max_dynamic_paths` sur des valeurs trop élevées, car cela peut rendre le stockage et la lecture moins efficaces.
+  Bien que cela dépende fortement des paramètres du système, comme la mémoire, le CPU, etc., une règle générale consiste à ne pas définir `max_dynamic_paths` au-delà de 10 000 pour le stockage sur le système de fichiers local et de 1024 pour le stockage sur le système de fichiers distant.
+
+<div id="further-reading">
+  ## Pour aller plus loin
+</div>
+
+* [Comment nous avons conçu un nouveau type de données JSON puissant pour ClickHouse](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse)
+* [Le défi JSON du milliard de documents : ClickHouse face à MongoDB, Elasticsearch et bien d&#39;autres](https://clickhouse.com/blog/json-bench-clickhouse-vs-mongodb-elasticsearch-duckdb-postgresql)

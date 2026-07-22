@@ -1,0 +1,33 @@
+---
+alias: []
+description: 'توثيق تنسيق PrettyCompactMonoBlock'
+input_format: false
+keywords: ['PrettyCompactMonoBlock']
+output_format: true
+slug: /interfaces/formats/PrettyCompactMonoBlock
+title: 'PrettyCompactMonoBlock'
+doc_type: 'مرجع'
+---
+
+import PrettyFormatSettings from '/snippets/ar/common-pretty-format-settings.mdx';
+
+| الإدخال | الإخراج | الاسم المستعار |
+| ------- | ------- | -------------- |
+| ✗       | ✔       |                |
+
+<div id="description">
+  ## الوصف
+</div>
+
+يختلف عن تنسيق [`PrettyCompact`](/ar/reference/formats/Pretty/PrettyCompact) في أنه يُخزَّن مؤقتًا ما يصل إلى `10,000` صف،
+ثم يُخرَج على هيئة جدول واحد، لا على شكل [كتل](/ar/resources/develop-contribute/introduction/architecture#block).
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>
+
+<PrettyFormatSettings />

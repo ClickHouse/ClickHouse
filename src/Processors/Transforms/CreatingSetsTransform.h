@@ -24,7 +24,7 @@ class PushingPipelineExecutor;
 /// Don't return any data. Sets are created when Finish status is returned.
 /// In general, several work() methods need to be called to finish.
 /// Independent processors is created for each subquery.
-class CreatingSetsTransform : public IAccumulatingTransform
+class CreatingSetsTransform final : public IAccumulatingTransform
 {
 public:
     CreatingSetsTransform(

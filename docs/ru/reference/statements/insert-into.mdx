@@ -1,0 +1,326 @@
+---
+description: 'Документация по оператору INSERT INTO'
+sidebarTitle: 'INSERT INTO'
+slug: /sql-reference/statements/insert-into
+title: 'Оператор INSERT INTO'
+doc_type: 'reference'
+---
+
+Вставляет данные в таблицу.
+
+**Синтаксис**
+
+```sql
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] VALUES (v11, v12, v13), (v21, v22, v23), ...
+```
+
+Вы можете указать список столбцов для вставки с помощью `(c1, c2, c3)`. Также можно использовать выражение с [селектором](/ru/reference/statements/select/index#asterisk) столбцов, например `*`, и/или [модификаторы](/ru/reference/statements/select/index#select-modifiers), такие как [APPLY](/ru/reference/statements/select/apply_modifier), [EXCEPT](/ru/reference/statements/select/except_modifier), [REPLACE](/ru/reference/statements/select/replace_modifier).
+
+Например, рассмотрим таблицу:
+
+```sql
+SHOW CREATE insert_select_testtable;
+```
+
+```text
+CREATE TABLE insert_select_testtable
+(
+    `a` Int8,
+    `b` String,
+    `c` Int8
+)
+ENGINE = MergeTree()
+ORDER BY a
+```
+
+```sql
+INSERT INTO insert_select_testtable (*) VALUES (1, 'a', 1) ;
+```
+
+Если вы хотите вставить данные во все столбцы, кроме столбца `b`, это можно сделать с помощью ключевого слова `EXCEPT`. В соответствии с приведённым выше синтаксисом нужно убедиться, что число вставляемых значений (`VALUES (v11, v13)`) совпадает с числом указанных столбцов (`(c1, c3)`) :
+
+```sql
+INSERT INTO insert_select_testtable (* EXCEPT(b)) Values (2, 2);
+```
+
+```sql
+SELECT * FROM insert_select_testtable;
+```
+
+```text
+┌─a─┬─b─┬─c─┐
+│ 2 │   │ 2 │
+└───┴───┴───┘
+┌─a─┬─b─┬─c─┐
+│ 1 │ a │ 1 │
+└───┴───┴───┘
+```
+
+В этом примере видно, что во второй вставленной строке столбцы `a` и `c` заполнены переданными значениями, а `b` — значением по умолчанию. Также можно использовать ключевое слово `DEFAULT`, чтобы вставить значения по умолчанию:
+
+```sql
+INSERT INTO insert_select_testtable VALUES (1, DEFAULT, 1) ;
+```
+
+Если список столбцов не включает все существующие столбцы, остальные заполняются:
+
+* Значениями, вычисленными из выражений `DEFAULT`, указанных в определении таблицы.
+* Нулями и пустыми строками, если выражения `DEFAULT` не заданы.
+
+Данные можно передавать в `INSERT` в любом [формате](/ru/reference/formats/index), поддерживаемом ClickHouse. Формат должен быть явно указан в запросе:
+
+```sql
+INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
+```
+
+Например, следующий формат запроса совпадает с базовой версией `INSERT ... VALUES`:
+
+```sql
+INSERT INTO [db.]table [(c1, c2, c3)] FORMAT Values (v11, v12, v13), (v21, v22, v23), ...
+```
+
+ClickHouse удаляет все пробелы и один символ перевода строки (если он есть) перед данными. При формировании запроса мы рекомендуем размещать данные с новой строки после операторов запроса, что особенно важно, если данные начинаются с пробелов.
+
+Пример:
+
+```sql
+INSERT INTO t FORMAT TabSeparated
+11  Hello, world!
+22  Qwerty
+```
+
+Вы можете выполнять вставку данных отдельно от запроса с помощью [клиента командной строки](/ru/concepts/features/tools-and-utilities/clickhouse-local) или [HTTP-интерфейса](/ru/concepts/features/interfaces/http).
+
+<Note>
+  Если вы хотите указать `SETTINGS` для запроса `INSERT`, это нужно сделать *до* предложения `FORMAT`, поскольку всё, что идёт после `FORMAT format_name`, рассматривается как данные. Например:
+
+  ```sql
+  INSERT INTO table SETTINGS ... FORMAT format_name data_set
+  ```
+</Note>
+
+<div id="constraints">
+  ## Ограничения
+</div>
+
+Если у таблицы есть [ограничения](/ru/reference/statements/create/table#constraints), их выражения будут проверяться для каждой вставляемой строки данных. Если какое-либо из этих ограничений не выполняется, сервер выдаст исключение с именем ограничения и его выражением, а запрос будет остановлен.
+
+<div id="data-type-validation">
+  ## Проверка типов данных
+</div>
+
+ClickHouse проверяет допустимые типы данных (которые контролируются настройками вроде `enable_time_time64_type`, `allow_suspicious_low_cardinality_types`, `allow_suspicious_fixed_string_types` и т. д.) только при создании таблицы (`CREATE TABLE`) и изменении схемы (`ALTER TABLE`), но не при `INSERT`.
+
+Это означает, что если таблица с недопустимым типом данных уже существует, в нее можно вставлять данные, даже если соответствующая настройка отключена на сервере. Это сделано намеренно: после создания таблицы вставка не должна блокироваться настройками, управляющими созданием типов.
+
+Например:
+
+```sql
+SET enable_time_time64_type = 1;
+
+CREATE TABLE events
+(
+    `id` UInt64,
+    `event_time` Time
+)
+ENGINE = MergeTree()
+ORDER BY id;
+
+SET enable_time_time64_type = 0;
+
+-- Это работает, даже если настройка теперь отключена.
+-- Таблица уже существует, поэтому вставки не блокируются.
+INSERT INTO events VALUES (1, '14:30:25');
+
+-- Но создание новой таблицы с типом Time завершится ошибкой.
+CREATE TABLE events_new
+(
+    `id` UInt64,
+    `event_time` Time
+)
+ENGINE = MergeTree()
+ORDER BY id; -- ERR: TYPE_TIME_TIME64_IS_NOT_ENABLED
+```
+
+<Note>
+  В результате клиент с более новой версией (где параметр по умолчанию включен) может выполнять вставку данных с недопустимыми типами данных на сервер с более старой версией (где параметр отключен), если в целевой таблице уже есть столбцы соответствующих типов. Проверка выполняется на уровне DDL, а не DML.
+</Note>
+
+<div id="inserting-the-results-of-select">
+  ## Вставка результатов запроса SELECT
+</div>
+
+**Синтаксис**
+
+```sql
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] SELECT ...
+```
+
+Столбцы сопоставляются в соответствии с их позицией в предложении `SELECT`. Однако их имена в выражении `SELECT` и в таблице для `INSERT` могут различаться. При необходимости выполняется приведение типов.
+
+Ни один из форматов данных, кроме формата Values, не позволяет задавать значения в виде выражений, таких как `now()`, `1 + 2` и т. д. Формат Values допускает ограниченное использование выражений, но это не рекомендуется, поскольку в этом случае для их вычисления используется неэффективный код.
+
+Другие запросы на изменение частей данных не поддерживаются: `UPDATE`, `DELETE`, `REPLACE`, `MERGE`, `UPSERT`, `INSERT UPDATE`.
+Однако старые данные можно удалить с помощью `ALTER TABLE ... DROP PARTITION`.
+
+Предложение `FORMAT` должно быть указано в конце запроса, если предложение `SELECT` содержит табличную функцию [input()](/ru/reference/functions/table-functions/input).
+
+Чтобы вставить значение по умолчанию вместо `NULL` в столбец с типом данных, не допускающим `NULL`, включите настройку [insert&#95;null&#95;as&#95;default](/ru/reference/settings/session-settings#insert_null_as_default).
+
+`INSERT` также поддерживает CTE (общее табличное выражение). Например, следующие два оператора эквивалентны:
+
+```sql
+INSERT INTO x WITH y AS (SELECT * FROM numbers(10)) SELECT * FROM y;
+WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
+```
+
+<div id="inserting-data-from-a-file">
+  ## Вставка данных из файла
+</div>
+
+**Синтаксис**
+
+```sql
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION type] [SETTINGS ...] [FORMAT format_name]
+```
+
+Используйте приведённый выше синтаксис для вставки данных из файла или файлов, хранящихся на стороне **клиента**. `file_name` и `type` — строковые литералы. Входной [формат](/ru/reference/formats/index) файла должен быть задан в предложении `FORMAT`.
+
+Поддерживаются сжатые файлы. Тип сжатия определяется по расширению имени файла. Либо его можно явно указать в предложении `COMPRESSION`. Поддерживаются следующие типы: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+
+Эта возможность доступна в [клиенте командной строки](/ru/concepts/features/interfaces/client) и [clickhouse-local](/ru/concepts/features/tools-and-utilities/clickhouse-local).
+
+**Примеры**
+
+<div id="single-file-with-from-infile">
+  ### Один файл с использованием FROM INFILE
+</div>
+
+Выполните следующие запросы с помощью [клиента командной строки](/ru/concepts/features/interfaces/client):
+
+```bash title="Query"
+echo 1,A > input.csv ; echo 2,B >> input.csv
+clickhouse-client --query="CREATE TABLE table_from_file (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;"
+clickhouse-client --query="INSERT INTO table_from_file FROM INFILE 'input.csv' FORMAT CSV;"
+clickhouse-client --query="SELECT * FROM table_from_file FORMAT PrettyCompact;"
+```
+
+```text title="Response"
+┌─id─┬─text─┐
+│  1 │ A    │
+│  2 │ B    │
+└────┴──────┘
+```
+
+<div id="multiple-files-with-from-infile-using-globs">
+  ### Несколько файлов в FROM INFILE с использованием глоб-шаблонов
+</div>
+
+Этот пример очень похож на предыдущий, но здесь вставка выполняется из нескольких файлов с помощью `FROM INFILE 'input_*.csv`.
+
+```bash
+echo 1,A > input_1.csv ; echo 2,B > input_2.csv
+clickhouse-client --query="CREATE TABLE infile_globs (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;"
+clickhouse-client --query="INSERT INTO infile_globs FROM INFILE 'input_*.csv' FORMAT CSV;"
+clickhouse-client --query="SELECT * FROM infile_globs FORMAT PrettyCompact;"
+```
+
+<Tip>
+  Помимо выбора нескольких файлов с помощью `*`, можно использовать диапазоны (`{1,2}` или `{1..9}`) и другие [подстановки глоб-шаблонов](/ru/reference/functions/table-functions/file#globs-in-path). Все три варианта будут работать с примером выше:
+
+  ```sql
+  INSERT INTO infile_globs FROM INFILE 'input_*.csv' FORMAT CSV;
+  INSERT INTO infile_globs FROM INFILE 'input_{1,2}.csv' FORMAT CSV;
+  INSERT INTO infile_globs FROM INFILE 'input_?.csv' FORMAT CSV;
+  ```
+</Tip>
+
+<div id="inserting-using-a-table-function">
+  ## Вставка с помощью табличной функции
+</div>
+
+Данные можно вставлять в таблицы, указанные через [табличные функции](/ru/reference/functions/table-functions/index).
+
+**Синтаксис**
+
+```sql
+INSERT INTO [TABLE] FUNCTION table_func ...
+```
+
+**Пример**
+
+Табличная функция [remote](/ru/reference/functions/table-functions/remote) используется в следующих запросах:
+
+```sql title="Query"
+CREATE TABLE simple_table (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;
+INSERT INTO TABLE FUNCTION remote('localhost', default.simple_table)
+    VALUES (100, 'inserted via remote()');
+SELECT * FROM simple_table;
+```
+
+```text title="Response"
+┌──id─┬─text──────────────────┐
+│ 100 │ inserted via remote() │
+└─────┴───────────────────────┘
+```
+
+<div id="inserting-into-clickhouse-cloud">
+  ## Вставка в ClickHouse Cloud
+</div>
+
+По умолчанию сервисы в ClickHouse Cloud предоставляют несколько реплик для высокой доступности. При подключении к сервису соединение устанавливается с одной из этих реплик.
+
+После успешного выполнения `INSERT` данные записываются в нижележащее хранилище. Однако репликам может потребоваться некоторое время, чтобы получить эти обновления. Поэтому, если вы используете другое соединение, которое выполняет запрос `SELECT` к одной из остальных реплик, обновлённые данные могут там ещё не отображаться.
+
+Можно использовать `select_sequential_consistency`, чтобы принудительно синхронизировать реплику с последними обновлениями. Вот пример запроса `SELECT` с этой настройкой:
+
+```sql
+SELECT .... SETTINGS select_sequential_consistency = 1;
+```
+
+Обратите внимание, что использование `select_sequential_consistency` увеличивает нагрузку на ClickHouse Keeper (который ClickHouse Cloud использует внутри своей инфраструктуры) и, в зависимости от нагрузки на сервис, может приводить к снижению производительности. Мы не рекомендуем включать этот параметр без необходимости. Рекомендуемый подход — выполнять операции чтения и записи в рамках одного сеанса или использовать клиентский драйвер, работающий через собственный протокол (и, следовательно, поддерживающий sticky connections).
+
+<div id="inserting-into-a-replicated-setup">
+  ## Вставка в реплицируемой конфигурации
+</div>
+
+В реплицируемой конфигурации данные становятся видны на других репликах после репликации. Репликация данных (то есть их загрузка на другие реплики) начинается сразу после `INSERT`. Это отличается от ClickHouse Cloud, где данные сразу записываются в общее хранилище, а реплики отслеживают изменения метаданных.
+
+Обратите внимание: в реплицируемых конфигурациях операции `INSERT` иногда могут занимать заметное время (порядка одной секунды), поскольку для этого требуется фиксация в ClickHouse Keeper для достижения распределённого консенсуса. Использование S3 в качестве хранилища также увеличивает задержку.
+
+<div id="performance-considerations">
+  ## Рекомендации по производительности
+</div>
+
+`INSERT` сортирует входные данные по первичному ключу и разбивает их на партиции по ключу партиционирования. Если вставлять данные сразу в несколько партиций, это может значительно снизить производительность запроса `INSERT`. Чтобы этого избежать:
+
+* Добавляйте данные достаточно крупными батчами, например по 100 000 строк за раз.
+* Группируйте данные по ключу партиционирования перед загрузкой в ClickHouse.
+
+Производительность не снизится, если:
+
+* Данные добавляются в реальном времени.
+* Вы загружаете данные, которые обычно уже отсортированы по времени.
+
+<div id="asynchronous-inserts">
+  ### Асинхронные вставки
+</div>
+
+Можно асинхронно вставлять данные небольшими, но частыми порциями. Данные из таких вставок объединяются в батчи, а затем безопасно вставляются в таблицу. Чтобы использовать асинхронные вставки, включите настройку [`async_insert`](/ru/reference/settings/session-settings#async_insert).
+
+Использование `async_insert` или [`Buffer` движка таблицы](/ru/reference/engines/table-engines/special/buffer) приводит к дополнительной буферизации.
+
+<div id="large-or-long-running-inserts">
+  ### Крупные или длительные вставки
+</div>
+
+При вставке больших объёмов данных ClickHouse оптимизирует производительность записи с помощью процесса, называемого «squashing». Небольшие блоки вставляемых данных в памяти сливаются и объединяются в более крупные блоки перед записью на диск. Squashing уменьшает накладные расходы, связанные с каждой операцией записи. В ходе этого процесса данные становятся доступными для запросов после того, как ClickHouse завершит запись каждых [`max_insert_block_size`](/ru/reference/settings/session-settings#max_insert_block_size) строк.
+
+**См. также**
+
+* [async&#95;insert](/ru/reference/settings/session-settings#async_insert)
+* [wait&#95;for&#95;async&#95;insert](/ru/reference/settings/session-settings#wait_for_async_insert)
+* [wait&#95;for&#95;async&#95;insert&#95;timeout](/ru/reference/settings/session-settings#wait_for_async_insert_timeout)
+* [async&#95;insert&#95;max&#95;data&#95;size](/ru/reference/settings/session-settings#async_insert_max_data_size)
+* [async&#95;insert&#95;busy&#95;timeout&#95;ms](/ru/reference/settings/session-settings#async_insert_busy_timeout_max_ms)
+* [async&#95;insert&#95;stale&#95;timeout&#95;ms](/ru/reference/settings/session-settings#async_insert_max_data_size)

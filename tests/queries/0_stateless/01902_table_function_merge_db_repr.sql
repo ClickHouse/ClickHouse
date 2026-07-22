@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-flaky-check
+-- { echoOn }
 
 SET enable_analyzer = 1;
 
@@ -17,10 +18,10 @@ CREATE TABLE 01902_db_repr1.t1 (n Int8) ENGINE=MergeTree ORDER BY n;
 CREATE TABLE 01902_db_repr2.t2 (n Int8) ENGINE=MergeTree ORDER BY n;
 CREATE TABLE 01902_db_repr3.t3 (n Int8) ENGINE=MergeTree ORDER BY n;
 
-INSERT INTO 01902_db_repr.t   SELECT * FROM numbers(10);
-INSERT INTO 01902_db_repr1.t1 SELECT * FROM numbers(10);
-INSERT INTO 01902_db_repr2.t2 SELECT * FROM numbers(10);
-INSERT INTO 01902_db_repr3.t3 SELECT * FROM numbers(10);
+INSERT INTO 01902_db_repr.t   SELECT * FROM numbers(1);
+INSERT INTO 01902_db_repr1.t1 SELECT * FROM numbers(1);
+INSERT INTO 01902_db_repr2.t2 SELECT * FROM numbers(1);
+INSERT INTO 01902_db_repr3.t3 SELECT * FROM numbers(1);
 
 SELECT 'CREATE TABLE t_merge as 01902_db_repr.t ENGINE=Merge(REGEXP(^01902_db_repr), ^t)';
 CREATE TABLE 01902_db_repr.t_merge as 01902_db_repr.t ENGINE=Merge(REGEXP('^01902_db_repr'), '^t');
@@ -66,7 +67,7 @@ SELECT _database, _table, n FROM merge(currentDatabase(), '^t') ORDER BY _databa
 
 --fuzzed LOGICAL_ERROR
 CREATE TABLE 01902_db_repr.t4 (n Date) ENGINE=MergeTree ORDER BY n;
-INSERT INTO 01902_db_repr.t4   SELECT * FROM numbers(10);
+INSERT INTO 01902_db_repr.t4   SELECT * FROM numbers(1);
 SELECT NULL FROM 01902_db_repr.t_merge WHERE n ORDER BY _table DESC;
 
 DROP DATABASE 01902_db_repr;

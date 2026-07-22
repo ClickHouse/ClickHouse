@@ -1,0 +1,42 @@
+---
+slug: /cloud/managed-postgres/settings
+sidebarTitle: '設定'
+title: '設定'
+description: 'PostgreSQL と PgBouncer のパラメータを設定し、Managed Postgres のインスタンス設定を管理します'
+keywords: ['Postgres 設定', 'PostgreSQL 設定', 'PgBouncer']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.settings-beta" />
+
+サイドバーの**設定**タブで、Managed Postgres インスタンスの設定パラメータを変更し、インスタンス設定を管理できます。
+
+<div id="service-actions">
+  ## Service actions とスケーリング
+</div>
+
+<Image img="/images/managed-postgres/service-actions.webp" alt="Service actions とスケーリング" size="md" border />
+
+**Service actions** ツールバーには、Managed Postgres インスタンスを管理するための操作が用意されています。
+
+* **Reset password**: スーパーユーザーのパスワードを更新します (インスタンスが `Running` の場合のみ)
+* **Restart**: データベースインスタンスを再起動します (インスタンスが `Running` の場合のみ)
+* **Delete**: インスタンスを削除します
+
+**Scaling** セクションでは、プライマリとスタンバイのインスタンスタイプを変更して、コンピューティングリソースとストレージ容量を増減できます。
+詳細については、[scaling ページ](/ja/products/managed-postgres/scaling)を参照してください。
+
+<div id="changing-configuration">
+  ## 設定パラメーターの変更
+</div>
+
+<Image img="/images/managed-postgres/postgres-parameters.webp" alt="Postgres パラメーター設定" size="md" border />
+
+パラメーターを変更するには、**Edit parameters** ボタンを選択します。変更したいパラメーターを選び、必要に応じて値を変更します。変更内容を確認したら、**Save Changes** ボタンを押します。
+
+設定パラメーターへの変更は、通常 1 分以内にインスタンスに保存されます。一部のパラメーターは、反映するためにデータベースの再起動が必要です。これらの変更は次回の再起動後に適用されます。再起動は **Service actions** ツールバーから手動でトリガーできます。
+
+設定パラメーターについては、公式の[ドキュメント](https://www.postgresql.org/docs/current/runtime-config.html)を参照してください。設定可能なパラメーターの一覧は、近日中に拡充される予定です。それまでの間、現在サポートされていないパラメーターの追加を希望する場合は、[support](https://clickhouse.com/support/program) までお問い合わせください。

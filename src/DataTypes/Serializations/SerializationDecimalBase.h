@@ -23,13 +23,13 @@ public:
 
     static UInt128 getHash(UInt32 precision_, UInt32 scale_);
 
-    void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override;
-    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
+    void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const final;
+    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const final;
+    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const final;
 
-    void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const override;
-    void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double avg_value_size_hint) const override;
+    void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const final;
+    void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const final;
+    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double avg_value_size_hint) const final;
 };
 
 extern template class SerializationDecimalBase<Decimal32>;

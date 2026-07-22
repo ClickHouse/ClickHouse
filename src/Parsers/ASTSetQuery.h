@@ -14,7 +14,8 @@ constexpr char QUERY_PARAMETER_NAME_PREFIX[] = "param_";
 class ASTSetQuery : public IAST
 {
 public:
-    bool is_standalone = true; /// If false, this AST is a part of another query, such as SELECT.
+    /// If false, this AST is a part of another query, such as SELECT.
+    bool is_standalone = true;
 
     SettingsChanges changes;
     /// settings that will be reset to default value

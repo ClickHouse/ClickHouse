@@ -1,0 +1,101 @@
+---
+sidebarTitle: '스케일링 권장 사항'
+slug: /cloud/features/autoscaling/scaling-recommendations
+description: 'ClickHouse Cloud의 스케일링 권장 사항 이해'
+keywords: ['스케일링 권장 사항', '추천기', '2-window', '자동 스케일링', '최적화']
+title: '스케일링 권장 사항'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="introduction">
+  ## 소개
+</div>
+
+데이터베이스 리소스의 자동 스케일링에는 신중한 균형이 필요합니다. 확장이 너무 늦으면 성능 저하 위험이 커지고, 축소가 지나치게 공격적이면 스케일링이 계속 오르내리는 현상이 발생할 수 있습니다.
+
+ClickHouse Cloud는 2개의 윈도우 기반 권장 프레임워크와 대상 추적 CPU 권장 시스템을 결합해, 프로덕션 데이터베이스에 필요한 안정성을 유지하면서도 더 빠른 축소, 스케일링 진동 최소화, 그리고 가변적인 워크로드의 인프라 비용을 크게 절감할 수 있도록 합니다.
+
+<div id="cpu-based-scaling">
+  ## CPU 기반 스케일링
+</div>
+
+CPU 스케일링은 target tracking을 기반으로 하며, 사용률을 목표 수준으로 유지하는 데 필요한 정확한 CPU 할당량을 계산합니다. 스케일링 작업은 현재 CPU 사용률이 정의된 범위를 벗어날 때만 수행됩니다:
+
+| Parameter | Value | Meaning                       |
+| --------- | ----- | ----------------------------- |
+| 목표 사용률    | 53%   | ClickHouse가 유지하려는 사용률 수준      |
+| 상한 워터마크   | 75%   | CPU가 이 임계값을 초과하면 확장이 수행됩니다    |
+| 하한 워터마크   | 37.5% | CPU가 이 임계값 아래로 떨어지면 축소가 수행됩니다 |
+
+추천기는 과거 사용량을 기준으로 CPU 사용률을 평가하고, 다음 공식을 사용해 권장 CPU 크기를 결정합니다:
+
+```text
+recommended_cpu = max_cpu_usage / target_utilization
+```
+
+CPU 사용률이 할당된 용량의 37.5%–75% 범위에 있으면 스케일링 작업은 수행되지 않습니다. 이 범위를 벗어나면 추천기가 사용률이 다시 53%가 되도록 필요한 정확한 크기를 계산하고, 그에 맞춰 서비스가 스케일링됩니다.
+
+<div id="cpu-scaling-example">
+  ### 예시
+</div>
+
+4 vCPU가 할당된 서비스의 사용량이 3.8 vCPU(~95% 사용률)까지 급증해 75% 상한 워터마크를 넘습니다.
+추천기는 `3.8 / 0.53 ≈ 7.2 vCPU`로 계산한 뒤, 다음으로 사용 가능한 크기인 8 vCPU로 올림합니다. 이후 부하가 줄고 사용량이 37.5%(1.5 vCPU) 아래로 떨어지면 추천기는 비례적으로 다시 축소합니다.
+
+<div id="memory-based-recommendations">
+  ## 메모리 기반 권장
+</div>
+
+ClickHouse Cloud는 서비스의 실제 사용 패턴을 바탕으로 적절한 메모리 크기를 자동으로 권장합니다.
+추천기는 lookback 윈도우 동안의 사용량을 분석하고, 사용량 급증에 대응하며 메모리 부족(OOM) 오류를 방지할 수 있도록 여유 용량을 추가합니다.
+
+추천기는 다음 3가지 신호를 확인합니다.
+
+* **쿼리 메모리**: 쿼리 실행 중 사용된 최대 메모리
+* **상주 메모리**: 프로세스 전체에서 점유한 최대 메모리
+* **OOM 이벤트**: 최근 쿼리 또는 레플리카에서 메모리 부족이 발생했는지 여부
+
+<div id="how-headroom-is-calculated">
+  ### 헤드룸 계산 방식
+</div>
+
+쿼리 및 상주 메모리의 경우, 추가되는 헤드룸의 크기는 사용량이 얼마나 예측 가능한지에 따라 달라집니다.
+
+* **안정적인 사용량(변동 낮음)**: 1.25x 배수 — 사용량이 일정하고 예상치 못한 급증 가능성이 낮으므로 헤드룸을 더 크게 확보합니다
+* **급격한 사용량(변동 높음)**: 1.1x 배수 — 이미 변동 폭이 큰 워크로드에 과도하게 프로비저닝하지 않도록 헤드룸을 더 적게 확보합니다
+
+OOM 이벤트가 감지되면 추천기는 서비스가 복구에 필요한 메모리를 충분히 확보할 수 있도록 더 공격적인 **1.5x 배수**를 적용합니다.
+
+<div id="final-recommendation">
+  ### 최종 권장 사항
+</div>
+
+시스템은 모든 신호 중 가장 높은 값을 기준으로 합니다:
+
+```text
+desired_memory = max(
+  query_memory × skew_multiplier,
+  resident_memory × skew_multiplier,
+  resident_memory × 1.5,   // 쿼리 OOM 감지 시
+  rss_at_crash × 1.5       // 파드 OOM 감지 시
+)
+```
+
+<div id="two-window-recommender">
+  ## 두 윈도우 추천기
+</div>
+
+ClickHouse Cloud는 단일 윈도우 대신 시간 범위가 서로 다른 2개의 lookback 윈도우를 사용합니다:
+
+* **Small Window (3시간)**: 최근 사용 패턴을 반영하여 더 빠른 축소를 가능하게 합니다
+* **Large Window (30시간)**: 여러 차례에 걸쳐 점진적으로 확대하는 대신, 더 긴 lookback 윈도우에서 확인된 최대 사용량까지 한 번에 확대되도록 보장합니다. 이는 스케일링에 시간이 걸리고 로컬 캐시를 무효화하기 때문에 중요합니다. 따라서 한 번에 확대하는 편이 더 안전합니다.
+
+각 윈도우는 메모리와 CPU 분석을 모두 사용하여 독립적으로 권장 사항을 생성합니다.
+그런 다음 시스템은 아래 그림과 같이 각 윈도우가 제안하는 스케일링 방향에 따라 이러한 권장 사항을 머지합니다:
+
+<Image img="/images/cloud/features/autoscaling/two-window-recommender.webp" size="lg" alt="두 윈도우 추천기 머지 로직" />
+
+추천기의 설계 결정에 관해 자세히 알아보려면 [&quot;ClickHouse를 위한 더 스마트한 자동 스케일링: 두 윈도우 접근 방식
+&quot;](https://clickhouse.com/blog/smarter-auto-scaling#the-two-window-solution)을 참조하십시오.

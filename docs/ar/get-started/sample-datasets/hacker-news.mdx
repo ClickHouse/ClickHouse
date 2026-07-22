@@ -1,0 +1,667 @@
+---
+description: 'مجموعة بيانات تضم 28 مليون صف من بيانات Hacker News.'
+sidebarTitle: 'Hacker News'
+slug: /getting-started/example-datasets/hacker-news
+title: 'مجموعة بيانات Hacker News'
+doc_type: 'guide'
+keywords: ['مجموعة بيانات مثال', 'hacker news', 'بيانات نموذجية', 'تحليل النصوص', 'البحث المتجهي']
+---
+
+> في هذا الدليل، ستُدرِج 28 مليون صف من بيانات Hacker News في
+> جدول ClickHouse باستخدام تنسيقي CSV وParquet، ثم تُشغِّل بعض الاستعلامات البسيطة لاستكشاف البيانات.
+
+<div id="csv">
+  ## CSV
+</div>
+
+<Steps>
+  <Step>
+    ### تنزيل CSV
+
+    يمكن تنزيل نسخة CSV من مجموعة البيانات من [حاوية S3 العامة الخاصة بنا](https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz)، أو بتشغيل هذا الأمر:
+
+    ```bash
+    wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz
+    ```
+
+    بحجم 4.6GB و28 مليون صف، من المفترض أن يستغرق تنزيل هذا الملف المضغوط من 5 إلى 10 دقائق.
+  </Step>
+
+  <Step>
+    ### أخذ عينة من البيانات
+
+    يتيح لك [`clickhouse-local`](/ar/concepts/features/tools-and-utilities/clickhouse-local) إجراء معالجة سريعة للملفات المحلية دون
+    الحاجة إلى نشر خادم ClickHouse وتهيئته.
+
+    قبل تخزين أي بيانات في ClickHouse، لنأخذ عينة من الملف باستخدام clickhouse-local.
+    من الطرفية شغّل:
+
+    ```bash
+    clickhouse-local
+    ```
+
+    بعد ذلك، نفّذ الأمر التالي لاستكشاف البيانات:
+
+    ```sql title="Query"
+    SELECT *
+    FROM file('hacknernews.csv.gz', CSVWithNames)
+    LIMIT 2
+    SETTINGS input_format_try_infer_datetimes = 0
+    FORMAT Vertical
+    ```
+
+    ```response title="Response"
+    Row 1:
+    ──────
+    id:          344065
+    deleted:     0
+    type:        comment
+    by:          callmeed
+    time:        2008-10-26 05:06:58
+    text:        What kind of reports do you need?<p>ActiveMerchant just connects your app to a gateway for cc approval and processing.<p>Braintree has very nice reports on transactions and it's very easy to refund a payment.<p>Beyond that, you are dealing with Rails after all–it's pretty easy to scaffold out some reports from your subscriber base.
+    dead:        0
+    parent:      344038
+    poll:        0
+    kids:        []
+    url:
+    score:       0
+    title:
+    parts:       []
+    descendants: 0
+
+    Row 2:
+    ──────
+    id:          344066
+    deleted:     0
+    type:        story
+    by:          acangiano
+    time:        2008-10-26 05:07:59
+    text:
+    dead:        0
+    parent:      0
+    poll:        0
+    kids:        [344111,344202,344329,344606]
+    url:         http://antoniocangiano.com/2008/10/26/what-arc-should-learn-from-ruby/
+    score:       33
+    title:       What Arc should learn from Ruby
+    parts:       []
+    descendants: 10
+    ```
+
+    يوفر هذا الأمر الكثير من الإمكانات الدقيقة.
+    يتيح لك العامل [`file`](/ar/reference/functions/regular-functions/files#file) قراءة الملف من قرص محلي، مع تحديد التنسيق `CSVWithNames` فقط.
+    والأهم من ذلك، تُستنتج البنية تلقائيًا من محتويات الملف.
+    لاحظ أيضًا أن `clickhouse-local` يستطيع قراءة الملف المضغوط، إذ يستنتج تنسيق gzip من امتداد الملف.
+    يُستخدم التنسيق `Vertical` لتسهيل عرض البيانات لكل عمود.
+  </Step>
+
+  <Step>
+    ### حمّل البيانات باستخدام استدلال المخطط
+
+    أبسط أداة لتحميل البيانات وأكثرها قوة هي `clickhouse-client`: عميل سطر أوامر أصلي غني بالميزات.
+    ولتحميل البيانات، يمكنك مرة أخرى الاستفادة من استدلال المخطط، مع الاعتماد على ClickHouse لتحديد أنواع الأعمدة.
+
+    شغّل الأمر التالي لإنشاء جدول وإدراج البيانات مباشرةً من ملف CSV بعيد، مع الوصول إلى المحتوى عبر الدالة [`url`](/ar/reference/functions/table-functions/url).
+    ويُستدل على المخطط تلقائيًا:
+
+    ```sql
+    CREATE TABLE hackernews ENGINE = MergeTree ORDER BY tuple
+    (
+    ) EMPTY AS SELECT * FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz', 'CSVWithNames');
+    ```
+
+    يؤدي هذا إلى إنشاء جدول فارغ باستخدام المخطط المُستنتَج من البيانات.
+    يتيح لنا الأمر [`DESCRIBE TABLE`](/ar/reference/statements/describe-table) فهم الأنواع التي جرى تعيينها.
+
+    ```sql title="Query"
+    DESCRIBE TABLE hackernews
+    ```
+
+    ```text title="Response"
+    ┌─name────────┬─type─────────────────────┬
+    │ id          │ Nullable(Float64)        │
+    │ deleted     │ Nullable(Float64)        │
+    │ type        │ Nullable(String)         │
+    │ by          │ Nullable(String)         │
+    │ time        │ Nullable(String)         │
+    │ text        │ Nullable(String)         │
+    │ dead        │ Nullable(Float64)        │
+    │ parent      │ Nullable(Float64)        │
+    │ poll        │ Nullable(Float64)        │
+    │ kids        │ Array(Nullable(Float64)) │
+    │ url         │ Nullable(String)         │
+    │ score       │ Nullable(Float64)        │
+    │ title       │ Nullable(String)         │
+    │ parts       │ Array(Nullable(Float64)) │
+    │ descendants │ Nullable(Float64)        │
+    └─────────────┴──────────────────────────┴
+    ```
+
+    لإدخال البيانات إلى هذا الجدول، استخدم الأمر `INSERT INTO, SELECT`.
+    وباستخدام الدالة `url`، ستُبث البيانات مباشرةً من عنوان URL:
+
+    ```sql
+    INSERT INTO hackernews SELECT *
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz', 'CSVWithNames')
+    ```
+
+    لقد نجحت في إدراج 28 مليون صف في ClickHouse باستخدام أمر واحد!
+  </Step>
+
+  <Step>
+    ### استعراض البيانات
+
+    احصل على عيّنة من قصص Hacker News وبعض الأعمدة المحددة بتشغيل الاستعلام التالي:
+
+    ```sql title="Query"
+    SELECT
+        id,
+        title,
+        type,
+        by,
+        time,
+        url,
+        score
+    FROM hackernews
+    WHERE type = 'story'
+    LIMIT 3
+    FORMAT Vertical
+    ```
+
+    ```response title="Response"
+    Row 1:
+    ──────
+    id:    2596866
+    title:
+    type:  story
+    by:
+    time:  1306685152
+    url:
+    score: 0
+
+    Row 2:
+    ──────
+    id:    2596870
+    title: WordPress capture users last login date and time
+    type:  story
+    by:    wpsnipp
+    time:  1306685252
+    url:   http://wpsnipp.com/index.php/date/capture-users-last-login-date-and-time/
+    score: 1
+
+    Row 3:
+    ──────
+    id:    2596872
+    title: Recent college graduates get some startup wisdom
+    type:  story
+    by:    whenimgone
+    time:  1306685352
+    url:   http://articles.chicagotribune.com/2011-05-27/business/sc-cons-0526-started-20110527_1_business-plan-recession-college-graduates
+    score: 1
+    ```
+
+    في حين أن استنتاج المخطط أداة ممتازة للاستكشاف الأولي للبيانات، فإنه يعمل وفق مبدأ «أفضل جهد ممكن»، ولا يُعد بديلاً طويل الأمد عن تحديد مخطط أمثل لبياناتك.
+  </Step>
+
+  <Step>
+    ### عرّف مخططًا
+
+    من التحسينات الواضحة والمباشرة تحديد نوع لكل حقل.
+    بالإضافة إلى تعريف حقل الوقت بالنوع `DateTime`، نحدّد نوعًا مناسبًا لكل حقل من الحقول أدناه بعد حذف مجموعة البيانات الحالية.
+    في ClickHouse، يُحدَّد المفتاح الأساسي للبيانات عبر عبارة `ORDER BY`.
+
+    يساعد اختيار الأنواع المناسبة وتحديد الأعمدة التي ينبغي تضمينها في عبارة `ORDER BY`
+    على تحسين سرعة الاستعلام والضغط.
+
+    شغّل الاستعلام أدناه لحذف المخطط القديم وإنشاء المخطط المُحسَّن:
+
+    ```sql title="Query"
+    DROP TABLE IF EXISTS hackernews;
+
+    CREATE TABLE hackernews
+    (
+        `id` UInt32,
+        `deleted` UInt8,
+        `type` Enum('story' = 1, 'comment' = 2, 'poll' = 3, 'pollopt' = 4, 'job' = 5),
+        `by` LowCardinality(String),
+        `time` DateTime,
+        `text` String,
+        `dead` UInt8,
+        `parent` UInt32,
+        `poll` UInt32,
+        `kids` Array(UInt32),
+        `url` String,
+        `score` Int32,
+        `title` String,
+        `parts` Array(UInt32),
+        `descendants` Int32
+    )
+        ENGINE = MergeTree
+    ORDER BY id
+    ```
+
+    بعد تحسين المخطّط، يمكنك الآن إدراج البيانات من نظام الملفات المحلي.
+    وباستخدام `clickhouse-client` مرة أخرى، أدرِج الملف عبر عبارة `INFILE` مع تعليمة `INSERT INTO` صريحة.
+
+    ```sql title="Query"
+    INSERT INTO hackernews FROM INFILE '/data/hacknernews.csv.gz' FORMAT CSVWithNames
+    ```
+  </Step>
+
+  <Step>
+    ### تشغيل استعلامات نموذجية
+
+    فيما يلي بعض نماذج الاستعلامات لتستلهم منها أفكاراً لكتابة استعلاماتك الخاصة.
+
+    #### ما مدى شيوع موضوع &quot;ClickHouse&quot; في Hacker News؟
+
+    يوفر حقل score مقياسًا لشعبية القصص، في حين يمكن استخدام حقل `id` ومعامل الدمج `||`
+    لإنشاء رابط للمنشور الأصلي.
+
+    ```sql title="Query"
+    SELECT
+        time,
+        score,
+        descendants,
+        title,
+        url,
+        'https://news.ycombinator.com/item?id=' || toString(id) AS hn_url
+    FROM hackernews
+    WHERE (type = 'story') AND (title ILIKE '%ClickHouse%')
+    ORDER BY score DESC
+    LIMIT 5 FORMAT Vertical
+    ```
+
+    ```response title="Response"
+    Row 1:
+    ──────
+    time:        1632154428
+    score:       519
+    descendants: 159
+    title:       ClickHouse, Inc.
+    url:         https://github.com/ClickHouse/ClickHouse/blob/master/website/blog/en/2021/clickhouse-inc.md
+    hn_url:      https://news.ycombinator.com/item?id=28595419
+
+    Row 2:
+    ──────
+    time:        1614699632
+    score:       383
+    descendants: 134
+    title:       ClickHouse as an alternative to Elasticsearch for log storage and analysis
+    url:         https://pixeljets.com/blog/clickhouse-vs-elasticsearch/
+    hn_url:      https://news.ycombinator.com/item?id=26316401
+
+    Row 3:
+    ──────
+    time:        1465985177
+    score:       243
+    descendants: 70
+    title:       ClickHouse – high-performance open-source distributed column-oriented DBMS
+    url:         https://clickhouse.yandex/reference_en.html
+    hn_url:      https://news.ycombinator.com/item?id=11908254
+
+    Row 4:
+    ──────
+    time:        1578331410
+    score:       216
+    descendants: 86
+    title:       ClickHouse cost-efficiency in action: analyzing 500B rows on an Intel NUC
+    url:         https://www.altinity.com/blog/2020/1/1/clickhouse-cost-efficiency-in-action-analyzing-500-billion-rows-on-an-intel-nuc
+    hn_url:      https://news.ycombinator.com/item?id=21970952
+
+    Row 5:
+    ──────
+    time:        1622160768
+    score:       198
+    descendants: 55
+    title:       ClickHouse: An open-source column-oriented database management system
+    url:         https://github.com/ClickHouse/ClickHouse
+    hn_url:      https://news.ycombinator.com/item?id=27310247
+    ```
+
+    هل يُنتج ClickHouse ضوضاءً أكثر بمرور الوقت؟ يتضح هنا الفائدة من تعريف الحقل `time`
+    بوصفه `DateTime`، إذ يتيح استخدام نوع البيانات المناسب توظيف الدالة `toYYYYMM()`:
+
+    ```sql title="Query"
+    SELECT
+       toYYYYMM(time) AS monthYear,
+       bar(count(), 0, 120, 20)
+    FROM hackernews
+    WHERE (type IN ('story', 'comment')) AND ((title ILIKE '%ClickHouse%') OR (text ILIKE '%ClickHouse%'))
+    GROUP BY monthYear
+    ORDER BY monthYear ASC
+    ```
+
+    ```response title="Response"
+    ┌─monthYear─┬─bar(count(), 0, 120, 20)─┐
+    │    201606 │ ██▎                      │
+    │    201607 │ ▏                        │
+    │    201610 │ ▎                        │
+    │    201612 │ ▏                        │
+    │    201701 │ ▎                        │
+    │    201702 │ █                        │
+    │    201703 │ ▋                        │
+    │    201704 │ █                        │
+    │    201705 │ ██                       │
+    │    201706 │ ▎                        │
+    │    201707 │ ▎                        │
+    │    201708 │ ▏                        │
+    │    201709 │ ▎                        │
+    │    201710 │ █▌                       │
+    │    201711 │ █▌                       │
+    │    201712 │ ▌                        │
+    │    201801 │ █▌                       │
+    │    201802 │ ▋                        │
+    │    201803 │ ███▏                     │
+    │    201804 │ ██▏                      │
+    │    201805 │ ▋                        │
+    │    201806 │ █▏                       │
+    │    201807 │ █▌                       │
+    │    201808 │ ▋                        │
+    │    201809 │ █▌                       │
+    │    201810 │ ███▌                     │
+    │    201811 │ ████                     │
+    │    201812 │ █▌                       │
+    │    201901 │ ████▋                    │
+    │    201902 │ ███                      │
+    │    201903 │ ▋                        │
+    │    201904 │ █                        │
+    │    201905 │ ███▋                     │
+    │    201906 │ █▏                       │
+    │    201907 │ ██▎                      │
+    │    201908 │ ██▋                      │
+    │    201909 │ █▋                       │
+    │    201910 │ █                        │
+    │    201911 │ ███                      │
+    │    201912 │ █▎                       │
+    │    202001 │ ███████████▋             │
+    │    202002 │ ██████▌                  │
+    │    202003 │ ███████████▋             │
+    │    202004 │ ███████▎                 │
+    │    202005 │ ██████▏                  │
+    │    202006 │ ██████▏                  │
+    │    202007 │ ███████▋                 │
+    │    202008 │ ███▋                     │
+    │    202009 │ ████                     │
+    │    202010 │ ████▌                    │
+    │    202011 │ █████▏                   │
+    │    202012 │ ███▋                     │
+    │    202101 │ ███▏                     │
+    │    202102 │ █████████                │
+    │    202103 │ █████████████▋           │
+    │    202104 │ ███▏                     │
+    │    202105 │ ████████████▋            │
+    │    202106 │ ███                      │
+    │    202107 │ █████▏                   │
+    │    202108 │ ████▎                    │
+    │    202109 │ ██████████████████▎      │
+    │    202110 │ ▏                        │
+    └───────────┴──────────────────────────┘
+    ```
+
+    يبدو أن شعبية &quot;ClickHouse&quot; في تزايد مستمر مع مرور الوقت.
+
+    #### من هم أكثر المعلّقين نشاطاً على المقالات المتعلقة بـ ClickHouse؟
+
+    ```sql title="Query"
+    SELECT
+       by,
+       count() AS comments
+    FROM hackernews
+    WHERE (type IN ('story', 'comment')) AND ((title ILIKE '%ClickHouse%') OR (text ILIKE '%ClickHouse%'))
+    GROUP BY by
+    ORDER BY comments DESC
+    LIMIT 5
+    ```
+
+    ```response title="Response"
+    ┌─by──────────┬─comments─┐
+    │ hodgesrm    │       78 │
+    │ zX41ZdbW    │       45 │
+    │ manigandham │       39 │
+    │ pachico     │       35 │
+    │ valyala     │       27 │
+    └─────────────┴──────────┘
+    ```
+
+    #### ما التعليقات التي تُثير أكبر قدر من الاهتمام؟
+
+    ```sql title="Query"
+    SELECT
+      by,
+      sum(score) AS total_score,
+      sum(length(kids)) AS total_sub_comments
+    FROM hackernews
+    WHERE (type IN ('story', 'comment')) AND ((title ILIKE '%ClickHouse%') OR (text ILIKE '%ClickHouse%'))
+    GROUP BY by
+    ORDER BY total_score DESC
+    LIMIT 5
+    ```
+
+    ```response title="Response"
+    ┌─by───────┬─total_score─┬─total_sub_comments─┐
+    │ zX41ZdbW │        571  │              50    │
+    │ jetter   │        386  │              30    │
+    │ hodgesrm │        312  │              50    │
+    │ mechmind │        243  │              16    │
+    │ tosh     │        198  │              12    │
+    └──────────┴─────────────┴────────────────────┘
+    ```
+  </Step>
+</Steps>
+
+<div id="parquet">
+  ## Parquet
+</div>
+
+من نقاط قوة ClickHouse قدرته على التعامل مع طيف واسع من [التنسيقات](/ar/reference/formats/index).
+ويمثّل CSV حالة استخدام شبه مثالية، لكنه ليس الخيار الأكثر كفاءة لتبادل البيانات.
+
+بعد ذلك، ستحمّل البيانات من ملف Parquet، وهو تنسيق عمودي فعّال.
+
+يوفّر Parquet مجموعة محدودة من الأنواع، ويجب على ClickHouse الالتزام بها، كما أن معلومات الأنواع هذه تكون مُرمَّزة في التنسيق نفسه.
+وسيؤدي الاستدلال على الأنواع في ملف Parquet حتمًا إلى مخطط يختلف قليلًا عن المخطط الخاص بملف CSV.
+
+<Steps>
+  <Step>
+    ### إدراج البيانات
+
+    نفّذ الاستعلام التالي لقراءة البيانات نفسها بتنسيق Parquet، باستخدام الدالة url مرة أخرى لقراءة البيانات البعيدة:
+
+    ```sql
+    DROP TABLE IF EXISTS hackernews;
+
+    CREATE TABLE hackernews
+    ENGINE = MergeTree
+    ORDER BY id
+    SETTINGS allow_nullable_key = 1 EMPTY AS
+    SELECT *
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
+
+    INSERT INTO hackernews SELECT *
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
+    ```
+
+    <Info>
+      **المفاتيح ذات القيمة NULL مع Parquet**
+
+      بحكم تنسيق Parquet، علينا أن نقبل أن المفاتيح قد تكون `NULL`،
+      حتى إن لم تكن موجودة في البيانات.
+    </Info>
+
+    شغّل الأمر التالي لعرض المخطط المُستنتَج:
+
+    ```response title="Response"
+    ┌─name────────┬─type───────────────────┬
+    │ id          │ Nullable(Int64)        │
+    │ deleted     │ Nullable(UInt8)        │
+    │ type        │ Nullable(String)       │
+    │ time        │ Nullable(Int64)        │
+    │ text        │ Nullable(String)       │
+    │ dead        │ Nullable(UInt8)        │
+    │ parent      │ Nullable(Int64)        │
+    │ poll        │ Nullable(Int64)        │
+    │ kids        │ Array(Nullable(Int64)) │
+    │ url         │ Nullable(String)       │
+    │ score       │ Nullable(Int32)        │
+    │ title       │ Nullable(String)       │
+    │ parts       │ Array(Nullable(Int64)) │
+    │ descendants │ Nullable(Int32)        │
+    └─────────────┴────────────────────────┴
+    ```
+
+    كما فعلنا سابقًا مع ملف CSV، يمكنك تحديد المخطط يدويًا لمزيد من التحكم في الأنواع المختارة وإدراج
+    البيانات مباشرةً من S3:
+
+    ```sql
+    CREATE TABLE hackernews
+    (
+        `id` UInt64,
+        `deleted` UInt8,
+        `type` String,
+        `author` String,
+        `timestamp` DateTime,
+        `comment` String,
+        `dead` UInt8,
+        `parent` UInt64,
+        `poll` UInt64,
+        `children` Array(UInt32),
+        `url` String,
+        `score` UInt32,
+        `title` String,
+        `parts` Array(UInt32),
+        `descendants` UInt32
+    )
+    ENGINE = MergeTree
+    ORDER BY (type, author);
+
+    INSERT INTO hackernews
+    SELECT * FROM s3(
+            'https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet',
+            'Parquet',
+            'id UInt64,
+             deleted UInt8,
+             type String,
+             by String,
+             time DateTime,
+             text String,
+             dead UInt8,
+             parent UInt64,
+             poll UInt64,
+             kids Array(UInt32),
+             url String,
+             score UInt32,
+             title String,
+             parts Array(UInt32),
+             descendants UInt32');
+    ```
+  </Step>
+
+  <Step>
+    ### أضف فهرس تخطٍّ لتسريع الاستعلامات
+
+    لمعرفة كم تعليقًا يذكر &quot;ClickHouse&quot;، شغّل الاستعلام التالي:
+
+    ```sql title="Query"
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasToken(lower(comment), 'ClickHouse');
+    ```
+
+    ```response title="Response" highlight={1}
+    1 row in set. Elapsed: 0.843 sec. Processed 28.74 million rows, 9.75 GB (34.08 million rows/s., 11.57 GB/s.)
+    ┌─count()─┐
+    │     516 │
+    └─────────┘
+    ```
+
+    بعد ذلك، ستنشئ [فهرسًا](/ar/reference/engines/table-engines/mergetree-family/textindexes) معكوسًا على العمود &quot;comment&quot;
+    لتسريع تنفيذ هذا الاستعلام.
+    لاحظ أن التعليقات المكتوبة بأحرف صغيرة ستُفهرس للعثور على المصطلحات بغضّ النظر عن حالة الأحرف.
+
+    شغّل الأوامر التالية لإنشاء الفهرس:
+
+    ```sql
+    ALTER TABLE hackernews ADD INDEX comment_idx(lower(comment)) TYPE inverted;
+    ALTER TABLE hackernews MATERIALIZE INDEX comment_idx;
+    ```
+
+    تستغرق عملية تجسيد الفهرس بعض الوقت (للتحقق مما إذا كان الفهرس قد أُنشئ، استخدم جدول النظام `system.data_skipping_indices`).
+
+    شغّل الاستعلام مرة أخرى بعد إنشاء الفهرس:
+
+    ```sql title="Query"
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasToken(lower(comment), 'clickhouse');
+    ```
+
+    لاحظ أن الاستعلام لا يستغرق الآن سوى 0.248 ثانية مع الفهرس، بعد أن كان يستغرق 0.843 ثانية سابقًا من دونه:
+
+    ```response title="Response" highlight={1}
+    1 row in set. Elapsed: 0.248 sec. Processed 4.54 million rows, 1.79 GB (18.34 million rows/s., 7.24 GB/s.)
+    ┌─count()─┐
+    │    1145 │
+    └─────────┘
+    ```
+
+    يمكن استخدام عبارة [`EXPLAIN`](/ar/reference/statements/explain) لفهم سبب تحسين
+    إضافة هذا الفهرس لأداء الاستعلام بنحو 3.4 مرة.
+
+    ```response text="Query"
+    EXPLAIN indexes = 1
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasToken(lower(comment), 'clickhouse')
+    ```
+
+    ```response title="Response"
+    ┌─explain─────────────────────────────────────────┐
+    │ Expression ((Projection + Before ORDER BY))     │
+    │   Aggregating                                   │
+    │     Expression (Before GROUP BY)                │
+    │       Filter (WHERE)                            │
+    │         ReadFromMergeTree (default.hackernews)  │
+    │         Indexes:                                │
+    │           PrimaryKey                            │
+    │             Condition: true                     │
+    │             Parts: 4/4                          │
+    │             Granules: 3528/3528                 │
+    │           Skip                                  │
+    │             Name: comment_idx                   │
+    │             Description: inverted GRANULARITY 1 │
+    │             Parts: 4/4                          │
+    │             Granules: 554/3528                  │
+    └─────────────────────────────────────────────────┘
+    ```
+
+    لاحظ كيف أتاح الفهرس تخطّي عدد كبير من الحبيبات
+    لتسريع الاستعلام.
+
+    ومن الممكن الآن أيضًا البحث بكفاءة عن مصطلح واحد أو عن مجموعة من المصطلحات كلها:
+
+    ```sql title="Query"
+    SELECT count(*)
+    FROM hackernews
+    WHERE multiSearchAny(lower(comment), ['oltp', 'olap']);
+    ```
+
+    ```response title="Response"
+    ┌─count()─┐
+    │    2177 │
+    └─────────┘
+    ```
+
+    ```sql title="Query"
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasToken(lower(comment), 'avx') AND hasToken(lower(comment), 'sve');
+    ```
+
+    ```response title="Response"
+    ┌─count()─┐
+    │      22 │
+    └─────────┘
+    ```
+  </Step>
+</Steps>

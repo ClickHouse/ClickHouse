@@ -1,0 +1,607 @@
+---
+sidebarTitle: 'Matérialisation : materialized_view'
+slug: /integrations/dbt/materialization-materialized-view
+description: 'Documentation dédiée à la matérialisation materialized_view'
+keywords: ['clickhouse', 'dbt', 'materialized_view', 'rafraîchissable', 'Vues matérialisées', 'rattrapage']
+title: 'Vues matérialisées'
+doc_type: 'guide'
+---
+
+import ClickHouseSupportedBadge from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+La matérialisation `materialized_view` doit être un `SELECT` à partir d’une table source existante. Contrairement à PostgreSQL, une vue matérialisée dans ClickHouse n’est pas « statique » (et ne dispose pas d’opération REFRESH correspondante). Elle agit plutôt comme un **déclencheur d’insertion** : elle insère de nouvelles lignes dans une table cible en appliquant la transformation `SELECT` définie aux lignes insérées dans la table source. Consultez la [documentation ClickHouse sur les vues matérialisées](/fr/concepts/features/materialized-views/index) pour en savoir plus sur le fonctionnement des vues matérialisées dans ClickHouse.
+
+<Note>
+  Pour les concepts généraux de matérialisation et les configurations partagées (engine, order&#95;by, partition&#95;by, etc.), consultez la page [Materializations](/fr/integrations/connectors/data-ingestion/etl-tools/dbt/materializations).
+</Note>
+
+<div id="target-table-management">
+  ## Gestion de la table cible
+</div>
+
+Lorsque vous utilisez la matérialisation `materialized_view`, dbt-clickhouse doit créer à la fois une **vue matérialisée** et une **table cible** dans laquelle les lignes transformées sont insérées. Il existe deux façons de gérer la table cible :
+
+| Approche            | Description                                                                                                                                                                                                                                                                                                                                                                                                                                               | Statut   |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| **Cible implicite** | dbt-clickhouse crée et gère automatiquement la table cible au sein du même modèle. Le schéma de la table cible est déduit du SQL de la MV.                                                                                                                                                                                                                                                                                                                | Stable   |
+| **Cible explicite** | Vous définissez la table cible comme une matérialisation `table` distincte et vous la référencez depuis votre modèle de MV à l’aide de la macro `materialization_target_table()`. La MV est créée avec une clause `TO` pointant vers cette table. Cette fonctionnalité est disponible à partir de la **version 1.10 de dbt-clickhouse**. **Attention** : cette fonctionnalité est en bêta et l’API peut évoluer en fonction des retours de la communauté. | **Bêta** |
+
+L’approche choisie a une incidence sur la gestion des changements de schéma, des rafraîchissements complets et des configurations avec plusieurs MV. Les sections suivantes décrivent chaque approche en détail.
+
+<div id="implicit-target">
+  ## Matérialisation avec cible implicite
+</div>
+
+Il s’agit du comportement par défaut. Lorsque vous définissez un modèle `materialized_view`, l’adapter va :
+
+1. Créer une **table cible** portant le nom du modèle
+2. Créer une **vue matérialisée** ClickHouse nommée `<model_name>_mv`
+
+Le schéma de la table cible est inféré à partir des colonnes de l’instruction `SELECT` de la MV. Toutes les ressources (table cible + MV) partagent la même configuration de modèle.
+
+```sql
+-- models/events_mv.sql
+{{
+    config(
+        materialized='materialized_view',
+        engine='SummingMergeTree()',
+        order_by='(event_date, event_type)'
+    )
+}}
+
+SELECT
+    toStartOfDay(event_time) AS event_date,
+    event_type,
+    count() AS total
+FROM {{ source('raw', 'events') }}
+GROUP BY event_date, event_type
+```
+
+Voir le [fichier de test](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/materialized_view/test_materialized_view.py) pour d’autres exemples.
+
+<Tip>
+  Vous pouvez également définir `codec` et `ttl` au niveau des colonnes de la table cible en appliquant un contrat de modèle. Consultez [Configuration des colonnes](/fr/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#column-configuration) pour plus de détails.
+</Tip>
+
+<div id="multiple-materialized-views">
+  ### Plusieurs vues matérialisées
+</div>
+
+ClickHouse permet à plusieurs vues matérialisées d’écrire des enregistrements dans la même table cible. Pour prendre cela en charge dans dbt-clickhouse avec l’approche de cible implicite, vous pouvez construire un `UNION` dans votre fichier de modèle, en encadrant le SQL de chaque vue matérialisée par des commentaires de la forme `--my_mv_name:begin` et `--my_mv_name:end`.
+
+Par exemple, ce qui suit créera deux vues matérialisées qui écrivent toutes deux des données dans la même table de destination du modèle. Les noms des vues matérialisées auront la forme `<model_name>_mv1` et `<model_name>_mv2` :
+
+```sql
+--mv1:begin
+select a,b,c from {{ source('raw', 'table_1') }}
+--mv1:end
+union all
+--mv2:begin
+select a,b,c from {{ source('raw', 'table_2') }}
+--mv2:end
+```
+
+<Warning>
+  Lors de la mise à jour d&#39;un modèle avec plusieurs vues matérialisées (MV), en particulier lors du renommage de l&#39;une des MV,
+  dbt-clickhouse ne supprime pas automatiquement l&#39;ancienne MV. À la place,
+  vous verrez l&#39;avertissement suivant :
+
+  `Warning - Table <previous table name> was detected with the same pattern as model name <your model name> but was not found in this run. In case it is a renamed mv that was previously part of this model, drop it manually (!!!) `
+</Warning>
+
+<div id="how-to-iterate-the-target-table-schema">
+  ### Comment faire évoluer le schéma de la table cible
+</div>
+
+À partir de la **version 1.9.8 de dbt-clickhouse**, vous pouvez contrôler la façon dont le schéma de la table cible évolue lorsque `dbt run` rencontre des colonnes différentes dans le SQL de la MV.
+
+```python
+{{config(
+    materialized='materialized_view',
+    engine='MergeTree()',
+    order_by='(id)',
+    on_schema_change='fail'  # this setting
+)}}
+```
+
+Par défaut, dbt n’applique aucune modification à la table cible (valeur du paramètre `ignore`), mais vous pouvez modifier ce paramètre pour adopter le même comportement que la config `on_schema_change` [dans les modèles incrémentiels](https://docs.getdbt.com/docs/build/incremental-models#what-if-the-columns-of-my-incremental-model-change).
+
+Vous pouvez également utiliser ce paramètre comme mécanisme de sécurité. Si vous le définissez sur `fail`, le build échouera si les colonnes du SQL de la MV diffèrent de celles de la table cible créée lors du premier `dbt run`.
+
+<div id="data-catch-up">
+  ### Rattrapage des données
+</div>
+
+Par défaut, lors de la création ou de la recréation d&#39;une vue matérialisée (MV), la table cible est d&#39;abord remplie avec les données historiques avant la création de la MV elle-même (`catchup=True`). Vous pouvez désactiver ce comportement en définissant la config `catchup` sur `False`.
+
+```python
+{{config(
+    materialized='materialized_view',
+    engine='MergeTree()',
+    order_by='(id)',
+    catchup=False  # this setting
+)}}
+```
+
+| Opération                               | `catchup: True` (par défaut)                                   | `catchup: False`                                         |
+| --------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------- |
+| Déploiement initial (`dbt run`)         | Table cible backfillée avec les données historiques            | Table cible créée vide                                   |
+| Full refresh (`dbt run --full-refresh`) | Table cible recréée et backfillée avec les données historiques | Table cible recréée vide, **données existantes perdues** |
+| Fonctionnement normal                   | La vue matérialisée capture les nouvelles insertions           | La vue matérialisée capture les nouvelles insertions     |
+
+<Warning>
+  **Risque de perte de données avec un full refresh**
+
+  L&#39;utilisation de `catchup: False` avec `dbt run --full-refresh` **supprimera toutes les données existantes** de la table cible. La table sera recréée vide et ne capturera ensuite que les nouvelles données. Assurez-vous de disposer de sauvegardes si vous pourriez avoir besoin des données historiques plus tard.
+</Warning>
+
+<div id="explicit-target">
+  ## Matérialisation avec cible explicite (Bêta)
+</div>
+
+<Warning>
+  **Bêta**
+
+  Cette fonctionnalité est en bêta et disponible à partir de la **version 1.10 de dbt-clickhouse**. L’API peut évoluer en fonction des retours de la communauté.
+</Warning>
+
+Par défaut, dbt-clickhouse crée et gère à la fois la table cible et les vues matérialisées au sein d’un même modèle (l’approche de [cible implicite](#implicit-target) décrite ci-dessus). Cette approche présente certaines limites :
+
+* Toutes les ressources (table cible + MV) partagent la même configuration. Si plusieurs MV pointent vers la même table cible, elles doivent être définies ensemble à l’aide de la syntaxe `UNION ALL`.
+* Aucune de ces ressources ne peut être gérée séparément ; elles doivent toutes être administrées à l’aide du même fichier de modèle.
+* Vous ne pouvez pas facilement contrôler le nom de chaque MV.
+* Tous les paramètres sont partagés entre la table cible et les MV, ce qui complique la configuration individuelle de chaque ressource et l’identification de la configuration associée à chacune.
+
+La fonctionnalité de **cible explicite** vous permet de définir séparément la table cible comme une matérialisation `table` classique, puis d’y faire référence depuis vos modèles de vue matérialisée.
+
+<div id="explicit-target-benefits">
+  ### Avantages
+</div>
+
+* **Ressources entièrement séparées** : chaque ressource peut désormais être définie séparément, ce qui améliore la lisibilité
+* **Ressources 1:1 entre dbt et CH** : vous pouvez désormais utiliser les outils dbt pour les gérer et les faire évoluer séparément.
+* **Différentes configurations désormais disponibles** : une configuration différente peut désormais être appliquée à chacune.
+* **Plus besoin de respecter les conventions de nommage** : toutes les ressources sont désormais créées avec le nom que vous leur donnez, et non avec un nom personnalisé suffixé par `_mv` pour les MV.
+
+<div id="explicit-target-limitations">
+  ### Limitations
+</div>
+
+* La définition de la table cible n’est pas naturelle pour dbt : il ne s’agit pas d’une requête SQL qui lira depuis une table source, vous perdez donc ici les validations dbt. Le SQL de la MV sera tout de même validé à l’aide des utilitaires dbt, et sa compatibilité avec les colonnes de la table cible sera validée au niveau de CH.
+* **Nous avons identifié quelques problèmes liés aux limitations de la fonction `ref()`** : nous devons l’utiliser pour référencer les modèles entre eux, mais elle ne peut servir qu’à référencer des modèles upstream, pas downstream. Cela pose certains problèmes pour cette implémentation. Nous avons créé une issue dans le dépôt dbt-core et échangeons actuellement avec eux [pour chercher des solutions possibles (dbt-labs/dbt-core#12319)](https://github.com/dbt-labs/dbt-core/issues/12319) :
+  * Lorsque `ref()` est appelé depuis l’intérieur du bloc config, il renvoie le modèle courant, et non celui partagé. Cela nous empêche de le définir dans la section config(), et nous oblige à utiliser un commentaire pour ajouter cette dépendance. Nous suivons le même modèle que celui défini dans la documentation dbt avec [l’approche &quot;--depends&#95;on:&quot;](https://docs.getdbt.com/reference/dbt-jinja-functions/ref#forcing-dependencies).
+  * `ref()` fonctionne dans notre cas car il force la création de la table cible en premier, mais dans le graphe des dépendances de la documentation générée, la table cible sera représentée comme une autre dépendance upstream, et non downstream, ce qui le rend un peu plus difficile à comprendre.
+  * `unit-test` nous oblige également à définir des données pour la table cible, même si l’idée n’est pas de la lire. Le contournement consiste simplement à laisser les données de cette table vides.
+
+<div id="explicit-target-usage">
+  ### Utilisation
+</div>
+
+**Étape 1 : Définissez la table cible en tant que modèle de table standard**
+
+Modèle `events_daily.sql`:
+
+```sql
+{{
+    config(
+        materialized='table',
+        engine='SummingMergeTree()',
+        order_by='(event_date, event_type)',
+        partition_by='toYYYYMM(event_date)'
+    )
+}}
+
+SELECT
+    toDate(now()) AS event_date,
+    '' AS event_type,
+    toUInt64(0) AS total
+WHERE 0  -- Creates empty table with correct schema
+```
+
+C’est la solution de contournement que nous mentionnons dans la section sur les limitations. Vous risquez d’y perdre certaines validations dbt, mais le schéma sera tout de même vérifié au niveau de ClickHouse.
+
+**Étape 2 : Définir des vues matérialisées qui pointent vers la table cible**
+
+Par exemple, vous pouvez définir différentes vues matérialisées dans différents modèles de cette manière, y compris en les faisant pointer vers la même table cible. Notez le nouvel appel de macro `{{ materialization_target_table(ref('events_daily')) }}`, qui configure la table cible pour la vue matérialisée.
+
+Modèle `page_events_aggregator.sql`:
+
+```sql
+{{ config(materialized='materialized_view') }}
+{{ materialization_target_table(ref('events_daily')) }}
+
+SELECT
+    toStartOfDay(event_time) AS event_date,
+    event_type,
+    count() AS total
+FROM {{ source('raw', 'page_events') }}
+GROUP BY event_date, event_type
+```
+
+Modèle `mobile_events_aggregator.sql` :
+
+```sql
+{{ config(materialized='materialized_view') }}
+{{ materialization_target_table(ref('events_daily')) }}
+
+SELECT
+    toStartOfDay(event_time) AS event_date,
+    event_type,
+    count() AS total
+FROM {{ source('raw', 'mobile_events') }}
+GROUP BY event_date, event_type
+```
+
+<div id="explicit-target-configuration">
+  ### Options de configuration
+</div>
+
+Lorsque vous utilisez des tables cibles explicites, en plus des [configurations générales de matérialisation](/fr/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#general-materialization-configurations) et des [configurations propres à la table](/fr/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-table), les configurations suivantes s&#39;appliquent :
+
+**Pour la table cible (`materialized='table'`) :**
+
+| Option                                | Description                                                                                                                                                                                                                                                                                                            | Par défaut                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mv_on_schema_change`                 | Définit comment gérer les changements de schéma lorsque la table est utilisée par des MV gérées par dbt. Suit le même comportement que la configuration `on_schema_change` [dans les modèles incrémentiels](https://docs.getdbt.com/docs/build/incremental-models#what-if-the-columns-of-my-incremental-model-change). | **Attention** : un modèle `materialized='table'` se comporte normalement s&#39;il n&#39;a aucune MV pointant vers lui. Dans ce cas, même si ce paramètre est défini, il sera ignoré. Si la table est la table cible de MV, cette configuration prendra par défaut la valeur `mv_on_schema_change='fail'` afin de protéger les données qu&#39;elle contient. |
+| `repopulate_from_mvs_on_full_refresh` | Avec `--full-refresh`, au lieu d&#39;exécuter le SQL de la table, reconstruit la table en exécutant des INSERT-SELECT à partir du SQL de toutes les MV qui pointent vers elle.                                                                                                                                         | `False`                                                                                                                                                                                                                                                                                                                                                     |
+
+**Pour la vue matérialisée (`materialized='materialized_view'`) :**
+
+| Option    | Description                                                                           | Par défaut |
+| --------- | ------------------------------------------------------------------------------------- | ---------- |
+| `catchup` | Indique s&#39;il faut recharger les données historiques lors de la création de la MV. | `True`     |
+
+<Note>
+  En général, vous ne définirez que `catchup` sur `True` pour les MV, ou `repopulate_from_mvs_on_full_refresh` sur `True` pour leurs tables cibles. Si vous définissez les deux sur `True`, cela peut dupliquer les données.
+</Note>
+
+<div id="explicit-target-common-operations">
+  ### Opérations courantes
+</div>
+
+<div id="explicit-target-full-refresh">
+  #### full refresh avec cibles explicites
+</div>
+
+Lors de l’utilisation de `--full-refresh`, les tables cibles explicites seront recréées (vous risquez donc de perdre des données si une ingestion est en cours pendant ce processus). Le comportement variera selon vos configurations :
+
+**Option 1 : comportement par défaut de `--full-refresh`. Tout est recréé, mais pendant la recréation des MV, la table cible sera vide ou partiellement chargée.**
+
+Tout est supprimé puis recréé. Si vous souhaitez réinsérer les données à l’aide du SQL des MV, conservez le paramètre `catchup=True` :
+
+```sql
+-- models/page_events_aggregator.sql
+{{ config(
+    materialized='materialized_view',
+    catchup=True  -- this is the default value so you don't need to actually set it.
+) }}
+{{ materialization_target_table(ref('events_daily')) }}
+...
+```
+
+**Option 2 : Je veux recréer la table cible et je ne veux pas voir ma table vide pendant la recréation des MV.**
+
+Si vous devez d&#39;abord mettre à jour le SQL des MV, vous pouvez y définir `catchup=False`, puis exécuter un `dbt run` ou un `dbt run --full-refresh` sur les MV. Assurez-vous que les MV sont créées avant d&#39;exécuter `--full-refresh` sur la table cible, car cette opération s&#39;appuie sur les définitions des MV dans ClickHouse.
+
+Définissez `repopulate_from_mvs_on_full_refresh=True` dans le model de la table cible. Lors d&#39;un `dbt run --full-refresh`, cela va :
+
+1. Créer une nouvelle table temporaire
+2. Exécuter INSERT-SELECT en utilisant le SQL de chaque MV
+3. Permuter les tables de manière atomique
+
+Ainsi, vous ne verrez pas votre table vide pendant la recréation des MV.
+
+```sql
+-- models/events_daily.sql
+{{
+    config(
+        materialized='table',
+        engine='SummingMergeTree()',
+        order_by='(event_date, event_type)',
+        repopulate_from_mvs_on_full_refresh=True
+    )
+}}
+...
+```
+
+<div id="explicit-target-changing">
+  #### Modifier la table cible
+</div>
+
+Vous ne pouvez pas modifier la table cible d’une MV sans `--full-refresh`. Si vous essayez d’exécuter un `dbt run` normal après avoir modifié la référence `materialization_target_table()`, l’exécution échouera avec un message d’erreur indiquant que la cible a changé.
+
+Pour modifier la cible :
+
+1. Mettez à jour l’appel à `materialization_target_table()`
+2. Exécutez `dbt run --full-refresh -s your_mv_model`
+
+<div id="explicit-target-troubleshooting">
+  ### Dépannage des problèmes courants
+</div>
+
+<div id="target-table-empty">
+  #### La table cible est vide pendant ou après l’exécution de `run`
+</div>
+
+Cela peut se produire pour plusieurs raisons :
+
+* Les vues matérialisées peuvent être configurées avec `catchup=False`, ou la table cible avec `repopulate_from_mvs_on_full_refresh=False` ; dans ce cas, aucun backfill n’est effectué lors de la création des vues matérialisées ou de la recréation de la table cible. C’est le comportement attendu. Si vous souhaitez réinsérer les données à l’aide du SQL des vues matérialisées, assurez-vous de définir `catchup=True` dans la vue matérialisée (c’est la valeur par défaut) ou `repopulate_from_mvs_on_full_refresh=True` dans la table cible. Veillez à ne pas activer les deux en même temps afin d’éviter les doublons. Consultez la [section de configuration](#explicit-target-configuration) pour plus de détails.
+* Lors de l’exécution de `dbt run --full-refresh`, si les vues matérialisées utilisent la valeur par défaut `catchup=True`, la cible sera recréée et les MV réinséreront les données de manière séquentielle. Pour éviter cette situation, consultez la section [Full refresh with explicit targets](#explicit-target-full-refresh).
+
+<div id="full-refresh-with-repopulate-from-mvs-on-full-refresh">
+  #### `dbt run --full-refresh` sur une table cible avec `repopulate_from_mvs_on_full_refresh=True` utilise la logique d’anciennes versions de vues matérialisées, et non celle du SQL actuellement présent dans le projet
+</div>
+
+`repopulate_from_mvs_on_full_refresh=True` utilise le SQL MV existant déjà défini dans ClickHouse. Pour garantir que la nouvelle définition de la vue matérialisée est bien utilisée, exécutez un `dbt run` pour chaque vue matérialisée avant d’exécuter un `dbt run --full-refresh` sur la table cible.
+
+<div id="duplicate-data">
+  #### Il y a des données en double après l’exécution d’un `run`
+</div>
+
+Raisons possibles :
+
+* `catchup=True` sur les vues matérialisées et `repopulate_from_mvs_on_full_refresh=True` sur la table cible peuvent être activés tous les deux : n’en gardez qu’un seul, selon les opérations que vous souhaitez exécuter. Consultez la [section de configuration](#explicit-target-configuration) pour plus de détails.
+* La table cible n’est pas définie avec `WHERE 0` : elle doit être créée vide, mais la requête interne peut insérer des données si `WHERE 0` n’est pas inclus. Assurez-vous que la clause est bien présente.
+
+<div id="data-loss-active-ingestion">
+  #### Perte de données lors d’une ingestion active après l’exécution d’un `dbt run --full-refresh`
+</div>
+
+Certaines lignes de la table source sont absentes de la table cible après l’exécution d’un `dbt run --full-refresh`.
+Les vues matérialisées de ClickHouse agissent comme des déclencheurs à l’insertion — elles ne capturent les données que tant qu’elles existent. Lors d’un full refresh, il y a un court laps de temps pendant lequel la MV est supprimée puis recréée (la « fenêtre aveugle »). Les lignes insérées dans la table source pendant cette fenêtre ne sont donc pas capturées. Consultez la section [Comportement lors d’une ingestion active](#behavior-during-active-ingestion) pour plus de détails.
+
+<div id="debugging-techniques">
+  ### Techniques de débogage
+</div>
+
+<div id="check-mv-target">
+  #### Vérifier la cible actuelle d’une MV dans ClickHouse
+</div>
+
+Interrogez `system.tables` pour voir dans quelle table une vue matérialisée écrit :
+
+```sql
+SELECT
+    name as mv_name,
+    replaceRegexpOne(
+        create_table_query,
+        '.*TO\\s+`?([^`\\s(]+)`?\\.`?([^`\\s(]+)`?.*',
+        '\\1.\\2'
+    ) AS target_table
+FROM system.tables
+WHERE database = 'your_schema'
+  AND engine = 'MaterializedView'
+```
+
+<div id="check-dbt-recognition">
+  #### Vérifier si dbt reconnaît une table comme table cible d’une vue matérialisée
+</div>
+
+Lors d’une exécution de dbt, recherchez ce message dans le log :
+
+> La table `<table_name>` est utilisée comme table cible par une vue matérialisée gérée par dbt. La valeur par défaut de mv&#95;on&#95;schema&#95;change est définie sur &quot;fail&quot; afin d’éviter toute perte de données.
+
+Si ce message apparaît, dbt a détecté que la table sert de table cible à au moins une vue matérialisée gérée par dbt. Si vous vous attendez à voir ce message mais qu’il n’apparaît pas, vérifiez que :
+
+* Le modèle de vue matérialisée définit correctement `{{ materialization_target_table(ref('your_target')) }}`
+* Le modèle de vue matérialisée a `materialized='materialized_view'` dans sa config
+* La vue matérialisée et la table cible ont toutes deux été exécutées au moins une fois
+
+<div id="migration-implicit-to-explicit">
+  ### Migration d’une cible implicite vers une cible explicite
+</div>
+
+Si vous avez des modèles de vue matérialisée existants qui utilisent l’approche de cible implicite et que vous souhaitez passer à l’approche de cible explicite, suivez ces étapes :
+
+**1. Créez le modèle de table cible**
+
+Créez un nouveau fichier de modèle avec `materialized='table'` qui définit le même schéma que la table cible de la MV actuelle. Utilisez une clause `WHERE 0` pour créer une table vide. Utilisez le même nom que le modèle actuel de vue matérialisée implicite. Vous pourrez ensuite utiliser ce modèle pour faire évoluer la table cible.
+
+```sql
+-- models/events_daily.sql
+{{
+    config(
+        materialized='table',
+        engine='MergeTree()',
+        order_by='(event_date, event_type)'
+    )
+}}
+
+SELECT
+    toDate(now()) AS event_date,
+    '' AS event_type,
+    toUInt64(0) AS total
+WHERE 0
+```
+
+**2. Mettez à jour vos modèles de MV**
+
+Créez de nouveaux modèles, chacun incluant le SQL de la MV ainsi que l’appel à la macro `materialization_target_table()` pointant vers la nouvelle table cible. Si vous utilisiez auparavant `UNION ALL`, supprimez cette partie ainsi que les commentaires.
+
+Pour les noms des modèles, vous devrez suivre cette convention de nommage :
+
+* si une seule MV était définie, elle portera le nom : `<old_model_name>_mv`
+* si plusieurs MV étaient définies, chacune portera le nom : `<old_model_name>_mv_<name_in_comments>`
+
+Auparavant, dans `my_model.sql` (table cible implicite, modèle unique avec UNION ALL) :
+
+```sql
+--mv1:begin
+select a, b, c from {{ source('raw', 'table_1') }}
+--mv1:end
+union all
+--mv2:begin
+select a, b, c from {{ source('raw', 'table_2') }}
+--mv2:end
+```
+
+Après (cible explicite, fichiers de modèles distincts) :
+
+```sql
+-- models/my_model_mv_mv1.sql
+{{ config(materialized='materialized_view') }}
+{{ materialization_target_table(ref('events_daily')) }}
+
+select a, b, c from {{ source('raw', 'table_1') }}
+```
+
+```sql
+-- models/my_model_mv_mv2.sql
+{{ config(materialized='materialized_view') }}
+{{ materialization_target_table(ref('events_daily')) }}
+
+select a, b, c from {{ source('raw', 'table_2') }}
+```
+
+**3. Modifiez-les selon vos besoins en suivant les instructions de la section [cible explicite](#explicit-target).**
+
+<div id="behavior-comparison">
+  ## Comparaison du comportement des approches à cible implicite et explicite
+</div>
+
+<div id="general-behavior">
+  ### Comportement général
+</div>
+
+| Opération                 | Cible implicite                                                                                                                                                                                                                                                                                                                                                                                               | Cible explicite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Première exécution de dbt | Toutes les ressources sont créées                                                                                                                                                                                                                                                                                                                                                                             | Toutes les ressources sont créées                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Exécution suivante de dbt | **Les ressources ne peuvent pas être gérées individuellement, tout se fait ensemble :**<br /><br />**table cible** : <br />les modifications sont gérées avec le paramètre `on_schema_change`. Par défaut, sa valeur est `ignore`, donc les nouvelles colonnes ne sont pas prises en compte.<br /><br />**Vues matérialisées** : elles sont toutes mises à jour via des opérations `alter table modify query` | **Les modifications peuvent être appliquées individuellement :<br /><br />table cible** : <br />détection automatique pour déterminer s&#39;il s&#39;agit de tables cibles issues de vues matérialisées définies par dbt. Si c&#39;est le cas, l&#39;évolution des colonnes est gérée par défaut avec le paramètre `mv_on_schema_change` défini sur `fail`, ce qui provoque un échec en cas de modification des colonnes. Nous avons ajouté cette valeur par défaut comme couche de protection<br /><br />**Vues matérialisées** : leur SQL est mis à jour via des opérations `alter table modify query`. |
+| dbt run --full-refresh    | **Les ressources ne peuvent pas être gérées individuellement, tout se fait ensemble :<br /><br />table cible** : <br />la table cible est recréée vide. `catchup` permet de configurer un backfill avec le SQL de toutes les vues matérialisées à la fois. `catchup` vaut `True` par défaut<br /><br />**Vues matérialisées** : elles sont toutes recréées.                                                   | **Les modifications seront appliquées individuellement :<br /><br />table cible:** sera recréée comme d&#39;habitude.<br /><br />**Vues matérialisées** : suppression puis recréation. `catchup` est disponible pour un backfill initial. `catchup` vaut `True` par défaut. <br /><br />**Remarque : pendant le processus, la table cible sera vide ou partiellement chargée jusqu&#39;à ce que les vues matérialisées soient recréées. Pour éviter cela, consultez la section suivante sur la manière de faire évoluer la table cible.**                                                                 |
+
+<div id="behavior-during-active-ingestion">
+  ### Comportement pendant l’ingestion active
+</div>
+
+Lorsque vous faites évoluer vos modèles, vous devez garder à l’esprit la manière dont les différentes opérations interagissent avec les données en cours d’insertion :
+
+* Comme les vues matérialisées de ClickHouse agissent comme des **déclencheurs d’insertion**, elles ne capturent les données que tant qu’elles existent. Si une vue matérialisée est supprimée puis recréée (par exemple lors d’un `--full-refresh`), les lignes insérées dans la table source pendant cet intervalle ne seront **pas** traitées par la vue matérialisée. On dit alors que la vue matérialisée est « aveugle ».
+* Les différents processus de `catchup` reposent tous sur des opérations `INSERT INTO ... SELECT` qui utilisent le SQL des vues matérialisées et sont indépendants de leur fonctionnement. Une fois l’`INSERT` démarré, les nouvelles données ne sont pas capturées par celui-ci, mais elles le seront par la vue matérialisée attachée.
+
+Le tableau suivant résume le niveau de sécurité de chaque opération lorsque des insertions sont en cours sur la table source.
+
+<div id="ingestion-implicit-target">
+  #### Opérations sur la cible implicite
+</div>
+
+| Opération                         | Processus interne                                                                                                                                                                            | Sécurité pendant les insertions                                                                                                                                              |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Premier `dbt run`                 | 1. Créer la table cible<br />2. Insérer les données (si `catchup=True`)<br />3. Créer des vues matérialisées                                                                                 | ⚠️ **La vue matérialisée ne capte rien entre les étapes 1 et 3.** Les lignes insérées dans la source pendant cet intervalle ne sont pas capturées.                           |
+| Exécutions suivantes de `dbt run` | `ALTER TABLE ... MODIFY QUERY`                                                                                                                                                               | ✅ Sûr. La vue matérialisée est mise à jour de façon atomique.                                                                                                                |
+| `dbt run --full-refresh`          | 1. Créer une table de sauvegarde<br />2. Insérer les données (si `catchup=True`)<br />3. Supprimer les vues matérialisées<br />4. Permuter les tables<br />5. Recréer les vues matérialisées | ⚠️ **La vue matérialisée ne capte rien pendant sa recréation.** Les données insérées dans la source entre les étapes 3 et 5 n’apparaîtront pas dans la nouvelle table cible. |
+
+<div id="ingestion-explicit-target">
+  #### Opérations sur cible explicite
+</div>
+
+**Modèles de vue matérialisée :**
+
+| Opération                           | Processus interne                                                                       | Sécurité pendant les insertions                                                                                                                                                                                                                                                                                  |
+| ----------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Premier `dbt run`                   | 1. Créer la MV (avec la clause `TO`)<br />2. Exécuter le rattrapage (si `catchup=True`) | ✅ La MV est créée en premier, donc les nouvelles insertions sont capturées immédiatement.<br />⚠️ **Le rattrapage peut créer des doublons** — la requête de backfill peut chevaucher des lignes déjà traitées par la MV. Sans risque si vous utilisez un moteur de déduplication (par ex. `ReplacingMergeTree`). |
+| `dbt run` suivants                  | `ALTER TABLE ... MODIFY QUERY`                                                          | ✅ Sans risque. La MV est mise à jour de façon atomique.                                                                                                                                                                                                                                                          |
+| `dbt run --full-refresh` sur les MV | 1. Supprimer puis recréer la MV<br />2. Exécuter le rattrapage (si `catchup=True`)      | ⚠️ **La MV est inactive pendant sa recréation** (entre la suppression et la création).<br />⚠️ **Le rattrapage peut créer des doublons** si des insertions ont lieu en parallèle.                                                                                                                                |
+
+**Modèle de table cible :**
+
+| Opération                                                                | Processus interne                                                                                                                       | Sécurité pendant les insertions                                                                                                                                                                |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dbt run`                                                                | Les changements de schéma sont appliqués conformément au paramètre `mv_on_schema_change`                                                | ✅ Sans risque. Aucun déplacement de données.                                                                                                                                                   |
+| `dbt run --full-refresh` (par défaut)                                    | Recréer la table (en la laissant vide)                                                                                                  | ⚠️ **La table cible est vide** jusqu’à ce que les MV la réalimentent. Les MV continuent d’insérer dans la nouvelle table une fois qu’elle existe.                                              |
+| `dbt run --full-refresh` avec `repopulate_from_mvs_on_full_refresh=True` | 1. Créer une table de sauvegarde<br />2. Insérer les données à l’aide du SQL de chaque MV<br />3. Permuter les tables de façon atomique | ⚠️ **La MV est inactive pendant la recréation.** Les données insérées entre les étapes 1 et 3 n’apparaîtront pas dans la nouvelle table. **Cela pourra changer dans les prochaines versions**. |
+
+<Tip>
+  **Recommandations pour les environnements de production avec ingestion active**
+
+  * **Mettez l’ingestion en pause pendant les opérations dbt si possible** : toutes les opérations seront ainsi sûres et aucune donnée ne sera perdue.
+  * **Utilisez si possible un moteur de déduplication** (par ex. `ReplacingMergeTree`) sur la table cible pour gérer les doublons potentiels dus aux chevauchements de rattrapage.
+  * **Privilégiez `ALTER TABLE ... MODIFY QUERY`** (`dbt run` normal sans `--full-refresh`) lorsque c’est possible — c’est toujours sûr.
+  * **Soyez attentif aux fenêtres à risque** pendant les opérations dbt.
+</Tip>
+
+<div id="refreshable-materialized-views">
+  ## Refreshable Materialized Views
+</div>
+
+Les [vues matérialisées actualisables](/fr/concepts/features/materialized-views/refreshable-materialized-view) sont un type particulier de vue matérialisée dans ClickHouse qui réexécute périodiquement la requête et en stocke le résultat, à l&#39;image du fonctionnement des vues matérialisées dans d&#39;autres bases de données. Cela est utile lorsque vous avez besoin de snapshots ou d&#39;aggregations périodiques plutôt que de déclencheurs d’insertion en temps réel.
+
+<Tip>
+  Les vues matérialisées actualisables peuvent être utilisées avec les approches [implicit target](#implicit-target) et [explicit target](#explicit-target). La `config` `refreshable` est indépendante de la manière dont la target table est gérée.
+</Tip>
+
+Pour utiliser une vue matérialisée actualisable, ajoutez un objet de `config` `refreshable` à votre modèle MV avec les options suivantes :
+
+| Option                        | Description                                                                                                                                                                                  | Requis | Valeur par défaut |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ----------------- |
+| refresh&#95;interval          | La clause interval (requise)                                                                                                                                                                 | Oui    |                   |
+| randomize                     | La clause de randomisation, qui apparaîtra après `RANDOMIZE FOR`                                                                                                                             |        |                   |
+| append                        | Si défini sur `True`, chaque actualisation insère des rows dans la table sans supprimer les rows existantes. L&#39;insert n&#39;est pas atomique, comme avec un `INSERT SELECT` classique.   |        | False             |
+| depends&#95;on                | Une liste de dependencies pour la MV actualisable. Fournissez les dependencies au format suivant `{schema}.{view_name}`                                                                      |        |                   |
+| depends&#95;on&#95;validation | Indique s&#39;il faut valider l&#39;existence des dependencies fournies dans `depends_on`. Si une dependency ne contient pas de schéma, la validation s&#39;effectue sur le schéma `default` |        | False             |
+
+<div id="refreshable-implicit-example">
+  ### Exemple avec cible implicite
+</div>
+
+```python
+{{
+    config(
+        materialized='materialized_view',
+        engine='MergeTree()',
+        order_by='(event_date)',
+        refreshable={
+            "interval": "EVERY 5 MINUTE",
+            "randomize": "1 MINUTE",
+            "append": True,
+            "depends_on": ['schema.depend_on_model'],
+            "depends_on_validation": True
+        }
+    )
+}}
+
+SELECT
+    toStartOfDay(event_time) AS event_date,
+    count() AS total
+FROM {{ source('raw', 'events') }}
+GROUP BY event_date
+```
+
+<div id="refreshable-explicit-example">
+  ### Exemple avec une cible explicite
+</div>
+
+```python
+{{
+    config(
+        materialized='materialized_view',
+        refreshable={
+            "interval": "EVERY 1 HOUR",
+            "append": False
+        }
+    )
+}}
+{{ materialization_target_table(ref('events_daily')) }}
+
+SELECT
+    toStartOfDay(event_time) AS event_date,
+    event_type,
+    count() AS total
+FROM {{ source('raw', 'events') }}
+GROUP BY event_date, event_type
+```
+
+<div id="refreshable-limitations">
+  ### Limites
+</div>
+
+* Lors de la création d&#39;une vue matérialisée actualisable (MV) dans ClickHouse avec une dépendance, ClickHouse ne renvoie pas d&#39;erreur si la
+  dépendance spécifiée n&#39;existe pas au moment de la création. À la place, la MV actualisable reste dans un
+  état inactif, en attendant que la dépendance soit disponible avant de commencer à traiter les mises à jour ou à s&#39;actualiser.
+  Ce comportement est intentionnel, mais il peut retarder la disponibilité des données si la dépendance requise n&#39;est pas mise en place
+  rapidement. Assurez-vous que toutes les dépendances sont correctement définies et existent avant de créer une vue matérialisée
+  actualisable.
+* À ce jour, il n&#39;existe pas de véritable « liaison dbt » entre la vue matérialisée et ses dépendances, de sorte que l&#39;ordre de création n&#39;est pas
+  garanti.
+* La fonctionnalité d&#39;actualisation n&#39;a pas été testée avec plusieurs vues matérialisées pointant vers le même modèle cible.

@@ -10,6 +10,7 @@
 #include <IO/PeekableReadBuffer.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
+#include <cstdint>
 #include <cstdlib>
 #include <bit>
 #include <utility>
@@ -45,43 +46,100 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
+/// Converts num_bytes hex-encoded bytes from src to dst in a single pass, folding validity into
+/// `error`: every hex digit is looked up once, and any invalid digit (which unhex maps to 0xff)
+/// raises the high nibble of `error`. Valid nibbles are 0..15, so `error & 0xF0` is nonzero iff
+/// some digit was invalid. This fuses validation and conversion, avoiding a separate scan.
 template <size_t num_bytes, typename IteratorSrc, typename IteratorDst>
-inline void parseHex(IteratorSrc src, IteratorDst dst)
+inline void parseHexChecked(IteratorSrc src, IteratorDst dst, UInt8 & error)
 {
     size_t src_pos = 0;
     size_t dst_pos = 0;
     for (; dst_pos < num_bytes; ++dst_pos, src_pos += 2)
-        dst[dst_pos] = unhex2(reinterpret_cast<const char *>(&src[src_pos]));
+    {
+        const UInt8 hi = unhex(static_cast<char>(src[src_pos]));
+        const UInt8 lo = unhex(static_cast<char>(src[src_pos + 1]));
+        error |= hi | lo;
+        dst[dst_pos] = static_cast<UInt8>(hi * 16 + lo);
+    }
+}
+
+template <typename ReturnType>
+static ReturnType parseUUIDImpl(std::span<const UInt8> src, UUID & uuid)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    const auto * src_ptr = src.data();
+    const auto size = src.size();
+
+    /// Decode into a local UUID and copy into `uuid` only after validation passes. parseHexChecked
+    /// writes the destination as it converts, so decoding straight into `uuid` would clobber the
+    /// caller's value on an invalid input; tryParseUUID / tryReadUUIDText must leave it unchanged.
+    UUID tmp;
+
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    const std::reverse_iterator<UInt8 *> dst(reinterpret_cast<UInt8 *>(&tmp) + sizeof(UUID));
+#else
+    auto * dst = reinterpret_cast<UInt8 *>(&tmp);
+#endif
+    if (size == 36)
+    {
+        /// Validate the 8-4-4-4-12 layout while converting: dashes at positions 8, 13, 18, 23 and hex
+        /// digits everywhere else. Conversion and hex validation happen in one pass (see parseHexChecked).
+        UInt8 error = 0;
+        parseHexChecked<4>(src_ptr, dst + 8, error);
+        parseHexChecked<2>(src_ptr + 9, dst + 12, error);
+        parseHexChecked<2>(src_ptr + 14, dst + 14, error);
+        parseHexChecked<2>(src_ptr + 19, dst, error);
+        parseHexChecked<6>(src_ptr + 24, dst + 2, error);
+        const bool bad_dashes = src_ptr[8] != '-' || src_ptr[13] != '-' || src_ptr[18] != '-' || src_ptr[23] != '-';
+        if (bad_dashes || (error & 0xF0))
+        {
+            if constexpr (throw_exception)
+                throw Exception(
+                    ErrorCodes::CANNOT_PARSE_UUID,
+                    "Cannot parse UUID from String: invalid format, expected 32 or 36 hexadecimal digits with dashes at positions 8, 13, 18, 23");
+            else
+                return ReturnType(false);
+        }
+    }
+    else if (size == 32)
+    {
+        UInt8 error = 0;
+        parseHexChecked<8>(src_ptr, dst + 8, error);
+        parseHexChecked<8>(src_ptr + 16, dst, error);
+        if (error & 0xF0)
+        {
+            if constexpr (throw_exception)
+                throw Exception(
+                    ErrorCodes::CANNOT_PARSE_UUID,
+                    "Cannot parse UUID from String: invalid format, expected 32 hexadecimal digits");
+            else
+                return ReturnType(false);
+        }
+    }
+    else
+    {
+        if constexpr (throw_exception)
+            throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Unexpected length when trying to parse UUID ({})", size);
+        else
+            return ReturnType(false);
+    }
+
+    uuid = tmp;
+    return ReturnType(true);
 }
 
 UUID parseUUID(std::span<const UInt8> src)
 {
     UUID uuid;
-    const auto * src_ptr = src.data();
-    const auto size = src.size();
-
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    const std::reverse_iterator<UInt8 *> dst(reinterpret_cast<UInt8 *>(&uuid) + sizeof(UUID));
-#else
-    auto * dst = reinterpret_cast<UInt8 *>(&uuid);
-#endif
-    if (size == 36)
-    {
-        parseHex<4>(src_ptr, dst + 8);
-        parseHex<2>(src_ptr + 9, dst + 12);
-        parseHex<2>(src_ptr + 14, dst + 14);
-        parseHex<2>(src_ptr + 19, dst);
-        parseHex<6>(src_ptr + 24, dst + 2);
-    }
-    else if (size == 32)
-    {
-        parseHex<8>(src_ptr, dst + 8);
-        parseHex<8>(src_ptr + 16, dst);
-    }
-    else
-        throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Unexpected length when trying to parse UUID ({})", size);
-
+    parseUUIDImpl<void>(src, uuid);
     return uuid;
+}
+
+bool tryParseUUID(std::span<const UInt8> src, UUID & uuid)
+{
+    return parseUUIDImpl<bool>(src, uuid);
 }
 
 void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
@@ -177,15 +235,46 @@ bool checkStringByFirstCharacterAndAssertTheRestCaseInsensitive(const char * s, 
 }
 
 
+/// Diagnostic predicate for the bounds-corruption class of bug tracked in
+/// `https://github.com/ClickHouse/ClickHouse/issues/104692`. Validates the
+/// caller-supplied `[rb.position(), end)` source range against the working
+/// buffer `[rb.buffer().begin(), rb.buffer().end())` WITHOUT performing
+/// relational pointer comparisons on the untrusted range. C++ relational
+/// comparisons between pointers from different allocations are UB; if
+/// `working_buffer` is corrupt and its begin/end / `end` come from different
+/// allocations, the predicates `end >= rb.position()`, `end <= rb.buffer().end()`,
+/// and `rb.position() >= rb.buffer().begin()` could trigger UB before
+/// `chassert` ever reports the bug. Compare the four pointers as integer
+/// addresses instead.
+static void assertReadBufferRangeForAppend(ReadBuffer & rb, const char * end)
+{
+    auto pos_addr = reinterpret_cast<std::uintptr_t>(rb.position());
+    auto end_addr = reinterpret_cast<std::uintptr_t>(end);
+    auto wb_begin_addr = reinterpret_cast<std::uintptr_t>(rb.buffer().begin());
+    auto wb_end_addr = reinterpret_cast<std::uintptr_t>(rb.buffer().end());
+    chassert(pos_addr <= end_addr);
+    chassert(end_addr <= wb_end_addr);
+    chassert(pos_addr >= wb_begin_addr);
+}
+
 template <typename T>
 static void appendToStringOrVector(T & s, ReadBuffer & rb, const char * end)
 {
+    /// Diagnostic asserts for the bounds-corruption class of bug tracked in
+    /// `https://github.com/ClickHouse/ClickHouse/issues/104692`. If
+    /// `working_buffer` becomes inverted or extends past the underlying owned
+    /// `Memory<>`, the `s.append` below memcpys an arbitrary span and corrupts
+    /// the destination `String`'s heap arena. The exception then surfaces
+    /// either at the memcpy itself (unmapped source) or much later when the
+    /// oversized `String` is freed.
+    assertReadBufferRangeForAppend(rb, end);
     s.append(rb.position(), end - rb.position());
 }
 
 template <>
 inline void appendToStringOrVector(PaddedPODArray<UInt8> & s, ReadBuffer & rb, const char * end)
 {
+    assertReadBufferRangeForAppend(rb, end);
     if (rb.isPadded())
         s.insertSmallAllowReadWriteOverflow15(rb.position(), end);
     else
@@ -195,6 +284,7 @@ inline void appendToStringOrVector(PaddedPODArray<UInt8> & s, ReadBuffer & rb, c
 template <>
 inline void appendToStringOrVector(PODArray<char> & s, ReadBuffer & rb, const char * end)
 {
+    assertReadBufferRangeForAppend(rb, end);
     s.insert(rb.position(), end);
 }
 
@@ -276,6 +366,12 @@ void readStringUntilEquals(String & s, ReadBuffer & buf)
 {
     s.clear();
     readStringUntilCharsInto<'='>(s, buf);
+}
+
+void readStringUntilColon(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readStringUntilCharsInto<':'>(s, buf);
 }
 
 template void readNullTerminated<PODArray<char>>(PODArray<char> & s, ReadBuffer & buf);
@@ -441,7 +537,7 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf, bool kee
         return error("Cannot parse escape sequence: unexpected eof", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
     }
 
-    assert(buf.hasPendingData());
+    chassert(buf.hasPendingData());
 
     switch (*buf.position())
     {
@@ -642,7 +738,7 @@ void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        char * next_pos;
+        char * next_pos = nullptr;
         if constexpr (support_crlf)
         {
             next_pos = find_first_symbols<'\t', '\n', '\\','\r'>(buf.position(), buf.buffer().end());
@@ -1097,7 +1193,7 @@ void readCSVField(String & s, ReadBuffer & buf, const FormatSettings::CSV & sett
     readCSVStringInto<String, true>(s, buf, settings);
 }
 
-void readCSVWithTwoPossibleDelimitersImpl(String & s, PeekableReadBuffer & buf, const String & first_delimiter, const String & second_delimiter)
+static void readCSVWithTwoPossibleDelimitersImpl(String & s, PeekableReadBuffer & buf, const String & first_delimiter, const String & second_delimiter)
 {
     /// Check that delimiters are not empty.
     if (first_delimiter.empty() || second_delimiter.empty())
@@ -1799,8 +1895,8 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, c
         if (*buf.position() == '+')
             ++buf.position();
 
-        double v;
-        if (!tryReadFloatText(v, buf))
+        double v = 0;
+        if (!tryReadFloatTextPrecise(v, buf))
         {
             if constexpr (throw_exception)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a number field for key '{}'", name_of_field);
@@ -2116,8 +2212,8 @@ void skipNullTerminated(ReadBuffer & buf)
 
 void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
 {
-    assert(current >= in.position());
-    assert(current <= in.buffer().end());
+    chassert(current >= in.position());
+    chassert(current <= in.buffer().end());
 
     const size_t old_bytes = memory.size();
     const size_t additional_bytes = current - in.position();
@@ -2128,7 +2224,7 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
     if (new_bytes == 0)
         return;
 
-    assert(in.position() + additional_bytes <= in.buffer().end());
+    chassert(in.position() + additional_bytes <= in.buffer().end());
     memory.resize(new_bytes);
     memcpy(memory.data() + old_bytes, in.position(), additional_bytes);
     in.position() = current;
@@ -2136,7 +2232,7 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
 
 bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current)
 {
-    assert(current <= in.buffer().end());
+    chassert(current <= in.buffer().end());
 
     if (current < in.buffer().end())
         return true;
@@ -2146,8 +2242,8 @@ bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current)
     bool loaded_more = !in.eof();
     // A sanity check. Buffer position may be in the beginning of the buffer
     // (normal case), or have some offset from it (AIO).
-    assert(in.position() >= in.buffer().begin());
-    assert(in.position() <= in.buffer().end());
+    chassert(in.position() >= in.buffer().begin());
+    chassert(in.position() <= in.buffer().end());
     current = in.position();
 
     return loaded_more;
@@ -2378,13 +2474,13 @@ ReturnType readQuotedFieldInto(Vector & s, ReadBuffer & buf)
     else
     {
         /// It's an integer, float or decimal. They all can be parsed as float.
+        /// This only tokenizes: the parsed value is discarded (we keep the consumed text), so use
+        /// the non-throwing parser. A non-numeric field then consumes nothing and is left for the
+        /// caller to handle, instead of raising a "cannot read float" error.
         auto parse_func = [](ReadBuffer & in)
         {
-            Float64 tmp;
-            if constexpr (throw_exception)
-                readFloatText(tmp, in);
-            else
-                return tryReadFloatText(tmp, in);
+            Float64 tmp = 0;
+            return tryReadFloatTextPrecise(tmp, in);
         };
 
         return readParsedValueInto<ReturnType>(s, buf, parse_func);

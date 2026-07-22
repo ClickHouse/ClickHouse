@@ -1,0 +1,30 @@
+---
+title: README
+---
+
+<div id="customizations">
+  # Personnalisations
+</div>
+
+Scripts personnalisés permettant de modifier l’apparence et le comportement du site Mintlify.
+Ils sont chargés via le tableau `scripts` dans `docs.json` et s’exécutent sur chaque page.
+
+Consultez la documentation de Mintlify sur les [scripts personnalisés](https://www.mintlify.com/docs/customize/custom-scripts) pour plus d’informations.
+
+<div id="scripts">
+  ## Scripts
+</div>
+
+* `ask-ai-button.js` — ajuste le style et le comportement du bouton Ask-AI.
+* `cookie-banner.js` — injecte et gère la bannière de consentement aux cookies.
+* `custom-footer.js` — affiche le pied de page personnalisé du site (`#ch-custom-footer`).
+* `inkeep-init.js` — remplace la recherche native de Mintlify (⌘K / barre de recherche de la barre de navigation) par la fenêtre modale de recherche Inkeep. Recherche uniquement ; le chat IA reste sur Kapa.
+* `kapa-init.js` — initialise le widget RAG de Kapa.ai.
+* `navbar-cta.js` — ajoute le CTA « Get started » à la barre de navigation.
+* `clickhouse-sql-lexer-wasm.js` — expose l’analyseur lexical SQL de ClickHouse (`src/Parsers/Lexer.cpp` compilé en WebAssembly) sous forme de variable globale base64. Instantané de ClickHouse `programs/server/play.html` ; réextrayez-le si l’analyseur lexical ou la liste de mots-clés du projet source change.
+* `clickhouse-sql-highlight.js` — réapplique la coloration syntaxique aux blocs de code `language="sql"` à l’aide de l’analyseur lexical WASM (couleurs natives de ClickHouse, identiques à celles de play.html / `clickhouse-client`) à la place de Shiki. Doit être chargé après `clickhouse-sql-lexer-wasm.js`. Les autres langages restent tels que Shiki les a rendus.
+* `quickstart-back-link.js` — sur les pages de quickstart, déplace le badge autogénéré « All quickstarts » du haut du body vers l’en-tête au-dessus du titre (position du fil d’Ariane).
+
+Pour ajouter un nouveau script, ajoutez une entrée
+`{ "src": "/_site/customizations/<name>.js" }`
+au tableau `scripts` de premier niveau dans `docs.json`.

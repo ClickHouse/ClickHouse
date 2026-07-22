@@ -7,8 +7,6 @@ title: 'Keeper HTTP API and Dashboard'
 doc_type: 'reference'
 ---
 
-# Keeper HTTP API and Dashboard
-
 ClickHouse Keeper provides an HTTP API and embedded web dashboard for monitoring, health checks, and storage management. 
 This interface allows operators to inspect cluster status, execute commands, and manage Keeper storage through a web browser or HTTP clients.
 

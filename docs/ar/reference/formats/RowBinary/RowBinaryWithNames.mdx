@@ -1,0 +1,41 @@
+---
+description: 'وثائق تنسيق RowBinaryWithNames'
+input_format: true
+keywords: ['RowBinaryWithNames']
+output_format: true
+slug: /interfaces/formats/RowBinaryWithNames
+title: 'RowBinaryWithNames'
+doc_type: 'reference'
+---
+
+import RowBinaryFormatSettings from '/snippets/ar/common-row-binary-format-settings.mdx';
+
+| الإدخال | الإخراج | الاسم المستعار |
+| ------- | ------- | -------------- |
+| ✔       | ✔       |                |
+
+<div id="description">
+  ## الوصف
+</div>
+
+مشابه لتنسيق [`RowBinary`](/ar/reference/formats/RowBinary/RowBinary)، ولكن مع ترويسة إضافية:
+
+* عدد الأعمدة (N) المرمَّز باستخدام [`LEB128`](https://en.wikipedia.org/wiki/LEB128).
+* N من قيم `String` التي تحدد أسماء الأعمدة.
+
+<div id="example-usage">
+  ## مثال على الاستخدام
+</div>
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>
+
+<RowBinaryFormatSettings />
+
+<Note>
+  * إذا كان الإعداد [`input_format_with_names_use_header`](/ar/reference/settings/formats#input_format_with_names_use_header) مضبوطًا على `1`،
+    فستُطابَق أعمدة بيانات الإدخال مع أعمدة الجدول بحسب أسمائها، وسيتم تخطي الأعمدة ذات الأسماء غير المعروفة.
+  * إذا كان الإعداد [`input_format_skip_unknown_fields`](/ar/reference/settings/formats#input_format_skip_unknown_fields) مضبوطًا على `1`.
+    وإلا، فسيتم تخطي الصف الأول.
+</Note>

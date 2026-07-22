@@ -14,12 +14,13 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMilliseconds rabbitmq_max_wait_ms;
+    extern const SettingsUInt64 interactive_delay;
 }
 
 static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot)
 {
     auto non_virtual_header = storage_snapshot->metadata->getSampleBlockNonMaterialized();
-    auto virtual_header = storage_snapshot->virtual_columns->getSampleBlock();
+    auto virtual_header = storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
 
     return {non_virtual_header, virtual_header};
 }
@@ -39,8 +40,9 @@ NATSSource::NATSSource(
     ContextPtr context_,
     const Names & columns,
     size_t max_block_size_,
-    StreamingHandleErrorMode handle_error_mode_)
-    : NATSSource(storage_, storage_snapshot_, getHeaders(storage_snapshot_), context_, columns, max_block_size_, handle_error_mode_)
+    StreamingHandleErrorMode handle_error_mode_,
+    std::optional<UInt64> cancel_epoch_)
+    : NATSSource(storage_, storage_snapshot_, getHeaders(storage_snapshot_), context_, columns, max_block_size_, handle_error_mode_, cancel_epoch_)
 {
 }
 
@@ -51,7 +53,8 @@ NATSSource::NATSSource(
     ContextPtr context_,
     const Names & columns,
     size_t max_block_size_,
-    StreamingHandleErrorMode handle_error_mode_)
+    StreamingHandleErrorMode handle_error_mode_,
+    std::optional<UInt64> cancel_epoch_)
     : ISource(std::make_shared<const Block>(getSampleBlock(headers.first, headers.second)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -61,6 +64,7 @@ NATSSource::NATSSource(
     , handle_error_mode(handle_error_mode_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
+    , cancel_epoch(cancel_epoch_.value_or(storage_.currentCancelEpoch()))
 {
 }
 
@@ -70,8 +74,10 @@ NATSSource::~NATSSource()
     if (!consumer)
         return;
 
+    consumer->dropConsumed();
+
     if (unsubscribe_on_destroy)
-        consumer->unsubscribe();
+        consumer->unsubscribe(/*finish_queue=*/false);
 
     storage.pushConsumer(consumer);
 }
@@ -91,6 +97,16 @@ bool NATSSource::checkTimeLimit() const
 
 Chunk NATSSource::generate()
 {
+    auto chunk = generateImpl();
+
+    if (!chunk && commit_on_select && !consumption_aborted && consumer)
+        consumer->ackConsumed();
+
+    return chunk;
+}
+
+Chunk NATSSource::generateImpl()
+{
     if (!consumer)
     {
         auto timeout = std::chrono::milliseconds(context->getSettingsRef()[Setting::rabbitmq_max_wait_ms].totalMilliseconds());
@@ -98,6 +114,7 @@ Chunk NATSSource::generate()
 
         if (consumer && !consumer->isSubscribed())
         {
+            consumer->dropBuffered();
             consumer->subscribe();
             unsubscribe_on_destroy = true;
         }
@@ -144,39 +161,60 @@ Chunk NATSSource::generate()
 
     while (true)
     {
-        if (consumer->queueEmpty())
+        if (isCancelled() || storage.isConsumeCancelRequested(cancel_epoch))
+        {
+            consumption_aborted = true;
+            return {};
+        }
+
+        if (consumer->isConsumerStopped() || !checkTimeLimit())
             break;
 
         exception_message.reset();
         size_t new_rows = 0;
-        if (auto buf = consumer->consume())
+
+        ReadBufferPtr buf;
+        if (wait_for_flush_interval)
+            buf = consumer->consume(std::max<UInt64>(100, context->getSettingsRef()[Setting::interactive_delay] / 1000));
+        else
+            buf = consumer->consume();
+
+        if (buf)
             new_rows = executor.execute(*buf);
+        else if (!wait_for_flush_interval)
+            break;
 
         if (new_rows)
         {
             auto subject = consumer->getSubject();
             virtual_columns[0]->insertMany(subject, new_rows);
+            virtual_columns[1]->insertMany(storage.getStorageID().getTableName(), new_rows);
             if (handle_error_mode == StreamingHandleErrorMode::STREAM)
             {
                 if (exception_message)
                 {
                     const auto & current_message = consumer->getCurrentMessage();
-                    virtual_columns[1]->insertData(current_message);
-                    virtual_columns[2]->insertData(*exception_message);
-
+                    virtual_columns[2]->insertData(current_message);
+                    virtual_columns[3]->insertData(*exception_message);
                 }
                 else
                 {
-                    virtual_columns[1]->insertDefault();
                     virtual_columns[2]->insertDefault();
+                    virtual_columns[3]->insertDefault();
                 }
             }
 
             total_rows = total_rows + new_rows;
         }
 
-        if (total_rows >= max_block_size || consumer->queueEmpty() || consumer->isConsumerStopped() || !checkTimeLimit())
+        if (total_rows >= max_block_size)
             break;
+    }
+
+    if (isCancelled() || storage.isConsumeCancelRequested(cancel_epoch))
+    {
+        consumption_aborted = true;
+        return {};
     }
 
     if (total_rows == 0)

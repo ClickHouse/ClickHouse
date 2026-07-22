@@ -49,6 +49,7 @@ $CLICKHOUSE_CLIENT --query_id $query_id -q "
     SET distributed_index_analysis_only_on_coordinator = 1;
     SET cluster_for_parallel_replicas = 'test_cluster_one_shard_two_replicas';
     SET send_logs_level = 'error';
+    SET use_statistics_for_part_pruning = 0;
 
     SELECT sum(key)
     FROM test_in_dia

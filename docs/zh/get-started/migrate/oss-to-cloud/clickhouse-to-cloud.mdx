@@ -1,0 +1,234 @@
+---
+sidebarTitle: '使用 remoteSecure'
+slug: /cloud/migration/clickhouse-to-cloud
+title: '使用 remoteSecure 在自管理 ClickHouse 与 ClickHouse Cloud 之间迁移'
+description: '介绍如何在自管理 ClickHouse 与 ClickHouse Cloud 之间迁移的页面'
+doc_type: 'guide'
+keywords: ['迁移', 'ClickHouse Cloud', 'OSS', '将自管理 ClickHouse 迁移到 Cloud']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import AddARemoteSystem from '/snippets/zh/_add_remote_ip_access_list_detail.mdx';
+
+import CompatibilityNote from '/snippets/zh/compatibility.mdx';
+
+<Image img="/images/integrations/migration/self-managed-01.webp" size="lg" alt="迁移自管理 ClickHouse" />
+
+本指南介绍如何将自管理 ClickHouse 服务器迁移到 ClickHouse Cloud，以及如何在 ClickHouse Cloud 服务之间进行迁移。
+[`remoteSecure`](/zh/reference/functions/table-functions/remote) 函数可在 `SELECT` 和 `INSERT` 查询中使用，以访问远程 ClickHouse 服务器，从而让表迁移变得像编写一条嵌入了 `SELECT` 的 `INSERT INTO` 查询一样简单。
+
+<div id="migrating-from-self-managed-clickhouse-to-clickhouse-cloud">
+  ## 从自管理 ClickHouse 迁移到 ClickHouse Cloud
+</div>
+
+<Image img="/images/integrations/migration/self-managed-02.webp" size="lg" alt="迁移自管理 ClickHouse" />
+
+无论您的源表是否进行了分片和/或复制，在 ClickHouse Cloud 中，您只需创建目标表 (可以省略该表的 Engine 参数，系统会自动选择 `SharedMergeTree` 作为表引擎) ，
+而 ClickHouse Cloud 会自动处理纵向和横向扩缩容。
+您无需自行考虑表该如何分片或复制。
+
+在此示例中，自管理 ClickHouse server 是 *源端*，ClickHouse Cloud 服务是 *目标端*。
+
+<div id="overview">
+  ### 概述
+</div>
+
+流程如下：
+
+1. 在源服务中添加一个只读用户
+2. 在目标服务上复制源表结构
+3. 根据源端的网络可达性，从源端将数据拉取到目标端，或从源端推送数据到目标端
+4. 从目标端的 IP Access List 中移除源服务器 (如适用)
+5. 从源服务中移除该只读用户
+
+<div id="migration-of-tables-from-one-system-to-another">
+  ### 将表从一个系统迁移到另一个系统：
+</div>
+
+本示例将一个表从自管理的 ClickHouse 服务器迁移到 ClickHouse Cloud。
+
+<CompatibilityNote />
+
+<div id="on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data">
+  ### 在源 ClickHouse 系统上 (即当前承载数据的系统)
+</div>
+
+* 添加一个只读用户，使其能够读取源表 (本示例中为 `db.table`)
+
+```sql
+CREATE USER exporter
+IDENTIFIED WITH SHA256_PASSWORD BY 'password-here'
+SETTINGS readonly = 1;
+```
+
+```sql
+GRANT SELECT ON db.table TO exporter;
+```
+
+* 复制表定义
+
+```sql
+SELECT create_table_query
+FROM system.tables
+WHERE database = 'db' AND table = 'table'
+```
+
+<div id="on-the-destination-clickhouse-cloud-system">
+  ### 在目标端 ClickHouse Cloud 系统中：
+</div>
+
+* 创建目标数据库：
+
+```sql
+CREATE DATABASE db
+```
+
+* 使用源端的 CREATE TABLE 语句创建目标端。
+
+<Tip>
+  执行 CREATE 语句时，将 ENGINE 改为不带任何参数的 ReplicatedMergeTree。ClickHouse Cloud 中的表始终会被复制，并会提供正确的参数。不过，仍需保留 `ORDER BY`、`PRIMARY KEY`、`PARTITION BY`、`SAMPLE BY`、`TTL` 和 `SETTINGS` 子句。
+</Tip>
+
+```sql
+CREATE TABLE db.table ...
+```
+
+* 使用 `remoteSecure` 函数从自管理端拉取数据
+
+<Image img="/images/integrations/migration/self-managed-03.webp" size="lg" alt="迁移自管理 ClickHouse" />
+
+```sql
+INSERT INTO db.table SELECT * FROM
+remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
+```
+
+<Note>
+  如果源系统无法从外部网络访问，你可以改用推送数据而不是拉取数据，因为 `remoteSecure` 函数同时支持查询和插入。请参见下一个选项。
+</Note>
+
+* 使用 `remoteSecure` 函数将数据推送到 ClickHouse Cloud 服务
+
+<Image img="/images/integrations/migration/self-managed-04.webp" size="lg" alt="迁移自管理 ClickHouse" />
+
+<Tip>
+  **将远程系统添加到你的 ClickHouse Cloud 服务 IP Access List**
+
+  要使 `remoteSecure` 函数能够连接到你的 ClickHouse Cloud 服务，必须在 IP Access List 中允许远程系统的 IP 地址。展开此提示下方的 **管理你的 IP Access List** 以了解更多信息。
+</Tip>
+
+<AddARemoteSystem />
+
+```sql
+INSERT INTO FUNCTION
+remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table',
+'default', 'PASS') SELECT * FROM db.table
+```
+
+<div id="migrating-between-clickhouse-cloud-services">
+  ## 在 ClickHouse Cloud 服务之间迁移
+</div>
+
+<Image img="/images/integrations/migration/self-managed-05.webp" size="lg" alt="迁移自管理 ClickHouse" />
+
+下面是一些在 ClickHouse Cloud 服务之间迁移数据的常见场景：
+
+* 迁移从已恢复备份中得到的数据
+* 将数据从 Development 服务复制到暂存服务 (或从暂存服务复制到生产环境)
+
+在本示例中，有两个 ClickHouse Cloud 服务，分别称为 *source* (源端) 和 *destination* (目标端) 。数据将从 source 拉取到 destination。虽然你也可以选择推送方式，但这里演示的是拉取方式，因为它使用只读用户。
+
+<Image img="/images/integrations/migration/self-managed-06.webp" size="lg" alt="迁移自管理 ClickHouse" />
+
+迁移分为以下几个步骤：
+
+1. 确定其中一个 ClickHouse Cloud 服务作为 *source*，另一个作为 *destination*
+2. 在 source 服务中添加一个只读用户
+3. 在 destination 服务上复制 source 表结构
+4. 临时放开对 source 服务的 IP 访问限制
+5. 将数据从 source 复制到 destination
+6. 在 destination 上重新设置 IP Access List
+7. 从 source 服务中删除只读用户
+
+<div id="add-a-read-only-user-to-the-source-service">
+  #### 向源服务添加只读用户
+</div>
+
+* 添加一个对源表具有只读权限的用户 (本示例中为 `db.table`)
+
+  ```sql
+  CREATE USER exporter
+  IDENTIFIED WITH SHA256_PASSWORD BY 'password-here'
+  SETTINGS readonly = 1;
+  ```
+
+  ```sql
+  GRANT SELECT ON db.table TO exporter;
+  ```
+
+* 复制表定义
+  ```sql
+  select create_table_query
+  from system.tables
+  where database = 'db' and table = 'table'
+  ```
+
+<div id="duplicate-the-table-structure-on-the-destination-service">
+  #### 在目标端服务上复制表结构
+</div>
+
+如果目标端上还没有该数据库，请先创建：
+
+* 创建目标端数据库：
+  ```sql
+  CREATE DATABASE db
+  ```
+
+* 使用源端的 CREATE TABLE 语句，在目标端创建表。
+
+  在目标端，使用源端 `select create_table_query...` 的输出创建表：
+
+  ```sql
+  CREATE TABLE db.table ...
+  ```
+
+<div id="allow-remote-access-to-the-source-service">
+  #### 允许远程访问源服务
+</div>
+
+要将数据从源端拉取到目标端，源服务必须允许连接。请临时禁用源服务上的“IP Access List”功能。
+
+<Tip>
+  如果迁移完成后你还会继续使用源 ClickHouse Cloud 服务，请先将现有的 IP Access List 导出为 JSON 文件，再切换为允许从任意位置访问；这样在数据迁移完成后，你就可以重新导入该访问列表。
+</Tip>
+
+修改允许列表，临时允许从 **Anywhere** 访问。详情请参阅 [IP Access List](/zh/products/cloud/guides/security/connectivity/setting-ip-filters) 文档。
+
+<div id="copy-the-data-from-source-to-destination">
+  #### 将数据从源端复制到目标端
+</div>
+
+* 使用 `remoteSecure` 函数从源 ClickHouse Cloud 服务拉取数据
+  连接到目标服务。在目标 ClickHouse Cloud 服务上运行以下命令：
+
+  ```sql
+  INSERT INTO db.table SELECT * FROM
+  remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
+  ```
+
+* 验证目标服务中的数据
+
+<div id="re-establish-the-ip-access-list-on-the-source">
+  #### 在源端重新设置 IP Access List
+</div>
+
+如果你之前已导出该 IP Access List，则可以通过 **共享** 将其重新导入；否则，请将相应条目重新添加到 IP Access List 中。
+
+<div id="remove-the-read-only-exporter-user">
+  #### 删除只读的 `exporter` 用户
+</div>
+
+```sql
+DROP USER exporter
+```
+
+* 将服务的 IP Access List 切换为限制访问

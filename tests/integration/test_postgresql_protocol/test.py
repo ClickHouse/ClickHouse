@@ -13,7 +13,7 @@ import psycopg2 as py_psql
 import psycopg2.extras
 import pytest
 
-from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
+from helpers.cluster import ClickHouseCluster, get_docker_compose_path
 
 psycopg2.extras.register_uuid()
 
@@ -37,6 +37,7 @@ cluster.add_instance(
     ],
     with_postgres=True,
     with_postgresql_java_client=True,
+    with_postgresql_dotnet_client=True,
 )
 
 cluster.add_instance(
@@ -234,7 +235,7 @@ def test_psql_client_secure(started_cluster):
     )
 
     assert node.contains_in_log(
-        f"<Error> PostgreSQLHandler: DB::Exception: SSL connection required."
+        "<Error> PostgreSQLHandler: DB::Exception: SSL connection required."
     )
 
 
@@ -355,7 +356,7 @@ def test_prepared_statement(started_cluster):
     assert cur.fetchall() == [(1,)]
 
     cur.execute("DEALLOCATE select_test;")
-    with pytest.raises(Exception) as exc:
+    with pytest.raises(Exception):
         cur.execute("EXECUTE select_test(1);")
 
 
@@ -496,3 +497,84 @@ def test_java_client(started_cluster):
         ],
     )
     assert res == reference
+
+
+def test_dotnet_client(started_cluster):
+    node = cluster.instances["node"]
+
+    with open(os.path.join(SCRIPT_DIR, "dotnet.reference")) as fp:
+        reference = fp.read()
+
+    res = started_cluster.exec_in_container(
+        started_cluster.postgresql_dotnet_client_docker_id,
+        [
+            "bash",
+            "-c",
+            f"cd /pg_testapp && dotnet run -- --host {node.hostname} --port {server_port} --username default --password 123",
+        ],
+    )
+    # `dotnet run` builds first, so the .NET SDK can prepend build diagnostics to
+    # stdout. That noise only appears before the client output, so tolerate it
+    # with a directional suffix check while still catching any trailing or
+    # inserted protocol divergence.
+    assert res.endswith(reference)
+
+
+def test_restricted_user_cannot_bypass_grants(started_cluster):
+    """Verify that a user with limited grants can connect via PostgreSQL protocol
+    (pg_type and other system views are initialized internally), but cannot
+    perform operations beyond their granted privileges."""
+    node = started_cluster.instances["node"]
+
+    # Create a restricted user that can only SELECT from default database
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute(
+        "CREATE USER IF NOT EXISTS pg_restricted IDENTIFIED WITH plaintext_password BY 'restricted123'"
+    )
+    cur.execute("GRANT SELECT ON default.* TO pg_restricted")
+    ch.close()
+
+    # Connect as the restricted user - should succeed
+    restricted = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="pg_restricted",
+        password="restricted123",
+        dbname="default",
+    )
+    cur = restricted.cursor()
+
+    # The internal pg_type view should be accessible.
+    # ClickHouse currently sends scalar values over the PostgreSQL protocol in
+    # text mode, so result[0] arrives as a string from psycopg.
+    cur.execute("SELECT count() FROM pg_type")
+    result = cur.fetchone()
+    assert int(result[0]) > 0
+
+    # SELECT should work
+    cur.execute("SELECT 1")
+    assert int(cur.fetchone()[0]) == 1
+
+    # CREATE TABLE should be denied
+    with pytest.raises(Exception) as exc:
+        cur.execute("CREATE TABLE default.test_restricted (id Int32) ENGINE = Memory")
+    assert "Not enough privileges" in str(exc.value)
+
+    restricted.close()
+
+    # Clean up
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute("DROP USER IF EXISTS pg_restricted")
+    ch.close()

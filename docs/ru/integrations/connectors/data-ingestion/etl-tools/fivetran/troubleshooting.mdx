@@ -1,0 +1,338 @@
+---
+sidebarTitle: 'Устранение неполадок и рекомендации'
+slug: /integrations/fivetran/troubleshooting
+description: 'Распространённые ошибки, советы по диагностике и рекомендации для пункта назначения Fivetran ClickHouse.'
+title: 'Устранение неполадок и рекомендации'
+doc_type: 'guide'
+keywords: ['fivetran', 'пункт назначения ClickHouse', 'устранение неполадок', 'рекомендации', 'диагностика']
+---
+
+<div id="common-errors">
+  ## Распространённые ошибки
+</div>
+
+<div id="grants-test-failed">
+  ### Сбой проверки привилегий или ошибки операций, связанные с разрешениями
+</div>
+
+**Сообщение об ошибке:**
+
+```sh
+Test grants failed, cause: user is missing the required grants on *.*: ALTER, CREATE DATABASE, CREATE TABLE, INSERT, SELECT
+```
+
+**Причина:** У пользователя Fivetran нет необходимых привилегий. Коннектору требуются привилегии `ALTER`, `CREATE DATABASE`, `CREATE TABLE`, `INSERT` и `SELECT` на `*.*` (во всех базах данных и таблицах).
+
+<Note>
+  При проверке привилегий выполняется запрос к `system.grants`, и учитываются только прямые привилегии пользователя. Привилегии, назначенные через роль ClickHouse, не обнаруживаются. Подробнее см. в разделе [ролевые привилегии](/ru/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#role-based-grants).
+</Note>
+
+**Решение:**
+
+Предоставьте необходимые привилегии напрямую пользователю Fivetran:
+
+```sql
+GRANT CURRENT GRANTS ON *.* TO fivetran_user;
+```
+
+<div id="mutations-not-completed">
+  ### Ошибка при ожидании завершения всех мутаций
+</div>
+
+**Сообщение об ошибке:**
+
+```sh
+error while waiting for all mutations to be completed: ... initial cause: ...
+```
+
+**Причина:** Была отправлена мутация `ALTER TABLE ... UPDATE` или `ALTER TABLE ... DELETE`, но коннектор превысил время ожидания, пока она завершится на всех репликах. В части ошибки &quot;initial cause&quot; часто содержится исходная ошибка ClickHouse (обычно код 341, &quot;Unfinished&quot;).
+
+Это может произойти, если:
+
+* Кластер ClickHouse Cloud находится под высокой нагрузкой.
+* Один или несколько узлов вышли из строя во время выполнения мутации.
+
+**Решения:**
+
+1. **Проверьте ход выполнения мутации**: Выполните следующий запрос, чтобы проверить наличие незавершенных мутаций:
+   ```sql
+   SELECT database, table, mutation_id, command, create_time, is_done
+   FROM system.mutations
+   WHERE NOT is_done
+   ORDER BY create_time DESC;
+   ```
+2. **Проверьте состояние кластера**: Убедитесь, что все узлы работают нормально.
+3. **Подождите и повторите попытку**: Мутации в конечном итоге завершаются, когда состояние кластера нормализуется. Fivetran автоматически повторит синхронизацию.
+
+<div id="column-mismatch-error">
+  ### Ошибка несоответствия столбцов
+</div>
+
+**Сообщение об ошибке:**
+
+Если несоответствие столбцов вызвано изменением схемы в источнике, могут возникать разные ошибки. Например:
+
+```sh
+columns count in ClickHouse table (8) does not match the input file (6). Expected columns: id, name, ..., got: id, name, ...
+```
+
+Или:
+
+```sh
+column user_email was not found in the table definition. Table columns: ...; input file columns: ...
+```
+
+**Причина:** Столбцы в целевой таблице ClickHouse не соответствуют столбцам в синхронизируемых данных. Это может произойти, если:
+
+* В таблицу ClickHouse вручную добавили или из неё удалили столбцы.
+* Изменение схемы в источнике не было корректно перенесено.
+
+**Решения:**
+
+1. **Не изменяйте вручную таблицы, которыми управляет Fivetran.** См. [рекомендации](/ru/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#dont-modify-tables).
+2. **Верните столбцу исходный тип**: Если вы знаете, какой тип должен быть у столбца, измените его обратно на ожидаемый, используя [сопоставление преобразований типов](/ru/integrations/connectors/data-ingestion/etl-tools/fivetran/reference#type-mapping) в качестве справочного материала.
+3. **Повторно синхронизируйте таблицу**: На панели мониторинга Fivetran запустите историческую повторную синхронизацию для затронутой таблицы.
+4. **Удалите и создайте заново**: В крайнем случае удалите целевую таблицу и позвольте Fivetran заново создать её при следующей синхронизации.
+
+<div id="ast-too-big">
+  ### Слишком большое AST (код 168)
+</div>
+
+**Сообщение об ошибке:**
+
+```sh
+code: 168, message: AST is too big. Maximum: 50000
+```
+
+или
+
+```sh
+code: 62, message: Max query size exceeded
+```
+
+**Причина:** Большие батчи UPDATE или DELETE приводят к созданию SQL-операторов с очень сложными абстрактными синтаксическими деревьями. Это часто встречается при работе с широкими таблицами или при включенном режиме history mode.
+
+**Решение:**
+
+Уменьшите значения `mutation_batch_size` и `hard_delete_batch_size` в файле [расширенной конфигурации](/ru/integrations/connectors/data-ingestion/etl-tools/fivetran/reference#advanced-configuration). Для обоих параметров значение по умолчанию — `1500`; допустимый диапазон — от `200` до `1500`.
+
+***
+
+<div id="memory-limit-exceeded">
+  ### Превышение лимита памяти / OOM (код 241)
+</div>
+
+**Сообщение об ошибке:**
+
+```sh
+code: 241, message: (total) memory limit exceeded: would use 14.01 GiB
+```
+
+**Причина:** Операции INSERT требуется больше памяти, чем доступно. Обычно это происходит при крупных первичных синхронизациях, работе с широкими таблицами или параллельных батч-операциях.
+
+**Решения:**
+
+1. **Уменьшите `write_batch_size`**: Попробуйте снизить значение до 50 000 для больших таблиц.
+2. **Уменьшите нагрузку на базу данных**: Проверьте нагрузку на сервис ClickHouse Cloud, чтобы понять, не перегружен ли он.
+3. **Масштабируйте сервис ClickHouse Cloud**, чтобы увеличить объем доступной памяти.
+
+***
+
+<div id="unexpected-eof">
+  ### Неожиданный EOF / Ошибка соединения
+</div>
+
+**Сообщение об ошибке:**
+
+```sh
+ClickHouse connection error: unexpected EOF
+```
+
+Или `FAILURE_WITH_TASK` без трассировки стека в журналах Fivetran.
+
+**Причины:**
+
+* IP Access List не настроен для разрешения трафика Fivetran.
+* Временные проблемы с сетью между Fivetran и ClickHouse Cloud.
+* Поврежденные или некорректные исходные данные приводят к сбою коннектора назначения.
+
+**Решения:**
+
+1. **Проверьте IP Access List**: в ClickHouse Cloud перейдите в **Settings &gt; Security** и добавьте [IP-адреса Fivetran](https://fivetran.com/docs/using-fivetran/ips) или разрешите доступ откуда угодно.
+2. **Повторите попытку**: последние версии коннектора автоматически повторяют попытку при ошибках EOF. Редкие ошибки (1–2 в день), скорее всего, носят временный характер.
+3. **Если проблема сохраняется**: откройте тикет в поддержку ClickHouse, указав временной интервал возникновения ошибки. Также попросите поддержку Fivetran проверить качество исходных данных.
+
+***
+
+<div id="uint64-type-error">
+  ### Не удаётся сопоставить тип UInt64
+</div>
+
+**Сообщение об ошибке:**
+
+```sh
+cause: can't map type UInt64 to Fivetran types
+```
+
+**Причина:** Коннектор сопоставляет `LONG` с `Int64`, но не с `UInt64`. Эта ошибка возникает, если тип столбца вручную изменён в таблице, управляемой Fivetran.
+
+**Решения:**
+
+1. **Не изменяйте типы столбцов вручную** в таблицах, управляемых Fivetran.
+2. **Чтобы восстановить состояние**: измените тип столбца обратно на ожидаемый (например, `Int64`) или удалите таблицу и повторно синхронизируйте её.
+3. **Для пользовательских типов**: создайте [materialized view](/ru/reference/statements/create/view#materialized-view) поверх таблицы, управляемой Fivetran.
+
+***
+
+<div id="no-primary-keys">
+  ### У таблицы нет первичного ключа
+</div>
+
+**Сообщение об ошибке:**
+
+```sh
+Failed to alter table ... cause: no primary keys for table
+```
+
+**Причина:** Для каждой таблицы ClickHouse требуется `ORDER BY`. Если у источника нет первичного ключа, Fivetran автоматически добавляет `_fivetran_id`. Эта ошибка возникает в редких случаях, когда в источнике задан PK, но в данных он отсутствует.
+
+**Решения:**
+
+1. **Обратитесь в поддержку Fivetran**, чтобы проверить конвейер источника.
+2. **Проверьте схему источника**: убедитесь, что столбцы первичного ключа присутствуют в данных.
+
+***
+
+<div id="role-based-grants">
+  ### Не работают ролевые привилегии
+</div>
+
+**Сообщение об ошибке:**
+
+```sh
+user is missing the required grants on *.*: ALTER, CREATE DATABASE, CREATE TABLE, INSERT, SELECT
+```
+
+**Причина:** Коннектор проверяет привилегии так:
+
+```sql
+SELECT access_type, database, table, column FROM system.grants WHERE user_name = 'my_user'
+```
+
+Это возвращает только прямые привилегии. Привилегии, назначенные через роль ClickHouse, имеют `user_name = NULL` и `role_name = 'my_role'`, поэтому эта проверка их не учитывает.
+
+**Решение:**
+
+**Назначьте привилегии напрямую** пользователю Fivetran:
+
+```sql
+GRANT CURRENT GRANTS ON *.* TO fivetran_user;
+```
+
+***
+
+<div id="best-practices">
+  ## Рекомендации
+</div>
+
+<div id="dedicated-service">
+  ### Выделенный сервис ClickHouse для Fivetran
+</div>
+
+При высокой нагрузке на ингестию рассмотрите использование [compute-compute separation](/ru/products/cloud/features/infrastructure/warehouses) в ClickHouse Cloud, чтобы создать выделенный сервис для нагрузок записи Fivetran. Это изолирует ингестию от аналитических запросов и предотвращает конкуренцию за ресурсы.
+
+Например, можно использовать следующую архитектуру:
+
+* **Сервис A (writer)**: пункт назначения Fivetran + другие инструменты ингестии (ClickPipes, коннекторы Kafka)
+* **Сервис B (reader)**: BI-инструменты, панели мониторинга, ad-hoc запросы
+
+<div id="optimizing-reading-queries">
+  ### Оптимизация запросов на чтение
+</div>
+
+ClickHouse использует `SharedReplacingMergeTree` для целевых таблиц Fivetran — это версия [движка таблицы `ReplacingMergeTree`](/ru/concepts/features/operations/update/replacing-merge-tree) в ClickHouse Cloud. Наличие строк-дубликатов с одинаковым первичным ключом — нормальное явление: дедупликация происходит асинхронно во время фоновых слияний. Поэтому при чтении данных нужно быть внимательными, чтобы не возвращать дубликаты, так как некоторые строки, возможно, еще не были дедуплицированы.
+
+Использование ключевого слова `FINAL` — самый простой способ избежать дубликатов, поскольку оно принудительно выполняет слияние всех еще не дедуплицированных строк во время чтения:
+
+```sql
+SELECT * FROM schema.table FINAL WHERE ...
+```
+
+Существуют способы оптимизировать эту операцию `FINAL` — например, фильтровать по столбцам ключа с помощью условия `WHERE`. Подробнее см. в разделе [производительность FINAL](/ru/concepts/features/operations/update/replacing-merge-tree#final-performance) руководства по ReplacingMergeTree.
+
+Если этих оптимизаций недостаточно, есть и другие варианты, которые позволяют избежать использования `FINAL`, при этом по-прежнему корректно обрабатывать дубликаты:
+
+* Если нужно запрашивать числовой столбец, значение которого только растёт, [можно использовать `max(the_column)`](/ru/concepts/features/operations/insert/deduplication#avoiding-final).
+* Если нужно получить последнее значение в некоторых столбцах для конкретного ключа, можно использовать [`argMax(the_column, _fivetran_id)`](https://clickhouse.com/blog/10-best-practice-tips#perfecting_replacingmergetree).
+
+<div id="primary-key-optimization">
+  ### Оптимизация первичного ключа и ORDER BY
+</div>
+
+Fivetran реплицирует первичный ключ исходной таблицы в выражение ClickHouse `ORDER BY`. Если у источника нет PK, ключом сортировки становится `_fivetran_id` (UUID), что может приводить к низкой производительности запросов, поскольку ClickHouse строит свой [разреженный первичный индекс](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes) на основе столбцов `ORDER BY`.
+
+**Рекомендации для таких случаев, если других оптимизаций недостаточно:**
+
+1. **Рассматривайте таблицы Fivetran как сырые staging-таблицы.** Не используйте их напрямую для аналитических запросов.
+2. **Если производительность запросов по-прежнему недостаточна**, используйте [Refreshable Materialized View](/ru/concepts/features/materialized-views/refreshable-materialized-view), чтобы создать копию таблицы с `ORDER BY`, оптимизированным под ваши шаблоны запросов. В отличие от incremental materialized views, refreshable materialized views заново выполняют полный запрос по расписанию, что позволяет корректно обрабатывать операции `UPDATE` и `DELETE`, которые Fivetran выполняет во время синхронизации:
+   ```sql
+   CREATE MATERIALIZED VIEW schema.table_optimized
+   REFRESH EVERY 1 HOUR
+   ENGINE = ReplacingMergeTree()
+   ORDER BY (user_id, event_date)
+   AS SELECT * FROM schema.table_raw FINAL;
+   ```
+
+<Note>
+  Избегайте incremental (non-refreshable) materialized views для таблиц, которыми управляет Fivetran. Поскольку Fivetran выполняет операции `UPDATE` и `DELETE` для поддержания синхронизации данных, incremental materialized views не будут отражать эти изменения и будут содержать устаревшие или некорректные данные.
+</Note>
+
+<div id="dont-modify-tables">
+  ### Не изменяйте таблицы, управляемые Fivetran, вручную
+</div>
+
+Избегайте ручных DDL-изменений (например, `ALTER TABLE ... MODIFY COLUMN`) в таблицах, которыми управляет Fivetran. Коннектор ожидает схему, которую создал сам. Ручные изменения могут вызывать [ошибки сопоставления типов](#uint64-type-error) и сбои из-за несоответствия схемы.
+
+Используйте materialized views для пользовательских преобразований.
+
+<div id="debugging">
+  ## Отладка операций
+</div>
+
+При диагностике сбоев:
+
+* Проверьте `system.query_log` в ClickHouse на наличие проблем на стороне сервера.
+* По проблемам на стороне клиента обратитесь за помощью в Fivetran.
+
+Если вы обнаружили ошибку в коннекторе, [создайте issue на GitHub](https://github.com/ClickHouse/clickhouse-fivetran-destination/issues) или свяжитесь с [ClickHouse Support](/ru/resources/about/support).
+
+<div id="debugging-fivetran-syncs">
+  ### Отладка синхронизаций Fivetran
+</div>
+
+Используйте следующие запросы, чтобы диагностировать сбои синхронизации на стороне ClickHouse.
+
+<div id="check-errors">
+  #### Проверьте недавние ошибки ClickHouse, связанные с Fivetran
+</div>
+
+```sql
+SELECT event_time, query, exception_code, exception
+FROM system.query_log
+WHERE client_name LIKE 'fivetran-destination%'
+  AND exception_code > 0
+ORDER BY event_time DESC
+LIMIT 50;
+```
+
+<div id="check-activity">
+  #### Просмотрите недавнюю активность пользователя Fivetran
+</div>
+
+```sql
+SELECT event_time, query_kind, query, exception_code, exception
+FROM system.query_log
+WHERE user = '{fivetran_user}'
+ORDER BY event_time DESC
+LIMIT 100;
+```

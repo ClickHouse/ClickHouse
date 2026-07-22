@@ -1,0 +1,85 @@
+---
+title: ClickPipes FAQ
+---
+
+<Accordion title="ClickPipes 레플리카란 무엇입니까?">
+  ClickPipes는 ClickHouse Cloud 서비스와 독립적으로 실행되고 스케일링되는
+  전용 인프라를 통해 원격 데이터 소스에서 데이터를 수집합니다.
+  이 때문에 전용 컴퓨트 레플리카를 사용합니다.
+  아래 다이어그램은 단순화된 아키텍처를 보여줍니다.
+
+  스트리밍 ClickPipes의 경우, ClickPipes 레플리카는 원격 데이터 소스(예: Kafka 브로커)에 액세스하여
+  데이터를 가져오고, 처리한 뒤 대상 ClickHouse 서비스로 수집합니다.
+
+  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_1.webp" size="lg" alt="ClickPipes 레플리카 - 스트리밍 ClickPipes" border force />
+
+  객체 스토리지 ClickPipes의 경우,
+  ClickPipes 레플리카가 데이터 로딩 작업을 오케스트레이션합니다
+  (복사할 파일 식별, 상태 유지, 파티션 이동).
+  반면 데이터는 ClickHouse 서비스가 직접 가져옵니다.
+
+  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_2.webp" size="lg" alt="ClickPipes 레플리카 - 객체 스토리지 ClickPipes" border force />
+</Accordion>
+
+<Accordion title="기본 레플리카 수와 크기는 얼마입니까?">
+  각 ClickPipe는 기본적으로 2 GiB RAM 및 0.5 vCPU가 제공되는 레플리카 1개를 사용합니다.
+  이는 **0.25** ClickHouse 컴퓨트 유닛(1유닛 = 8 GiB RAM, 2 vCPU)에 해당합니다.
+</Accordion>
+
+<Accordion title="ClickPipes 레플리카를 스케일링할 수 있습니까?">
+  예, 스트리밍 ClickPipes는 수평 및 수직으로 모두 스케일링할 수 있습니다.
+  수평 스케일링은 처리량을 늘리기 위해 레플리카를 추가하는 것이고, 수직 스케일링은 더 집약적인 워크로드를 처리할 수 있도록 각 레플리카에 할당된 리소스(CPU 및 RAM)를 늘리는 것입니다.
+  이는 ClickPipe 생성 시 또는 **설정** -&gt; **고급 설정** -&gt; **스케일링**에서 언제든지 구성할 수 있습니다.
+</Accordion>
+
+<Accordion title="ClickPipes 레플리카는 몇 개가 필요합니까?">
+  필요한 수는 워크로드의 처리량 및 지연 시간 요구 사항에 따라 달라집니다.
+  기본값인 레플리카 1개로 시작해 지연 시간을 측정하고, 필요하면 레플리카를 추가하는 것을 권장합니다.
+  Kafka ClickPipes의 경우 Kafka 브로커 파티션도 그에 맞게 스케일링해야 한다는 점에 유의하십시오.
+  스케일링 제어 옵션은 각 스트리밍 ClickPipe의 &quot;설정&quot; 아래에서 사용할 수 있습니다.
+
+  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_3.webp" size="lg" alt="ClickPipes 레플리카 - ClickPipes 레플리카는 몇 개가 필요합니까?" border force />
+</Accordion>
+
+<Accordion title="ClickPipes 요금 구조는 어떻게 됩니까?">
+  이는 두 가지 차원으로 구성됩니다.
+
+  * **컴퓨트**: 유닛당 시간별 가격
+    컴퓨트는 데이터를 실제로 수집하는지 여부와 관계없이 ClickPipes 레플리카 파드를 실행하는 비용을 의미합니다.
+    이는 모든 ClickPipes 타입에 적용됩니다.
+  * **수집된 데이터**: GB당 가격
+    수집된 데이터 요율은 모든 스트리밍 ClickPipes에 적용됩니다
+    (Kafka, Confluent, Amazon MSK, Amazon Kinesis, Redpanda, WarpStream,
+    Azure Event Hubs). 이는 레플리카 파드를 통해 전송된 데이터에 대한 요금입니다.
+    수집된 데이터 크기(GB)는 소스에서 수신한 바이트 수를 기준으로 과금됩니다(비압축 또는 압축).
+</Accordion>
+
+<Accordion title="ClickPipes의 공개 가격은 얼마입니까?">
+  * Compute: 시간당 유닛당 $0.20 (레플리카당 시간당 $0.05)
+  * 수집된 데이터: GB당 $0.04
+</Accordion>
+
+<Accordion title="예시로 보면 어떻습니까?">
+  예를 들어 단일 레플리카(0.25 컴퓨트 유닛)를 사용해 24시간 동안 Kafka connector로 1 TB의 데이터를 수집하는 비용은 다음과 같습니다.
+
+  $$
+  (0.25 \times 0.20 \times 24) + (0.04 \times 1000) = $41.2
+  $$
+
+  <br />
+
+  객체 스토리지 connector(S3 및 GCS)의 경우,
+  ClickPipes 파드는 데이터를 처리하지 않고
+  기반 ClickHouse 서비스가 수행하는 전송만 오케스트레이션하므로
+  ClickPipes 컴퓨트 비용만 발생합니다:
+
+  $$
+  0.25 \times 0,20 \times 24 = $1.2
+  $$
+</Accordion>
+
+<Accordion title="ClickPipes 요금은 시장과 비교해 어떻습니까?">
+  ClickPipes 요금 정책의 기본 철학은
+  플랫폼 운영 비용을 충당하면서 데이터를 ClickHouse Cloud로 이동하는 쉽고 신뢰할 수 있는 방법을 제공하는 것입니다.
+  이러한 관점에서 시장 분석 결과, ClickPipes는 경쟁력 있는 위치에 있는 것으로 나타났습니다.
+</Accordion>

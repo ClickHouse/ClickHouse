@@ -15,6 +15,7 @@ ATTACH VIEW tables
     `TABLE_TYPE` String,
     `TABLE_ROWS` Nullable(UInt64),
     `DATA_LENGTH` Nullable(UInt64),
+    `INDEX_LENGTH` Nullable(UInt64),
     `TABLE_COLLATION` Nullable(String),
     `TABLE_COMMENT` Nullable(String)
 )
@@ -42,10 +43,11 @@ AS SELECT
     table_type           AS TABLE_TYPE,
     table_rows           AS TABLE_ROWS,
     data_length          AS DATA_LENGTH,
+    index_length         AS INDEX_LENGTH,
     table_collation      AS TABLE_COLLATION,
     table_comment        AS TABLE_COMMENT
 FROM system.tables t
-LEFT JOIN system.parts p ON (t.database = p.database AND t.name = p.table)
+LEFT JOIN system.parts p ON (t.database = p.database AND t.name = p.table AND p.active = 1)
 GROUP BY
     t.database,
     t.name,

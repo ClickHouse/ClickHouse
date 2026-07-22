@@ -1,0 +1,275 @@
+---
+sidebarTitle: 'نظرة عامة'
+description: 'اربط تخزين الكائنات لديك بـ ClickHouse Cloud بسلاسة.'
+slug: /integrations/clickpipes/object-storage/s3/overview
+title: 'تكامل Amazon S3 مع ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يوفّر S3 ClickPipe طريقة مُدارة بالكامل وعالية الاعتمادية لإدخال البيانات من Amazon S3 ومخازن الكائنات المتوافقة مع S3 إلى ClickHouse Cloud. وهو يدعم كلاً من **الإدخال لمرة واحدة** و**الإدخال المستمر** مع ضمان المعالجة مرة واحدة فقط.
+
+يمكن نشر S3 ClickPipes وإدارتها يدويًا باستخدام ClickPipes UI، وكذلك برمجيًا باستخدام [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[Terraform](/ar/integrations/clickpipes/programmatic-access/terraform).
+
+<div id="supported-data-sources">
+  ## مصادر البيانات المدعومة
+</div>
+
+| الاسم                                         | الشعار                                                                                        | التفاصيل                                                                                                                                                                            |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Amazon S3**                                 | <img src="/images/integrations/logos/amazon_s3_logo.svg" alt="شعار Amazon S3" width="32" />   | يتطلب الإدخال المستمر [الترتيب المعجمي](#continuous-ingestion-lexicographical-order) افتراضيًا، ولكن يمكن تهيئته أيضًا [لإدخال الملفات بأي ترتيب](#continuous-ingestion-any-order). |
+| **Cloudflare R2** <br /> *متوافق مع S3*       | <img src="/images/integrations/logos/cloudflare.svg" alt="شعار Cloudflare R2" width="32" />   | يتطلب الإدخال المستمر [الترتيب المعجمي](#continuous-ingestion-lexicographical-order). ولا يدعم الوضع غير المرتب.                                                                     |
+| **DigitalOcean Spaces** <br /> *متوافق مع S3* | <img src="/images/integrations/logos/digitalocean.svg" alt="شعار Digital Ocean" width="32" /> | يتطلب الإدخال المستمر [الترتيب المعجمي](#continuous-ingestion-lexicographical-order). ولا يدعم الوضع غير المرتب.                                                                     |
+| **OVH Object Storage** <br /> *متوافق مع S3*  | <img src="/images/integrations/logos/ovh.webp" alt="شعار Cloud Storage" width="32" />          | يتطلب الإدخال المستمر [الترتيب المعجمي](#continuous-ingestion-lexicographical-order). ولا يدعم الوضع غير المرتب.                                                                     |
+
+<Tip>
+  نظرًا لاختلاف تنسيقات URL وتنفيذات واجهة برمجة تطبيقات بين موفري خدمات تخزين الكائنات، ليست كل الخدمات المتوافقة مع S3 مدعومة بشكل مباشر. إذا كنت تواجه مشكلات مع خدمة غير مُدرجة أعلاه، فيُرجى [التواصل مع فريقنا](https://clickhouse.com/company/contact?loc=clickpipes).
+</Tip>
+
+<div id="supported-formats">
+  ## التنسيقات المدعومة
+</div>
+
+* [JSON](/ar/reference/formats/JSON/JSON)
+* [CSV](/ar/reference/formats/CSV/CSV)
+* [TSV](/ar/reference/formats/TabSeparated/TabSeparated)
+* [Parquet](/ar/reference/formats/Parquet/Parquet)
+* [Avro](/ar/reference/formats/Avro/Avro)
+
+<div id="features">
+  ## الميزات
+</div>
+
+<div id="one-time-ingestion">
+  ### الإدخال لمرة واحدة
+</div>
+
+افتراضيًا، يحمّل S3 ClickPipe جميع الملفات التي يطابقها نمط معيّن من الحاوية المحددة إلى جدول الوجهة في ClickHouse ضمن عملية دفعية واحدة. وبمجرد اكتمال مهمة الإدخال، يتوقف ClickPipe تلقائيًا. ويوفر وضع الإدخال لمرة واحدة هذا ضمان المعالجة مرة واحدة فقط، مما يضمن معالجة كل ملف بشكل موثوق من دون تكرار.
+
+<div id="continuous-ingestion">
+  ### الإدخال المستمر
+</div>
+
+عند تمكين الإدخال المستمر، تقوم ClickPipes بإدخال البيانات باستمرار من المسار المحدد. ولتحديد ترتيب الإدخال، يعتمد S3 ClickPipe افتراضيًا على [الترتيب المعجمي](#continuous-ingestion-lexicographical-order) الضمني للملفات. كما يمكن تهيئته لإدخال الملفات [بأي ترتيب](#continuous-ingestion-any-order) باستخدام قائمة انتظار [Amazon SQS](https://aws.amazon.com/sqs/) متصلة بالحاوية.
+
+<div id="continuous-ingestion-lexicographical-order">
+  #### الترتيب المعجمي
+</div>
+
+بشكل افتراضي، يفترض S3 ClickPipe أن الملفات تُضاف إلى الحاوية وفق الترتيب المعجمي، ويعتمد على هذا الترتيب الضمني لإدخال الملفات بالتسلسل. وهذا يعني أن أي ملف جديد **يجب** أن يكون اسمه أكبر معجميًا من آخر ملف جرى إدخاله. على سبيل المثال، ستُدخَل الملفات المسماة `file1` و`file2` و`file3` بالتسلسل، ولكن إذا أُضيف ملف جديد باسم `file 0` إلى الحاوية، فسيتم **تجاهله** لأن اسم الملف ليس أكبر معجميًا من آخر ملف جرى إدخاله.
+
+في هذا الوضع، ينفّذ S3 ClickPipe تحميلًا أوليًا لـ **جميع الملفات** في المسار المحدد، ثم يفحص وجود ملفات جديدة على فاصل زمني قابل للتهيئة (30 ثانية افتراضيًا). **ولا يمكن** بدء الإدخال من ملف محدد أو من نقطة زمنية معينة — إذ ستقوم ClickPipes دائمًا بتحميل جميع الملفات في المسار المحدد.
+
+<div id="continuous-ingestion-any-order">
+  #### بأي ترتيب
+</div>
+
+<Tip>
+  راجع [تهيئة الوضع غير المرتب للإدخال المستمر](/ar/integrations/clickpipes/object-storage/amazon-s3/unordered-mode) للحصول على إرشادات خطوة بخطوة.
+</Tip>
+
+يمكن تهيئة S3 ClickPipe لإدخال الملفات التي لا تملك ترتيبًا ضمنيًا عبر إعداد قائمة انتظار [Amazon SQS](https://aws.amazon.com/sqs/) متصلة بالحاوية، مع استخدام [Amazon EventBridge](https://aws.amazon.com/eventbridge/) اختياريًا كموجّه للأحداث. يتيح ذلك لـ ClickPipes الاستماع إلى أحداث إنشاء الكائنات وإدخال أي ملفات جديدة بغض النظر عن اصطلاح تسمية الملفات.
+
+<Note>
+  الوضع غير المرتب مدعوم **فقط** مع Amazon S3، وهو **غير** مدعوم للحاويات العامة أو الخدمات المتوافقة مع S3. كما يتطلب إعداد قائمة انتظار [Amazon SQS](https://aws.amazon.com/sqs/) متصلة بالحاوية، مع استخدام [Amazon EventBridge](https://aws.amazon.com/eventbridge/) اختياريًا كموجّه للأحداث.
+</Note>
+
+في هذا الوضع، ينفّذ S3 ClickPipe تحميلًا أوليًا لكل **الملفات** في المسار المحدد، ثم يستمع إلى أحداث `ObjectCreated:*` في قائمة الانتظار التي تطابق المسار المحدد. وسيتم **تجاهل** أي رسالة تخص ملفًا سبق رصده، أو ملفًا لا يطابق المسار، أو حدثًا من نوع مختلف.
+
+<Note>
+  تعيين بادئة/لاحقة للأحداث اختياري. وإذا فعلت ذلك، فتأكد من أنها تطابق المسار المحدد لـ ClickPipe. لا يتيح S3 وجود قواعد إشعارات متعددة ومتداخلة لأنواع الأحداث نفسها.
+</Note>
+
+تُدخَل الملفات عند بلوغ الحد المعيّن في `max insert bytes` أو `max file count`، أو بعد فاصل زمني قابل للتهيئة (30 ثانية افتراضيًا). **لا يمكن** بدء الإدخال من ملف معيّن أو من نقطة زمنية محددة — إذ ستقوم ClickPipes دائمًا بتحميل جميع الملفات في المسار المحدد. وإذا جرى تهيئة DLQ، فستُعاد الرسائل الفاشلة إلى قائمة الانتظار وتُعالَج مجددًا حتى عدد المرات المحدد في المعلَمة `maxReceiveCount` الخاصة بـ DLQ.
+
+<Tip>
+  نوصي بشدة بتهيئة **Dead-Letter-Queue (DLQ)** لقائمة انتظار SQS، لتسهيل تصحيح الرسائل الفاشلة وإعادة محاولة معالجتها.
+</Tip>
+
+<div id="eb-to-sqs">
+  ##### EventBridge إلى SQS
+</div>
+
+يمكن أيضًا إرسال إشعارات أحداث S3 إلى SQS عبر [Amazon EventBridge](https://aws.amazon.com/eventbridge/). وهذا هو النهج الموصى به لمعظم حالات الاستخدام، لأن EventBridge يدعم تصفية أحداث أكثر تقدّمًا، والتوزيع إلى عدة وجهات، كما أنه لا يخضع لقيود S3 التي تفرض قاعدة إشعار واحدة فقط لكل نوع حدث ولكل بادئة. راجع [تهيئة الوضع غير المرتب للإدخال المستمر](/ar/integrations/clickpipes/object-storage/amazon-s3/unordered-mode) للحصول على إرشادات خطوة بخطوة.
+
+<div id="sns-to-sqs">
+  ##### SNS إلى SQS
+</div>
+
+يمكن أيضًا إرسال إشعارات أحداث S3 إلى SQS عبر موضوع SNS. ويمكن استخدام ذلك إذا واجهت بعض قيود التكامل المباشر بين S3 وSQS. في هذه الحالة، ستحتاج إلى تفعيل خيار [تسليم الرسائل الخام](https://docs.aws.amazon.com/sns/latest/dg/sns-large-payload-raw-message-delivery.html).
+
+<div id="file-pattern-matching">
+  ### مطابقة أنماط الملفات
+</div>
+
+تتبع Object Storage ClickPipes معيار POSIX لمطابقة أنماط الملفات. جميع الأنماط **حساسة لحالة الأحرف** وتطابق **المسار الكامل** بعد اسم حاوية. ولتحسين الأداء، استخدم النمط الأكثر تحديدًا قدر الإمكان (على سبيل المثال، `data-2024-*.csv` بدلًا من `*.csv`).
+
+<div id="supported-patterns">
+  #### الأنماط المدعومة
+</div>
+
+| النمط              | الوصف                                                                                     | مثال                | يطابق                                                             |
+| ------------------ | ----------------------------------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------- |
+| `?`                | يطابق **حرفًا واحدًا** تمامًا (باستثناء `/`)                                              | `data-?.csv`        | `data-1.csv`, `data-a.csv`, `data-x.csv`                          |
+| `*`                | يطابق **صفرًا أو أكثر** من الأحرف (باستثناء `/`)                                          | `data-*.csv`        | `data-1.csv`, `data-001.csv`, `data-report.csv`, `data-.csv`      |
+| `**` <br /> تكراري | يطابق **صفرًا أو أكثر** من الأحرف (بما في ذلك `/`). يتيح **اجتياز المجلدات بشكل تكراري**. | `logs/**/error.log` | `logs/error.log`, `logs/2024/error.log`, `logs/2024/01/error.log` |
+
+**أمثلة:**
+
+* `https://bucket.s3.amazonaws.com/folder/*.csv`
+* `https://bucket.s3.amazonaws.com/logs/**/data.json`
+* `https://bucket.s3.amazonaws.com/file-?.parquet`
+* `https://bucket.s3.amazonaws.com/data-2024-*.csv.gz`
+
+<div id="unsupported-patterns">
+  #### الأنماط غير المدعومة
+</div>
+
+| النمط       | الوصف                   | مثال                   | البدائل                              |
+| ----------- | ----------------------- | ---------------------- | ------------------------------------ |
+| `{abc,def}` | توسيع الأقواس المعقوفة. | `{logs,data}/file.csv` | أنشئ ClickPipes منفصلة لكل path.     |
+| `{N..M}`    | توسيع النطاق العددي     | `file-{1..100}.csv`    | استخدم `file-*.csv` أو `file-?.csv`. |
+
+**أمثلة:**
+
+* `https://bucket.s3.amazonaws.com/{documents-01,documents-02}.json`
+* `https://bucket.s3.amazonaws.com/file-{1..100}.csv`
+* `https://bucket.s3.amazonaws.com/{logs,metrics}/data.parquet`
+
+<div id="exactly-once-semantics">
+  ### ضمان المعالجة مرة واحدة فقط
+</div>
+
+قد تحدث أنواع مختلفة من حالات الفشل عند استيعاب مجموعة بيانات كبيرة، ما قد يؤدي إلى عمليات إدراج جزئية أو بيانات مكررة. يتميز Object Storage ClickPipes بالقدرة على تحمل حالات فشل الإدراج ويوفر ضمان المعالجة مرة واحدة فقط. ويتحقق ذلك باستخدام جداول مرحلية مؤقتة. تُدرج البيانات أولًا في الجداول المرحلية. وإذا حدث خطأ ما أثناء عملية الإدراج هذه، يمكن إفراغ الجدول المرحلي ثم إعادة محاولة الإدراج من حالة نظيفة. ولا تُنقل الأقسام من الجدول المرحلي إلى الجدول الهدف إلا بعد اكتمال عملية الإدراج ونجاحها. لقراءة المزيد عن هذه الاستراتيجية، اطّلع على [منشور المدونة هذا](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3).
+
+<div id="virtual-columns">
+  ### الأعمدة الافتراضية
+</div>
+
+لتتبّع الملفات التي تم إدخالها، أدرِج العمود الافتراضي `_file` ضمن قائمة تعيين الأعمدة. يحتوي العمود الافتراضي `_file` على اسم ملف الكائن المصدر، ويمكن استخدامه للاستعلام عن الملفات التي تمت معالجتها.
+
+<div id="access-control">
+  ## التحكم في الوصول
+</div>
+
+<div id="permissions">
+  ### الأذونات
+</div>
+
+يدعم S3 ClickPipe حاويات S3 العامة والخاصة. ولا يدعم حاويات [Requester Pays](https://docs.aws.amazon.com/AmazonS3/latest/userguide/RequesterPaysBuckets.html).
+
+<div id="s3-bucket">
+  #### حاوية S3
+</div>
+
+يجب أن تسمح حاويات S3 بالإجراءات التالية ضمن سياسة الحاوية:
+
+* [`s3:GetObject`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html)
+* [`s3:ListBucket`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html)
+
+<div id="sqs-queue">
+  #### قائمة انتظار SQS
+</div>
+
+عند استخدام [الوضع غير المرتب](#continuous-ingestion-any-order)، يجب أن تسمح سياسة قائمة الانتظار في SQS بالإجراءات التالية:
+
+* [`sqs:ReceiveMessage`](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_ReceiveMessage.html)
+* [`sqs:DeleteMessage`](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_DeleteMessage.html)
+* [`sqs:GetQueueAttributes`](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_GetQueueAttributes.html)
+* [`sqs:ListQueues`](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_ListQueues.html)
+
+<div id="authentication">
+  ### المصادقة
+</div>
+
+<div id="iam-credentials">
+  #### بيانات اعتماد IAM
+</div>
+
+لاستخدام [مفاتيح الوصول](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) في المصادقة، اختر `Credentials` ضمن **Authentication method** عند إعداد اتصال ClickPipe. بعد ذلك، أدخِل معرّف مفتاح الوصول (مثل `AKIAIOSFODNN7EXAMPLE`) ومفتاح الوصول السري (مثل `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`) في الحقلين `Access key` و`Secret key`، على الترتيب.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_credentials.webp" alt="بيانات اعتماد IAM لـ S3 ClickPipes" size="lg" border />
+
+<div id="iam-role">
+  #### IAM role
+</div>
+
+لاستخدام [الوصول المستند إلى الأدوار](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html) في المصادقة، اختر `IAM role` ضمن **Authentication method** عند إعداد اتصال ClickPipe.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_iam.webp" alt="مصادقة IAM لـ S3 ClickPipes" size="lg" border />
+
+اتّبع [هذا الدليل](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) [لإنشاء دور](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role) بسياسة الثقة المطلوبة للوصول إلى S3. ثم أدخِل ARN لدور IAM ضمن `IAM role ARN`.
+
+<div id="network-access">
+  ### الوصول إلى الشبكة
+</div>
+
+تستخدم S3 ClickPipes مسارين منفصلين على الشبكة لاكتشاف البيانات الوصفية وإدخال البيانات: خدمة ClickPipes وخدمة ClickHouse Cloud، على التوالي. إذا كنت تريد تهيئة طبقة إضافية من أمان الشبكة (على سبيل المثال، لأسباب تتعلق بالامتثال)، **فيجب تهيئة الوصول إلى الشبكة لكلا المسارين**.
+
+* بالنسبة إلى **التحكم في الوصول المستند إلى عناوين IP**، يجب أن تسمح سياسة حاوية S3 بعناوين IP الثابتة لمنطقة خدمة ClickPipes والمُدرجة [هنا](/ar/integrations/clickpipes/home#list-of-static-ips)، بالإضافة إلى [عناوين IP الثابتة](/ar/products/cloud/guides/data-sources/cloud-endpoints-api) الخاصة بخدمة ClickHouse Cloud. للحصول على عناوين IP الثابتة لمنطقة ClickHouse Cloud الخاصة بك، افتح نافذة طرفية ونفّذ:
+
+  ```bash
+  # استبدل <your-region> بمنطقة ClickHouse Cloud الخاصة بك
+  curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.aws[] | select(.region == "<your-region>") | .egress_ips[]'
+  ```
+
+* بالنسبة إلى **التحكم في الوصول المستند إلى VPC endpoint**، يجب أن تكون حاوية S3 في المنطقة نفسها التي توجد فيها خدمة ClickHouse Cloud، وأن يقيّد عمليات `GetObject` على معرّفات VPC endpoint الخاصة بخدمة ClickHouse Cloud. للحصول على VPC endpoints لمنطقة ClickHouse Cloud الخاصة بك، افتح نافذة طرفية ونفّذ:
+
+  ```bash
+  # استبدل <your-region> بمنطقة ClickHouse Cloud الخاصة بك
+  curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.aws[] | select(.region == "<your-region>") | .s3_endpoints[]'
+  ```
+
+<div id="advanced-settings">
+  ## الإعدادات المتقدمة
+</div>
+
+يوفّر ClickPipes إعدادات افتراضية مناسبة تلبي متطلبات معظم حالات الاستخدام. وإذا كانت حالة الاستخدام لديك تتطلب ضبطًا إضافيًا أكثر دقة، فيمكنك تعديل الإعدادات التالية:
+
+| الإعداد                              | القيمة الافتراضية | الوصف                                                                                                                                         |
+| ------------------------------------ | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB              | عدد البايتات التي تُعالَج في دفعة إدراج واحدة.                                                                                                |
+| `Max file count`                     | 100               | الحد الأقصى لعدد الملفات التي تُعالَج في دفعة إدراج واحدة.                                                                                    |
+| `Max threads`                        | auto(3)           | [الحد الأقصى لعدد الخيوط المتزامنة](/ar/reference/settings/session-settings#max_threads) لمعالجة الملفات.                                        |
+| `Max insert threads`                 | 1                 | [الحد الأقصى لعدد خيوط الإدراج المتزامنة](/ar/reference/settings/session-settings#max_insert_threads) لمعالجة الملفات.                           |
+| `Min insert block size bytes`        | 1GB               | [الحد الأدنى لحجم البايتات في الكتلة](/ar/reference/settings/session-settings#min_insert_block_size_bytes) التي يمكن إدراجها في جدول.            |
+| `Max download threads`               | 4                 | [الحد الأقصى لعدد خيوط التنزيل المتزامنة](/ar/reference/settings/session-settings#max_download_threads).                                         |
+| `Object storage polling interval`    | 30s               | يضبط الحد الأقصى لمدة الانتظار قبل إدراج البيانات في عنقود ClickHouse.                                                                        |
+| `Parallel distributed insert select` | 2                 | [إعداد parallel distributed insert select](/ar/reference/settings/session-settings#parallel_distributed_insert_select).                          |
+| `Parallel view processing`           | false             | ما إذا كان سيتم تمكين الدفع إلى طرق العرض المرفقة [بالتوازي بدلًا من التسلسل](/ar/reference/settings/session-settings#parallel_view_processing). |
+| `Use cluster function`               | true              | ما إذا كانت الملفات ستُعالَج بالتوازي عبر عدة عُقد.                                                                                           |
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="الإعدادات المتقدمة لـ ClickPipes" size="lg" border />
+
+<div id="scaling">
+  ### التحجيم
+</div>
+
+يتم تحجيم Object Storage ClickPipes استنادًا إلى الحد الأدنى لحجم خدمة ClickHouse كما تحدده [إعدادات التحجيم التلقائي الرأسي المُهيأة](/ar/products/cloud/features/autoscaling/vertical#configuring-vertical-auto-scaling). ويُحدَّد حجم ClickPipe عند إنشاء الـ ClickPipe. ولن تؤثر أي تغييرات لاحقة على إعدادات خدمة ClickHouse في حجم ClickPipe.
+
+لزيادة معدل النقل في عمليات استيعاب البيانات الكبيرة، نوصي بتحجيم خدمة ClickHouse قبل إنشاء ClickPipe.
+
+<div id="known-limitations">
+  ## القيود المعروفة
+</div>
+
+<div id="file-size">
+  ### حجم الملف
+</div>
+
+لن تحاول ClickPipes سوى استيعاب الكائنات التي يبلغ حجمها **10GB أو أقل**. وإذا كان حجم الملف أكبر من 10GB، فسيُضاف سجل خطأ إلى جدول الأخطاء المخصص في ClickPipes.
+
+<div id="compatibility">
+  ### التوافق
+</div>
+
+على الرغم من أن بعض الخدمات متوافقة مع S3، فإنها تستخدم بنية URL مختلفة قد لا يتمكن S3 ClickPipe من تحليلها (على سبيل المثال، Backblaze B2)، أو تتطلب تكاملًا مع خدمات قائمة انتظار خاصة بكل مزوّد من أجل إدخال البيانات بشكل مستمر وغير مرتب. إذا كنت تواجه مشكلات مع خدمة غير مدرجة ضمن [مصادر البيانات المدعومة](#supported-data-sources)، يُرجى [التواصل مع فريقنا](https://clickhouse.com/company/contact?loc=clickpipes).
+
+<div id="view-support">
+  ### دعم العروض
+</div>
+
+العروض المُجسَّدة على الجدول الهدف مدعومة أيضًا. ستنشئ ClickPipes جداول مرحلية ليس فقط للجدول الهدف، بل أيضًا لأي عرض مُجسَّد تابع له.
+
+لا ننشئ جداول مرحلية للعروض غير المُجسَّدة. وهذا يعني أنه إذا كان لديك جدول هدف يتبعه عرض مُجسَّد واحد أو أكثر في المراحل اللاحقة، فينبغي أن تتجنب هذه العروض المُجسَّدة تحديد البيانات عبر عرض من الجدول الهدف. وإلا، فقد تلاحظ فقدان بعض البيانات في العرض المُجسَّد.

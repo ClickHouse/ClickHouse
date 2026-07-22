@@ -11,11 +11,11 @@ sqlite3 "${CLICKHOUSE_TMP}/database.sqlite3" 'CREATE TABLE _kv(k TEXT, v TEXT, P
 echo '{"max_ts":123456}' > "${CLICKHOUSE_TMP}/test.json"
 
 ${CLICKHOUSE_LOCAL} --query="
-CREATE DATABASE tmpdb ENGINE = SQLite('${CLICKHOUSE_TMP}/database.sqlite3');
-INSERT INTO tmpdb._kv VALUES ('a', 'b');
+CREATE DATABASE ${CLICKHOUSE_DATABASE_1} ENGINE = SQLite('${CLICKHOUSE_TMP}/database.sqlite3');
+INSERT INTO ${CLICKHOUSE_DATABASE_1}._kv VALUES ('a', 'b');
 SELECT 'max_ts' AS k, CAST(max_ts, 'String') AS v FROM file('${CLICKHOUSE_TMP}/test.json');
-INSERT INTO tmpdb._kv SELECT 'max_ts' AS k, CAST(max_ts, 'String') AS v from file('${CLICKHOUSE_TMP}/test.json');
-SELECT * FROM tmpdb._kv ORDER BY ALL;
+INSERT INTO ${CLICKHOUSE_DATABASE_1}._kv SELECT 'max_ts' AS k, CAST(max_ts, 'String') AS v from file('${CLICKHOUSE_TMP}/test.json');
+SELECT * FROM ${CLICKHOUSE_DATABASE_1}._kv ORDER BY ALL;
 "
 
 rm "${CLICKHOUSE_TMP}/database.sqlite3" "${CLICKHOUSE_TMP}/test.json"

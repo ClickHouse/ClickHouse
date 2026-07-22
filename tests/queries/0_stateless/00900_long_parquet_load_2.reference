@@ -116,6 +116,9 @@
 2	2	2	2	1	14784270877707858952
 
 \N	0	0	0	10	2493791989391501480
+=== Try load data from 04057_empty_row_group.parquet
+
+\N	\N	\N	0	\N
 === Try load data from 68131.parquet
 0	[1,2]	1	5845551876324623491
 

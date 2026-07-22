@@ -155,7 +155,7 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
                 next_rule = selectPatternForPath(this->params, next_path);
 
             const Graphite::RetentionPattern * retention_pattern = std::get<0>(next_rule);
-            time_t next_time_rounded;
+            time_t next_time_rounded = 0;
             if (retention_pattern)
             {
                 UInt32 precision = selectPrecision(retention_pattern->retentions, next_row_time);

@@ -1,0 +1,40 @@
+---
+slug: /use-cases/observability/clickstack/managing
+title: 'Gerenciando o ClickStack'
+sidebarTitle: 'Gerenciando o ClickStack'
+description: 'Gerenciando o ClickStack'
+doc_type: 'guide'
+keywords: ['gerenciamento do ClickStack', 'desempenho', 'visões materializadas', 'comandos administrativos']
+---
+
+Esta seção descreve como gerenciar o ClickStack.
+
+<div id="admin-guides">
+  ## Guias para administradores
+</div>
+
+| Seção                                                               | Descrição                                                                                                                    |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| [Administração básica](/pt-BR/clickstack/managing/admin)                  | Uma introdução às tarefas administrativas comuns no ClickStack.                                                              |
+| [Estimativa de recursos](/pt-BR/clickstack/managing/estimating-resources) | Orientações para dimensionar os recursos computacionais do Managed ClickStack com base no volume de ingestão.                |
+| [Preparação para produção](/pt-BR/clickstack/managing/production)         | Etapas recomendadas e boas práticas antes de executar o ClickStack em produção.                                              |
+| [Visões materializadas](/pt-BR/clickstack/managing/materialized-views)    | Um guia detalhado sobre como usar visões materializadas no ClickStack para acelerar o desempenho das consultas.              |
+| [Otimização de desempenho](/pt-BR/clickstack/managing/performance-tuning) | Um guia abrangente para otimizar o ClickStack para workloads de grande escala.                                               |
+| [RBAC](/pt-BR/clickstack/managing/rbac)                                   | Configure o Controle de Acesso Baseado em Funções para gerenciar as permissões da equipe em painéis, buscas salvas e fontes. |
+
+<div id="core-concepts">
+  ## Conceitos centrais do ClickHouse
+</div>
+
+A maioria das tarefas de gerenciamento do ClickStack exige familiaridade com o banco de dados ClickHouse subjacente. Recomendamos revisar os principais conceitos do ClickHouse descritos abaixo antes de realizar operações administrativas ou relacionadas ao desempenho.
+
+| Conceito                            | Descrição                                                                                                                                                                                                                    |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Tabelas**                         | Como as fontes de dados do ClickStack são mapeadas para as tabelas subjacentes do ClickHouse. As tabelas do ClickHouse usam principalmente o motor [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree). |
+| **Partes**                          | Como os dados são gravados como partes imutáveis e mesclados ao longo do tempo.                                                                                                                                              |
+| **Partições**                       | Agrupamentos lógicos de partes de tabela que simplificam o gerenciamento, as consultas e a otimização dos dados.                                                                                                             |
+| **Mesclas**                         | O processo em segundo plano que combina partes para reduzir a quantidade de partes lidas nas consultas e manter o desempenho.                                                                                                |
+| **Grânulos**                        | A menor unidade de dados lida e descartada durante a execução da consulta.                                                                                                                                                   |
+| **Chaves primárias (de ordenação)** | Como a chave `ORDER BY` define o layout dos dados em disco, a compressão e o comportamento de poda das consultas.                                                                                                            |
+
+Esses conceitos são fundamentais para o desempenho do ClickHouse e ajudarão você a tomar decisões administrativas mais bem informadas ao gerenciar o ClickStack.

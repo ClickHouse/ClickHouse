@@ -1,0 +1,183 @@
+---
+sidebarTitle: 'Lightdash'
+slug: /integrations/lightdash
+keywords: ['clickhouse', 'lightdash', 'تصور البيانات', 'BI', 'الطبقة الدلالية', 'dbt', 'تحليلات الخدمة الذاتية', 'الاتصال']
+description: 'Lightdash هي أداة BI حديثة مفتوحة المصدر ومبنية على dbt، تتيح للفرق استكشاف البيانات وتصورها من ClickHouse عبر طبقة دلالية. تعرّف على كيفية ربط Lightdash بـ ClickHouse للحصول على تحليلات سريعة ومحكومة ومدعومة بـ dbt.'
+title: 'Lightdash'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+import { Image } from "/snippets/ar/components/Image.jsx";
+import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+Lightdash هي **منصة ذكاء أعمال قائمة على الذكاء الاصطناعي أولًا** ومصممة لفرق البيانات الحديثة، إذ تجمع بين انفتاح dbt وأداء ClickHouse. ومن خلال ربط ClickHouse بـ Lightdash، تحصل الفرق على **تجربة تحليلات ذاتية الخدمة مدعومة بالذكاء الاصطناعي** ومرتكزة على الطبقة الدلالية في dbt، بحيث تُجاب كل الأسئلة باستخدام مقاييس محكومة ومتسقة.
+
+يحب المطورون Lightdash بفضل معماريتها المفتوحة، ونماذج YAML الخاضعة للتحكم في الإصدارات، وعمليات التكامل التي تلائم سير عملهم مباشرةً — من GitHub إلى IDE.
+
+تجمع هذه الشراكة بين **سرعة ClickHouse** و**تجربة المطور التي تقدمها Lightdash**، مما يجعل استكشاف الرؤى وتصورها وأتمتتها بالذكاء الاصطناعي أسهل من أي وقت مضى.
+
+<div id="build-an-interactive-dashboard">
+  ## أنشئ لوحة معلومات تفاعلية باستخدام Lightdash وClickHouse
+</div>
+
+في هذا الدليل، سترى كيف يتصل **Lightdash** بـ **ClickHouse** لاستكشاف نماذج dbt لديك وإنشاء لوحات معلومات تفاعلية.
+يوضح المثال أدناه لوحة معلومات مكتملة تستند إلى بيانات من ClickHouse.
+
+<Image size="md" img="/images/integrations/data-visualization/lightdash_02.webp" alt="مثال على لوحة معلومات في Lightdash" border />
+
+<Steps>
+  <Step>
+    ### اجمع تفاصيل الاتصال
+
+    عند إعداد الاتصال بين Lightdash وClickHouse، ستحتاج إلى التفاصيل التالية:
+
+    * **Host:** العنوان الذي تعمل عليه قاعدة بيانات ClickHouse
+    * **User:** اسم مستخدم قاعدة بيانات ClickHouse
+    * **Password:** كلمة مرور قاعدة بيانات ClickHouse
+    * **DB name:** اسم قاعدة بيانات ClickHouse
+    * **Schema:** المخطط الافتراضي الذي يستخدمه dbt لتجميع مشروعك وتشغيله (ستجده في `profiles.yml`)
+    * **Port:** منفذ واجهة ClickHouse عبر HTTPS (الافتراضي: `8443`)
+    * **Secure:** فعّل هذا الخيار لاستخدام HTTPS/SSL لإجراء اتصالات آمنة
+    * **Retries:** عدد المرات التي يعيد فيها Lightdash محاولة تنفيذ استعلامات ClickHouse الفاشلة (الافتراضي: `3`)
+    * **Start of week:** اختر اليوم الذي يبدأ فيه أسبوع التقارير؛ ويكون الإعداد الافتراضي وفقًا لإعداد المستودع لديك
+
+    <ConnectionDetails />
+
+    ***
+  </Step>
+
+  <Step>
+    ### قم بتهيئة ملف تعريف dbt لـ ClickHouse
+
+    في Lightdash، تستند الاتصالات إلى **مشروع dbt** الحالي لديك.
+    للاتصال بـ ClickHouse، تأكد من أن ملفك المحلي `~/.dbt/profiles.yml` يتضمن إعداد target صالحًا لـ ClickHouse.
+
+    على سبيل المثال:
+
+    <Image size="md" img="/images/integrations/data-visualization/lightdash_01.webp" alt="مثال على إعداد profiles.yml لمشروع lightdash-clickhouse" border />
+
+    <br />
+  </Step>
+
+  <Step>
+    ### أنشئ مشروع Lightdash متصلًا بـ ClickHouse
+
+    بمجرد تهيئة ملف تعريف dbt لاستخدام ClickHouse، ستحتاج أيضًا إلى ربط **مشروع dbt** الخاص بك بـ Lightdash.
+
+    ولأن هذه العملية هي نفسها في جميع مستودعات البيانات، فلن نتناولها هنا بالتفصيل — يمكنك اتباع دليل Lightdash الرسمي لاستيراد مشروع dbt:
+
+    [استيراد مشروع dbt → توثيق Lightdash](https://docs.lightdash.com/get-started/setup-lightdash/connect-project#2-import-a-dbt-project?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
+
+    بعد ربط مشروع dbt الخاص بك، سيكتشف Lightdash تلقائيًا تهيئة ClickHouse من ملف `profiles.yml`. وبمجرد نجاح اختبار الاتصال، ستتمكن من البدء في استكشاف نماذج dbt وإنشاء لوحات المعلومات المدعومة من ClickHouse.
+
+    ***
+  </Step>
+
+  <Step>
+    ### استكشف بيانات ClickHouse في Lightdash
+
+    بمجرد الاتصال، يزامن Lightdash تلقائيًا نماذج dbt الخاصة بك ويعرض ما يلي:
+
+    * **الأبعاد** و**المقاييس** المعرّفة في YAML
+    * **منطق الطبقة الدلالية**، مثل المقاييس وعمليات الربط وعمليات الاستكشاف
+    * **لوحات المعلومات** التي تعمل باستعلامات ClickHouse اللحظية
+
+    يمكنك الآن إنشاء لوحات معلومات، ومشاركة الرؤى، وحتى استخدام **Ask AI** لإنشاء تصورات مباشرةً استنادًا إلى ClickHouse — من دون الحاجة إلى كتابة SQL يدويًا.
+
+    ***
+  </Step>
+
+  <Step>
+    ### تحديد المقاييس والأبعاد في Lightdash
+
+    في Lightdash، تُعرَّف جميع **المقاييس** و**الأبعاد** مباشرةً في ملفات `.yml` الخاصة بنماذج dbt. وهذا يجعل منطق الأعمال لديك خاضعًا للتحكم في الإصدارات، ومتسقًا، وشفافًا بالكامل.
+
+    <Image size="md" img="/images/integrations/data-visualization/lightdash_03.webp" alt="مثال على تعريف المقاييس في ملف .yml" border />
+
+    <br />
+
+    يضمن تعريف هذه العناصر في YAML أن يستخدم فريقك التعريفات نفسها في مختلف لوحات المعلومات والتحليلات. على سبيل المثال، يمكنك إنشاء مقاييس قابلة لإعادة الاستخدام مثل `total_order_count` أو `total_revenue` أو `avg_order_value` إلى جانب نماذج dbt مباشرةً، من دون الحاجة إلى تكرارها في واجهة المستخدم.
+
+    لمعرفة المزيد حول كيفية تعريف هذه العناصر، راجع أدلة Lightdash التالية:
+
+    * [كيفية إنشاء المقاييس](https://docs.lightdash.com/guides/how-to-create-metrics?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
+    * [كيفية إنشاء الأبعاد](https://docs.lightdash.com/guides/how-to-create-dimensions?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
+
+    ***
+  </Step>
+
+  <Step>
+    ### استعلم عن بياناتك من الجداول
+
+    بمجرد ربط مشروع dbt الخاص بك بـ Lightdash ومزامنته معه، يمكنك البدء في استكشاف البيانات مباشرةً من **الجداول** (أو &quot;الاستكشافات&quot;).
+    يمثّل كل جدول نموذجًا في dbt، ويتضمّن المقاييس والأبعاد التي عرّفتها في YAML.
+
+    تتكوّن صفحة **Explore** من خمسة أقسام رئيسية:
+
+    1. **الأبعاد والمقاييس** — جميع الحقول المتاحة في الجدول المحدد
+    2. **عوامل التصفية** — لتقييد البيانات التي يعيدها استعلامك
+    3. **المخطط** — لتصوّر نتائج استعلامك
+    4. **النتائج** — لعرض البيانات الأولية المعادة من قاعدة بيانات ClickHouse
+    5. **SQL** — لفحص استعلام SQL المُولَّد الذي تستند إليه نتائجك
+
+    <Image size="lg" img="/images/integrations/data-visualization/lightdash_04.webp" alt="عرض Explore في Lightdash يوضّح الأبعاد، وعوامل التصفية، والمخطط، والنتائج، وSQL" border />
+
+    من هنا، يمكنك إنشاء الاستعلامات وتعديلها بشكل تفاعلي — عبر سحب الحقول وإفلاتها، وإضافة عوامل التصفية، والتبديل بين أنواع التصور مثل الجداول، والمخططات الشريطية، أو السلاسل الزمنية.
+
+    للاطلاع بشكل أعمق على الاستكشافات وكيفية الاستعلام من جداولك، انظر:
+    [مقدمة إلى الجداول وصفحة Explore → وثائق Lightdash](https://docs.lightdash.com/get-started/exploring-data/using-explores#an-intro-to-tables-and-the-explore-page?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
+
+    ***
+  </Step>
+
+  <Step>
+    ### إنشاء لوحات المعلومات
+
+    بعد استكشاف بياناتك وحفظ التصورات، يمكنك جمعها في **لوحات معلومات** لمشاركتها مع فريقك.
+
+    تتميز لوحات المعلومات في Lightdash بأنها تفاعلية بالكامل — إذ يمكنك تطبيق عوامل التصفية، وإضافة علامات تبويب، وعرض مخططات تعتمد على استعلامات ClickHouse في الوقت الفعلي.
+
+    يمكنك أيضًا إنشاء مخططات جديدة **مباشرةً من داخل لوحة المعلومات**، مما يساعدك على إبقاء مشاريعك منظَّمة وخالية من الفوضى. وتكون المخططات التي تُنشأ بهذه الطريقة **مقتصرة على لوحة المعلومات تلك** — ولا يمكن إعادة استخدامها في أي مكان آخر ضمن المشروع.
+
+    لإنشاء مخطط مخصص للوحة المعلومات فقط:
+
+    1. انقر على **إضافة مربع**
+    2. حدِّد **مخطط جديد**
+    3. أنشئ تصورك في أداة إنشاء المخططات
+    4. احفظه — وسيظهر في أسفل لوحة المعلومات
+
+    <Image size="lg" img="/images/integrations/data-visualization/lightdash_05.webp" alt="إنشاء المخططات وتنظيمها داخل لوحة معلومات في Lightdash" border />
+
+    تعرّف على المزيد حول كيفية إنشاء لوحات المعلومات وتنظيمها هنا:
+    [إنشاء لوحات المعلومات ← مستندات Lightdash](https://docs.lightdash.com/get-started/exploring-data/dashboards?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
+
+    ***
+  </Step>
+
+  <Step>
+    ### Ask AI: تحليلات ذاتية الخدمة مدعومة بـ dbt
+
+    تجعل **AI Agents** في Lightdash استكشاف البيانات ذاتي الخدمة بالفعل.
+    فبدلًا من كتابة الاستعلامات، يمكنك ببساطة طرح الأسئلة بلغة طبيعية — مثل *&quot;ما نمو إيراداتنا الشهري؟&quot;* — وسينشئ AI Agent تلقائيًا التصور المناسب، مع الاستناد إلى المقاييس والنماذج المعرّفة في dbt لضمان الدقة والاتساق.
+
+    وهي مدعومة بالطبقة الدلالية نفسها التي تستخدمها في dbt، ما يعني أن كل إجابة تظل خاضعة للحوكمة، وقابلة للتفسير، وسريعة — وكل ذلك بالاستناد إلى ClickHouse.
+
+    <Image size="lg" img="/images/integrations/data-visualization/lightdash_06.webp" alt="واجهة Ask AI في Lightdash تعرض استعلامًا بلغة طبيعية مدعومًا بمقاييس dbt" border />
+
+    <Tip>
+      تعرّف على المزيد حول AI Agents هنا: [AI Agents → وثائق Lightdash](https://docs.lightdash.com/guides/ai-agents?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
+    </Tip>
+  </Step>
+</Steps>
+
+<div id="learn-more">
+  ## تعرّف على المزيد
+</div>
+
+لمعرفة المزيد حول ربط مشاريع dbt بـ Lightdash، يُرجى زيارة [وثائق Lightdash → إعداد ClickHouse](https://docs.lightdash.com/get-started/setup-lightdash/connect-project#clickhouse?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs).

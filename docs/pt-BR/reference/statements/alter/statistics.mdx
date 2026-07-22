@@ -1,0 +1,41 @@
+---
+description: 'Documentação sobre a manipulação de estatísticas de coluna'
+sidebarTitle: 'STATISTICS'
+slug: /sql-reference/statements/alter/statistics
+title: 'Manipulação de estatísticas de coluna'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+As operações a seguir estão disponíveis:
+
+* `ALTER TABLE [db].table ADD STATISTICS [IF NOT EXISTS] (column list) TYPE (type list)` - Adiciona a descrição das estatísticas aos metadados da tabela.
+
+* `ALTER TABLE [db].table MODIFY STATISTICS (column list) TYPE (type list)` - Modifica a descrição das estatísticas nos metadados da tabela.
+
+* `ALTER TABLE [db].table DROP STATISTICS [IF EXISTS] (column list)` - Remove as estatísticas dos metadados das colunas especificadas e exclui todos os objetos de estatísticas em todas as partes dessas colunas.
+
+* `ALTER TABLE [db].table CLEAR STATISTICS [IF EXISTS] (column list)` - Exclui todos os objetos de estatísticas em todas as partes das colunas especificadas. Os objetos de estatísticas podem ser reconstruídos com `ALTER TABLE MATERIALIZE STATISTICS`.
+
+* `ALTER TABLE [db.]table MATERIALIZE STATISTICS (ALL | [IF EXISTS] (column list))` - Reconstrói as estatísticas das colunas. Implementado como uma [mutação](/pt-BR/reference/statements/alter/index#mutations).
+
+Os dois primeiros comandos são leves, no sentido de que apenas alteram metadados ou removem arquivos.
+
+Além disso, eles são replicados, sincronizando os metadados das estatísticas via ZooKeeper.
+
+<div id="example">
+  ## Exemplo:
+</div>
+
+Adicionando dois tipos de estatísticas a duas colunas:
+
+```sql
+ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;
+```
+
+<Note>
+  Estatísticas são compatíveis apenas com tabelas que usam motores [`*MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) (incluindo variantes [replicadas](/pt-BR/reference/engines/table-engines/mergetree-family/replication)).
+</Note>

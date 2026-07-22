@@ -179,7 +179,7 @@ public:
                 key = assert_cast<const ColumnVector<KeyType> &>(key_column).getData()[offset + i];
             }
 
-            AggregateDataPtr nested_place;
+            AggregateDataPtr nested_place = nullptr;
             auto it = merged_maps.find(key);
 
             if (it == merged_maps.end())
@@ -197,16 +197,22 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
         const auto & rhs_maps = this->data(rhs).merged_maps;
+
+        /// Zero-sized nested state (aggregate over Nothing): every key's nested state is a
+        /// zero-byte arena allocation, and alignedAlloc(0) does not advance the arena, so a
+        /// shared key's nested_place aliases elem.second. There is nothing to merge, and
+        /// merge() with aliasing source/destination is undefined. We still union the key sets.
+        const bool zero_size_nested = nested_func->sizeOfData() == 0;
 
         for (const auto & elem : rhs_maps)
         {
             const auto & it = merged_maps.find(elem.first);
 
-            AggregateDataPtr nested_place;
+            AggregateDataPtr nested_place = nullptr;
             if (it == merged_maps.end())
             {
                 // elem.second cannot be copied since this it will be destroyed after merging,
@@ -220,7 +226,8 @@ public:
                 nested_place = it->second;
             }
 
-            nested_func->merge(nested_place, elem.second, arena);
+            if (!zero_size_nested)
+                nested_func->merge(nested_place, elem.second, arena);
         }
     }
 
@@ -270,13 +277,13 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
-        UInt64 size;
+        UInt64 size = 0;
 
         readVarUInt(size, buf);
         for (UInt64 i = 0; i < size; ++i)
         {
-            KeyType key;
-            AggregateDataPtr nested_place;
+            KeyType key{};
+            AggregateDataPtr nested_place = nullptr;
 
             this->data(place).readKey(key, buf);
             nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
@@ -461,9 +468,13 @@ public:
 
 }
 
+void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorMap>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorMap>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumMap`), it aggregates `Map` values key-wise.",
+        .syntax = "<aggregate_function>Map",
+        .related = {"Array"}});
 }
 
 }

@@ -9,7 +9,7 @@
 namespace DB
 {
 
-class SerializationInterval : public SerializationNumber<typename DataTypeInterval::FieldType>
+class SerializationInterval final : public SerializationNumber<typename DataTypeInterval::FieldType>
 {
 private:
     explicit SerializationInterval(IntervalKind kind_);

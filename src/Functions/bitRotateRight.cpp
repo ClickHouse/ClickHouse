@@ -1,6 +1,10 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
+#if USE_EMBEDDED_COMPILER
+#    include <llvm/IR/Intrinsics.h>
+#endif
+
 namespace DB
 {
 namespace ErrorCodes
@@ -20,13 +24,22 @@ struct BitRotateRightImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
+    static Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
         if constexpr (is_big_int_v<A> || is_big_int_v<B>)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Bit rotate is not implemented for big integers");
         else
-            return static_cast<Result>((static_cast<Result>(a) >> static_cast<Result>(b))
-                | (static_cast<Result>(a) << static_cast<Result>((sizeof(Result) * 8) - static_cast<Result>(b))));
+        {
+            /// See note in `bitRotateLeft.cpp` about the canonical defined-rotation form.
+            using U = std::conditional_t<sizeof(Result) == 1, uint8_t,
+                std::conditional_t<sizeof(Result) == 2, uint16_t,
+                std::conditional_t<sizeof(Result) == 4, uint32_t, uint64_t>>>;
+            static_assert(sizeof(U) == sizeof(Result));
+            constexpr U bits = sizeof(U) * 8;
+            const U ua = static_cast<U>(a);
+            const U ub = static_cast<U>(b);
+            return static_cast<Result>((ua >> (ub & (bits - 1))) | (ua << ((-ub) & (bits - 1))));
+        }
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -36,8 +49,7 @@ struct BitRotateRightImpl
     {
         if (!left->getType()->isIntegerTy())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "BitRotateRightImpl expected an integral type");
-        auto * size = llvm::ConstantInt::get(left->getType(), left->getType()->getPrimitiveSizeInBits());
-        return b.CreateOr(b.CreateLShr(left, right), b.CreateShl(left, b.CreateSub(size, right)));
+        return b.CreateIntrinsic(llvm::Intrinsic::fshr, {left->getType()}, {left, left, right});
     }
 #endif
 };

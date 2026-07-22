@@ -43,6 +43,16 @@
   <query>SELECT count() FROM hits_10m_single WHERE hasAnyTokens(SearchPhrase, [])</query>
   <query>SELECT count() FROM hits_10m_single WHERE hasAllTokens(SearchPhrase, [])</query>
 
+  <query>SELECT count() FROM hits_10m_single WHERE hasPhrase(SearchPhrase, '2014 фото')</query>
+  <query>SELECT count() FROM hits_10m_single WHERE hasPhrase(SearchPhrase, '2014 года')</query>
+  <query>SELECT count() FROM hits_10m_single WHERE hasPhrase(SearchPhrase, 'ru -> eng')</query>
+  <query>SELECT count() FROM hits_10m_single WHERE hasPhrase(SearchPhrase, 'google.com')</query>
+  <query>SELECT count() FROM hits_10m_single WHERE hasPhrase(SearchPhrase, 'yandex.ru')</query>
+  <query>SELECT count() FROM hits_10m_single WHERE hasPhrase(SearchPhrase, 'video world')</query>
+  <query>SELECT count() FROM hits_10m_single WHERE hasPhrase(SearchPhrase, 'puma oxygen')</query>
+  <query>SELECT count() FROM hits_10m_single WHERE hasPhrase(SearchPhrase, 'master video')</query>
+  <query>SELECT count() FROM hits_10m_single WHERE hasPhrase(SearchPhrase, 'grand world')</query>
+
   <query>SELECT token, cardinality FROM mergeTreeTextIndex(currentDatabase(), hits_10m_single, idx_sp) FORMAT Null</query>
 
   <drop_query>ALTER TABLE hits_10m_single DROP INDEX idx_sp</drop_query>

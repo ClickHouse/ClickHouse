@@ -26,7 +26,7 @@ extern const int ILLEGAL_COLUMN;
 namespace
 {
 
-class FunctionH3EdgeLengthKm : public IFunction
+class FunctionH3EdgeLengthKm final : public IFunction
 {
 public:
     static constexpr auto name = "h3EdgeLengthKm";
@@ -87,7 +87,8 @@ public:
                     toString(resolution),
                     getName(),
                     MAX_H3_RES);
-            Float64 res = getHexagonEdgeLengthAvgKm(resolution);
+            double res = 0;
+            getHexagonEdgeLengthAvgKm(resolution, &res);
             dst_data[row] = res;
         }
 

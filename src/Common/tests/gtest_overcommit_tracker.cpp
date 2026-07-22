@@ -29,7 +29,7 @@ protected:
         BaseTracker::picked_tracker = tracker;
     }
 
-    MemoryTracker * tracker;
+    MemoryTracker * tracker = nullptr;
 };
 
 using UserOvercommitTrackerForTest = OvercommitTrackerForTest<UserOvercommitTracker>;

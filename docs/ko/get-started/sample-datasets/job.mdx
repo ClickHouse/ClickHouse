@@ -1,0 +1,130 @@
+---
+description: 'Join Order Benchmark (JOB) 데이터셋 및 쿼리.'
+sidebarTitle: 'JOB'
+slug: /getting-started/example-datasets/job
+title: 'Join Order Benchmark (JOB)'
+doc_type: 'guide'
+keywords: ['예시 데이터셋', 'job', 'join order benchmark', '벤치마크', '성능 테스트', '쿼리 최적화기', 'join ordering']
+---
+
+Join Order Benchmark (JOB)는 실제 데이터셋(IMDb의 스냅샷)을 기반으로 한, 상관관계가 높은 데이터에 대해 113개의 분석 쿼리로 쿼리 최적화기를 검증하는 벤치마크입니다. 도입 이후 JOB 벤치마크는 카디널리티 추정과 조인 순서 최적화를 포함해 관계형 데이터베이스 쿼리 최적화기의 성능을 평가하는 사실상의 표준이 되었습니다. 균등하고 서로 독립적인 데이터를 가정하는 합성 벤치마크와 달리, JOB는 편향과 상관관계가 있는 실제 데이터를 사용하므로 조인 순서 최적화와 카디널리티 추정에 까다로운 테스트입니다.
+
+이 데이터셋은 21개 테이블에 걸쳐 약 7,400만 개의 행을 포함하며, ClickHouse에서 압축 시 약 1.15 GiB를 차지합니다.
+
+113개의 쿼리는 33개의 패밀리(`1`–`33`)로 구성됩니다. 같은 패밀리 내의 쿼리(`a`, `b`, `c`, ...)는 동일한 조인 그래프를 공유하지만 선택 프레디케이트는 서로 다릅니다.
+
+**참고**
+
+* [How Good Are Query Optimizers, Really?](https://www.vldb.org/pvldb/vol9/p204-leis.pdf) (Leis et al., VLDB 2015)
+* [Join Order Benchmark](https://github.com/gregrahn/join-order-benchmark) 리포지토리
+
+<div id="creating-tables">
+  ## 테이블 생성
+</div>
+
+JOB 데이터셋은 21개의 테이블로 구성된 IMDb의 스냅샷입니다. 테이블 정의는 ClickHouse 리포지토리의 [`init_cloud.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/init_cloud.sql)에서 확인할 수 있습니다.
+
+각 테이블은 프라이머리 키 컬럼 `id`를 기준으로 정렬된 [`MergeTree`](/ko/engines/table-engines/mergetree-family/mergetree) 엔진을 사용하며, 이는 모든 테이블이 `id integer NOT NULL PRIMARY KEY`를 선언하는 원본 PostgreSQL 스키마를 반영한 것입니다. 널 허용 PostgreSQL 컬럼은 `Nullable(...)` 타입에 매핑됩니다.
+
+테이블을 생성하세요:
+
+```bash
+curl -O https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/tests/benchmarks/job/init_cloud.sql
+clickhouse client --query "CREATE DATABASE IF NOT EXISTS job"
+clickhouse client --database job --queries-file init_cloud.sql
+```
+
+<div id="loading-the-data">
+  ## 데이터 로드
+</div>
+
+데이터는 JOB에서 사용된 원본 IMDb 스냅샷에서 가져오며, 각 테이블별 CSV file 하나(`aka_name.csv`, `title.csv`, ...)로 배포됩니다.
+이 CSV들은 `ESCAPE '\'`를 사용하는 PostgreSQL `COPY` 의미 체계를 따릅니다. 즉, 백슬래시는 따옴표로 묶인 field 안에서만 따옴표 문자를 이스케이프하고, 따옴표 밖에서는 문자 그대로 취급됩니다.
+ClickHouse는 RFC 4180 CSV(따옴표 이중화, 백슬래시 이스케이프 없음)를 기대하므로, 먼저 파일을 다시 인코딩해야 합니다.
+
+[`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py)는 이 재인코딩을 수행합니다.
+이 스크립트는 원본 CSV를 stdin에서 읽고 표준 CSV를 stdout에 기록하며, 내부 따옴표는 이중화하고 따옴표로 묶이지 않은 빈 field는 그대로 유지합니다(ClickHouse는 이를 `Nullable` 컬럼의 `NULL`로 매핑합니다).
+
+원본 CSV로 테이블을 빌드하려면:
+
+* 테이블을 생성하십시오(위 참고).
+* Join Order Benchmark 리포지토리의 지침에 따라 IMDb 데이터 집합을 `imdb.tgz` file로 다운로드하십시오.
+* 데이터를 변환하고 가져오십시오:
+
+```bash
+set -euo pipefail
+
+for table in aka_name aka_title cast_info char_name comp_cast_type company_name \
+             company_type complete_cast info_type keyword kind_type link_type \
+             movie_companies movie_info movie_info_idx movie_keyword movie_link \
+             name person_info role_type title; do
+    echo "Loading ${table} ..."
+    python3 convert_csv.py < "${table}.csv" > "${table}.clean.csv"
+    clickhouse client --database job --query "INSERT INTO ${table} FORMAT CSV" < "${table}.clean.csv"
+done
+```
+
+테이블(table)에 데이터가 채워지면, 나중에 더 빠르게 다시 가져올 수 있도록 Parquet로 내보낼 수 있습니다. 예:
+`clickhouse client --database job --query "SELECT * FROM title ORDER BY id FORMAT Parquet" > title.parquet`.
+
+상세 테이블 크기:
+
+| Table                  | 크기(행 수)        | 크기(ClickHouse에서 압축됨) |
+| ---------------------- | -------------- | -------------------- |
+| aka&#95;name           | 901,343        | 31.86 MiB            |
+| aka&#95;title          | 361,472        | 14.32 MiB            |
+| cast&#95;info          | 36,244,344     | 296.25 MiB           |
+| char&#95;name          | 3,140,339      | 107.95 MiB           |
+| comp&#95;cast&#95;type | 4              | 132.00 B             |
+| company&#95;name       | 234,997        | 8.38 MiB             |
+| company&#95;type       | 4              | 162.00 B             |
+| complete&#95;cast      | 135,086        | 748.80 KiB           |
+| info&#95;type          | 113            | 1.25 KiB             |
+| keyword                | 134,170        | 1.88 MiB             |
+| kind&#95;type          | 7              | 177.00 B             |
+| link&#95;type          | 18             | 284.00 B             |
+| movie&#95;companies    | 2,609,129      | 21.20 MiB            |
+| movie&#95;info         | 14,835,720     | 300.46 MiB           |
+| movie&#95;info&#95;idx | 1,380,035      | 8.01 MiB             |
+| movie&#95;keyword      | 4,523,930      | 21.06 MiB            |
+| movie&#95;link         | 29,997         | 178.21 KiB           |
+| name                   | 4,167,491      | 131.16 MiB           |
+| person&#95;info        | 2,963,664      | 154.12 MiB           |
+| role&#95;type          | 12             | 246.00 B             |
+| title                  | 2,528,312      | 78.04 MiB            |
+| **합계**                 | **74,190,187** | **1.15 GiB**         |
+
+(ClickHouse의 압축된 크기는 `system.tables.total_bytes`에서 가져온 값이며, 위 테이블 정의를 기준으로 합니다.)
+
+<div id="queries">
+  ## 쿼리
+</div>
+
+113개의 JOB 쿼리는 ClickHouse 리포지토리의 [여기](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries)에서 확인할 수 있습니다.
+실행에 사용된 설정은 [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json)에 있습니다.
+알려진 문제와 특정 쿼리에 관한 참고 사항은 [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md)를 참조하십시오.
+
+쿼리는 테이블 이름을 직접 참조하므로 `job` 데이터베이스에서 실행하십시오(예: `clickhouse client --database job`).
+
+예시 쿼리(`1a`):
+
+```sql
+SELECT MIN(mc.note) AS production_note,
+       MIN(t.title) AS movie_title,
+       MIN(t.production_year) AS movie_year
+FROM company_type AS ct,
+     info_type AS it,
+     movie_companies AS mc,
+     movie_info_idx AS mi_idx,
+     title AS t
+WHERE ct.kind = 'production companies'
+  AND it.info = 'top 250 rank'
+  AND mc.note NOT LIKE '%(as Metro-Goldwyn-Mayer Pictures)%'
+  AND (mc.note LIKE '%(co-production)%'
+       OR mc.note LIKE '%(presents)%')
+  AND ct.id = mc.company_type_id
+  AND t.id = mc.movie_id
+  AND t.id = mi_idx.movie_id
+  AND mc.movie_id = mi_idx.movie_id
+  AND it.id = mi_idx.info_type_id;
+```

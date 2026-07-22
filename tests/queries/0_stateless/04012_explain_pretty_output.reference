@@ -1,0 +1,108 @@
+Output: a, b
+
+ReadFromMergeTree (default.t1)
+   Read type: Default
+   Parts: 1 | Granules: 1
+   Output: a, b
+--- Projection with expressions ---
+Output: a + 1, lower(b)
+
+ReadFromMergeTree (default.t1)
+   Read type: Default
+   Parts: 1 | Granules: 1
+   Output: a, b
+--- ReadFromMergeTree output ---
+Output: a, b, c
+
+ReadFromMergeTree (default.t1)
+   Read type: Default
+   Parts: 1 | Granules: 1
+   Output: a, b, c
+--- ReadFromMergeTree with subset of columns ---
+Output: a
+
+ReadFromMergeTree (default.t1)
+   Read type: Default
+   Parts: 1 | Granules: 1
+   Output: a
+--- Join output with left and right columns ---
+Output: a, b, y
+
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100]
+│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Result rows: 100
+│  Join conditions: a = x
+│  Output:
+│    Left:  a, b
+│    Right: y
+├──ReadFromMergeTree (default.t1)
+│     Read type: Default
+│     Parts: 1 | Granules: 1
+│     Output: a, b
+└──ReadFromMergeTree (default.t2)
+      Read type: Default
+      Parts: 1 | Granules: 1
+      Output: y, x
+--- Join output select star ---
+Output: a, b, c, x, y
+
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100]
+│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Result rows: 100
+│  Join conditions: a = x
+│  Output:
+│    Left:  a, b, c
+│    Right: x, y
+├──ReadFromMergeTree (default.t1)
+│     Read type: Default
+│     Parts: 1 | Granules: 1
+│     Output: a, b, c
+└──ReadFromMergeTree (default.t2)
+      Read type: Default
+      Parts: 1 | Granules: 1
+      Output: x, y
+--- Join with only left columns selected ---
+Output: a, b
+
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100]
+│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Result rows: 100
+│  Join conditions: a = x
+│  Output:
+│    Left:  a, b
+│    Right: Empty
+├──ReadFromMergeTree (default.t1)
+│     Read type: Default
+│     Parts: 1 | Granules: 1
+│     Output: a, b
+└──ReadFromMergeTree (default.t2)
+      Read type: Default
+      Parts: 1 | Granules: 1
+      Output: x
+--- Join with only right columns selected ---
+Output: x, y
+
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100]
+│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Result rows: 100
+│  Join conditions: a = x
+│  Output:
+│    Left:  Empty
+│    Right: x, y
+├──ReadFromMergeTree (default.t1)
+│     Read type: Default
+│     Parts: 1 | Granules: 1
+│     Output: a
+└──ReadFromMergeTree (default.t2)
+      Read type: Default
+      Parts: 1 | Granules: 1
+      Output: x, y
+--- No output lines without pretty ---
+ReadFromMergeTree (default.t1)
+ReadType: Default
+Parts: 1
+Granules: 1

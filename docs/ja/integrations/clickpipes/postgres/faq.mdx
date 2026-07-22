@@ -1,0 +1,512 @@
+---
+sidebarTitle: 'よくある質問'
+description: 'ClickPipes for Postgres に関するよくある質問です。'
+slug: /integrations/clickpipes/postgres/faq
+title: 'ClickPipes for Postgres のよくある質問'
+keywords: ['Postgres よくある質問', 'ClickPipes', 'TOAST カラム', 'レプリケーションスロット', 'パブリケーション']
+doc_type: 'reference'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="are-transaction-rollbacks-replicated">
+  ### トランザクションのロールバックは ClickHouse にレプリケートされますか？
+</div>
+
+いいえ。CDC (変更データキャプチャ) でレプリケートされるのは、コミット済みのトランザクションのみです。ロールバックされたトランザクションが ClickHouse に送信されることはありません。
+
+<div id="retain-data-longer-in-clickhouse">
+  ### ClickHouse では、ソースの Postgres より長くデータを保持できますか？
+</div>
+
+はい。ソースの Postgres と宛先の ClickHouse のデータ保持期間は、それぞれ独立しています。たとえば、Postgres には 3 か月分のデータだけを保持し、ClickHouse には全履歴を保持できます。Postgres で古い行を削除すると、その DELETE イベントが ClickHouse にレプリケートされるため、履歴データを保持したい場合は、[パブリケーション](/ja/integrations/clickpipes/postgres/faq#ignore-delete-truncate) から DELETE を除外するか、クエリレイヤーで処理する必要があります。
+
+<div id="data-enrichment">
+  ### Postgres から ClickHouse に流れるデータを、どのようにエンリッチできますか？
+</div>
+
+CDC の宛先テーブルに対して [materialized views](/ja/concepts/features/materialized-views/index) を使用します。ClickHouse の materialized view は insert trigger として機能するため、Postgres からレプリケートされた各行を、最終的なターゲットテーブルに書き込む前に変換したり、ルックアップテーブルと join したり、追加のカラムを付加したりできます。
+
+<div id="multi-region-multi-source">
+  ### 複数のPostgresインスタンスから、1つまたは複数のClickHouseサービスへレプリケートできますか？
+</div>
+
+はい。異なるPostgresインスタンス (AWSリージョンをまたぐものを含む) から、1つまたは複数のClickHouseサービスに向けて、個別のClickPipesを作成できます。たとえば、低レイテンシで分析するために、あるリージョンのPostgresからローカルのClickHouseクラスターへデータを送信し、同時に、集約レポート用として別のリージョンにある中央集約型のClickHouseクラスターへ送信することもできます。クロスリージョン構成では、AWSのリージョン間データ転送コストに加えて、ネットワークレイテンシも増加する点に注意してください。
+
+<div id="how-does-idling-affect-my-postgres-cdc-clickpipe">
+  ### アイドル状態は Postgres CDC (変更データキャプチャ) ClickPipe にどのような影響がありますか？
+</div>
+
+ClickHouse Cloud サービスがアイドル状態でも、Postgres CDC (変更データキャプチャ) ClickPipe は引き続きデータを同期します。受信データを処理するため、サービスは次の同期間隔のタイミングで起動します。同期が完了し、アイドル時間に達すると、サービスは再びアイドル状態に戻ります。
+
+たとえば、同期間隔を 30 分、サービスのアイドル時間を 10 分に設定している場合、サービスは 30 分ごとに起動して 10 分間アクティブになり、その後再びアイドル状態に戻ります。
+
+<div id="how-are-toast-columns-handled-in-clickpipes-for-postgres">
+  ### ClickPipes for Postgres では、TOAST カラムはどのように処理されますか？
+</div>
+
+詳細については、[TOAST カラムの処理](/ja/integrations/clickpipes/postgres/toast) ページを参照してください。
+
+<div id="how-are-generated-columns-handled-in-clickpipes-for-postgres">
+  ### ClickPipes for Postgres では生成カラムはどのように処理されますか？
+</div>
+
+詳細については、[Postgres の生成カラム: 注意点とベストプラクティス](/ja/integrations/clickpipes/postgres/postgres-generated-columns) ページを参照してください。
+
+<div id="do-tables-need-to-have-primary-keys-to-be-part-of-postgres-cdc">
+  ### Postgres CDCの対象にするには、テーブルに主キーが必要ですか？
+</div>
+
+ClickPipes for Postgresでテーブルをレプリケートするには、そのテーブルに主キーまたは [REPLICA IDENTITY](https://www.postgresql.org/docs/current/sql-altertable.html#SQL-ALTERTABLE-REPLICA-IDENTITY) のいずれかが定義されている必要があります。
+
+* **主キー**: 最もわかりやすい方法は、テーブルに主キーを定義することです。これにより各行に一意の識別子が与えられ、更新や削除を追跡するうえで重要になります。この場合、REPLICA IDENTITY は `DEFAULT` (既定の動作) に設定できます。
+* **Replica Identity**: テーブルに主キーがない場合は、レプリカアイデンティティ を設定できます。レプリカアイデンティティ は `FULL` に設定でき、この場合は行全体を使って変更を識別します。あるいは、テーブルに一意な索引がある場合はその索引を使用するように設定し、REPLICA IDENTITY を `USING INDEX index_name` に設定することもできます。
+  レプリカアイデンティティ を FULL に設定するには、次の SQL コマンドを使用します。
+
+```sql
+ALTER TABLE your_table_name REPLICA IDENTITY FULL;
+```
+
+`REPLICA IDENTITY FULL` を使用すると、変更されていない TOAST カラムもレプリケーションの対象になります。詳しくは[こちら](/ja/integrations/clickpipes/postgres/toast)をご覧ください。
+
+`REPLICA IDENTITY FULL` の使用は、パフォーマンスに影響する可能性があるほか、WAL の増加が速くなる場合がある点に注意してください。特に、主キーがなく、更新や削除が頻繁に発生するテーブルでは、変更ごとにより多くのデータをログに記録する必要があるため、その影響が大きくなります。テーブルの主キーやレプリカアイデンティティの設定について不明な点がある場合、または設定の支援が必要な場合は、サポートチームまでお問い合わせください。
+
+また、主キーとレプリカアイデンティティのいずれも定義されていない場合、ClickPipes はそのテーブルの変更をレプリケートできず、レプリケーション処理中にエラーが発生する可能性があります。そのため、ClickPipe を設定する前にテーブルのスキーマを確認し、これらの要件を満たしていることを確認することをお勧めします。
+
+<div id="do-you-support-partitioned-tables-as-part-of-postgres-cdc">
+  ### Postgres CDC (変更データキャプチャ) でパーティション化テーブルはサポートされていますか？
+</div>
+
+はい。パーティション化テーブルは、PRIMARY KEY または REPLICA IDENTITY が定義されていれば、追加設定なしでサポートされます。PRIMARY KEY と REPLICA IDENTITY は、親テーブルとそのパーティションの両方に設定されている必要があります。詳細については、[こちら](https://blog.peerdb.io/real-time-change-data-capture-for-postgres-partitioned-tables)をご覧ください。
+
+<div id="can-i-connect-postgres-databases-that-dont-have-a-public-ip-or-are-in-private-networks">
+  ### パブリック IP を持たない、またはプライベートネットワーク内にある Postgres データベースに接続できますか？
+</div>
+
+はい。ClickPipes for Postgres では、プライベートネットワーク内のデータベースに接続するための方法を 2 つ用意しています。
+
+1. **SSH トンネリング**
+   * ほとんどのユースケースに適しています
+   * セットアップ手順は[こちら](/ja/integrations/clickpipes/postgres/index#adding-your-source-postgres-database-connection)をご覧ください
+   * すべてのリージョンで利用できます
+
+2. **AWS PrivateLink**
+   * 次の 3 つの AWS リージョンで利用できます。
+     * us-east-1
+     * us-east-2
+     * eu-central-1
+   * 詳しいセットアップ手順については、[PrivateLink ドキュメント](/ja/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)をご覧ください
+   * PrivateLink を利用できないリージョンでは、SSH トンネリングを使用してください
+
+<div id="how-do-you-handle-updates-and-deletes">
+  ### UPDATE と DELETE はどのように処理されますか？
+</div>
+
+ClickPipes for Postgres は、Postgres の INSERT と UPDATE の両方を、ClickHouse では異なるバージョン (`_peerdb_` バージョンカラムを使用) を持つ新しい行として取り込みます。ReplacingMergeTree テーブルエンジンは、順序キー (ORDER BY カラム) に基づいてバックグラウンドで定期的に重複排除を行い、最新の `_peerdb_` バージョンを持つ行だけを保持します。
+
+Postgres の DELETE は、削除済みとしてマークされた新しい行 (`_peerdb_is_deleted` カラムを使用) として伝播されます。重複排除プロセスは非同期のため、一時的に重複が見える場合があります。これに対処するには、クエリレイヤーで重複排除を行う必要があります。
+
+また、デフォルトでは、Postgres は DELETE 操作時に、主キーまたは レプリカアイデンティティ に含まれないカラムの値を送信しない点にも注意してください。DELETE 時に行全体のデータを取得したい場合は、[REPLICA IDENTITY](https://www.postgresql.org/docs/current/sql-altertable.html#SQL-ALTERTABLE-REPLICA-IDENTITY) を FULL に設定できます。
+
+詳細については、以下を参照してください。
+
+* [ReplacingMergeTree テーブルエンジンのベストプラクティス](https://docs.peerdb.io/bestpractices/clickhouse_datamodeling#replacingmergetree-table-engine)
+* [Postgres-to-ClickHouse CDC (変更データキャプチャ) の内部実装ブログ](https://clickhouse.com/blog/postgres-to-clickhouse-data-modeling-tips)
+
+<div id="can-i-update-primary-key-columns-in-postgresql">
+  ### PostgreSQL で主キーカラムを更新できますか？
+</div>
+
+<Warning>
+  PostgreSQL での主キー更新は、デフォルトでは ClickHouse に正しく反映できません。
+
+  これは、`ReplacingMergeTree` の重複排除が `ORDER BY` カラム (通常は主キーに対応) に基づいて動作するためです。PostgreSQL で主キーを更新すると、ClickHouse では既存の行の更新ではなく、異なるキーを持つ新しい行として扱われます。その結果、ClickHouse テーブル内に古い主キー値と新しい主キー値の両方が存在する可能性があります。
+</Warning>
+
+主キーは変更されない識別子として設計されるため、PostgreSQL のデータベース設計において主キーカラムの更新は一般的ではない点にも注意してください。ほとんどのアプリケーションでは、設計上主キーの更新を避けているため、この制限が問題になるケースは通常まれです。
+
+主キー更新の処理を有効にできる実験的な設定もありますが、パフォーマンスへの影響が大きく、十分に検討せずに本番環境で使用することは推奨されません。
+
+PostgreSQL で主キーカラムを更新し、その変更を ClickHouse に正しく反映させる必要がある場合は、具体的な要件や考えられる解決策について相談するため、[db-integrations-support@clickhouse.com](mailto:db-integrations-support@clickhouse.com) までサポートチームにご連絡ください。
+
+<div id="do-you-support-schema-changes">
+  ### スキーマ変更に対応していますか？
+</div>
+
+詳しくは、[ClickPipes for Postgres: スキーマ変更の反映サポート](/ja/integrations/clickpipes/postgres/schema-changes) ページを参照してください。
+
+<div id="what-are-the-costs-for-clickpipes-for-postgres-cdc">
+  ### ClickPipes for Postgres CDC (変更データキャプチャ)  のコストはいくらですか？
+</div>
+
+料金の詳細については、[メインの請求概要ページにある ClickPipes for Postgres CDC (変更データキャプチャ)  の料金セクション](/ja/products/cloud/reference/billing/clickpipes/index)をご参照ください。
+
+<div id="my-replication-slot-size-is-growing-or-not-decreasing-what-might-be-the-issue">
+  ### レプリケーションスロットのサイズが増え続ける、または減らないのはなぜですか？
+</div>
+
+Postgres のレプリケーションスロットのサイズが増え続けていたり、なかなか小さくならなかったりする場合、通常は **WAL (Write-Ahead Log) レコードが CDC パイプラインまたはレプリケーション処理で十分な速度で消費 (または「再生」) されていない** ことを意味します。以下では、よくある原因とその対処方法を説明します。
+
+1. **データベースアクティビティの急増**
+   * 大規模なバッチ更新、大量挿入、または大きなスキーマ変更により、短時間で大量の WAL データが生成されることがあります。
+   * レプリケーションスロットは、これらの WAL レコードが消費されるまで保持するため、一時的にサイズが急増します。
+
+2. **長時間実行されるトランザクション**
+   * トランザクションが開いたままになっていると、Postgres はそのトランザクションの開始以降に生成されたすべての WAL セグメントを保持する必要があり、スロットサイズが大幅に増えることがあります。
+   * トランザクションが無期限に開いたままにならないよう、`statement_timeout` と `idle_in_transaction_session_timeout` を妥当な値に設定してください。
+     ```sql
+     SELECT
+         pid,
+         state,
+         age(now(), xact_start) AS transaction_duration,
+         query AS current_query
+     FROM
+         pg_stat_activity
+     WHERE
+         xact_start IS NOT NULL
+     ORDER BY
+         age(now(), xact_start) DESC;
+     ```
+     このクエリを使うと、異常に長時間実行されているトランザクションを特定できます。
+
+3. **メンテナンスまたはユーティリティ処理 (例: `pg_repack`)&#x20;**
+   * `pg_repack` のようなツールはテーブル全体を書き換えることがあり、短時間で大量の WAL データを生成します。
+   * これらの処理はトラフィックの少ない時間帯に実行するか、実行中は WAL 使用量を注意深く監視してください。
+
+4. **VACUUM と VACUUM ANALYZE**
+   * これらの処理はデータベースの健全性維持に必要ですが、特に大きなテーブルをスキャンする場合は、追加の WAL トラフィックを発生させることがあります。
+   * autovacuum の調整パラメータを利用するか、手動の VACUUM 処理をピーク外の時間帯に実行することを検討してください。
+
+5. **レプリケーション consumer がスロットを継続的に読み取っていない**
+   * CDC パイプライン (例: ClickPipes) または別のレプリケーション consumer が停止、一時停止、またはクラッシュすると、WAL データがスロット内に蓄積されます。
+   * パイプラインが継続的に稼働していることを確認し、接続や認証の error がないか logs を確認してください。
+
+このトピックを詳しく掘り下げたい場合は、次のブログ記事をご覧ください: [Overcoming Pitfalls of Postgres Logical Decoding](https://blog.peerdb.io/overcoming-pitfalls-of-postgres-logical-decoding#heading-beware-of-replication-slot-growth-how-to-monitor-it)。
+
+<div id="how-are-postgres-data-types-mapped-to-clickhouse">
+  ### Postgresのデータ型はClickHouseにどのようにマッピングされますか？
+</div>
+
+ClickPipes for Postgresでは、Postgresのデータ型をClickHouse側で可能な限りネイティブにマッピングすることを目指しています。このドキュメントでは、各データ型とそのマッピングの対応を包括的にまとめています: [データ型マトリクス](https://docs.peerdb.io/datatypes/datatype-matrix).
+
+<div id="can-i-define-my-own-data-type-mapping-while-replicating-data-from-postgres-to-clickhouse">
+  ### Postgres から ClickHouse へデータをレプリケーションする際に、独自の型マッピングを定義できますか？
+</div>
+
+現時点では、パイプの一部としてカスタムの型マッピングを定義することはサポートしていません。ただし、ClickPipes で使用されるデフォルトの型マッピングは、各システムのネイティブ型に非常に忠実である点に注意してください。Postgres のほとんどのカラム型は、ClickHouse 上の対応するネイティブ型にできるだけ近い形でレプリケートされます。たとえば、Postgres の整数の Array 型は、ClickHouse でも整数の Array 型としてレプリケートされます。
+
+<div id="how-are-json-and-jsonb-columns-replicated-from-postgres">
+  ### Postgres の JSON および JSONB カラムはどのようにレプリケートされますか？
+</div>
+
+JSON および JSONB カラムは、ClickHouse では String type としてレプリケートされます。ClickHouse はネイティブの [JSON type](/ja/reference/data-types/newjson) をサポートしているため、必要に応じて、ClickPipes のテーブル上に materialized view を作成して変換できます。あるいは、String カラムに対して直接 [JSON functions](/ja/reference/functions/regular-functions/json-functions) を使用することもできます。現在、JSON および JSONB カラムを ClickHouse の JSON type に直接レプリケートする機能を鋭意開発中です。この機能は数か月以内に利用可能になる見込みです。
+
+<div id="what-happens-to-inserts-when-a-mirror-is-paused">
+  ### ミラーが一時停止されると、insert はどうなりますか？
+</div>
+
+ミラーを一時停止すると、メッセージはソースの Postgres 上のレプリケーションスロットにキューされるため、バッファされた状態で保持され、失われることはありません。ただし、ミラーを一時停止して再開すると接続が再確立されるため、ソース環境によっては多少時間がかかる場合があります。
+
+この過程で、sync (Postgres からデータを取得して ClickHouse の raw table にストリーミングする処理) と normalize (raw table からターゲットテーブルへの処理) の両方が中止されます。ただし、どちらも確実に再開するために必要な状態は保持されます。
+
+* sync では、途中でキャンセルされた場合、Postgres の confirmed&#95;flush&#95;lsn は更新されないため、次回の sync は中断されたものと同じ位置から開始され、データの整合性が保たれます。
+* normalize では、ReplacingMergeTree における insert 順序によって重複排除が行われます。
+
+要するに、一時停止中に sync と normalize のプロセスはいったん終了しますが、データ損失や不整合を起こすことなく再開できるため、安全に実行できます。
+
+<div id="can-clickpipe-creation-be-automated-or-done-via-api-or-cli">
+  ### ClickPipe の作成は自動化できますか？また、API や CLI から実行できますか？
+</div>
+
+Postgres ClickPipe は、[OpenAPI](/ja/products/cloud/features/admin-features/api/openapi) のエンドポイントを介して作成および管理することもできます。この機能はベータで、API リファレンスは[こちら](/ja/api-reference/organization/get-list-of-available-organizations#tag/beta)にあります。現在、Postgres ClickPipes を作成するための Terraform サポートも積極的に進めています。
+
+<div id="how-do-i-speed-up-my-initial-load">
+  ### 初期ロードを高速化するにはどうすればよいですか？
+</div>
+
+すでに実行中の初期ロードを高速化することはできません。ただし、一部の設定を調整することで、今後の初期ロードを最適化できます。デフォルトでは、並列スレッド数は4、スナップショットのパーティションあたりの行数は100,000に設定されています。これらは高度な設定ですが、通常はほとんどのユースケースで十分です。
+
+Postgres 13 以前では、CTID の範囲スキャンは非常に低速なため、ClickPipes ではこれを使用しません。代わりに、テーブル全体を単一のパーティションとして読み込むため、実質的にシングルスレッドになります (そのため、パーティションあたりの行数と並列スレッド数の設定はいずれも無視されます) 。この場合に初期ロードを高速化するには、`snapshot number of tables in parallel` を増やすか、大きなテーブルに対して独自の索引付きパーティション化カラムを指定してください。
+
+<div id="how-should-i-scope-my-publications-when-setting-up-replication">
+  ### レプリケーションの設定時、パブリケーションのスコープはどのように設定すべきですか？
+</div>
+
+パブリケーションは ClickPipes に管理させることもできます (追加の権限が必要です) 。また、自分で作成して管理することもできます。ClickPipes 管理のパブリケーションでは、パイプの編集に応じたテーブルの追加・削除が自動的に処理されます。自分で管理する場合は、レプリケーションが必要なテーブルだけを含めるよう、パブリケーションのスコープを慎重に設定してください。不要なテーブルまで含めると、Postgres の WAL デコードが遅くなります。
+
+パブリケーションに含めるテーブルには、必ず主キーまたは `REPLICA IDENTITY FULL` のいずれかが設定されていることを確認してください。主キーのないテーブルがある状態で、すべてのテーブルを対象とするパブリケーションを作成すると、それらのテーブルでは DELETE や UPDATE が失敗します。
+
+データベース内で主キーのないテーブルを特定するには、次のクエリを使用できます。
+
+```sql
+SELECT table_schema, table_name
+FROM information_schema.tables
+WHERE
+    (table_catalog, table_schema, table_name) NOT IN (
+        SELECT table_catalog, table_schema, table_name
+        FROM information_schema.table_constraints
+        WHERE constraint_type = 'PRIMARY KEY') AND
+    table_schema NOT IN ('information_schema', 'pg_catalog', 'pgq', 'londiste');
+```
+
+主キーのないテーブルを扱う場合、選択肢は 2 つあります。
+
+1. **主キーのないテーブルを ClickPipes から除外する**:
+   主キーのあるテーブルだけを含むようにパブリケーションを作成します。
+   ```sql
+   CREATE PUBLICATION clickpipes_publication FOR TABLE table_with_primary_key1, table_with_primary_key2, ...;
+   ```
+
+2. **主キーのないテーブルを ClickPipes に含める**:
+   主キーのないテーブルを含める場合は、それらのレプリカアイデンティティを `FULL` に変更する必要があります。これにより、UPDATE および DELETE 操作が正しく機能します。
+   ```sql
+   ALTER TABLE table_without_primary_key1 REPLICA IDENTITY FULL;
+   ALTER TABLE table_without_primary_key2 REPLICA IDENTITY FULL;
+   CREATE PUBLICATION clickpipes_publication FOR TABLE <...>, <...>;
+   ```
+
+<Tip>
+  ClickPipes に管理させずにパブリケーションを手動で作成する場合は、`FOR ALL TABLES` のパブリケーションを作成することは推奨しません。これにより、Postgres から ClickPipes へのトラフィックが増加し (パイプに含まれない他のテーブルの変更も送信されるため) 、全体的な効率が低下します。
+
+  パブリケーションを手動で作成する場合は、パイプに追加する前に、追加したいテーブルをパブリケーションに含めてください。
+</Tip>
+
+<Warning>
+  Postgres の read replica / hot standby からレプリケーションする場合は、プライマリインスタンス上で独自のパブリケーションを作成する必要があります。作成したパブリケーションは自動的に standby に伝播されます。standby ではパブリケーションを作成できないため、この場合 ClickPipe でパブリケーションを管理することはできません。
+</Warning>
+
+<div id="recommended-max_slot_wal_keep_size-settings">
+  ### 推奨される `max_slot_wal_keep_size` の設定
+</div>
+
+* **最低限:** [`max_slot_wal_keep_size`](https://www.postgresql.org/docs/devel/runtime-config-replication.html#GUC-MAX-SLOT-WAL-KEEP-SIZE) は、少なくとも **2 日分** の WAL データを保持できるように設定します。
+* **大規模なデータベース向け (トランザクション量が多い場合) :** 1 日あたりの WAL 生成量のピーク時の **2～3 倍** を少なくとも保持します。
+* **ストレージ容量に制約がある環境向け:** レプリケーションの安定性を確保しつつ、**ディスク容量の枯渇を避ける** ため、控えめに調整します。
+
+<div id="how-to-calculate-the-right-value">
+  #### 適切な値の求め方
+</div>
+
+適切な設定値を決めるには、WAL の生成率を測定します。
+
+<div id="for-postgresql-10">
+  ##### PostgreSQL 10以降
+</div>
+
+```sql
+SELECT pg_wal_lsn_diff(pg_current_wal_insert_lsn(), '0/0') / 1024 / 1024 AS wal_generated_mb;
+```
+
+<div id="for-postgresql-96-and-below">
+  ##### PostgreSQL 9.6 以下の場合:
+</div>
+
+```sql
+SELECT pg_xlog_location_diff(pg_current_xlog_insert_location(), '0/0') / 1024 / 1024 AS wal_generated_mb;
+```
+
+* 上記のクエリを、1日のさまざまな時間帯、特にトランザクション量が多い時間帯に実行します。
+* 24時間あたりに生成されるWALの量を計算します。
+* 十分な保持期間を確保するため、その値に2倍または3倍を掛けます。
+* `max_slot_wal_keep_size` を、算出した値 (MB または GB) に設定します。
+
+<div id="example">
+  ##### 例
+</div>
+
+データベースが1日あたり100 GBのWALを生成する場合は、次のように設定します。
+
+```sql
+max_slot_wal_keep_size = 200GB
+```
+
+<div id="im-seeing-a-receivemessage-eof-error-in-the-logs-what-does-it-mean">
+  ### ログに ReceiveMessage EOF エラーが表示されています。これは何を意味しますか？
+</div>
+
+`ReceiveMessage` は、Postgres のロジカルデコードプロトコルで、レプリケーションストリームからメッセージを読み取る関数です。EOF (End of File) エラーは、レプリケーションストリームの読み取り中に、Postgres サーバーへの connection が予期せず閉じられたことを示します。
+
+これは回復可能で、まったく致命的ではないエラーです。ClickPipes は自動的に再接続を試み、レプリケーションを再開します。
+
+これは、いくつかの理由で発生する可能性があります。
+
+* **ネットワークの問題:** 一時的なネットワーク障害によって、connection が切断されることがあります。
+* **Postgres サーバーの再起動:** Postgres サーバーが再起動された、またはクラッシュした場合、connection は失われます。
+
+<div id="my-replication-slot-is-invalidated-what-should-i-do">
+  ### レプリケーションスロットが無効化されました。どうすればよいですか？
+</div>
+
+ClickPipe を復旧するには、再同期をトリガーするしかありません。これは Settings ページから実行できます。
+
+レプリケーションスロットが無効化される最も一般的な原因は、PostgreSQL データベースの `max_slot_wal_keep_size` の設定値が小さいことです (たとえば数 GB) 。この値を増やすことを推奨します。`max_slot_wal_keep_size` の調整については、[こちらのセクションを参照してください](/ja/integrations/clickpipes/postgres/faq#recommended-max_slot_wal_keep_size-settings)。レプリケーションスロットの無効化を防ぐには、理想的には少なくとも 200GB に設定してください。
+
+まれに、`max_slot_wal_keep_size` が設定されていない場合でもこの問題が発生することがあります。これは PostgreSQL の複雑でまれな不具合が原因である可能性がありますが、原因は依然として明らかになっていません。
+
+<div id="i-am-seeing-out-of-memory-ooms-on-clickhouse-while-my-clickpipe-is-ingesting-data-can-you-help">
+  ### ClickPipe がデータを取り込んでいる際に、ClickHouse でメモリ不足 (OOM) が発生しています。対処方法はありますか？
+</div>
+
+ClickHouse で OOM が発生する一般的な原因の 1 つは、サービスのサイズが不足していることです。つまり、現在のサービス構成では、インジェスト負荷を効率よく処理するのに十分なリソース (たとえばメモリや CPU) がありません。ClickPipe のデータインジェストに必要な負荷を満たせるよう、サービスをスケールアップすることを強く推奨します。
+
+もう 1 つ確認されている原因は、十分に最適化されていない JOIN を含む下流の materialized view が存在することです。
+
+* `JOIN` の一般的な最適化手法の 1 つは、右側のテーブルが非常に大きい `LEFT JOIN` がある場合です。この場合は、クエリを `RIGHT JOIN` を使う形に書き換え、大きいテーブルを左側に移してください。これにより、クエリプランナーはよりメモリ効率よく処理できるようになります。
+
+* `JOIN` の別の最適化方法としては、`subqueries` や `CTEs` を使ってテーブルを明示的に絞り込み、その後それらのサブクエリ同士で `JOIN` を実行する方法があります。これにより、プランナーは、行を効率よく絞り込み、`JOIN` を実行するためのヒントを得られます。
+
+<div id="i-am-seeing-an-invalid-snapshot-identifier-during-the-initial-load-what-should-i-do">
+  ### 初期ロード中に `invalid snapshot identifier` が表示されます。どうすればよいですか？
+</div>
+
+`invalid snapshot identifier` エラーは、ClickPipes と Postgres データベース間の接続が切断されたときに発生します。これは、ゲートウェイのタイムアウト、データベースの再起動、またはその他の一時的な問題が原因で起こることがあります。
+
+初期ロードの実行中は、Postgres データベースに対してアップグレードや再起動などの影響の大きい操作は行わず、データベースへのネットワーク接続が安定していることを確認することを推奨します。
+
+この問題を解決するには、ClickPipes UI から再同期をトリガーできます。これにより、初期ロードは最初からやり直されます。
+
+<div id="what-happens-if-i-drop-a-publication-in-postgres">
+  ### Postgres でパブリケーションを削除するとどうなりますか？
+</div>
+
+Postgres でパブリケーションを削除すると、ClickPipe がソースから変更を取得するにはそのパブリケーションが必要なため、ClickPipe 接続は機能しなくなります。この場合、通常はパブリケーションが存在しなくなったことを示すエラーアラートを受け取ります。
+
+パブリケーションを削除したあとに ClickPipe を復旧するには:
+
+1. Postgres で、同じ名前と必要なテーブルを含む新しいパブリケーションを作成します
+2. ClickPipe の Settings タブで &#39;Resync tables&#39; ボタンをクリックします
+
+この再同期が必要なのは、再作成したパブリケーションには、名前が同じでも Postgres 内で異なる Object Identifier (OID) が割り当てられるためです。再同期プロセスにより宛先テーブルが更新され、接続が復元されます。
+
+必要に応じて、まったく新しいパイプを作成することもできます。
+
+なお、パーティション化されたテーブルを扱っている場合は、適切な設定でパブリケーションを作成してください:
+
+```sql
+CREATE PUBLICATION clickpipes_publication
+FOR TABLE <...>, <...>
+WITH (publish_via_partition_root = true);
+```
+
+<div id="what-if-i-am-seeing-unexpected-datatype-errors">
+  ### `Unexpected Datatype` エラーや `Cannot parse type XX ...` が表示される場合はどうすればよいですか？
+</div>
+
+このエラーは通常、ソースPostgresデータベースに、インジェスト時にマッピングできないデータ型がある場合に発生します。
+詳細については、以下の可能性を確認してください。
+
+<div id="postgres-invalid-memalloc-bug">
+  ### レプリケーション/slot の作成中に `invalid memory alloc request size <XXX>` のような error が発生する
+</div>
+
+Postgres のパッチバージョン 17.5/16.9/15.13/14.18/13.21 には不具合があり、その影響で特定のワークロードによりメモリ使用量が指数関数的に増加し、Postgres が無効と見なす 1GB 超のメモリ割り当て要求が発生することがあります。この不具合はすでに[修正されており](https://github.com/postgres/postgres/commit/d87d07b7ad3b782cb74566cd771ecdb2823adf6a)、次の Postgres パッチシリーズ (17.6...) に含まれる予定です。このパッチバージョンがいつアップグレード可能になるかについては、Postgres のプロバイダーに確認してください。すぐにアップグレードできない場合は、error が発生した時点でパイプの再同期が必要になります。
+
+<div id="ignore-delete-truncate">
+  ### ソースのPostgresデータベースからデータが削除されても、ClickHouse に完全な履歴レコードを保持しておく必要があります。ClickPipes で Postgres の DELETE 操作と TRUNCATE 操作を完全に無視できますか？
+</div>
+
+はい、可能です。Postgres ClickPipe を作成する前に、DELETE 操作を含まない パブリケーション を作成してください。例:
+
+```sql
+CREATE PUBLICATION <pub_name> FOR TABLES IN SCHEMA <schema_name> WITH (publish = 'insert,update');
+```
+
+次に、Postgres ClickPipe を[設定](/ja/integrations/clickpipes/postgres/index#configuring-the-replication-settings)する際は、このパブリケーション名が選択されていることを確認してください。
+
+なお、TRUNCATE 操作は ClickPipes では無視され、ClickHouse にはレプリケートされません。
+
+<div id="replicate-table-dot">
+  ### ドットを含むテーブルをレプリケートできないのはなぜですか？
+</div>
+
+現在、PeerDB には制限があり、ログソーステーブル識別子、つまりスキーマ名またはテーブル名にドットが含まれている場合は、レプリケーションをサポートしていません。PeerDB はドットで分割して判別するため、その場合、どこがスキーマ名でどこがテーブル名なのかを識別できないためです。
+この制限を回避できるよう、スキーマ名とテーブル名を別々に入力できるようにする対応が進められています。
+
+<div id="initial-load-issue">
+  ### 初期ロードは完了したのに、ClickHouse にデータがない、または一部欠けています。考えられる原因は何ですか？
+</div>
+
+初期ロードがエラーなく完了しているにもかかわらず、宛先の ClickHouse テーブルにデータが不足している場合は、ソースの Postgres テーブルで RLS (行レベルセキュリティ) ポリシーが有効になっている可能性があります。
+あわせて、次の点も確認してください。
+
+* ユーザーにソーステーブルを読み取るための十分な権限があるか。
+* ClickHouse 側に、行を除外してしまう可能性のある行ポリシーがないか。
+
+<div id="failover-slot">
+  ### フェイルオーバーを有効にしたレプリケーションスロットを ClickPipe に作成させることはできますか？
+</div>
+
+はい。レプリケーションモードが CDC (変更データキャプチャ)  または Snapshot + CDC (変更データキャプチャ)  の Postgres ClickPipe では、ClickPipe の作成時に `Advanced Settings` セクションで以下のスイッチを有効にすることで、ClickPipes にフェイルオーバー対応のレプリケーションスロットを作成させることができます。なお、この機能を使用するには Postgres 17 以降が必要です。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/failover_slot.webp" border size="md" />
+
+ソース側が適切に設定されていれば、Postgres のリードレプリカへのフェイルオーバー後もスロットは保持され、データレプリケーションを継続できます。詳細は[こちら](https://www.postgresql.org/docs/current/logical-replication-failover.html)をご覧ください。
+
+<div id="transient-logical-decoding-errors">
+  ### `Internal error encountered during logical decoding of aborted sub-transaction` のようなエラーが表示される
+</div>
+
+このエラーは、中断されたサブトランザクションのロジカルデコードで一時的な問題が発生していることを示しており、Aurora Postgres のカスタム実装に固有のものです。エラーが `ReorderBufferPreserveLastSpilledSnapshot` ルーチンから発生していることから、ロジカルデコードがディスクにスピルされたスナップショットを読み取れていない可能性があります。[`logical_decoding_work_mem`](https://www.postgresql.org/docs/current/runtime-config-resource.html#GUC-LOGICAL-DECODING-WORK-MEM) をより大きな値に増やしてみることをお勧めします。
+
+<div id="logical-message-processing-errors">
+  ### CDC (変更データキャプチャ)  レプリケーション中に `error converting new tuple to map` や `error parsing logical message` のようなエラーが表示される
+</div>
+
+Postgres は、固定されたプロトコルに従うメッセージ形式で変更情報を送信します。これらのエラーは、ClickPipe がパースできないメッセージを受信したときに発生します。原因としては、転送中の破損や無効なメッセージの送信などが考えられます。具体的な原因はケースによって異なりますが、これまでに Neon Postgres ソースで複数の事例を確認しています。Neon でもこの問題が発生している場合は、Neon のサポートに問い合わせてください。それ以外の場合は、弊社サポートチームまでご連絡ください。
+
+<div id="include-excluded-columns">
+  ### 最初にレプリケーション対象から除外したカラムを含めることはできますか？
+</div>
+
+現時点ではまだサポートされていません。代替策として、含めたいカラムを持つ[テーブルを再同期](/ja/integrations/clickpipes/postgres/table-resync)してください。
+
+<div id="snapshot-no-data-flow">
+  ### ClickPipe が Snapshot に入ったのにデータが流れてこない場合、何が原因として考えられますか？
+</div>
+
+これにはいくつかの理由が考えられますが、主な原因としては、スナップショット取得の前提条件の一部に通常より時間がかかっていることが挙げられます。詳しくは、並列スナップショット取得に関するドキュメントを[こちら](/ja/integrations/clickpipes/postgres/parallel-initial-load)でご覧ください。
+
+<div id="parallel-snapshotting-taking-time">
+  #### 並列スナップショットでパーティションの取得に時間がかかる
+</div>
+
+並列スナップショットでは、最初にテーブルの論理パーティションを取得するための処理がいくつか実行されます。テーブルが小さい場合は数秒で完了しますが、非常に大きい (テラバイト級の) テーブルでは、これに時間がかかることがあります。スナップショット用のパーティション取得に関連する長時間実行中のクエリがないか確認するには、**ログソース** タブで Postgres のログソース上で実行されているクエリを監視できます。パーティションの取得が完了すると、データの取り込みが始まります。
+
+<div id="replication-slot-creation-transaction-locked">
+  #### レプリケーションスロットの作成がトランザクションによってロックされている
+</div>
+
+Activity セクションの **Source** タブでは、`CREATE_REPLICATION_SLOT` クエリが `Lock` 状態のまま停止していることがあります。これは、Postgres がレプリケーションスロットの作成時に使用するオブジェクトに対して、別のトランザクションがロックを保持していることが原因である可能性があります。
+どのクエリがブロックしているかを確認するには、Postgres ソースで以下のクエリを実行してください。
+
+```sql
+SELECT
+  blocked.pid AS blocked_pid,
+  blocked.query AS blocked_query,
+  blocking.pid AS blocking_pid,
+  blocking.query AS blocking_query,
+  blocking.state AS blocking_state
+FROM pg_locks blocked_lock
+JOIN pg_stat_activity blocked
+  ON blocked_lock.pid = blocked.pid
+JOIN pg_locks blocking_lock
+  ON blocking_lock.locktype = blocked_lock.locktype
+  AND blocking_lock.database IS NOT DISTINCT FROM blocked_lock.database
+  AND blocking_lock.relation IS NOT DISTINCT FROM blocked_lock.relation
+  AND blocking_lock.page IS NOT DISTINCT FROM blocked_lock.page
+  AND blocking_lock.tuple IS NOT DISTINCT FROM blocked_lock.tuple
+  AND blocking_lock.virtualxid IS NOT DISTINCT FROM blocked_lock.virtualxid
+  AND blocking_lock.transactionid IS NOT DISTINCT FROM blocked_lock.transactionid
+  AND blocking_lock.classid IS NOT DISTINCT FROM blocked_lock.classid
+  AND blocking_lock.objid IS NOT DISTINCT FROM blocked_lock.objid
+  AND blocking_lock.objsubid IS NOT DISTINCT FROM blocked_lock.objsubid
+  AND blocking_lock.pid != blocked_lock.pid
+JOIN pg_stat_activity blocking
+  ON blocking_lock.pid = blocking.pid
+WHERE NOT blocked_lock.granted;
+```
+
+ブロッキングしているクエリを特定したら、そのまま完了を待つか、重要でなければキャンセルするかを判断できます。ブロッキングしているクエリが解消されると、レプリケーションスロットの作成が進み、スナップショットが開始されてデータが流れ始めるはずです。

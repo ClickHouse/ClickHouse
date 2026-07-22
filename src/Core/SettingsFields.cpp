@@ -116,7 +116,21 @@ namespace
                     /// Conversion of infinite values to integer is undefined.
                     throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert infinite value to integer type");
                 }
-                if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
+                /// Use precision-correct float-vs-integer comparison via `accurate::greaterOp` / `accurate::lessOp`.
+                /// A naive `x > Float64(numeric_limits<T>::max())` is wrong for wide integer types like `UInt64`:
+                /// `Float64(numeric_limits<UInt64>::max())` rounds UP to `2^64`, so a `Float64` value equal to
+                /// that rounded-up boundary slips through the check and produces undefined behavior in the
+                /// subsequent `static_cast<T>(x)`. See issue #103817.
+                ///
+                /// Bool is special-cased: `numeric_limits<bool>` is exactly representable in `Float64`, and
+                /// `accurate::lessOp` would fail to instantiate for `bool` (`make_unsigned_t<bool>` is ill-formed).
+                if constexpr (std::is_same_v<T, bool>)
+                {
+                    if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
+                        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert out of range floating point value to integer type");
+                }
+                else if (accurate::greaterOp(x, std::numeric_limits<T>::max())
+                         || accurate::lessOp(x, std::numeric_limits<T>::lowest()))
                 {
                     throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert out of range floating point value to integer type");
                 }
@@ -217,13 +231,13 @@ void SettingFieldNumber<T>::readBinary(ReadBuffer & in)
 {
     if constexpr (std::is_integral_v<T> && is_unsigned_v<T>)
     {
-        UInt64 x;
+        UInt64 x = 0;
         readVarUInt(x, in);
         *this = static_cast<T>(x);
     }
     else if constexpr (std::is_integral_v<T> && is_signed_v<T>)
     {
-        Int64 x;
+        Int64 x = 0;
         readVarInt(x, in);
         *this = static_cast<T>(value);
     }
@@ -255,6 +269,9 @@ namespace
 {
     UInt64 stringToMaxThreads(const String & str)
     {
+        /// Accept both the clean `auto(N)` form and the legacy `'auto(N)'` form (quotes included in the
+        /// value). The latter is what older replicas send over the wire; keeping it parseable is what lets
+        /// `toString` emit the clean form without breaking mixed-version clusters. Do not remove it.
         if (startsWith(str, "auto") || startsWith(str, "'auto"))
             return 0;
         return parseFromString<UInt64>(str);
@@ -281,8 +298,13 @@ SettingFieldMaxThreads & SettingFieldMaxThreads::operator=(const Field & f)
 String SettingFieldMaxThreads::toString() const
 {
     if (is_auto)
-        /// Removing quotes here will introduce an incompatibility between replicas with different versions.
-        return "'auto(" + ::DB::toString(value) + ")'";
+        /// The surrounding quotes are an unfortunate historical artifact: for a long time this returned the
+        /// string `'auto(N)'` (quotes included in the value itself), which leaks into `system.settings` and
+        /// looks like garbage. We emit the clean `auto(N)` form now. This is safe across versions because
+        /// `stringToMaxThreads` accepts both `auto(...)` and the legacy `'auto(...)'` form, so a server
+        /// receiving settings from an older replica still parses them, and every released version can parse
+        /// the unquoted form we send (see issue #68748 and the history below).
+        return "auto(" + ::DB::toString(value) + ")";
     return ::DB::toString(value);
 }
 
@@ -310,19 +332,19 @@ UInt64 SettingFieldMaxThreads::getAuto()
 
 namespace
 {
-    Poco::Timespan::TimeDiff float64AsSecondsToTimespan(Float64 d)
+    Int64 float64AsSecondsToTimespan(Float64 d)
     {
         if (d != 0.0 && !std::isnormal(d))
             throw Exception(
                 ErrorCodes::CANNOT_PARSE_NUMBER, "A setting's value in seconds must be a normal floating point number or zero. Got {}", d);
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
-        if (d * 1000000 > std::numeric_limits<Poco::Timespan::TimeDiff>::max() || d * 1000000 < std::numeric_limits<Poco::Timespan::TimeDiff>::min())
+        if (d * 1000000 > std::numeric_limits<Int64>::max() || d * 1000000 < std::numeric_limits<Int64>::min())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "Cannot convert seconds to microseconds: the setting's value in seconds is too big: {}", d);
 #pragma clang diagnostic pop
 
-        return static_cast<Poco::Timespan::TimeDiff>(d * 1000000);
+        return static_cast<Int64>(d * 1000000);
     }
 
 }
@@ -355,7 +377,7 @@ SettingFieldTimespan<SettingFieldTimespanUnit::Millisecond> & SettingFieldMillis
 template <>
 String SettingFieldSeconds::toString() const
 {
-    return ::DB::toString(static_cast<Float64>(value.totalMicroseconds()) / microseconds_per_unit);
+    return ::DB::toString(static_cast<Float64>(microseconds) / microseconds_per_unit);
 }
 
 template <>
@@ -367,7 +389,7 @@ String SettingFieldMilliseconds::toString() const
 template <>
 SettingFieldSeconds::operator Field() const
 {
-    return static_cast<Float64>(value.totalMicroseconds()) / microseconds_per_unit;
+    return static_cast<Float64>(microseconds) / microseconds_per_unit;
 }
 
 template <>
@@ -380,7 +402,7 @@ template <>
 void SettingFieldSeconds::parseFromString(const String & str)
 {
     Float64 n = parse<Float64>(str.data(), str.size());
-    *this = Poco::Timespan{static_cast<Poco::Timespan::TimeDiff>(n * microseconds_per_unit)};
+    *this = Poco::Timespan{static_cast<Int64>(n * microseconds_per_unit)};
 }
 
 template <>

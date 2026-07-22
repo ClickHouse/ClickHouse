@@ -1,0 +1,6 @@
+Constant path equals vector path including order (must all be 1)
+1	1	1
+Constant path is deterministic across repeated evaluations (must be 1)
+1
+Every key matching grp = 1 is returned exactly once (sorted view, must be 1)
+1

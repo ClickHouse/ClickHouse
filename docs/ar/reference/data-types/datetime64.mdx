@@ -1,0 +1,139 @@
+---
+description: 'توثيق لنوع البيانات DateTime64 في ClickHouse، الذي يخزّن الطوابع الزمنية
+  بدقة أجزاء من الثانية'
+sidebarTitle: 'DateTime64'
+slug: /sql-reference/data-types/datetime64
+title: 'DateTime64'
+doc_type: 'مرجع'
+---
+
+يتيح تخزين نقطة زمنية يمكن التعبير عنها كتاريخ تقويمي ووقت من اليوم، مع دقة محددة لأجزاء من الثانية
+
+حجم الـtick (precision): ‏10<sup>-precision</sup> ثانية. النطاق الصالح: [ 0 : 9 ].
+وعادةً ما تُستخدم القيم: 3 (ميلي ثانية)، 6 (ميكروثانية)، 9 (نانوثانية).
+
+القيمة الافتراضية: 3 (ميلي ثانية).
+
+**الصياغة:**
+
+```sql
+DateTime64(precision, [timezone])
+```
+
+داخليًا، يخزّن البيانات على شكل عدد من &#39;ticks&#39; منذ بداية epoch ‏(1970-01-01 00:00:00 UTC) بصيغة Int64. ويتحدد مستوى دقة الـ tick بواسطة المعلَمة precision. بالإضافة إلى ذلك، يمكن للنوع `DateTime64` تخزين منطقة زمنية واحدة للعمود بأكمله، ما يؤثر في كيفية عرض قيم النوع `DateTime64` بتنسيق نصي وكيفية تفسير القيم المحددة كسلاسل نصية (&#39;2020-01-01 05:00:01.000&#39;). لا تُخزَّن المنطقة الزمنية في صفوف الجدول (أو في مجموعة النتائج)، بل تُخزَّن في البيانات الوصفية للعمود. راجع التفاصيل في [DateTime](/ar/reference/data-types/datetime).
+
+النطاق المدعوم للقيم: [1900-01-01 00:00:00, 2299-12-31 23:59:59.999999999]
+
+يعتمد عدد الخانات بعد الفاصلة العشرية على المعلَمة precision.
+
+ملاحظة: تبلغ دقة القيمة القصوى 8. وإذا استُخدمت الدقة القصوى البالغة 9 خانات (نانوثانية)، فإن القيمة القصوى المدعومة هي `2262-04-11 23:47:16` بتوقيت UTC.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+1. إنشاء جدول يحتوي على عمود من النوع `DateTime64` وإدراج البيانات فيه:
+
+```sql
+CREATE TABLE dt64
+(
+    `timestamp` DateTime64(3, 'Asia/Istanbul'),
+    `event_id` UInt8
+)
+ENGINE = MergeTree;
+```
+
+```sql
+-- Parse DateTime
+-- - from an integer interpreted as the number of milliseconds (because of precision 3) since 1970-01-01,
+-- - from a decimal interpreted as the number of seconds before the decimal part, and based on the precision after the decimal point,
+-- - from a string.
+
+INSERT INTO dt64
+VALUES
+(1546300800123, 1),
+(1546300800.123, 2),
+('2019-01-01 00:00:00', 3);
+
+SELECT * FROM dt64;
+```
+
+```text
+┌───────────────timestamp─┬─event_id─┐
+│ 2019-01-01 03:00:00.123 │        1 │
+│ 2019-01-01 03:00:00.123 │        2 │
+│ 2019-01-01 00:00:00.000 │        3 │
+└─────────────────────────┴──────────┘
+```
+
+* عند إدراج `datetime` كعدد صحيح، يُتعامل معه على أنه Unix timestamp مضبوط وفق المقياس المناسب (UTC). تمثل `1546300800000` (بدقة 3) `'2019-01-01 00:00:00'` بتوقيت UTC. ومع ذلك، بما أن العمود `timestamp` محددة له المنطقة الزمنية `Asia/Istanbul` ‏(UTC+3)، فعند إخراجه كسلسلة نصية ستظهر القيمة بالشكل `'2019-01-01 03:00:00'`. أما عند إدراج `datetime` كعدد عشري، فيُتعامل معه بطريقة مماثلة للعدد الصحيح، باستثناء أن القيمة الواقعة قبل الفاصلة العشرية تكون هي Unix timestamp حتى الثواني بما فيها، بينما يُتعامل مع ما بعد الفاصلة العشرية على أنه الدقة.
+* عند إدراج قيمة نصية كسمة `datetime`، يُتعامل معها على أنها ضمن المنطقة الزمنية الخاصة بالعمود. ستُعامل `'2019-01-01 00:00:00'` على أنها ضمن المنطقة الزمنية `Asia/Istanbul`، وتُخزَّن على أنها `1546290000000`.
+
+2. التصفية على قيم `DateTime64`
+
+```sql
+SELECT * FROM dt64 WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul');
+```
+
+```text
+┌───────────────timestamp─┬─event_id─┐
+│ 2019-01-01 00:00:00.000 │        3 │
+└─────────────────────────┴──────────┘
+```
+
+بخلاف `DateTime`، لا تُحوَّل قيم `DateTime64` تلقائيًا من `String`.
+
+```sql
+SELECT * FROM dt64 WHERE timestamp = toDateTime64(1546300800.123, 3);
+```
+
+```text
+┌───────────────timestamp─┬─event_id─┐
+│ 2019-01-01 03:00:00.123 │        1 │
+│ 2019-01-01 03:00:00.123 │        2 │
+└─────────────────────────┴──────────┘
+```
+
+على عكس الإدراج، ستتعامل الدالة `toDateTime64` مع جميع القيم على أنها الصيغة العشرية، لذا يجب
+تحديد الدقة بعد الفاصلة العشرية.
+
+3. الحصول على المنطقة الزمنية لقيمة من النوع `DateTime64`:
+
+```sql
+SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS x;
+```
+
+```text
+┌──────────────────column─┬─x──────────────────────────────┐
+│ 2023-06-05 00:09:52.000 │ DateTime64(3, 'Asia/Istanbul') │
+└─────────────────────────┴────────────────────────────────┘
+```
+
+4. التحويل بين المناطق الزمنية
+
+```sql
+SELECT
+toDateTime64(timestamp, 3, 'Europe/London') AS lon_time,
+toDateTime64(timestamp, 3, 'Asia/Istanbul') AS istanbul_time
+FROM dt64;
+```
+
+```text
+┌────────────────lon_time─┬───────────istanbul_time─┐
+│ 2019-01-01 00:00:00.123 │ 2019-01-01 03:00:00.123 │
+│ 2019-01-01 00:00:00.123 │ 2019-01-01 03:00:00.123 │
+│ 2018-12-31 21:00:00.000 │ 2019-01-01 00:00:00.000 │
+└─────────────────────────┴─────────────────────────┘
+```
+
+**راجع أيضًا**
+
+* [دوال تحويل أنواع البيانات](/ar/reference/functions/regular-functions/type-conversion-functions)
+* [دوال التعامل مع التواريخ والأوقات](/ar/reference/functions/regular-functions/date-time-functions)
+* [إعداد `date_time_input_format`](/ar/reference/settings/formats#date_time_input_format)
+* [إعداد `date_time_output_format`](/ar/reference/settings/formats#date_time_output_format)
+* [معلمة تهيئة الخادم `timezone`](/ar/reference/settings/server-settings/settings#timezone)
+* [إعداد `session_timezone`](/ar/reference/settings/session-settings#session_timezone)
+* [العوامل الخاصة بالتعامل مع التواريخ والأوقات](/ar/reference/operators/index#operators-for-working-with-dates-and-times)
+* [نوع البيانات `Date`](/ar/reference/data-types/date)
+* [نوع البيانات `DateTime`](/ar/reference/data-types/datetime)

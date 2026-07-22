@@ -1,0 +1,890 @@
+---
+description: 'ClickHouseにおけるC++開発のコーディングスタイルガイド'
+sidebarTitle: 'C++ スタイルガイド'
+slug: /development/style
+title: 'C++ スタイルガイド'
+doc_type: 'guide'
+---
+
+<div id="general-recommendations">
+  ## 一般的な推奨事項
+</div>
+
+以下は必須事項ではなく、あくまで推奨事項です。
+コードを編集する場合は、既存のコードのフォーマットに合わせるのが適切です。
+一貫性を保つには、コードスタイルが必要です。一貫性があるとコードが読みやすくなり、コード内の検索もしやすくなります。
+規則の多くに明確な論理的根拠があるわけではなく、確立された慣行に基づいています。
+
+<div id="formatting">
+  ## フォーマット
+</div>
+
+**1.** フォーマットのほとんどは `clang-format` によって自動的に処理されます。
+
+**2.** インデントは4スペースです。タブキーを押すと4スペース分が挿入されるよう、開発環境を設定してください。
+
+**3.** 開き波括弧と閉じ波括弧は、それぞれ独立した行に記述してください。
+
+```cpp
+inline void readBoolText(bool & x, ReadBuffer & buf)
+{
+    char tmp = '0';
+    readChar(tmp, buf);
+    x = tmp != '0';
+}
+```
+
+**4.** 関数本体全体が単一の`ステートメント`である場合、1行に記述できます。波括弧の前後にスペースを入れてください (行末のスペースは除く) 。
+
+```cpp
+inline size_t mask() const                { return buf_size() - 1; }
+inline size_t place(HashValue x) const    { return x & mask(); }
+```
+
+**5.** 関数について。括弧の前後にスペースを入れないでください。
+
+```cpp
+void reinsert(const Value & x)
+```
+
+```cpp
+memcpy(&buf[place_value], &x, sizeof(x));
+```
+
+**6.** `if`、`for`、`while` などの式では、開き括弧の前にスペースを挿入します (関数呼び出しとは異なります) 。
+
+```cpp
+for (size_t i = 0; i < rows; i += storage.index_granularity)
+```
+
+**7.** 二項演算子 (`+`、`-`、`*`、`/`、`%` など) および三項演算子 `?:` の前後にスペースを入れてください。
+
+```cpp
+UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
+UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
+UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
+```
+
+**8.** 改行文字が入力された場合は、演算子を新しい行に配置し、その前のインデントを深くします。
+
+```cpp
+if (elapsed_ns)
+    message << " ("
+        << rows_read_on_server * 1000000000 / elapsed_ns << " rows/s., "
+        << bytes_read_on_server * 1000.0 / elapsed_ns << " MB/s.) ";
+```
+
+**9.** 必要に応じて、行内の位置揃えにスペースを使用できます。
+
+```cpp
+dst.ClickLogID         = click.LogID;
+dst.ClickEventID       = click.EventID;
+dst.ClickGoodEvent     = click.GoodEvent;
+```
+
+**10.** 演算子 `.`、`->` の前後にスペースを使用しないでください。
+
+必要に応じて、演算子を次の行に折り返すことができます。この場合、その前のインデントが深くなります。
+
+**11.** 単項演算子 (`--`、`++`、`*`、`&` など) と引数の間にスペースを使用しないでください。
+
+**12.** カンマの後にはスペースを入れ、前には入れないこと。同じルールが `for` 式内のセミコロンにも適用される。
+
+**13.** `[]` 演算子の前後にスペースを入れないでください。
+
+**14.** `template <...>` という式では、`template` と `<` の間にスペースを入れる。`<` の後や `>` の前にはスペースを入れない。
+
+```cpp
+template <typename TKey, typename TValue>
+struct AggregatedStatElement
+{}
+```
+
+**15.** クラスおよび構造体では、`public`、`private`、`protected` を `class/struct` と同じレベルに記述し、残りのコードはインデントする。
+
+```cpp
+template <typename T>
+class MultiVersion
+{
+public:
+    /// 使用するオブジェクトのバージョン。shared_ptr がバージョンのライフタイムを管理する。
+    using Version = std::shared_ptr<const T>;
+    ...
+}
+```
+
+**16.** ファイル全体で同じ `namespace` が使用されており、他に特筆すべき内容がない場合、`namespace` 内でインデントは不要です。
+
+**17.** `if`、`for`、`while`、またはその他の式のブロックが単一の`statement`で構成される場合、波括弧は省略できます。その場合、`statement`は別の行に記述してください。このルールは、ネストされた`if`、`for`、`while`などにも適用されます。
+
+ただし、内側の`ステートメント`に波括弧または`else`が含まれる場合、外側のブロックも波括弧で記述する必要があります。
+
+```cpp
+/// 書き込みを終了する。
+for (auto & stream : streams)
+    stream.second->finalize();
+```
+
+**18.** 行末にスペースを入れてはなりません。
+
+**19.** ソースファイルは UTF-8 でエンコードされています。
+
+**20.** 非ASCII文字は文字列リテラルで使用できます。
+
+```cpp
+<< ", " << (timer.elapsed() / chunks_stats.hits) << " μsec/hit.";
+```
+
+**21.** 1 行に複数の式を書かないでください。
+
+**22.** 関数内のコードはセクションごとにまとめ、セクション間は空行 1 行以内で区切ってください。
+
+**23.** 関数やクラスなどの間は、1 行または 2 行の空行で区切ってください。
+
+**24.** 値に関連する `A const` は、型名の前に記述しなければなりません。
+
+```cpp
+//正しい
+const char * pos
+const std::string & s
+//誤り
+char const * pos
+```
+
+**25.** ポインタまたは参照を宣言する際は、`*` と `&` の両側にスペースを入れる必要があります。
+
+```cpp
+//正しい
+const char * pos
+//誤り
+const char* pos
+const char *pos
+```
+
+**26.** テンプレート型を使用する場合は、`using` キーワードで別名を付けます (ごく単純な場合を除く) 。
+
+つまり、テンプレートパラメータは `using` でのみ指定し、コード内で繰り返し記述しません。
+
+`using` は、関数内などでローカルに宣言できます。
+
+```cpp
+//正しい
+using FileStreams = std::map<std::string, std::shared_ptr<Stream>>;
+FileStreams streams;
+//誤り
+std::map<std::string, std::shared_ptr<Stream>> streams;
+```
+
+**27.** 1つの文で異なる型の変数を複数宣言しないでください。
+
+```cpp
+//不正解
+int x, *y;
+```
+
+**28.** C言語形式のキャストは使用しないでください。
+
+```cpp
+//不正
+std::cerr << (int)c <<; std::endl;
+//正しい
+std::cerr << static_cast<int>(c) << std::endl;
+```
+
+**29.** クラスや構造体では、各アクセス指定子ごとに、メンバーと関数を分けてまとめてください。
+
+**30.** 小さなクラスや構造体では、メソッドの宣言と実装を分ける必要はありません。
+
+同じことは、クラスや構造体内の小さなメソッドにも当てはまります。
+
+Template クラスや構造体では、メソッドの宣言と実装を分けないでください (そうしないと、同じ翻訳単位で定義する必要があるためです) 。
+
+**31.** 行は 80 文字ではなく、140 文字で折り返してかまいません。
+
+**32.** 後置形式が不要な場合は、必ず前置のインクリメント/デクリメント演算子を使用してください。
+
+```cpp
+for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
+```
+
+<div id="comments">
+  ## コメント
+</div>
+
+**1.** 自明でないコードには、すべて必ずコメントを付けてください。
+
+これは非常に重要です。コメントを書こうとすると、そのコードは不要だとか、設計が間違っていると気づくことがあります。
+
+```cpp
+/** 使用可能なメモリの一部。
+  * 例えば、internal_bufferが1MBで、ファイルからbufferに読み込まれたのが10バイトのみの場合、
+  * working_bufferのサイズは10バイトのみとなる
+  * (working_buffer.end()は、読み取り可能なその10バイトの直後の位置を指す)。
+  */
+```
+
+**2.** コメントは必要に応じて、どこまでも詳しくしてかまいません。
+
+**3.** コメントは、その対象となるコードの前に置きます。まれに、同じ行でコードの後ろにコメントを書くこともあります。
+
+```cpp
+/** クエリを解析して実行する。
+*/
+void executeQuery(
+    ReadBuffer & istr, /// クエリの読み取り元（および該当する場合はINSERTのデータ）
+    WriteBuffer & ostr, /// 結果の書き込み先
+    Context & context, /// DB、テーブル、データ型、エンジン、関数、集約関数...
+    BlockInputStreamPtr & query_plan, /// クエリの実行方法に関する説明を記述できる
+    QueryProcessingStage::Enum stage = QueryProcessingStage::Complete /// SELECTクエリをどの段階まで処理するか
+    )
+```
+
+**4.** コメントは英語のみで記述してください。
+
+**5.** ライブラリを作成する場合は、メインのヘッダーファイルに、その内容を詳しく説明するコメントを記述してください。
+
+**6.** 追加情報のないコメントは書かないでください。特に、次のような中身のないコメントを残さないでください。
+
+```cpp
+/*
+* Procedure Name:
+* Original procedure name:
+* Author:
+* Date of creation:
+* Dates of modification:
+* Modification authors:
+* Original file name:
+* Purpose:
+* Intent:
+* Designation:
+* Classes used:
+* Constants:
+* Local variables:
+* Parameters:
+* Date of creation:
+* Purpose:
+*/
+```
+
+この例は、http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/ からの引用です。
+
+**7.** 各ファイルの先頭に、不要なコメント (著者名、作成日など) を書かないでください。
+
+**8.** 1 行コメントはスラッシュ 3 つの `///` で始め、複数行コメントは `/**` で始めます。これらのコメントは &quot;ドキュメント用&quot; と見なされます。
+
+注: これらのコメントからドキュメントを生成するために Doxygen を使用できます。ただし、IDE 上でコードをたどるほうが便利なため、Doxygen は一般には使われません。
+
+**9.** 複数行コメントの先頭と末尾には空行を入れてはいけません (複数行コメントを閉じる行は除きます) 。
+
+**10.** コードをコメントアウトする場合は、&quot;ドキュメント用&quot; コメントではなく、通常のコメントを使用してください。
+
+**11.** コメントアウトしたコードは、コミット前に削除してください。
+
+**12.** コメントやコードに暴言を書かないでください。
+
+**13.** 大文字は使わないでください。句読点を過剰に使わないでください。
+
+```cpp
+/// WHAT THE FAIL???
+```
+
+**14.** コメントを区切り文字として使わないでください。
+
+```cpp
+///******************************************************
+```
+
+**15.** コメント欄で議論を始めないでください。
+
+```cpp
+/// Why did you do this stuff?
+```
+
+**16.** そのブロックが何のためのものかを説明するコメントを、末尾に書く必要はありません。
+
+```cpp
+/// for
+```
+
+<div id="names">
+  ## 名前
+</div>
+
+**1.** 変数名とクラスメンバー名には、アンダースコアで区切った小文字を使用します。
+
+```cpp
+size_t max_block_size;
+```
+
+**2.** 関数名 (メソッド名) には、先頭を小文字にしたcamelCaseを使用します。
+
+```cpp
+std::string getName() const override { return "Memory"; }
+```
+
+**3.** クラス名 (struct を含む) には、先頭を大文字にした CamelCase を使用します。インターフェイスでは、I 以外のプレフィックスは使用しません。
+
+```cpp
+class StorageMemory : public IStorage
+```
+
+**4.** `using` は、クラスと同じ規則で命名します。
+
+**5.** Template 型引数の名前: 単純な場合は、`T`、`T`、`U`、`T1`、`T2` を使用します。
+
+より複雑な場合は、クラス名の規則に従うか、プレフィックスとして `T` を付けます。
+
+```cpp
+template <typename TKey, typename TValue>
+struct AggregatedStatElement
+```
+
+**6.** Template 定数引数の名前: 変数名の規則に従うか、簡単な場合は `N` を使用します。
+
+```cpp
+template <bool without_www>
+struct ExtractDomain
+```
+
+**7.** 抽象クラス (インターフェイス) には、`I` プレフィックスを付けることができます。
+
+```cpp
+class IProcessor
+```
+
+**8.** 変数をローカルで使う場合は、短い名前を使っても構いません。
+
+それ以外の場合は、意味が分かる名前を使います。
+
+```cpp
+bool info_successfully_loaded = false;
+```
+
+**9.** `define` とグローバル定数の名前は、アンダースコアで区切った ALL&#95;CAPS を使用します。
+
+```cpp
+#define MAX_SRC_TABLE_NAMES_TO_STORE 1000
+```
+
+**10.** ファイル名は、その中身と同じ命名スタイルにする必要があります。
+
+ファイルにクラスが 1 つだけ含まれている場合は、ファイル名もクラス名と同じにします (CamelCase) 。
+
+ファイルに関数が 1 つだけ含まれている場合は、ファイル名も関数名と同じにします (camelCase) 。
+
+**11.** 名前に略語が含まれる場合は、次のルールに従います。
+
+* 変数名では、略語は小文字にします `mysql_connection` (`mySQL_connection` ではありません) 。
+* クラス名と関数名では、略語の大文字はそのまま維持します `MySQLConnection` (`MySqlConnection` ではありません) 。
+
+**12.** クラスメンバーの初期化にのみ使うコンストラクタ引数は、クラスメンバーと同じ名前にします。ただし、末尾にアンダースコアを付けます。
+
+```cpp
+FileQueueProcessor(
+    const std::string & path_,
+    const std::string & prefix_,
+    std::shared_ptr<FileHandler> handler_)
+    : path(path_),
+    prefix(prefix_),
+    handler(handler_),
+    log(&Logger::get("FileQueueProcessor"))
+{
+}
+```
+
+アンダースコアの接尾辞は、引数をコンストラクター本体で使用しない場合は省略できます。
+
+**13.** ローカル変数とクラスメンバーで名前を区別する必要はありません (プレフィックスは不要です) 。
+
+```cpp
+timer (not m_timer)
+```
+
+**14.** `enum` の定数には、先頭を大文字にした CamelCase を使用します。ALL&#95;CAPS も使用可能です。`enum` がローカルでない場合は、`enum class` を使用します。
+
+```cpp
+enum class CompressionMethod
+{
+    QuickLZ = 0,
+    LZ4     = 1,
+};
+```
+
+**15.** 名前はすべて英語でなければなりません。ヘブライ語の単語を翻字して使うことは認められません。
+
+not T&#95;PAAMAYIM&#95;NEKUDOTAYIM
+
+**16.** 略語は、広く知られているものであれば使用できます (Wikipedia や検索エンジンで意味を容易に確認できる場合) 。
+
+`AST`, `SQL`.
+
+Not `NVDH` (意味のない適当な文字列)
+
+短縮した形が一般的に使われているなら、省略形の語も使用できます。
+
+コメント内に正式名称を併記している場合は、略語を使用してもかまいません。
+
+**17.** C++ のソースコードのファイル名には `.cpp` 拡張子を付ける必要があります。ヘッダーファイルには `.h` 拡張子を付ける必要があります。
+
+<div id="how-to-write-code">
+  ## コードの書き方
+</div>
+
+**1.** メモリ管理。
+
+手動でのメモリ解放 (`delete`) は、ライブラリコードでのみ使用できます。
+
+ライブラリコードでは、`delete` 演算子を使用できるのはデストラクタ内だけです。
+
+アプリケーションコード では、メモリはそれを所有するオブジェクトが解放する必要があります。
+
+例:
+
+* 最も簡単なのは、オブジェクトをスタック上に置くか、別のクラスのメンバーにすることです。
+* 小さなオブジェクトが大量にある場合は、コンテナーを使用します。
+* ヒープ上にある少数のオブジェクトを自動的に解放するには、`shared_ptr/unique_ptr` を使用します。
+
+**2.** リソース管理。
+
+`RAII` を使用してください。詳細は上記を参照してください。
+
+**3.** エラー処理。
+
+例外を使用します。ほとんどの場合、必要なのは例外を throw することだけで、catch する必要はありません (`RAII` のためです) 。
+
+オフラインのデータ処理アプリケーションでは、例外を catch しなくても問題ないことがよくあります。
+
+ユーザーリクエストを処理するサーバーでは、通常、connection ハンドラーの最上位レベルで例外を catch すれば十分です。
+
+スレッド関数では、すべての例外を catch して保持し、`join` の後でメインスレッドで再度 throw するようにしてください。
+
+```cpp
+/// まだ計算が行われていない場合は、最初のブロックを同期的に計算する
+if (!started)
+{
+    calculate();
+    started = true;
+}
+else /// 計算がすでに進行中の場合は、結果を待つ
+    pool.wait();
+
+if (exception)
+    exception->rethrow();
+```
+
+対処せずに例外を握りつぶしてはいけません。例外をすべて無批判にログに出力するだけにしてもいけません。
+
+```cpp
+//正しくない
+catch (...) {}
+```
+
+一部の例外を無視する必要がある場合は、特定の例外だけを無視し、それ以外は再スローしてください。
+
+```cpp
+catch (const DB::Exception & e)
+{
+    if (e.code() == ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION)
+        return nullptr;
+    else
+        throw;
+}
+```
+
+応答コードまたは `errno` を返す関数を使用する場合は、必ず結果を確認し、エラー時には例外を送出してください。
+
+```cpp
+if (0 != close(fd))
+    throw ErrnoException(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file {}", file_name);
+```
+
+コード中の不変条件をチェックするために `assert` を使用できます。
+
+**4.** 例外の種類。
+
+アプリケーションコードで複雑な例外階層を使う必要はありません。例外メッセージは、システム管理者が理解できるものであるべきです。
+
+**5.** デストラクタからの例外送出。
+
+これは推奨されませんが、許容されています。
+
+次の方法があります。
+
+* 例外につながる可能性のある処理を事前にすべて行う関数 (`done()` または `finalize()`) を作成します。その関数が呼び出されていれば、その後デストラクタで例外が発生しないようにします。
+* 複雑すぎる処理 (ネットワーク経由でのメッセージ送信など) は、オブジェクトが破棄される前にクラスの利用者が呼び出す別のメソッドに切り出すことができます。
+* デストラクタ内で例外が発生した場合は、それを隠すよりログに記録するほうが望ましいです (ロガーが利用可能な場合) 。
+* 単純なアプリケーションでは、例外処理を `std::terminate` (C++11 では `noexcept` がデフォルトであるため) に任せてもかまいません。
+
+**6.** 無名のコードブロック。
+
+特定の変数をローカルにして、ブロックを抜けるときにデストラクタが呼び出されるようにするため、1 つの関数の中に別のコードブロックを作成できます。
+
+```cpp
+Block block = data.in->read();
+
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    data.ready = true;
+    data.block = block;
+}
+
+ready_any.set();
+```
+
+**7.** マルチスレッド。
+
+オフラインデータ処理プログラムでは:
+
+* まずは単一の CPU コアで可能な限り高い性能を出せるようにしてください。そのうえで、必要に応じてコードを並列化できます。
+
+サーバーアプリケーションでは:
+
+* リクエストの処理にはスレッドプールを使用してください。これまでのところ、ユーザー空間でのコンテキストスイッチを必要とするタスクはありませんでした。
+
+並列化に fork は使用しません。
+
+**8.** スレッドの同期。
+
+多くの場合、異なるスレッドが異なるメモリセルを使うようにし (さらに望ましいのは異なる cache line を使うことです) 、スレッド同期をまったく使わないようにできます (`joinAll` を除く) 。
+
+同期が必要な場合でも、ほとんどのケースでは `lock_guard` の下で mutex を使えば十分です。
+
+それ以外の場合は、システムの同期プリミティブを使用してください。ビジーウェイトは使用しないでください。
+
+アトミック操作は、最も単純なケースでのみ使用してください。
+
+それがあなたの主たる専門分野でない限り、ロックフリーなデータ構造を実装しようとしないでください。
+
+**9.** ポインタと参照。
+
+ほとんどの場合、参照を優先してください。
+
+**10.** `const`。
+
+定数参照、定数へのポインタ、`const_iterator`、および `const` メソッドを使用してください。
+
+`const` をデフォルトと考え、必要な場合にのみ非 `const` を使用してください。
+
+変数を値渡しする場合、`const` を付けても通常は意味がありません。
+
+**11.** unsigned。
+
+必要な場合にのみ `unsigned` を使用してください。
+
+**12.** 数値型。
+
+`UInt8`、`UInt16`、`UInt32`、`UInt64`、`Int8`、`Int16`、`Int32`、`Int64`、および `size_t`、`ssize_t`、`ptrdiff_t` を使用してください。
+
+数値には次の型を使用しないでください: `signed/unsigned long`、`long long`、`short`、`signed/unsigned char`、`char`。
+
+**13.** 引数の受け渡し。
+
+複雑な値は、ムーブする場合は値渡しにして `std::move` を使用してください。ループ内で値を更新したい場合は、参照渡しにしてください。
+
+関数がヒープ上で作成されたオブジェクトの所有権を受け取る場合は、引数の型を `shared_ptr` または `unique_ptr` にしてください。
+
+**14.** 戻り値。
+
+ほとんどの場合、単に `return` を使ってください。`return std::move(res)` と書かないでください。
+
+関数がヒープ上にオブジェクトを確保してそれを返す場合は、`shared_ptr` または `unique_ptr` を使用してください。
+
+まれに (ループ内で値を更新する場合) 、引数経由で値を返す必要があることがあります。この場合、その引数は参照にするべきです。
+
+```cpp
+using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
+
+/** 名前から集約関数を作成するためのクラス。
+  */
+class AggregateFunctionFactory
+{
+public:
+    AggregateFunctionFactory();
+    AggregateFunctionPtr get(const String & name, const DataTypes & argument_types) const;
+```
+
+**15.** `namespace`。
+
+アプリケーションコードのために、別の `namespace` を使う必要はありません。
+
+小規模なライブラリでも同様に不要です。
+
+中規模から大規模のライブラリでは、すべてを `namespace` に入れてください。
+
+ライブラリの `.h` ファイルでは、アプリケーションコードに不要な実装の詳細を隠すために `namespace detail` を使えます。
+
+`.cpp` ファイルでは、シンボルを隠すために `static` または無名 `namespace` を使えます。
+
+また、対応する名前が外側の `namespace` に出てしまうのを防ぐために、`enum` に対して `namespace` を使うこともできます (ただし、`enum class` を使うほうが望ましいです) 。
+
+**16.** 遅延初期化。
+
+初期化に引数が必要なら、通常はデフォルトコンストラクタを書くべきではありません。
+
+後で初期化を遅らせる必要が生じた場合は、無効なオブジェクトを作るデフォルトコンストラクタを追加できます。あるいは、オブジェクト数が少ないなら、`shared_ptr/unique_ptr` を使うこともできます。
+
+```cpp
+Loader(DB::Connection * connection_, const std::string & query, size_t max_block_size_);
+
+/// 遅延初期化用
+Loader() {}
+```
+
+**17.** 仮想関数。
+
+クラスをポリモーフィックに使う意図がない場合、関数を virtual にする必要はありません。これはデストラクタにも当てはまります。
+
+**18.** エンコーディング。
+
+あらゆる箇所で UTF-8 を使用してください。`std::string` と `char *` を使用してください。`std::wstring` と `wchar_t` は使用しないでください。
+
+**19.** ロギング。
+
+コード中の例を参照してください。
+
+コミット前に、無意味なログやデバッグ用のログ、その他あらゆるデバッグ出力をすべて削除してください。
+
+ループ内でのログ出力は、`Trace` レベルであっても避けるべきです。
+
+ログは、どのログレベルでも読みやすくなければなりません。
+
+ログは、基本的にはアプリケーションコードでのみ使用すべきです。
+
+ログメッセージは英語で記述しなければなりません。
+
+ログは、できればシステム管理者が理解できる内容であるべきです。
+
+ログで下品な表現を使わないでください。
+
+ログでは UTF-8 エンコーディングを使用してください。まれに、ログで非 ASCII 文字を使用してもかまいません。
+
+**20.** 入出力。
+
+アプリケーションの性能にとって重要な内部ループでは `iostreams` を使わないでください (また、`stringstream` は絶対に使わないでください) 。
+
+代わりに `DB/IO` ライブラリを使用してください。
+
+**21.** 日付と時刻。
+
+`DateLUT` ライブラリを参照してください。
+
+**22.** include。
+
+include ガードではなく、常に `#pragma once` を使用してください。
+
+**23.** using。
+
+`using namespace` は使用しません。特定の対象に対して `using` を使うことはできます。ただし、クラスまたは関数の内部に限定してください。
+
+**24.** 必要な場合を除き、関数で `trailing return type` を使用しないでください。
+
+```cpp
+auto f() -> void
+```
+
+**25.** 変数の宣言と初期化。
+
+```cpp
+//正しい方法
+std::string s = "Hello";
+std::string s{"Hello"};
+
+//誤った方法
+auto s = std::string{"Hello"};
+```
+
+**26.** 仮想関数では、基底クラスには `virtual` を記述し、派生クラスでは `virtual` ではなく `override` を記述します。
+
+<div id="unused-features-of-c">
+  ## C++で使用していない機能
+</div>
+
+**1.** 仮想継承は使用していません。
+
+**2.** モダンC++で簡潔に書ける構文。たとえば、
+
+```cpp
+// 糖衣構文を使わない従来の方法
+template <typename G, typename = std::enable_if_t<std::is_same<G, F>::value, void>> // std::enable_if による SFINAE、::value の使用
+std::pair<int, int> func(const E<G> & e) // 戻り値の型を明示的に指定
+{
+    if (elements.count(e)) // .count() による要素の存在確認
+    {
+        // ...
+    }
+
+    elements.erase(
+        std::remove_if(
+            elements.begin(), elements.end(),
+            [&](const auto x){
+                return x == 1;
+            }),
+        elements.end()); // remove-erase イディオム
+
+    return std::make_pair(1, 2); // make_pair() によるペアの生成
+}
+
+// 糖衣構文を使った場合 (C++14/17/20)
+template <typename G>
+requires std::same_v<G, F> // C++20 コンセプトによる SFINAE、C++14 テンプレートエイリアスの使用
+auto func(const E<G> & e) // auto による戻り値の型推論 (C++14)
+{
+    if (elements.contains(e)) // C++20 .contains による要素の存在確認
+    {
+        // ...
+    }
+
+    elements.erase_if(
+        elements,
+        [&](const auto x){
+            return x == 1;
+        }); // C++20 std::erase_if
+
+    return {1, 2}; // または: return std::pair(1, 2); // 初期化リストまたは値初期化によるペアの生成 (C++17)
+}
+```
+
+<div id="platform">
+  ## プラットフォーム
+</div>
+
+**1.** コードは特定のプラットフォーム向けに記述します。
+
+ただし、ほかの条件が同じであれば、クロスプラットフォームなコード、つまり移植性の高いコードが望まれます。
+
+**2.** 言語: C++20 (利用可能な [C++20 の機能](https://en.cppreference.com/w/cpp/compiler_support#C.2B.2B20_features) の一覧を参照) 。
+
+**3.** コンパイラ: `clang`。本稿執筆時点 (2025年3月) では、コードは clang バージョン 19 以上でコンパイルされています。
+
+標準ライブラリには `libc++` を使用します。
+
+**4.** OS: Ubuntu Linux、Precise 以降。
+
+**5.** コードは x86&#95;64 CPU アーキテクチャ向けに記述します。
+
+CPU 命令セットは、当社サーバーでサポートされる最小構成に合わせます。現在は SSE 4.2 です。
+
+**6.** 一部の例外を除き、`-Wall -Wextra -Werror -Weverything` コンパイルフラグを使用します。
+
+**7.** 静的リンクが難しいものを除き、すべてのライブラリで静的リンクを使用します (`ldd` コマンドの出力を参照) 。
+
+**8.** コードの開発とデバッグはリリース設定で行います。
+
+<div id="tools">
+  ## ツール
+</div>
+
+**1.** KDevelop は優れた IDE です。
+
+**2.** デバッグには、`gdb`、`valgrind` (`memcheck`) 、`strace`、`-fsanitize=...`、または `tcmalloc_minimal_debug` を使用してください。
+
+**3.** プロファイリングには、`Linux Perf`、`valgrind` (`callgrind`) 、または `strace -cf` を使用してください。
+
+**4.** ソースコードは Git で管理されています。
+
+**5.** ビルドには `CMake` を使用します。
+
+**6.** プログラムは `deb` パッケージとしてリリースされます。
+
+**7.** master へのコミットでビルドを壊してはなりません。
+
+ただし、正常に動作すると見なされるのは一部のリビジョンだけです。
+
+**8.** コードがまだ完全でなくても、できるだけ頻繁にコミットしてください。
+
+この目的にはブランチを使用してください。
+
+`master` ブランチ内のコードがまだビルドできない場合は、`push` の前にそのコードをビルド対象から外してください。数日以内に仕上げるか、削除する必要があります。
+
+**9.** 単純ではない変更には、ブランチを使用し、サーバーに公開してください。
+
+**10.** 未使用のコードはリポジトリから削除されます。
+
+<div id="libraries">
+  ## ライブラリ
+</div>
+
+**1.** C++20 の標準ライブラリを使用します (Experimental な拡張は許可されます) 。また、`boost` および `Poco` フレームワークも使用します。
+
+**2.** OS パッケージのライブラリは使用できません。あらかじめインストールされているライブラリも使用できません。すべてのライブラリは `contrib` ディレクトリにソースコードとして配置し、ClickHouse と一緒にビルドする必要があります。詳しくは、[新しいサードパーティライブラリの追加に関するガイドライン](/ja/resources/develop-contribute/contribute/contrib#adding-and-maintaining-third-party-libraries)を参照してください。
+
+**3.** すでに使用されているライブラリを常に優先します。
+
+<div id="general-recommendations">
+  ## 一般的な推奨事項
+</div>
+
+**1.** コードはできるだけ少なく書いてください。
+
+**2.** まずは最も単純な解決策を試してください。
+
+**3.** どう動作するのか、また内側のループがどのように機能するのかを理解するまでは、コードを書かないでください。
+
+**4.** 最も単純なケースでは、クラスや構造体の代わりに `using` を使ってください。
+
+**5.** 可能であれば、コピーコンストラクター、代入演算子、デストラクタ (クラスに少なくとも 1 つの virtual 関数がある場合の virtual デストラクタを除く) 、ムーブコンストラクター、ムーブ代入演算子は書かないでください。言い換えると、コンパイラが生成する関数で正しく動作するようにすべきです。`default` を使えます。
+
+**6.** コードの簡素化を心がけてください。可能な場合はコード量を減らしてください。
+
+<div id="additional-recommendations">
+  ## 追加の推奨事項
+</div>
+
+**1.** `stddef.h` の型に `std::` を明示的に付けること
+
+は推奨されません。つまり、`std::size_t` ではなく、より短い `size_t` と書くことを推奨します。
+
+ただし、`std::` を付けても構いません。
+
+**2.** 標準 C ライブラリの関数に `std::` を明示的に付けること
+
+は推奨されません。つまり、`std::memcpy` ではなく `memcpy` と書いてください。
+
+その理由は、`memmem` のような類似の非標準関数があるためです。これらの関数を使うこともあります。こうした関数は `namespace std` には存在しません。
+
+どこでも `memcpy` ではなく `std::memcpy` と書いていると、`std::` なしの `memmem` が不自然に見えてしまいます。
+
+とはいえ、好みで `std::` を使っても問題ありません。
+
+**3.** 標準 C++ ライブラリに同等のものがある場合に C の関数を使うこと。
+
+より効率的であれば、これは許容されます。
+
+たとえば、大きなメモリ chunk をコピーする場合は、`std::copy` ではなく `memcpy` を使います。
+
+**4.** 複数行の関数引数。
+
+次のいずれの折り返しスタイルも使用できます。
+
+```cpp
+function(
+  T1 x1,
+  T2 x2)
+```
+
+```cpp
+function(
+  size_t left, size_t right,
+  const & RangesInDataParts ranges,
+  size_t limit)
+```
+
+```cpp
+function(size_t left, size_t right,
+  const & RangesInDataParts ranges,
+  size_t limit)
+```
+
+```cpp
+function(size_t left, size_t right,
+      const & RangesInDataParts ranges,
+      size_t limit)
+```
+
+```cpp
+function(
+      size_t left,
+      size_t right,
+      const & RangesInDataParts ranges,
+      size_t limit)
+```

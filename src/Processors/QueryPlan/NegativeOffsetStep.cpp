@@ -2,6 +2,7 @@
 #include <Processors/NegativeOffsetTransform.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -56,12 +57,13 @@ void NegativeOffsetStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr NegativeOffsetStep::deserialize(Deserialization & ctx)
 {
-    UInt64 offset;
+    UInt64 offset = 0;
     readVarUInt(offset, ctx.in);
 
     return std::make_unique<NegativeOffsetStep>(ctx.input_headers.front(), offset);
 }
 
+void registerNegativeOffsetStep(QueryPlanStepRegistry & registry);
 void registerNegativeOffsetStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("NegativeOffset", NegativeOffsetStep::deserialize);

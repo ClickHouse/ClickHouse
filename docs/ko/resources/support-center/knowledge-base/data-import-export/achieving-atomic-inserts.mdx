@@ -1,0 +1,167 @@
+---
+title: ClickHouse Cloud에서 원자적 삽입과 다중 테이블 일관성 구현하기
+description: 스테이징 테이블과 파티션 수준 작업을 사용하여 다중 명령문 트랜잭션 없이 ClickHouse Cloud에서 데이터를 원자적으로 적재하고 여러 테이블의 일관성을 유지하는 방법입니다.
+date: 2026-06-01
+tags: ['데이터 적재', '모범 사례']
+keywords: ['원자적 삽입', '스테이징 테이블', 'MOVE PARTITION', 'ATTACH PARTITION', 'REPLACE PARTITION', '다중 테이블 일관성']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="problem">
+  ## 문제
+</div>
+
+ClickHouse Cloud는 전통적인 RDBMS 의미의 다중 statement transaction을 지원하지 않습니다.
+이로 인해 흔히 다음과 같은 두 가지 문제가 발생합니다.
+
+1. 대량 적재(bulk load) 시 단일 테이블 원자성(atomicity): 일반적인 방식은 임시 partial key에 데이터를 삽입한 다음, 레코드를 실제 key로 복사하고 임시 레코드를 삭제하는 것입니다. 이 방식은 성능이 좋지 않으며, 특히 삭제 단계가 전체 작업 시간의 90% 이상을 차지할 수 있습니다.
+2. 다중 테이블 일관성: 파이프라인이 Table A 적재에는 성공했지만 Table B에서 실패하면, Table A는 이미 커밋되어 롤백할 수 없습니다. 두 테이블에 걸쳐 쿼리하는 분석가는 서로 맞지 않는 데이터를 보게 됩니다.
+
+<div id="background">
+  ## 배경
+</div>
+
+ClickHouse는 단일 삽입, 단일 파티션 수준에서 원자성(atomicity)을 보장합니다. `INSERT`가 성공하면 해당 블록의 모든 행이 보이게 되며, 실패하면 어떤 행도 보이지 않습니다. 하지만 여러 번의 삽입이나 여러 테이블에 걸쳐 데이터를 원자적으로 commit하는 기본 제공 메커니즘은 없습니다.
+
+파티션 조작 명령([`MOVE PARTITION TO TABLE`](/ko/reference/statements/alter/partition#move-partition-to-table), [`REPLACE PARTITION`](/ko/reference/statements/alter/partition#replace-partition), [`ATTACH PARTITION FROM`](/ko/reference/statements/alter/partition#attach-partition-from))은 소스 테이블과 대상 테이블이 동일한 스토리지 정책을 사용할 때 메타데이터 수준에서 동작합니다.
+
+즉, 데이터 크기와 관계없이 거의 즉시 실행되므로 원자적 스왑 패턴을 구현하는 데 이상적인 구성 요소입니다.
+
+<div id="recommended-solution">
+  ## 권장 솔루션
+</div>
+
+실패 후 정리를 시도하며 프로덕션 테이블에 직접 삽입하는 대신, 전용 스테이징 테이블을 적재 영역으로 사용하십시오. 데이터를 검증한 후에는 파티션 수준 작업을 사용해 데이터를 프로덕션 테이블에 원자적으로 반영하십시오.
+
+<div id="step-by-step">
+  ## 단일 테이블 원자성 단계별 안내
+</div>
+
+<Steps>
+  <Step>
+    ### 스테이징 테이블 생성
+
+    프로덕션 테이블과 동일한 스키마(schema), 파티션 키, `ORDER BY`, 스토리지 정책을 사용합니다.
+
+    ```sql
+    CREATE TABLE my_table_staging AS my_table_prod;
+    ```
+  </Step>
+
+  <Step>
+    ### 스테이징 테이블에 데이터 삽입
+
+    프로덕션 테이블 대신 스테이징 테이블에 데이터를 삽입합니다.
+
+    ```sql
+    INSERT INTO my_table_staging SELECT ... FROM source;
+    ```
+  </Step>
+
+  <Step>
+    ### 삽입이 실패하면 테이블을 비우고 재시도
+
+    스테이징 테이블을 비우고 적재를 다시 실행합니다. 프로덕션 데이터에는 영향이 없습니다.
+
+    ```sql
+    TRUNCATE TABLE my_table_staging;
+    ```
+  </Step>
+
+  <Step>
+    ### 삽입이 성공하면 파티션을 프로덕션으로 이동
+
+    데이터를 프로덕션으로 이동하고 스테이징 테이블에서 제거하려면 `MOVE PARTITION`을 사용합니다.
+
+    ```sql
+    ALTER TABLE my_table_staging MOVE PARTITION <partition_expr> TO TABLE my_table_prod;
+    ```
+
+    또는 `ATTACH PARTITION`을 사용해 데이터를 프로덕션의 기존 파티션에 복사할 수 있습니다.
+
+    ```sql
+    ALTER TABLE my_table_prod ATTACH PARTITION tuple() FROM my_table_staging;
+    ```
+
+    두 작업 모두 동일한 스토리지 정책에서 수행되는 메타데이터 수준의 변경이므로 거의 즉시 완료됩니다.
+  </Step>
+
+  <Step>
+    ### 스테이징 테이블 정리
+
+    모든 파티션이 이동되면 다음 적재를 위해 스테이징 테이블이 비어 있도록 테이블을 비웁니다.
+
+    ```sql
+    TRUNCATE TABLE my_table_staging;
+    ```
+  </Step>
+</Steps>
+
+<div id="multi-table-consistency">
+  ## 다중 테이블 일관성
+</div>
+
+같은 방식은 둘 이상의 테이블이 모두 로드되기 전까지 어느 하나도 분석가에게 노출되어서는 안 되는 파이프라인에도 적용할 수 있습니다. 각 테이블의 데이터를 해당 테이블의 스테이징 테이블(staging table)에 로드하고 모두 검증한 다음, 파티션 이동 작업을 함께 실행합니다. 각 이동 작업은 거의 즉시 완료되는 메타데이터 작업이므로, 테이블 간 불일치가 발생하는 구간은 전체 로드 시간에서 파티션을 스왑하는 데 걸리는 시간으로 크게 줄어듭니다.
+
+<div id="requirements-and-constraints">
+  ## 요구 사항 및 제약 조건
+</div>
+
+`MOVE PARTITION TO TABLE`, `REPLACE PARTITION`, `ATTACH PARTITION FROM`의 경우 원본 테이블과 대상 테이블은 다음 조건을 충족해야 합니다.
+
+* 동일한 컬럼 구조
+* 동일한 파티션 키, `ORDER BY` 키 및 프라이머리 키
+* 동일한 스토리지 정책
+* 대상 테이블에는 원본 테이블의 모든 인덱스와 프로젝션이 포함되어야 합니다
+
+<div id="example">
+  ## 예시
+</div>
+
+아래 예시는 [fiddle](https://fiddle.clickhouse.com/7ef9ed84-ac14-4f2c-9ca5-d5913089769a)에서 직접 실행해 볼 수 있습니다:
+
+```sql
+CREATE TABLE prod
+(
+  uid Int16,
+  name String,
+  age Int16
+)
+ENGINE=MergeTree
+ORDER BY ();
+
+CREATE TABLE staging
+(
+  uid Int16,
+  name String,
+  age Int16
+)
+ENGINE=MergeTree
+ORDER BY ();
+
+-- 초기 데이터
+INSERT INTO prod VALUES (123, 'John', 33);
+INSERT INTO prod VALUES (456, 'Ksenia', 48);
+-- 데이터 로드
+INSERT INTO staging VALUES (8811, 'Alice', 50);
+INSERT INTO staging VALUES (8812, 'Bob', 23);
+
+-- 가져오기 검증
+SELECT 'Staging count:', COUNT() FROM staging;
+-- 파티션 이동
+ALTER TABLE staging MOVE PARTITION tuple() TO TABLE prod; -- 원자적 연산
+
+-- 데이터 확인
+SELECT 'Prod count:', COUNT() FROM prod;
+SELECT * FROM prod;
+```
+
+<div id="references">
+  ## 참고
+</div>
+
+* [**파티션 및 파트 다루기**](/ko/reference/statements/alter/partition)
+* 이 전략에 대해 자세히 알아보려면 블로그 게시물 [**대규모 ClickHouse 데이터 로드 가속화 - 3부: 대규모 데이터 로드를 안정적으로 처리하기**](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3)를 참조하세요.

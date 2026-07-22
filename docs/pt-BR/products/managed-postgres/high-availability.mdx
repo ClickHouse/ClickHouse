@@ -1,0 +1,76 @@
+---
+slug: /cloud/managed-postgres/high-availability
+sidebarTitle: 'Alta disponibilidade'
+title: 'Alta disponibilidade'
+description: 'Configure réplicas em standby e modos de replicação para alta disponibilidade no ClickHouse Managed Postgres'
+keywords: ['alta disponibilidade', 'ha', 'standby', 'replicação', 'failover', 'postgres ha']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.high-availability-beta" />
+
+O Managed Postgres oferece diferentes níveis de alta disponibilidade para atender aos seus requisitos de durabilidade e desempenho. Você pode adicionar uma ou duas réplicas em standby ao provisionar seu banco de dados ou ajustar essa configuração mais tarde na página **Settings**, conforme necessário.
+
+{/* TODO(kaushik-ubi): Captura de tela da tela de configuração de alta disponibilidade
+    Caminho: /images/cloud/managed-postgres/high-availability-config.png */}
+
+<div id="high-availability-options">
+  ## Opções de alta disponibilidade
+</div>
+
+<div id="two-standbys">
+  ### 2 Standbys
+</div>
+
+Com dois standbys, dois nós de réplica são implantados junto com a instância primária. Ambos os standbys têm o mesmo porte da instância primária, e qualquer um deles pode assumir caso ela falhe.
+
+Essa configuração usa **replicação síncrona**, em que a instância primária aguarda a confirmação de pelo menos um standby antes de confirmar as gravações. Isso oferece garantias de durabilidade mais fortes do que a replicação assíncrona. Como apenas uma confirmação é necessária (não as duas), o impacto no desempenho é menor do que na replicação síncrona com um único standby.
+
+<div id="one-standby">
+  ### 1 Standby
+</div>
+
+Com um standby, um nó de réplica é provisionado ao lado do primário. O standby tem o mesmo tamanho que o primário e pode assumir se o primário falhar.
+
+Os dados são replicados para o standby usando **replicação assíncrona**. Isso significa que o commit das gravações ocorre no primário sem esperar confirmação do standby. A replicação assíncrona garante que a alta disponibilidade não torne suas gravações mais lentas devido à latência de rede adicional. No entanto, isso também significa que o standby pode não ter recebido as transações mais recentes no momento de uma falha do primário. Para a maioria das aplicações, essa compensação entre desempenho e o pequeno risco de perder gravações muito recentes vale a pena. Se a durabilidade das gravações for necessária, recomenda-se optar por 2 standbys.
+
+<div id="no-standby">
+  ### Sem standby
+</div>
+
+Com esta opção, apenas um nó primário é provisionado no tamanho selecionado. Nenhum nó standby é criado. Seu nó primário continua sendo monitorado quanto a falhas, mas a recuperação pode levar mais tempo, dependendo da natureza do problema, já que não há uma réplica pronta para assumir. Essa configuração é mais adequada para ambientes de desenvolvimento, testes ou workloads não críticas em que algum tempo de indisponibilidade é aceitável.
+
+<div id="standbys-vs-read-replicas">
+  ## Standbys vs réplicas de leitura
+</div>
+
+Standbys e réplicas de leitura têm finalidades diferentes no Managed Postgres e são configurados separadamente.
+
+**Standbys** são dedicados exclusivamente à alta disponibilidade e ao failover automático. Eles replicam os dados da instância primária usando replicação por streaming e estão sempre prontos para ser promovidos se a primária falhar. Os standbys não ficam disponíveis para consultas de leitura.
+
+**Réplicas de leitura** são projetadas para escalabilidade de leitura. Elas extraem dados do WAL (Write-Ahead Log) do armazenamento de objetos e são executadas em um ambiente de rede separado, com seu próprio endpoint de conexão. As réplicas de leitura permitem descarregar o tráfego de leitura da instância primária sem afetar as garantias de HA.
+
+<div id="why-standbys-dont-serve-read-queries">
+  ### Por que standbys não processam consultas de leitura
+</div>
+
+Embora alguns provedores de banco de dados disponibilizem hot standbys para consultas somente leitura, o Managed Postgres intencionalmente não faz isso. Permitir consultas de leitura em standbys pode comprometer o principal objetivo deles: estar prontos para assumir imediatamente quando o primário falhar.
+
+Há duas preocupações principais:
+
+1. **Competição com o replay de WAL**: Em cargas de trabalho com muitas gravações, consultas de leitura em um standby competem com o replay de WAL pelos recursos do sistema. Essa competição pode causar alta defasagem de replicação, o que significa que o standby fica atrás do primário. Se ocorrer um failover enquanto o standby estiver defasado, ele não terá os dados mais recentes e talvez não esteja pronto para assumir corretamente.
+
+2. **Interferência no `VACUUM`**: Consultas de leitura de longa duração em um standby podem impedir que o `VACUUM` (e o `AUTOVACUUM`) limpem tuplas mortas no primário. O PostgreSQL não pode remover linhas que uma consulta ativa em qualquer réplica ainda possa precisar acessar. Isso pode levar ao inchaço da tabela e à degradação do desempenho ao longo do tempo.
+
+Ao manter os standbys dedicados ao failover, o Managed Postgres garante que eles estejam sempre sincronizados e prontos para assumir com perda mínima de dados e tempo de inatividade. Para escalar leituras, use [réplicas de leitura](/pt-BR/products/managed-postgres/read-replicas) em vez disso.
+
+<div id="handling-failures">
+  ## Como lidar com falhas
+</div>
+
+Todas as instâncias do Managed Postgres são monitoradas continuamente em busca de falhas, independentemente de a alta disponibilidade estar habilitada. Em todos os casos, o sistema tenta se recuperar automaticamente das falhas.
+
+Quando há instâncias standby disponíveis, a recuperação automática é mais rápida e mais simples. Em geral, o sistema se recupera em poucos minutos promovendo uma instância standby a primária. Sem instâncias standby, a recuperação pode exigir intervenção manual, aumentando significativamente a duração de qualquer indisponibilidade.

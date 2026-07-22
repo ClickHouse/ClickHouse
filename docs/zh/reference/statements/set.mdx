@@ -1,0 +1,80 @@
+---
+description: 'SET 语句说明'
+sidebarTitle: 'SET'
+slug: /sql-reference/statements/set
+title: 'SET 语句'
+doc_type: 'reference'
+---
+
+```sql
+SET param = value
+```
+
+将 `value` 赋值给当前会话的 `param` [设置](/zh/concepts/features/configuration/settings/overview)。你无法通过这种方式更改[服务器设置](/zh/reference/settings/server-settings/settings)。
+
+你也可以在单条查询中设置指定 profile 中的所有值。
+
+```sql
+SET profile = 'profile-name-from-the-settings-file'
+```
+
+对于值为 true 的布尔设置，可以使用简写语法，省略值赋值。只指定设置名称时，会自动设为 `1` (true) 。
+
+```sql
+-- 以下两种写法等价：
+SET force_index_by_date = 1
+SET force_index_by_date
+```
+
+<div id="set-time-zone">
+  ## SET TIME ZONE
+</div>
+
+```sql
+SET TIME ZONE [=] 'timezone'
+```
+
+设置会话时区。这是 `SET session_timezone = 'timezone'` 的别名，用于兼容 PostgreSQL 和其他 SQL 数据库。
+
+许多 SQL 客户端、ORM 和 JDBC 驱动在建立连接时会自动执行 `SET TIME ZONE`。这种语法让这类工具无需定制变通方案即可与 ClickHouse 配合使用。
+
+```sql
+SET TIME ZONE 'UTC';
+SET TIME ZONE 'Europe/Amsterdam';
+SET TIME ZONE 'America/New_York';
+
+-- 验证当前会话时区
+SELECT getSetting('session_timezone');
+```
+
+timezone 值必须是 [IANA Time Zone Database](https://www.iana.org/time-zones) 中的有效名称。无效的 timezone 名称会导致 error。
+
+有关 `session_timezone` 设置的更多信息，请参见 [session&#95;timezone](/zh/reference/settings/session-settings#session_timezone)。
+
+<div id="setting-query-parameters">
+  ## 设置查询参数
+</div>
+
+`SET` 语句也可用于定义查询参数，只需在参数名前添加 `param_` 前缀。
+查询参数支持您编写包含占位符的通用查询，并在执行时将其替换为实际值。
+
+```sql
+SET param_name = value
+```
+
+要在查询中使用查询参数，请通过 `{name: datatype}` 语法引用它：
+
+```sql
+SET param_id = 42;
+SET param_name = 'John';
+
+SELECT * FROM users
+WHERE id = {id: UInt32}
+AND name = {name: String};
+```
+
+当需要使用不同的值多次执行同一查询时，查询参数特别有用。
+
+有关查询参数的更多信息，包括如何与 `Identifier` 类型配合使用，请参见 [定义和使用查询参数](/zh/reference/syntax#defining-and-using-query-parameters)。
+
+更多信息，请参见 [Settings](/zh/reference/settings/session-settings)。

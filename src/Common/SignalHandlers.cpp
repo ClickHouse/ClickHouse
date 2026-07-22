@@ -6,6 +6,7 @@
 #include <Common/SymbolIndex.h>
 #include <Common/FramePointers.h>
 #include <Common/ErrnoException.h>
+#include <Common/setThreadName.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
 #include <base/sleep.h>
@@ -21,7 +22,9 @@
 #include <thread>
 #include <unistd.h>
 
+#pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-identifier"
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace DB
 {
@@ -48,6 +51,9 @@ using namespace DB;
 static std::atomic_bool is_crashed = false;
 static_assert(std::atomic_bool::is_always_lock_free, "is_crashed must be lock-free for use in signal handlers");
 bool isCrashed() { return is_crashed.load(std::memory_order_relaxed); }
+
+/// Set once the deadly signal handlers are reset to SIG_DFL; makes resetHandledSignals() a no-op afterwards.
+static std::atomic_flag handled_signals_were_reset;
 
 /// After re-raising the signal, the siginfo recorded in the core dump shows SI_TKILL with no si_addr,
 /// so we need to preserve the address for core dump analysis.
@@ -108,7 +114,19 @@ void childSignalHandler(int sig, siginfo_t * info, void *)
 /// Handler for "fault" or diagnostic signals. Send data about fault to separate thread to write into log.
 static void signalHandler(int sig, siginfo_t * info, void * context)
 {
-    if (asynchronous_stack_unwinding && sig == SIGSEGV)
+    /// A fault while asynchronously unwinding another thread's stack (the query profiler and
+    /// system.stack_trace) must be recovered by discarding the capture, not crash the server. Walking a
+    /// bad frame pointer dereferences an invalid address and raises SIGSEGV. On macOS the frame-pointer
+    /// walk in backtrace() can additionally land on a misaligned address (e.g. when the profiler
+    /// interrupts a thread parked in frame-pointer-less libsystem code), which raises SIGBUS, so recover
+    /// from that too there. We siglongjmp back to asynchronous_stack_unwinding_signal_jump_buffer, where
+    /// the handler drops the capture (the profiler also increments ProfileEvents::QueryProfilerErrors).
+    if (asynchronous_stack_unwinding
+        && (sig == SIGSEGV
+#if defined(OS_DARWIN)
+            || sig == SIGBUS
+#endif
+        ))
         siglongjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1);
 
     DENY_ALLOCATIONS_IN_SCOPE;
@@ -220,6 +238,45 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 
 #if defined(SANITIZER)
 extern "C" void __sanitizer_set_death_callback(void (*)());
+extern "C" void __sanitizer_on_print(const char * str);
+
+/// Captures sanitizer runtime output into a preallocated global buffer,
+/// so that the core dump analyzer can read it.
+extern "C"
+{
+char sanitizer_report[1 << 20];
+unsigned long sanitizer_report_size = 0;
+}
+
+static char sanitizer_report_lock;
+
+static DISABLE_SANITIZER_INSTRUMENTATION void appendToSanitizerReport(const char * str)
+{
+    unsigned long i = sanitizer_report_size;
+    while (*str != '\0' && i < sizeof(sanitizer_report) - 1)
+        sanitizer_report[i++] = *str++;
+    sanitizer_report_size = i;
+}
+
+extern "C" DISABLE_SANITIZER_INSTRUMENTATION void __sanitizer_on_print(const char * str)
+{
+    /// Writing to sanitizer_report_size by previous thread must happen-before reading from sanitizer_report_size by this thread.
+    /// Hence, we need acquire-release.
+    while (__atomic_test_and_set(&sanitizer_report_lock, __ATOMIC_ACQUIRE))
+        ;
+
+    /// The preamble makes the buffer discoverable by scanning the core dump.
+    /// It is assembled from parts so its only full copy is in this buffer.
+    if (sanitizer_report_size == 0)
+    {
+        appendToSanitizerReport("CLICKHOUSE");
+        appendToSanitizerReport(" SANITIZER");
+        appendToSanitizerReport(" REPORT\n");
+    }
+    appendToSanitizerReport(str);
+
+    __atomic_clear(&sanitizer_report_lock, __ATOMIC_RELEASE);
+}
 
 /// You should be very careful on which functions is called from the death callback, in some cases sanitizers will deadlock.
 /// So let's disable instrumentation to avoid possible issues, but note:
@@ -237,13 +294,15 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
     /// Sanitizer errors cannot be handled properly with our signal handlers, because it leads to deadlock.
     /// So we need to reset the signal handlers (this does not lead to deadlock),
     /// but closing the pipe leads to deadlock from death callback, so we will not close it.
-    HandledSignals::instance().reset(/* close_pipe= */ false);
+    /// Use resetHandledSignals() (idempotent, does not construct the singleton) instead of
+    /// HandledSignals::instance().reset() to stay safe when called at process exit.
+    resetHandledSignals();
 }
 #endif
 
 void HandledSignals::addSignalHandler(const std::vector<int> & signals, signal_function handler, bool register_signal)
 {
-    struct sigaction sa;
+    struct sigaction sa{};
     memset(&sa, 0, sizeof(sa));
     sa.sa_sigaction = handler;
     sa.sa_flags = SA_SIGINFO;
@@ -298,6 +357,8 @@ SignalListener::SignalListener(BaseDaemon * daemon_, LoggerPtr log_, TerminateRe
 
 void SignalListener::run()
 {
+    setThreadName(ThreadName::SIGNAL_LISTENER);
+
     if (daemon)
     {
         build_id = [this]{ return daemon->build_id; };
@@ -343,7 +404,7 @@ void SignalListener::run()
         }
         else if (sig == StdTerminate)
         {
-            UInt32 thread_num;
+            UInt32 thread_num = 0;
             std::string message;
 
             readBinary(thread_num, in);
@@ -353,7 +414,7 @@ void SignalListener::run()
         }
         else if (sig == SIGINT || sig == SIGQUIT || sig == SIGTERM)
         {
-            bool crashing;
+            bool crashing = false;
             {
                 std::lock_guard lock(terminate_request_mutex);
                 ++terminate_requested;
@@ -679,6 +740,8 @@ HandledSignals::HandledSignals()
 
 void HandledSignals::reset(bool close_pipe)
 {
+    handled_signals_were_reset.test_and_set();
+
     /// Reset signals to SIG_DFL to avoid trying to write to the signal_pipe that will be closed after.
     for (int sig : handled_signals)
     {
@@ -697,6 +760,15 @@ void HandledSignals::reset(bool close_pipe)
 
     if (close_pipe)
         signal_pipe.close();
+}
+
+void resetHandledSignals()
+{
+    /// Already reset: do nothing, and in particular do not touch (or construct) HandledSignals.
+    if (handled_signals_were_reset.test())
+        return;
+
+    HandledSignals::instance().reset(/* close_pipe= */ false);
 }
 
 HandledSignals::~HandledSignals()
@@ -737,3 +809,5 @@ void HandledSignals::setupCommonTerminateRequestSignalHandlers()
 {
     addSignalHandler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler, true);
 }
+
+#pragma clang diagnostic pop

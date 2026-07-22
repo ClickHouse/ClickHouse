@@ -7,6 +7,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
 #include <Formats/JSONUtils.h>
+#include <Formats/ParseError.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -21,6 +22,7 @@ namespace ErrorCodes
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
 
@@ -145,6 +147,10 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
         restore_elements();
         if constexpr (throw_exception)
             throw;
+        /// Only a genuine parse failure means "this value did not parse"; other errors
+        /// (e.g. MEMORY_LIMIT_EXCEEDED) must propagate instead of being reported as a
+        /// failed parse and silently turned into a default/skip.
+        rethrowIfNotParseError();
         return ReturnType(false);
     }
 
@@ -232,7 +238,7 @@ ReturnType SerializationTuple::deserializeTextImpl(IColumn & column, ReadBuffer 
             }
             else
             {
-                bool ok;
+                bool ok = false;
                 if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
                     ok = SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(element_column, istr, settings, elems[i]);
                 else
@@ -260,7 +266,24 @@ ReturnType SerializationTuple::deserializeTextImpl(IColumn & column, ReadBuffer 
         if (whole && !istr.eof())
         {
             if constexpr (throw_exception)
-                throwUnexpectedDataAfterParsedValue(column, istr, settings, "Tuple");
+            {
+                /// If empty tuple, temporarily increase size to make sure we can read the parsed
+                /// value via serializeText.
+                if (elems.empty())
+                    assert_cast<ColumnTuple &>(column).addSize(1);
+                WriteBufferFromOwnString ostr;
+                serializeText(column, column.size() - 1, ostr, settings);
+
+                /// Revert the temporarily added size increment for empty tuple.
+                if (elems.empty())
+                    assert_cast<ColumnTuple &>(column).popBack(1);
+
+                throw Exception(
+                    ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
+                    "Unexpected data '{}' after parsed Tuple value '{}'",
+                    std::string(istr.position(), std::min(size_t(10), istr.available())),
+                    ostr.str());
+            }
             return false;
         }
 

@@ -10,10 +10,25 @@ namespace DB
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
+struct LogicalJoinInfo
+{
+    String readable_relation_name;
+    std::optional<UInt64> result_rows_estimation;
+    JoinLocality locality{};
+};
+
 /// Join two data streams.
 class JoinStep : public IQueryPlanStep
 {
 public:
+
+    enum class JoinStage : size_t
+    {
+        Default = 0,
+        Build = 1,
+        Probe = 2,
+    };
+
     JoinStep(
         const SharedHeader & left_header_,
         const SharedHeader & right_header_,
@@ -38,6 +53,7 @@ public:
 
     const JoinPtr & getJoin() const { return join; }
     void setJoin(JoinPtr join_, bool swap_streams_ = false);
+    void setLogicalJoinInfo(LogicalJoinInfo && logical_join_info);
     bool allowPushDownToRight() const;
 
     /// Swap automatically if not set, otherwise always or never, depending on the value
@@ -62,14 +78,19 @@ public:
     bool isOptimized() const { return optimized; }
     void setOptimized() { optimized = true; }
 
+    std::vector<size_t> getStepGroups() const override;
+    String getStepGroupName(size_t group) const override;
+
 private:
     bool optimized = false;
     void updateOutputHeader() override;
 
     /// Header that expected to be returned from IJoin
     SharedHeader join_algorithm_header;
+    String join_readable_relation_name;
 
     JoinPtr join;
+    std::optional<size_t> result_rows_estimation;
     size_t max_block_size;
     size_t min_block_size_rows;
     size_t min_block_size_bytes;
@@ -77,6 +98,7 @@ private:
 
     const NameSet required_output;
     std::set<size_t> columns_to_remove;
+    JoinLocality locality = JoinLocality::Unspecified;
     bool keep_left_read_in_order;
     bool use_new_analyzer = false;
     bool use_join_disjunctions_push_down;

@@ -1,0 +1,155 @@
+---
+description: 'Documentation du type de données Time64 dans ClickHouse, qui stocke
+  l''heure avec une précision en fractions de seconde'
+slug: /sql-reference/data-types/time64
+sidebarTitle: 'Time64'
+title: 'Time64'
+doc_type: 'reference'
+---
+
+Le type de données `Time64` représente une heure de la journée avec des fractions de seconde.
+Il ne comporte aucun composant de date calendaire (jour, mois, année).
+Le paramètre `precision` définit le nombre de chiffres fractionnaires et, par conséquent, la taille du tick.
+
+Taille du tick (précision) : 10<sup>-precision</sup> secondes. Plage valide : 0..9. Les choix courants sont 3 (millisecondes), 6 (microsecondes) et 9 (nanosecondes).
+
+**Syntaxe :**
+
+```sql
+Time64(precision)
+```
+
+En interne, `Time64` stocke un nombre décimal signé sur 64 bits (Decimal64) représentant des fractions de seconde.
+La résolution du tick est déterminée par le paramètre `precision`.
+Les fuseaux horaires ne sont pas pris en charge : spécifier un fuseau horaire avec `Time64` provoquera une erreur.
+
+Contrairement à `DateTime64`, `Time64` ne stocke pas de composante de date.
+Voir aussi [`Time`](/fr/reference/data-types/time).
+
+Plage de représentation textuelle : [-999:59:59.000, 999:59:59.999] pour `precision = 3`. En général, le minimum est `-999:59:59` et le maximum est `999:59:59`, avec jusqu&#39;à `precision` chiffres fractionnaires (pour `precision = 9`, le minimum est `-999:59:59.999999999`).
+
+<div id="implementation-details">
+  ## Détails d’implémentation
+</div>
+
+**Représentation**.
+Valeur `Decimal64` signée comptant les fractions de seconde avec `precision` chiffres fractionnaires.
+
+**Normalisation**.
+Lors de l’analyse de chaînes en `Time64`, les composantes de l’heure sont normalisées mais non validées.
+Par exemple, `25:70:70` est interprété comme `26:11:10`.
+
+**Valeurs négatives**.
+Les signes moins initiaux sont pris en charge et conservés.
+Les valeurs négatives résultent généralement d’opérations arithmétiques sur des valeurs `Time64`.
+Pour `Time64`, les entrées négatives sont conservées aussi bien pour les entrées textuelles (par exemple, `'-01:02:03.123'`) que numériques (par exemple, `-3723.123`).
+
+**Saturation**.
+La composante horaire est limitée à la plage [-999:59:59.xxx, 999:59:59.xxx] lors de la conversion en composantes ou de la sérialisation en texte.
+La valeur numérique stockée peut dépasser cette plage ; cependant, toute extraction de composantes (heures, minutes, secondes) et toute représentation textuelle utilisent la valeur saturée.
+
+**Fuseaux horaires**.
+`Time64` ne prend pas en charge les fuseaux horaires.
+Spécifier un fuseau horaire lors de la création d’un type ou d’une valeur `Time64` génère une erreur.
+De même, les tentatives d’appliquer ou de modifier un fuseau horaire sur des colonnes `Time64` ne sont pas prises en charge et entraînent une erreur.
+
+<div id="examples">
+  ## Exemples
+</div>
+
+1. Création d’une table avec une colonne de type `Time64` et insertion de données :
+
+```sql
+CREATE TABLE tab64
+(
+    `event_id` UInt8,
+    `time` Time64(3)
+)
+ENGINE = TinyLog;
+```
+
+```sql
+-- Parse Time64
+-- - from string,
+-- - from a number of seconds since 00:00:00 (fractional part according to precision).
+INSERT INTO tab64 VALUES (1, '14:30:25'), (2, 52225.123), (3, '14:30:25');
+
+SELECT * FROM tab64 ORDER BY event_id;
+```
+
+```text
+   ┌─event_id─┬────────time─┐
+1. │        1 │ 14:30:25.000 │
+2. │        2 │ 14:30:25.123 │
+3. │        3 │ 14:30:25.000 │
+   └──────────┴──────────────┘
+```
+
+2. Filtrage des valeurs `Time64`
+
+```sql
+SELECT * FROM tab64 WHERE time = toTime64('14:30:25', 3);
+```
+
+```text
+   ┌─event_id─┬────────time─┐
+1. │        1 │ 14:30:25.000 │
+2. │        3 │ 14:30:25.000 │
+   └──────────┴──────────────┘
+```
+
+```sql
+SELECT * FROM tab64 WHERE time = toTime64(52225.123, 3);
+```
+
+```text
+   ┌─event_id─┬────────time─┐
+1. │        2 │ 14:30:25.123 │
+   └──────────┴──────────────┘
+```
+
+Remarque : `toTime64` interprète les littéraux numériques comme des secondes avec une partie fractionnaire selon la précision spécifiée ; indiquez donc explicitement le nombre de chiffres après la virgule souhaité.
+
+3. Inspection du type résultant :
+
+```sql
+SELECT CAST('14:30:25.250' AS Time64(3)) AS column, toTypeName(column) AS type;
+```
+
+```text
+   ┌────────column─┬─type──────┐
+1. │ 14:30:25.250 │ Time64(3) │
+   └───────────────┴───────────┘
+```
+
+<div id="addition-with-date">
+  ## Addition avec une Date
+</div>
+
+Une valeur [Time64](/fr/reference/data-types/time64) peut être ajoutée à une valeur [Date](/fr/reference/data-types/date) ou [Date32](/fr/reference/data-types/date32) pour produire une valeur [DateTime64](/fr/reference/data-types/datetime64) avec la même précision que `Time64` :
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT toDate('2024-07-15') + toTime64('14:30:25.123456', 6) AS dt, toTypeName(dt);
+```
+
+```text
+   ┌─────────────────────────dt─┬─toTypeName(dt)─┐
+1. │ 2024-07-15 14:30:25.123456 │ DateTime64(6)  │
+   └────────────────────────────┴────────────────┘
+```
+
+Voir [Addition de dates et d&#39;heures](/fr/reference/operators/index#date-time-addition) pour en savoir plus sur toutes les combinaisons prises en charge et les types de résultats.
+
+**Voir aussi**
+
+* [Fonctions de conversion de type](/fr/reference/functions/regular-functions/type-conversion-functions)
+* [Fonctions pour manipuler les dates et heures](/fr/reference/functions/regular-functions/date-time-functions)
+* [Le paramètre `date_time_input_format`](/fr/reference/settings/formats#date_time_input_format)
+* [Le paramètre `date_time_output_format`](/fr/reference/settings/formats#date_time_output_format)
+* [Le paramètre de configuration du serveur `timezone`](/fr/reference/settings/server-settings/settings#timezone)
+* [Le paramètre `session_timezone`](/fr/reference/settings/session-settings#session_timezone)
+* [Opérateurs pour manipuler les dates et heures](/fr/reference/operators/index#operators-for-working-with-dates-and-times)
+* [Type de données `Date`](/fr/reference/data-types/date)
+* [Type de données `Time`](/fr/reference/data-types/time)
+* [Type de données `DateTime`](/fr/reference/data-types/datetime)

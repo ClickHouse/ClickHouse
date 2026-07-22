@@ -10,6 +10,9 @@ wrong	is_prime	7718
 correct	is_prime	1
 is_prime	1
 correct	is_prime	1
+4
+2
+0
 wasm_l
 return_default	1
 times2	1

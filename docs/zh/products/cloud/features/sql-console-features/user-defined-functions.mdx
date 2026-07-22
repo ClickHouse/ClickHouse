@@ -1,0 +1,198 @@
+---
+sidebarTitle: '用户自定义函数'
+slug: /cloud/features/user-defined-functions
+title: 'Cloud 中的用户自定义函数'
+description: '在 Cloud 中添加自定义的可执行 Python 函数'
+doc_type: 'guide'
+keywords: ['user defined function', 'UDF']
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+用户自定义函数 (UDF) 允许用户将 ClickHouse 的功能扩展到其内置的一千多种[函数](/zh/reference/functions/regular-functions/regular-functions-index)之外。
+
+在 ClickHouse Cloud 中，创建用户自定义函数有两种方式：
+
+1. 使用 SQL
+2. 使用 UI 和你自己的代码 (Public Beta)
+
+<div id="sql-udfs">
+  ## SQL 用户自定义函数
+</div>
+
+可以使用 [`CREATE FUNCTION`](/zh/reference/statements/create/function) 语句，基于 lambda 表达式创建 SQL UDF。
+
+在此示例中，我们将创建一个简单的可执行用户自定义函数 `isBusinessHours`。
+该函数会检查某个时间戳是否处于正常营业时间内；如果是则返回 true，否则返回 false。
+
+1. 登录 Cloud Console 并打开 SQL 控制台
+2. 编写以下 SQL 查询以创建 `isBusinessHours` 函数：
+
+```sql
+CREATE FUNCTION isBusinessHours AS (ts) ->
+toDayOfWeek(ts) BETWEEN 1 AND 5
+AND toHour(ts) BETWEEN 9 AND 17;
+```
+
+3. 运行以下内容，测试你刚创建的 UDF：
+
+```sql
+SELECT isBusinessHours('2026-03-20 10:00:00'::DateTime), isBusinessHours('2026-03-20 23:00:00'::DateTime);
+```
+
+你应该会看到如下结果：
+
+```response
+1   0
+```
+
+4. 您可以使用 `DROP FUNCTION` 命令删除刚刚创建的 UDF：
+
+```sql
+DROP FUNCTION isBusinessHours
+```
+
+<Warning>
+  **重要**
+
+  ClickHouse Cloud 中的 UDFs **不会继承用户级设置**，而是按默认系统设置执行。
+</Warning>
+
+这意味着：
+
+* 会话级设置 (通过 `SET` 语句设置) 不会传递到 UDF 的执行上下文中
+* 用户 profile 中的设置不会被 UDFs 继承
+* 查询级设置在 UDF 执行期间不生效
+
+<div id="ui-udfs">
+  ## 通过 UI 创建的用户自定义函数
+</div>
+
+<BetaBadge />
+
+ClickHouse Cloud 提供了可通过 UI 创建用户自定义函数的配置界面。
+
+在本示例中，我们将创建与前文相同的简单可执行用户自定义函数 `isBusinessHours`，用于检查某个时间戳是否落在正常工作时间内。
+此前我们是通过 SQL 创建它的，这次则改用 Python 创建，并通过 UI 进行配置。
+
+<Steps>
+  <Step>
+    ### 创建 Python 文件
+
+    在本地新建一个 `main.py` 文件：
+
+    ```python
+    cat > main.py << 'EOF'
+    import sys
+    from datetime import datetime
+
+    for line in sys.stdin:
+        ts = datetime.fromisoformat(line.strip())
+        result = 1 if (0 <= ts.weekday() <= 4 and 9 <= ts.hour <= 17) else 0
+        print(result)
+        sys.stdout.flush()
+    EOF
+    ```
+
+    如果你的 Python 脚本导入了第三方包，请在 `requirements.txt` 文件中列出这些依赖项，ClickHouse Cloud 会为你安装。你也可以选择直接将依赖项打包到 ZIP 中，但这样就必须同时包含适用于两种 CPU 架构的缓存包，因此使用 `requirements.txt` 更简单。例如：
+
+    ```text
+    requests>=2.28.0
+    numpy>=1.23.0
+    ```
+
+    <Note>
+      ClickHouse Cloud 会在你下一步通过 UI 上传的 zip 文件中查找 `main.py`。
+      如果将该文件命名为其他名称，就会报错。
+    </Note>
+  </Step>
+
+  <Step>
+    ### 打包依赖项和本地文件
+
+    要包含依赖包以及其他本地文件 (例如 wheel 文件、配置文件或数据文件) ，请将它们放在与您的 `main.py` 和 `requirements.txt` 相同的目录中。创建 ZIP 归档时，请包含所有文件：
+
+    ```bash
+    zip is_business_hours.zip main.py requirements.txt
+    ```
+
+    你可以在 Python 代码中使用 `os.path.dirname(os.path.abspath(__file__))` 引用本地打包路径的基目录。它会返回 ZIP 归档中 `main.py` 所在目录的绝对路径，以便你访问其他一并打包的文件：
+
+    ```python
+    import os
+
+    # Get the base directory of the bundled files
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(base_dir, 'config.json')
+    ```
+
+    在你需要执行以下操作时，这会很有用：
+
+    * 访问随 UDF 一起打包的配置文件
+    * 为自定义依赖加载 wheel 包
+    * 引用其他脚本或数据文件
+
+    现在将该文件压缩为 ZIP 压缩包：
+
+    ```bash
+    zip is_business_hours.zip main.py
+    ```
+
+    <Warning>
+      **不允许使用符号链接**
+
+      ClickHouse Cloud 会拒绝包含符号链接的 UDF 归档文件。请确保 ZIP 压缩包中只包含普通文件和目录——包含符号链接的上传内容将无法通过验证。
+    </Warning>
+  </Step>
+
+  <Step>
+    ### 通过 UI 创建 UDF
+
+    1. 在 Cloud 控制台主页上，点击左下角菜单中的组织名称。
+    2. 从菜单中选择**用户自定义函数**。
+    3. 在用户自定义函数页面中，点击**设置 UDF**。屏幕右侧会打开一个配置面板。
+    4. 输入函数名称。本示例使用 `isBusinessHours`。
+    5. 选择函数类型，可选 **Executable pool** 或 **Executable**：
+       * **Executable pool**：系统会维护一个持久进程池，并从池中取出进程来处理读取请求。
+       * **Executable**：脚本会在每次查询时运行。
+    6. 本示例使用默认设置。有关完整的配置参数列表，请参见[可执行用户自定义函数](/zh/reference/functions/regular-functions/udf#executable-user-defined-functions)。
+    7. 点击**浏览文件**，上传在本教程开头创建的 `.zip` 文件。
+    8. 添加一个新参数。本示例中，添加一个类型为 `DateTime` 的参数 `timestamp`。
+    9. 选择返回类型。本示例中，选择 `Bool`。
+    10. 点击**创建 UDF**。此时会显示一个对话框，展示当前构建状态。
+        * 如果出现任何问题，状态将变为**错误**。
+        * 否则，状态会从**构建中**变为**预配中**。你的服务必须处于唤醒状态才能完成预配。如果服务处于空闲状态，请在服务名称旁的 **UDF 详细信息** 面板中点击**唤醒服务**。
+        * 完成后，状态将变为**已部署**。
+  </Step>
+
+  <Step>
+    ### 测试你的 UDF
+
+    1. 点击页面左上角的 **Settings - 返回到服务视图**，返回 SQL 控制台主页
+    2. 点击左侧菜单中的 **SQL 控制台**
+    3. 输入以下查询：
+
+    ```sql
+    SELECT isBusinessHours('2026-03-20 10:00:00'::DateTime), isBusinessHours('2026-03-20 23:00:00'::DateTime);
+    ```
+
+    你应该会看到如下结果：
+
+    ```response
+    true    false
+    ```
+  </Step>
+
+  <Step>
+    ### 创建新版本
+
+    如需更改 UDF 的代码，请创建一个新版本。**Edit** 面板仅用于管理 UDF 分配给哪些服务；在此处上传文件不会替换已部署的代码。
+
+    1. 在 Cloud Console 首页，点击左下角菜单中的组织名称。
+    2. 在菜单中选择 **用户自定义函数**。
+    3. 在 `isBusinessHours` UDF 的 **操作** 一栏中点击三点图标，然后点击 **创建新版本**
+    4. 上传包含修改后代码的 ZIP 压缩包，或修改设置，然后点击 **创建新版本**
+
+    你已成功通过 UI 添加了第一个用户自定义函数，确认其可正常运行，并了解了在需要时如何创建新版本。
+  </Step>
+</Steps>

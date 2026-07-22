@@ -1,0 +1,101 @@
+---
+sidebarTitle: '概览'
+title: 'ClickHouse Cloud API'
+slug: /cloud/manage/api/api-overview
+description: '了解 ClickHouse Cloud API'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', 'API 概览', '云 API', 'REST API', '编程访问']
+---
+
+<div id="overview">
+  ## 概述
+</div>
+
+ClickHouse Cloud API 是一个面向开发者的 REST API，旨在让您轻松管理 ClickHouse Cloud 上的组织和服务。通过我们的 Cloud API，您可以创建和管理服务、配置 API 密钥，以及在组织中添加或移除成员等。
+
+[了解如何创建您的第一个 API 密钥，并开始使用 ClickHouse Cloud API。](/zh/products/cloud/features/admin-features/api/openapi)
+
+<div id="swagger-openapi-endpoint-and-ui">
+  ## Swagger (OpenAPI) 端点和 UI
+</div>
+
+ClickHouse Cloud API 基于开源的 [OpenAPI 规范](https://www.openapis.org/) 构建，
+便于客户端以可预测的方式进行调用。如果你需要以编程方式
+获取 ClickHouse Cloud API 文档，我们通过 https://api.clickhouse.cloud/v1
+提供基于 JSON 的 Swagger 端点。你也可以通过
+[Swagger UI](/zh/api-reference/organization/get-list-of-available-organizations) 查看 API 文档。
+
+<Note>
+  如果你的组织已迁移到某个[新定价方案](https://clickhouse.com/pricing?plan=scale\&provider=aws\&region=us-east-1\&hours=8\&storageCompressed=false)，并且你使用 OpenAPI，则需要在创建服务的 `POST` 请求中移除 `tier` 字段。
+
+  由于我们不再提供服务层级，服务对象中的 `tier` 字段已被移除。
+  这会影响 `POST`、`GET` 和 `PATCH` 服务请求返回的对象。因此，任何使用这些 API 的代码都可能需要进行相应调整，以适配这些变更。
+</Note>
+
+<div id="rate-limits">
+  ## 速率限制
+</div>
+
+每个组织最多可创建 100 个 API 密钥。每个 API 密钥在
+10 秒时间窗口内最多可发出 10 个请求。如果你希望提高组织的
+API 密钥数量上限，或提高每 10 秒时间窗口内的请求上限，
+请联系 support@clickhouse.com
+
+<div id="terraform-provider">
+  ## Terraform 提供商
+</div>
+
+官方的 ClickHouse Terraform 提供商 让您能够使用 [Infrastructure as Code](https://www.redhat.com/en/topics/automation/what-is-infrastructure-as-code-iac)
+创建可预测、可进行版本控制的配置，从而大幅降低部署
+出错的可能性。
+
+您可以在 [Terraform registry](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) 中查看 Terraform 提供商 文档。
+
+如果您想为 ClickHouse Terraform 提供商 做出贡献，可以在
+[GitHub 仓库](https://github.com/ClickHouse/terraform-provider-clickhouse)中查看源代码。
+
+<Note>
+  如果您的组织已迁移到某个[新定价方案](https://clickhouse.com/pricing?plan=scale\&provider=aws\&region=us-east-1\&hours=8\&storageCompressed=false)，则必须使用 2.0.0 或更高版本的 [ClickHouse Terraform 提供商](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs)。必须进行此升级，是因为需要处理服务资源中 `tier` 属性的变更：完成定价迁移后，将不再接受 `tier` 字段，因此应移除对它的引用。
+
+  现在，您还可以将 `num_replicas` 字段指定为服务资源的一个属性。
+</Note>
+
+<div id="terraform-provider-releases">
+  ## Terraform 提供商 发布说明
+</div>
+
+ClickHouse 维护着两个官方 Terraform 提供商：用于云基础设施的 ClickHouse Cloud 提供商，以及用于数据库级对象的 DBops 提供商。两者都遵循相同的发布模式。
+
+<div id="stable-vs-alpha">
+  ### 稳定版本与 alpha
+</div>
+
+稳定版本 (例如 3.11.1、1.9.0) 仅包含 GA 功能所需的资源。Alpha 版本 (例如 3.12.0-alpha2、1.10.0-alpha1) 除了包含稳定版本中的全部内容外，还包含仍处于 Beta 或私有预览阶段的功能所需资源，且必须显式锁定到该版本才能使用。
+
+<div id="versioning">
+  ### 版本编号
+</div>
+
+两个提供商都采用语义化版本控制 (MAJOR.MINOR.PATCH) 。主版本号在发生破坏性变更时递增，次版本号用于新增功能或资源，补丁版本号则用于错误修复。Alpha 发布会在下一个次版本号后附加预发布后缀 (例如 3.12.0-alpha1) ；在正式晋升之前，随着新增修复或变更，alpha 编号会继续递增 (例如 alpha1 → alpha2 → alpha3) 。发布按需进行，而不是按固定周期安排。当为尚未达到 GA 的功能新增资源，或某项修复需要提前验证时，就会创建新的 alpha 版本。累计的变更 (包括期间已达到 GA 的功能) 一旦准备好用于生产环境，通常在经过一段客户反馈期后，就会创建新的稳定版本。多个 alpha 次版本可能会先逐步积累，之后再合并为一个稳定版本发布。
+
+<div id="promotion">
+  ### 从 alpha 晋升到稳定版本
+</div>
+
+当某个 Terraform 功能达到 GA 就绪状态时，相应的 Terraform 资源会在下一个稳定版本发布中从 alpha 晋升为稳定版本。在此之前，该资源仅在 alpha 构建中可用。
+
+<div id="terraform-and-openapi-new-pricing---replica-settings-explained">
+  ## Terraform 和 OpenAPI 新定价：副本设置说明
+</div>
+
+每个服务在创建时的默认副本数，在 Scale 和 Enterprise 层级中为 3，而在基础版中为 1。
+对于 Scale 和 Enterprise 层级，可以通过在服务创建请求中传入 `numReplicas` 字段来调整副本数。
+对于仓库中的第一个服务，`numReplicas` 字段的值必须在 2 到 20 之间。在现有仓库中创建的服务，副本数则最低可为 1。
+
+<div id="support">
+  ## 支持
+</div>
+
+我们建议您先访问[我们的 Slack 频道](https://clickhouse.com/slack)，以获得快速支持。如果
+您需要更多帮助，或想进一步了解我们的 API 及其功能，
+请通过 https://console.clickhouse.cloud/support 联系 ClickHouse 支持团队

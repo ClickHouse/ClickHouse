@@ -1,0 +1,99 @@
+---
+description: 'ClickHouse の PostgreSQL ワイヤプロトコルインターフェイスに関するドキュメント'
+sidebarTitle: 'PostgreSQL インターフェイス'
+slug: /interfaces/postgresql
+title: 'PostgreSQL インターフェイス'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+<Tip>
+  [Managed Postgres](/ja/products/managed-postgres/overview) サービスもぜひご覧ください。コンピュートと物理的に同一場所に配置された NVMe storage を基盤としており、EBS のようなネットワーク接続型ストレージを使用する代替手段と比べて、ディスク I/O がボトルネックとなるワークロードで最大 10 倍高速なパフォーマンスを実現します。また、ClickPipes の Postgres CDC (変更データキャプチャ) コネクタを使用して、Postgres のデータを ClickHouse にレプリケートできます。
+</Tip>
+
+ClickHouse は PostgreSQL ワイヤプロトコル をサポートしているため、Postgres クライアントを使って ClickHouse に接続できます。言い換えると、ClickHouse は PostgreSQL インスタンスとして振る舞えるため、ClickHouse がまだ直接サポートしていない PostgreSQLクライアントアプリケーション (たとえば Amazon Redshift) からでも ClickHouse に接続できます。
+
+PostgreSQL ワイヤプロトコル を有効にするには、サーバーの設定ファイルに [postgresql&#95;port](/ja/reference/settings/server-settings/settings#postgresql_port) 設定を追加します。たとえば、`config.d` フォルダー内の新しい XML ファイルでポートを定義できます。
+
+```xml
+<clickhouse>
+    <postgresql_port>9005</postgresql_port>
+</clickhouse>
+```
+
+ClickHouse serverを起動し、**Listening for PostgreSQL compatibility protocol** という文言を含む、次のようなログメッセージを探します:
+
+```response
+{} <Information> Application: Listening for PostgreSQL compatibility protocol: 127.0.0.1:9005
+```
+
+<div id="connect-psql-to-clickhouse">
+  ## psql を ClickHouse に接続する
+</div>
+
+次のコマンドは、PostgreSQLクライアント `psql` を ClickHouse に接続する方法を示しています。
+
+```bash
+psql -p [port] -h [hostname] -U [username] [database_name]
+```
+
+例：
+
+```bash
+psql -p 9005 -h 127.0.0.1 -U alice default
+```
+
+<Note>
+  `psql` クライアントではパスワード付きでのログインが必要なため、パスワードが設定されていない `default` ユーザーでは接続できません。`default` ユーザーにパスワードを設定するか、別のユーザーでログインしてください。
+</Note>
+
+`psql` クライアントでパスワードの入力が求められます。
+
+```response
+Password for user alice:
+psql (14.2, server 22.3.1.1)
+WARNING: psql major version 14, server major version 22.
+         Some psql features might not work.
+Type "help" for help.
+
+default=>
+```
+
+以上で完了です。これで、ClickHouse に接続された PostgreSQL client を利用でき、すべてのコマンドとクエリは ClickHouse 上で実行されます。
+
+<Note>
+  PostgreSQL プロトコルは現在、平文パスワードのみをサポートしています。
+</Note>
+
+<div id="using-ssl">
+  ## SSL の使用
+</div>
+
+ClickHouse インスタンスで SSL/TLS が設定されている場合、`postgresql_port` でも同じ設定が使われます (このポートはセキュア接続と非セキュア接続の両方で共有されます) 。
+
+SSL を使用した接続方法は、クライアントごとに異なります。次のコマンドは、証明書と秘密鍵を指定して `psql` から ClickHouse に安全に接続する方法を示しています。
+
+```bash
+psql "port=9005 host=127.0.0.1 user=alice dbname=default sslcert=/path/to/certificate.pem sslkey=/path/to/key.pem sslrootcert=/path/to/rootcert.pem sslmode=verify-ca"
+```
+
+<div id="using-scram-sha256">
+  ## SCRAM-SHA-256 を使用した ClickHouse ユーザー認証の設定
+</div>
+
+ClickHouse で安全なユーザー認証を行うには、SCRAM-SHA-256 プロトコルの使用を推奨します。users.xml ファイルで `password_scram_sha256_hex` 要素を指定して、ユーザーを設定します。パスワードハッシュは num&#95;iterations=4096 を指定して生成する必要があります。
+
+接続時に psql クライアントが SCRAM-SHA-256 をサポートし、そのネゴシエーションを行うことを確認してください。
+
+パスワード `abacaba` のユーザー `user_with_sha256` の設定例:
+
+```xml
+<user_with_sha256>
+    <password_scram_sha256_hex>04e7a70338d7af7bb6142fe7e19fef46d9b605f3e78b932a60e8200ef9154976</password_scram_sha256_hex>
+</user_with_sha256>
+```
+
+[PostgreSQL ドキュメント](https://jdbc.postgresql.org/documentation/head/ssl-client.html)で、SSL 設定の詳細を確認できます。

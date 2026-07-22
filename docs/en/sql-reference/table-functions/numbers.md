@@ -7,8 +7,6 @@ description: 'Returns a table with a single `number` column that contains a sequ
 doc_type: 'reference'
 ---
 
-# numbers Table Function
-
 - `numbers()` – Returns an infinite table with a single `number` column (UInt64) that contains integers in ascending order, starting from 0. Use `LIMIT` (and optionally `OFFSET`) to restrict the number of rows.
 
 - `numbers(N)` – Returns a table with a single `number` column (UInt64) that contains integers from 0 to `N - 1`.

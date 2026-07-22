@@ -24,7 +24,7 @@ namespace
 {
 
 template <typename Point>
-class FunctionpolygonsIntersect : public IFunction
+class FunctionpolygonsIntersect final : public IFunction
 {
 public:
     static inline const char * name;
@@ -128,11 +128,11 @@ REGISTER_FUNCTION(polygonsIntersect)
 
         )",
             R"(
-                ┌─polygonsIntersectCartesian()─┐
-                │ 1 │
-                └───────────────────┘
+┌─polygonsIntersectCartesian()─┐
+│                            1 │
+└──────────────────────────────┘
         )"}},
-        .introduced_in = {25, 6},
+        .introduced_in = {25, 7},
         .category = FunctionDocumentation::Category::Geo});
 
     factory.registerFunction<FunctionpolygonsIntersect<SphericalPoint>>(FunctionDocumentation{
@@ -156,11 +156,11 @@ REGISTER_FUNCTION(polygonsIntersect)
 
         )",
             R"(
-                ┌─polygonsIntersectSpherical()─┐
-                │ 1 │
-                └───────────────────┘
+┌─polygonsIntersectSpherical()─┐
+│                            1 │
+└──────────────────────────────┘
         )"}},
-        .introduced_in = {25, 6},
+        .introduced_in = {25, 7},
         .category = FunctionDocumentation::Category::Geo});
 }
 

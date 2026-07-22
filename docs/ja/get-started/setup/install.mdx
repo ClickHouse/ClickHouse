@@ -1,0 +1,73 @@
+---
+description: 'ClickHouse のインストール'
+keywords: ['clickhouse', 'インストール', 'はじめに', 'クイックスタート']
+sidebarTitle: 'インストール'
+slug: /install
+title: 'インストール手順'
+doc_type: 'guide'
+---
+
+import {galaxyOnClick} from "/snippets/ja/lib/galaxy.jsx";
+
+<Card title="ClickHouse Cloud" icon="cloud" href="https://console.clickhouse.cloud/signUp?loc=docs-install-page-banner" cta="無料で使い始める">
+  クラスターのサイジングやスケーリングを気にすることなく、すぐに構築を始められます。ClickHouse Cloud がサイジング、スケーリング
+  、セキュリティ、信頼性、アップグレードを担います。
+</Card>
+
+<br />
+
+自社で管理したい場合は、以下のオープンソース ClickHouse のオプションから選択してください。
+ローカルセットアップにはクイックインストールスクリプトまたは `clickhousectl` CLI を使用し、
+本番デプロイメントにはパッケージまたはバイナリから
+ClickHouse Server をインストールしてください。
+
+<h3 className="install-group-heading">ローカル開発</h3>
+
+<p className="install-group-description">
+  ご利用のマシン上で ClickHouse を実行し、構築、テスト、検証を行えます。
+  クイックインストールなら単一バイナリをすばやく入手でき、clickhousectl
+  を使ってローカルのバージョンやサーバーをインストール、管理することもできます。
+</p>
+
+<div className="installContainer">
+  <a href="/install/quick-install" style={{textDecoration: 'none'}}>
+    <Card title="クイックインストール" />
+  </a>
+
+  <a href="/install/clickhousectl" style={{textDecoration: 'none'}}>
+    <Card title="clickhousectl (CLI)" icon="console" />
+  </a>
+
+  <a href="/install/docker" style={{textDecoration: 'none'}}>
+    <Card title="Docker" />
+  </a>
+
+  <a href="/install/advanced" style={{textDecoration: 'none'}}>
+    <Card title="ソースからビルド" icon="code" />
+  </a>
+</div>
+
+<h3 className="install-group-heading">本番サーバー</h3>
+
+<p className="install-group-description">
+  パッケージまたはバイナリから ClickHouse Server をインストールし、
+  自社のインフラストラクチャ上で長期間稼働するデプロイメントを実行できます。
+</p>
+
+<div className="installContainer">
+  <a href="/install/debian_ubuntu" style={{textDecoration: 'none'}}>
+    <Card title="Debian/Ubuntu" />
+  </a>
+
+  <a href="/install/redhat" style={{textDecoration: 'none'}}>
+    <Card title="Redhat" />
+  </a>
+
+  <a href="/install/nixos" style={{textDecoration: 'none'}}>
+    <Card title="NixOS" />
+  </a>
+
+  <a href="/install/linux_other" style={{textDecoration: 'none'}}>
+    <Card title="その他の Linux" />
+  </a>
+</div>

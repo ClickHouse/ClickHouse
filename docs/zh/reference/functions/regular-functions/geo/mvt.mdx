@@ -1,0 +1,342 @@
+---
+description: 'Mapbox 矢量瓦片编码文档'
+sidebarTitle: 'Mapbox 矢量瓦片'
+slug: /sql-reference/functions/geo/mvt
+title: 'Mapbox 矢量瓦片编码函数'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 概述
+</div>
+
+[Mapbox 矢量瓦片](https://github.com/mapbox/vector-tile-spec) (MVT) 是采用 protobuf 编码的瓦片，MapLibre 和 Mapbox GL 等 Web 地图
+客户端可原生渲染这类瓦片。ClickHouse 可通过一对相互配合的函数，完全使用 SQL 构建此类瓦片：
+
+* `MVTEncodeGeom` — 一个标量函数，用于将几何对象投影到 slippy-map 瓦片的局部像素空间中，并
+  将其裁剪到该瓦片范围内。
+* `MVTEncode` — 一个聚合函数，用于将某个分组中的已投影几何对象聚合为单图层瓦片的
+  二进制字节。
+
+两个辅助函数 `MVTBoundingBox` 和 `MVTBoundingBoxMercator` 会返回瓦片的边界框，以便在 `WHERE` 子句中使用索引将行
+限制到该边界框内。
+
+支持 Point、line 和 polygon 几何对象，包括 `Geometry` 类型以及具体的 geo types (`Point`、
+`LineString`、`MultiLineString`、`Ring`、`Polygon`、`MultiPolygon`) 。
+
+生成的字节是一个完整的瓦片，可通过 HTTP interface 结合 `FORMAT RawBLOB` 直接返回。
+
+这些函数对应 PostGIS 的工作流，同时也提供了使用 PostGIS 名称的别名：`ST_AsMVTGeom`
+对应 `MVTEncodeGeom`，`ST_AsMVT` 对应 `MVTEncode`。
+
+<div id="mvtencodegeom">
+  ## MVTEncodeGeom
+</div>
+
+将以地理坐标 (经度/纬度) 表示的几何对象投影到由 `zoom`、`tile_x` 和 `tile_y` 标识的
+slippy-map 瓦片局部像素空间中，将其裁剪到瓦片范围内，对齐到整数像素网格，
+并返回瓦片空间中的几何对象。
+
+该投影采用覆盖完整 `UInt32` 坐标范围的 Web Mercator。返回坐标的原点位于瓦片
+左上角，y 轴向下，这正是 Mapbox Vector
+Tile 格式采用的坐标约定，因此结果可直接传给 `MVTEncode`。坐标会被舍入到整像素，因此按
+`MVTEncodeGeom` 分组时，会将落在同一网格上的几何对象归并为一个聚类。
+
+启用 `clip` 时 (默认值) ，几何对象会被裁剪到按 `buffer` 像素扩展后的瓦片范围内 (每个轴上的范围为
+`[-buffer, extent + buffer]`) ；完全落在该范围之外的几何对象会变为 `NULL`。这相当于
+PostGIS 的 `ST_AsMVTGeom`。
+
+输出几何类型取决于输入：`Point` 返回 `Point`；`LineString` 或 `MultiLineString` 返回
+`MultiLineString`；`Ring`、`Polygon` 或 `MultiPolygon` 返回 `MultiPolygon` (裁剪可能会将一个几何对象分成
+多个部分) 。
+
+**语法**
+
+```sql
+MVTEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])
+```
+
+**参数**
+
+* `geometry` — 以经纬度 (度) 表示的 Geometry。经度会被限制在 `[-180, 180]`，纬度会被限制在 Web Mercator 的范围 `[-85.05112878, 85.05112878]` 内。[`Point`](/zh/reference/data-types/geo) / [`LineString`](/zh/reference/data-types/geo) / [`MultiLineString`](/zh/reference/data-types/geo) / [`Ring`](/zh/reference/data-types/geo) / [`Polygon`](/zh/reference/data-types/geo) / [`MultiPolygon`](/zh/reference/data-types/geo) / [`Geometry`](/zh/reference/data-types/geo)。
+* `zoom` — Slippy 地图的缩放级别，范围为 `[0, 32]`。[`UInt8`](/zh/reference/data-types/int-uint)。
+* `tile_x` — 瓦片列索引，范围为 `[0, 2^zoom - 1]`。[`UInt32`](/zh/reference/data-types/int-uint)。
+* `tile_y` — 瓦片行索引，范围为 `[0, 2^zoom - 1]`。[`UInt32`](/zh/reference/data-types/int-uint)。
+* `extent` — 可选的瓦片边长 (每边像素数) ，范围为 `[1, 2147483647]`。默认值为 `4096`，即 Mapbox Vector Tile 的默认值。[`UInt32`](/zh/reference/data-types/int-uint)。
+* `buffer` — 可选的裁剪缓冲区 (像素) ，范围为 `[0, 2147483647]`。默认值为 `1`。[`UInt32`](/zh/reference/data-types/int-uint)。
+* `clip` — 可选标志；当其为非零值时 (默认如此) ，几何对象会被裁剪到瓦片加缓冲区的范围内。[`UInt8`](/zh/reference/data-types/int-uint)。
+
+**返回值**
+
+返回瓦片空间中的几何对象；如果被完全裁剪掉，则返回 `NULL`。[`Geometry`](/zh/reference/data-types/geo)。
+
+**示例**
+
+```sql
+SELECT MVTEncodeGeom((13.37, 52.52)::Point, 10, 550, 335) AS pixel
+```
+
+```text
+┌─pixel──────┐
+│ (124,3384) │
+└────────────┘
+```
+
+<div id="mvtencode">
+  ## MVTEncode
+</div>
+
+将一组要素编码为二进制的 Mapbox Vector Tile layer。这是标量
+函数 `MVTEncodeGeom` 的聚合版本。每个输入行都会成为一个要素；支持点、线和多边形几何。
+
+`geometry` 参数是一个使用瓦片空间坐标的 `Geometry`，通常由 `MVTEncodeGeom` 生成。几何为 `NULL` 的行 (例如被 `MVTEncodeGeom` 裁剪掉的行) 会被跳过。可选的 `properties` 参数是一个
+命名元组，其元素名称会成为要素属性的键，其元素类型则决定矢量切片中的值类型。
+
+结果是单layer切片的原始字节数据。空分组会生成空切片。这对应于
+PostGIS `ST_AsMVT`。
+
+**语法**
+
+```sql
+MVTEncode(layer_name[, extent[, feature_id_name[, stringify_unsupported]]])(geometry[, properties])
+```
+
+**参数**
+
+* `layer_name` — 矢量瓦片layer名称。[`String`](/zh/reference/data-types/string)。
+* `extent` — 瓦片每条边的像素范围，取值区间为 `[1, 2147483647]`。默认值为 `4096`。[`UInt32`](/zh/reference/data-types/int-uint)。
+* `feature_id_name` — 可选，用于指定 `properties` 元组中某个无符号整数字段的名称，将其作为 MVT 要素 的 `id` (`UInt64`) 输出，而不是作为标签输出。有符号整数会被拒绝。若 `id` 为 `NULL`，则该 要素 不包含 `id`。参数按位置传递，因此要使用它，必须提供 `extent`。[`String`](/zh/reference/data-types/string)。
+* `stringify_unsupported` — 可选标志 (`0`/`1`，默认值为 `0`) ；当设为 `1` 时，不受直接支持的属性类型 (如大整数、`UUID`、`Decimal`) 会被编码为其文本 `string_value`，而不是报错。[`UInt8`](/zh/reference/data-types/int-uint)。
+
+**参数**
+
+* `geometry` — 瓦片空间中的几何数据，例如来自 `MVTEncodeGeom`。[`Geometry`](/zh/reference/data-types/geo)。
+* `properties` — 可选的要素属性命名元组。元素名称会成为属性键。[`Tuple`](/zh/reference/data-types/tuple)。
+
+**返回值**
+
+返回单layer Mapbox Vector Tile 的二进制内容。[`String`](/zh/reference/data-types/string)。
+
+<div id="property-types">
+  ### 属性类型
+</div>
+
+每个属性元素都会编码为与其 ClickHouse 类型相匹配的 Mapbox Vector Tile `Value` Variant：
+
+| ClickHouse 类型                                                  | 矢量切片值类型        |
+| -------------------------------------------------------------- | -------------- |
+| `String` / `FixedString`                                       | `string_value` |
+| `Float32` / `BFloat16`                                         | `float_value`  |
+| `Float64`                                                      | `double_value` |
+| `Bool`                                                         | `bool_value`   |
+| `Int8` / `Int16` / `Int32` / `Int64` / `Date32`                | `sint_value`   |
+| `UInt8` / `UInt16` / `UInt32` / `UInt64` / `Date` / `DateTime` | `uint_value`   |
+
+类型可以包裹在 `Nullable` 和/或 `LowCardinality` 中。对于 `NULL` 值，会省略该要素的这个 attribute，因为
+矢量切片格式不支持 null。其他任何属性类型都会引发异常，除非设置了 `stringify_unsupported`，此时
+它会被编码为其文本形式的 `string_value`。
+
+相同的属性值会被归并到该 layer 的共享值池中，因此某个在许多要素中出现的值
+只会存储一次。
+
+<div id="naming-the-properties-tuple">
+  ### 为 properties Tuple 命名
+</div>
+
+properties Tuple 必须具有明确的元素名称。`tuple(...)` 内部的列别名**不会**传递给 Tuple 的元素名称，因此请使用类型转换为这些元素命名：
+
+```sql
+tuple(count(), any(id))::Tuple(cluster_count UInt64, id String)
+```
+
+<div id="clustering">
+  ### 聚类
+</div>
+
+聚类逻辑是在 SQL 中表达的，而不是由该函数实现。由于 `MVTEncodeGeom` 会将坐标舍入为整像素，因此按
+像素几何体分组会把重合的几何体合并在一起；请先在子查询中对各组进行聚合，再将每个聚类对应的一行数据传递给
+`MVTEncode`：
+
+```sql
+SELECT MVTEncode('points')(geom, tuple(cluster_count)::Tuple(cluster_count UInt64)) AS tile
+FROM
+(
+    SELECT MVTEncodeGeom((lon, lat)::Point, 10, 550, 335) AS geom, count() AS cluster_count
+    FROM points
+    GROUP BY geom
+)
+SETTINGS allow_suspicious_types_in_group_by = 1;
+```
+
+按 `Geometry` 值分组时，需要设置 `allow_suspicious_types_in_group_by = 1`，因为默认情况下，
+不允许按基于 `Variant` 的 `Geometry` 类型分组。省略内部的 `GROUP BY` (以及 `count()`) 即可为每个输入行输出一个要素，
+而不是输出聚类后的要素。
+
+<div id="mvtboundingbox">
+  ## MVTBoundingBox
+</div>
+
+返回由 `zoom`、`tile_x` 和 `tile_y` 标识的 slippy-map 瓦片的地理边界框，以元组
+`(min_lon, min_lat, max_lon, max_lat)` 表示，单位为度。
+
+可在直接按 `longitude`/`latitude` 列过滤时，使用它将行限制在某个瓦片范围内——这样就可以利用这些列上的主键或
+索引——而无需对每一行重新计算 Web Mercator 投影。可选参数 `margin`
+会按瓦片大小的该比例向边界框四周扩展；将其设置为 `buffer / extent`，即可覆盖
+`MVTEncodeGeom` 的裁剪缓冲区。
+
+**语法**
+
+```sql
+MVTBoundingBox(zoom, tile_x, tile_y[, margin])
+```
+
+**参数**
+
+* `zoom` — Slippy 地图的缩放级别，范围为 `[0, 32]`。[`UInt8`](/zh/reference/data-types/int-uint)。
+* `tile_x` — 瓦片列索引，范围为 `[0, 2^zoom - 1]`。[`UInt32`](/zh/reference/data-types/int-uint)。
+* `tile_y` — 瓦片行索引，范围为 `[0, 2^zoom - 1]`。[`UInt32`](/zh/reference/data-types/int-uint)。
+* `margin` — 可选的瓦片尺寸比例，用于将边界框向四周扩展。默认为 `0`。[`Float64`](/zh/reference/data-types/float)。
+
+**返回值**
+
+返回以度为单位的瓦片边界框，表示为元组 `(min_lon, min_lat, max_lon, max_lat)`。[`Tuple(Float64, Float64, Float64, Float64)`](/zh/reference/data-types/tuple)。
+
+**示例**
+
+```sql
+SELECT MVTBoundingBox(0, 0, 0) AS bbox
+```
+
+```text
+┌─bbox────────────────────────────────────────────┐
+│ (-180,-85.05112877980659,180,85.05112877980659)  │
+└──────────────────────────────────────────────────┘
+```
+
+<div id="mvtboundingboxmercator">
+  ## MVTBoundingBoxMercator
+</div>
+
+`MVTBoundingBox` 的 Web Mercator 版本。返回
+`MVTEncodeGeom` 在内部使用的完整 `UInt32` Web Mercator 坐标空间中某个瓦片的边界框，形式为 Tuple
+`(min_x, min_y, max_x, max_y)`。y 轴向下增大 (顶部为北方) 。适用于将
+Mercator 坐标列物化并为其创建索引，而不是为 `longitude`/`latitude` 创建索引的表。
+
+**语法**
+
+```sql
+MVTBoundingBoxMercator(zoom, tile_x, tile_y[, margin])
+```
+
+**参数**
+
+与 [`MVTBoundingBox`](#mvtboundingbox) 相同。
+
+**返回值**
+
+返回瓦片边界框，对应 Web Mercator 坐标中的 tuple `(min_x, min_y, max_x, max_y)`。[`Tuple(Float64, Float64, Float64, Float64)`](/zh/reference/data-types/tuple)。
+
+**示例**
+
+```sql
+SELECT MVTBoundingBoxMercator(1, 0, 0) AS bbox
+```
+
+```text
+┌─bbox────────────────────────┐
+│ (0,0,2147483648,2147483648)  │
+└──────────────────────────────┘
+```
+
+<div id="restricting-rows-to-a-tile">
+  ## 将行限制在单个瓦片内
+</div>
+
+一个瓦片只能包含属于它的几何对象。最好的做法是让两个步骤协同配合：在 `WHERE` 子句中使用一个开销低、可利用索引的边界框过滤条件 (性能) ，再结合 `MVTEncodeGeom` 的裁剪 (正确性) 。
+裁剪会丢弃瓦片外的几何对象，因此即使边界框过滤条件较为宽松，也不会让瓦片外的几何对象泄漏到结果中。
+
+```sql
+WITH
+    1 AS buffer,
+    4096 AS extent,
+    MVTBoundingBox({z:UInt8}, {x:UInt32}, {y:UInt32}, buffer / extent) AS bounding_box   -- margin matches the clip buffer
+SELECT MVTEncode('points')(geom, tuple(cluster_count)::Tuple(cluster_count UInt64))
+FROM
+(
+    SELECT MVTEncodeGeom((lon, lat)::Point, {z:UInt8}, {x:UInt32}, {y:UInt32}) AS geom, count() AS cluster_count
+    FROM points
+    WHERE lon BETWEEN bounding_box.1 AND bounding_box.3 AND lat BETWEEN bounding_box.2 AND bounding_box.4   -- index-using prefilter
+    GROUP BY geom
+)
+SETTINGS allow_suspicious_types_in_group_by = 1
+```
+
+边界框谓词只是一个粗略的预过滤条件；精确的瓦片边界则由
+`MVTEncodeGeom`
+的裁剪操作来保证。向 `MVTEncodeGeom` 传入 `clip => false` (第七个参数) 可禁用裁剪，并且仅依赖
+`WHERE` 谓词。
+
+<div id="serving-tiles-over-http">
+  ## 通过 HTTP 提供瓦片
+</div>
+
+默认情况下，ClickHouse 不会提供瓦片端点：HTTP interface 只接受发送到 `/` 的查询。简洁的
+`/tile/{z}/{x}/{y}` URL 由 operator 通过 [预定义查询处理程序](/zh/concepts/features/interfaces/http) 添加到
+服务器配置中。该处理程序的 `url` 使用 `regex:` 形式捕获路径片段，将其绑定为查询
+参数，并以 `FORMAT RawBLOB` 返回二进制字节流。
+
+在最简单的情况下，表中有一个 `Geometry` 列，处理程序按每行一个要素提供数据——`MVTEncodeGeom`
+会将每个几何体投影到请求的瓦片中并进行裁剪，因此位于瓦片之外的行会自动被丢弃：
+
+```xml
+<http_handlers>
+    <rule>
+        <methods>GET</methods>
+        <url><![CDATA[regex:/tile/(?P<z>\d+)/(?P<x>\d+)/(?P<y>\d+)]]></url>
+        <handler>
+            <type>predefined_query_handler</type>
+            <query>
+                SELECT MVTEncode('shapes')(
+                    MVTEncodeGeom(geom, {z:UInt8}, {x:UInt32}, {y:UInt32}),
+                    tuple(id, name)::Tuple(id UInt32, name String))
+                FROM shapes
+                FORMAT RawBLOB
+            </query>
+            <content_type>application/vnd.mapbox-vector-tile</content_type>
+        </handler>
+    </rule>
+    <defaults/>
+</http_handlers>
+```
+
+这里的 `shapes` 是一个带有 `geom Geometry` 列的表 (可混合包含点、线和多边形) 。`GET /tile/10/550/335`
+会返回编码后的瓦片。
+
+对于点数据，这种方法同样适用于普通的 `longitude`/`latitude` 列，只需通过
+`MVTEncodeGeom((lon, lat)::Point, …)` 直接内联构造点即可。若要对重合的要素进行聚类，或为大型表添加利用索引的边界框预过滤，
+请按 [Clustering](#clustering) 和
+[Restricting rows to a tile](#restricting-rows-to-a-tile) 中所示扩展内部查询。
+
+<div id="limitations">
+  ## 局限性
+</div>
+
+* Web Mercator 投影会将纬度限制在 `±85.05112878°`，且不处理跨越反经线的输入。
+
+* **Polygon 裁剪不保证输出是有效的 MVT。** 裁剪会修正环的方向和闭合性，但不会修复自相交。因此，自相交的 (&quot;蝴蝶结形&quot;) 环不会被修复：根据它与瓦片的相交情况，要么原样输出 (仍然无效) ，要么被丢弃为 `NULL`。例如，完全位于瓦片内的蝴蝶结形会被丢弃，而将相同的四个角按简单环的顺序连接时则会被保留：
+
+```sql
+-- self-intersecting ring -> dropped (NULL)
+SELECT MVTEncodeGeom([[(40.0, 40.0), (50.0, 50.0), (50.0, 40.0), (40.0, 50.0), (40.0, 40.0)]]::Polygon, 2, 2, 1) IS NULL;  -- 1
+-- simple ring, same four corners -> kept
+SELECT MVTEncodeGeom([[(40.0, 40.0), (50.0, 40.0), (50.0, 50.0), (40.0, 50.0), (40.0, 40.0)]]::Polygon, 2, 2, 1) IS NULL;  -- 0
+```
+
+* **Geometry 会先被裁剪，再舍入到整数像素网格。** PostGIS 会先将几何对象贴合到整数像素网格上，再进行裁剪；`MVTEncodeGeom` 则是先裁剪 (在浮点投影坐标上) ，再进行舍入。在靠近瓦片边缘时，这可能会丢掉原本会被舍入到边界像素上的坐标。例如，当 `buffer = 0` 时，位于瓦片边缘正东侧的一个点会被裁剪掉，尽管它会被舍入到边缘像素 `4096`，而先舍入的方法会保留它：
+
+```sql
+-- floating-point x ~= 4096.23 is just past the east edge (extent = 4096) -> clipped
+SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0) IS NULL;          -- 1
+-- the same point projected without clipping rounds onto the edge pixel:
+SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0, false);           -- (4096,2664)
+```

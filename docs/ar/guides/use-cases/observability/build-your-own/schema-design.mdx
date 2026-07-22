@@ -1,0 +1,1999 @@
+---
+title: 'تصميم مخطط للأوبزرفابيليتي'
+description: 'تصميم مخطط للأوبزرفابيليتي'
+keywords: ['الأوبزرفابيليتي', 'السجلات', 'التتبعات', 'المقاييس', 'OpenTelemetry', 'Grafana', 'OTel']
+slug: /use-cases/observability/schema-design
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+نوصي المستخدمين دائمًا بإنشاء مخططهم الخاص للسجلات والتتبعات للأسباب التالية:
+
+* **اختيار مفتاح أساسي** - تستخدم المخططات الافتراضية عبارة `ORDER BY` مُحسّنة لأنماط وصول محددة. ومن غير المرجح أن تتوافق أنماط وصولك مع ذلك.
+* **استخراج البنية** - قد ترغب في استخراج أعمدة جديدة من الأعمدة الموجودة، مثل العمود `Body`. ويمكن تنفيذ ذلك باستخدام الأعمدة المادية (وباستخدام العروض المادية في الحالات الأكثر تعقيدًا). وهذا يتطلب تغييرات على المخطط.
+* **تحسين الخرائط** - تستخدم المخططات الافتراضية النوع Map لتخزين السمات. وتتيح هذه الأعمدة تخزين بيانات وصفية عشوائية. ورغم أن هذه قدرة أساسية، لأن البيانات الوصفية القادمة من الأحداث لا تكون معرّفة مسبقًا في كثير من الأحيان، وبالتالي لا يمكن تخزينها بغير ذلك في قاعدة بيانات ذات أنواع صارمة مثل ClickHouse، فإن الوصول إلى مفاتيح الخريطة وقيمها ليس بالكفاءة نفسها التي يوفّرها الوصول إلى عمود عادي. ونعالج ذلك بتعديل المخطط والتأكد من أن مفاتيح الخريطة الأكثر استخدامًا تكون أعمدة من المستوى الأعلى - انظر [&quot;استخراج البنية باستخدام SQL&quot;](#extracting-structure-with-sql). وهذا يتطلب تغييرًا في المخطط.
+* **تبسيط الوصول إلى مفاتيح الخريطة** - يتطلب الوصول إلى المفاتيح داخل الخرائط صياغة أكثر تفصيلًا. ويمكنك التخفيف من ذلك باستخدام الأسماء المستعارة. راجع [&quot;استخدام الأسماء المستعارة&quot;](#using-aliases) لتبسيط الاستعلامات.
+* **الفهارس الثانوية** - يستخدم المخطط الافتراضي فهارس ثانوية لتسريع الوصول إلى الخرائط وتسريع الاستعلامات النصية. وهذه الفهارس لا تكون مطلوبة عادةً، كما أنها تستهلك مساحة إضافية على القرص. ويمكن استخدامها، لكن ينبغي اختبارها للتأكد من الحاجة إليها. راجع [&quot;الفهارس الثانوية / فهارس تخطي البيانات&quot;](#secondarydata-skipping-indices).
+* **استخدام codecs** - قد ترغب في تخصيص codecs للأعمدة إذا كنت تفهم طبيعة البيانات المتوقعة ولديك أدلة على أن ذلك يحسّن الضغط.
+
+*نشرح كل حالة من حالات الاستخدام المذكورة أعلاه بالتفصيل أدناه.*
+
+**مهم:** مع أنه يُشجَّع المستخدمون على توسيع مخططاتهم وتعديلها لتحقيق أفضل ضغط وأفضل أداء للاستعلامات، ينبغي لهم الالتزام بتسمية مخطط OTel للأعمدة الأساسية حيثما أمكن. يفترض ملحق ClickHouse Grafana وجود بعض أعمدة OTel الأساسية للمساعدة في بناء الاستعلامات، مثل Timestamp وSeverityText. والأعمدة المطلوبة للسجلات والتتبعات موثقة هنا [[1]](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format)[[2]](https://grafana.com/docs/grafana/latest/explore/logs-integration/) و[هنا](https://grafana.com/docs/grafana/latest/explore/trace-integration/#data-frame-structure) على التوالي. ويمكنك اختيار تغيير أسماء هذه الأعمدة، مع تجاوز القيم الافتراضية في إعدادات الملحق.
+
+<Tip>
+  **يأتي ClickStack مع مخطط افتراضي مُحسَّن**
+
+  **يوفّر ClickStack مخططات جاهزة للاستخدام للسجلات والتتبعات والمقاييس** تتضمن أحدث ميزات ClickHouse (فهارس نصية للبحث النصي الكامل والبحث في مفاتيح الخريطة، وأعمدة مادية ومصفوفات ALIAS للتصفية بالقراءة المباشرة، وعمليات بحث عن الصفوف برقم الكتلة)، وقد خضعت لاختبارات معيارية لتقديم أداء قوي جاهزًا للاستخدام لأحمال عمل السجلات والتتبعات. استخدمها كنقطة مرجعية لتصميمك الخاص.
+
+  * DDL القياسي: [الجداول والمخططات التي يستخدمها ClickStack](/ar/clickstack/ingesting-data/schemas).
+  * وصفات التحسين: [ضبط أداء ClickStack](/ar/clickstack/managing/performance-tuning). ينطبق كثير من التوصيات الواردة في تلك الصفحة (الأعمدة المادية، skip indexes، اختيار المفتاح الأساسي، projections، والعروض المادية) مباشرةً على إعداد مخصّص تبنيه بنفسك.
+</Tip>
+
+<div id="extracting-structure-with-sql">
+  ## استخراج البنية باستخدام SQL
+</div>
+
+سواء كنت تُدخل سجلات مهيكلة أو غير مهيكلة، فغالبًا ما تحتاج إلى القدرة على:
+
+* **استخراج الأعمدة من كائنات blob النصية**. يكون الاستعلام عنها أسرع من استخدام عمليات السلاسل النصية وقت الاستعلام.
+* **استخراج المفاتيح من الخرائط**. يضع المخطط الافتراضي السمات العشوائية في أعمدة من نوع Map. ويوفّر هذا النوع إمكانية العمل بلا مخطط، ما يتيح للمستخدمين عدم الحاجة إلى تعريف أعمدة السمات مسبقًا عند تعريف السجلات وtraces — وغالبًا ما يكون ذلك غير ممكن عند جمع السجلات من Kubernetes مع الحاجة إلى الاحتفاظ بتسميات الـ pod لإجراء البحث لاحقًا. كما أن الوصول إلى مفاتيح الخريطة وقيمها أبطأ من الاستعلام عن أعمدة ClickHouse العادية. لذلك، يكون من المرغوب فيه غالبًا استخراج المفاتيح من الخرائط إلى أعمدة الجدول الجذرية.
+
+تأمل الاستعلامات التالية:
+
+لنفترض أننا نريد احتساب مسارات URL التي تستقبل أكبر عدد من طلبات POST باستخدام السجلات المهيكلة. تُخزَّن كتلة JSON داخل العمود `Body` بوصفها String. بالإضافة إلى ذلك، قد تُخزَّن أيضًا في العمود `LogAttributes` بوصفها `Map(String, String)` إذا كان المستخدم قد فعّل json&#95;parser في الـ المجمّع.
+
+```sql
+SELECT LogAttributes
+FROM otel_logs
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Body:           {"remote_addr":"54.36.149.41","remote_user":"-","run_time":"0","time_local":"2019-01-22 00:26:14.000","request_type":"GET","request_path":"\/filter\/27|13 ,27|  5 ,p53","request_protocol":"HTTP\/1.1","status":"200","size":"30577","referer":"-","user_agent":"Mozilla\/5.0 (compatible; AhrefsBot\/6.1; +http:\/\/ahrefs.com\/robot\/)"}
+LogAttributes: {'status':'200','log.file.name':'access-structured.log','request_protocol':'HTTP/1.1','run_time':'0','time_local':'2019-01-22 00:26:14.000','size':'30577','user_agent':'Mozilla/5.0 (compatible; AhrefsBot/6.1; +http://ahrefs.com/robot/)','referer':'-','remote_user':'-','request_type':'GET','request_path':'/filter/27|13 ,27|  5 ,p53','remote_addr':'54.36.149.41'}
+```
+
+بافتراض أن `LogAttributes` متاح، فهذا هو الاستعلام لحساب مسارات URL في الموقع التي تستقبل أكبر عدد من طلبات POST:
+
+```sql
+SELECT path(LogAttributes['request_path']) AS path, count() AS c
+FROM otel_logs
+WHERE ((LogAttributes['request_type']) = 'POST')
+GROUP BY path
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─path─────────────────────┬─────c─┐
+│ /m/updateVariation       │ 12182 │
+│ /site/productCard        │ 11080 │
+│ /site/productPrice       │ 10876 │
+│ /site/productModelImages │ 10866 │
+│ /site/productAdditives   │ 10866 │
+└──────────────────────────┴───────┘
+
+5 rows in set. Elapsed: 0.735 sec. Processed 10.36 million rows, 4.65 GB (14.10 million rows/s., 6.32 GB/s.)
+Peak memory usage: 153.71 MiB.
+```
+
+لاحظ هنا استخدام صيغة `map`، مثل `LogAttributes['request_path']`، واستخدام [الدالة `path`](/ar/reference/functions/regular-functions/url-functions#path) لإزالة معلمات الاستعلام من عنوان URL.
+
+إذا لم يكن المستخدم قد فعَّل تحليل JSON في المجمّع، فستكون `LogAttributes` فارغة، مما يضطرنا إلى استخدام [دوال JSON](/ar/reference/functions/regular-functions/json-functions) لاستخراج الأعمدة من `Body` ذي النوع `String`.
+
+<Info>
+  **يُفضَّل استخدام ClickHouse للتحليل**
+
+  نوصي عمومًا بأن يُجري المستخدمون تحليل JSON في ClickHouse للسجلات المنظَّمة. ونحن على ثقة بأن ClickHouse يوفّر أسرع تنفيذ لتحليل JSON. ومع ذلك، ندرك أنك قد ترغب في إرسال السجلات إلى مصادر أخرى، وألا يكون هذا المنطق موجودًا في SQL.
+</Info>
+
+```sql
+SELECT path(JSONExtractString(Body, 'request_path')) AS path, count() AS c
+FROM otel_logs
+WHERE JSONExtractString(Body, 'request_type') = 'POST'
+GROUP BY path
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─path─────────────────────┬─────c─┐
+│ /m/updateVariation       │ 12182 │
+│ /site/productCard        │ 11080 │
+│ /site/productPrice       │ 10876 │
+│ /site/productAdditives   │ 10866 │
+│ /site/productModelImages │ 10866 │
+└──────────────────────────┴───────┘
+
+5 rows in set. Elapsed: 0.668 sec. Processed 10.37 million rows, 5.13 GB (15.52 million rows/s., 7.68 GB/s.)
+Peak memory usage: 172.30 MiB.
+```
+
+والآن لننظر في الأمر نفسه بالنسبة إلى السجلات غير المهيكلة:
+
+```sql
+SELECT Body, LogAttributes
+FROM otel_logs
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Body:           151.233.185.144 - - [22/Jan/2019:19:08:54 +0330] "GET /image/105/brand HTTP/1.1" 200 2653 "https://www.zanbil.ir/filter/b43,p56" "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36" "-"
+LogAttributes: {'log.file.name':'access-unstructured.log'}
+```
+
+يتطلّب استعلام مماثل للسجلات غير المهيكلة استخدام التعبيرات النمطية عبر الدالة `extractAllGroupsVertical`.
+
+```sql
+SELECT
+        path((groups[1])[2]) AS path,
+        count() AS c
+FROM
+(
+        SELECT extractAllGroupsVertical(Body, '(\\w+)\\s([^\\s]+)\\sHTTP/\\d\\.\\d') AS groups
+        FROM otel_logs
+        WHERE ((groups[1])[1]) = 'POST'
+)
+GROUP BY path
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─path─────────────────────┬─────c─┐
+│ /m/updateVariation       │ 12182 │
+│ /site/productCard        │ 11080 │
+│ /site/productPrice       │ 10876 │
+│ /site/productModelImages │ 10866 │
+│ /site/productAdditives   │ 10866 │
+└──────────────────────────┴───────┘
+
+5 rows in set. Elapsed: 1.953 sec. Processed 10.37 million rows, 3.59 GB (5.31 million rows/s., 1.84 GB/s.)
+```
+
+إن ازدياد تعقيد الاستعلامات وتكلفتها عند تحليل السجلات غير المهيكلة (لاحظ فرق الأداء) هو السبب في أننا نوصي المستخدمين دائمًا باستخدام السجلات المهيكلة متى أمكن.
+
+<Info>
+  **ضع القواميس في الحسبان**
+
+  يمكن تحسين الاستعلام أعلاه للاستفادة من قواميس التعبيرات النمطية. راجع [استخدام القواميس](#using-dictionaries) لمزيد من التفاصيل.
+</Info>
+
+يمكن تلبية حالتي الاستخدام هاتين في ClickHouse عبر نقل منطق الاستعلام أعلاه إلى وقت الإدراج. نستعرض أدناه عدة أساليب، مع توضيح الحالات المناسبة لكل منها.
+
+<Info>
+  **OTel أم ClickHouse للمعالجة؟**
+
+  يمكنك أيضًا إجراء المعالجة باستخدام processors وoperators الخاصة بـ OTel المجمّع كما هو موضح [هنا](/ar/guides/use-cases/observability/build-your-own/integrating-opentelemetry#processing---filtering-transforming-and-enriching). في معظم الحالات، ستجد أن ClickHouse أكثر كفاءةً في استخدام الموارد وأسرع بكثير من processors الخاصة بـ المجمّع. ويتمثل العيب الأساسي لتنفيذ جميع عمليات معالجة الأحداث باستخدام SQL في ربط الحل لديك بـ ClickHouse. فعلى سبيل المثال، قد ترغب في إرسال السجلات المعالَجة إلى وجهات بديلة من OTel المجمّع، مثل S3.
+</Info>
+
+<div id="materialized-columns">
+  ### الأعمدة المادية
+</div>
+
+توفّر الأعمدة المادية أبسط حل لاستخراج البنية من الأعمدة الأخرى. وتُحتسب قيم هذه الأعمدة دائمًا في وقت الإدراج، ولا يمكن تحديدها في استعلامات INSERT.
+
+<Info>
+  **العبء الإضافي**
+
+  تضيف الأعمدة المادية عبئًا إضافيًا على التخزين، لأن القيم تُستخرج إلى أعمدة جديدة على القرص في وقت الإدراج.
+</Info>
+
+تدعم الأعمدة المادية أي تعبير في ClickHouse، ويمكنها الاستفادة من أي من الدوال التحليلية الخاصة بـ [معالجة السلاسل النصية](/ar/reference/functions/regular-functions/string-functions) (بما في ذلك [التعابير النمطية والبحث](/ar/reference/functions/regular-functions/string-search-functions)) و[URL](/ar/reference/functions/regular-functions/url-functions)، وإجراء [تحويلات الأنواع](/ar/reference/functions/regular-functions/type-conversion-functions)، و[استخراج القيم من JSON](/ar/reference/functions/regular-functions/json-functions)، أو [العمليات الرياضية](/ar/reference/functions/regular-functions/math-functions).
+
+نوصي باستخدام الأعمدة المادية للمعالجة الأساسية. وهي مفيدة بشكل خاص لاستخراج القيم من نوع خريطة، ورفعها إلى أعمدة على المستوى الأعلى، وإجراء تحويلات الأنواع. وغالبًا ما تكون أكثر فائدة عند استخدامها في مخططات بسيطة جدًا أو بالاقتران مع العروض المادية. انظر إلى المخطط التالي للسجلات، حيث استخرج المجمّع بيانات JSON إلى العمود `LogAttributes`:
+
+```sql
+CREATE TABLE otel_logs
+(
+        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `TraceId` String CODEC(ZSTD(1)),
+        `SpanId` String CODEC(ZSTD(1)),
+        `TraceFlags` UInt32 CODEC(ZSTD(1)),
+        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
+        `SeverityNumber` Int32 CODEC(ZSTD(1)),
+        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
+        `Body` String CODEC(ZSTD(1)),
+        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
+        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
+        `ScopeName` String CODEC(ZSTD(1)),
+        `ScopeVersion` String CODEC(ZSTD(1)),
+        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `RequestPage` String MATERIALIZED path(LogAttributes['request_path']),
+        `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
+        `RefererDomain` String MATERIALIZED domain(LogAttributes['referer'])
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SeverityText, toUnixTimestamp(Timestamp), TraceId)
+```
+
+يمكن العثور على المخطّط المكافئ لاستخراج البيانات من `Body` من النوع String باستخدام دوال JSON [هنا](https://pastila.nl/?005cbb97/513b174a7d6114bf17ecc657428cf829#gqoOOiomEjIiG6zlWhE+Sg==).
+
+تستخرج أعمدتنا الثلاثة المادية صفحة الطلب ونوع الطلب ونطاق المُحيل. وتصل هذه الأعمدة إلى مفاتيح خريطة وتطبّق الدوال على قيمها. لذا يكون استعلامنا اللاحق أسرع بكثير:
+
+```sql
+SELECT RequestPage AS path, count() AS c
+FROM otel_logs
+WHERE RequestType = 'POST'
+GROUP BY path
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─path─────────────────────┬─────c─┐
+│ /m/updateVariation       │ 12182 │
+│ /site/productCard        │ 11080 │
+│ /site/productPrice       │ 10876 │
+│ /site/productAdditives   │ 10866 │
+│ /site/productModelImages │ 10866 │
+└──────────────────────────┴───────┘
+
+5 rows in set. Elapsed: 0.173 sec. Processed 10.37 million rows, 418.03 MB (60.07 million rows/s., 2.42 GB/s.)
+Peak memory usage: 3.16 MiB.
+```
+
+<Note>
+  لن تُعاد الأعمدة المادية افتراضيًا في `SELECT *`. وذلك لضمان بقاء الخاصية التالية قائمة: يمكن دائمًا إعادة إدراج نتيجة `SELECT *` في الجدول باستخدام INSERT. ويمكن تعطيل هذا السلوك بضبط `asterisk_include_materialized_columns=1`، كما يمكن تفعيل ذلك في Grafana (راجع `Additional Settings -> Custom Settings` في إعدادات مصدر البيانات).
+</Note>
+
+<div id="materialized-views">
+  ## العروض المادية
+</div>
+
+توفّر [العروض المادية](/ar/concepts/features/materialized-views/index) طريقة أقوى لتطبيق التصفية والتحويلات باستخدام SQL على السجلات والتتبعات.
+
+تتيح لك العروض المادية نقل تكلفة المعالجة من وقت الاستعلام إلى وقت الإدراج. والعرض المادي في ClickHouse ليس سوى مُشغِّل ينفّذ استعلامًا على كتل البيانات أثناء إدراجها في جدول. وتُدرَج نتائج هذا الاستعلام في جدول &quot;هدف&quot; ثانٍ.
+
+<Image img="/images/use-cases/observability/observability-10.webp" alt="عرض مادي" size="md" />
+
+<Info>
+  **تحديثات في الوقت الفعلي**
+
+  تُحدَّث العروض المادية في ClickHouse في الوقت الفعلي مع تدفّق البيانات إلى الجدول الذي تستند إليه، لذا فهي تعمل بصورة أقرب إلى الفهارس التي تُحدَّث باستمرار. وعلى النقيض من ذلك، تكون العروض المادية في قواعد البيانات الأخرى عادةً لقطات ثابتة لاستعلام يجب تحديثها (على نحو مشابه لـ Refreshable Materialized Views في ClickHouse).
+</Info>
+
+يمكن نظريًا أن يكون الاستعلام المرتبط بالعرض المادي أي استعلام، بما في ذلك التجميع، رغم وجود [قيود على عمليات JOIN](https://clickhouse.com/blog/using-materialized-views-in-clickhouse#materialized-views-and-joins). وبالنسبة إلى أعباء عمل التحويلات والتصفية المطلوبة للسجلات والتتبعات، يمكنك اعتبار أي عبارة `SELECT` ممكنة.
+
+يجب أن تتذكر أن الاستعلام ليس سوى مُشغِّل يُنفَّذ على الصفوف التي تُدرَج في جدول (الجدول المصدر)، وتُرسَل نتائجه إلى جدول جديد (الجدول الهدف).
+
+ولضمان عدم تخزين البيانات مرتين (في الجدولَين المصدر والهدف)، يمكننا تغيير محرك الجدول المصدر إلى [Null table engine](/ar/reference/engines/table-engines/special/null)، مع الحفاظ على المخطط الأصلي. وستواصل مكونات OTel المجمّع لدينا إرسال البيانات إلى هذا الجدول. فعلى سبيل المثال، بالنسبة إلى السجلات، يصبح جدول `otel_logs` كما يلي:
+
+```sql
+CREATE TABLE otel_logs
+(
+        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `TraceId` String CODEC(ZSTD(1)),
+        `SpanId` String CODEC(ZSTD(1)),
+        `TraceFlags` UInt32 CODEC(ZSTD(1)),
+        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
+        `SeverityNumber` Int32 CODEC(ZSTD(1)),
+        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
+        `Body` String CODEC(ZSTD(1)),
+        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
+        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
+        `ScopeName` String CODEC(ZSTD(1)),
+        `ScopeVersion` String CODEC(ZSTD(1)),
+        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1))
+) ENGINE = Null
+```
+
+يُعد Null table engine أسلوب تحسين قويًا — فكّر فيه على أنه `/dev/null`. هذا الجدول لن يخزّن أي بيانات، لكن أي عروض مادية مرفقة ستظل تُنفَّذ على الصفوف المُدرجة قبل التخلّص منها.
+
+تأمّل الاستعلام التالي. فهو يحوّل صفوفنا إلى format نرغب في الاحتفاظ به، مع استخراج جميع الأعمدة من `LogAttributes` (ونفترض أن المجمّع قد ضبط ذلك باستخدام العامل `json_parser`)، وتعيين `SeverityText` و`SeverityNumber` (استنادًا إلى بعض الشروط البسيطة وتعريف [هذه الأعمدة](https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-severitytext)). وفي هذه الحالة، نحدّد أيضًا فقط الأعمدة التي نعرف أنها ستُملأ — مع تجاهل أعمدة مثل `TraceId` و`SpanId` و`TraceFlags`.
+
+```sql
+SELECT
+        Body, 
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        LogAttributes['status'] AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['size'] AS Size,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddr,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Body:           {"remote_addr":"54.36.149.41","remote_user":"-","run_time":"0","time_local":"2019-01-22 00:26:14.000","request_type":"GET","request_path":"\/filter\/27|13 ,27|  5 ,p53","request_protocol":"HTTP\/1.1","status":"200","size":"30577","referer":"-","user_agent":"Mozilla\/5.0 (compatible; AhrefsBot\/6.1; +http:\/\/ahrefs.com\/robot\/)"}
+Timestamp:      2019-01-22 00:26:14
+ServiceName:
+Status:         200
+RequestProtocol: HTTP/1.1
+RunTime:        0
+Size:           30577
+UserAgent:      Mozilla/5.0 (compatible; AhrefsBot/6.1; +http://ahrefs.com/robot/)
+Referer:        -
+RemoteUser:     -
+RequestType:    GET
+RequestPath:    /filter/27|13 ,27|  5 ,p53
+RemoteAddr:     54.36.149.41
+RefererDomain:
+RequestPage:    /filter/27|13 ,27|  5 ,p53
+SeverityText:   INFO
+SeverityNumber:  9
+
+1 row in set. Elapsed: 0.027 sec.
+```
+
+نستخرج أيضاً عمود `Body` أعلاه - احتياطاً في حال إضافة سمات إضافية لاحقاً لا يستخرجها استعلام SQL الخاص بنا. ينبغي أن يتضغط هذا العمود بكفاءة في ClickHouse وسيُستخدم نادراً، مما لا يؤثر على أداء الاستعلام. وأخيراً، نُقلّص Timestamp إلى DateTime (لتوفير المساحة - انظر [&quot;Optimizing Types&quot;](#optimizing-types)) باستخدام cast.
+
+<Info>
+  **التعبيرات الشرطية**
+
+  لاحظ استخدام [التعبيرات الشرطية](/ar/reference/functions/regular-functions/conditional-functions) أعلاه لاستخراج `SeverityText` و`SeverityNumber`. وهي مفيدة جدًا لصياغة الشروط المعقدة والتحقق مما إذا كانت القيم معيّنة داخل `maps` — إذ نفترض بسذاجة أن جميع المفاتيح موجودة في `LogAttributes`. ننصح المستخدمين بالتعرّف عليها جيدًا، فهي خير معين لك في تحليل السجلات، إلى جانب الدوال المخصّصة للتعامل مع [قيم NULL](/ar/reference/functions/regular-functions/functions-for-nulls)!
+</Info>
+
+نحتاج إلى جدول لاستقبال هذه النتائج. يتوافق الجدول الهدف أدناه مع الاستعلام أعلاه:
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+الأنواع المختارة هنا مبنيةٌ على التحسينات التي تمت مناقشتها في [&quot;تحسين الأنواع&quot;](#optimizing-types).
+
+<Note>
+  لاحظ كيف غيّرنا المخطط بشكل جذري. عمليًا، من المرجح أيضًا أن تكون لديك أعمدة Trace سترغب في الحفاظ عليها، بالإضافة إلى العمود `ResourceAttributes` (يحتوي هذا عادةً على بيانات Kubernetes الوصفية). يمكن لـ Grafana الاستفادة من أعمدة التتبّع لتوفير وظيفة الربط بين السجلات والتتبّعات - راجع [&quot;استخدام Grafana&quot;](/ar/guides/use-cases/observability/build-your-own/grafana).
+</Note>
+
+فيما يلي، ننشئ عرضًا ماديًا `otel_logs_mv`، ينفّذ عبارة SELECT المذكورة أعلاه على جدول `otel_logs` ويرسل النتائج إلى `otel_logs_v2`.
+
+```sql
+CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2 AS
+SELECT
+        Body, 
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        LogAttributes['status']::UInt16 AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['size'] AS Size,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddress,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+```
+
+يوضح الشكل أدناه ما سبق:
+
+<Image img="/images/use-cases/observability/observability-11.webp" alt="OTel MV" size="md" />
+
+إذا أعدنا الآن تشغيل تهيئة المجمّع المستخدمة في [&quot;التصدير إلى ClickHouse&quot;](/ar/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse)، فستظهر البيانات في `otel_logs_v2` بالتنسيق المطلوب. لاحظ استخدام دوال استخراج JSON ذات الأنواع المحددة.
+
+```sql
+SELECT *
+FROM otel_logs_v2
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Body:           {"remote_addr":"54.36.149.41","remote_user":"-","run_time":"0","time_local":"2019-01-22 00:26:14.000","request_type":"GET","request_path":"\/filter\/27|13 ,27|  5 ,p53","request_protocol":"HTTP\/1.1","status":"200","size":"30577","referer":"-","user_agent":"Mozilla\/5.0 (compatible; AhrefsBot\/6.1; +http:\/\/ahrefs.com\/robot\/)"}
+Timestamp:      2019-01-22 00:26:14
+ServiceName:
+Status:         200
+RequestProtocol: HTTP/1.1
+RunTime:        0
+Size:           30577
+UserAgent:      Mozilla/5.0 (compatible; AhrefsBot/6.1; +http://ahrefs.com/robot/)
+Referer:        -
+RemoteUser:     -
+RequestType:    GET
+RequestPath:    /filter/27|13 ,27|  5 ,p53
+RemoteAddress:  54.36.149.41
+RefererDomain:
+RequestPage:    /filter/27|13 ,27|  5 ,p53
+SeverityText:   INFO
+SeverityNumber:  9
+
+1 row in set. Elapsed: 0.010 sec.
+```
+
+يُعرض أدناه عرض مادي مكافئ يعتمد على استخراج الأعمدة من العمود `Body` باستخدام دوال JSON:
+
+```sql
+CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2 AS
+SELECT  Body, 
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        JSONExtractUInt(Body, 'status') AS Status,
+        JSONExtractString(Body, 'request_protocol') AS RequestProtocol,
+        JSONExtractUInt(Body, 'run_time') AS RunTime,
+        JSONExtractUInt(Body, 'size') AS Size,
+        JSONExtractString(Body, 'user_agent') AS UserAgent,
+        JSONExtractString(Body, 'referer') AS Referer,
+        JSONExtractString(Body, 'remote_user') AS RemoteUser,
+        JSONExtractString(Body, 'request_type') AS RequestType,
+        JSONExtractString(Body, 'request_path') AS RequestPath,
+        JSONExtractString(Body, 'remote_addr') AS remote_addr,
+        domain(JSONExtractString(Body, 'referer')) AS RefererDomain,
+        path(JSONExtractString(Body, 'request_path')) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+```
+
+<div id="beware-types">
+  ### انتبه إلى الأنواع
+</div>
+
+تعتمد العروض المادية المذكورة أعلاه على التحويل الضمني للأنواع، وخاصةً عند استخدام خريطة `LogAttributes`. وغالبًا ما يقوم ClickHouse بتحويل القيمة المستخرجة تلقائيًا إلى نوع الجدول الهدف، مما يقلّل من الصياغة المطلوبة. ومع ذلك، نوصي المستخدمين دائمًا باختبار عروضهم باستخدام عبارة `SELECT` الخاصة بالعرض مع عبارة [`INSERT INTO`](/ar/reference/statements/insert-into) على جدول هدف يستخدم مخطط مطابقة. من المفترض أن يؤكد ذلك أن الأنواع تُعالَج بشكل صحيح. ويجب إيلاء اهتمام خاص للحالات التالية:
+
+* إذا لم يكن المفتاح موجودًا في الخريطة، فستُعاد سلسلة نصية فارغة. وفي حالة القيم الرقمية، ستحتاج إلى تعيين هذه القيم إلى قيمة مناسبة. ويمكن تحقيق ذلك باستخدام [العبارات الشرطية](/ar/reference/functions/regular-functions/conditional-functions) مثل `if(LogAttributes['status'] = ", 200, LogAttributes['status'])` أو [دوال التحويل](/ar/reference/functions/regular-functions/type-conversion-functions) إذا كانت القيم الافتراضية مقبولة، مثل `toUInt8OrDefault(LogAttributes['status'] )`
+* بعض الأنواع لا تُحوَّل دائمًا؛ فعلى سبيل المثال، لا تُحوَّل التمثيلات النصية للقيم الرقمية إلى قيم enum.
+* تُرجع دوال استخراج JSON قيمًا افتراضية بحسب نوعها إذا لم يتم العثور على قيمة. تأكد من أن هذه القيم منطقية!
+
+<Info>
+  **تجنب Nullable**
+
+  تجنب استخدام [Nullable](/ar/reference/data-types/nullable) في ClickHouse لبيانات Observability. فنادرًا ما تكون هناك حاجة في logs وtraces إلى التمييز بين القيمة الفارغة وNULL. وتضيف هذه الميزة عبئًا إضافيًا على التخزين، كما تؤثر سلبًا في query performance. راجع [هنا](/ar/guides/clickhouse/data-modelling/schema-design#optimizing-types) لمزيد من التفاصيل.
+</Info>
+
+<div id="choosing-a-primary-ordering-key">
+  ## اختيار مفتاح أساسي (ترتيبي)
+</div>
+
+بمجرد استخراج الأعمدة المطلوبة، يمكنك البدء في تحسين مفتاح الترتيب/المفتاح الأساسي.
+
+يمكن تطبيق بعض القواعد البسيطة للمساعدة في اختيار مفتاح الترتيب. قد تتعارض الإرشادات التالية أحيانًا، لذا يُستحسن النظر فيها بهذا الترتيب. ويمكن أن تسفر هذه العملية عن عدة مفاتيح مرشحة، وعادةً ما تكون 4-5 كافية:
+
+1. اختر الأعمدة التي تتوافق مع عوامل التصفية الشائعة وأنماط الوصول لديك. فإذا كنت تبدأ عادةً تحقيقات Observability بالتصفية حسب عمود معين، مثل اسم الـ pod، فسيُستخدم هذا العمود كثيرًا في عبارات `WHERE`. لذا أعطِ الأولوية لإدراج هذه الأعمدة في مفتاحك مقارنةً بالأعمدة الأقل استخدامًا.
+2. فضّل الأعمدة التي تساعد عند التصفية على استبعاد نسبة كبيرة من إجمالي الصفوف، مما يقلل كمية البيانات التي يلزم قراءتها. وغالبًا ما تكون أسماء الخدمات ورموز الحالة مرشحة جيدة — وفي الحالة الأخيرة تحديدًا، إذا كنت تُجري التصفية حسب قيم تستبعد معظم الصفوف؛ فعلى سبيل المثال، التصفية حسب قيم 200 ستطابق في معظم الأنظمة معظم الصفوف، بخلاف أخطاء 500 التي تمثل عادةً مجموعة فرعية صغيرة.
+3. فضّل الأعمدة التي يُحتمل أن تكون شديدة الارتباط بأعمدة أخرى في الجدول. فهذا يساعد على ضمان تخزين هذه القيم أيضًا بشكل متجاور، مما يحسّن الضغط.
+4. يمكن جعل عمليات `GROUP BY` و`ORDER BY` للأعمدة الموجودة في مفتاح الترتيب أكثر كفاءة من حيث الذاكرة.
+
+<br />
+
+بعد تحديد المجموعة الفرعية من الأعمدة الخاصة بمفتاح الترتيب، يجب تعريفها بترتيب محدد. ويمكن أن يؤثر هذا الترتيب بدرجة كبيرة في كلٍّ من كفاءة التصفية على أعمدة المفاتيح الثانوية في الاستعلامات ونسبة الضغط لملفات بيانات الجدول. وبوجه عام، **من الأفضل ترتيب المفاتيح تصاعديًا حسب الكاردينالية**. لكن ينبغي موازنة ذلك مع حقيقة أن التصفية على الأعمدة التي تظهر لاحقًا في مفتاح الترتيب ستكون أقل كفاءة من التصفية على الأعمدة التي تظهر مبكرًا في الـ tuple. وازن بين هذين الاعتبارين وراعِ أنماط الوصول لديك. والأهم من ذلك، اختبر البدائل المختلفة. ولمزيد من الفهم لمفاتيح الترتيب وكيفية تحسينها، نوصي بـ[هذه المقالة](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes).
+
+<Info>
+  **البنية أولًا**
+
+  نوصي بتحديد مفاتيح الترتيب بعد الانتهاء من هيكلة السجلات. لا تستخدم مفاتيح داخل خرائط attribute كمفتاح ترتيب، ولا تعبيرات استخراج JSON. وتأكد من أن مفاتيح الترتيب لديك موجودة كأعمدة جذرية في جدولك.
+</Info>
+
+<div id="using-maps">
+  ## استخدام Map
+</div>
+
+تُظهر الأمثلة السابقة استخدام صيغة `map['key']` للوصول إلى القيم في الأعمدة من النوع `Map(String, String)`. وإلى جانب استخدام ترميز map للوصول إلى المفاتيح المتداخلة، تتوفر أيضًا [دوال map](/ar/reference/functions/regular-functions/tuple-map-functions#mapKeys) المتخصصة في ClickHouse لتصفية هذه الأعمدة أو تحديدها.
+
+على سبيل المثال، يحدِّد الاستعلام التالي جميع المفاتيح الفريدة المتاحة في العمود `LogAttributes` باستخدام [الدالة `mapKeys`](/ar/reference/functions/regular-functions/tuple-map-functions#mapKeys)، متبوعةً بـ [الدالة `groupArrayDistinctArray`](/ar/reference/functions/aggregate-functions/combinators) (وهي combinator).
+
+```sql
+SELECT groupArrayDistinctArray(mapKeys(LogAttributes))
+FROM otel_logs
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+groupArrayDistinctArray(mapKeys(LogAttributes)): ['remote_user','run_time','request_type','log.file.name','referer','request_path','status','user_agent','remote_addr','time_local','size','request_protocol']
+
+1 row in set. Elapsed: 1.139 sec. Processed 5.63 million rows, 2.53 GB (4.94 million rows/s., 2.22 GB/s.)
+Peak memory usage: 71.90 MiB.
+```
+
+<Info>
+  **تجنب النقاط**
+
+  لا نوصي باستخدام النقاط في أسماء أعمدة Map، وقد نلغي دعمها مستقبلًا. استخدم `_`.
+</Info>
+
+<div id="using-aliases">
+  ## استخدام الأسماء المستعارة
+</div>
+
+الاستعلام عن أنواع `Map` أبطأ من الاستعلام عن الأعمدة العادية - راجع [&quot;تسريع الاستعلامات&quot;](#accelerating-queries). بالإضافة إلى ذلك، فهو أكثر تعقيدًا من حيث الصياغة وقد يكون من المرهق كتابته. ولمعالجة هذه المشكلة، نوصي باستخدام أعمدة Alias.
+
+تُحتسب أعمدة ALIAS وقت الاستعلام ولا تُخزَّن في الجدول. لذلك، لا يمكن إجراء INSERT لقيمة في عمود من هذا النوع. وباستخدام الأسماء المستعارة، يمكننا الإشارة إلى مفاتيح `Map` وتبسيط الصياغة، مع إظهار إدخالات `Map` كأنها عمود عادي بشكل شفاف. تأمل المثال التالي:
+
+```sql
+CREATE TABLE otel_logs
+(
+        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `TraceId` String CODEC(ZSTD(1)),
+        `SpanId` String CODEC(ZSTD(1)),
+        `TraceFlags` UInt32 CODEC(ZSTD(1)),
+        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
+        `SeverityNumber` Int32 CODEC(ZSTD(1)),
+        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
+        `Body` String CODEC(ZSTD(1)),
+        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
+        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
+        `ScopeName` String CODEC(ZSTD(1)),
+        `ScopeVersion` String CODEC(ZSTD(1)),
+        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `RequestPath` String MATERIALIZED path(LogAttributes['request_path']),
+        `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
+        `RefererDomain` String MATERIALIZED domain(LogAttributes['referer']),
+        `RemoteAddr` IPv4 ALIAS LogAttributes['remote_addr']
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, Timestamp)
+```
+
+لدينا عدة أعمدة materialized وعمود `ALIAS` باسم `RemoteAddr` يقرأ من الـ map `LogAttributes`. يمكننا الآن الاستعلام عن قيم `LogAttributes['remote_addr']` عبر هذا العمود، مما يبسّط الاستعلام، أي:
+
+```sql
+SELECT RemoteAddr
+FROM default.otel_logs
+LIMIT 5
+```
+
+```response
+┌─RemoteAddr────┐
+│ 54.36.149.41  │
+│ 31.56.96.51   │
+│ 31.56.96.51   │
+│ 40.77.167.129 │
+│ 91.99.72.15   │
+└───────────────┘
+
+5 rows in set. Elapsed: 0.011 sec.
+```
+
+علاوة على ذلك، يمكن إضافة `ALIAS` بسهولة عبر الأمر `ALTER TABLE`. وتصبح هذه الأعمدة متاحة فورًا، على سبيل المثال.
+
+```sql
+ALTER TABLE default.otel_logs
+        (ADD COLUMN `Size` String ALIAS LogAttributes['size'])
+
+SELECT Size
+FROM default.otel_logs_v3
+LIMIT 5
+```
+
+```response
+┌─Size──┐
+│ 30577 │
+│ 5667  │
+│ 5379  │
+│ 1696  │
+│ 41483 │
+└───────┘
+
+5 rows in set. Elapsed: 0.014 sec.
+```
+
+<Info>
+  **الاسم البديل مستبعَد افتراضيًا**
+
+  افتراضيًا، لا يتضمن `SELECT *` أعمدة ALIAS. ويمكن إيقاف هذا السلوك بتعيين `asterisk_include_alias_columns=1`.
+</Info>
+
+<div id="optimizing-types">
+  ## تحسين الأنواع
+</div>
+
+تنطبق [أفضل ممارسات ClickHouse العامة](/ar/guides/clickhouse/data-modelling/schema-design#optimizing-types) لتحسين الأنواع على حالة استخدام ClickHouse.
+
+<div id="using-codecs">
+  ## استخدام codecs
+</div>
+
+بالإضافة إلى تحسينات الأنواع، يمكنك اتباع [أفضل الممارسات العامة لـ codecs](/ar/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec) عند محاولة تحسين الضغط لمخططات ClickHouse Observability.
+
+بوجه عام، ستجد أن codec ‏`ZSTD` مناسب جدًا لمجموعات بيانات logging وtrace. وقد يؤدي رفع قيمة الضغط عن `default value` البالغة 1 إلى تحسين الضغط. ومع ذلك، ينبغي اختبار ذلك، لأن القيم الأعلى تفرض overhead أكبر على `CPU` وقت `insert`. وعادةً ما نرى فائدة محدودة من زيادة هذه القيمة.
+
+علاوة على ذلك، فرغم أن `timestamps` تستفيد من ترميز delta من ناحية الضغط، فقد تبيّن أنها قد تؤدي إلى تراجع `query performance` إذا استُخدم هذا `column` في المفتاح الأساسي/مفتاح الترتيب. نوصي المستخدمين بتقييم الموازنة بين الضغط و`query performance` في كل حالة.
+
+<div id="using-dictionaries">
+  ## استخدام القواميس
+</div>
+
+تُعد [القواميس](/ar/reference/statements/create/dictionary) [ميزة رئيسية](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse) في ClickHouse، إذ توفّر تمثيلًا للبيانات داخل الذاكرة بصيغة [مفتاح-قيمة](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) من [مصادر](/ar/reference/statements/create/dictionary/sources/overview#dictionary-sources) داخلية وخارجية متنوعة، ومُحسّنة لعمليات البحث بزمن انتقال منخفض للغاية.
+
+<Image img="/images/use-cases/observability/observability-12.webp" alt="Observability والقواميس" size="md" />
+
+يفيد ذلك في سيناريوهات متعددة، بدءًا من إثراء البيانات الواردة أثناء تدفقها من دون إبطاء عملية الاستيعاب، ووصولًا إلى تحسين أداء الاستعلامات عمومًا، مع استفادة عمليات JOIN على نحو خاص.
+ومع أن عمليات الربط نادرًا ما تكون مطلوبة في حالات استخدام Observability، فإن القواميس تظل مفيدة لأغراض الإثراء، سواء وقت الإدراج أو وقت تنفيذ الاستعلام. ونورد أدناه أمثلة على الحالتين.
+
+<Info>
+  **تسريع عمليات الربط**
+
+  يمكن للمستخدمين المهتمين بتسريع عمليات الربط باستخدام القواميس العثور على مزيد من التفاصيل [هنا](/ar/concepts/features/dictionaries/index).
+</Info>
+
+<div id="insert-time-vs-query-time">
+  ### وقت الإدراج مقابل وقت الاستعلام
+</div>
+
+يمكن استخدام القواميس لإثراء مجموعات البيانات في وقت الاستعلام أو وقت الإدراج. ولكلٍّ من هذين النهجين مزاياه وعيوبه. باختصار:
+
+* **وقت الإدراج** - يكون هذا مناسبًا عادةً إذا كانت قيمة الإثراء لا تتغير وكانت موجودة في مصدر خارجي يمكن استخدامه لملء القاموس. في هذه الحالة، يؤدّي إثراء الصف وقت الإدراج إلى تجنّب إجراء عملية بحث في القاموس وقت الاستعلام. ويأتي ذلك على حساب أداء الإدراج، بالإضافة إلى زيادةٍ في عبء التخزين، إذ ستُخزَّن القيم المُثرية على هيئة أعمدة.
+* **وقت الاستعلام** - إذا كانت القيم في القاموس تتغير كثيرًا، فغالبًا ما تكون عمليات البحث وقت الاستعلام أكثر ملاءمة. وهذا يجنّب الحاجة إلى تحديث الأعمدة (وإعادة كتابة البيانات) إذا تغيّرت القيم المعينة. وتأتي هذه المرونة على حساب تكلفة البحث وقت الاستعلام. وعادةً ما تكون هذه التكلفة ملحوظة إذا كانت عملية البحث مطلوبة لعدد كبير من الصفوف، مثل استخدام بحث في القاموس ضمن عبارة `filter`. أما بالنسبة إلى إثراء النتائج، أي ضمن `SELECT`، فعادةً لا يكون هذا العبء ملحوظًا.
+
+نوصي بأن يتعرّف المستخدمون على أساسيات القواميس. توفّر القواميس جدول بحث داخل الذاكرة يمكن استرجاع القيم منه باستخدام [دوال متخصصة](/ar/reference/functions/regular-functions/ext-dict-functions#dictGetAll).
+
+للاطلاع على أمثلة بسيطة على الإثراء، راجع دليل Dictionaries [هنا](/ar/concepts/features/dictionaries/index). وفيما يلي، نركّز على مهام إثراء observability الشائعة.
+
+<div id="using-ip-dictionaries">
+  ### استخدام قواميس IP
+</div>
+
+يُعد الإثراء الجغرافي للسجلات والتتبعات بقيم خط العرض وخط الطول باستخدام عناوين IP من المتطلبات الشائعة في مجال Observability. ويمكن تحقيق ذلك باستخدام القاموس المنظَّم `ip_trie`.
+
+نستخدم [مجموعة بيانات DB-IP على مستوى المدينة](https://github.com/sapics/ip-location-db#db-ip-database-update-monthly) المتاحة علنًا، والمقدَّمة من [DB-IP.com](https://db-ip.com/) بموجب شروط [ترخيص CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
+ومن [ملف README](https://github.com/sapics/ip-location-db#csv-format)، يمكننا أن نرى أن البيانات منظَّمة على النحو التالي:
+
+```csv
+| ip_range_start | ip_range_end | country_code | state1 | state2 | city | postcode | latitude | longitude | timezone |
+```
+
+استنادًا إلى هذه البنية، لنبدأ بإلقاء نظرة سريعة على البيانات باستخدام دالة الجدول [url()](/ar/reference/functions/table-functions/url):
+
+```sql
+SELECT *
+FROM url('https://raw.githubusercontent.com/sapics/ip-location-db/master/dbip-city/dbip-city-ipv4.csv.gz', 'CSV', '\n           \tip_range_start IPv4, \n       \tip_range_end IPv4, \n         \tcountry_code Nullable(String), \n     \tstate1 Nullable(String), \n           \tstate2 Nullable(String), \n           \tcity Nullable(String), \n     \tpostcode Nullable(String), \n         \tlatitude Float64, \n          \tlongitude Float64, \n         \ttimezone Nullable(String)\n   \t')
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+ip_range_start: 1.0.0.0
+ip_range_end:   1.0.0.255
+country_code:   AU
+state1:         Queensland
+state2:         ᴺᵁᴸᴸ
+city:           South Brisbane
+postcode:       ᴺᵁᴸᴸ
+latitude:       -27.4767
+longitude:      153.017
+timezone:       ᴺᵁᴸᴸ
+```
+
+لتسهيل الأمر، لنستخدم محرك الجدول [`URL()`](/ar/reference/engines/table-engines/special/url) لإنشاء جدول في ClickHouse بأسماء الحقول الخاصة بنا، والتحقق من إجمالي عدد الصفوف:
+
+```sql
+CREATE TABLE geoip_url(
+        ip_range_start IPv4,
+        ip_range_end IPv4,
+        country_code Nullable(String),
+        state1 Nullable(String),
+        state2 Nullable(String),
+        city Nullable(String),
+        postcode Nullable(String),
+        latitude Float64,
+        longitude Float64,
+        timezone Nullable(String)
+) ENGINE=URL('https://raw.githubusercontent.com/sapics/ip-location-db/master/dbip-city/dbip-city-ipv4.csv.gz', 'CSV')
+
+select count() from geoip_url;
+```
+
+```response
+┌─count()─┐
+│ 3261621 │ -- 3.26 million
+└─────────┘
+```
+
+نظرًا لأن قاموس `ip_trie` لدينا يتطلب تمثيل نطاقات عناوين IP بترميز CIDR، فسنحتاج إلى تحويل `ip_range_start` و`ip_range_end`.
+
+يمكن حساب قيمة CIDR لكل نطاق بإيجاز باستخدام الاستعلام التالي:
+
+```sql
+WITH
+        bitXor(ip_range_start, ip_range_end) AS xor,
+        if(xor != 0, ceil(log2(xor)), 0) AS unmatched,
+        32 - unmatched AS cidr_suffix,
+        toIPv4(bitAnd(bitNot(pow(2, unmatched) - 1), ip_range_start)::UInt64) AS cidr_address
+SELECT
+        ip_range_start,
+        ip_range_end,
+        concat(toString(cidr_address),'/',toString(cidr_suffix)) AS cidr    
+FROM
+        geoip_url
+LIMIT 4;
+```
+
+```response
+┌─ip_range_start─┬─ip_range_end─┬─cidr───────┐
+│ 1.0.0.0        │ 1.0.0.255    │ 1.0.0.0/24 │
+│ 1.0.1.0        │ 1.0.3.255    │ 1.0.0.0/22 │
+│ 1.0.4.0        │ 1.0.7.255    │ 1.0.4.0/22 │
+│ 1.0.8.0        │ 1.0.15.255   │ 1.0.8.0/21 │
+└────────────────┴──────────────┴────────────┘
+
+4 rows in set. Elapsed: 0.259 sec.
+```
+
+<Note>
+  هناك الكثير مما يجري في الاستعلام أعلاه. لمن يهمه الأمر، يمكنه قراءة هذا [الشرح](https://clickhouse.com/blog/geolocating-ips-in-clickhouse-and-grafana#using-bit-functions-to-convert-ip-ranges-to-cidr-notation) الممتاز. وإلا، فاكتفِ باعتبار أن ما سبق يحسب قيمة CIDR لنطاق IP.
+</Note>
+
+بالنسبة إلى غرضنا، لن نحتاج إلا إلى نطاق IP ورمز البلد والإحداثيات، لذا لنُنشئ جدولًا جديدًا ونُدرج فيه بيانات Geo IP الخاصة بنا:
+
+```sql
+CREATE TABLE geoip
+(
+        `cidr` String,
+        `latitude` Float64,
+        `longitude` Float64,
+        `country_code` String
+)
+ENGINE = MergeTree
+ORDER BY cidr
+
+INSERT INTO geoip
+WITH
+        bitXor(ip_range_start, ip_range_end) as xor,
+        if(xor != 0, ceil(log2(xor)), 0) as unmatched,
+        32 - unmatched as cidr_suffix,
+        toIPv4(bitAnd(bitNot(pow(2, unmatched) - 1), ip_range_start)::UInt64) as cidr_address
+SELECT
+        concat(toString(cidr_address),'/',toString(cidr_suffix)) as cidr,
+        latitude,
+        longitude,
+        country_code    
+FROM geoip_url
+```
+
+لإجراء عمليات بحث عن عناوين IP بزمن استجابة منخفض في ClickHouse، سنستفيد من القواميس لتخزين تعيينات المفتاح -&gt; السمات لبيانات Geo IP الخاصة بنا في الذاكرة. يوفّر ClickHouse بنية القاموس `ip_trie` [بنية القاموس](/ar/reference/statements/create/dictionary/layouts/ip-trie) لربط بادئات الشبكة لدينا (كتل CIDR) بالإحداثيات ورموز البلدان. يعرّف الاستعلام التالي قاموسًا باستخدام هذا التخطيط، مع الجدول أعلاه كمصدر.
+
+```sql
+CREATE DICTIONARY ip_trie (
+   cidr String,
+   latitude Float64,
+   longitude Float64,
+   country_code String
+)
+primary key cidr
+source(clickhouse(table 'geoip'))
+layout(ip_trie)
+lifetime(3600);
+```
+
+يمكننا اختيار صفوف من القاموس والتأكد من أن مجموعة البيانات هذه متاحة لعمليات البحث:
+
+```sql
+SELECT * FROM ip_trie LIMIT 3
+```
+
+```response
+┌─cidr───────┬─latitude─┬─longitude─┬─country_code─┐
+│ 1.0.0.0/22 │  26.0998 │   119.297 │ CN           │
+│ 1.0.0.0/24 │ -27.4767 │   153.017 │ AU           │
+│ 1.0.4.0/22 │ -38.0267 │   145.301 │ AU           │
+└────────────┴──────────┴───────────┴──────────────┘
+
+3 rows in set. Elapsed: 4.662 sec.
+```
+
+<Info>
+  **التحديث الدوري**
+
+  تُحدَّث القواميس في ClickHouse دوريًا استنادًا إلى بيانات underlying table وبند lifetime المستخدم أعلاه. ولتحديث قاموس Geo IP لدينا بحيث يعكس أحدث التغييرات في dataset ‏DB-IP، نحتاج فقط إلى إعادة إدراج البيانات من الجدول البعيد geoip&#95;url إلى جدول `geoip` مع تطبيق التحويلات.
+</Info>
+
+الآن بعد أن حمّلنا بيانات Geo IP إلى قاموس `ip_trie` (الذي يحمل أيضًا الاسم `ip_trie`)، يمكننا استخدامه لتحديد الموقع الجغرافي لعناوين IP. ويمكن تنفيذ ذلك باستخدام [الدالة `dictGet()`](/ar/reference/functions/regular-functions/ext-dict-functions) كما يلي:
+
+```sql
+SELECT dictGet('ip_trie', ('country_code', 'latitude', 'longitude'), CAST('85.242.48.167', 'IPv4')) AS ip_details
+```
+
+```response
+┌─ip_details──────────────┐
+│ ('PT',38.7944,-9.34284) │
+└─────────────────────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+لاحظ سرعة جلب البيانات هنا. يتيح لنا ذلك إثراء السجلات. في هذه الحالة، نختار **إجراء الإثراء في وقت الاستعلام**.
+
+وبالعودة إلى مجموعة بيانات السجلات الأصلية، يمكننا استخدام ما سبق لتجميع سجلاتنا بحسب البلد. ويفترض ما يلي أننا نستخدم المخطط الناتج عن العرض المادي السابق، والذي يتضمن عمود `RemoteAddress` مُستخرجًا.
+
+```sql
+SELECT dictGet('ip_trie', 'country_code', tuple(RemoteAddress)) AS country,
+        formatReadableQuantity(count()) AS num_requests
+FROM default.otel_logs_v2
+WHERE country != ''
+GROUP BY country
+ORDER BY count() DESC
+LIMIT 5
+```
+
+```response
+┌─country─┬─num_requests────┐
+│ IR      │ 7.36 million    │
+│ US      │ 1.67 million    │
+│ AE      │ 526.74 thousand │
+│ DE      │ 159.35 thousand │
+│ FR      │ 109.82 thousand │
+└─────────┴─────────────────┘
+
+5 rows in set. Elapsed: 0.140 sec. Processed 20.73 million rows, 82.92 MB (147.79 million rows/s., 591.16 MB/s.)
+Peak memory usage: 1.16 MiB.
+```
+
+نظرًا لأن تعيين عنوان IP إلى موقع جغرافي قد يتغير، فمن المرجح أن يرغب المستخدمون في معرفة الموقع الذي صدر منه الطلب وقت إرساله، لا الموقع الجغرافي الحالي للعنوان نفسه. ولهذا السبب، يُفضَّل هنا على الأرجح إجراء الإثراء عند الفهرسة. ويمكن تنفيذ ذلك باستخدام الأعمدة المُجسَّدة كما هو موضح أدناه، أو في عبارة `select` ضمن عرض مُجسَّد:
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8,
+        `Country` String MATERIALIZED dictGet('ip_trie', 'country_code', tuple(RemoteAddress)),
+        `Latitude` Float32 MATERIALIZED dictGet('ip_trie', 'latitude', tuple(RemoteAddress)),
+        `Longitude` Float32 MATERIALIZED dictGet('ip_trie', 'longitude', tuple(RemoteAddress))
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+<Info>
+  **تحديث دوري**
+
+  من المرجّح أن يرغب المستخدمون في تحديث قاموس إثراء عناوين IP دوريًا استنادًا إلى البيانات الجديدة. ويمكن تحقيق ذلك باستخدام عبارة `LIFETIME` في القاموس، ما يؤدي إلى إعادة تحميل القاموس دوريًا من الجدول الأساسي. لتحديث الجدول الأساسي، راجع [&quot;العروض المادية القابلة للتحديث&quot;](/ar/concepts/features/materialized-views/refreshable-materialized-view).
+</Info>
+
+توفّر البلدان والإحداثيات المذكورة أعلاه إمكانات تصور تتجاوز مجرد التجميع والتصفية حسب البلد. وللاستلهام، راجع [&quot;تصور البيانات الجغرافية&quot;](/ar/guides/use-cases/observability/build-your-own/grafana#visualizing-geo-data).
+
+<div id="using-regex-dictionaries-user-agent-parsing">
+  ### استخدام قواميس Regex (تحليل وكيل المستخدم)
+</div>
+
+يُعدّ تحليل [سلاسل وكيل المستخدم](https://en.wikipedia.org/wiki/User_agent) من المشكلات الكلاسيكية في التعابير النمطية، وهو مطلب شائع في مجموعات البيانات المعتمدة على السجلات وآثار التتبع. ويوفّر ClickHouse تحليلًا فعّالًا لـ وكيل المستخدم باستخدام قواميس شجرة التعابير النمطية.
+
+تُعرَّف قواميس شجرة التعابير النمطية في ClickHouse مفتوح المصدر باستخدام نوع مصدر القاموس YAMLRegExpTree، الذي يوفّر المسار إلى ملف YAML يحتوي على شجرة التعابير النمطية. وإذا رغبت في توفير قاموس تعابير نمطية خاص بك، فيمكن العثور على تفاصيل البنية المطلوبة [هنا](/ar/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source). نركّز أدناه على تحليل وكيل المستخدم باستخدام [uap-core](https://github.com/ua-parser/uap-core)، ونحمّل قاموسنا لاستخدامه مع تنسيق CSV المدعوم. هذا النهج متوافق مع OSS وClickHouse Cloud.
+
+<Note>
+  في الأمثلة أدناه، نستخدم لقطات snapshots من أحدث تعابير uap-core النمطية لتحليل وكيل المستخدم من يونيو 2024. ويمكن العثور على أحدث ملف، الذي يُحدَّث من حين لآخر، [هنا](https://raw.githubusercontent.com/ua-parser/uap-core/master/regexes.yaml). يمكنك اتباع الخطوات [هنا](/ar/reference/statements/create/dictionary/layouts/regexp-tree#collecting-attribute-values) للتحميل إلى ملف CSV المستخدم أدناه.
+</Note>
+
+أنشئ جداول Memory التالية. وتحتفظ هذه الجداول بالتعابير النمطية التي نستخدمها لتحليل الأجهزة والمتصفحات وأنظمة التشغيل.
+
+```sql
+CREATE TABLE regexp_os
+(
+        id UInt64,
+        parent_id UInt64,
+        regexp String,
+        keys   Array(String),
+        values Array(String)
+) ENGINE=Memory;
+
+CREATE TABLE regexp_browser
+(
+        id UInt64,
+        parent_id UInt64,
+        regexp String,
+        keys   Array(String),
+        values Array(String)
+) ENGINE=Memory;
+
+CREATE TABLE regexp_device
+(
+        id UInt64,
+        parent_id UInt64,
+        regexp String,
+        keys   Array(String),
+        values Array(String)
+) ENGINE=Memory;
+```
+
+يمكن تعبئة هذه الجداول من ملفات CSV المستضافة علنًا التالية، باستخدام دالة الجدول url:
+
+```sql
+INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+
+INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+
+INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+```
+
+بعد تعبئة جداول الذاكرة، يمكننا تحميل قواميس التعبيرات النمطية. لاحظ أننا بحاجة إلى تحديد قيم المفاتيح كأعمدة، إذ ستكون هذه هي السمات التي يمكننا استخراجها من وكيل المستخدم.
+
+```sql
+CREATE DICTIONARY regexp_os_dict
+(
+        regexp String,
+        os_replacement String default 'Other',
+        os_v1_replacement String default '0',
+        os_v2_replacement String default '0',
+        os_v3_replacement String default '0',
+        os_v4_replacement String default '0'
+)
+PRIMARY KEY regexp
+SOURCE(CLICKHOUSE(TABLE 'regexp_os'))
+LIFETIME(MIN 0 MAX 0)
+LAYOUT(REGEXP_TREE);
+
+CREATE DICTIONARY regexp_device_dict
+(
+        regexp String,
+        device_replacement String default 'Other',
+        brand_replacement String,
+        model_replacement String
+)
+PRIMARY KEY(regexp)
+SOURCE(CLICKHOUSE(TABLE 'regexp_device'))
+LIFETIME(0)
+LAYOUT(regexp_tree);
+
+CREATE DICTIONARY regexp_browser_dict
+(
+        regexp String,
+        family_replacement String default 'Other',
+        v1_replacement String default '0',
+        v2_replacement String default '0'
+)
+PRIMARY KEY(regexp)
+SOURCE(CLICKHOUSE(TABLE 'regexp_browser'))
+LIFETIME(0)
+LAYOUT(regexp_tree);
+```
+
+بعد تحميل هذه القواميس، يمكننا إدخال وكيل المستخدم نموذجي واختبار إمكانات الاستخراج الجديدة باستخدام القواميس:
+
+```sql
+WITH 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:127.0) Gecko/20100101 Firefox/127.0' AS user_agent
+SELECT
+        dictGet('regexp_device_dict', ('device_replacement', 'brand_replacement', 'model_replacement'), user_agent) AS device,
+        dictGet('regexp_browser_dict', ('family_replacement', 'v1_replacement', 'v2_replacement'), user_agent) AS browser,
+        dictGet('regexp_os_dict', ('os_replacement', 'os_v1_replacement', 'os_v2_replacement', 'os_v3_replacement'), user_agent) AS os
+```
+
+```response
+┌─device────────────────┬─browser───────────────┬─os─────────────────────────┐
+│ ('Mac','Apple','Mac') │ ('Firefox','127','0') │ ('Mac OS X','10','15','0') │
+└───────────────────────┴───────────────────────┴────────────────────────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+نظرًا لأن القواعد المرتبطة بـ وكيل المستخدم نادرًا ما تتغير، ولا يحتاج القاموس إلى التحديث إلا عند ظهور متصفحات وأنظمة تشغيل وأجهزة جديدة، فمن المنطقي إجراء هذا الاستخراج عند الإدراج.
+
+يمكننا إما تنفيذ ذلك باستخدام عمود مُجسَّد أو باستخدام عرض مادي. في ما يلي نعدّل العرض المادي الذي استُخدم سابقًا:
+
+```sql
+CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2
+AS SELECT
+        Body,
+        CAST(Timestamp, 'DateTime') AS Timestamp,
+        ServiceName,
+        LogAttributes['status'] AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['size'] AS Size,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddress,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(CAST(Status, 'UInt64') > 500, 'CRITICAL', CAST(Status, 'UInt64') > 400, 'ERROR', CAST(Status, 'UInt64') > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(CAST(Status, 'UInt64') > 500, 20, CAST(Status, 'UInt64') > 400, 17, CAST(Status, 'UInt64') > 300, 13, 9) AS SeverityNumber,
+        dictGet('regexp_device_dict', ('device_replacement', 'brand_replacement', 'model_replacement'), UserAgent) AS Device,
+        dictGet('regexp_browser_dict', ('family_replacement', 'v1_replacement', 'v2_replacement'), UserAgent) AS Browser,
+        dictGet('regexp_os_dict', ('os_replacement', 'os_v1_replacement', 'os_v2_replacement', 'os_v3_replacement'), UserAgent) AS Os
+FROM otel_logs
+```
+
+يتطلب ذلك تعديل مخطط الجدول الهدف `otel_logs_v2`:
+
+```sql
+CREATE TABLE default.otel_logs_v2
+(
+ `Body` String,
+ `Timestamp` DateTime,
+ `ServiceName` LowCardinality(String),
+ `Status` UInt8,
+ `RequestProtocol` LowCardinality(String),
+ `RunTime` UInt32,
+ `Size` UInt32,
+ `UserAgent` String,
+ `Referer` String,
+ `RemoteUser` String,
+ `RequestType` LowCardinality(String),
+ `RequestPath` String,
+ `remote_addr` IPv4,
+ `RefererDomain` String,
+ `RequestPage` String,
+ `SeverityText` LowCardinality(String),
+ `SeverityNumber` UInt8,
+ `Device` Tuple(device_replacement LowCardinality(String), brand_replacement LowCardinality(String), model_replacement LowCardinality(String)),
+ `Browser` Tuple(family_replacement LowCardinality(String), v1_replacement LowCardinality(String), v2_replacement LowCardinality(String)),
+ `Os` Tuple(os_replacement LowCardinality(String), os_v1_replacement LowCardinality(String), os_v2_replacement LowCardinality(String), os_v3_replacement LowCardinality(String))
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp, Status)
+```
+
+بعد إعادة تشغيل المجمّع وإدخال السجلات المنظَّمة، وبالاستناد إلى الخطوات الموثَّقة سابقًا، يمكننا الاستعلام عن أعمدة Device وBrowser وOs التي استخرجناها حديثًا.
+
+```sql
+SELECT Device, Browser, Os
+FROM otel_logs_v2
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Device:  ('Spider','Spider','Desktop')
+Browser: ('AhrefsBot','6','1')
+Os:     ('Other','0','0','0')
+```
+
+<Info>
+  **Tuples للبُنى المعقّدة**
+
+  لاحِظ استخدام Tuples في أعمدة وكيل المستخدم هذه. يُوصى باستخدام Tuples مع البُنى المعقّدة التي يكون تسلسلها الهرمي معروفًا مسبقًا. وتوفّر الأعمدة الفرعية الأداء نفسه الذي توفّره الأعمدة العادية (على عكس مفاتيح Map)، مع إتاحة استخدام أنواع غير متجانسة.
+</Info>
+
+<div id="further-reading">
+  ### للمزيد من القراءة
+</div>
+
+للمزيد من الأمثلة والتفاصيل حول القواميس، نوصي بالمقالات التالية:
+
+* [موضوعات متقدمة حول القواميس](/ar/concepts/features/dictionaries/index#advanced-dictionary-topics)
+* [&quot;استخدام القواميس لتسريع الاستعلامات&quot;](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)
+* [القواميس](/ar/reference/statements/create/dictionary)
+
+<div id="accelerating-queries">
+  ## تسريع الاستعلامات
+</div>
+
+يدعم ClickHouse عددًا من الأساليب لتسريع أداء الاستعلامات. ولا ينبغي النظر فيما يلي إلا بعد اختيار مفتاح أساسي/مفتاح ترتيب مناسب لتحسين أكثر أنماط الوصول شيوعًا وزيادة كفاءة الضغط إلى أقصى حد. وعادةً ما يكون لذلك أكبر أثر على الأداء بأقل جهد.
+
+<div id="using-materialized-views-incremental-for-aggregations">
+  ### استخدام Materialized views (التدريجية) للتجميعات
+</div>
+
+في الأقسام السابقة، استعرضنا استخدام Materialized views لتحويل البيانات وتصفيتها. ومع ذلك، يمكن أيضًا استخدام Materialized views لاحتساب التجميعات مسبقًا عند الإدراج وتخزين النتيجة. ويمكن بعد ذلك تحديث هذه النتيجة بنتائج عمليات الإدراج اللاحقة، مما يتيح عمليًا احتساب التجميعات مسبقًا وقت الإدراج.
+
+وتتمثل الفكرة الأساسية هنا في أن النتائج ستكون غالبًا تمثيلًا أصغر للبيانات الأصلية (على شكل ملخص جزئي في حالة التجميعات). وعند إقران ذلك باستعلام أبسط لقراءة النتائج من الجدول الهدف، ستكون أزمنة الاستعلام أسرع مما لو أُجري الحساب نفسه على البيانات الأصلية.
+
+انظر إلى الاستعلام التالي، حيث نحسب إجمالي حركة المرور لكل ساعة باستخدام السجلات المنظَّمة:
+
+```sql
+SELECT toStartOfHour(Timestamp) AS Hour,
+        sum(toUInt64OrDefault(LogAttributes['size'])) AS TotalBytes
+FROM otel_logs
+GROUP BY Hour
+ORDER BY Hour DESC
+LIMIT 5
+```
+
+```response
+┌────────────────Hour─┬─TotalBytes─┐
+│ 2019-01-26 16:00:00 │ 1661716343 │
+│ 2019-01-26 15:00:00 │ 1824015281 │
+│ 2019-01-26 14:00:00 │ 1506284139 │
+│ 2019-01-26 13:00:00 │ 1580955392 │
+│ 2019-01-26 12:00:00 │ 1736840933 │
+└─────────────────────┴────────────┘
+
+5 rows in set. Elapsed: 0.666 sec. Processed 10.37 million rows, 4.73 GB (15.56 million rows/s., 7.10 GB/s.)
+Peak memory usage: 1.40 MiB.
+```
+
+يمكننا تخيّل أن هذا قد يكون مخططًا خطيًا شائعًا ينشئه المستخدمون في Grafana. ولا شك أن هذا الاستعلام سريع جدًا — فمجموعة البيانات لا تضم سوى 10 ملايين صف، وClickHouse سريع! لكن إذا وسّعنا ذلك إلى مليارات وتريليونات من الصفوف، فسنرغب بالطبع في الحفاظ على مستوى أداء هذا الاستعلام.
+
+<Note>
+  سيكون هذا الاستعلام أسرع بعشر مرات إذا استخدمنا الجدول `otel_logs_v2`، الناتج عن العرض المادي السابق، والذي يستخرج المفتاح size من الخريطة `LogAttributes`. نستخدم البيانات الخام هنا لأغراض توضيحية فقط، ونوصي باستخدام العرض السابق إذا كان هذا الاستعلام شائعًا.
+</Note>
+
+نحتاج إلى جدول لتلقّي النتائج إذا أردنا تنفيذ هذا الحساب عند الإدراج باستخدام عرض مادي. يجب ألا يحتفظ هذا الجدول إلا بصف واحد لكل ساعة. وإذا وصل تحديث لساعة موجودة بالفعل، فيجب دمج الأعمدة الأخرى في صف تلك الساعة الحالي. ولكي يحدث هذا الدمج للحالات التزايدية، يجب تخزين حالات جزئية للأعمدة الأخرى.
+
+يتطلب ذلك نوع محرك خاصًا في ClickHouse: ‏SummingMergeTree. إذ يستبدل جميع الصفوف التي لها مفتاح الترتيب نفسه بصف واحد يحتوي على قيم مجمّعة للأعمدة الرقمية. وسيقوم الجدول التالي بدمج أي صفوف لها التاريخ نفسه، مع جمع أي أعمدة رقمية.
+
+```sql
+CREATE TABLE bytes_per_hour
+(
+  `Hour` DateTime,
+  `TotalBytes` UInt64
+)
+ENGINE = SummingMergeTree
+ORDER BY Hour
+```
+
+لتوضيح طريقة عمل العرض المادي، افترض أن جدول `bytes_per_hour` فارغ ولم يستقبل أي بيانات بعد. ينفّذ العرض المادي لدينا عبارة `SELECT` المذكورة أعلاه على البيانات المُدرجة في `otel_logs` (وسيُنفَّذ ذلك على مستوى كتل بالحجم المُعدّ)، ثم تُرسَل النتائج إلى `bytes_per_hour`. تظهر البنية أدناه:
+
+```sql
+CREATE MATERIALIZED VIEW bytes_per_hour_mv TO bytes_per_hour AS
+SELECT toStartOfHour(Timestamp) AS Hour,
+       sum(toUInt64OrDefault(LogAttributes['size'])) AS TotalBytes
+FROM otel_logs
+GROUP BY Hour
+```
+
+تُعد عبارة `TO` هنا أساسية، إذ تحدد الوجهة التي ستُرسل إليها النتائج، أي `bytes_per_hour`.
+
+إذا أعدنا تشغيل OTel Collector وأعدنا إرسال السجلات، فسيُملأ جدول `bytes_per_hour` تدريجيًا بنتيجة الاستعلام أعلاه. وعند اكتمال ذلك، يمكننا التأكد من حجم `bytes_per_hour` — إذ ينبغي أن يحتوي على صف واحد لكل ساعة:
+
+```sql
+SELECT count()
+FROM bytes_per_hour
+FINAL
+```
+
+```response
+┌─count()─┐
+│     113 │
+└─────────┘
+
+1 row in set. Elapsed: 0.039 sec.
+```
+
+لقد خفّضنا فعليًا عدد الصفوف هنا من 10m (في `otel_logs`) إلى 113 من خلال تخزين نتيجة الاستعلام. والمهم هنا أنه إذا أُدرجت سجلات جديدة في جدول `otel_logs`، فستُرسَل القيم الجديدة إلى `bytes_per_hour` بحسب الساعة المقابلة لها، حيث ستُدمَج تلقائيًا بشكل غير متزامن في الخلفية. وبالاحتفاظ بصف واحد فقط لكل ساعة، سيظل `bytes_per_hour` صغيرًا ومحدَّثًا دائمًا.
+
+ونظرًا إلى أن دمج الصفوف يتم بشكل غير متزامن، فقد يكون هناك أكثر من صف واحد لكل ساعة عند تنفيذ المستخدم للاستعلام. ولضمان دمج أي صفوف متبقية وقت تنفيذ الاستعلام، لدينا خياران:
+
+* استخدام [`FINAL` المُعدِّل](/ar/reference/statements/select/from#final-modifier) مع اسم الجدول (وهذا ما فعلناه في استعلام العد أعلاه).
+* التجميع حسب مفتاح الترتيب المستخدم في جدولنا النهائي، أي Timestamp، ثم جمع المقاييس.
+
+وعادةً ما يكون الخيار الثاني أكثر كفاءة ومرونة (إذ يمكن استخدام الجدول لأغراض أخرى)، لكن الخيار الأول قد يكون أبسط في بعض الاستعلامات. نعرض كلا الخيارين أدناه:
+
+```sql
+SELECT
+        Hour,
+        sum(TotalBytes) AS TotalBytes
+FROM bytes_per_hour
+GROUP BY Hour
+ORDER BY Hour DESC
+LIMIT 5
+```
+
+```response
+┌────────────────Hour─┬─TotalBytes─┐
+│ 2019-01-26 16:00:00 │ 1661716343 │
+│ 2019-01-26 15:00:00 │ 1824015281 │
+│ 2019-01-26 14:00:00 │ 1506284139 │
+│ 2019-01-26 13:00:00 │ 1580955392 │
+│ 2019-01-26 12:00:00 │ 1736840933 │
+└─────────────────────┴────────────┘
+
+5 rows in set. Elapsed: 0.008 sec.
+```
+
+```sql
+SELECT
+        Hour,
+        TotalBytes
+FROM bytes_per_hour
+FINAL
+ORDER BY Hour DESC
+LIMIT 5
+```
+
+```response
+┌────────────────Hour─┬─TotalBytes─┐
+│ 2019-01-26 16:00:00 │ 1661716343 │
+│ 2019-01-26 15:00:00 │ 1824015281 │
+│ 2019-01-26 14:00:00 │ 1506284139 │
+│ 2019-01-26 13:00:00 │ 1580955392 │
+│ 2019-01-26 12:00:00 │ 1736840933 │
+└─────────────────────┴────────────┘
+
+5 rows in set. Elapsed: 0.005 sec.
+```
+
+لقد سرّع هذا استعلامنا من 0.6s إلى 0.008s — أي بأكثر من 75 مرة!
+
+<Note>
+  قد تكون هذه المكاسب أكبر بكثير مع مجموعات بيانات أكبر واستعلامات أكثر تعقيدًا. اطّلع على أمثلة [هنا](https://github.com/ClickHouse/clickpy).
+</Note>
+
+<div id="a-more-complex-example">
+  #### مثال أكثر تعقيدًا
+</div>
+
+يُجمِّع المثال أعلاه عددًا بسيطًا لكل ساعة باستخدام [SummingMergeTree](/ar/reference/engines/table-engines/mergetree-family/summingmergetree). أما الإحصاءات التي تتجاوز المجاميع البسيطة فتتطلب محرك جدول هدف مختلفًا: [AggregatingMergeTree](/ar/reference/engines/table-engines/mergetree-family/aggregatingmergetree).
+
+لنفترض أننا نريد حساب عدد عناوين IP الفريدة (أو المستخدمين الفريدين) لكل يوم. الاستعلام الخاص بذلك:
+
+```sql
+SELECT toStartOfHour(Timestamp) AS Hour, uniq(LogAttributes['remote_addr']) AS UniqueUsers
+FROM otel_logs
+GROUP BY Hour
+ORDER BY Hour DESC
+```
+
+```response
+┌────────────────Hour─┬─UniqueUsers─┐
+│ 2019-01-26 16:00:00 │     4763    │
+│ 2019-01-22 00:00:00 │     536     │
+└─────────────────────┴─────────────┘
+
+113 rows in set. Elapsed: 0.667 sec. Processed 10.37 million rows, 4.73 GB (15.53 million rows/s., 7.09 GB/s.)
+```
+
+للاحتفاظ بعدد العناصر المميّزة لأغراض التحديث التزايدي، يلزم استخدام AggregatingMergeTree.
+
+```sql
+CREATE TABLE unique_visitors_per_hour
+(
+  `Hour` DateTime,
+  `UniqueUsers` AggregateFunction(uniq, IPv4)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY Hour
+```
+
+لضمان أن يعرف ClickHouse أن حالات التجميع ستُخزَّن، نُعرِّف العمود `UniqueUsers` بالنوع [`AggregateFunction`](/ar/reference/data-types/aggregatefunction)، مع تحديد الدالة التي تُنتج الحالات الجزئية (uniq) ونوع العمود المصدر (IPv4). وكما في SummingMergeTree، ستُدمَج الصفوف التي لها قيمة مفتاح `ORDER BY` نفسها (Hour في المثال أعلاه).
+
+ويستخدم العرض المادي المرتبط الاستعلام السابق:
+
+```sql
+CREATE MATERIALIZED VIEW unique_visitors_per_hour_mv TO unique_visitors_per_hour AS
+SELECT toStartOfHour(Timestamp) AS Hour,
+        uniqState(LogAttributes['remote_addr']::IPv4) AS UniqueUsers
+FROM otel_logs
+GROUP BY Hour
+ORDER BY Hour DESC
+```
+
+لاحظ كيف نُلحق اللاحقة `State` بنهاية دوالنا التجميعية. يضمن ذلك إرجاع الحالة التجميعية للدالة بدلًا من النتيجة النهائية. وستتضمن هذه الحالة معلومات إضافية تتيح دمج هذه الحالة الجزئية مع حالات أخرى.
+
+بمجرد إعادة تحميل البيانات عبر إعادة تشغيل Collector، يمكننا التأكد من توفّر 113 صفًا في جدول `unique_visitors_per_hour`.
+
+```sql
+SELECT count()
+FROM unique_visitors_per_hour
+FINAL
+```
+
+```response
+┌─count()─┐
+│   113   │
+└─────────┘
+
+1 row in set. Elapsed: 0.009 sec.
+```
+
+يجب أن يستخدم استعلامنا النهائي اللاحقة Merge في دوالنا (لأن الأعمدة تخزّن حالات التجميع الجزئية):
+
+```sql
+SELECT Hour, uniqMerge(UniqueUsers) AS UniqueUsers
+FROM unique_visitors_per_hour
+GROUP BY Hour
+ORDER BY Hour DESC
+```
+
+```response
+┌────────────────Hour─┬─UniqueUsers─┐
+│ 2019-01-26 16:00:00 │      4763   │
+│ 2019-01-22 00:00:00 │      536    │
+└─────────────────────┴─────────────┘
+
+113 rows in set. Elapsed: 0.027 sec.
+```
+
+لاحظ أننا نستخدم `GROUP BY` هنا بدلًا من `FINAL`.
+
+<div id="using-materialized-views-incremental--for-fast-lookups">
+  ### استخدام العروض المادية (التزايدية)  لعمليات البحث السريع
+</div>
+
+ينبغي مراعاة أنماط الوصول عند اختيار مفتاح الترتيب في ClickHouse، إلى جانب الأعمدة التي تُستخدم كثيرًا في عبارات التصفية والتجميع. وقد يكون ذلك مقيِّدًا في حالات استخدام Observability، حيث تكون لدى المستخدمين أنماط وصول أكثر تنوعًا لا يمكن حصرها ضمن مجموعة واحدة من الأعمدة. ويتضح ذلك بأفضل شكل في مثال مضمَّن في مخططات OTel الافتراضية. تأمّل المخطط الافتراضي للتتبعات:
+
+```sql
+CREATE TABLE otel_traces
+(
+        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `TraceId` String CODEC(ZSTD(1)),
+        `SpanId` String CODEC(ZSTD(1)),
+        `ParentSpanId` String CODEC(ZSTD(1)),
+        `TraceState` String CODEC(ZSTD(1)),
+        `SpanName` LowCardinality(String) CODEC(ZSTD(1)),
+        `SpanKind` LowCardinality(String) CODEC(ZSTD(1)),
+        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
+        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `ScopeName` String CODEC(ZSTD(1)),
+        `ScopeVersion` String CODEC(ZSTD(1)),
+        `SpanAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `Duration` Int64 CODEC(ZSTD(1)),
+        `StatusCode` LowCardinality(String) CODEC(ZSTD(1)),
+        `StatusMessage` String CODEC(ZSTD(1)),
+        `Events.Timestamp` Array(DateTime64(9)) CODEC(ZSTD(1)),
+        `Events.Name` Array(LowCardinality(String)) CODEC(ZSTD(1)),
+        `Events.Attributes` Array(Map(LowCardinality(String), String)) CODEC(ZSTD(1)),
+        `Links.TraceId` Array(String) CODEC(ZSTD(1)),
+        `Links.SpanId` Array(String) CODEC(ZSTD(1)),
+        `Links.TraceState` Array(String) CODEC(ZSTD(1)),
+        `Links.Attributes` Array(Map(LowCardinality(String), String)) CODEC(ZSTD(1)),
+        INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1,
+        INDEX idx_res_attr_key mapKeys(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+        INDEX idx_res_attr_value mapValues(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+        INDEX idx_span_attr_key mapKeys(SpanAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+        INDEX idx_span_attr_value mapValues(SpanAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+        INDEX idx_duration Duration TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SpanName, toUnixTimestamp(Timestamp), TraceId)
+```
+
+هذا المخطط مُحسَّن للتصفية حسب `ServiceName` و`SpanName` و`Timestamp`. وفي التتبّع، يحتاج المستخدمون أيضًا إلى إمكانية إجراء عمليات بحث باستخدام `TraceId` محدّد واسترجاع الـ spans المرتبطة بهذا الـ trace. ومع أن ذلك موجود في مفتاح الترتيب، فإن وجوده في النهاية يعني أن [التصفية لن تكون بالكفاءة نفسها](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#ordering-key-columns-efficiently)، كما يُرجَّح أن يتطلّب استرجاع trace واحد فحص كميات كبيرة من البيانات.
+
+يثبّت OTel collector أيضًا عرضًا ماديًا وجدولًا مرتبطًا بها لمعالجة هذا التحدّي. الجدول والعرض موضّحان أدناه:
+
+```sql
+CREATE TABLE otel_traces_trace_id_ts
+(
+        `TraceId` String CODEC(ZSTD(1)),
+        `Start` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `End` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        INDEX idx_trace_id TraceId TYPE bloom_filter(0.01) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY (TraceId, toUnixTimestamp(Start))
+
+CREATE MATERIALIZED VIEW otel_traces_trace_id_ts_mv TO otel_traces_trace_id_ts
+(
+        `TraceId` String,
+        `Start` DateTime64(9),
+        `End` DateTime64(9)
+)
+AS SELECT
+        TraceId,
+        min(Timestamp) AS Start,
+        max(Timestamp) AS End
+FROM otel_traces
+WHERE TraceId != ''
+GROUP BY TraceId
+```
+
+يضمن هذا العرض عمليًا أن يتضمن الجدول `otel_traces_trace_id_ts` الحدين الأدنى والأقصى للطابع الزمني الخاص بالتتبّع. ويتيح هذا الجدول، المرتّب حسب `TraceId`، استرجاع هاتين القيمتين بكفاءة. ويمكن بعد ذلك استخدام هذه النطاقات الزمنية عند الاستعلام عن الجدول الرئيسي `otel_traces`. وبشكل أكثر تحديدًا، عند استرجاع تتبّع بواسطة معرّفه، يستخدم Grafana الاستعلام التالي:
+
+```sql
+WITH 'ae9226c78d1d360601e6383928e4d22d' AS trace_id,
+        (
+        SELECT min(Start)
+          FROM default.otel_traces_trace_id_ts
+          WHERE TraceId = trace_id
+        ) AS trace_start,
+        (
+        SELECT max(End) + 1
+          FROM default.otel_traces_trace_id_ts
+          WHERE TraceId = trace_id
+        ) AS trace_end
+SELECT
+        TraceId AS traceID,
+        SpanId AS spanID,
+        ParentSpanId AS parentSpanID,
+        ServiceName AS serviceName,
+        SpanName AS operationName,
+        Timestamp AS startTime,
+        Duration * 0.000001 AS duration,
+        arrayMap(key -> map('key', key, 'value', SpanAttributes[key]), mapKeys(SpanAttributes)) AS tags,
+        arrayMap(key -> map('key', key, 'value', ResourceAttributes[key]), mapKeys(ResourceAttributes)) AS serviceTags
+FROM otel_traces
+WHERE (traceID = trace_id) AND (startTime >= trace_start) AND (startTime <= trace_end)
+LIMIT 1000
+```
+
+يحدّد تعبير الجدول الشائع هنا الحدين الأدنى والأقصى لـ `timestamp` لمعرّف التتبّع `ae9226c78d1d360601e6383928e4d22d`، ثم يستخدم ذلك لتصفية جدول `otel_traces` الرئيسي وإرجاع الـ `spans` المرتبطة به.
+
+يمكن تطبيق هذا النهج نفسه على أنماط وصول مشابهة. ونستعرض مثالًا مشابهًا في نمذجة البيانات [هنا](/ar/concepts/features/materialized-views/incremental-materialized-view#lookup-table).
+
+<div id="using-projections">
+  ### استخدام الإسقاطات
+</div>
+
+تتيح لك إسقاطات ClickHouse تحديد عدة عبارات `ORDER BY` للجدول.
+
+في الأقسام السابقة، استعرضنا كيف يمكن استخدام العروض المادية في ClickHouse لإجراء عمليات التجميع مسبقًا، وتحويل الصفوف، وتحسين استعلامات Observability لأنماط الوصول المختلفة.
+
+قدمنا مثالًا يرسل فيه العرض المادي الصفوف إلى جدول هدف بمفتاح ترتيب يختلف عن الجدول الأصلي الذي يستقبل عمليات الإدراج، وذلك لتحسين عمليات البحث بحسب معرّف التتبّع.
+
+يمكن استخدام الإسقاطات لمعالجة المشكلة نفسها، إذ تتيح للمستخدم تحسين الاستعلامات على عمود لا يكون جزءًا من المفتاح الأساسي.
+
+نظريًا، يمكن استخدام هذه الإمكانية لتوفير عدة مفاتيح ترتيب للجدول، لكن مع عيب واضح: تكرار البيانات. فعلى وجه التحديد، يجب كتابة البيانات وفق ترتيب المفتاح الأساسي الرئيسي، بالإضافة إلى الترتيب المحدد لكل إسقاط. ويؤدي ذلك إلى إبطاء عمليات الإدراج واستهلاك مساحة أكبر على القرص.
+
+<Info>
+  **الإسقاطات مقابل العروض المادية**
+
+  توفّر الإسقاطات كثيرًا من الإمكانيات نفسها التي توفّرها العروض المادية، لكن ينبغي استخدامها بحذر، وغالبًا ما تكون العروض المادية هي الخيار المفضّل. ويجب أن تفهم عيوبها ومتى يكون استخدامها مناسبًا. فعلى سبيل المثال، رغم إمكانية استخدام الإسقاطات لإجراء عمليات التجميع مسبقًا، فإننا نوصي المستخدمين باستخدام العروض المادية لهذا الغرض.
+</Info>
+
+<Image img="/images/use-cases/observability/observability-13.webp" alt="Observability والإسقاطات" size="md" />
+
+انظر إلى الاستعلام التالي، الذي يرشّح جدول `otel_logs_v2` لدينا بحسب 500 من رموز الخطأ. ومن المرجح أن يكون هذا نمط وصول شائعًا في السجلّات، إذ يرغب المستخدمون في التصفية بحسب رموز الخطأ:
+
+```sql
+SELECT Timestamp, RequestPath, Status, RemoteAddress, UserAgent
+FROM otel_logs_v2
+WHERE Status = 500
+FORMAT `Null`
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.177 sec. Processed 10.37 million rows, 685.32 MB (58.66 million rows/s., 3.88 GB/s.)
+Peak memory usage: 56.54 MiB.
+```
+
+<Info>
+  **استخدم Null لقياس الأداء**
+
+  نحن لا نعرض النتائج هنا باستخدام `FORMAT Null`. فهذا يفرض قراءة جميع النتائج من دون إرجاعها، وبذلك يمنع الإنهاء المبكر للاستعلام بسبب LIMIT. والغرض من ذلك هو فقط إظهار الوقت المستغرق في فحص جميع الصفوف العشرة ملايين.
+</Info>
+
+يتطلب الاستعلام أعلاه فحصًا خطيًا باستخدام مفتاح الترتيب الذي اخترناه `(ServiceName, Timestamp)`. وبينما يمكننا إضافة `Status` إلى نهاية مفتاح الترتيب لتحسين أداء الاستعلام أعلاه، يمكننا أيضًا إضافة إسقاط.
+
+```sql
+ALTER TABLE otel_logs_v2 (
+  ADD PROJECTION status
+  (
+     SELECT Timestamp, RequestPath, Status, RemoteAddress, UserAgent ORDER BY Status
+  )
+)
+
+ALTER TABLE otel_logs_v2 MATERIALIZE PROJECTION status
+```
+
+لاحظ أنه يجب علينا أولًا إنشاء الإسقاط ثم تمثيله ماديًا. ويؤدي هذا الأمر الأخير إلى تخزين البيانات مرتين على القرص، بترتيبين مختلفين. كما يمكن أيضًا تعريف الإسقاط عند إنشاء البيانات، كما هو موضح أدناه، وستتم صيانته تلقائيًا عند إدراج البيانات.
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8,
+        PROJECTION status
+        (
+           SELECT Timestamp, RequestPath, Status, RemoteAddress, UserAgent
+           ORDER BY Status
+        )
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+ومن المهم ملاحظة أنه إذا أُنشئ الإسقاط عبر `ALTER`، فسيُنفَّذ إنشاؤه بشكل غير متزامن عند إصدار الأمر `MATERIALIZE PROJECTION`. ويمكنك التحقق من تقدّم هذه العملية باستخدام الاستعلام التالي، مع انتظار `is_done=1`.
+
+```sql
+SELECT parts_to_do, is_done, latest_fail_reason
+FROM system.mutations
+WHERE (`table` = 'otel_logs_v2') AND (command LIKE '%MATERIALIZE%')
+```
+
+```response
+┌─parts_to_do─┬─is_done─┬─latest_fail_reason─┐
+│           0 │     1   │                    │
+└─────────────┴─────────┴────────────────────┘
+
+1 row in set. Elapsed: 0.008 sec.
+```
+
+إذا كررنا الاستعلام أعلاه، فسنرى أن الأداء قد تحسّن بشكل ملحوظ، ولكن على حساب مساحة تخزين إضافية (راجع [&quot;قياس حجم الجدول والضغط&quot;](#measuring-table-size--compression) لمعرفة كيفية قياس ذلك).
+
+```sql
+SELECT Timestamp, RequestPath, Status, RemoteAddress, UserAgent
+FROM otel_logs_v2
+WHERE Status = 500
+FORMAT `Null`
+```
+
+```response
+0 rows in set. Elapsed: 0.031 sec. Processed 51.42 thousand rows, 22.85 MB (1.65 million rows/s., 734.63 MB/s.)
+Peak memory usage: 27.85 MiB.
+```
+
+في المثال أعلاه، نحدّد الأعمدة المستخدمة في الاستعلام السابق ضمن الإسقاط. وهذا يعني أنه لن تُخزَّن على القرص، كجزء من الإسقاط، سوى هذه الأعمدة المحددة، مرتبةً حسب Status. وإذا استخدمنا `SELECT *` هنا بدلًا من ذلك، فسيتم تخزين جميع الأعمدة. ورغم أن هذا سيتيح لعدد أكبر من الاستعلامات (باستخدام أي مجموعة فرعية من الأعمدة) الاستفادة من الإسقاط، فإنه سيؤدي إلى استهلاك مساحة تخزين إضافية. لقياس مساحة القرص والضغط، راجع [&quot;قياس حجم الجدول والضغط&quot;](#measuring-table-size--compression).
+
+<div id="secondarydata-skipping-indices">
+  ### الفهارس الثانوية/فهارس تخطي البيانات
+</div>
+
+مهما كانت درجة إحكام ضبط المفتاح الأساسي في ClickHouse، فستتطلب بعض الاستعلامات حتمًا إجراء فحص كامل للجدول. ويمكن الحد من ذلك باستخدام العروض المادية (وكذلك الإسقاطات لبعض الاستعلامات)، لكن هذا يفرض أعمال صيانة إضافية ويتطلب أيضًا أن يكون المستخدمون على علم بتوفرها حتى يضمنوا الاستفادة منها. وفي حين تعالج قواعد البيانات العلائقية التقليدية هذه المشكلة باستخدام الفهارس الثانوية، فإن هذه الفهارس لا تكون فعّالة في قواعد البيانات العمودية مثل ClickHouse. وبدلًا من ذلك، يستخدم ClickHouse فهارس &quot;Skip&quot;، التي يمكنها تحسين أداء الاستعلام بشكل كبير من خلال تمكين قاعدة البيانات من تجاوز أجزاء كبيرة من البيانات التي لا تحتوي على أي قيم مطابقة.
+
+تستخدم مخططات OTel الافتراضية فهارس ثانوية في محاولة لتسريع الوصول إلى بيانات Map. ومع أننا نجدها غير فعّالة عمومًا، ولا نوصي بنسخها إلى مخططك المخصص، فإن فهارس التخطي قد تظل مفيدة.
+
+ينبغي لك قراءة [دليل الفهارس الثانوية](/ar/concepts/features/performance/skip-indexes/skipping-indexes) وفهمه قبل محاولة تطبيقها.
+
+**وعمومًا، تكون فعّالة عندما توجد علاقة ارتباط قوية بين المفتاح الأساسي والعمود/التعبير المستهدف غير الأساسي، وعندما يبحث المستخدمون عن قيم نادرة، أي القيم التي لا تظهر في عدد كبير من الحبيبات.**
+
+<div id="text-index-for-full-text-search">
+  ### فهرس نصي للبحث النصي الكامل
+</div>
+
+يوفّر ClickHouse [فهرسًا نصيًا](/ar/reference/engines/table-engines/mergetree-family/textindexes) مخصّصًا للبحث النصي الكامل.
+ويُنشئ هذا الفهرس فهرسًا معكوسًا للبيانات النصية المُجزأة إلى رموز، مما يتيح استعلامات بحث سريعة قائمة على الرموز.
+
+تتوفر الفهارس النصية بدءًا من الإصدار 26.2 من ClickHouse.
+
+يمكن تعريفها على أنواع الأعمدة التالية في جداول MergeTree: [String](/ar/reference/data-types/string)، و[FixedString](/ar/reference/data-types/fixedstring)، و[Array(String)](/ar/reference/data-types/array)، و[Array(FixedString)](/ar/reference/data-types/array)، وأعمدة [Map](/ar/reference/data-types/map) (باستخدام دالتي الخرائط [mapKeys](/ar/reference/functions/regular-functions/tuple-map-functions#mapKeys) و[mapValues](/ar/reference/functions/regular-functions/tuple-map-functions#mapValues)).
+
+يتطلب الفهرس النصي وسيط `tokenizer` في تعريفه. واختياريًا، يمكن تحديد دالة للمعالجة المسبقة لتحويل سلسلة الإدخال قبل تجزئتها إلى رموز.
+
+الدالتان الموصى بهما للبحث في الفهرس هما: `hasAnyTokens` و`hasAllTokens`.
+كما تُحسَّن بعض دوال البحث التقليدية في السلاسل النصية تلقائيًا عند وجود فهرس نصي.
+راجع التوثيق للاطلاع على التفاصيل والدوال المدعومة [هنا](/ar/reference/engines/table-engines/mergetree-family/textindexes#using-a-text-index) و[هنا](/ar/reference/engines/table-engines/mergetree-family/textindexes#functions-example-hasanytokens-hasalltokens).
+
+في الأمثلة أدناه، نستخدم مجموعة بيانات لسجلات مهيكلة.
+
+```sql
+CREATE TABLE otel_logs
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8
+)
+ENGINE = MergeTree
+ORDER BY Timestamp
+SETTINGS index_granularity = 8192
+```
+
+يمكننا أيضًا استخدام `hasAnyTokens` من دون فهرس نصي، لكن الاستعلام سينفّذ فحصًا كاملًا بطيئًا لعمود Body:
+
+```sql
+SELECT count()
+FROM otel_logs
+WHERE hasAllTokens(Body, ['Connection', 'accepted'])
+```
+
+```response
+Query id: ff0b866c-6df7-47be-9e36-795ef3888169
+
+   ┌─count()─┐
+1. │   27281 │
+   └─────────┘
+
+1 row in set. Elapsed: 0.584 sec. Processed 19.95 million rows, 3.08 GB (34.15 million rows/s., 5.27 GB/s.)
+```
+
+<div id="adding-a-text-index">
+  #### إضافة فهرس نصي
+</div>
+
+يمكن إضافة فهرس نصي إلى العمود Body عند إنشاء الجدول:
+
+```sql
+CREATE TABLE otel_logs_index_body
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8,
+         INDEX idx_body Body TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 100000000
+)
+ENGINE = MergeTree
+ORDER BY Timestamp
+SETTINGS index_granularity = 8192
+```
+
+أو يمكن إضافته لاحقًا باستخدام `ALTER TABLE`:
+
+```sql
+ALTER TABLE otel_logs ADD INDEX idx_body Body TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 100000000;
+ALTER TABLE otel_logs MATERIALIZE INDEX idx_body;
+```
+
+إذا شغّلنا استعلام SELECT نفسه مرة أخرى، فسيُجري عملية بحث في الفهرس النصي.
+ستنخفض كمية البيانات التي يجري الوصول إليها من غيغابايتات إلى ميغابايتات، وسيتحسن الأداء بنحو 45 ضعفًا.
+
+```sql
+SELECT count()
+FROM otel_logs_index_body
+WHERE hasAllTokens(Body, ['Connection', 'accepted'])
+```
+
+```response
+Query id: ebc31a94-92b3-48aa-860a-939d7e788ef4
+
+   ┌─count()─┐
+1. │   27281 │
+   └─────────┘
+
+1 row in set. Elapsed: 0.013 sec. Processed 20.41 million rows, 20.41 MB (1.59 billion rows/s., 1.59 GB/s.)
+Peak memory usage: 15.23 MiB.
+```
+
+<div id="using-a-preprocessor">
+  #### استخدام مُعالج مسبق
+</div>
+
+في مجموعة البيانات هذه، يحتوي العمود Body على سلسلة بتنسيق JSON تضم عدة أزواج مفتاح-قيمة (مثل `msg` و`id` و`ctx` و`attr` وغيرها).
+
+لنفترض أننا مهتمون فقط بالبحث داخل الحقل `msg`.
+وبدلًا من فهرسة سلسلة JSON بالكامل، يمكننا تعريف مُعالج مسبق لاستخراج قيمة `msg` فقط قبل التجزئة إلى رموز.
+
+على سبيل المثال:
+
+```sql
+ INDEX idx_text Body TYPE text(tokenizer = splitByNonAlpha,
+                               preprocessor = JSONExtract(Body, 'msg', 'String'))
+```
+
+في هذا المثال، يقوم المعالج المسبق بما يلي:
+
+* تقليل كمية النص التي تُجزَّأ إلى رموز وتُفهرس،
+* تقليل حجم الفهرس،
+* تقليل احتمالية النتائج الإيجابية الكاذبة، و
+* تحسين أداء الاستعلامات.
+
+```sql
+SELECT count()
+FROM otel_logs_text_body_preprocessed
+WHERE hasAllTokens(Body, ['Connection', 'accepted'])
+```
+
+```response
+Query id: f6a5cd9c-665f-4e4f-82f2-d6a4408a68a8
+
+   ┌─count()─┐
+1. │   27281 │
+   └─────────┘
+
+1 row in set. Elapsed: 0.006 sec. Processed 13.54 million rows, 13.54 MB (2.45 billion rows/s., 2.45 GB/s.)
+Peak memory usage: 1.95 MiB.
+```
+
+مقارنةً بالفهرس غير المُعالَج مسبقًا، يتحسن الأداء إلى نحو الضعف تقريبًا.
+
+ويؤدي استخدام مُعالج مسبق أيضًا إلى تقليص حجم الفهرس من غيغابايتات إلى بضع مئات من الكيلوبايتات، أي ما يقارب 0.01% من حجمه الأصلي
+
+```sql
+SELECT
+    `table`,
+    formatReadableSize(data_compressed_bytes) AS compressed_size,
+    formatReadableSize(data_uncompressed_bytes) AS uncompressed_size
+FROM system.data_skipping_indices
+WHERE startsWith(`table`, 'otel_logs')
+```
+
+```response
+Query id: 730e4b77-e697-40b3-a24d-67219ec42075
+
+   ┌─table───────────────────────────────────┬─compressed_size─┬─uncompressed_size─┐
+1. │ otel_logs_text_index_body_preprocessed  │ 423.98 KiB      │ 424.29 KiB        │
+2. │ otel_logs_text_index_body               │ 2.76 GiB        │ 2.78 GiB          │
+   └─────────────────────────────────────────┴─────────────────┴───────────────────┘
+```
+
+**فهارس أخرى للبحث النصي
+
+يمكن الاطلاع على مزيد من التفاصيل حول فهارس التخطي الثانوية [هنا](/ar/concepts/features/performance/skip-indexes/skipping-indexes#skip-index-functions).
+
+<details markdown="1">
+  <summary>مرشحات Bloom للبحث في النصوص</summary>
+
+  <Note>
+    لم يعد يُنصح باستخدام فهارس `ngrambf_v1` و`tokenbf_v1` للبحث النصي الكامل.
+  </Note>
+
+  يمكن استخدام فهارس bloom filter المستندة إلى n-gram والرموز [`ngrambf_v1`](/ar/concepts/features/performance/skip-indexes/skipping-indexes#bloom-filter-types) و[`tokenbf_v1`](/ar/concepts/features/performance/skip-indexes/skipping-indexes#bloom-filter-types) لتسريع عمليات البحث في أعمدة String باستخدام العوامل `LIKE` و`IN` وhasToken. والجدير بالذكر أن الفهرس المستند إلى الرموز يُولّد الرموز باستخدام الأحرف غير الأبجدية الرقمية فاصلًا بينها، مما يعني أنه لا يمكن مطابقة سوى الرموز الكاملة (أي الكلمات بأكملها) في وقت الاستعلام. أما للحصول على مطابقة أكثر دقةً، فيمكن الاستعانة بـ[فهرس N-gram bloom filter](/ar/concepts/features/performance/skip-indexes/skipping-indexes#bloom-filter-types)، الذي يُقسّم السلاسل النصية إلى ngrams بحجم محدد، مما يُتيح مطابقة أجزاء الكلمات.
+
+  لتقييم الرموز المميزة التي سيتم إنتاجها ومطابقتها، يمكن استخدام دالة `tokens`:
+
+  ```sql
+  SELECT tokens('https://www.zanbil.ir/m/filter/b113')
+  ```
+
+  ```response
+  ┌─tokens────────────────────────────────────────────┐
+  │ ['https','www','zanbil','ir','m','filter','b113'] │
+  └───────────────────────────────────────────────────┘
+
+  1 row in set. Elapsed: 0.008 sec.
+  ```
+
+  توفر دالة `ngram` إمكانات مماثلة، إذ يمكن تحديد حجم `ngram` كمعامل ثانٍ:
+
+  ```sql
+  SELECT ngrams('https://www.zanbil.ir/m/filter/b113', 3)
+  ```
+
+  ```response
+  ┌─ngrams('https://www.zanbil.ir/m/filter/b113', 3)────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ ['htt','ttp','tps','ps:','s:/','://','//w','/ww','www','ww.','w.z','.za','zan','anb','nbi','bil','il.','l.i','.ir','ir/','r/m','/m/','m/f','/fi','fil','ilt','lte','ter','er/','r/b','/b1','b11','113'] │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  1 row in set. Elapsed: 0.008 sec.
+  ```
+
+  لأغراض هذا المثال، نستخدم مجموعة بيانات السجلات المنظَّمة. لنفترض أننا نريد حساب عدد السجلات التي يحتوي فيها عمود `Referer` على `ultra`.
+
+  ```sql
+  SELECT count()
+  FROM otel_logs_v2
+  WHERE Referer LIKE '%ultra%'
+  ```
+
+  ```response
+  ┌─count()─┐
+  │  114514 │
+  └─────────┘
+
+  1 row in set. Elapsed: 0.177 sec. Processed 10.37 million rows, 908.49 MB (58.57 million rows/s., 5.13 GB/s.)
+  ```
+
+  نحتاج هنا إلى المطابقة بحجم ngram مقداره 3. لذا، سننشئ فهرس `ngrambf_v1`.
+
+  ```sql
+  CREATE TABLE otel_logs_bloom
+  (
+          `Body` String,
+          `Timestamp` DateTime,
+          `ServiceName` LowCardinality(String),
+          `Status` UInt16,
+          `RequestProtocol` LowCardinality(String),
+          `RunTime` UInt32,
+          `Size` UInt32,
+          `UserAgent` String,
+          `Referer` String,
+          `RemoteUser` String,
+          `RequestType` LowCardinality(String),
+          `RequestPath` String,
+          `RemoteAddress` IPv4,
+          `RefererDomain` String,
+          `RequestPage` String,
+          `SeverityText` LowCardinality(String),
+          `SeverityNumber` UInt8,
+          INDEX idx_span_attr_value Referer TYPE ngrambf_v1(3, 10000, 3, 7) GRANULARITY 1
+  )
+  ENGINE = MergeTree
+  ORDER BY (Timestamp)
+  ```
+
+  يأخذ الـ index هنا `ngrambf_v1(3, 10000, 3, 7)` أربعة parameters. يمثّل آخرها (القيمة 7) الـ seed، فيما تمثّل البقية حجم الـ ngram (3)، والقيمة `m` (حجم الـ filter)، وعدد الـ hash functions `k` (7). يستلزم كلٌّ من `k` و`m` ضبطًا دقيقًا، ويعتمد ذلك على عدد الـ ngrams/tokens الفريدة واحتمالية أن يُنتج الـ filter نتيجةً سلبيةً حقيقية — مما يؤكد غياب قيمة معينة في الـ granule. نوصي بالاستعانة بـ[هذه الدوال](/ar/reference/engines/table-engines/mergetree-family/mergetree#bloom-filter) للمساعدة في تحديد هذه القيم.
+
+  عند الضبط الصحيح، يمكن أن يكون تحسّن الأداء هنا ملحوظاً:
+
+  ```sql
+  SELECT count()
+  FROM otel_logs_bloom
+  WHERE Referer LIKE '%ultra%'
+  ```
+
+  ```response
+  ┌─count()─┐
+  │   182   │
+  └─────────┘
+
+  1 row in set. Elapsed: 0.077 sec. Processed 4.22 million rows, 375.29 MB (54.81 million rows/s., 4.87 GB/s.)
+  Peak memory usage: 129.60 KiB.
+  ```
+
+  <Info>
+    **مثال فقط**
+
+    ما سبق هو لأغراض التوضيح فحسب. نوصي المستخدمين باستخراج البنية من السجلات عند الإدراج، بدلًا من محاولة تحسين البحث النصي باستخدام مرشحات bloom المعتمدة على الرموز. ومع ذلك، هناك حالات تكون لدى المستخدمين فيها تتبعات مكدس أو قيم Strings كبيرة أخرى، حيث يمكن أن يكون البحث النصي مفيدًا بسبب بنية أقل حتمية.
+  </Info>
+
+  بعض الإرشادات العامة حول استخدام مرشحات بلوم:
+
+  الهدف من bloom filter هو تصفية [الـ granules](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design)، وبذلك تجنّب الحاجة إلى تحميل جميع القيم الخاصة بعمود ما وإجراء مسح خطي. يمكن استخدام جملة `EXPLAIN` مع المعامل `indexes=1` لتحديد عدد الـ granules التي جرى تخطّيها. تأمّل الاستجابات أدناه للجدول الأصلي `otel_logs_v2` والجدول `otel_logs_bloom` المزوّد بـ ngram bloom filter.
+
+  ```sql
+  EXPLAIN indexes = 1
+  SELECT count()
+  FROM otel_logs_v2
+  WHERE Referer LIKE '%ultra%'
+  ```
+
+  ```response
+  ┌─explain────────────────────────────────────────────────────────────┐
+  │ Expression ((Project names + Projection))                          │
+  │   Aggregating                                                      │
+  │       Expression (Before GROUP BY)                                 │
+  │       Filter ((WHERE + Change column names to column identifiers)) │
+  │       ReadFromMergeTree (default.otel_logs_v2)                     │
+  │       Indexes:                                                     │
+  │               PrimaryKey                                           │
+  │               Condition: true                                      │
+  │               Parts: 9/9                                           │
+  │               Granules: 1278/1278                                  │
+  └────────────────────────────────────────────────────────────────────┘
+
+  10 rows in set. Elapsed: 0.016 sec.
+  ```
+
+  ```sql
+  EXPLAIN indexes = 1
+  SELECT count()
+  FROM otel_logs_bloom
+  WHERE Referer LIKE '%ultra%'
+  ```
+
+  ```response
+  ┌─explain────────────────────────────────────────────────────────────┐
+  │ Expression ((Project names + Projection))                          │
+  │   Aggregating                                                      │
+  │       Expression (Before GROUP BY)                                 │
+  │       Filter ((WHERE + Change column names to column identifiers)) │
+  │       ReadFromMergeTree (default.otel_logs_bloom)                  │
+  │       Indexes:                                                     │
+  │               PrimaryKey                                           │ 
+  │               Condition: true                                      │
+  │               Parts: 8/8                                           │
+  │               Granules: 1276/1276                                  │
+  │               Skip                                                 │
+  │               Name: idx_span_attr_value                            │
+  │               Description: ngrambf_v1 GRANULARITY 1                │
+  │               Parts: 8/8                                           │
+  │               Granules: 517/1276                                   │
+  └────────────────────────────────────────────────────────────────────┘
+  ```
+
+  عادةً لا يكون bloom filter أسرع إلا إذا كان حجمه أصغر من حجم العمود نفسه. أما إذا كان أكبر، فمن المرجح ألا يكون هناك تحسّن يُذكر في الأداء. قارن حجم الفلتر بحجم العمود باستخدام الاستعلامات التالية:
+
+  ```sql
+  SELECT
+          name,
+          formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+          formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+          round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+  FROM system.columns
+  WHERE (`table` = 'otel_logs_bloom') AND (name = 'Referer')
+  GROUP BY name
+  ORDER BY sum(data_compressed_bytes) DESC
+  ```
+
+  ```response
+  ┌─name────┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+  │ Referer │ 56.16 MiB       │ 789.21 MiB        │ 14.05 │
+  └─────────┴─────────────────┴───────────────────┴───────┘
+
+  1 row in set. Elapsed: 0.018 sec.
+  ```
+
+  ```sql
+  SELECT
+          `table`,
+          formatReadableSize(data_compressed_bytes) AS compressed_size,
+          formatReadableSize(data_uncompressed_bytes) AS uncompressed_size
+  FROM system.data_skipping_indices
+  WHERE `table` = 'otel_logs_bloom'
+  ```
+
+  ```response
+  ┌─table───────────┬─compressed_size─┬─uncompressed_size─┐
+  │ otel_logs_bloom │ 12.03 MiB       │ 12.17 MiB         │
+  └─────────────────┴─────────────────┴───────────────────┘
+
+  1 row in set. Elapsed: 0.004 sec.
+  ```
+
+  في الأمثلة أعلاه، يمكننا ملاحظة أن فهرس bloom filter الثانوي يبلغ 12 ميغابايت - أي أصغر بنحو 5 أضعاف من الحجم المضغوط للعمود نفسه البالغ 56 ميغابايت.
+
+  قد تستلزم bloom filters ضبطًا دقيقًا مكثفًا. نوصي بمراجعة الملاحظات الواردة [هنا](/ar/reference/engines/table-engines/mergetree-family/mergetree#bloom-filter)، إذ قد تُفيد في تحديد الإعدادات المثلى. كما أن bloom filters قد تُشكّل عبئًا على الأداء أثناء عمليات الإدراج والدمج. لذا، يُنصح بتقييم تأثيرها على أداء الإدراج قبل إضافتها إلى بيئة الإنتاج.
+</details>
+
+<div id="extracting-from-maps">
+  ### الاستخراج من قيم Map
+</div>
+
+ينتشر نوع Map على نطاق واسع في مخططات OTel. ويتطلب هذا النوع أن تكون المفاتيح والقيم من النوع نفسه، وهو ما يكفي للبيانات الوصفية مثل وسوم Kubernetes. انتبه إلى أنه عند الاستعلام عن مفتاح فرعي ضمن نوع Map، يُحمَّل العمود الأب بالكامل. وإذا كانت الخريطة تحتوي على مفاتيح كثيرة، فقد يفرض ذلك عبئًا كبيرًا على الاستعلام، إذ يلزم قراءة بيانات من القرص أكثر مما لو كان المفتاح موجودًا كعمود.
+
+إذا كنت تستعلم كثيرًا عن مفتاح محدد، ففكّر في نقله إلى عمود مخصص مستقل على المستوى الجذري. وعادةً ما يتم ذلك استجابةً لأنماط الوصول الشائعة بعد النشر، وقد يصعب توقّعه قبل بيئة الإنتاج. راجع [&quot;إدارة تغييرات المخطط&quot;](/ar/guides/use-cases/observability/build-your-own/managing-data#managing-schema-changes) لمعرفة كيفية تعديل مخططك بعد النشر.
+
+<div id="measuring-table-size--compression">
+  ## قياس حجم الجدول والضغط
+</div>
+
+يُعد الضغط أحد الأسباب الرئيسية لاستخدام ClickHouse في Observability.
+
+فإلى جانب خفض تكاليف التخزين بشكل كبير، فإن تقليل حجم البيانات على القرص يعني تقليل عمليات I/O وتسريع الاستعلامات وعمليات الإدراج. كما أن الانخفاض في IO يفوق الكلفة الإضافية لأي خوارزمية ضغط من ناحية CPU. لذلك، ينبغي أن يكون تحسين ضغط البيانات محور التركيز الأول عند العمل على ضمان سرعة استعلامات ClickHouse.
+
+يمكن العثور على تفاصيل حول قياس الضغط [هنا](/ar/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).

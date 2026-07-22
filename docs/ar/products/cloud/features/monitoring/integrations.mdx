@@ -1,0 +1,36 @@
+---
+title: 'تكاملات المجتمع والشركاء'
+slug: /cloud/monitoring/integrations
+description: 'تكاملات مراقبة من جهات خارجية وواجهة برمجة تطبيقات الفوترة والاستخدام لـ ClickHouse Cloud'
+keywords: ['cloud', 'monitoring', 'datadog', 'grafana', 'community', 'billing', 'usage api']
+sidebarTitle: 'التكاملات'
+doc_type: 'guide'
+---
+
+import CommunityMonitoring from '/snippets/ar/_community_monitoring.mdx';
+
+<div id="direct-datadog">
+  ## تكامل Datadog المباشر
+</div>
+
+يوفّر Datadog إضافة ClickHouse Monitoring لوكيله، والتي تستعلم مباشرةً من جداول النظام. يوفّر هذا التكامل مراقبة شاملة لقاعدة البيانات مع وعيٍ بالعُنقود من خلال وظيفة `clusterAllReplicas`.
+
+<Warning>
+  **غير موصى به لـ ClickHouse Cloud**
+
+  لا يُنصح باستخدام تكامل وكيل Datadog المباشر الذي يستعلم من جداول النظام في عمليات النشر على ClickHouse Cloud، بسبب عدم توافقه مع سلوك الخمول المُحسَّن للتكلفة وقيود التشغيل في طبقة الوكيل السحابي.
+</Warning>
+
+بدلاً من ذلك، استخدم [Agent](https://docs.datadoghq.com/agent/?tab=Linux) و[تكامل OpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/) في Datadog لجمع المقاييس من نقطة نهاية ClickHouse Cloud Prometheus. يراعي هذا النهج سلوك خمول الخدمة ويحافظ على الفصل التشغيلي بين المراقبة وأحمال العمل في بيئة الإنتاج. للحصول على إرشادات التهيئة، راجع [وثائق Datadog لتكاملَي Prometheus وOpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/).
+
+للاطلاع على تفاصيل إعداد نقطة نهاية Prometheus، راجع [صفحة تكامل Prometheus](/ar/products/cloud/features/monitoring/prometheus#integrating-with-datadog).
+
+<CommunityMonitoring />
+
+<div id="billing-usage-api">
+  ## واجهة برمجة تطبيقات الفوترة والاستخدام
+</div>
+
+يمكن استخدام واجهة برمجة تطبيقات الفوترة والاستخدام للوصول برمجيًا إلى سجلات الفوترة والاستخدام الخاصة بمؤسستك على Cloud. ويُعد ذلك مفيدًا لإنشاء لوحات معلومات مخصصة لمراقبة التكاليف أو لدمج بيانات الفوترة في مسارات عمل إعداد التقارير المالية الحالية.
+
+للاطلاع على المرجع الكامل لواجهة برمجة التطبيقات، راجع [وثائق Billing API](/ar/api-reference/organization/get-list-of-available-organizations#tag/Billing).

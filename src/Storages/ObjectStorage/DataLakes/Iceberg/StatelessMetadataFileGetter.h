@@ -3,17 +3,14 @@
 #if USE_AVRO
 
 #include <cstddef>
-#include <Common/Exception.h>
 
 
-#include <Core/NamesAndTypes.h>
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 

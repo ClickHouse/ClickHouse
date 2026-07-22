@@ -1,0 +1,42 @@
+---
+sidebarTitle: 'Omni'
+slug: /integrations/omni
+keywords: ['clickhouse', 'Omni', 'connect', 'integrate', 'ui']
+description: 'Omni is an enterprise platform for BI, data applications, and embedded analytics that helps you explore and share insights in real time.'
+title: 'Omni'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
+import { Image } from "/snippets/components/Image.jsx";
+
+import PartnerBadge from "/snippets/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge/>
+
+Omni can connect to ClickHouse Cloud or on-premise deployment via the official ClickHouse data source.
+
+<Steps>
+<Step title="Gather your connection details" id="1-gather-your-connection-details">
+
+<ConnectionDetails />
+
+</Step>
+<Step title="Create a ClickHouse data source" id="2-create-a-clickhouse-data-source">
+
+Navigate to Admin -> Connections and click the "Add Connection" button in the top right corner.
+
+<Image size="lg" img="/images/integrations/data-visualization/omni_01.webp" alt="Omni admin interface showing the Add Connection button in the Connections section" border />
+<br/>
+
+Select `ClickHouse`. Enter your credentials in the form.
+
+<Image size="lg" img="/images/integrations/data-visualization/omni_02.webp" alt="Omni connection configuration interface for ClickHouse showing credential form fields" border />
+<br/>
+
+Now you should can query and visualize data from ClickHouse in Omni.
+</Step>
+</Steps>

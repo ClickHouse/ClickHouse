@@ -1,0 +1,215 @@
+---
+sidebarTitle: 'Splunk'
+slug: /integrations/splunk
+keywords: ['Splunk', 'تكامل', 'تصور البيانات']
+description: 'ربط لوحات معلومات Splunk بـ ClickHouse'
+title: 'ربط Splunk بـ ClickHouse'
+doc_type: 'دليل'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+<Tip>
+  هل تريد تخزين سجلات التدقيق في ClickHouse داخل Splunk؟ اتبع دليل [&quot;Storing ClickHouse Cloud Audit logs into Splunk&quot;](/ar/integrations/connectors/data-integrations/integrations/splunk).
+</Tip>
+
+يُعد Splunk تقنية شائعة في مجال الأمن وobservability. كما أنه محرك قوي للبحث وإنشاء لوحات المعلومات. وتتوفر مئات تطبيقات Splunk لتلبية حالات استخدام مختلفة.
+
+أما بالنسبة إلى ClickHouse تحديدًا، فنحن نعتمد على [Splunk تطبيق DB Connect App](https://splunkbase.splunk.com/app/2686)، الذي يوفّر تكاملًا بسيطًا مع برنامج تشغيل ClickHouse JDBC عالي الأداء للاستعلام عن الجداول في ClickHouse مباشرةً.
+
+وتكون حالة الاستخدام المثالية لهذا التكامل عندما تستخدم ClickHouse مع مصادر بيانات كبيرة، مثل بيانات NetFlow أو Avro أو Protobuf الثنائية، وDNS، وVPC flow logs، وسجلات OTel الأخرى، بحيث يمكن مشاركتها مع فريقك في Splunk للبحث وإنشاء لوحات المعلومات. وباستخدام هذا النهج، لا تُدخَل البيانات إلى طبقة الفهرسة في Splunk، بل يُستعلَم عنها مباشرةً من ClickHouse، على غرار تكاملات التصور الأخرى مثل [Metabase](https://www.metabase.com/) أو [Superset](https://superset.apache.org/).
+
+<div id="goal">
+  ## الهدف​
+</div>
+
+في هذا الدليل، سنستخدم برنامج تشغيل ClickHouse JDBC لربط ClickHouse بـ Splunk. سنثبّت إصدارًا محليًا من Splunk Enterprise، لكننا لن نفهرس أي بيانات. وبدلًا من ذلك، سنستخدم وظائف البحث عبر محرك الاستعلام في DB Connect.
+
+باستخدام هذا الدليل، ستتمكن من إنشاء لوحة معلومات متصلة بـ ClickHouse مشابهة لهذه:
+
+<Image img="/images/integrations/splunk/splunk-1.webp" size="lg" border alt="لوحة معلومات في Splunk تعرض تصورات لبيانات سيارات الأجرة في مدينة نيويورك" />
+
+<Note>
+  يستخدم هذا الدليل [مجموعة بيانات سيارات الأجرة في مدينة نيويورك](/ar/get-started/sample-datasets/nyc-taxi). وهناك العديد من مجموعات البيانات الأخرى التي يمكنك استخدامها من [وثائقنا](http://localhost:3000/docs/getting-started/example-datasets).
+</Note>
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+قبل البدء، ستحتاج إلى ما يلي:
+
+* Splunk Enterprise لاستخدام وظائف Search Head
+* تثبيت متطلبات [Java Runtime Environment (JRE)](https://docs.splunk.com/Documentation/DBX/3.16.0/DeployDBX/Prerequisites) على نظام التشغيل أو الحاوية
+* [Splunk DB Connect](https://splunkbase.splunk.com/app/2686)
+* صلاحية وصول Admin أو SSH إلى مثيل نظام التشغيل الخاص بـ Splunk Enterprise
+* تفاصيل الاتصال بـ ClickHouse (راجع [هنا](/ar/integrations/connectors/data-visualization/metabase-and-clickhouse#1-gather-your-connection-details) إذا كنت تستخدم ClickHouse Cloud)
+
+<div id="install-and-configure-db-connect-on-splunk-enterprise">
+  ## ثبّت DB Connect واضبطه على Splunk Enterprise
+</div>
+
+يجب أولاً تثبيت بيئة تشغيل Java على مثيل Splunk Enterprise لديك. إذا كنت تستخدم Docker، يمكنك استخدام الأمر `microdnf install java-11-openjdk`.
+
+دوّن مسار `java_home`: `java -XshowSettings:properties -version`.
+
+تأكّد من أن تطبيق DB Connect App مثبّت على Splunk Enterprise. يمكنك العثور عليه في قسم Apps ضمن واجهة Splunk Web:
+
+* سجّل الدخول إلى Splunk Web وانتقل إلى Apps &gt; Find More Apps
+* استخدم مربع البحث للعثور على DB Connect
+* انقر على زر &quot;Install&quot; الأخضر بجوار Splunk DB Connect
+* انقر على &quot;Restart Splunk&quot;
+
+إذا واجهت مشكلات أثناء تثبيت تطبيق DB Connect App، فيُرجى الرجوع إلى [هذا الرابط](https://splunkbase.splunk.com/app/2686) للحصول على تعليمات إضافية.
+
+بعد التأكد من تثبيت تطبيق DB Connect App، أضف مسار `java_home` إلى تطبيق DB Connect App ضمن Configuration -&gt; Settings، ثم انقر على save وبعدها reset.
+
+<Image img="/images/integrations/splunk/splunk-2.webp" size="md" border alt="صفحة إعدادات Splunk DB Connect التي تعرض إعداد Java Home" />
+
+<div id="configure-jdbc-for-clickhouse">
+  ## تهيئة JDBC لـ ClickHouse
+</div>
+
+نزّل [ملف JAR لبرنامج تشغيل ClickHouse JDBC](https://github.com/ClickHouse/clickhouse-java/releases/) وانسخه إلى مجلد DB Connect Drivers على المسار التالي:
+
+```bash
+$SPLUNK_HOME/etc/apps/splunk_app_db_connect/drivers
+```
+
+لضمان توفّر جميع التبعيات المطلوبة لتطبيق DB Connect App، نزّل أحد ما يلي:
+
+```text
+- clickhouse-jdbc-<VERSION>-shaded-all.jar (if VERSION < 0.9.0)
+- clickhouse-jdbc-<VERSION>-all-dependencies.jar (if VERSION >= 0.9.0)
+```
+
+يجب بعد ذلك تعديل إعدادات أنواع الاتصال في `$SPLUNK_HOME/etc/apps/splunk_app_db_connect/local/db_connection_types.conf` لإضافة تفاصيل الفئة الخاصة بـ ClickHouse JDBC Driver. أضف المقطع التالي إلى `db_connection_types.conf`:
+
+```text
+[ClickHouse]
+displayName = ClickHouse
+serviceClass = com.splunk.dbx2.DefaultDBX2JDBC
+jdbcUrlFormat = jdbc:ch://<host>:<port>/<database>
+jdbcUrlSSLFormat = jdbc:ch://<host>:<port>/<database>?ssl=true
+jdbcDriverClass = com.clickhouse.jdbc.ClickHouseDriver
+ui_default_catalog = $database$
+```
+
+أعد تشغيل Splunk باستخدام `$SPLUNK_HOME/bin/splunk restart`.
+
+ارجع إلى تطبيق DB Connect App، ثم انتقل إلى Configuration &gt; Settings &gt; Drivers. ينبغي أن ترى علامة صح خضراء بجوار ClickHouse:
+
+<Image img="/images/integrations/splunk/splunk-3.webp" size="lg" border alt="صفحة برامج التشغيل في Splunk DB Connect تعرض تثبيت برنامج تشغيل ClickHouse بنجاح" />
+
+<div id="connect-splunk-search-to-clickhouse">
+  ## ربط بحث Splunk بـ ClickHouse
+</div>
+
+انتقل إلى تطبيق DB Connect App Configuration -&gt; Databases -&gt; Identities، ثم أنشئ هوية لـ ClickHouse.
+
+أنشئ اتصالًا جديدًا بـ ClickHouse من Configuration -&gt; Databases -&gt; Connections، ثم اختر &quot;New Connection&quot;.
+
+<Image img="/images/integrations/splunk/splunk-4.webp" size="sm" border alt="زر اتصال جديد في Splunk DB Connect" />
+
+<br />
+
+أضف بيانات مضيف ClickHouse، وتأكد من تحديد &quot;Enable SSL&quot;:
+
+<Image img="/images/integrations/splunk/splunk-5.webp" size="md" border alt="صفحة إعداد اتصال Splunk لـ ClickHouse" />
+
+بعد حفظ الاتصال، ستكون قد نجحت في توصيل ClickHouse بـ Splunk!
+
+<Note>
+  إذا ظهرت لك رسالة خطأ، فتأكد من إضافة عنوان IP الخاص بمثيل Splunk إلى IP Access List في ClickHouse Cloud. راجع [الوثائق](/ar/products/cloud/guides/security/connectivity/setting-ip-filters) لمزيد من المعلومات.
+</Note>
+
+<div id="run-a-sql-query">
+  ## شغّل استعلام SQL
+</div>
+
+سنشغّل الآن استعلام SQL للتأكّد من أن كل شيء يعمل كما ينبغي.
+
+حدِّد تفاصيل الاتصال في SQL Explorer ضمن قسم DataLab في تطبيق DB Connect App. سنستخدم جدول `trips` في هذا العرض التوضيحي:
+
+<Image img="/images/integrations/splunk/splunk-6.webp" size="md" border alt="يحدِّد SQL Explorer في Splunk اتصالًا بـ ClickHouse" />
+
+نفِّذ استعلام SQL على جدول `trips` لإرجاع عدد جميع السجلات في الجدول:
+
+<Image img="/images/integrations/splunk/splunk-7.webp" size="md" border alt="تنفيذ استعلام SQL في Splunk لعرض عدد السجلات في جدول trips" />
+
+إذا نُفِّذ الاستعلام بنجاح، فسترى النتائج.
+
+<div id="create-a-dashboard">
+  ## أنشئ لوحة معلومات
+</div>
+
+لننشئ لوحة معلومات تستفيد من مزيج من SQL ولغة المعالجة القوية من Splunk ‏(SPL).
+
+قبل المتابعة، يجب أولاً [تعطيل وسائل الحماية الخاصة بـ DPL](https://docs.splunk.com/Documentation/Splunk/9.2.1/Security/SPLsafeguards?ref=hk#Deactivate_SPL_safeguards).
+
+شغّل الاستعلام التالي الذي يوضّح أكثر 10 أحياء تسجيلاً لعمليات الالتقاط:
+
+```sql
+dbxquery query="SELECT pickup_ntaname, count(*) AS count
+FROM default.trips GROUP BY pickup_ntaname
+ORDER BY count DESC LIMIT 10;" connection="chc"
+```
+
+اختر علامة تبويب التصور لعرض مخطط الأعمدة الذي تم إنشاؤه:
+
+<Image img="/images/integrations/splunk/splunk-8.webp" size="lg" border alt="تصور لمخطط أعمدة في Splunk يعرض أفضل 10 أحياء لالتقاط الركاب" />
+
+سننشئ الآن لوحة معلومات بالنقر على Save As &gt; Save to a Dashboard.
+
+لنُضِف استعلامًا آخر يعرض متوسط الأجرة استنادًا إلى عدد الركاب.
+
+```sql
+dbxquery query="SELECT passenger_count,avg(total_amount)
+FROM default.trips GROUP BY passenger_count;" connection="chc"
+```
+
+هذه المرة، لنُنشئ تصورًا على هيئة مخطط أعمدة ونحفظه في لوحة المعلومات السابقة.
+
+<Image img="/images/integrations/splunk/splunk-9.webp" size="lg" border alt="مخطط أعمدة في Splunk يُظهر متوسط الأجرة حسب عدد الركاب" />
+
+أخيرًا، لنُضِف استعلامًا آخر يُظهر العلاقة بين عدد الركاب ومسافة الرحلة:
+
+```sql
+dbxquery query="SELECT passenger_count, toYear(pickup_datetime) AS year,
+round(trip_distance) AS distance, count(* FROM default.trips)
+GROUP BY passenger_count, year, distance
+ORDER BY year, count(*) DESC; " connection="chc"
+```
+
+ينبغي أن تبدو لوحة المعلومات النهائية لدينا كما يلي:
+
+<Image img="/images/integrations/splunk/splunk-10.webp" size="lg" border alt="لوحة معلومات Splunk النهائية مع تصورات متعددة لبيانات سيارات الأجرة في نيويورك" />
+
+<div id="time-series-data">
+  ## بيانات السلاسل الزمنية
+</div>
+
+يضم Splunk مئات الوظائف المضمنة التي يمكن للوحات المعلومات استخدامها لتصور بيانات السلاسل الزمنية وعرضها. يجمع هذا المثال بين SQL وSPL لإنشاء استعلام يمكنه العمل مع بيانات السلاسل الزمنية في Splunk
+
+```sql
+dbxquery query="SELECT time, orig_h, duration
+FROM "demo"."conn" WHERE time >= now() - interval 1 HOURS" connection="chc"
+| eval time = strptime(time, "%Y-%m-%d %H:%M:%S.%3Q")
+| eval _time=time
+| timechart avg(duration) as duration by orig_h
+| eval duration=round(duration/60)
+| sort - duration:
+```
+
+<div id="learn-more">
+  ## تعرّف على المزيد
+</div>
+
+إذا كنت ترغب في معرفة المزيد عن Splunk DB Connect وكيفية إنشاء لوحات المعلومات، فيُرجى زيارة [وثائق Splunk](https://docs.splunk.com/Documentation).

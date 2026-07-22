@@ -1,0 +1,50 @@
+---
+description: 'Documentation du type de données Date dans ClickHouse'
+sidebarTitle: 'Date'
+slug: /sql-reference/data-types/date
+title: 'Date'
+doc_type: 'reference'
+---
+
+Une date. Stockée sur deux octets sous forme du nombre de jours écoulés depuis le 1970-01-01 (non signé). Permet de stocker des valeurs allant de juste après le début de l’époque Unix jusqu’au seuil maximal défini par une constante à la compilation (actuellement, jusqu’à l’année 2149, mais la dernière année entièrement prise en charge est 2148).
+
+Plage de valeurs prise en charge : [1970-01-01, 2149-06-06].
+
+La valeur de date est stockée sans fuseau horaire.
+
+**Exemple**
+
+Création d’une table avec une colonne de type `Date` et insertion de données dans celle-ci :
+
+```sql
+CREATE TABLE dt
+(
+    `timestamp` Date,
+    `event_id` UInt8
+)
+ENGINE = TinyLog;
+```
+
+```sql
+-- Parse Date
+-- - from string,
+-- - from 'small' integer interpreted as number of days since 1970-01-01, and
+-- - from 'big' integer interpreted as number of seconds since 1970-01-01.
+INSERT INTO dt VALUES ('2019-01-01', 1), (17897, 2), (1546300800, 3);
+
+SELECT * FROM dt;
+```
+
+```text
+┌──timestamp─┬─event_id─┐
+│ 2019-01-01 │        1 │
+│ 2019-01-01 │        2 │
+│ 2019-01-01 │        3 │
+└────────────┴──────────┘
+```
+
+**Voir aussi**
+
+* [Fonctions de manipulation des dates et des heures](/fr/reference/functions/regular-functions/date-time-functions)
+* [Opérateurs de manipulation des dates et des heures](/fr/reference/operators/index#operators-for-working-with-dates-and-times)
+* [Type de données `DateTime`](/fr/reference/data-types/datetime)

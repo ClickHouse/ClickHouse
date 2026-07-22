@@ -1,3 +1,5 @@
+SET explain_query_plan_default = 'legacy';
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 
@@ -11,7 +13,8 @@ INSERT INTO users_04041 VALUES (1231, 'John', 33), (6666, 'Ksenia', 48),
 (8888, 'Alice', 50);
 
 EXPLAIN WITH a AS MATERIALIZED (SELECT * FROM users_04041)
-SELECT count() FROM a as l JOIN a as r ON l.uid = r.uid;
+SELECT count() FROM a as l JOIN a as r ON l.uid = r.uid
+SETTINGS enable_join_runtime_filters = 1;
 
 -- Materialized CTE referenced twice (prevents inlining).
 -- CTE subquery reads from MergeTree table → parallel replicas kicks in.

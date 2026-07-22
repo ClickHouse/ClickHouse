@@ -1,0 +1,301 @@
+---
+description: 'Azure Blob Storage 内のファイルに対して select/insert を行うためのテーブル形式インターフェイスを提供します。s3 関数に似ています。'
+keywords: ['azure blob storage']
+sidebarTitle: 'azureBlobStorage'
+slug: /sql-reference/table-functions/azureBlobStorage
+title: 'azureBlobStorage'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="azureblobstorage-table-function">
+  # azureBlobStorage テーブル関数
+</div>
+
+[Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) 内のファイルに対して select/insert を行うためのテーブル形式インターフェイスを提供します。このテーブル関数は [s3 関数](/ja/reference/functions/table-functions/s3) に似ています。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+<Tabs>
+  <Tab title="接続文字列">
+    認証情報は接続文字列に埋め込まれているため、`account_name`/`account_key` を別途指定する必要はありません。
+
+    ```sql
+    azureBlobStorage(connection_string, container_name, blobpath [, format, compression, structure])
+    ```
+  </Tab>
+
+  <Tab title="ストレージアカウント URL">
+    `account_name` と `account_key` を個別の引数として指定する必要があります。
+
+    ```sql
+    azureBlobStorage(storage_account_url, container_name, blobpath, account_name, account_key [, format, compression, structure])
+    ```
+  </Tab>
+
+  <Tab title="名前付きコレクション">
+    サポートされているキーの一覧については、後述の [名前付きコレクション](#named-collections) を参照してください。
+
+    ```sql
+    azureBlobStorage(named_collection[, option=value [,..]])
+    ```
+  </Tab>
+</Tabs>
+
+<div id="arguments">
+  ## 引数
+</div>
+
+| Argument                         | Description                                                                                                                                                                                                                                                                                                                                                                                   |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `connection_string`              | 埋め込みの認証情報 (アカウント名 + アカウントキー、または SAS トークン) を含む接続文字列です。この形式を使用する場合、`account_name` と `account_key` を別途渡しては**なりません**。[接続文字列の構成](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json\&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account)を参照してください。 |
+| `storage_account_url`            | ストレージアカウントのエンドポイント URL です (例: `https://myaccount.blob.core.windows.net/`) 。この形式を使用する場合は、`account_name` と `account_key` も**必ず**渡す必要があります。                                                                                                                                                                                                                                                      |
+| `container_name`                 | コンテナー名。                                                                                                                                                                                                                                                                                                                                                                                       |
+| `blobpath`                       | ファイルパスです。読み取り専用モードでは、次のワイルドカードをサポートします: `*`, `**`, `?`, `{abc,def}` および `{N..M}`。ここで、`N`、`M` は数値、`'abc'`、`'def'` は文字列です。                                                                                                                                                                                                                                                                      |
+| `account_name`                   | ストレージアカウント名。SAS なしで `storage_account_url` を使用する場合は**必須**です。`connection_string` を使用する場合は渡しては**なりません**。                                                                                                                                                                                                                                                                                         |
+| `account_key`                    | ストレージアカウントキー。SAS なしで `storage_account_url` を使用する場合は**必須**です。`connection_string` を使用する場合は渡しては**なりません**。                                                                                                                                                                                                                                                                                        |
+| `format`                         | ファイルの[フォーマット](/ja/reference/formats/index)です。                                                                                                                                                                                                                                                                                                                                                    |
+| `compression`                    | サポートされる値: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`。デフォルトでは、ファイル拡張子から圧縮方式を自動判定します (`auto` を設定した場合と同じです) 。                                                                                                                                                                                                                                                                         |
+| `structure`                      | テーブルの構造です。形式: `'column1_name column1_type, column2_name column2_type, ...'`。                                                                                                                                                                                                                                                                                                                  |
+| `partition_strategy`             | 任意。サポートされる値: `WILDCARD` または `HIVE`。`WILDCARD` では、パス内に `{_partition_id}` が必要で、これはパーティションキーに置き換えられます。`HIVE` ではワイルドカードは使用できず、パスがテーブルのルートであることを前提とし、ファイル名に Snowflake IDs、拡張子にファイルフォーマットを使用した Hive 形式のパーティションディレクトリを生成します。デフォルトは `file_like_engine_default_partition_strategy` 設定です (`26.6` より古い `compatibility` 設定では `WILDCARD`、それ以外では `HIVE`)。                                                   |
+| `partition_columns_in_data_file` | 任意。`HIVE` パーティション方式でのみ使用されます。データファイル内にパーティションカラムが書き込まれているものとして扱うかどうかを ClickHouse に指示します。デフォルトは `false` です。                                                                                                                                                                                                                                                                                    |
+| `extra_credentials`              | 認証には `client_id` と `tenant_id` を使用します。`extra_credentials` が指定されている場合、`account_name` と `account_key` よりも優先されます。                                                                                                                                                                                                                                                                                |
+
+<div id="named-collections">
+  ## 名前付きコレクション
+</div>
+
+引数は [名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections) を使って渡すこともできます。この場合、次のキーを使用できます。
+
+| Key                   | Required | Description                                                                              |
+| --------------------- | -------- | ---------------------------------------------------------------------------------------- |
+| `container`           | はい       | コンテナー名。位置引数 `container_name` に対応します。                                                     |
+| `blob_path`           | はい       | ファイルパス (必要に応じてワイルドカードを含む) 。位置引数 `blobpath` に対応します。                                       |
+| `connection_string`   | いいえ*     | 認証情報が埋め込まれた接続文字列。*`connection_string` または `storage_account_url` のいずれかを指定する必要があります。       |
+| `storage_account_url` | いいえ*     | ストレージアカウントのエンドポイント URL。*`connection_string` または `storage_account_url` のいずれかを指定する必要があります。 |
+| `account_name`        | いいえ      | `storage_account_url` を使用する場合に必要です                                                       |
+| `account_key`         | いいえ      | `storage_account_url` を使用する場合に必要です                                                       |
+| `format`              | いいえ      | ファイルフォーマット。                                                                              |
+| `compression`         | いいえ      | 圧縮タイプ。                                                                                   |
+| `structure`           | いいえ      | テーブル構造。                                                                                  |
+| `client_id`           | いいえ      | 認証用のクライアント ID。                                                                           |
+| `tenant_id`           | いいえ      | 認証用のテナント ID。                                                                             |
+
+<Note>
+  名前付きコレクションのキー名は、関数の位置引数名とは異なります。`container` は `container_name` ではなく、`blob_path` は `blobpath` ではありません。
+</Note>
+
+**例:**
+
+```sql
+CREATE NAMED COLLECTION azure_my_data AS
+    storage_account_url = 'https://myaccount.blob.core.windows.net/',
+    container = 'mycontainer',
+    blob_path = 'data/*.parquet',
+    account_name = 'myaccount',
+    account_key = 'mykey...==',
+    format = 'Parquet';
+
+SELECT *
+FROM azureBlobStorage(azure_my_data)
+LIMIT 5;
+```
+
+クエリ実行時に 名前付きコレクション の値を上書きすることもできます:
+
+```sql
+SELECT *
+FROM azureBlobStorage(azure_my_data, blob_path = 'other_data/*.csv', format = 'CSVWithNames')
+LIMIT 5;
+```
+
+<div id="returned_value">
+  ## 戻り値
+</div>
+
+指定されたファイル内のデータの読み書きに使用する、指定された構造のテーブル。
+
+<div id="examples">
+  ## 例
+</div>
+
+<div id="reading-with-storage-account-url">
+  ### `storage_account_url` 形式での読み込み
+</div>
+
+```sql
+SELECT *
+FROM azureBlobStorage(
+    'https://myaccount.blob.core.windows.net/',
+    'mycontainer',
+    'data/*.parquet',
+    'myaccount',
+    'mykey...==',
+    'Parquet'
+)
+LIMIT 5;
+```
+
+<div id="reading-with-connection-string">
+  ### `connection_string` 形式を使った読み取り
+</div>
+
+```sql
+SELECT *
+FROM azureBlobStorage(
+    'DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=mykey...==;EndPointSuffix=core.windows.net',
+    'mycontainer',
+    'data/*.csv',
+    'CSVWithNames'
+)
+LIMIT 5;
+```
+
+<div id="writing-with-partitions">
+  ### パーティションを指定して書き込む
+</div>
+
+```sql
+INSERT INTO TABLE FUNCTION azureBlobStorage(
+    'DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=mykey...==;EndPointSuffix=core.windows.net',
+    'mycontainer',
+    'test_{_partition_id}.csv',
+    'CSV',
+    'auto',
+    'column1 UInt32, column2 UInt32, column3 UInt32'
+) PARTITION BY column3
+VALUES (1, 2, 3), (3, 2, 1), (78, 43, 3);
+```
+
+次に、特定のパーティションを読み出します:
+
+```sql
+SELECT *
+FROM azureBlobStorage(
+    'DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=mykey...==;EndPointSuffix=core.windows.net',
+    'mycontainer',
+    'test_1.csv',
+    'CSV',
+    'auto',
+    'column1 UInt32, column2 UInt32, column3 UInt32'
+);
+```
+
+```response
+┌─column1─┬─column2─┬─column3─┐
+│       3 │       2 │       1 │
+└─────────┴─────────┴─────────┘
+```
+
+<div id="virtual-columns">
+  ## 仮想カラム
+</div>
+
+* `_path` — ファイルのパス。型: `LowCardinality(String)`。
+* `_file` — ファイル名。型: `LowCardinality(String)`。
+* `_size` — ファイルサイズ (バイト単位) 。型: `Nullable(UInt64)`。ファイルサイズが不明な場合、値は `NULL` です。
+* `_time` — ファイルの最終更新時刻。型: `Nullable(DateTime)`。時刻が不明な場合、値は `NULL` です。
+
+<div id="partitioned-write">
+  ## パーティション分割での書き込み
+</div>
+
+<div id="partition-strategy">
+  ### パーティション方式
+</div>
+
+`INSERT` クエリでのみサポートされています。
+
+`WILDCARD`: ファイルパス内の `{_partition_id}` ワイルドカードを実際のパーティションキーに置き換えます。デフォルトで選択されるのは `26.6` より古い `compatibility` 設定の場合のみで、それ以外のデフォルトは `HIVE` です (`file_like_engine_default_partition_strategy` 設定を参照) 。
+
+`HIVE` は、読み取りと書き込みに対して Hive スタイルのパーティション化を実装します。ファイルは次のフォーマットで生成されます: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`。
+
+**`HIVE` パーティション方式の例**
+
+```sql
+INSERT INTO TABLE FUNCTION azureBlobStorage(
+    azure_conf2,
+    storage_account_url = 'https://myaccount.blob.core.windows.net/',
+    container = 'cont',
+    blob_path = 'azure_table_root',
+    format = 'CSVWithNames',
+    compression = 'auto',
+    structure = 'year UInt16, country String, id Int32',
+    partition_strategy = 'hive'
+) PARTITION BY (year, country)
+VALUES (2020, 'Russia', 1), (2021, 'Brazil', 2);
+```
+
+```result
+SELECT _path, * FROM azureBlobStorage(
+    azure_conf2,
+    storage_account_url = 'https://myaccount.blob.core.windows.net/',
+    container = 'cont',
+    blob_path = 'azure_table_root/**.csvwithnames'
+)
+
+   ┌─_path───────────────────────────────────────────────────────────────────────────┬─id─┬─year─┬─country─┐
+1. │ cont/azure_table_root/year=2021/country=Brazil/7351307847391293440.csvwithnames │  2 │ 2021 │ Brazil  │
+2. │ cont/azure_table_root/year=2020/country=Russia/7351307847378710528.csvwithnames │  1 │ 2020 │ Russia  │
+   └─────────────────────────────────────────────────────────────────────────────────┴────┴──────┴─────────┘
+```
+
+<div id="hive-style-partitioning">
+  ## use_hive_partitioning 設定
+</div>
+
+これは、読み取り時に Hive スタイルでパーティション化されたファイルを ClickHouse が解析するためのヒントです。書き込みには影響しません。読み取りと書き込みで対称性を持たせるには、`partition_strategy` 引数を使用します。
+
+`use_hive_partitioning` 設定を 1 にすると、ClickHouse はパス内の Hive スタイルのパーティション化 (`/name=value/`) を検出し、クエリでパーティションカラムを仮想カラムとして使用できるようになります。これらの仮想カラムは、パーティション化されたパス内の名前と同じ名前になります。
+
+**例**
+
+Hive スタイルのパーティション化で作成された仮想カラムを使用する
+
+```sql
+SELECT * FROM azureBlobStorage(config, storage_account_url='...', container='...', blob_path='http://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
+```
+
+<div id="using-shared-access-signatures-sas-sas-tokens">
+  ## Shared Access Signatures (SAS) の使用
+</div>
+
+Shared Access Signature (SAS) は、Azure Storage のコンテナーまたはファイルに対する制限付きアクセスを許可する URI です。これを使用すると、ストレージ アカウント キーを共有することなく、ストレージ アカウントのリソースに期限付きでアクセスを許可できます。詳細は[こちら](https://learn.microsoft.com/en-us/rest/api/storageservices/delegate-access-with-shared-access-signature)を参照してください。
+
+`azureBlobStorage` 関数は Shared Access Signatures (SAS) をサポートしています。
+
+[Blob SAS トークン](https://learn.microsoft.com/en-us/azure/ai-services/translator/document-translation/how-to-guides/create-sas-tokens?tabs=Containers) には、対象のブロブ、アクセス許可、有効期間など、リクエストの認証に必要なすべての情報が含まれています。ブロブ URL を構成するには、Blob service のエンドポイントに SAS トークンを追加します。たとえば、エンドポイントが `https://clickhousedocstest.blob.core.windows.net/` の場合、リクエストは次のようになります。
+
+```sql
+SELECT count()
+FROM azureBlobStorage('BlobEndpoint=https://clickhousedocstest.blob.core.windows.net/;SharedAccessSignature=sp=r&st=2025-01-29T14:58:11Z&se=2025-01-29T22:58:11Z&spr=https&sv=2022-11-02&sr=c&sig=Ac2U0xl4tm%2Fp7m55IilWl1yHwk%2FJG0Uk6rMVuOiD0eE%3D', 'exampledatasets', 'example.csv')
+
+┌─count()─┐
+│      10 │
+└─────────┘
+
+1 行 in set. Elapsed: 0.425 sec.
+```
+
+また、生成された[Blob SAS URL](https://learn.microsoft.com/en-us/azure/ai-services/translator/document-translation/how-to-guides/create-sas-tokens?tabs=Containers)を使用することもできます。
+
+```sql
+SELECT count()
+FROM azureBlobStorage('https://clickhousedocstest.blob.core.windows.net/?sp=r&st=2025-01-29T14:58:11Z&se=2025-01-29T22:58:11Z&spr=https&sv=2022-11-02&sr=c&sig=Ac2U0xl4tm%2Fp7m55IilWl1yHwk%2FJG0Uk6rMVuOiD0eE%3D', 'exampledatasets', 'example.csv')
+
+┌─count()─┐
+│      10 │
+└─────────┘
+
+1 行 in set. Elapsed: 0.153 sec.
+```
+
+<div id="related">
+  ## 関連
+</div>
+
+* [AzureBlobStorage テーブルエンジン](/ja/reference/engines/table-engines/integrations/azureBlobStorage)

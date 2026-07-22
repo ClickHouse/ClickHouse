@@ -1,0 +1,408 @@
+---
+slug: /use-cases/observability/clickstack/integrations/postgresql-logs
+title: 'Supervision des logs PostgreSQL avec ClickStack'
+sidebarTitle: 'Logs PostgreSQL'
+description: 'Supervision des logs PostgreSQL avec ClickStack'
+doc_type: 'guide'
+keywords: ['PostgreSQL', 'Postgres', 'logs', 'OTEL', 'ClickStack', 'supervision de base de données']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/fr/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **En bref**
+
+  Collectez et visualisez les logs du serveur PostgreSQL (format CSV) dans ClickStack avec le receiver OTel `filelog`. Inclut un jeu de données de démonstration et un tableau de bord préconfiguré.
+</Info>
+
+<div id="existing-postgres">
+  ## Intégration avec un PostgreSQL existant
+</div>
+
+Cette section explique comment configurer votre installation PostgreSQL existante pour envoyer des logs à ClickStack en modifiant la configuration du ClickStack OTel collecteur.
+
+Si vous souhaitez tester l’intégration des logs PostgreSQL avant de configurer votre propre installation, vous pouvez utiliser notre configuration préconfigurée et nos données d’exemple dans la section [&quot;Jeu de données de démonstration&quot;](/fr/clickstack/integration-examples/postgres-logs#demo-dataset).
+
+<div id="prerequisites">
+  ##### Prérequis
+</div>
+
+* Une instance ClickStack opérationnelle
+* Une installation PostgreSQL existante (version 9.6 ou ultérieure)
+* Un accès permettant de modifier les fichiers de configuration de PostgreSQL
+* Suffisamment d’espace disque pour les fichiers journaux
+
+<Steps>
+  <Step>
+    #### Configurer la journalisation de PostgreSQL
+
+    PostgreSQL prend en charge plusieurs formats de journalisation. Pour une analyse structurée avec OpenTelemetry, nous recommandons le format CSV, qui fournit une sortie cohérente et facile à analyser.
+
+    Le fichier `postgresql.conf` se trouve généralement à l’emplacement suivant :
+
+    * **Linux (apt/yum)** : `/etc/postgresql/{version}/main/postgresql.conf`
+    * **macOS (Homebrew)** : `/usr/local/var/postgres/postgresql.conf` ou `/opt/homebrew/var/postgres/postgresql.conf`
+    * **Docker** : la configuration est généralement définie via des variables d’environnement ou un fichier de configuration monté
+
+    Ajoutez ou modifiez ces paramètres dans `postgresql.conf` :
+
+    ```conf
+    # Required for CSV logging
+    logging_collector = on
+    log_destination = 'csvlog'
+
+    # Recommended: Connection logging
+    log_connections = on
+    log_disconnections = on
+
+    # Optional: Tune based on your monitoring needs
+    #log_min_duration_statement = 1000  # Log queries taking more than 1 second
+    #log_statement = 'ddl'               # Log DDL statements (CREATE, ALTER, DROP)
+    #log_checkpoints = on                # Log checkpoint activity
+    #log_lock_waits = on                 # Log lock contention
+    ```
+
+    <Note>
+      Ce guide utilise le format `csvlog` de PostgreSQL pour un parsing structuré fiable. Si vous utilisez les formats `stderr` ou `jsonlog`, vous devrez ajuster la configuration du collecteur OpenTelemetry en conséquence.
+    </Note>
+
+    Après avoir effectué ces modifications, redémarrez PostgreSQL :
+
+    ```bash
+    # For systemd
+    sudo systemctl restart postgresql
+
+    # For Docker
+    docker restart 
+    ```
+
+    Vérifiez que les logs sont bien enregistrés :
+
+    ```bash
+    # Default log location on Linux
+    tail -f /var/lib/postgresql/{version}/main/log/postgresql-*.log
+
+    # macOS Homebrew
+    tail -f /usr/local/var/postgres/log/postgresql-*.log
+    ```
+  </Step>
+
+  <Step>
+    #### Créer une configuration personnalisée de l’OTel collector
+
+    ClickStack vous permet d’étendre la configuration de base de l’OpenTelemetry Collector en montant un fichier de configuration personnalisé et en définissant une variable d’environnement. Cette configuration personnalisée est fusionnée avec la configuration de base gérée par HyperDX via OpAMP.
+
+    Créez un fichier nommé `postgres-logs-monitoring.yaml` avec la configuration suivante :
+
+    ```yaml
+    receivers:
+      filelog/postgres:
+        include:
+          - /var/lib/postgresql/*/main/log/postgresql-*.csv # Adjust to match your PostgreSQL installation
+        start_at: end
+        multiline:
+          line_start_pattern: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
+        operators:
+          - type: csv_parser
+            parse_from: body
+            parse_to: attributes
+            header: 'log_time,user_name,database_name,process_id,connection_from,session_id,session_line_num,command_tag,session_start_time,virtual_transaction_id,transaction_id,error_severity,sql_state_code,message,detail,hint,internal_query,internal_query_pos,context,query,query_pos,location,application_name,backend_type,leader_pid,query_id'
+            lazy_quotes: true
+            
+          - type: time_parser
+            parse_from: attributes.log_time
+            layout: '%Y-%m-%d %H:%M:%S.%L %Z'
+          
+          - type: add
+            field: attributes.source
+            value: "postgresql"
+          
+          - type: add
+            field: resource["service.name"]
+            value: "postgresql-production"
+
+    service:
+      pipelines:
+        logs/postgres:
+          receivers: [filelog/postgres]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    ```
+
+    Cette configuration :
+
+    * Lit les logs CSV de PostgreSQL à leur emplacement standard
+    * Gère les entrées de log sur plusieurs lignes (les erreurs s’étalent souvent sur plusieurs lignes)
+    * Analyse le format CSV avec tous les champs standard des logs PostgreSQL
+    * Extrait les timestamps afin de préserver l’horodatage d’origine des logs
+    * Ajoute l’attribut `source: postgresql` pour le filtrage dans HyperDX
+    * Achemine les logs vers l’exporter ClickHouse via un pipeline dédié
+
+    <Note>
+      - Vous ne définissez que de nouveaux receivers et pipelines dans la configuration personnalisée
+      - Les processors (`memory_limiter`, `transform`, `batch`) et les exporters (`clickhouse`) sont déjà définis dans la configuration de base de ClickStack ; il vous suffit de les référencer par leur nom
+      - L’operator `csv_parser` extrait tous les champs standard des logs CSV PostgreSQL dans des attributs structurés
+      - Cette configuration utilise `start_at: end` pour éviter de réingérer les logs lors des redémarrages du collector. Pour les tests, remplacez-le par `start_at: beginning` afin d’afficher immédiatement les logs historiques.
+      - Ajustez le chemin `include` pour qu’il corresponde à l’emplacement du répertoire des logs PostgreSQL
+    </Note>
+  </Step>
+
+  <Step>
+    #### Configurer ClickStack pour charger une configuration personnalisée
+
+    Pour activer une configuration personnalisée du collecteur dans votre déploiement ClickStack existant, vous devez :
+
+    1. Monter le fichier de configuration personnalisé à l’emplacement `/etc/otelcol-contrib/custom.config.yaml`
+    2. Définir la variable d’environnement `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`
+    3. Monter le répertoire des logs PostgreSQL afin que le collecteur puisse les lire
+
+    ##### Option 1 : Docker Compose
+
+    Mettez à jour la configuration de votre déploiement ClickStack :
+
+    ```yaml
+    services:
+      clickstack:
+        # ... existing configuration ...
+        environment:
+          - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
+          # ... other environment variables ...
+        volumes:
+          - ./postgres-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+          - /var/lib/postgresql:/var/lib/postgresql:ro
+          # ... other volumes ...
+    ```
+
+    ##### Option 2 : Docker Run (image tout-en-un)
+
+    Si vous utilisez l&#39;image tout-en-un avec `docker run` :
+
+    ```bash
+    docker run --name clickstack \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/postgres-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v /var/lib/postgresql:/var/lib/postgresql:ro \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    <Note>
+      Assurez-vous que le collecteur ClickStack dispose des autorisations nécessaires pour lire les fichiers journaux de PostgreSQL. En production, utilisez des montages en lecture seule (`:ro`) et respectez le principe du moindre privilège.
+    </Note>
+  </Step>
+
+  <Step>
+    #### Vérification des logs dans HyperDX
+
+    Une fois la configuration terminée, connectez-vous à HyperDX et vérifiez que les logs sont bien ingérés :
+
+    1. Accédez à la vue Search
+    2. Sélectionnez Logs comme source
+    3. Filtrez sur `source:postgresql` pour afficher les logs spécifiques à PostgreSQL
+    4. Vous devriez voir des entrées de logs structurées avec des champs tels que `user_name`, `database_name`, `error_severity`, `message`, `query`, etc.
+
+    <Image img="/images/clickstack/postgres/postgres-logs-search-view.webp" alt="Vue Search des logs" />
+
+    <Image img="/images/clickstack/postgres/postgres-log-view.webp" alt="Vue Log" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## Jeu de données de démonstration
+</div>
+
+Pour les utilisateurs qui souhaitent tester l’intégration des logs PostgreSQL avant de configurer leurs systèmes de production, nous fournissons un jeu de données d’exemple composé de logs PostgreSQL pré-générés avec des motifs réalistes.
+
+<Steps>
+  <Step>
+    #### Télécharger le jeu de données d’exemple
+
+    Téléchargez le fichier de logs d’exemple :
+
+    ```bash
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/postgres/postgresql.log
+    ```
+  </Step>
+
+  <Step>
+    #### Créer une configuration de collecteur de test
+
+    Créez un fichier nommé `postgres-logs-demo.yaml` avec la configuration suivante :
+
+    ```yaml
+    cat > postgres-logs-demo.yaml << 'EOF'
+    receivers:
+      filelog/postgres:
+        include:
+          - /tmp/postgres-demo/postgresql.log
+        start_at: beginning  # Lire depuis le début pour les données de démonstration
+        multiline:
+          line_start_pattern: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
+        operators:
+          - type: csv_parser
+            parse_from: body
+            parse_to: attributes
+            header: 'log_time,user_name,database_name,process_id,connection_from,session_id,session_line_num,command_tag,session_start_time,virtual_transaction_id,transaction_id,error_severity,sql_state_code,message,detail,hint,internal_query,internal_query_pos,context,query,query_pos,location,application_name,backend_type,leader_pid,query_id'
+            lazy_quotes: true
+            
+          - type: time_parser
+            parse_from: attributes.log_time
+            layout: '%Y-%m-%d %H:%M:%S.%L %Z'
+          
+          - type: add
+            field: attributes.source
+            value: "postgresql-demo"
+          
+          - type: add
+            field: resource["service.name"]
+            value: "postgresql-demo"
+
+    service:
+      pipelines:
+        logs/postgres-demo:
+          receivers: [filelog/postgres]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    EOF
+    ```
+  </Step>
+
+  <Step>
+    #### Exécuter ClickStack avec la configuration de démonstration
+
+    Exécutez ClickStack avec les logs et la configuration de démonstration :
+
+    ```bash
+    docker run --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/postgres-logs-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/postgresql.log:/tmp/postgres-demo/postgresql.log:ro" \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+  </Step>
+
+  <Step>
+    #### Vérifier les logs dans HyperDX
+
+    Une fois ClickStack en cours d’exécution :
+
+    1. Ouvrez [HyperDX](http://localhost:8080/) et connectez-vous à votre compte (vous devrez peut-être d’abord en créer un)
+    2. Accédez à la vue Search et définissez la source sur `Logs`
+    3. Définissez la plage horaire sur **2025-11-09 00:00:00 - 2025-11-12 00:00:00**
+
+    <Info>
+      **Affichage du fuseau horaire**
+
+      HyperDX affiche les horodatages dans le fuseau horaire local de votre navigateur. Les données de démonstration couvrent **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)**. Cette large plage horaire vous garantit de voir les logs de démonstration, quel que soit l’endroit où vous vous trouvez. Une fois les logs visibles, vous pouvez réduire la plage à une période de 24 heures pour obtenir des visualisations plus claires.
+    </Info>
+
+    <Image img="/images/clickstack/postgres/postgres-logs-search-view.webp" alt="Vue Search des logs" />
+
+    <Image img="/images/clickstack/postgres/postgres-log-view.webp" alt="Vue d’un log" />
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## Tableaux de bord et visualisations
+</div>
+
+Pour vous aider à commencer à surveiller PostgreSQL avec ClickStack, nous fournissons les visualisations essentielles pour les logs PostgreSQL.
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-logs-dashboard.json'} download="postgresql-logs-dashboard.json" eventName="docs.postgres_logs_monitoring.dashboard_download">Télécharger</TrackedLink> la configuration du tableau de bord
+  </Step>
+
+  <Step>
+    #### Importer le tableau de bord préconfiguré
+
+    1. Ouvrez HyperDX et accédez à la section Tableaux de bord
+    2. Cliquez sur **Importer un tableau de bord** dans le coin supérieur droit, dans le menu à points de suspension
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="Bouton d’importation de tableau de bord" />
+
+    3. Téléversez le fichier `postgresql-logs-dashboard.json` et cliquez sur **Terminer l’importation**
+
+    <Image img="/images/clickstack/postgres/import-logs-dashboard.webp" alt="Terminer l’importation" />
+  </Step>
+
+  <Step>
+    #### Afficher le tableau de bord
+
+    Le tableau de bord sera créé avec toutes les visualisations déjà configurées :
+
+    <Image img="/images/clickstack/postgres/postgres-logs-dashboard.webp" alt="Tableau de bord des logs" />
+
+    <Note>
+      Pour le jeu de données de démonstration, définissez la plage horaire sur **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)** (à ajuster selon votre fuseau horaire local). Le tableau de bord importé n’aura pas de plage horaire définie par défaut.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## Dépannage
+</div>
+
+<div id="troubleshooting-not-loading">
+  ### La configuration personnalisée ne se charge pas
+</div>
+
+Vérifiez que la variable d’environnement est définie :
+
+```bash
+docker exec <container-name> printenv CUSTOM_OTELCOL_CONFIG_FILE
+```
+
+Vérifiez que le fichier de configuration personnalisé est bien monté et lisible :
+
+```bash
+docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml | head -10
+```
+
+<div id="no-logs">
+  ### Aucun log n’apparaît dans HyperDX
+</div>
+
+Vérifiez que la configuration effective inclut bien votre receiver filelog :
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 filelog
+```
+
+Recherchez des erreurs dans les logs du collecteur :
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/agent.log | grep -i postgres
+```
+
+Si vous utilisez le jeu de données de démonstration, vérifiez que le fichier de logs est accessible :
+
+```bash
+docker exec <container> cat /tmp/postgres-demo/postgresql.log | wc -l
+```
+
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
+
+* Configurez des [alertes](/fr/clickstack/features/alerts) pour les événements critiques (échecs de connexion, requêtes lentes, pics d’erreurs)
+* Corrélez les logs avec les [métriques PostgreSQL](/fr/clickstack/integration-examples/postgres-metrics) pour une supervision complète de la base de données
+* Créez des tableaux de bord personnalisés pour les modèles de requêtes propres à votre application
+* Configurez `log_min_duration_statement` pour identifier les requêtes lentes en fonction de vos exigences de performance
+
+<div id="going-to-production">
+  ## Passage en production
+</div>
+
+Ce guide s’appuie sur l’OTel Collecteur intégré à ClickStack pour une mise en place rapide. Pour les déploiements en production, nous recommandons d’exécuter votre propre OTel Collecteur et d’envoyer les données vers l’endpoint OTLP de ClickStack. Consultez [Sending OpenTelemetry data](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration de production.

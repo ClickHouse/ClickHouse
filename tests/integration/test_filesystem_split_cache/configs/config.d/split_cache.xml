@@ -13,6 +13,7 @@
                 <path>/cache1/</path>
                 <max_size>5Mi</max_size>
                 <max_file_segment_size>1Ki</max_file_segment_size>
+                <boundary_alignment>1Ki</boundary_alignment>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <use_split_cache>1</use_split_cache>
                 <split_cache_ratio>0.4</split_cache_ratio>
@@ -24,6 +25,7 @@
                 <path>/cache2/</path>
                 <max_size>5Mi</max_size>
                 <max_file_segment_size>1Ki</max_file_segment_size>
+                <boundary_alignment>1Ki</boundary_alignment>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <use_split_cache>1</use_split_cache>
                 <split_cache_ratio>0.4</split_cache_ratio>
@@ -35,6 +37,7 @@
                 <path>/lru/</path>
                 <max_size>5Mi</max_size>
                 <max_file_segment_size>1Ki</max_file_segment_size>
+                <boundary_alignment>1Ki</boundary_alignment>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <cache_policy>SLRU</cache_policy>
             </lru>

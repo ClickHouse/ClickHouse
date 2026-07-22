@@ -1,0 +1,393 @@
+---
+description: 'Документация по управлению проекциями'
+sidebarTitle: 'PROJECTION'
+slug: /sql-reference/statements/alter/projection
+title: 'Проекции'
+doc_type: 'reference'
+---
+
+На этой странице объясняется, что такое проекции, как их использовать и какие есть способы управления проекциями.
+
+<div id="overview">
+  ## Обзор проекций
+</div>
+
+Проекции хранят данные в формате, оптимизированном для выполнения запросов. Эта возможность полезна в следующих случаях:
+
+* Выполнение запросов по столбцу, который не входит в первичный ключ
+* Предварительная агрегация столбцов, что снижает как вычислительные затраты, так и объём операций ввода-вывода
+
+Для таблицы можно определить одну или несколько проекций, и на этапе анализа запроса ClickHouse выберет проекцию, для которой требуется просканировать меньше всего данных, не изменяя запрос, заданный пользователем.
+
+<Info>
+  **Использование диска**
+
+  Проекции внутренне создают новую скрытую таблицу, а это значит, что потребуется больше операций ввода-вывода и места на диске.
+  Например, если для проекции задан другой первичный ключ, все данные из исходной таблицы будут дублироваться.
+</Info>
+
+Более подробную техническую информацию о том, как проекции работают изнутри, см. на этой [странице](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections).
+
+<div id="examples">
+  ## Использование проекций
+</div>
+
+<div id="example-filtering-without-using-primary-keys">
+  ### Пример фильтрации без использования первичных ключей
+</div>
+
+Создание таблицы:
+
+```sql
+CREATE TABLE visits_order
+(
+   `user_id` UInt64,
+   `user_name` String,
+   `pages_visited` Nullable(Float64),
+   `user_agent` String
+)
+ENGINE = MergeTree()
+PRIMARY KEY user_agent
+```
+
+С помощью `ALTER TABLE` можно добавить проекцию в существующую таблицу:
+
+```sql
+ALTER TABLE visits_order ADD PROJECTION user_name_projection (
+    SELECT *
+    ORDER BY user_name
+)
+
+ALTER TABLE visits_order MATERIALIZE PROJECTION user_name_projection
+```
+
+Вставка данных:
+
+```sql
+INSERT INTO visits_order SELECT
+    number,
+    'test',
+    1.5 * (number / 2),
+    'Android'
+FROM numbers(1, 100);
+```
+
+Проекция позволит нам быстро фильтровать по `user_name`, даже если в исходной таблице `user_name` не был определён как `PRIMARY_KEY`.
+Во время выполнения запроса ClickHouse определяет, что при использовании проекции будет обработано меньше данных, так как данные упорядочены по `user_name`.
+
+```sql
+SELECT
+    *
+FROM visits_order
+WHERE user_name='test'
+LIMIT 2
+```
+
+Чтобы убедиться, что запрос использует проекцию, можно проверить таблицу `system.query_log`. В поле `projections` указано имя использованной проекции или пустое значение, если проекция не использовалась:
+
+```sql
+SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
+```
+
+<div id="example-pre-aggregation-query">
+  ### Пример запроса с предварительной агрегацией
+</div>
+
+Создайте таблицу с проекцией `projection_visits_by_user`:
+
+```sql
+CREATE TABLE visits
+(
+   `user_id` UInt64,
+   `user_name` String,
+   `pages_visited` Nullable(Float64),
+   `user_agent` String,
+   PROJECTION projection_visits_by_user
+   (
+       SELECT
+           user_agent,
+           sum(pages_visited)
+       GROUP BY user_id, user_agent
+   )
+)
+ENGINE = MergeTree()
+ORDER BY user_agent
+```
+
+Вставьте данные:
+
+```sql
+INSERT INTO visits SELECT
+    number,
+    'test',
+    1.5 * (number / 2),
+    'Android'
+FROM numbers(1, 100);
+```
+
+```sql
+INSERT INTO visits SELECT
+    number,
+    'test',
+    1. * (number / 2),
+   'IOS'
+FROM numbers(100, 500);
+```
+
+Выполните первый запрос с `GROUP BY`, используя поле `user_agent`.
+Этот запрос не будет использовать проекцию, так как предварительная агрегация ему не соответствует.
+
+```sql
+SELECT
+    user_agent,
+    count(DISTINCT user_id)
+FROM visits
+GROUP BY user_agent
+```
+
+Чтобы использовать проекцию, можно выполнять запросы, выбирающие часть или все поля предварительной агрегации и `GROUP BY`:
+
+```sql
+SELECT
+    user_agent
+FROM visits
+WHERE user_id > 50 AND user_id < 150
+GROUP BY user_agent
+```
+
+```sql
+SELECT
+    user_agent,
+    sum(pages_visited)
+FROM visits
+GROUP BY user_agent
+```
+
+Как уже упоминалось, вы можете просмотреть таблицу `system.query_log`, чтобы понять, использовалась ли проекция.
+Поле `projections` показывает имя использованной проекции.
+Оно будет пустым, если проекция не использовалась:
+
+```sql
+SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
+```
+
+<div id="projection-indexes">
+  ### Создание и использование индексов-проекций
+</div>
+
+Создание [индекса-проекции](/ru/reference/engines/table-engines/mergetree-family/mergetree#projection-index):
+
+```sql
+CREATE TABLE events
+(
+    `event_time` DateTime,
+    `event_id` UInt64,
+    `user_id` UInt64,
+    `huge_string` String,
+    PROJECTION order_by_user_id INDEX user_id TYPE basic
+)
+ENGINE = MergeTree()
+ORDER BY (event_id);
+```
+
+<details markdown="1">
+  <summary>Создание проекции с явным полем `_part_offset`</summary>
+
+  Проекции также можно создавать с помощью следующего синтаксиса (не рекомендуется):
+
+  ```sql
+  CREATE TABLE events
+  (
+      `event_time` DateTime,
+      `event_id` UInt64,
+      `user_id` UInt64,
+      `huge_string` String,
+      PROJECTION order_by_user_id
+      (
+          SELECT
+              _part_offset
+          ORDER BY user_id
+      )
+  )
+  ENGINE = MergeTree()
+  ORDER BY (event_id);
+  ```
+</details>
+
+Вставим несколько примеров данных:
+
+```sql
+INSERT INTO events SELECT * FROM generateRandom() LIMIT 100000;
+```
+
+Поле `_part_offset` сохраняет своё значение при слияниях и мутациях, что делает его полезным для вторичной индексации. Это можно использовать в запросах:
+
+```sql
+SELECT
+    count()
+FROM events
+WHERE _part_starting_offset + _part_offset IN (
+    SELECT _part_starting_offset + _part_offset
+    FROM events
+    WHERE user_id = 42
+)
+SETTINGS enable_shared_storage_snapshot_in_query = 1
+```
+
+<div id="manipulating-projections">
+  ## Управление проекциями
+</div>
+
+Доступны следующие операции с [проекциями](/ru/reference/engines/table-engines/mergetree-family/mergetree#projections):
+
+<div id="add-projection">
+  ### ADD PROJECTION
+</div>
+
+Используйте приведённый ниже оператор, чтобы добавить описание проекции в метаданные таблицы:
+
+```sql
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+```
+
+<div id="with-settings">
+  #### Конструкция `WITH SETTINGS`
+</div>
+
+`WITH SETTINGS` определяет **настройки уровня проекции**, которые задают, как проекция хранит данные (например, `index_granularity` или `index_granularity_bytes`).
+Они напрямую соответствуют **настройкам таблиц семейства MergeTree**, но применяются **только к этой проекции**.
+
+Пример:
+
+```sql
+ALTER TABLE t
+ADD PROJECTION p (
+    SELECT x ORDER BY x
+) WITH SETTINGS (
+    index_granularity = 4096,
+    index_granularity_bytes = 1048576
+);
+```
+
+Настройки проекции переопределяют действующие настройки таблицы для этой проекции с учетом правил проверки (например, недопустимые или несовместимые переопределения будут отклонены).
+
+<div id="drop-projection">
+  ### DROP PROJECTION
+</div>
+
+Используйте оператор ниже, чтобы удалить описание проекции из метаданных таблицы и удалить файлы проекции с диска.
+Эта операция выполняется как [мутация](/ru/reference/statements/alter/index#mutations).
+
+```sql
+ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name
+```
+
+<div id="materialize-projection">
+  ### MATERIALIZE PROJECTION
+</div>
+
+Используйте приведённый ниже оператор, чтобы перестроить проекцию `name` в партиции `partition_name`.
+Это реализовано как [мутация](/ru/reference/statements/alter/index#mutations).
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] MATERIALIZE PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
+```
+
+<div id="clear-projection">
+  ### CLEAR PROJECTION
+</div>
+
+Используйте приведённый ниже оператор, чтобы удалить с диска файлы проекции, не удаляя её описание.
+Это реализовано как [мутация](/ru/reference/statements/alter/index#mutations).
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
+```
+
+Команды `ADD`, `DROP` и `CLEAR` считаются легковесными, поскольку изменяют только метаданные или удаляют файлы.
+Кроме того, эти команды реплицируются и синхронизируют метаданные проекций через ClickHouse Keeper или ZooKeeper.
+
+<Note>
+  Операции с проекциями поддерживаются только для таблиц с движком [`таблица семейства *MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree) (включая [реплицируемые](/ru/reference/engines/table-engines/mergetree-family/replication) варианты).
+</Note>
+
+<div id="control-projections-merges">
+  ### Управление поведением слияния проекций
+</div>
+
+Когда вы выполняете запрос, ClickHouse выбирает, читать ли данные из исходной таблицы или из одной из её проекций.
+Это решение принимается отдельно для каждой части таблицы.
+Как правило, ClickHouse старается читать как можно меньше данных и использует несколько приёмов, чтобы определить, из какой части лучше читать, например сэмплирование по первичному ключу части.
+В некоторых случаях у частей исходной таблицы нет соответствующих частей проекций.
+Это может происходить, например, потому что создание проекции для таблицы в SQL по умолчанию выполняется «лениво»: оно затрагивает только вновь вставленные данные, а существующие части не изменяются.
+
+Поскольку одна из проекций уже содержит заранее вычисленные агрегированные значения, ClickHouse старается читать из соответствующих частей проекций, чтобы избежать повторной агрегации во время выполнения запроса. Если у конкретной части нет соответствующей части проекции, запрос выполняется по исходной части.
+
+Но что происходит, если строки в исходной таблице нетривиально изменяются из-за нетривиальных фоновых слияний частей данных?
+Например, предположим, что таблица использует движок таблицы `ReplacingMergeTree`.
+Если во время слияния в нескольких входных частях обнаруживается одна и та же строка, сохраняется только самая новая версия строки (из части, вставленной последней), а все более старые версии отбрасываются.
+
+Аналогично, если таблица использует движок таблицы `AggregatingMergeTree`, операция слияния может сворачивать одинаковые строки во входных частях (на основе значений первичного ключа) в одну строку, чтобы обновить промежуточные состояния агрегации.
+
+До ClickHouse v24.8 части проекций либо незаметно рассинхронизировались с основными данными, либо некоторые операции, такие как обновления и удаления, вообще нельзя было выполнять, поскольку база данных автоматически генерировала исключение, если у таблицы были проекции.
+
+Начиная с v24.8, новый параметр уровня таблицы [`deduplicate_merge_projection_mode`](/ru/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode) управляет поведением в случае, если вышеупомянутые нетривиальные фоновые операции слияния происходят в частях исходной таблицы.
+
+Мутации удаления — ещё один пример операций слияния частей, при которых удаляются строки в частях исходной таблицы. Начиная с v24.7, также есть параметр для управления поведением в отношении мутаций удаления, запускаемых легковесными удалениями: [`lightweight_mutation_projection_mode`](/ru/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode).
+
+Ниже приведены возможные значения для `deduplicate_merge_projection_mode` и `lightweight_mutation_projection_mode`:
+
+* `throw` (по умолчанию): генерируется исключение, что не позволяет частям проекций рассинхронизироваться.
+* `drop`: Затронутые части таблицы проекций удаляются. Для таких частей запросы будут выполняться по исходной части таблицы.
+* `rebuild`: Затронутая часть проекции перестраивается, чтобы оставаться согласованной с данными в части исходной таблицы.
+
+<div id="limitations">
+  ## Ограничения
+</div>
+
+Нельзя использовать столбец `ALIAS` в предложении `ORDER BY` проекции. Например:
+
+```sql highlight={6}
+CREATE TABLE t
+(
+    id UInt64,
+    a UInt32,
+    ab_sum UInt64 ALIAS a + 1,
+    PROJECTION p (SELECT a ORDER BY ab_sum)
+)
+ENGINE = MergeTree ORDER BY id;
+-- Завершается с ошибкой UNKNOWN_IDENTIFIER
+```
+
+Столбцы `ALIAS` физически не хранятся и вычисляются на лету во время выполнения запроса, поэтому они недоступны при записи части проекции, когда вычисляется выражение сортировки.
+
+Вместо этого используйте столбцы `MATERIALIZED` или встроите выражение напрямую:
+
+```sql
+-- использование MATERIALIZED столбца
+CREATE TABLE t
+(
+    id UInt64,
+    a UInt32,
+    ab_sum UInt64 MATERIALIZED a + 1,
+    PROJECTION p (SELECT a ORDER BY ab_sum)
+)
+ENGINE = MergeTree ORDER BY id;
+
+-- использование встроенного выражения
+CREATE TABLE t
+(
+    id UInt64,
+    a UInt32,
+    PROJECTION p (SELECT a ORDER BY a + 1)
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* [&quot;Управление проекциями во время слияний&quot; (пост в блоге)](https://clickhouse.com/blog/clickhouse-release-24-08#control-of-projections-during-merges)
+* [&quot;Проекции&quot; (руководство)](/ru/concepts/features/projections/projections#using-projections-to-speed-up-UK-price-paid)
+* [&quot;materialized views и проекции&quot;](/ru/concepts/features/projections/materialized-views-versus-projections)

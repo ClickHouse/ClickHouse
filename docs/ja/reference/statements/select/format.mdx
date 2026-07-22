@@ -1,0 +1,23 @@
+---
+description: 'FORMAT 句のドキュメント'
+sidebarTitle: 'FORMAT'
+slug: /sql-reference/statements/select/format
+title: 'FORMAT 句'
+doc_type: 'reference'
+---
+
+ClickHouse は、クエリ結果などで使用できる幅広い[シリアライゼーションフォーマット](/ja/reference/formats/index)をサポートしています。`SELECT` の出力フォーマットを選択する方法はいくつかあり、その 1 つが、クエリの末尾に `FORMAT format` を指定して、結果データを特定のフォーマットで取得する方法です。
+
+特定のフォーマットは、利便性の向上、他のシステムとの連携、またはパフォーマンス向上のために使用できます。
+
+<div id="default-format">
+  ## デフォルトフォーマット
+</div>
+
+`FORMAT` 句が省略された場合は、デフォルトフォーマットが使用されます。これは、設定と ClickHouse サーバーへのアクセスに使用するインターフェイスの両方に依存します。[HTTP インターフェイス](/ja/concepts/features/interfaces/http) とバッチモードの [コマンドラインクライアント](/ja/concepts/features/interfaces/client) では、デフォルトフォーマットは `TabSeparated` です。対話型モードのコマンドラインクライアントでは、デフォルトフォーマットは `PrettyCompact` です (compact で人間が読みやすい表形式で出力されます) 。
+
+<div id="implementation-details">
+  ## 実装の詳細
+</div>
+
+コマンドラインクライアントを使用する場合、データは常に内部の効率的なフォーマット (`Native`) でネットワーク経由でやり取りされます。クライアントはクエリの `FORMAT` 句を独自に解釈し、自身でデータをフォーマットします (そのため、ネットワークやサーバーに余分な負荷をかけずに済みます) 。

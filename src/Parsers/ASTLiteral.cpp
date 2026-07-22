@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <Common/checkStackSize.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
@@ -49,6 +50,8 @@ private:
 template<>
 String FieldVisitorToColumnName::operator() (const Tuple & x) const
 {
+    checkStackSize();
+
     WriteBufferFromOwnString wb;
 
     wb << "tuple(";
@@ -84,8 +87,8 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);
-        UInt64 low;
-        UInt64 high;
+        UInt64 low = 0;
+        UInt64 high = 0;
         hash.get128(low, high);
 
         writeCString(type == Field::Types::Array ? "__array_" : "__tuple_", ostr);
@@ -121,8 +124,8 @@ void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);
-        UInt64 low;
-        UInt64 high;
+        UInt64 low = 0;
+        UInt64 high = 0;
         hash.get128(low, high);
 
         writeCString("__array_", ostr);

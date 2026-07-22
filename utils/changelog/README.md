@@ -25,7 +25,13 @@ python3 changelog.py --output=changelog-v22.4.1.2305-prestable.md --gh-user-or-t
 
 Python has notoriously poor developer experience - it is a pile of garbage.
 
-Here is how to use it:
+Here is how to use it (variant 1 with `uv`):
+
+```bash
+uv run --no-project --with-requirements requirements.txt changelog.py --gh-user-or-token ghp_... --from a79faf5da8027c201a94cdc5c9a6a1d7852d69b5 95ccb0e1a86fd26a50b11a9479586e973dba66ce
+```
+
+Here is how to use it (variant 2 with `venv`):
 
 ```bash
 brew install python

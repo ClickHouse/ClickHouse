@@ -1,0 +1,139 @@
+---
+slug: /use-cases/observability/clickstack/deployment/all-in-one
+title: 'オールインワン'
+description: 'オールインワンによる ClickStack Open Source のデプロイ - ClickHouse オブザーバビリティ スタック'
+doc_type: 'guide'
+keywords: ['ClickStack Open Source ', 'オブザーバビリティ', 'オールインワン', 'デプロイメント']
+---
+
+import JSONSupport from '/snippets/ja/_json_support.mdx';
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+この包括的な Docker image には、ClickStack Open Source のすべてのコンポーネントが含まれています:
+
+* **ClickHouse**
+* **HyperDX**
+* **OpenTelemetry (OTel) collector** (ポート `4317` および `4318` で OTLP を公開)
+* **MongoDB** (アプリケーションの状態を永続化するため)
+
+このオプションには認証が含まれており、ダッシュボード、アラート、保存済み検索をセッションやユーザーをまたいで保持できます。
+
+<div id="suitable-for">
+  ### 適した用途
+</div>
+
+* デモ
+* フルスタックのローカル環境でのテスト
+
+<div id="deployment-steps">
+  ## デプロイ手順
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### Docker でデプロイする
+
+    以下を実行すると、OpenTelemetry collector (ポート 4317 と 4318) および HyperDX UI (ポート 8080) が起動します。
+
+    ```shell
+    docker run -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
+    ```
+
+    <Info>
+      **イメージ名の更新**
+
+      ClickStack イメージは現在 `clickhouse/clickstack-*` として公開されています (以前は `docker.hyperdx.io/hyperdx/*`) 。
+    </Info>
+  </Step>
+
+  <Step>
+    ### HyperDX UI にアクセスする
+
+    HyperDX UI にアクセスするには、[http://localhost:8080](http://localhost:8080) を開きます。
+
+    要件を満たすユーザー名とパスワードを指定して、ユーザーを作成します。
+
+    `Create` をクリックすると、組み込みの ClickHouse インスタンス用のデータソースが作成されます。
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+
+    別の ClickHouse インスタンスを使用する例については、[&quot;Using ClickHouse Cloud&quot;](#using-clickhouse-cloud) を参照してください。
+  </Step>
+
+  <Step>
+    ### データを取り込む
+
+    データの取り込みについては、[&quot;データの取り込み&quot;](/ja/clickstack/ingesting-data/index) を参照してください。
+  </Step>
+</Steps>
+
+<div id="persisting-data-and-settings">
+  ## データと設定の永続化
+</div>
+
+コンテナーの再起動後もデータと設定を保持するには、上記の docker コマンドを変更して、`/data/db`、`/var/lib/clickhouse`、`/var/log/clickhouse-server` の各パスをマウントします。例:
+
+```shell
+# ディレクトリが存在することを確認する
+mkdir -p .volumes/db .volumes/ch_data .volumes/ch_logs
+# パスをマウントするようにコマンドを変更する
+docker run \
+  -p 8080:8080 \
+  -p 4317:4317 \
+  -p 4318:4318 \
+  -v "$(pwd)/.volumes/db:/data/db" \
+  -v "$(pwd)/.volumes/ch_data:/var/lib/clickhouse" \
+  -v "$(pwd)/.volumes/ch_logs:/var/log/clickhouse-server" \
+  clickhouse/clickstack-all-in-one:latest
+```
+
+<div id="deploying-to-production">
+  ## 本番環境へのデプロイ
+</div>
+
+このオプションは、以下の理由から本番環境にデプロイすべきではありません。
+
+* **非永続ストレージ:** すべてのデータは Docker ネイティブのオーバーレイファイルシステムに保存されます。この構成では大規模環境で必要な性能を確保できず、さらに、ユーザーが[必要なファイルパスをマウント](#persisting-data-and-settings)しない限り、コンテナーの削除や再起動時にデータが失われます。
+* **コンポーネントの分離不足:** すべてのコンポーネントが単一の Docker コンテナー内で実行されます。そのため、個別のスケーリングや監視ができず、`cgroup` の制限もすべてのプロセスに一律で適用されます。結果として、コンポーネント同士で CPU やメモリを奪い合う可能性があります。
+
+<div id="customizing-ports-deploy">
+  ## ポートのカスタマイズ
+</div>
+
+HyperDX Local が使用するアプリケーション (8080) または API (8000) のポートをカスタマイズする必要がある場合は、適切なポートを転送し、いくつかの環境変数を設定するように `docker run` コマンドを変更する必要があります。
+
+OpenTelemetry のポートは、ポートフォワーディングのフラグを変更するだけで簡単にカスタマイズできます。たとえば、OpenTelemetry HTTP ポートを 4999 に変更するには、`-p 4318:4318` を `-p 4999:4318` に置き換えます。
+
+```shell
+docker run -p 8080:8080 -p 4317:4317 -p 4999:4318 clickhouse/clickstack-all-in-one:latest
+```
+
+<div id="using-clickhouse-cloud">
+  ## Using ClickHouse Cloud
+</div>
+
+このディストリビューションは ClickHouse Cloud と併用できます。ローカルの ClickHouse インスタンスも引き続きデプロイされますが (使用はされません) 、環境変数 `CLICKHOUSE_ENDPOINT`、`CLICKHOUSE_USER`、`CLICKHOUSE_PASSWORD` を設定することで、OTel collector が ClickHouse Cloud インスタンスを使用するように構成できます。
+
+例:
+
+```shell
+export CLICKHOUSE_ENDPOINT=<HTTPS ENDPOINT>
+export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+
+docker run -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
+```
+
+`CLICKHOUSE_ENDPOINT` には、ポート `8443` を含む ClickHouse Cloud の HTTPS エンドポイントを指定してください。例: `https://mxl4k3ul6a.us-east-2.aws.clickhouse.com:8443`
+
+HyperDX UI にアクセスしたら、[`Team Settings`](http://localhost:8080/team) に移動し、まず ClickHouse Cloud サービスへの接続を作成してから、必要なログソースを作成します。
+
+<div id="configuring-collector">
+  ## OpenTelemetry Collector の設定
+</div>
+
+必要に応じて、OTel collector の設定を変更できます。詳しくは、[「設定の変更」](/ja/clickstack/ingesting-data/collector#modifying-otel-collector-configuration) を参照してください。
+
+<JSONSupport />

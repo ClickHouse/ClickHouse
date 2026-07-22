@@ -1,0 +1,257 @@
+---
+description: 'このエンジンを使用すると、ClickHouse を RocksDB と連携できます'
+sidebarTitle: 'EmbeddedRocksDB'
+slug: /engines/table-engines/integrations/embedded-rocksdb
+title: 'EmbeddedRocksDB テーブルエンジン'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+このエンジンでは、ClickHouse を [RocksDB](http://rocksdb.org/) と統合できます。
+
+<div id="creating-a-table">
+  ## テーブルの作成
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = EmbeddedRocksDB([ttl, rocksdb_dir, read_only]) PRIMARY KEY(primary_key_name)
+[ SETTINGS name=value, ... ]
+```
+
+エンジンパラメータ:
+
+* `ttl` - 値の有効期限 (TTL)。TTL は秒単位で指定します。TTL が 0 の場合は、通常の RocksDB インスタンスが使用されます (TTL なし) 。
+* `rocksdb_dir` - 既存の RocksDB のディレクトリへのパス、または新規作成される RocksDB の保存先パス。指定した `rocksdb_dir` でテーブルを開きます。
+* `read_only` - `read_only` を true に設定すると、読み取り専用モードになります。TTL を使用するストレージでは、compaction は手動・自動のいずれでもトリガーされないため、期限切れのエントリは削除されません。
+* `primary_key_name` – カラムリスト内の任意のカラム名。
+* `primary key` の指定は必須で、主キーとしてサポートされるカラムは 1 つのみです。主キーは `rocksdb key` として binary 形式でシリアライズされます。
+* 主キー以外のカラムは、対応する順序で `rocksdb` の値として binary 形式でシリアライズされます。
+* キーに対する `equals` または `in` フィルタを含むクエリは、`rocksdb` からの複数キーのルックアップ向けに最適化されます。
+
+エンジン設定:
+
+* `optimize_for_bulk_insert` – テーブルは大量挿入向けに最適化されます (insert pipeline は memtable に書き込む代わりに SST ファイルを作成し、rocksdb database にインポートします) 。デフォルト値: `1`。
+* `bulk_insert_block_size` - 大量挿入時に作成される SST ファイルの最小サイズ (行数ベース) 。デフォルト値: `1048449`。
+
+例:
+
+```sql
+CREATE TABLE test
+(
+    `key` String,
+    `v1` UInt32,
+    `v2` String,
+    `v3` Float32
+)
+ENGINE = EmbeddedRocksDB
+PRIMARY KEY key
+```
+
+<div id="metrics">
+  ## メトリクス
+</div>
+
+RocksDB の統計情報を公開する `system.rocksdb` テーブルもあります:
+
+```sql
+SELECT
+    name,
+    value
+FROM system.rocksdb
+
+┌─name──────────────────────┬─value─┐
+│ no.file.opens             │     1 │
+│ number.block.decompressed │     1 │
+└───────────────────────────┴───────┘
+```
+
+<div id="configuration">
+  ## 設定
+</div>
+
+`config` を使用して、任意の [RocksDB のオプション](https://github.com/facebook/rocksdb/wiki/Option-String-and-Option-Map) を変更することもできます。
+
+```xml
+<rocksdb>
+    <options>
+        <max_background_jobs>8</max_background_jobs>
+    </options>
+    <column_family_options>
+        <num_levels>2</num_levels>
+    </column_family_options>
+    <tables>
+        <table>
+            <name>TABLE</name>
+            <options>
+                <max_background_jobs>8</max_background_jobs>
+            </options>
+            <column_family_options>
+                <num_levels>2</num_levels>
+            </column_family_options>
+        </table>
+    </tables>
+</rocksdb>
+```
+
+デフォルトでは、単純な概算件数最適化は無効になっており、`count()` クエリのパフォーマンスに影響する可能性があります。この最適化を有効にするには、`optimize_trivial_approximate_count_query = 1` を設定します。また、この設定は EmbeddedRocksDB エンジンの `system.tables` にも影響します。`total_rows` と `total_bytes` の概算値を表示するには、この設定を有効にしてください。
+
+<div id="supported-operations">
+  ## 対応している操作
+</div>
+
+<div id="inserts">
+  ### 挿入
+</div>
+
+新しい行が `EmbeddedRocksDB` に挿入される際、キーがすでに存在する場合は値が更新され、存在しない場合は新しいキーが作成されます。
+
+例:
+
+```sql
+INSERT INTO test VALUES ('some key', 1, 'value', 3.2);
+```
+
+<div id="deletes">
+  ### 削除
+</div>
+
+行は、`DELETE` クエリまたは `TRUNCATE` を使用して削除できます。
+
+```sql
+DELETE FROM test WHERE key LIKE 'some%' AND v1 > 1;
+```
+
+```sql
+ALTER TABLE test DELETE WHERE key LIKE 'some%' AND v1 > 1;
+```
+
+```sql
+TRUNCATE TABLE test;
+```
+
+<div id="updates">
+  ### 更新
+</div>
+
+値は `ALTER TABLE` クエリで更新できます。主キーは更新できません。
+
+```sql
+ALTER TABLE test UPDATE v1 = v1 * 10 + 2 WHERE key LIKE 'some%' AND v3 > 3.1;
+```
+
+<div id="joins">
+  ### JOIN
+</div>
+
+EmbeddedRocksDB テーブルに対する特別な `direct` join がサポートされています。
+この direct join では、メモリ内に hash table を作成せず、
+EmbeddedRocksDB から直接データにアクセスします。
+
+大規模な joins では、hash table を作成しないため、
+direct joins を使用すると memory usage を大幅に抑えられる場合があります。
+
+direct joins を有効にするには:
+
+```sql
+SET join_algorithm = 'direct, hash'
+```
+
+<Tip>
+  `join_algorithm` が `direct, hash` に設定されている場合、可能であれば direct JOIN が使用され、
+  それ以外の場合は hash が使用されます。
+</Tip>
+
+<div id="example">
+  #### 例
+</div>
+
+<div id="create-and-populate-an-embeddedrocksdb-table">
+  ##### EmbeddedRocksDB テーブルを作成し、データを挿入する
+</div>
+
+```sql
+CREATE TABLE rdb
+(
+    `key` UInt32,
+    `value` Array(UInt32),
+    `value2` String
+)
+ENGINE = EmbeddedRocksDB
+PRIMARY KEY key
+```
+
+```sql
+INSERT INTO rdb
+    SELECT
+        toUInt32(sipHash64(number) % 10) AS key,
+        [key, key+1] AS value,
+        ('val2' || toString(key)) AS value2
+    FROM numbers_mt(10);
+```
+
+<div id="create-and-populate-a-table-to-join-with-table-rdb">
+  ##### テーブル `rdb` と結合するテーブルを作成し、データを挿入する
+</div>
+
+```sql
+CREATE TABLE t2
+(
+    `k` UInt16
+)
+ENGINE = TinyLog
+```
+
+```sql
+INSERT INTO t2 SELECT number AS k
+FROM numbers_mt(10)
+```
+
+<div id="set-the-join-algorithm-to-direct">
+  ##### JOIN アルゴリズムを `direct` に設定する
+</div>
+
+```sql
+SET join_algorithm = 'direct'
+```
+
+<div id="an-inner-join">
+  ##### INNER JOIN
+</div>
+
+```sql
+SELECT *
+FROM
+(
+    SELECT k AS key
+    FROM t2
+) AS t2
+INNER JOIN rdb ON rdb.key = t2.key
+ORDER BY key ASC
+```
+
+```response
+┌─key─┬─rdb.key─┬─value──┬─value2─┐
+│   0 │       0 │ [0,1]  │ val20  │
+│   2 │       2 │ [2,3]  │ val22  │
+│   3 │       3 │ [3,4]  │ val23  │
+│   6 │       6 │ [6,7]  │ val26  │
+│   7 │       7 │ [7,8]  │ val27  │
+│   8 │       8 │ [8,9]  │ val28  │
+│   9 │       9 │ [9,10] │ val29  │
+└─────┴─────────┴────────┴────────┘
+```
+
+<div id="more-information-on-joins">
+  ### JOINの詳細
+</div>
+
+* [`join_algorithm` 設定](/ja/reference/settings/session-settings#join_algorithm)
+* [JOIN句](/ja/reference/statements/select/join)
