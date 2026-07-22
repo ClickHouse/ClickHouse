@@ -9,6 +9,7 @@
 #include <Common/Exception.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Disks/DiskType.h>
+#include <Disks/ISyncGuard.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Disks/WriteMode.h>
@@ -118,19 +119,6 @@ public:
 };
 
 using SpacePtr = std::shared_ptr<Space>;
-
-/**
- * A guard, that should synchronize file's or directory's state
- * with storage device (e.g. fsync in POSIX) in its destructor.
- */
-class ISyncGuard
-{
-public:
-    ISyncGuard() = default;
-    virtual ~ISyncGuard() = default;
-};
-
-using SyncGuardPtr = std::unique_ptr<ISyncGuard>;
 
 /**
  * A unit of storage persisting data and metadata.

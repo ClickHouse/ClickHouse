@@ -72,6 +72,11 @@ public:
 
     MetadataStorageType getType() const override { return MetadataStorageType::Local; }
 
+    /// The metadata files live on a local `disk`, so honor the MergeTree fsync settings by
+    /// fsync'ing the local metadata file / its directory (otherwise ignored on object-storage disks).
+    void syncMetadataFile(const std::string & path) override;
+    SyncGuardPtr getDirectorySyncGuard(const std::string & path) const override;
+
     /// Metadata on disk for an empty file can store empty list of blobs and size=0
     bool supportsEmptyFilesWithoutBlobs() const override { return true; }
     bool areBlobPathsRandom() const override { return true; }

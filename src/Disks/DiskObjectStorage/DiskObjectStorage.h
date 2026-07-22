@@ -102,6 +102,17 @@ public:
 
     MetadataStoragePtr getMetadataStorage() override { return metadata_storage; }
 
+    /// Delegate to the metadata storage so `fsync_part_directory` can fsync the local directory
+    /// that holds the part's metadata files. Only for fake (immediate) transactions: a queued
+    /// transaction has not created the directory yet when the guard is requested, and its metadata
+    /// durability is Keeper's responsibility rather than a local directory fsync. Returns nullptr
+    /// otherwise (also for metadata storages not backed by a local directory), matching the prior
+    /// behavior of not syncing the directory on such disks.
+    SyncGuardPtr getDirectorySyncGuard(const String & path) const override
+    {
+        return use_fake_transaction ? metadata_storage->getDirectorySyncGuard(path) : nullptr;
+    }
+
     UInt32 getRefCount(const String & path) const override;
 
     /// Return metadata for each file path. Also, before serialization reset

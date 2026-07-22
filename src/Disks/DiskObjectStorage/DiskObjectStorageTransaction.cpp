@@ -370,7 +370,26 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
             disk_tx->commit();
     };
 
-    return std::make_unique<WriteBufferWithFinalizeCallback>(std::move(buffer_to_enabled_locations), std::move(create_metadata_callback), object.remote_path, create_blob_if_empty);
+    /// When the caller syncs the write buffer (e.g. fsync_after_insert), fsync the local metadata
+    /// file that commits this path to its blobs (see requestMetadataSync).
+    auto sync_metadata_callback = [disk_tx = shared_from_this(), path]()
+    {
+        disk_tx->requestMetadataSync(path);
+    };
+
+    return std::make_unique<WriteBufferWithFinalizeCallback>(
+        std::move(buffer_to_enabled_locations), std::move(create_metadata_callback), std::move(sync_metadata_callback), object.remote_path, create_blob_if_empty);
+}
+
+void DiskObjectStorageTransaction::requestMetadataSync(const std::string & path)
+{
+    /// The metadata file exists once its metadata operation has committed. Autocommit (fake
+    /// transaction) writes commit inside the finalize callback, before the buffer is synced, so the
+    /// file is present and we fsync it. syncMetadataFile touches only its own fd, so it is safe to
+    /// call from the parallel file-sync pool. A queued transaction has not created the file yet;
+    /// there the local metadata is not authoritative (Keeper is), so a local fsync is not needed.
+    if (metadata_storage->existsFile(path))
+        metadata_storage->syncMetadataFile(path);
 }
 
 /// This function is a simplified and adapted version of DiskObjectStorageTransaction::writeFile().

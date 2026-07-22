@@ -10,6 +10,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Disks/DirectoryIterator.h>
+#include <Disks/ISyncGuard.h>
 #include <Disks/WriteMode.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
@@ -164,6 +165,16 @@ public:
     virtual const std::string & getPath() const = 0;
 
     virtual MetadataStorageType getType() const = 0;
+
+    /// fsync the file that persists the metadata for `path` (the local commit record that maps a
+    /// logical file to its blobs). Used to honor MergeTree fsync settings on object-storage disks:
+    /// without it, an acknowledged part can be lost on power loss even when its blobs are durable.
+    /// Default is a no-op for metadata storages that are not backed by a syncable local file.
+    virtual void syncMetadataFile(const std::string & /* path */) {}
+
+    /// fsync the directory holding the metadata for `path`, if the metadata storage is backed by a
+    /// local directory. Lets `fsync_part_directory` reach object-storage disks. Default no-op.
+    virtual SyncGuardPtr getDirectorySyncGuard(const std::string & /* path */) const { return nullptr; }
 
     virtual std::string getZooKeeperName() const { return ""; }
     virtual std::string getZooKeeperPath() const { return ""; }

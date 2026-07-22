@@ -1,0 +1,4 @@
+wide, fsync on: FileSync>0=1 DirectorySync>0=1
+compact, fsync on: FileSync>0=1 DirectorySync>0=1
+wide, fsync off: FileSync>0=0 DirectorySync>0=0
+non-fake txn, fsync on: 1000	499500

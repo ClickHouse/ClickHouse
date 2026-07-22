@@ -29,6 +29,16 @@ MetadataStorageType MetadataStorageFromCacheObjectStorage::getType() const
     return underlying->getType();
 }
 
+void MetadataStorageFromCacheObjectStorage::syncMetadataFile(const std::string & path)
+{
+    underlying->syncMetadataFile(path);
+}
+
+SyncGuardPtr MetadataStorageFromCacheObjectStorage::getDirectorySyncGuard(const std::string & path) const
+{
+    return underlying->getDirectorySyncGuard(path);
+}
+
 std::string MetadataStorageFromCacheObjectStorage::getZooKeeperName() const
 {
     return underlying->getZooKeeperName();

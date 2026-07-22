@@ -22,6 +22,8 @@ public:
 
     const std::string & getPath() const override;
     MetadataStorageType getType() const override;
+    void syncMetadataFile(const std::string & path) override;
+    SyncGuardPtr getDirectorySyncGuard(const std::string & path) const override;
     std::string getZooKeeperName() const override;
     std::string getZooKeeperPath() const override;
 

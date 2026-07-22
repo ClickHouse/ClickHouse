@@ -7,9 +7,23 @@
 #include <IO/WriteHelpers.h>
 
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+#include <Common/ErrnoException.h>
 
+#include <fcntl.h>
+
+#include <filesystem>
 #include <memory>
 #include <shared_mutex>
+
+namespace fs = std::filesystem;
+
+namespace ProfileEvents
+{
+    extern const Event FileSync;
+    extern const Event FileSyncElapsedMicroseconds;
+}
 
 namespace DB
 {
@@ -17,6 +31,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_FSYNC;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_CLOSE_FILE;
 }
 
 MetadataStorageFromDisk::MetadataStorageFromDisk(DiskPtr disk_, std::string compatible_key_prefix_, ObjectStorageKeyGeneratorPtr key_generator_, bool persist_removal_queue_, size_t removal_log_compaction_threshold_)
@@ -32,6 +49,42 @@ MetadataStorageFromDisk::MetadataStorageFromDisk(DiskPtr disk_, std::string comp
 const std::string & MetadataStorageFromDisk::getPath() const
 {
     return disk->getPath();
+}
+
+void MetadataStorageFromDisk::syncMetadataFile(const std::string & path)
+{
+    /// The metadata write only finalizes the file (no fsync). Reopen the committed file on the
+    /// local `disk` and fdatasync it. Called only when the caller requested fsync, so it is opt-in.
+    if (!disk->existsFile(path))
+        return;
+
+    const auto full_path = fs::path(disk->getPath()) / path;
+    int fd = ::open(full_path.c_str(), O_RDONLY | O_CLOEXEC);
+    if (-1 == fd)
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, full_path.string(), "Cannot open file {} to fsync", full_path.string());
+
+    ProfileEvents::increment(ProfileEvents::FileSync);
+    Stopwatch watch;
+#if defined(OS_DARWIN)
+    int res = ::fsync(fd);
+#else
+    int res = ::fdatasync(fd);
+#endif
+    ProfileEvents::increment(ProfileEvents::FileSyncElapsedMicroseconds, watch.elapsedMicroseconds());
+
+    if (-1 == res)
+    {
+        ::close(fd);
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, full_path.string(), "Cannot fsync {}", full_path.string());
+    }
+
+    if (-1 == ::close(fd))
+        throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file {}", full_path.string());
+}
+
+SyncGuardPtr MetadataStorageFromDisk::getDirectorySyncGuard(const std::string & path) const
+{
+    return disk->getDirectorySyncGuard(path);
 }
 
 bool MetadataStorageFromDisk::existsFile(const std::string & path) const

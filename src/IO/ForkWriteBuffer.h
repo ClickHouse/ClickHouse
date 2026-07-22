@@ -19,6 +19,10 @@ public:
     using WriteBufferPtrs = VectorWithMemoryTracking<WriteBufferPtr>;
     explicit ForkWriteBuffer(WriteBufferPtrs && sources_);
 
+    /// Forward sync to every child buffer; the base WriteBuffer::sync only flushes and would
+    /// leave the underlying writers un-fsynced.
+    void sync() override;
+
 protected:
     void nextImpl() override;
     void preFinalize() override;
