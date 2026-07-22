@@ -141,10 +141,18 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
         additional_filters_present = true;
     }
 
-    /// A row-level policy filter is reader-side as well.
+    /// A row-level policy filter is reader-side as well. It restricts the set of rows just like a `WHERE`
+    /// or `PREWHERE`, so it must participate in `additional_filters_present`: otherwise a query filtered
+    /// only by a hidden row policy is treated as unfiltered, the `vector_search_filter_strategy = 'prefilter'`
+    /// bailout below is skipped, and `MergeTreeIndexConditionVectorSimilarity` fetches only `LIMIT` neighbors
+    /// (unless `vector_search_with_rescoring = 1`), so a policy such as `USING id != 0` can make
+    /// `ORDER BY cosineDistance(...) LIMIT 1` miss the next allowed neighbor or return no rows.
     if (const auto & row_level_filter = read_from_mergetree_step->getRowLevelFilter())
+    {
         if (row_level_filter->actions.hasStatefulFunctions())
             return no_layers_updated;
+        additional_filters_present = true;
+    }
 
     if (additional_filters_present && settings.vector_search_filter_strategy == VectorSearchFilterStrategy::PREFILTER)
         return no_layers_updated; /// user explicitly wanted exact (brute-force) vector search
