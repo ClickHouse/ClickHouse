@@ -57,7 +57,7 @@
               "group": "Query optimization",
               "pages": [
                 "guides/clickhouse/performance-and-monitoring/diagnose-slow-queries",
-                "guides/clickhouse/performance-and-monitoring/decompose-query-performance",
+                "guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks",
                 "guides/clickhouse/performance-and-monitoring/query-optimization-example"
               ],
               "root": "guides/clickhouse/performance-and-monitoring/query-optimization"

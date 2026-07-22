@@ -55,7 +55,7 @@ Use the following workflow when investigating a slow query:
 
 1. Identify a recurring slow query.
 2. Record a reproducible baseline.
-3. Decompose the query to isolate expensive execution stages.
+3. Compare simplified forms of the query to isolate expensive execution stages.
 4. Select an optimization that addresses the measured bottleneck.
 5. Apply one change.
 6. Run the same measurement again and compare the results.
@@ -68,7 +68,7 @@ Query optimization starts with understanding where a query spends its time. Inst
   <Card title="Diagnose slow queries" icon="magnifying-glass" href="/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries">
     Find recurring slow queries and inspect their execution characteristics.
   </Card>
-  <Card title="Decompose query performance" icon="layer-group" href="/guides/clickhouse/performance-and-monitoring/decompose-query-performance">
+  <Card title="Isolate query bottlenecks" icon="layer-group" href="/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks">
     Establish a repeatable baseline and isolate the work responsible for query latency.
   </Card>
   <Card title="Worked optimization example" icon="flask" href="/guides/clickhouse/performance-and-monitoring/query-optimization-example">
