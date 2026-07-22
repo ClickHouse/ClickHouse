@@ -17,3 +17,8 @@
 2
 -- SHOW CREATE is unchanged
 WITH c AS (SELECT 1 AS x) SELECT c.x AS f FROM c AS s
+-- two references to the same CTE with different aliases
+1
+-- materialized view with an aliased CTE reference
+1
+2
