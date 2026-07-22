@@ -569,12 +569,36 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         if (function_name == "notIn"  || function_name == "globalNotIn")
             out.function = RPNElement::FUNCTION_NOT_IN;
 
+        /// With transform_null_in=1 the analyzer rewrites `in`/`globalIn` to `nullIn`/`globalNullIn`.
+        /// When the set has no NULL element, `nullIn` selects exactly the same rows as `in`, so the
+        /// bloom filter can prune. If the set contains a NULL, `nullIn` also matches NULL rows, so we
+        /// leave FUNCTION_UNKNOWN (no pruning). Array columns are excluded: whole-array equality
+        /// hashing is not sound for granules that mix empty and non-empty arrays (a pre-existing
+        /// limitation of the `in` path here too), so we must not start pruning them via `nullIn`.
+        /// Only single-column sets are handled: Set::hasNull() reports NULL content only for
+        /// single-column sets (it returns false for any multi-column set), so the null-free guard is
+        /// unreliable otherwise. A multi-column set against a single index column is also a genuine
+        /// column-count mismatch that must keep raising NUMBER_OF_COLUMNS_DOESNT_MATCH at execution
+        /// rather than being silently pruned away.
+        /// The set element type must also match the index type (modulo Nullable / LowCardinality):
+        /// with transform_null_in=1 the set casts the key strictly (not accurate_or_null), so a
+        /// type-incompatible set, e.g. a String index against `IN (SELECT toUInt8(1))`, throws at
+        /// execution. Pruning such a granule would swallow that error and return an empty result.
+        if ((function_name == "nullIn" || function_name == "globalNullIn") && prepared_set
+            && prepared_set->getDataTypes().size() == 1 && !prepared_set->hasNull()
+            && prepared_set->areTypesEqual(0, index_type)
+            && !typeid_cast<const DataTypeArray *>(index_type.get()))
+            out.function = RPNElement::FUNCTION_IN;
+
         return true;
     }
 
     /// Try to match the column name to a JSONAllPaths index for JSON subcolumn IN filtering.
     /// tryMatchNodeToJSONIndex handles both plain subcolumns and CAST-wrapped expressions.
     /// NOT IN is not supported because after BoolMask inversion it never skips any granules.
+    /// Only plain in/globalIn are wired here; nullIn/globalNullIn (transform_null_in=1) still
+    /// full-scan JSON subcolumns (out of scope for issue #111311, which targets directly indexed
+    /// columns; extending them needs per-path NULL-semantics checks).
     if (auto json_info = tryMatchNodeToJSONIndex(key_node, header, "JSONAllPaths"))
     {
         if (function_name != "in" && function_name != "globalIn")
@@ -676,6 +700,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             return false;
         }
 
+        /// As with the JSON branch above, only plain in/globalIn prune here; nullIn/globalNullIn
+        /// (transform_null_in=1) still full-scan map subcolumns. Out of scope for issue #111311.
         if (function_name == "in" || function_name == "globalIn")
             out.function = RPNElement::FUNCTION_IN;
 
