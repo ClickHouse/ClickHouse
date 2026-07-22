@@ -973,6 +973,223 @@ def test_mysql_point(started_cluster):
     conn.close()
 
 
+def test_mysql_geometry(started_cluster):
+    table_name = "test_mysql_geometry"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            CREATE TABLE `clickhouse`.`{table_name}` (
+            `id` int NOT NULL,
+            `ls` linestring NOT NULL,
+            `pg` polygon NOT NULL,
+            `mls` multilinestring NOT NULL,
+            `mpg` multipolygon NOT NULL,
+            `geo` geometry NOT NULL,
+            `geo_mp` geometry NOT NULL,
+            PRIMARY KEY (`id`)) ENGINE=InnoDB;
+        """
+        )
+        cursor.execute(
+            f"""
+            INSERT INTO `clickhouse`.`{table_name}` SET
+                id = 1,
+                ls = ST_GeomFromText('LINESTRING(0 0, 1 1, 2 2)'),
+                pg = ST_GeomFromText('POLYGON((0 0, 4 0, 4 4, 0 4, 0 0))'),
+                mls = ST_GeomFromText('MULTILINESTRING((0 0, 1 1), (2 2, 3 3))'),
+                mpg = ST_GeomFromText('MULTIPOLYGON(((0 0, 2 0, 2 2, 0 2, 0 0)))'),
+                geo = ST_GeomFromText('LINESTRING(5 5, 6 6)'),
+                geo_mp = ST_GeomFromText('MULTIPOINT(0 0, 1 1)')
+        """
+        )
+        assert 1 == cursor.execute(f"SELECT count(*) FROM `clickhouse`.`{table_name}`")
+
+    conn.commit()
+
+    table_function = (
+        f"mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    )
+
+    # The concrete spatial column types are mapped to the corresponding ClickHouse geometric types,
+    # because their subtype is fixed by the column type. The generic `geometry` column type can hold
+    # a value of any subtype, so it maps to the umbrella `Geometry` type (a `Variant` over the
+    # concrete geometric types). A value whose subtype has no ClickHouse counterpart (`MULTIPOINT`,
+    # `GEOMETRYCOLLECTION`) then throws at read time (checked below); this incompatibility is accepted
+    # in exchange for a proper geometric type.
+    assert (
+        node1.query(
+            "SELECT toTypeName(ls), toTypeName(pg), toTypeName(mls), toTypeName(mpg), toTypeName(geo), toTypeName(geo_mp) "
+            f"FROM {table_function} LIMIT 1"
+        ).strip()
+        == "LineString\tPolygon\tMultiLineString\tMultiPolygon\tGeometry\tGeometry"
+    )
+
+    assert (
+        node1.query(f"SELECT ls FROM {table_function}").strip()
+        == "[(0,0),(1,1),(2,2)]"
+    )
+    assert (
+        node1.query(f"SELECT pg FROM {table_function}").strip()
+        == "[[(0,0),(4,0),(4,4),(0,4),(0,0)]]"
+    )
+    assert (
+        node1.query(f"SELECT mls FROM {table_function}").strip()
+        == "[[(0,0),(1,1)],[(2,2),(3,3)]]"
+    )
+    assert (
+        node1.query(f"SELECT mpg FROM {table_function}").strip()
+        == "[[[(0,0),(2,0),(2,2),(0,2),(0,0)]]]"
+    )
+    # A generic `geometry` column holding a representable subtype reads back as the geometric value:
+    # `geo` stores a LINESTRING, so it is read through the `Geometry` Variant's `LineString` alternative.
+    assert (
+        node1.query(f"SELECT geo FROM {table_function}").strip()
+        == "[(5,5),(6,6)]"
+    )
+    # Regression test for the accepted incompatibility: a generic `geometry` column holding a subtype
+    # with no ClickHouse counterpart (`MULTIPOINT` here) throws at read time, because `MULTIPOINT` is
+    # not representable by the `Geometry` Variant.
+    assert "Incorrect geometry type" in node1.query_and_get_error(
+        f"SELECT geo_mp FROM {table_function}"
+    )
+
+    # Regression test: the WKB parsing of spatial values read from MySQL honors the
+    # `max_wkb_geometry_elements` setting (which bounds point/ring/polygon counts before the parser
+    # reserves memory). `ls` is a LINESTRING of 3 points, so reading it with the limit set to 1 must
+    # be rejected instead of parsing an oversized element count. Before the fix the MySQL read path
+    # called `parseWKBFormat` with the default `0`, so only the hard-coded 100M cap applied.
+    assert "TOO_LARGE_ARRAY_SIZE" in node1.query_and_get_error(
+        f"SELECT ls FROM {table_function} SETTINGS max_wkb_geometry_elements = 1"
+    )
+    # A limit large enough for this value reads it back normally.
+    assert (
+        node1.query(
+            f"SELECT ls FROM {table_function} SETTINGS max_wkb_geometry_elements = 1000000"
+        ).strip()
+        == "[(0,0),(1,1),(2,2)]"
+    )
+
+    # When the `geometry` mapping is disabled, the concrete spatial types (except `Point`) also fall
+    # back to String.
+    assert (
+        node1.query(
+            f"SELECT toTypeName(ls) FROM {table_function} LIMIT 1",
+            settings={"mysql_datatypes_support_level": "decimal,datetime64,date2Date32"},
+        ).strip()
+        == "String"
+    )
+
+    # Regression test: disabling `geometry` through the table function's own `SETTINGS` must be
+    # honored during schema inference (the per-call opt-out), falling a concrete spatial type back to
+    # `String`. Before the fix the table function inferred the structure with the default engine
+    # settings, so both the per-call `SETTINGS` and a query-level value were silently ignored.
+    table_function_no_geo = (
+        f"mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}', "
+        "SETTINGS mysql_datatypes_support_level = 'decimal,datetime64,date2Date32')"
+    )
+    assert (
+        node1.query(f"SELECT toTypeName(ls) FROM {table_function_no_geo} LIMIT 1").strip()
+        == "String"
+    )
+
+    # The per-call `SETTINGS` override the query-context value: here `geometry` is enabled through the
+    # function-local `SETTINGS` even though the query context disables it.
+    table_function_geo = (
+        f"mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}', "
+        "SETTINGS mysql_datatypes_support_level = 'decimal,datetime64,date2Date32,geometry')"
+    )
+    assert (
+        node1.query(
+            f"SELECT toTypeName(ls) FROM {table_function_geo} LIMIT 1",
+            settings={"mysql_datatypes_support_level": "decimal,datetime64,date2Date32"},
+        ).strip()
+        == "LineString"
+    )
+
+    # A user can still read a generic `geometry` column as a geometric value by declaring the column
+    # as `Geometry` explicitly through the MySQL table engine (when its values are representable).
+    node1.query("DROP TABLE IF EXISTS test_geometry")
+    node1.query(
+        "CREATE TABLE test_geometry (id Int32, ls LineString, pg Polygon, mls MultiLineString, mpg MultiPolygon, geo Geometry) "
+        f"Engine=MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    )
+    assert node1.query("SELECT ls FROM test_geometry").strip() == "[(0,0),(1,1),(2,2)]"
+    assert node1.query("SELECT geo FROM test_geometry").strip() == "[(5,5),(6,6)]"
+    node1.query("DROP TABLE IF EXISTS test_geometry")
+
+    # The MySQL table engine infers the columns from MySQL when they are omitted. By default the
+    # `geometry` mapping is on, so a concrete spatial column is inferred as its geometric type.
+    node1.query("DROP TABLE IF EXISTS test_geometry_inferred")
+    node1.query(
+        f"CREATE TABLE test_geometry_inferred Engine=MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+    )
+    assert (
+        node1.query("SELECT toTypeName(ls) FROM test_geometry_inferred LIMIT 1").strip()
+        == "LineString"
+    )
+    node1.query("DROP TABLE IF EXISTS test_geometry_inferred")
+
+    # Regression test: disabling `geometry` through the table engine's own SETTINGS must be honored
+    # during schema inference, falling the concrete spatial types back to `String` (raw WKB). This is
+    # the per-engine opt-out; before the fix it was ignored because schema inference read the global
+    # query-context setting instead of the engine setting.
+    node1.query("DROP TABLE IF EXISTS test_geometry_no_geo")
+    node1.query(
+        f"CREATE TABLE test_geometry_no_geo Engine=MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}') "
+        "SETTINGS mysql_datatypes_support_level = 'decimal,datetime64,date2Date32'"
+    )
+    assert (
+        node1.query("SELECT toTypeName(ls) FROM test_geometry_no_geo LIMIT 1").strip()
+        == "String"
+    )
+    node1.query("DROP TABLE IF EXISTS test_geometry_no_geo")
+
+    # Regression test (query-backed inference): a MySQL source defined over a *query* rather than a
+    # table name infers its columns from the query result-set metadata, which reports every spatial
+    # value as the generic `MYSQL_TYPE_GEOMETRY` without exposing the concrete subtype. It must not be
+    # guessed as `Point` - that made reading a non-`Point` value such as this `LINESTRING` throw
+    # `Only Point data type is supported` at read time - so it falls back to the raw WKB `String`.
+    # Before the fix the query-backed path also dropped the effective `mysql_datatypes_support_level`
+    # entirely (it read the global query context), so the per-call/per-engine opt-out was ignored.
+    table_function_query = f"mysql('mysql80:3306', 'clickhouse', query('SELECT ls FROM {table_name}'), 'root', '{mysql_pass}')"
+    # The concrete subtype is unknowable from query result metadata, so it is inferred as `String` (raw
+    # WKB), never a geometric type such as `Point`/`LineString` (nullability follows the query metadata).
+    ls_query_type = node1.query(
+        f"SELECT toTypeName(ls) FROM {table_function_query} LIMIT 1"
+    ).strip()
+    assert "String" in ls_query_type and "Point" not in ls_query_type
+    # The value reads back as raw WKB `String` without an exception (before the fix this threw).
+    assert len(node1.query(f"SELECT ls FROM {table_function_query}").strip()) > 0
+
+    # Regression test (named-collection precedence): a named collection carrying an explicit
+    # `mysql_datatypes_support_level` opt-out keeps precedence over a conflicting session
+    # `SET mysql_datatypes_support_level`. The `mysql_no_geo_types` collection disables `geometry`, so a
+    # `LINESTRING` column is inferred as `String` even though the session enables `geometry`, and the
+    # session value is not frozen into `SHOW CREATE`. Before the fix the query-context bridge overwrote
+    # the named-collection value with the session value (and persisted it into the table definition).
+    node1.query("DROP TABLE IF EXISTS test_geometry_nc")
+    node1.query(
+        "CREATE TABLE test_geometry_nc Engine=MySQL(mysql_no_geo_types)",
+        settings={
+            "mysql_datatypes_support_level": "decimal,datetime64,date2Date32,geometry"
+        },
+    )
+    assert (
+        node1.query("SELECT toTypeName(ls) FROM test_geometry_nc LIMIT 1").strip()
+        == "String"
+    )
+    assert "mysql_datatypes_support_level" not in node1.query(
+        "SHOW CREATE TABLE test_geometry_nc"
+    )
+    node1.query("DROP TABLE IF EXISTS test_geometry_nc")
+
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
 def test_joins(started_cluster):
     conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
     drop_mysql_table(conn, "test_joins_mysql_users")
@@ -1237,6 +1454,35 @@ def test_query_passing_engine(started_cluster):
     node1.query("DROP TABLE mysql_engine_query")
     drop_mysql_table(conn, table_name)
     drop_mysql_table(conn, second_table)
+    conn.close()
+
+
+def test_query_passing_type_mismatch(started_cluster):
+    # A declared structure whose types disagree with the passed query must surface as a query error, never
+    # abort the server.
+    table_name = "query_passing_mismatch"
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"CREATE TABLE clickhouse.{table_name} (a INT NOT NULL, b VARCHAR(50) NOT NULL, PRIMARY KEY (a)) ENGINE=InnoDB;"
+        )
+        cursor.execute(
+            f"INSERT INTO clickhouse.{table_name} VALUES (1, 'name_1'), (2, 'name_2')"
+        )
+        conn.commit()
+
+    # Column b holds text but is declared Int32. MySQL's typed accessor reports a query error instead of
+    # crashing.
+    node1.query("DROP TABLE IF EXISTS mysql_type_mismatch")
+    node1.query(
+        f"CREATE TABLE mysql_type_mismatch (a Int32, b Int32) "
+        f"ENGINE = MySQL('mysql80:3306', 'clickhouse', query('SELECT a, b FROM {table_name}'), 'root', '{mysql_pass}')"
+    )
+    assert node1.query_and_get_error("SELECT * FROM mysql_type_mismatch") != ""
+    node1.query("DROP TABLE mysql_type_mismatch")
+
+    drop_mysql_table(conn, table_name)
     conn.close()
 
 
