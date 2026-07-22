@@ -31,9 +31,11 @@ qid_attach="attach-${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT --query_id "$qid_detach" --fsync_metadata 1 -q "DETACH TABLE tbl PERMANENTLY"
 $CLICKHOUSE_CLIENT --query_id "$qid_attach" --fsync_metadata 1 -q "ATTACH TABLE tbl"
 
-# fsync_metadata = 0 must not fsync the directory.
+# fsync_metadata = 0 must not fsync the directory, for both the marker create and remove sides.
 qid_detach_off="detach-off-${CLICKHOUSE_DATABASE}"
+qid_attach_off="attach-off-${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT --query_id "$qid_detach_off" --fsync_metadata 0 -q "DETACH TABLE tbl PERMANENTLY"
+$CLICKHOUSE_CLIENT --query_id "$qid_attach_off" --fsync_metadata 0 -q "ATTACH TABLE tbl"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
@@ -43,6 +45,7 @@ echo -n "attach, fsync_metadata=1: "
 [[ "$(dir_sync "$qid_attach")" -ge 1 ]] && echo "DirectorySync >= 1" || echo "FAIL: no DirectorySync"
 echo -n "detach permanently, fsync_metadata=0: "
 echo "DirectorySync = $(dir_sync "$qid_detach_off")"
+echo -n "attach, fsync_metadata=0: "
+echo "DirectorySync = $(dir_sync "$qid_attach_off")"
 
-$CLICKHOUSE_CLIENT -q "ATTACH TABLE tbl"
 $CLICKHOUSE_CLIENT -q "DROP TABLE tbl"
