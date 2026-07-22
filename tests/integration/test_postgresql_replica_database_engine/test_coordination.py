@@ -1274,6 +1274,25 @@ def test_refused_drop_when_nested_table_drop_fails_recovers_database(started_clu
     instance.query(
         "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
     )
+
+    # The recovery drops the shut-down nested table and recreates it, so the table is transiently
+    # absent (UNKNOWN_TABLE), and the recreate on the just-dropped Keeper path can itself hit a
+    # transient "dropped right now" error that the retrying startup resolves - poll instead of
+    # failing on the first error.
+    def wait_for_database_count(expected, timeout=120):
+        for _ in range(timeout):
+            try:
+                count = int(
+                    instance.query("SELECT count() FROM test_database.test_table")
+                )
+                if count == expected:
+                    return
+            except Exception:
+                pass
+            time.sleep(1)
+        raise AssertionError(f"test_database.test_table did not reach {expected} rows")
+
+    wait_for_database_count(200)
     check_tables_are_synchronized(instance, "test_table")
     assert int(instance.query("SELECT count() FROM test_database.test_table")) == 200
 
@@ -1633,3 +1652,38 @@ def test_create_is_rejected_while_teardown_token_is_held(started_cluster):
     # the keeper path by removing its own teardown token (and the then-empty path root).
     assert not replication_slot_exists()
     assert not publication_exists()
+
+
+def test_coordination_settings_cannot_be_altered(started_cluster):
+    # The coordination settings define the engine of the nested tables and this replica's coordination
+    # identity, so they are CREATE-time-only: the nested replicated tree and the coordination state in
+    # Keeper are already built from them. ALTER DATABASE ... MODIFY SETTING must reject them with an
+    # actionable message instead of the generic "Unknown setting".
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(50)"
+    )
+
+    settings = COORDINATION_SETTINGS + [
+        "materialized_postgresql_tables_list = 'test_table'"
+    ]
+    pg_manager.create_materialized_db(
+        ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+    )
+    check_tables_are_synchronized(instance, "test_table")
+
+    for setting, value in [
+        ("materialized_postgresql_table_engine", "'ReplacingMergeTree'"),
+        ("materialized_postgresql_keeper_path", "'/clickhouse/mat_pg/other'"),
+        ("materialized_postgresql_replica_name", "'other_replica'"),
+    ]:
+        error = instance.query_and_get_error(
+            f"ALTER DATABASE test_database MODIFY SETTING {setting} = {value}"
+        )
+        assert setting in error and "can only be set at CREATE time" in error, error
+
+    # The database is untouched and keeps replicating.
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(50, 50)"
+    )
+    check_tables_are_synchronized(instance, "test_table")

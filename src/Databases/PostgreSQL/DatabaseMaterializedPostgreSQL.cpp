@@ -247,6 +247,15 @@ void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges 
                             "by type inference, and cannot be changed for an existing database: the already created "
                             "nested tables keep their fixed column types. Recreate the database to change it.", change.name);
         }
+        else if (change.name == "materialized_postgresql_table_engine"
+                 || change.name == "materialized_postgresql_keeper_path"
+                 || change.name == "materialized_postgresql_replica_name")
+        {
+            throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
+                            "Setting `{}` defines the engine of the nested tables and the coordination identity of this "
+                            "replica, and can only be set at CREATE time: the nested tables and the coordination state in "
+                            "Keeper are already built from it. Recreate the database to change it.", change.name);
+        }
         else if ((change.name != "materialized_postgresql_allow_automatic_update") && (change.name != "materialized_postgresql_max_block_size"))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown setting");
