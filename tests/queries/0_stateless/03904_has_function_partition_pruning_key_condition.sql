@@ -1,6 +1,8 @@
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 -- EXPLAIN output may differ
 
+SET explain_query_plan_default = 'legacy';
+
 -- { echo }
 
 SET optimize_rewrite_has_to_in = 0;

@@ -1,4 +1,5 @@
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Common/FieldVisitorToString.h>
 #include <DataTypes/Serializations/ISerialization.h>
@@ -200,35 +201,37 @@ namespace QueryPlanFormat
 
         String formatConstant(const ActionsDAG::Node * node)
         {
-            if (!node->column || node->column->empty())
+            if (!node->column)
                 return node->result_name;
 
             if (node->result_type && WhichDataType(node->result_type).isSet())
                 return node->result_name;
 
+            /// node->column is a size-0 ColumnConst; read the value from its data column.
+            const auto & data_col = node->column->getDataColumnPtr();
             WhichDataType data_type(node->result_type);
 
             if (data_type.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64())
             {
                 WriteBufferFromOwnString buf;
                 writeChar('\'', buf);
-                const auto & col = node->column->convertToFullColumnIfConst();
-                node->result_type->getDefaultSerialization()->serializeText(*col, 0, buf, {});
+                node->result_type->getDefaultSerialization()->serializeText(*data_col, 0, buf, {});
                 writeChar('\'', buf);
                 return buf.str();
             }
 
             Field value;
-            node->column->get(0, value);
+            data_col->get(0, value);
             return applyVisitor(FieldVisitorToString(), value);
         }
 
         String getRuntimeFilterId(const ActionsDAG::Node * node)
         {
-            const ActionsDAG::Node * first_child = node->children[0];
-            if (const auto * col = checkAndGetColumnConst<ColumnString>(first_child->column.get()))
-                return col->getValue<String>();
-            return first_child->result_name;
+            /// The first `__applyFilter` argument is a const whose DAG result NAME is the stable
+            /// structural id (`_runtime_filter_<hash>`), under which `runtime_filter_names` is keyed
+            /// (`BuildRuntimeFilterStep::getFilterName`). Its VALUE is the volatile per-plan-build
+            /// rendezvous key, which must never surface in EXPLAIN — so key on the result name.
+            return node->children[0]->result_name;
         }
 
         String formatSetPretty(
@@ -240,9 +243,7 @@ namespace QueryPlanFormat
             if (!set_node->column)
                 return trimColumnIdentifier(set_node->result_name);
 
-            const auto * column_ptr = set_node->column.get();
-            const auto * col_const = typeid_cast<const ColumnConst *>(column_ptr);
-            const ColumnSet * column_set = col_const ? typeid_cast<const ColumnSet *>(&col_const->getDataColumn()) : typeid_cast<const ColumnSet *>(column_ptr);
+            const ColumnSet * column_set = typeid_cast<const ColumnSet *>(&set_node->column->getDataColumn());
 
             if (!column_set || !column_set->getData())
                 return trimColumnIdentifier(set_node->result_name);
@@ -585,14 +586,31 @@ namespace QueryPlanFormat
         return {};
     }
 
+    using PerPlanColumnMaps = std::unordered_map<const QueryPlan *, PrettyColumnNameMap>;
+
     static void buildPrettyNamesForNode(
         const QueryPlan::Node * node,
-        std::unordered_map<String, PrettyColumnName> & pretty_names,
-        std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
-        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names)
+        PrettyColumnNameMap & pretty_names,
+        PrettyRuntimeFilterNameMap & runtime_filter_names,
+        PrettySetNameMap & subquery_set_names,
+        PerPlanColumnMaps & per_plan_columns)
     {
         for (auto it = node->children.rbegin(); it != node->children.rend(); ++it)
-            buildPrettyNamesForNode(*it, pretty_names, runtime_filter_names, subquery_set_names);
+            buildPrettyNamesForNode(*it, pretty_names, runtime_filter_names, subquery_set_names, per_plan_columns);
+
+        for (auto * child_plan : node->step->getChildPlans())
+        {
+            if (child_plan && child_plan->getRootNode())
+            {
+                /// A child plan is a separate naming scope. Build its column names into their own map so
+                /// the parent sees the child's output columns as leaves (trimmed identifiers) rather than
+                /// the child's internal expressions; otherwise nested plans compound the rendering, e.g.
+                /// `materialize(materialize(...))`. Runtime-filter and subquery-set names are global ids,
+                /// so they stay shared across the whole tree.
+                auto & child_columns = per_plan_columns[child_plan];
+                buildPrettyNamesForNode(child_plan->getRootNode(), child_columns, runtime_filter_names, subquery_set_names, per_plan_columns);
+            }
+        }
 
         const auto & step = node->step;
         const auto & step_name = step->getName();
@@ -611,9 +629,13 @@ namespace QueryPlanFormat
                 if (output->type != ActionsDAG::ActionType::INPUT)
                     pretty_names[output->result_name] = PrettyColumnName(formatNodePretty(output, pretty_names, runtime_filter_names, subquery_set_names));
         }
-        else if (step_name == "Aggregating" || step_name == "AggregatingProjection")
+        else if (step_name == "Aggregating")
         {
             addAggregatesPrettyNames(static_cast<const AggregatingStep *>(step.get())->getParams(), pretty_names);
+        }
+        else if (step_name == "AggregatingProjection")
+        {
+            addAggregatesPrettyNames(static_cast<const AggregatingProjectionStep *>(step.get())->getParams(), pretty_names);
         }
         else if (step_name == "MergingAggregated")
         {
@@ -697,14 +719,29 @@ namespace QueryPlanFormat
         }
     }
 
-    void buildPrettyNamesMap(
-        const QueryPlan & plan,
-        std::unordered_map<String, PrettyColumnName> & pretty_names,
-        std::unordered_map<String, RuntimeFilterInfo> & runtime_filter_names,
-        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> & subquery_set_names)
+    PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan)
     {
-        if (plan.getRootNode())
-            buildPrettyNamesForNode(plan.getRootNode(), pretty_names, runtime_filter_names, subquery_set_names);
+        /// Runtime-filter and subquery-set names are global ids; keep them shared across the whole tree
+        /// so their numbering stays consistent regardless of plan boundaries. Only column names are scoped.
+        PrettyRuntimeFilterNameMap runtime_filter_names;
+        PrettySetNameMap subquery_set_names;
+        PerPlanColumnMaps per_plan_columns;
+
+        /// Reserve the top plan's slot first so it is keyed even if it has no expression columns.
+        auto & top_columns = per_plan_columns[&plan];
+        auto * root = plan.getRootNode();
+        if (root)
+            buildPrettyNamesForNode(root, top_columns, runtime_filter_names, subquery_set_names, per_plan_columns);
+
+        PrettyNamesPerPlan result;
+        for (auto & [plan_ptr, columns] : per_plan_columns)
+        {
+            /// Subquery-set names are global; expose them in every plan's map so set references resolve.
+            for (const auto & [hash, name] : subquery_set_names)
+                columns[PreparedSets::toString(hash, {})] = PrettyColumnName(name);
+            result.names.emplace(plan_ptr, PrettyNames{std::move(columns), runtime_filter_names});
+        }
+        return result;
     }
 
 }

@@ -649,6 +649,21 @@ public:
         if (total_bit_num == 0)
             return false;
 
+        /// The value 1 is represented by the single set bit at index `fraction_bit_num`
+        /// (the lowest integer bit). When `integer_bit_num == 0` that bit lies outside
+        /// `data_array` (which has `total_bit_num` entries), so the vector cannot represent
+        /// the value 1, and `getDataArrayAt(fraction_bit_num)` in `pointwiseMultiply` would
+        /// read out of bounds. Such a vector is therefore never all-ones.
+        if (fraction_bit_num >= total_bit_num)
+            return false;
+
+        /// An empty vector carries no values, so it is not all-ones. The value 1 is the single
+        /// bit at index `fraction_bit_num`, hence at least one index must carry that bit. Without
+        /// this check an empty (but initialized) vector would be misclassified as all-ones and the
+        /// fast path in `pointwiseMultiply` would drop the other operand instead of zeroing it.
+        if (getDataArrayAt(fraction_bit_num)->size() == 0)
+            return false;
+
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             if (i == fraction_bit_num)
@@ -673,6 +688,19 @@ public:
 
         res.zero_indexes->merge(*zero_indexes);
         res.zero_indexes->rb_and(bm);
+    }
+
+    /// Records an explicit zero for every index present in only one of the operands.
+    /// The general `pointwiseRawBinaryOperate` multiply path treats a missing value as zero, so
+    /// such indexes become explicit zeros in its result. The all-ones fast path uses `andBitmap`,
+    /// which keeps only the intersection; this restores the dropped indexes as zeros so the fast
+    /// path stays equivalent to the general path. `res` already holds the (non-zero) products.
+    static void addUnionZeroIndexes(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, BSINumericIndexedVector & res)
+    {
+        auto result_zero_indexes = lhs.getAllIndex();
+        result_zero_indexes->rb_or(*rhs.getAllIndex());
+        result_zero_indexes->rb_andnot(*res.getAllNonZeroIndex());
+        res.zero_indexes = result_zero_indexes;
     }
 
     /// Set Roaring containers to RoaringBitmapWithSmallSet
@@ -1229,11 +1257,13 @@ public:
         if (lhs.allValuesEqualOne())
         {
             rhs.andBitmap(*lhs.getDataArrayAt(lhs.fraction_bit_num), res);
+            addUnionZeroIndexes(lhs, rhs, res);
             return;
         }
         else if (rhs.allValuesEqualOne())
         {
-            lhs.andBitmap(*rhs.getDataArrayAt(lhs.fraction_bit_num), res);
+            lhs.andBitmap(*rhs.getDataArrayAt(rhs.fraction_bit_num), res);
+            addUnionZeroIndexes(lhs, rhs, res);
             return;
         }
         UInt32 max_integer_bit_num = std::max(lhs.integer_bit_num, rhs.integer_bit_num);

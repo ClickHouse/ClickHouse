@@ -1,0 +1,71 @@
+---
+description: 'Documentation de la fonction de fenêtre nth_value'
+sidebarTitle: 'nth_value'
+slug: /sql-reference/window-functions/nth_value
+title: 'nth_value'
+doc_type: 'reference'
+---
+
+Renvoie la première valeur non-NULL évaluée à la n-ième ligne (offset) de son cadre ordonné.
+
+**Syntaxe**
+
+```sql
+nth_value (x, offset)
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
+        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+FROM table_name
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+```
+
+Pour plus de détails sur la syntaxe des fonctions de fenêtre, voir : [Fonctions de fenêtre - Syntaxe](/fr/reference/functions/window-functions/index#syntax).
+
+**Paramètres**
+
+* `x` — Nom de la colonne.
+* `offset` — n-ième ligne par rapport à laquelle évaluer la ligne courante.
+
+**Valeur retournée**
+
+* La première valeur non-NULL évaluée par rapport à la n-ième ligne (`offset`) dans son frame ordonné.
+
+**Exemple**
+
+Dans cet exemple, la fonction `nth-value` est utilisée pour trouver le troisième salaire le plus élevé dans un jeu de données fictif contenant les salaires de joueurs de Premier League.
+
+```sql title="Query"
+DROP TABLE IF EXISTS salaries;
+CREATE TABLE salaries
+(
+    `team` String,
+    `player` String,
+    `salary` UInt32,
+    `position` String
+)
+Engine = Memory;
+
+INSERT INTO salaries FORMAT Values
+    ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 100000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 180000, 'D'),
+    ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M'),
+    ('South Hampton Seagulls', 'Douglas Benson', 150000, 'M'),
+    ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
+```
+
+```sql title="Query"
+SELECT player, salary, nth_value(player,3) OVER(ORDER BY salary DESC) AS third_highest_salary FROM salaries;
+```
+
+```response title="Response"
+   ┌─player──────────┬─salary─┬─third_highest_salary─┐
+1. │ Gary Chen       │ 195000 │                      │
+2. │ Robert George   │ 195000 │                      │
+3. │ Charles Juarez  │ 190000 │ Charles Juarez       │
+4. │ Scott Harrison  │ 180000 │ Charles Juarez       │
+5. │ Douglas Benson  │ 150000 │ Charles Juarez       │
+6. │ James Henderson │ 140000 │ Charles Juarez       │
+7. │ Michael Stanley │ 100000 │ Charles Juarez       │
+   └─────────────────┴────────┴──────────────────────┘
+```

@@ -1,7 +1,9 @@
 #include <Dictionaries/HTTPDictionarySource.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Formats/formatBlock.h>
+#include <IO/CompressionMethod.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromOStream.h>
@@ -19,12 +21,32 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSnappyMode snappy_mode;
+}
+
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
 }
 
 static const UInt64 max_block_size = 8192;
+
+static const std::unordered_set<std::string_view> optional_configuration_keys = { // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    "url",
+    "endpoint",
+    "user",
+    "credentials.user",
+    "password",
+    "credentials.password",
+    "format",
+    "compression_method",
+    "structure",
+    "name",
+    "headers.header.name",
+    "headers.header.value",
+};
 
 
 HTTPDictionarySource::HTTPDictionarySource(
@@ -62,8 +84,18 @@ QueryPipeline HTTPDictionarySource::createWrappedBuffer(std::unique_ptr<ReadWrit
 {
     Poco::URI uri(configuration.url);
     String http_request_compression_method_str = http_buffer_ptr->getCompressionMethod();
+    auto compression_method = chooseCompressionMethod(uri.getPath(), http_request_compression_method_str);
+    /// When the compression method came from the response's `Content-Encoding` header,
+    /// `Content-Encoding: snappy` follows the HTTP standard wire format (snappy framing),
+    /// independent of the user-tunable `snappy_mode`. When the method is instead inferred
+    /// from the URL path (for example `http://.../data.snappy`), respect the user's
+    /// `snappy_mode` setting like `StorageURL` does, so dictionary sources stay consistent
+    /// with generic file/url reads.
+    SnappyMode snappy_mode = !http_request_compression_method_str.empty()
+        ? SnappyMode::Framed
+        : context->getSettingsRef()[Setting::snappy_mode];
     auto in_ptr_wrapped
-        = wrapReadBufferWithCompressionMethod(std::move(http_buffer_ptr), chooseCompressionMethod(uri.getPath(), http_request_compression_method_str));
+        = wrapReadBufferWithCompressionMethod(std::move(http_buffer_ptr), compression_method, /*zstd_window_log_max=*/0, snappy_mode);
     auto source = context->getInputFormat(configuration.format, *in_ptr_wrapped, sample_block, max_block_size);
     source->addBuffer(std::move(in_ptr_wrapped));
     return QueryPipeline(std::move(source));
@@ -235,11 +267,19 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
         auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix, global_context) : nullptr;
         if (named_collection)
         {
+            /// Headers in config file will have structure "headers.header.name" and "headers.header.value".
+            /// But Poco::AbstractConfiguration converts them into "header", "header[1]", "header[2]".
+            static const std::vector<std::shared_ptr<re2::RE2>> optional_regex_keys // STYLE_CHECK_ALLOW_STD_CONTAINERS
+            {
+                std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].name)"),
+                std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].value)"),
+            };
+
             validateNamedCollection(
                 *named_collection,
-                /* required_keys */{},
-                /* optional_keys */ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>{
-                "url", "endpoint", "user", "credentials.user", "password", "credentials.password", "format", "compression_method", "structure", "name"});
+                /* required_keys */ {},
+                /* optional_keys */ optional_configuration_keys,
+                optional_regex_keys);
 
             url = named_collection->getOrDefault<String>("url", "");
             endpoint = named_collection->getOrDefault<String>("endpoint", "");
@@ -310,7 +350,10 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 
         return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context);
     };
-    factory.registerSource("http", create_table_source);
+    factory.registerSource("http", create_table_source, Documentation{
+        .description = "Obtains dictionary data from an HTTP(S) endpoint in one of the supported formats.",
+        .syntax = "SOURCE(HTTP(url 'https://host/path' format 'CSV'))",
+        .related = {"file"}});
 }
 
 }

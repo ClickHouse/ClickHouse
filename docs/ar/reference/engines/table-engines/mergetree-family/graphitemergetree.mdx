@@ -1,0 +1,289 @@
+---
+description: 'مصمم لتقليل كثافة بيانات Graphite وتجميعها/احتساب متوسطها (rollup).'
+sidebarTitle: 'GraphiteMergeTree'
+slug: /engines/table-engines/mergetree-family/graphitemergetree
+title: 'محرك جدول GraphiteMergeTree'
+doc_type: 'guide'
+---
+
+صُمم هذا المحرك لتقليل كثافة بيانات [Graphite](http://graphite.readthedocs.io/en/latest/index.html) وتجميعها/احتساب متوسطها (rollup). وقد يكون مفيدًا للمطورين الذين يريدون استخدام ClickHouse كمخزن بيانات لـ Graphite.
+
+يمكنك استخدام أي محرك جدول في ClickHouse لتخزين بيانات Graphite إذا لم تكن بحاجة إلى rollup، ولكن إذا كنت بحاجة إليه فاستخدم `GraphiteMergeTree`. يقلل هذا المحرك من حجم التخزين ويزيد من كفاءة استعلامات Graphite.
+
+يرث هذا المحرك خصائصه من [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree).
+
+<div id="creating-table">
+  ## إنشاء جدول
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    Path String,
+    Time DateTime,
+    Value Float64,
+    Version <Numeric_type>
+    ...
+) ENGINE = GraphiteMergeTree(config_section)
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
+```
+
+اطّلع على وصف تفصيلي لعبارة [CREATE TABLE](/ar/reference/statements/create/table).
+
+يجب أن يحتوي جدول بيانات Graphite على الأعمدة التالية لأنواع البيانات التالية:
+
+* اسم المقياس (Graphite sensor). نوع البيانات: `String`.
+
+* وقت قياس المقياس. نوع البيانات: `DateTime`.
+
+* قيمة المقياس. نوع البيانات: `Float64`.
+
+* إصدار المقياس. نوع البيانات: أي نوع رقمي (يحفظ ClickHouse الصفوف ذات الإصدار الأعلى، أو آخر صف كُتب إذا كانت الإصدارات متساوية. وتُحذف الصفوف الأخرى أثناء دمج أجزاء البيانات).
+
+يجب ضبط أسماء هذه الأعمدة في إعداد rollup.
+
+**معلمات GraphiteMergeTree**
+
+* `config_section` — اسم القسم في ملف الإعدادات الذي تُضبط فيه قواعد rollup.
+
+**بنود الاستعلام**
+
+عند إنشاء جدول `GraphiteMergeTree`، تكون [البنود](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) نفسها مطلوبة كما هي الحال عند إنشاء جدول `MergeTree`.
+
+<details markdown="1">
+  <summary>طريقة مهجورة لإنشاء جدول</summary>
+
+  <Note>
+    لا تستخدم هذه الطريقة في المشاريع الجديدة، وإذا أمكن، انقل المشاريع القديمة إلى الطريقة الموضحة أعلاه.
+  </Note>
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+  (
+      EventDate Date,
+      Path String,
+      Time DateTime,
+      Value Float64,
+      Version <Numeric_type>
+      ...
+  ) ENGINE [=] GraphiteMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, config_section)
+  ```
+
+  جميع المعلمات باستثناء `config_section` لها المعنى نفسه كما في `MergeTree`.
+
+  * `config_section` — اسم القسم في ملف الإعدادات الذي تُضبط فيه قواعد rollup.
+</details>
+
+<div id="rollup-configuration">
+  ## تهيئة rollup
+</div>
+
+تُحدَّد إعدادات rollup بواسطة المعلمة [graphite&#95;rollup](/ar/reference/settings/server-settings/settings#graphite) ضمن إعدادات الخادم. ويمكن أن يكون اسم المعلمة أيّ اسم. يمكنك إنشاء عدة تهيئات واستخدامها مع جداول مختلفة.
+
+بنية تهيئة rollup:
+
+الأعمدة المطلوبة
+الأنماط
+
+<div id="required-columns">
+  ### الأعمدة المطلوبة
+</div>
+
+<div id="path_column_name">
+  #### `path_column_name`
+</div>
+
+`path_column_name` — اسم العمود الذي يخزّن اسم المقياس (Graphite sensor). القيمة الافتراضية: `Path`.
+
+<div id="time_column_name">
+  #### `time_column_name`
+</div>
+
+`time_column_name` — اسم العمود الذي يخزّن وقت قياس المقياس. القيمة الافتراضية: `Time`.
+
+<div id="value_column_name">
+  #### `value_column_name`
+</div>
+
+`value_column_name` — اسم العمود الذي يخزّن قيمة المقياس عند الوقت المحدَّد في `time_column_name`. القيمة الافتراضية: `Value`.
+
+<div id="version_column_name">
+  #### `version_column_name`
+</div>
+
+`version_column_name` — اسم العمود الذي يخزّن إصدار المقياس. القيمة الافتراضية: `Timestamp`.
+
+<div id="patterns">
+  ### الأنماط
+</div>
+
+بنية قسم `patterns`:
+
+```text
+pattern
+    rule_type
+    regexp
+    function
+pattern
+    rule_type
+    regexp
+    age + precision
+    ...
+pattern
+    rule_type
+    regexp
+    function
+    age + precision
+    ...
+pattern
+    ...
+default
+    function
+    age + precision
+    ...
+```
+
+<Warning>
+  يجب أن تكون الأنماط مرتبة ترتيبًا صارمًا:
+
+  1. الأنماط التي لا تحتوي على `function` أو `retention`.
+  2. الأنماط التي تحتوي على كلٍّ من `function` و`retention`.
+  3. النمط `default`.
+</Warning>
+
+عند معالجة صف، يتحقق ClickHouse من القواعد في أقسام `pattern`. ويمكن لكل قسم من أقسام `pattern` (بما في ذلك `default`) أن يحتوي على المعلَمة `function` للتجميع، أو معلَمات `retention`، أو كليهما. إذا طابق اسم المقياس `regexp`، فستُطبَّق القواعد من قسم `pattern` (أو الأقسام)؛ وإلا فستُستخدم القواعد من قسم `default`.
+
+الحقول الخاصة بقسمي `pattern` و`default`:
+
+* `rule_type` - نوع القاعدة. لا تُطبَّق إلا على مقاييس معيّنة. يستخدمها المحرّك للفصل بين المقاييس العادية والمقاييس الموسومة. معلَمة اختيارية. القيمة الافتراضية: `all`.
+  لا تكون ضرورية إذا لم يكن الأداء بالغ الأهمية، أو إذا كان يُستخدم نوع واحد فقط من المقاييس، مثل المقاييس العادية. افتراضيًا، لا تُنشأ إلا مجموعة واحدة من القواعد. بخلاف ذلك، إذا جرى تعريف أي من الأنواع الخاصة، فستُنشأ مجموعتان مختلفتان: واحدة للمقاييس العادية (root.branch.leaf) وأخرى للمقاييس الموسومة (root.branch.leaf;tag1=value1).
+  وتُدرج القواعد الافتراضية ضمن كلتا المجموعتين.
+  القيم الصالحة:
+  * `all` (الافتراضية) - قاعدة عامة تُستخدم عند حذف `rule_type`.
+  * `plain` - قاعدة للمقاييس العادية. يُعالَج الحقل `regexp` بوصفه تعبيرًا نمطيًا.
+  * `tagged` - قاعدة للمقاييس الموسومة (تُخزَّن المقاييس في DB بالتنسيق `someName?tag1=value1&tag2=value2&tag3=value3`). يجب أن يكون التعبير النمطي مرتبًا بحسب أسماء tags، ويجب أن يكون أول tag هو `__name__` إن وُجد. يُعالَج الحقل `regexp` بوصفه تعبيرًا نمطيًا.
+  * `tag_list` - قاعدة للمقاييس الموسومة، وهي DSL بسيطة لتسهيل وصف المقياس بتنسيق graphite مثل `someName;tag1=value1;tag2=value2` أو `someName` أو `tag1=value1;tag2=value2`. يُترجم الحقل `regexp` إلى قاعدة `tagged`. لا حاجة إلى الترتيب حسب أسماء tags، إذ سيُجرى ذلك تلقائيًا. ويمكن تعيين قيمة tag (وليس الاسم) على هيئة تعبير نمطي، مثل `env=(dev|staging)`.
+* `regexp` – نمط لاسم المقياس (تعبير نمطي أو DSL).
+* `age` – الحد الأدنى لعمر البيانات بالثواني.
+* `precision`– مدى الدقة في تحديد عمر البيانات بالثواني. يجب أن يكون قاسمًا للعدد 86400 (عدد الثواني في اليوم).
+* `function` – اسم دالة التجميع التي ستُطبَّق على البيانات التي يقع عمرها ضمن المجال `[age, age + precision]`. الدوال المقبولة: min / max / any / avg. يُحسَب المتوسط بشكل غير دقيق، مثل متوسط المتوسطات.
+
+<div id="configuration-example">
+  ### مثال على التهيئة من دون أنواع القواعد
+</div>
+
+```xml
+<graphite_rollup>
+    <version_column_name>Version</version_column_name>
+    <pattern>
+        <regexp>click_cost</regexp>
+        <function>any</function>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <default>
+        <function>max</function>
+        <retention>
+            <age>0</age>
+            <precision>60</precision>
+        </retention>
+        <retention>
+            <age>3600</age>
+            <precision>300</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>3600</precision>
+        </retention>
+    </default>
+</graphite_rollup>
+```
+
+<div id="configuration-typed-example">
+  ### مثال على التهيئة لأنواع القواعد
+</div>
+
+```xml
+<graphite_rollup>
+    <version_column_name>Version</version_column_name>
+    <pattern>
+        <rule_type>plain</rule_type>
+        <regexp>click_cost</regexp>
+        <function>any</function>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <pattern>
+        <rule_type>tagged</rule_type>
+        <regexp>^((.*)|.)min\?</regexp>
+        <function>min</function>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <pattern>
+        <rule_type>tagged</rule_type>
+        <regexp><![CDATA[^someName\?(.*&)*tag1=value1(&|$)]]></regexp>
+        <function>min</function>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <pattern>
+        <rule_type>tag_list</rule_type>
+        <regexp>someName;tag2=value2</regexp>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <default>
+        <function>max</function>
+        <retention>
+            <age>0</age>
+            <precision>60</precision>
+        </retention>
+        <retention>
+            <age>3600</age>
+            <precision>300</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>3600</precision>
+        </retention>
+    </default>
+</graphite_rollup>
+```
+
+<Note>
+  تُجرى عملية rollup للبيانات أثناء عمليات الدمج. وعادةً لا تبدأ عمليات الدمج للأقسام القديمة، لذلك يلزم، لتنفيذ rollup، تشغيل عملية دمج غير مجدولة باستخدام [optimize](/ar/reference/statements/optimize). أو استخدام أدوات إضافية، مثل [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer).
+</Note>

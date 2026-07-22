@@ -1,0 +1,46 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/redis
+title: 'Source de dictionnaire Redis'
+sidebarTitle: 'Redis'
+description: 'Configure Redis comme source de dictionnaire dans ClickHouse.'
+doc_type: 'reference'
+---
+
+Exemple de paramètres :
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(REDIS(
+        host 'localhost'
+        port 6379
+        storage_type 'simple'
+        db_index 0
+    ))
+    ```
+  </Tab>
+
+  <Tab title="Fichier de configuration">
+    ```xml
+    <source>
+        <redis>
+            <host>localhost</host>
+            <port>6379</port>
+            <storage_type>simple</storage_type>
+            <db_index>0</db_index>
+        </redis>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Champs de paramétrage :
+
+| Paramètre      | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host`         | L’hôte Redis.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `port`         | Le port du serveur Redis.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `storage_type` | La structure du stockage interne Redis utilisée pour gérer les clés. `simple` utilise un modèle clé-valeur simple et prend en charge les layouts à clé simple ainsi que les layouts à clé complexe sur une seule colonne (tels que `complex_key_cache` et `complex_key_direct`). `hash_map` utilise un hash Redis et est requis pour les clés complexes composites ; il attend exactement deux colonnes de clé. Les colonnes de clé doivent être de type entier ou chaîne. Les layouts par plage ne sont pas pris en charge. La valeur par défaut est `simple`. Facultatif. |
+| `db_index`     | L’index numérique de la base de données logique Redis. La valeur par défaut est `0`. Facultatif.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |

@@ -1,0 +1,68 @@
+---
+alias: []
+description: 'MsgPack 格式文档'
+input_format: true
+keywords: ['MsgPack']
+output_format: true
+slug: /interfaces/formats/MsgPack
+title: 'MsgPack'
+doc_type: 'reference'
+---
+
+| 输入 | 输出 | 别名 |
+| -- | -- | -- |
+| ✔  | ✔  |    |
+
+<div id="description">
+  ## 说明
+</div>
+
+ClickHouse 支持读取和写入 [MessagePack](https://msgpack.org/) 格式的数据文件。
+
+<div id="data-types-matching">
+  ## 数据类型匹配
+</div>
+
+| MessagePack 数据类型 (`INSERT`)                                        | ClickHouse 数据类型                                                               | MessagePack 数据类型 (`SELECT`)        |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------- | ---------------------------------- |
+| `uint N`, `positive fixint`                                        | [`UIntN`](/zh/reference/data-types/int-uint)                                     | `uint N`                           |
+| `int N`, `negative fixint`                                         | [`IntN`](/zh/reference/data-types/int-uint)                                      | `int N`                            |
+| `bool`                                                             | [`UInt8`](/zh/reference/data-types/int-uint)                                     | `uint 8`                           |
+| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [`String`](/zh/reference/data-types/string)                                      | `bin 8`, `bin 16`, `bin 32`        |
+| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [`FixedString`](/zh/reference/data-types/fixedstring)                            | `bin 8`, `bin 16`, `bin 32`        |
+| `float 32`                                                         | [`Float32`](/zh/reference/data-types/float)                                      | `float 32`                         |
+| `float 64`                                                         | [`Float64`](/zh/reference/data-types/float)                                      | `float 64`                         |
+| `uint 16`                                                          | [`Date`](/zh/reference/data-types/date)                                          | `uint 16`                          |
+| `int 32`                                                           | [`Date32`](/zh/reference/data-types/date32)                                      | `int 32`                           |
+| `uint 32`                                                          | [`DateTime`](/zh/reference/data-types/datetime)                                  | `uint 32`                          |
+| `uint 64`                                                          | [`DateTime64`](/zh/reference/data-types/datetime)                                | `uint 64`                          |
+| `fixarray`, `array 16`, `array 32`                                 | [`Array`](/zh/reference/data-types/array)/[`Tuple`](/zh/reference/data-types/tuple) | `fixarray`, `array 16`, `array 32` |
+| `fixmap`, `map 16`, `map 32`                                       | [`Map`](/zh/reference/data-types/map)                                            | `fixmap`, `map 16`, `map 32`       |
+| `uint 32`                                                          | [`IPv4`](/zh/reference/data-types/ipv4)                                          | `uint 32`                          |
+| `bin 8`                                                            | [`String`](/zh/reference/data-types/string)                                      | `bin 8`                            |
+| `int 8`                                                            | [`Enum8`](/zh/reference/data-types/enum)                                         | `int 8`                            |
+| `bin 8`                                                            | [`(U)Int128`/`(U)Int256`](/zh/reference/data-types/int-uint)                     | `bin 8`                            |
+| `int 32`                                                           | [`Decimal32`](/zh/reference/data-types/decimal)                                  | `int 32`                           |
+| `int 64`                                                           | [`Decimal64`](/zh/reference/data-types/decimal)                                  | `int 64`                           |
+| `bin 8`                                                            | [`Decimal128`/`Decimal256`](/zh/reference/data-types/decimal)                    | `bin 8 `                           |
+
+<div id="example-usage">
+  ## 示例用法
+</div>
+
+写入文件 &quot;.msgpk&quot;：
+
+```sql
+$ clickhouse-client --query="CREATE TABLE msgpack (array Array(UInt8)) ENGINE = Memory;"
+$ clickhouse-client --query="INSERT INTO msgpack VALUES ([0, 1, 2, 3, 42, 253, 254, 255]), ([255, 254, 253, 42, 3, 2, 1, 0])";
+$ clickhouse-client --query="SELECT * FROM msgpack FORMAT MsgPack" > tmp_msgpack.msgpk;
+```
+
+<div id="format-settings">
+  ## 格式设置
+</div>
+
+| 设置                                                                                                                   | 描述                                    | 默认值   |
+| -------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ----- |
+| [`input_format_msgpack_number_of_columns`](/zh/reference/settings/formats#input_format_msgpack_number_of_columns)       | 插入的 MsgPack 数据中的列数。用于根据数据自动推断 schema。 | `0`   |
+| [`output_format_msgpack_uuid_representation`](/zh/reference/settings/formats#output_format_msgpack_uuid_representation) | 以 MsgPack 格式输出 UUID 的方式。              | `EXT` |

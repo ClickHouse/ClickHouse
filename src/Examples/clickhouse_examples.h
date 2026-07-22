@@ -11,6 +11,8 @@
 int mainEntryExampleKerberosInit(int argc, char ** argv);
 int mainEntryExampleQuantileTDigest(int argc, char ** argv);
 int mainEntryExampleGroupArraySorted(int argc, char ** argv);
+int mainEntryExampleTimeSeriesToGridTwoStackVsRecompute(int argc, char ** argv);
+int mainEntryExampleTimeSeriesToGridRangeScanVsStdSort(int argc, char ** argv);
 int mainEntryExampleTestConnect(int argc, char ** argv);
 int mainEntryExampleZkutilTestCommands(int argc, char ** argv);
 int mainEntryExampleZkutilTestCommandsNewLib(int argc, char ** argv);
@@ -39,6 +41,7 @@ int mainEntryExampleHiveMetastoreClient(int argc, char ** argv);
 int mainEntryExampleIntervalTree(int argc, char ** argv);
 int mainEntryExampleEncryptDecrypt(int argc, char ** argv);
 int mainEntryExampleCheckPointerValid(int argc, char ** argv);
+int mainEntryExampleMemoryTrackerBenchmark(int argc, char ** argv);
 int mainEntryExampleUtf8UpperLower(int argc, char ** argv);
 int mainEntryExampleCompressedBuffer(int argc, char ** argv);
 int mainEntryExampleDecompressPerf(int argc, char ** argv);

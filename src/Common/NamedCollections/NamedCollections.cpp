@@ -262,6 +262,18 @@ bool NamedCollection::isOverridable(const Key & key, bool default_value) const
     return pimpl->isOverridable(key, default_value);
 }
 
+void NamedCollection::markQueryOverridden(const Key & key)
+{
+    std::lock_guard lock(mutex);
+    query_overridden_keys.insert(key);
+}
+
+bool NamedCollection::isQueryOverridden(const Key & key) const
+{
+    std::lock_guard lock(mutex);
+    return query_overridden_keys.contains(key);
+}
+
 template <bool Locked> void NamedCollection::remove(const Key & key)
 {
     assertMutable();

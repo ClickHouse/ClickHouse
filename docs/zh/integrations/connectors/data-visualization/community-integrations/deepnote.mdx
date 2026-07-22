@@ -1,0 +1,60 @@
+---
+sidebarTitle: 'Deepnote'
+slug: /integrations/deepnote
+keywords: ['ClickHouse', 'Deepnote', '连接', '集成', '笔记本']
+description: '在熟悉的笔记本环境中高效查询超大规模数据集，并轻松进行分析和建模。'
+title: '将 ClickHouse 连接到 Deepnote'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+  - website: 'https://deepnote.com/launch?template=ClickHouse%20and%20Deepnote'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
+
+<CommunityMaintainedBadge />
+
+<a href="https://www.deepnote.com/" target="_blank">Deepnote</a> 是一个面向团队的协作式数据 笔记本，用于帮助团队发现并共享洞察。除了兼容 Jupyter 之外，它还支持在云端运行，并为你提供一个统一的平台，以便高效协作和开展数据科学项目。
+
+本指南假定你已拥有 Deepnote 账户，并且已有一个正在运行的 ClickHouse 实例。
+
+<div id="interactive-example">
+  ## 交互式示例
+</div>
+
+如果你想查看一个通过 Deepnote 数据笔记本查询 ClickHouse 的交互式示例，请点击下方按钮，启动一个连接到 [ClickHouse playground](/zh/get-started/sample-datasets/playground) 的模板项目。
+
+[<img src="https://deepnote.com/buttons/launch-in-deepnote.svg" alt="在 Deepnote 中启动" width="32" />](https://deepnote.com/launch?template=ClickHouse%20and%20Deepnote)
+
+<div id="connect-to-clickhouse">
+  ## 连接到 ClickHouse
+</div>
+
+1. 在 Deepnote 中，选择“Integrations”概览，然后点击 ClickHouse 卡片。
+
+<Image size="lg" img="/images/integrations/data-visualization/deepnote_01.webp" alt="ClickHouse 集成卡片" border />
+
+2. 填写 ClickHouse 实例的连接信息：
+
+<ConnectionDetails />
+
+<Image size="md" img="/images/integrations/data-visualization/deepnote_02.webp" alt="ClickHouse 详情对话框" border />
+
+***注意：*** 如果您与 ClickHouse 的连接受 IP Access List 保护，可能需要将 Deepnote 的 IP 地址加入允许列表。更多信息请参阅 [Deepnote 文档](https://docs.deepnote.com/integrations/authorize-connections-from-deepnote-ip-addresses)。
+
+3. 恭喜！您已成功将 ClickHouse 集成到 Deepnote 中。
+
+<div id="using-clickhouse-integration">
+  ## 使用 ClickHouse 集成
+</div>
+
+1. 首先，连接到 笔记本 右侧的 ClickHouse 集成。
+
+   <Image size="lg" img="/images/integrations/data-visualization/deepnote_03.webp" alt="ClickHouse 详细信息对话框" border />
+
+2. 现在，新建一个 ClickHouse 查询块，并查询你的数据库。查询结果将保存为 DataFrame，并存储在 SQL 块中指定的变量中。
+
+3. 你也可以将任何现有的 [SQL 块](https://docs.deepnote.com/features/sql-cells) 转换为 ClickHouse 块。

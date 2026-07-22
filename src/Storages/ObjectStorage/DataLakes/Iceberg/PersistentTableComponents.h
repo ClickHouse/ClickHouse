@@ -11,7 +11,10 @@
 namespace DB::Iceberg
 {
 
-// All fields in this struct should be either thread-safe or immutable, because it can be used by several queries
+// All fields in this struct should be either thread-safe or immutable, because it can be used by several queries.
+// `format_version` is the value observed when the table was opened; the authoritative version
+// for parsing a specific manifest list / manifest file is taken from that file's own Avro metadata,
+// so an external upgrade (e.g. Spark v1 -> v2) between queries does not corrupt this cache.
 struct PersistentTableComponents
 {
     IcebergSchemaProcessorPtr schema_processor;

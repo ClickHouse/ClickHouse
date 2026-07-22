@@ -1,0 +1,351 @@
+---
+slug: /partitions
+title: 'テーブルパーティション'
+description: 'ClickHouse のテーブルパーティションとは'
+keywords: ['パーティション', 'partition by']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+import { RunnableCode } from "/snippets/ja/components/RunnableCode/RunnableCode.jsx";
+
+<div id="what-are-table-partitions-in-clickhouse">
+  ## ClickHouse におけるテーブルのパーティションとは？
+</div>
+
+<br />
+
+パーティションは、[MergeTree エンジンファミリー](/ja/reference/engines/table-engines/mergetree-family/index)のテーブルにある[データパーツ](/ja/concepts/core-concepts/parts)を、整理された論理的な単位としてまとめるための仕組みです。これは、時間範囲、カテゴリ、その他の主要な属性といった特定の基準に基づいて、概念的に意味のある形でデータを整理する方法です。こうした論理単位により、データの管理、クエリ、最適化がしやすくなります。
+
+<div id="partition-by">
+  ### PARTITION BY
+</div>
+
+パーティション化は、テーブルの初期定義時に [PARTITION BY 句](/ja/reference/engines/table-engines/mergetree-family/custom-partitioning-key) を指定することで有効にできます。この句には任意のカラムに対する SQL 式を含めることができ、その結果によって各行がどのパーティションに属するかが決まります。
+
+これを説明するために、[What are table parts](/ja/concepts/core-concepts/parts) のサンプルテーブルに `PARTITION BY toStartOfMonth(date)` 句を追加して [拡張](https://sql.clickhouse.com/?query=U0hPVyBDUkVBVEUgVEFCTEUgdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQ\&run_query=true\&tab=results) します。これにより、テーブルのデータパーツが不動産売買の月ごとに整理されます。
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple_partitioned
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = MergeTree
+ORDER BY (town, street)
+PARTITION BY toStartOfMonth(date);
+```
+
+当社のClickHouse SQL Playgroundで、[このテーブルにクエリを実行できます](https://sql.clickhouse.com/?query=U0VMRUNUICogRlJPTSB1ay51a19wcmljZV9wYWlkX3NpbXBsZV9wYXJ0aXRpb25lZA\&run_query=true\&tab=results)。
+
+<div id="structure-on-disk">
+  ### ディスク上の構造
+</div>
+
+テーブルに行のセットが挿入されるたびに、挿入されたすべての行を含む単一のデータパーツを ([少なくとも](/ja/reference/settings/session-settings#max_insert_block_size)) 1 つ作成するのではなく ([こちら](/ja/concepts/core-concepts/parts)で説明しているとおり) 、ClickHouse は、挿入された行の中で一意な各パーティションキーの値ごとに、新しいデータパーツを 1 つ作成します。
+
+<Image img="/images/managing-data/core-concepts/partitions.webp" size="lg" alt="INSERT の処理" />
+
+<br />
+
+ClickHouse サーバーはまず、上の図に示されている 4 行の挿入例の行を、パーティションキーの値 `toStartOfMonth(date)` ごとに分割します。
+次に、特定された各パーティションについて、[通常どおり](/ja/concepts/core-concepts/parts)複数の連続した手順 (① ソート、② カラムへの分割、③ 圧縮、④ ディスクへの書き込み) で行が処理されます。
+
+パーティション化を有効にすると、ClickHouse は各データパーツに対して自動的に [MinMax indexes](https://github.com/ClickHouse/ClickHouse/blob/dacc8ebb0dac5bbfce5a7541e7fc70f26f7d5065/src/Storages/MergeTree/IMergeTreeDataPart.h#L341) を作成する点に注意してください。これらは単に、パーティションキー式で使用される各テーブルカラムごとのファイルであり、そのデータパーツ内におけるそのカラムの最小値と最大値が含まれています。
+
+<div id="per-partition-merges">
+  ### パーティションごとのマージ
+</div>
+
+パーティション化を有効にすると、ClickHouse はパーティションをまたいでではなく、各パーティション内でのみデータパーツを[マージ](/ja/concepts/core-concepts/merges)します。この動作を、上記の例のテーブルで図示します。
+
+<Image img="/images/managing-data/core-concepts/merges_with_partitions.webp" size="lg" alt="パーツのマージ" />
+
+<br />
+
+上の図のとおり、異なるパーティションに属するパーツがマージされることはありません。カーディナリティの高いパーティションキーを選ぶと、パーツが数千ものパーティションに分散し、マージ候補になることがないため、事前設定された制限を超えて、厄介な`Too many parts`エラーの原因になります。この問題への対処は簡単です。適切なパーティションキーを選び、[カーディナリティを 1000..10000 未満](https://github.com/ClickHouse/ClickHouse/blob/ffc5b2c56160b53cf9e5b16cfb73ba1d956f7ce4/src/Storages/MergeTree/MergeTreeDataWriter.cpp#L121)にしてください。
+
+<div id="monitoring-partitions">
+  ## パーティションの監視
+</div>
+
+[仮想カラム](/ja/reference/engines/table-engines/index#table_engines-virtual_columns) `_partition_value` を使うと、サンプルテーブルに存在する一意なパーティションの一覧を[クエリ](https://sql.clickhouse.com/?query=U0VMRUNUIERJU1RJTkNUIF9wYXJ0aXRpb25fdmFsdWUgQVMgcGFydGl0aW9uCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKT1JERVIgQlkgcGFydGl0aW9uIEFTQw\&run_query=true\&tab=results)できます。
+
+<RunnableCode>
+  ```sql
+  SELECT DISTINCT _partition_value AS partition
+  FROM uk.uk_price_paid_simple_partitioned
+  ORDER BY partition ASC;
+  ```
+</RunnableCode>
+
+あるいは、ClickHouse はすべてのテーブルのすべてのパーツとパーティションを [system.parts](/ja/reference/system-tables/parts) システムテーブルで追跡しています。次のクエリは、上記のサンプルテーブルについて、すべてのパーティションの一覧に加え、パーティションごとの現在アクティブなパーツ数と、それらのパーツに含まれる行数の合計を[返します](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICBwYXJ0aXRpb24sCiAgICBjb3VudCgpIEFTIHBhcnRzLAogICAgc3VtKHJvd3MpIEFTIHJvd3MKRlJPTSBzeXN0ZW0ucGFydHMKV0hFUkUgKGRhdGFiYXNlID0gJ3VrJykgQU5EIChgdGFibGVgID0gJ3VrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkJykgQU5EIGFjdGl2ZQpHUk9VUCBCWSBwYXJ0aXRpb24KT1JERVIgQlkgcGFydGl0aW9uIEFTQzs\&run_query=true\&tab=results)。
+
+<RunnableCode>
+  ```sql
+  SELECT
+      partition,
+      count() AS parts,
+      sum(rows) AS rows
+  FROM system.parts
+  WHERE (database = 'uk') AND (`table` = 'uk_price_paid_simple_partitioned') AND active
+  GROUP BY partition
+  ORDER BY partition ASC;
+  ```
+</RunnableCode>
+
+<div id="what-are-table-partitions-used-for">
+  ## テーブルのパーティションは何に使われますか？
+</div>
+
+<div id="data-management">
+  ### データ管理
+</div>
+
+ClickHouse では、パーティション化は主にデータ管理のための機能です。パーティション式に基づいてデータを論理的に整理することで、各パーティションを個別に管理できます。たとえば、上記のサンプルテーブルのパーティション化方式では、[有効期限 (TTL) ルール](/ja/concepts/features/operations/delete/ttl) を使って古いデータを自動的に自動削除し、メインテーブルには直近 12 か月分のデータのみを保持するといった運用が可能です (DDL ステートメントに追加された最後の行を参照) 。:
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple_partitioned
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = MergeTree
+PARTITION BY toStartOfMonth(date)
+ORDER BY (town, street)
+TTL date + INTERVAL 12 MONTH DELETE;
+```
+
+テーブルは `toStartOfMonth(date)` でパーティション分割されているため、有効期限 (TTL) の条件を満たすパーティション全体 ([テーブルパーツ](/ja/concepts/core-concepts/parts) の集合) が削除され、[パーツを書き換えることなく](/ja/reference/statements/alter/index#mutations) クリーンアップ処理をより効率的に実行できます。
+
+同様に、古いデータを削除する代わりに、よりコスト効率に優れた [ストレージティア](/ja/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#storage-tiers) に自動的かつ効率的に移動することもできます:
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple_partitioned
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = MergeTree
+PARTITION BY toStartOfMonth(date)
+ORDER BY (town, street)
+TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
+```
+
+<div id="query-optimization">
+  ### クエリ最適化
+</div>
+
+パーティションはクエリパフォーマンスの向上に役立つ場合がありますが、その効果はアクセスパターンに大きく左右されます。クエリの対象が少数のパーティション (理想的には 1 つ) に限られる場合は、パフォーマンスの向上が見込めます。これは通常、以下のクエリ例のように、パーティションキーが主キーに含まれておらず、そのパーティションキーでフィルタリングしている場合に特に有効です。
+
+<RunnableCode>
+  ```sql
+  SELECT MAX(price) AS highest_price
+  FROM uk.uk_price_paid_simple_partitioned
+  WHERE date >= '2020-12-01'
+    AND date <= '2020-12-31'
+    AND town = 'LONDON';
+  ```
+</RunnableCode>
+
+このクエリは、上記の例のテーブルに対して実行され、テーブルのパーティションキーに使われているカラム (`date`) と、テーブルの主キーに使われているカラム (`town`) の両方でフィルタリングすることで、2020 年 12 月にロンドンで売却されたすべての不動産の最高価格を[算出](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkCldIRVJFIGRhdGUgPj0gJzIwMjAtMTItMDEnCiAgQU5EIGRhdGUgPD0gJzIwMjAtMTItMzEnCiAgQU5EIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results)します (`date` は主キーの一部ではありません) 。
+
+ClickHouse はこのクエリを処理する際、無関係なデータを評価しないように、一連の pruning 手法を適用します。
+
+<Image img="/images/managing-data/core-concepts/partition-pruning.webp" size="lg" alt="パーツマージ 2" />
+
+<br />
+
+① **パーティションプルーニング**: テーブルのパーティションキーに使われているカラムに対するクエリの filter に論理的に一致しないパーティション全体 (パーツの集合) を除外するために、[MinMax indexes](/ja/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) が使用されます。
+
+② **Granule pruning**: 手順 ① の後に残った data parts に対しては、[プライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)を使い、テーブルの主キーに使われているカラムに対するクエリの filter に論理的に一致しないすべての[グラニュール](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (行の block) を除外します。
+
+これらのデータ pruning のステップは、上記のクエリ例について、[EXPLAIN](/ja/reference/statements/explain) 句を使って物理的なクエリ実行計画を[確認](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgZGF0ZSA-PSAnMjAyMC0xMi0wMScKICBBTkQgZGF0ZSA8PSAnMjAyMC0xMi0zMScKICBBTkQgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results)することで観察できます。
+
+```sql style="fontSize:13px"
+EXPLAIN indexes = 1
+SELECT MAX(price) AS highest_price
+FROM uk.uk_price_paid_simple_partitioned
+WHERE date >= '2020-12-01'
+  AND date <= '2020-12-31'
+  AND town = 'LONDON';
+```
+
+```response
+    ┌─explain──────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))                                                                    │
+ 2. │   Aggregating                                                                                                │
+ 3. │     Expression (Before GROUP BY)                                                                             │
+ 4. │       Expression                                                                                             │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple_partitioned)                                              │
+ 6. │         Indexes:                                                                                             │
+ 7. │           MinMax                                                                                             │
+ 8. │             Keys:                                                                                            │
+ 9. │               date                                                                                           │
+10. │             Condition: and((date in (-Inf, 18627]), (date in [18597, +Inf)))                                 │
+11. │             Parts: 1/436                                                                                     │
+12. │             Granules: 11/3257                                                                                │
+13. │           Partition                                                                                          │
+14. │             Keys:                                                                                            │
+15. │               toStartOfMonth(date)                                                                           │
+16. │             Condition: and((toStartOfMonth(date) in (-Inf, 18597]), (toStartOfMonth(date) in [18597, +Inf))) │
+17. │             Parts: 1/1                                                                                       │
+18. │             Granules: 11/11                                                                                  │
+19. │           PrimaryKey                                                                                         │
+20. │             Keys:                                                                                            │
+21. │               town                                                                                           │
+22. │             Condition: (town in ['LONDON', 'LONDON'])                                                        │
+23. │             Parts: 1/1                                                                                       │
+24. │             Granules: 1/11                                                                                   │
+    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+上の出力は、次のことを示しています。
+
+① パーティションプルーニング: 上記の EXPLAIN 出力の 7 行目から 18 行目は、ClickHouse がまず `date` フィールドの [MinMax index](/ja/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) を使って、存在する 3257 個の [グラニュール](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (行のブロック) のうち 11 個を特定し、それらが、クエリの `date` フィルターに一致する行を含む、436 個あるアクティブなデータパーツのうち 1 個に格納されていることを示しています。
+
+② Granule pruning: 上記の EXPLAIN 出力の 19 行目から 24 行目は、続いて ClickHouse が、手順 ① で特定されたデータパーツの [プライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes) (`town` フィールドに対して作成されたもの) を使って、グラニュールの数 (クエリの `town` フィルターにも一致する可能性がある行を含むもの) を 11 から 1 にさらに絞り込むことを示しています。これは、さらに上で表示した、実行したクエリに対する ClickHouse-client の出力にも反映されています。
+
+```response
+... Elapsed: 0.006 sec. Processed 8.19 thousand rows, 57.34 KB (1.36 million rows/s., 9.49 MB/s.)
+Peak memory usage: 2.73 MiB.
+```
+
+つまり、ClickHouse がクエリ結果の算出にあたり、1 granule ([8192](/ja/reference/settings/merge-tree-settings#index_granularity) 行からなる block) を 6 ミリ秒でスキャンして処理したことを意味します。
+
+<div id="partitioning-is-primarily-a-data-management-feature">
+  ### パーティション化は主にデータ管理のための機能です
+</div>
+
+すべてのパーティションをまたぐクエリは、通常、同じクエリをパーティション化されていないテーブルで実行する場合より低速になる点に注意してください。
+
+パーティション化すると、データは通常より多くのデータパーツに分散されるため、ClickHouse がより大量のデータをスキャンして処理することになりがちです。
+
+これは、同じクエリを [What are table parts](/ja/concepts/core-concepts/parts) のサンプルテーブル (パーティション化が有効になっていないもの) と、上で使っている現在のサンプルテーブル (パーティション化が有効なもの) の両方に対して実行すると確認できます。どちらのテーブルにも、同じデータと同じ行数が[含まれています](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICB0YWJsZSwKICAgIHN1bShyb3dzKSBBUyByb3dzCkZST00gc3lzdGVtLnBhcnRzCldIRVJFIChkYXRhYmFzZSA9ICd1aycpIEFORCAoYHRhYmxlYCBJTiBbJ3VrX3ByaWNlX3BhaWRfc2ltcGxlJywgJ3VrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkJ10pIEFORCBhY3RpdmUKR1JPVVAgQlkgdGFibGU7\&run_query=true\&tab=results):
+
+<RunnableCode>
+  ```sql
+  SELECT
+      table,
+      sum(rows) AS rows
+  FROM system.parts
+  WHERE (database = 'uk') AND (table IN ['uk_price_paid_simple', 'uk_price_paid_simple_partitioned']) AND active
+  GROUP BY table;
+  ```
+</RunnableCode>
+
+ただし、パーティション化が有効なテーブルには、より多くのアクティブな[データパーツ](/ja/concepts/core-concepts/parts)が[あります](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICB0YWJsZSwKICAgIGNvdW50KCkgQVMgcGFydHMKRlJPTSBzeXN0ZW0ucGFydHMKV0hFUkUgKGRhdGFiYXNlID0gJ3VrJykgQU5EIChgdGFibGVgIElOIFsndWtfcHJpY2VfcGFpZF9zaW1wbGUnLCAndWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQnXSkgQU5EIGFjdGl2ZQpHUk9VUCBCWSB0YWJsZTs\&run_query=true\&tab=results)。これは、上で述べたように、ClickHouse はデータパーツをパーティション内では[マージ](/ja/concepts/core-concepts/parts)しますが、パーティションをまたいではマージしないためです:
+
+<RunnableCode>
+  ```sql
+  SELECT
+      table,
+      count() AS parts
+  FROM system.parts
+  WHERE (database = 'uk') AND (table IN ['uk_price_paid_simple', 'uk_price_paid_simple_partitioned']) AND active
+  GROUP BY table;
+
+  ```
+</RunnableCode>
+
+さらに上で示したように、パーティション化されたテーブル `uk_price_paid_simple_partitioned` には 600 を超えるパーティションがあり、そのためアクティブなデータパーツは 600 306 個あります。一方、パーティション化されていないテーブル `uk_price_paid_simple` では、すべての[初期](/ja/concepts/core-concepts/parts)データパーツがバックグラウンドマージによって 1 つのアクティブなパーツにまでマージされました。
+
+上記のサンプルクエリをパーティションフィルターなしでパーティション化テーブルに対して実行したときの物理的なクエリ実行計画を、[EXPLAIN](/ja/reference/statements/explain) 句で[確認すると](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results)、以下の出力の 19 行目と 20 行目から、ClickHouse が既存の[グラニュール](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (行のブロック) 3257 個のうち 671 個を、既存のアクティブなデータパーツ 436 個のうち 431 個にまたがって、クエリのフィルターに一致する行を含む可能性があるものとして特定していることがわかります。したがって、これらがクエリエンジンによってスキャンおよび処理されます:
+
+```sql
+EXPLAIN indexes = 1
+SELECT MAX(price) AS highest_price
+FROM uk.uk_price_paid_simple_partitioned
+WHERE town = 'LONDON';
+```
+
+```response
+    ┌─explain─────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))                       │
+ 2. │   Aggregating                                                   │
+ 3. │     Expression (Before GROUP BY)                                │
+ 4. │       Expression                                                │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple_partitioned) │
+ 6. │         Indexes:                                                │
+ 7. │           MinMax                                                │
+ 8. │             Condition: true                                     │
+ 9. │             Parts: 436/436                                      │
+10. │             Granules: 3257/3257                                 │
+11. │           Partition                                             │
+12. │             Condition: true                                     │
+13. │             Parts: 436/436                                      │
+14. │             Granules: 3257/3257                                 │
+15. │           PrimaryKey                                            │
+16. │             Keys:                                               │
+17. │               town                                              │
+18. │             Condition: (town in ['LONDON', 'LONDON'])           │
+19. │             Parts: 431/436                                      │
+20. │             Granules: 671/3257                                  │
+    └─────────────────────────────────────────────────────────────────┘
+```
+
+パーティションのないテーブルに対して同じサンプルクエリを実行した場合の物理クエリ実行計画の[出力](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGUKV0hFUkUgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results)の11行目と12行目を見ると、ClickHouse が、そのテーブルの単一のアクティブなデータパーツ内に存在する3083個のブロックのうち241個を、そのクエリのフィルターに一致する行を含む可能性があるものとして特定したことが分かります:
+
+```sql
+EXPLAIN indexes = 1
+SELECT MAX(price) AS highest_price
+FROM uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```response
+    ┌─explain───────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))             │
+ 2. │   Aggregating                                         │
+ 3. │     Expression (Before GROUP BY)                      │
+ 4. │       Expression                                      │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple)   │
+ 6. │         Indexes:                                      │
+ 7. │           PrimaryKey                                  │
+ 8. │             Keys:                                     │
+ 9. │               town                                    │
+10. │             Condition: (town in ['LONDON', 'LONDON']) │
+11. │             Parts: 1/1                                │
+12. │             Granules: 241/3083                        │
+    └───────────────────────────────────────────────────────┘
+```
+
+テーブルのパーティション化されたバージョンに対してクエリを[実行](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkCldIRVJFIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results)すると、ClickHouse は671ブロック分の行 (約550万行) をスキャンして処理し、90ミリ秒で完了します。
+
+```sql
+SELECT MAX(price) AS highest_price
+FROM uk.uk_price_paid_simple_partitioned
+WHERE town = 'LONDON';
+```
+
+```response
+┌─highest_price─┐
+│     594300000 │ -- 5億9430万
+└───────────────┘
+
+1 row in set. 経過時間: 0.090 秒。処理済み 5.48 million 行、27.95 MB（60.66 million 行/秒、309.51 MB/秒）。
+ピークメモリ使用量: 163.44 MiB。
+```
+
+これに対し、パーティション化されていないテーブルに対して[クエリを実行](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlCldIRVJFIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results)すると、ClickHouse は 241 ブロック (約 200 万行) を 12 ミリ秒でスキャンして処理します。
+
+```sql
+SELECT MAX(price) AS highest_price
+FROM uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```response
+┌─highest_price─┐
+│     594300000 │ -- 5億9,430万
+└───────────────┘
+
+1 row in set. Elapsed: 0.012 sec. Processed 1.97 million rows, 9.87 MB (162.23 million rows/s., 811.17 MB/s.)
+Peak memory usage: 62.02 MiB.
+```

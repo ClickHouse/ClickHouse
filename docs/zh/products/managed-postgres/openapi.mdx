@@ -1,0 +1,465 @@
+---
+slug: /cloud/managed-postgres/openapi
+sidebarTitle: 'OpenAPI'
+title: 'Managed Postgres OpenAPI'
+description: '通过我们的 OpenAPI 管理您的 Managed Postgres 服务'
+keywords: ['managed postgres', 'openapi', 'api', 'curl', '教程', '命令行', 'query insights', '慢查询']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.openapi-beta" />
+
+使用 [ClickHouse OpenAPI](/zh/products/cloud/features/admin-features/api/index) 可像管理 ClickHouse 服务一样，以编程方式管理您的 Managed Postgres 服务。同一个 API 还公开了一个用于抓取服务指标的 [Prometheus 端点]。如果您已经熟悉 [OpenAPI]，可直接获取您的 [API 密钥] 并跳转到 [Managed Postgres API 参考文档][pg-openapi]。否则，请继续阅读，快速了解一下。
+
+<div id="api-keys">
+  ## API 密钥
+</div>
+
+使用 ClickHouse OpenAPI 需要进行身份验证；有关如何创建 API 密钥，请参阅 [API 密钥]。然后可按如下方式通过 Basic Auth 凭据使用这些密钥：
+
+```bash
+KEY_ID=mykeyid
+KEY_SECRET=mykeysecret
+
+curl -s --user "$KEY_ID:$KEY_SECRET" https://api.clickhouse.cloud/v1/organizations | jq
+```
+
+<div id="organization-id">
+  ## Organization ID
+</div>
+
+接下来，你需要用到你的 Organization ID。
+
+1. 在控制台左下角选择你的组织名称。
+2. 选择 **Organization details**。
+3. 点击 **Organization ID** 右侧的复制图标，将其直接复制到剪贴板。
+
+现在你可以像这样在请求中使用它：
+
+```bash
+ORG_ID=myorgid
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres" | jq
+```
+
+现在你已经发出了第一个 Postgres API 请求：[list API] 会列出你的组织中的所有
+Postgres 服务器。输出应类似于：
+
+```json
+{
+  "result": [
+    {
+      "id": "ee2fef9f-b443-8ad0-8c9b-724390cdb826",
+      "name": "oltp",
+      "provider": "aws",
+      "region": "eu-west-2",
+      "postgresVersion": "18",
+      "size": "r6gd.medium",
+      "storageSize": 59,
+      "haType": "none",
+      "tags": [],
+      "isPrimary": true,
+      "state": "running",
+      "createdAt": "2026-05-25T16:42:16+00:00"
+    }
+  ],
+  "requestId": "c128d830-5769-4c82-8235-f79aa69d1ebf",
+  "status": 200
+}
+```
+
+<div id="crud">
+  ## CRUD
+</div>
+
+下面来了解 Postgres 服务 的生命周期。
+
+<div id="create">
+  ### 创建
+</div>
+
+首先，使用 [create API]
+创建一个新的实例。请求的 JSON body
+需要包含以下属性：
+
+* `name`：新 Postgres 服务的名称
+* `provider`：云提供商的名称
+* `region`：在提供商网络中部署该
+  服务的区域
+* `size`：VM 规格
+
+有关这些属性的可选值，请参阅 [create API] 文档。此外，
+我们将指定使用 Postgres 18，而不是默认的 17：
+
+```bash
+create_data='{
+  "name": "my postgres",
+  "provider": "aws",
+  "region": "us-west-2",
+  "postgresVersion": "18",
+  "size": "r8gd.large"
+}'
+```
+
+现在使用这些数据创建一个新实例；请注意，这需要设置 Content-Type 请求头：
+
+```bash
+curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres" \
+    -d "$create_data" | jq
+```
+
+成功后，将创建一个新的实例并返回其相关信息，
+包括连接数据：
+
+```json
+{
+  "result": {
+    "id": "67b4bc12-8582-45d0-8806-fe9b2e5a54e6",
+    "name": "my postgres",
+    "provider": "aws",
+    "region": "us-west-2",
+    "postgresVersion": "18",
+    "size": "r8gd.large",
+    "storageSize": 118,
+    "haType": "none",
+    "tags": [],
+    "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@my-postgres-6d8d2e3e.pg7myrd1j06p3gx4zrm2ze8qz6.c0.us-west-2.aws.pg.clickhouse-dev.com:5432/postgres?channel_binding=require",
+    "username": "postgres",
+    "password": "vV6cfEr2p_-TzkCDrZOx",
+    "hostname": "my-postgres-6d8d2e3e.pg7myrd1j06p3gx4zrm2ze8qz6.c0.us-west-2.aws.pg.clickhouse-dev.com",
+    "isPrimary": true,
+    "state": "creating"
+  },
+  "requestId": "a5957990-dbe5-46fd-b5ce-a7f8f79e50fe",
+  "status": 200
+}
+```
+
+<div id="read">
+  ### 查询
+</div>
+
+使用响应中的 `id` 再次查询该服务：
+
+```bash
+PG_ID=67b4bc12-8582-45d0-8806-fe9b2e5a54e6
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
+    | jq
+```
+
+输出将与创建操作返回的 JSON 类似，但请留意 `state`；当它变为 `running` 时，服务器即表示已就绪：
+
+```bash
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
+    | jq .result.state
+```
+
+```json
+"running"
+```
+
+现在可以使用 `connectionString` 属性进行连接，例如通过
+[psql]：
+
+```bash
+$ psql "$(
+    curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
+    | jq -r .result.connectionString
+)"
+
+psql (18.3)
+SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, compression: off, ALPN: postgresql)
+Type "help" for help.
+
+postgres=#
+```
+
+输入 `\q` 退出 [psql]。
+
+<div id="update">
+  ### 更新
+</div>
+
+[patch API] 支持通过 [RFC 7396] JSON Merge Patch 更新 Managed
+Postgres 服务的部分属性。对于复杂的部署场景，标签可能尤其有用；
+只需在请求中单独发送标签即可：
+
+```bash
+curl -sX PATCH --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
+    -d '{"tags": [{"key": "Environment", "value": "production"}]}' \
+    | jq .result
+```
+
+返回的数据应包括新的标签：
+
+```json
+{
+  "id": "67b4bc12-8582-45d0-8806-fe9b2e5a54e6",
+  "name": "my postgres",
+  "provider": "aws",
+  "region": "us-west-2",
+  "postgresVersion": "18",
+  "size": "r8gd.large",
+  "storageSize": 118,
+  "haType": "none",
+  "tags": [
+    {
+      "key": "Environment",
+      "value": "production"
+    }
+  ],
+  "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com:5432/postgres?channel_binding=require",
+  "username": "postgres",
+  "password": "vV6cfEr2p_-TzkCDrZOx",
+  "hostname": "my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com",
+  "isPrimary": true,
+  "state": "running"
+}
+```
+
+OpenAPI 提供了额外的端点，用于更新 [patch API] 不支持
+的属性。例如，要更新 [Postgres 配置]，
+请使用 [config API]：
+
+```bash
+curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/config" \
+    -d '{"pgConfig": {"max_connections": "42"}, "pgBouncerConfig": {}}' | jq
+```
+
+输出会显示更新后的配置，以及一条说明此次更改后果的消息：
+
+```json
+{
+  "result":{
+    "pgConfig": {
+      "max_connections": "42"
+    },
+    "pgBouncerConfig": {},
+    "message": "The changes in the following parameters require a database restart to take effect: max_connections. You can restart the database by using the restart endpoint."
+  },
+  "requestId":"fdec06f2-66f7-45b4-9f82-0c051aba20aa",
+  "status": 200
+}
+```
+
+{/*
+
+  TODO: API 发布后，取消注释并插入正确的示例输出。
+
+  其他更新 API 包括：
+
+  * 重置 superuser 密码
+  * 重命名 Postgres 服务（会更改主机名）
+  * 升级到下一个 Postgres 主版本
+
+  */}
+
+<div id="delete">
+  ### 删除
+</div>
+
+使用[删除 API]删除 Postgres 服务。
+
+<Warning>
+  删除 Postgres 服务会彻底移除该服务及其所有
+  数据。删除服务前，请务必确认您已完成备份，或已将某个副本提升为主节点。
+</Warning>
+
+```bash
+curl -sX DELETE --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
+    | jq
+```
+
+成功时，响应会返回 200 状态码，例如：
+
+```json
+{
+  "requestId": "ac9bbffa-e370-410c-8bdd-bd24bf3d7f82",
+  "status": 200
+}
+```
+
+<div id="monitoring">
+  ## 监控
+</div>
+
+两个兼容 Prometheus 的端点可提供 Managed Postgres 服务的 CPU、内存、I/O、连接
+和事务指标：其中一个返回组织内所有服务的指标，另一个返回单个
+服务的指标。有关设置，请参阅 [Prometheus 端点] 页面；完整指标列表请参阅
+[指标参考]。
+
+<div id="query-insights">
+  ## Query insights
+</div>
+
+云控制台中 [Query Insights] 选项卡背后的按语句粒度的遥测数据也可通过编程方式获取。两个端点公开了某个服务上最慢的
+查询模式：一个列出按影响排序的所有模式，另一个返回单个模式及其最近的执行记录。
+
+<div id="list-slow-query-patterns">
+  ### 列出慢查询模式
+</div>
+
+[慢查询模式 API] 返回指定时间窗口内观测到的最慢查询
+模式的聚合指标。必须提供该时间窗口——请传递
+`from_date` 和 `to_date` 作为 RFC 3339 时间戳：
+
+```bash
+FROM=2026-05-25T00:00:00Z
+TO=2026-05-26T00:00:00Z
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/slowQueryPatterns?from_date=$FROM&to_date=$TO" \
+    | jq
+```
+
+结果默认按成本最高的模式优先返回，并按 `total_duration`
+降序排序。可使用 `sort_by` 按不同的计数指标排序 (例如
+`p99_duration`、`call_count` 或 `total_wal_bytes`) ，并使用
+`sort_order` 反转排序方向。还可使用 `db_name`、`db_user`、
+`db_operation` 和 `app` 过滤器缩小结果范围，并通过 `limit` 和
+`offset` 分页查看。
+
+每个结果都是一个归一化模式，其中字面量已被去除，
+耗时以微秒为单位表示：
+
+```json
+{
+  "result": [
+    {
+      "queryId": "-4748036479882663975",
+      "queryText": "SELECT * FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT $2",
+      "dbName": "sales",
+      "dbUser": "orders_service",
+      "dbOperation": "SELECT",
+      "app": "orders-api",
+      "callCount": 84213,
+      "errorCount": 0,
+      "totalDurationUs": 1012384556,
+      "avgDurationUs": 12021,
+      "maxDurationUs": 482915,
+      "p50DurationUs": 9874,
+      "p95DurationUs": 28431,
+      "p99DurationUs": 41200,
+      "totalRows": 842130,
+      "totalSharedBlksRead": 19284,
+      "totalSharedBlksHit": 48217734,
+      "totalCpuTimeUs": 938472113,
+      "totalWalBytes": 0
+    }
+  ],
+  "requestId": "c128d830-5769-4c82-8235-f79aa69d1ebf",
+  "status": 200
+}
+```
+
+`queryId` 是归一化后语句的有符号 64 位哈希值，因此通常为负数。将它原样传回——包括开头的 `-`——即可获取单个查询模式。
+
+<div id="get-slow-query-pattern">
+  ### 获取慢查询模式
+</div>
+
+将列表响应中的 `queryId` 传递给[慢查询模式 API]，即可获取该
+模式的聚合指标，以及其最近的各次单独执行记录。
+标识该模式所需的 `db_name`、`db_user` 和 `db_operation`
+是必填项：
+
+```bash
+QUERY_ID=-4748036479882663975
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/slowQueryPatterns/$QUERY_ID?db_name=sales&db_user=orders_service&db_operation=SELECT" \
+    | jq
+```
+
+响应在 `aggregate` 字段下包含与列表端点相同的聚合数据，
+另有一个 `recentExecutions` 数组。每次执行都包含完整的
+单次执行计数器——共享和临时块 I/O、CPU 用户态和系统态
+时间、并行工作线程、JIT 以及 WAL——也就是
+控制台中[详情弹出面板]分项展示的那些相同计数器：
+
+```json
+{
+  "result": {
+    "aggregate": {
+      "queryId": "-4748036479882663975",
+      "queryText": "SELECT * FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT $2",
+      "dbName": "sales",
+      "dbUser": "orders_service",
+      "dbOperation": "SELECT",
+      "callCount": 84213,
+      "avgDurationUs": 12021,
+      "p99DurationUs": 41200
+    },
+    "recentExecutions": [
+      {
+        "timestamp": "2026-05-25T16:42:09Z",
+        "durationUs": 41200,
+        "rows": 10,
+        "sharedBlksHit": 412,
+        "sharedBlksRead": 3,
+        "tempBlksWritten": 0,
+        "cpuUserTimeUs": 38211,
+        "cpuSysTimeUs": 1044,
+        "parallelWorkersPlanned": 0,
+        "parallelWorkersLaunched": 0,
+        "walBytes": 0,
+        "serverRole": "primary"
+      }
+    ]
+  },
+  "requestId": "a5957990-dbe5-46fd-b5ce-a7f8f79e50fe",
+  "status": 200
+}
+```
+
+该示例为简洁起见对这两个对象都进行了裁剪；API 返回的是
+[per-execution counters]中记录的完整
+计数器 集合。
+
+[ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/index "Cloud API"
+
+[OpenAPI]: https://www.openapis.org "OpenAPI Initiative"
+
+[API keys]: /products/cloud/features/admin-features/api/openapi "管理 API 密钥"
+
+[pg-openapi]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres "ClickHouse Cloud 的 Postgres OpenAPI 规范"
+
+[list API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceGetList "获取组织的 Postgres 服务 列表"
+
+[create API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceCreate "创建新的 Postgres 服务"
+
+[psql]: https://www.postgresql.org/docs/current/app-psql.html "PostgreSQL Docs：psql — PostgreSQL 交互式终端"
+
+[patch API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServicePatch "更新 PostgreSQL 服务"
+
+[RFC 7396]: https://www.rfc-editor.org/rfc/rfc7396 "RFC 7396：JSON Merge Patch"
+
+[Postgres configuration]: https://www.postgresql.org/docs/18/runtime-config.html "PostgreSQL Docs：服务器配置"
+
+[config API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceSetConfig "更新 Postgres 服务 配置"
+
+[delete API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceDelete "删除 PostgreSQL 服务"
+
+[Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "Managed Postgres Prometheus 端点"
+
+[metrics reference]: /products/managed-postgres/monitoring/metrics "Managed Postgres 指标参考"
+
+[Query Insights]: /products/managed-postgres/monitoring/query-insights "Postgres Query Insights"
+
+[detail flyout]: /products/managed-postgres/monitoring/query-insights#detail "Query Insights 详情弹出面板"
+
+[per-execution counters]: /products/managed-postgres/monitoring/query-insights#counters "Query Insights 的单次执行计数器"
+
+[slow patterns API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList "列出 Postgres 慢查询模式"
+
+[slow pattern API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet "获取带有近期执行记录的 Postgres 慢查询模式"

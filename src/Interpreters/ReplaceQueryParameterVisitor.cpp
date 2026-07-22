@@ -12,11 +12,14 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTViewTargets.h>
+#include <Parsers/FieldFromAST.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Analyzer/Utils.h>
+#include <Common/SettingsChanges.h>
 #include <Common/checkStackSize.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -45,6 +48,8 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
         visitQueryParameter(ast);
     else if (ast->as<ASTIdentifier>() || ast->as<ASTTableIdentifier>())
         visitIdentifier(ast);
+    else if (auto * set_query = ast->as<ASTSetQuery>())
+        visitSetQuery(*set_query);
     else
     {
         if (auto * describe_query = dynamic_cast<ASTDescribeQuery *>(ast.get()); describe_query && describe_query->table_expression)
@@ -154,25 +159,19 @@ ASTPtr makeASTForQueryParameter(const Field & literal, const String & type_name,
 
 }
 
-void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
+Field ReplaceQueryParameterVisitor::resolveParameterValueAsField(const String & name, const String & type_name)
 {
-    const auto & ast_param = ast->as<ASTQueryParameter &>();
-    const String & type_name = ast_param.type;
-    String alias = ast_param.alias;
-
     const auto data_type = DataTypeFactory::instance().get(type_name);
 
-    auto it = query_parameters.find(ast_param.name);
+    auto it = query_parameters.find(name);
     if (it == query_parameters.end())
     {
         /// If a parameter has Nullable type and is not specified, assume its value is NULL.
         if (!isNullableOrLowCardinalityNullable(data_type))
-            throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Substitution {} is not set", backQuote(ast_param.name));
+            throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Substitution {} is not set", backQuote(name));
 
-        ast = makeASTForQueryParameter(Field(), type_name, data_type);
-        ast->setAlias(alias);
         ++num_replaced_parameters;
-        return;
+        return Field();
     }
 
     const String & value = it->second;
@@ -185,14 +184,14 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     const SerializationPtr & serialization = data_type->getDefaultSerialization();
     try
     {
-        if (ast_param.name == "_request_body")
+        if (name == "_request_body")
             serialization->deserializeWholeText(temp_column, read_buffer, format_settings);
         else
             serialization->deserializeTextEscaped(temp_column, read_buffer, format_settings);
     }
     catch (Exception & e)
     {
-        e.addMessage("value {} cannot be parsed as {} for query parameter '{}'", value, type_name, ast_param.name);
+        e.addMessage("value {} cannot be parsed as {} for query parameter '{}'", value, type_name, name);
         throw;
     }
 
@@ -200,7 +199,7 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
             "Value {} cannot be parsed as {} for query parameter '{}'"
             " because it isn't parsed completely: only {} of {} bytes was parsed: {}",
-            value, type_name, ast_param.name, read_buffer.count(), value.size(), value.substr(0, read_buffer.count()));
+            value, type_name, name, read_buffer.count(), value.size(), value.substr(0, read_buffer.count()));
 
     Field literal;
 
@@ -217,11 +216,54 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
         literal = temp_column[0];
     }
 
+    ++num_replaced_parameters;
+    return literal;
+}
+
+void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
+{
+    const auto & ast_param = ast->as<ASTQueryParameter &>();
+    const String & type_name = ast_param.type;
+    String alias = ast_param.alias;
+
+    const auto data_type = DataTypeFactory::instance().get(type_name);
+    Field literal = resolveParameterValueAsField(ast_param.name, type_name);
+
     ast = makeASTForQueryParameter(literal, type_name, data_type);
 
     /// Keep the original alias.
     ast->setAlias(alias);
-    ++num_replaced_parameters;
+}
+
+void ReplaceQueryParameterVisitor::visitSettingsChanges(SettingsChanges & changes)
+{
+    /// A setting value can be a query parameter, e.g. `SET max_threads = {threads:UInt64}`
+    /// or `SELECT ... SETTINGS max_threads = {threads:UInt64}`. The parser stores such a value
+    /// as an ASTQueryParameter wrapped into a Field (see ParserSetQuery); resolve it into the
+    /// concrete value here, before the settings are applied.
+    for (auto & change : changes)
+    {
+        CustomType custom;
+        if (!change.value.tryGet<CustomType>(custom) || std::string_view(custom.getTypeName()) != FieldFromASTImpl::name)
+            continue;
+
+        const auto & ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
+        const auto * param = ast->as<ASTQueryParameter>();
+        if (!param)
+            continue; /// Some other AST-valued setting, e.g. `disk = disk(...)`; leave it untouched.
+
+        change.value = resolveParameterValueAsField(param->name, param->type);
+    }
+}
+
+void ReplaceQueryParameterVisitor::visitSetQuery(ASTSetQuery & set_query)
+{
+    visitSettingsChanges(set_query.changes);
+}
+
+void replaceQueryParametersInSettingsChanges(SettingsChanges & changes, const NameToNameMap & parameters)
+{
+    ReplaceQueryParameterVisitor(parameters).visitSettingsChanges(changes);
 }
 
 void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)

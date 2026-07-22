@@ -71,6 +71,12 @@ public:
 
     void setMaxSpeed(size_t max_speed_);
 
+protected:
+    virtual void sleep(UInt64 nanoseconds)
+    {
+        sleepForNanoseconds(nanoseconds);
+    }
+
 private:
     void throttleImpl(size_t amount, size_t & count_value, double & tokens_value);
     void throttleImpl(size_t amount, size_t & count_value, double & tokens_value, size_t & max_speed_value);

@@ -33,6 +33,10 @@ void StorageFromMergeTreeProjection::read(
 {
     context->checkAccess(AccessType::SELECT, parent_storage->getStorageID());
 
+    /// A UNIQUE KEY parent rejects projection reads in the MergeTreeDataSelectExecutor
+    /// constructor below (the universal projection-read chokepoint), since reading a
+    /// projection part bypasses the parent's delete-bitmap filter.
+
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
     const auto & parts = snapshot_data.parts;
 

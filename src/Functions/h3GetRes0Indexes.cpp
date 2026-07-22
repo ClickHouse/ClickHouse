@@ -2,6 +2,7 @@
 
 #if USE_H3
 
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>

@@ -1,3 +1,15 @@
+#include "config.h"
+
+#if USE_MYSQL
+#if __has_include(<mysql.h>)
+#include <mysql.h>
+#else
+#include <mysql/mysql.h>
+#endif
+/// NB: <mysql.h> must be included before the unit's header, otherwise the build breaks because of the
+/// forward declaration of `enum_field_types` in mysqlxx/Types.h. See a similar case in mysqlxx/Row.cpp.
+#endif
+
 #include <DataTypes/convertMySQLDataType.h>
 
 #include <Core/Field.h>
@@ -12,6 +24,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -122,10 +135,36 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
     }
     else if (type_name == "point")
     {
+        /// `Point` is supported unconditionally for backward compatibility (since version 24.1).
         res = DataTypeFactory::instance().get("Point");
     }
+    else if (type_support.isSet(MySQLDataTypesSupport::GEOMETRY) && type_name == "linestring")
+    {
+        res = DataTypeFactory::instance().get("LineString");
+    }
+    else if (type_support.isSet(MySQLDataTypesSupport::GEOMETRY) && type_name == "polygon")
+    {
+        res = DataTypeFactory::instance().get("Polygon");
+    }
+    else if (type_support.isSet(MySQLDataTypesSupport::GEOMETRY) && type_name == "multilinestring")
+    {
+        res = DataTypeFactory::instance().get("MultiLineString");
+    }
+    else if (type_support.isSet(MySQLDataTypesSupport::GEOMETRY) && type_name == "multipolygon")
+    {
+        res = DataTypeFactory::instance().get("MultiPolygon");
+    }
+    else if (type_support.isSet(MySQLDataTypesSupport::GEOMETRY) && type_name == "geometry")
+    {
+        /// The generic `GEOMETRY` column can hold a value of any subtype, so it is mapped to the
+        /// umbrella `Geometry` type (a `Variant` over the concrete geometric types). Reading a value
+        /// whose subtype has no ClickHouse counterpart (`MULTIPOINT`, `GEOMETRYCOLLECTION`) throws at
+        /// read time; this incompatibility is accepted in exchange for a proper geometric type.
+        res = DataTypeFactory::instance().get("Geometry");
+    }
 
-    /// Also String is fallback for all unknown types.
+    /// String is the fallback for all unknown types. In particular, the spatial types `MULTIPOINT`
+    /// and `GEOMETRYCOLLECTION` have no ClickHouse counterpart and fall back to String.
     if (!res)
         res = std::make_shared<DataTypeString>();
 
@@ -134,5 +173,116 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
 
     return res;
 }
+
+#if USE_MYSQL
+DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support, MYSQL_FIELD & field, bool use_nulls)
+{
+    const bool is_nullable = use_nulls && !(field.flags & NOT_NULL_FLAG);
+    const bool is_unsigned = (field.flags & UNSIGNED_FLAG);
+
+    DataTypePtr res;
+
+    switch (field.type)
+    {
+        case enum_field_types::MYSQL_TYPE_TINY:
+            if (is_unsigned)
+                res = std::make_shared<DataTypeUInt8>();
+            else
+                res = std::make_shared<DataTypeInt8>();
+            break;
+        case enum_field_types::MYSQL_TYPE_SHORT:
+            if (is_unsigned)
+                res = std::make_shared<DataTypeUInt16>();
+            else
+                res = std::make_shared<DataTypeInt16>();
+            break;
+        case enum_field_types::MYSQL_TYPE_INT24: /// Treat int24 as int32.
+        case enum_field_types::MYSQL_TYPE_LONG:
+            if (is_unsigned)
+                res = std::make_shared<DataTypeUInt32>();
+            else
+                res = std::make_shared<DataTypeInt32>();
+            break;
+        case enum_field_types::MYSQL_TYPE_LONGLONG:
+            if (is_unsigned)
+                res = std::make_shared<DataTypeUInt64>();
+            else
+                res = std::make_shared<DataTypeInt64>();
+            break;
+
+        case enum_field_types::MYSQL_TYPE_DECIMAL:
+        case enum_field_types::MYSQL_TYPE_NEWDECIMAL:
+            if (type_support.isSet(MySQLDataTypesSupport::DECIMAL))
+            {
+                /// MySQL includes the room for the sign and the decimal point in the declared length.
+                UInt32 precision = static_cast<UInt32>(field.length);
+                if (field.decimals > 0 && precision > 0)
+                    precision -= 1; /// Decimal point.
+                if (!is_unsigned && precision > 0)
+                    precision -= 1; /// Sign.
+                if (precision > 0 && precision <= DataTypeDecimalBase<Decimal256>::maxPrecision())
+                    res = createDecimal<DataTypeDecimal>(precision, field.decimals);
+            }
+            break;
+
+        case enum_field_types::MYSQL_TYPE_FLOAT:
+            res = std::make_shared<DataTypeFloat32>();
+            break;
+        case enum_field_types::MYSQL_TYPE_DOUBLE:
+            res = std::make_shared<DataTypeFloat64>();
+            break;
+
+        case enum_field_types::MYSQL_TYPE_BIT:
+            res = std::make_shared<DataTypeUInt64>();
+            break;
+
+        case enum_field_types::MYSQL_TYPE_DATETIME:
+        case enum_field_types::MYSQL_TYPE_TIMESTAMP:
+            if (!type_support.isSet(MySQLDataTypesSupport::DATETIME64))
+                res = std::make_shared<DataTypeDateTime>();
+            else if (field.type == enum_field_types::MYSQL_TYPE_TIMESTAMP && field.decimals == 0)
+                res = std::make_shared<DataTypeDateTime>();
+            else
+                res = std::make_shared<DataTypeDateTime64>(field.decimals);
+            break;
+
+        case enum_field_types::MYSQL_TYPE_DATE:
+        case enum_field_types::MYSQL_TYPE_NEWDATE:
+            if (type_support.isSet(MySQLDataTypesSupport::DATE2DATE32))
+                res = std::make_shared<DataTypeDate32>();
+            else if (type_support.isSet(MySQLDataTypesSupport::DATE2STRING))
+                res = std::make_shared<DataTypeString>();
+            else
+                res = std::make_shared<DataTypeDate>();
+            break;
+
+        case enum_field_types::MYSQL_TYPE_GEOMETRY:
+            /// A query result set reports `MYSQL_TYPE_GEOMETRY` for a value of any spatial subtype
+            /// (`POINT`, `LINESTRING`, `POLYGON`, ...) without exposing which one it is, so the concrete
+            /// ClickHouse geometric type cannot be inferred here. Guessing `Point` makes reading any
+            /// non-`Point` value throw at read time (`Only Point data type is supported`), so the value is
+            /// left as the raw WKB `String` fallback instead. The concrete-type mapping controlled by
+            /// `mysql_datatypes_support_level` is applied only where MySQL exposes the concrete column type
+            /// (the table-name path, via the string overload above).
+            break;
+
+        case enum_field_types::MYSQL_TYPE_NULL:
+            res = std::make_shared<DataTypeNothing>();
+            break;
+
+        default:
+            /// String is the fallback for TIME, YEAR, all string/blob types, and any unknown type.
+            break;
+    }
+
+    if (!res)
+        res = std::make_shared<DataTypeString>();
+
+    if (is_nullable && !res->isNullable())
+        res = std::make_shared<DataTypeNullable>(res);
+
+    return res;
+}
+#endif
 
 }

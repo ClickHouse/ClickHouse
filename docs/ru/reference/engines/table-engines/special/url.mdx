@@ -1,0 +1,138 @@
+---
+description: 'Запрашивает данные с удалённого HTTP/HTTPS-сервера и отправляет их на
+  него. Этот движок похож на движок File.'
+sidebarTitle: 'URL'
+slug: /engines/table-engines/special/url
+title: 'движок таблицы URL'
+doc_type: 'справочник'
+---
+
+Запрашивает данные с удалённого HTTP/HTTPS-сервера и отправляет их на него. Этот движок похож на движок [File](/ru/reference/engines/table-engines/special/file).
+
+Синтаксис: `URL(URL [,Format] [,CompressionMethod])`
+
+* Параметр `URL` должен соответствовать структуре Uniform Resource Locator. Указанный URL должен указывать на сервер, использующий HTTP или HTTPS. Для получения ответа от сервера не требуются дополнительные заголовки.
+
+* `Format` должен поддерживаться ClickHouse в запросах `SELECT` и, при необходимости, в операциях `INSERT`. Полный список поддерживаемых форматов см. в разделе [Formats](/ru/reference/formats/index#formats-overview).
+
+  Если этот аргумент не указан, ClickHouse автоматически определяет формат по суффиксу параметра `URL`. Если суффикс параметра `URL` не соответствует ни одному из поддерживаемых форматов, создать таблицу не удастся. Например, для выражения движка `URL('http://localhost/test.json')` применяется формат `JSON`.
+
+* `CompressionMethod` указывает, должно ли тело HTTP-сообщения быть сжато. Если сжатие включено, HTTP-пакеты, отправляемые движком URL, содержат заголовок &#39;Content-Encoding&#39;, который указывает, какой метод сжатия используется.
+
+Чтобы включить сжатие, сначала убедитесь, что удалённая HTTP конечная точка, указанная в параметре `URL`, поддерживает соответствующий алгоритм сжатия.
+
+Поддерживаемый `CompressionMethod` должен быть одним из следующих:
+
+* gzip or gz
+* deflate
+* brotli or br
+* lzma or xz
+* zstd or zst
+* lz4
+* bz2
+* snappy
+* none
+* auto
+
+Если `CompressionMethod` не указан, по умолчанию используется `auto`. Это означает, что ClickHouse автоматически определяет метод сжатия по суффиксу параметра `URL`. Если суффикс соответствует одному из перечисленных выше методов сжатия, применяется соответствующее сжатие, в противном случае сжатие не используется.
+
+Например, для выражения движка `URL('http://localhost/test.gzip')` применяется метод сжатия `gzip`, а для `URL('http://localhost/test.fr')` сжатие не используется, поскольку суффикс `fr` не соответствует ни одному из указанных выше методов сжатия.
+
+<div id="using-the-engine-in-the-clickhouse-server">
+  ## Использование
+</div>
+
+Запросы `INSERT` и `SELECT` преобразуются в запросы `POST` и `GET`
+соответственно. Для обработки запросов `POST` удалённый сервер должен поддерживать
+[Chunked transfer encoding](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
+
+Вы можете ограничить максимальное количество переходов по HTTP GET-перенаправлениям с помощью настройки [max&#95;http&#95;get&#95;redirects](/ru/reference/settings/session-settings#max_http_get_redirects).
+
+<div id="example">
+  ## Пример
+</div>
+
+**1.** Создайте таблицу `url_engine_table` на сервере:
+
+```sql
+CREATE TABLE url_engine_table (word String, value UInt64)
+ENGINE=URL('http://127.0.0.1:12345/', CSV)
+```
+
+**2.** Создайте простой HTTP-сервер с помощью стандартных средств Python 3 и
+запустите его:
+
+```python3
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class CSVHTTPServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/csv')
+        self.end_headers()
+
+        self.wfile.write(bytes('Hello,1\nWorld,2\n', "utf-8"))
+
+if __name__ == "__main__":
+    server_address = ('127.0.0.1', 12345)
+    HTTPServer(server_address, CSVHTTPServer).serve_forever()
+```
+
+```bash
+$ python3 server.py
+```
+
+**3.** Запросите данные:
+
+```sql
+SELECT * FROM url_engine_table
+```
+
+```text
+┌─word──┬─value─┐
+│ Hello │     1 │
+│ World │     2 │
+└───────┴───────┘
+```
+
+<div id="details-of-implementation">
+  ## Детали реализации
+</div>
+
+* Чтение и запись могут выполняться параллельно
+* Не поддерживаются:
+  * Операции `ALTER` и `SELECT...SAMPLE`.
+  * Индексы.
+  * Репликация.
+
+<div id="virtual-columns">
+  ## Виртуальные столбцы
+</div>
+
+* `_path` — Путь к `URL`. Тип: `LowCardinality(String)`.
+* `_file` — Имя ресурса `URL`. Тип: `LowCardinality(String)`.
+* `_size` — Размер ресурса в байтах. Тип: `Nullable(UInt64)`. Если размер неизвестен, значение — `NULL`.
+* `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение — `NULL`.
+* `_headers` - HTTP-заголовки ответа. Тип: `Map(LowCardinality(String), LowCardinality(String))`.
+
+<div id="resolving-relative-urls">
+  ## Разрешение относительных URL
+</div>
+
+Настройка [url&#95;base](/ru/reference/settings/session-settings#url_base) позволяет использовать относительный URL в движке `URL`. Если задан `url_base`, URL, переданный в движок, разрешается относительно него в соответствии с [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). Полное описание правил разрешения приведено в [документации по табличной функции url](/ru/reference/functions/table-functions/url#resolving-relative-urls).
+
+**Пример**
+
+```sql
+SET url_base = 'http://127.0.0.1:12345/';
+CREATE TABLE url_engine_table (word String, value UInt64) ENGINE = URL('hello.csv', CSV);
+SELECT * FROM url_engine_table;
+```
+
+<div id="storage-settings">
+  ## Настройки хранилища
+</div>
+
+* [engine&#95;url&#95;skip&#95;empty&#95;files](/ru/reference/settings/session-settings#engine_url_skip_empty_files) - позволяет пропускать пустые файлы при чтении. По умолчанию отключено.
+* [enable&#95;url&#95;encoding](/ru/reference/settings/session-settings#enable_url_encoding) - позволяет включать/отключать декодирование/кодирование пути в URI. По умолчанию включено.
+* [url&#95;base](/ru/reference/settings/session-settings#url_base) - базовый URL для разрешения относительных URL, передаваемых в движок.

@@ -1,0 +1,52 @@
+---
+title: '데이터베이스 ClickPipe resync'
+description: '데이터베이스 ClickPipe resync 가이드'
+slug: /integrations/clickpipes/mongodb/resync
+sidebarTitle: 'ClickPipe resync'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', '데이터 수집', '실시간 동기화']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="what-mongodb-resync-do">
+  ### Resync는 어떤 작업을 수행합니까?
+</div>
+
+Resync에는 다음 작업이 순서대로 포함됩니다.
+
+1. 기존 ClickPipe가 삭제되고, 새로운 &quot;resync&quot; ClickPipe가 시작됩니다. 따라서 resync를 수행하면 소스 테이블 구조의 변경 사항도 반영됩니다.
+2. resync ClickPipe는 원본 테이블과 이름은 같지만 `_resync` 접미사가 붙은 새 대상 테이블 집합을 생성(또는 대체)합니다.
+3. `_resync` 테이블에 대해 초기 적재가 수행됩니다.
+4. 그런 다음 `_resync` 테이블이 원본 테이블과 스왑됩니다. 스왑 전에 소프트 삭제된 행은 원본 테이블에서 `_resync` 테이블로 이관됩니다.
+
+원본 ClickPipe의 모든 설정은 resync ClickPipe에도 유지됩니다. 원본 ClickPipe의 통계는 UI에서 초기화됩니다.
+
+<div id="use-cases-mongodb-resync">
+  ### ClickPipe를 resync하는 사용 사례
+</div>
+
+다음은 몇 가지 시나리오입니다:
+
+1. 원본 테이블에 대규모 스키마 변경을 수행해야 하는 경우, 기존 ClickPipe가 더 이상 정상적으로 동작하지 않아 다시 시작해야 할 수 있습니다. 변경을 적용한 후 Resync를 클릭하면 됩니다.
+2. 특히 ClickHouse에서는 대상 테이블의 ORDER BY 키를 변경해야 할 수 있습니다. 이 경우 Resync를 수행하면 올바른 정렬 키로 새 테이블에 데이터를 다시 채울 수 있습니다.
+
+<div id="guide-mongodb-resync">
+  ### ClickPipe resync 가이드
+</div>
+
+1. Data Sources 탭에서 resync하려는 MongoDB ClickPipe를 클릭합니다.
+2. **설정** 탭으로 이동합니다.
+3. **Resync** 버튼을 클릭합니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp" border size="md" />
+
+4. 확인 대화상자가 표시되면 **Resync**를 다시 클릭합니다.
+5. **메트릭** 탭으로 이동합니다.
+6. 파이프 상태가 **Setup** 또는 **Snapshot**이 될 때까지 기다립니다.
+7. resync의 초기 적재 진행 상황은 **테이블** 탭의 **초기 적재 통계** 섹션에서 확인할 수 있습니다.
+8. 초기 적재가 완료되면 파이프는 `_resync` 테이블을 원본 테이블과 원자적으로 스왑합니다. 스왑 중 상태는 **Resync**입니다.
+9. 스왑이 완료되면 파이프는 **Running** 상태로 전환되며, 활성화된 경우 CDC를 수행합니다.

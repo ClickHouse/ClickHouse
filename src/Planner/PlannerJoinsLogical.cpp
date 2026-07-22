@@ -6,6 +6,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -549,8 +550,8 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
         {
             auto actions_dag = build_context.expression_actions.getActionsDAG();
             auto nothing_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
-            ColumnWithTypeAndName null_column(nothing_type->createColumnConstWithDefaultValue(1), nothing_type, "NULL");
-            JoinActionRef null_action(&actions_dag->addColumn(null_column), build_context.expression_actions);
+            auto null_column = nothing_type->createColumnConstWithDefaultValue(0);
+            JoinActionRef null_action(&actions_dag->addColumn(std::move(null_column), nothing_type, "NULL"), build_context.expression_actions);
             null_action.setSourceRelations(BitSet());
             build_context.join_operator.expression.push_back(null_action);
         }

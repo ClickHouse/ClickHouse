@@ -85,8 +85,7 @@ std::string CompileDAG::dump() const
         {
             case CompileType::CONSTANT:
             {
-                const auto * column = typeid_cast<const ColumnConst *>(node.column.get());
-                const auto & data = column->getDataColumn();
+                const auto & data = node.column->getDataColumn();
 
                 dumped_values[i] = applyVisitor(FieldVisitorToString(), data[0]) + " : " + node.result_type->getName();
                 break;
@@ -139,7 +138,7 @@ UInt128 CompileDAG::hash() const
         {
             case CompileType::CONSTANT:
             {
-                assert_cast<const ColumnConst *>(node.column.get())->getDataColumn().updateHashWithValue(0, hash);
+                node.column->getDataColumn().updateHashWithValue(0, hash);
                 break;
             }
             case CompileType::FUNCTION:
