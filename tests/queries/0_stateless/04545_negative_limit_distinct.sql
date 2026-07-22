@@ -1,8 +1,10 @@
 -- The DISTINCT early-stop limit hint (limit_length + limit_offset) may only bound the number of
--- distinct rows when the LIMIT/OFFSET is a plain non-negative integer. It must be disabled for:
---   * negative LIMIT (takes rows from the tail, not the head), and
+-- distinct rows when there is an actual non-negative integer LIMIT. It must be disabled for:
+--   * negative LIMIT (takes rows from the tail, not the head),
 --   * fractional LIMIT/OFFSET (a fraction of the total row count is only known after all rows are
---     read, so it cannot bound the distinct rows collected from the head).
+--     read, so it cannot bound the distinct rows collected from the head), and
+--   * a bare OFFSET with no LIMIT (limit_offset is populated, so the hint would become the offset
+--     alone and drop the tail that OFFSET must return).
 -- A multi-part MergeTree enables the in-order DISTINCT whose hint previously truncated the stream.
 -- https://github.com/ClickHouse/ClickHouse/issues/111254
 
@@ -35,6 +37,10 @@ SELECT DISTINCT intDiv(x, 100) AS d FROM nl ORDER BY d LIMIT 2;           -- 0 1
 SELECT DISTINCT intDiv(x, 100) AS d FROM nl ORDER BY d LIMIT 1 OFFSET 0.5; -- 2
 -- Fractional LIMIT with an integral OFFSET: skip 5 groups, then ceil(40 * 0.3) = 12 groups -> 5..16.
 SELECT DISTINCT intDiv(x, 10) AS d FROM nl ORDER BY d LIMIT 0.3 OFFSET 5;  -- 5 6 7 8 9 10 11 12 13 14 15 16
+-- Bare OFFSET with no LIMIT: the hint must stay disabled, otherwise DISTINCT stops after the offset
+-- and the later OFFSET strips it, dropping the tail.
+SELECT DISTINCT intDiv(x, 100) AS d FROM nl ORDER BY d OFFSET 1;          -- 1 2 3
+SELECT DISTINCT intDiv(x, 100) AS d FROM nl ORDER BY d OFFSET 2;          -- 2 3
 
 SET enable_analyzer = 0;
 SELECT 'old analyzer';
@@ -43,5 +49,7 @@ SELECT DISTINCT intDiv(x, 100) AS d FROM nl ORDER BY d LIMIT -2;          -- 2 3
 SELECT DISTINCT intDiv(x, 100) AS d FROM nl ORDER BY d LIMIT 1;           -- 0 (positive unchanged)
 SELECT DISTINCT intDiv(x, 100) AS d FROM nl ORDER BY d LIMIT 1 OFFSET 0.5; -- 2
 SELECT DISTINCT intDiv(x, 10) AS d FROM nl ORDER BY d LIMIT 0.3 OFFSET 5;  -- 5 6 7 8 9 10 11 12 13 14 15 16
+SELECT DISTINCT intDiv(x, 100) AS d FROM nl ORDER BY d OFFSET 1;          -- 1 2 3
+SELECT DISTINCT intDiv(x, 100) AS d FROM nl ORDER BY d OFFSET 2;          -- 2 3
 
 DROP TABLE nl;

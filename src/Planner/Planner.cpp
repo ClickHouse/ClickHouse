@@ -904,13 +904,17 @@ void addDistinctStep(QueryPlan & query_plan,
     /** If after this stage of DISTINCT
       * 1. ORDER BY is not executed.
       * 2. There is no LIMIT BY.
-      * 3. LIMIT is not negative (a negative LIMIT takes rows from the tail, so it cannot bound
+      * 3. There is a non-zero LIMIT (a bare OFFSET without a LIMIT still populates limit_offset, but
+      *    limit_length + limit_offset would then bound the head by the offset alone and drop the tail
+      *    that OFFSET must return).
+      * 4. LIMIT is not negative (a negative LIMIT takes rows from the tail, so it cannot bound
       *    the number of distinct rows collected from the head).
-      * 4. LIMIT/OFFSET is not fractional (a fraction of the total row count is only resolved after
+      * 5. LIMIT/OFFSET is not fractional (a fraction of the total row count is only resolved after
       *    all rows are read, so it cannot bound the number of distinct rows either).
       * Then you can get no more than limit_length + limit_offset of different rows.
       */
     if ((!query_node.hasOrderBy() || !before_order) && !query_node.hasLimitBy()
+        && limit_length != 0
         && !query_analysis_result.is_limit_length_negative
         && query_analysis_result.fractional_limit == 0 && query_analysis_result.fractional_offset == 0)
     {
