@@ -528,10 +528,6 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
                 {
                     auto table_ptr = iterator->table();
-                    /// Storage object could not be resolved (e.g. unresolvable DataLakeCatalog
-                    /// metadata); nothing to drop/truncate for it here.
-                    if (!table_ptr)
-                        continue;
 
                     /// Skip tables that don't support truncation (e.g. views)
                     /// when doing TRUNCATE ALL TABLES.
@@ -681,9 +677,6 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         for (auto it = database->getTablesIterator(table_context); it->isValid(); it->next())
         {
             const auto & table_ptr = it->table();
-            /// Storage object could not be resolved (e.g. unresolvable DataLakeCatalog metadata).
-            if (!table_ptr)
-                continue;
 
             /// Skip tables that don't support truncation (e.g. views).
             if (!table_ptr->supportsTruncate())

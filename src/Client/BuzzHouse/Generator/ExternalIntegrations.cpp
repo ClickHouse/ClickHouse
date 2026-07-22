@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <cinttypes>
 #include <cstring>
 #include <ctime>
@@ -68,7 +67,7 @@ bool ClickHouseIntegratedDatabase::performTableIntegration(
                 "{}{} {} {}NULL",
                 first ? "" : ", ",
                 quoteIdentifier(entry.getBottomName()),
-                columnTypeAsString(rg, t.isDeterministic(), tp),
+                columnTypeAsString(rg, t.is_deterministic, tp),
                 ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable>(false, false, false, tp)) ? "" : "NOT ");
             first = false;
         }
@@ -312,7 +311,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 bool ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
 {
     chassert(t.hasDatabasePeer());
-    return !performQuery(fmt::format("{} {}{};", truncateStatement(), getSQLQuotedTableName(t.db, t.getBaseName()), truncateSuffix()));
+    return !performQuery(fmt::format("{} {} SYNC;", truncateStatement(), getSQLQuotedTableName(t.db, t.getBaseName())));
 }
 
 bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableDatabase pt, const String & query)
@@ -407,12 +406,6 @@ String MySQLIntegration::getSQLQuotedTableName(std::shared_ptr<SQLDatabase> db, 
 String MySQLIntegration::truncateStatement()
 {
     return fmt::format("TRUNCATE{}", is_clickhouse ? " TABLE" : "");
-}
-
-String MySQLIntegration::truncateSuffix()
-{
-    /// SYNC is ClickHouse-only; plain MySQL does not accept it.
-    return is_clickhouse ? " SYNC" : "";
 }
 
 bool MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const SQLTable & t)
@@ -1704,19 +1697,14 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
 
         collectColumnPaths(val.getColumnName(), val.tp.get(), 0, cpc, entries);
     }
-    /// Sometimes send the columns in a different order to stress schema resolution by name
-    if (entries.size() > 1 && rg.nextSmallNumber() < 4)
-    {
-        std::shuffle(entries.begin(), entries.end(), rg.generator);
-    }
     /// Common information
     buf += fmt::format(
         R"({{"seed":{},"database_name":"{}","table_name":"{}","format":"{}","deterministic":{},"columns":[)",
         rg.nextInFullRange(),
         escapeJSON(t.getDatabaseName()),
         escapeJSON(t.getBaseName(false)),
-        t.file_format.value_or("any"),
-        t.isDeterministic() ? "1" : "0");
+        t.file_format.has_value() ? InOutFormat_Name(t.file_format.value()).substr(6) : "any",
+        t.is_deterministic ? "1" : "0");
     for (const auto & entry : entries)
     {
         buf += fmt::format(
@@ -1853,7 +1841,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
                           te->add_params()->set_svalue(minio.secret);
                           if (t.isAnyIcebergEngine() && t.file_format.has_value() && rg.nextMediumNumber() < 96)
                           {
-                              te->add_params()->set_svalue(t.file_format.value());
+                              te->add_params()->set_svalue(InOutFormat_Name(t.file_format.value()).substr(6));
                               if (t.file_comp.has_value() && rg.nextMediumNumber() < 96)
                               {
                                   te->add_params()->set_svalue(t.file_comp.value());
@@ -1888,7 +1876,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
         te->add_params()->set_svalue(fmt::format("{}:{}", host, port));
         te->add_params()->set_svalue(t.topic.value()); /// topic
         te->add_params()->set_svalue(t.group.value()); /// group
-        te->add_params()->set_in_out(t.file_format.value_or("CSV"));
+        te->add_params()->set_in_out(t.file_format.has_value() ? t.file_format.value() : InOutFormat::INOUT_CSV);
     }
 }
 

@@ -327,7 +327,6 @@ private:
 
     PreparedSetsCachePtr getPreparedSetsCache(Int64 mutation_id);
 
-    bool isTableReadonly() const;
     void assertNotReadonly() const;
 
     friend class MergeTreeSink;
