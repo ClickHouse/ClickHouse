@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-random-settings, no-random-merge-tree-settings
-# The scenarios pin the deduplication path exactly (the async batch trigger, the insert/thread
+# The scenarios pin the deduplication path exactly (the squash thresholds, the insert/thread
 # counts), so settings randomization is disabled, as in 04613_deduplication_alias_hop_row_drift.
 # Companion of 04613_deduplication_alias_hop_row_drift with a PARTITIONED deduplicating target
 # behind the alias hop. Partitioning adds a path the unpartitioned test cannot reach: the sink
@@ -56,33 +56,24 @@ $CLICKHOUSE_CLIENT -q "SELECT (SELECT count() FROM part_src), (SELECT count() FR
 for _ in $(seq 1 4); do seq 1 100; done | $CLICKHOUSE_CLIENT $ASYNC_SETTINGS -q "INSERT INTO part_src FORMAT TSV"
 $CLICKHOUSE_CLIENT -q "SELECT (SELECT count() FROM part_src), (SELECT count() FROM part_inner), (SELECT count() FROM part_dst), (SELECT count(DISTINCT _partition_id) FROM part_dst)"
 
-# Two async inserts batched into one flush carry two deduplication tokens, so the partitioned sink
-# must attribute each token's source rows to the partitions - impossible after mv1's GROUP BY
-# collapsed the batch, so the flush is rejected with NOT_IMPLEMENTED by filterToPartition (pre-fix
-# this walked the source-row ranges over the smaller partition selector: an out-of-bounds read).
-# Both waiting inserts report the flush error. The batch is joined by a count trigger
-# (async_insert_max_query_number=2, the has_enough_queries path); concurrently running tests
-# execute SYSTEM FLUSH ASYNC INSERT QUEUE, which can flush the first insert alone before the
-# second is queued, so a split batch (the outputs are not both 1: each flush then carries a single
-# token and succeeds) is retried, as in 04613_deduplication_alias_hop_row_drift. A regression
-# fails every attempt. The busy timeout is a bounded fallback so a split attempt's stranded insert
-# flushes promptly instead of hanging the test.
-# grep -m1 -c prints exactly one count per insert: the server also echoes the exception through
+$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE part_src"
+$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE part_inner"
+$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE part_dst"
+
+# Two deduplication tokens in one sync insert: the source-side squashing
+# (min_insert_block_size_rows, with max_insert_block_size as the parser cap) re-blocks the 800
+# input rows into two 400-row source blocks, each carrying its own token, and the nested INSERT
+# behind the alias hop squashes them into one block. The partitioned sink must then attribute each token's
+# source rows to the partitions - impossible after mv1's GROUP BY collapsed the blocks - so the
+# insert is rejected with NOT_IMPLEMENTED by filterToPartition (pre-fix this walked the
+# source-row ranges over the smaller partition selector: an out-of-bounds read). Nothing reaches
+# dst.
+# grep -m1 -c prints exactly one count: the server also echoes the exception through
 # send_logs_level, so the raw number of matching lines is not stable.
-BATCH_SETTINGS="$ASYNC_SETTINGS --async_insert_max_query_number=2 --async_insert_busy_timeout_min_ms=5000 --async_insert_busy_timeout_max_ms=5000"
-BATCH_OUT_1="${CLICKHOUSE_TMP}/04621_batch_1.out"
-BATCH_OUT_2="${CLICKHOUSE_TMP}/04621_batch_2.out"
-for _ in $(seq 1 10)
-do
-    for _ in $(seq 1 4); do seq 1 100; done | $CLICKHOUSE_CLIENT $BATCH_SETTINGS -q "INSERT INTO part_src FORMAT TSV" 2>&1 | grep -m1 -c "NOT_IMPLEMENTED" > "$BATCH_OUT_1" &
-    for _ in $(seq 1 4); do seq 1 100; done | $CLICKHOUSE_CLIENT $BATCH_SETTINGS -q "INSERT INTO part_src FORMAT TSV" 2>&1 | grep -m1 -c "NOT_IMPLEMENTED" > "$BATCH_OUT_2" &
-    wait
-    if [ "$(cat "$BATCH_OUT_1")" = "1" ] && [ "$(cat "$BATCH_OUT_2")" = "1" ]
-    then
-        break
-    fi
-done
-cat "$BATCH_OUT_1" "$BATCH_OUT_2"
+SPLIT_SETTINGS="$SETTINGS --async_insert=0 --max_insert_block_size=400 --min_insert_block_size_rows=400 --min_insert_block_size_bytes=0 --min_insert_block_size_rows_for_materialized_views=1000000"
+
+{ for _ in $(seq 1 4); do seq 1 100; done; for _ in $(seq 1 4); do seq 101 200; done; } | $CLICKHOUSE_CLIENT $SPLIT_SETTINGS -q "INSERT INTO part_src FORMAT TSV" 2>&1 | grep -m1 -c "NOT_IMPLEMENTED"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM part_dst"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE part_mv2"
 $CLICKHOUSE_CLIENT -q "DROP TABLE part_mv1"
