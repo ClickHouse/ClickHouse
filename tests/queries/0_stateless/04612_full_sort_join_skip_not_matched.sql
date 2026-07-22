@@ -96,3 +96,34 @@ SELECT count(), sum(l.k), sum(r.k)
 FROM (SELECT number AS k FROM numbers(5000)) AS l
 FULL JOIN (SELECT number + 1000000 AS k FROM numbers(5000)) AS r
 ON l.k = r.k;
+
+-- Float64 first key with +-Inf / NaN through trackCursorsFirstKey. The run 7,8,9 < 10
+-- forces a multi-row track; NaN is present on BOTH sides so the first-key comparison
+-- sees NaN vs NaN, and the mismatching second key keeps the pair from joining, without
+-- pinning down whether NaN keys with equal remaining keys would match.
+SELECT '-- inner, float keys with inf and nan, multi-column';
+SELECT l.k1, l.k2, l.val, r.val
+FROM (SELECT * FROM values('k1 Float64, k2 UInt32, val String',
+    (-inf, 0, 'L-inf'), (1, 0, 'L1'), (2, 0, 'L2'), (3, 0, 'L3'), (7, 0, 'L7'), (8, 0, 'L8'), (9, 0, 'L9'), (inf, 0, 'Linf'), (nan, 10, 'Lnan10'), (nan, 20, 'Lnan20'))) AS l
+INNER JOIN (SELECT * FROM values('k1 Float64, k2 UInt32, val String',
+    (0, 0, 'R0'), (3, 0, 'R3'), (5, 0, 'R5'), (10, 0, 'R10'), (inf, 0, 'Rinf'), (nan, 30, 'Rnan30'))) AS r
+ON l.k1 = r.k1 AND l.k2 = r.k2
+ORDER BY isNaN(l.k1), l.k1, l.k2, l.val;
+
+SELECT '-- left, float keys with inf and nan, multi-column';
+SELECT l.k1, l.k2, l.val, r.val
+FROM (SELECT * FROM values('k1 Float64, k2 UInt32, val String',
+    (-inf, 0, 'L-inf'), (1, 0, 'L1'), (2, 0, 'L2'), (3, 0, 'L3'), (7, 0, 'L7'), (8, 0, 'L8'), (9, 0, 'L9'), (inf, 0, 'Linf'), (nan, 10, 'Lnan10'), (nan, 20, 'Lnan20'))) AS l
+LEFT JOIN (SELECT * FROM values('k1 Float64, k2 UInt32, val String',
+    (0, 0, 'R0'), (3, 0, 'R3'), (5, 0, 'R5'), (10, 0, 'R10'), (inf, 0, 'Rinf'), (nan, 30, 'Rnan30'))) AS r
+ON l.k1 = r.k1 AND l.k2 = r.k2
+ORDER BY isNaN(l.k1), l.k1, l.k2, l.val;
+
+SELECT '-- nan first keys with mismatching second key stay unmatched';
+SELECT count()
+FROM (SELECT * FROM values('k1 Float64, k2 UInt32',
+    (-inf, 0), (1, 0), (2, 0), (3, 0), (7, 0), (8, 0), (9, 0), (inf, 0), (nan, 10), (nan, 20))) AS l
+INNER JOIN (SELECT * FROM values('k1 Float64, k2 UInt32',
+    (0, 0), (3, 0), (5, 0), (10, 0), (inf, 0), (nan, 30))) AS r
+ON l.k1 = r.k1 AND l.k2 = r.k2
+WHERE isNaN(l.k1);

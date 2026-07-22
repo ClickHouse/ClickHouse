@@ -28,3 +28,19 @@
 500	4000	4000
 -- disjoint key ranges, no matches at all
 10000	12497500	5012497500
+-- inner, float keys with inf and nan, multi-column
+3	0	L3	R3
+inf	0	Linf	Rinf
+-- left, float keys with inf and nan, multi-column
+-inf	0	L-inf	
+1	0	L1	
+2	0	L2	
+3	0	L3	R3
+7	0	L7	
+8	0	L8	
+9	0	L9	
+inf	0	Linf	Rinf
+nan	10	Lnan10	
+nan	20	Lnan20	
+-- nan first keys with mismatching second key stay unmatched
+0
