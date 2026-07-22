@@ -483,15 +483,19 @@ class ReleaseInfo:
             f"Create and push release tag [{self.release_tag}], commit [{self.commit_sha}]"
         )
         # Create the annotated tag (force, so reruns are idempotent) with the
-        # robot identity, then push it as the robot PAT. Retry: on a repo this
-        # size GitHub's push-time "does this ref touch .github/workflows" check
-        # can time out and fail closed with a spurious "remote rejected ...
-        # `workflows` scope may be required"; the tag points at an existing
-        # commit (no workflow changes), so retrying lets the check complete.
+        # robot identity, then push it as the robot PAT. The tag is created
+        # unconditionally -- NOT gated on dry_run -- because later release steps
+        # resolve it as a local ref even on a dry run (e.g. release_job.py's
+        # changelog step runs `changelog.py ... <release_tag>` with no dry-run
+        # guard); only the push is skipped on a dry run. Retry the push: on a
+        # repo this size GitHub's push-time "does this ref touch
+        # .github/workflows" check can time out and fail closed with a spurious
+        # "remote rejected ... `workflows` scope may be required"; the tag
+        # points at an existing commit (no workflow changes), so retrying lets
+        # the check complete.
         Shell.check(
             f"{GIT_PREFIX} tag -f -a -m 'Release {self.release_tag}'"
             f" {self.release_tag} {self.commit_sha}",
-            dry_run=dry_run,
             strict=True,
             verbose=True,
         )
