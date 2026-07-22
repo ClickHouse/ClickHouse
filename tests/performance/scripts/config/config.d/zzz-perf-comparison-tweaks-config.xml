@@ -35,6 +35,20 @@
     <delta_lake_metadata_log remove="remove"/>
 
     <uncompressed_cache_size>1000000000</uncompressed_cache_size>
+
+    <!--
+        Disable the columns cache in the perf-comparison environment:
+        - the comparison should measure code effects, not right-server-only cache
+          hits (the same reason the query condition cache is disabled in
+          perf-comparison-tweaks-users.xml);
+        - the default 2 GiB cache (weighted by byteSize, so actual RSS is higher)
+          on top of two servers and the hits datasets exhausts the memory of the
+          perf runner and kills it mid-run.
+        A size of 0 makes the server skip both cache reads and cache writes
+        (including the deferred-write buffering). The old reference server
+        ignores this unknown config key.
+    -->
+    <columns_cache_size>0</columns_cache_size>
     <asynchronous_metrics_update_period_s>10</asynchronous_metrics_update_period_s>
     <remap_executable replace="replace">true</remap_executable>
 </clickhouse>
