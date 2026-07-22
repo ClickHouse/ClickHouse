@@ -1,9 +1,12 @@
 #pragma once
 
-#include <base/types.h>
-#include <Common/OpenTelemetryTracingContext.h>
-
+#include <map>
+#include <optional>
+#include <vector>
 #include <time.h>
+#include <base/types.h>
+#include <Common/HTTPFieldLess.h>
+#include <Common/OpenTelemetryTracingContext.h>
 
 namespace Poco::Net
 {
@@ -121,13 +124,16 @@ public:
     HTTPMethod http_method = HTTPMethod::UNKNOWN;
     String http_user_agent;
     String http_referer;
-    std::unordered_map<String, String> http_headers;
+    std::map<String, String, HTTPFieldLess> http_headers;
 
     /// For mysql and postgresql
     UInt64 connection_id = 0;
 
     /// For interserver in case initial query transport was authenticated via JWT.
     String jwt;
+
+    /// Initiator's current roles for secondary queries; nullopt = not sent (remote uses default roles).
+    std::optional<std::vector<String>> current_roles;
 
     /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
     /// It's expected that proxy appends the forwarded address to the end of the list.
@@ -159,10 +165,10 @@ public:
       * Only values that are not calculated automatically or passed separately are serialized.
       * Revisions are passed to use format that server will understand or client was used.
       */
-    /// `with_trailing_fields` controls whether the `client_agent` and `is_internal` fields are (de)serialized as
-    /// trailing members of `ClientInfo`. It must be `false` for the embedded `ClientInfo` of the persisted async
-    /// `Distributed` insert header, where `client_agent` and `is_internal` are stored as trailing header fields
-    /// instead, so that older binaries draining newer queue files can read the header without misinterpreting it.
+    /// `with_trailing_fields` controls whether the `client_agent`, `is_internal` and `current_roles` fields are
+    /// (de)serialized as trailing members of `ClientInfo`. It must be `false` for the embedded `ClientInfo` of the
+    /// persisted async `Distributed` insert header, where these are stored as trailing header fields instead, so
+    /// that older binaries draining newer queue files can read the header without misinterpreting it.
     void write(WriteBuffer & out, UInt64 server_protocol_revision, bool with_trailing_fields = true) const;
     void read(ReadBuffer & in, UInt64 client_protocol_revision, bool with_trailing_fields = true);
 

@@ -5,6 +5,7 @@ from ci.defs.defs import (
     LLVM_ARTIFACTS_LIST,
     LLVM_FT_NUM_BATCHES,
     LLVM_FT_OLD_S3_DB_REPL_WASM_NUM_BATCHES,
+    LLVM_FT_OLD_S3_DB_REPL_WASM_SEQUENTIAL_NUM_BATCHES,
     LLVM_IT_NUM_BATCHES,
     ArtifactNames,
     BuildTypes,
@@ -54,6 +55,7 @@ fast_test_digest_config = Job.CacheDigestConfig(
     include_paths=[
         "./ci/jobs/fast_test.py",
         "./ci/jobs/scripts/clickhouse_proc.py",
+        "./ci/jobs/scripts/server_cleanup.py",
         "./tests/queries/0_stateless/",
         "./tests/config/",
         "./tests/clickhouse-test",
@@ -102,6 +104,7 @@ common_ft_job_config = Job.Config(
         include_paths=[
             "./ci/jobs/functional_tests.py",
             "./ci/jobs/scripts/clickhouse_proc.py",
+            "./ci/jobs/scripts/server_cleanup.py",
             "./ci/jobs/scripts/functional_tests_results.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./ci/praktika/cidb.py",
@@ -187,6 +190,10 @@ class JobConfigs:
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="python3 ./ci/jobs/copilot_review_job.py --codex",
         allow_failure=True,
+        enable_gh_auth=True,
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
+        ],
     )
     ci_tests = Job.Config(
         name=JobNames.CI_TESTS,
@@ -369,6 +376,32 @@ class JobConfigs:
                 ArtifactNames.TGZ_ARM_RELEASE,
             ],
             runs_on=RunnerLabels.ARM_LARGE,
+        ),
+    )
+    cfi_build_job = common_build_job_config.parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_CFI,
+            provides=[ArtifactNames.CH_AMD_CFI, ArtifactNames.DEB_AMD_CFI],
+            runs_on=RunnerLabels.ARM_LARGE,
+            timeout=4 * 3600,
+        ),
+    )
+    cfi_integration_jobs = common_integration_test_job_config.parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"amd_cfi, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM,
+                requires=[ArtifactNames.CH_AMD_CFI],
+            )
+            for total_batches in (4,)
+            for batch in range(1, total_batches + 1)
+        ]
+    )
+    cfi_stress_job = common_stress_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_cfi",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.DEB_AMD_CFI],
         ),
     )
     # sccache-warmup builds (MasterCI only): compile amd_release / arm_release
@@ -554,6 +587,21 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
     )
+    # Merge-queue drift guard: reruns the PR's new/changed stateless tests on
+    # the merge group state (the PR merged with the current `master`), so a PR
+    # whose last CI run predates test-infrastructure changes on `master` (e.g.
+    # a new randomized setting in `tests/clickhouse-test`) is bounced from the
+    # queue instead of breaking `master`. Runs on the `amd_binary` build the
+    # merge queue produces anyway; merge-queue runs use a reduced iteration
+    # count and time budget (see `ci/jobs/functional_tests.py`) to keep queue
+    # latency bounded.
+    stateless_tests_flaky_mq_jobs = common_ft_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_binary, flaky check",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_BINARY],
+        ),
+    )
     stateless_tests_targeted_pr_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="arm_asan_ubsan, targeted",
@@ -623,6 +671,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/clickhouse_light.py",
+                "./ci/jobs/scripts/server_cleanup.py",
                 "./ci/jobs/queries",
             ],
         ),
@@ -630,27 +679,31 @@ class JobConfigs:
         runs_on=RunnerLabels.AMD_SMALL,
     )
     functional_tests_jobs = common_ft_job_config.parametrize(
-        *[
-            Job.ParamSet(
-                parameter=f"amd_asan_ubsan, distributed plan, parallel, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_MEDIUM_CPU,
-                requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
-            )
-            for total_batches in (2,)
-            for batch in range(1, total_batches + 1)
-        ],
+        Job.ParamSet(
+            parameter="amd_asan_ubsan, distributed plan, parallel",
+            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
+            requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
+            # This variant runs the parallel suite at reduced concurrency (see the
+            # distributed-plan branch in `functional_tests.py`) to keep the
+            # aggregate server RSS under the sanitizer memory cap, which lowers
+            # throughput. Allow more wall-clock than the common 2.5h budget so the
+            # reduced concurrency cannot turn into a job timeout: the job ran ~2h36m
+            # at 8 workers, and the further cut to 7 workers pushes it to ~2h57m, so
+            # 3.5h keeps a comfortable margin.
+            timeout=int(3600 * 3.5),
+        ),
         *[
             Job.ParamSet(
                 parameter=f"amd_asan_ubsan, db disk, distributed plan, sequential, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_SMALL_MEM,
                 requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
             )
-            for total_batches in (2,)
+            for total_batches in (3,)
             for batch in range(1, total_batches + 1)
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_llvm_coverage, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, parallel, {batch}/{total_batches}",
+                parameter=f"amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, WasmEdge, parallel, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
                 requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
                 provides=[
@@ -661,12 +714,19 @@ class JobConfigs:
             for total_batches in (LLVM_FT_OLD_S3_DB_REPL_WASM_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ],
-        Job.ParamSet(
-            parameter="amd_llvm_coverage, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, sequential",
-            runs_on=RunnerLabels.AMD_SMALL,
-            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-            provides=[ArtifactNames.LLVM_COVERAGE_FILE + "_ft_old_s3_db_repl_wasm_sequential"],
-        ),
+        *[
+            Job.ParamSet(
+                parameter=f"amd_llvm_coverage, old analyzer, s3 storage, DBReplicated, WasmEdge, sequential, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_SMALL,
+                requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+                provides=[
+                    ArtifactNames.LLVM_COVERAGE_FILE
+                    + f"_ft_old_s3_db_repl_wasm_sequential_{batch}"
+                ],
+            )
+            for total_batches in (LLVM_FT_OLD_S3_DB_REPL_WASM_SEQUENTIAL_NUM_BATCHES,)
+            for batch in range(1, total_batches + 1)
+        ],
         Job.ParamSet(
             parameter="amd_llvm_coverage, ParallelReplicas, s3 storage, parallel",
             runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
@@ -701,15 +761,11 @@ class JobConfigs:
             runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
-        *[
-            Job.ParamSet(
-                parameter=f"amd_tsan, parallel, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_LARGE,
-                requires=[ArtifactNames.CH_AMD_TSAN],
-            )
-            for total_batches in (2,)
-            for batch in range(1, total_batches + 1)
-        ],
+        Job.ParamSet(
+            parameter="amd_tsan, parallel",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.CH_AMD_TSAN],
+        ),
         *[
             Job.ParamSet(
                 parameter=f"amd_tsan, sequential, {batch}/{total_batches}",
@@ -753,7 +809,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_TSAN],
             )
-            for total_batches in (2,)
+            for total_batches in (3,)
             for batch in range(1, total_batches + 1)
         ],
         *[
@@ -792,7 +848,7 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter="arm_asan_ubsan, azure, parallel",
-            runs_on=RunnerLabels.ARM_MEDIUM,
+            runs_on=RunnerLabels.ARM_LARGE,  # ~2h on medium
             requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
         ),
         Job.ParamSet(
@@ -833,6 +889,50 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_SMALL_MEM,
         ),
     )
+    # Builds the "before" unit_tests_dbms (merge-base + only the PR's unit-test file
+    # changes) in-job, so it needs the binary-builder image and submodules. It does NOT
+    # require the PR's UNITTEST_AMD_ASAN_UBSAN artifact: the "touched tests pass on the
+    # PR binary" side is delegated to the regular `Unit tests (asan_ubsan)` job (see the
+    # module docstring), so this job is not gated behind `build_amd_asan_ubsan` and
+    # builds the "before" binary in parallel with the build matrix — matching the early
+    # start of the functional/integration bugfix validators.
+    bugfix_validation_ut_job = Job.Config(
+        name=JobNames.BUGFIX_VALIDATE_UT,
+        runs_on=RunnerLabels.AMD_LARGE,
+        command="python3 ./ci/jobs/unit_tests_bugfix_validation_job.py",
+        # The job both builds and RUNS the before-binary in this container. Running
+        # `unit_tests_dbms` needs `io_uring` (the `silk` fiber runtime calls
+        # `io_uring_queue_init_params` at startup), which Docker's default seccomp
+        # profile blocks — without this the before-binary aborts before any test runs.
+        # `--privileged` mirrors how the regular unit-test job runs the same binary
+        # (`clickhouse/test-base+--privileged`).
+        run_in_docker=BINARY_DOCKER_COMMAND + "+--privileged",
+        needs_submodules=True,
+        timeout=3600 * 4,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/unit_tests_bugfix_validation_job.py",
+                "./ci/jobs/build_clickhouse.py",
+                "./src",
+                "./contrib/",
+                "./.gitmodules",
+                "./CMakeLists.txt",
+                "./PreLoad.cmake",
+                "./cmake",
+                "./base",
+                "./programs",
+                "./rust",
+            ],
+            with_git_submodules=True,
+        ),
+        result_name_for_cidb="Tests",
+    ).set_allow_failure(True)
+    # allow_failure: an inconclusive ERROR (e.g. the before-binary could not be compiled,
+    # or crashed before any test ran) must NOT hard-block merge — "we couldn't determine"
+    # is not a reason to block. Only a definitive FAIL (the added test passes on the
+    # merge-base too, so it doesn't catch the bug) should block. Like the FT/IT bugfix
+    # jobs, the merge decision is centralized in new_tests_check.py, which blocks the unit
+    # case iff this job reported FAIL.
     _fuzzer_command = (
         "python3 ./ci/jobs/unit_tests_job.py --gtest_filter=FunctionsStress.*"
     )
@@ -1312,15 +1412,23 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ]
     )
-    clickbench_master_jobs = Job.Config(
+    clickbench_jobs = Job.Config(
         name=JobNames.CLICKBENCH,
         runs_on=RunnerLabels.FUNC_TESTER_AMD,
         command="python3 ./ci/jobs/clickbench.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/clickbench.py",
+                # ClickBench starts the server via `ClickHouseService`, which
+                # clears leftover processes through `server_cleanup.py`. Track
+                # both so changes to the shared start path reschedule the job.
+                "./ci/jobs/scripts/clickhouse_proc.py",
+                "./ci/jobs/scripts/server_cleanup.py",
                 "./ci/jobs/scripts/clickbench/",
+                "./ci/jobs/scripts/clickhouse_service.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                "./ci/praktika/result.py",
+                "./tests/config/users.d/ci_logs_sender.yaml",
             ],
         ),
         run_in_docker="clickhouse/stateless-test+--shm-size=16g+--network=host",
@@ -1373,7 +1481,7 @@ class JobConfigs:
             # introduced under ./docs.
             exclude_paths=[
                 "./docs/README.md",
-                "./docs/_description_templates/",
+                "./docs/_templates/",
                 "./docs/_includes/",
                 "./docs/changelog_entry_guidelines.md",
                 "./docs/changelogs/",
@@ -1385,7 +1493,9 @@ class JobConfigs:
     docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse",
+        # --apt-mirror-region points apt at the in-region AWS Ubuntu mirror; the
+        # runners are in us-east-1, where Canonical's mirrors are often unreachable.
+        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse --apt-mirror-region us-east-1",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/docker_server.py",
@@ -1399,7 +1509,9 @@ class JobConfigs:
     docker_keeper = Job.Config(
         name=JobNames.DOCKER_KEEPER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse",
+        # --apt-mirror-region points apt at the in-region AWS Ubuntu mirror; the
+        # runners are in us-east-1, where Canonical's mirrors are often unreachable.
+        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse --apt-mirror-region us-east-1",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/docker_server.py",
@@ -1453,6 +1565,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/sqltest_job.py",
+                "./ci/jobs/scripts/server_cleanup.py",
             ],
         ),
         requires=[ArtifactNames.CH_ARM_RELEASE],
@@ -1466,6 +1579,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/sqllogic_test.py",
+                "./ci/jobs/scripts/server_cleanup.py",
                 "./tests/sqllogic/",
             ],
         ),
@@ -1480,6 +1594,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/sqlstorm_test.py",
+                "./ci/jobs/scripts/server_cleanup.py",
                 "./tests/sqlstorm/",
             ],
         ),
@@ -1494,7 +1609,7 @@ class JobConfigs:
         requires=["Build (amd_binary)"],
     )
     jepsen_server = Job.Config(
-        name=JobNames.JEPSEN_KEEPER,
+        name=JobNames.JEPSEN_SERVER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
         command="python3 ./ci/jobs/jepsen_check.py server",
         requires=["Build (amd_binary)"],
@@ -1517,6 +1632,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/collect_clickhouse_profiles.py",
+                "./ci/jobs/scripts/server_cleanup.py",
                 "./cmake/profile_optimization.cmake",
                 "./tests/performance/",
             ],

@@ -16,6 +16,10 @@ This guide shows how to use Azure Private Link to provide private connectivity v
 
 <Image img="/images/cloud/security/azure-pe.webp" size="lg" alt="Overview of PrivateLink" background='white' />
 
+<Warning>
+Azure Private Link supports only connections initiated from your Azure VNet to ClickHouse Cloud. It can't be used for connections initiated from ClickHouse Cloud to services in your VNet, such as a private database.
+</Warning>
+
 Azure supports cross-region connectivity via Private Link. This enables you to establish connections between VNets located in different regions where you have ClickHouse services deployed.
 
 <Note>
