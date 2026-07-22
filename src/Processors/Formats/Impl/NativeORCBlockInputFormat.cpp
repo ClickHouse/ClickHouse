@@ -2015,7 +2015,7 @@ static bool orcUnionBranchMatchesType(const orc::Type * orc_branch_type, const D
     switch (orc_branch_type->getKind())
     {
         case orc::TypeKind::BOOLEAN:
-            return which.isUInt8();
+            return which.isUInt8() || which.isEnum8();
         case orc::TypeKind::BYTE:
             return which.isInt8() || (which.isUInt8() && !isBool(type)) || which.isEnum8();
         case orc::TypeKind::SHORT:
