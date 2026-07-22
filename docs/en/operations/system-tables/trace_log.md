@@ -18,8 +18,8 @@ Contains stack traces collected by the [sampling query profiler](../../operation
 ClickHouse creates this table when the [trace_log](../../operations/server-configuration-parameters/settings.md#trace_log) server configuration section is set. Also see settings: [query_profiler_real_time_period_ns](../../operations/settings/settings.md#query_profiler_real_time_period_ns), [query_profiler_cpu_time_period_ns](../../operations/settings/settings.md#query_profiler_cpu_time_period_ns), [memory_profiler_step](../../operations/settings/settings.md#memory_profiler_step),
 [memory_profiler_sample_probability](../../operations/settings/settings.md#memory_profiler_sample_probability), [trace_profile_events](../../operations/settings/settings.md#trace_profile_events).
 
-When symbolization is enabled (the default), the demangled function names and source locations are already available in the `symbols` and `lines` columns, so you can analyze the logs directly without introspection functions.
-If symbolization is disabled, or you want to resolve the raw addresses in the `trace` column on the fly (for example, to expand inline frames), use the `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` and `demangle` introspection functions.
+When symbolization is enabled (the default), the demangled function names and source locations are already available in the `symbols` and `lines` columns, so you can analyze the logs directly without introspection functions. Symbolization is supported on ELF platforms (such as Linux) and macOS; on FreeBSD the `symbols` and `lines` columns are always empty.
+If symbolization is disabled or unavailable on your platform, or you want to resolve the raw addresses in the `trace` column on the fly (for example, to expand inline frames), use the `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` and `demangle` introspection functions.
 
 ## Columns {#columns}
 

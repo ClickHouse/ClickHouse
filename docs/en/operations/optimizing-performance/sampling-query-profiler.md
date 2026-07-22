@@ -20,7 +20,7 @@ You can trace CPU time and wall-clock time spent including idle time.
 The query profiler is automatically enabled in ClickHouse Cloud.
 The following example query finds the most frequent stack traces for a profiled query, with resolved function names and source locations.
 
-By default, the profiler symbolizes stack traces at collection time and stores the results in the `symbols` and `lines` columns of [`system.trace_log`](/operations/system-tables/trace_log), so the examples below read those columns directly and do not require introspection functions. Symbolization is controlled by the `symbolize` setting in the `trace_log` server configuration section (enabled by default). If it is disabled, use the `addressToSymbol`, `demangle` and `addressToLine` [introspection functions](../../sql-reference/functions/introspection.md) to resolve the raw addresses in the `trace` column instead.
+By default, the profiler symbolizes stack traces at collection time and stores the results in the `symbols` and `lines` columns of [`system.trace_log`](/operations/system-tables/trace_log), so the examples below read those columns directly and do not require introspection functions. Symbolization is controlled by the `symbolize` setting in the `trace_log` server configuration section (enabled by default) and is supported on ELF platforms (such as Linux) and macOS; on FreeBSD the `symbols` and `lines` columns are always empty. If symbolization is disabled or unavailable on your platform, use the `addressToSymbol`, `demangle` and `addressToLine` [introspection functions](../../sql-reference/functions/introspection.md) to resolve the raw addresses in the `trace` column instead.
 
 :::tip
 Replace the `query_id` value with the ID of the query you want to profile.
@@ -101,8 +101,8 @@ This section configures the [trace_log](/operations/system-tables/trace_log) sys
 The `symbolize` option (enabled by default) makes ClickHouse resolve each stack frame at collection time and store the demangled function names and source locations in the `symbols` and `lines` columns.
 
 Note that the raw addresses in the `trace` column are less stable across restarts and upgrades than the pre-symbolized columns.
-Frames in the main ClickHouse binary are stored as physical file offsets, so they stay resolvable across restarts as long as the binary is unchanged.
-Frames outside the main binary (for example, in shared libraries) are stored as runtime virtual addresses that may become invalid after a restart, and any raw address becomes unresolvable after a binary upgrade because the code layout changes.
+On ELF platforms except FreeBSD, frames in the main ClickHouse binary are stored as physical file offsets, so they stay resolvable across restarts as long as the binary is unchanged; on macOS and FreeBSD they are stored as runtime virtual addresses that may become invalid after a restart.
+Frames outside the main binary (for example, in shared libraries) are always stored as runtime virtual addresses that may become invalid after a restart, and any raw address becomes unresolvable after a binary upgrade because the code layout changes.
 ClickHouse does not clean up the table on restart, so stale raw addresses can remain.
 The pre-symbolized `symbols` and `lines` columns, on the other hand, remain valid across restarts and upgrades, so prefer them when analyzing historical data.
 
@@ -123,7 +123,7 @@ If you need to profile each individual query, use a higher sampling frequency.
 To get a profile for some query, you need to aggregate data from the `trace_log` table.
 You can aggregate data by individual functions or by the whole stack traces.
 
-When symbolization is enabled (the default), the demangled function names and source locations are already available in the `symbols` and `lines` columns, so no additional setup is required.
+When symbolization is enabled (the default), the demangled function names and source locations are already available in the `symbols` and `lines` columns, so no additional setup is required. Symbolization is not supported on FreeBSD, where these columns are always empty.
 
 If symbolization is disabled, or you want to resolve the raw addresses in the `trace` column on the fly (for example, to expand inline frames), allow introspection functions with the [`allow_introspection_functions`](../../operations/settings/settings.md#allow_introspection_functions) setting:
 
