@@ -1,0 +1,49 @@
+---
+description: 'تُتيح دالة الجدول قراءة البيانات من عنقود YTsaurus.'
+sidebarTitle: 'ytsaurus'
+slug: /sql-reference/table-functions/ytsaurus
+title: 'ytsaurus'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="ytsaurus-table-function">
+  # دالة الجدول ytsaurus
+</div>
+
+<ExperimentalBadge />
+
+تتيح دالة الجدول هذه قراءة البيانات من عنقود YTsaurus.
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+```sql
+ytsaurus(http_proxy_url, cypress_path, oauth_token, format)
+```
+
+<Info>
+  هذه ميزة تجريبية وقد تتغير في الإصدارات المستقبلية بشكل غير متوافق مع الإصدارات السابقة.
+  فعّل استخدام دالة الجدول YTsaurus
+  باستخدام الإعداد [allow&#95;experimental&#95;ytsaurus&#95;table&#95;function](/ar/reference/settings/session-settings#allow_experimental_ytsaurus_table_engine).
+  أدخِل الأمر `set allow_experimental_ytsaurus_table_function = 1`.
+</Info>
+
+<div id="arguments">
+  ## الوسائط
+</div>
+
+* `http_proxy_url` — URL لوكيل HTTP الخاص بـ YTsaurus.
+* `cypress_path` — مسار Cypress إلى مصدر البيانات.
+* `oauth_token` — رمز OAuth.
+* `format` — [تنسيق](/ar/reference/formats/index) مصدر البيانات.
+
+**القيمة المعادة**
+
+جدول بالبنية المحددة لقراءة البيانات من مسار Cypress المحدد في عنقود YTsaurus.
+
+**انظر أيضًا**
+
+* [محرك YTsaurus](/ar/reference/engines/table-engines/integrations/ytsaurus)

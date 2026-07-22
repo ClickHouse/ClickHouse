@@ -523,7 +523,7 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
         readJSONField(field, istr, settings.json);
         Float64 tmp = 0;
         ReadBufferFromString buf(field);
-        if (tryReadFloatText(tmp, buf) && buf.eof())
+        if (tryReadFloatTextPrecise(tmp, buf) && buf.eof())
             read<void>(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON String value here: {}", field);
@@ -568,7 +568,7 @@ bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
 
         Float64 tmp = 0;
         ReadBufferFromString buf(field);
-        if (tryReadFloatText(tmp, buf) && buf.eof())
+        if (tryReadFloatTextPrecise(tmp, buf) && buf.eof())
         {
             read<void>(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
             return true;

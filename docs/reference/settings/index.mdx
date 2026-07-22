@@ -1,0 +1,25 @@
+---
+description: 'Table of Contents page for Settings'
+slug: /operations/settings/
+title: 'Settings'
+doc_type: 'landing-page'
+mode: wide
+---
+
+<CardGroup cols={2}>
+  <Card title="Server Settings" icon="server" href="/reference/settings/server-settings/settings">
+    Settings for the ClickHouse server configuration.
+  </Card>
+  <Card title="Session Settings" icon="user-gear" href="/reference/settings/session-settings">
+    Settings which are found in the `system.settings` table.
+  </Card>
+  <Card title="MergeTree tables settings" icon="table" href="/reference/settings/merge-tree-settings">
+    Settings for `MergeTree` which are in `system.merge_tree_settings`.
+  </Card>
+  <Card title="Format Settings" icon="file-lines" href="/reference/settings/formats">
+    Settings which control input and output formats.
+  </Card>
+  <Card title="Beta and experimental features" icon="flask" href="/reference/settings/beta-and-experimental-features">
+    Settings and features that are beta or experimental.
+  </Card>
+</CardGroup>

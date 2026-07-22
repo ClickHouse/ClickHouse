@@ -96,6 +96,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_free_disk_bytes_to_perform_insert;
     extern const MergeTreeSettingsFloat min_free_disk_ratio_to_perform_insert;
     extern const MergeTreeSettingsBool optimize_row_order;
+    extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
@@ -355,7 +356,7 @@ void updateTTL(
     }
 
     if (update_part_min_max_ttls)
-        ttl_infos.updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
+        ttl_infos.updatePartMinMaxTTL(ttl_info);
 }
 
 void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActionsPtr & expr, Block & block)
@@ -482,8 +483,13 @@ void MergeTreeTemporaryPart::prewarmCaches()
 }
 
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
-    Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+    Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, IColumn::Selector * out_selector)
 {
+    /// out_selector is left empty when the block is not split (a single resulting partition);
+    /// the caller then knows every row belongs to the only partition.
+    if (out_selector)
+        out_selector->clear();
+
     BlocksWithPartition result;
     if (block.empty() || !block.rows())
     {
@@ -552,6 +558,10 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     for (auto & item : result)
         item.partition_id = item.partition.getID(metadata_snapshot->getPartitionKey().sample_block);
+
+    /// Hand the row -> partition-index mapping to the caller (deduplication uses it).
+    if (out_selector)
+        *out_selector = std::move(selector);
 
     return result;
 }
@@ -880,6 +890,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     {
         static_cast<double>((*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         true,
+        (*data_settings)[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
         (*data_settings)[MergeTreeSetting::serialization_info_version],
         (*data_settings)[MergeTreeSetting::string_serialization_version],
         (*data_settings)[MergeTreeSetting::nullable_serialization_version],
@@ -1070,6 +1081,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     {
         static_cast<double>((*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         true,
+        (*data_settings)[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
         (*data_settings)[MergeTreeSetting::serialization_info_version],
         (*data_settings)[MergeTreeSetting::string_serialization_version],
         (*data_settings)[MergeTreeSetting::nullable_serialization_version],

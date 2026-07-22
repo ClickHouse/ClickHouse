@@ -1,0 +1,206 @@
+---
+slug: /primary-indexes
+title: '主索引'
+description: 'ClickHouse 中的稀疏主索引是如何工作的'
+keywords: ['稀疏主索引', '主索引', '索引']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<Tip>
+  **想了解更高级的索引详情？**
+
+  本页将介绍 ClickHouse 的稀疏主索引，包括它的构建方式、工作原理，以及它如何帮助加速查询。
+
+  如需了解更高级的索引策略和更深入的技术细节，请参阅[主索引深度解析](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。
+</Tip>
+
+<div id="how-does-the-sparse-primary-index-work-in-clickHouse">
+  ## ClickHouse 中的稀疏主索引是如何工作的？
+</div>
+
+<br />
+
+ClickHouse 中的稀疏主索引有助于高效识别可能包含与查询在表主键列条件相匹配数据的[粒度](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing)——即由多行组成的数据块。在下一节中，我们将说明该索引是如何根据这些列中的值构建的。
+
+<div id="sparse-primary-index-creation">
+  ### 稀疏主索引的创建
+</div>
+
+为了说明稀疏主索引是如何构建的，我们使用 [uk&#95;price&#95;paid&#95;simple](/zh/concepts/core-concepts/parts) 表，并结合一些动画来展示。
+
+[回顾一下](/zh/concepts/core-concepts/parts)，在我们的 ① 示例表中，主键为 (town, street)，② 插入的数据会 ③ 按主键列值排序后存储到磁盘上，并按列分别压缩保存到独立文件中：
+
+<Image img="/images/managing-data/core-concepts/primary-index-light_01.webp" size="lg" />
+
+<br />
+
+<br />
+
+在处理时，每一列的数据在逻辑上会被 ④ 划分为多个粒度——每个粒度包含 8,192 行——这是 ClickHouse 数据处理机制处理的最小单位。
+
+这种粒度结构也是主索引之所以是**稀疏**的原因：ClickHouse 不会为每一行建立索引，而是 ⑤ 每个粒度只存储一行的主键值——更准确地说，是该粒度的第一行。因此，每个粒度都会对应一个索引条目：
+
+<Image img="/images/managing-data/core-concepts/primary-index-light_02.webp" size="lg" />
+
+<br />
+
+<br />
+
+得益于这种稀疏性，主索引足够小，可以完全装入内存，从而能够对主键列上带有过滤条件的查询进行快速过滤。在下一节中，我们将说明它如何帮助加速此类查询。
+
+<div id="primary-index-usage">
+  ### 主索引的用法
+</div>
+
+我们通过另一个动画来说明稀疏主索引如何用于加速查询：
+
+<Image img="/images/managing-data/core-concepts/primary-index-light_03.webp" size="lg" />
+
+<br />
+
+<br />
+
+① 示例查询同时包含针对两个主键列的谓词：`town = 'LONDON' AND street = 'OXFORD STREET'`。
+
+② 为了加速查询，ClickHouse 会将表的主索引加载到内存中。
+
+③ 然后，它会扫描索引条目，以确定哪些粒度可能包含与该谓词匹配的行——也就是说，哪些粒度不能跳过。
+
+④ 随后，这些可能相关的粒度会被加载到内存中，并与查询所需的其他列中对应的粒度一起进行[处理](/zh/concepts/core-concepts/query-parallelism)。
+
+<div id="monitoring-primary-indexes">
+  ## 监控主索引
+</div>
+
+表中的每个[数据分区片段](/zh/concepts/core-concepts/parts)都有自己的主索引。我们可以使用 [mergeTreeIndex](/zh/reference/functions/table-functions/mergeTreeIndex) 表函数查看这些索引的内容。
+
+以下查询列出了示例表中每个数据分区片段的主索引条目数：
+
+```sql
+SELECT
+    part_name,
+    max(mark_number) AS entries
+FROM mergeTreeIndex('uk', 'uk_price_paid_simple')
+GROUP BY part_name;
+```
+
+```txt
+   ┌─part_name─┬─entries─┐
+1. │ all_2_2_0 │     914 │
+2. │ all_1_1_0 │    1343 │
+3. │ all_0_0_0 │    1349 │
+   └───────────┴─────────┘
+```
+
+该查询显示了当前某个数据分区片段的主索引中的前 10 条记录。请注意，这些数据分区片段会在后台持续[合并](/zh/concepts/core-concepts/merges)为更大的分区片段：
+
+```sql
+SELECT 
+    mark_number + 1 AS entry,
+    town,
+    street
+FROM mergeTreeIndex('uk', 'uk_price_paid_simple')
+WHERE part_name = (SELECT any(part_name) FROM mergeTreeIndex('uk', 'uk_price_paid_simple')) 
+ORDER BY mark_number ASC
+LIMIT 10;
+```
+
+```txt
+    ┌─entry─┬─town───────────┬─street───────────┐
+ 1. │     1 │ ABBOTS LANGLEY │ ABBEY DRIVE      │
+ 2. │     2 │ ABERDARE       │ RICHARDS TERRACE │
+ 3. │     3 │ ABERGELE       │ PEN Y CAE        │
+ 4. │     4 │ ABINGDON       │ CHAMBRAI CLOSE   │
+ 5. │     5 │ ABINGDON       │ THORNLEY CLOSE   │
+ 6. │     6 │ ACCRINGTON     │ MAY HILL CLOSE   │
+ 7. │     7 │ ADDLESTONE     │ HARE HILL        │
+ 8. │     8 │ ALDEBURGH      │ LINDEN ROAD      │
+ 9. │     9 │ ALDERSHOT      │ HIGH STREET      │
+10. │    10 │ ALFRETON       │ ALMA STREET      │
+    └───────┴────────────────┴──────────────────┘
+```
+
+最后，我们使用 [EXPLAIN](/zh/reference/statements/explain) 子句来查看如何利用所有数据分区片段的主索引，跳过那些不可能包含与示例查询过滤条件匹配的行的粒度。这些粒度不会被加载和处理：
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    max(price)
+FROM
+    uk.uk_price_paid_simple
+WHERE
+    town = 'LONDON' AND street = 'OXFORD STREET';
+```
+
+```txt
+    ┌─explain────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))                                                                  │
+ 2. │   Aggregating                                                                                              │
+ 3. │     Expression (Before GROUP BY)                                                                           │
+ 4. │       Expression                                                                                           │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple)                                                        │
+ 6. │         Indexes:                                                                                           │
+ 7. │           PrimaryKey                                                                                       │
+ 8. │             Keys:                                                                                          │
+ 9. │               town                                                                                         │
+10. │               street                                                                                       │
+11. │             Condition: and((street in ['OXFORD STREET', 'OXFORD STREET']), (town in ['LONDON', 'LONDON'])) │
+12. │             Parts: 3/3                                                                                     │
+13. │             Granules: 3/3609                                                                               │
+    └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+请注意，上面的 EXPLAIN 输出第 13 行显示，在所有数据分区片段的 3,609 个粒度中，主索引分析仅选中了 3 个进行处理，其余粒度则被完全跳过。
+
+我们还可以通过直接运行该查询来看到，大部分数据都被跳过了：
+
+```sql
+SELECT max(price)
+FROM uk.uk_price_paid_simple
+WHERE (town = 'LONDON') AND (street = 'OXFORD STREET');
+```
+
+```txt
+   ┌─max(price)─┐
+1. │  263100000 │ -- 2.631亿
+   └────────────┘
+
+1 row in set. Elapsed: 0.010 sec. Processed 24.58 thousand rows, 159.04 KB (2.53 million rows/s., 16.35 MB/s.)
+Peak memory usage: 13.00 MiB.
+```
+
+如上所示，在示例表约 3000 万行数据中，仅处理了约 25,000 行：
+
+```sql
+SELECT count() FROM uk.uk_price_paid_simple;
+```
+
+```txt
+   ┌──count()─┐
+1. │ 29556244 │ -- 2956万
+   └──────────┘
+```
+
+<div id="key-takeaways">
+  ## 关键要点
+</div>
+
+* **稀疏主索引**通过识别哪些粒度中可能包含在主键列上满足查询条件的行，帮助 ClickHouse 跳过不必要的数据。
+
+* 每个索引只存储**每个粒度第一行**的主键值 (一个粒度默认包含 8,192 行) ，因此结构足够紧凑，可以放入内存。
+
+* MergeTree 表中的**每个数据分区片段**都有**自己的主索引**，并在查询执行期间独立使用。
+
+* 在查询过程中，索引可让 ClickHouse **跳过粒度**，从而减少 I/O 和内存占用并提升性能。
+
+* 你可以使用 `mergeTreeIndex` 表函数来**查看索引内容**，并通过 `EXPLAIN` 子句监控索引的使用情况。
+
+<div id="where-to-find-more-information">
+  ## 更多信息
+</div>
+
+如果你想更深入地了解 ClickHouse 中稀疏主索引的工作原理，包括它与传统数据库索引的区别以及使用方面的最佳实践，请参阅我们关于索引的详细[深度解析](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。
+
+如果你想了解 ClickHouse 如何以高度并行的方式处理主索引扫描选出的数据，请参阅[此处](/zh/concepts/core-concepts/query-parallelism)的查询并行指南。

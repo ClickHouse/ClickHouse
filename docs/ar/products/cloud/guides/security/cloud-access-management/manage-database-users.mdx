@@ -1,0 +1,189 @@
+---
+sidebarTitle: 'إدارة مستخدمي قاعدة البيانات'
+slug: /cloud/security/manage-database-users
+title: 'إدارة مستخدمي قاعدة البيانات'
+description: 'تشرح هذه الصفحة كيف يمكن للمسؤولين إضافة مستخدمي قاعدة البيانات، وإدارة عمليات الإسناد، وإزالة مستخدمي قاعدة البيانات'
+doc_type: 'guide'
+keywords: ['مستخدمو قاعدة البيانات', 'إدارة الوصول', 'الأمان', 'الأذونات', 'إدارة المستخدمين']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يوضح هذا الدليل طريقتين لإدارة مستخدمي قاعدة البيانات: من خلال SQL Console أو مباشرةً داخل قاعدة البيانات.
+
+<div id="sql-console-passwordless-authentication">
+  ### المصادقة بدون كلمة مرور في SQL Console
+</div>
+
+يُنشأ مستخدمو SQL Console لكل جلسة، وتتم مصادقتهم باستخدام شهادات X.509 التي تُدوَّر تلقائيًا. ويُزال المستخدم عند إنهاء الجلسة. عند إنشاء قوائم الوصول لأغراض التدقيق، يُرجى الانتقال إلى علامة التبويب Settings الخاصة بالخدمة في Console، ومراعاة وصول SQL Console بالإضافة إلى مستخدمي قاعدة البيانات الموجودين في قاعدة البيانات. وإذا كانت الأدوار المخصصة مُهيأة، فسيُدرج وصول المستخدم ضمن الدور الذي ينتهي باسم المستخدم الخاص به.
+
+<div id="sql-console-users-and-roles">
+  ## مستخدمو SQL Console والأدوار
+</div>
+
+يمكن إسناد أدوار SQL Console الأساسية إلى المستخدمين الذين لديهم أذونات Service Read Only وService Admin. لمزيد من المعلومات، راجع [إدارة تعيينات أدوار SQL Console](/ar/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments). يوضّح هذا الدليل كيفية إنشاء دور مخصّص لمستخدم في SQL Console.
+
+لإنشاء دور مخصّص لمستخدم في SQL Console ومنحه دورًا عامًا، شغّل الأوامر التالية. يجب أن يتطابق عنوان البريد الإلكتروني مع عنوان البريد الإلكتروني للمستخدم في Console.
+
+<Steps>
+  <Step>
+    #### إنشاء `database_developer` ومنح الأذونات
+
+    أنشئ الدور `database_developer` وامنحه أذونات `SHOW` و`CREATE` و`ALTER` و`DELETE`.
+
+    ```sql
+    CREATE ROLE OR REPLACE database_developer;
+    GRANT SHOW ON * TO database_developer;
+    GRANT CREATE ON * TO database_developer;
+    GRANT ALTER ON * TO database_developer;
+    GRANT DELETE ON * TO database_developer;
+    ```
+  </Step>
+
+  <Step>
+    #### إنشاء دور لمستخدم SQL Console
+
+    أنشئ دورًا لمستخدم SQL Console وهو my.user@domain.com، ثم أسند إليه الدور `database_developer`.
+
+    ```sql
+    CREATE ROLE OR REPLACE `sql-console-role:my.user@domain.com`;
+    GRANT database_developer TO `sql-console-role:my.user@domain.com`;
+    ```
+  </Step>
+
+  <Step>
+    #### يُسنَد إلى المستخدم الدور الجديد عند استخدام SQL Console
+
+    سيُسنَد إلى المستخدم الدور المرتبط بعنوان بريده الإلكتروني كلما استخدم SQL Console.
+  </Step>
+</Steps>
+
+<div id="database-authentication">
+  ## مصادقة قاعدة البيانات
+</div>
+
+<div id="database-user-id--password">
+  ### معرّف مستخدم قاعدة البيانات وكلمة المرور
+</div>
+
+استخدم أسلوب SHA256&#95;hash عند [إنشاء حسابات المستخدمين](/ar/reference/statements/create/user) لتأمين كلمات المرور. يجب أن تتكوّن كلمات مرور مستخدمي قاعدة بيانات ClickHouse من 12 حرفًا على الأقل، وأن تستوفي متطلبات التعقيد: أحرف كبيرة، وأحرف صغيرة، وأرقام و/أو رموز خاصة.
+
+<Tip>
+  **أنشئ كلمات المرور بأمان**
+
+  نظرًا إلى أن المستخدمين ذوي الامتيازات الأقل من الامتيازات الإدارية لا يمكنهم تعيين كلمات المرور الخاصة بهم بأنفسهم، فاطلب من المستخدم إجراء تجزئة لكلمة مروره باستخدام مُولِّد
+  مثل [هذا](https://tools.keycdn.com/sha256-online-generator) قبل تزويد المسؤول بها لإعداد الحساب.
+</Tip>
+
+```sql
+CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
+```
+
+<div id="database-ssh">
+  ### مستخدم قاعدة بيانات مع مصادقة SSH
+</div>
+
+لإعداد مصادقة SSH لمستخدم قاعدة بيانات في ClickHouse Cloud.
+
+1. استخدم ssh-keygen لإنشاء زوج من المفاتيح.
+2. استخدم المفتاح العام لإنشاء المستخدم.
+3. عيّن الأدوار و/أو الأذونات للمستخدم.
+4. استخدم المفتاح الخاص للمصادقة مع الخدمة.
+
+للاطّلاع على شرح تفصيلي مع أمثلة، راجع [How to connect to ClickHouse Cloud using SSH keys](/ar/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys) في قاعدة المعرفة الخاصة بنا.
+
+<div id="database-permissions">
+  ## أذونات قاعدة البيانات
+</div>
+
+اضبط ما يلي على مستوى الخدمات وقواعد البيانات باستخدام عبارة SQL ‏[GRANT](/ar/reference/statements/grant).
+
+| Role    | Description                                                     |
+| :------ | :-------------------------------------------------------------- |
+| Default | وصول إداري كامل إلى الخدمات                                     |
+| Custom  | اضبطه باستخدام عبارة SQL [`GRANT`](/ar/reference/statements/grant) |
+
+* أدوار قاعدة البيانات تراكمية. وهذا يعني أنه إذا كان المستخدم عضوًا في دورين، فسيحصل على أوسع نطاق وصول يمنحه أيٌّ من هذين الدورين. ولا يفقد أي صلاحيات عند إضافة أدوار.
+* يمكن منح أدوار قاعدة البيانات لأدوار أخرى، مما يؤدي إلى بنية هرمية. وترث الأدوار جميع أذونات الأدوار التي تكون عضوًا فيها.
+* أدوار قاعدة البيانات خاصة بكل خدمة، ويمكن تطبيقها على عدة قواعد بيانات ضمن الخدمة نفسها.
+
+يوضح الشكل أدناه الطرق المختلفة التي يمكن بها منح مستخدم أذونات.
+
+<Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt="رسم توضيحي يبيّن الطرق المختلفة التي يمكن بها منح مستخدم أذونات" size="md" background="black" />
+
+<div id="initial-settings">
+  ### الإعدادات الأولية
+</div>
+
+تتضمن قواعد البيانات حسابًا باسم `default` يُضاف تلقائيًا ويُمنَح الدور `default_role` عند إنشاء الخدمة. ويُعرَض للمستخدم الذي ينشئ الخدمة كلمة المرور العشوائية المُولَّدة تلقائيًا والمُعيَّنة لحساب `default` عند إنشاء الخدمة. ولا تظهر كلمة المرور بعد الإعداد الأولي، لكن يمكن لأي مستخدم لديه أذونات Service Admin في Console تغييرها لاحقًا. ويمكن لهذا الحساب، أو لأي حساب لديه امتيازات Service Admin ضمن Console، إعداد مستخدمي قاعدة بيانات إضافيين وأدوار في أي وقت.
+
+<Note>
+  لتغيير كلمة المرور المُعيَّنة لحساب `default` في Console، انتقل إلى قائمة Services على اليسار، وافتح الخدمة، ثم انتقل إلى علامة التبويب Settings وانقر على زر Reset password.
+</Note>
+
+نوصي بإنشاء حساب مستخدم جديد مرتبط بشخص، ومنح هذا المستخدم الدور `default_role`. وذلك لكي تُنسَب الأنشطة التي ينفذها المستخدمون إلى معرّفات المستخدم الخاصة بهم، وليبقى حساب `default` مخصصًا لإجراءات الطوارئ.
+
+```sql
+  CREATE USER userID IDENTIFIED WITH sha256_hash by 'hashed_password';
+  GRANT default_role to userID;
+```
+
+يمكنك استخدام مولّد تجزئة SHA256 أو دالة برمجية مثل `hashlib` في بايثون لتحويل كلمة مرور مكوّنة من 12 حرفًا أو أكثر وبدرجة تعقيد مناسبة إلى سلسلة SHA256 لتقديمها إلى مسؤول النظام لاستخدامها ككلمة مرور. ويضمن ذلك ألّا يرى المسؤول كلمات المرور غير المشفّرة أو يتعامل معها.
+
+<div id="database-access-listings-with-sql-console-users">
+  ### قوائم الوصول إلى قاعدة البيانات باستخدام مستخدمي SQL console
+</div>
+
+يمكن استخدام العملية التالية لإنشاء قائمة وصول كاملة عبر SQL console وقواعد البيانات في مؤسستك.
+
+<Steps>
+  <Step>
+    #### الحصول على قائمة بجميع الأذونات الممنوحة في قاعدة البيانات
+
+    شغّل الاستعلامات التالية للحصول على قائمة بجميع الأذونات الممنوحة في قاعدة البيانات.
+
+    ```sql
+    SELECT grants.user_name,
+    grants.role_name,
+    users.name AS role_member,
+    grants.access_type,
+    grants.database,
+    grants.table
+    FROM system.grants LEFT OUTER JOIN system.role_grants ON grants.role_name = role_grants.granted_role_name
+    LEFT OUTER JOIN system.users ON role_grants.user_name = users.name
+
+    UNION ALL
+
+    SELECT grants.user_name,
+    grants.role_name,
+    role_grants.role_name AS role_member,
+    grants.access_type,
+    grants.database,
+    grants.table
+    FROM system.role_grants LEFT OUTER JOIN system.grants ON role_grants.granted_role_name = grants.role_name
+    WHERE role_grants.user_name is null;
+    ```
+  </Step>
+
+  <Step>
+    #### ربط قائمة الأذونات الممنوحة بمستخدمي Console الذين لديهم وصول إلى SQL console
+
+    اربط هذه القائمة بمستخدمي Console الذين لديهم وصول إلى SQL console.
+
+    a. انتقل إلى Console.
+
+    b. حدِّد الخدمة ذات الصلة.
+
+    c. حدِّد Settings من القائمة اليسرى.
+
+    d. مرّر إلى قسم الوصول إلى SQL console.
+
+    e. انقر على الرابط الذي يعرض عدد المستخدمين الذين لديهم وصول إلى قاعدة البيانات `There are # users with access to this service.` لعرض قائمة المستخدمين.
+  </Step>
+</Steps>
+
+<div id="warehouse-users">
+  ## مستخدمو المستودع
+</div>
+
+تتم مشاركة مستخدمي المستودع بين الخدمات ضمن المستودع نفسه. لمزيد من المعلومات، راجع [عناصر التحكم في الوصول إلى المستودع](/ar/products/cloud/features/infrastructure/warehouses#access-controls).

@@ -1,0 +1,106 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/copilotkit
+sidebarTitle: 'CopilotKit を統合する'
+title: 'CopilotKit と ClickHouse MCPサーバーで AI Agent を構築する方法'
+description: 'ClickHouse に保存されたデータを ClickHouse MCP と CopilotKit で活用し、エージェント型アプリケーションを構築する方法を学びます'
+keywords: ['ClickHouse', 'MCP', 'copilotkit']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+これは、ClickHouse に保存されたデータを使ってエージェント型アプリケーションを構築する方法の一例です。
+[ClickHouse MCPサーバー](https://github.com/ClickHouse/mcp-clickhouse) を使用して
+ClickHouse のデータをクエリし、そのデータに基づいてチャートを生成します。
+
+[CopilotKit](https://github.com/CopilotKit/CopilotKit) は UI を構築し、
+ユーザーにチャットインターフェイスを提供するために使用されます。
+
+<Info>
+  **サンプルコード**
+
+  この例のコードは [examples リポジトリ](https://github.com/ClickHouse/examples/edit/main/ai/mcp/copilotkit) にあります。
+</Info>
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* `Node.js >= 20.14.0`
+* `uv >= 0.1.0`
+
+<div id="install-dependencies">
+  ## 依存関係をインストールする
+</div>
+
+プロジェクトをローカルにクローンします: `git clone https://github.com/ClickHouse/examples` を実行し、
+`ai/mcp/copilotkit` ディレクトリに移動します。
+
+このセクションはスキップして、依存関係をインストールするには `./install.sh` スクリプトを実行してください。依存関係を手動でインストールする場合は、以下の手順に従ってください。
+
+<div id="install-dependencies-manually">
+  ## 依存関係を手動でインストールする
+</div>
+
+1. 依存関係をインストールします:
+
+`npm install` を実行して、Node.js の依存関係をインストールします。
+
+2. mcp-clickhouse をインストールします:
+
+新しいフォルダー `external` を作成し、その中に mcp-clickhouse リポジトリをクローンします。
+
+```sh
+mkdir -p external
+git clone https://github.com/ClickHouse/mcp-clickhouse external/mcp-clickhouse
+```
+
+Python の依存関係をインストールし、fastmcp CLI ツールを追加します。
+
+```sh
+cd external/mcp-clickhouse
+uv sync
+uv add fastmcp
+```
+
+<div id="configure-the-application">
+  ## アプリケーションを設定する
+</div>
+
+`env.example` ファイルを `.env` にコピーし、`ANTHROPIC_API_KEY` を設定するように編集します。
+
+<div id="use-your-own-llm">
+  ## 独自のLLMを使用する
+</div>
+
+Anthropic ではなく別のLLMプロバイダーを使いたい場合は、
+Copilotkitのランタイムを変更して、別のLLMアダプターを使用できます。
+[こちら](https://docs.copilotkit.ai/guides/bring-your-own-llm) に、サポートされている
+プロバイダーの一覧があります。
+
+<div id="use-your-own-clickhouse-cluster">
+  ## 独自の ClickHouse クラスターを使用する
+</div>
+
+デフォルトでは、このサンプルは
+[ClickHouse デモクラスター](https://sql.clickhouse.com/) に接続するように設定されています。以下の環境変数を設定すると、独自の
+ClickHouse クラスターを使用することもできます。
+
+* `CLICKHOUSE_HOST`
+* `CLICKHOUSE_PORT`
+* `CLICKHOUSE_USER`
+* `CLICKHOUSE_PASSWORD`
+* `CLICKHOUSE_SECURE`
+
+<div id="run-the-application">
+  ## アプリケーションを実行する
+</div>
+
+`npm run dev` を実行して開発サーバーを起動します。
+
+次のようなプロンプトを使って Agent をテストできます。
+
+> &quot;過去 10 年間の
+> Manchester における価格推移を表示してください。&quot;
+
+結果を確認するには、ブラウザで
+[http://localhost:3000](http://localhost:3000) を開きます。

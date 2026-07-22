@@ -16,10 +16,6 @@ if (NOT ENABLE_JEMALLOC)
     return()
 endif ()
 
-if (NOT OS_LINUX)
-    message (WARNING "jemalloc support on non-Linux is EXPERIMENTAL")
-endif()
-
 # jemalloc runtime config (malloc_conf). Options common to all platforms:
 #   muzzy_decay_ms:0           Release muzzy pages to the OS immediately (we tune via dirty decay only).
 #   dirty_decay_ms:5000        Purge dirty pages 5s after they go idle, off the allocation path.
@@ -30,6 +26,20 @@ endif()
 #                              reused instead of faulting via MADV_DONTNEED.
 #                              https://github.com/ClickHouse/ClickHouse/pull/80245
 #                              https://github.com/jemalloc/jemalloc/pull/2842
+# Linux and macOS:
+#   prof:true,prof_active:true,prof_thread_active_init:false
+#                              Compile in and globally arm sampling but leave it off per-thread, so it can
+#                              be switched on at runtime (per-thread or globally). Profiling is compiled in
+#                              (JEMALLOC_PROF=1) and linked against libunwind on every platform below, so
+#                              arming it at runtime is what makes the allocation profiler usable. Left off
+#                              on FreeBSD, which has no perf coverage to validate the change.
+#   percpu_arena:percpu        Cap arenas at the CPU count. Otherwise each thread keeps its own arena
+#                              (up to 4*CPU) and holds that memory while idle, bloating RSS. Needs a
+#                              current-CPU query: sched_getcpu on Linux (a glibc extension). macOS has no
+#                              sched_getcpu, so jemalloc reads the CPU number from TPIDR_EL0 (arm64) or
+#                              sidt (x86) like Apple's _os_cpu_number, verified to spread across all CPUs
+#                              on Apple Silicon. https://github.com/jemalloc/jemalloc/pull/2953
+#                              FreeBSD has no working query and keeps it off.
 #
 # Linux-only:
 #   oversize_threshold:N       Route large allocations (>= N) to jemalloc's dedicated oversize arena,
@@ -37,22 +47,22 @@ endif()
 #                              arenas. 64MiB on Linux: fewer page faults on hashtable-heavy queries and
 #                              ~2x less retained virtual address space; explicit arenas are not affected.
 #                              https://github.com/ClickHouse/ClickHouse/pull/103958
-#                              0 disables the arena (non-Linux still uses 0).
-#   percpu_arena:percpu        Cap arenas at the CPU count. Otherwise each thread keeps its own arena
-#                              (up to 4*CPU) and holds that memory while idle. Needs sched_getcpu, which
-#                              is unavailable on macOS/FreeBSD.
-#   prof:true,prof_active:true,prof_thread_active_init:false
-#                              Compile in and globally arm sampling but leave it off per-thread, so it can
-#                              be switched on at runtime (per-thread or globally). Not enabled on non-Linux.
+#                              0 disables the arena. Left disabled on non-Linux: the win relies on THP
+#                              madvise on the oversize arena (JEMALLOC_HAVE_MADVISE_HUGE, absent on macOS)
+#                              and is unvalidated there.
 if (OS_LINUX)
     set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:67108864,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:true,prof_thread_active_init:false,background_thread:true,lg_extent_max_active_fit:8")
-else()
-    # On Darwin, background_thread is unavailable in upstream jemalloc; we enable it via the Darwin config
+elseif (OS_DARWIN)
+    # background_thread is unavailable in upstream jemalloc on Darwin; we enable it via the Darwin config
     # headers (include_darwin_*/jemalloc/internal/jemalloc_internal_defs.h.in), where the full rationale
     # lives (it requires switching malloc_mutex_t off os_unfair_lock and the nstime clock off Mach uptime).
-    # On FreeBSD (also handled by this branch) background_thread is supported out of the box. Previously
-    # this branch used dirty_decay_ms:0 (eager per-free purging) to bound RSS, under the wrong assumption
-    # that background_thread was unavailable; see https://github.com/ClickHouse/ClickHouse/issues/108429
+    # Previously this used dirty_decay_ms:0 (eager per-free purging) to bound RSS, under the wrong
+    # assumption that background_thread was unavailable; see
+    # https://github.com/ClickHouse/ClickHouse/issues/108429
+    # percpu_arena relies on malloc_getcpu, which reads the CPU number via TPIDR_EL0/sidt on macOS (see above).
+    set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:true,prof_thread_active_init:false,background_thread:true,lg_extent_max_active_fit:8")
+else()
+    # FreeBSD and any other non-Linux target. background_thread is supported out of the box.
     set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,background_thread:true,lg_extent_max_active_fit:8")
 endif()
 # CACHE variable is empty to allow changing defaults without the necessity
@@ -165,7 +175,11 @@ if (ARCH_AMD64)
         set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_x86_64")
     endif()
 elseif (ARCH_AARCH64)
-    set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_aarch64")
+    if (USE_MUSL)
+        set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_aarch64_musl")
+    else()
+        set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_aarch64")
+    endif()
 elseif (ARCH_PPC64LE)
     set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_ppc64le")
 elseif (ARCH_RISCV64)

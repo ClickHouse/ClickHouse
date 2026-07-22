@@ -1,0 +1,24 @@
+---
+title: Les vues matérialisées sont-elles insérées de façon synchrone ?
+description: Cet article de la base de connaissances examine si l’insertion dans les vues matérialisées s’effectue de façon synchrone
+date: 2023-03-01
+tags: ['Modélisation des données']
+keywords: ['Vue matérialisée']
+---
+
+<div id="are-materialized-views-inserted-synchronously">
+  ## Les vues matérialisées sont-elles insérées de manière synchrone ?
+</div>
+
+**Question :** Lorsqu’une table source reçoit de nouvelles lignes, celles-ci sont également envoyées à toutes ses vues matérialisées. Les insertions dans les vues matérialisées sont-elles effectuées de manière synchrone, c’est-à-dire que, lorsqu’une insertion est confirmée comme réussie par le serveur au client, cela signifie que toutes les vues matérialisées ont été entièrement mises à jour et sont disponibles pour les requêtes ?
+
+**Réponse :**
+
+1. Lorsqu’un `INSERT` réussit, les données sont insérées à la fois dans la table et dans toutes les vues matérialisées.
+2. L’insertion n’est pas atomique vis-à-vis des vues matérialisées. Pendant qu’un `INSERT` est en cours, des clients concurrents peuvent voir un état intermédiaire : les données ont été insérées dans la table principale, mais pas encore dans les vues matérialisées, ou inversement.
+3. Si vous utilisez les [insertions asynchrones](/fr/concepts/features/operations/insert/asyncinserts), elles mettent les données en tampon puis effectuent en interne une insertion classique, en renvoyant au client le même type de réponse que pour les insertions classiques. Si le client a reçu une réponse de succès d’une insertion asynchrone avec l’option `wait_for_async_insert` (ce qui est le cas par défaut), les données sont insérées à la fois dans la table et dans toutes ses vues matérialisées.
+
+**Question :** Qu’en est-il des vues matérialisées chaînées/en cascade ?
+
+**Réponse :**
+Les mêmes règles s’appliquent : un `INSERT` ayant reçu une réponse positive signifie que les données ont été insérées dans chaque vue matérialisée de la chaîne. L’insertion n’est pas atomique.

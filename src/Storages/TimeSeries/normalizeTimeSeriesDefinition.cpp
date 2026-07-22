@@ -29,6 +29,7 @@
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
@@ -698,6 +699,35 @@ namespace
     }
 
 
+    /// The TimeSeries `tags` inner table keeps the tag columns (and the `tags`/`all_tags` Maps) outside
+    /// the sorting key, but they are functionally dependent on `id`, which is part of it: every group of
+    /// rows that a background merge collapses together shares the same `id`, hence the same values of
+    /// those columns, so this off-key layout is safe here. `AggregatingMergeTree` rejects such a layout
+    /// by default (see the `allow_dimensions_outside_sorting_key` setting and
+    /// https://github.com/ClickHouse/ClickHouse/issues/751), so enable that setting on the inner tags
+    /// engine — both when we generate it and when the user specifies an aggregating engine explicitly.
+    void allowOffKeyDimensionsForAggregatingTagsEngine(ASTStorage & storage)
+    {
+        if (!storage.engine || storage.engine->name.find("Aggregating") == std::string::npos)
+            return;
+
+        if (storage.settings)
+        {
+            /// Respect an explicit value if the user already set it.
+            for (const auto & change : storage.settings->changes)
+                if (change.name == "allow_dimensions_outside_sorting_key")
+                    return;
+        }
+        else
+        {
+            auto settings_ast = make_intrusive<ASTSetQuery>();
+            settings_ast->is_standalone = false;
+            storage.set(storage.settings, settings_ast);
+        }
+
+        storage.settings->changes.push_back(SettingChange{"allow_dimensions_outside_sorting_key", Field(static_cast<UInt64>(1))});
+    }
+
     /// Makes the definition of the default engine for an inner table.
     boost::intrusive_ptr<ASTStorage> generateInnerEngine(ViewTarget::Kind target_kind, const TimeSeriesSettings & settings)
     {
@@ -715,7 +745,8 @@ namespace
         }
         else if (target_kind == ViewTarget::Tags)
         {
-            std::string_view engine_name = settings[TimeSeriesSetting::aggregate_min_time_and_max_time]
+            const bool aggregate_min_time_and_max_time = settings[TimeSeriesSetting::aggregate_min_time_and_max_time];
+            std::string_view engine_name = aggregate_min_time_and_max_time
                 ? "AggregatingMergeTree"
                 : "ReplacingMergeTree";
             auto engine = makeASTFunction(engine_name);
@@ -727,7 +758,7 @@ namespace
             ASTs order_by_list;
             order_by_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
             order_by_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
-            if (settings[TimeSeriesSetting::store_min_time_and_max_time] && !settings[TimeSeriesSetting::aggregate_min_time_and_max_time])
+            if (settings[TimeSeriesSetting::store_min_time_and_max_time] && !aggregate_min_time_and_max_time)
             {
                 order_by_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime));
                 order_by_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MaxTime));
@@ -1035,6 +1066,12 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
 
                 if (!create_query.getTargetInnerEngine(kind))
                     create_query.setTargetInnerEngine(kind, generateInnerEngine(kind, settings));
+
+                if (kind == ViewTarget::Tags)
+                {
+                    if (auto * tags_engine = create_query.getTargetInnerEngine(kind))
+                        allowOffKeyDimensionsForAggregatingTagsEngine(*tags_engine);
+                }
             }
         }
     }

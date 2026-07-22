@@ -1,0 +1,28 @@
+---
+title: クラウドオブジェクトストレージから ClickHouse Cloud にデータを移行する
+description: 'オブジェクトストレージから ClickHouse Cloud へのデータ移行'
+keywords: ['オブジェクトストレージ', 's3', 'azure blob', 'gcs', '移行']
+slug: /integrations/migration/object-storage-to-clickhouse
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<Image img="/images/integrations/migration/object-storage-01.webp" size="md" alt="セルフマネージド ClickHouse の移行" />
+
+クラウドオブジェクトストレージをデータレイクとして利用していて、このデータを ClickHouse Cloud にインポートしたい場合、
+または現在のデータベースシステムからデータを クラウドオブジェクトストレージ に直接オフロードできる場合は、次のいずれかの
+テーブル関数を使って、クラウドオブジェクトストレージ に保存されているデータを ClickHouse Cloud のテーブルへ移行できます。
+
+* [s3](/ja/reference/functions/table-functions/s3) or [s3Cluster](/ja/reference/functions/table-functions/s3Cluster)
+* [gcs](/ja/reference/functions/table-functions/gcs)
+* [azureBlobStorage](/ja/reference/functions/table-functions/azureBlobStorage)
+
+現在のデータベースシステムからデータを クラウドオブジェクトストレージ に直接オフロードできない場合は、[サードパーティの ETL/ELT ツール](/ja/get-started/migrate/other-methods/etl-tool-to-clickhouse) または [clickhouse-local](/ja/get-started/migrate/other-methods/clickhouse-local-etl) を使用して、現在のデータベースシステムから クラウドオブジェクトストレージ へデータを移動し、
+次のステップでそのデータを ClickHouse Cloud のテーブルに移行できます。
+
+これは 2 段階のプロセスですが (まずデータを クラウドオブジェクトストレージ にオフロードし、その後 ClickHouse にロードする) 、
+ClickHouse Cloud は クラウドオブジェクトストレージ からの高並列な読み取りを[強力にサポート](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3)しているため、PB 規模までスケールします。
+さらに、[Parquet](/ja/reference/formats/Parquet/Parquet) のような高機能かつ圧縮可能なフォーマットも活用できます。
+
+S3 を使用して ClickHouse Cloud にデータを取り込む方法を、具体的なコード例とともに紹介した[ブログ記事](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3)もあります。

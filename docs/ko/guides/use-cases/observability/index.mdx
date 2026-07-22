@@ -1,0 +1,44 @@
+---
+slug: /use-cases/observability
+title: '관측성'
+description: '관측성 사용 사례 가이드를 위한 랜딩 페이지'
+keywords: ['관측성', 'logs', 'traces', '메트릭', 'OpenTelemetry', 'Grafana', 'OTel']
+doc_type: 'guide'
+---
+
+ClickHouse는 관측성 워크로드에 탁월한 속도, 확장성, 비용 효율성을 제공합니다. 이 가이드는 요구 사항에 따라 두 가지 경로를 안내합니다:
+
+<div id="clickstack">
+  ## ClickStack - ClickHouse 관측성 스택
+</div>
+
+ClickHouse Observability Stack은 대부분의 사용자에게 **권장하는 방식**입니다.
+
+**ClickStack**은 ClickHouse와 OpenTelemetry(OTel)를 기반으로 구축된 프로덕션급 관측성 플랫폼으로, 로그, 트레이스, 메트릭, 세션을 하나의 고성능 확장형 솔루션으로 통합하며 단일 노드 배포부터 **멀티 페타바이트** 규모까지 지원합니다.
+
+| 섹션                                            | 설명                           |
+| --------------------------------------------- | ---------------------------- |
+| [개요](/ko/clickstack/overview)                    | ClickStack 및 주요 기능 소개        |
+| [시작하기](/ko/clickstack/getting-started/index)     | 빠른 시작 가이드 및 기본 설정 안내         |
+| [예시 데이터셋](/ko/clickstack/example-datasets/index) | 샘플 데이터셋 및 사용 사례              |
+| [아키텍처](/ko/clickstack/architecture)              | 시스템 아키텍처 및 구성 요소 개요          |
+| [배포](/ko/clickstack/deployment/overview)         | 배포 가이드 및 옵션                  |
+| [구성](/ko/clickstack/managing/config)             | 세부 구성 옵션 및 설정                |
+| [데이터 수집](/ko/clickstack/ingesting-data/index)    | ClickStack으로 데이터를 수집하기 위한 지침 |
+| [검색](/ko/clickstack/features/search)             | 관측성 데이터를 검색하고 쿼리하는 방법        |
+| [프로덕션](/ko/clickstack/managing/production)       | 프로덕션 배포를 위한 모범 사례            |
+
+<div id="build-your-own-stack">
+  ## 직접 구축하는 스택
+</div>
+
+고도로 특화된 수집 파이프라인, 스키마 설계, 극단적인 스케일링 요구 사항 등 **맞춤 요구 사항**이 있는 사용자를 위해 ClickHouse를 핵심 데이터베이스로 사용하는 맞춤형 관측성 스택을 구축하는 방법을 안내합니다.
+
+| 페이지                                                                                          | 설명                                                                                                       |
+| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| [소개](/ko/guides/use-cases/observability/build-your-own/introduction)                            | 이 가이드는 ClickHouse를 사용해 로그와 트레이스를 중심으로 자체 관측성 솔루션을 구축하려는 경우를 위한 안내서입니다.                                   |
+| [스키마 설계](/ko/guides/use-cases/observability/build-your-own/schema-design)                       | 로그와 트레이스에 맞는 자체 스키마를 만드는 것이 권장되는 이유와, 이를 위한 몇 가지 모범 사례를 알아보십시오.                                          |
+| [데이터 관리](/ko/guides/use-cases/observability/build-your-own/managing-data)                       | 관측성을 위한 ClickHouse 배포에는 대규모 데이터셋이 필연적으로 수반되며, 이러한 데이터는 적절히 관리해야 합니다. ClickHouse는 데이터 관리를 지원하는 기능을 제공합니다. |
+| [OpenTelemetry 통합](/ko/guides/use-cases/observability/build-your-own/integrating-opentelemetry) | ClickHouse와 함께 OpenTelemetry를 사용해 로그와 트레이스를 수집하고 내보내는 방법을 설명합니다.                                         |
+| [시각화 도구 사용](/ko/guides/use-cases/observability/build-your-own/grafana)                          | HyperDX와 Grafana를 포함한 ClickHouse용 관측성 시각화 도구 사용 방법을 알아보십시오.                                              |
+| [데모 애플리케이션](/ko/guides/use-cases/observability/build-your-own/demo-application)                 | 로그와 트레이스에 대해 ClickHouse와 함께 작동하도록 포크된 OpenTelemetry 데모 애플리케이션을 살펴보십시오.                                   |

@@ -4,12 +4,15 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/MaskingPolicy.h>
-#include <Access/ViewDefinerDependencies.h>
+#include <Access/DefinerDependencies.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -59,18 +62,22 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
 
     if (query.type == AccessEntityType::USER)
     {
-        auto & view_definer_dependencies = ViewDefinerDependencies::instance();
+        auto & definer_dependencies = DefinerDependencies::instance();
         for (const auto & name : query.names)
         {
-            if (view_definer_dependencies.hasViewDependencies(name))
+            std::vector<String> objects;
+            for (const auto & uuid : definer_dependencies.getObjectsForDefiner(name))
             {
-                auto views_storage_ids = view_definer_dependencies.getViewsForDefiner(name);
-                std::vector<String> views;
-                views.reserve(views_storage_ids.size());
-                for (const auto & id : views_storage_ids)
-                    views.push_back(id.getNameForLogs());
-                throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "User `{}` is used as a definer in views {}.", name, toString(views));
+                auto & catalog = DatabaseCatalog::instance();
+                if (const auto table = catalog.tryGetByUUID(uuid).second)
+                    objects.push_back(table->getStorageID().getNameForLogs());
+                else if (catalog.hasUUIDMapping(uuid))
+                    /// A detached table.
+                    objects.push_back(toString(uuid));
+                /// Otherwise the object is gone and the dependency is stale.
             }
+            if (!objects.empty())
+                throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "User `{}` is used as a definer of {}.", name, toString(objects));
         }
     }
 

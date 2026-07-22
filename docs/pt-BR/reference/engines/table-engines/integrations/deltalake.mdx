@@ -1,0 +1,146 @@
+---
+description: 'Este mecanismo fornece uma integração somente leitura com tabelas Delta Lake
+  existentes no Amazon S3.'
+sidebarTitle: 'DeltaLake'
+slug: /engines/table-engines/integrations/deltalake
+title: 'Mecanismo de tabela DeltaLake'
+doc_type: 'reference'
+---
+
+Este mecanismo fornece integração com tabelas [Delta Lake](https://github.com/delta-io/delta) existentes no S3 e nos armazenamentos do GCP e do Azure, com suporte tanto a leituras quanto a gravações (a partir da v25.10).
+
+<div id="create-table">
+  ## Criar uma tabela DeltaLake
+</div>
+
+Para criar uma tabela DeltaLake, ela já deve existir no armazenamento S3, GCP ou Azure. Os comandos abaixo não aceitam parâmetros DDL para criar uma nova tabela.
+
+<Tabs>
+  <Tab title="S3">
+    **Sintaxe**
+
+    ```sql
+    CREATE TABLE table_name
+    ENGINE = DeltaLake(url, [aws_access_key_id, aws_secret_access_key,] [extra_credentials])
+    ```
+
+    **Parâmetros do mecanismo**
+
+    * `url` — URL do bucket com o caminho para a tabela Delta Lake existente.
+    * `aws_access_key_id`, `aws_secret_access_key` - Credenciais de longo prazo para o usuário da conta [AWS](https://aws.amazon.com/). Você pode usá-las para autenticar suas solicitações. O parâmetro é opcional. Se as credenciais não forem especificadas, elas serão obtidas do arquivo de configuração.
+    * `extra_credentials` - Opcional. Usado para informar um `role_arn` para acesso baseado em função no ClickHouse Cloud. Consulte [Secure S3](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely) para ver as etapas de configuração.
+
+    Os parâmetros do mecanismo podem ser especificados usando [coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections).
+
+    **Exemplo**
+
+    ```sql
+    CREATE TABLE deltalake
+    ENGINE = DeltaLake('http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/test_table/', 'ABC123', 'Abc+123')
+    ```
+
+    Usando coleções nomeadas:
+
+    ```xml
+    <clickhouse>
+        <named_collections>
+            <deltalake_conf>
+                <url>http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/</url>
+                <access_key_id>ABC123</access_key_id>
+                <secret_access_key>Abc+123</secret_access_key>
+            </deltalake_conf>
+        </named_collections>
+    </clickhouse>
+    ```
+
+    ```sql
+    CREATE TABLE deltalake
+    ENGINE = DeltaLake(deltalake_conf, filename = 'test_table')
+    ```
+  </Tab>
+
+  <Tab title="GCP">
+    **Sintaxe**
+
+    ```sql
+    -- Usando URL HTTPS (recomendado)
+    CREATE TABLE table_name
+    ENGINE = DeltaLake('https://storage.googleapis.com/<bucket>/<path>/', '<access_key_id>', '<secret_access_key>')
+    ```
+
+    <Info>
+      **URI gsutil sem suporte**
+
+      URIs gsutil, como `gs://clickhouse-docs-example-bucket`, não têm suporte. Use uma URL começando com `https://storage.googleapis.com`
+    </Info>
+
+    **Argumentos**
+
+    * `url` — URL do bucket do GCS para a tabela Delta Lake. Deve usar o formato `https://storage.googleapis.com/<bucket>/<path>/`
+      (o endpoint da API XML do GCS) ou `gs://<bucket>/<path>/`, que é convertido automaticamente.
+    * `access_key_id` — Chave de acesso do GCS. Crie-a em Google Cloud Console → Cloud Storage → Settings → Interoperability.
+    * `secret_access_key` — Segredo do GCS.
+
+    **Coleções nomeadas**
+
+    Você também pode usar coleções nomeadas.
+    Por exemplo:
+
+    ```sql
+    CREATE NAMED COLLECTION gcs_creds AS
+    access_key_id = '<access_key>',
+    secret_access_key = '<secret>';
+
+    CREATE TABLE gcpDeltaLake
+    ENGINE = DeltaLake(gcs_creds, url = 'https://storage.googleapis.com/<bucket>/<path>')
+    ```
+  </Tab>
+
+  <Tab title="Azure">
+    **Sintaxe**
+
+    ```sql
+    CREATE TABLE table_name
+    ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+    ```
+
+    **Argumentos**
+
+    * `connection_string` — string de conexão do Azure
+    * `storage_account_url` — URL da conta de armazenamento do Azure (por exemplo, https://account.blob.core.windows.net)
+    * `container_name` — nome do contêiner do Azure
+    * `blobpath` — caminho para a tabela Delta Lake dentro do contêiner
+    * `account_name` — nome da conta de armazenamento do Azure
+    * `account_key` — chave da conta de armazenamento do Azure
+  </Tab>
+</Tabs>
+
+<div id="insert-data">
+  ## Grave dados usando uma tabela DeltaLake
+</div>
+
+Depois de criar uma tabela usando o motor de tabela DeltaLake, você pode inserir dados nela com:
+
+```sql
+SET allow_experimental_delta_lake_writes = 1;
+
+INSERT INTO deltalake(id, firstname, lastname, gender, age)
+VALUES (1, 'John', 'Smith', 'M', 32);
+```
+
+<Note>
+  A gravação usando o motor de tabela é compatível apenas por meio do delta kernel.
+  Gravações no Azure ainda não são compatíveis, mas já funcionam com S3 e GCS.
+</Note>
+
+<div id="data-cache">
+  ### Cache de dados
+</div>
+
+O motor de tabela e a função de tabela `DeltaLake` são compatíveis com cache de dados, assim como os armazenamentos `S3`, `AzureBlobStorage` e `HDFS`. Consulte [&quot;motor de tabela S3&quot;](/pt-BR/reference/engines/table-engines/integrations/s3#data-cache) para mais detalhes.
+
+<div id="see-also">
+  ## Veja também
+</div>
+
+* [função de tabela deltaLake](/pt-BR/reference/functions/table-functions/deltalake)

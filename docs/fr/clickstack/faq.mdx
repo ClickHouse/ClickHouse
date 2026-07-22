@@ -1,0 +1,91 @@
+---
+slug: /use-cases/observability/clickstack/faq
+title: 'FAQ sur ClickStack'
+sidebarTitle: 'FAQ'
+description: 'Questions fréquemment posées sur les alertes, les tableaux de bord, les drill-downs et la découverte des métriques dans ClickStack.'
+doc_type: 'guide'
+keywords: ['ClickStack', 'FAQ', 'alertes', 'tableaux de bord', 'drill-down', 'découverte des métriques']
+---
+
+Cette page répond aux questions fréquemment posées sur les fonctionnalités de ClickStack, notamment les alertes, les tableaux de bord, les drill-downs et la découverte des métriques.
+
+<div id="alerting">
+  ## Alertes
+</div>
+
+<Accordion title="Quels types d’alertes sont pris en charge par ClickStack ?">
+  ClickStack prend en charge deux types d’alertes :
+
+  * [Alertes de recherche](/fr/clickstack/features/alerts#search-alerts) : déclenchent des notifications lorsque le nombre de résultats de logs ou de traces correspondants, dans une fenêtre temporelle donnée, dépasse un seuil ou passe en dessous de celui-ci.
+  * [Alertes de graphiques de tableau de bord](/fr/clickstack/features/alerts#dashboard-alerts) : déclenchent des notifications lorsqu’une métrique affichée sur une tuile de tableau de bord franchit un seuil défini.
+
+  Ces deux types d’alertes reposent sur des conditions de seuil statiques. Pour plus d’informations, consultez [Alertes](/fr/clickstack/features/alerts).
+</Accordion>
+
+<Accordion title="Puis-je créer des alertes sur des conditions de métriques complexes, comme des ratios, des valeurs p95/p99 ou des formules multi-métriques ?">
+  Les ratios entre deux métriques ainsi que les valeurs p95 et p99 peuvent être affichés sur une tuile de tableau de bord à l’aide de l’UI du [constructeur de graphiques](/fr/clickstack/features/dashboards/overview#navigate-chart-explorer). Vous pouvez ensuite créer des alertes basées sur des seuils pour ces tuiles.
+
+  Cependant, ClickStack ne prend actuellement pas en charge :
+
+  * Les alertes sur des requêtes SQL personnalisées pour les métriques.
+  * Les règles d’alerte à conditions multiples ou portant sur plusieurs métriques, regroupées dans une seule alerte.
+  * Les conditions d’alerte dynamiques ou basées sur la détection d’anomalies (la détection d’anomalies est prévue).
+
+  Si vous devez créer une alerte sur une métrique complexe, l’approche recommandée consiste à créer d’abord la visualisation sous forme de graphique de tableau de bord, puis à y associer une alerte de seuil.
+</Accordion>
+
+<Accordion title="Puis-je utiliser des vues matérialisées pour des cas d’usage liés aux alertes ?">
+  Les vues matérialisées sont automatiquement utilisées par ClickStack pour les alertes, lorsque cela s’applique. Cependant, elles ne sont actuellement pas prises en charge pour les data sources de métriques OpenTelemetry. Pour les métriques, ClickStack fonctionne de manière optimale avec le [schéma de métriques OpenTelemetry ClickHouse](/fr/clickstack/ingesting-data/schemas) par défaut. Pour en savoir plus sur les vues matérialisées, consultez [Vues matérialisées](/fr/clickstack/managing/materialized-views).
+</Accordion>
+
+<div id="dashboards-and-drill-downs">
+  ## Tableaux de bord et drill-downs
+</div>
+
+<Accordion title="ClickStack prend-il en charge les tableaux de bord paramétrables ou les variables de tableau de bord ?">
+  ClickStack prend en charge des filtres déroulants personnalisés sur les tableaux de bord, alimentés par des données interrogées dans ClickHouse. Ces filtres permettent de limiter dynamiquement toutes les tuiles d&#39;un tableau de bord à une valeur spécifique (par exemple, un nom de service, un environnement ou un hôte).
+
+  ClickStack ne prend pas encore en charge de variables de tableau de bord réutilisables, à la manière des variables de template Grafana. Comme ClickStack utilise exclusivement ClickHouse comme source de données, les fonctionnalités de drill-down et de filtrage peuvent être fournies nativement, sans nécessiter de couche d&#39;abstraction pour les variables.
+
+  Pour en savoir plus sur la création de tableaux de bord et l&#39;application de filtres, consultez [tableaux de bord](/fr/clickstack/features/dashboards/overview).
+</Accordion>
+
+<Accordion title="Quelles fonctionnalités de drill-down sont disponibles ?">
+  ClickStack prend en charge les workflows de drill-down suivants :
+
+  * [Filtrage au niveau du tableau de bord](/fr/clickstack/features/dashboards/overview#filter-dashboards) : les filtres Lucene ou SQL et les ajustements de l&#39;intervalle de temps appliqués au niveau du tableau de bord se répercutent sur toutes les tuiles.
+  * Filtres de tableau de bord personnalisés : les tableaux de bord personnalisés prennent en charge des contrôles de filtre explicites alimentés par les valeurs de vos données, ce qui permet aux utilisateurs de limiter toutes les tuiles sans écrire manuellement de requêtes.
+  * Cliquer pour afficher les événements : cliquer sur des données dans une tuile de tableau de bord puis sélectionner **View Events** ouvre la page [Search](/fr/clickstack/features/search) avec les filtres pertinents pour les données de logs et de trace.
+  * [Drill-downs par clic sur une ligne de tableau](/fr/clickstack/features/dashboards/row-click-drilldowns) : une table tile peut être configurée pour qu&#39;un clic sur une ligne ouvre la page Search ou un autre tableau de bord, en transmettant les valeurs de la ligne comme filtres. Cela permet des workflows à plusieurs niveaux, par exemple un inventaire de services menant à un tableau de bord de détail par service.
+  * [Drill-downs des tableaux de bord prédéfinis](/fr/clickstack/features/dashboards/overview#presets) : les tableaux de bord [Services](/fr/clickstack/features/dashboards/overview#services-dashboard), [ClickHouse](/fr/clickstack/features/dashboards/overview#clickhouse-dashboard) et [Kubernetes](/fr/clickstack/features/dashboards/overview#kubernetes-dashboard) incluent une navigation de drill-down intégrée plus riche entre les onglets.
+
+  <Note>
+    Le drill-down **View Events** fonctionne mieux avec les données de logs et de trace. Comme les données de métriques ne peuvent pas être affichées sur la page [Search](/fr/clickstack/features/search), un drill-down depuis une tuile de métriques renverra plutôt vers les logs autour de la période sélectionnée.
+  </Note>
+</Accordion>
+
+<div id="metrics-discovery">
+  ## Découverte des métriques
+</div>
+
+<Accordion title="Existe-t-il une UI pour parcourir et rechercher des métriques ?">
+  ![Metric Attribute Explorer](/images/clickstack/faq/metrics-explorer.webp)
+
+  Les noms de métriques sont accessibles via le menu déroulant des noms de métriques dans le [constructeur de graphiques](/fr/clickstack/features/dashboards/overview#navigate-chart-explorer). Lorsqu&#39;une métrique est sélectionnée, le panneau Metric Attribute Explorer affiche sa description, ses unités, ainsi que les attributs disponibles et leurs valeurs. Vous pouvez ainsi parcourir les attributs et les ajouter directement depuis ce panneau comme filtres ou champs de group-by.
+
+  Il n&#39;existe pas actuellement de page dédiée à la recherche de métriques, comparable à l&#39;expérience de recherche des logs. L&#39;amélioration de la découverte des métriques est un axe de développement actif.
+</Accordion>
+
+<Accordion title="La découverte basée sur SQL est-elle l'approche prévue à long terme pour les métriques ?">
+  Non. Bien qu&#39;il soit aujourd&#39;hui possible d&#39;utiliser des requêtes SQL pour découvrir des métriques, ce n&#39;est pas l&#39;approche envisagée à long terme. Des outils de découverte des métriques plus avancés sont en cours de développement.
+</Accordion>
+
+<div id="further-reading">
+  ## Pour en savoir plus
+</div>
+
+* [Alerte](/fr/clickstack/features/alerts): alertes de recherche, alertes de graphique de tableau de bord et intégrations webhook.
+* [Tableaux de bord](/fr/clickstack/features/dashboards/overview): création de visualisations, création de tableaux de bord et application de filtres.
+* [Search](/fr/clickstack/features/search): recherche dans les logs et les traces avec la syntaxe Lucene et SQL.
+* [Schémas](/fr/clickstack/ingesting-data/schemas): schémas de données OpenTelemetry pour les logs, les traces et les métriques.
+* [Architecture](/fr/clickstack/architecture): composants ClickStack et leur articulation.

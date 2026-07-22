@@ -1,0 +1,100 @@
+---
+sidebarTitle: '账户关闭'
+slug: /cloud/manage/close_account
+title: '账户关闭与删除'
+description: '我们理解，某些情况下您可能需要关闭账户。本指南将帮助您完成这一流程。'
+keywords: ['ClickHouse Cloud', '账户关闭', '删除账户', '云账户管理', '账户删除']
+doc_type: 'guide'
+---
+
+<div id="account-close--deletion">
+  ## 账户关闭与删除
+</div>
+
+我们的目标是帮助您顺利推进项目。如果您有本网站未解答的问题，或需要我们协助评估特殊用例，请通过 [support@clickhouse.com](mailto:support@clickhouse.com) 联系我们。
+
+我们理解，有时会因各种原因需要进行账户关闭。本指南将帮助您完成这一流程。
+
+<div id="close-vs-delete">
+  ## 关闭账户与删除账户的区别
+</div>
+
+客户可以重新登录已关闭的账户，以查看用量、计费情况和账户级活动日志。这样，您就能轻松访问
+各种用途所需的详细信息，例如记录用例，或在年底出于税务目的下载发票。
+您还会继续收到产品更新，以便及时了解您一直在等待的某项功能是否已经上线。此外，
+已关闭的账户可随时重新启用，以启动新的服务。
+
+申请删除个人数据的客户应注意，此过程不可逆。账户及相关信息将不再
+可用。您将不会再收到产品更新，也无法重新启用该账户。这不会影响任何新闻通讯订阅。
+
+新闻通讯订阅者可随时使用新闻通讯电子邮件底部的退订链接取消订阅，无需关闭账户或
+删除其信息。
+
+<div id="preparing-for-closure">
+  ## 为账户关闭做好准备
+</div>
+
+在申请账户关闭之前，请先完成以下准备步骤。
+
+<Steps>
+  <Step>
+    ### 1. 导出所有需要保留的数据。
+
+    > 导出服务内容<br />
+    > 导出控制台日志<br />
+    > 导出数据库日志<br />
+  </Step>
+
+  <Step>
+    ### 2. 停止并删除你的服务。
+
+    > 这样可以防止你的账户继续产生额外费用
+  </Step>
+
+  <Step>
+    ### 3. 删除除提出关闭请求的管理员外的所有用户。
+
+    > 这有助于避免账户上出现可能导致无法关闭的异常活动
+  </Step>
+
+  <Step>
+    ### 4. 检查“Usage”和“Billing”选项卡，确认所有费用均已结清。
+
+    > 我们无法关闭存在未结清余额的账户。
+  </Step>
+</Steps>
+
+<div id="request-account-closure">
+  ## 申请账户关闭
+</div>
+
+我们需要对账户关闭和数据删除请求进行身份验证。为确保您的请求能够尽快得到处理，请按照
+下方列出的步骤操作。
+
+1. 登录您的 clickhouse.cloud 账户。
+2. 完成上文 *为账户关闭做好准备* 部分中所有剩余步骤。
+3. 点击“帮助”按钮 (屏幕右上角的问号图标) 。
+4. 在“Support”下，点击“Create case”。
+5. 在“Create new case”页面中，输入以下内容：
+
+```text
+Priority: Severity 3
+Priority: Severity 3
+Subject: 请关闭我的 ClickHouse 账户
+Description: 如果您能简要说明取消的原因，我们将不胜感激。
+```
+
+5. 点击 &#39;Create new case&#39;
+6. 我们将关闭您的账户，并在处理完成后向您发送确认电子邮件。
+
+<div id="request-personal-data-deletion">
+  ## 申请删除您的个人数据
+</div>
+
+请注意，只有账户管理员才能向 ClickHouse 申请删除个人数据。如果您不是账户管理员，请联系
+您的 ClickHouse 账户管理员，申请将您从该账户中移除。
+
+如需申请删除数据，请按照上文“申请账户关闭”中的步骤操作。在填写工单信息时，请将 subject 修改为
+“Please close my ClickHouse account and delete my personal data.”
+
+我们会在 30 天内完成个人数据删除请求。
