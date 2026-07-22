@@ -17,22 +17,27 @@
 -- a sleep-vs-no-sleep pair) so the result is robust to the unbounded, noisy set-building time: under
 -- sanitizers or on a loaded runner the build can take a variable number of seconds, but that noise is
 -- common to both queries and is dominated by the several-second difference in the idle-hold interval.
+--
+-- The server caps every sleep call at 3 seconds per block (for sleepEachRow the cap applies to the
+-- per-block total), so a single sleep(6) is rejected with TOO_SLOW. To hold for longer, each query
+-- reads 2 rows with max_block_size = 1, so sleepEachRow runs once per single-row block and each call
+-- stays within the cap: 2 x 0.5 s = 1 s for the short hold, 2 x 3 s = 6 s for the long one.
 
 SET log_queries = 1;
 
 -- Build the set and hold it idle for a short interval before finishing.
 SELECT count()
-FROM numbers(1)
-WHERE sleep(1) = 0 AND number IN (SELECT number FROM numbers(4000000))
+FROM numbers(2)
+WHERE sleepEachRow(0.5) = 0 AND number IN (SELECT number FROM numbers(4000000))
 FORMAT Null
-SETTINGS max_threads = 1, log_comment = '04506_memory_credits_hold_short';
+SETTINGS max_threads = 1, max_block_size = 1, log_comment = '04506_memory_credits_hold_short';
 
 -- Build the identical set and hold it idle for a much longer interval before finishing.
 SELECT count()
-FROM numbers(1)
-WHERE sleep(6) = 0 AND number IN (SELECT number FROM numbers(4000000))
+FROM numbers(2)
+WHERE sleepEachRow(3) = 0 AND number IN (SELECT number FROM numbers(4000000))
 FORMAT Null
-SETTINGS max_threads = 1, log_comment = '04506_memory_credits_hold_long';
+SETTINGS max_threads = 1, max_block_size = 1, log_comment = '04506_memory_credits_hold_long';
 
 SYSTEM FLUSH LOGS query_log;
 
