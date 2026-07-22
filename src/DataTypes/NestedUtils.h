@@ -93,7 +93,10 @@ namespace Nested
     NamesAndTypesList collect(const NamesAndTypesList & names_and_types);
 
     /// Convert old-style nested (single arrays with same prefix, `n.a`, `n.b`...) to subcolumns of data type Nested.
-    NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types);
+    /// When `skip_columns_with_id` is set, columns already carrying a stable `column_id` are left untouched:
+    /// with column IDs each flattened-Nested field is a standalone, ID-keyed on-disk column (no shared offsets),
+    /// so folding it back onto the Nested parent would misresolve its stream name.
+    NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types, bool skip_columns_with_id = false);
 
     /// Unwrap Nullable(Tuple(...)) into Tuple(...) by propagating the struct-level null map
     /// to each element. Scalar elements become Nullable(T), already-Nullable elements get merged

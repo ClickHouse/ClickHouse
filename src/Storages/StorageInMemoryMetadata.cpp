@@ -18,6 +18,7 @@
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -114,6 +115,13 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     column_id_mapping = other.column_id_mapping;
 
     return *this;
+}
+
+ColumnIdMappingPtr StorageInMemoryMetadata::getActiveColumnIdMapping() const
+{
+    if (column_id_mapping && column_id_mapping->isActive())
+        return column_id_mapping;
+    return nullptr;
 }
 
 void StorageInMemoryMetadata::setComment(const String & comment_)

@@ -2,6 +2,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompactSingleBuffer.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Interpreters/Context.h>
@@ -67,8 +68,14 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback)
 {
+    /// Ingress stamp: resolve requested name->ID off the snapshot metadata we hold, so the
+    /// reader reads `column.getColumnIdInStorage()` and needs no mapping of its own.
+    NamesAndTypesList columns = columns_to_read;
+    if (const auto mapping = storage_snapshot->metadata->getActiveColumnIdMapping())
+        stampColumnIdsForRead(columns, *mapping);
+
     return std::make_unique<MergeTreeReaderCompactSingleBuffer>(
-        read_info, columns_to_read, virtual_fields,
+        read_info, columns, virtual_fields,
         storage_snapshot, storage_settings, uncompressed_cache,
         mark_cache, deserialization_prefixes_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback, CLOCK_MONOTONIC_COARSE);
@@ -196,9 +203,8 @@ void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, Mark
         return;
 
     auto context = storage.getContext();
-    /// current mapping: mark-cache load with no operation snapshot; column IDs are stable so this live read is safe.
     auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
-        shared_from_this(), std::make_shared<AlterConversions>(), storage.getActiveColumnIdMapping());
+        shared_from_this(), std::make_shared<AlterConversions>());
 
     LOG_TEST(getLogger("MergeTreeDataPartCompact"), "Loading marks into mark cache for columns {} of part {}", toString(column_names), name);
 

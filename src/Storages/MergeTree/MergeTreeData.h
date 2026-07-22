@@ -677,25 +677,7 @@ public:
         RangesInDataPartsPtr parts;
 
         MutationsSnapshotPtr mutations_snapshot;
-
-        /// Column-ID mapping captured with the snapshot (see getColumnIdMappingFromSnapshot).
-        ColumnIdMappingPtr column_id_mapping;
     };
-
-    /// Snapshot capture mechanism for the column-ID mapping.
-    ///
-    /// An operation captures ONE mapping snapshot at entry and threads it, so every
-    /// name->ID resolution inside the operation sees one consistent version even if an
-    /// ALTER republishes the mapping mid-operation (see the contract in ColumnIdMapping.h).
-    /// The mapping rides in `SnapshotData` alongside the parts/mutations snapshot; this
-    /// helper reads it back. Returns nullptr when the snapshot carries no MergeTree data
-    /// (a bare part load then captures the live mapping once itself).
-    static ColumnIdMappingPtr getColumnIdMappingFromSnapshot(const StorageSnapshot & snapshot);
-
-    /// Builds a mapping-only StorageSnapshot for a merge: it captures the active mapping
-    /// once (the merge's only live read) and, unlike the query factories, omits the
-    /// parts/mutations snapshot (a merge reads its own `future_part` sources).
-    StorageSnapshotPtr createSnapshotWithColumnIdMapping(const StorageMetadataPtr & metadata_snapshot) const;
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
@@ -1395,16 +1377,13 @@ public:
     static PartsSnapshotInfo getPartsSnapshotInfo(const DataPartsVector & parts);
 
     /// Return alter conversions for part which must be applied on fly.
-    /// @column_id_mapping is the operation's captured mapping (the one the base-part
-    /// reader uses); the patch-part reader built here must use the SAME mapping so a
-    /// concurrent DROP+ADD that reuses a name (fresh ID) cannot split base and patch
-    /// resolution and silently drop the patch. Pass getColumnIdMappingFromSnapshot of
-    /// the operation snapshot; pass nullptr / the live mapping only on paths that read
-    /// no patch data (see the callers).
+    /// The patch-part reader built for these conversions stamps its requested columns from
+    /// the snapshot mapping at read ingress (createMergeTreeReader), the same way the
+    /// base-part reader does, so base and patch resolve names against one consistent mapping
+    /// with no column-id mapping threaded through here.
     static AlterConversionsPtr getAlterConversionsForPart(
         const MergeTreeDataPartPtr & part,
         const MutationsSnapshotPtr & mutations,
-        const ColumnIdMappingPtr & column_id_mapping,
         const ContextPtr & query_context
 #if CLICKHOUSE_CLOUD
         , const EnabledMaskingPoliciesPtr & enabled_masking_policies

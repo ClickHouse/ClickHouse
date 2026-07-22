@@ -53,7 +53,8 @@ public:
         SharedHeader minmax_header_,
         MergeTreeData::DataPartsVector data_parts_,
         ContextPtr context_,
-        bool with_marks_)
+        bool with_marks_,
+        ColumnIdMappingPtr column_id_mapping_)
         : ISource(header_)
         , WithContext(context_)
         , header(std::move(header_))
@@ -61,6 +62,7 @@ public:
         , minmax_header(std::move(minmax_header_))
         , data_parts(std::move(data_parts_))
         , with_marks(with_marks_)
+        , column_id_mapping(std::move(column_id_mapping_))
     {
     }
 
@@ -179,9 +181,8 @@ protected:
 private:
     std::shared_ptr<MergeTreeMarksLoader> createMarksLoader(const MergeTreeDataPartPtr & part, const String & prefix_name, size_t num_columns)
     {
-        /// current mapping: index-marks load with no operation snapshot; column IDs are stable so this live read is safe.
         auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
-            part, std::make_shared<AlterConversions>(), part->storage.getActiveColumnIdMapping());
+            part, std::make_shared<AlterConversions>());
         auto local_context = getContext();
 
         return std::make_shared<MergeTreeMarksLoader>(
@@ -222,10 +223,9 @@ private:
             {
                 /// A metadata-only RENAME does not refresh the part's cached column list, so a
                 /// part loaded before the rename still carries the old logical name while its
-                /// stamped ID is unchanged. Map the current name to its ID via the live mapping,
-                /// then locate the part column by that ID to build the ID-keyed stream name.
-                if (auto column_id_mapping = part->storage.getActiveColumnIdMapping();
-                    column_id_mapping && column_id_mapping->hasLogicalName(unescaped_name))
+                /// stamped ID is unchanged. Map the current name to its ID via the captured
+                /// mapping, then locate the part column by that ID to build the ID-keyed stream name.
+                if (column_id_mapping && column_id_mapping->hasLogicalName(unescaped_name))
                 {
                     const auto index_by_id = part->getColumns().getIndexByStorageColumnId();
                     if (auto it = index_by_id.find(column_id_mapping->getColumnId(unescaped_name)); it != index_by_id.end())
@@ -322,6 +322,9 @@ private:
     SharedHeader minmax_header;
     MergeTreeData::DataPartsVector data_parts;
     bool with_marks;
+    /// Source table's active mapping, captured once at pipeline init (this source holds no
+    /// StorageSnapshot of the source table); fillMarks resolves logical names->IDs through it.
+    ColumnIdMappingPtr column_id_mapping;
 
     size_t part_index = 0;
 };
@@ -483,13 +486,18 @@ void ReadFromMergeTreeIndex::initializePipeline(QueryPipelineBuilder & pipeline,
         filtered_parts.size(),
         storage->source_table->getStorageID().getNameForLogs());
 
+    /// Capture the source table's active mapping once here (this step holds no StorageSnapshot
+    /// of the source table); the source threads it into fillMarks for name->ID resolution.
+    auto source_metadata = storage->source_table->getInMemoryMetadataPtr(context, false);
+
     pipeline.init(Pipe(std::make_shared<MergeTreeIndexSource>(
         getOutputHeader(),
         storage->key_sample_block,
         storage->minmax_sample_block,
         std::move(filtered_parts),
         context,
-        storage->with_marks)));
+        storage->with_marks,
+        source_metadata->getActiveColumnIdMapping())));
 }
 
 }

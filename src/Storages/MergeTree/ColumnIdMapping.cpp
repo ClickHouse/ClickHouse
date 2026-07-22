@@ -367,4 +367,17 @@ void populateColumnIds(NamesAndTypesList & columns, const ColumnIdMapping & mapp
         column.setColumnId(mapping.getColumnIdOrDefault(column.getNameInStorage()));
 }
 
+void stampColumnIdsForRead(NamesAndTypesList & columns, const ColumnIdMapping & mapping)
+{
+    if (!mapping.isActive())
+        return;
+
+    for (auto & column : columns)
+    {
+        const auto name_in_storage = column.getNameInStorage();
+        if (mapping.hasLogicalName(name_in_storage))
+            column.setColumnId(mapping.getColumnId(name_in_storage));
+    }
+}
+
 }

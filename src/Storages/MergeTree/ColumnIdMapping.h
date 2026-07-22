@@ -147,4 +147,12 @@ private:
 /// get their logical name as the column ID (passthrough).
 void populateColumnIds(NamesAndTypesList & columns, const ColumnIdMapping & mapping);
 
+/// Read-path ingress stamp: set `column_id` on each requested column whose logical
+/// storage name is in the mapping, and leave the rest UNSTAMPED (empty column_id).
+/// Unlike `populateColumnIds` (write path) this does not default unmapped columns to
+/// their name, so a reader can tell "resolve by ID" (stamped) from "legacy by-name"
+/// (unstamped). Called before `convertToSubcolumns`, so a flattened-Nested field is
+/// still a flat `n.x` pair whose full dotted name is directly in the mapping.
+void stampColumnIdsForRead(NamesAndTypesList & columns, const ColumnIdMapping & mapping);
+
 }

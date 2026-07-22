@@ -10,16 +10,11 @@ namespace DB
 class LoadedMergeTreeDataPartInfoForReader final : public IMergeTreeDataPartInfoForReader
 {
 public:
-    /// The column-ID mapping must be passed explicitly (see ColumnIdMapping.h): read-path
-    /// callers thread the operation's captured mapping; maintenance callers without a
-    /// snapshot pass `storage.getActiveColumnIdMapping()` at the call site, so the live
-    /// read is visible and justified rather than hidden inside this constructor.
     LoadedMergeTreeDataPartInfoForReader(
-        MergeTreeData::DataPartPtr data_part_, AlterConversionsPtr alter_conversions_, ColumnIdMappingPtr column_id_mapping_)
+        MergeTreeData::DataPartPtr data_part_, AlterConversionsPtr alter_conversions_)
         : IMergeTreeDataPartInfoForReader(data_part_->storage.getContext())
         , data_part(std::move(data_part_))
         , alter_conversions(std::move(alter_conversions_))
-        , column_id_mapping(std::move(column_id_mapping_))
     {
     }
 
@@ -100,12 +95,9 @@ public:
 
     size_t getRowCount() const override { return data_part->rows_count; }
 
-    ColumnIdMappingPtr getColumnIdMapping() const override { return column_id_mapping; }
-
 private:
     MergeTreeData::DataPartPtr data_part;
     AlterConversionsPtr alter_conversions;
-    ColumnIdMappingPtr column_id_mapping;
     RangesInDataPartReadHints read_hints;
 };
 

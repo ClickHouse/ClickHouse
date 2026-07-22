@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -77,9 +78,15 @@ MergeTreeReaderPtr createMergeTreeReaderWide(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback)
 {
+    /// Ingress stamp: resolve requested name->ID off the snapshot metadata we hold, so the
+    /// reader reads `column.getColumnIdInStorage()` and needs no mapping of its own.
+    NamesAndTypesList columns = columns_to_read;
+    if (const auto mapping = storage_snapshot->metadata->getActiveColumnIdMapping())
+        stampColumnIdsForRead(columns, *mapping);
+
     return std::make_unique<MergeTreeReaderWide>(
         read_info,
-        columns_to_read,
+        columns,
         virtual_fields,
         storage_snapshot,
         storage_settings,
@@ -289,9 +296,8 @@ void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCac
 
     auto context = storage.getContext();
     auto read_settings = context->getReadSettings();
-    /// current mapping: mark-cache load with no operation snapshot; column IDs are stable so this live read is safe.
     auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
-        shared_from_this(), std::make_shared<AlterConversions>(), storage.getActiveColumnIdMapping());
+        shared_from_this(), std::make_shared<AlterConversions>());
 
     LOG_TEST(getLogger("MergeTreeDataPartWide"), "Loading marks into mark cache for columns {} of part {}", toString(column_names), name);
 
@@ -655,9 +661,8 @@ std::vector<String> MergeTreeDataPartWide::getListOfStreamsForColumn(const NameA
     settings.read_only_column_sample = true;
 
     auto alter_conversions = std::make_shared<AlterConversions>();
-    /// current mapping: no operation snapshot here; column IDs are stable so this live read is safe.
     auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
-        shared_from_this(), alter_conversions, storage.getActiveColumnIdMapping());
+        shared_from_this(), alter_conversions);
 
     MergeTreeReaderPtr reader = createMergeTreeReaderWide(
         part_info,

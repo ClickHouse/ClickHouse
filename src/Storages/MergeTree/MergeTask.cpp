@@ -620,11 +620,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     if (!global_ctx->parent_part)
         global_ctx->temporary_directory_lock = global_ctx->data->getTemporaryPartDirectoryHolder(local_tmp_part_basename);
 
-    /// The merge's only live read of the column-ID mapping: it stamps the new part's
-    /// columns and, through the snapshot, drives every reader of the source parts.
-    global_ctx->storage_snapshot = global_ctx->data->createSnapshotWithColumnIdMapping(global_ctx->metadata_snapshot);
+    /// A metadata-only snapshot (the merge reads its own `future_part` sources, not the
+    /// snapshot's parts). The mapping rides its `metadata`, so both the stamp below and
+    /// every reader of the source parts resolve names against the same schema version.
+    global_ctx->storage_snapshot = global_ctx->data->getStorageSnapshotWithoutData(global_ctx->metadata_snapshot, global_ctx->context);
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
-    if (const auto column_id_mapping = MergeTreeData::getColumnIdMappingFromSnapshot(*global_ctx->storage_snapshot))
+    if (const auto column_id_mapping = global_ctx->metadata_snapshot->getActiveColumnIdMapping())
         populateColumnIds(global_ctx->storage_columns, *column_id_mapping);
     global_ctx->virtual_columns = global_ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
     global_ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(global_ctx->metadata_snapshot->getPartitionKey(), global_ctx->data_settings);
@@ -884,8 +885,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         }
 
         global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(
-            part, mutations_snapshot,
-            MergeTreeData::getColumnIdMappingFromSnapshot(*global_ctx->storage_snapshot), global_ctx->context
+            part, mutations_snapshot, global_ctx->context
 #if CLICKHOUSE_CLOUD
             , nullptr
 #endif
@@ -1384,7 +1384,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
         auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
         auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
             *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context,
-            MergeTreeData::getColumnIdMappingFromSnapshot(*global_ctx->storage_snapshot));
+            global_ctx->metadata_snapshot->getActiveColumnIdMapping());
 
         tmp_part->finalize();
         tmp_part->part->getDataPartStorage().commitTransaction();
@@ -1427,7 +1427,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
                 *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context,
-                MergeTreeData::getColumnIdMappingFromSnapshot(*global_ctx->storage_snapshot));
+                global_ctx->metadata_snapshot->getActiveColumnIdMapping());
 
             temp_part->finalize();
             temp_part->part->getDataPartStorage().commitTransaction();

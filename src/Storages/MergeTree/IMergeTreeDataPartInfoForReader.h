@@ -113,8 +113,6 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReadHints not implemented for this reader");
     }
-
-    virtual ColumnIdMappingPtr getColumnIdMapping() const { return nullptr; }
 };
 
 using MergeTreeDataPartInfoForReaderPtr = std::shared_ptr<IMergeTreeDataPartInfoForReader>;

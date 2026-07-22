@@ -3882,7 +3882,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         {
             stripped_snapshot_data->storage = snapshot_data->storage;
             stripped_snapshot_data->mutations_snapshot = snapshot_data->mutations_snapshot;
-            stripped_snapshot_data->column_id_mapping = snapshot_data->column_id_mapping;
         }
 
         storage_snapshot->data = std::move(stripped_snapshot_data);

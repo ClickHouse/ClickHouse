@@ -129,8 +129,7 @@ bool tryEstimateEmpirical(
         /// Apply patch parts / on-the-fly mutations so we see the up-to-date values
         auto alter_conversions = mutations_snapshot
             ? MergeTreeData::getAlterConversionsForPart(
-                part, mutations_snapshot,
-                MergeTreeData::getColumnIdMappingFromSnapshot(*storage_snapshot), context
+                part, mutations_snapshot, context
 #if CLICKHOUSE_CLOUD
                 , context->getAccess()->getEnabledMaskingPolicies()
 #endif

@@ -671,10 +671,10 @@ Block MergeTreeDataWriter::mergeBlock(
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPart(
-    BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context, ColumnIdMappingPtr column_id_mapping)
+    BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context)
 {
     auto partition_id = block.partition.getID(metadata_snapshot->getPartitionKey().sample_block);
-    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*source_parts_set=*/ {}, std::move(context), data.insert_increment.get(), std::move(column_id_mapping));
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*source_parts_set=*/ {}, std::move(context), data.insert_increment.get());
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPatchPart(
@@ -682,10 +682,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPatchPart(
     StorageMetadataPtr metadata_snapshot,
     String partition_id,
     SourcePartsSetForPatch source_parts_set,
-    ContextPtr context,
-    ColumnIdMappingPtr column_id_mapping)
+    ContextPtr context)
 {
-    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), std::move(source_parts_set), std::move(context), data.insert_increment.get(), std::move(column_id_mapping));
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), std::move(source_parts_set), std::move(context), data.insert_increment.get());
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
@@ -694,8 +693,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     String partition_id,
     SourcePartsSetForPatch source_parts_set,
     ContextPtr context,
-    UInt64 block_number,
-    ColumnIdMappingPtr column_id_mapping)
+    UInt64 block_number)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     Block & block = *block_with_partition.block;
@@ -705,6 +703,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     const auto & global_settings = context->getSettingsRef();
 
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
+    /// The mapping rides the pinned metadata_snapshot (folded there with the schema), so the
+    /// stamp is taken from the same schema version the part's columns come from.
+    const auto column_id_mapping = metadata_snapshot->getActiveColumnIdMapping();
     /// Test hook: pause after the mapping was captured (in the sink) but before stamping,
     /// so a concurrent ALTER RENAME can prove the writer stamps from the captured mapping.
     FailPointInjection::pauseFailPoint(FailPoints::insert_write_temp_part_pause);

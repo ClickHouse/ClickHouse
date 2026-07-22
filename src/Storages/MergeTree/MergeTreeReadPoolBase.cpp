@@ -211,8 +211,7 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
     read_task_info.part_index_in_query = part_with_ranges.part_index_in_query;
     read_task_info.part_starting_offset_in_query = part_with_ranges.part_starting_offset_in_query;
     read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(
-        read_task_info.data_part, mutations_snapshot,
-        MergeTreeData::getColumnIdMappingFromSnapshot(*storage_snapshot), getContext()
+        read_task_info.data_part, mutations_snapshot, getContext()
 #if CLICKHOUSE_CLOUD
         , getContext()->getAccess()->getEnabledMaskingPolicies()
 #endif
@@ -224,8 +223,7 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
         .withSubcolumns();
 
     LoadedMergeTreeDataPartInfoForReader part_info(
-        part_with_ranges.data_part, read_task_info.alter_conversions,
-        MergeTreeData::getColumnIdMappingFromSnapshot(*storage_snapshot));
+        part_with_ranges.data_part, read_task_info.alter_conversions);
     bool has_lightweight_delete = read_task_info.data_part->hasLightweightDelete() || read_task_info.alter_conversions->hasLightweightDelete();
 
     if (reader_settings.apply_deleted_mask && has_lightweight_delete)

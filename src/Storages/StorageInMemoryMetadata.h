@@ -92,6 +92,12 @@ struct StorageInMemoryMetadata
     /// with the schema. Null unless the table opted into column IDs. Shallow-copied below.
     ColumnIdMappingPtr column_id_mapping;
 
+    /// The column-ID mapping, but only when it is active (physical names activated);
+    /// nullptr otherwise. Every holder of this metadata (a StorageMetadataPtr or a
+    /// StorageSnapshot's `metadata`) resolves names->IDs against this, so the mapping
+    /// rides the schema it is consistent with instead of being threaded separately.
+    ColumnIdMappingPtr getActiveColumnIdMapping() const;
+
     /// If metadata was cloned we need to extend lifetime of previous metadata.
     std::shared_ptr<const StorageInMemoryMetadata> cloned_from = nullptr;
 

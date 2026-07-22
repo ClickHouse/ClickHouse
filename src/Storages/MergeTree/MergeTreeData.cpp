@@ -11743,7 +11743,6 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
 AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     const MergeTreeDataPartPtr & part,
     const MutationsSnapshotPtr & mutations,
-    const ColumnIdMappingPtr & column_id_mapping,
     const ContextPtr & query_context
 #if CLICKHOUSE_CLOUD
     , const EnabledMaskingPoliciesPtr & enabled_masking_policies
@@ -11779,11 +11778,11 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     {
         auto patch_commands = mutations->getOnFlyMutationCommandsForPart(patch.part);
         auto patch_conversions = std::make_shared<AlterConversions>(patch_commands, PatchPartsForReader{}, query_context);
-        /// Resolve the patch part's columns with the operation's captured mapping -- the
-        /// same one the base-part reader uses -- so a concurrent DROP+ADD name reuse cannot
-        /// orphan the patch's stamped column and silently drop the update.
+        /// The patch reader stamps its requested columns from the same snapshot mapping the
+        /// base-part reader uses (both go through createMergeTreeReader), so a concurrent
+        /// DROP+ADD name reuse cannot orphan the patch's stamped column and drop the update.
         auto patch_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
-            std::move(patch.part), std::move(patch_conversions), column_id_mapping);
+            std::move(patch.part), std::move(patch_conversions));
 
         patches_for_reader.push_back(PatchPartInfoForReader
         {
@@ -12361,10 +12360,6 @@ StorageSnapshotPtr
 MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const
 {
     auto snapshot_data = std::make_unique<SnapshotData>();
-    /// Read the mapping off the pinned metadata (folded there), not the live mapping,
-    /// so it cannot skew against the schema this snapshot resolves names against.
-    if (const auto & mapping = metadata_snapshot->column_id_mapping; mapping && mapping->isActive())
-        snapshot_data->column_id_mapping = mapping;
 
     if (without_data)
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
@@ -12426,22 +12421,6 @@ StorageSnapshotPtr
 MergeTreeData::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
     return createStorageSnapshot(metadata_snapshot, query_context, true);
-}
-
-ColumnIdMappingPtr MergeTreeData::getColumnIdMappingFromSnapshot(const StorageSnapshot & snapshot)
-{
-    if (const auto * snapshot_data = dynamic_cast<const SnapshotData *>(snapshot.data.get()))
-        return snapshot_data->column_id_mapping;
-    return nullptr;
-}
-
-StorageSnapshotPtr MergeTreeData::createSnapshotWithColumnIdMapping(const StorageMetadataPtr & metadata_snapshot) const
-{
-    auto snapshot_data = std::make_unique<SnapshotData>();
-    /// Read the mapping off the pinned metadata (folded there), not the live mapping.
-    if (const auto & mapping = metadata_snapshot->column_id_mapping; mapping && mapping->isActive())
-        snapshot_data->column_id_mapping = mapping;
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
 }
 
 void MergeTreeData::incrementInsertedPartsProfileEvent(MergeTreeDataPartType type)

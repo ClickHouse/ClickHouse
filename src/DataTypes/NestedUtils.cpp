@@ -510,13 +510,16 @@ NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
     return res;
 }
 
-NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types)
+NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types, bool skip_columns_with_id)
 {
     auto nested_types = getSubcolumnsOfNested(names_and_types);
     auto res = names_and_types;
 
     for (auto & name_type : res)
     {
+        if (skip_columns_with_id && !name_type.column_id.empty())
+            continue;
+
         if (!isArray(name_type.type))
             continue;
 

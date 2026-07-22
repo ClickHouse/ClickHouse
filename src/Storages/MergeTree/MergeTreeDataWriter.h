@@ -81,15 +81,14 @@ public:
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
       */
     MergeTreeTemporaryPartPtr writeTempPart(
-        BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context, ColumnIdMappingPtr column_id_mapping);
+        BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context);
 
     MergeTreeTemporaryPartPtr writeTempPatchPart(
         BlockWithPartition & block,
         StorageMetadataPtr metadata_snapshot,
         String partition_id,
         SourcePartsSetForPatch source_parts_set,
-        ContextPtr context,
-        ColumnIdMappingPtr column_id_mapping);
+        ContextPtr context);
 
     MergeTreeData::MergingParams::Mode getMergingMode() const
     {
@@ -132,8 +131,7 @@ private:
         String partition_id,
         SourcePartsSetForPatch source_parts_set,
         ContextPtr context,
-        UInt64 block_number,
-        ColumnIdMappingPtr column_id_mapping);
+        UInt64 block_number);
 
     static MergeTreeTemporaryPartPtr writeProjectionPartImpl(
         const String & part_name,

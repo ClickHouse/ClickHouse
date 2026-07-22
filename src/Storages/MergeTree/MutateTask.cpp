@@ -1667,11 +1667,11 @@ struct MutationContext
     StorageSnapshotPtr storage_snapshot;
     DiskPtr disk;
 
-    /// The mutation's single column-ID mapping, derived from the captured
-    /// `storage_snapshot` (see MergeTreeData::getColumnIdMappingFromSnapshot).
+    /// The mutation's single column-ID mapping, read off the pinned `metadata_snapshot`
+    /// (the mapping is folded into the metadata, captured atomically with the schema).
     ColumnIdMappingPtr getColumnIdMapping() const
     {
-        return storage_snapshot ? MergeTreeData::getColumnIdMappingFromSnapshot(*storage_snapshot) : nullptr;
+        return metadata_snapshot ? metadata_snapshot->getActiveColumnIdMapping() : nullptr;
     }
 
     MutationCommandsConstPtr commands;
@@ -3448,7 +3448,7 @@ bool MutateTask::prepare()
 
     auto mutations_snapshot = ctx->data->getMutationsSnapshot(params);
     auto alter_conversions = MergeTreeData::getAlterConversionsForPart(
-        ctx->source_part, mutations_snapshot, ctx->getColumnIdMapping(), ctx->context
+        ctx->source_part, mutations_snapshot, ctx->context
 #if CLICKHOUSE_CLOUD
         , nullptr
 #endif

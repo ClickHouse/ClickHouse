@@ -64,9 +64,7 @@ TemporaryPartPtr MergeTreeSinkPatch::writeNewTempPart(BlockWithPartition & block
     UInt64 block_number = update_holder.block_holder->block.number;
 
     auto source_parts_set = buildSourceSetForPatch(*block.block, block_number);
-    return storage.writer.writeTempPatchPart(
-        block, metadata_snapshot, std::move(partition_id), std::move(source_parts_set), context,
-        MergeTreeData::getColumnIdMappingFromSnapshot(*storage_snapshot));
+    return storage.writer.writeTempPatchPart(block, metadata_snapshot, std::move(partition_id), std::move(source_parts_set), context);
 }
 
 }

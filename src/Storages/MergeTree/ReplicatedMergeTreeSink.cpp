@@ -406,8 +406,7 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 
 MergeTreeTemporaryPartPtr ReplicatedMergeTreeSink::writeNewTempPart(BlockWithPartition & block)
 {
-    return storage.writer.writeTempPart(
-        block, metadata_snapshot, context, MergeTreeData::getColumnIdMappingFromSnapshot(*storage_snapshot));
+    return storage.writer.writeTempPart(block, metadata_snapshot, context);
 }
 
 void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper)
