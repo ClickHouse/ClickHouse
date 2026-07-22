@@ -629,10 +629,15 @@ namespace
         /// Adds a dependency from a table function whose leading arguments name a table as `[database, ] table`:
         /// in the short form (`short_form_num_args` arguments) the first argument is the table name, and the
         /// long form (one argument more) carries the database and the table in the first two arguments.
-        /// In the short form only an identifier may be qualified (`timeSeriesMetrics(db.table)`); a string is
-        /// the whole table name of the current database and is never split at a dot (these functions resolve it
-        /// through `Context::resolveStorageID` as is, so `timeSeriesMetrics('a.b')` reads the table named `a.b`
-        /// of the current database), unlike `dictGet` / `joinGet`, whose string argument is a qualified name.
+        /// Only spellings with an explicit database yield a dependency. An unqualified short-form name - a bare
+        /// identifier, or a string, which is the whole table name and is never split at a dot - is resolved
+        /// through `Context::resolveStorageID` at execution time, against the current database and the session
+        /// temporary tables of the *querying* session, not necessarily those of this CREATE, so it does not name
+        /// a stable object this metadata could depend on. Stored queries persist such spellings unchanged
+        /// (`AddDefaultDatabaseVisitor` does not rewrite table-function arguments); the only context that binds
+        /// them to the create-time database is the persisted `Distributed(..., table_function())` target
+        /// (`bindTableFunctionTargetToCurrentDatabase` produces the explicit long form), and an unqualified
+        /// spelling surviving there names a session temporary table, which takes no part in dependency tracking.
         void addDependencyFromLeadingTableNameArguments(const ASTFunction & function, size_t short_form_num_args)
         {
             if (!function.arguments)
@@ -641,14 +646,18 @@ namespace
             size_t num_args = function.arguments->children.size();
             if (num_args == short_form_num_args)
             {
-                if (function.arguments->children.at(0)->as<ASTIdentifier>())
-                    addQualifiedNameFromArgument(function, 0);
-                else if (auto target_table_name = tryGetStringFromArgument(function, 0))
-                    dependencies.emplace(QualifiedTableName{current_database, std::move(target_table_name).value()});
+                if (const auto * identifier = dynamic_cast<const ASTIdentifier *>(function.arguments->children.at(0).get()))
+                {
+                    auto table_identifier = identifier->createTable();
+                    if (table_identifier && !table_identifier->getDatabaseName().empty())
+                        dependencies.emplace(QualifiedTableName{table_identifier->getDatabaseName(), table_identifier->shortName()});
+                }
             }
             else if (num_args == short_form_num_args + 1)
             {
-                addDatabaseAndTableNameFromArguments(function, 0, 1);
+                auto qualified_name = tryGetDatabaseAndTableNameFromArguments(function, 0, 1, /* apply_current_database= */ false);
+                if (qualified_name && !qualified_name->database.empty())
+                    dependencies.emplace(std::move(qualified_name).value());
             }
         }
 
