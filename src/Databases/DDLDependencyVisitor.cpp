@@ -627,9 +627,12 @@ namespace
         }
 
         /// Adds a dependency from a table function whose leading arguments name a table as `[database, ] table`:
-        /// in the short form (`short_form_num_args` arguments) the first argument is a possibly qualified table
-        /// name whose omitted database means the current database, and the long form (one argument more) carries
-        /// the database and the table in the first two arguments.
+        /// in the short form (`short_form_num_args` arguments) the first argument is the table name, and the
+        /// long form (one argument more) carries the database and the table in the first two arguments.
+        /// In the short form only an identifier may be qualified (`timeSeriesMetrics(db.table)`); a string is
+        /// the whole table name of the current database and is never split at a dot (these functions resolve it
+        /// through `Context::resolveStorageID` as is, so `timeSeriesMetrics('a.b')` reads the table named `a.b`
+        /// of the current database), unlike `dictGet` / `joinGet`, whose string argument is a qualified name.
         void addDependencyFromLeadingTableNameArguments(const ASTFunction & function, size_t short_form_num_args)
         {
             if (!function.arguments)
@@ -637,9 +640,16 @@ namespace
 
             size_t num_args = function.arguments->children.size();
             if (num_args == short_form_num_args)
-                addQualifiedNameFromArgument(function, 0);
+            {
+                if (function.arguments->children.at(0)->as<ASTIdentifier>())
+                    addQualifiedNameFromArgument(function, 0);
+                else if (auto target_table_name = tryGetStringFromArgument(function, 0))
+                    dependencies.emplace(QualifiedTableName{current_database, std::move(target_table_name).value()});
+            }
             else if (num_args == short_form_num_args + 1)
+            {
                 addDatabaseAndTableNameFromArguments(function, 0, 1);
+            }
         }
 
         std::optional<String> tryGetClusterNameFromArgument(const ASTFunction & function, size_t arg_idx) const

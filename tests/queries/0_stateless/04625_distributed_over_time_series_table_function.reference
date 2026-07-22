@@ -1,0 +1,5 @@
+0
+CREATE TABLE default.dist_ts_dot (`metric_family_name` String, `type` LowCardinality(String), `unit` LowCardinality(String), `help` String) ENGINE = Distributed(\'test_shard_localhost\', timeSeriesMetrics(\'default\', \'dot.target\'))
+0
+0
+0
