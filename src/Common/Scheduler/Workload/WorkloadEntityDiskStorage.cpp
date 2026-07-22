@@ -85,7 +85,7 @@ namespace
             normalized = normalized.parent_path();
 
         /// Collect the not-yet-existing components, deepest first, before creating them.
-        std::vector<fs::path> to_create;
+        std::vector<fs::path> to_create; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         if (fsync)
             for (fs::path p = normalized; !p.empty() && p != p.parent_path() && !fs::exists(p); p = p.parent_path())
                 to_create.push_back(p);
