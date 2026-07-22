@@ -2094,9 +2094,13 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
         const auto & left_offsets = left_array_col->getOffsets();
         if (!left_offsets.empty())
             rows_count = left_offsets.back();
-        auto res = array_element_function
-            ? array_element_function->executeImpl(new_arguments, result_array_type, rows_count)
-            : executeImpl(new_arguments, result_array_type, rows_count);
+        ColumnPtr res;
+        if (rows_count == 0 && isNothing(removeNullable(result_array_type)))
+            res = result_array_type->createColumn();
+        else
+            res = array_element_function
+                ? array_element_function->executeImpl(new_arguments, result_array_type, rows_count)
+                : executeImpl(new_arguments, result_array_type, rows_count);
 
         auto array_result = ColumnArray::create(res, left_array_col->getOffsetsPtr());
         return detail::wrapNullableArrayArithmeticResult(std::move(array_result), merged_null_map, result_type, input_rows_count);
@@ -2223,7 +2227,9 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             std::swap(new_arguments[1], new_arguments[0]);
 
         ColumnPtr res;
-        if (!right_element_null_map)
+        if (rows_count == 0 && isNothing(removeNullable(result_array_type)))
+            res = result_array_type->createColumn();
+        if (!res && !right_element_null_map)
         {
             if (array_element_function)
                 res = array_element_function->executeImpl(new_arguments, result_array_type, rows_count);

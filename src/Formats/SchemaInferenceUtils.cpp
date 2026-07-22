@@ -1760,7 +1760,10 @@ static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullabl
     if (which.isObject() && !settings.schema_inference_make_json_columns_nullable)
         return type;
 
-    return make_nullable ? makeNullableSafe(type) : type;
+    if (!make_nullable)
+        return type;
+
+    return canBeInsideNullableBySchemaSettings(type, settings) ? makeNullableAllowingArray(type) : type;
 }
 
 DataTypePtr makeNullableRecursively(DataTypePtr type, const FormatSettings & settings)

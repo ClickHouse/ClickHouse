@@ -1163,14 +1163,15 @@ DataTypePtr fieldToCHType(
     if (!result)
         throw Exception(ErrorCodes::UNKNOWN_TYPE, "Could not map Arrow field '{}' to a ClickHouse type", field.name);
 
-    if (make_nullable && result->canBeInsideNullable())
+    if (make_nullable)
     {
         /// A Tuple (from an Arrow Struct) is wrapped in Nullable only when `allow_experimental_nullable_tuple_type`
         /// is enabled; otherwise schema inference would return a `Nullable(Tuple)` that `CREATE TABLE` rejects.
-        /// Without it the struct is read as a plain Tuple (its null map is dropped), as before `Nullable(Tuple)`
-        /// was supported. The decode path applies the same gate.
-        if (!WhichDataType(result).isTuple() || settings.schema_inference_allow_nullable_tuple_type)
+        /// Array follows its own nullable-array gate; the decode path applies the same rules.
+        if (result->canBeInsideNullable() && (!WhichDataType(result).isTuple() || settings.schema_inference_allow_nullable_tuple_type))
             result = std::make_shared<DataTypeNullable>(result);
+        else if (typeid_cast<const DataTypeArray *>(result.get()) && settings.schema_inference_allow_nullable_array_type)
+            result = makeNullableAllowingArray(result);
     }
 
     return result;

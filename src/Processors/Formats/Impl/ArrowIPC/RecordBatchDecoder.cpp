@@ -39,6 +39,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
@@ -1107,6 +1108,11 @@ ColumnPtr RecordBatchDecoder::decodeField(
     /// to the decoded column.
     const DataTypePtr effective_hint = resolveTargetHint(target_hint, path);
     const bool explicit_nullable_hint = effective_hint && (effective_hint->isNullable() || effective_hint->isLowCardinalityNullable());
+    if (field.nullable && node.null_count() != 0 && effective_hint && !explicit_nullable_hint
+        && typeid_cast<const DataTypeArray *>(stripHint(effective_hint).get()) && !settings.null_as_default)
+        throw Exception(
+            ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
+            "Cannot insert NULL value into a non-nullable Array column");
     const bool nullable_tuple_allowed = settings.schema_inference_allow_nullable_tuple_type || explicit_nullable_hint;
     const bool nullable_array_allowed = typeid_cast<const ColumnArray *>(inner.get())
         && (settings.schema_inference_allow_nullable_array_type || explicit_nullable_hint);

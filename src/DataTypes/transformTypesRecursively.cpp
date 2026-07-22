@@ -53,7 +53,7 @@ void transformTypesRecursively(
             const bool can_make_nullable = format_settings ? canBeInsideNullableBySchemaSettings(nested_types[i], *format_settings)
                                                            : nested_types[i]->canBeInsideNullable();
             if (is_nullable[i] && can_make_nullable)
-                types[i] = makeNullable(nested_types[i]);
+                types[i] = makeNullableAllowingArray(nested_types[i]);
             else
                 types[i] = nested_types[i];
         }
