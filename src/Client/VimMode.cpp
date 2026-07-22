@@ -567,10 +567,14 @@ void ReplxxLineReader::setupVimKeybindings()
                 },
                 i);
         }
-    }
 
-    for (int i = 0; i < MODE_END; i++)
-    {
+        rx.bind_key(
+            Replxx::KEY::control('J'),
+            [this](char32_t code) {
+                return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
+            },
+            i);
+
         rx.bind_key(
             Replxx::KEY::control('P'),
             [this](char32_t code)
@@ -634,25 +638,6 @@ void ReplxxLineReader::setupVimKeybindings()
     }
 
     bindKey(
-        Replxx::KEY::meta(Replxx::KEY::ENTER),
-        [this](int & pos, std::string & text, char32_t)
-        {
-            pos++;
-            text.insert(pos - 1, 1, '\n');
-            resetVim(&pos, &text);
-        },
-        MODE_INSERT);
-
-    rx.bind_key(
-        Replxx::KEY::ENTER,
-        [this](char32_t code)
-        {
-            rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
-            return Replxx::ACTION_RESULT::CONTINUE;
-        },
-        MODE_NORMAL);
-
-    bindKey(
         Replxx::KEY::BACKSPACE,
         [this](int & pos, std::string & text, char32_t)
         {
@@ -663,6 +648,29 @@ void ReplxxLineReader::setupVimKeybindings()
                 pos--;
                 if (text[pos] == '\n')
                     rep--;
+            }
+            resetVim(&pos, &text);
+        },
+        MODE_NORMAL);
+
+    bindKey(
+        Replxx::KEY::ENTER,
+        [this](int &pos, std::string & text, char32_t) {
+            pos++;
+            text.insert(pos - 1, 1, '\n');
+            resetVim(&pos, &text);
+        },
+        MODE_INSERT);
+
+    bindKey(
+        Replxx::KEY::ENTER,
+        [this](int &pos, std::string & text, char32_t) {
+            int length = static_cast<int>(text.length());
+            int reps = vimReps();
+            for (int rep = 0; rep < reps; rep++)
+            {
+                for (pos = pos + 1; pos < length - 1 && text[pos] != '\n'; pos++);
+                for (; pos < length - 1 && iswhitespace(text[pos]); pos++);
             }
             resetVim(&pos, &text);
         },
