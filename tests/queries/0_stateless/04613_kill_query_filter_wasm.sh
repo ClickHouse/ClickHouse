@@ -12,8 +12,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 query_id="kill_query_filter_wasm_${CLICKHOUSE_DATABASE}_$RANDOM"
 output_file="${CLICKHOUSE_TMP}/kill_query_filter_wasm_${CLICKHOUSE_DATABASE}.out"
 
+# EXIT trap covers failed reruns that crashed before explicit cleanup.
+trap '${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q "DROP FUNCTION IF EXISTS infinite_loop_04613" 2>/dev/null;
+      ${CLICKHOUSE_CLIENT} -q "DELETE FROM system.webassembly_modules WHERE name = '\''faulty_04613'\''" 2>/dev/null' EXIT
+
 # Use module/function names unique to 04613 for isolation from 03207_wasm_fault.sh.
-# Clean up any stale entry from a previous failed 04613 run.
+# Drop function before deleting module — DELETE throws CANNOT_DROP_FUNCTION
+# while a function backed by the module still exists.
+${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q "DROP FUNCTION IF EXISTS infinite_loop_04613"
 ${CLICKHOUSE_CLIENT} -q "DELETE FROM system.webassembly_modules WHERE name = 'faulty_04613'"
 
 # Load the WASM module with the infinite_loop function
