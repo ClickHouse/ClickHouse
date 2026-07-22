@@ -1,8 +1,13 @@
 #include <memory>
 #include <optional>
 #include <Server/PostgreSQLHandler.h>
+#include <IO/CascadeWriteBuffer.h>
+#include <IO/ConcatReadBuffer.h>
+#include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/copyData.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteBuffer.h>
@@ -784,20 +789,33 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         /// feeding the pipeline as frames arrive would let a client abort (`CopyFail`) after the first
         /// flushed block leave partial rows visible even though the `COPY` reports failure - and a client
         /// retry would then duplicate them. Staging moves the commit boundary after a successful
-        /// `CopyDone`: an aborted copy never touches the insert pipeline at all. The staging buffer is
-        /// allocated under the query scope, so the query's memory limits account for it.
+        /// `CopyDone`: an aborted copy never touches the insert pipeline at all.
+        ///
+        /// The staging store is bounded in memory: the first part of the payload is kept in a
+        /// `MemoryWriteBuffer` (allocated under the query scope, so the query's memory limits account
+        /// for it), and anything beyond that spills to a temporary file on disk, so a large `COPY`
+        /// stages in O(1) memory instead of holding the whole payload resident.
+        static constexpr size_t max_staged_bytes_in_memory = 1024 * 1024;
+
         CopyInDataReadBuffer copy_in_stream(*message_transport);
-        String staged_data;
+        CascadeWriteBuffer::WriteBufferPtrs staging_buffers;
+        staging_buffers.emplace_back(std::make_shared<MemoryWriteBuffer>(max_staged_bytes_in_memory));
+        CascadeWriteBuffer::WriteBufferConstructors staging_buffers_lazy;
+        staging_buffers_lazy.emplace_back(
+            [tmp_data = query_context->getTempDataOnDisk()](const WriteBufferPtr &) -> WriteBufferPtr
+            {
+                return std::make_unique<TemporaryDataBuffer>(tmp_data);
+            });
+        CascadeWriteBuffer staged_out(std::move(staging_buffers), std::move(staging_buffers_lazy));
         try
         {
-            while (!copy_in_stream.eof())
-            {
-                staged_data.append(copy_in_stream.position(), copy_in_stream.available());
-                copy_in_stream.position() += copy_in_stream.available();
-            }
+            copyData(copy_in_stream, staged_out);
+            staged_out.finalize();
         }
         catch (...)
         {
+            staged_out.cancel();
+
             /// A client-initiated abort (`CopyFail`) is an ordinary "your copy failed" error, not a fatal
             /// connection error: reply with an `ErrorResponse` and report the query as handled so the run
             /// loop follows with `ReadyForQuery` and the connection stays usable (mirroring the binary and
@@ -815,11 +833,25 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
             throw;
         }
 
+        /// Reassemble the staged payload as one read stream: the in-memory part, then the spilled part.
+        ConcatReadBuffer staged_stream;
+        for (auto & staged_buf : staged_out.getResultBuffers())
+        {
+            if (auto * spilled = dynamic_cast<TemporaryDataBuffer *>(staged_buf.get()))
+            {
+                if (auto reread_buf = spilled->read())
+                    staged_stream.appendBuffer(std::move(reread_buf));
+            }
+            else if (auto * readable = dynamic_cast<IReadableWriteBuffer *>(staged_buf.get()))
+            {
+                if (auto reread_buf = readable->tryGetReadBuffer())
+                    staged_stream.appendBuffer(std::move(reread_buf));
+            }
+        }
+
         /// The executor is created only after the payload is staged in full: creating it earlier would
         /// leave an unfinished pushing executor behind on the abort return path above.
         auto executor = std::make_unique<PushingPipelineExecutor>(io.pipeline);
-
-        ReadBufferFromString staged_stream(staged_data);
         auto format_ptr = FormatFactory::instance().getInput(
             format,
             staged_stream,
