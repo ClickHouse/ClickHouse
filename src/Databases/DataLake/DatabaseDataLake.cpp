@@ -970,14 +970,10 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
     Tables tables;
     DataLake::CatalogTables catalog_tables;
 
-    /// By default do not throw here, because this might be, for example, a query to system.tables.
-    /// It must not fail on case of some datalake error. But when the user explicitly opted into
-    /// showing datalake catalogs in system tables, surface the error (e.g. expired catalog
-    /// credentials) instead of pretending the database has no tables.
+    /// Do not throw here, because this might be, for example, a query to system.tables.
+    /// It must not fail on case of some datalake error.
     try
     {
-        /// Simulate a catalog listing failure (e.g. expired catalog credentials),
-        /// so tests can exercise both the tolerant and the error-surfacing paths.
         fiu_do_on(FailPoints::datalake_get_tables_throw,
         {
             throw Exception(ErrorCodes::DATALAKE_DATABASE_ERROR, "Injected catalog listing failure");
@@ -1123,14 +1119,10 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
     DataLake::CatalogTables catalog_tables;
     std::vector<LightWeightTableDetails> result;
 
-    /// By default do not throw here, because this might be, for example, a query to system.tables.
-    /// It must not fail on case of some datalake error. But when the user explicitly opted into
-    /// showing datalake catalogs in system tables, surface the error (e.g. expired catalog
-    /// credentials) instead of pretending the database has no tables.
+    /// Do not throw here, because this might be, for example, a query to system.tables.
+    /// It must not fail on case of some datalake error.
     try
     {
-        /// Simulate a catalog listing failure (e.g. expired catalog credentials),
-        /// so tests can exercise both the tolerant and the error-surfacing paths.
         fiu_do_on(FailPoints::datalake_get_tables_throw,
         {
             throw Exception(ErrorCodes::DATALAKE_DATABASE_ERROR, "Injected catalog listing failure");

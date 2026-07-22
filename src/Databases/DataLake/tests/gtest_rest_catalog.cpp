@@ -148,9 +148,6 @@ public:
             return;
         }
 
-        /// Table metadata endpoints (shape-independent), for `tryGetTableMetadata` tests:
-        /// an existing table, a missing table (404) and a table behind expired/invalid
-        /// credentials (401).
         if (path == "/v1/namespaces/namespace/tables/table_a")
         {
             writeJSON(response, R"({"metadata":{"table-uuid":"11111111-2222-3333-4444-555555555555"}})");
@@ -325,18 +322,14 @@ TEST(RestCatalog, TryGetTableMetadataDistinguishesMissingTableFromOtherErrors)
         /* oauth_server_use_request_body */false,
         context);
 
-    /// An existing table resolves.
     TableMetadata existing;
     EXPECT_TRUE(catalog.tryGetTableMetadata("namespace", "table_a", existing));
     EXPECT_TRUE(catalog.existsTable("namespace", "table_a"));
 
-    /// 404 means the table does not exist.
     TableMetadata missing;
     EXPECT_FALSE(catalog.tryGetTableMetadata("namespace", "missing_table", missing));
     EXPECT_FALSE(catalog.existsTable("namespace", "missing_table"));
 
-    /// 401 (expired/invalid credentials) must propagate as an error rather than be
-    /// misreported as a missing table (`UNKNOWN_TABLE`).
     TableMetadata unauthorized;
     EXPECT_THROW(catalog.tryGetTableMetadata("namespace", "unauthorized_table", unauthorized), DB::HTTPException);
     EXPECT_THROW(catalog.existsTable("namespace", "unauthorized_table"), DB::HTTPException);

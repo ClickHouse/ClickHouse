@@ -1961,10 +1961,8 @@ def test_catalog_listing_error_surfaces_in_system_tables(started_cluster):
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
 
-    ## Simulate a catalog listing failure (e.g. expired catalog credentials).
     node.query("SYSTEM ENABLE FAILPOINT datalake_get_tables_throw")
     try:
-        ## Default: catalog errors are tolerated and the listing degrades to empty.
         assert (
             node.query(
                 f"SELECT count() FROM system.iceberg_files WHERE database = '{CATALOG_NAME}'"
@@ -1972,21 +1970,18 @@ def test_catalog_listing_error_surfaces_in_system_tables(started_cluster):
             == "0"
         )
 
-        ## With the explicit opt-in the error surfaces instead of an empty result.
         error = node.query_and_get_error(
             f"SELECT count() FROM system.iceberg_files WHERE database = '{CATALOG_NAME}' "
             "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
         )
         assert "Injected catalog listing failure" in error
 
-        ## Same for system.tables, both the name-only (lightweight) path...
         error = node.query_and_get_error(
             f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
             "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
         )
         assert "Injected catalog listing failure" in error
 
-        ## ...and the full path with storage-dependent columns.
         error = node.query_and_get_error(
             f"SELECT name, engine FROM system.tables WHERE database = '{CATALOG_NAME}' "
             "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
@@ -1995,7 +1990,6 @@ def test_catalog_listing_error_surfaces_in_system_tables(started_cluster):
     finally:
         node.query("SYSTEM DISABLE FAILPOINT datalake_get_tables_throw")
 
-    ## With the failpoint disabled the listing works again.
     result = node.query(
         f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
         "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
