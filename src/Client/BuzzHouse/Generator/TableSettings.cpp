@@ -86,8 +86,8 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"async_insert", trueOrFalseSetting},
     {"auto_statistics_types",
      CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"tdigest", "countmin", "minmax", "uniq", "basic"}); },
-         {"'tdigest'", "'countmin'", "'minmax'", "'uniq'", "'basic'"},
+         [](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"tdigest", "countmin", "uniq", "basic"}); },
+         {"'tdigest'", "'countmin'", "'uniq'", "'basic'"},
          false)},
     {"background_task_preferred_step_execution_time_ms", highRangeSetting},
     {"cache_populated_by_fetch", trueOrFalseSetting},
@@ -1162,7 +1162,22 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
         logTableSettings.insert({{"disk", disk_setting}});
         dataLakeSettings.insert({{"disk", disk_name_setting}});
         paimonSettings.insert({{"disk", disk_name_setting}});
-        allDatabaseSettings.insert({{"disk", disk_setting}});
+
+        /// A disk-backed database commits table metadata with an atomic rename, so its disk's metadata
+        /// store must support `moveFile`: `Local` and `PlainRewritable` do, `Plain` (and read-only/keeper
+        /// metadata) do not, which would make every `CREATE TABLE` in the database fail with NOT_IMPLEMENTED.
+        DB::Strings database_safe_disks;
+        for (const auto & di : fc.disks)
+            if (di.metadata_type == "Local" || di.metadata_type == "PlainRewritable")
+                database_safe_disks.emplace_back(di.name);
+        if (!database_safe_disks.empty())
+        {
+            const auto & database_disk_setting = CHSetting(
+                [database_safe_disks](RandomGenerator & rg, FuzzConfig &) { return "'" + rg.pickRandomly(database_safe_disks) + "'"; },
+                {},
+                false);
+            allDatabaseSettings.insert({{"disk", database_disk_setting}});
+        }
     }
     if (fc.enable_fault_injection_settings)
     {
@@ -1326,6 +1341,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {PaimonLocal, paimonLocalSettings},
          {Merge, {}},
          {Distributed, distributedTableSettings},
+         {Remote, distributedTableSettings},
+         {RemoteSecure, distributedTableSettings},
          {Dictionary, {}},
          {GenerateRandom, {}},
          {AzureBlobStorage, azureBlobStorageSettings},
@@ -1387,6 +1404,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {PaimonLocal, {}},
          {Merge, {}},
          {Distributed, {}},
+         {Remote, {}},
+         {RemoteSecure, {}},
          {Dictionary, {}},
          {GenerateRandom, {}},
          {AzureBlobStorage, {}},

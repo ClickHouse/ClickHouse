@@ -285,7 +285,7 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
                 rel.cols.emplace_back(SQLRelationCol(rel_name, {"_tags"}));
             }
         }
-        else if (t.isDistributedEngine())
+        else if (t.isDistributedEngine() || t.isAnyRemoteEngine())
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_shard_num"}, size_tp.get()));
         }
@@ -1232,6 +1232,14 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && b.isFileEngine())
     {
+        if (b.integration == IntegrationCall::Dolor)
+        {
+            /// Ask Spark to write the data file before ClickHouse creates the table over it
+            if (SQLTable * t = dynamic_cast<SQLTable *>(&b))
+            {
+                connections.createExternalDatabaseTable(rg, *t, entries, te);
+            }
+        }
         if (b.file_format.has_value())
         {
             te->add_params()->set_in_out(b.file_format.value());
@@ -1298,7 +1306,7 @@ void StatementGenerator::generateEngineDetails(
         }
         te->add_params()->set_svalue(std::move(mergeDesc));
     }
-    else if (te->has_engine() && (b.isDistributedEngine() || b.isBufferEngine() || b.isAliasEngine()))
+    else if (te->has_engine() && (b.isDistributedEngine() || b.isAnyRemoteEngine() || b.isBufferEngine() || b.isAliasEngine()))
     {
         SQLTable * bt = dynamic_cast<SQLTable *>(&b);
         const SQLTable * tt = nullptr;
@@ -1313,7 +1321,14 @@ void StatementGenerator::generateEngineDetails(
 
         if (b.isDistributedEngine())
         {
+            /// `Distributed` reads from a configured cluster.
             te->add_params()->set_svalue(rg.pickRandomly(fc.clusters));
+        }
+        else if (b.isAnyRemoteEngine())
+        {
+            /// `Remote` / `RemoteSecure` build a cluster on the fly from an addresses expression,
+            /// exactly like the `remote` / `remoteSecure` table functions.
+            te->add_params()->set_svalue(getNextTestingAddress(rg, b.isRemoteSecureEngine()));
         }
         rg.pickWeighted(
             {{dist_table,
@@ -1373,6 +1388,22 @@ void StatementGenerator::generateEngineDetails(
             if (!fc.storage_policies.empty() && rg.nextBool())
             {
                 te->add_params()->set_svalue(rg.pickRandomly(fc.storage_policies));
+            }
+        }
+        else if (b.isAnyRemoteEngine() && rg.nextBool())
+        {
+            /// Optional positional `user[, password[, sharding_key]]`, matching the `remote` function.
+            const bool with_password = rg.nextBool();
+
+            te->add_params()->set_svalue("default");
+            if (with_password)
+            {
+                te->add_params()->set_svalue("");
+            }
+            /// The sharding key is only reachable positionally once user (and here password) precede it.
+            if (with_password && rg.nextBool())
+            {
+                setRandomShardKey(rg, bt ? std::make_optional<SQLTable>(*bt) : std::nullopt, te->add_params()->mutable_expr());
             }
         }
         else if (b.isBufferEngine())
@@ -2316,6 +2347,13 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         {
             this->ids.emplace_back(Distributed);
         }
+        /// Remote / RemoteSecure build a cluster on the fly from addresses, so (unlike Distributed)
+        /// they don't need a configured cluster — only a target table on the (local) remote server.
+        if ((fc.engine_mask & allow_remote) != 0)
+        {
+            this->ids.emplace_back(Remote);
+            this->ids.emplace_back(RemoteSecure);
+        }
         if ((fc.engine_mask & allow_alias) != 0)
         {
             this->ids.emplace_back(Alias);
@@ -2668,7 +2706,8 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     }
     setClusterClause(rg, next.cluster, ct->mutable_cluster());
     if ((next.isAnyIcebergEngine() && next.integration == IntegrationCall::Dolor && next.getLakeCatalog() == LakeCatalog::None)
-        || ((next.isDistributedEngine() || next.isBufferEngine() || next.isAliasEngine()) && rg.nextMediumNumber() < 96))
+        || ((next.isDistributedEngine() || next.isAnyRemoteEngine() || next.isBufferEngine() || next.isAliasEngine())
+            && rg.nextMediumNumber() < 96))
     {
         /// For Iceberg tables created from Spark, don't give table schema
         ct->clear_table_def();

@@ -11,6 +11,7 @@ from pathlib import Path
 from integration.helpers.client import Client
 from pyiceberg.catalog import load_catalog
 from .kafkatest import KafkaHandler
+from .filetables import FileHandler
 from .laketables import (
     TableStorage,
     LakeFormat,
@@ -182,6 +183,7 @@ class SparkHandler:
         self.spark_local_dir.mkdir(parents=True, exist_ok=True)
         self.data_generator = LakeDataGenerator(self.spark_query_logger)
         self.table_check = SparkAndClickHouseCheck()
+        self.file_handler = FileHandler(self)
         self.env = env
         spark_log = f"""
 # ----- log4j2.properties -----
@@ -921,6 +923,8 @@ logger.jetty.level = warn
 
     def create_lake_table(self, cluster, data) -> bool:
         saved_exception = None
+        if data["engine"] == "file":
+            return self.file_handler.create_table(cluster, data)
         if data["engine"] == "kafka":
             # At the moment, this is an ugly hack
             return self.kafka_handler.create_kafka_table(
@@ -1031,7 +1035,7 @@ logger.jetty.level = warn
         catalog_type = LakeCatalogs.NoCatalog
         run_background_worker = data["async"] == 0 and random.randint(1, 2) == 1
 
-        if data["engine"] != "kafka":
+        if data["engine"] not in ("kafka", "file"):
             with self.catalogs_lock:
                 next_table = self.catalogs[catalog_name].spark_tables[
                     data["table_name"]
@@ -1053,11 +1057,18 @@ logger.jetty.level = warn
                 nloops = random.randint(1, 50)
                 tbl = (
                     f"{data['catalog_name']}.{data['table_name']}"
-                    if data["engine"] == "kafka"
+                    if data["engine"] in ("kafka", "file")
                     else next_table.get_clickhouse_path()
                 )
+                # A File table's data file can be truncated to 0 bytes by ClickHouse (e.g.
+                # TRUNCATE), unreadable as a structured format; skip empty files to read 0 rows
+                settings = (
+                    " SETTINGS engine_file_skip_empty_files = 1"
+                    if data["engine"] == "file"
+                    else ""
+                )
                 for _ in range(nloops):
-                    client.query(f"SELECT * FROM {tbl} LIMIT 100;")
+                    client.query(f"SELECT * FROM {tbl} LIMIT 100{settings};")
                     time.sleep(1)
 
             self.worker.set_task_function(my_new_task)
@@ -1068,23 +1079,39 @@ logger.jetty.level = warn
                 res = self.kafka_handler.update_table(
                     cluster, data["catalog_name"], data["table_name"]
                 )
-            elif data["engine"] in ["iceberg", "deltalake", "paimon"]:
+            elif data["engine"] in ("file", "iceberg", "deltalake", "paimon"):
+                is_file = data["engine"] == "file"
                 with self.spark_lock:
+                    # File tables have no Spark catalog behind them, so any local session works;
+                    # catalog_type already defaults to NoCatalog for them
                     next_session = self.get_next_session(
                         cluster,
-                        catalog_name,
-                        next_table.storage,
-                        next_table.lake_format,
+                        "file_tables" if is_file else catalog_name,
+                        (
+                            TableStorage.storage_from_str("local")
+                            if is_file
+                            else next_table.storage
+                        ),
+                        (
+                            LakeFormat.lakeformat_from_str("iceberg")
+                            if is_file
+                            else next_table.lake_format
+                        ),
                         catalog_type,
                     )
                     try:
-                        res = (
-                            self.data_generator.update_table(next_session, next_table)
-                            if random.randint(1, 10) < 8
-                            else self.table_check.check_table(
+                        if is_file:
+                            res = self.file_handler.update_or_check_table(
+                                cluster, next_session, data
+                            )
+                        elif random.randint(1, 10) < 8:
+                            res = self.data_generator.update_table(
+                                next_session, next_table
+                            )
+                        else:
+                            res = self.table_check.check_table(
                                 cluster, next_session, next_table
                             )
-                        )
                     finally:
                         next_session.stop()
         except Exception as e:

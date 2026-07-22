@@ -213,9 +213,7 @@ class SparkAndClickHouseCheck:
             # fixed-point (strip its grouping commas) and preserves full 38-digit precision.
             def spark_col_expr(col) -> str:
                 if isinstance(col.spark_type, DecimalType):
-                    plain = (
-                        f"regexp_replace(format_number({col.column_name}, {col.spark_type.scale}), ',', '')"
-                    )
+                    plain = f"regexp_replace(format_number({col.column_name}, {col.spark_type.scale}), ',', '')"
                     s = (
                         f"CASE WHEN {plain} LIKE '%.%' "
                         f"THEN TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM {plain})) ELSE {plain} END"

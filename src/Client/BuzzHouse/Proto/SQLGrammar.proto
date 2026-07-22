@@ -1447,12 +1447,11 @@ message TypeName {
 }
 
 enum ColumnStat {
-    STAT_MinMax = 1;
-    STAT_TDigest = 2;
-    STAT_Uniq = 3;
-    STAT_CountMin = 4;
-    STAT_Basic = 5;
-    STAT_Uniq_V2 = 6;
+    STAT_TDigest = 1;
+    STAT_Uniq = 2;
+    STAT_CountMin = 3;
+    STAT_Basic = 4;
+    STAT_Uniq_V2 = 5;
 }
 
 message ColumnStatistics {
@@ -1632,6 +1631,8 @@ enum TableEngineValues {
     PaimonS3 = 57;
     PaimonAzure = 58;
     PaimonLocal = 59;
+    Remote = 60;
+    RemoteSecure = 61;
 }
 
 enum TableEngineOption {

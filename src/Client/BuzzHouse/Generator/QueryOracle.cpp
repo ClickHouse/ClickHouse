@@ -26,6 +26,8 @@ static void finishSettings(SettingValues * svs)
     /// reset must be the `DEFAULT` keyword - assigning the default value would keep the
     /// setting `changed` and pin a nonexistent snapshot. Delta/Paimon pins are value-based
     /// (-1 = latest), where `DEFAULT` works as well.
+    /// `engine_file_truncate_on_insert` keeps the `file()` dump idempotent: without it a
+    /// re-run appends a second copy of the rows and the digest comparison gets a false mismatch.
     static const std::unordered_map<String, String> toSet
         = {{"alter_sync", "2"},
            {"apply_deleted_mask", "1"},
@@ -33,6 +35,7 @@ static void finishSettings(SettingValues * svs)
            {"delta_lake_snapshot_end_version", "DEFAULT"},
            {"delta_lake_snapshot_start_version", "DEFAULT"},
            {"delta_lake_snapshot_version", "DEFAULT"},
+           {"engine_file_truncate_on_insert", "1"},
            {"iceberg_snapshot_id", "DEFAULT"},
            {"iceberg_timestamp_ms", "DEFAULT"},
            {"lightweight_deletes_sync", "2"},

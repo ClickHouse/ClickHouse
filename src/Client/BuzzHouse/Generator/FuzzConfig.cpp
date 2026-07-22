@@ -367,6 +367,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"paimonlocal", allow_paimonLocal},
            {"merge", allow_merge},
            {"distributed", allow_distributed},
+           {"remote", allow_remote},
            {"dictionary", allow_dictionary},
            {"generaterandom", allow_generaterandom},
            {"azureblobstorage", allow_AzureBlobStorage},

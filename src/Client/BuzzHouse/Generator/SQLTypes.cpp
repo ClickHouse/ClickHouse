@@ -301,9 +301,9 @@ std::unique_ptr<SQLType> FloatType::typeDeepCopy() const
     return std::make_unique<FloatType>(size);
 }
 
-String FloatType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
+String FloatType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
 {
-    return nextFloatingPoint(rg, true);
+    return nextFloatingPoint(rg, gen.fc.fuzz_floating_points);
 }
 
 String FloatType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
@@ -477,7 +477,7 @@ String DateTimeType::appendRandomRawValue(RandomGenerator & rg, StatementGenerat
 {
     const bool allow_func = gen.getAllowNotDetermistic();
     String ret
-        = extended ? rg.nextDateTime64("'", allow_func, precision.has_value()) : rg.nextDateTime("'", allow_func, precision.has_value());
+        = extended ? rg.nextDateTime64("'", allow_func, precision.value_or(0)) : rg.nextDateTime("'", allow_func, precision.has_value());
 
     ret += allow_func ? fmt::format("::{}", typeName(false, false)) : "";
     return ret;
@@ -672,14 +672,10 @@ String UUIDType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & ge
     return appendRandomRawValue(rg, gen);
 }
 
-String EnumType::typeName(const bool escape, const bool simplified) const
+String EnumType::typeName(const bool escape, const bool) const
 {
     String ret;
 
-    if (simplified)
-    {
-        return "String";
-    }
     ret += "Enum";
     ret += std::to_string(size);
     ret += "(";
@@ -949,7 +945,7 @@ String JSONType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &
     std::uniform_int_distribution<int> dopt(1, gen.fc.max_depth);
     std::uniform_int_distribution<int> wopt(1, gen.fc.max_width);
 
-    return "'" + strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator)) + "'";
+    return "'" + strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator), gen.fc.fuzz_floating_points) + "'";
 }
 
 String JSONType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
@@ -2574,7 +2570,7 @@ String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt)
     return ret;
 }
 
-static String homogeneousJSONArray(RandomGenerator & rg)
+static String homogeneousJSONArray(RandomGenerator & rg, const bool fuzz_floating_points)
 {
     /// Homogeneous typed array: pick element type once, generate 0-5 elements of that type
     String ret;
@@ -2596,7 +2592,7 @@ static String homogeneousJSONArray(RandomGenerator & rg)
             }
             case 2: ret += std::to_string(rg.nextRandomInt64()); break;
             case 3: ret += std::to_string(rg.nextRandomUInt64()); break;
-            case 4: ret += nextFloatingPoint(rg, true); break;
+            case 4: ret += nextFloatingPoint(rg, fuzz_floating_points); break;
             case 5: ret += rg.nextString("\"", false, rg.nextStrlen()); break;
             case 6: ret += rg.nextBool() ? "true" : "false"; break;
             case 7: ret += "null"; break;
@@ -2619,7 +2615,7 @@ static String homogeneousJSONArray(RandomGenerator & rg)
     return ret;
 }
 
-String strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth)
+String strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth, const bool fuzz_floating_points)
 {
     std::uniform_int_distribution<int> jopt(1, 4);
     int nelems = 0;
@@ -2644,26 +2640,26 @@ String strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidt
             {
                 case 1:
                     /// Object
-                    ret += strBuildJSON(rg, jdepth - 1, next_width);
+                    ret += strBuildJSON(rg, jdepth - 1, next_width, fuzz_floating_points);
                     break;
                 case 2:
                     /// Array
-                    ret += strBuildJSONArray(rg, jdepth - 1, next_width);
+                    ret += strBuildJSONArray(rg, jdepth - 1, next_width, fuzz_floating_points);
                     break;
                 case 3:
                     /// Others
-                    ret += strBuildJSONElement(rg);
+                    ret += strBuildJSONElement(rg, fuzz_floating_points);
                     break;
                 case 4:
                     /// Homogeneous array
-                    ret += homogeneousJSONArray(rg);
+                    ret += homogeneousJSONArray(rg, fuzz_floating_points);
                     break;
                 default: UNREACHABLE();
             }
         }
         else
         {
-            ret += strBuildJSONElement(rg);
+            ret += strBuildJSONElement(rg, fuzz_floating_points);
         }
         next_width--;
     }
@@ -2671,7 +2667,7 @@ String strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidt
     return ret;
 }
 
-String strBuildJSONElement(RandomGenerator & rg)
+String strBuildJSONElement(RandomGenerator & rg, const bool fuzz_floating_points)
 {
     String ret;
     std::uniform_int_distribution<int> opts(1, 25);
@@ -2735,7 +2731,7 @@ String strBuildJSONElement(RandomGenerator & rg)
             break;
         case 19:
             /// Datetime64
-            ret = rg.nextDateTime64("\"", false, rg.nextSmallNumber() < 8);
+            ret = rg.nextDateTime64("\"", false, rg.nextSmallNumber() - 1);
             break;
         case 20:
             /// UUID
@@ -2751,7 +2747,7 @@ String strBuildJSONElement(RandomGenerator & rg)
             break;
         case 23:
             /// Floating-point
-            ret = nextFloatingPoint(rg, true);
+            ret = nextFloatingPoint(rg, fuzz_floating_points);
             break;
         case 24:
             /// Empty string
@@ -2759,14 +2755,14 @@ String strBuildJSONElement(RandomGenerator & rg)
             break;
         case 25:
             /// String with escape sequences
-            ret = '[' + homogeneousJSONArray(rg) + ']';
+            ret = '[' + homogeneousJSONArray(rg, fuzz_floating_points) + ']';
             break;
         default: UNREACHABLE();
     }
     return ret;
 }
 
-String strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth)
+String strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth, const bool fuzz_floating_points)
 {
     String ret = "{";
 
@@ -2790,15 +2786,15 @@ String strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth)
             {
                 case 1:
                     /// Object
-                    ret += strBuildJSON(rg, jdepth - 1, jwidth);
+                    ret += strBuildJSON(rg, jdepth - 1, jwidth, fuzz_floating_points);
                     break;
                 case 2:
                     /// Array
-                    ret += strBuildJSONArray(rg, jdepth - 1, jwidth);
+                    ret += strBuildJSONArray(rg, jdepth - 1, jwidth, fuzz_floating_points);
                     break;
                 case 3:
                     /// Others
-                    ret += strBuildJSONElement(rg);
+                    ret += strBuildJSONElement(rg, fuzz_floating_points);
                     break;
                 default: UNREACHABLE();
             }

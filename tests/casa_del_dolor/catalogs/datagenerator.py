@@ -1,4 +1,5 @@
 import random
+import re
 from decimal import Decimal, getcontext
 from datetime import datetime, timedelta, date
 import json
@@ -269,8 +270,90 @@ class LakeDataGenerator:
         )
         return "".join(random.choice(alphabet) for _ in range(nlen))
 
+    def _rand_time_string(self):
+        # ClickHouse `Time` accepts [-999:59:59, 999:59:59]; no fractional part, so the
+        # string casts to both `Time` and `Time64`
+        hours = random.randint(0, 999 if random.randint(1, 10) == 1 else 23)
+        res = f"{hours:02d}:{random.randint(0, 59):02d}:{random.randint(0, 59):02d}"
+        return f"-{res}" if random.randint(1, 10) == 1 else res
+
     def _rand_binary(self, nlen):
         return bytes(random.getrandbits(8) for _ in range(nlen))
+
+    _CH_STRING_ESCAPES = {
+        "n": "\n",
+        "t": "\t",
+        "r": "\r",
+        "0": "\0",
+        "b": "\b",
+        "f": "\f",
+        "a": "\a",
+        "v": "\v",
+    }
+
+    @staticmethod
+    def _decode_enum_literal(mode: str, text: str):
+        """Decode one enum element literal: plain `'..'` (already unescaped), hex `x'..'`
+        or binary `b'..'`. Returns None for names that are not valid UTF-8, which cannot
+        round-trip through a Spark string."""
+        try:
+            if mode == "x":
+                return bytes.fromhex(text).decode("utf-8")
+            if mode == "b":
+                n = int(text, 2)
+                return n.to_bytes(max(1, (len(text) + 7) // 8), "big").decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return None
+        return text
+
+    @staticmethod
+    def _parse_enum_values(ch_type: str):
+        """Collect the declared element names of every `Enum` in a ClickHouse type string.
+        Handles `'..'`, hex `x'..'` and binary `b'..'` element literals. Returns their
+        intersection (union when disjoint, so a nested type mixing distinct enums may
+        still yield an invalid element), or None when the type has no enums."""
+        defs = []
+        for m in re.finditer(r"\bEnum(?:8|16)?\(", ch_type):
+            values = []
+            cur = None  # None = between quoted names
+            mode = ""
+            i = m.end()
+            while i < len(ch_type):
+                c = ch_type[i]
+                if cur is None:
+                    if c in "xb" and i + 1 < len(ch_type) and ch_type[i + 1] == "'":
+                        mode = c
+                        cur = []
+                        i += 1
+                    elif c == "'":
+                        mode = ""
+                        cur = []
+                    elif c == ")":
+                        break
+                elif c == "\\" and i + 1 < len(ch_type):
+                    i += 1
+                    nc = ch_type[i]
+                    cur.append(LakeDataGenerator._CH_STRING_ESCAPES.get(nc, nc))
+                elif c == "'":
+                    val = LakeDataGenerator._decode_enum_literal(mode, "".join(cur))
+                    if val is not None:
+                        values.append(val)
+                    cur = None
+                else:
+                    cur.append(c)
+                i += 1
+            if values:
+                defs.append(values)
+        if not defs:
+            return None
+        pool = [v for v in defs[0] if all(v in d for d in defs[1:])]
+        if not pool:
+            pool = [v for d in defs for v in d]
+        pool = list(dict.fromkeys(pool))
+        # Names holding U+FFFD were likely mangled in JSON transport of invalid UTF-8
+        # and would not match the server-side element bytes
+        clean = [v for v in pool if "�" not in v]
+        return clean or pool
 
     def _rand_date(self):
         if random.randint(1, 100) < 16:
@@ -293,7 +376,7 @@ class LakeDataGenerator:
         micros = self._rand_int(0, 999999)
         return start + timedelta(seconds=secs, microseconds=micros)
 
-    def _rand_decimal(self, precision, scale):
+    def _rand_decimal(self, precision, scale, non_negative=False):
         # Set context a bit higher to avoid rounding surprises
         getcontext().prec = max(precision, 38)
         int_digits = precision - scale
@@ -312,7 +395,7 @@ class LakeDataGenerator:
             s = f"{int_part}"
         # Apply the sign to the assembled string: `sign * int_part` loses it whenever
         # int_part is 0, so e.g. DECIMAL(p, p) values were never negative
-        if random.random() < 0.5:
+        if not non_negative and random.random() < 0.5:
             s = "-" + s
         return Decimal(s)
 
@@ -334,8 +417,25 @@ class LakeDataGenerator:
         self._thread_local._nested_budget = budget - n
         return n
 
-    def _random_value_for_type(self, dtype: DataType, null_rate: float):
-        """Return a random Python value that conforms to the given Spark DataType."""
+    _TYPE_WRAPPER_RE = re.compile(r"^(?:Nullable|LowCardinality)\((.*)\)$", re.DOTALL)
+
+    @classmethod
+    def _ch_hint_strip(cls, ch_hint: str) -> str:
+        # Peel transparent wrappers so the hint compares against the payload type
+        ch_hint = ch_hint.strip()
+        while True:
+            m = cls._TYPE_WRAPPER_RE.match(ch_hint)
+            if not m:
+                return ch_hint
+            ch_hint = m.group(1).strip()
+
+    def _random_value_for_type(
+        self, dtype: DataType, null_rate: float, ch_hint: str = ""
+    ):
+        """Return a random Python value that conforms to the given Spark DataType.
+        `ch_hint` is the ClickHouse type behind this node (empty when unknown); it is
+        peeled per-path so nested members each honor their own read-back constraint."""
+        ch_hint = self._ch_hint_strip(ch_hint)
         if random.random() < null_rate:
             return None
         if isinstance(dtype, BooleanType):
@@ -383,21 +483,49 @@ class LakeDataGenerator:
                 )
             return float(self._rand_float(-1e9, 1e9))
         if isinstance(dtype, DecimalType):
-            return self._rand_decimal(dtype.precision, dtype.scale)
+            # UInt columns may be DECIMAL-mapped in data files; ClickHouse throws
+            # casting a negative decimal back to the unsigned declared type
+            return self._rand_decimal(
+                dtype.precision, dtype.scale, ch_hint.startswith("UInt")
+            )
         if isinstance(dtype, StringType):
+            # Time columns are STRING-mapped in data files; ClickHouse casts the strings
+            # back to `Time`, so they must be valid times
+            if re.match(r"Time(64)?($|\()", ch_hint):
+                return self._rand_time_string()
+            # Same for Enum columns: values must be declared enum elements
+            if ch_hint.startswith("Enum"):
+                enum_values = self._parse_enum_values(ch_hint)
+                if enum_values:
+                    return random.choice(enum_values)
+            # Empty `Tuple()` is STRING-mapped and casts back by parsing its text form
+            if re.match(r"Tuple\(\s*\)$", ch_hint):
+                return "()"
             return self._rand_string(
                 random.randint(
                     self._thread_local._min_str_len, self._thread_local._max_str_len
                 )
             )
         if isinstance(dtype, (CharType, VarcharType)):
-            return self._rand_string(
+            val = self._rand_string(
                 random.randint(
                     min(dtype.length, self._thread_local._min_str_len),
                     min(dtype.length, self._thread_local._max_str_len),
                 )
             )
+            # These lengths come from ClickHouse FixedString(n), which is n BYTES:
+            # trim multibyte strings until they fit
+            while len(val.encode("utf-8")) > dtype.length:
+                val = val[:-1]
+            return val
         if isinstance(dtype, BinaryType):
+            # Enum columns may also be BINARY-mapped; same declared-element constraint
+            if ch_hint.startswith("Enum"):
+                enum_values = self._parse_enum_values(ch_hint)
+                if enum_values:
+                    return random.choice(enum_values).encode("utf-8")
+            if re.match(r"Tuple\(\s*\)$", ch_hint):
+                return b"()"
             return self._rand_binary(
                 random.randint(
                     self._thread_local._min_str_len, self._thread_local._max_str_len
@@ -419,13 +547,26 @@ class LakeDataGenerator:
         if isinstance(dtype, ArrayType):
             # Arrays of variable length
             elem_null_rate = null_rate if dtype.containsNull else 0.0
+            if ch_hint.startswith("Array("):
+                elem_hint = self.type_generator._extract_nested_content(
+                    ch_hint, "Array"
+                )
+            elif ch_hint.startswith("Nested("):
+                # Nested maps to ARRAY<STRUCT<...>>: recurse as a tuple of its fields
+                elem_hint = (
+                    "Tuple("
+                    + self.type_generator._extract_nested_content(ch_hint, "Nested")
+                    + ")"
+                )
+            else:
+                elem_hint = ""
             n = self._take_nested_budget(
                 random.randint(
                     self._thread_local._min_nested, self._thread_local._max_nested
                 )
             )
             return [
-                self._random_value_for_type(dtype.elementType, elem_null_rate)
+                self._random_value_for_type(dtype.elementType, elem_null_rate, elem_hint)
                 for _ in range(n)
             ]
         if isinstance(dtype, MapType):
@@ -434,6 +575,13 @@ class LakeDataGenerator:
             # so such maps can only be produced empty.
             if isinstance(dtype.keyType, ArrayType) and dtype.keyType.needConversion():
                 return {}
+            key_hint = value_hint = ""
+            if ch_hint.startswith("Map("):
+                kv = self.type_generator._parse_map_types(
+                    self.type_generator._extract_nested_content(ch_hint, "Map")
+                )
+                if kv:
+                    key_hint, value_hint = kv
             # Keys: must be non-null and hashable; values may be null only if allowed
             value_null_rate = null_rate if dtype.valueContainsNull else 0.0
             n = self._take_nested_budget(
@@ -447,7 +595,7 @@ class LakeDataGenerator:
             while len(out) < n and attempts < n * 5:
                 attempts += 1
                 k = self._random_value_for_type(
-                    dtype.keyType, 0.0
+                    dtype.keyType, 0.0, key_hint
                 )  # NEVER null for keys
                 if k is None:
                     continue
@@ -461,14 +609,27 @@ class LakeDataGenerator:
                     hash(k)
                 except TypeError:
                     continue
-                v = self._random_value_for_type(dtype.valueType, value_null_rate)
+                v = self._random_value_for_type(
+                    dtype.valueType, value_null_rate, value_hint
+                )
                 out[k] = v
             return out
         if isinstance(dtype, StructType):
+            # Positional zip with the Tuple elements; on any shape mismatch fall back
+            # to no hints rather than guessing
+            field_hints = [""] * len(dtype.fields)
+            if ch_hint.startswith("Tuple("):
+                elems = self.type_generator._parse_tuple_elements(
+                    self.type_generator._extract_nested_content(ch_hint, "Tuple")
+                )
+                if len(elems) == len(dtype.fields):
+                    field_hints = [
+                        self.type_generator._split_named_element(e)[1] for e in elems
+                    ]
             obj = {}
-            for f in dtype.fields:
+            for f, fh in zip(dtype.fields, field_hints):
                 nr = null_rate if f.nullable else 0.0
-                obj[f.name] = self._random_value_for_type(f.dataType, nr)
+                obj[f.name] = self._random_value_for_type(f.dataType, nr, fh)
             return Row(**obj)
         # Surface missing branches (e.g. a new Spark version adding a type) instead
         # of silently degrading to strings
@@ -605,7 +766,12 @@ class LakeDataGenerator:
             rec = {}
             for f in struct1.fields:
                 nr = null_rate if f.nullable else 0.0
-                rec[f.name] = self._random_value_for_type(f.dataType, nr)
+                # The ClickHouse type travels down the recursion as a per-path hint,
+                # so each nested member honors its own read-back constraint
+                col = table.columns.get(f.name)
+                rec[f.name] = self._random_value_for_type(
+                    f.dataType, nr, getattr(col, "clickhouse_type", "")
+                )
             rows.append(Row(**rec))
         # Use explicit schema so types match exactly
         df = spark.createDataFrame(rows, schema=struct2)
@@ -633,9 +799,15 @@ class LakeDataGenerator:
             return f"CAST('{'Infinity' if v > 0 else '-Infinity'}' AS {sql_type})"
         return f"CAST({v!r} AS {sql_type})"
 
-    def _sql_scalar_literal(self, dtype: DataType):
+    def _sql_scalar_literal(self, dtype: DataType, ch_type: str = ""):
         """A SQL literal for a scalar type, or None for container/variant types
         whose literals are impractical to spell out inline."""
+        enum_values = self._parse_enum_values(ch_type) if "Enum" in ch_type else None
+        if not enum_values and re.search(r"\bTuple\(\s*\)", ch_type):
+            if isinstance(dtype, (StringType, CharType, VarcharType)):
+                return "'()'"
+            if isinstance(dtype, BinaryType):
+                return f"X'{b'()'.hex()}'"
         if isinstance(dtype, BooleanType):
             return "true" if self._rand_bool() else "false"
         if isinstance(dtype, (ByteType, ShortType, IntegerType, LongType)):
@@ -645,13 +817,19 @@ class LakeDataGenerator:
         if isinstance(dtype, DoubleType):
             return self._float_literal(float(self._rand_float(-1e9, 1e9)), "DOUBLE")
         if isinstance(dtype, DecimalType):
+            # Same constraint as the file path: no negative literals for UInt columns
+            non_negative = self._ch_hint_strip(ch_type).startswith("UInt")
             return (
-                f"CAST('{self._rand_decimal(dtype.precision, dtype.scale)}'"
+                f"CAST('{self._rand_decimal(dtype.precision, dtype.scale, non_negative)}'"
                 f" AS DECIMAL({dtype.precision}, {dtype.scale}))"
             )
         if isinstance(dtype, (StringType, CharType, VarcharType)):
             s = (
-                self._rand_string(random.randint(0, 16))
+                (
+                    random.choice(enum_values)
+                    if enum_values
+                    else self._rand_string(random.randint(0, 16))
+                )
                 .replace("\\", "\\\\")
                 .replace("'", "\\'")
             )
@@ -665,6 +843,8 @@ class LakeDataGenerator:
                 f"TIMESTAMP '{self._rand_timestamp().strftime('%Y-%m-%d %H:%M:%S.%f')}'"
             )
         if isinstance(dtype, BinaryType):
+            if enum_values:
+                return f"X'{random.choice(enum_values).encode('utf-8').hex()}'"
             return f"X'{self._rand_binary(random.randint(0, 8)).hex()}'"
         return None
 
@@ -981,7 +1161,9 @@ class LakeDataGenerator:
         random.shuffle(targets)
         assignments = []
         for c in targets[: random.randint(1, max(1, len(targets)))]:
-            lit = self._sql_scalar_literal(table.columns[c].spark_type)
+            lit = self._sql_scalar_literal(
+                table.columns[c].spark_type, table.columns[c].clickhouse_type
+            )
             if lit is not None:
                 assignments.append(f"{c} = {lit}")
             elif table.columns[c].nullable:

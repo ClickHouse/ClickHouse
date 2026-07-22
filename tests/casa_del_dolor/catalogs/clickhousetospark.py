@@ -455,7 +455,9 @@ class ClickHouseTypeMapper:
             ch_type in ("UInt64", "UInt128", "UInt256", "Int128", "Int256")
             and random.randint(1, 3) == 1
         ):
-            nprecision = 20 if ch_type == "UInt64" else 38
+            # 19 digits for UInt64: non-negative DECIMAL(19, 0) always fits it, while
+            # DECIMAL(20, 0) can exceed its maximum and fail the read-back cast
+            nprecision = 19 if ch_type == "UInt64" else 38
             return (
                 f"DECIMAL({nprecision}, 0)",
                 inside_nullable,

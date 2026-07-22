@@ -42,7 +42,9 @@
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCreateResourceQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDictionary.h>
@@ -50,6 +52,8 @@
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTDropResourceQuery.h>
+#include <Parsers/ASTDropWorkloadQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
@@ -84,7 +88,9 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTTimeInterval.h>
 #include <Parsers/ASTTransactionControl.h>
+#include <Parsers/ASTUndropQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
@@ -452,10 +458,16 @@ Field QueryFuzzer::getRandomField(int type)
         }
         case 5: {
             /// DateTime/DateTime64 boundary values as strings — stress timestamp parsing, overflow and sub-second precision.
-            /// DateTime range is [1970-01-01 00:00:00, 2106-02-07 06:28:15],
-            /// DateTime64 range is [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999].
+            /// DateTime range is [1970-01-01 00:00:00, 2106-02-07 06:28:15]. DateTime64 spans up to
+            /// [0001-01-01 00:00:00, 9999-12-31 23:59:59] at low scales, narrowing at higher scales
+            /// (scale 9 tops out near 2262-04-11); the out-of-range values below intentionally stress overflow.
             static constexpr const char * datetime_values[]
-                = {"1900-01-01 00:00:00",
+                = {"0000-01-01 00:00:00",
+                   "0001-01-01 00:00:00",
+                   "0001-01-01 00:00:00.000000000",
+                   "1677-09-21 00:00:00.000000000",
+                   "1899-12-31 23:59:59",
+                   "1900-01-01 00:00:00",
                    "1900-01-01 00:00:00.000000000",
                    "1970-01-01 00:00:00",
                    "1970-01-01 00:00:00.000000000",
@@ -1356,17 +1368,24 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
         engine_name = pickRandomly(fuzz_rand, small_engines);
     }
 
-    /// Fuzz the Distributed engine: Distributed(cluster, db, table[, sharding_key[, policy_name]]).
-    if (engine_name == "Distributed" && storage.engine->arguments)
+    /// Fuzz the Distributed / Remote / RemoteSecure engines, which share the shape
+    /// Distributed(cluster, db, table[, sharding_key[, policy_name]]) and
+    /// Remote(addresses, db, table[, sharding_key]) (optionally with a positional user/password).
+    const bool is_distributed = engine_name == "Distributed";
+    const bool is_remote = engine_name == "Remote" || engine_name == "RemoteSecure";
+    if ((is_distributed || is_remote) && storage.engine->arguments)
     {
         auto & args = storage.engine->arguments->children;
 
-        /// Swap the named cluster (first argument).
-        if (!args.empty() && fuzz_rand() % 5 == 0)
+        /// Swap the named cluster (first argument) — only Distributed's first argument is a
+        /// cluster name; Remote's is an addresses expression, so leave it untouched.
+        if (is_distributed && !args.empty() && fuzz_rand() % 5 == 0)
             args[0] = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributed_cluster_names)));
 
-        /// Add / replace / drop the optional sharding key (fourth argument).
-        if (fuzz_rand() % 5 == 0)
+        /// Add / replace / drop the optional sharding key (fourth argument). For Remote/RemoteSecure
+        /// only do this in the credential-free layout (addresses, db, table[, sharding_key]); a
+        /// positional user/password shifts the sharding-key index, so skip to avoid clobbering them.
+        if (fuzz_rand() % 5 == 0 && (is_distributed || args.size() <= 4))
         {
             if (args.size() >= 4 && fuzz_rand() % 3 == 0)
             {
@@ -1507,6 +1526,86 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
         fuzz_setting("materialize_projections_on_insert", UInt64(fuzz_rand() % 2));
 }
 
+void QueryFuzzer::fuzzRefreshStrategy(ASTRefreshStrategy & strategy)
+{
+    /// Fuzz the refresh period; occasionally switch it to a calendar (months) interval.
+    /// EVERY forbids mixing calendar and clock units, so set exactly one of the two.
+    if (strategy.period && fuzz_rand() % 5 == 0)
+    {
+        if (fuzz_rand() % 20 == 0)
+        {
+            strategy.period->interval.seconds = 0;
+            strategy.period->interval.months = static_cast<UInt64>(fuzz_rand() % 12) + 1;
+        }
+        else
+        {
+            strategy.period->interval.months = 0;
+            strategy.period->interval.seconds = static_cast<UInt64>(fuzz_rand() % 3600) + 1;
+        }
+    }
+
+    /// Fuzz spread (RANDOMIZE FOR jitter); occasionally add one where absent
+    if (strategy.spread && fuzz_rand() % 5 == 0)
+        strategy.spread->interval.seconds = static_cast<UInt64>(fuzz_rand() % 300);
+    else if (!strategy.spread && fuzz_rand() % 20 == 0)
+    {
+        auto spread = make_intrusive<ASTTimeInterval>();
+        spread->interval.seconds = static_cast<UInt64>(fuzz_rand() % 300) + 1;
+        strategy.set(strategy.spread, std::move(spread));
+    }
+
+    /// Toggle APPEND
+    if (fuzz_rand() % 10 == 0)
+        strategy.append = !strategy.append;
+
+    /// Toggle schedule kind between EVERY and AFTER
+    if (strategy.schedule_kind != RefreshScheduleKind::UNKNOWN && fuzz_rand() % 10 == 0)
+        strategy.schedule_kind
+            = (strategy.schedule_kind == RefreshScheduleKind::EVERY) ? RefreshScheduleKind::AFTER : RefreshScheduleKind::EVERY;
+
+    /// Fuzz offset (EVERY ... OFFSET ...)
+    if (strategy.offset && fuzz_rand() % 5 == 0)
+        strategy.offset->interval.seconds = static_cast<UInt64>(fuzz_rand() % 3600);
+
+    /// The parser rejects OFFSET >= period on reparse, so repair the invariant after fuzzing both
+    if (strategy.offset && strategy.period && strategy.offset->interval.maxSeconds() >= strategy.period->interval.minSeconds())
+        strategy.offset->interval = CalendarTimeInterval{};
+
+    if (strategy.dependencies && fuzz_rand() % 20 == 0)
+    {
+        /// Drop the DEPENDS ON list — exercises the dependency-free scheduling path
+        auto & ch = strategy.children;
+        ch.erase(std::remove_if(ch.begin(), ch.end(), [&](const ASTPtr & c) { return c.get() == strategy.dependencies; }), ch.end());
+        strategy.dependencies = nullptr;
+    }
+    else if (!original_table_name_to_fuzzed.empty() && fuzz_rand() % 20 == 0)
+    {
+        /// Add a DEPENDS ON entry pointing at a known table — exercises the dependency scheduler,
+        /// including cycles when the picked table is itself a refreshable view. Use a live fuzzed
+        /// name: DEPENDS ON identifiers are never rewritten by fuzzTableName, so the original
+        /// corpus name would not resolve once creates are renamed.
+        const auto & fuzzed = std::next(original_table_name_to_fuzzed.begin(), fuzz_rand() % original_table_name_to_fuzzed.size())->second;
+        if (!fuzzed.empty())
+        {
+            auto dep = make_intrusive<ASTIdentifier>(*std::next(fuzzed.begin(), fuzz_rand() % fuzzed.size()));
+            if (strategy.dependencies)
+                strategy.dependencies->children.emplace_back(std::move(dep));
+            else
+            {
+                auto list = make_intrusive<ASTExpressionList>();
+                list->children.emplace_back(std::move(dep));
+                strategy.set(strategy.dependencies, std::move(list));
+            }
+        }
+    }
+
+    /// Fuzz REFRESH ... SETTINGS values
+    if (strategy.settings)
+        for (auto & change : strategy.settings->changes)
+            if (fuzz_rand() % 5 == 0)
+                change.value = fuzzField(change.value);
+}
+
 void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
 {
     if (create.columns_list && create.columns_list->columns)
@@ -1574,48 +1673,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
             create.is_populate = !create.is_populate;
 
         if (create.refresh_strategy)
-        {
-            /// Fuzz refresh period
-            if (create.refresh_strategy->period && fuzz_rand() % 5 == 0)
-                create.refresh_strategy->period->interval.seconds = static_cast<UInt64>(fuzz_rand() % 3600) + 1;
-
-            /// Fuzz spread (jitter)
-            if (create.refresh_strategy->spread && fuzz_rand() % 5 == 0)
-                create.refresh_strategy->spread->interval.seconds = static_cast<UInt64>(fuzz_rand() % 300);
-
-            /// Toggle APPEND
-            if (fuzz_rand() % 10 == 0)
-                create.refresh_strategy->append = !create.refresh_strategy->append;
-
-            /// Toggle schedule kind between EVERY and AFTER
-            if (create.refresh_strategy->schedule_kind != RefreshScheduleKind::UNKNOWN && fuzz_rand() % 10 == 0)
-            {
-                create.refresh_strategy->schedule_kind = (create.refresh_strategy->schedule_kind == RefreshScheduleKind::EVERY)
-                    ? RefreshScheduleKind::AFTER
-                    : RefreshScheduleKind::EVERY;
-            }
-
-            /// Fuzz offset (EVERY ... OFFSET ...)
-            if (create.refresh_strategy->offset && fuzz_rand() % 5 == 0)
-                create.refresh_strategy->offset->interval.seconds = static_cast<UInt64>(fuzz_rand() % 3600);
-
-            /// Drop the DEPENDS ON list — exercises the dependency-free scheduling path
-            if (create.refresh_strategy->dependencies && fuzz_rand() % 20 == 0)
-            {
-                auto & ch = create.refresh_strategy->children;
-                ch.erase(
-                    std::remove_if(
-                        ch.begin(), ch.end(), [&](const ASTPtr & c) { return c.get() == create.refresh_strategy->dependencies; }),
-                    ch.end());
-                create.refresh_strategy->dependencies = nullptr;
-            }
-
-            /// Fuzz REFRESH ... SETTINGS values
-            if (create.refresh_strategy->settings)
-                for (auto & change : create.refresh_strategy->settings->changes)
-                    if (fuzz_rand() % 5 == 0)
-                        change.value = fuzzField(change.value);
-        }
+            fuzzRefreshStrategy(*create.refresh_strategy);
     }
 
     /// Fuzz SQL SECURITY type for ordinary and materialized views
@@ -2075,6 +2133,82 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
     size_t index = index_of_fuzzed_table[original_name]++;
     auto new_name = getFuzzedTableName(original_name, index);
 
+    /// Occasionally wrap a live fuzzed clone of this table in a Distributed/Remote/RemoteSecure/Buffer/
+    /// Alias/Merge engine, dropping the (now inferred) column list and the key clauses these engines reject.
+    /// Target a previously created __fuzz_ name: creates are renamed, so the corpus name rarely exists.
+    const auto wrap_targets = original_table_name_to_fuzzed.find(original_name);
+    if (create.storage && create.storage->engine && create.columns_list && create.table && !create.select && !create.isView()
+        && !create.is_dictionary && wrap_targets != original_table_name_to_fuzzed.end() && !wrap_targets->second.empty()
+        && fuzz_rand() % 50 == 0)
+    {
+        const auto & targets = wrap_targets->second;
+        const String & target_name = *std::next(targets.begin(), fuzz_rand() % targets.size());
+        const String & db = create.getDatabase();
+        ASTPtr db_arg = db.empty() ? ASTPtr(makeASTFunction("currentDatabase")) : ASTPtr(make_intrusive<ASTLiteral>(db));
+        ASTPtr table_arg = make_intrusive<ASTLiteral>(target_name);
+        ASTPtr new_engine;
+        switch (fuzz_rand() % 6)
+        {
+            case 0:
+                /// Remote(addresses, db, table)
+                new_engine = makeASTFunction("Remote", make_intrusive<ASTLiteral>(String("127.0.0.1")), db_arg, table_arg);
+                break;
+            case 1:
+                /// RemoteSecure(addresses, db, table)
+                new_engine = makeASTFunction("RemoteSecure", make_intrusive<ASTLiteral>(String("127.0.0.1:9440")), db_arg, table_arg);
+                break;
+            case 2:
+                /// Buffer(db, table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes)
+                new_engine = makeASTFunction(
+                    "Buffer",
+                    db_arg,
+                    table_arg,
+                    make_intrusive<ASTLiteral>(UInt64(1)),
+                    make_intrusive<ASTLiteral>(UInt64(1)),
+                    make_intrusive<ASTLiteral>(UInt64(10)),
+                    make_intrusive<ASTLiteral>(UInt64(10000)),
+                    make_intrusive<ASTLiteral>(UInt64(1000000)),
+                    make_intrusive<ASTLiteral>(UInt64(10000000)),
+                    make_intrusive<ASTLiteral>(UInt64(100000000)));
+                break;
+            case 3:
+                /// Alias(table): resolves the target in this table's own database.
+                new_engine = makeASTFunction("Alias", table_arg);
+                break;
+            case 4:
+                /// Merge(db, tables_regexp): anchored to match only the target table.
+                new_engine = makeASTFunction("Merge", db_arg, make_intrusive<ASTLiteral>("^" + target_name + "$"));
+                break;
+            default:
+                /// Distributed(cluster, db, table) reads from a configured cluster.
+                new_engine = makeASTFunction(
+                    "Distributed",
+                    make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributed_cluster_names))),
+                    db_arg,
+                    table_arg);
+                break;
+        }
+
+        /// Reset every storage clause (these engines take no key clauses or MergeTree settings),
+        /// then reattach only the new engine.
+        auto & storage = *create.storage;
+        storage.engine = nullptr;
+        storage.partition_by = nullptr;
+        storage.primary_key = nullptr;
+        storage.order_by = nullptr;
+        storage.sample_by = nullptr;
+        storage.ttl_table = nullptr;
+        storage.unique_key = nullptr;
+        storage.settings = nullptr;
+        storage.children.clear();
+        storage.set(storage.engine, new_engine);
+
+        /// Drop the explicit column list; the structure is inferred from the destination table.
+        auto & ch = create.children;
+        ch.erase(std::remove_if(ch.begin(), ch.end(), [&](const ASTPtr & c) { return c.get() == create.columns_list; }), ch.end());
+        create.columns_list = nullptr;
+    }
+
     create.setTable(new_name);
 
     SipHash sip_hash;
@@ -2091,7 +2225,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         original_table_name_to_fuzzed[original_name].insert(new_name);
 }
 
-static const Strings stat_types = {"tdigest", "countmin", "minmax", "uniq", "uniq_v2", "nullcount"};
+static const Strings stat_types = {"tdigest", "countmin", "basic", "uniq", "uniq_v2", "nullcount"};
 
 void QueryFuzzer::fuzzCodecFunction(ASTFunction & codec_fn)
 {
@@ -2199,8 +2333,8 @@ void QueryFuzzer::fuzzCodecFunction(ASTFunction & codec_fn)
                 make_intrusive<ASTLiteral>(subspaces[fuzz_rand() % std::size(subspaces)])));
         }
         else
-            codec_fn.arguments->children.push_back(makeASTFunction(
-                "Quantized", make_intrusive<ASTLiteral>(method), make_intrusive<ASTLiteral>(dimensions)));
+            codec_fn.arguments->children.push_back(
+                makeASTFunction("Quantized", make_intrusive<ASTLiteral>(method), make_intrusive<ASTLiteral>(dimensions)));
     }
     else
         codec_fn.arguments->children.push_back(makeASTFunction(chosen));
@@ -6402,6 +6536,21 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         /// DROP SYNC: wait for all mutations/merges to finish before returning
         if (drop_query->kind == ASTDropQuery::Drop && fuzz_rand() % 20 == 0)
             drop_query->sync = !drop_query->sync;
+        /// Turn a single-table DROP into UNDROP TABLE for the same target. Exercises the Atomic
+        /// database delayed-cleanup / UUID-resurrection path (undrop only makes sense right after a
+        /// drop, so replacing an emitted DROP is a natural place to probe it).
+        if (drop_query->kind == ASTDropQuery::Drop && !drop_query->is_dictionary && !drop_query->is_view && !drop_query->isTemporary()
+            && drop_query->table && !drop_query->database_and_tables && fuzz_rand() % 50 == 0)
+        {
+            auto undrop = make_intrusive<ASTUndropQuery>();
+            if (!drop_query->getDatabase().empty())
+                undrop->setDatabase(drop_query->getDatabase());
+            undrop->setTable(drop_query->getTable());
+            if (drop_query->uuid != UUIDHelpers::Nil)
+                undrop->uuid = drop_query->uuid;
+            debug_visited_nodes.erase(ast.get());
+            ast = std::move(undrop);
+        }
     }
     else if (auto * create_index_query = typeid_cast<ASTCreateIndexQuery *>(ast.get()))
     {
@@ -6775,6 +6924,14 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                     if (auto * lit = alter_cmd->comment->as<ASTLiteral>())
                         lit->value = fuzzField(lit->value);
                 break;
+            case ASTAlterCommand::MODIFY_REFRESH:
+                /// The refresh member is an ASTRefreshStrategy — fuzz it the same way as at CREATE.
+                if (alter_cmd->refresh)
+                    if (auto * strategy = alter_cmd->refresh->as<ASTRefreshStrategy>())
+                        fuzzRefreshStrategy(*strategy);
+                break;
+            /// MODIFY_QUERY: the new SELECT body is an owned child, so the recursive
+            /// fuzz(alter_cmd->children) at the end of this branch mutates it directly.
             /// case ASTAlterCommand::FETCH_PARTITION:
             /// Do not flip `part` here: FETCH PARTITION and FETCH PART parse different payloads
             /// (ASTPartition vs string part name), so toggling the flag breaks reparse.
@@ -6951,6 +7108,20 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         if (fuzz_rand() % 200 == 0)
             interpolate_elem->column = "col_" + std::to_string(fuzz_rand() % 10);
         fuzz(interpolate_elem->children);
+    }
+    else if (auto * assignment = typeid_cast<ASTAssignment *>(ast.get()))
+    {
+        /// Point the assigned column at another known column (self-assign, or a column that resolves
+        /// to an ALIAS / MATERIALIZED expression — fertile ground for the mutation analyzer paths).
+        if (fuzz_rand() % 20 == 0)
+            if (ASTPtr col = getRandomColumnLike())
+                if (const auto * id = col->as<ASTIdentifier>())
+                    assignment->column_name = id->name();
+        /// Replace the RHS expression with a random column-like expression.
+        if (!assignment->children.empty() && fuzz_rand() % 20 == 0)
+            if (ASTPtr rhs = getRandomColumnLike())
+                assignment->children[0] = std::move(rhs);
+        fuzz(assignment->children);
     }
     else if (auto * sample_ratio = typeid_cast<ASTSampleRatio *>(ast.get()))
     {
@@ -7572,6 +7743,47 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     {
         if (fuzz_rand() % 10 == 0)
             drop_nc->if_exists = !drop_nc->if_exists;
+    }
+    else if (auto * create_workload = typeid_cast<ASTCreateWorkloadQuery *>(ast.get()))
+    {
+        /// or_replace and if_not_exists are mutually exclusive in the formatter, so keep one clear.
+        if (fuzz_rand() % 10 == 0)
+        {
+            create_workload->or_replace = !create_workload->or_replace;
+            if (create_workload->or_replace)
+                create_workload->if_not_exists = false;
+        }
+        if (!create_workload->or_replace && fuzz_rand() % 10 == 0)
+            create_workload->if_not_exists = !create_workload->if_not_exists;
+        for (auto & change : create_workload->changes)
+            if (fuzz_rand() % 5 == 0)
+                change.value = fuzzField(change.value);
+        /// Drop a setting, or duplicate one (a repeated setting exercises the last-wins/validation path)
+        if (create_workload->changes.size() > 1 && fuzz_rand() % 20 == 0)
+            create_workload->changes.erase(create_workload->changes.begin() + fuzz_rand() % create_workload->changes.size());
+        else if (!create_workload->changes.empty() && fuzz_rand() % 20 == 0)
+            create_workload->changes.push_back(create_workload->changes[fuzz_rand() % create_workload->changes.size()]);
+    }
+    else if (auto * create_resource = typeid_cast<ASTCreateResourceQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+        {
+            create_resource->or_replace = !create_resource->or_replace;
+            if (create_resource->or_replace)
+                create_resource->if_not_exists = false;
+        }
+        if (!create_resource->or_replace && fuzz_rand() % 10 == 0)
+            create_resource->if_not_exists = !create_resource->if_not_exists;
+    }
+    else if (auto * drop_workload = typeid_cast<ASTDropWorkloadQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            drop_workload->if_exists = !drop_workload->if_exists;
+    }
+    else if (auto * drop_resource = typeid_cast<ASTDropResourceQuery *>(ast.get()))
+    {
+        if (fuzz_rand() % 10 == 0)
+            drop_resource->if_exists = !drop_resource->if_exists;
     }
     else if (auto * txn = typeid_cast<ASTTransactionControl *>(ast.get()))
     {

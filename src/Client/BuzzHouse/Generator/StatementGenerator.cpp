@@ -913,7 +913,7 @@ void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg,
 {
     /// MANIFEST is manifest-only compaction for Iceberg tables. It is incompatible with
     /// FINAL/PARTITION/DEDUPLICATE/CLEANUP/DRY RUN, so when chosen it is emitted on its own.
-    const bool manifest = rg.nextMediumNumber() < 6;
+    const bool manifest = rg.nextMediumNumber() < (t.isAnyLakeEngine() ? 31 : 6);
     const bool has_final = !manifest && t.can_run_merges
         && (t.supportsFinal(true) || t.isMergeTreeFamily(true) || rg.nextMediumNumber() < 21) && (strict || rg.nextSmallNumber() < 4);
     const bool has_partition = !manifest && rg.nextBool();

@@ -28,6 +28,7 @@ class ASTColumnDeclaration;
 class ASTDropQuery;
 class ASTIndexDeclaration;
 class ASTProjectionDeclaration;
+class ASTRefreshStrategy;
 class ASTSetQuery;
 class ASTStorage;
 struct ASTTableExpression;
@@ -242,6 +243,7 @@ private:
     void fuzzWindowFrame(ASTWindowDefinition & def);
     void fuzzWindowDefinition(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
+    void fuzzRefreshStrategy(ASTRefreshStrategy & strategy);
     void fuzzTableStorage(ASTStorage & storage);
     void fuzzExplainQuery(ASTExplainQuery & explain);
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
