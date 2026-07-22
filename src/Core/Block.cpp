@@ -83,17 +83,37 @@ static bool haveCompatibleColumnStructure(const IColumn & actual, const IColumn 
     if (typeid(actual) != typeid(expected))
         return false;
 
+    /// `Variant` is compositional too: its type equality (checked before this point) already
+    /// fixes the set and the global order of alternatives, so the only thing that can differ
+    /// between two structurally-equal-typed `Variant` columns is an aggregate state nested
+    /// inside an alternative, which is exactly what we want to relax. But the local order of
+    /// the nested variant columns (the order `forEachSubcolumn` iterates them in) is a property
+    /// of a particular column, not of the type, and `getName` lists the variants in the global
+    /// order — so compare the alternatives pairwise by global discriminator, like `getName` does.
+    if (const auto * actual_variant = typeid_cast<const ColumnVariant *>(&actual))
+    {
+        const auto & expected_variant = assert_cast<const ColumnVariant &>(expected);
+        const size_t num_variants = actual_variant->getNumVariants();
+        if (num_variants != expected_variant.getNumVariants())
+            return false;
+
+        for (size_t global_discr = 0; global_discr < num_variants; ++global_discr)
+            if (!haveCompatibleColumnStructure(
+                actual_variant->getVariantByGlobalDiscriminator(global_discr),
+                expected_variant.getVariantByGlobalDiscriminator(global_discr)))
+                return false;
+
+        return true;
+    }
+
     /// Descend only into the plain container columns whose name is a pure composition of the
     /// nested column names, so that for everything else the comparison stays exactly as strict
-    /// as comparing full column names. `Variant` is compositional too: its type equality (checked
-    /// before this point) already fixes the set and order of alternatives, so the only thing that
-    /// can differ between two structurally-equal-typed `Variant` columns is an aggregate state
-    /// nested inside an alternative, which is exactly what we want to relax. `Dynamic`/`Object`
-    /// are deliberately left strict because their nested structure is not fixed by the type.
+    /// as comparing full column names. `Dynamic`/`Object` are deliberately left strict because
+    /// their nested structure is not fixed by the type.
     const bool is_compositional = typeid_cast<const ColumnTuple *>(&actual) || typeid_cast<const ColumnArray *>(&actual)
         || typeid_cast<const ColumnMap *>(&actual) || typeid_cast<const ColumnNullable *>(&actual)
         || typeid_cast<const ColumnConst *>(&actual) || typeid_cast<const ColumnSparse *>(&actual)
-        || typeid_cast<const ColumnReplicated *>(&actual) || typeid_cast<const ColumnVariant *>(&actual);
+        || typeid_cast<const ColumnReplicated *>(&actual);
 
     if (!is_compositional)
         return actual.getName() == expected.getName();

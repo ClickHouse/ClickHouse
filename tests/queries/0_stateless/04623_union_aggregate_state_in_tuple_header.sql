@@ -31,3 +31,20 @@ SELECT count() IGNORE NULLS FROM
     EXCEPT ALL
     (SELECT tuple(quantilesState(0.9)(number), toInt128(2)) FROM numbers(5))
 );
+
+-- The alternatives inside a `Variant` column are stored in a local order that may differ from the
+-- global (type) order and between the two sides of a `UNION`. The check must compare the
+-- alternatives by global discriminator (the order the column name lists them in), not in the
+-- storage order, otherwise same-typed `Variant` columns are reported as a structure mismatch.
+SELECT count() FROM
+(
+    SELECT n, m FROM
+    (
+        (SELECT 2 AS n, map('z', 'a') AS m FROM numbers(2))
+        EXCEPT ALL
+        (SELECT map(toFixedString('z', 1), 'a') AS m, 2 AS n FROM numbers(2))
+    )
+    UNION ALL
+    SELECT toLowCardinality(1) AS n, map('-1', 'b') AS m FROM numbers(2)
+)
+SETTINGS allow_suspicious_types_in_order_by = 1;
