@@ -1327,6 +1327,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"skip_empty_columns_on_insert", false, false, "New setting to skip writing all type-default columns on INSERT"},
             {"dead_blobs_to_delay_insert", 0, 100000, "New setting to artificially slow down inserts when the dead blobs queues of the table's disks accumulate too many blobs pending removal."},
             {"dead_blobs_to_throw_insert", 0, 1000000, "New setting to reject inserts when the dead blobs queues of the table's disks accumulate too many blobs pending removal."},
+            {"shared_merge_tree_merge_coordinator_distribution_algorithm", "water_filling", "water_filling", "New setting which controls what algorithm is used by the merge coordinator to distribute merges between replicas"},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",
