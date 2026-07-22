@@ -1,7 +1,7 @@
--- view created with old analyzer, aliased CTE reference
+-- view created with enable_analyzer = 0, aliased CTE reference
 1
 1
--- view created with new analyzer
+-- view created with enable_analyzer = 1
 1
 1
 -- qualification by both cte name and alias

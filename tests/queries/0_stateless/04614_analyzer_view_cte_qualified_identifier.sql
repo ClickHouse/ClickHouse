@@ -5,13 +5,13 @@
 
 DROP TABLE IF EXISTS v_cte_old, v_cte_new, v_cte_both, v_cte_noalias, v_cte_union, v_cte_double, mv_cte, t_mv_src;
 
-SELECT '-- view created with old analyzer, aliased CTE reference';
+SELECT '-- view created with enable_analyzer = 0, aliased CTE reference';
 SET enable_analyzer = 0;
 CREATE VIEW v_cte_old AS WITH c AS (SELECT 1 AS x) SELECT c.x AS f FROM c AS s;
 SELECT * FROM v_cte_old SETTINGS enable_analyzer = 0;
 SELECT * FROM v_cte_old SETTINGS enable_analyzer = 1;
 
-SELECT '-- view created with new analyzer';
+SELECT '-- view created with enable_analyzer = 1';
 SET enable_analyzer = 1;
 CREATE VIEW v_cte_new AS WITH c AS (SELECT 1 AS x) SELECT c.x AS f FROM c AS s;
 SELECT * FROM v_cte_new SETTINGS enable_analyzer = 0;
