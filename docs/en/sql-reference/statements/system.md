@@ -887,6 +887,74 @@ If there's a refresh in progress for the given view on the current replica, inte
 SYSTEM CANCEL VIEW [db.]name
 ```
 
+## Managing Background Activity {#managing-background-activity}
+
+Engine-agnostic commands to control the background activity of a single table, or of every such table on the server at once. They cover:
+
+- [Refreshable materialized views](../../sql-reference/statements/create/view.md#refreshable-materialized-view) (the periodic refresh), and
+- the streaming table engines that continuously consume from an external source: [Kafka](../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md), [NATS](../../engines/table-engines/integrations/nats.md), [S3Queue](../../engines/table-engines/integrations/s3queue.md) and [AzureQueue](../../engines/table-engines/integrations/azure-queue.md).
+
+For a refreshable materialized view each verb is an alias of the corresponding `SYSTEM ... VIEW` command from [Managing Refreshable Materialized Views](#managing-refreshable-materialized-views), so `SYSTEM STOP [db.]name` behaves exactly like `SYSTEM STOP VIEW [db.]name`, and so on.
+
+The per-table and wildcard forms differ in how they treat tables without a background activity. The per-table form (`SYSTEM STOP [db.]table`) throws an error if the named table is neither a streaming engine nor a refreshable materialized view. The wildcard form silently skips such tables, so it is always safe to run.
+
+`STOP` and `CANCEL` interrupt consumption as soon as possible. For [Kafka](../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md) and [NATS](../../engines/table-engines/integrations/nats.md) they stop reading from the source but do not interrupt an insert that has already started: a block already being written into the materialized views still finishes and commits. [S3Queue](../../engines/table-engines/integrations/s3queue.md) and [AzureQueue](../../engines/table-engines/integrations/azure-queue.md) read and insert in a single pipeline. With deduplication enabled (default) the insert is cancelled too and the files are reprocessed later. With deduplication disabled the in-flight batch finishes and commits instead (like the engines above) to avoid duplicating rows. Data that was read but not yet committed is consumed again later, so nothing is lost, except for core NATS (without JetStream), which cannot redeliver and drops it.
+
+`PAUSE` does not interrupt a running insert, so it normally does not lose anything. Core NATS is the exception: pausing stops consuming and drops the messages it had already received but not yet inserted, and core NATS cannot redeliver them.
+
+:::note
+None of these states persist across a server restart. After a restart, refreshable views resume their configured schedules and streaming engines resume consuming.
+:::
+
+### SYSTEM STOP {#stop-background}
+
+Stop the background activity and keep it stopped: interrupt what is running now, and run nothing further until `SYSTEM START`. Equivalent to `PAUSE` + `CANCEL`.
+
+```sql
+SYSTEM STOP [db.]table
+SYSTEM STOP ALL BACKGROUND
+```
+
+### SYSTEM START {#start-background}
+
+Resume activity, undoing a previous `SYSTEM STOP` or `SYSTEM PAUSE`. No activity is interrupted.
+
+```sql
+SYSTEM START [db.]table
+SYSTEM START ALL BACKGROUND
+```
+
+### SYSTEM PAUSE {#pause-background}
+
+Prevent further background activity, but let whatever is running right now finish first.
+
+```sql
+SYSTEM PAUSE [db.]table
+SYSTEM PAUSE ALL BACKGROUND
+```
+
+### SYSTEM CANCEL {#cancel-background}
+
+Interrupt the activity running right now only, without blocking future activity — the table keeps refreshing or consuming on its schedule. Does nothing if no activity is in progress.
+
+```sql
+SYSTEM CANCEL [db.]table
+SYSTEM CANCEL ALL BACKGROUND
+```
+
+### SYSTEM REFRESH {#refresh-background}
+
+Run one extra cycle out of schedule. On a streaming table it runs immediately and once, even while the table is stopped or paused. On a refreshable materialized view it behaves like `SYSTEM REFRESH VIEW`: if the view is stopped, the refresh is remembered and runs once `SYSTEM START` releases it.
+
+```sql
+SYSTEM REFRESH [db.]table
+SYSTEM REFRESH ALL BACKGROUND
+```
+
+### Privileges {#background-privileges}
+
+Each command requires the privilege of the targeted engine: `SYSTEM VIEWS` for a refreshable materialized view and `SYSTEM STREAMING ENGINES` for a streaming table. Both are children of `SYSTEM BACKGROUND`, so granting `SYSTEM BACKGROUND` allows controlling the background activity of every such table. The `ALL BACKGROUND` forms apply only to the tables the user is allowed to control and silently skip the rest.
+
 ## SYSTEM FLUSH OBJECT STORAGE QUEUE {#flush-object-storage-queue}
 
 Blocks until the given file has been processed or permanently failed by the given [S3Queue](../../engines/table-engines/integrations/s3queue.md) or [AzureQueue](../../engines/table-engines/integrations/azure-queue.md) table. Returns immediately if the file was already processed. Raises an error if the file has permanently failed (all retries exhausted).
