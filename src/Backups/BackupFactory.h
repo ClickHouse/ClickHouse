@@ -64,18 +64,24 @@ public:
     /// observe the same collection state.
     String getDestinationIdentity(const BackupInfo & backup_info, ContextPtr context) const;
 
+    /// Returns a copy without credentials embedded in the backup locator.
+    BackupInfo withoutCredentials(const BackupInfo & backup_info, ContextPtr context) const;
+
     using CreatorFn = std::function<BackupMutablePtr(const CreateParams & params)>;
     using DestinationIdentityFn = std::function<Strings(const BackupInfo & backup_info, ContextPtr context)>;
+    using RemoveCredentialsFn = std::function<void(BackupInfo & backup_info, ContextPtr context)>;
     void registerBackupEngine(
         const String & engine_name,
         const CreatorFn & creator_fn,
-        const DestinationIdentityFn & destination_identity_fn);
+        const DestinationIdentityFn & destination_identity_fn,
+        const RemoveCredentialsFn & remove_credentials_fn);
 
 private:
     struct RegisteredEngine
     {
         CreatorFn creator;
         DestinationIdentityFn destination_identity;
+        RemoveCredentialsFn remove_credentials;
     };
 
     BackupFactory();

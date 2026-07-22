@@ -115,7 +115,7 @@ void registerBackupEngineNull(BackupFactory & factory)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Null backup destinations do not have a persistent identity");
     };
 
-    factory.registerBackupEngine("Null", creator_fn, destination_identity_fn);
+    factory.registerBackupEngine("Null", creator_fn, destination_identity_fn, [](BackupInfo &, ContextPtr) {});
 }
 
 }

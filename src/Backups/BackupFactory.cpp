@@ -79,14 +79,30 @@ String BackupFactory::getDestinationIdentity(const BackupInfo & backup_info, Con
     return identity;
 }
 
+BackupInfo BackupFactory::withoutCredentials(const BackupInfo & backup_info, ContextPtr context) const
+{
+    if (!context)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Context is required to remove credentials from a backup locator");
+
+    auto it = engines.find(backup_info.backup_engine_name);
+    if (it == engines.end())
+        throw Exception(ErrorCodes::BACKUP_ENGINE_NOT_FOUND, "Not found backup engine '{}'", backup_info.backup_engine_name);
+
+    BackupInfo res = backup_info;
+    res.frozen_named_collection.reset();
+    it->second.remove_credentials(res, context);
+    return res;
+}
+
 void BackupFactory::registerBackupEngine(
     const String & engine_name,
     const CreatorFn & creator_fn,
-    const DestinationIdentityFn & destination_identity_fn)
+    const DestinationIdentityFn & destination_identity_fn,
+    const RemoveCredentialsFn & remove_credentials_fn)
 {
     if (engines.contains(engine_name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup engine '{}' was registered twice", engine_name);
-    engines.emplace(engine_name, RegisteredEngine{creator_fn, destination_identity_fn});
+    engines.emplace(engine_name, RegisteredEngine{creator_fn, destination_identity_fn, remove_credentials_fn});
 }
 
 void registerBackupEnginesFileAndDisk(BackupFactory &);

@@ -72,7 +72,7 @@ namespace
         const auto & context = getContext().context;
         auto info = BackupInfo::fromString("S3(collection, url = concat('https://user:URLPASSWORD@', 's3.example.com/bucket/backup'))");
 
-        String str = info.withoutS3Credentials(context).toString();
+        String str = BackupFactory::instance().withoutCredentials(info, context).toString();
         requireContains(str, "'https://s3.example.com/bucket/backup'");
         requireNotContains(str, "URLPASSWORD");
         requireNotContains(str, "concat");
@@ -83,9 +83,9 @@ namespace
     {
         tryRegisterFunctions();
         const auto & context = getContext().context;
-        auto info = BackupInfo::fromString("S3(collection, concat('secret_', 'access_key') = 'KEYSECRET')");
+        auto info = BackupInfo::fromString("S3(collection, concat('secret_', 'access_key') = throwIf(1, 'KEYSECRET'))");
 
-        String str = info.withoutS3Credentials(context).toString();
+        String str = BackupFactory::instance().withoutCredentials(info, context).toString();
         requireNotContains(str, "KEYSECRET");
         requireNotContains(str, "concat");
         std::_Exit(0);
@@ -97,7 +97,7 @@ namespace
         const auto & context = getContext().context;
         auto info = BackupInfo::fromString("S3(collection, concat('u', 'rl') = concat('https://user:URLPASSWORD@', 'host/bucket/backup'))");
 
-        String str = info.withoutS3Credentials(context).toString();
+        String str = BackupFactory::instance().withoutCredentials(info, context).toString();
         requireContains(str, "host/bucket/backup");
         requireNotContains(str, "URLPASSWORD");
         std::_Exit(0);
@@ -117,6 +117,11 @@ namespace
     String getDestinationIdentity(const String & backup_name, ContextPtr context)
     {
         return BackupFactory::instance().getDestinationIdentity(BackupInfo::fromString(backup_name), context);
+    }
+
+    BackupInfo withoutCredentials(const BackupInfo & backup_info)
+    {
+        return BackupFactory::instance().withoutCredentials(backup_info, getContext().context);
     }
 
     template <typename F>
@@ -160,7 +165,7 @@ TEST(BackupInfo, WithoutS3CredentialsStripsPositionalArguments)
 {
     auto info = BackupInfo::fromString("S3('https://s3.example.com/bucket/backup', 'KEYID', 'KEYSECRET')");
 
-    EXPECT_EQ(info.withoutS3Credentials().toString(), "S3('https://s3.example.com/bucket/backup')");
+    EXPECT_EQ(withoutCredentials(info).toString(), "S3('https://s3.example.com/bucket/backup')");
 }
 
 TEST(BackupInfo, WithoutS3CredentialsStripsAuthKeyValueArguments)
@@ -169,7 +174,7 @@ TEST(BackupInfo, WithoutS3CredentialsStripsAuthKeyValueArguments)
         "S3(collection, filename = 'backup', access_key_id = 'KEYID', secret_access_key = 'KEYSECRET', session_token = 'TOKEN', "
         "role_arn = 'ROLEARN', role_session_name = 'ROLESESSION', external_id = 'EXTERNALID')");
 
-    String str = info.withoutS3Credentials().toString();
+    String str = withoutCredentials(info).toString();
     EXPECT_NE(str.find("collection"), String::npos);
     EXPECT_NE(str.find("filename"), String::npos);
     for (const auto * credential : {"KEYID", "KEYSECRET", "TOKEN", "ROLEARN", "ROLESESSION", "EXTERNALID"})
@@ -181,14 +186,14 @@ TEST(BackupInfo, WithoutS3CredentialsStripsExtraCredentials)
     auto info = BackupInfo::fromString(
         "S3('https://s3.example.com/bucket/backup', extra_credentials(role_arn = 'ROLEARN', role_session_name = 'ROLESESSION'))");
 
-    EXPECT_EQ(info.withoutS3Credentials().toString(), "S3('https://s3.example.com/bucket/backup')");
+    EXPECT_EQ(withoutCredentials(info).toString(), "S3('https://s3.example.com/bucket/backup')");
 }
 
 TEST(BackupInfo, WithoutS3CredentialsRedactsURLUserInfo)
 {
     auto info = BackupInfo::fromString("S3('https://user:URLPASSWORD@s3.example.com/bucket/backup', 'KEYID', 'KEYSECRET')");
 
-    EXPECT_EQ(info.withoutS3Credentials().toString(), "S3('https://s3.example.com/bucket/backup')");
+    EXPECT_EQ(withoutCredentials(info).toString(), "S3('https://s3.example.com/bucket/backup')");
 }
 
 TEST(BackupInfo, WithoutS3CredentialsRedactsPresignedURLParameters)
@@ -196,7 +201,7 @@ TEST(BackupInfo, WithoutS3CredentialsRedactsPresignedURLParameters)
     auto info = BackupInfo::fromString(
         "S3('https://s3.example.com/bucket/backup?versionId=v1&X-Amz-Signature=URLSIGNATURE&Expires=12345')");
 
-    EXPECT_EQ(info.withoutS3Credentials().toString(), "S3('https://s3.example.com/bucket/backup?versionId=v1')");
+    EXPECT_EQ(withoutCredentials(info).toString(), "S3('https://s3.example.com/bucket/backup?versionId=v1')");
 }
 
 TEST(BackupInfo, WithoutS3CredentialsRedactsCombinedURLCredentials)
@@ -205,37 +210,23 @@ TEST(BackupInfo, WithoutS3CredentialsRedactsCombinedURLCredentials)
         "S3('https://user:URLPASSWORD@s3.example.com/bucket/backup?versionId=v1&X-Amz-Signature=URLSIGNATURE&Expires=12345', "
         "'KEYID', 'KEYSECRET')");
 
-    EXPECT_EQ(info.withoutS3Credentials().toString(), "S3('https://s3.example.com/bucket/backup?versionId=v1')");
+    EXPECT_EQ(withoutCredentials(info).toString(), "S3('https://s3.example.com/bucket/backup?versionId=v1')");
 }
 
 TEST(BackupInfo, WithoutS3CredentialsRedactsURLOverride)
 {
     auto info = BackupInfo::fromString("S3(collection, url = 'https://s3.example.com/bucket/backup?X-Amz-Signature=URLSIGNATURE')");
 
-    String str = info.withoutS3Credentials().toString();
+    String str = withoutCredentials(info).toString();
     EXPECT_NE(str.find("bucket/backup"), String::npos) << str;
     EXPECT_EQ(str.find("URLSIGNATURE"), String::npos) << str;
 }
 
-TEST(BackupInfo, WithoutS3CredentialsRejectsExpressionCredentialKeyWithoutContext)
-{
-    auto info = BackupInfo::fromString("S3(collection, concat('secret_', 'access_key') = 'KEYSECRET')");
-
-    EXPECT_THROW((void)info.withoutS3Credentials(), Exception);
-}
-
-TEST(BackupInfo, WithoutS3CredentialsRejectsURLOverrideExpressionWithoutContext)
-{
-    auto info = BackupInfo::fromString("S3(collection, url = concat('https://host/', 'bucket'))");
-
-    EXPECT_THROW((void)info.withoutS3Credentials(), Exception);
-}
-
 TEST(BackupInfo, WithoutS3CredentialsKeepsPlainQuery)
 {
-    auto info = BackupInfo::fromString("S3('https://s3.example.com/bucket/backup?foo=bar')");
+    auto info = BackupInfo::fromString("S3('https://s3.example.com/bucket/backup?foo&encoded=a+b%2B')");
 
-    EXPECT_EQ(info.withoutS3Credentials().toString(), "S3('https://s3.example.com/bucket/backup?foo=bar')");
+    EXPECT_EQ(withoutCredentials(info).toString(), "S3('https://s3.example.com/bucket/backup?foo&encoded=a+b%2B')");
 }
 
 TEST(BackupInfo, WithoutS3CredentialsIsIdempotent)
@@ -244,8 +235,8 @@ TEST(BackupInfo, WithoutS3CredentialsIsIdempotent)
         "S3(collection, url = 'https://user:URLPASSWORD@s3.example.com/bucket/backup?versionId=v1&X-Amz-Signature=URLSIGNATURE', "
         "access_key_id = 'KEYID', secret_access_key = 'KEYSECRET', extra_credentials(external_id = 'SECRET_EXTERNAL_ID'))");
 
-    auto once = info.withoutS3Credentials();
-    EXPECT_EQ(once.withoutS3Credentials().toString(), once.toString());
+    auto once = withoutCredentials(info);
+    EXPECT_EQ(withoutCredentials(once).toString(), once.toString());
 }
 
 TEST(BackupInfo, WithoutS3CredentialsKeepsOtherEngines)
@@ -253,7 +244,7 @@ TEST(BackupInfo, WithoutS3CredentialsKeepsOtherEngines)
     for (const auto * backup_name : {"Disk('backups', 'path')", "File('path')"})
     {
         auto info = BackupInfo::fromString(backup_name);
-        EXPECT_EQ(info.withoutS3Credentials().toString(), info.toString());
+        EXPECT_EQ(withoutCredentials(info).toString(), info.toString());
     }
 }
 
@@ -377,7 +368,7 @@ TEST(BackupInfo, FreezeNamedCollectionPreservesDestinationSnapshot)
     auto info = BackupInfo::fromString("S3(" + collection_name + ", url='https://user:URLPASSWORD@bucket.s3.amazonaws.com/overridden')");
     auto frozen = info.freezeNamedCollection(context);
     const String identity = BackupFactory::instance().getDestinationIdentity(frozen, context);
-    auto redacted = frozen.withoutS3Credentials(context);
+    auto redacted = BackupFactory::instance().withoutCredentials(frozen, context);
 
     EXPECT_TRUE(frozen.frozen_named_collection->isQueryOverridden("url"));
     EXPECT_NE(frozen.getNamedCollection(context)->get<String>("url").find("URLPASSWORD"), String::npos);
@@ -391,6 +382,39 @@ TEST(BackupInfo, FreezeNamedCollectionPreservesDestinationSnapshot)
 
 
 #if USE_AZURE_BLOB_STORAGE
+TEST(BackupInfo, WithoutCredentialsRedactsAzureArguments)
+{
+    for (const auto * locator : {
+             "AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=account;AccountKey=SECRET;EndpointSuffix=core.windows.net', "
+             "'container', 'backup')",
+             "AzureBlobStorage('https://user:SECRET@account.blob.core.windows.net?sv=1&sig=SECRET', 'container', 'backup')",
+             "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'backup', 'account', 'SECRET')"})
+    {
+        auto redacted = withoutCredentials(BackupInfo::fromString(locator));
+        EXPECT_EQ(redacted.args.size(), 3);
+        EXPECT_EQ(redacted.toString().find("SECRET"), String::npos);
+        EXPECT_NE(redacted.toString().find("https://account.blob.core.windows.net"), String::npos);
+    }
+}
+
+
+TEST(BackupInfo, WithoutCredentialsRedactsAzureNamedCollectionOverrides)
+{
+    auto info = BackupInfo::fromString(
+        "AzureBlobStorage(collection, "
+        "connection_string = 'DefaultEndpointsProtocol=https;AccountName=account;AccountKey=CONNECTION_SECRET;EndpointSuffix=core.windows.net', "
+        "storage_account_url = 'https://user:URL_SECRET@account.blob.core.windows.net?sig=SAS_SECRET', "
+        "account_name = 'account', account_key = 'ACCOUNT_SECRET', client_id = 'CLIENT_SECRET', tenant_id = 'TENANT_SECRET', "
+        "blob_path = 'backup', extra_credentials(account_key = 'FUNCTION_SECRET'))");
+
+    String str = withoutCredentials(info).toString();
+    EXPECT_NE(str.find("connection_string"), String::npos);
+    EXPECT_NE(str.find("storage_account_url"), String::npos);
+    EXPECT_NE(str.find("blob_path"), String::npos);
+    EXPECT_EQ(str.find("SECRET"), String::npos) << str;
+}
+
+
 TEST(BackupInfo, DestinationIdentityIgnoresAzureCredentials)
 {
     auto context = getContext().context;

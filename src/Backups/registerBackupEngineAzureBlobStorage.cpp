@@ -13,9 +13,12 @@
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 
 #include <Poco/URI.h>
+#include <algorithm>
 
 #endif
 
@@ -180,12 +183,11 @@ namespace
         return location;
     }
 
-    Strings getAzureDestinationIdentity(const BackupInfo & backup_info, ContextPtr context)
+    String removeAzureCredentials(const AzureBlobStorage::ConnectionParams & connection_params)
     {
-        auto location = resolveAzureBackupLocation(backup_info, context);
         try
         {
-            const String connection_url = location.connection_params.getConnectionURL();
+            const String connection_url = connection_params.getConnectionURL();
             const size_t query_pos = connection_url.find('?');
             const size_t fragment_pos = connection_url.find('#');
             if (fragment_pos != String::npos && (query_pos == String::npos || fragment_pos < query_pos))
@@ -195,22 +197,69 @@ namespace
             uri.setUserInfo("");
             uri.setQuery("");
             uri.setFragment("");
-            const String canonical_connection_url = Azure::Core::Url(uri.toString()).GetAbsoluteUrl();
-            return {
-                "connection_url=" + stripOneTrailingSlash(canonical_connection_url),
-                "container=" + location.connection_params.getContainer(),
-                "blob_path=" + stripOneTrailingSlash(location.blob_path),
-                "archive=" + location.archive_name,
-            };
+            return Azure::Core::Url(uri.toString()).GetAbsoluteUrl();
         }
         catch (const Poco::Exception &)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse Azure backup destination for identity");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse Azure backup destination");
         }
         catch (const std::logic_error &)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse Azure backup destination for identity");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse Azure backup destination");
         }
+    }
+
+    String removeAzureCredentials(const String & connection_url)
+    {
+        AzureBlobStorage::ConnectionParams connection_params;
+        AzureBlobStorage::processURL(connection_url, "", connection_params.endpoint, connection_params.auth_method);
+        return removeAzureCredentials(connection_params);
+    }
+
+    void removeAzureCredentials(BackupInfo & backup_info, ContextPtr context)
+    {
+        if (backup_info.id_arg.empty())
+        {
+            auto location = resolveAzureBackupLocation(backup_info, context);
+            backup_info.args[0] = removeAzureCredentials(location.connection_params);
+            backup_info.args.resize(3);
+            backup_info.kv_args.clear();
+        }
+        else
+        {
+            backup_info.kv_args.erase(
+                std::remove_if(
+                    backup_info.kv_args.begin(),
+                    backup_info.kv_args.end(),
+                    [&](ASTPtr & kv_arg)
+                    {
+                        String key = BackupInfo::evaluateKeyValueArgument(kv_arg, 0, context);
+                        if (key == "account_name" || key == "account_key" || key == "client_id" || key == "tenant_id")
+                            return true;
+                        if (key == "connection_string" || key == "storage_account_url")
+                        {
+                            ASTPtr cloned = kv_arg->clone();
+                            cloned->as<ASTFunction>()->arguments->children[1]
+                                = make_intrusive<ASTLiteral>(removeAzureCredentials(
+                                    BackupInfo::evaluateKeyValueArgument(kv_arg, 1, context)));
+                            kv_arg = std::move(cloned);
+                        }
+                        return false;
+                    }),
+                backup_info.kv_args.end());
+        }
+        backup_info.function_arg = nullptr;
+    }
+
+    Strings getAzureDestinationIdentity(const BackupInfo & backup_info, ContextPtr context)
+    {
+        auto location = resolveAzureBackupLocation(backup_info, context);
+        return {
+            "connection_url=" + stripOneTrailingSlash(removeAzureCredentials(location.connection_params)),
+            "container=" + location.connection_params.getContainer(),
+            "blob_path=" + stripOneTrailingSlash(location.blob_path),
+            "archive=" + location.archive_name,
+        };
     }
 }
 #endif
@@ -319,7 +368,16 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
 #endif
     };
 
-    factory.registerBackupEngine("AzureBlobStorage", creator_fn, destination_identity_fn);
+    auto remove_credentials_fn = []([[maybe_unused]] BackupInfo & backup_info, [[maybe_unused]] ContextPtr context)
+    {
+#if USE_AZURE_BLOB_STORAGE
+        removeAzureCredentials(backup_info, context);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "AzureBlobStorage support is disabled");
+#endif
+    };
+
+    factory.registerBackupEngine("AzureBlobStorage", creator_fn, destination_identity_fn, remove_credentials_fn);
 }
 
 }
