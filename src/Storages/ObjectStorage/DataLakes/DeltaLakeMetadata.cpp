@@ -749,80 +749,87 @@ void DeltaLakeMetadata::createInitial(
     auto configuration_ptr = configuration.lock();
 
 #if USE_DELTA_KERNEL_RS
-    if (configuration_ptr && isDeltaKernelEnabled(local_context, configuration_ptr->getType()))
-    {
-        if (!columns.has_value())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "CREATE TABLE for DeltaLake requires explicit column definitions");
-
-        /// Reject columns whose names are reserved for virtual columns *before* the first remote commit.
-        /// `InterpreterCreateQuery::validateVirtualColumns` performs the same check, but only after the
-        /// storage constructor has already written `_delta_log`, which would leave an orphan Delta table
-        /// behind at the target path when the DDL is rejected.
-        const auto reserved_virtual_columns = VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
-        for (const auto & column : *columns)
-            if (reserved_virtual_columns.contains(column.name))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Cannot create DeltaLake table with column `{}` because it is reserved for a virtual column",
-                    column.name);
-
-        /// `StorageObjectStorage::ctor` calls `configuration->check()` only after this path, so
-        /// enforce `RemoteHostFilter`/`HTTPHeaderFilter` here, before the first remote commit.
-        configuration_ptr->check(local_context);
-
-        /// Only a catalog registration needs to know the pre-`createTable` state, so probe storage for it
-        /// only when we will register (a fresh create writes commit 0, which would otherwise make the
-        /// post-create `deltaLogExists` always true); `createTable` itself makes the create/attach decision.
-        const bool register_with_catalog = catalog && local_context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes];
-
-        /// If a Delta table already exists at the location, `createTable` attaches to it (no new commit);
-        /// otherwise it writes commit 0 from `columns`. Remember which happened for catalog registration.
-        const bool delta_log_existed = register_with_catalog && deltaLogExists(*object_storage, configuration_ptr->getRawPath().path);
-
-        /// Materialize the initial `_delta_log` commit (Protocol + Metadata actions) on storage.
-        DeltaLakeMetadataDeltaKernel::createTable(
-            object_storage, configuration, local_context, *columns, partition_by, if_not_exists);
-
-        /// For catalog databases (e.g. Unity) register the new table so it is visible via the catalog,
-        /// mirroring `IcebergMetadata::createInitial`. Gated on writes too: without them `createTable`
-        /// above wrote no `_delta_log`, so there is nothing to register.
-        if (register_with_catalog)
-        {
-            /// Register the full URI (`s3://…`, `file://…`) the kernel reads, not the scheme-less `getRawPath().path` (which `TableMetadata::setLocation` cannot parse back).
-            const auto location = getKernelHelper(configuration_ptr, object_storage)->getTableLocation();
-
-            /// Register the schema that is actually on storage: the just-committed `columns` for a fresh
-            /// table, or the existing snapshot schema when attaching to a preexisting `_delta_log` (the
-            /// declared `columns` may differ from it and were not committed).
-            const auto registration_schema = delta_log_existed
-                ? DeltaLakeMetadataDeltaKernel::create(object_storage, configuration)->getTableSchema(local_context)
-                : columns->getAllPhysical();
-
-            Poco::JSON::Object::Ptr metadata_content = new Poco::JSON::Object;
-            metadata_content->set("location", location);
-            metadata_content->set("fields", buildDeltaSchemaFields(registration_schema));
-
-            const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
-            catalog->createTable(namespace_name, table_name, location, metadata_content);
-        }
-        return;
-    }
+    const bool kernel_enabled = configuration_ptr && isDeltaKernelEnabled(local_context, configuration_ptr->getType());
+#else
+    const bool kernel_enabled = false;
 #endif
 
-    /// No non-kernel writer exists: attaching to an existing `_delta_log` is fine, but a fresh CREATE
-    /// (no `_delta_log`) must fail rather than silently succeed writing nothing.
-    if (configuration_ptr && !deltaLogExists(*object_storage, configuration_ptr->getRawPath().path))
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "Creating a new Delta Lake table requires allow_experimental_delta_kernel_rs = 1 "
-            "(there is no non-kernel Delta Lake writer)");
+    /// Without the kernel there is no Delta Lake writer: attaching to an existing `_delta_log` is fine,
+    /// but a fresh CREATE (no `_delta_log`) must fail rather than silently succeed writing nothing.
+    if (!kernel_enabled)
+    {
+        if (configuration_ptr && !deltaLogExists(*object_storage, configuration_ptr->getRawPath().path))
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Creating a new Delta Lake table requires allow_experimental_delta_kernel_rs = 1 "
+                "(there is no non-kernel Delta Lake writer)");
+#if !USE_DELTA_KERNEL_RS
+        (void)local_context;
+        (void)columns;
+        (void)partition_by;
+        (void)if_not_exists;
+        (void)catalog;
+        (void)table_id_;
+#endif
+        return;
+    }
 
-    (void)local_context;
-    (void)columns;
-    (void)partition_by;
-    (void)if_not_exists;
-    (void)catalog;
-    (void)table_id_;
+#if USE_DELTA_KERNEL_RS
+    if (!columns.has_value())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "CREATE TABLE for DeltaLake requires explicit column definitions");
+
+    /// Reject columns whose names are reserved for virtual columns *before* the first remote commit.
+    /// `InterpreterCreateQuery::validateVirtualColumns` performs the same check, but only after the
+    /// storage constructor has already written `_delta_log`, which would leave an orphan Delta table
+    /// behind at the target path when the DDL is rejected.
+    const auto reserved_virtual_columns = VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
+    for (const auto & column : *columns)
+        if (reserved_virtual_columns.contains(column.name))
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot create DeltaLake table with column `{}` because it is reserved for a virtual column",
+                column.name);
+
+    /// `StorageObjectStorage::ctor` calls `configuration->check()` only after this path, so
+    /// enforce `RemoteHostFilter`/`HTTPHeaderFilter` here, before the first remote commit.
+    configuration_ptr->check(local_context);
+
+    /// Only a catalog registration needs to know the pre-`createTable` state, so probe storage for it
+    /// only when we will register (a fresh create writes commit 0, which would otherwise make the
+    /// post-create `deltaLogExists` always true); `createTable` itself makes the create/attach decision.
+    const bool register_with_catalog = catalog && local_context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes];
+
+    /// If a Delta table already exists at the location, `createTable` attaches to it (no new commit);
+    /// otherwise it writes commit 0 from `columns`. Remember which happened for catalog registration.
+    const bool delta_log_existed = register_with_catalog && deltaLogExists(*object_storage, configuration_ptr->getRawPath().path);
+
+    /// Materialize the initial `_delta_log` commit (Protocol + Metadata actions) on storage.
+    DeltaLakeMetadataDeltaKernel::createTable(
+        object_storage, configuration, local_context, *columns, partition_by, if_not_exists);
+
+    /// For catalog databases (e.g. Unity) register the new table so it is visible via the catalog,
+    /// mirroring `IcebergMetadata::createInitial`. Gated on writes too: without them `createTable`
+    /// above wrote no `_delta_log`, so there is nothing to register.
+    if (register_with_catalog)
+    {
+        /// Register the full URI (`s3://…`, `file://…`) the kernel reads, not the scheme-less `getRawPath().path` (which `TableMetadata::setLocation` cannot parse back).
+        const auto location = getKernelHelper(configuration_ptr, object_storage)->getTableLocation();
+
+        /// Register the schema that is actually on storage: the just-committed `columns` for a fresh
+        /// table, or the existing snapshot schema when attaching to a preexisting `_delta_log` (the
+        /// declared `columns` may differ from it and were not committed).
+        const auto registration_schema = delta_log_existed
+            ? DeltaLakeMetadataDeltaKernel::create(object_storage, configuration)->getTableSchema(local_context)
+            : columns->getAllPhysical();
+
+        Poco::JSON::Object::Ptr metadata_content = new Poco::JSON::Object;
+        metadata_content->set("location", location);
+        metadata_content->set("fields", buildDeltaSchemaFields(registration_schema));
+
+        const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
+        catalog->createTable(namespace_name, table_name, location, metadata_content);
+    }
+#endif
 }
 
 DataLakeMetadataPtr DeltaLakeMetadata::create(

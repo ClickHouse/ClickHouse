@@ -2207,7 +2207,7 @@ This engine provides an integration with existing [Delta Lake](https://github.co
 
 ## Create a DeltaLake table {#create-table}
 
-A DeltaLake table can be created either over an existing Delta Lake table in S3, GCP or Azure storage, or at an empty location, in which case a brand-new Delta Lake table is created (the initial `_delta_log` is written). Creating a new table is experimental and requires both `allow_experimental_delta_kernel_rs = 1` and `allow_experimental_delta_lake_writes = 1`; if the location already contains a `_delta_log`, the statement attaches to the existing table and no settings are required. When creating a new table, the `PARTITION BY`, `ORDER BY`, `PRIMARY KEY` and `SAMPLE BY` clauses are not yet supported, and only column types that round-trip through Delta metadata are accepted (for example `Bool` not `UInt8`, `Date32` not `Date`, `DateTime64(6)` not `DateTime`).
+A DeltaLake table can be created either over an existing Delta Lake table in S3, GCP or Azure storage, or at an empty location, in which case a brand-new Delta Lake table is created (the initial `_delta_log` is written). Creating a new table is experimental (available from version 26.7) and requires both `allow_experimental_delta_kernel_rs = 1` and `allow_experimental_delta_lake_writes = 1`; if the location already contains a `_delta_log`, the statement attaches to the existing table and no settings are required. When creating a new table, the `PARTITION BY`, `ORDER BY`, `PRIMARY KEY` and `SAMPLE BY` clauses are not yet supported, and only column types that round-trip through Delta metadata are accepted (for example `Bool` not `UInt8`, `Date32` not `Date`, `DateTime64(6)` not `DateTime`).
 
 <Tabs>
 <TabItem value="S3" label="S3" default>

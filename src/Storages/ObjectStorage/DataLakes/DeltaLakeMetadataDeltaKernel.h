@@ -72,15 +72,7 @@ public:
 
     /// Initialize a new Delta table at the configured location by writing the
     /// `00000000000000000000.json` commit with Protocol + Metadata actions.
-    /// Drives the v0.23.0 create-table FFI via `WriteTransaction::createTable`,
-    /// which itself converts `ColumnsDescription` -> `StructType` through
-    /// `buildKernelEngineSchema` (in `getSchemaFromSnapshot.{h,cpp}`, alongside
-    /// the existing kernel <-> ClickHouse schema helpers).
-    /// When the location already has a `_delta_log`, attaches to the existing table
-    /// (no commit is written and write access is not required).
-    /// Direct entry point for both `DeltaLakeMetadata::createInitial`
-    /// (standalone `ENGINE = DeltaLake(...)`) and `DatabaseDataLake::createTable`
-    /// (Unity / catalog-managed paths).
+    /// When the location already has a `_delta_log`, attaches to the existing table.
     static void createTable(
         const ObjectStoragePtr & object_storage_,
         const StorageObjectStorageConfigurationWeakPtr & configuration,

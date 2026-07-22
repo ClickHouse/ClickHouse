@@ -71,8 +71,8 @@ public:
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
 
-    /// No-op: creation + catalog registration happen earlier in `DeltaLakeMetadata::createInitial`
-    /// during storage construction (like `IcebergMetadata::createInitial`).
+    /// No-op: for data lake catalogs, table creation and catalog registration happen earlier,
+    /// during storage construction, not here.
     void createTable(
         ContextPtr /*context*/,
         const String & /*name*/,
