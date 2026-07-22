@@ -393,78 +393,79 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
         };
 
-        auto collect_top_level_source_settings = [&](ASTPtr & target_settings_ast)
+        auto merge_settings_ast_with_override = [](ASTPtr & target_ast, const ASTPtr & source_ast)
         {
-            auto merge_settings_ast_with_override = [](ASTPtr & target_ast, const ASTPtr & source_ast)
+            if (!source_ast)
+                return;
+
+            if (!target_ast)
             {
-                if (!source_ast)
+                target_ast = source_ast->clone();
+                return;
+            }
+
+            auto & source_settings = source_ast->as<ASTSetQuery &>();
+            auto & target_settings = target_ast->as<ASTSetQuery &>();
+
+            std::unordered_map<String, size_t> target_change_positions;
+            target_change_positions.reserve(target_settings.changes.size());
+            for (size_t i = 0; i < target_settings.changes.size(); ++i)
+                target_change_positions[target_settings.changes[i].name] = i;
+
+            std::unordered_map<String, size_t> target_default_positions;
+            target_default_positions.reserve(target_settings.default_settings.size());
+            for (size_t i = 0; i < target_settings.default_settings.size(); ++i)
+                target_default_positions[target_settings.default_settings[i]] = i;
+
+            auto erase_default = [&](const String & name)
+            {
+                auto it = target_default_positions.find(name);
+                if (it == target_default_positions.end())
                     return;
 
-                if (!target_ast)
-                {
-                    target_ast = source_ast->clone();
-                    return;
-                }
-
-                auto & source_settings = source_ast->as<ASTSetQuery &>();
-                auto & target_settings = target_ast->as<ASTSetQuery &>();
-
-                std::unordered_map<String, size_t> target_change_positions;
-                target_change_positions.reserve(target_settings.changes.size());
-                for (size_t i = 0; i < target_settings.changes.size(); ++i)
-                    target_change_positions[target_settings.changes[i].name] = i;
-
-                std::unordered_map<String, size_t> target_default_positions;
-                target_default_positions.reserve(target_settings.default_settings.size());
+                target_settings.default_settings.erase(target_settings.default_settings.begin() + it->second);
+                target_default_positions.clear();
                 for (size_t i = 0; i < target_settings.default_settings.size(); ++i)
                     target_default_positions[target_settings.default_settings[i]] = i;
-
-                auto erase_default = [&](const String & name)
-                {
-                    auto it = target_default_positions.find(name);
-                    if (it == target_default_positions.end())
-                        return;
-
-                    target_settings.default_settings.erase(target_settings.default_settings.begin() + it->second);
-                    target_default_positions.clear();
-                    for (size_t i = 0; i < target_settings.default_settings.size(); ++i)
-                        target_default_positions[target_settings.default_settings[i]] = i;
-                };
-
-                auto erase_change = [&](const String & name)
-                {
-                    auto it = target_change_positions.find(name);
-                    if (it == target_change_positions.end())
-                        return;
-
-                    target_settings.changes.erase(target_settings.changes.begin() + it->second);
-                    target_change_positions.clear();
-                    for (size_t i = 0; i < target_settings.changes.size(); ++i)
-                        target_change_positions[target_settings.changes[i].name] = i;
-                };
-
-                for (const auto & change : source_settings.changes)
-                {
-                    erase_default(change.name);
-                    if (auto it = target_change_positions.find(change.name); it != target_change_positions.end())
-                        target_settings.changes[it->second] = change;
-                    else
-                    {
-                        target_settings.changes.push_back(change);
-                        target_change_positions[change.name] = target_settings.changes.size() - 1;
-                    }
-                }
-
-                for (const auto & default_setting : source_settings.default_settings)
-                {
-                    erase_change(default_setting);
-                    if (target_default_positions.contains(default_setting))
-                        continue;
-
-                    target_settings.default_settings.push_back(default_setting);
-                    target_default_positions[default_setting] = target_settings.default_settings.size() - 1;
-                }
             };
+
+            auto erase_change = [&](const String & name)
+            {
+                auto it = target_change_positions.find(name);
+                if (it == target_change_positions.end())
+                    return;
+
+                target_settings.changes.erase(target_settings.changes.begin() + it->second);
+                target_change_positions.clear();
+                for (size_t i = 0; i < target_settings.changes.size(); ++i)
+                    target_change_positions[target_settings.changes[i].name] = i;
+            };
+
+            for (const auto & change : source_settings.changes)
+            {
+                erase_default(change.name);
+                if (auto it = target_change_positions.find(change.name); it != target_change_positions.end())
+                    target_settings.changes[it->second] = change;
+                else
+                {
+                    target_settings.changes.push_back(change);
+                    target_change_positions[change.name] = target_settings.changes.size() - 1;
+                }
+            }
+
+            for (const auto & default_setting : source_settings.default_settings)
+            {
+                erase_change(default_setting);
+                if (target_default_positions.contains(default_setting))
+                    continue;
+
+                target_settings.default_settings.push_back(default_setting);
+                target_default_positions[default_setting] = target_settings.default_settings.size() - 1;
+            }
+        };
+
+        auto collect_top_level_source_settings = [&](ASTPtr & target_settings_ast)
+        {
 
             auto collect_top_level_impl = [&](auto && self, const ASTPtr & current, bool allow_subquery_unwrap) -> void
             {
@@ -476,19 +477,21 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     if (!select_with_union->list_of_selects)
                         return;
 
+                    /// Match standalone SELECT precedence:
+                    /// set-op level SETTINGS are applied first, then the last first-order arm overrides duplicates.
+                    merge_settings_ast_with_override(target_settings_ast, select_with_union->settings_ast);
                     const auto & children = select_with_union->list_of_selects->children;
                     if (!children.empty())
                         self(self, children.back(), false);
-                    merge_settings_ast_with_override(target_settings_ast, select_with_union->settings_ast);
                     return;
                 }
 
                 if (const auto * intersect_except = current->as<ASTSelectIntersectExceptQuery>())
                 {
+                    merge_settings_ast_with_override(target_settings_ast, intersect_except->settings());
                     auto children = intersect_except->getListOfSelects();
                     if (!children.empty())
                         self(self, children.back(), false);
-                    merge_settings_ast_with_override(target_settings_ast, intersect_except->settings());
                     return;
                 }
 
@@ -517,14 +520,20 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             InsertQuerySettingsPushDownVisitor::Data visitor_data{source_select_settings_runtime_ast};
             InsertQuerySettingsPushDownVisitor(visitor_data).visit(select);
 
-            merge_settings_ast(source_select_settings_global_ast, source_select_settings_ast);
-            collect_top_level_source_settings(source_select_settings_global_ast);
+            ASTPtr source_top_level_settings_ast;
+            collect_top_level_source_settings(source_top_level_settings_ast);
+
+            /// Trailing source SETTINGS after RETURNING must keep precedence over source SELECT settings.
+            merge_settings_ast_with_override(source_top_level_settings_ast, source_select_settings_ast);
+            source_select_settings_global_ast = source_top_level_settings_ast;
         }
         else
         {
             /// For plain INSERT ... SELECT keep historical top-level-only pushdown semantics:
             /// nested source subquery SETTINGS stay local and must not leak into outer planning/execution.
-            collect_top_level_source_settings(settings_ast);
+            ASTPtr source_top_level_settings_ast;
+            collect_top_level_source_settings(source_top_level_settings_ast);
+            merge_settings_ast(settings_ast, source_top_level_settings_ast);
         }
 
     }
