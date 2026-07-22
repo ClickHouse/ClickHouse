@@ -19,12 +19,22 @@ ${CLICKHOUSE_CLIENT} --query "
     SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1;
 "
 
-${CLICKHOUSE_CLIENT} --query "INSERT INTO t_empty_checksums SELECT number, toString(number) FROM numbers(1000)"
+# The test manipulates the single part's checksums.txt on disk by an absolute path captured once,
+# so it must have exactly one active part that does not move during the test. max_insert_threads and
+# block-size randomization can split the INSERT into several parts, and a background merge can replace
+# the captured part with a new directory. Collapse to one part (single insert thread + OPTIMIZE FINAL),
+# then stop merges so the captured path stays valid. Order matters: SYSTEM STOP MERGES cancels a
+# concurrent OPTIMIZE, so it must come after the OPTIMIZE, not before.
+${CLICKHOUSE_CLIENT} --max_insert_threads 1 --query "INSERT INTO t_empty_checksums SELECT number, toString(number) FROM numbers(1000)"
+${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE t_empty_checksums FINAL"
+${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES t_empty_checksums"
 
 echo "rows before:"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t_empty_checksums"
 
-DATA_PATH=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 't_empty_checksums' AND active")
+# Require exactly one active part; otherwise the single-path manipulation below is meaningless.
+${CLICKHOUSE_CLIENT} --query "SELECT throwIf(count() != 1, 'Expected exactly one active part') FROM system.parts WHERE database = currentDatabase() AND table = 't_empty_checksums' AND active" > /dev/null || exit 1
+DATA_PATH=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 't_empty_checksums' AND active LIMIT 1")
 # ensure the path is absolute before touching it
 ${CLICKHOUSE_CLIENT} --query "SELECT throwIf(substring('${DATA_PATH}', 1, 1) != '/', 'Path is relative: ${DATA_PATH}')" > /dev/null || exit 1
 
