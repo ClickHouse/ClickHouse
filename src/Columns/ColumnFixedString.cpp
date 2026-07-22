@@ -620,13 +620,10 @@ void ColumnFixedString::batchSerializeAsComparable(
     const IColumn::Permutation * permutation,
     const UInt8 * null_map) const
 {
-    for (size_t r = 0; r < num_rows; ++r)
-    {
-        const size_t src = permutation ? (*permutation)[r] : r;
-        if (null_map && null_map[src])
-            continue;
-        out[r].append(reinterpret_cast<const char *>(&chars[src * n]), n);
-    }
+    batchSerializeAsComparableImpl(
+        num_rows, out, permutation, null_map,
+        [this](size_t src, String & dst)
+        { dst.append(reinterpret_cast<const char *>(&chars[src * n]), n); });
 }
 
 }

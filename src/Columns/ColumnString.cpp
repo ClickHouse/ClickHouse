@@ -924,13 +924,9 @@ void ColumnString::batchSerializeAsComparable(
     const IColumn::Permutation * permutation,
     const UInt8 * null_map) const
 {
-    for (size_t r = 0; r < num_rows; ++r)
-    {
-        const size_t src = permutation ? (*permutation)[r] : r;
-        if (null_map && null_map[src])
-            continue;
-        serializeAsComparable(src, out[r]);
-    }
+    batchSerializeAsComparableImpl(
+        num_rows, out, permutation, null_map,
+        [this](size_t src, String & dst) { serializeAsComparable(src, dst); });
 }
 
 }

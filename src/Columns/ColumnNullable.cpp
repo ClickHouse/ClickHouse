@@ -7,6 +7,7 @@
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/IColumnImpl.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -1064,20 +1065,20 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
     nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
-/// Leading flag byte of a Nullable row's comparable encoding. `\x00` (non-NULL)
-/// sorts before `\x01` (NULL), so NULLs compare greater, matching compareAt with
-/// null_direction_hint = 1. A non-NULL row is `\x00` followed by the nested value's
-/// encoding; a NULL row is just `\x01`.
+/// A NULL row emits only the flag byte and never touches the nested column, so an
+/// unsupported nested type (e.g. LowCardinality, Array) would slip through silently.
+/// Probe row 0 once so every row rejects the same types a non-NULL row would, even
+/// in an all-NULL block. Not on the hot path.
 void ColumnNullable::validateNestedComparable() const
 {
-    /// A NULL row emits only the flag byte and never touches the nested column, so an
-    /// unsupported nested type (e.g. LowCardinality, Array) would slip through silently.
-    /// Probe row 0 once so every row rejects the same types a non-NULL row would, even
-    /// in an all-NULL block. Not on the hot path.
     String probe;
     nested_column->serializeAsComparable(0, probe);
 }
 
+/// Leading flag byte of a Nullable row's comparable encoding. `\x00` (non-NULL)
+/// sorts before `\x01` (NULL), so NULLs compare greater, matching compareAt with
+/// null_direction_hint = 1. A non-NULL row is `\x00` followed by the nested value's
+/// encoding; a NULL row is just `\x01`.
 void ColumnNullable::serializeAsComparable(size_t n, String & out) const
 {
     const auto & null_map_data = getNullMapData();
@@ -1094,7 +1095,7 @@ void ColumnNullable::serializeAsComparable(size_t n, String & out) const
 void ColumnNullable::batchSerializeAsComparable(
     size_t num_rows,
     VectorWithMemoryTracking<String> & out,
-    const IColumn::Permutation * permutation,
+    const Permutation * permutation,
     const UInt8 * outer_null_map) const
 {
     if (num_rows == 0)
@@ -1102,26 +1103,14 @@ void ColumnNullable::batchSerializeAsComparable(
 
     validateNestedComparable();
 
-    /// Write the null flag for every row first: NULL=0x01 (sorts after),
-    /// non-NULL=0x00 (sorts before) — matches compareAt with nulls_direction=1.
-    /// A row that is NULL either here or in an outer wrapper contributes only
-    /// this flag and no nested payload.
+    /// Write the null flag for every row: NULL=0x01 (sorts after), non-NULL=0x00.
     const auto & null_map_data = getNullMapData();
-    for (size_t r = 0; r < num_rows; ++r)
-    {
-        const size_t src = permutation ? (*permutation)[r] : r;
-        if (outer_null_map && outer_null_map[src])
-            continue;
-        out[r].push_back(null_map_data[src] ? '\x01' : '\x00');
-    }
+    batchSerializeAsComparableImpl(
+        num_rows, out, permutation, outer_null_map,
+        [&](size_t src, String & dst) { dst.push_back(null_map_data[src] ? '\x01' : '\x00'); });
 
-    /// Encode the nested values in one shot: a single virtual dispatch into the
-    /// nested concrete type, then its own monomorphic row loop (e.g.
-    /// ColumnVector<UInt64>). Passing our null map lets the nested loop skip NULL
-    /// rows and append non-NULL payload directly into `out[r]` — no scratch buffer,
-    /// no second copy, and NULL rows never materialize hidden nested payload.
-    /// `outer_null_map` (if any) also propagates so a row masked by an enclosing
-    /// wrapper is skipped too.
+    /// Encode the nested values with one virtual dispatch; the merged null map
+    /// lets the nested loop skip NULL rows.
     const UInt8 * effective_null_map = null_map_data.data();
     PaddedPODArray<UInt8> merged_null_map;
     if (outer_null_map)

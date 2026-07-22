@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Columns/IColumnImpl.h>
 #include <Core/Field.h>
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
@@ -201,15 +202,13 @@ public:
         /// (and a possible NOT_IMPLEMENTED from an unsupported nested type).
         if (num_rows == 0)
             return;
+
         String encoded;
         data->serializeAsComparable(0, encoded);
-        for (size_t r = 0; r < num_rows; ++r)
-        {
-            const size_t src = permutation ? (*permutation)[r] : r;
-            if (null_map && null_map[src])
-                continue;
-            out[r].append(encoded);
-        }
+        /// All rows share `encoded`; `src` only matters for the null-map check.
+        batchSerializeAsComparableImpl(
+            num_rows, out, permutation, null_map,
+            [&encoded](size_t /*src*/, String & dst) { dst.append(encoded); });
     }
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override
