@@ -5,7 +5,6 @@ Tests are parametrized over available catalog backends via the
 missing are automatically skipped.
 """
 
-import concurrent.futures
 import datetime
 import decimal
 import time
@@ -193,7 +192,7 @@ def started_cluster(catalog_manager):
     cluster = ClickHouseCluster(__file__, name=f"test_e2e_catalogs_{catalog_manager}")
     cluster.add_instance(
         "node1",
-        main_configs=["configs/merge_tree.xml", "configs/biglake_metadata_hosts.xml"],
+        main_configs=["configs/merge_tree.xml"],
         user_configs=["configs/allow_experimental.xml"],
         env_variables=catalog_manager.clickhouse_env_variables(),
         stay_alive=True,
@@ -738,15 +737,16 @@ def test_show_data_lake_catalogs_setting(
     db = catalog_manager.make_database_name()
     catalog_manager.create_catalog(node, db)
 
-    # system.databases always lists data lake catalog databases regardless of
-    # show_data_lake_catalogs_in_system_tables: the database name is local
-    # metadata and never requires a call to the external catalog service.
-    for setting_value in (0, 1):
-        db_row = node.query(
-            f"SELECT engine FROM system.databases WHERE name = '{db}' FORMAT TSV",
-            settings={"show_data_lake_catalogs_in_system_tables": setting_value},
-        ).strip()
-        assert "DataLakeCatalog" in db_row
+    assert not node.query(
+        f"SELECT 1 FROM system.databases WHERE name = '{db}' FORMAT TSV",
+        settings={"show_data_lake_catalogs_in_system_tables": 0},
+    ).strip()
+
+    db_row = node.query(
+        f"SELECT engine FROM system.databases WHERE name = '{db}' FORMAT TSV",
+        settings={"show_data_lake_catalogs_in_system_tables": 1},
+    ).strip()
+    assert "DataLakeCatalog" in db_row
 
     catalog_manager.resolve_table_name(node, db, sales_table)
 
@@ -1067,102 +1067,13 @@ def test_onelake_show_create_table_no_secret(
     )
 
 
-@only_onelake
-def test_onelake_system_databases_no_bearer_token(node, catalog_manager):
-    """engine_full in system.databases must not expose onelake_bearer_token."""
-
-    token = catalog_manager.bearer_token()
-    db = catalog_manager.make_database_name()
-    catalog_manager.create_catalog_bearer(node, db, token)
-    engine_full = node.query(
-        f"SELECT engine_full FROM system.databases WHERE name = '{db}' "
-        f"FORMAT TSV",
-        settings={"show_data_lake_catalogs_in_system_tables": 1},
-    ).strip()
-    assert engine_full, f"Database {db} not found in system.databases"
-    assert token not in engine_full, (
-        "onelake_bearer_token leaked in engine_full of system.databases"
-    )
-    assert "[HIDDEN]" in engine_full, (
-        f"onelake_bearer_token was not masked in engine_full:\n{engine_full}"
-    )
-
-
-@only_onelake
-def test_onelake_show_create_no_bearer_token(node, catalog_manager):
-    """SHOW CREATE DATABASE must not expose onelake_bearer_token."""
-
-    token = catalog_manager.bearer_token()
-    db = catalog_manager.make_database_name()
-    catalog_manager.create_catalog_bearer(node, db, token)
-    result = node.query(f"SHOW CREATE DATABASE {db}").strip()
-    assert token not in result, (
-        f"onelake_bearer_token leaked in SHOW CREATE DATABASE:\n{result}"
-    )
-    assert "[HIDDEN]" in result, (
-        f"onelake_bearer_token was not masked in SHOW CREATE DATABASE:\n{result}"
-    )
-
-
-@only_onelake
-def test_onelake_show_create_table_no_bearer_token(
-    node, catalog_manager, sales_table,
-):
-    """SHOW CREATE TABLE / system.tables must not expose onelake_bearer_token."""
-
-    token = catalog_manager.bearer_token()
-    db = catalog_manager.make_database_name()
-    catalog_manager.create_catalog_bearer(node, db, token)
-    try:
-        full = catalog_manager.resolve_table_name(node, db, sales_table)
-        result = node.query(f"SHOW CREATE TABLE {db}.`{full}`").strip()
-        assert result, "SHOW CREATE TABLE returned empty result"
-        assert token not in result, (
-            f"onelake_bearer_token leaked in SHOW CREATE TABLE:\n{result}"
-        )
-        system_row = node.query(
-            f"SELECT engine_full FROM system.tables "
-            f"WHERE database = '{db}' AND name = '{full}' "
-            f"FORMAT TSV"
-        ).strip()
-        assert token not in system_row, (
-            f"onelake_bearer_token leaked in system.tables engine_full:\n{system_row}"
-        )
-    finally:
-        node.query(f"DROP DATABASE IF EXISTS {db}")
-
-
-@only_onelake
-def test_onelake_read_with_bearer_token(node, catalog_manager, sales_table):
-    """Read table data authenticating only with onelake_bearer_token.
-
-    Exercises both the catalog Authorization header and the Azure Blob
-    StaticCredential read path (unlike the masking tests, which never
-    query data)."""
-    token = catalog_manager.bearer_token()
-    db = catalog_manager.make_database_name()
-    catalog_manager.create_catalog_bearer(node, db, token)
-    try:
-        full = catalog_manager.resolve_table_name(node, db, sales_table)
-        # count() alone can be served from Iceberg metadata; sum() over a
-        # data column forces an actual data-file read from OneLake blob storage.
-        count = node.query(
-            f"SELECT count() FROM {db}.`{full}` FORMAT TSV"
-        ).strip()
-        assert int(count) == 20
-        total_qty = node.query(
-            f"SELECT sum(quantity) FROM {db}.`{full}` FORMAT TSV"
-        ).strip()
-        assert int(total_qty) == 60
-    finally:
-        node.query(f"DROP DATABASE IF EXISTS {db}")
-
-
 def test_insert_into_table(node, catalog_manager, request):
     """INSERT INTO a catalog table and verify the row count increases."""
     backend = request.node.callspec.params.get("catalog_manager")
     if backend == "biglake":
         pytest.xfail("INSERT into BigLake DataLakeCatalog does not commit to the catalog")
+    if backend == "onelake":
+        pytest.xfail("INSERT into OneLake raises StorageException during blob upload")
     data = pa.table(
         {
             "id": pa.array([1, 2], type=pa.int64()),
@@ -1186,93 +1097,62 @@ def test_insert_into_table(node, catalog_manager, request):
             f"INSERT INTO {db}.`{full}` VALUES (3, 'three')",
             settings={"allow_insert_into_iceberg": 1},
         )
-        if backend == "onelake":
-            # OneLake's catalog is eventually consistent, so poll (cache off) for
-            # the new snapshot. Other backends must see it immediately (one-shot).
-            read_settings = {"use_iceberg_metadata_files_cache": 0}
-            deadline = time.monotonic() + 180
-            while True:
-                count = node.query(
-                    f"SELECT count() FROM {db}.`{full}` FORMAT TSV",
-                    settings=read_settings,
-                ).strip()
-                if count == "3" or time.monotonic() >= deadline:
-                    break
-                time.sleep(5)
-        else:
-            read_settings = {}
-            count = node.query(
-                f"SELECT count() FROM {db}.`{full}` FORMAT TSV"
-            ).strip()
-        assert int(count) == 3
-        # count() can come from metadata alone, so read a real value too.
-        value = node.query(
-            f"SELECT value FROM {db}.`{full}` WHERE id = 3 FORMAT TSV",
-            settings=read_settings,
+        count = node.query(
+            f"SELECT count() FROM {db}.`{full}` FORMAT TSV"
         ).strip()
-        assert value == "three", value
+        assert int(count) == 3
     finally:
         catalog_manager.cleanup_table(table_name)
 
 
 @only_onelake
 def test_onelake_invalid_oauth_uri(node, catalog_manager):
-    """Invalid oauth_server_uri -> CREATE DATABASE fails eagerly.
-
-    Catalog initialization now happens in the DatabaseDataLake constructor, so
-    the OAuth token is retrieved during CREATE DATABASE. An unreachable
-    oauth_server_uri therefore makes the statement fail immediately instead of
-    deferring the error to first catalog access.
-    """
+    """Invalid oauth_server_uri -> CREATE succeeds but catalog access fails."""
 
     db = catalog_manager.make_database_name()
     sql = catalog_manager.create_db_sql(
         db, oauth_server_uri="https://invalid.example.com/oauth/token",
     )
 
-    error = node.query_and_get_error(sql)
-    assert error, "Expected CREATE DATABASE to fail with invalid oauth URI"
+    _, create_err = node.query_and_get_answer_with_error(sql)
+    assert not create_err.strip(), f"CREATE unexpectedly failed: {create_err}"
+
+    tables_out, tables_err = node.query_and_get_answer_with_error(
+        f"SHOW TABLES FROM {db}"
+    )
+    assert not tables_out.strip() and not tables_err.strip(), (
+        "SHOW TABLES should return empty (lazy auth swallows errors)"
+    )
+
+    error = node.query_and_get_error(
+        f"SELECT * FROM {db}.nonexistent_table FORMAT TSV"
+    )
+    assert error, "Expected error when accessing table with invalid oauth URI"
 
 
 @only_onelake
 def test_onelake_warehouse_wrong_format(node, catalog_manager):
-    """Malformed warehouse -> CREATE DATABASE fails eagerly.
-
-    Catalog initialization now happens in the DatabaseDataLake constructor, so
-    a malformed warehouse makes catalog setup fail during CREATE DATABASE
-    instead of deferring the error to first catalog access.
-    """
+    """Malformed warehouse -> CREATE succeeds but catalog access fails."""
 
     db = catalog_manager.make_database_name()
     sql = catalog_manager.create_db_sql(
         db, warehouse="not-a-valid-format-no-slash"
     )
 
-    error = node.query_and_get_error(sql)
-    assert error, "Expected CREATE DATABASE to fail with malformed warehouse"
+    _, create_err = node.query_and_get_answer_with_error(sql)
+    assert not create_err.strip(), f"CREATE unexpectedly failed: {create_err}"
 
+    tables_out, tables_err = node.query_and_get_answer_with_error(
+        f"SHOW TABLES FROM {db}"
+    )
+    assert not tables_out.strip() and not tables_err.strip(), (
+        "SHOW TABLES should return empty (lazy auth swallows errors)"
+    )
 
-@only_onelake
-def test_onelake_both_auth_methods_rejected(node, catalog_manager):
-    """Providing both a bearer token and client credentials is rejected."""
-
-    db = catalog_manager.make_database_name()
-    # A dummy token is enough: validation fires before any network call.
-    sql = catalog_manager.create_db_sql(db, bearer_token="dummy_token")
-
-    error = node.query_and_get_error(sql)
-    assert "exactly one" in error, error
-
-
-@only_onelake
-def test_onelake_no_auth_method_rejected(node, catalog_manager):
-    """Providing neither a bearer token nor client credentials is rejected."""
-
-    db = catalog_manager.make_database_name()
-    sql = catalog_manager.create_db_sql(db, client_id="", client_secret="")
-
-    error = node.query_and_get_error(sql)
-    assert "exactly one" in error, error
+    error = node.query_and_get_error(
+        f"SELECT * FROM {db}.nonexistent_table FORMAT TSV"
+    )
+    assert error, "Expected error when accessing table with malformed warehouse"
 
 
 # ---------------------------------------------------------------------------
@@ -1312,28 +1192,8 @@ def test_list_tables_pagination(node, catalog_manager):
     created = []
     db = None
     try:
-        # Catalog round-trips dominate per-table create time (~2-4s each on
-        # OneLake / BigLake / Glue), so creating tables serially adds 2-4 min
-        # per backend. Issue them in parallel; each catalog client + REST
-        # endpoint handles concurrent creates fine.  Record every
-        # successful result as it completes (rather than via `list(map())`
-        # at the end), so if one worker raises we still know about the
-        # tables that already succeeded and the `finally` block can drop
-        # them instead of leaking catalog/storage artifacts.
-        first_exc = None
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
-            futures = [
-                pool.submit(catalog_manager.create_table, data, table_name=short)
-                for short in expected
-            ]
-            for fut in concurrent.futures.as_completed(futures):
-                try:
-                    created.append(fut.result())
-                except BaseException as exc:
-                    if first_exc is None:
-                        first_exc = exc
-        if first_exc is not None:
-            raise first_exc
+        for short in expected:
+            created.append(catalog_manager.create_table(data, table_name=short))
 
         db = catalog_manager.make_database_name()
         catalog_manager.create_catalog(node, db)
@@ -1393,9 +1253,8 @@ def test_list_tables_pagination(node, catalog_manager):
             f"Expected 1 row in last-page table {late}, got {rows}"
         )
     finally:
-        if created:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
-                list(pool.map(catalog_manager.cleanup_table, created))
+        for name in created:
+            catalog_manager.cleanup_table(name)
         if db is not None:
             try:
                 node.query(f"DROP DATABASE IF EXISTS {db}")

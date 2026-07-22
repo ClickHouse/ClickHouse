@@ -42,7 +42,7 @@ SETTINGS defer_partition_pruning_after_final = 0;
 -- The behavioral difference shows up in the `Partition Min-Max` index step of EXPLAIN.
 -- Default reads all 5 parts (pruning disabled). Opt-out prunes to 1.
 SELECT 'default-defer partition pruning',
-       countIf(explain LIKE '%Min-Max%')           AS has_partition_step,
+       countIf(explain LIKE '%Partition Min-Max%') AS has_partition_step,
        countIf(explain LIKE '%Parts: 5/5%')        AS no_pruning,
        countIf(explain LIKE '%Parts: 1/5%')        AS pruned
 FROM
@@ -53,7 +53,7 @@ FROM
 );
 
 SELECT 'opt-out partition pruning',
-       countIf(explain LIKE '%Min-Max%')           AS has_partition_step,
+       countIf(explain LIKE '%Partition Min-Max%') AS has_partition_step,
        countIf(explain LIKE '%Parts: 5/5%')        AS no_pruning,
        countIf(explain LIKE '%Parts: 1/5%')        AS pruned
 FROM

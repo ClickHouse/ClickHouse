@@ -18,7 +18,6 @@
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ExecuteCommandArgs.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/RemoveOrphanFilesExecute.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotFilesTraversal.h>
@@ -308,39 +307,12 @@ Pipe executeRemoveOrphanFiles(
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_components)
 {
-    /// `persistent_components.format_version` is captured when the table was opened and
-    /// can become stale if an external tool (e.g. Spark) upgrades the table v1 -> v2
-    /// between queries. Read the latest metadata file to get the authoritative version
-    /// for this command gate.
-    auto log = getLogger("IcebergRemoveOrphanFiles");
-    auto [_metadata_version, latest_metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
-        object_storage,
-        persistent_components.table_path,
-        data_lake_settings,
-        persistent_components.metadata_cache,
-        context,
-        log.get(),
-        persistent_components.table_uuid,
-        persistent_components.metadata_compression_method,
-        /* force_fetch_latest_metadata */ true,
-        /* ignore_explicit_metadata_file_path */ true);
-
-    auto latest_metadata = getMetadataJSONObject(
-        latest_metadata_path,
-        object_storage,
-        persistent_components.metadata_cache,
-        context,
-        log,
-        compression_method,
-        persistent_components.table_uuid);
-
-    Int32 current_format_version = latest_metadata->getValue<Int32>(f_format_version);
-    if (current_format_version < 2)
+    if (persistent_components.format_version < 2)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "remove_orphan_files requires Iceberg format version >= 2, "
             "but this table uses format version {}",
-            current_format_version);
+            persistent_components.format_version);
 
     auto parsed = makeSchema().parse(args);
 
@@ -349,7 +321,7 @@ Pipe executeRemoveOrphanFiles(
     {
         String older_than_str = parsed.getAs<String>("older_than");
         ReadBufferFromString buf(older_than_str);
-        time_t ts = 0;
+        time_t ts;
         readDateTimeText(ts, buf);
 
         auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());

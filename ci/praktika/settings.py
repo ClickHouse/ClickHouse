@@ -38,8 +38,6 @@ class _Settings:
     ######################################
     MAX_RETRIES_S3 = 3
     MAX_RETRIES_GH = 3
-    # PR label that bypasses all job filtering (filter hooks and changed-file filtering)
-    CI_FORCE_ALL_LABEL: str = "ci-force-all"
 
     ######################################
     #   S3 (artifact storage) settings   #
@@ -62,12 +60,11 @@ class _Settings:
     ENVIRONMENT_VAR_FILE: str = f"{TEMP_DIR}/environment.json"
     RUN_LOG: str = f"{TEMP_DIR}/job.log"
 
+    USE_CUSTOM_GH_AUTH: bool = False
     SECRET_GH_APP_ID: str = ""
     SECRET_GH_APP_PEM_KEY: str = ""
     SECRET_GH_APP_INSTALLATION_ID: str = ""
     SECRET_GH_APP_REGION: str = ""
-    GH_AUTH_LAMBDA_NAME: str = ""
-    GH_AUTH_LAMBDA_REGION: str = ""
 
     ENV_SETUP_SCRIPT: str = f"{TEMP_DIR}/praktika_setup_env.sh"
     WORKFLOW_JOB_FILE: str = f"{TEMP_DIR}/workflow_job.json"
@@ -160,7 +157,6 @@ _USER_DEFINED_SETTINGS = [
     "INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS",
     "MAX_RETRIES_S3",
     "MAX_RETRIES_GH",
-    "CI_FORCE_ALL_LABEL",
     "VALIDATE_FILE_PATHS",
     "DOCKERHUB_USERNAME",
     "DOCKERHUB_SECRET",
@@ -173,12 +169,11 @@ _USER_DEFINED_SETTINGS = [
     "KEEPER_STRESS_METRICS_DB_NAME",
     "KEEPER_STRESS_METRICS_TABLE_NAME",
     "CI_DB_INSERT_TIMEOUT_SEC",
+    "USE_CUSTOM_GH_AUTH",
     "SECRET_GH_APP_ID",
     "SECRET_GH_APP_PEM_KEY",
     "SECRET_GH_APP_INSTALLATION_ID",
     "SECRET_GH_APP_REGION",
-    "GH_AUTH_LAMBDA_NAME",
-    "GH_AUTH_LAMBDA_REGION",
     "MAIN_BRANCH",
     "DISABLED_WORKFLOWS",
     "ENABLED_WORKFLOWS",
@@ -216,7 +211,7 @@ def _get_settings() -> _Settings:
                 value = getattr(foo, setting)
                 res.__setattr__(setting, value)
                 # print(f"- read user defined setting [{setting} = {value}]")
-            except Exception:
+            except Exception as e:
                 # print(f"Exception while read user settings: {e}")
                 pass
 

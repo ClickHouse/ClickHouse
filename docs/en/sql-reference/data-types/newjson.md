@@ -139,13 +139,13 @@ Our implementation will always assume the latter.
 
 For example:
 
-```sql title="Query"
+```sql
 SELECT CAST('{"a.b.c" : 42}', 'JSON') AS json
 ```
 
 will return:
 
-```response title="Response"
+```response
    ┌─json───────────────────┐
 1. │ {"a":{"b":{"c":"42"}}} │
    └────────────────────────┘
@@ -980,13 +980,13 @@ FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz
 └─arrayJoin(distinctJSONPaths(json))─────────────────────────┘
 ```
 
-```sql title="Query"
+```sql
 SELECT arrayJoin(distinctJSONPathsAndTypes(json))
 FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject)
 SETTINGS date_time_input_format = 'best_effort'
 ```
 
-```text title="Response"
+```text
 ┌─arrayJoin(distinctJSONPathsAndTypes(json))──────────────────┐
 │ ('actor.avatar_url',['String'])                             │
 │ ('actor.display_login',['String'])                          │
@@ -1192,7 +1192,7 @@ You can also use expressions that combine multiple subcolumns, for example `json
 
 #### Example {#json-indexes-on-subcolumns-example}
 
-```sql title="Query"
+```sql
 CREATE TABLE sensor_data
 (
     data JSON(sensor_id UInt32),
@@ -1254,7 +1254,7 @@ This works similarly to creating skip indexes on [`Map`](/sql-reference/data-typ
 
 #### Example {#json-indexes-jsonallpaths-example}
 
-```sql title="Query"
+```sql
 CREATE TABLE events
 (
     data JSON,

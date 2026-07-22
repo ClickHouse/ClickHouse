@@ -72,7 +72,6 @@ struct FormatFilterInfo
 
     ColumnMapperPtr column_mapper;
 
-    std::optional<size_t> condition_hash;
 private:
     /// For lazily initializing the fields above.
     std::once_flag init_flag;
@@ -84,13 +83,6 @@ public:
     /// Creates `key_condition` and `additional_columns` with std::call_once semantics.
     /// If a previous init attempt threw an exception, rethrows it instead of retrying.
     void initKeyConditionOnce(const Block & keys);
-
-    /// Returns `base` extended with columns required by PREWHERE / row-level filter.
-    /// Hint: pass `base` with `std::move` to avoid copying
-    static Block buildKeyConditionInputs(
-        Block base,
-        const PrewhereInfoPtr & prewhere_info,
-        const FilterDAGInfoPtr & row_level_filter);
 };
 
 }

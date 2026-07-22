@@ -189,7 +189,6 @@ String LibraryDictionarySource::getDictAttributesString()
 }
 
 
-void registerDictionarySourceLibrary(DictionarySourceFactory & factory);
 void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,
@@ -207,10 +206,7 @@ void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
         return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, global_context, created_from_ddl);
     };
 
-    factory.registerSource("library", create_table_source, Documentation{
-        .description = "Obtains dictionary data from an external shared library that implements the dictionary library bridge interface. When created from a DDL query, the library path must be inside the configured dictionaries library directory.",
-        .syntax = "SOURCE(LIBRARY(path '/path/to/lib.so'))",
-        .related = {}});
+    factory.registerSource("library", create_table_source);
 }
 
 

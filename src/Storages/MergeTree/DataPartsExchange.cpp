@@ -27,11 +27,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/Jemalloc.h>
-#include <Common/JemallocMergeTreeArena.h>
 #include <Common/randomDelay.h>
 #include <Common/thread_local_rng.h>
-#include <Core/UUID.h>
 
 namespace fs = std::filesystem;
 
@@ -192,7 +189,7 @@ void Service::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuf
         Strings capabilities;
         const String delimiter(", ");
         size_t pos_start = 0;
-        size_t pos_end = 0;
+        size_t pos_end;
         while ((pos_end = remote_fs_metadata.find(delimiter, pos_start)) != std::string::npos)
         {
             const String token = remote_fs_metadata.substr(pos_start, pos_end - pos_start);
@@ -343,7 +340,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     return data_checksums;
 }
 
-static bool wait_loop(UInt32 wait_timeout_ms, const std::function<bool()> & pred)
+bool wait_loop(UInt32 wait_timeout_ms, const std::function<bool()> & pred)
 {
     static const UInt32 loop_delay_ms = 5;
 
@@ -509,7 +506,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
 
     ReadSettings read_settings = context->getReadSettings();
     /// Disable retries for fetches, this will be done by the engine itself.
-    read_settings.http_settings.max_tries = 1;
+    read_settings.http_max_tries = 1;
 
     auto in = BuilderRWBufferFromHTTP(uri)
                   .withConnectionGroup(HTTPConnectionGroupType::HTTP)
@@ -700,7 +697,7 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
     ThrottlerPtr throttler,
     bool sync) const
 {
-    size_t files = 0;
+    size_t files;
     readBinary(files, in);
     LOG_DEBUG(log, "Downloading files {}", files);
 
@@ -710,7 +707,7 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
     for (size_t i = 0; i < files; ++i)
     {
         String file_name;
-        UInt64 file_size = 0;
+        UInt64 file_size;
 
         readStringBinary(file_name, in);
         readBinary(file_size, in);
@@ -808,19 +805,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     auto part_dir = tmp_prefix + part_name;
     auto part_relative_path = data.getRelativeDataPath() + String(to_detached ? MergeTreeData::DETACHED_DIR_NAME : "");
+    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
 
-    /// Same rationale as `MergeTreeData::loadDataPart`: the `SingleDiskVolume` and the
-    /// `DataPartStorageOnDiskFull` below are stored on the resulting part and live for its
-    /// lifetime. Only this two-line scope is wrapped — the actual fetch I/O buffers below
-    /// are short-lived and stay in the default arena.
-    auto [volume, part_storage_for_loading] = [&]
-    {
-        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        auto v = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
-        auto s = std::make_shared<DataPartStorageOnDiskFull>(v, part_relative_path, part_dir);
-        return std::pair{std::move(v), std::move(s)};
-    }();
-
+    /// Create temporary part storage to write sent files.
+    /// Actual part storage will be initialized later from metadata.
+    auto part_storage_for_loading = std::make_shared<DataPartStorageOnDiskFull>(volume, part_relative_path, part_dir);
     part_storage_for_loading->beginTransaction();
 
     if (part_storage_for_loading->exists())
@@ -939,34 +928,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
                     data_checksums.addFile(name, checksum.file_size, checksum.file_hash);
             }
             new_data_part->checksums.checkEqual(data_checksums, false, new_data_part->name);
-        }
-        else
-        {
-            /// A packed part is transferred as a single data.packed archive, so the per-file wire
-            /// hashes above only prove the archive arrived intact, not that its logical contents match
-            /// the checksums it advertises (data_checksums is keyed by data.packed, not by the logical
-            /// files in part->checksums, which is why the checkEqual above is limited to full storage).
-            /// Recompute the checksums from the archive and compare them, so a corrupted packed part is
-            /// rejected on fetch instead of being accepted and propagated to this replica.
-            /// checkDataPart itself tolerates an unknown <name>.proj that the table no longer knows about
-            /// (a projection dropped while the part was detached, then re-attached): it drops such
-            /// entries from the expected checksums when throw_on_broken_projection is false. Genuine
-            /// base-file corruption still fails checkEqual, so it is left to propagate.
-            bool is_broken_projection = false;
-            auto computed_checksums = checkDataPart(new_data_part, /*require_checksums=*/ true, is_broken_projection);
-
-            /// checkDataPart returns an empty result (instead of throwing) when it hits a retryable error
-            /// such as a transient read or memory-limit exception, expecting the check to be retried
-            /// later. On the fetch path there is no later check before the part is published, so an empty
-            /// result means the archive contents were never verified. Fail the fetch so it is retried
-            /// rather than accepting a possibly-corrupted packed part. (A real part always has files, so a
-            /// genuine part never yields empty checksums here.)
-            if (computed_checksums.empty())
-                throw Exception(
-                    ErrorCodes::ABORTED,
-                    "Could not verify packed part {} on fetch (checksum computation was skipped because of a "
-                    "transient error); the fetch will be retried",
-                    part_name);
         }
         LOG_DEBUG(log, "Download of part {} onto disk {} finished.", part_name, disk->getName());
     }

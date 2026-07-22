@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadGroupSwitcher.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>
@@ -11,7 +10,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Common/ThreadStatus.h>
 #include <Interpreters/Context.h>
 
 

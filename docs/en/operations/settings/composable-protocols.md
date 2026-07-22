@@ -8,6 +8,8 @@ title: 'Composable protocols'
 doc_type: 'reference'
 ---
 
+# Composable protocols
+
 ## Overview {#overview}
 
 Composable protocols allow more flexible configuration of TCP access to the 

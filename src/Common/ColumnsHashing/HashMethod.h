@@ -44,7 +44,6 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 
     static constexpr bool has_cheap_key_calculation = true;
-    static constexpr bool has_pre_computed_hashes = false;
 
     const char * vec;
 
@@ -175,14 +174,13 @@ struct HashMethodString : public columns_hashing_impl::HashMethodBase<
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 
     static constexpr bool has_cheap_key_calculation = false;
-    static constexpr bool has_pre_computed_hashes = false;
 
     const IColumn::Offset * offsets;
     const UInt8 * chars;
 
     HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
     {
-        const IColumn * column = nullptr;
+        const IColumn * column;
         if constexpr (nullable)
         {
             column = checkAndGetColumn<ColumnNullable>(*key_columns[0]).getNestedColumnPtr().get();
@@ -235,14 +233,13 @@ struct HashMethodFixedString : public columns_hashing_impl::HashMethodBase<
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 
     static constexpr bool has_cheap_key_calculation = false;
-    static constexpr bool has_pre_computed_hashes = false;
 
     size_t n;
     const ColumnFixedString::Chars * chars;
 
     HashMethodFixedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
     {
-        const IColumn * column = nullptr;
+        const IColumn * column;
         if constexpr (nullable)
         {
             column = checkAndGetColumn<ColumnNullable>(*key_columns[0]).getNestedColumnPtr().get();
@@ -307,7 +304,6 @@ struct HashMethodKeysFixed
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
     static constexpr bool has_cheap_key_calculation = true;
-    static constexpr bool has_pre_computed_hashes = false;
 
     LowCardinalityKeys<has_low_cardinality> low_cardinality_keys;
     Sizes key_sizes;
@@ -431,7 +427,7 @@ struct HashMethodKeysFixed
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
             if constexpr (sizeof(Key) <= 16)
             {
-                chassert(!has_low_cardinality && !has_nullable_keys);
+                assert(!has_low_cardinality && !has_nullable_keys);
                 return packFixedShuffle<Key>(columns_data.get(), keys_size, key_sizes.data(), row, masks.get());
             }
 #endif
@@ -481,7 +477,6 @@ struct HashMethodHashed
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
 
     static constexpr bool has_cheap_key_calculation = false;
-    static constexpr bool has_pre_computed_hashes = false;
 
     ColumnRawPtrs key_columns;
 

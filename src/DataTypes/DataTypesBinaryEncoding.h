@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
-#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -72,13 +71,11 @@ enum class BinaryTypeIndex : uint8_t
     Please don't use 0x33 and 0x35, because older client might try to serialise data as TimeWithTimezone/Time64WithTimezone, and newer server would deserialise them as incorrect types. */
     Time64 = 0x34,
     /// reserved = 0x35
-    QBit = 0x36,
-    /// QBit with an explicit stride parameter (stride != dimension). Non-strided QBit keeps using 0x36 for backward compatibility.
-    QBitWithStride = 0x37
+    QBit = 0x36
 };
 
 /// Maximum value of BinaryTypeIndex + 1, used for sizing the index array in SimpleDataTypesCache.
-inline constexpr size_t BINARY_TYPE_INDEX_SIZE = 0x38;
+inline constexpr size_t BINARY_TYPE_INDEX_SIZE = 0x37;
 
 /**
 
@@ -139,10 +136,7 @@ Binary encoding for ClickHouse data types:
 | Time                                                                                                    | 0x32                                                                                                                                                                                                                                                                                                                                                                     |
 | Time64(P)                                                                                               | 0x34<uint8_precision>                                                                                                                                                                                                                                                                                                                                                    |
 | QBit(T, N)                                                                                              | 0x36<element_type_encoding><var_uint_dimension>                                                                                                                                                                                                                                                                                                                          |
-| QBit(T, N, stride)                                                                                      | 0x37<element_type_encoding><var_uint_dimension><var_uint_stride>                                                                                                                                                                                                                                                                                                         |
 |---------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-
-For type QBit the 0x37 encoding is used only when stride differs from the dimension N. When stride == N (including when the third argument is written explicitly, as in QBit(Float32, 4, 4)) the type is canonicalized to the two-argument QBit(T, N) form and encoded as 0x36 above, so its binary encoding stays byte-identical to a non-strided QBit.
 
 Interval kind binary encoding:
 |---------------|-----------------|
@@ -158,7 +152,7 @@ Interval kind binary encoding:
 | Week          | 0x07            |
 | Month         | 0x08            |
 | Quarter       | 0x09            |
-| Year          | 0x0A            |
+| Year          | 0x1A            |
 |---------------|-----------------|
 
 Aggregate function parameter binary encoding (binary encoding of a Field, see src/Common/FieldBinaryEncoding.h):
@@ -199,14 +193,8 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf);
 /// It can skip serializing some data types parameters.
 void encodeDataTypeForHashCalculation(const DataTypePtr & type, WriteBuffer & buf);
 
-/// Decode a type. max_complexity limits the number of decoded type nodes (0 == unlimited, the default).
-/// Callers reading untrusted input (input formats, and query plans deserialized from a client via
-/// receiveQueryPlan) pass the effective `input_format_binary_max_type_complexity` to guard against malicious
-/// input; callers decoding already-stored server data (columns, shared-data) use the default (unlimited).
-DataTypePtr decodeDataType(ReadBuffer & buf, size_t max_complexity = 0);
-
-/// Resolve the effective input_format_binary_max_type_complexity from a context, to pass to decodeDataType.
-/// Reads the setting once (not per type node), so it does not reintroduce per-value context contention.
-size_t getBinaryTypeDecodingComplexityLimit(const ContextPtr & context);
+DataTypePtr decodeDataType(const String & data);
+DataTypePtr decodeDataType(std::string_view data);
+DataTypePtr decodeDataType(ReadBuffer & buf);
 
 }

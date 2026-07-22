@@ -17,7 +17,7 @@ namespace
 /// Syntax:
 /// - overlay(s, replace, offset[, length])
 /// - overlayUTF8(s, replace, offset[, length]) - measure offset and length in code points instead of bytes
-class FunctionOverlay final : public IFunction
+class FunctionOverlay : public IFunction
 {
 public:
     FunctionOverlay(const char * name_, bool is_utf8_) : function_name(name_), is_utf8(is_utf8_) {}
@@ -256,7 +256,7 @@ private:
         size_t valid_length = 0; // not negative
         if constexpr (has_four_args && length_is_const)
         {
-            chassert(const_length >= 0);
+            assert(const_length >= 0);
             valid_length = const_length;
         }
         else if constexpr (!has_four_args)
@@ -363,7 +363,7 @@ private:
         size_t valid_length = 0; // not negative
         if constexpr (has_four_args && length_is_const)
         {
-            chassert(const_length >= 0);
+            assert(const_length >= 0);
             valid_length = const_length;
         }
         else if constexpr (!has_four_args)
@@ -482,7 +482,7 @@ private:
         size_t valid_length = 0; // not negative
         if constexpr (has_four_args && length_is_const)
         {
-            chassert(const_length >= 0);
+            assert(const_length >= 0);
             valid_length = const_length;
         }
 
@@ -600,7 +600,7 @@ private:
         size_t valid_length = 0; // not negative
         if constexpr (has_four_args && length_is_const)
         {
-            chassert(const_length >= 0);
+            assert(const_length >= 0);
             valid_length = const_length;
         }
 
