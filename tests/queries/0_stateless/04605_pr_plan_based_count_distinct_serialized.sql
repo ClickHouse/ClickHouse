@@ -1,7 +1,7 @@
 -- Tags: no-parallel-replicas
--- Regression test for a crash in plan-based parallel replicas. count(DISTINCT ...) with
+-- Regression test for an exception in plan-based parallel replicas. count(DISTINCT ...) with
 -- count_distinct_optimization is a keys-only aggregation shipped to replicas as a plan fragment; its
--- chunks must carry AggregatedChunkInfo or the MergingAggregated above ReadFromParallelReplicas aborts
+-- chunks must carry AggregatedChunkInfo or the MergingAggregated above ReadFromParallelReplicas throws
 -- ("Chunk should have AggregatedChunkInfo in MergingAggregatedTransform"). See PR #111063.
 -- count_distinct_optimization and forced two-level aggregation are pinned to trigger it deterministically.
 

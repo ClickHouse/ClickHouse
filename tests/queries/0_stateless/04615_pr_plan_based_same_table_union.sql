@@ -21,7 +21,7 @@ SET parallel_replicas_plan_based = 1;
 SET parallel_replicas_local_plan = 1;
 SET automatic_parallel_replicas_mode = 0;
 
--- Correctness: same-table UNION ALL counts rows twice; must match non-parallel and not crash. Both the
+-- Correctness: same-table UNION ALL counts rows twice; must match non-parallel and not throw an exception. Both the
 -- top-level union and a view expanding to the same union.
 SELECT count(), sum(a) FROM (SELECT a FROM t_pr_stu UNION ALL SELECT a FROM t_pr_stu);
 SELECT count(), sum(a) FROM v_pr_stu;

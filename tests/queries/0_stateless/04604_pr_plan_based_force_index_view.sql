@@ -5,8 +5,8 @@
 -- force_primary_key over a view see the covered predicate and do NOT throw a false-positive
 -- INDEX_NOT_USED, without enabling parallel_replicas_filter_pushdown (nor
 -- parallel_replicas_allow_view_over_mergetree). A genuinely unused index still throws.
--- Compare with 04501_force_index_by_date_parallel_replicas_view.sql (the non-plan-based / AST path, which
--- needs the pushdown to be auto-enabled). See issues #108266 / PR #109409.
+-- Compare with the non-plan-based / AST path, which needs the pushdown to be auto-enabled.
+-- See issues #108266 / PR #109409.
 
 DROP TABLE IF EXISTS t_force_index_pr_pb;
 DROP VIEW IF EXISTS v_force_index_pr_pb;
