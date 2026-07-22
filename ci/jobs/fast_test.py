@@ -170,6 +170,7 @@ def main():
 
     clickhouse_bin_path = Path(f"{build_dir}/programs/clickhouse")
     clickhouse_se_path = Path(f"{build_dir}/programs/self-extracting/clickhouse")
+    clickhouse_se_stripped_path = Path(f"{build_dir}/programs/self-extracting/clickhouse-stripped")
 
     for path in [
         Path(temp_dir) / "clickhouse",
@@ -193,6 +194,7 @@ def main():
                 "clickhouse-format",
                 "clickhouse-obfuscator",
                 "clickhouse-su",
+                "ch",
             ):
                 Utils.link(resolved_clickhouse_bin_path, resolved_clickhouse_bin_path.parent / tool)
             Shell.check(f"chmod +x {resolved_clickhouse_bin_path}", strict=True)
@@ -293,15 +295,19 @@ def main():
 
     if res and JobStages.BUILD in stages:
         se_check_path = Path(build_dir) / "clickhouse_se_check"
+        se_stripped_check_path = Path(build_dir) / "clickhouse_se_stripped_check"
         commands = [
             "sccache --show-stats",
             "clickhouse-client --version",
-            # Verify the self-extracting bundle works: copy it so the first-run
-            # in-place decompression does not corrupt the artifact we will upload,
-            # then run --version to trigger extraction and confirm it produces output.
+            # Verify both self-extracting bundles: copy each so the first-run
+            # in-place decompression does not corrupt the artifacts we will upload,
+            # then run --version to trigger extraction and confirm output.
             f"cp {clickhouse_se_path} {se_check_path}",
             f"chmod +x {se_check_path}",
             f"{se_check_path} --version",
+            f"cp {clickhouse_se_stripped_path} {se_stripped_check_path}",
+            f"chmod +x {se_stripped_check_path}",
+            f"{se_stripped_check_path} --version",
         ]
         results.append(
             Result.from_commands_run(
@@ -379,9 +385,12 @@ def main():
             attach_debug = True
         job_info = results[-1].info
 
-    if clickhouse_se_path.is_file():
+    clickhouse_upload_path = (
+        clickhouse_se_path if (attach_debug or not res) else clickhouse_se_stripped_path
+    )
+    if clickhouse_upload_path.is_file():
         # do not reupload clickhouse binary for non-building jobs (e.g. darwin tests)
-        attach_files.append(clickhouse_se_path)
+        attach_files.append(clickhouse_upload_path)
     if attach_debug:
         attach_files.extend(CH.prepare_logs(info=info, all=True))
 
