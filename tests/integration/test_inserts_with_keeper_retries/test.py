@@ -211,7 +211,7 @@ def test_ambiguous_zk_commit_query_timeout_preserves_data(started_cluster):
         job = pool.apply_async(
             node1.query_and_get_error,
             (
-                "INSERT INTO amb_timeout SELECT number, toString(number) FROM numbers(10) "
+                "INSERT INTO amb_timeout SELECT number, toString(number) FROM numbers(10) ORDER BY ALL "
                 "SETTINGS insert_keeper_max_retries=10000, insert_keeper_retry_initial_backoff_ms=50, "
                 "insert_keeper_retry_max_backoff_ms=100, max_execution_time=2",
             ),
@@ -244,7 +244,7 @@ def test_ambiguous_zk_commit_query_timeout_preserves_data(started_cluster):
         # part must remain readable and retrying the insert must be deduplicated.
         assert node1.query("SELECT count() FROM amb_timeout") == "10\n"
         node1.query(
-            "INSERT INTO amb_timeout SELECT number, toString(number) FROM numbers(10)"
+            "INSERT INTO amb_timeout SELECT number, toString(number) FROM numbers(10) ORDER BY ALL"
         )
         assert node1.query("SELECT count() FROM amb_timeout") == "10\n"
         assert (
@@ -292,7 +292,7 @@ def test_ambiguous_zk_commit_kill_preserves_data(started_cluster):
         job = pool.apply_async(
             node1.query_and_get_error,
             (
-                "INSERT INTO amb_kill SELECT number, toString(number) FROM numbers(10) "
+                "INSERT INTO amb_kill SELECT number, toString(number) FROM numbers(10) ORDER BY ALL "
                 "SETTINGS insert_keeper_max_retries=10000, insert_keeper_retry_initial_backoff_ms=100, "
                 "insert_keeper_retry_max_backoff_ms=200",
             ),
@@ -322,7 +322,7 @@ def test_ambiguous_zk_commit_kill_preserves_data(started_cluster):
 
         assert node1.query("SELECT count() FROM amb_kill") == "10\n"
         node1.query(
-            "INSERT INTO amb_kill SELECT number, toString(number) FROM numbers(10)"
+            "INSERT INTO amb_kill SELECT number, toString(number) FROM numbers(10) ORDER BY ALL"
         )
         assert node1.query("SELECT count() FROM amb_kill") == "10\n"
         assert (
