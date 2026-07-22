@@ -9543,7 +9543,7 @@ MergeTreeData::Transaction::Transaction(MergeTreeData & data_, MergeTreeTransact
         data.transactions_enabled.store(true);
 }
 
-void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
+void MergeTreeData::Transaction::rollbackPartsToTemporaryState(DataPartsLock * acquired_lock)
 {
     if (!isEmpty())
     {
@@ -9554,8 +9554,11 @@ void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
         buf << ".";
         LOG_DEBUG(data.log, "Undoing transaction.{}", buf.str());
 
+        std::optional<DataPartsLock> own_lock;
+        auto & lock = acquired_lock ? *acquired_lock : own_lock.emplace(data.lockParts());
+
         data.removePartsFromWorkingSetImmediatelyAndSetTemporaryState(
-            DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()));
+            DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()), lock);
     }
 
     clear();

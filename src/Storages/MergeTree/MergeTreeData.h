@@ -381,7 +381,7 @@ public:
 
         /// Immediately remove parts from table's data_parts set and change part
         /// state to temporary. Useful for new parts which not present in table.
-        void rollbackPartsToTemporaryState();
+        void rollbackPartsToTemporaryState(DataPartsLock * acquired_lock = nullptr);
 
         size_t size() const { return precommitted_parts.size(); }
         bool isEmpty() const { return precommitted_parts.empty(); }

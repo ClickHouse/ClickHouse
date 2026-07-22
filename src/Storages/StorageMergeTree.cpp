@@ -3115,7 +3115,25 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
     /// The rename below is the first write that publishes the covering empty parts into the
     /// (possibly shared) storage prefix. A lease lost during `stopMergesAndWait` or the empty-part
     /// preparation above must fail closed here, before anything becomes visible to the new leader.
-    assertWritableLeaderAtEpoch(admission_epoch);
+    try
+    {
+        assertWritableLeaderAtEpoch(admission_epoch);
+    }
+    catch (...)
+    {
+        /// The covering parts were never renamed to their persistent names, and their names are
+        /// deterministic (covered part with `level + 1`). A regular rollback would leave them in
+        /// the working set as Outdated with storage still pointing at the `tmp_empty_*` directory;
+        /// a later retry of the same DDL on the same partition re-creates that exact directory,
+        /// and the lazy cleanup of the zombie would then destroy the retry's live part storage.
+        /// Remove them from the working set entirely: they were never visible to anyone.
+        transaction.rollbackPartsToTemporaryState();
+        /// Restore temporary ownership (cleared by `preparePartForCommit`) so the destructors
+        /// remove the never-published directories instead of leaving stale leftovers.
+        for (auto & part : new_parts)
+            part->is_temp = true;
+        throw;
+    }
 
     transaction.renameParts();
     transaction.commit();
@@ -3910,8 +3928,35 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             /// BEFORE `renameParts` publishes anything on shared storage. The `commit` calls below
             /// re-check leadership, but by then the renames have already happened, and they cannot
             /// detect a lease lost and reacquired while the parts were being cloned.
-            dest_table_storage->assertWritableLeaderAtEpoch(dest_admission_epoch);
-            assertWritableLeaderAtEpoch(src_admission_epoch);
+            try
+            {
+                dest_table_storage->assertWritableLeaderAtEpoch(dest_admission_epoch);
+                assertWritableLeaderAtEpoch(src_admission_epoch);
+            }
+            catch (...)
+            {
+                /// None of the staged parts were renamed to their persistent names yet, and their
+                /// names are deterministic. A regular rollback would leave them in the working
+                /// sets as Outdated with storage still pointing at the temporary directories;
+                /// a later retry of the same `MOVE PARTITION` re-creates those exact directories,
+                /// and the lazy cleanup of the zombies would then destroy the retry's live part
+                /// storage. Remove them from the working sets entirely: they were never visible
+                /// to anyone. Skipped for `MergeTreeTransaction` to keep its CSN bookkeeping on
+                /// the regular rollback path.
+                if (!txn)
+                {
+                    dest_transaction.rollbackPartsToTemporaryState(&dest_data_parts_lock);
+                    src_transaction.rollbackPartsToTemporaryState(&src_data_parts_lock);
+                    /// Restore temporary ownership (cleared by `preparePartForCommit`) so the
+                    /// destructors remove the never-published directories instead of leaving
+                    /// stale leftovers.
+                    for (auto & part : dst_parts)
+                        part->is_temp = true;
+                    for (auto & part : new_empty_covering_src_parts)
+                        part->is_temp = true;
+                }
+                throw;
+            }
 
             dest_transaction.renameParts();
             dest_transaction.commit(dest_data_parts_lock);
