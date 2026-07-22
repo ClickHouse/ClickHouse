@@ -23,7 +23,7 @@ The table below compares supported ORC data types and their corresponding ClickH
 
 | ORC data type (`INSERT`)              | ClickHouse data type                                                                                              | ORC data type (`SELECT`) |
 |---------------------------------------|-------------------------------------------------------------------------------------------------------------------|--------------------------|
-| `Boolean`                             | [UInt8](/sql-reference/data-types/int-uint.md)                                                            | `Boolean`                |
+| `Boolean`                             | [Bool](/sql-reference/data-types/boolean.md)                                                              | `Boolean`                |
 | `Tinyint`                             | [Int8/UInt8](/sql-reference/data-types/int-uint.md)/[Enum8](/sql-reference/data-types/enum.md)    | `Tinyint`                |
 | `Smallint`                            | [Int16/UInt16](/sql-reference/data-types/int-uint.md)/[Enum16](/sql-reference/data-types/enum.md) | `Smallint`               |
 | `Int`                                 | [Int32/UInt32](/sql-reference/data-types/int-uint.md)                                                     | `Int`                    |
