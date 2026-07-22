@@ -426,7 +426,12 @@ def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
             f"{repo_path}/tests/performance/scripts/perf.py "
             f"--host localhost localhost "
             f"--port {port} {port} "
-            f"--runs {runs} --max-queries {max_queries} "
+            # Exactly `runs` runs: profile collection wants quick coverage,
+            # not measurement precision, so pin the minimum and both caps
+            # instead of the legacy --runs ("at least N"), which would widen
+            # the adaptive policy to its default minimum of 5.
+            f"--min-runs {runs} --cap {runs} --cap-fast {runs} "
+            f"--max-queries {max_queries} "
             f"--max-query-seconds 15 --prewarm-max-query-seconds 15 "
             f"--profile-seconds 0 "
             f"{repo_path}/tests/performance/{test_file}",
