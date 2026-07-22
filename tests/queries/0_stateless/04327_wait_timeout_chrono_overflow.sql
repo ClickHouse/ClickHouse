@@ -46,8 +46,13 @@ DROP TABLE t_04327_sync_merges;
 -- largest ttl must not overflow that time_point addition, and the entry must stay non-stale (a wrapped
 -- deadline would land in the past). The top-level write goes through executeQuery; the inner subquery
 -- write goes through the Planner path (query_cache_for_subqueries). Both must be cached and non-stale.
+-- system.query_cache is server-global, so read it as a single-row aggregate: one row regardless of how
+-- many entries accumulate across repeated (flaky-check) runs, while still asserting the required entries
+-- exist and none is stale (a wrapped deadline would land in the past and make stale=1). The top-level
+-- write goes to the executeQuery path (is_subquery=0); the subquery block must produce BOTH the top-level
+-- (is_subquery=0) and the Planner subquery (is_subquery=1) entries, so check each path explicitly.
 SELECT 'qc_04327_top' SETTINGS use_query_cache = 1, query_cache_ttl = 9223372036854;
-SELECT stale FROM system.query_cache WHERE query LIKE '%qc\_04327\_top%' AND query NOT LIKE '%system.query_cache%';
+SELECT countIf(is_subquery = 0) > 0 AND max(stale) = 0 FROM system.query_cache WHERE query LIKE '%qc\_04327\_top%' AND query NOT LIKE '%system.query_cache%';
 
 SELECT sum(number) FROM (SELECT number FROM numbers(5) WHERE number > 41000000) SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, query_cache_ttl = 9223372036854;
-SELECT stale FROM system.query_cache WHERE query LIKE '%41000000%' AND query NOT LIKE '%system.query_cache%' ORDER BY query;
+SELECT countIf(is_subquery = 0) > 0 AND countIf(is_subquery = 1) > 0 AND max(stale) = 0 FROM system.query_cache WHERE query LIKE '%41000000%' AND query NOT LIKE '%system.query_cache%';
