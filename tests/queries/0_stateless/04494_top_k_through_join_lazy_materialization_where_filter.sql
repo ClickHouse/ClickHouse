@@ -71,8 +71,11 @@ DROP TABLE IF EXISTS t_l_using;
 DROP TABLE IF EXISTS t_r_using;
 CREATE TABLE t_l_using (v Int64, x String) ENGINE = MergeTree ORDER BY v;
 INSERT INTO t_l_using SELECT number, toString(number) FROM numbers(100);
-CREATE TABLE t_r_using (v Int64, id UInt32, ts DateTime) ENGINE = MergeTree ORDER BY v;
-INSERT INTO t_r_using SELECT number, number, toDateTime(1700000000 + number) FROM numbers(100);
+-- `ts` is `DateTime('UTC')` so its rendered value does not depend on the
+-- server/session timezone (a plain `DateTime` renders in the server timezone and
+-- makes the reference non-deterministic across CI runners).
+CREATE TABLE t_r_using (v Int64, id UInt32, ts DateTime('UTC')) ENGINE = MergeTree ORDER BY v;
+INSERT INTO t_r_using SELECT number, number, toDateTime(1700000000 + number, 'UTC') FROM numbers(100);
 
 SELECT 'right_using_mtp0_on' AS label, r.ts
 FROM t_l_using AS l RIGHT JOIN t_r_using AS r USING (v)
