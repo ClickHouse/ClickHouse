@@ -9,7 +9,7 @@
   },
   {
     "source": "/integrations/language-clients/nodejs",
-    "destination": "/integrations/language-clients/js"
+    "destination": "/integrations/language-clients/js/index"
   },
   {
     "source": "/manage/security/compliance-and-certification",
@@ -3942,7 +3942,7 @@
   },
   {
     "source": "/integrations/c",
-    "destination": "/integrations/language-clients/c"
+    "destination": "/integrations/language-clients/c/index"
   },
   {
     "source": "/integrations/cassandra",
@@ -4422,39 +4422,39 @@
   },
   {
     "source": "/integrations/go",
-    "destination": "/integrations/language-clients/go"
+    "destination": "/integrations/language-clients/go/index"
   },
   {
     "source": "/integrations/go/choosing-a-client",
-    "destination": "/integrations/language-clients/go"
+    "destination": "/integrations/language-clients/go/index"
   },
   {
     "source": "/integrations/go/clickhouse-go",
-    "destination": "/integrations/language-clients/go"
+    "destination": "/integrations/language-clients/go/index"
   },
   {
     "source": "/integrations/go/clickhouse-go/clickhouse-api",
-    "destination": "/integrations/language-clients/go"
+    "destination": "/integrations/language-clients/go/index"
   },
   {
     "source": "/integrations/go/clickhouse-go/database-sql-api",
-    "destination": "/integrations/language-clients/go"
+    "destination": "/integrations/language-clients/go/index"
   },
   {
     "source": "/integrations/go/clickhouse-go/installation",
-    "destination": "/integrations/language-clients/go"
+    "destination": "/integrations/language-clients/go/index"
   },
   {
     "source": "/integrations/go/clickhouse-go/introduction",
-    "destination": "/integrations/language-clients/go"
+    "destination": "/integrations/language-clients/go/index"
   },
   {
     "source": "/integrations/go/clickhouse-go/performance-tips",
-    "destination": "/integrations/language-clients/go"
+    "destination": "/integrations/language-clients/go/index"
   },
   {
     "source": "/integrations/go/intro",
-    "destination": "/integrations/language-clients/go"
+    "destination": "/integrations/language-clients/go/index"
   },
   {
     "source": "/integrations/google-dataflow/dataflow",
@@ -4530,7 +4530,7 @@
   },
   {
     "source": "/integrations/java",
-    "destination": "/integrations/language-clients/java"
+    "destination": "/integrations/language-clients/java/index"
   },
   {
     "source": "/integrations/java/client-v2",
@@ -4550,7 +4550,7 @@
   },
   {
     "source": "/integrations/javascript",
-    "destination": "/integrations/language-clients/js"
+    "destination": "/integrations/language-clients/js/index"
   },
   {
     "source": "/integrations/jdbc",
@@ -4678,31 +4678,31 @@
   },
   {
     "source": "/integrations/language-clients/java/r2dbc",
-    "destination": "/integrations/language-clients/java"
+    "destination": "/integrations/language-clients/java/index"
   },
   {
     "source": "/integrations/language-clients/javascript",
-    "destination": "/integrations/language-clients/js"
+    "destination": "/integrations/language-clients/js/index"
   },
   {
     "source": "/integrations/language-clients/python/driver-api",
-    "destination": "/integrations/language-clients/python"
+    "destination": "/integrations/language-clients/python/index"
   },
   {
     "source": "/integrations/language-clients/python/inserts",
-    "destination": "/integrations/language-clients/python"
+    "destination": "/integrations/language-clients/python/index"
   },
   {
     "source": "/integrations/language-clients/python/intro",
-    "destination": "/integrations/language-clients/python"
+    "destination": "/integrations/language-clients/python/index"
   },
   {
     "source": "/integrations/language-clients/python/options",
-    "destination": "/integrations/language-clients/python"
+    "destination": "/integrations/language-clients/python/index"
   },
   {
     "source": "/integrations/language-clients/python/queries",
-    "destination": "/integrations/language-clients/python"
+    "destination": "/integrations/language-clients/python/index"
   },
   {
     "source": "/integrations/lightdash",
@@ -4862,7 +4862,7 @@
   },
   {
     "source": "/integrations/python",
-    "destination": "/integrations/language-clients/python"
+    "destination": "/integrations/language-clients/python/index"
   },
   {
     "source": "/integrations/qstudio",
@@ -4918,7 +4918,7 @@
   },
   {
     "source": "/integrations/rust",
-    "destination": "/integrations/language-clients/rust"
+    "destination": "/integrations/language-clients/rust/index"
   },
   {
     "source": "/integrations/s3",
@@ -5074,7 +5074,7 @@
   },
   {
     "source": "/interfaces/cpp",
-    "destination": "/integrations/language-clients/cpp"
+    "destination": "/integrations/language-clients/cpp/index"
   },
   {
     "source": "/interfaces/csharp",
@@ -5486,7 +5486,7 @@
   },
   {
     "source": "/interfaces/go",
-    "destination": "/integrations/language-clients/go"
+    "destination": "/integrations/language-clients/go/index"
   },
   {
     "source": "/interfaces/grpc",
@@ -5502,7 +5502,7 @@
   },
   {
     "source": "/interfaces/javascript",
-    "destination": "/integrations/language-clients/js"
+    "destination": "/integrations/language-clients/js/index"
   },
   {
     "source": "/interfaces/jdbc",
@@ -5534,7 +5534,7 @@
   },
   {
     "source": "/interfaces/python",
-    "destination": "/integrations/language-clients/python"
+    "destination": "/integrations/language-clients/python/index"
   },
   {
     "source": "/interfaces/schema-inference",
