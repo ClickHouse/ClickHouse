@@ -21,6 +21,13 @@ set -euo pipefail
 # tests/fuzz/dictionaries/old.dict. Unlike a committed snapshot, it cannot drift
 # from the sources it is generated from.
 #
+# Names composed at compile time (macro token-pasting like toIntervalDay,
+# template concatenation like tuplePlus / emptyArrayUInt8 / L2Normalize /
+# inIgnoreSet) cannot be derived from the sources by scanning; they are kept in
+# the curated old.dict. update_dict.sh - which runs in the nightly libFuzzer
+# job against a real binary - verifies that the output of this script covers
+# the binary-derived dictionary, so any gap fails loudly instead of drifting.
+#
 # Usage: generate_source_dict.sh <clickhouse_source_root> <output_file>
 
 SOURCE_ROOT="$1"
@@ -43,8 +50,35 @@ trap 'rm -f "$TMP_FILE"' EXIT
     #     static constexpr auto makeDateName = "makeDate";
     # Both = and brace initializers are accepted:
     #     static constexpr auto name{"JSONHas"};
+    # Besides constexpr, plain const definitions are covered too, including
+    # out-of-class template specializations and inline members:
+    #     const char * FunctionPolygonsUnion<CartesianPoint>::name = "polygonsUnionCartesian";
+    #     static inline const char * name = "widthBucket";
+    # src/Formats hosts the name constants of the structureTo*Schema functions,
+    # so it is scanned as well.
     # Every string literal in the initializer is taken.
-    grep -rhozE 'constexpr [a-zA-Z_:<> *]+ [A-Za-z_]*[Nn]ame(\[\])?[[:space:]]*[={][^;]*;' \
+    grep -rhozE '\bconst(expr)?[[:space:]]+[a-zA-Z_:<> *]+[Nn]ame(\[\])?[[:space:]]*[={][^;]*;' \
+        "$SOURCE_ROOT/src/Functions" \
+        "$SOURCE_ROOT/src/AggregateFunctions" \
+        "$SOURCE_ROOT/src/TableFunctions" \
+        "$SOURCE_ROOT/src/Formats" \
+        | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"'
+
+    # Names carried by a local String variable instead of a literal argument,
+    # e.g. the in/notIn/globalIn/nullIn family (src/Functions/in.cpp):
+    #     String full_name_in = "in";
+    #     factory.registerFunction(full_name_in, ...);
+    grep -rhozE '\bString [A-Za-z_]*[Nn]ame[A-Za-z_]*[[:space:]]*=[[:space:]]*"[^"]+"' \
+        "$SOURCE_ROOT/src/Functions" \
+        "$SOURCE_ROOT/src/AggregateFunctions" \
+        "$SOURCE_ROOT/src/TableFunctions" \
+        | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"'
+
+    # Names carried by an alias list registered in a loop, e.g.
+    #     static const VectorWithMemoryTracking<std::string> aliases = {"groupConcat", "group_concat", "string_agg"};
+    # looped over factory.registerAlias(aliases.at(i), ...) in
+    # src/AggregateFunctions/AggregateFunctionGroupConcat.cpp.
+    grep -rhozE '[Aa]lias(es)?[[:space:]]*=[[:space:]]*\{[^;]*"[^;]*;' \
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
@@ -95,21 +129,29 @@ trap 'rm -f "$TMP_FILE"' EXIT
         } | grep -aoE '"[^"]+"' | tr -d '"' | LC_ALL=C sort -u
     )
     # Base aggregate function names and their aliases (the combinators apply to
-    # both), taken from src/AggregateFunctions with the same three passes used
-    # above (constexpr name constants such as NameQuantile::name, getName()
-    # accessors, and registerFunction/registerAlias calls). The Combinators
-    # subdirectory is excluded so the combinator suffixes themselves are not
-    # treated as base names.
+    # both), taken from src/AggregateFunctions with the same passes used above
+    # (const/constexpr name constants such as NameQuantile::name, getName()
+    # accessors, registerFunction/registerAlias/registerAliasUnchecked calls,
+    # and looped-over alias lists). Window functions (rank, lag, dense_rank,
+    # ...) are aggregate functions too - the binary path crosses them with the
+    # combinators as well - so their registration site
+    # src/Processors/Transforms/WindowTransform.cpp is included. The
+    # Combinators subdirectory is excluded so the combinator suffixes
+    # themselves are not treated as base names.
     aggregate_names=$(
         {
             grep -rhozE --exclude-dir=Combinators \
-                'constexpr [a-zA-Z_:<> *]+ [A-Za-z_]*[Nn]ame(\[\])?[[:space:]]*[={][^;]*;' \
+                '\bconst(expr)?[[:space:]]+[a-zA-Z_:<> *]+[Nn]ame(\[\])?[[:space:]]*[={][^;]*;' \
                 "$SOURCE_ROOT/src/AggregateFunctions"
             grep -rhozE --exclude-dir=Combinators \
                 'getName\(\)[[:space:]]*\{[[:space:]]*return[[:space:]]+"[^"]+"' \
                 "$SOURCE_ROOT/src/AggregateFunctions"
             grep -rhozE --exclude-dir=Combinators \
-                '(registerFunction|registerAlias)[[:space:]]*\([[:space:]]*"[^"]+"' \
+                '(registerFunction|registerAlias[A-Za-z]*)[[:space:]]*\([[:space:]]*"[^"]+"' \
+                "$SOURCE_ROOT/src/AggregateFunctions" \
+                "$SOURCE_ROOT/src/Processors/Transforms/WindowTransform.cpp"
+            grep -rhozE --exclude-dir=Combinators \
+                '[Aa]lias(es)?[[:space:]]*=[[:space:]]*\{[^;]*"[^;]*;' \
                 "$SOURCE_ROOT/src/AggregateFunctions"
         } | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"' \
             | grep -vE '[*?\["\\]' | LC_ALL=C sort -u

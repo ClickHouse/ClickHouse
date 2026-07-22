@@ -24,7 +24,8 @@ configure_file(
 # sources, so it cannot drift the way a committed snapshot does.
 # The dictionary is derived from the registration code, so an incremental
 # build must rerun it when any scanned source changes, not only when the
-# script itself does.
+# script itself does. Keep this list in sync with the trees and files that
+# generate_source_dict.sh scans.
 file(GLOB_RECURSE CODEGEN_DICT_SCANNED_SOURCES CONFIGURE_DEPENDS
     "${ClickHouse_SOURCE_DIR}/src/Functions/*.h"
     "${ClickHouse_SOURCE_DIR}/src/Functions/*.cpp"
@@ -34,6 +35,11 @@ file(GLOB_RECURSE CODEGEN_DICT_SCANNED_SOURCES CONFIGURE_DEPENDS
     "${ClickHouse_SOURCE_DIR}/src/TableFunctions/*.cpp"
     "${ClickHouse_SOURCE_DIR}/src/DataTypes/*.h"
     "${ClickHouse_SOURCE_DIR}/src/DataTypes/*.cpp"
+    "${ClickHouse_SOURCE_DIR}/src/Formats/*.h"
+    "${ClickHouse_SOURCE_DIR}/src/Formats/*.cpp"
+)
+list(APPEND CODEGEN_DICT_SCANNED_SOURCES
+    "${ClickHouse_SOURCE_DIR}/src/Processors/Transforms/WindowTransform.cpp"
 )
 
 add_custom_command(
