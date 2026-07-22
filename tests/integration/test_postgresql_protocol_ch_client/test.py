@@ -902,6 +902,61 @@ def test_copy_from_stdin_client_abort_sends_copy_fail(started_cluster):
         conn.close()
 
 
+class _FailingSourceAfterManyRows:
+    # A file-like object that streams more rows than fit in one insert block (`max_insert_block_size`
+    # defaults to ~1M rows) and then fails, so psycopg2 sends a `CopyFail` only after the server has
+    # received enough data to have flushed at least one block if it were inserting as frames arrive.
+    def __init__(self, chunks=60, rows_per_chunk=25000):
+        self._remaining = chunks
+        self._chunk = "7\n" * rows_per_chunk
+
+    def read(self, size=-1):
+        if self._remaining > 0:
+            self._remaining -= 1
+            return self._chunk
+        raise IOError("simulated local source failure")
+
+
+def test_copy_from_stdin_abort_leaves_no_partial_rows(started_cluster):
+    # Sinks such as `MergeTreeSink` commit parts while an insert streams, so if the `COPY` payload were
+    # fed to the insert pipeline as frames arrive, a `CopyFail` after the first flushed block would leave
+    # partial rows visible even though the `COPY` reports failure - and a client retry would duplicate
+    # them. The payload is staged in full before the insert starts, so an aborted copy must leave the
+    # target table empty even when the payload exceeds one insert block (1.5M rows here, above the
+    # default `max_insert_block_size`).
+    node.query("DROP TABLE IF EXISTS test_copy_abort_multiblock SYNC")
+    node.query(
+        "CREATE TABLE test_copy_abort_multiblock (id UInt32) ENGINE = MergeTree ORDER BY id"
+    )
+
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+        with pytest.raises(Exception):
+            cur.copy_expert(
+                "COPY test_copy_abort_multiblock FROM STDIN WITH (FORMAT csv)",
+                _FailingSourceAfterManyRows(),
+            )
+        conn.rollback()
+
+        # No rows from the aborted copy were committed.
+        assert node.query("SELECT count() FROM test_copy_abort_multiblock") == "0\n"
+
+        # The connection survives and a subsequent copy of the same data succeeds without duplicates.
+        cur.copy_expert(
+            "COPY test_copy_abort_multiblock FROM STDIN WITH (FORMAT csv)",
+            io.StringIO("1\n2\n3\n"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert node.query("SELECT count() FROM test_copy_abort_multiblock") == "3\n"
+    node.query("DROP TABLE test_copy_abort_multiblock SYNC")
+
+
 def test_copy_rejects_unsupported_endpoints(started_cluster):
     # Only the client stream is implemented: `COPY ... TO STDOUT` and `COPY ... FROM STDIN`. Any other copy
     # endpoint - a server-side `PROGRAM`, a file path, or a mismatched `TO STDIN` / `FROM STDOUT` - must be

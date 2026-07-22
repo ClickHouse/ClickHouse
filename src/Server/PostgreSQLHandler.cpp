@@ -125,11 +125,12 @@ private:
             }
             /// A `CopyFail` is a normal client-side abort of the copy (libpq sends it when its local data
             /// source errors or the copy is cancelled), not a protocol violation. Record the abort and throw
-            /// to unwind and cancel the insert pipeline (so the partial input is not committed); the COPY_FROM
-            /// handler recognizes the abort via `clientAborted`, sends a clean `ErrorResponse` and returns the
-            /// query as handled so the run loop follows with `ReadyForQuery`, keeping the connection alive. A
-            /// plain rethrow instead would propagate out of `processQuery` to the run loop and drop the
-            /// connection before `ReadyForQuery`, which a driver such as psycopg2 reports as a lost connection.
+            /// to unwind the staging loop (the payload is staged in full before anything reaches the insert
+            /// pipeline, so an abort leaves no partial rows behind); the COPY_FROM handler recognizes the
+            /// abort via `clientAborted`, sends a clean `ErrorResponse` and returns the query as handled so
+            /// the run loop follows with `ReadyForQuery`, keeping the connection alive. A plain rethrow
+            /// instead would propagate out of `processQuery` to the run loop and drop the connection before
+            /// `ReadyForQuery`, which a driver such as psycopg2 reports as a lost connection.
             if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_FAILURE)
             {
                 auto copy_fail = transport.receive<PostgreSQLProtocol::Messaging::CopyFail>();
@@ -765,7 +766,6 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         /// `database.table` name separately backquoted), so it must not be wrapped in backquotes again.
         auto [ast, io] = executeQuery(fmt::format("INSERT INTO {} {} FROM INFILE 'psql_copy'", copy_query->table_name, columns_to_insert), query_context, {}, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pushing());
-        auto executor = std::make_unique<PushingPipelineExecutor>(io.pipeline);
 
         String format = toString(copy_query->format);
 
@@ -775,14 +775,54 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
 
         /// `CopyData` frame boundaries carry no meaning: a single logical row may arrive split across
         /// several frames (a client is free to chunk the payload however it likes), and one frame may
-        /// hold many rows. So the whole `COPY` payload is parsed by a single input format reading from
-        /// `CopyInDataReadBuffer`, which concatenates the frames into one stream and turns `CopyDone`
-        /// into end-of-stream - never one parser per frame, which would drop a partial trailing row of
-        /// every frame.
+        /// hold many rows. So the whole `COPY` payload is parsed by a single input format reading the
+        /// concatenation of all frames as one stream - never one parser per frame, which would drop a
+        /// partial trailing row of every frame.
+        ///
+        /// The payload is staged in full before any of it is fed to the insert pipeline. Sinks such as
+        /// `MergeTreeSink` commit parts while the insert streams (`consume` / `finishDelayedChunk`), so
+        /// feeding the pipeline as frames arrive would let a client abort (`CopyFail`) after the first
+        /// flushed block leave partial rows visible even though the `COPY` reports failure - and a client
+        /// retry would then duplicate them. Staging moves the commit boundary after a successful
+        /// `CopyDone`: an aborted copy never touches the insert pipeline at all. The staging buffer is
+        /// allocated under the query scope, so the query's memory limits account for it.
         CopyInDataReadBuffer copy_in_stream(*message_transport);
+        String staged_data;
+        try
+        {
+            while (!copy_in_stream.eof())
+            {
+                staged_data.append(copy_in_stream.position(), copy_in_stream.available());
+                copy_in_stream.position() += copy_in_stream.available();
+            }
+        }
+        catch (...)
+        {
+            /// A client-initiated abort (`CopyFail`) is an ordinary "your copy failed" error, not a fatal
+            /// connection error: reply with an `ErrorResponse` and report the query as handled so the run
+            /// loop follows with `ReadyForQuery` and the connection stays usable (mirroring the binary and
+            /// unsupported-option rejections above). Nothing has been pushed to the insert pipeline, so the
+            /// target table is untouched. Any other error is a genuine failure - rethrow it.
+            if (copy_in_stream.clientAborted())
+            {
+                message_transport->send(
+                    PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
+                        PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "57014",
+                        fmt::format("COPY FROM STDIN aborted by the client: {}", copy_in_stream.abortReason())),
+                    true);
+                return true;
+            }
+            throw;
+        }
+
+        /// The executor is created only after the payload is staged in full: creating it earlier would
+        /// leave an unfinished pushing executor behind on the abort return path above.
+        auto executor = std::make_unique<PushingPipelineExecutor>(io.pipeline);
+
+        ReadBufferFromString staged_stream(staged_data);
         auto format_ptr = FormatFactory::instance().getInput(
             format,
-            copy_in_stream,
+            staged_stream,
             io.pipeline.getHeader(),
             query_context,
             settings[Setting::max_insert_block_size],
@@ -812,20 +852,6 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         catch (...)
         {
             executor->cancel();
-
-            /// A client-initiated abort (`CopyFail`) is an ordinary "your copy failed" error, not a fatal
-            /// connection error: reply with an `ErrorResponse` and report the query as handled so the run
-            /// loop follows with `ReadyForQuery` and the connection stays usable (mirroring the binary and
-            /// unsupported-option rejections above). Any other error is a genuine failure - rethrow it.
-            if (copy_in_stream.clientAborted())
-            {
-                message_transport->send(
-                    PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                        PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "57014",
-                        fmt::format("COPY FROM STDIN aborted by the client: {}", copy_in_stream.abortReason())),
-                    true);
-                return true;
-            }
             throw;
         }
 
