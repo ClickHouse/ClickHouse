@@ -1,16 +1,16 @@
 {
-  "item": "Get started",
   "icon": "/images/icons/icon-get-started.svg",
+  "item": "Get started",
   "pages": [
     {
       "group": "Get started",
       "icon": "/images/menu-icon-lightning.svg",
-      "root": "get-started/index",
       "pages": [
+        "get-started/quickstarts/home",
         {
-          "group": "Introduction",
           "expandable": true,
           "expanded": true,
+          "group": "Introduction",
           "pages": [
             "get-started/about/intro",
             "get-started/about/why-clickhouse-is-so-fast",
@@ -18,31 +18,29 @@
           ]
         },
         {
-          "group": "Use cases",
           "expanded": true,
-          "root": "get-started/use-cases/overview",
+          "group": "Use cases",
           "pages": [
             "get-started/use-cases/real-time-analytics",
             "get-started/use-cases/observability",
             "get-started/use-cases/data-warehousing",
             "get-started/use-cases/agentic-analytics"
-          ]
+          ],
+          "root": "get-started/use-cases/overview"
         },
-        "get-started/about/deployment-modes",
-        "get-started/quickstarts/home"
-      ]
+        "get-started/about/deployment-modes"
+      ],
+      "root": "get-started/index"
     },
     {
+      "expanded": true,
       "group": "Setup",
       "icon": "/images/menu-icon-gear.svg",
-      "root": "get-started/setup/install",
-      "expanded": true,
       "pages": [
         "get-started/setup/cloud",
         {
-          "group": "Self-managed",
           "expanded": true,
-          "root": "get-started/setup/self-managed/overview",
+          "group": "Self-managed",
           "pages": [
             {
               "group": "Local development",
@@ -62,15 +60,16 @@
                 "get-started/setup/self-managed/other-linux"
               ]
             }
-          ]
+          ],
+          "root": "get-started/setup/self-managed/overview"
         }
-      ]
+      ],
+      "root": "get-started/setup/install"
     },
     {
+      "expanded": true,
       "group": "Sample datasets",
       "icon": "/images/menu-icon-database.svg",
-      "expanded": true,
-      "root": "get-started/sample-datasets/index",
       "pages": [
         "get-started/sample-datasets/playground",
         {
@@ -133,17 +132,16 @@
             "get-started/sample-datasets/uk-price-paid"
           ]
         }
-      ]
+      ],
+      "root": "get-started/sample-datasets/index"
     },
     {
+      "expanded": true,
       "group": "Migrate",
       "icon": "/images/caret-double-right.svg",
-      "expanded": true,
-      "root": "get-started/migrate/overview",
       "pages": [
         {
           "group": "PostgreSQL",
-          "root": "get-started/migrate/postgres/index",
           "pages": [
             "get-started/migrate/postgres/overview",
             {
@@ -155,16 +153,17 @@
               ]
             },
             "get-started/migrate/postgres/appendix"
-          ]
+          ],
+          "root": "get-started/migrate/postgres/index"
         },
         {
           "group": "BigQuery",
-          "root": "get-started/migrate/bigquery/index",
           "pages": [
             "get-started/migrate/bigquery/overview",
             "get-started/migrate/bigquery/migrating-to-clickhouse-cloud",
             "get-started/migrate/bigquery/loading-data"
-          ]
+          ],
+          "root": "get-started/migrate/bigquery/index"
         },
         {
           "group": "Snowflake",
@@ -202,7 +201,8 @@
             "get-started/migrate/other-methods/object-storage-to-clickhouse"
           ]
         }
-      ]
+      ],
+      "root": "get-started/migrate/overview"
     }
   ]
 }

@@ -1,23 +1,35 @@
 ---
 slug: /guides/developer/overview
-sidebarTitle: 'Advanced guides overview'
-description: 'Overview of the advanced guides'
-title: 'Advanced guides'
-keywords: ['ClickHouse advanced guides', 'developer guides', 'query optimization', 'materialized views', 'deduplication', 'time series', 'query execution']
-doc_type: 'guide'
+sidebarTitle: 'Overview'
+description: 'Overview of the ClickHouse guides'
+title: 'ClickHouse guides'
+keywords: ['ClickHouse guides', 'data formats', 'data modelling', 'aggregate function combinators', 'upgrades', 'best practices', 'deployment', 'scaling']
+doc_type: 'landing-page'
+mode: wide
 ---
 
-This section contains the following advanced guides:
+This section contains the following guides:
 
-| Guide                                                                                                                  | Description                                                                                                                                                                                                                                                                                                                                    |
-|------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [Alternative Query Languages](/concepts/features/configuration/settings/alternative-query-languages)                                         | A guide on alternative supported dialects and how to use them. Provides examples of queries in each dialect.                                                                                                                                                                                                                                   |
-| [Cascading Materialized Views](/concepts/features/materialized-views/cascading-materialized-views)                                       | A guide on how to create Materialized Views and cascade them together, combine multiple source tables into a single destination table. Contains an example of using cascading materialized views to aggregate data by month and year for a group of domain names.                                                                              |
-| [Debugging memory issues](/concepts/features/performance/troubleshoot/debugging-memory-issues)                                                 | A guide on how to debug memory issues within ClickHouse.                                                                                                                                                                                                                                                                                       |
-| [Deduplicating Inserts on Retries](/concepts/features/operations/insert/deduplicating-inserts-on-retries)                               | A guide on how to handle situations where you might retry failed inserts.                                                                                                                                                                                                                                                                      |
-| [Deduplication strategies](/concepts/features/operations/insert/deduplication)                                                          | A guide which dives into data deduplication, a technique for removing duplicate rows from your database. Explains differences from primary key-based deduplication in OLTP systems, ClickHouse's approach to deduplication and how to handle duplicate data scenarios within your ClickHouse queries.                                          |
-| [Filling gaps in time-series data](/guides/use-cases/real-time-analytics/time-series/time-series-filling-gaps)                                       | A guide which provides insights into ClickHouse's capabilities for handling time-series data, including techniques for filling gaps in data to create a more complete and continuous representation of time-series information.                                                                                                                |
-| [Manage Data with TTL (Time-to-live)](/concepts/features/operations/delete/ttl)                                                         | A guide discussing how to use the `WITH FILL` clause to fill gaps in time-series data. It covers how to fill gaps with 0 values, how to specify a starting point for filling gaps, how to fill gaps up to a specific end point, and how to interpolate values for cumulative calculations.                                                     |
-| [Stored procedures & query parameters](/guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements)                  | A guide explaining that ClickHouse doesn't support traditional stored procedures, and provides recommended alternatives including User-Defined Functions (UDFs), parameterized views, materialized views, and external orchestration. Also covers query parameters for safe parameterized queries (similar to prepared statements).            |
-| [Understanding query execution with the Analyzer](/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer) | A guide which demystifies ClickHouse query execution by introducing the analyzer tool. It explains how the analyzer breaks down a query into a series of steps, allowing you to visualize and troubleshoot the entire execution process for optimal performance.                                                                               |
-| [Using JOINs in ClickHouse](/concepts/features/operations/select/joining-tables)                                                                  | A guide that simplifies joining tables in ClickHouse. It covers different join types (`INNER`, `LEFT`, `RIGHT`, etc.), explores best practices for efficient joins (like placing smaller tables on the right), and provides insights on ClickHouse's internal join algorithms to help you optimize your queries for complex data relationships. |
+<CardGroup cols={2}>
+  <Card title="Data formats" icon="file-lines" href="/guides/clickhouse/data-formats/intro">
+    Examples for importing from and exporting to various data formats, including CSV and TSV, Parquet, JSON, binary formats, SQL dumps, and templates with regular expressions.
+  </Card>
+  <Card title="Data modelling" icon="diagram-project" href="/guides/clickhouse/data-modelling/index">
+    Guides on data modelling in ClickHouse, including schema design, sparse primary indexes, denormalization, backfilling data, and data compression.
+  </Card>
+  <Card title="Performance & monitoring" icon="gauge-high" href="/guides/clickhouse/performance-and-monitoring/query-optimization">
+    Guides for optimizing query performance, understanding the analyzer, and dynamic column selection.
+  </Card>
+  <Card title="Aggregate combinator examples" icon="calculator" href="/guides/clickhouse/examples/aggregate-function-combinators/anyIf">
+    Examples of using aggregate function combinators such as `-If`, `-Map`, `-SimpleState`, `-State`, `-Merge`, `-Resample`, `-Array`, and `-ForEach`.
+  </Card>
+  <Card title="Self-managed upgrade" icon="circle-arrow-up" href="/guides/oss/update">
+    A guide on upgrading a self-managed ClickHouse installation, including upgrade paths and version compatibility considerations.
+  </Card>
+  <Card title="OSS best practices" icon="list-check" href="/guides/oss/best-practices/sizing-and-hardware-recommendations">
+    Sizing and hardware recommendations and usage recommendations for open-source ClickHouse.
+  </Card>
+  <Card title="Deployment and scaling" icon="server" href="/guides/oss/deployment-and-scaling/index">
+    Deployment guides with examples of deploying ClickHouse for scaling and/or fault tolerance, including ClickHouse Keeper configuration and monitoring.
+  </Card>
+</CardGroup>

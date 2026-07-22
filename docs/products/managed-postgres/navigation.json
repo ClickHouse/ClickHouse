@@ -1,6 +1,4 @@
 {
-  "item": "Managed Postgres",
-  "icon": "/images/icons/icon-postgres.svg",
   "groups": [
     {
       "group": "Get started",
@@ -24,11 +22,11 @@
         "products/managed-postgres/extensions",
         {
           "group": "pg_clickhouse",
-          "root": "products/managed-postgres/extensions/pg_clickhouse/introduction",
           "pages": [
             "products/managed-postgres/extensions/pg_clickhouse/reference",
             "products/managed-postgres/extensions/pg_clickhouse/tutorial"
-          ]
+          ],
+          "root": "products/managed-postgres/extensions/pg_clickhouse/introduction"
         },
         "products/managed-postgres/upgrades",
         "products/managed-postgres/openapi",
@@ -82,5 +80,7 @@
         "products/managed-postgres/faq"
       ]
     }
-  ]
+  ],
+  "icon": "/images/icons/icon-postgres.svg",
+  "item": "Managed Postgres"
 }

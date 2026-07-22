@@ -20,6 +20,8 @@ public:
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     const Aggregator::Params & getParams() const;
+
+    QueryPlanStepPtr clone() const override;
 private:
     void updateOutputHeader() override;
 

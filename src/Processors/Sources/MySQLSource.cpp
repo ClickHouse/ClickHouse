@@ -9,13 +9,18 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
+#include <Common/WKB.h>
+#include <Functions/geometryConverters.h>
 #include <base/range.h>
 #include <Common/logger_useful.h>
 #include <Processors/Sources/MySQLSource.h>
@@ -31,18 +36,22 @@ namespace Setting
     extern const SettingsUInt64 external_storage_max_read_bytes;
     extern const SettingsUInt64 external_storage_max_read_rows;
     extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_wkb_geometry_elements;
 }
 
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 StreamSettings::StreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_, size_t max_retry_)
     : max_read_mysql_row_nums(
           (settings[Setting::external_storage_max_read_rows]) ? settings[Setting::external_storage_max_read_rows] : settings[Setting::max_block_size])
     , max_read_mysql_bytes_size(settings[Setting::external_storage_max_read_bytes])
+    , max_wkb_geometry_elements(
+          static_cast<UInt32>(std::min<UInt64>(settings[Setting::max_wkb_geometry_elements], MAX_WKB_GEOMETRY_ELEMENTS_HARD_LIMIT)))
     , auto_close(auto_close_)
     , fetch_by_name(fetch_by_name_)
     , default_num_tries_on_connection_loss(max_retry_)
@@ -214,7 +223,81 @@ namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
 
-    void insertValue(const IDataType & data_type, IColumn & column, const ValueType type, const mysqlxx::Value & value, size_t & read_bytes_size, enum enum_field_types mysql_type)
+    /// MySQL returns spatial values as a 4-byte SRID prefix followed by a standard WKB payload.
+    /// Parse it and insert into the target column, which is either a concrete geometric type
+    /// (`LineString`, `Polygon`, `MultiLineString`, `MultiPolygon`) or the umbrella `Geometry`
+    /// type (a `Variant` over all of them). `Point` is read by the dedicated `vtPoint` path.
+    void insertGeometryValue(const IDataType & data_type, IColumn & column, const mysqlxx::Value & value, UInt32 max_wkb_geometry_elements)
+    {
+        ReadBufferFromMemory payload(value.data(), value.size());
+        payload.ignore(4); /// Skip the SRID.
+        GeometricObject object = parseWKBFormat(payload, max_wkb_geometry_elements);
+
+        /// Serialize the single parsed object into a one-row column of its concrete geometric type.
+        ColumnPtr concrete;
+        String concrete_type_name;
+        std::visit([&](const auto & geometry)
+        {
+            using T = std::decay_t<decltype(geometry)>;
+            if constexpr (std::is_same_v<T, CartesianPoint>)
+            {
+                PointSerializer<CartesianPoint> serializer;
+                serializer.add(geometry);
+                concrete = serializer.finalize();
+                concrete_type_name = "Point";
+            }
+            else if constexpr (std::is_same_v<T, LineString<CartesianPoint>>)
+            {
+                LineStringSerializer<CartesianPoint> serializer;
+                serializer.add(geometry);
+                concrete = serializer.finalize();
+                concrete_type_name = "LineString";
+            }
+            else if constexpr (std::is_same_v<T, MultiLineString<CartesianPoint>>)
+            {
+                MultiLineStringSerializer<CartesianPoint> serializer;
+                serializer.add(geometry);
+                concrete = serializer.finalize();
+                concrete_type_name = "MultiLineString";
+            }
+            else if constexpr (std::is_same_v<T, Polygon<CartesianPoint>>)
+            {
+                PolygonSerializer<CartesianPoint> serializer;
+                serializer.add(geometry);
+                concrete = serializer.finalize();
+                concrete_type_name = "Polygon";
+            }
+            else if constexpr (std::is_same_v<T, MultiPolygon<CartesianPoint>>)
+            {
+                MultiPolygonSerializer<CartesianPoint> serializer;
+                serializer.add(geometry);
+                concrete = serializer.finalize();
+                concrete_type_name = "MultiPolygon";
+            }
+        }, object);
+
+        if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(&data_type))
+        {
+            /// The umbrella `Geometry` type: route the value to the matching variant.
+            auto discriminator = variant_type->tryGetVariantDiscriminator(concrete_type_name);
+            if (!discriminator)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot store a geometry of type {} into a {} column", concrete_type_name, data_type.getName());
+            assert_cast<ColumnVariant &>(column).insertIntoVariantFrom(*discriminator, *concrete, 0);
+        }
+        else
+        {
+            /// A concrete geometric column (e.g. `LineString`): the WKB subtype must match the column.
+            const auto * custom_name = data_type.getCustomName();
+            if (!custom_name || custom_name->getName() != concrete_type_name)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Got a geometry of type {} from MySQL, but the column has type {}",
+                    concrete_type_name, data_type.getName());
+            column.insertFrom(*concrete, 0);
+        }
+    }
+
+    void insertValue(const IDataType & data_type, IColumn & column, const ValueType type, const mysqlxx::Value & value, size_t & read_bytes_size, enum enum_field_types mysql_type, UInt32 max_wkb_geometry_elements)
     {
         switch (type)
         {
@@ -387,6 +470,12 @@ namespace
                 read_bytes_size += value.size();
                 break;
             }
+            case ValueType::vtGeometry:
+            {
+                insertGeometryValue(data_type, column, value, max_wkb_geometry_elements);
+                read_bytes_size += value.size();
+                break;
+            }
             default:
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported value type");
         }
@@ -430,12 +519,12 @@ Chunk MySQLSource::generate()
                 {
                     ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[index]);
                     const auto & data_type = assert_cast<const DataTypeNullable &>(*sample.type);
-                    insertValue(*data_type.getNestedType(), column_nullable.getNestedColumn(), description.types[index].first, value, read_bytes_size, row.getFieldType(position_mapping[index]));
+                    insertValue(*data_type.getNestedType(), column_nullable.getNestedColumn(), description.types[index].first, value, read_bytes_size, row.getFieldType(position_mapping[index]), settings->max_wkb_geometry_elements);
                     column_nullable.getNullMapData().emplace_back(false);
                 }
                 else
                 {
-                    insertValue(*sample.type, *columns[index], description.types[index].first, value, read_bytes_size, row.getFieldType(position_mapping[index]));
+                    insertValue(*sample.type, *columns[index], description.types[index].first, value, read_bytes_size, row.getFieldType(position_mapping[index]), settings->max_wkb_geometry_elements);
                 }
             }
             else

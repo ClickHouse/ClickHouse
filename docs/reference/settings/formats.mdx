@@ -470,6 +470,14 @@ Ignore case when matching Arrow columns with CH columns.
 
 Skip columns with unsupported types while schema inference for format Arrow
 
+## input_format_arrow_use_native_reader {#input_format_arrow_use_native_reader}   
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "New setting to use the native ClickHouse reader for the Arrow and ArrowStream formats instead of the Apache Arrow library."}]}]}/>
+
+Use the native ClickHouse reader for the Arrow and ArrowStream formats instead of the one based on the Apache Arrow library.
+
 ## input_format_avro_allow_missing_fields {#input_format_avro_allow_missing_fields}   
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -538,9 +546,9 @@ Supported modes:
 
     When this option is enabled, if the connection closes unexpectedly, any remaining data in the buffer will be parsed and processed instead of being treated as an error
 
-:::note
+<Note>
 Enabling this option disables parallel parsing and makes deduplication impossible
-:::
+</Note>
 
 ## input_format_csv_allow_cr_end_of_line {#input_format_csv_allow_cr_end_of_line}   
 
@@ -677,9 +685,9 @@ Skip trailing empty lines in CustomSeparated format
 
 When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option applies to [JSONEachRow](/reference/formats/JSON/JSONEachRow) (and other JSON formats), [CSV](/reference/formats/CSV/CSV), [TabSeparated](/reference/formats/TabSeparated/TabSeparated), [TSKV](/reference/formats/TabSeparated/TSKV), [Parquet](/reference/formats/Parquet/Parquet), [Arrow](/reference/formats/Arrow/Arrow), [Avro](/reference/formats/Avro/Avro), [ORC](/reference/formats/ORC), [Native](/reference/formats/Native) formats and formats with `WithNames`/`WithNamesAndTypes` suffixes.
 
-:::note
+<Note>
 When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
-:::
+</Note>
 
 Possible values:
 
@@ -1071,13 +1079,13 @@ Limits the size of the blocks formed during data parsing in input formats in byt
 
 Limits the maximum time in milliseconds to wait before emitting a block during parsing in row-based input formats. 0 means no limit.
 
-:::note
+<Note>
 This option only works if `input_format_connection_handling` is enabled. Setting a value also disables parallel parsing and makes deduplication impossible.
-:::
+</Note>
 
-:::note
+<Note>
 For streaming inserts, you must also set `min_insert_block_size_rows=0` and `min_insert_block_size_bytes=0`. Otherwise, parsed blocks may still be accumulated in memory by the block squashing stage until those thresholds are reached, preventing timely inserts.
-:::
+</Note>
 
 **Example: streaming Wikipedia recent changes into ClickHouse**
 
@@ -1693,6 +1701,14 @@ Output types having no conversion as raw binary data. If false - such types woul
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "0"},{"label": "Allow to use 64 bit indexes type in Arrow dictionaries"}]}, {"id": "row-2","items": [{"label": "24.1"},{"label": "0"},{"label": "Allow to use 64 bit indexes type in Arrow dictionaries"}]}]}/>
 
 Always use 64 bit integers for dictionary indexes in Arrow format
+
+## output_format_arrow_use_native_writer {#output_format_arrow_use_native_writer}   
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "New setting to use the native ClickHouse writer for the Arrow and ArrowStream formats instead of the Apache Arrow library."}]}]}/>
+
+Use the native ClickHouse writer for the Arrow and ArrowStream formats instead of the one based on the Apache Arrow library.
 
 ## output_format_arrow_use_signed_indexes_for_dictionary {#output_format_arrow_use_signed_indexes_for_dictionary}   
 
@@ -2660,9 +2676,9 @@ Enabled by default
 
 ## precise_float_parsing {#precise_float_parsing}   
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-Prefer more precise (but slower) float parsing algorithm
+Use the precise float parsing algorithm, which always returns the closest representable value to the input. When disabled, a faster but less accurate algorithm is used that may differ from the precise result by the least significant bits.
 
 ## schema_inference_hints {#schema_inference_hints}   
 
@@ -2682,9 +2698,9 @@ y   Nullable(String)
 z   IPv4
 ```
 
-:::note
+<Note>
 If the `schema_inference_hints` is not formatted properly, or if there is a typo or a wrong datatype, etc... the whole schema_inference_hints will be ignored.
-:::
+</Note>
 
 ## schema_inference_make_columns_nullable {#schema_inference_make_columns_nullable}   
 

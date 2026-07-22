@@ -47,7 +47,26 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int UNKNOWN_FILE_SIZE;
     extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
+    extern const int TEMPORARY_DATA_NOT_IN_CACHE;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int FILE_DOESNT_EXIST;
+}
+
+namespace
+{
+
+/// For `temp_cache_only` reads: a miss is a clean, retriable error, never a remote-FS bypass.
+[[noreturn]] void throwTemporaryDataNotInCache(size_t offset, size_t end_offset, const FileCacheKey & key)
+{
+    throw Exception(
+        ErrorCodes::TEMPORARY_DATA_NOT_IN_CACHE,
+        "Temporary data is no longer present in the cache "
+        "(cache-only read of [{}, {}) for key {}): the data was removed "
+        "(eviction, expiry, writer failure or server restart). "
+        "The query has to be retried",
+        offset, end_offset, key);
+}
+
 }
 
 CachedOnDiskReadBufferFromFile::ReadInfo::ReadInfo(
@@ -209,6 +228,19 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
     if (!size)
         return false;
 
+    if (info.cache_settings.temp_cache_only)
+    {
+        info.file_segments = cache->getDownloadedContiguousOrEmpty(
+            info.cache_key, file_offset_of_buffer_end, size, origin.user_id);
+
+        /// Throw, not `return false`: an empty batch is LOGICAL_ERROR in initialize()
+        /// and silent EOF in the mid-read refills.
+        if (info.file_segments->empty())
+            throwTemporaryDataNotInCache(file_offset_of_buffer_end, file_offset_of_buffer_end + size, info.cache_key);
+
+        return true;
+    }
+
     if (info.cache_settings.read_if_exists_otherwise_bypass)
     {
         info.file_segments = cache->get(
@@ -289,7 +321,11 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     auto path = file_segment.getPath();
     if (info.cache_file_reader)
     {
-        chassert(info.cache_file_reader->getFileName() == path);
+        /// A fully downloaded regular segment's file is renamed from `<offset>` to `<offset>_<size>`
+        /// (see `FileSegment::renameToIncludeSizeInNameUnlocked`), so a reader opened while the segment
+        /// was still downloading carries the old name. Reopen it under the current name in that case;
+        /// the caller (`prepareReadFromFileSegmentState`) seeks the returned buffer, so this is safe.
+        /// The already opened descriptor stays valid across the rename, so reusing it is also fine.
         if (info.cache_file_reader->getFileName() == path)
             return info.cache_file_reader;
 
@@ -321,10 +357,121 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     local_read_settings.local_fs_settings.buffer_size = info.use_external_buffer ? 0 : info.local_fs_buffer_size;
     local_read_settings.local_throttler = info.local_throttler;
 
-    info.cache_file_reader
-        = createReadBufferFromFileBase(path, local_read_settings, std::nullopt, std::nullopt, file_segment.getFlagsForLocalRead());
+    auto open_cache_file = [&](const String & path_to_open)
+    {
+        return createReadBufferFromFileBase(
+            path_to_open, local_read_settings, std::nullopt, std::nullopt, file_segment.getFlagsForLocalRead());
+    };
 
-    if (getFileSizeFromReadBuffer(*info.cache_file_reader) == 0)
+    try
+    {
+        info.cache_file_reader = open_cache_file(path);
+    }
+    catch (const Exception & e)
+    {
+        /// A fully downloaded regular segment is renamed from `<offset>` to `<offset>_<size>`
+        /// (`FileSegment::renameToIncludeSizeInNameUnlocked`) while we may still be reading it —
+        /// reads are allowed before the segment is fully downloaded. `getPath` is lock-free, so the
+        /// name computed above can become stale if the rename happens right before we open the file,
+        /// and the open then fails because the file has already moved to its new name. That race can
+        /// surface only as `FILE_DOESNT_EXIST` (the old name is gone); any other error is unrelated to
+        /// the rename, so propagate it immediately.
+        if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+            throw;
+
+        /// Recompute the path while holding the segment lock — the rename runs under the same lock, so
+        /// this serializes against it and observes the final name — and retry once. If the path is
+        /// unchanged, the missing file is not explained by a rename, so propagate it.
+        String current_path;
+        {
+            auto segment_lock = file_segment.lock();
+            current_path = file_segment.getPath();
+        }
+        if (current_path == path)
+            throw;
+
+        path = current_path;
+        info.cache_file_reader = open_cache_file(path);
+    }
+
+    /// A fully downloaded regular segment encodes its size in the file name (`<offset>_<size>`), and
+    /// startup metadata loading trusts that size without a `stat` (see `FileCache::loadMetadataForKey`).
+    /// If such a file was truncated outside ClickHouse, the segment is restored as fully `DOWNLOADED`
+    /// but the on-disk file is shorter than recorded. Detect that here -- the file is already open, so
+    /// reading its size needs no extra `stat` -- and treat it as a possible inconsistency rather than a
+    /// `LOGICAL_ERROR` (a corrupted cache must not surface as a server-bug-class exception). Bypass the
+    /// broken segment by returning `nullptr` so the caller re-fetches the data from the source. This
+    /// covers the empty-file case (`cache_file_size == 0 < downloaded_size`) as well.
+    ///
+    /// We deliberately do *not* remove the broken segment from this read path. Removal
+    /// (`LockedKey::removeFileSegmentImpl`) invalidates the segment's priority-queue entry
+    /// (`queue_iterator->invalidate()`) while holding only the key and segment locks, not the cache
+    /// priority lock. A concurrent `FileSegment::increasePriority` -> `SLRUFileCachePriority::tryIncreasePriority`
+    /// marks the same entry `Moving` under the key lock, releases the key lock to do the protected-queue
+    /// work, then invalidates the old entry under the priority lock. If a read-path removal invalidates the
+    /// entry inside that window, `tryIncreasePriority` double-invalidates it and aborts with a
+    /// `LOGICAL_ERROR` (`Entry::setInvalidatedFlag`). As `EvictionCandidates` documents, priority-queue
+    /// entries may only be invalidated under the cache priority lock, which this read path does not hold.
+    /// Leaving the segment in place also closes the concurrent-reader windows around detachment: every read
+    /// of the truncated file re-detects the short size and bypasses, so no reader is left with a stale
+    /// descriptor. The corrupted entry lingers (reads keep bypassing) until a path that already holds the
+    /// cache lock -- eviction, `LockedKey::sync`, or metadata reload -- removes it; external truncation is
+    /// rare, so the small accounting drift until then is acceptable.
+    ///
+    /// The recovery is gated on `hasSizeInFileName`: it applies only to a segment whose size was trusted
+    /// from the file name without a `stat`. Such a segment is renamed to `<offset>_<size>` only once it is
+    /// fully downloaded, after which the file is immutable at `downloaded_size` bytes -- so a shorter
+    /// on-disk file can only mean an external truncation. A segment *without* the size suffix can legitimately
+    /// be shorter than `downloaded_size` under normal operation and must not trip this recovery: a legacy
+    /// `<offset>` file had its size `stat`-ed at load (so a mismatch is not the trusted-size case), and an
+    /// in-progress download is renamed only on completion, so while `DOWNLOADING` its file is momentarily
+    /// shorter than the already-advanced `downloaded_size`. Without this gate the check fires spuriously on
+    /// such segments during ordinary reads (observed as `... is shorter than its recorded size ... truncated
+    /// outside ClickHouse` warnings on plain `<offset>` cache files). `hasSizeInFileName` is a lock-free
+    /// atomic read and stays valid after a detach.
+    ///
+    /// Among size-in-filename segments, `downloaded_size` is final for a `DOWNLOADED` one and for a
+    /// `DETACHED` one (`downloaded_size` is not reset on detach).
+    ///
+    /// The on-disk size is measured *after* observing this final state, not before. A reader can reach
+    /// here for a segment that is still `DOWNLOADING`, reading its already-written prefix (see
+    /// `createReadFromFileSegmentState`: a `DOWNLOADING` segment routes to `ReadType::CACHED` when the
+    /// requested offset is within the downloaded prefix). If the size were sampled first and the state
+    /// observed afterwards, a concurrent download completing in between -- `setDownloadedUnlocked` writes
+    /// the final bytes, renames to `<offset>_<size>`, then publishes `DOWNLOADED` -- would leave us
+    /// comparing a stale, partial length against the now-final `downloaded_size` and reporting a spurious
+    /// truncation (observed as `... is shorter than its recorded size ...` warnings during ordinary reads
+    /// that repopulate the cache). Because we observe the final state first, and a size-in-filename
+    /// `DOWNLOADED`/`DETACHED` segment's file is immutable at `downloaded_size` bytes, the size read next
+    /// is the final one -- a shorter value can then only mean an external truncation. (The open descriptor
+    /// survives the rename, so re-reading its size sees the completed file.)
+    const auto download_state = file_segment.state();
+    const bool trust_size_from_filename
+        = file_segment.hasSizeInFileName()
+        && (download_state == FileSegment::State::DOWNLOADED
+            || download_state == FileSegment::State::DETACHED);
+
+    const size_t cache_file_size = getFileSizeFromReadBuffer(*info.cache_file_reader);
+
+    if (trust_size_from_filename
+        && cache_file_size < file_segment.getDownloadedSize())
+    {
+        LOG_WARNING(
+            getLogger("CachedOnDiskReadBufferFromFile"),
+            "Cache file {} is shorter than its recorded size ({} < {}); it was likely truncated outside "
+            "ClickHouse. Bypassing the cache; the data will be re-fetched from the source",
+            path, cache_file_size, file_segment.getDownloadedSize());
+
+        /// Returning `nullptr` tells the caller to bypass the cache and read from the source -- the same
+        /// outcome as the `DETACHED` state -- rather than failing the read. Throwing `CANNOT_READ_ALL_DATA`
+        /// here would be misinterpreted as a broken part during `MergeTree` part loading (when the truncated
+        /// file happens to back a mark/metadata file), and the part would be wrongly detached instead of
+        /// self-healing.
+        info.cache_file_reader.reset();
+        return nullptr;
+    }
+
+    if (cache_file_size == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read from an empty cache file: {}", path);
 
     return info.cache_file_reader;
@@ -442,6 +589,17 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
             case ReadType::CACHED:
             {
                 buf = getCacheReadBuffer(file_segment, info_);
+                if (!buf)
+                {
+                    /// `getCacheReadBuffer` found the cache file truncated outside ClickHouse and asks us to
+                    /// bypass the cache. The broken segment is intentionally left in place (see the detailed
+                    /// comment in `getCacheReadBuffer`: removing it from this read path would invalidate its
+                    /// priority-queue entry without holding the cache priority lock). Read from the source
+                    /// instead, producing the same read outcome as the `DETACHED` branch, so a truncated cache
+                    /// file is transparently re-fetched rather than failing the read.
+                    type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+                    buf = getRemoteReadBuffer(file_segment, offset, type, info_);
+                }
                 break;
             }
             case ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
@@ -457,6 +615,19 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
     };
 
     auto download_state = file_segment.state();
+    if (info_.cache_settings.temp_cache_only)
+    {
+        /// Unreachable (the helper returns only readable segments, kept alive by the holder);
+        /// turns any regression into the clear error instead of a remote read that cannot exist.
+        if (download_state == FileSegment::State::DETACHED || !canStartFromCache(offset, file_segment))
+        {
+            chassert(false);
+            throwTemporaryDataNotInCache(offset, file_segment.range().right + 1, file_segment.key());
+        }
+
+        return create(ReadType::CACHED);
+    }
+
     if (info_.cache_settings.read_if_exists_otherwise_bypass)
     {
         if (download_state == FileSegment::State::DOWNLOADED)
@@ -706,8 +877,19 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
     auto * current_file_segment = &info.file_segments->front();
     auto completed_range = current_file_segment->range();
 
+    /// Snapshot the read type for the cache log, then drop the current read state (and thus our
+    /// reference to the current segment's remote reader) before doing any potentially-throwing work.
+    /// Downloader ownership of this segment has already been released in `nextImplStep`, so another
+    /// thread may pick up the reusable remote reader as the next downloader and start mutating it. If
+    /// we keep `state->buf` pointing at that reader and something below throws — for example
+    /// `appendFilesystemCacheLog` hitting `bad_alloc` in `SystemLogBase::add`, or preparing the next
+    /// segment — the diagnostics in `nextImplStep`'s SCOPE_EXIT (`getInfoForLog`) would read the
+    /// reader concurrently with the new downloader — a data race.
+    const auto completed_read_type = state->read_type;
+    state.reset();
+
     if (cache_log)
-        appendFilesystemCacheLog(*current_file_segment, state->read_type);
+        appendFilesystemCacheLog(*current_file_segment, completed_read_type);
 
     chassert(file_offset_of_buffer_end > completed_range.right);
     info.cache_file_reader.reset();
@@ -829,7 +1011,19 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                     /// waiting on this segment can take over instead of waiting for a download that
                     /// will never finish. This mirrors the EOF handling in readFromFileSegment.
                     if (file_segment.isDownloader())
+                    {
+                        /// Withdraw the reader from the file segment before releasing the segment
+                        /// (only the downloader may do it). `setDownloadFinishedWithoutContinuation`
+                        /// publishes `PARTIALLY_DOWNLOADED_NO_CONTINUATION` and wakes up the waiters,
+                        /// and from that moment another thread could take the still-registered
+                        /// reader (`FileSegment::extractRemoteFileReader`, or the background
+                        /// download) and start mutating it, while this frame still reads `state.buf`
+                        /// in the diagnostics below (`eof` may even call `next`) and restores its
+                        /// internal buffer in the `SCOPE_EXIT` above — a data race. After the
+                        /// withdrawal we own the reader exclusively.
+                        file_segment.resetRemoteFileReader();
                         file_segment.setDownloadFinishedWithoutContinuation();
+                    }
 
                     /// The remote object may have been overwritten with shorter content
                     /// between listing and reading. Check the actual remote file metadata (size and
@@ -969,6 +1163,15 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                 /// TODO: allow seek more than once with seek avoiding.
 
                 state.bytes_to_predownload = 0;
+
+                /// The failed reservation (or cache write) above has already withdrawn the reader
+                /// from the file segment (`FileSegment::setDownloadFailedUnlocked`), so the waiters
+                /// woken up by `completePartAndResetDownloader` cannot reach it, and the buffer
+                /// restore in the `SCOPE_EXIT` above and the bypass handoff (`swap`) in
+                /// `readFromFileSegment` stay race-free. Withdraw it explicitly anyway (a no-op
+                /// today) so that the invariant — once another thread may reuse the reader, nothing
+                /// here may touch it — does not silently depend on that distant reset.
+                file_segment.resetRemoteFileReader();
                 file_segment.completePartAndResetDownloader();
                 chassert(file_segment.state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
 
@@ -1027,6 +1230,13 @@ void CachedOnDiskReadBufferFromFile::updateReadStateIfNeeded(
         * to read by marks range given to him. Therefore, each nextImpl() call, in case of
         * READ_AND_PUT_IN_CACHE, starts with getOrSetDownloader().
         */
+
+        /// Release the old state (and thus our reference to the possibly-reused remote reader that
+        /// belonged to the previous downloader term) before re-electing a downloader. Otherwise, if
+        /// `prepareReadFromFileSegmentState` below throws, `state->buf` would still point at a reader
+        /// that another thread may now own as the new downloader, and the diagnostics in
+        /// `nextImplStep`'s SCOPE_EXIT (`getInfoForLog`) would read it concurrently — a data race.
+        state.reset();
         state = prepareReadFromFileSegmentState(file_segment, offset, info, file_size_, log);
     }
 }
@@ -1130,11 +1340,18 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     }
 
     bool implementation_buffer_can_be_reused = false;
+    /// Number of in-flight exceptions when this scope is entered. Comparing the count at scope exit
+    /// against this baseline tells us whether *this* scope is unwinding because of a new exception, as
+    /// opposed to merely running while some outer exception is being unwound. The latter happens, for
+    /// example, when a read here is triggered from a destructor during rollback (e.g.
+    /// `MergeTreeData::Transaction::~Transaction`): a bare `std::uncaught_exceptions() > 0` would then
+    /// misfire and wrongly treat a successful read as a failure.
+    const auto uncaught_exceptions_on_entry = std::uncaught_exceptions();
     SCOPE_EXIT({
         try
         {
             /// Save state of current file segment before it is completed. But we'll use it only if exception happened.
-            if (std::uncaught_exceptions() > 0)
+            if (std::uncaught_exceptions() > uncaught_exceptions_on_entry)
                 nextimpl_step_log_info = getInfoForLog();
 
             chassert(!internal_buffer.empty());
@@ -1146,7 +1363,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             auto & file_segment = info.file_segments->front();
 
             const bool could_be_downloader
-                = !state || state->read_type != ReadType::CACHED || std::uncaught_exceptions() > 0;
+                = !state || state->read_type != ReadType::CACHED || std::uncaught_exceptions() > uncaught_exceptions_on_entry;
 
             if (could_be_downloader && file_segment.isDownloader())
             {
@@ -1218,8 +1435,31 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     state->buf->set(internal_buffer.begin(), internal_buffer.size());
     size_t size = 0;
     {
+        /// See the note on `uncaught_exceptions_on_entry` above: this frame may be running while an
+        /// outer exception is being unwound (e.g. a cached read issued from a destructor during
+        /// rollback). Detect whether `readFromFileSegment` itself throws by comparing the in-flight
+        /// exception count against the value captured just before the call, not against zero.
+        const auto uncaught_exceptions_before_read = std::uncaught_exceptions();
         SCOPE_EXIT({
-            state->buf->set(nullptr, 0);
+            /// On normal completion we still exclusively own `state->buf`: either we are the segment's
+            /// downloader for a `REMOTE_FS_READ_AND_PUT_IN_CACHE` read (downloader ownership is only
+            /// released later, at the end of `nextImplStep`), or it is a non-shared
+            /// `REMOTE_FS_READ_BYPASS_CACHE`/`CACHED` reader. So it is safe to un-borrow our
+            /// `internal_buffer` from it here.
+            ///
+            /// If `readFromFileSegment` threw, it may have already released downloader ownership of the
+            /// shared remote reader while `state->buf` still points at it: the predownload,
+            /// `PARTIALLY_DOWNLOADED_NO_CONTINUATION` and bypass paths call
+            /// `completePartAndResetDownloader`/`setDownloadFinishedWithoutContinuation` before swapping
+            /// in a bypass buffer, and any later call there can throw. Once ownership is released,
+            /// another reader can pick up the same reader (`FileSegment::extractRemoteFileReader` /
+            /// `getRemoteFileReader`) and start mutating it. Touching it here (`set`) — or reading it in
+            /// the `getInfoForLog` diagnostics of the enclosing `SCOPE_EXIT` — would then be a data
+            /// race, so on the exception path drop our reference to it instead.
+            if (std::uncaught_exceptions() > uncaught_exceptions_before_read)
+                state.reset();
+            else
+                state->buf->set(nullptr, 0);
         });
 
         size = readFromFileSegment(
@@ -1488,7 +1728,18 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             /// is being concurrently replaced, and (unlike a LOGICAL_ERROR) it does not alert as a
             /// server bug. The predownloadForFileSegment and readBigAt paths fail the same way.
             if (file_segment.isDownloader())
+            {
+                /// Withdraw the shared remote reader before releasing the segment.
+                /// `setDownloadFinishedWithoutContinuation` publishes `PARTIALLY_DOWNLOADED_NO_CONTINUATION`
+                /// and wakes up the waiters, and from that moment another thread could take the
+                /// still-registered reader (`FileSegment::extractRemoteFileReader` is only state-gated,
+                /// not downloader-gated) and start mutating it, while `state.buf` still points at it --
+                /// the outer `SCOPE_EXIT` diagnostics in `nextImplStep`/`readBigAt` (and, in `readBigAt`,
+                /// the reader still borrowing the caller's `to` buffer) would then race on it. After the
+                /// withdrawal we own the reader exclusively. Mirrors `predownloadForFileSegment`.
+                file_segment.resetRemoteFileReader();
                 file_segment.setDownloadFinishedWithoutContinuation();
+            }
             throw Exception(
                 ErrorCodes::CANNOT_READ_ALL_DATA,
                 "Remote object was truncated between listing and reading: "
@@ -1562,7 +1813,18 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
         info.use_external_buffer, info.cache_settings, info.local_fs_buffer_size,
         /* read_until_position */range_begin + n, info.local_throttler);
 
-    if (info.cache_settings.read_if_exists_otherwise_bypass)
+    if (info.cache_settings.temp_cache_only)
+    {
+        current_info.file_segments = cache->getDownloadedContiguousOrEmpty(
+            info.cache_key,
+            /* offset */range_begin,
+            /* size */n,
+            origin.user_id);
+
+        if (current_info.file_segments->empty())
+            throwTemporaryDataNotInCache(range_begin, range_begin + n, info.cache_key);
+    }
+    else if (info.cache_settings.read_if_exists_otherwise_bypass)
     {
         current_info.file_segments = cache->get(
             info.cache_key,
@@ -1598,13 +1860,29 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
     ReadFromFileSegmentStatePtr current_state;
     auto object_size = const_cast<CachedOnDiskReadBufferFromFile &>(*this).getFileSize();
 
+    /// See the note in `nextImplStep`: distinguish an exception thrown by this scope from an outer
+    /// exception being unwound through it (e.g. a cached read issued from a destructor during
+    /// rollback) by comparing against the count captured on entry, not against zero.
+    const auto uncaught_exceptions_on_entry = std::uncaught_exceptions();
     SCOPE_EXIT({
         if (current_info.file_segments->empty())
             return;
 
         auto & file_segment = current_info.file_segments->front();
         if (file_segment.isDownloader())
+        {
+            /// Mirror the outer-cleanup invariant of `nextImplStep`: withdraw the shared remote reader
+            /// from the segment before releasing downloader ownership. If `readFromFileSegment` threw,
+            /// the inner `SCOPE_EXIT` below left the reader still borrowing the caller's `to` buffer (it
+            /// only un-borrows via `set(nullptr, 0)` on normal completion). Once `completePartAndResetDownloader`
+            /// releases us as downloader on the `PARTIALLY_DOWNLOADED_NO_CONTINUATION` path, a bypass waiter
+            /// could `extractRemoteFileReader` that still-borrowing reader and race on (and outlive) the
+            /// stale `to` buffer. Detaching it here keeps the reader exclusively ours until it is dropped.
+            if (std::uncaught_exceptions() > uncaught_exceptions_on_entry || !implementation_buffer_can_be_reused)
+                file_segment.resetRemoteFileReader();
+
             file_segment.completePartAndResetDownloader();
+        }
     });
 
     while (!cancelled && read_bytes < n)
@@ -1638,7 +1916,18 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
 
         if (current_state)
         {
-            updateReadStateIfNeeded(file_segment, offset, current_state, current_info, object_size, log);
+            /// Unlike the `nextImpl` path, which completes the downloaded part and releases
+            /// downloader ownership after every step, `readBigAt` stays the downloader until the
+            /// whole call completes. So after a partial read of a segment (e.g. the remote object
+            /// turned out to be shorter than expected) this frame is still the segment's downloader,
+            /// and re-electing a downloader through `updateReadStateIfNeeded` would be a logical
+            /// error: `prepareReadFromFileSegmentState` may only be called by a non-downloader (on
+            /// a DOWNLOADING segment it would wait for the downloader -- ourselves -- to make
+            /// progress). The current state is intact and positioned at the current download
+            /// offset, so continue reading with it: the next `readFromFileSegment` either reads
+            /// further or, if the source is exhausted, reports the truncation.
+            if (!file_segment.isDownloader())
+                updateReadStateIfNeeded(file_segment, offset, current_state, current_info, object_size, log);
         }
         else
         {
@@ -1653,8 +1942,17 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
 
         [[maybe_unused]] size_t remaining_size_in_file_segment = file_segment.range().right - offset + 1;
         current_state->buf->set(to + read_bytes, n - read_bytes);
+        /// See the note in `nextImplStep`: detect an exception thrown by `readFromFileSegment` itself
+        /// (as opposed to an outer exception being unwound through this frame) by comparing against the
+        /// count captured just before the call, not against zero.
+        const auto uncaught_exceptions_before_read = std::uncaught_exceptions();
         SCOPE_EXIT({
-            current_state->buf->set(nullptr, 0);
+            /// See the matching comment in `nextImplStep`: if `readFromFileSegment` threw, it may have
+            /// released downloader ownership of the shared remote reader while `current_state->buf`
+            /// still points at it, so another thread may now own and mutate it. Only un-borrow our
+            /// buffer on normal completion, when we still exclusively own the reader.
+            if (std::uncaught_exceptions() <= uncaught_exceptions_before_read)
+                current_state->buf->set(nullptr, 0);
         });
 
         const auto size = readFromFileSegment(

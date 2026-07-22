@@ -1895,10 +1895,36 @@ void PartMergerWriter::createBuildTextIndexesTask()
 
 void PartMergerWriter::calculateProjection(size_t projection_idx, const Block & block, UInt64 starting_offset)
 {
+    const auto & projection = *ctx->projections_to_build[projection_idx];
+
+    /// When mutations like CLEAR COLUMN do not include all columns in the pipeline output,
+    /// projections that depend on those columns still need to be rebuilt (e.g., for non-full
+    /// part storage). Add any missing required columns with default values so that projection
+    /// calculation does not fail with "Not found column in block".
+    Block block_for_projection;
+    bool added_missing_columns = false;
+    for (const auto & col_name : projection.required_columns)
+    {
+        if (!block.has(col_name))
+        {
+            if (!added_missing_columns)
+            {
+                block_for_projection = block;
+                added_missing_columns = true;
+            }
+            auto column_desc = ctx->metadata_snapshot->getColumns().getPhysical(col_name);
+            block_for_projection.insert(
+                {column_desc.type->createColumnConstWithDefaultValue(block.rows())->convertToFullColumnIfConst(),
+                 column_desc.type,
+                 col_name});
+        }
+    }
+    const Block & projection_input = added_missing_columns ? block_for_projection : block;
+
     Chunk squashed_chunk;
     {
         ProfileEventTimeIncrement<Microseconds> projection_watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
-        Block block_to_squash = ctx->projections_to_build[projection_idx]->calculate(block, starting_offset, ctx->context);
+        Block block_to_squash = projection.calculate(projection_input, starting_offset, ctx->context);
 
         /// Everything is deleted by lightweight delete
         if (block_to_squash.rows() == 0)
@@ -2918,9 +2944,17 @@ private:
         MergeTreePartition partition = ctx->new_data_part->partition;
         std::string part_name = ctx->new_data_part->getNewName(part_info);
 
-        auto [mutable_empty_part, _] = ctx->data->createEmptyPart(
+        auto [mutable_empty_part, tmp_dir_holder] = ctx->data->createEmptyPart(
             part_info, partition, part_name, ctx->new_data_part->getMetadataSnapshot(), ctx->txn);
+        /// Drop the wrapped mutation's old part (living under tmp_mut_<part>) first, while its
+        /// directory holder in ctx->temporary_directory_lock is still alive, so the old temp dir is
+        /// never cleaned up without a temporary_parts entry (the lock-before-cleanup invariant). Only
+        /// then install the new tmp_empty_<part> holder. The local tmp_dir_holder keeps tmp_empty_<part>
+        /// registered across this reorder, so both directories stay protected at all times. Installing
+        /// the holder keeps temporary_parts authoritative for every createEmptyPart caller (see
+        /// createEmptyPart), so the entry outlives the physical tmp_empty_<part> directory.
         ctx->new_data_part = std::move(mutable_empty_part);
+        ctx->temporary_directory_lock = std::move(tmp_dir_holder);
     }
 };
 
@@ -3400,12 +3434,16 @@ bool MutateTask::prepare()
                 "Part {} is fully deleted, creating empty part with mutation version {}",
                 ctx->source_part->name, ctx->future_part->part_info.mutation);
 
-            auto [empty_part, _] = ctx->data->createEmptyPart(
+            auto [empty_part, tmp_dir_holder] = ctx->data->createEmptyPart(
                 ctx->future_part->part_info,
                 ctx->source_part->partition,
                 ctx->future_part->name,
                 ctx->source_part->getMetadataSnapshot(),
                 ctx->txn);
+            /// Keep the temporary-directory holder alive until the part is renamed/committed, so
+            /// the in-memory `temporary_parts` entry outlives the physical `tmp_empty_<part>`
+            /// directory, keeping the holder authoritative for every createEmptyPart caller.
+            ctx->temporary_directory_lock = std::move(tmp_dir_holder);
 
             ProfileEvents::increment(ProfileEvents::MutationCreatedEmptyParts);
             promise.set_value(std::move(empty_part));
@@ -3494,6 +3532,20 @@ bool MutateTask::prepare()
 
     String tmp_part_dir_name = prefix + ctx->future_part->name;
     ctx->temporary_directory_lock = ctx->data->getTemporaryPartDirectoryHolder(tmp_part_dir_name);
+
+    /// Reclaim a stale leftover temporary directory (a mutation interrupted or rolled back and retried
+    /// with the same deterministic name) BEFORE constructing the part storage. Otherwise packed storage
+    /// seeds its archive reader and snapshots the mark layout from the leftover data.packed, and
+    /// finalizeWriter later carries every logical file the new mutation did not rewrite into the new
+    /// part. The temporary-directory lock above guarantees no concurrent operation owns this name.
+    {
+        auto relative_tmp_dir = fs::path(ctx->data->getRelativeDataPath()) / tmp_part_dir_name;
+        if (ctx->disk->existsDirectory(relative_tmp_dir))
+        {
+            LOG_WARNING(ctx->log, "Removing old temporary directory {}", (fs::path(ctx->disk->getPath()) / relative_tmp_dir).string());
+            ctx->disk->removeRecursive(relative_tmp_dir);
+        }
+    }
 
     auto builder = ctx->data->getDataPartBuilder(ctx->future_part->name, single_disk_volume, tmp_part_dir_name, getReadSettings());
     builder.withPartFormat(ctx->future_part->part_format);
