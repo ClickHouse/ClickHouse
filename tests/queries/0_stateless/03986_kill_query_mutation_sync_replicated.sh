@@ -21,27 +21,30 @@ $CLICKHOUSE_CLIENT --query "
 
 $CLICKHOUSE_CLIENT --query "INSERT INTO ${CLICKHOUSE_DATABASE}.t_kill_mutation SELECT number, toString(number) FROM numbers(100)"
 
-# This ALTER DELETE uses sleepEachRow to make the mutation take a very long time
-# (100 rows * 3 seconds = ~300 seconds) without consuming significant memory.
-# The condition is always false (sleepEachRow returns 0), so no rows are deleted,
-# but the mutation still scans every row. With mutations_sync=1 the query blocks
-# waiting for the mutation to complete.
+# Stop merges so the mutation entry is created but never executed by the background pool.
+# The mutation stays incomplete forever, so with mutations_sync=1 the ALTER blocks inside
+# waitMutationToFinishOnReplicas (the code path fixed by #97589). This makes the test
+# deterministic and CPU-independent: it does not rely on a long-running or memory-heavy
+# mutation to keep the query alive, and it leaves no in-flight background work to stall
+# teardown.
+$CLICKHOUSE_CLIENT --query "SYSTEM STOP MERGES ${CLICKHOUSE_DATABASE}.t_kill_mutation"
+
 $CLICKHOUSE_CLIENT --query_id="$query_id" --query "
-    ALTER TABLE ${CLICKHOUSE_DATABASE}.t_kill_mutation DELETE WHERE sleepEachRow(3) = 1
-    SETTINGS mutations_sync = 1, allow_nondeterministic_mutations = 1
+    ALTER TABLE ${CLICKHOUSE_DATABASE}.t_kill_mutation DELETE WHERE value = 'nonexistent'
+    SETTINGS mutations_sync = 1
 " >/dev/null 2>&1 &
 
 wait_for_query_to_start "$query_id"
 
-# Use async KILL (without SYNC) to avoid blocking if propagation is slow.
-# The background ALTER client will exit when the server sends back the cancellation error.
+# KILL QUERY must unblock the ALTER waiting on the mutation. The background ALTER client
+# exits once the server returns the cancellation error.
 $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
-
-# Kill the mutation immediately so it stops consuming resources in the background.
-$CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "KILL MUTATION WHERE database = '${CLICKHOUSE_DATABASE}' AND table = 't_kill_mutation'" >/dev/null 2>&1 || true
 
 # Wait for the ALTER client to finish (should exit promptly after the kill).
 wait
+
+# Remove the never-executed mutation entry so the table can be dropped cleanly.
+$CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "KILL MUTATION WHERE database = '${CLICKHOUSE_DATABASE}' AND table = 't_kill_mutation'" >/dev/null 2>&1 || true
 
 $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t_kill_mutation SYNC"
 

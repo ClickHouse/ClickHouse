@@ -2260,7 +2260,9 @@ def test_async_backup_restore_with_max_execution_time_zero():
     backup_name = new_backup_name()
     inst.query("CREATE DATABASE IF NOT EXISTS test")
     inst.query("CREATE TABLE test.table(x UInt32, y String) ENGINE=MergeTree ORDER BY y PARTITION BY x%10")
-    inst.query("INSERT INTO test.table SELECT number, toString(number) FROM numbers(100)")
+    # The node's 0.5s profile timeout (used below to trigger the bug) also caps this
+    # foreground setup query; disable it so a slow CI lane can't time out the INSERT.
+    inst.query("INSERT INTO test.table SELECT number, toString(number) FROM numbers(100) SETTINGS max_execution_time = 0")
 
     try:
         # Pause backup before it starts so the 500ms profile-level timeout fires.
@@ -2298,7 +2300,11 @@ def test_async_backup_restore_with_max_execution_time_zero():
             TSV([["RESTORED", ""]]),
         )
 
-        assert inst.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+        # Same: don't let the 0.5s profile timeout cap this foreground verification query.
+        assert (
+            inst.query("SELECT count(), sum(x) FROM test.table SETTINGS max_execution_time = 0")
+            == "100\t4950\n"
+        )
     finally:
         inst.query("SYSTEM DISABLE FAILPOINT backup_pause_on_start")
         inst.query("SYSTEM DISABLE FAILPOINT restore_pause_on_start")
