@@ -110,6 +110,7 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
     extern const SettingsBool vector_search_with_rescoring;
@@ -1759,11 +1760,13 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     if (const auto & filter_actions_dag = select_query_info.filter_actions_dag)
     {
         const auto * output = filter_actions_dag->getOutputs().front();
-        /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is disabled, so the WHERE
-        /// consult must not partition its lookup key by the TopK plan (and must not take the predicate-only
-        /// reuse path). Consult with the plain condition hash, restoring the behavior from before PR #104478.
-        /// This is safe because the disabled write paths never store TopK-salted entries anymore.
-        auto stats = drop_mark_ranges(output, /*apply_top_k_salt=*/ false);
+        /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
+        /// `use_query_condition_cache_for_top_k` setting (disabled by default). Only partition the WHERE
+        /// consult key by the TopK plan (and take the predicate-only reuse path) when the setting is on;
+        /// otherwise consult with the plain condition hash. When off, the write paths store no TopK-salted
+        /// entries, so an unsalted consult is both correct and consistent with them.
+        const bool apply_top_k_salt = settings[Setting::use_query_condition_cache_for_top_k];
+        auto stats = drop_mark_ranges(output, apply_top_k_salt);
         LOG_DEBUG(log,
                 "Query condition cache has dropped {}/{} granules for WHERE condition {}.",
                 stats.granules_dropped,

@@ -279,6 +279,7 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_top_k_dynamic_filtering;
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsUInt64 predicate_statistics_sample_rate;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
@@ -2930,14 +2931,22 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                                                          /// Avoid that SAMPLE-narrowed entries poison the cache (later non-SAMPLE-ing queries would return wrong results).
         {
             const auto & outputs = query_info_.filter_actions_dag->getOutputs();
-            /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is disabled: the
-            /// ranges excluded by index analysis for a TopK read include marks dropped by the running
-            /// `__topKFilter` threshold, which is not sound to record in the (threshold-oblivious) QCC.
-            /// Skip the write for TopK reads, restoring the behavior from before PR #104478 — for a
-            /// non-TopK read `top_k_filter_info` is empty and `isDeterministicAllowingTopKFilter` is
-            /// equivalent to `VirtualColumnUtils::isDeterministic` (no `__topKFilter` can appear).
-            if (outputs.size() == 1 && !top_k_filter_info && isDeterministicAllowingTopKFilter(outputs.front()))
-                condition_hash = outputs.front()->getHash();
+            /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
+            /// `use_query_condition_cache_for_top_k` setting (disabled by default). When it is off, do
+            /// not record index-analysis exclusions for TopK reads: their excluded ranges include marks
+            /// dropped by the running `__topKFilter` threshold, which is not sound to store in the
+            /// (threshold-oblivious) QCC. When it is on, salt the key with the TopK plan parameters so
+            /// only the same plan reuses them (mirrors the write path in `updateQueryConditionCache`).
+            /// For a non-TopK read `top_k_filter_info` is empty and `isDeterministicAllowingTopKFilter`
+            /// is equivalent to `VirtualColumnUtils::isDeterministic` (no `__topKFilter` can appear).
+            const bool skip_top_k = top_k_filter_info && !settings[Setting::use_query_condition_cache_for_top_k];
+            if (outputs.size() == 1 && !skip_top_k && isDeterministicAllowingTopKFilter(outputs.front()))
+            {
+                size_t hash = outputs.front()->getHash();
+                if (top_k_filter_info)
+                    boost::hash_combine(hash, top_k_filter_info->condition_hash);
+                condition_hash = hash;
+            }
         }
 
         /// Fill query condition cache with ranges excluded by index analysis.
@@ -4987,12 +4996,13 @@ void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
 {
     top_k_filter_info = top_k_filter_info_;
 
-    /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is disabled: a TopK read can
-    /// drop granules during execution depending on the running `__topKFilter` threshold, so it is not
-    /// sound to write/consult QCC entries for it. Turn the cache off at the reader level, restoring the
-    /// behavior from before PR #104478. The salting infrastructure below is kept in place (inert) so the
-    /// feature can be re-enabled by reverting this change.
-    reader_settings.use_query_condition_cache = false;
+    /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
+    /// `use_query_condition_cache_for_top_k` setting (disabled by default). When it is off, turn the
+    /// cache off at the reader level for this read: a TopK read can drop granules during execution
+    /// depending on the running `__topKFilter` threshold, so writing/consulting threshold-oblivious
+    /// QCC entries is unsound.
+    if (!context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k])
+        reader_settings.use_query_condition_cache = false;
 
     /// A TopK granule-skip decision recorded for one part is computed against the running
     /// `__topKFilter` threshold, which is derived from the rows of *all* parts the query reads.
