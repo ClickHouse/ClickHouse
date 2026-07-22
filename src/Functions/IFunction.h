@@ -129,11 +129,16 @@ protected:
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
-    /** True if function might throw an exception during execution.
+    /** True if the function might throw an exception that depends on the processed rows during
+      * execution. Receives normalized argument types (see canThrowNormalizedTypes).
       */
     virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return true; }
 
 private:
+
+    /// Normalizes the argument types the way execution will (strips LowCardinality and Nullable
+    /// when the corresponding default implementations are enabled).
+    bool canThrowNormalizedTypes(const ColumnsWithTypeAndName & arguments) const;
 
     ColumnPtr executeInternal(
             const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
@@ -338,10 +343,13 @@ public:
       */
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
-    /** Returns true if the function may throw during execution depending on data values.
-      * Used to prevent pushing such functions past row-filtering operations (e.g. ARRAY JOIN)
-      * Only accounts for data-dependent exceptions (e.g. invalid data parsing, division by zero),
-      * not exceptions at preparation time (e.g. type resolution).
+    /** Returns true if the function may throw during execution depending on the processed rows.
+      * Only accounts for exceptions that depend on the data (e.g. invalid data parsing, division
+      * by zero), not exceptions at preparation time (e.g. type resolution) and not exceptions
+      * that fire for any input including zero rows.
+      * Receives the argument types as executeImpl sees them: when the default implementations for
+      * Nullable / LowCardinality are enabled for the function, the wrappers are already removed
+      * (see IExecutableFunction::canThrowNormalizedTypes).
       */
     virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
@@ -627,6 +635,7 @@ public:
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
+    /// See the comment on IFunctionBase::canThrow.
     virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
     /// Higher-order functions accept at least one lambda expression as an argument.

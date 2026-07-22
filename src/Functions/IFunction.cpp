@@ -201,6 +201,26 @@ ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
 }
 
 
+bool IExecutableFunction::canThrowNormalizedTypes(const ColumnsWithTypeAndName & arguments) const
+{
+    DataTypesWithConstInfo argument_types;
+    argument_types.reserve(arguments.size());
+    for (const auto & argument : arguments)
+    {
+        /// Normalize the types the way execution will, so that canThrow judges the types
+        /// executeImpl actually sees: convertLowCardinalityColumnsToFull and
+        /// createBlockWithNestedColumns remove these wrappers before executeImpl.
+        DataTypePtr type = argument.type;
+        if (useDefaultImplementationForLowCardinalityColumns())
+            type = recursiveRemoveLowCardinality(type);
+        if (useDefaultImplementationForNulls())
+            type = removeNullable(type);
+        argument_types.push_back({type, argument.column && isColumnConst(*argument.column)});
+    }
+
+    return canThrow(argument_types);
+}
+
 ColumnPtr IExecutableFunction::defaultImplementationForNulls(
     const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
@@ -582,12 +602,7 @@ void IExecutableFunction::validateCanThrowOnException(
         || code == ErrorCodes::ABORTED)
         return;
 
-    DataTypesWithConstInfo argument_types;
-    argument_types.reserve(arguments.size());
-    for (const auto & argument : arguments)
-        argument_types.push_back({argument.type, argument.column && isColumnConst(*argument.column)});
-
-    if (canThrow(argument_types))
+    if (canThrowNormalizedTypes(arguments))
         return;
 
     ColumnsWithTypeAndName empty_arguments;
@@ -659,13 +674,11 @@ ColumnPtr IExecutableFunction::executeInternal(
         /// If we have only constants and replicated columns with the same indexes
         /// we can execute function on nested columns and create replicated column
         /// from the result using common indexes.
-        DataTypesWithConstInfo argument_types;
         ColumnPtr common_replicated_indexes;
         Columns nested_columns;
         bool has_full_columns = false;
         for (const auto & argument : arguments)
         {
-            argument_types.push_back({argument.type, isColumnConst(*argument.column)});
             if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(argument.column.get()))
             {
                 nested_columns.push_back(column_replicated->getNestedColumn());
@@ -692,8 +705,8 @@ ColumnPtr IExecutableFunction::executeInternal(
         }
 
         /// In case the function might throw an exception replicated columns must be compacted
-        // to avoid throwing on unused rows in the nested data.
-        if (canThrow(argument_types))
+        /// to avoid throwing on unused rows in the nested data.
+        if (canThrowNormalizedTypes(arguments))
         {
             ColumnIndex column_index(common_replicated_indexes);
             auto res = column_index.buildCompactIndexedColumns(nested_columns);

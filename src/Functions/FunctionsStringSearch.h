@@ -9,7 +9,6 @@
 #include <Columns/ColumnVector.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -144,7 +143,7 @@ public:
     bool canThrow(const DataTypesWithConstInfo & arguments) const override
     {
         /// A non-string haystack (an Enum) is converted to strings during execution, which can throw.
-        if (!isStringOrFixedString(removeNullable(removeLowCardinality(arguments[0].type))))
+        if (!isStringOrFixedString(arguments[0].type))
             return true;
         /// The OrNull variants return NULL instead of throwing on execution errors.
         if constexpr (execution_error_policy == ExecutionErrorPolicy::Null)

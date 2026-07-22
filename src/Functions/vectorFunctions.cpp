@@ -1487,8 +1487,13 @@ public:
 
     bool canThrow(const DataTypesWithConstInfo & arguments) const override
     {
+        /// Transposed traits have no tuple function.
+        if constexpr (IsTransposedTrait<Traits>::value)
+            return array_function->canThrow(arguments);
+
         if (arguments.empty())
-            return false;
+            return true;
+
         bool is_array_or_qbit = checkDataTypes<DataTypeArray>(arguments[0].type.get())
             || checkDataTypes<DataTypeQBit>(arguments[0].type.get())
             || checkDataTypes<DataTypeFixedString>(arguments[0].type.get());

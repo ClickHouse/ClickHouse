@@ -21,11 +21,8 @@ function expect_corrupted_data()
 
 # The exact query found by the fuzzer: a window `argMin` state reinterpreted as a `contingency`
 # state. It previously failed the assertion `phi_squared > -1e-4`.
-# The fuzzer's original rounding scale 2147483647 is replaced with the maximum valid scale 32767:
-# an out-of-range constant scale is now rejected at query analysis, before the corrupted state
-# deserialization a chance to run.
 expect_corrupted_data 'fuzzer query' "
-    SELECT round(roundtrip, 32767) AS roundtrip, abs(direct - roundtrip) < 1e-9, round(direct) AS direct FROM (SELECT finalizeAggregation(st_win) AS direct, finalizeAggregation(CAST(CAST(st_win, 'String'), 'AggregateFunction(contingency, UInt8, UInt8)')) AS roundtrip FROM (SELECT argMinState(toUInt8(number % 10), *) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS st_win FROM numbers(10000) ORDER BY number DESC NULLS FIRST LIMIT 9223372036854775807))"
+    SELECT round(roundtrip, 2147483647) AS roundtrip, abs(direct - roundtrip) < 1e-9, round(direct) AS direct FROM (SELECT finalizeAggregation(st_win) AS direct, finalizeAggregation(CAST(CAST(st_win, 'String'), 'AggregateFunction(contingency, UInt8, UInt8)')) AS roundtrip FROM (SELECT argMinState(toUInt8(number % 10), *) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS st_win FROM numbers(10000) ORDER BY number DESC NULLS FIRST LIMIT 9223372036854775807))"
 
 # A simplified version of the fuzzer query: the same foreign state built by a plain aggregation.
 expect_corrupted_data 'foreign state' "

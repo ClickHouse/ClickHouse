@@ -30,7 +30,16 @@ public:
     bool isVariadic() const override { return true; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    {
+        /// Execution supports only native numeric columns.
+        for (const auto & argument : arguments)
+            if (!isNativeNumber(argument.type))
+                return true;
+        return false;
+    }
+
     size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

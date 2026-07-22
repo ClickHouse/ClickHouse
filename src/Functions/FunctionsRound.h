@@ -692,7 +692,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override { return arguments.size() > 1 && !arguments[1].is_const; }
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override { return arguments.size() > 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -704,13 +704,6 @@ public:
             {"N", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "The number of decimal places to round to"},
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        /// Validate constant scale; canThrow relies on this build-time check.
-        if (arguments.size() > 1)
-        {
-            if (const auto * scale_const = checkAndGetColumnConst<IColumn>(arguments[1].column.get()))
-                validateScale(scale_const->getInt(0));
-        }
 
         return arguments[0].type;
     }

@@ -5,7 +5,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/CastOverloadResolver.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 
@@ -42,8 +41,9 @@ namespace
 
         bool canThrow(const DataTypesWithConstInfo & arguments) const override
         {
-            /// Numbers are compared against zero.
-            return !isNumber(removeNullable(removeLowCardinality(arguments[0].type)));
+            /// This function handles Nullable itself: the CAST compares the nested numbers against
+            /// zero under the null map, which cannot throw.
+            return !isNumber(removeNullable(arguments[0].type));
         }
 
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
