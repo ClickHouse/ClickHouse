@@ -497,6 +497,13 @@ public:
         this->dispatchWithHash(*this, key_holder, saved_hash, EmplaceCallable(it, inserted));
     }
 
+    static bool keyGoesToLongStringMap(std::string_view key)
+    {
+        return key.size() > 24 || (!key.empty() && key.back() == 0);
+    }
+
+    void reserveAdditionalLongStrings(size_t additional) { ms.reserve(ms.size() + additional); }
+
     struct PrefetchCallable
     {
         template <typename Map, typename KeyHolder>
