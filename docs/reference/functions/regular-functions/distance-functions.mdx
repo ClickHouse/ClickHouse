@@ -202,8 +202,41 @@ SELECT L2DistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 
 ```response title=Response
 ┌─L2DistanceTransposed([0, 1], [1, 2], 16)─┐
-│                       1.4142135623730951 │
+│                       1.3922918381215914 │
 └──────────────────────────────────────────┘
+```
+
+## L2DistanceTransposedQuantized {#L2DistanceTransposedQuantized}
+
+Introduced in: v26.7.0
+
+Calculates the approximate [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance) between a `QBit(Int8)` of `quantizeBFloat16ToInt8` codes (dequantized on the fly) and a reference vector. A `Float` reference (query) vector is compared directly at `Float32` precision -- the reconstruction precision of the dequantized codes, so a `Float64` query is narrowed to `Float32` while a `BFloat16` query widens to it exactly (asymmetric distance computation); an `Array(Int8)` reference is itself treated as `quantizeBFloat16ToInt8` codes and dequantized to its reconstruction levels. Note that `p` truncates only the stored `QBit` codes; the `Array(Int8)` reference is a complete query and is always reconstructed at full 8-bit precision, so this is a symmetric quantized-vs-quantized distance only at `p = 8` (for `p < 8` only the stored side is read at coarser precision). It must live in the same space as the values were in before quantization (i.e. after the same random rotation and scaling), which is the caller's responsibility. Cosine distance is scale-invariant; dot product and L2 distance are not.
+
+**Syntax**
+
+```sql
+L2DistanceTransposedQuantized(vectors, reference, p[, used_dims])
+```
+
+**Arguments**
+
+- `vectors` — Vectors of `quantizeBFloat16ToInt8` codes. [`QBit(Int8, UInt64[, UInt64])`](/reference/data-types/qbit)
+- `reference` — Reference (query) vector: a `Float` array (the query, compared at `Float32` precision -- a `Float64` query is narrowed to `Float32`), or an `Array(Int8)` of `quantizeBFloat16ToInt8` codes dequantized on the fly. [`Array(Float32)`](/reference/data-types/array) or [`Array(Int8)`](/reference/data-types/array)
+- `p` — Number of top bits of each stored `QBit` code to use (1 to 8). Fewer bits reconstruct a coarser embedded quantizer for faster I/O with reduced accuracy; 8 bits is the full-precision reconstruction. `p` truncates only the stored `QBit`; an `Array(Int8)` reference is always reconstructed at full 8-bit precision. [`UInt`](/reference/data-types/int-uint)
+- `used_dims` — Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a multiple of the QBit stride not exceeding its dimension, and the reference vector must have exactly this many elements. Only the stride groups covering these dimensions are read. [`UInt`](/reference/data-types/int-uint)
+
+**Returned value**
+
+Returns the approximate 2-norm distance. Always returns `Float64`. [`Float64`](/reference/data-types/float)
+
+**Examples**
+
+**Basic usage**
+
+```sql title=Query
+CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
+SELECT L2DistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
 ```
 
 ## L2Norm {#L2Norm}
@@ -663,8 +696,41 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 
 ```response title=Response
 ┌─cosineDistanceTransposed([0, 1], [1, 2], 16)─┐
-│                          0.10557281085638826 │
+│                          0.10557280905788935 │
 └──────────────────────────────────────────────┘
+```
+
+## cosineDistanceTransposedQuantized {#cosineDistanceTransposedQuantized}
+
+Introduced in: v26.7.0
+
+Calculates the approximate [cosine distance](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance) between a `QBit(Int8)` of `quantizeBFloat16ToInt8` codes (dequantized on the fly) and a reference vector. The smaller the returned value, the more similar the vectors. A `Float` reference (query) vector is compared directly at `Float32` precision -- the reconstruction precision of the dequantized codes, so a `Float64` query is narrowed to `Float32` while a `BFloat16` query widens to it exactly (asymmetric distance computation); an `Array(Int8)` reference is itself treated as `quantizeBFloat16ToInt8` codes and dequantized to its reconstruction levels. Note that `p` truncates only the stored `QBit` codes; the `Array(Int8)` reference is a complete query and is always reconstructed at full 8-bit precision, so this is a symmetric quantized-vs-quantized distance only at `p = 8` (for `p < 8` only the stored side is read at coarser precision). It must live in the same space as the values were in before quantization (i.e. after the same random rotation and scaling), which is the caller's responsibility. Cosine distance is scale-invariant; dot product and L2 distance are not.
+
+**Syntax**
+
+```sql
+cosineDistanceTransposedQuantized(vectors, reference, p[, used_dims])
+```
+
+**Arguments**
+
+- `vectors` — Vectors of `quantizeBFloat16ToInt8` codes. [`QBit(Int8, UInt64[, UInt64])`](/reference/data-types/qbit)
+- `reference` — Reference (query) vector: a `Float` array (the query, compared at `Float32` precision -- a `Float64` query is narrowed to `Float32`), or an `Array(Int8)` of `quantizeBFloat16ToInt8` codes dequantized on the fly. [`Array(Float32)`](/reference/data-types/array) or [`Array(Int8)`](/reference/data-types/array)
+- `p` — Number of top bits of each stored `QBit` code to use (1 to 8). Fewer bits reconstruct a coarser embedded quantizer for faster I/O with reduced accuracy; 8 bits is the full-precision reconstruction. `p` truncates only the stored `QBit`; an `Array(Int8)` reference is always reconstructed at full 8-bit precision. [`UInt`](/reference/data-types/int-uint)
+- `used_dims` — Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a multiple of the QBit stride not exceeding its dimension, and the reference vector must have exactly this many elements. Only the stride groups covering these dimensions are read. [`UInt`](/reference/data-types/int-uint)
+
+**Returned value**
+
+Returns the approximate cosine distance (one minus the cosine similarity). Always returns `Float64`. [`Float64`](/reference/data-types/float)
+
+**Examples**
+
+**Basic usage**
+
+```sql title=Query
+CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
+SELECT cosineDistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
 ```
 
 ## dotProductTransposed {#dotProductTransposed}
@@ -705,7 +771,40 @@ SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
 
 ```response title=Response
 ┌─dotProductTransposed([0, 1], [1, 2], 16)─┐
-│                                        2 │
+│                                   2.0625 │
 └──────────────────────────────────────────┘
+```
+
+## dotProductTransposedQuantized {#dotProductTransposedQuantized}
+
+Introduced in: v26.7.0
+
+Calculates the approximate [dot product](https://en.wikipedia.org/wiki/Dot_product) (inner product) between a `QBit(Int8)` of `quantizeBFloat16ToInt8` codes (dequantized on the fly) and a reference vector. This is a similarity measure: the larger the returned value, the more similar the vectors. A `Float` reference (query) vector is compared directly at `Float32` precision -- the reconstruction precision of the dequantized codes, so a `Float64` query is narrowed to `Float32` while a `BFloat16` query widens to it exactly (asymmetric distance computation); an `Array(Int8)` reference is itself treated as `quantizeBFloat16ToInt8` codes and dequantized to its reconstruction levels. Note that `p` truncates only the stored `QBit` codes; the `Array(Int8)` reference is a complete query and is always reconstructed at full 8-bit precision, so this is a symmetric quantized-vs-quantized distance only at `p = 8` (for `p < 8` only the stored side is read at coarser precision). It must live in the same space as the values were in before quantization (i.e. after the same random rotation and scaling), which is the caller's responsibility. Cosine distance is scale-invariant; dot product and L2 distance are not.
+
+**Syntax**
+
+```sql
+dotProductTransposedQuantized(vectors, reference, p[, used_dims])
+```
+
+**Arguments**
+
+- `vectors` — Vectors of `quantizeBFloat16ToInt8` codes. [`QBit(Int8, UInt64[, UInt64])`](/reference/data-types/qbit)
+- `reference` — Reference (query) vector: a `Float` array (the query, compared at `Float32` precision -- a `Float64` query is narrowed to `Float32`), or an `Array(Int8)` of `quantizeBFloat16ToInt8` codes dequantized on the fly. [`Array(Float32)`](/reference/data-types/array) or [`Array(Int8)`](/reference/data-types/array)
+- `p` — Number of top bits of each stored `QBit` code to use (1 to 8). Fewer bits reconstruct a coarser embedded quantizer for faster I/O with reduced accuracy; 8 bits is the full-precision reconstruction. `p` truncates only the stored `QBit`; an `Array(Int8)` reference is always reconstructed at full 8-bit precision. [`UInt`](/reference/data-types/int-uint)
+- `used_dims` — Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a multiple of the QBit stride not exceeding its dimension, and the reference vector must have exactly this many elements. Only the stride groups covering these dimensions are read. [`UInt`](/reference/data-types/int-uint)
+
+**Returned value**
+
+Returns the approximate dot product of the two vectors. Always returns `Float64`. [`Float64`](/reference/data-types/float)
+
+**Examples**
+
+**Basic usage**
+
+```sql title=Query
+CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
+SELECT dotProductTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
 ```
 {/*AUTOGENERATED_END*/}
