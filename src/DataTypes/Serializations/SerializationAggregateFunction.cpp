@@ -380,7 +380,15 @@ void SerializationAggregateFunction::deserializeTextEscaped(IColumn & column, Re
 
     if (useLegacyTextArrayParsing(function, settings))
     {
-        deserializeFromSingleArgumentTextArray(column, istr, settings, function);
+        /// Decode the escaped field first (as the released implementation did), so escape sequences
+        /// inside the elements, e.g. `["a\tb"]` in `TabSeparated`, become real characters before the
+        /// per-element parse.
+        String s;
+        settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(s, istr) : readEscapedString(s, istr);
+        ReadBufferFromString str_buf(s);
+        deserializeFromSingleArgumentTextArray(column, str_buf, settings, function);
+        if (!str_buf.eof())
+            throwUnexpectedDataAfterParsedValue(column, str_buf, settings, "Array");
         return;
     }
 
@@ -463,6 +471,11 @@ void SerializationAggregateFunction::deserializeTextJSON(IColumn & column, ReadB
     /// value/array as a JSON string holding its textual representation, e.g. `{"x": "[1,2,3]"}` in `array` mode.
     /// The native JSON form `{"x": [1,2,3]}` added by this change reads `[` directly, so a string-wrapped array would
     /// otherwise be rejected. Keep accepting the legacy string-wrapped form alongside the native one.
+    /// Note that this does not shadow any native quoted form: scalar values parse identically through the
+    /// whole-text parse of the unwrapped content (JSON escapes are decoded by `readJSONString`), and the
+    /// `JSON` type itself has no native quoted-token form (a JSON document root must be an object, so e.g.
+    /// `{"x": "hello"}` is rejected for plain `JSON` columns as well), while its released string-wrapped
+    /// object form `{"x": "{\"a\":1}"}` only works through this branch.
     skipWhitespaceIfAny(istr);
     if (!istr.eof() && *istr.position() == '"')
     {
