@@ -18,8 +18,9 @@ base="http://localhost:11111/test/${CLICKHOUSE_DATABASE}/04340"
 # push the test past the per-test time limit, whereas a single query creates `data_01.csv` ... `data_40.csv`
 # server-side in one pass. `leftPad(toString(x), 2, '0')` makes every partition id exactly two digits, so
 # the files match the anchored `data_??.csv` glob below; digit-only partition ids pass the partition-value
-# validation for `s3` writes.
-$CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION s3('${base}/data_{_partition_id}.csv', 'test', 'testtest', 'CSV', 'x UInt64') PARTITION BY leftPad(toString(x), 2, '0') SELECT number AS x FROM numbers(1, 40) SETTINGS s3_truncate_on_insert=1;"
+# validation for `s3` writes. Since 26.7 the default partition strategy is `hive`, which rejects a
+# `{_partition_id}` wildcard in the path, so request the `wildcard` strategy explicitly.
+$CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION s3('${base}/data_{_partition_id}.csv', 'test', 'testtest', 'CSV', 'x UInt64') PARTITION BY leftPad(toString(x), 2, '0') SELECT number AS x FROM numbers(1, 40) SETTINGS s3_truncate_on_insert=1, file_like_engine_default_partition_strategy='wildcard';"
 
 # Match the files by an anchored glob (`data_??.csv`) rather than `*.csv`. Under the stress query fuzzer
 # the directory can also hold sibling objects with mutated, non-UTF-8 names (e.g. `data\xef\xbf\xbd.csv`)
