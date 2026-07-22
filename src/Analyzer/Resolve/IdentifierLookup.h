@@ -46,6 +46,14 @@ struct IdentifierLookup
     IdentifierLookupContext lookup_context;
     ASTPtr original_ast_node = nullptr;
 
+    /// The lookup is for the qualifier of a qualified matcher (e.g. `db.table.*`).
+    /// Such an identifier is resolved as an expression first and, when that fails, as a table
+    /// expression. So when the qualifier binds to a table expression but the rest of the
+    /// identifier does not name a column, the lookup may return an empty result instead of
+    /// throwing: the caller still has the table expression interpretation to try.
+    /// Like `original_ast_node`, this flag does not participate in comparison and hashing.
+    bool is_matcher_qualifier = false;
+
     bool isExpressionLookup() const
     {
         return lookup_context == IdentifierLookupContext::EXPRESSION;

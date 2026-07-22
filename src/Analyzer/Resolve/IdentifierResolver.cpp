@@ -894,31 +894,36 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
       * attempted only after the current scope returns no result, so an early exception here would make
       * the outer interpretation unreachable.
       * Example: SELECT (SELECT db1.tbl.id FROM db2.db1 LIMIT 1) FROM db1.tbl;
-      * The retry is only valid when there is an actual database-and-table interpretation to try: some
-      * table expression in this scope or in a parent scope is the table `identifier[1]` inside the
-      * database `path_start` (for a two-part identifier that interpretation is the table itself, e.g. a
-      * matcher qualifier `db.db.*`; for three and more parts it is `db.table.column`). Without such a
-      * candidate a failed lookup must throw as before; e.g. a two-part `db.x` against the table `db`
-      * with no table `x` in the database `db` must not fall through to a column literally named `db.x`
-      * of a sibling table expression.
+      * The fall-through is only valid when there is an actual database-and-table interpretation to try:
+      * some table expression in this scope or in a parent scope is the table `identifier[1]` inside the
+      * database `path_start`. Without such a candidate a failed lookup must throw as before; e.g. a
+      * two-part `db.x` against the table `db` with no table `x` in the database `db` must not fall
+      * through to a column literally named `db.x` of a sibling table expression.
+      * For a two-part identifier the database-and-table interpretation is the table expression itself,
+      * which is not a valid column expression, so an expression lookup must still throw
+      * (e.g. plain `db.db` selected from the table `db.db`). The only exception is the qualifier of
+      * a qualified matcher (`db.db.*`): it is resolved as an expression first, and that lookup must be
+      * allowed to fail so that the matcher can resolve the qualifier as a table expression next.
+      * The candidate check is evaluated lazily, only after a failed qualifier lookup, to avoid
+      * scanning the scope chain on the hot path of successful resolution.
       */
-    bool identifier_first_part_matches_database_name = !database_name.empty() && path_start == database_name;
-
-    bool identifier_can_be_database_and_table_qualified = false;
-    for (const IdentifierResolveScope * current_scope = &scope;
-         current_scope && !identifier_can_be_database_and_table_qualified;
-         current_scope = current_scope->parent_scope)
+    auto identifier_can_fall_through_to_database_and_table = [&]() -> bool
     {
-        for (const auto & [_, other_table_expression_data] : current_scope->table_expression_node_to_data)
+        if (identifier.getPartsSize() == 2 && !identifier_lookup.is_matcher_qualifier)
+            return false;
+
+        for (const IdentifierResolveScope * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
         {
-            if (!other_table_expression_data.database_name.empty() && path_start == other_table_expression_data.database_name
-                && identifier[1] == other_table_expression_data.table_name)
+            for (const auto & [_, other_table_expression_data] : current_scope->table_expression_node_to_data)
             {
-                identifier_can_be_database_and_table_qualified = true;
-                break;
+                if (!other_table_expression_data.database_name.empty() && path_start == other_table_expression_data.database_name
+                    && identifier[1] == other_table_expression_data.table_name)
+                    return true;
             }
         }
-    }
+
+        return false;
+    };
 
     if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
     {
@@ -928,10 +933,19 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             table_expression_data,
             scope,
             1 /*identifier_column_qualifier_parts*/,
-            identifier_can_be_database_and_table_qualified /*can_be_not_found*/);
+            true /*can_be_not_found*/);
 
-        if (lookup_result.resolved_identifier || !identifier_can_be_database_and_table_qualified)
+        if (lookup_result.resolved_identifier)
             return lookup_result;
+
+        /// No other interpretation is possible: repeat the lookup to throw the proper exception.
+        if (!identifier_can_fall_through_to_database_and_table())
+            return tryResolveIdentifierFromStorage(
+                identifier_lookup,
+                table_expression_node,
+                table_expression_data,
+                scope,
+                1 /*identifier_column_qualifier_parts*/);
     }
 
     if (table_expression_node_type == QueryTreeNodeType::TABLE)
@@ -945,17 +959,25 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
                 table_expression_data,
                 scope,
                 1 /*identifier_column_qualifier_parts*/,
-                identifier_can_be_database_and_table_qualified /*can_be_not_found*/);
+                true /*can_be_not_found*/);
 
-            if (lookup_result.resolved_identifier || !identifier_can_be_database_and_table_qualified)
+            if (lookup_result.resolved_identifier)
                 return lookup_result;
+
+            if (!identifier_can_fall_through_to_database_and_table())
+                return tryResolveIdentifierFromStorage(
+                    identifier_lookup,
+                    table_expression_node,
+                    table_expression_data,
+                    scope,
+                    1 /*identifier_column_qualifier_parts*/);
         }
     }
 
     if (identifier.getPartsSize() == 2)
         return {};
 
-    if (identifier_first_part_matches_database_name && identifier[1] == table_name)
+    if (!database_name.empty() && path_start == database_name && identifier[1] == table_name)
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 2 /*identifier_column_qualifier_parts*/);
 
     return {};
@@ -1150,12 +1172,13 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
 
 static bool qualifierBindsToJoinSubtree(
     const QueryTreeNodePtr & join_tree_node,
-    const std::string & qualifier,
-    const IdentifierResolveScope & scope,
-    bool qualifier_can_be_database_name)
+    const Identifier & identifier,
+    const IdentifierResolveScope & scope)
 {
-    if (!join_tree_node || qualifier.empty())
+    if (!join_tree_node)
         return false;
+
+    const auto & qualifier = identifier.front();
 
     if (join_tree_node->hasAlias() && join_tree_node->getAlias() == qualifier)
         return true;
@@ -1165,21 +1188,21 @@ static bool qualifierBindsToJoinSubtree(
         case QueryTreeNodeType::JOIN:
         {
             const auto & join = join_tree_node->as<JoinNode &>();
-            return qualifierBindsToJoinSubtree(join.getLeftTableExpression(), qualifier, scope, qualifier_can_be_database_name)
-                || qualifierBindsToJoinSubtree(join.getRightTableExpression(), qualifier, scope, qualifier_can_be_database_name);
+            return qualifierBindsToJoinSubtree(join.getLeftTableExpression(), identifier, scope)
+                || qualifierBindsToJoinSubtree(join.getRightTableExpression(), identifier, scope);
         }
         case QueryTreeNodeType::CROSS_JOIN:
         {
             const auto & cross = join_tree_node->as<CrossJoinNode &>();
             for (const auto & expr : cross.getTableExpressions())
-                if (qualifierBindsToJoinSubtree(expr, qualifier, scope, qualifier_can_be_database_name))
+                if (qualifierBindsToJoinSubtree(expr, identifier, scope))
                     return true;
             return false;
         }
         case QueryTreeNodeType::ARRAY_JOIN:
         {
             const auto & arr = join_tree_node->as<ArrayJoinNode &>();
-            return qualifierBindsToJoinSubtree(arr.getTableExpression(), qualifier, scope, qualifier_can_be_database_name);
+            return qualifierBindsToJoinSubtree(arr.getTableExpression(), identifier, scope);
         }
         default:
             break;
@@ -1192,7 +1215,8 @@ static bool qualifierBindsToJoinSubtree(
         return true;
     /// The identifier can also be qualified with the database name and the table name of this table
     /// expression (`db.table.column`), so the subtree must not be pruned from resolution in that case.
-    return qualifier_can_be_database_name && !it->second.database_name.empty() && it->second.database_name == qualifier;
+    return !it->second.database_name.empty() && it->second.database_name == qualifier
+        && it->second.table_name == identifier[1];
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
@@ -1253,12 +1277,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     bool binds_right = true;
     if (prefer_alias && identifier_lookup.isExpressionLookup() && identifier_lookup.identifier.getPartsSize() > 1)
     {
-        const auto & path_start = identifier_lookup.identifier.front();
-        /// A `db.table.column` interpretation needs at least three parts, so for shorter identifiers
-        /// the first part cannot act as a database qualifier.
-        bool qualifier_can_be_database_name = identifier_lookup.identifier.getPartsSize() > 2;
-        binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpression(), path_start, scope, qualifier_can_be_database_name);
-        binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpression(), path_start, scope, qualifier_can_be_database_name);
+        binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpression(), identifier_lookup.identifier, scope);
+        binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpression(), identifier_lookup.identifier, scope);
     }
 
     QueryTreeNodePtr left_resolved_identifier = nullptr;

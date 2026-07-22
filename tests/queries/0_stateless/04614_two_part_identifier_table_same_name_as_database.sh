@@ -36,6 +36,23 @@ SELECT ${DB}.x.y FROM ${DB}.${DB}, (SELECT 1 AS \`${DB}.x.y\`)
 SETTINGS enable_analyzer = 1, joined_subquery_requires_alias = 0;
 " 2>&1 | grep -o -m1 'UNKNOWN_IDENTIFIER'
 
+# The same when the second part names a real table: plain two-part \`db.db\` selected from the
+# table \`db.db\` has no expression-level \`db.table.column\` interpretation either (the
+# database-and-table interpretation is the table itself, not a column), so it must still throw
+# instead of falling through to a sibling column literally named \`db.db\`.
+$CLICKHOUSE_CLIENT --query "
+SELECT ${DB}.${DB} FROM ${DB}.${DB}, (SELECT 1 AS \`${DB}.${DB}\`)
+SETTINGS enable_analyzer = 1, joined_subquery_requires_alias = 0;
+" 2>&1 | grep -o -m1 'UNKNOWN_IDENTIFIER'
+
+# The qualified matcher is the one context where the two-part qualifier miss must fall through:
+# \`db.db.*\` resolves the qualifier \`db.db\` as an expression first, and that lookup must be
+# allowed to fail so that the qualifier is bound as a table expression next.
+$CLICKHOUSE_CLIENT --query "
+SELECT ${DB}.${DB}.* FROM ${DB}.${DB}
+SETTINGS enable_analyzer = 1;
+"
+
 # The dotted column is still reachable under its own qualification.
 $CLICKHOUSE_CLIENT --query "
 SELECT t.\`${DB}.x\` FROM ${DB}.${DB}, (SELECT 1 AS \`${DB}.x\`) AS t
