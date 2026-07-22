@@ -14,17 +14,17 @@ if (ARCH_AARCH64)
     # [1] https://en.wikipedia.org/wiki/AArch64
     option (NO_ARMV81_OR_HIGHER "Disable ARMv8.1 or higher on Aarch64 for maximum compatibility with older/embedded hardware." 0)
 
-    # ENABLE_SVE compiles the entire binary with "+sve" added to -march=, enabling __ARM_FEATURE_SVE
+    # ENABLE_SVE_GLOBALLY compiles the entire binary with "+sve" added to -march=, enabling __ARM_FEATURE_SVE
     # and SVE autovectorization throughout the binary. It is disabled by default because SVE remains
     # optional on ARMv8.2+ architectures. It is available on processors such as Graviton 3, but
     # not Graviton 2. Enable this option only when targeting hardware that supports SVE.
-    option (ENABLE_SVE "Compile the entire binary with ARM SVE enabled (requires ARMv8.2+, e.g. Graviton 3)" 0)
+    option (ENABLE_SVE_GLOBALLY "Compile the entire binary with ARM SVE enabled (requires ARMv8.2+, e.g. Graviton 3)" 0)
 
     if (NO_ARMV81_OR_HIGHER)
         # crc32 is optional in v8.0 and mandatory in v8.1. Enable it as __crc32()* is used in lot's of places and even very old ARM CPUs
         # support it.
-        if (ENABLE_SVE)
-            message (${RECONFIGURE_MESSAGE_LEVEL} "ENABLE_SVE requires ARMv8.2+ and cannot be combined with NO_ARMV81_OR_HIGHER")
+        if (ENABLE_SVE_GLOBALLY)
+            message (${RECONFIGURE_MESSAGE_LEVEL} "ENABLE_SVE_GLOBALLY requires ARMv8.2+ and cannot be combined with NO_ARMV81_OR_HIGHER")
         endif()
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8+crc")
         list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+crc,-neon")
@@ -61,7 +61,7 @@ if (ARCH_AARCH64)
         set(ARM_FEATURES "armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16")
         # Not adding `+v8.2a,+crypto` to rust because it complains about them being unstable
         set(RUST_TARGET_FEATURES "+dotprod,+ssbs,+rcpc,+bf16")
-        if (ENABLE_SVE)
+        if (ENABLE_SVE_GLOBALLY)
             set(ARM_FEATURES "${ARM_FEATURES}+sve")
             set(RUST_TARGET_FEATURES "${RUST_TARGET_FEATURES},+sve")
         endif()

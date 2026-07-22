@@ -183,7 +183,7 @@ static std::optional<T>
 findExtreme(const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t start, size_t end)
 {
 #if USE_ARM_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::SVE))
+    if (isArchSupported(TargetArch::ARM_SVE))
         return findExtremeImpl_ARM_SVE<T, ComparatorClass, add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
 #endif
     return findExtremeImpl<T, ComparatorClass, add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);

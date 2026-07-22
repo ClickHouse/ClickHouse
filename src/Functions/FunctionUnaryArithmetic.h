@@ -61,7 +61,7 @@ struct UnaryOperationImpl
         }
 
 #elif USE_ARM_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::SVE))
+        if (isArchSupported(TargetArch::ARM_SVE))
         {
             vectorImpl_ARM_SVE(a, c);
             return;
@@ -101,7 +101,7 @@ struct FixedStringUnaryOperationImpl
         }
 
 #elif USE_ARM_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::SVE))
+        if (isArchSupported(TargetArch::ARM_SVE))
         {
             vectorImpl_ARM_SVE(a, c);
             return;
@@ -135,7 +135,7 @@ struct StringUnaryOperationReduceImpl
         }
 
 #elif USE_ARM_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::SVE))
+        if (isArchSupported(TargetArch::ARM_SVE))
         {
             return vectorImpl_ARM_SVE(start, end);
         }

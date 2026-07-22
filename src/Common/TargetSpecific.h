@@ -24,7 +24,7 @@
  *     whenever you use anything from the x86_64-specific namespaces (x86_64_v2, x86_64_v3,
  *     x86_64_v4, etc.)
  *   - USE_ARM_MULTITARGET_CODE: set to 1 only on AArch64. Use #if USE_ARM_MULTITARGET_CODE
- *     whenever you use anything from the ARM-specific namespaces (SVE).
+ *     whenever you use anything from the ARM-specific namespaces (ARM_SVE).
  *
  * For similarities there is a macros DECLARE_DEFAULT_CODE, which wraps code
  * into the namespace TargetSpecific::Default but doesn't specify any additional
@@ -56,8 +56,8 @@
  *     if (isArchSupported(TargetArch::x86_64_v3))
  *         return TargetSpecific::x86_64_v3::funcImpl();
  * #elif USE_ARM_MULTITARGET_CODE
- *     if (isArchSupported(TargetArch::SVE))
- *         return TargetSpecific::SVE::funcImpl();
+ *     if (isArchSupported(TargetArch::ARM_SVE))
+ *         return TargetSpecific::ARM_SVE::funcImpl();
  * #endif
  *     return TargetSpecific::Default::funcImpl();
  * }
@@ -111,7 +111,7 @@ enum class TargetArch : UInt32
     GenuineIntel = (1 << 5),          /// Not an instruction set, but a CPU vendor. Used for optimizations that are only applicable for Intel CPUs, like prefetching
 
     /// ARM instruction set extensions
-    SVE = (1 << 6),
+    ARM_SVE = (1 << 6),
 };
 
 /// Runtime detection.
@@ -240,9 +240,9 @@ END_TARGET_SPECIFIC_CODE
 
 #define DECLARE_ARM_SVE_SPECIFIC_CODE(...) \
 BEGIN_SVE_SPECIFIC_CODE \
-namespace TargetSpecific::SVE { \
+namespace TargetSpecific::ARM_SVE { \
     DUMMY_FUNCTION_DEFINITION \
-    using namespace DB::TargetSpecific::SVE; \
+    using namespace DB::TargetSpecific::ARM_SVE; \
     __VA_ARGS__ \
 } \
 END_TARGET_SPECIFIC_CODE
@@ -276,12 +276,11 @@ namespace TargetSpecific::Default { \
 }
 
 
-/// Only enable extra x86 v3, v4 and ARM SVE by default
+/// Only enable extra v3 and v4 by default
 #define DECLARE_MULTITARGET_CODE(...) \
 DECLARE_DEFAULT_CODE         (__VA_ARGS__) \
 DECLARE_X86_64_V3_SPECIFIC_CODE    (__VA_ARGS__) \
-DECLARE_X86_64_V4_SPECIFIC_CODE   (__VA_ARGS__) \
-DECLARE_ARM_SVE_SPECIFIC_CODE (__VA_ARGS__)
+DECLARE_X86_64_V4_SPECIFIC_CODE   (__VA_ARGS__)
 
 DECLARE_DEFAULT_CODE(
     constexpr auto BuildArch = TargetArch::Default;
@@ -304,7 +303,7 @@ DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(
 )
 
 DECLARE_ARM_SVE_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::SVE;
+    constexpr auto BuildArch = TargetArch::ARM_SVE;
 )
 
 /** Runtime Dispatch helpers for class members.
@@ -314,7 +313,7 @@ DECLARE_ARM_SVE_SPECIFIC_CODE(
   * class TestClass
   * {
   * public:
-  *     MULTITARGET_FUNCTION_X86_V4(
+  *     MULTITARGET_FUNCTION_X86_V4_ARM_SVE(
   *     MULTITARGET_FUNCTION_HEADER(int), testFunctionImpl, MULTITARGET_FUNCTION_BODY((int value) /// NOLINT
   *     {
   *          return value;
@@ -322,19 +321,19 @@ DECLARE_ARM_SVE_SPECIFIC_CODE(
   *     )
   *
   *     void testFunction(int value) {
+  * #if USE_MULTITARGET_CODE
   *         if (isArchSupported(TargetArch::x86_64_v4))
   *         {
   *             testFunctionImpl_x86_64_v4(value);
   *         }
-  *         else if (isArchSupported(TargetArch::x86_64_v3))
+  *         else
+  * #elif USE_ARM_MULTITARGET_CODE
+  *         if (isArchSupported(TargetArch::ARM_SVE))
   *         {
-  *             testFunctionImpl_x86_64_v3(value);
-  *         }
-  *         else if (isArchSupported(TargetArch::SVE))
-  *         {
-  *             testFunctionImpl_SVE(value);
+  *             testFunctionImpl_ARM_SVE(value);
   *         }
   *         else
+  * #endif
   *         {
   *             testFunctionImpl(value);
   *         }
