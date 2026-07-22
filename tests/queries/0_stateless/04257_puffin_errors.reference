@@ -16,6 +16,10 @@ exceeds declared cardinality
 --- cardinality_exceeds_materialization_limit.puffin ---
 exceeds materialization limit
 BAD_ARGUMENTS
+--- dv_envelope_length_mismatch.puffin ---
+does not match combined length
+--- oversized_dv_blob.puffin ---
+exceeds absolute limit
 --- invalid_cardinality_non_numeric.puffin ---
 property 'cardinality' must be an unsigned integer
 --- invalid_cardinality_negative.puffin ---

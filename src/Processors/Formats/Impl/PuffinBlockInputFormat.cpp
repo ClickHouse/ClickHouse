@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstring>
 #include <limits>
 #include <optional>
 #include <unordered_map>
@@ -59,6 +60,11 @@ constexpr size_t PUFFIN_FOOTER_MAX_PAYLOAD_SIZE = 16 * 1024 * 1024;
 /// guard for Array(UInt64) expansion of roaring bitmaps, not a tunable acceptance policy.
 /// Global `max_memory_usage` still applies later; this rejects before allocating the array.
 constexpr UInt64 PUFFIN_DV_MAX_MATERIALIZED_POSITIONS = 100'000'000;
+/// Absolute cap on on-disk deletion-vector-v1 blob length before reading bytes into memory.
+/// Aligns with Iceberg DeleteLoader's 2 GiB content-size check. Fail closed before allocate:
+/// footer `length` alone can point at the whole blob region while `cardinality` stays small.
+/// Intentionally a compile-time safety ceiling, not a FormatSettings knob.
+constexpr size_t PUFFIN_DV_MAX_BLOB_SIZE = 2ULL * 1024 * 1024 * 1024;
 constexpr UInt8 DELETION_VECTOR_MAGIC[4] = {0xD1, 0xD3, 0x39, 0x64};
 /// Matches Iceberg `RoaringPositionBitmap.MAX_POSITION` / iceberg-cpp `kMaxPosition`.
 /// Key INT32_MAX is unsupported: the reference bitmap array length is a signed Int32.
@@ -574,6 +580,71 @@ String readPuffinBlobBytes(
     return result;
 }
 
+void readDeletionVectorEnvelopeHeader(
+    const PuffinBlob & blob, ReadBuffer & buf, const std::vector<UInt8> & data, bool seekable_read, UInt8 header[8])
+{
+    if (!data.empty())
+    {
+        if (static_cast<UInt64>(blob.offset) + 8 > data.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob offset/length out of bounds of buffered data");
+        std::memcpy(header, data.data() + static_cast<size_t>(blob.offset), 8);
+        return;
+    }
+
+    auto * seekable = dynamic_cast<SeekableReadBuffer *>(&buf);
+    if (!seekable_read || !seekable || !seekable->checkIfActuallySeekable())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read Puffin blob: input is not seekable and was not buffered");
+
+    seekable->seek(blob.offset, SEEK_SET);
+    seekable->readStrict(reinterpret_cast<char *>(header), 8);
+}
+
+/// Reject oversize / inconsistent DV blobs before allocating `blob.length` bytes.
+void validateDeletionVectorBlobBeforeRead(
+    const PuffinBlob & blob, ReadBuffer & buf, const std::vector<UInt8> & data, bool seekable_read)
+{
+    if (blob.length < 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector blob length is negative");
+
+    if (static_cast<UInt64>(blob.length) > PUFFIN_DV_MAX_BLOB_SIZE)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Deletion vector blob length {} exceeds absolute limit {}",
+            blob.length,
+            PUFFIN_DV_MAX_BLOB_SIZE);
+
+    if (static_cast<UInt64>(blob.length) < 12)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector blob is too small");
+
+    UInt8 header[8];
+    readDeletionVectorEnvelopeHeader(blob, buf, data, seekable_read, header);
+
+    const UInt32 combined_length = readBigEndianUInt32(header);
+    if (std::memcmp(header + sizeof(UInt32), DELETION_VECTOR_MAGIC, sizeof(DELETION_VECTOR_MAGIC)) != 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector magic");
+
+    if (combined_length < sizeof(DELETION_VECTOR_MAGIC))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector combined length: {}", combined_length);
+
+    UInt64 expected_blob_size = 0;
+    if (common::addOverflow(static_cast<UInt64>(combined_length), UInt64{8}, expected_blob_size))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector combined length: {}", combined_length);
+
+    if (static_cast<UInt64>(blob.length) != expected_blob_size)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Deletion vector blob size {} does not match combined length {}",
+            blob.length,
+            combined_length);
+}
+
+String readDeletionVectorBlobBytes(
+    const PuffinBlob & blob, ReadBuffer & buf, const std::vector<UInt8> & data, bool seekable_read)
+{
+    validateDeletionVectorBlobBeforeRead(blob, buf, data, seekable_read);
+    return readPuffinBlobBytes(blob, buf, data, seekable_read);
+}
+
 roaring::Roaring readRoaringPortableSafe(const char * data, size_t size, Int32 key)
 {
     try
@@ -901,7 +972,7 @@ Chunk PuffinInputFormat::read()
         MutableColumnPtr col_rows;
         if (need_deleted_rows)
         {
-            const String blob_data = readPuffinBlobBytes(blob, *in, footer.data, seekable_read);
+            const String blob_data = readDeletionVectorBlobBytes(blob, *in, footer.data, seekable_read);
             auto col_rows_data = ColumnUInt64::create();
             deserializeDeletionVectorV1(blob_data, expected_cardinality, *col_rows_data);
 
@@ -1026,6 +1097,8 @@ Fixed output columns:
 - `deleted_rows` (`Array(UInt64)`) - 64-bit row positions deleted according to the deletion vector roaring bitmap
 
 Deletion vectors whose declared `cardinality` exceeds an absolute materialization ceiling are rejected when `deleted_rows` is requested. Selecting only `referenced_data_file` skips payload materialization and does not apply that ceiling.
+
+On-disk `deletion-vector-v1` blob length is bounded by an absolute ceiling (aligned with Iceberg's 2 GiB content-size check). The reader validates the blob envelope header before allocating the full payload, so oversized or size-mismatched blobs are rejected early.
 
 LZ4-compressed and uncompressed puffin footers are supported. Footer payload size (and declared LZ4 content size) is bounded by a compression ratio where applicable and an absolute ceiling; oversized footers are rejected before allocation.
 

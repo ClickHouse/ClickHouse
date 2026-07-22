@@ -507,6 +507,24 @@ def generate_sparse_large_key() -> None:
     write_fixture("sparse_large_key.puffin", build_puffin_file(blob, footer_json_for_blob(blob, properties)))
 
 
+def generate_dv_envelope_length_mismatch() -> None:
+    """Footer `length` disagrees with envelope `combined_length`; reader must reject after header peek."""
+    magic = DELETION_VECTOR_MAGIC
+    combined_length = len(magic)
+    crc = zlib.crc32(magic) & 0xFFFFFFFF
+    real_envelope = struct.pack(">I", combined_length) + magic + struct.pack(">I", crc)
+    claimed_length = 1024
+    blob = real_envelope + b"\x00" * (claimed_length - len(real_envelope))
+    properties = {
+        "referenced-data-file": DEFAULT_REFERENCED_DATA_FILE,
+        "cardinality": "1",
+    }
+    write_fixture(
+        "dv_envelope_length_mismatch.puffin",
+        build_puffin_file(blob, footer_json_for_blob(blob, properties)),
+    )
+
+
 def generate_mixed_blob_types() -> None:
     theta_blob = b"\x00" * 16
     bitmap = pyroaring.BitMap([2, 5])
@@ -708,6 +726,7 @@ def main() -> None:
     generate_invalid_cardinality_strings()
     generate_invalid_dv_snapshot_sequence()
     generate_sparse_large_key()
+    generate_dv_envelope_length_mismatch()
 
 
 if __name__ == "__main__":
