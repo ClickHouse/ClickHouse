@@ -6,8 +6,12 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Disks/LocalDirectorySyncGuard.h>
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
 #include <Interpreters/Access/InterpreterShowGrantsQuery.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Poco/JSON/JSON.h>
@@ -19,10 +23,16 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <optional>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool fsync_metadata;
+}
+
 namespace ErrorCodes
 {
     extern const int DIRECTORY_DOESNT_EXIST;
@@ -33,6 +43,19 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Whether access-entity files should be fsync'd, honoring the `fsync_metadata` setting.
+    /// Foreground writes (CREATE/ALTER/DROP USER etc.) run on the query thread, so honor its
+    /// session setting; background `.list` writes have no query context and fall back to the
+    /// global one. Absent any context we default to syncing (matches the setting's default).
+    bool shouldFsyncMetadata()
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            return query_context->getSettingsRef()[Setting::fsync_metadata];
+        if (auto global_context = Context::getGlobalContextInstance())
+            return global_context->getSettingsRef()[Setting::fsync_metadata];
+        return true;
+    }
+
     /// Reads a file containing ATTACH queries and then parses it to build an access entity.
     AccessEntityPtr readEntityFile(const String & file_path)
     {
@@ -60,7 +83,7 @@ namespace
     }
 
     /// Writes ATTACH queries for building a specified access entity to a file.
-    void writeEntityFile(const String & file_path, const IAccessEntity & entity)
+    void writeEntityFile(const String & file_path, const IAccessEntity & entity, bool fsync)
     {
         String file_contents = serializeAccessEntity(entity);
 
@@ -76,10 +99,19 @@ namespace
         /// Write the file.
         WriteBufferFromFile out{tmp_file_path.string()};
         out.write(file_contents.data(), file_contents.size());
+        if (fsync)
+            out.sync();
         out.close();
 
-        /// Rename.
-        std::filesystem::rename(tmp_file_path, file_path);
+        /// Rename. Sync the parent directory so the rename itself survives a power loss:
+        /// fsync of the file alone does not persist the directory entry (open the dir fd
+        /// before the rename; the guard's destructor fsyncs it afterwards).
+        {
+            std::optional<LocalDirectorySyncGuard> dir_sync_guard;
+            if (fsync)
+                dir_sync_guard.emplace(std::filesystem::path{file_path}.parent_path().string());
+            std::filesystem::rename(tmp_file_path, file_path);
+        }
         succeeded = true;
     }
 
@@ -125,7 +157,7 @@ namespace
 
 
     /// Writes a map of name of access entity to UUID for access entities of some type to a file.
-    void writeListFile(const String & file_path, const std::vector<std::pair<UUID, std::string_view>> & id_name_pairs)
+    void writeListFile(const String & file_path, const std::vector<std::pair<UUID, std::string_view>> & id_name_pairs, bool fsync)
     {
         WriteBufferFromFile out(file_path);
         writeVarUInt(id_name_pairs.size(), out);
@@ -134,6 +166,10 @@ namespace
             writeStringBinary(name, out);
             writeUUIDText(id, out);
         }
+        /// The `.list` file is overwritten in place (no rename), so only the file content needs
+        /// to be synced; it is anyway rebuildable from the `.sql` files via need_rebuild_lists.mark.
+        if (fsync)
+            out.sync();
         out.close();
     }
 
@@ -281,6 +317,8 @@ void DiskAccessStorage::writeLists()
     if (types_of_lists_to_write.empty())
         return;
 
+    const bool fsync = shouldFsyncMetadata();
+
     for (const auto & type : types_of_lists_to_write)
     {
         auto file_path = getListFilePath(directory_path, type);
@@ -291,7 +329,7 @@ void DiskAccessStorage::writeLists()
             id_name_pairs.reserve(all_entities.size());
             for (const auto & [id, entity] : all_entities)
                 id_name_pairs.emplace_back(id, entity->getName());
-            writeListFile(file_path, id_name_pairs);
+            writeListFile(file_path, id_name_pairs, fsync);
         }
         catch (...)
         {
@@ -769,7 +807,7 @@ AccessEntityPtr DiskAccessStorage::readAccessEntityFromDisk(const UUID & id) con
 void DiskAccessStorage::writeAccessEntityToDisk(const UUID & id, const IAccessEntity & entity) const
 {
     LOG_TRACE(getLogger(), "Writing file for entity with id {} and name {}", id, entity.getName());
-    writeEntityFile(getEntityFilePath(directory_path, id), entity);
+    writeEntityFile(getEntityFilePath(directory_path, id), entity, shouldFsyncMetadata());
 }
 
 
@@ -777,6 +815,14 @@ void DiskAccessStorage::deleteAccessEntityOnDisk(const UUID & id) const
 {
     auto file_path = getEntityFilePath(directory_path, id);
     LOG_TRACE(getLogger(), "Deleting file {} for entity with id {}", file_path, id);
+
+    /// Sync the parent directory after the unlink so DROP USER / REVOKE (and the old-file
+    /// removal on rename-replace) survive a power loss: like a rename, an unlink is a
+    /// directory-entry change that is not durable until the directory is fsync'd. Open the
+    /// dir fd before removing; the guard's destructor fsyncs it afterwards.
+    std::optional<LocalDirectorySyncGuard> dir_sync_guard;
+    if (shouldFsyncMetadata())
+        dir_sync_guard.emplace(std::filesystem::path{file_path}.parent_path().string());
     if (!std::filesystem::remove(file_path))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Couldn't delete {}", file_path);
 }
