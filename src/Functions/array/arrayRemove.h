@@ -15,12 +15,12 @@ namespace DB
   *   arrayRemove(['a', NULL, 'b', NULL], NULL) -> ['a', 'b']
   */
 
-class FunctionArrayRemove final : public IFunction
+class FunctionArrayRemove : public IFunction
 {
 public:
     static constexpr auto name = "arrayRemove";
-    static FunctionPtr create(ContextPtr context_);
-    explicit FunctionArrayRemove(ContextPtr context_);
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionArrayRemove>(context_); }
+    explicit FunctionArrayRemove(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
@@ -32,13 +32,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override;
 
 private:
-    FunctionOverloadResolverPtr is_null_resolver;
-    FunctionOverloadResolverPtr not_resolver;
-    FunctionOverloadResolverPtr not_equals_resolver;
-    FunctionOverloadResolverPtr equals_resolver;
-    FunctionOverloadResolverPtr or_resolver;
-    FunctionOverloadResolverPtr and_resolver;
-    FunctionOverloadResolverPtr if_resolver;
+    ContextPtr context;
 };
 
 }

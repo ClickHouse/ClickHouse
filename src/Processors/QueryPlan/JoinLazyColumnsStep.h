@@ -25,13 +25,10 @@ public:
 
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
-    void setPassThrough(bool value);
-
 protected:
     void updateOutputHeader() override;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
-    bool pass_through = false;
 };
 
 }

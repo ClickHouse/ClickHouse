@@ -52,7 +52,7 @@ struct FunctionArrayPartialShuffleTraits
 };
 
 template <typename Traits>
-class FunctionArrayShuffleImpl final : public IFunction
+class FunctionArrayShuffleImpl : public IFunction
 {
 public:
     static constexpr auto name = Traits::name;
@@ -63,8 +63,6 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return Traits::getArgumentsThatAreAlwaysConstant(); }
     bool useDefaultImplementationForConstants() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayShuffleImpl<Traits>>(); }
 

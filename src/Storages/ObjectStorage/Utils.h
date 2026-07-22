@@ -1,7 +1,5 @@
 #pragma once
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Storages/StorageFactory.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB
@@ -34,8 +32,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const ObjectStoragePtr & object_storage,
     const ContextPtr & context_,
     const LoggerPtr & log,
-    const std::optional<ReadSettings> & read_settings = std::nullopt,
-    bool allow_page_cache = true);
+    const std::optional<ReadSettings> & read_settings = std::nullopt);
 
 ASTs::iterator getFirstKeyValueArgument(ASTs & args);
 std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & function_args, ContextPtr context);
@@ -65,10 +62,6 @@ struct ParseFromDiskResult
 };
 
 ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr context, const fs::path & prefix);
-
-void expandPaimonKeeperMacrosIfNeeded(
-    const StorageFactory::Arguments & args,
-    const DataLakeStorageSettingsPtr & storage_settings);
 
 
 }

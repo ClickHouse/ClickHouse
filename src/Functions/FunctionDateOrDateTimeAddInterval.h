@@ -21,6 +21,7 @@
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
 
 
@@ -321,63 +322,21 @@ struct AddDaysImpl
 {
     static constexpr auto name = "addDays";
 
-    template <bool fixed_offset>
-    static NO_SANITIZE_UNDEFINED DateTime64 executeWithOffsetMode(
-        DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
+    static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
-        if constexpr (fixed_offset)
-        {
-            if (time_zone.dayShiftStaysWithinLUT(t, delta, multiplier))
-                return t + delta * DATE_SECONDS_PER_DAY * multiplier;
-        }
         auto d = std::div(t, multiplier);
         return time_zone.addDays(d.quot, delta) * multiplier + d.rem;
     }
-    template <bool fixed_offset>
-    static NO_SANITIZE_UNDEFINED Time64 executeWithOffsetMode(
-        Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
+    static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<Time64>(scale);
-        if constexpr (fixed_offset)
-        {
-            if (time_zone.dayShiftStaysWithinLUT(t, delta, multiplier))
-                return t + delta * DATE_SECONDS_PER_DAY * multiplier;
-        }
         auto d = std::div(t, multiplier);
         return time_zone.addDays(d.quot, delta) * multiplier + d.rem;
     }
-    template <bool fixed_offset>
-    static NO_SANITIZE_UNDEFINED UInt32 executeWithOffsetMode(
-        UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
-        if constexpr (fixed_offset)
-        {
-            if (time_zone.dayShiftStaysWithinLUT(t, delta))
-                return static_cast<UInt32>(t + delta * DATE_SECONDS_PER_DAY);
-        }
         return static_cast<UInt32>(time_zone.addDays(t, delta));
-    }
-    static NO_SANITIZE_UNDEFINED DateTime64 execute(
-        DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
-    {
-        if (time_zone.hasFixedOffset())
-            return executeWithOffsetMode<true>(t, delta, time_zone, utc_time_zone, scale);
-        return executeWithOffsetMode<false>(t, delta, time_zone, utc_time_zone, scale);
-    }
-    static NO_SANITIZE_UNDEFINED Time64 execute(
-        Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
-    {
-        if (time_zone.hasFixedOffset())
-            return executeWithOffsetMode<true>(t, delta, time_zone, utc_time_zone, scale);
-        return executeWithOffsetMode<false>(t, delta, time_zone, utc_time_zone, scale);
-    }
-    static NO_SANITIZE_UNDEFINED UInt32 execute(
-        UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
-    {
-        if (time_zone.hasFixedOffset())
-            return executeWithOffsetMode<true>(t, delta, time_zone, utc_time_zone, scale);
-        return executeWithOffsetMode<false>(t, delta, time_zone, utc_time_zone, scale);
     }
     static NO_SANITIZE_UNDEFINED UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
@@ -408,79 +367,21 @@ struct AddWeeksImpl
 {
     static constexpr auto name = "addWeeks";
 
-    /// Wraps like the plain multiplication the calendar path used to do, but reports the overflow so
-    /// that the fast path can decline it instead of deciding on a wrapped shift.
-    static bool weeksToDays(Int64 delta, Int64 & days)
-    {
-        return !__builtin_mul_overflow(delta, 7, &days);
-    }
-
-    template <bool fixed_offset>
-    static NO_SANITIZE_UNDEFINED DateTime64 executeWithOffsetMode(
-        DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
+    static NO_SANITIZE_UNDEFINED DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
-        Int64 days = 0;
-        if constexpr (fixed_offset)
-        {
-            if (weeksToDays(delta, days) && time_zone.dayShiftStaysWithinLUT(t, days, multiplier))
-                return t + days * DATE_SECONDS_PER_DAY * multiplier;
-        }
-        else
-            weeksToDays(delta, days);
         auto d = std::div(t, multiplier);
-        return time_zone.addDays(d.quot, days) * multiplier + d.rem;
+        return time_zone.addDays(d.quot, delta * 7) * multiplier + d.rem;
     }
-    template <bool fixed_offset>
-    static NO_SANITIZE_UNDEFINED Time64 executeWithOffsetMode(
-        Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
+    static NO_SANITIZE_UNDEFINED Time64 execute(Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
     {
         auto multiplier = DecimalUtils::scaleMultiplier<Time64>(scale);
-        Int64 days = 0;
-        if constexpr (fixed_offset)
-        {
-            if (weeksToDays(delta, days) && time_zone.dayShiftStaysWithinLUT(t, days, multiplier))
-                return t + days * DATE_SECONDS_PER_DAY * multiplier;
-        }
-        else
-            weeksToDays(delta, days);
         auto d = std::div(t, multiplier);
-        return time_zone.addDays(d.quot, days) * multiplier + d.rem;
+        return time_zone.addDays(d.quot, delta * 7) * multiplier + d.rem;
     }
-    template <bool fixed_offset>
-    static NO_SANITIZE_UNDEFINED UInt32 executeWithOffsetMode(
-        UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
-        Int64 days = 0;
-        if constexpr (fixed_offset)
-        {
-            if (weeksToDays(delta, days) && time_zone.dayShiftStaysWithinLUT(t, days))
-                return static_cast<UInt32>(t + days * DATE_SECONDS_PER_DAY);
-        }
-        else
-            weeksToDays(delta, days);
-        return static_cast<UInt32>(time_zone.addDays(t, days));
-    }
-    static NO_SANITIZE_UNDEFINED DateTime64 execute(
-        DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
-    {
-        if (time_zone.hasFixedOffset())
-            return executeWithOffsetMode<true>(t, delta, time_zone, utc_time_zone, scale);
-        return executeWithOffsetMode<false>(t, delta, time_zone, utc_time_zone, scale);
-    }
-    static NO_SANITIZE_UNDEFINED Time64 execute(
-        Time64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
-    {
-        if (time_zone.hasFixedOffset())
-            return executeWithOffsetMode<true>(t, delta, time_zone, utc_time_zone, scale);
-        return executeWithOffsetMode<false>(t, delta, time_zone, utc_time_zone, scale);
-    }
-    static NO_SANITIZE_UNDEFINED UInt32 execute(
-        UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
-    {
-        if (time_zone.hasFixedOffset())
-            return executeWithOffsetMode<true>(t, delta, time_zone, utc_time_zone, scale);
-        return executeWithOffsetMode<false>(t, delta, time_zone, utc_time_zone, scale);
+        return static_cast<UInt32>(time_zone.addWeeks(t, delta));
     }
     static NO_SANITIZE_UNDEFINED UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
@@ -647,33 +548,11 @@ struct SubtractIntervalImpl : public Transform
 {
     using Transform::Transform;
 
-    /// Wraps like the raw negation used to (delta == INT64_MIN stays INT64_MIN), but reports the
-    /// overflow so the checked fast-path guards run on a defined value instead of UB.
-    static bool negate(Int64 delta, Int64 & negated)
-    {
-        return !__builtin_sub_overflow(Int64{0}, delta, &negated);
-    }
-
     template <typename T>
-    auto execute(T t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale) const
+    NO_SANITIZE_UNDEFINED auto execute(T t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale) const
     {
-        Int64 negated = 0;
-        negate(delta, negated);
-        return Transform::execute(t, negated, time_zone, utc_time_zone, scale);
-    }
-
-    template <bool fixed_offset, typename T>
-    auto executeWithOffsetMode(
-        T t,
-        Int64 delta,
-        const DateLUTImpl & time_zone,
-        const DateLUTImpl & utc_time_zone,
-        UInt16 scale) const
-    {
-        Int64 negated = 0;
-        if (!negate(delta, negated))
-            return Transform::template executeWithOffsetMode<false>(t, negated, time_zone, utc_time_zone, scale);
-        return Transform::template executeWithOffsetMode<fixed_offset>(t, negated, time_zone, utc_time_zone, scale);
+        /// Signed integer overflow is Ok.
+        return Transform::execute(t, -delta, time_zone, utc_time_zone, scale);
     }
 
     template <typename T>
@@ -702,14 +581,7 @@ struct SubtractQuartersImpl : SubtractIntervalImpl<AddQuartersImpl> { static con
 struct SubtractYearsImpl : SubtractIntervalImpl<AddYearsImpl> { static constexpr auto name = "subtractYears"; };
 
 
-template <typename Transform, typename FromDataType>
-inline constexpr bool supports_fixed_offset_dispatch
-    = (std::is_base_of_v<AddDaysImpl, Transform> || std::is_base_of_v<AddWeeksImpl, Transform>)
-    && (std::is_same_v<FromDataType, DataTypeDateTime>
-        || std::is_same_v<FromDataType, DataTypeDateTime64>
-        || std::is_same_v<FromDataType, DataTypeTime64>);
-
-template <typename Transform, bool fixed_offset>
+template <typename Transform>
 struct Processor
 {
     const Transform transform;
@@ -734,7 +606,7 @@ struct Processor
             for (size_t i = 0 ; i < input_rows_count; ++i)
             {
                 std::string_view from = col_from.getDataAt(i);
-                vec_to[i] = executeTransform<FromDataType>(from, checkOverflow(delta), time_zone, utc_time_zone, scale);
+                vec_to[i] = transform.execute(from, checkOverflow(delta), time_zone, utc_time_zone, scale);
             }
         }
         else
@@ -752,8 +624,7 @@ struct Processor
             else
             {
                 for (size_t i = 0; i < input_rows_count; ++i)
-                    vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(
-                        executeTransform<FromDataType>(vec_from[i], checkOverflow(delta), time_zone, utc_time_zone, scale));
+                    vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(transform.execute(vec_from[i], checkOverflow(delta), time_zone, utc_time_zone, scale));
             }
         }
     }
@@ -783,20 +654,10 @@ struct Processor
     }
 
 private:
-    template <typename FromDataType, typename T>
-    auto executeTransform(
-        T t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale) const
-    {
-        if constexpr (supports_fixed_offset_dispatch<Transform, FromDataType>)
-            return transform.template executeWithOffsetMode<fixed_offset>(t, delta, time_zone, utc_time_zone, scale);
-        else
-            return transform.execute(t, delta, time_zone, utc_time_zone, scale);
-    }
-
     template <typename Value>
     static Int64 checkOverflow(Value val)
     {
-        Int64 result = 0;
+        Int64 result;
         if (accurate::convertNumeric<Value, Int64, false>(val, result))
             return result;
         throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
@@ -820,8 +681,7 @@ private:
             for (size_t i = 0 ; i < input_rows_count; ++i)
             {
                 std::string_view from = col_from.getDataAt(i);
-                vec_to[i] = executeTransform<FromDataType>(
-                    from, checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale);
+                vec_to[i] = transform.execute(from, checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale);
             }
         }
         else
@@ -839,8 +699,7 @@ private:
             else
             {
                 for (size_t i = 0; i < input_rows_count; ++i)
-                    vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(executeTransform<FromDataType>(
-                        vec_from[i], checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale));
+                    vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(transform.execute(vec_from[i], checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale));
             }
         }
     }
@@ -866,8 +725,7 @@ private:
         else
         {
             for (size_t i = 0; i < input_rows_count; ++i)
-                vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(executeTransform<FromDataType>(
-                    from, checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale));
+                vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(transform.execute(from, checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale));
         }
     }
 };
@@ -878,27 +736,6 @@ struct DateTimeAddIntervalImpl
 {
     static ColumnPtr execute(Transform transform, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, UInt16 scale, size_t input_rows_count)
     {
-        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0);
-
-        if constexpr (supports_fixed_offset_dispatch<Transform, FromDataType>)
-        {
-            if (time_zone.hasFixedOffset())
-                return executeWithOffsetMode<true>(std::move(transform), arguments, result_type, scale, input_rows_count, time_zone);
-        }
-
-        return executeWithOffsetMode<false>(std::move(transform), arguments, result_type, scale, input_rows_count, time_zone);
-    }
-
-private:
-    template <bool fixed_offset>
-    static ColumnPtr executeWithOffsetMode(
-        Transform transform,
-        const ColumnsWithTypeAndName & arguments,
-        const DataTypePtr & result_type,
-        UInt16 scale,
-        size_t input_rows_count,
-        const DateLUTImpl & time_zone)
-    {
         using FromValueType = typename FromDataType::FieldType;
         using FromColumnType = typename FromDataType::ColumnType;
         using ToColumnType = typename ToDataType::ColumnType;
@@ -906,10 +743,12 @@ private:
         const IColumn & source_column = *arguments[0].column;
         const IColumn & delta_column = *arguments[1].column;
 
+        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0);
+
         auto result_col = result_type->createColumn();
         auto col_to = assert_cast<ToColumnType *>(result_col.get());
 
-        auto processor = Processor<Transform, fixed_offset>{std::move(transform)};
+        auto processor = Processor<Transform>{std::move(transform)};
 
         if (const auto * sources = checkAndGetColumn<FromColumnType>(&source_column))
         {
@@ -946,7 +785,7 @@ template <> struct ResultDataTypeMap<Int8>             { using ResultDataType = 
 }
 
 template <typename Transform>
-class FunctionDateOrDateTimeAddInterval final : public IFunction
+class FunctionDateOrDateTimeAddInterval : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;

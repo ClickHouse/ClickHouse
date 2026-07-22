@@ -13,7 +13,7 @@ namespace DB
 /** Stream for output data in Npy format.
   * https://numpy.org/doc/stable/reference/generated/numpy.lib.format.html
   */
-class NpyOutputFormat final : public IOutputFormat
+class NpyOutputFormat : public IOutputFormat
 {
 public:
     NpyOutputFormat(WriteBuffer & out_, SharedHeader header_);

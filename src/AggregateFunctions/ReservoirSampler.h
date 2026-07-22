@@ -5,6 +5,8 @@
 #include <base/types.h>
 #include <base/sort.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators_pcg_random.h>
@@ -84,12 +86,7 @@ public:
             return;
 
         sorted = false;
-        /// Keep `total_values` saturated once it hits the max. A saturated state (e.g. from
-        /// multiplying an aggregate state by a huge constant) can be merged into another via
-        /// the insert() branch of merge(); a plain ++ would wrap SIZE_MAX to 0 and reach
-        /// genRandom(0), which is UB / a debug assert failure.
-        if (total_values != std::numeric_limits<size_t>::max())
-            ++total_values;
+        ++total_values;
         if (samples.size() < sample_count)
         {
             samples.push_back(v);
@@ -192,13 +189,7 @@ public:
             /// with the probability of b.total_values / (a.total_values + b.total_values)
             /// Do it more roughly than true random sampling to save performance.
 
-            /// `total_values` can overflow when an aggregate state is multiplied by a huge
-            /// constant: `executeAggregateMultiply` self-merges the reservoir with
-            /// exponentiation by squaring, doubling `total_values` each step. On overflow the
-            /// wrapped sum would make `frequency` drop below 1, turning the loop below into a
-            /// near-infinite one. Saturate the sum so `frequency` stays >= 1.
-            if (__builtin_add_overflow(total_values, b.total_values, &total_values))
-                total_values = std::numeric_limits<size_t>::max();
+            total_values += b.total_values;
 
             /// Will replace every frequency'th element in a to element from b.
             double frequency = static_cast<double>(total_values) / static_cast<double>(b.total_values);

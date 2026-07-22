@@ -4,12 +4,9 @@
 
 #if USE_MYSQL
 
-#include <Core/MultiEnum.h>
-#include <Core/SettingsEnums.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <Processors/QueryPlan/ISourceStep.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
-#include <Storages/TableNameOrQuery.h>
+#include <Storages/IStorage.h>
 #include <mysqlxx/PoolWithFailover.h>
 
 namespace Poco
@@ -27,14 +24,14 @@ struct StorageID;
 /** Implements storage in the MySQL database.
   * Use ENGINE = mysql(host_port, database_name, table_name, user_name, password)
   */
-class StorageMySQL final : public StorageWithCommonVirtualColumns, WithContext
+class StorageMySQL final : public IStorage, WithContext
 {
 public:
     StorageMySQL(
         const StorageID & table_id_,
         mysqlxx::PoolWithFailover && pool_,
         const std::string & remote_database_name_,
-        const TableNameOrQuery & remote_table_or_query_,
+        const std::string & remote_table_name_,
         bool replace_query_,
         const std::string & on_duplicate_clause_,
         const ColumnsDescription & columns_,
@@ -47,9 +44,7 @@ public:
 
     bool isExternalDatabase() const override { return true; }
 
-    static VirtualColumnsDescription createVirtuals();
-
-    void readImpl(
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -70,7 +65,7 @@ public:
         String username = "default";
         String password;
         String database;
-        TableNameOrQuery table_or_query;
+        String table;
 
         String ssl_ca;
         String ssl_cert;
@@ -87,20 +82,19 @@ public:
 
     static Configuration processNamedCollectionResult(
         const NamedCollection & named_collection, MySQLSettings & storage_settings,
-        ContextPtr context_, bool require_table_or_query = true);
+        ContextPtr context_, bool require_table = true);
 
     static ColumnsDescription getTableStructureFromData(
         mysqlxx::PoolWithFailover & pool_,
         const String & database,
-        const TableNameOrQuery & table_or_query,
-        const ContextPtr & context_,
-        MultiEnum<MySQLDataTypesSupport> type_support);
+        const String & table,
+        const ContextPtr & context_);
 
 private:
     friend class StorageMySQLSink;
 
     std::string remote_database_name;
-    TableNameOrQuery remote_table_or_query;
+    std::string remote_table_name;
     bool replace_query;
     std::string on_duplicate_clause;
 
