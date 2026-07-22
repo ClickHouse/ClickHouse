@@ -4,6 +4,7 @@
 #include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/formatIPv6.h>
 #include <Common/quoteString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -82,10 +83,23 @@ static bool hasAlignedStringVsNonStringElement(const DataTypePtr & left_type, co
             return false;
         }
 
-    /// Scalar (or structurally divergent) level: the legacy coercion applies exactly when one side
-    /// is string-like and the aligned other side is not.
-    const bool left_is_string = WhichDataType(left).isStringOrFixedString();
-    const bool right_is_string = WhichDataType(right).isStringOrFixedString();
+    const WhichDataType left_which(left);
+    const WhichDataType right_which(right);
+
+    /// The `FixedString(16)` <-> `IPv6` pair is a genuine full-column comparison (see the dedicated
+    /// path in `executeImpl`, where a `FixedString(16)` is treated as the binary representation of an
+    /// `IPv6`), not a legacy const-string coercion. It is executable element-wise, so do not reject it.
+    auto is_ipv6_binary_fixed_string = [](const DataTypePtr & type)
+    {
+        const auto * fixed_string = checkAndGetDataType<DataTypeFixedString>(type.get());
+        return fixed_string && fixed_string->getN() == IPV6_BINARY_LENGTH;
+    };
+    if ((left_which.isIPv6() && is_ipv6_binary_fixed_string(right))
+        || (right_which.isIPv6() && is_ipv6_binary_fixed_string(left)))
+        return false;
+
+    const bool left_is_string = left_which.isStringOrFixedString();
+    const bool right_is_string = right_which.isStringOrFixedString();
     return left_is_string != right_is_string;
 }
 
