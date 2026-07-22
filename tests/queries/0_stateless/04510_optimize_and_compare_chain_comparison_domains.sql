@@ -66,6 +66,13 @@ FROM values(
     ('999999999999999999', '1'))
 WHERE a > b AND b > toDecimal64('0.5', 1);
 
+-- `Enum` compares to a `String` column by name but converts a `String` constant to its id;
+-- a derived endpoint would flip between the two orders. Here the chain holds by name order
+-- ('x' <= 'z') while the id-order endpoint `e <= 'z'` (5 <= 1) is false.
+SELECT 'enum name id order mix', count()
+FROM values('e Enum(\'x\' = 5, \'z\' = 1), s String', ('x', 'z'))
+WHERE e <= s AND s <= 'z';
+
 -- Keep deriving conditions inside explicitly supported domains.
 SELECT
     'safe domains remain optimized',
@@ -217,5 +224,82 @@ SELECT
      FROM (EXPLAIN QUERY TREE
            SELECT * FROM values('a Decimal64(2), b Decimal128(2)', ('1.00', '2.00'))
            WHERE a < b AND b < toDecimal64('3.00', 2)
+           SETTINGS optimize_and_compare_chain = 0)
+     WHERE explain LIKE '%function_name: less,%');
+
+-- Types that accept only their own exact type as a comparison counterpart keep a single
+-- order per type. Keep deriving conditions for chains over one such type: UUID, one
+-- concrete Enum, one FixedString width.
+SELECT
+    'exact type domains remain optimized',
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('u1 UUID, u2 UUID', ('11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222'))
+           WHERE u1 < u2 AND u2 < toUUID('33333333-3333-3333-3333-333333333333')
+           SETTINGS optimize_and_compare_chain = 1)
+     WHERE explain LIKE '%function_name: less,%')
+        >
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('u1 UUID, u2 UUID', ('11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222'))
+           WHERE u1 < u2 AND u2 < toUUID('33333333-3333-3333-3333-333333333333')
+           SETTINGS optimize_and_compare_chain = 0)
+     WHERE explain LIKE '%function_name: less,%'),
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('e1 Enum(\'x\' = 5, \'z\' = 1), e2 Enum(\'x\' = 5, \'z\' = 1)', ('z', 'z'))
+           WHERE e1 < e2 AND e2 < CAST('x', 'Enum(\'x\' = 5, \'z\' = 1)')
+           SETTINGS optimize_and_compare_chain = 1)
+     WHERE explain LIKE '%function_name: less,%')
+        >
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('e1 Enum(\'x\' = 5, \'z\' = 1), e2 Enum(\'x\' = 5, \'z\' = 1)', ('z', 'z'))
+           WHERE e1 < e2 AND e2 < CAST('x', 'Enum(\'x\' = 5, \'z\' = 1)')
+           SETTINGS optimize_and_compare_chain = 0)
+     WHERE explain LIKE '%function_name: less,%'),
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('f1 FixedString(3), f2 FixedString(3)', ('aaa', 'bbb'))
+           WHERE f1 < f2 AND f2 < toFixedString('zzz', 3)
+           SETTINGS optimize_and_compare_chain = 1)
+     WHERE explain LIKE '%function_name: less,%')
+        >
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('f1 FixedString(3), f2 FixedString(3)', ('aaa', 'bbb'))
+           WHERE f1 < f2 AND f2 < toFixedString('zzz', 3)
+           SETTINGS optimize_and_compare_chain = 0)
+     WHERE explain LIKE '%function_name: less,%');
+
+-- The exact-type domain must not connect different types: FixedString of different widths
+-- trims padding when converting while equal widths compare the padded bytes, and Enum
+-- converts against a String column by name. No conditions may be derived across those.
+SELECT
+    'exact type requires equal types',
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('f3 FixedString(3), f5 FixedString(5)', ('aaa', 'bbbbb'))
+           WHERE f3 < f5 AND f5 < toFixedString('zzzzz', 5)
+           SETTINGS optimize_and_compare_chain = 1)
+     WHERE explain LIKE '%function_name: less,%')
+        =
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('f3 FixedString(3), f5 FixedString(5)', ('aaa', 'bbbbb'))
+           WHERE f3 < f5 AND f5 < toFixedString('zzzzz', 5)
+           SETTINGS optimize_and_compare_chain = 0)
+     WHERE explain LIKE '%function_name: less,%'),
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('e Enum(\'x\' = 5, \'z\' = 1), s String', ('x', 'z'))
+           WHERE e < s AND s < 'zz'
+           SETTINGS optimize_and_compare_chain = 1)
+     WHERE explain LIKE '%function_name: less,%')
+        =
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('e Enum(\'x\' = 5, \'z\' = 1), s String', ('x', 'z'))
+           WHERE e < s AND s < 'zz'
            SETTINGS optimize_and_compare_chain = 0)
      WHERE explain LIKE '%function_name: less,%');
