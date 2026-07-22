@@ -83,6 +83,26 @@ def test_postgresql_database_engine_respects_remote_host_filter(started_cluster)
     node.query("DROP DATABASE pg_db_allowed")
 
 
+def test_postgresql_database_engine_named_collection_addresses_expr(started_cluster):
+    # The `PostgreSQL` database engine over a named collection goes through
+    # `StoragePostgreSQL::processNamedCollectionResult(..., require_table = false)` and then the
+    # dedicated `checkHostAndPort` loop in `registerDatabasePostgreSQL`, a distinct path from the
+    # positional `host:port` form above. An `addresses_expr` named collection is the less shared
+    # shape here, so exercise it directly. See the named collections in `named_collections.xml`.
+
+    # A blocked host inside `addresses_expr` is rejected by the host filter, before any connection.
+    node.query("DROP DATABASE IF EXISTS pg_nc_blocked_db")
+    error = node.query_and_get_error("CREATE DATABASE pg_nc_blocked_db ENGINE = PostgreSQL(mpg_nc_blocked)")
+    assert "UNACCEPTABLE_URL" in error
+
+    # The whitelisted host works: the database engine over the `addresses_expr` collection creates
+    # successfully and reads data, proving the filter accepts the whitelisted host.
+    node.query("DROP DATABASE IF EXISTS pg_nc_allowed_db")
+    node.query("CREATE DATABASE pg_nc_allowed_db ENGINE = PostgreSQL(mpg_nc_allowed)")
+    assert node.query("SELECT count() FROM pg_nc_allowed_db.test_table").strip() == "10"
+    node.query("DROP DATABASE pg_nc_allowed_db")
+
+
 def test_materialized_postgresql_named_collection_addresses_expr(started_cluster):
     # A named collection can specify the endpoint as `addresses_expr`, which fills only
     # `configuration.addresses` and leaves `host` / `port` empty. The MaterializedPostgreSQL

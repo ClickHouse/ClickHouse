@@ -17,8 +17,13 @@
             <username>postgres</username>
             <password>ClickHouse_PostgreSQL_P@ssw0rd</password>
         </mpg_nc_allowed>
+        <!-- Two addresses, both on the whitelisted `postgres1` host (different ports), so the
+             host filter accepts every address and the multi-address rejection is what the test
+             observes. Using a non-whitelisted host here would instead trip the host filter first
+             in the table-engine path (where `StoragePostgreSQL::getConfiguration` checks each
+             address before the multi-address guard runs). -->
         <mpg_nc_multiple>
-            <addresses_expr>postgres1|postgres2:5432</addresses_expr>
+            <addresses_expr>postgres1:5432|postgres1:5433</addresses_expr>
             <database>postgres</database>
             <username>postgres</username>
             <password>ClickHouse_PostgreSQL_P@ssw0rd</password>
