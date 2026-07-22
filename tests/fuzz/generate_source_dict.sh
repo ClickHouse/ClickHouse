@@ -55,13 +55,18 @@ trap 'rm -f "$TMP_FILE"' EXIT
     #     const char * FunctionPolygonsUnion<CartesianPoint>::name = "polygonsUnionCartesian";
     #     static inline const char * name = "widthBucket";
     # src/Formats hosts the name constants of the structureTo*Schema functions,
-    # so it is scanned as well.
+    # and src/Storages/ObjectStorage/StorageObjectStorageDefinitions.h the names
+    # of the object storage and data lake table functions (s3, gcs, iceberg*,
+    # deltaLake*, paimon*, ... and their *Cluster variants), so they are scanned
+    # as well. Arrays of names are covered too:
+    #     constexpr std::array<const char *, 2> names = {"generate_series", "generateSeries"};
     # Every string literal in the initializer is taken.
-    grep -rhozE '\bconst(expr)?[[:space:]]+[a-zA-Z_:<> *]+[Nn]ame(\[\])?[[:space:]]*[={][^;]*;' \
+    grep -rhozE '\bconst(expr)?[[:space:]]+[a-zA-Z_0-9,:<> *]+[Nn]ames?(\[\])?[[:space:]]*[={][^;]*;' \
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
         "$SOURCE_ROOT/src/Formats" \
+        "$SOURCE_ROOT/src/Storages/ObjectStorage/StorageObjectStorageDefinitions.h" \
         | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"'
 
     # Names carried by a local String variable instead of a literal argument,
@@ -84,12 +89,21 @@ trap 'rm -f "$TMP_FILE"' EXIT
         "$SOURCE_ROOT/src/TableFunctions" \
         | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"'
 
-    # Names returned by a getName() accessor that yields a string literal, e.g.
+    # Names returned by a *Name/getName helper whose body yields string
+    # literals, e.g. an accessor
     #     static const char * getName() { return "contingency"; }
-    # Such names reach the factory as factory.registerFunction(Data::getName(),
-    # ...), so the registration call itself carries no string literal for the
-    # pass below to find (contingency, cramersV, cramersVBiasCorrected, theilsU).
-    grep -rhozE 'getName\(\)[[:space:]]*\{[[:space:]]*return[[:space:]]+"[^"]+"' \
+    # (such names reach the factory as factory.registerFunction(Data::getName(),
+    # ...) - contingency, cramersV, cramersVBiasCorrected, theilsU), or a free
+    # helper choosing between literals
+    #     const char * mergeTreeAnalyzeIndexFunctionName(bool resolve_by_uuid)
+    #     {
+    #         if (resolve_by_uuid)
+    #             return "mergeTreeAnalyzeIndexesUUID";
+    #         else
+    #             return "mergeTreeAnalyzeIndexes";
+    #     }
+    # Every string literal in the (brace-free) function body is taken.
+    grep -rhozE '[A-Za-z_]*[Nn]ame[[:space:]]*\([^()]*\)[[:space:]]*(const[[:space:]]*)?(override[[:space:]]*)?\{[^{}"]*"[^{}]*\}' \
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \

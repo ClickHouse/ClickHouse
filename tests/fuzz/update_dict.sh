@@ -4,8 +4,8 @@ set -euo pipefail
 
 # Generate the libFuzzer dictionary (all.dict) from a ClickHouse binary.
 #
-# The dictionary lists every function, data type family and keyword known to the
-# server. Deriving it from the binary - instead of committing a snapshot that
+# The dictionary lists every function, table function, data type family and
+# keyword known to the server. Deriving it from the binary - instead of committing a snapshot that
 # has to be refreshed by hand - guarantees it never drifts from the actual SQL
 # grammar. In CI this runs in the libFuzzer test job against the release binary,
 # see ci/jobs/libfuzzer_test_check.py.
@@ -35,6 +35,9 @@ echo "Generating data types dict"
 
 echo "Generating keywords dict"
 "$CLICKHOUSE_BIN" local -q "SELECT DISTINCT concat('\"', keyword, '\"') as res FROM system.keywords ORDER BY keyword" > "$TMP_DIR/keywords.dict"
+
+echo "Generating table functions dict"
+"$CLICKHOUSE_BIN" local -q "SELECT DISTINCT concat('\"', name, '\"') as res FROM system.table_functions ORDER BY name" > "$TMP_DIR/tablefunctions.dict"
 
 echo "Merging dictionaries into $OUTPUT_DIR/all.dict"
 mkdir -p "$OUTPUT_DIR"
