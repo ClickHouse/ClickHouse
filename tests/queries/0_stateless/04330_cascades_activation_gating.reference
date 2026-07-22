@@ -33,3 +33,4 @@
 2
 3
 4
+-- 11. Subquery WITH TOTALS under an outer top-N is rejected (fail-close)

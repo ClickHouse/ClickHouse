@@ -91,4 +91,10 @@ SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1; -- { serverEr
 SELECT k FROM t_gating WHERE k IN (0, 2, 4) GROUP BY k ORDER BY k WITH FILL
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 0;
 
+-- A subquery `WITH TOTALS` sets "read till the end" on the outer limit, which the two-stage
+-- top-N split cannot honor; such plans are rejected by the `WITH TOTALS` gate before any rule runs.
+SELECT '-- 11. Subquery WITH TOTALS under an outer top-N is rejected (fail-close)';
+SELECT k, s FROM (SELECT k, sum(x) AS s FROM t_gating GROUP BY k WITH TOTALS) ORDER BY s DESC LIMIT 3
+SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1; -- { serverError SUPPORT_IS_DISABLED }
+
 DROP TABLE t_gating;
