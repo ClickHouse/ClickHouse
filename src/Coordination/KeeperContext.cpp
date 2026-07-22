@@ -104,7 +104,6 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
 
     digest_enabled = config.getBool("keeper_server.digest_enabled", false);
     digest_enabled_on_commit = config.getBool("keeper_server.digest_enabled_on_commit", false);
-    ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
 
     initializeFeatureFlags(config);
     initializeDisks(config);
@@ -190,11 +189,6 @@ KeeperContext::Phase KeeperContext::getServerState() const
 void KeeperContext::setServerState(KeeperContext::Phase server_state_)
 {
     server_state = server_state_;
-}
-
-bool KeeperContext::ignoreSystemPathOnStartup() const
-{
-    return ignore_system_path_on_startup;
 }
 
 bool KeeperContext::digestEnabled() const
