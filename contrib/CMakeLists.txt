@@ -194,6 +194,11 @@ if (ENABLE_NLP)
     add_contrib (cld2-cmake cld2)
 endif()
 
+option(ENABLE_MECAB "Enable MeCab (Japanese morphological analyzer) support" ${ENABLE_LIBRARIES})
+if (ENABLE_MECAB)
+    add_contrib (MeCab-cmake MeCab)
+endif()
+
 add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
 add_contrib (c-ares-cmake c-ares)
