@@ -196,7 +196,7 @@ String buildStructuredSubstreamNameSuffix(const SubstreamPath & path)
 
     if (last_type == Substream::Regular)
     {
-        const String path_context = getStructuredPathPrefixInRange(path, 0, path_size - 1);
+        String path_context = getStructuredPathPrefixInRange(path, 0, path_size - 1);
         if (array_elements_count == 0)
             return path_context;
 
