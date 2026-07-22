@@ -62,6 +62,10 @@ must omit 'compression-codec'
 snapshot-id and sequence-number must be -1
 --- dv_nonzero_sequence_number.puffin ---
 snapshot-id and sequence-number must be -1
+--- invalid_cardinality_non_numeric.puffin ---
+property 'cardinality' must be an unsigned integer
+--- invalid_cardinality_negative.puffin ---
+property 'cardinality' must be an unsigned integer
 --- puffin_metadata_wrong_type ---
 Unexpected type
 --- puffin_metadata_unknown_column ---

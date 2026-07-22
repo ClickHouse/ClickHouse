@@ -290,6 +290,13 @@ void requireDeletionVectorV1Properties(const PuffinBlob & blob, size_t blob_inde
                 blob_index,
                 key);
     }
+
+    UInt64 cardinality = 0;
+    if (!tryParse(cardinality, blob.properties.at("cardinality")))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Puffin blob {}: deletion-vector-v1 property 'cardinality' must be an unsigned integer",
+            blob_index);
 }
 
 void parseStringValuedProperties(
@@ -874,19 +881,19 @@ Chunk PuffinInputFormat::read()
 
         const auto & referenced_data_file = blob.properties.at("referenced-data-file");
 
+        UInt64 expected_cardinality = 0;
+        if (!tryParse(expected_cardinality, blob.properties.at("cardinality")))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Puffin blob {}: deletion-vector-v1 property 'cardinality' must be an unsigned integer",
+                current_blob_index);
+
         auto col_file = ColumnString::create();
         col_file->insertData(referenced_data_file.data(), referenced_data_file.size());
 
         MutableColumnPtr col_rows;
         if (need_deleted_rows)
         {
-            UInt64 expected_cardinality = 0;
-            if (!tryParse(expected_cardinality, blob.properties.at("cardinality")))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Puffin blob {}: deletion-vector-v1 property 'cardinality' must be an unsigned integer",
-                    current_blob_index);
-
             const String blob_data = readPuffinBlobBytes(blob, *in, footer.data, seekable_read);
             auto col_rows_data = ColumnUInt64::create();
             deserializeDeletionVectorV1(blob_data, expected_cardinality, *col_rows_data);

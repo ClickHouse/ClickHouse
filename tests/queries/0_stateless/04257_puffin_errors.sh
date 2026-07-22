@@ -32,6 +32,14 @@ do
     id=$((id + 1))
 done
 
+# Footer metadata validity must not depend on projecting deleted_rows.
+for f in invalid_cardinality_non_numeric invalid_cardinality_negative
+do
+    launch "$id" raw_puffin "${f}_subset" "property 'cardinality' must be an unsigned integer" \
+        "SELECT referenced_data_file FROM file('$DATA/$f.puffin', Puffin)"
+    id=$((id + 1))
+done
+
 launch "$id" raw_puffin 'puffin_wrong_type' 'Unexpected type' \
     "SELECT deleted_rows FROM file('$PUFFIN', Puffin, 'deleted_rows Array(String)')"
 id=$((id + 1))

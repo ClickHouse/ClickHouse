@@ -65,6 +65,12 @@ do
     id=$((id + 1))
 done
 
+for f in invalid_cardinality_non_numeric invalid_cardinality_negative
+do
+    launch "$id" meta "$DATA/$f.puffin" "property 'cardinality' must be an unsigned integer"
+    id=$((id + 1))
+done
+
 launch "$id" raw_meta 'puffin_metadata_wrong_type' 'Unexpected type' \
     "SELECT blob_type FROM file('$PUFFIN', PuffinMetadata, 'blob_type Int32')"
 id=$((id + 1))

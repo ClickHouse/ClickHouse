@@ -20,6 +20,10 @@ BAD_ARGUMENTS
 property 'cardinality' must be an unsigned integer
 --- invalid_cardinality_negative.puffin ---
 property 'cardinality' must be an unsigned integer
+--- invalid_cardinality_non_numeric_subset ---
+property 'cardinality' must be an unsigned integer
+--- invalid_cardinality_negative_subset ---
+property 'cardinality' must be an unsigned integer
 --- puffin_wrong_type ---
 Unexpected type
 --- puffin_unknown_column ---
