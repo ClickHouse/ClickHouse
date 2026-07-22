@@ -802,11 +802,11 @@ getColumnsForNewDataPart(
         auto old_type = part_columns.getPhysical(name).type;
         auto new_type = updated_header.getByName(new_name).type;
 
-        if (settings.isAlwaysDefault() || !settings.canUseSparseSerialization(*new_type))
+        if (settings.isAlwaysDefault() || !settings.shouldCollectSerializationInfo(*new_type))
             continue;
 
         auto new_info = new_type->createSerializationInfo(settings);
-        if (!old_info->structureEquals(*new_info))
+        if (!old_info->structureEquals(*new_info) && !(isObject(old_type) && isObject(new_type)))
         {
             new_serialization_infos.emplace(new_name, std::move(new_info));
             continue;

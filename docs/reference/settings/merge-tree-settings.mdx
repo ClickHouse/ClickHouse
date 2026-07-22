@@ -2557,6 +2557,7 @@ This makes settings like `string_serialization_version` effective.
 During rolling upgrades, set this to `basic` so that new servers produce
 data parts compatible with old servers. After the upgrade completes,
 switch to `with_types` or `with_subcolumns` to enable the corresponding serialization features.
+Do not use `with_subcolumns` until every replica has been upgraded because older servers cannot read its part metadata.
 
 ## share_nested_offsets {#share_nested_offsets} 
 <SettingsInfoBlock type="Bool" default_value="1" />

@@ -66,6 +66,12 @@ bool SerializationInfoSettings::canUseSparseSerialization(const IDataType & type
     return type.supportsSparseSerialization();
 }
 
+bool SerializationInfoSettings::shouldCollectSerializationInfo(const IDataType & type) const
+{
+    return canUseSparseSerialization(type)
+        || (version >= MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS && type.hasSparseSerializationSubcolumns());
+}
+
 void SerializationInfoSettings::updateHash(SipHash & hash) const
 {
     hash.update(ratio_of_defaults_for_sparse);

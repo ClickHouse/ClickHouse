@@ -273,6 +273,26 @@ TEST(SerializationInfoObject, EnabledOnlyForSubcolumnsVersion)
     EXPECT_NE(typeid_cast<const SerializationInfoObject *>(restored.tryGet("j").get()), nullptr);
 }
 
+TEST(SerializationInfoObject, CreateWithChangedTypedPaths)
+{
+    auto old_type = DataTypeFactory::instance().get("JSON(x String, y UInt64, max_dynamic_paths=0)");
+    auto new_type = DataTypeFactory::instance().get("JSON(x String, z UInt64, max_dynamic_paths=0)");
+
+    auto settings = defaultSettings();
+    settings.version = MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS;
+
+    auto old_info = old_type->createSerializationInfo(settings);
+    old_info->addDefaults(100);
+    auto new_info = old_info->createWithType(*old_type, *new_type, settings);
+    const auto * object_info = typeid_cast<const SerializationInfoObject *>(new_info.get());
+    ASSERT_NE(object_info, nullptr);
+
+    const auto sparse_kind = ISerialization::KindStack({ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE});
+    EXPECT_EQ(object_info->getTypedPathInfo("x")->getKindStack(), sparse_kind);
+    EXPECT_EQ(object_info->getTypedPathInfo("z")->getKindStack(), sparse_kind);
+    EXPECT_THROW(object_info->getTypedPathInfo("y"), DB::Exception);
+}
+
 TEST(SerializationInfoObject, NativeRevisionGate)
 {
     constexpr size_t rows = 4;
