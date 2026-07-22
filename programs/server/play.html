@@ -7428,12 +7428,27 @@ async function readEventStream(response, targetResultEl, abortController, tab, p
     if (buffer.trim().length > 0)
     {
         const had_exception = saw_exception;
-        dispatchEventStreamBlock(buffer, handleEvent);
-        if (saw_exception && !had_exception) exception_block = buffer;
-        if (!saw_exception)
+        let residual_dispatch_failed = false;
+        try
         {
-            /// The residual was not a recognizable terminal `exception`: the stream was cut off.
-            /// Render an explicit error and synthesize a carrier so the failure survives replay too.
+            dispatchEventStreamBlock(buffer, handleEvent);
+        }
+        catch (e)
+        {
+            /// The stream was cut off inside the residual block's JSON payload, so the handler's
+            /// `JSON.parse` throws. Any non-empty residual already means a broken stream: map the
+            /// parse failure to the same synthesized truncation error below, instead of letting a
+            /// raw `SyntaxError` escape to the generic catch (which would lose the snapshot's
+            /// `framing_kind` and stop a restored result from replaying the partial stream).
+            residual_dispatch_failed = true;
+        }
+        if (!residual_dispatch_failed && saw_exception && !had_exception) exception_block = buffer;
+        if (residual_dispatch_failed || !saw_exception)
+        {
+            /// The residual was not a recognizable (or parseable) terminal `exception`: the stream
+            /// was cut off. Render an explicit error and synthesize a carrier so the failure
+            /// survives replay too. The carrier is synthesized - never the unparseable residual
+            /// itself - so replaying the snapshot cannot hit the same parse failure.
             const message = 'The response stream was truncated before it completed.';
             targetResultEl.renderError(message);
             exception_block = 'event: exception\ndata: ' + JSON.stringify({ exception: message });
@@ -7931,6 +7946,12 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                     }
                 }
             };
+            /// Both NDJSON producers here are newline-delimited and terminate every line - including
+            /// the terminal exception - with `\n`, so a stream whose last character is not a newline
+            /// was cut off mid-line (e.g. the connection dropped inside the terminal
+            /// `{"packet":"exception",...}` line before its prefix could be recognized). Track it and
+            /// fail closed, so a truncated response is never recorded as a success.
+            let ends_mid_line = false;
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
@@ -7939,8 +7960,18 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 if (posted_request_num != tab.reqNum) { return { cancelled: true }; }
                 targetResultEl.updateRaw(new_content);
                 scanForException(new_content);
+                if (new_content !== '') ends_mid_line = !new_content.endsWith('\n');
             }
-            return { saw_exception, exception_line };
+            /// EOF: flush any bytes still held by the streaming decoder (a multi-byte sequence split
+            /// across the final chunk) before judging whether the last line was terminated.
+            const tail = decoder.decode();
+            if (tail !== '') {
+                reply = appendCappedSnapshot(reply, tail);
+                targetResultEl.updateRaw(tail);
+                scanForException(tail);
+                ends_mid_line = !tail.endsWith('\n');
+            }
+            return { saw_exception, exception_line, truncated: ends_mid_line };
         };
 
         if (!response.ok && content_type.startsWith('text/event-stream')) {
@@ -7974,6 +8005,16 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             const res = await readNdjsonPacketStream(ndjson_exception_prefix);
             if (res.cancelled) { return { cancelled: true }; }
             exception_carrier = res.exception_line;
+            if (res.truncated && exception_carrier === null && ndjson_exception_prefix !== null) {
+                /// The error stream was itself cut off before its terminal exception packet: show
+                /// an explicit truncation error and synthesize a replayable carrier, so the saved
+                /// failure snapshot still carries an error reason.
+                const message = 'The response stream was truncated before it completed.';
+                targetResultEl.renderError(message);
+                exception_carrier = user_framing
+                    ? JSON.stringify({ packet: 'exception', exception: message })
+                    : JSON.stringify({ exception: message });
+            }
             return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind, exception_carrier };
         } else if (!response.ok) {
             is_error = true;
@@ -8184,10 +8225,24 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 framing_kind = 'ndjson_packets';
                 const res = await readNdjsonPacketStream(ndjson_exception_prefix);
                 if (res.cancelled) { return { cancelled: true }; }
-                if (res.saw_exception) {
+                if (res.saw_exception || res.truncated) {
                     is_error = true;
-                    exception_carrier = res.exception_line;
-                    display_error = res.exception_line;
+                    if (res.saw_exception) {
+                        exception_carrier = res.exception_line;
+                        display_error = res.exception_line;
+                    } else {
+                        /// The stream ended mid-line without a recognizable terminal exception: it
+                        /// was truncated. Fail closed - render an explicit error and synthesize a
+                        /// carrier in the form this framing kind replays, so the failure survives
+                        /// a tab restore too - instead of recording the broken response as a
+                        /// success that `Run all` would continue past.
+                        const message = 'The response stream was truncated before it completed.';
+                        targetResultEl.renderError(message);
+                        display_error = message;
+                        exception_carrier = user_framing
+                            ? JSON.stringify({ packet: 'exception', exception: message })
+                            : JSON.stringify({ exception: message });
+                    }
                     return { format, exception_tag, reply, display_error, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind, exception_carrier };
                 }
             } else {

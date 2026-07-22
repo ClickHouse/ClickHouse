@@ -128,6 +128,16 @@ echo "$page" | grep -q -F 'function formatMayWriteInBandException(' && echo 'in-
 # and otherwise the run is marked failed so "Run all" does not proceed. Browser-only lifecycle,
 # checked by the guard's presence on the served page.
 echo "$page" | grep -q -F 'The response stream was truncated before it completed.' && echo 'truncated stream fails closed: OK'
+# A residual frame cut off inside its JSON payload makes the event handler's `JSON.parse` throw;
+# that parse failure maps to the same synthesized truncation error (with the snapshot's framing
+# kind preserved) instead of escaping to the generic catch as a raw `SyntaxError`.
+echo "$page" | grep -q -F 'residual_dispatch_failed = true;' && echo 'residual parse failure maps to truncation: OK'
+# The raw NDJSON packet reader fails closed too: both NDJSON producers terminate every line with a
+# newline, so an EOF that leaves the last line unterminated (after flushing the streaming decoder)
+# marks the stream truncated, and a broken response is not recorded as a success "Run all" would
+# continue past.
+echo "$page" | grep -q -F 'truncated: ends_mid_line' && echo 'ndjson reader fails closed mid-line: OK'
+echo "$page" | grep -q -F 'if (res.saw_exception || res.truncated) {' && echo 'ndjson truncation stops the run: OK'
 # A "Run all" whose total per-statement snapshot exceeds the size budget keeps a COMPACT failure
 # snapshot for each failed statement (dropping only oversized SUCCESSFUL payloads), so a large
 # statement that failed still restores its error instead of the whole run reopening blank.

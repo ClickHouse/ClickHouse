@@ -12,6 +12,9 @@ all collection sites capped: OK
 no uncapped reply growth: OK
 in-band exception detector present: OK
 truncated stream fails closed: OK
+residual parse failure maps to truncation: OK
+ndjson reader fails closed mid-line: OK
+ndjson truncation stops the run: OK
 multi keeps compact failed snapshots: OK
 log queue bounded: OK
 metric history bounded: OK
