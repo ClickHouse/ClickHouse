@@ -40,4 +40,9 @@ INSERT INTO t_mutation_pruning_exotic_r VALUES ('2024-02-01', 2, 200);
 ALTER TABLE t_mutation_pruning_exotic_r DELETE WHERE _partition_id = '202401';
 SELECT * FROM t_mutation_pruning_exotic_r ORDER BY d;
 
+SELECT 'replicated, subquery in predicate';
+SET allow_nondeterministic_mutations = 1;
+ALTER TABLE t_mutation_pruning_exotic_r UPDATE y = y + 1 WHERE x IN (SELECT number + 2 FROM numbers(1));
+SELECT * FROM t_mutation_pruning_exotic_r ORDER BY d;
+
 DROP TABLE t_mutation_pruning_exotic_r;

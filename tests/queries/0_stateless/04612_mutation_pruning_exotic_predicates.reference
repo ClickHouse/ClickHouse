@@ -5,3 +5,5 @@ subquery in predicate
 2024-02-01	2	11
 replicated, virtual column in predicate
 2024-02-01	2	200
+replicated, subquery in predicate
+2024-02-01	2	201
