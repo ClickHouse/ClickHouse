@@ -36,6 +36,8 @@ class WriteBuffer;
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
+struct PlanSkeleton;
+
 class Pipe;
 
 struct QueryPlanOptimizationSettings;
@@ -205,14 +207,35 @@ public:
 
     static void cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes);
 
-private:
-    struct SerializationFlags;
+    struct SerializationFlags
+    {
+        /// Query-plan serialization version of the stream, set on deserialize from the leading version field.
+        UInt64 version = 0;
+        bool skip_data = false;
+    };
 
+private:
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
+    void serializeV4(WriteBuffer & out, const SerializationFlags & flags) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity);
+    static QueryPlanAndSets deserializeV4(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity);
 
     static void serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out, const QueryPlan::SerializationFlags & flags);
     static QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in, const SerializationFlags & flags, const ContextPtr & context, size_t max_type_complexity);
+
+    friend void serializeQueryPlanSetsV4(
+        SerializedSetsRegistry & registry,
+        const SerializationFlags & flags,
+        PlanSkeleton & skeleton,
+        std::vector<String> & payloads);
+    friend QueryPlanAndSets deserializeQueryPlanSetsV4(
+        QueryPlan plan,
+        DeserializedSetsRegistry & registry,
+        const PlanSkeleton & skeleton,
+        ReadBuffer & in,
+        const SerializationFlags & flags,
+        const ContextPtr & context,
+        size_t max_type_complexity);
 
     QueryPlanResourceHolder resources;
     Nodes nodes;

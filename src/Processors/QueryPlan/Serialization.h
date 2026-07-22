@@ -53,6 +53,11 @@ struct IQueryPlanStep::Deserialization
     /// Steps that are expensive or need execution-only context (index analysis, parallel-replicas
     /// callbacks) may read their bytes but build a lightweight placeholder instead of a real step.
     bool skipping = false;
+
+    /// v4 skeleton streams: the payload format version this step was written with (1 otherwise).
+    /// A reader may see a version above the one it knows; the tail fields are then ignorable by
+    /// the append-only rule and are skipped via the payload frame.
+    UInt64 step_format_version = 1;
 };
 
 /// Header encoding shared by the plan stream and the v4 skeleton section: column names and

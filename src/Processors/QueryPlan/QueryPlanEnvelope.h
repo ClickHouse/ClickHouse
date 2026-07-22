@@ -1,7 +1,11 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/SetSerialization.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 
 namespace DB
 {
@@ -27,14 +31,8 @@ class ReadBuffer;
 /// versions.
 struct PlanSkeleton
 {
-    struct SettingEntry
-    {
-        String name;
-        UInt8 flags = 0;    /// bit 0: ignorable — an old reader may skip this setting
-        String value;       /// the setting-field binary encoding, exactly what writeChangedBinary emits per value
-
-        static constexpr UInt8 FLAG_IGNORABLE = 1;
-    };
+    /// name + flags (bit 0: ignorable) + framed setting-field value bytes.
+    using SettingEntry = QueryPlanSerializationSettings::FramedEntry;
 
     struct Node
     {
@@ -91,5 +89,23 @@ QueryPlanSkeletonValidationResult validateQueryPlanSkeleton(const PlanSkeleton &
 /// EXPLAIN-style rendering from the skeleton alone. Unknown steps render as placeholders with
 /// their payload size; no payload is decoded and no catalog/storage work is done.
 String formatQueryPlanSkeleton(const PlanSkeleton & skeleton);
+
+/// v4 sets channel (Section C): fills skeleton.sets (canonical hash order) and one payload per
+/// entry. A subquery set's payload is a complete serialized plan (with its own leading version).
+void serializeQueryPlanSetsV4(
+    SerializedSetsRegistry & registry,
+    const QueryPlan::SerializationFlags & flags,
+    PlanSkeleton & skeleton,
+    std::vector<String> & payloads);
+
+/// Reads Section C per the skeleton's set entries; every payload must consume its frame exactly.
+QueryPlanAndSets deserializeQueryPlanSetsV4(
+    QueryPlan plan,
+    DeserializedSetsRegistry & registry,
+    const PlanSkeleton & skeleton,
+    ReadBuffer & in,
+    const QueryPlan::SerializationFlags & flags,
+    const ContextPtr & context,
+    size_t max_type_complexity);
 
 }

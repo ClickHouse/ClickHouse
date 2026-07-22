@@ -1,5 +1,8 @@
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/QueryPlanEnvelope.h>
 #include <Processors/QueryPlan/Serialization.h>
+
+#include <IO/ReadBufferFromMemory.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/resolveStorages.h>
 
@@ -145,6 +148,164 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown FutureSet type {}", typeid(set_ref).name());
         }
     }
+}
+
+void serializeQueryPlanSetsV4(
+    SerializedSetsRegistry & registry,
+    const QueryPlan::SerializationFlags & flags,
+    PlanSkeleton & skeleton,
+    std::vector<String> & payloads)
+{
+    auto ordered_sets = registry.orderedEntries();
+    skeleton.sets.reserve(ordered_sets.size());
+    payloads.reserve(ordered_sets.size());
+
+    for (const auto & [hash, set_ptr] : ordered_sets)
+    {
+        PlanSkeleton::SetEntry entry;
+        entry.hash = hash;
+
+        WriteBufferFromOwnString body;
+
+        if (auto * from_storage = typeid_cast<FutureSetFromStorage *>(set_ptr))
+        {
+            entry.kind = UInt8(SetSerializationKind::StorageSet);
+            const auto & storage_id = from_storage->getStorageID();
+            if (!storage_id)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "FutureSetFromStorage without storage id");
+            writeStringBinary(storage_id->getFullTableName(), body);
+        }
+        else if (auto * from_tuple = typeid_cast<FutureSetFromTuple *>(set_ptr))
+        {
+            entry.kind = UInt8(SetSerializationKind::TupleValues);
+
+            auto types = from_tuple->getTypes();
+            auto columns = from_tuple->getKeyColumns();
+
+            if (columns.size() != types.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Invalid number of columns for Set. Expected {} got {}",
+                    columns.size(), types.size());
+
+            UInt64 num_columns = columns.size();
+            UInt64 num_rows = num_columns > 0 ? columns.front()->size() : 0;
+
+            writeVarUInt(num_columns, body);
+            writeVarUInt(num_rows, body);
+
+            for (size_t col = 0; col < num_columns; ++col)
+            {
+                if (columns[col]->size() != num_rows)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Invalid number of rows in column of Set. Expected {} got {}",
+                        num_rows, columns[col]->size());
+
+                encodeDataType(types[col], body);
+                auto serialization = types[col]->getDefaultSerialization();
+                NativeWriter::writeData(*serialization, columns[col], body, {}, 0, 0, 0);
+            }
+        }
+        else if (auto * from_subquery = typeid_cast<FutureSetFromSubquery *>(set_ptr))
+        {
+            entry.kind = UInt8(SetSerializationKind::SubqueryPlan);
+            const auto * plan = from_subquery->getQueryPlan();
+            if (!plan)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize FutureSetFromSubquery with no query plan");
+
+            /// A complete plan with its own leading version, so the nested envelope is framed and
+            /// self-describing (unlike the legacy stream, which embeds the nested body inline).
+            plan->serialize(body, flags.version);
+        }
+        else
+        {
+            const auto & set_ref = *set_ptr;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown FutureSet type {}", typeid(set_ref).name());
+        }
+
+        body.finalize();
+        entry.payload_size = body.str().size();
+        skeleton.sets.push_back(entry);
+        payloads.push_back(body.str());
+    }
+}
+
+QueryPlanAndSets deserializeQueryPlanSetsV4(
+    QueryPlan plan,
+    DeserializedSetsRegistry & registry,
+    const PlanSkeleton & skeleton,
+    ReadBuffer & in,
+    const QueryPlan::SerializationFlags & flags,
+    const ContextPtr & context,
+    size_t max_type_complexity)
+{
+    QueryPlanAndSets res;
+    res.plan = std::move(plan);
+
+    for (const auto & entry : skeleton.sets)
+    {
+        auto it = registry.sets.find(entry.hash);
+        if (it == registry.sets.end())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} is not registered", entry.hash.low64, entry.hash.high64);
+
+        auto & columns = it->second;
+        if (columns.empty())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} is serialized twice", entry.hash.low64, entry.hash.high64);
+
+        String payload;
+        payload.resize(entry.payload_size);
+        in.readStrict(payload.data(), payload.size());
+        ReadBufferFromMemory body(payload.data(), payload.size());
+
+        if (entry.kind == UInt8(SetSerializationKind::StorageSet))
+        {
+            String storage_name;
+            readStringBinary(storage_name, body);
+            res.sets_from_storage.emplace_back(QueryPlanAndSets::SetFromStorage{{entry.hash, std::move(columns)}, std::move(storage_name)});
+        }
+        else if (entry.kind == UInt8(SetSerializationKind::TupleValues))
+        {
+            UInt64 num_columns = 0;
+            UInt64 num_rows = 0;
+            readVarUInt(num_columns, body);
+            readVarUInt(num_rows, body);
+
+            ColumnsWithTypeAndName set_columns;
+            set_columns.reserve(num_columns);
+
+            FormatSettings format_settings;
+            format_settings.binary.max_binary_type_complexity = max_type_complexity;
+
+            for (size_t col = 0; col < num_columns; ++col)
+            {
+                auto type = decodeDataType(body, max_type_complexity);
+                auto serialization = type->getDefaultSerialization();
+                ColumnPtr column = type->createColumn();
+                NativeReader::readData(*serialization, column, body, &format_settings, num_rows, nullptr, nullptr);
+
+                set_columns.emplace_back(std::move(column), std::move(type), String{});
+            }
+
+            res.sets_from_tuple.emplace_back(QueryPlanAndSets::SetFromTuple{{entry.hash, std::move(columns)}, std::move(set_columns)});
+        }
+        else if (entry.kind == UInt8(SetSerializationKind::SubqueryPlan))
+        {
+            auto plan_for_set = QueryPlan::deserialize(body, context, max_type_complexity, flags.skip_data);
+
+            res.sets_from_subquery.emplace_back(QueryPlanAndSets::SetFromSubquery{
+                {entry.hash, std::move(columns)},
+                std::move(plan_for_set)});
+        }
+        else
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} has unknown kind {}",
+                entry.hash.low64, entry.hash.high64, int(entry.kind));
+
+        if (!body.eof())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Serialized set {}_{} did not consume its payload frame ({} bytes left)",
+                entry.hash.low64, entry.hash.high64, body.available());
+    }
+
+    return res;
 }
 
 QueryPlanAndSets QueryPlan::deserializeSets(
