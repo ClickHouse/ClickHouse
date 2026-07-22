@@ -1,0 +1,257 @@
+---
+slug: /cloud/data-sources/secure-gcs
+sidebarTitle: 'Безопасный доступ к данным в GCS'
+title: 'Безопасный доступ к данным в GCS'
+description: 'В этой статье показано, как клиенты ClickHouse Cloud могут безопасно получать доступ к своим данным в GCS'
+keywords: ['GCS']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+В этом руководстве показано, как безопасно пройти аутентификацию в Google Cloud Storage (GCS) и получить доступ к своим данным из ClickHouse Cloud.
+
+<div id="introduction">
+  ## Введение
+</div>
+
+ClickHouse Cloud подключается к GCS с помощью HMAC-ключей (Hash-based Message Authentication Code), связанных с сервисным аккаунтом Google Cloud.
+Этот подход обеспечивает безопасный доступ к вашим бакетам GCS без прямой передачи учетных данных в запросах.
+
+Как это работает:
+
+1. Вы создаете сервисный аккаунт Google Cloud с соответствующими разрешениями для GCS
+2. Вы генерируете HMAC-ключи для этого сервисного аккаунта
+3. Вы предоставляете эти HMAC-учетные данные ClickHouse Cloud
+4. ClickHouse Cloud использует эти учетные данные для доступа к вашим бакетам GCS
+
+Этот подход позволяет централизованно управлять доступом к бакетам GCS через политики IAM сервисного аккаунта, поэтому предоставлять или отзывать доступ можно без изменения политик отдельных бакетов.
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+Чтобы следовать этому руководству, вам потребуется:
+
+* Активный сервис ClickHouse Cloud
+* Проект Google Cloud с включенным Cloud Storage
+* Разрешения на создание сервисных аккаунтов и генерацию HMAC-ключей в вашем проекте GCP
+
+<div id="setup">
+  ## Настройка
+</div>
+
+<Steps>
+  <Step>
+    ### Создайте сервисный аккаунт Google Cloud
+
+    1. В консоли Google Cloud перейдите в IAM &amp; Admin → Service Accounts
+
+    <Image img="/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp" size="md" alt="" />
+
+    2. В левом меню выберите `Service accounts`, затем нажмите `Create service account`:
+
+    <Image img="/images/cloud/guides/accessing-data/GCS/create_service_account.webp" size="md" alt="" />
+
+    Введите имя и описание для сервисного аккаунта, например:
+
+    ```text
+    Service account name: clickhouse-gcs-access (or your preferred name)
+    Service account description: Service account for ClickHouse Cloud to access GCS buckets
+    ```
+
+    Нажмите `Create and continue`
+
+    <Image img="/images/cloud/guides/accessing-data/GCS/create_and_continue.webp" size="sm" alt="" />
+
+    Назначьте сервисному аккаунту роль `Storage Object User`:
+
+    <Image img="/images/cloud/guides/accessing-data/GCS/storage_object_user.webp" size="sm" alt="" />
+
+    Эта роль предоставляет доступ к объектам GCS на чтение и запись
+
+    <Tip>
+      Для доступа только для чтения используйте `Storage Object Viewer`
+      Для более детального управления можно создать пользовательскую роль
+    </Tip>
+
+    Нажмите `Continue`, затем `Done`
+
+    Сохраните адрес электронной почты сервисного аккаунта:
+
+    <Image img="/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp" size="md" alt="" />
+  </Step>
+
+  <Step>
+    ### Предоставьте сервисному аккаунту доступ к бакету
+
+    Вы можете предоставить доступ либо на уровне проекта, либо на уровне отдельного бакета.
+
+    #### Вариант 1: Предоставить доступ к конкретным бакетам (рекомендуется)
+
+    1. Перейдите в `Cloud Storage` → `Buckets`
+    2. Нажмите на бакет, к которому хотите предоставить доступ
+    3. Откройте вкладку `Permissions`
+    4. В разделе &quot;Permissions&quot; нажмите `Grant access` для субъекта, созданного на предыдущих шагах
+    5. В поле &quot;New principals&quot; введите адрес электронной почты вашего сервисного аккаунта
+    6. Выберите подходящую роль:
+
+    * Storage Object User для доступа на чтение и запись
+    * Storage Object Viewer для доступа только для чтения
+
+    7. Нажмите `Save`
+    8. Повторите эти действия для всех остальных бакетов
+
+    #### Вариант 2: Предоставить доступ на уровне проекта
+
+    1. Перейдите в `IAM & Admin` → `IAM`
+    2. Нажмите `Grant access`
+    3. Введите адрес электронной почты вашего сервисного аккаунта в поле `New principals`
+    4. Выберите Storage Object User (или Storage Object Viewer для доступа только для чтения)
+    5. Нажмите SAVE
+
+    <Warning>
+      **Рекомендация по безопасности**
+
+      Предоставляйте доступ только к тем бакетам, которые нужны ClickHouse, а не разрешения на уровне всего проекта.
+    </Warning>
+  </Step>
+
+  <Step>
+    ### Сгенерируйте HMAC-ключи для сервисного аккаунта
+
+    Перейдите в `Cloud Storage` → `Settings` → `Interoperability`:
+
+    <Image img="/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp" size="sm" alt="" />
+
+    Если раздела &quot;Access keys&quot; нет, нажмите `Enable interoperability access`
+
+    В разделе &quot;Access keys for service accounts&quot; нажмите `Create a key for a service account`:
+
+    <Image img="/images/cloud/guides/accessing-data/GCS/create_key_for_service_account.webp" size="md" alt="" />
+
+    Выберите сервисный аккаунт, который вы создали ранее (например, clickhouse-gcs-access@your-project.iam.gserviceaccount.com)
+
+    Нажмите `Create key`:
+
+    <Image img="/images/cloud/guides/accessing-data/GCS/create_a_key.webp" size="md" alt="" />
+
+    На экране отобразится HMAC-ключ.
+    Сразу сохраните и Access Key, и Secret — позже секретный ключ посмотреть уже не получится.
+
+    Ниже приведены примеры ключей:
+
+    ```vbnet
+    Access Key: GOOG1EF4YBJVNFQ2YGCP3SLV4Y7CMFHW7HPC6EO7RITLJDDQ75639JK56SQVD
+    Secret: nFy6DFRr4sM9OnV6BG4FtWVPR25JfqpmcdZ6w9nV
+    ```
+
+    <Danger>
+      **Важно**
+
+      Надёжно сохраните эти учетные данные.
+      После закрытия этого экрана получить секрет повторно будет нельзя.
+      Если вы потеряете секрет, вам потребуется сгенерировать новые ключи.
+    </Danger>
+
+    ## Использование HMAC-ключей с ClickHouse Cloud
+
+    Теперь вы можете использовать учетные данные HMAC для доступа к GCS из ClickHouse Cloud.
+    Для этого используйте табличную функцию GCS:
+
+    ```sql
+    SELECT *
+    FROM gcs(
+        'https://storage.googleapis.com/clickhouse-docs-example-bucket/epidemiology.csv',
+        'GOOG1E...YOUR_ACCESS_KEY',
+        'YOUR_SECRET_KEY',
+        'CSVWithNames'
+    );
+    ```
+
+    Используйте подстановочные шаблоны для нескольких файлов:
+
+    ```sql
+    SELECT *
+    FROM gcs(
+    'https://storage.googleapis.com/clickhouse-docs-example-bucket/*.parquet',
+    'GOOG1E...YOUR_ACCESS_KEY',
+    'YOUR_SECRET_KEY',
+    'Parquet'
+    );
+    ```
+
+    ## HMAC-аутентификация в ClickPipes для GCS
+
+    ClickPipes использует ключи HMAC (Hash-based Message Authentication Code) для аутентификации в Google Cloud Storage.
+
+    При [настройке GCS ClickPipe](/ru/integrations/clickpipes/object-storage/google-cloud-storage/get-started):
+
+    1. Выберите `Credentials` в разделе `Authentication method` при настройке ClickPipe
+    2. Укажите учетные данные HMAC, полученные на предыдущих шагах
+
+    <Image img="/images/cloud/guides/accessing-data/GCS/clickpipes_hmac_key.webp" size="md" alt="" />
+
+    <Note>
+      Аутентификация через сервисный аккаунт пока не поддерживается — необходимо использовать ключи HMAC
+      URL GCS-бакета должен быть в формате: `https://storage.googleapis.com/<bucket>/<path>` (не `gs://`)
+    </Note>
+
+    Ключи HMAC должны быть связаны с сервисным аккаунтом, которому назначена роль `roles/storage.objectViewer`, включающая:
+
+    * `storage.objects.list`: для получения списка объектов в бакете
+    * `storage.objects.get`: для чтения объектов
+  </Step>
+</Steps>
+
+<div id="best-practices">
+  ## Рекомендации
+</div>
+
+<div id="separate-service-accounts">
+  ### Используйте отдельные сервисные аккаунты для разных сред
+</div>
+
+Создайте отдельные сервисные аккаунты для сред разработки, стейджинга и продакшна. Например:
+
+* `clickhouse-gcs-dev@project.iam.gserviceaccount.com`
+* `clickhouse-gcs-staging@project.iam.gserviceaccount.com`
+* `clickhouse-gcs-prod@project.iam.gserviceaccount.com`
+
+Это позволит вам легко отозвать доступ для конкретной среды, не затрагивая остальные.
+
+<div id="apply-least-privilege-access">
+  ### Применяйте принцип наименьших привилегий
+</div>
+
+Предоставляйте только минимально необходимые разрешения:
+
+* Используйте **Storage Object Viewer** для доступа только для чтения
+* Предоставляйте доступ к конкретным бакетам, а не ко всему проекту
+* При необходимости используйте условия на уровне бакета, чтобы ограничить доступ к определённым путям
+
+<div id="rotate-hmac-keys">
+  ### Регулярно меняйте ключи HMAC
+</div>
+
+Настройте график ротации ключей:
+
+* Сгенерируйте новые ключи HMAC
+* Обновите конфигурации ClickHouse, указав новые ключи
+* Проверьте работу с новыми ключами
+* Удалите старые ключи HMAC
+
+<Tip>
+  Google Cloud не устанавливает срок действия ключей HMAC автоматически, поэтому вам нужно внедрить собственную политику ротации.
+</Tip>
+
+<div id="monitor-access">
+  ### Мониторинг доступа с помощью Cloud Audit Logs
+</div>
+
+Включите Cloud Audit Logs для Cloud Storage и отслеживайте доступ:
+
+1. Перейдите в IAM &amp; Admin → Audit Logs
+2. Найдите в списке Cloud Storage
+3. Включите `Admin Read`, `Data Read` и `Data Write logs`
+4. Используйте эти журналы для мониторинга шаблонов доступа и выявления аномалий

@@ -1,0 +1,93 @@
+---
+slug: /use-cases/observability/cloud-monitoring
+title: 'مراقبة ClickHouse Cloud'
+sidebarTitle: 'مراقبة ClickHouse Cloud'
+description: 'دليل مراقبة ClickHouse Cloud'
+doc_type: 'guide'
+keywords: ['observability', 'المراقبة', 'السحابة', 'المقاييس', 'صحة النظام']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+import ObservabilityIntegrations from '/snippets/ar/_observability_integration_options.mdx';
+import DirectIntegrations from '/snippets/ar/_direct_observability_integration_options.mdx';
+import CommunityMonitoring from '/snippets/ar/_community_monitoring.mdx';
+
+يوفّر هذا الدليل لفرق المؤسسات التي تقيّم ClickHouse Cloud معلومات شاملة حول إمكانات المراقبة وobservability لعمليات النشر في بيئات الإنتاج. وكثيرًا ما يسأل عملاء Enterprise عن ميزات المراقبة الجاهزة للاستخدام، وعن التكامل مع مكدسات observability الحالية لديهم، بما في ذلك أدوات مثل Datadog وAWS CloudWatch، وعن كيفية مقارنة إمكانات المراقبة في ClickHouse بعمليات النشر المستضافة ذاتيًا.
+
+<div id="advanced-observability">
+  ## لوحة معلومات observability المتقدمة
+</div>
+
+يوفر ClickHouse Cloud مراقبة شاملة من خلال واجهات لوحات معلومات مدمجة يمكن الوصول إليها عبر قسم Monitoring. تعرض هذه اللوحات مقاييس النظام والأداء في الوقت الفعلي من دون الحاجة إلى إعداد إضافي، وتُعد الأدوات الأساسية للمراقبة الفورية لبيئات الإنتاج داخل ClickHouse Cloud.
+
+* **لوحة المعلومات المتقدمة**: توفّر واجهة لوحة المعلومات الرئيسية، التي يمكن الوصول إليها عبر Monitoring → لوحة المعلومات المتقدمة، رؤية فورية لمعدلات الاستعلامات، واستخدام الموارد، وصحة النظام، وأداء التخزين. لا تتطلب لوحة المعلومات هذه مصادقة منفصلة، ولا تمنع المثيلات من الدخول في وضع الخمول، كما أنها لا تضيف حملاً ناتجًا عن الاستعلامات إلى نظام الإنتاج لديك. يعتمد كل تصور فيها على استعلامات SQL قابلة للتخصيص، مع مخططات جاهزة مُجمَّعة ضمن مقاييس خاصة بـ ClickHouse، ومقاييس صحة النظام، ومقاييس خاصة بـ Cloud. ويمكنك توسيع نطاق المراقبة من خلال إنشاء استعلامات مخصصة مباشرة في SQL Console.
+
+<Note>
+  لا يؤدي الوصول إلى هذه المقاييس إلى تنفيذ استعلام على الخدمة الأساسية، ولن يوقظ الخدمات الخاملة.
+</Note>
+
+<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="لوحة المعلومات المتقدمة" />
+
+يمكن للمستخدمين الذين يرغبون في توسيع هذه التصورات استخدام ميزة dashboards في ClickHouse Cloud والاستعلام مباشرة من جداول النظام.
+
+* **لوحة المعلومات المتقدمة الأصلية**: واجهة بديلة للوحة المعلومات يمكن الوصول إليها عبر &quot;You can still access the native advanced dashboard&quot; داخل قسم Monitoring. تُفتح هذه الواجهة في علامة تبويب منفصلة مع مصادقة، وتوفّر واجهة UI بديلة لمراقبة صحة النظام وصحة الخدمة. تتيح لوحة المعلومات هذه تحليلات متقدمة، حيث يمكنك تعديل استعلامات SQL الأساسية.
+
+<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="لوحة المعلومات المتقدمة" />
+
+توفّر كلتا لوحتي المعلومات رؤية فورية لصحة الخدمة والأداء من دون تبعيات خارجية، ما يميزهما عن الأدوات الخارجية التي تركّز على استكشاف الأخطاء وإصلاحها مثل ClickStack.
+
+للاطلاع على تفاصيل ميزات لوحة المعلومات والمقاييس المتاحة، راجع [توثيق لوحة المعلومات المتقدمة](/ar/products/cloud/features/monitoring/advanced-dashboard).
+
+<div id="query-insights">
+  ## Query Insights ومراقبة الموارد
+</div>
+
+يتضمن ClickHouse Cloud إمكانات إضافية للمراقبة:
+
+* Query Insights: واجهة مدمجة لتحليل أداء الاستعلامات واستكشاف الأخطاء وإصلاحها
+* Resource Utilization Dashboard: يتتبع الذاكرة، وتخصيص CPU، وأنماط نقل البيانات. تُظهر مخططات CPU usage وmemory usage قيمة الاستخدام القصوى خلال فترة زمنية معينة. ويعرض مخطط CPU usage مقياس استخدام CPU على مستوى النظام (وليس مقياس استخدام CPU في ClickHouse).
+
+راجع وثائق [query insights](/ar/products/cloud/features/sql-console-features/query-insights) و[استخدام الموارد](/ar/guides/oss/deployment-and-scaling/monitoring/monitoring#resource-utilization) للاطلاع على الميزات بالتفصيل.
+
+<div id="prometheus">
+  ## نقطة نهاية المقاييس المتوافقة مع Prometheus
+</div>
+
+يوفّر ClickHouse Cloud نقطة نهاية لـ Prometheus. يتيح لك ذلك الحفاظ على سير العمل الحالية، والاستفادة من خبرات الفريق المتوفرة، ودمج مقاييس ClickHouse في منصات المراقبة المؤسسية، بما في ذلك Grafana وDatadog وغيرها من الأدوات المتوافقة مع Prometheus.
+
+تجمع نقطة النهاية على مستوى المؤسسة المقاييس من جميع الخدمات، بينما توفّر نقاط النهاية الخاصة بكل خدمة مراقبة تفصيلية. وتشمل الميزات الرئيسية ما يلي:
+
+* خيار المقاييس المُرشَّحة: تقلّل المعلمة الاختيارية `filtered_metrics=true` الحمولة من أكثر من 1000 مقياس متاح إلى 125 مقياسًا &quot;بالغ الأهمية&quot; لتحسين التكلفة وتسهيل التركيز على المراقبة
+* تقديم المقاييس المخزنة مؤقتًا: يستخدم عروضًا مادية يُعاد تحديثها كل دقيقة لتقليل حمل الاستعلامات على أنظمة production
+
+<Note>
+  يراعي هذا النهج سلوك خمول الخدمة، مما يتيح تحسين التكلفة عندما لا تكون الخدمات تعالج الاستعلامات بشكل نشط. تعتمد نقطة نهاية واجهة برمجة التطبيقات هذه على بيانات اعتماد ClickHouse Cloud API. للاطلاع على التفاصيل الكاملة لإعداد نقطة النهاية، راجع [توثيق Prometheus](/ar/products/cloud/features/monitoring/prometheus) الخاص بـ Cloud.
+</Note>
+
+<ObservabilityIntegrations />
+
+<div id="clickstack-deployment">
+  ### خيارات نشر ClickStack
+</div>
+
+* **HyperDX in ClickHouse Cloud**  (معاينة خاصة): يمكن تشغيل HyperDX على أي خدمة ClickHouse Cloud.
+* [Helm](/ar/clickstack/deployment/helm): يُوصى به لبيئات تصحيح الأخطاء المستندة إلى Kubernetes. يدعم التكامل مع ClickHouse Cloud، ويتيح إعدادات خاصة بكل بيئة، وحدودًا للموارد، وإمكانية التوسع عبر `values.yaml`.
+* [Docker Compose](/ar/clickstack/deployment/docker-compose): ينشر كل مكوّن (ClickHouse، وHyperDX، وOTel collector، وMongoDB) على حدة. يمكنك تعديل ملف compose لإزالة أي مكوّنات غير مستخدمة عند التكامل مع ClickHouse Cloud، وتحديدًا ClickHouse وOpenTelemetry Collector.
+* [HyperDX Only](/ar/clickstack/deployment/hyperdx-only): حاوية HyperDX مستقلة.
+
+للاطلاع على جميع خيارات النشر وتفاصيل المعمارية، راجع [وثائق ClickStack](/ar/clickstack/overview) و[دليل إدخال البيانات](/ar/clickstack/ingesting-data/overview).
+
+<Note>
+  يمكنك أيضًا جمع المقاييس من نقطة نهاية Prometheus الخاصة بـ ClickHouse Cloud عبر OpenTelemetry Collector، ثم إعادة توجيهها إلى عملية نشر منفصلة لـ ClickStack من أجل التصور.
+</Note>
+
+<DirectIntegrations />
+
+<CommunityMonitoring />
+
+<div id="system-impact">
+  ## اعتبارات تأثير النظام
+</div>
+
+تستخدم جميع الأساليب المذكورة أعلاه مزيجًا من الاعتماد على نقاط نهاية Prometheus، أو الإدارة بواسطة ClickHouse Cloud، أو الاستعلام مباشرةً من جداول النظام.
+ويعتمد آخر هذه الخيارات على الاستعلام من خدمة ClickHouse في بيئة الإنتاج. وهذا يضيف حمل استعلامات إلى النظام الخاضع للمراقبة ويمنع مثيلات ClickHouse Cloud من الدخول في حالة خمول، مما يؤثر على تحسين التكلفة. بالإضافة إلى ذلك، إذا تعطل نظام الإنتاج، فقد تتأثر المراقبة أيضًا لأن الاثنين مترابطان. ينجح هذا الأسلوب في الفحص الداخلي العميق واستكشاف الأخطاء وإصلاحها، لكنه أقل ملاءمةً للمراقبة في الوقت الفعلي في بيئات الإنتاج. ضع هذه المفاضلات بين إمكانات التحليل التفصيلي للنظام والأعباء التشغيلية في الحسبان عند تقييم التكامل المباشر مع Grafana مقارنةً بأساليب التكامل مع الأدوات الخارجية التي نوقشت في القسم التالي.

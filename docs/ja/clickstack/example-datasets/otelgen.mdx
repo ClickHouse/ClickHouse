@@ -1,0 +1,197 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/otelgen
+title: 'otelgenで合成OpenTelemetryデータを生成する'
+sidebarTitle: 'otelgenで合成データを生成'
+description: 'otelgenを使用して、合成ログ、トレース、メトリクスをClickStack OpenTelemetry collectorに送信します'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', 'otelgen', '合成データ', 'OpenTelemetry', 'テスト', 'logs', 'traces', 'metrics', 'オブザーバビリティ']
+---
+
+[`otelgen`](https://github.com/krzko/otelgen) は、合成OTLPログ、トレース、メトリクスを生成する小規模な Go CLI です。これを使用すると、既存の ClickStack OpenTelemetry collector がデータを受信していることや、イベントが ClickStack UI に表示されることを確認できます。
+
+このガイドでは、collector が `4317` (gRPC) および `4318` (HTTP) の OTLP エンドポイントですでに稼働していることを前提としています。
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    <Steps>
+      <Step>
+        ### 前提条件
+
+        このガイドは、[Managed ClickStack の Getting Started ガイド](/ja/clickstack/deployment/managed)を完了しており、`otelgen` を実行するマシンから到達可能な OTLP gRPC (`4317`) および HTTP (`4318`) エンドポイントで OpenTelemetry collector が稼働していることを前提としています。[collector を保護](/ja/clickstack/ingesting-data/collector#securing-the-collector)して `OTLP_AUTH_TOKEN` を設定している場合は、その値をすぐ使えるようにしておいてください。
+      </Step>
+
+      <Step>
+        ### otelgen をインストールする
+
+        Homebrew でインストールします。
+
+        ```shell
+        brew install krzko/tap/otelgen
+        ```
+
+        または Go でインストールします。
+
+        ```shell
+        go install github.com/krzko/otelgen@latest
+        ```
+      </Step>
+
+      <Step>
+        ### 環境変数を設定する
+
+        collector の endpoint と、collector が保護されている場合は認証トークンを export します。
+
+        ```shell
+        export OTEL_ENDPOINT=<host>:4317
+        export OTLP_AUTH_TOKEN=<your_otlp_auth_token>
+        ```
+
+        使用する collector のホストとポートを指定してください。同じマシン上で collector を実行している場合は、`localhost:4317` になります。
+
+        <Info>
+          **保護されていない collector**
+
+          ClickStack OpenTelemetry collector はデフォルトで認証なしです。[collector の保護](/ja/clickstack/ingesting-data/collector#securing-the-collector)に従って `OTLP_AUTH_TOKEN` を設定していない場合は、ここでは `OTLP_AUTH_TOKEN` を省略し、以下のコマンドから `--header` フラグを削除してください。
+        </Info>
+      </Step>
+
+      <Step>
+        ### traces を生成する
+
+        複数の span を含む traces を短時間送信します。
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+          --header "authorization=${OTLP_AUTH_TOKEN}" \
+          --protocol grpc --insecure \
+          --rate 2 --duration 10 \
+          traces multi
+        ```
+
+        `--rate` は 1 秒あたりの traces 数、`--duration` は実行時間 (秒) です。`--insecure` は gRPC connection の TLS を無効にします。これは、collector の平文 OTLP ポートを `otelgen` の接続先にする場合に必要です。
+      </Step>
+
+      <Step>
+        ### logs を生成する
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+          --header "authorization=${OTLP_AUTH_TOKEN}" \
+          --protocol grpc --insecure \
+          --rate 2 --duration 10 \
+          logs multi
+        ```
+      </Step>
+
+      <Step>
+        ### メトリクスを生成する
+
+        metrics サブコマンドは `--duration` に対応していません。コマンドを実行し、数秒後に `Ctrl+C` を押して停止してください。
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+          --header "authorization=${OTLP_AUTH_TOKEN}" \
+          --protocol grpc --insecure \
+          --rate 2 \
+          metrics sum
+        ```
+
+        `otelgen` は `metrics` 配下で `gauge`、`histogram`、`up-down-counter`、`exponential-histogram` の各サブコマンドもサポートしています。
+      </Step>
+
+      <Step>
+        ### ClickStack で確認する
+
+        ClickHouse Cloudコンソールから ClickStack UI を開きます。`Search` ビューでログソースを `Logs` と `Traces` の間で切り替え、新しいイベントが取り込まれていることを確認します。時間範囲を `Last 15 minutes` に設定します。`Chart Explorer` を開いて `Metrics` を選択し、`otelgen` が生成したメトリクス名の 1 つ (たとえば `otelgen.metrics.sum`) を chart して、メトリクスのインジェストを確認します。
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    <Steps>
+      <Step>
+        ### 前提条件
+
+        このガイドでは、[all-in-one イメージの手順](/ja/clickstack/getting-started/oss)に従って Open Source ClickStack を起動済みであり、OTLP endpoint (`4317` gRPC および `4318` HTTP) に到達できることを前提としています。また、HyperDX UI の `Team Settings > API Keys` にあるインジェスト API key も必要です。
+      </Step>
+
+      <Step>
+        ### otelgen をインストールする
+
+        Homebrew でインストールします。
+
+        ```shell
+        brew install krzko/tap/otelgen
+        ```
+
+        または、Go でインストールします。
+
+        ```shell
+        go install github.com/krzko/otelgen@latest
+        ```
+      </Step>
+
+      <Step>
+        ### 環境変数を設定する
+
+        collector の endpoint とインジェスト API key をエクスポートします。
+
+        ```shell
+        export OTEL_ENDPOINT=localhost:4317
+        export CLICKSTACK_API_KEY=<your_ingestion_api_key>
+        ```
+      </Step>
+
+      <Step>
+        ### トレースを生成する
+
+        複数の span を含むトレースを短時間送信します。
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+          --header "authorization=${CLICKSTACK_API_KEY}" \
+          --protocol grpc --insecure \
+          --rate 2 --duration 10 \
+          traces multi
+        ```
+
+        `--rate` は 1 秒あたりのトレース数、`--duration` は実行時間 (秒) です。`--insecure` はローカル collector に対する平文の gRPC を有効にします。
+      </Step>
+
+      <Step>
+        ### ログを生成する
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+          --header "authorization=${CLICKSTACK_API_KEY}" \
+          --protocol grpc --insecure \
+          --rate 2 --duration 10 \
+          logs multi
+        ```
+      </Step>
+
+      <Step>
+        ### メトリクスを生成する
+
+        `metrics` サブコマンドでは `--duration` は機能しません。コマンドを実行し、数秒後に `Ctrl+C` を押して停止してください。
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+          --header "authorization=${CLICKSTACK_API_KEY}" \
+          --protocol grpc --insecure \
+          --rate 2 \
+          metrics sum
+        ```
+
+        `otelgen` は `metrics` 配下で `gauge`、`histogram`、`up-down-counter`、`exponential-histogram` の各サブコマンドもサポートしています。
+      </Step>
+
+      <Step>
+        ### ClickStack で確認する
+
+        [http://localhost:8080](http://localhost:8080) にアクセスして ClickStack UI を開きます。`Search` ビューでログソースを `Logs` と `Traces` の間で切り替え、新しいイベントが表示されることを確認します。時間範囲を `Last 15 minutes` に設定します。`Chart Explorer` を開いて `Metrics` を選択し、`otelgen` によって生成されたメトリクス名の 1 つ (たとえば `otelgen.metrics.sum`) をグラフ化して、メトリクスのインジェストを確認します。
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>

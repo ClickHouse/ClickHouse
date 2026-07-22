@@ -1,0 +1,125 @@
+---
+slug: /cloud/billing/marketplace/azure-marketplace-committed-contract
+title: 'Azure Marketplace 承诺合同'
+description: '通过 Azure Marketplace 订阅 ClickHouse Cloud（承诺合同）'
+keywords: ['Microsoft', 'Azure', '市场', '计费', '承诺', '承诺合同']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+通过承诺合同在 [Azure Marketplace](https://azuremarketplace.microsoft.com/en-us/marketplace/apps) 上开始使用 ClickHouse Cloud。承诺合同，也称为 Private Offer，是指客户承诺在一段时间内为 ClickHouse Cloud 消费一定金额的合同。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* ClickHouse 根据特定合同条款提供的专属优惠。
+
+<div id="steps-to-sign-up">
+  ## 注册步骤
+</div>
+
+1. 您应该已经收到一封电子邮件，其中包含一个用于查看并接受专属优惠的链接。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-1.webp" size="md" alt="Azure Marketplace 专属优惠邮件" border />
+
+<br />
+
+2. 点击电子邮件中的 **Review Private Offer** 链接。这会将您带到 Azure Marketplace 页面，其中显示专属优惠的详细信息。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-2.webp" size="md" alt="Azure Marketplace 专属优惠详情" border />
+
+<br />
+
+3. 接受优惠后，您将进入 **Private Offer Management** 页面。Azure 可能需要一些时间准备该优惠，以便购买。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-3.webp" size="md" alt="Azure Marketplace Private Offer Management 页面" border />
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-4.webp" size="md" alt="Azure Marketplace Private Offer Management 页面加载中" border />
+
+<br />
+
+4. 几分钟后，刷新页面。该优惠应已可 **Purchase**。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-5.webp" size="md" alt="Azure Marketplace Private Offer Management 页面已启用购买" border />
+
+<br />
+
+5. 点击 **Purchase**，您会看到一个弹出面板打开。请完成以下内容：
+
+<br />
+
+* 选择订阅和资源组
+* 为 SaaS 订阅提供一个名称
+* 选择您获得专属优惠的计费方案。只有创建专属优惠时对应的期限 (例如 1 年) 会显示金额，其他计费期限选项的金额将显示为 $0。
+* 选择是否启用周期性计费。如果未选择周期性计费，则合同将在计费周期结束时终止，资源将被设为已停用。
+* 点击 **Review + subscribe**。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-6.webp" size="md" alt="Azure Marketplace 订阅表单" border />
+
+<br />
+
+6. 在下一个页面中，检查所有详细信息，然后点击 **Subscribe**。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-7.webp" size="md" alt="Azure Marketplace 订阅确认" border />
+
+<br />
+
+7. 在下一个页面中，您会看到 **Your SaaS subscription in progress**。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-8.webp" size="md" alt="Azure Marketplace 订阅提交页面" border />
+
+<br />
+
+8. 准备就绪后，您可以点击 **Configure account now**。请注意，这是一个关键步骤，它会将 Azure 订阅绑定到您账户对应的 ClickHouse Cloud 组织。如果没有这一步，您的 Marketplace 订阅就不算完成。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-9.webp" size="md" alt="Azure Marketplace Configure account now 按钮" border />
+
+<br />
+
+9. 您将被重定向到 ClickHouse Cloud 的注册或登录页面。您既可以使用新账户注册，也可以使用现有账户登录。登录后，将创建一个新的组织，该组织可立即使用，并通过 Azure Marketplace 计费。
+
+10. 继续之前，您需要回答几个问题——包括地址和公司信息。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="md" alt="ClickHouse Cloud 注册信息表单" border />
+
+<br />
+
+11. 点击 **Complete sign up** 后，您将进入 ClickHouse Cloud 中的组织。在那里，您可以查看计费页面，以确认您是通过 Azure Marketplace 计费，并创建服务。
+
+<br />
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-11.webp" size="sm" alt="ClickHouse Cloud 注册信息表单" border />
+
+<br />
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-12.webp" size="md" alt="ClickHouse Cloud 注册信息表单" border />
+
+<br />
+
+如果您遇到任何问题，请随时联系[我们的支持团队](https://clickhouse.com/support/program)。

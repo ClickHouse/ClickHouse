@@ -1,0 +1,51 @@
+---
+title: 'Pausar e retomar um ClickPipe do MySQL'
+description: 'Pausar e retomar um ClickPipe do MySQL'
+sidebarTitle: 'Pausar tabela'
+slug: /integrations/clickpipes/mysql/pause_and_resume
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'cdc', 'ingestão de dados', 'sincronização em tempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Há cenários em que pode ser útil pausar um ClickPipe do MySQL. Por exemplo, você pode querer executar análises em dados existentes sem alterações. Ou talvez esteja realizando atualizações no MySQL. Veja como pausar e retomar um ClickPipe do MySQL.
+
+<div id="pause-clickpipe-steps">
+  ## Etapas para pausar um ClickPipe do MySQL
+</div>
+
+1. Na aba **Data Sources**, clique no ClickPipe do MySQL que você deseja pausar.
+2. Vá até a aba **Configurações**.
+3. Clique no botão **Pausar**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp" border size="md" />
+
+4. Uma caixa de diálogo de confirmação será exibida. Clique em **Pausar** novamente.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp" border size="md" />
+
+4. Vá até a aba **Métricas**.
+5. Em cerca de 5 segundos (e também ao atualizar a página), o status do ClickPipe deverá ser **Pausado**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp" border size="md" />
+
+<div id="resume-clickpipe-steps">
+  ## Etapas para retomar uma ClickPipe do MySQL
+</div>
+
+1. Na aba Data Sources, clique na ClickPipe do MySQL que você deseja retomar. O status do mirror deve estar **pausado** inicialmente.
+2. Vá até a aba **Settings**.
+3. Clique no botão **retomar**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp" border size="md" />
+
+4. Uma caixa de diálogo de confirmação deve aparecer. Clique em **retomar** novamente.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp" border size="md" />
+
+5. Vá até a aba **Metrics**.
+6. Em cerca de 5 segundos (e também ao atualizar a página), o status do pipe deve ser **Running**.

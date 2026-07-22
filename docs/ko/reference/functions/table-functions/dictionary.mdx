@@ -1,0 +1,67 @@
+---
+description: '딕셔너리 데이터를 ClickHouse 테이블로 표시합니다. Dictionary 엔진과 같은
+  방식으로 작동합니다.'
+sidebarTitle: 'dictionary'
+slug: /sql-reference/table-functions/dictionary
+title: 'dictionary'
+doc_type: 'reference'
+---
+
+[딕셔너리](/ko/reference/statements/create/dictionary) 데이터를 ClickHouse 테이블로 표시합니다. [Dictionary](/ko/reference/engines/table-engines/special/dictionary) 엔진과 같은 방식으로 작동합니다.
+
+<div id="syntax">
+  ## 구문
+</div>
+
+```sql
+dictionary('dict')
+```
+
+<div id="arguments">
+  ## 인수
+</div>
+
+* `dict` — 딕셔너리의 이름입니다. [String](/ko/reference/data-types/string).
+
+<div id="returned_value">
+  ## 반환 값
+</div>
+
+ClickHouse 테이블입니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+입력 테이블 `dictionary_source_table`:
+
+```text
+┌─id─┬─value─┐
+│  0 │     0 │
+│  1 │     1 │
+└────┴───────┘
+```
+
+딕셔너리를 생성하세요:
+
+```sql title="Query"
+CREATE DICTIONARY new_dictionary(id UInt64, value UInt64 DEFAULT 0) PRIMARY KEY id
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dictionary_source_table')) LAYOUT(DIRECT());
+```
+
+```sql title="Query"
+SELECT * FROM dictionary('new_dictionary');
+```
+
+```text title="Response"
+┌─id─┬─value─┐
+│  0 │     0 │
+│  1 │     1 │
+└────┴───────┘
+```
+
+<div id="related">
+  ## 관련 문서
+</div>
+
+* [Dictionary 엔진](/ko/reference/engines/table-engines/special/dictionary)

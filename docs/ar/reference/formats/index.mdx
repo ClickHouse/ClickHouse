@@ -1,0 +1,179 @@
+---
+description: 'نظرة عامة على تنسيقات البيانات المدعومة للإدخال والإخراج في ClickHouse'
+sidebarTitle: 'عرض جميع التنسيقات...'
+slug: /interfaces/formats
+title: 'تنسيقات بيانات الإدخال والإخراج'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="formats-for-input-and-output-data">
+  # تنسيقات بيانات الإدخال والإخراج
+</div>
+
+يدعم ClickHouse معظم تنسيقات البيانات النصية والثنائية المعروفة. ويتيح ذلك دمجه بسهولة في أي خط أنابيب بيانات تقريبًا للاستفادة من مزايا ClickHouse.
+
+<div id="input-formats">
+  ## تنسيقات الإدخال
+</div>
+
+تُستخدم تنسيقات الإدخال في:
+
+* تحليل البيانات المُمرَّرة إلى عبارات `INSERT`
+* تنفيذ استعلامات `SELECT` من الجداول المستندة إلى ملفات، مثل `File` أو `URL` أو `HDFS`
+* قراءة Dictionaries
+
+يُعد اختيار تنسيق الإدخال المناسب أمرًا بالغ الأهمية لتحقيق كفاءة إدخال البيانات في ClickHouse. ومع توفر أكثر من 70 تنسيقًا مدعومًا،
+فإن اختيار الخيار الأفضل أداءً يمكن أن يؤثر بشكل كبير في سرعة الإدراج، واستخدام CPU والذاكرة، والكفاءة العامة
+للنظام. ولمساعدتك على المفاضلة بين هذه الخيارات، أجرينا مقارنة معيارية لأداء إدخال البيانات عبر التنسيقات المختلفة، وكشفت عن أبرز النتائج التالية:
+
+* **يُعد تنسيق [Native](/ar/reference/formats/Native) أكثر تنسيقات الإدخال كفاءة**، إذ يوفّر أفضل ضغط، وأقل
+  استهلاك للموارد، وأدنى حمل إضافي للمعالجة على جانب الخادم.
+* **الضغط ضروري** - إذ يقلل LZ4 حجم البيانات بأقل تكلفة ممكنة على CPU، بينما يوفّر ZSTD ضغطًا أعلى على
+  حساب زيادة إضافية في استخدام CPU.
+* **للترتيب المسبق تأثير متوسط**، لأن ClickHouse يرتّب البيانات بكفاءة بالفعل.
+* **يُحسّن التجميع الكفاءة بشكل كبير** - فكلما كانت الدُفعات أكبر، انخفض الحمل الإضافي للإدراج وتحسّن معدل النقل.
+
+للاطلاع بتعمق على النتائج وأفضل الممارسات،
+اقرأ [تحليل المقارنة المعيارية الكامل](https://www.clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient).
+وللاطلاع على نتائج الاختبار كاملةً، استكشف [لوحة FastFormats](https://fastformats.clickhouse.com/) عبر الإنترنت.
+
+<div id="output-formats">
+  ## تنسيقات الإخراج
+</div>
+
+تُستخدم تنسيقات الإخراج المدعومة من أجل:
+
+* تنسيق نتائج استعلام `SELECT`
+* تنفيذ عمليات `INSERT` في الجداول المعتمدة على الملفات
+
+<div id="formats-overview">
+  ## نظرة عامة على التنسيقات
+</div>
+
+التنسيقات المدعومة هي:
+
+| التنسيق                                                                                                          | الإدخال | الإخراج |
+| ---------------------------------------------------------------------------------------------------------------- | ------- | ------- |
+| [TabSeparated](/ar/reference/formats/TabSeparated/TabSeparated)                                                     | ✔       | ✔       |
+| [TabSeparatedRaw](/ar/reference/formats/TabSeparated/TabSeparatedRaw)                                               | ✔       | ✔       |
+| [TabSeparatedWithNames](/ar/reference/formats/TabSeparated/TabSeparatedWithNames)                                   | ✔       | ✔       |
+| [TabSeparatedWithNamesAndTypes](/ar/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes)                   | ✔       | ✔       |
+| [TabSeparatedRawWithNames](/ar/reference/formats/TabSeparated/TabSeparatedRawWithNames)                             | ✔       | ✔       |
+| [TabSeparatedRawWithNamesAndTypes](/ar/reference/formats/TabSeparated/TabSeparatedRawWithNamesAndTypes)             | ✔       | ✔       |
+| [Template](/ar/reference/formats/Template/Template)                                                                 | ✔       | ✔       |
+| [TemplateIgnoreSpaces](/ar/reference/formats/Template/TemplateIgnoreSpaces)                                         | ✔       | ✗       |
+| [CSV](/ar/reference/formats/CSV/CSV)                                                                                | ✔       | ✔       |
+| [CSVWithNames](/ar/reference/formats/CSV/CSVWithNames)                                                              | ✔       | ✔       |
+| [CSVWithNamesAndTypes](/ar/reference/formats/CSV/CSVWithNamesAndTypes)                                              | ✔       | ✔       |
+| [CustomSeparated](/ar/reference/formats/CustomSeparated/CustomSeparated)                                            | ✔       | ✔       |
+| [CustomSeparatedWithNames](/ar/reference/formats/CustomSeparated/CustomSeparatedWithNames)                          | ✔       | ✔       |
+| [CustomSeparatedWithNamesAndTypes](/ar/reference/formats/CustomSeparated/CustomSeparatedWithNamesAndTypes)          | ✔       | ✔       |
+| [SQLInsert](/ar/reference/formats/SQLInsert)                                                                        | ✗       | ✔       |
+| [Values](/ar/reference/formats/Values)                                                                              | ✔       | ✔       |
+| [Vertical](/ar/reference/formats/Vertical)                                                                          | ✗       | ✔       |
+| [JSON](/ar/reference/formats/JSON/JSON)                                                                             | ✔       | ✔       |
+| [JSONAsString](/ar/reference/formats/JSON/JSONAsString)                                                             | ✔       | ✗       |
+| [JSONAsObject](/ar/reference/formats/JSON/JSONAsObject)                                                             | ✔       | ✗       |
+| [JSONStrings](/ar/reference/formats/JSON/JSONStrings)                                                               | ✗       | ✔       |
+| [JSONColumns](/ar/reference/formats/JSON/JSONColumns)                                                               | ✔       | ✔       |
+| [JSONColumnsWithMetadata](/ar/reference/formats/JSON/JSONColumnsWithMetadata)                                       | ✔       | ✔       |
+| [JSONCompact](/ar/reference/formats/JSON/JSONCompact)                                                               | ✔       | ✔       |
+| [JSONCompactStrings](/ar/reference/formats/JSON/JSONCompactStrings)                                                 | ✗       | ✔       |
+| [JSONCompactColumns](/ar/reference/formats/JSON/JSONCompactColumns)                                                 | ✔       | ✔       |
+| [JSONEachRow](/ar/reference/formats/JSON/JSONEachRow)                                                               | ✔       | ✔       |
+| [PrettyJSONEachRow](/ar/reference/formats/JSON/PrettyJSONEachRow)                                                   | ✗       | ✔       |
+| [JSONEachRowWithProgress](/ar/reference/formats/JSON/JSONEachRowWithProgress)                                       | ✗       | ✔       |
+| [JSONStringsEachRow](/ar/reference/formats/JSON/JSONStringsEachRow)                                                 | ✔       | ✔       |
+| [JSONStringsEachRowWithProgress](/ar/reference/formats/JSON/JSONStringsEachRowWithProgress)                         | ✗       | ✔       |
+| [JSONCompactEachRow](/ar/reference/formats/JSON/JSONCompactEachRow)                                                 | ✔       | ✔       |
+| [JSONCompactEachRowWithNames](/ar/reference/formats/JSON/JSONCompactEachRowWithNames)                               | ✔       | ✔       |
+| [JSONCompactEachRowWithNamesAndTypes](/ar/reference/formats/JSON/JSONCompactEachRowWithNamesAndTypes)               | ✔       | ✔       |
+| [JSONCompactEachRowWithProgress](/ar/reference/formats/JSON/JSONCompactEachRowWithProgress)                         | ✗       | ✔       |
+| [JSONCompactStringsEachRow](/ar/reference/formats/JSON/JSONCompactStringsEachRow)                                   | ✔       | ✔       |
+| [JSONCompactStringsEachRowWithNames](/ar/reference/formats/JSON/JSONCompactStringsEachRowWithNames)                 | ✔       | ✔       |
+| [JSONCompactStringsEachRowWithNamesAndTypes](/ar/reference/formats/JSON/JSONCompactStringsEachRowWithNamesAndTypes) | ✔       | ✔       |
+| [JSONCompactStringsEachRowWithProgress](/ar/reference/formats/JSON/JSONCompactStringsEachRowWithProgress)           | ✗       | ✔       |
+| [JSONObjectEachRow](/ar/reference/formats/JSON/JSONObjectEachRow)                                                   | ✔       | ✔       |
+| [BSONEachRow](/ar/reference/formats/BSONEachRow)                                                                    | ✔       | ✔       |
+| [TSKV](/ar/reference/formats/TabSeparated/TSKV)                                                                     | ✔       | ✔       |
+| [Pretty](/ar/reference/formats/Pretty/Pretty)                                                                       | ✗       | ✔       |
+| [PrettyNoEscapes](/ar/reference/formats/Pretty/PrettyNoEscapes)                                                     | ✗       | ✔       |
+| [PrettyMonoBlock](/ar/reference/formats/Pretty/PrettyMonoBlock)                                                     | ✗       | ✔       |
+| [PrettyNoEscapesMonoBlock](/ar/reference/formats/Pretty/PrettyNoEscapesMonoBlock)                                   | ✗       | ✔       |
+| [PrettyCompact](/ar/reference/formats/Pretty/PrettyCompact)                                                         | ✗       | ✔       |
+| [PrettyCompactNoEscapes](/ar/reference/formats/Pretty/PrettyCompactNoEscapes)                                       | ✗       | ✔       |
+| [PrettyCompactMonoBlock](/ar/reference/formats/Pretty/PrettyCompactMonoBlock)                                       | ✗       | ✔       |
+| [PrettyCompactNoEscapesMonoBlock](/ar/reference/formats/Pretty/PrettyCompactNoEscapesMonoBlock)                     | ✗       | ✔       |
+| [PrettySpace](/ar/reference/formats/Pretty/PrettySpace)                                                             | ✗       | ✔       |
+| [PrettySpaceNoEscapes](/ar/reference/formats/Pretty/PrettySpaceNoEscapes)                                           | ✗       | ✔       |
+| [PrettySpaceMonoBlock](/ar/reference/formats/Pretty/PrettySpaceMonoBlock)                                           | ✗       | ✔       |
+| [PrettySpaceNoEscapesMonoBlock](/ar/reference/formats/Pretty/PrettySpaceNoEscapesMonoBlock)                         | ✗       | ✔       |
+| [Prometheus](/ar/reference/formats/Prometheus)                                                                      | ✗       | ✔       |
+| [Protobuf](/ar/reference/formats/Protobuf/Protobuf)                                                                 | ✔       | ✔       |
+| [ProtobufSingle](/ar/reference/formats/Protobuf/ProtobufSingle)                                                     | ✔       | ✔       |
+| [ProtobufList](/ar/reference/formats/Protobuf/ProtobufList)                                                         | ✔       | ✔       |
+| [Avro](/ar/reference/formats/Avro/Avro)                                                                             | ✔       | ✔       |
+| [AvroConfluent](/ar/reference/formats/Avro/AvroConfluent)                                                           | ✔       | ✔       |
+| [Parquet](/ar/reference/formats/Parquet/Parquet)                                                                    | ✔       | ✔       |
+| [ParquetMetadata](/ar/reference/formats/Parquet/ParquetMetadata)                                                    | ✔       | ✗       |
+| [Arrow](/ar/reference/formats/Arrow/Arrow)                                                                          | ✔       | ✔       |
+| [ArrowStream](/ar/reference/formats/Arrow/ArrowStream)                                                              | ✔       | ✔       |
+| [ORC](/ar/reference/formats/ORC)                                                                                    | ✔       | ✔       |
+| [One](/ar/reference/formats/One)                                                                                    | ✔       | ✗       |
+| [Npy](/ar/reference/formats/Npy)                                                                                    | ✔       | ✔       |
+| [RowBinary](/ar/reference/formats/RowBinary/RowBinary)                                                              | ✔       | ✔       |
+| [RowBinaryWithNames](/ar/reference/formats/RowBinary/RowBinaryWithNames)                                            | ✔       | ✔       |
+| [RowBinaryWithNamesAndTypes](/ar/reference/formats/RowBinary/RowBinaryWithNamesAndTypes)                            | ✔       | ✔       |
+| [RowBinaryWithDefaults](/ar/reference/formats/RowBinary/RowBinaryWithDefaults)                                      | ✔       | ✗       |
+| [RowBinaryWithNamesAndTypesAndDefaults](/ar/reference/formats/RowBinary/RowBinaryWithNamesAndTypesAndDefaults)      | ✔       | ✗       |
+| [Native](/ar/reference/formats/Native)                                                                              | ✔       | ✔       |
+| [Buffers](/ar/reference/formats/Buffers)                                                                            | ✔       | ✔       |
+| [Null](/ar/reference/formats/Null)                                                                                  | ✗       | ✔       |
+| [Hash](/ar/reference/formats/Hash)                                                                                  | ✗       | ✔       |
+| [XML](/ar/reference/formats/XML)                                                                                    | ✗       | ✔       |
+| [CapnProto](/ar/reference/formats/CapnProto)                                                                        | ✔       | ✔       |
+| [LineAsString](/ar/reference/formats/LineAsString/LineAsString)                                                     | ✔       | ✔       |
+| [LineAsStringWithNames](/ar/reference/formats/LineAsString/LineAsStringWithNames)                                   | ✗       | ✔       |
+| [LineAsStringWithNamesAndTypes](/ar/reference/formats/LineAsString/LineAsStringWithNamesAndTypes)                   | ✗       | ✔       |
+| [Regexp](/ar/reference/formats/Regexp)                                                                              | ✔       | ✗       |
+| [RawBLOB](/ar/reference/formats/RawBLOB)                                                                            | ✔       | ✔       |
+| [MsgPack](/ar/reference/formats/MsgPack)                                                                            | ✔       | ✔       |
+| [MySQLDump](/ar/reference/formats/MySQLDump)                                                                        | ✔       | ✗       |
+| [GeoJSON](/ar/reference/formats/GeoJSON)                                                                            | ✔       | ✗       |
+| [DWARF](/ar/reference/formats/DWARF)                                                                                | ✔       | ✗       |
+| [Markdown](/ar/reference/formats/Markdown)                                                                          | ✗       | ✔       |
+| [Form](/ar/reference/formats/Form)                                                                                  | ✔       | ✗       |
+
+يمكنك التحكّم في بعض معلمات معالجة التنسيق باستخدام إعدادات ClickHouse. لمزيد من المعلومات، راجع قسم [الإعدادات](/ar/reference/settings/formats).
+
+<div id="formatschema">
+  ## مخطط التنسيق
+</div>
+
+يُحدَّد اسم الملف الذي يحتوي على مخطط التنسيق بواسطة الإعداد `format_schema`.
+ويجب تعيين هذا الإعداد عند استخدام أحد التنسيقين `Cap'n Proto` و`Protobuf`.
+مخطط التنسيق هو عبارة عن اسم ملف متبوعًا باسم نوع الرسالة داخل هذا الملف، ويفصل بينهما نقطتان،
+على سبيل المثال `schemafile.proto:MessageType`.
+إذا كان الملف يحمل الامتداد القياسي للتنسيق (مثل `.proto` بالنسبة إلى `Protobuf`)،
+فيمكن حذفه، وفي هذه الحالة يكون مخطط التنسيق بالشكل `schemafile:MessageType`.
+
+إذا كنت تُدخل البيانات أو تُخرجها عبر [العميل](/ar/concepts/features/interfaces/client) في الوضع التفاعلي، فإن اسم الملف المحدد في مخطط التنسيق
+يمكن أن يتضمن مسارًا مطلقًا أو مسارًا نسبيًا إلى الدليل الحالي على العميل.
+أما إذا كنت تستخدم العميل في [وضع الدفعات](/ar/concepts/features/interfaces/client#batch-mode)، فيجب أن يكون مسار المخطط نسبيًا لأسباب أمنية.
+
+إذا كنت تُدخل البيانات أو تُخرجها عبر [واجهة HTTP](/ar/concepts/features/interfaces/http)، فإن اسم الملف المحدد في مخطط التنسيق
+يجب أن يكون موجودًا في الدليل المحدد في [format&#95;schema&#95;path](/ar/reference/settings/server-settings/settings#format_schema_path)
+ضمن إعدادات الخادم.
+
+<div id="skippingerrors">
+  ## تخطي الأخطاء
+</div>
+
+يمكن لبعض التنسيقات مثل `CSV` و`TabSeparated` و`TSKV` و`JSONEachRow` و`Template` و`CustomSeparated` و`Protobuf` تخطي صف تالف عند حدوث خطأ في التحليل، ومواصلة التحليل من بداية الصف التالي. راجع إعدادَي [input&#95;format&#95;allow&#95;errors&#95;num](/ar/reference/settings/formats#input_format_allow_errors_num) و
+[input&#95;format&#95;allow&#95;errors&#95;ratio](/ar/reference/settings/formats#input_format_allow_errors_ratio).
+القيود:
+
+* عند حدوث خطأ في التحليل، يتخطى `JSONEachRow` جميع البيانات حتى نهاية السطر (أو EOF)، لذا يجب أن تكون الصفوف مفصولة بـ `\n` لكي يُحتسب عدد الأخطاء بشكل صحيح.
+* يستخدم `Template` و`CustomSeparated` الفاصل بعد العمود الأخير والفاصل بين الصفوف لتحديد بداية الصف التالي، لذا لا يعمل تخطي الأخطاء إلا إذا كان أحدهما على الأقل غير فارغ.

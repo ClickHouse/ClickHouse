@@ -1,0 +1,130 @@
+---
+slug: /cloud/data-sources/secure-azure
+sidebarTitle: '安全访问 Azure 数据'
+title: '将 ClickHouse Cloud 连接到 Azure Blob 存储'
+description: '本文介绍 ClickHouse Cloud 客户如何安全访问其 Azure 数据'
+keywords: ['ABS', 'azure blob storage']
+doc_type: 'guide'
+---
+
+本指南介绍如何将 ClickHouse Cloud 安全地连接到 Azure Blob 存储，以用于数据摄取、外部表和其他集成场景。
+
+<div id="overview">
+  ## 概览
+</div>
+
+ClickHouse Cloud 可通过多种身份验证方法连接到 Azure Blob 存储。
+本指南将帮助你选择合适的方式，并安全地配置连接。
+
+支持的用例：
+
+* 使用 [azureBlobStorage table function](/zh/reference/functions/table-functions/azureBlobStorage) 从 Azure Blob 存储读取数据
+* 使用 [AzureBlobStorage table engine](/zh/reference/engines/table-engines/integrations/azureBlobStorage) 创建外部表
+* 通过 ClickPipes 摄取数据
+* [将备份存储到 Azure Blob 存储](/zh/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui#azure)
+
+<Warning>
+  **重要网络限制**
+
+  当你的 ClickHouse Cloud 服务与 Azure Blob 存储容器部署在同一 Azure 区域时，IP 地址白名单将不起作用。
+
+  这是因为 Azure 会通过其内部网络 (VNet + 服务端点) 路由同区域流量，从而绕过公共互联网和 NAT 网关。
+  因此，基于公共 IP 地址的 Azure 存储账户防火墙规则不会生效。
+
+  在以下情况下，IP 白名单可用：
+
+  * 你的 ClickHouse Cloud 服务位于与存储账户不同的 Azure 区域
+  * 你的 ClickHouse Cloud 服务部署在 AWS/GCP 上并连接到 Azure 存储
+
+  在以下情况下，IP 白名单会失效：
+
+  * 你的 ClickHouse Cloud 服务与存储部署在同一 Azure 区域。请通过连接字符串使用 [Shared Access Signatures (SAS)](/zh/integrations/clickpipes/object-storage/azure-blob-storage/overview#authentication)，而不要使用 IP 白名单，或者将 ABS 和 ClickHouse 部署到不同区域。
+</Warning>
+
+<div id="network-config">
+  ## 网络配置 (仅限跨区域)
+</div>
+
+<Warning>
+  **仅限跨区域**
+
+  仅当您的 ClickHouse Cloud 服务与 Azure Blob 存储容器位于不同的 Azure 区域，或 ClickHouse Cloud 运行在 AWS/GCP 上时，本节才适用。
+  对于同区域部署，请改用 SAS 令牌。
+</Warning>
+
+<Steps>
+  <Step>
+    ### 查找您的 ClickHouse Cloud 出站 IP
+
+    要配置基于 IP 的防火墙规则，您需要将 ClickHouse Cloud 所在区域的出站 IP 地址加入允许列表。
+
+    运行以下命令，按区域获取出站和入站 IP 列表。
+    将下面的 `eastus` 替换为您的区域，以过滤掉其他区域：
+
+    ```bash
+    # 对于 Azure 区域
+    curl https://api.clickhouse.cloud/static-ips.json | jq '.azure[] | select(.region == "westus")'
+    ```
+
+    您将看到类似如下内容：
+
+    ```response
+    {
+      "egress_ips": [
+        "20.14.94.21",
+        "20.150.217.205",
+        "20.38.32.164"
+      ],
+      "ingress_ips": [
+        "4.227.34.126"
+      ],
+      "region": "westus3"
+    }
+    ```
+
+    <Tip>
+      请参阅 [Azure 区域](/zh/products/cloud/reference/supported-regions#azure-regions) 了解支持的 Cloud 区域列表，
+      并查看 [Azure 区域列表](https://learn.microsoft.com/en-us/azure/reliability/regions-list#azure-regions-list-1) 中的 “Programmatic name” 列，
+      以确定应使用哪个名称。
+    </Tip>
+
+    更多详情，请参阅 [“Cloud IP addresses”](/zh/products/cloud/guides/data-sources/cloud-endpoints-api)。
+  </Step>
+
+  <Step>
+    ### 配置 Azure 存储防火墙
+
+    在 Azure 门户中，进入您的存储账户。
+
+    1. 前往 **Networking** → **Firewalls and virtual networks**
+    2. 选择 **Enabled from selected virtual networks and IP addresses**
+    3. 将上一步获取的每个 ClickHouse Cloud 出站 IP 地址添加到 Address range 字段中
+
+    <Warning>
+      不要添加 ClickHouse Cloud 私有 IP (10.x.x.x 地址)
+    </Warning>
+
+    4. 点击 Save
+
+    更多详情，请参阅 [Configure Azure Storage firewalls docs](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security?tabs=azure-portal)。
+  </Step>
+</Steps>
+
+<div id="clickpipes-config">
+  ## ClickPipes 配置
+</div>
+
+使用 [ClickPipes](/zh/integrations/clickpipes/home) 对接 Azure Blob 存储时，您需要在 ClickPipes UI 中配置身份验证。
+更多详情，请参阅[&quot;创建您的第一个 Azure ClickPipe&quot;](/zh/integrations/clickpipes/object-storage/azure-blob-storage/get-started)。
+
+<Note>
+  ClickPipes 的出站连接使用单独的静态 IP 地址。
+  如果您使用基于 IP 的防火墙规则，则必须将这些 IP 加入允许列表。
+
+  请参阅[&quot;静态 IP 列表&quot;](/zh/integrations/clickpipes/home#list-of-static-ips)
+</Note>
+
+<Tip>
+  本文档开头提到的同一区域 IP 白名单限制同样适用于 ClickPipes。
+  如果您的 ClickPipes 服务和 Azure Blob 存储位于同一区域，请使用 SAS 令牌进行身份验证，而不要使用 IP 白名单。
+</Tip>

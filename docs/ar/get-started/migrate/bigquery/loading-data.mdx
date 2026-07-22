@@ -1,0 +1,143 @@
+---
+sidebarTitle: 'تحميل البيانات'
+title: 'تحميل البيانات من BigQuery إلى ClickHouse'
+slug: /migrations/bigquery/loading-data
+description: 'كيفية تحميل البيانات من BigQuery إلى ClickHouse'
+keywords: ['migrate', 'migration', 'migrating', 'data', 'etl', 'elt', 'BigQuery']
+doc_type: 'guide'
+---
+
+*هذا الدليل متوافق مع ClickHouse Cloud ومع ClickHouse المُستضاف ذاتيًا بالإصدار v23.5+.*
+
+يوضح هذا الدليل كيفية ترحيل البيانات من [BigQuery](https://cloud.google.com/bigquery) إلى ClickHouse.
+
+نبدأ بتصدير جدول إلى [خدمة تخزين الكائنات من Google ‏(GCS)](https://cloud.google.com/storage)، ثم نستورد تلك البيانات إلى [ClickHouse Cloud](https://clickhouse.com/cloud). يجب تكرار هذه الخطوات لكل جدول تريد تصديره من BigQuery إلى ClickHouse.
+
+<div id="how-long-will-exporting-data-to-clickhouse-take">
+  ## كم سيستغرق تصدير البيانات إلى ClickHouse؟
+</div>
+
+تعتمد مدة تصدير البيانات من BigQuery إلى ClickHouse على حجم مجموعة البيانات لديك. وللمقارنة، يستغرق تصدير [مجموعة بيانات Ethereum العامة بحجم 4TB](https://cloud.google.com/blog/products/data-analytics/ethereum-bigquery-public-dataset-smart-contract-analytics) من BigQuery إلى ClickHouse باستخدام هذا الدليل حوالي ساعة.
+
+| الجدول                                                                                         | عدد الصفوف    | الملفات المُصدَّرة | حجم البيانات | التصدير من BigQuery | زمن الـ Slot      | الاستيراد إلى ClickHouse |
+| ---------------------------------------------------------------------------------------------- | ------------- | ------------------ | ------------ | ------------------- | ----------------- | ------------------------ |
+| [الكتل](https://github.com/ClickHouse/examples/blob/main/ethereum/schemas/blocks.md)           | 16,569,489    | 73                 | 14.53GB      | 23 secs             | 37 min            | 15.4 secs                |
+| [المعاملات](https://github.com/ClickHouse/examples/blob/main/ethereum/schemas/transactions.md) | 1,864,514,414 | 5169               | 957GB        | 1 min 38 sec        | 1 day 8hrs        | 18 mins 5 secs           |
+| [التتبعات](https://github.com/ClickHouse/examples/blob/main/ethereum/schemas/traces.md)        | 6,325,819,306 | 17,985             | 2.896TB      | 5 min 46 sec        | 5 days 19 hr      | 34 mins 55 secs          |
+| [العقود](https://github.com/ClickHouse/examples/blob/main/ethereum/schemas/contracts.md)       | 57,225,837    | 350                | 45.35GB      | 16 sec              | 1 hr 51 min       | 39.4 secs                |
+| الإجمالي                                                                                       | 8.26 billion  | 23,577             | 3.982TB      | 8 min 3 sec         | &gt; 6 days 5 hrs | 53 mins 45 secs          |
+
+<Steps>
+  <Step>
+    ## تصدير بيانات الجدول إلى GCS
+
+    في هذه الخطوة، نستخدم [مساحة عمل BigQuery SQL](https://cloud.google.com/bigquery/docs/bigquery-web-ui) لتنفيذ أوامر SQL. في المثال أدناه، نُصدّر جدولًا في BigQuery باسم `mytable` إلى حاوية GCS باستخدام عبارة [`EXPORT DATA`](https://cloud.google.com/bigquery/docs/reference/standard-sql/other-statements).
+
+    ```sql
+    DECLARE export_path STRING;
+    DECLARE n INT64;
+    DECLARE i INT64;
+    SET i = 0;
+
+    -- We recommend setting n to correspond to x billion rows. So 5 billion rows, n = 5
+    SET n = 100;
+
+    WHILE i < n DO
+      SET export_path = CONCAT('gs://mybucket/mytable/', i,'-*.parquet');
+      EXPORT DATA
+        OPTIONS (
+          uri = export_path,
+          format = 'PARQUET',
+          overwrite = true
+        )
+      AS (
+        SELECT * FROM mytable WHERE export_id = i
+      );
+      SET i = i + 1;
+    END WHILE;
+    ```
+
+    في الاستعلام أعلاه، نُصدِّر جدول BigQuery الخاص بنا إلى [تنسيق بيانات Parquet](https://parquet.apache.org/). ولدينا أيضًا الحرف `*` في المعلمة `uri`. وهذا يضمن تقسيم الناتج إلى عدة ملفات، مع لاحقة رقمية متزايدة، إذا تجاوز التصدير 1GB من البيانات.
+
+    لهذا النهج عدد من المزايا:
+
+    * تتيح Google تصدير ما يصل إلى 50TB يوميًا إلى GCS مجانًا. ولا يدفع المستخدمون سوى مقابل تخزين GCS.
+    * تُنتج عمليات التصدير ملفات متعددة تلقائيًا، مع تقييد كل ملف بحد أقصى قدره 1GB من بيانات الجدول. وهذا مفيد لـ ClickHouse لأنه يتيح تنفيذ عمليات الاستيراد بالتوازي.
+    * يُعد Parquet، بوصفه تنسيقًا موجَّهًا بالأعمدة، تنسيقًا أفضل لتبادل البيانات لأنه مضغوط بطبيعته، كما أنه أسرع بالنسبة إلى BigQuery عند التصدير وClickHouse عند تنفيذ الاستعلامات
+  </Step>
+
+  <Step>
+    ## استيراد البيانات إلى ClickHouse من GCS
+
+    بمجرد اكتمال التصدير، يمكننا استيراد هذه البيانات إلى جدول في ClickHouse. يمكنك استخدام [وحدة تحكم ClickHouse SQL](/ar/integrations/connectors/sql-clients/sql-console) أو [`clickhouse-client`](/ar/concepts/features/interfaces/cli) لتنفيذ الأوامر أدناه.
+
+    يجب أولاً [إنشاء الجدول](/ar/reference/statements/create/table) في ClickHouse:
+
+    ```sql
+    -- If your BigQuery table contains a column of type STRUCT, you must enable this setting
+    -- to map that column to a ClickHouse column of type Nested
+    SET input_format_parquet_import_nested = 1;
+
+    CREATE TABLE default.mytable
+    (
+            `timestamp` DateTime64(6),
+            `some_text` String
+    )
+    ENGINE = MergeTree
+    ORDER BY (timestamp);
+    ```
+
+    بعد إنشاء الجدول، فعِّل الإعداد `parallel_distributed_insert_select` إذا كان لديك عدة نُسخ متماثلة من ClickHouse في الـcluster لتسريع عملية التصدير. وإذا كانت لديك عقدة ClickHouse واحدة فقط، فيمكنك تخطي هذه الخطوة:
+
+    ```sql
+    SET parallel_distributed_insert_select = 1;
+    ```
+
+    أخيرًا، يمكننا إدراج البيانات من GCS في جدول ClickHouse باستخدام [أمر `INSERT INTO SELECT`](/ar/reference/statements/insert-into#inserting-the-results-of-select)، الذي يُدرج البيانات في جدول استنادًا إلى نتائج استعلام `SELECT`.
+
+    لاسترجاع البيانات من أجل `INSERT`، يمكننا استخدام [دالة s3Cluster](/ar/reference/functions/table-functions/s3Cluster) لجلب البيانات من حاوية GCS، لأن GCS متوافق مع [Amazon S3](https://aws.amazon.com/s3/). إذا كانت لديك عقدة ClickHouse واحدة فقط، فيمكنك استخدام [دالة الجدول S3](/ar/reference/functions/table-functions/s3) بدلًا من الدالة `s3Cluster`.
+
+    ```sql
+    INSERT INTO mytable
+    SELECT
+        timestamp,
+        ifNull(some_text, '') AS some_text
+    FROM s3Cluster(
+        'default',
+        'https://storage.googleapis.com/mybucket/mytable/*.parquet.gz',
+        '<ACCESS_ID>',
+        '<SECRET>'
+    );
+    ```
+
+    يمثل كلٌّ من `ACCESS_ID` و`SECRET` المستخدمَين في الاستعلام أعلاه [مفتاح HMAC](https://cloud.google.com/storage/docs/authentication/hmackeys) المرتبط بحاوية GCS الخاصة بك.
+
+    <Info>
+      **استخدم `ifNull` عند تصدير الأعمدة من النوع `Nullable`**
+
+      في الاستعلام أعلاه، نستخدم [الدالة `ifNull`](/ar/reference/functions/regular-functions/functions-for-nulls#ifNull) مع العمود `some_text` لإدراج البيانات في جدول ClickHouse مع قيمة افتراضية. يمكنك أيضًا جعل أعمدتك في ClickHouse من النوع [`Nullable`](/ar/reference/data-types/nullable)، لكن لا يُنصح بذلك لأنه قد يؤثر سلبًا في الأداء.
+
+      بدلاً من ذلك، يمكنك ضبط `SET input_format_null_as_default=1`، وعندها ستُستبدل أي قيم مفقودة أو NULL بالقيم الافتراضية للأعمدة المقابلة، إذا كانت تلك القيم الافتراضية محددة.
+    </Info>
+  </Step>
+
+  <Step>
+    ## اختبار نجاح تصدير البيانات
+
+    لاختبار ما إذا كانت بياناتك قد أُدرجت بشكل صحيح، ما عليك سوى تنفيذ استعلام `SELECT` على جدولك الجديد:
+
+    ```sql
+    SELECT * FROM mytable LIMIT 10;
+    ```
+
+    لتصدير المزيد من جداول BigQuery، ما عليك سوى تكرار الخطوات أعلاه لكل جدول إضافي.
+  </Step>
+</Steps>
+
+<div id="further-reading-and-support">
+  ## لمزيد من القراءة والدعم
+</div>
+
+إلى جانب هذا الدليل، نوصي أيضًا بقراءة تدوينة المدونة التي توضّح [كيفية استخدام ClickHouse لتسريع BigQuery وكيفية التعامل مع عمليات الاستيراد المتزايدة](https://clickhouse.com/blog/clickhouse-bigquery-migrating-data-for-realtime-queries).
+
+إذا كنت تواجه مشكلات في نقل البيانات من BigQuery إلى ClickHouse، فلا تتردد في التواصل معنا عبر support@clickhouse.com.

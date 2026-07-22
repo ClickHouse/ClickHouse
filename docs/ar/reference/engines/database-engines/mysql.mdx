@@ -1,0 +1,187 @@
+---
+description: 'يتيح الاتصال بقواعد بيانات على خادم MySQL بعيد وإجراء استعلامات
+  `INSERT` و`SELECT` لتبادل البيانات بين ClickHouse وMySQL.'
+sidebarTitle: 'MySQL'
+slug: /engines/database-engines/mysql
+title: 'MySQL'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="mysql-database-engine">
+  # محرك قاعدة بيانات MySQL
+</div>
+
+<CloudNotSupportedBadge />
+
+يتيح الاتصال بقواعد البيانات على خادم MySQL بعيد وتنفيذ استعلامات `INSERT` و`SELECT` لتبادل البيانات بين ClickHouse وMySQL.
+
+يترجم محرك قاعدة البيانات `MySQL` الاستعلامات إلى خادم MySQL، مما يتيح لك تنفيذ عمليات مثل `SHOW TABLES` أو `SHOW CREATE TABLE`.
+
+لا يمكنك تنفيذ الاستعلامات التالية:
+
+* `RENAME`
+* `CREATE TABLE`
+* `ALTER`
+
+<div id="creating-a-database">
+  ## إنشاء قاعدة بيانات
+</div>
+
+```sql
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
+ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
+[SETTINGS enable_compression=0]
+```
+
+**معلمات المحرك**
+
+* `host:port` — عنوان خادم MySQL.
+* `database` — اسم قاعدة البيانات على الخادم البعيد.
+* `user` — مستخدم MySQL.
+* `password` — كلمة مرور المستخدم.
+
+**الإعدادات**
+
+<div id="enable-compression">
+  ### `enable_compression`
+</div>
+
+يُفعّل ضغط zlib لاتصال بروتوكول MySQL. عند ضبطه على `1`، يطلب ClickHouse ضغطًا على مستوى البروتوكول من خادم MySQL.
+
+القيمة الافتراضية: `0`.
+
+مثال:
+
+```sql
+CREATE DATABASE mysql_db
+ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
+SETTINGS enable_compression = 1;
+```
+
+<div id="data_types-support">
+  ## دعم أنواع البيانات
+</div>
+
+| MySQL                            | ClickHouse                                       |
+| -------------------------------- | ------------------------------------------------ |
+| UNSIGNED TINYINT                 | [UInt8](/ar/reference/data-types/int-uint)          |
+| TINYINT                          | [Int8](/ar/reference/data-types/int-uint)           |
+| UNSIGNED SMALLINT                | [UInt16](/ar/reference/data-types/int-uint)         |
+| SMALLINT                         | [Int16](/ar/reference/data-types/int-uint)          |
+| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](/ar/reference/data-types/int-uint)         |
+| INT, MEDIUMINT                   | [Int32](/ar/reference/data-types/int-uint)          |
+| UNSIGNED BIGINT                  | [UInt64](/ar/reference/data-types/int-uint)         |
+| BIGINT                           | [Int64](/ar/reference/data-types/int-uint)          |
+| FLOAT                            | [Float32](/ar/reference/data-types/float)           |
+| DOUBLE                           | [Float64](/ar/reference/data-types/float)           |
+| DATE                             | [Date](/ar/reference/data-types/date)               |
+| DATETIME, TIMESTAMP              | [DateTime](/ar/reference/data-types/datetime)       |
+| BINARY                           | [FixedString](/ar/reference/data-types/fixedstring) |
+
+تُحوَّل جميع أنواع بيانات MySQL الأخرى إلى النوع [String](/ar/reference/data-types/string).
+
+النوع [Nullable](/ar/reference/data-types/nullable) مدعوم.
+
+<div id="global-variables-support">
+  ## دعم المتغيرات العامة
+</div>
+
+لتحقيق توافق أفضل، يمكنك الإشارة إلى المتغيرات العامة بأسلوب MySQL، بالشكل `@@identifier`.
+
+المتغيرات التالية مدعومة:
+
+* `version`
+* `max_allowed_packet`
+
+<Note>
+  حتى الآن، هذه المتغيرات مجرد عناصر وهمية ولا تقابل أي شيء فعليًا.
+</Note>
+
+مثال:
+
+```sql
+SELECT @@version;
+```
+
+<div id="examples-of-use">
+  ## أمثلة الاستخدام
+</div>
+
+جدول في MySQL:
+
+```text
+mysql> USE test;
+Database changed
+
+mysql> CREATE TABLE `mysql_table` (
+    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+    ->   `float` FLOAT NOT NULL,
+    ->   PRIMARY KEY (`int_id`));
+Query OK, 0 rows affected (0,09 sec)
+
+mysql> insert into mysql_table (`int_id`, `float`) VALUES (1,2);
+Query OK, 1 row affected (0,00 sec)
+
+mysql> select * from mysql_table;
++------+-----+
+| int_id | value |
++------+-----+
+|      1 |     2 |
++------+-----+
+1 row in set (0,00 sec)
+```
+
+قاعدة بيانات في ClickHouse تتبادل البيانات مع خادم MySQL:
+
+```sql
+CREATE DATABASE mysql_db ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password') SETTINGS read_write_timeout=10000, connect_timeout=100;
+```
+
+```sql
+SHOW DATABASES
+```
+
+```text
+┌─name─────┐
+│ default  │
+│ mysql_db │
+│ system   │
+└──────────┘
+```
+
+```sql
+SHOW TABLES FROM mysql_db
+```
+
+```text
+┌─name─────────┐
+│  mysql_table │
+└──────────────┘
+```
+
+```sql
+SELECT * FROM mysql_db.mysql_table
+```
+
+```text
+┌─int_id─┬─value─┐
+│      1 │     2 │
+└────────┴───────┘
+```
+
+```sql
+INSERT INTO mysql_db.mysql_table VALUES (3,4)
+```
+
+```sql
+SELECT * FROM mysql_db.mysql_table
+```
+
+```text
+┌─int_id─┬─value─┐
+│      1 │     2 │
+│      3 │     4 │
+└────────┴───────┘
+```

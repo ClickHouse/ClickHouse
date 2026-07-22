@@ -1,0 +1,78 @@
+---
+description: 'Используйте ClickHouse для выполнения запросов, ускорения и анализа данных в открытых табличных форматах, таких как Apache Iceberg, Delta Lake, Apache Hudi и Apache Paimon.'
+slug: /use-cases/data-lake
+title: 'Озера данных'
+keywords: ['озера данных', 'lakehouse', 'iceberg', 'delta lake', 'hudi', 'paimon', 'glue', 'unity', 'rest', 'OneLake', 'BigLake']
+doc_type: 'landing-page'
+---
+
+ClickHouse интегрируется с открытыми табличными форматами, включая [Apache Iceberg](/ru/reference/engines/table-engines/integrations/iceberg), [Delta Lake](/ru/reference/engines/table-engines/integrations/deltalake), [Apache Hudi](/ru/reference/engines/table-engines/integrations/hudi) и [Apache Paimon](/ru/reference/functions/table-functions/paimon). Это позволяет пользователям подключать ClickHouse к данным, уже хранящимся в этих форматах в объектных хранилищах, сочетая аналитические возможности ClickHouse с существующей инфраструктурой озер данных.
+
+<div id="why-clickhouse-uses-lake-formats">
+  ## Зачем использовать ClickHouse с открытыми табличными форматами?
+</div>
+
+<div id="querying-data-in-place">
+  ### Выполняйте запросы к существующим данным без их перемещения
+</div>
+
+ClickHouse может выполнять запросы к открытым табличным форматам напрямую в объектном хранилище без дублирования данных. Организации, использующие Iceberg, Delta Lake, Hudi или Paimon в качестве стандарта, могут указать ClickHouse на существующие таблицы и сразу использовать его диалект SQL, аналитические функции и эффективный нативный ридер Parquet. В то же время такие инструменты, как [clickhouse-local](/ru/concepts/features/tools-and-utilities/clickhouse-local) и [chDB](/ru/products/chdb/index), позволяют проводить исследовательский и ad hoc-анализ более чем 70 форматов файлов в удаленном хранилище, давая пользователям возможность интерактивно изучать датасеты в озерах данных без настройки инфраструктуры.
+
+Пользователи могут делать это либо через прямое чтение, используя [табличные функции и движки таблиц](/ru/guides/use-cases/data-warehousing/getting-started/querying-directly), либо [подключившись к каталогу данных](/ru/guides/use-cases/data-warehousing/getting-started/connecting-catalogs).
+
+<div id="real-time-with-clickhouse">
+  ### Рабочие нагрузки аналитики в реальном времени с ClickHouse
+</div>
+
+Для рабочих нагрузок, которым требуются высокий параллелизм и низкая задержка отклика, пользователи могут загружать данные из открытых табличных форматов в движок [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree) ClickHouse. Это создает слой Real-time аналитики поверх данных из озера данных, поддерживая панели мониторинга, операционную отчётность и другие чувствительные к задержкам рабочие нагрузки, которым полезны столбцовое хранение и возможности индексации MergeTree.
+
+См. руководство «Начало работы» [по ускорению аналитики с MergeTree](/ru/guides/use-cases/data-warehousing/getting-started/accelerating-analytics).
+
+<div id="capabilities">
+  ## Привилегии
+</div>
+
+<div id="read-data-directly">
+  ### Чтение данных напрямую
+</div>
+
+ClickHouse предоставляет [табличные функции](/ru/reference/functions/table-functions/index) и [движки](/ru/reference/engines/table-engines/integrations/index) для прямого чтения открытых табличных форматов из объектного хранилища. Такие функции, как [`iceberg()`](/ru/reference/functions/table-functions/iceberg), [`deltaLake()`](/ru/reference/functions/table-functions/deltalake), [`hudi()`](/ru/reference/functions/table-functions/hudi) и [`paimon()`](/ru/reference/functions/table-functions/paimon), позволяют выполнять запросы к таблицам в открытых табличных форматах прямо из SQL-оператора, без какой-либо предварительной настройки. Для большинства распространённых объектных хранилищ, таких как S3, Azure Blob Storage и GCS, существуют соответствующие версии этих функций. У этих функций также есть эквивалентные движки таблиц, которые можно использовать для создания таблиц в ClickHouse, ссылающихся на базовое объектное хранилище с открытыми табличными форматами, — это делает выполнение запросов более удобным.
+
+См. наше руководство «Начало работы»: [прямое выполнение запросов](/ru/guides/use-cases/data-warehousing/getting-started/querying-directly) или [подключение к каталогу данных](/ru/guides/use-cases/data-warehousing/getting-started/connecting-catalogs).
+
+<div id="expose-catalogs-as-databases">
+  ### Подключение каталогов как баз данных
+</div>
+
+С помощью движка базы данных [`DataLakeCatalog`](/ru/reference/engines/database-engines/datalake) пользователи могут подключать ClickHouse к внешнему каталогу и представлять его как базу данных. Таблицы, зарегистрированные в каталоге, отображаются в ClickHouse как обычные таблицы, что позволяет прозрачно использовать весь синтаксис ClickHouse SQL и аналитические функции. Это означает, что пользователи могут выполнять запросы, JOIN и агрегации по таблицам, управляемым каталогом, так, как если бы это были собственные таблицы ClickHouse, пользуясь преимуществами оптимизации запросов, параллельного выполнения и возможностей чтения ClickHouse.
+
+Поддерживаются следующие каталоги:
+
+| Каталог                  | Руководство                                                                                |
+| ------------------------ | ------------------------------------------------------------------------------------------ |
+| AWS Glue                 | [Руководство по Glue Catalog](/ru/guides/use-cases/data-warehousing/glue-catalog)             |
+| BigLake Metastore        | [Руководство по BigLake Metastore](/ru/guides/use-cases/data-warehousing/biglake-catalog)     |
+| Databricks Unity Catalog | [Руководство по Unity Catalog](/ru/guides/use-cases/data-warehousing/unity-catalog)           |
+| Iceberg REST Catalog     | [Руководство по REST Catalog](/ru/guides/use-cases/data-warehousing/rest-catalog)             |
+| Lakekeeper               | [Руководство по Lakekeeper Catalog](/ru/guides/use-cases/data-warehousing/lakekeeper-catalog) |
+| Project Nessie           | [Руководство по Nessie Catalog](/ru/guides/use-cases/data-warehousing/nessie-catalog)         |
+| Microsoft OneLake        | [Руководство по OneLake Catalog](/ru/guides/use-cases/data-warehousing/onelake-catalog)       |
+
+См. руководство «Начало работы» по [подключению к каталогам](/ru/guides/use-cases/data-warehousing/getting-started/connecting-catalogs).
+
+<div id="write-back-to-lakehouse-formats">
+  ### Обратная запись в открытые табличные форматы
+</div>
+
+ClickHouse поддерживает обратную запись данных в открытые табличные форматы, что особенно полезно в таких сценариях, как:
+
+* **Из real-time в долгосрочное хранилище** — данные проходят через ClickHouse как слой Real-time аналитики, после чего пользователям требуется выгружать результаты в Iceberg или другие форматы для надежного и экономичного долгосрочного хранения.
+* **Reverse ETL** — пользователи выполняют преобразования в ClickHouse с помощью materialized view или запросов по расписанию и хотят сохранять результаты в открытых табличных форматах, чтобы их могли использовать другие инструменты в экосистеме данных.
+
+См. руководство «Начало работы» по [записи в озера данных](/ru/guides/use-cases/data-warehousing/getting-started/writing-data).
+
+<div id="next-steps">
+  ## Следующие шаги
+</div>
+
+Готовы попробовать? В [руководстве «Начало работы»](/ru/guides/use-cases/data-warehousing/getting-started/overview) пошагово показано, как напрямую выполнять запросы к открытым табличным форматам, подключаться к каталогу, загружать данные в MergeTree для быстрой аналитики и записывать результаты обратно — всё в рамках единого сквозного сценария.

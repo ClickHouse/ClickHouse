@@ -1,0 +1,61 @@
+---
+slug: /data-compression/compression-modes
+title: 'أوضاع الضغط'
+description: 'أوضاع ضغط الأعمدة في ClickHouse'
+keywords: ['الضغط', 'الترميز', 'الترميز', 'الأوضاع']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يدعم بروتوكول ClickHouse ضغط **كتل البيانات** مع قيم التحقق من السلامة.
+استخدم `LZ4` إذا لم تكن متأكدًا من الوضع الذي ينبغي اختياره.
+&#96;&#96;
+
+<Tip>
+  تعرّف على المزيد حول [مرمِّزات ضغط الأعمدة](/ar/reference/statements/create/table#column_compression_codec) المتاحة، وعيّنها عند إنشاء جداولك أو لاحقًا.
+</Tip>
+
+<div id="modes">
+  ## الأنماط
+</div>
+
+| القيمة | الاسم              | الوصف                              |
+| ------ | ------------------ | ---------------------------------- |
+| `0x02` | [None](#none-mode) | بدون ضغط، مع قيم التحقق فقط        |
+| `0x82` | LZ4                | سريع للغاية، مع ضغط جيد            |
+| `0x90` | ZSTD               | ‏Zstandard، سريع نسبيًا، وأفضل ضغط |
+
+كلٌّ من LZ4 وZSTD من تطوير المطوّر نفسه، لكن مع مفاضلات مختلفة.
+من [اختبارات الأداء لدى Facebook](https://facebook.github.io/zstd/#benchmarks):
+
+| الاسم             | النسبة | الترميز  | فك الترميز |
+| ----------------- | ------ | -------- | ---------- |
+| **zstd** 1.4.5 -1 | 2.8    | 500 MB/s | 1660 MB/s  |
+| **lz4** 1.9.2     | 2.1    | 740 MB/s | 4530 MB/s  |
+
+<div id="block">
+  ## كتلة
+</div>
+
+| الحقل               | النوع   | الوصف                                                                                         |
+| ------------------- | ------- | --------------------------------------------------------------------------------------------- |
+| قيمة التحقق         | uint128 | [تجزئة](/ar/resources/develop-contribute/native-protocol/hash) لـ (الترويسة + البيانات المضغوطة) |
+| raw&#95;size        | uint32  | الحجم الخام من دون الترويسة                                                                   |
+| data&#95;size       | uint32  | حجم البيانات غير المضغوطة                                                                     |
+| وضع                 | byte    | وضع الضغط                                                                                     |
+| compressed&#95;data | binary  | كتلة بيانات مضغوطة                                                                            |
+
+<Image img="/images/data-compression/ch_compression_block.webp" size="md" alt="مخطط يوضح بنية كتلة الضغط في ClickHouse" />
+
+الترويسة هي (raw&#95;size + data&#95;size + وضع)، والحجم الخام هو len(header + compressed&#95;data).
+
+قيمة التحقق هي `hash(header + compressed_data)`، باستخدام [ClickHouse CityHash](/ar/resources/develop-contribute/native-protocol/hash).
+
+<div id="none-mode">
+  ## وضع None
+</div>
+
+إذا استُخدم وضع *None*، فإن `compressed_data` تكون مساوية للبيانات الأصلية.
+ويفيد وضع عدم الضغط في توفير درجة إضافية من سلامة البيانات باستخدام قيم التحقق، لأن
+الكلفة الإضافية للتجزئة لا تُذكر.

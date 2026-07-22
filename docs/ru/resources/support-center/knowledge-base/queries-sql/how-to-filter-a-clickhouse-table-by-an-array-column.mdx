@@ -1,0 +1,114 @@
+---
+title: Как отфильтровать таблицу ClickHouse по столбцу-массиву?
+description: "Статья базы знаний о том, как отфильтровать таблицу ClickHouse по столбцу-массиву."
+date: 2024-12-17
+tags: ['Моделирование данных', 'Функции']
+keywords: ['Фильтр', 'Столбец-массив']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## Введение
+</div>
+
+Фильтрация таблицы ClickHouse по столбцу-массиву — распространённая задача, и ClickHouse предоставляет множество [функций](/ru/reference/functions/regular-functions/array-functions) для работы со столбцами-массивами.
+
+В этой статье мы сосредоточимся на фильтрации таблицы по столбцу-массиву, а в видео ниже рассматривается множество других функций для работы с массивами:
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/JKHAdCFtYDg?si=OqS3ry1LFrOlF8Iy" title="Видеопроигрыватель YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="example">
+  ## Пример
+</div>
+
+Рассмотрим пример таблицы с двумя столбцами `tags_string` и `tags_int`, которые содержат массивы строк и целых чисел соответственно.
+
+* Создайте пример базы данных и таблицы.
+
+```sql
+CREATE DATABASE db1;
+```
+
+* Создайте таблицу-пример
+
+```sql
+CREATE TABLE db1.tags_table
+(
+    `id` UInt64,
+    `tags_string` Array(String),
+    `tags_int` Array(UInt64),
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+* Вставьте в таблицу несколько строк тестовых данных.
+
+```sql
+INSERT INTO db1.tags_table VALUES (1, ['tag1', 'tag2', 'tag3'], [1, 2, 3]), (2, ['tag2', 'tag3', 'tag4'], [2, 3, 4]), (3, ['tag1', 'tag3', 'tag5'], [1, 3, 5]);
+```
+
+Отфильтруйте таблицу с помощью функции `has(arr, elem)`, чтобы получить строки, в которых массив `arr` содержит элемент `elem`.
+
+Отфильтруйте таблицу так, чтобы получить строки, в которых массив `tags_string` содержит элемент `tag1`.
+
+```sql
+SELECT * FROM db1.tags_table WHERE has(tags_string, 'tag1');
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  1 │ ['tag1','tag2','tag3'] │ [1,2,3]  │
+│  3 │ ['tag1','tag3','tag5'] │ [1,3,5]  │
+└────┴────────────────────────┴──────────┘
+```
+
+Используйте функцию `hasAll(arr, elems)`, чтобы получить строки, в которых все элементы массива `elems` присутствуют в массиве `arr`.
+
+Отфильтруйте таблицу, чтобы получить строки, в которых все элементы массива `tags_string` присутствуют в массиве `['tag1', 'tag2']`.
+
+```sql
+SELECT * FROM db1.tags_table WHERE hasAll(tags_string, ['tag1', 'tag2']);
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  1 │ ['tag1','tag2','tag3'] │ [1,2,3]  │
+└────┴────────────────────────┴──────────┘
+```
+
+Используйте функцию `hasAny(arr, elems)`, чтобы вернуть строки, в которых хотя бы один элемент массива `elems` присутствует в массиве `arr`.
+
+Отфильтруйте table, чтобы вернуть строки, в которых хотя бы один элемент массива `tags_string` присутствует в массиве `['tag1', 'tag2']`.
+
+```sql
+SELECT * FROM db1.tags_table WHERE hasAny(tags_string, ['tag1', 'tag2']);
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  1 │ ['tag1','tag2','tag3'] │ [1,2,3]  │
+│  2 │ ['tag2','tag3','tag4'] │ [2,3,4]  │
+│  3 │ ['tag1','tag3','tag5'] │ [1,3,5]  │
+└────┴────────────────────────┴──────────┘
+```
+
+Мы можем использовать лямбда-функцию для фильтрации таблицы с помощью функции `arrayExists(lambda, arr)`.
+
+Отфильтруйте таблицу так, чтобы вернуть строки, где хотя бы один элемент массива `tags_int` больше 3.
+
+```sql
+SELECT * FROM db1.tags_table WHERE arrayExists(x -> x > 3, tags_int);
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  2 │ ['tag2','tag3','tag4'] │ [2,3,4]  │
+│  3 │ ['tag1','tag3','tag5'] │ [1,3,5]  │
+└────┴────────────────────────┴──────────┘
+```

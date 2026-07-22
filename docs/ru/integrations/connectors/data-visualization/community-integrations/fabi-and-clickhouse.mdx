@@ -1,0 +1,59 @@
+---
+sidebarTitle: 'Fabi.ai'
+slug: /integrations/fabi.ai
+keywords: ['clickhouse', 'Fabi.ai', 'подключение', 'интеграция', 'блокнот', 'интерфейс', 'аналитика']
+description: 'Fabi.ai — это универсальная платформа для совместной аналитики данных. Вы можете использовать SQL, Python, ИИ и no-code, чтобы создавать панели мониторинга и рабочие процессы с данными быстрее, чем когда-либо'
+title: 'Подключение ClickHouse к Fabi.ai'
+doc_type: 'guide'
+integration:
+   - support_level: 'community'
+   - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
+
+<CommunityMaintainedBadge />
+
+<a href="https://www.fabi.ai/" target="_blank">Fabi.ai</a> — это универсальная платформа для совместной работы с данными и их анализа. Вы можете использовать SQL, Python, ИИ и no-code, чтобы создавать панели мониторинга и рабочие процессы с данными быстрее, чем когда-либо. В сочетании с масштабируемостью и мощностью ClickHouse это позволит вам за считанные минуты создать и поделиться своей первой высокопроизводительной панелью мониторинга на очень большом наборе данных.
+
+<Image size="md" img="/images/integrations/data-visualization/fabi_01.webp" alt="Платформа Fabi.ai для анализа данных и автоматизации рабочих процессов" border />
+
+<div id="gather-your-connection-details">
+  ## Подготовьте сведения о подключении
+</div>
+
+<ConnectionDetails />
+
+<div id="connect-to-clickhouse">
+  ## Создайте аккаунт Fabi.ai и подключите ClickHouse
+</div>
+
+Войдите в аккаунт Fabi.ai или создайте его: https://app.fabi.ai/
+
+1. При первом создании аккаунта вам будет предложено подключить базу данных. Если у вас уже есть аккаунт, нажмите на панели источников данных слева в любом Smartbook и выберите Add Data Source.
+
+   <Image size="lg" img="/images/integrations/data-visualization/fabi_02.webp" alt="Добавление источника данных" border />
+
+2. Затем вам будет предложено ввести сведения о подключении.
+
+   <Image size="md" img="/images/integrations/data-visualization/fabi_03.webp" alt="Форма учетных данных ClickHouse" border />
+
+3. Готово! ClickHouse успешно интегрирован с Fabi.ai.
+
+<div id="querying-clickhouse">
+  ## Выполнение запросов к ClickHouse.
+</div>
+
+После подключения Fabi.ai к ClickHouse перейдите в любой [Smartbook](https://docs.fabi.ai/analysis_and_reporting/smartbooks) и создайте SQL-ячейку. Если к вашему экземпляру Fabi.ai подключён только один источник данных, в SQL-ячейке по умолчанию будет выбран ClickHouse. В противном случае источник для запроса можно выбрать в раскрывающемся списке источников.
+
+<Image size="lg" img="/images/integrations/data-visualization/fabi_04.webp" alt="Выполнение запросов к ClickHouse" border />
+
+<div id="additional-resources">
+  ## Дополнительные ресурсы
+</div>
+
+Документация [Fabi.ai](https://www.fabi.ai): https://docs.fabi.ai/introduction
+
+Видеоруководства [Fabi.ai](https://www.fabi.ai) по началу работы: https://www.youtube.com/playlist?list=PLjxPRVnyBCQXxxByw2CLC0q7c-Aw6t2nl

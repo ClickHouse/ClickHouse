@@ -1,0 +1,80 @@
+---
+title: Как проверить, возвращают ли два запроса одинаковые наборы результатов
+description: Узнайте, как проверить, что два запроса ClickHouse возвращают идентичные наборы результатов, с помощью хеш-функций и методов сравнения.
+date: 2023-05-04
+tags: ['Функции']
+keywords: ['Проверка', 'Наборы результатов', 'Хеш-функции']
+---
+
+<div id="question">
+  ## Вопрос
+</div>
+
+Как убедиться, что два запроса возвращают одинаковые наборы результатов?
+
+<div id="answer">
+  ## Ответ
+</div>
+
+Можно использовать следующий подход:
+
+```sql
+WITH
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            -- ваш запрос 1 здесь
+            -- SELECT ...
+        )
+    ) AS q1_resultset_hash,
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            -- ваш запрос 2 здесь
+            -- SELECT ...
+        )
+    ) AS q2_resultset_hash
+SELECT equals(q1_resultset_hash,q2_resultset_hash) as Q1_equals_Q2
+```
+
+В этом примере используется [CTE](/ru/reference/statements/select/with) для вычисления суммы значений [cityHash](/ru/reference/functions/regular-functions/hash-functions#cityhash64) для каждой строки в этих двух запросах; если два набора результатов идентичны, будет возвращено `1`.
+
+Используем последовательность целых чисел и наглядное форматирование:
+
+```sql
+WITH
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            SELECT *
+            FROM numbers(10)
+            ORDER BY number DESC
+        )
+    ) AS q1_resultset_hash,
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            SELECT *
+            FROM numbers(10)
+            ORDER BY number ASC
+        )
+    ) AS q2_resultset_hash
+SELECT q1_resultset_hash = q2_resultset_hash AS Q1_equals_Q2
+FORMAT Pretty
+```
+
+вернёт:
+
+```
+┏━━━━━━━━━━━━━━┓
+┃ Q1_equals_Q2 ┃
+┡━━━━━━━━━━━━━━┩
+│            1 │
+└──────────────┘
+```
+
+Хотя во многих случаях это может быть удобно, такой подход нельзя считать универсальным способом проверки равенства наборов результатов для всех типов, и при его использовании есть ряд оговорок. Например, если хотя бы одна строка содержит значения `NULL`, описанный выше подход не сработает.

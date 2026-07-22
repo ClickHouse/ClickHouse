@@ -1,0 +1,155 @@
+---
+title: 'Como criar um usuário do IAM da AWS e um bucket do S3'
+description: 'Como criar um usuário do IAM da AWS e um bucket do S3.'
+keywords: ['AWS', 'IAM', 'bucket do S3']
+slug: /integrations/s3/creating-iam-user-and-s3-bucket
+sidebarTitle: 'Como criar um usuário do IAM da AWS e um bucket do S3'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+> Este guia mostra como configurar um usuário do IAM da AWS e um bucket do S3 na AWS,
+> uma etapa prévia necessária para fazer backups no S3 ou configurar o ClickHouse para
+> armazenar dados no S3
+
+<div id="create-an-aws-iam-user">
+  ## Criar um usuário do IAM da AWS
+</div>
+
+Neste procedimento, criaremos um usuário para conta de serviço, não um usuário com login.
+
+1. Faça login no Console de Gerenciamento do AWS IAM.
+
+2. Na aba `Users`, selecione `Create user`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-1.webp" alt="Console de Gerenciamento do AWS IAM - Adicionando um novo usuário" />
+
+3. Insira um nome de usuário
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-2.webp" alt="Console de Gerenciamento do AWS IAM - Adicionando um novo usuário" />
+
+4. Selecione `Next`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-3.webp" alt="Console de Gerenciamento do AWS IAM - Adicionando um novo usuário" />
+
+5. Selecione `Next`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-4.webp" alt="Console de Gerenciamento do AWS IAM - Adicionando um novo usuário" />
+
+6. Selecione `Create user`
+
+O usuário foi criado.
+Clique no usuário recém-criado.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-5.webp" alt="Console de Gerenciamento do AWS IAM - Adicionando um novo usuário" />
+
+7. Selecione `Create access key`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-6.webp" alt="Console de Gerenciamento do AWS IAM - Adicionando um novo usuário" />
+
+8. Selecione `Application running outside AWS`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-7.webp" alt="Console de Gerenciamento do AWS IAM - Adicionando um novo usuário" />
+
+9. Selecione `Create access key`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-8.webp" alt="Console de Gerenciamento do AWS IAM - Adicionando um novo usuário" />
+
+10. Baixe sua chave de acesso e sua chave secreta como um arquivo .csv para usar mais tarde
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-9.webp" alt="Console de Gerenciamento do AWS IAM - Adicionando um novo usuário" />
+
+<div id="create-an-s3-bucket">
+  ## Criar um bucket do S3
+</div>
+
+1. Na seção de bucket do S3, selecione **Create bucket**
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-10.webp" alt="Console de Gerenciamento do AWS IAM - Adicionando um novo usuário" />
+
+2. Insira um nome para o bucket e deixe as demais opções com os valores padrão
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-11.webp" alt="Console de Gerenciamento do AWS IAM - Adicionando um novo usuário" />
+
+<Note>
+  O nome do bucket deve ser exclusivo em toda a AWS, não apenas na sua organização, ou ocorrerá um erro.
+</Note>
+
+3. Deixe `Block all Public Access` enabled; o acesso público não é necessário.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-12.webp" alt="Console de Gerenciamento do AWS IAM - Adicionando um novo usuário" />
+
+4. Selecione **Create Bucket** na parte inferior da página
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-13.webp" alt="Console de Gerenciamento do AWS IAM - Adicionando um novo usuário" />
+
+5. Selecione o link, copie o ARN e salve-o para usar ao configurar a política de acesso do bucket
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-14.webp" alt="Console de Gerenciamento do AWS IAM - Adicionando um novo usuário" />
+
+6. Depois que o bucket for criado, localize o novo bucket do S3 na lista de buckets do S3 e selecione o nome dele; isso levará você à página mostrada abaixo:
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-15.webp" alt="Console de Gerenciamento do AWS IAM - Adicionando um novo usuário" />
+
+7. Selecione `Create folder`
+
+8. Insira um nome de pasta que será o destino do disco S3 ou do backup do ClickHouse e selecione `Create folder` na parte inferior da página
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-16.webp" alt="Console de Gerenciamento do AWS IAM - Adicionando um novo usuário" />
+
+9. A pasta agora deve estar visível na lista do bucket
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-17.webp" alt="Console de Gerenciamento do AWS IAM - Adicionando um novo usuário" />
+
+10. Marque a caixa de seleção da nova pasta e clique em `Copy URL`. Salve a URL para usar na configuração de armazenamento do ClickHouse na próxima seção.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-18.webp" alt="Console de Gerenciamento do AWS IAM - Adicionando um novo usuário" />
+
+11. Selecione a guia **Permissions** e clique no botão **Edit** na seção **Bucket Policy**
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-19.webp" alt="Console de Gerenciamento do AWS IAM - Adicionando um novo usuário" />
+
+12. Adicione uma política de bucket, conforme o exemplo abaixo
+
+```json
+{
+    "Version": "2012-10-17",
+    "Id": "Policy123456",
+    "Statement": [
+        {
+            "Sid": "abc123",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::782985192762:user/docs-s3-user"
+            },
+            "Action": "s3:*",
+            "Resource": [
+                "arn:aws:s3:::ch-docs-s3-bucket",
+                "arn:aws:s3:::ch-docs-s3-bucket/*"
+            ]
+        }
+    ]
+}
+```
+
+<Note>
+  A política acima permite executar todas as ações no bucket
+</Note>
+
+| Parâmetro | Descrição                                                 | Valor de exemplo                                                                         |
+| --------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Version   | Versão do interpretador de políticas, deixe como está     | 2012-10-17                                                                               |
+| Sid       | ID da política definido pelo usuário                      | abc123                                                                                   |
+| Effect    | Se as solicitações do usuário serão permitidas ou negadas | Allow                                                                                    |
+| Principal | A conta ou o usuário que terá permissão                   | arn:aws:iam::782985192762:user/docs-s3-user                                              |
+| Action    | Quais operações são permitidas no bucket                  | s3:*                                                                                     |
+| Resource  | Em quais recursos do bucket as operações serão permitidas | &quot;arn:aws:s3:::ch-docs-s3-bucket&quot;, &quot;arn:aws:s3:::ch-docs-s3-bucket/*&quot; |
+
+<Note>
+  Você deve trabalhar com sua equipe de segurança para determinar quais permissões usar; considere estas como um ponto de partida.
+  Para mais informações sobre políticas e configurações, consulte a documentação da AWS:
+  https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-policy-language-overview.html
+</Note>
+
+13. Salve a configuração da política

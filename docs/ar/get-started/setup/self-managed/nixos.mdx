@@ -1,0 +1,111 @@
+---
+description: 'تثبيت ClickHouse على NixOS وباستخدام Nix'
+keywords: ['ClickHouse', 'install', 'NixOS', 'Nix', 'nixpkgs']
+sidebarTitle: 'NixOS'
+slug: /install/nixos
+title: 'تثبيت ClickHouse على NixOS'
+hide_title: true
+doc_type: 'guide'
+---
+
+import Recommendations from '/snippets/ar/recommendations.mdx';
+
+> يتوفر ClickHouse في مستودع Nixpkgs ويمكن تثبيته باستخدام Nix على **Linux** و**macOS**.
+
+<Steps>
+  <Step>
+    ## راجع التوصيات
+
+    <Recommendations />
+  </Step>
+
+  <Step>
+    ## تثبيت ClickHouse باستخدام Nix
+
+    يمكنك استخدام Nix لتثبيت ClickHouse دون إضافته بشكل دائم إلى نظامك:
+
+    ```bash
+    # تثبيت أحدث إصدار مستقر
+    nix shell nixpkgs#clickhouse
+
+    # أو تثبيت إصدار LTS
+    nix shell nixpkgs#clickhouse-lts
+    ```
+
+    سيؤدي ذلك إلى إتاحة الملف التنفيذي `clickhouse` في جلسة shell الحالية.
+
+    * توفّر الحزمة `nixpkgs#clickhouse` أحدث إصدار مستقر.
+    * توفّر الحزمة `nixpkgs#clickhouse-lts` إصدار الدعم طويل الأمد.
+    * تعمل كلتا الحزمتين على Linux وmacOS.
+  </Step>
+
+  <Step>
+    ## التثبيت الدائم
+
+    لتثبيت ClickHouse بشكل دائم على نظامك:
+
+    **لمستخدمي NixOS**، أضف ما يلي إلى `configuration.nix`:
+
+    ```nix
+    environment.systemPackages = with pkgs; [
+      clickhouse
+    ];
+    ```
+
+    ثم أعد بناء نظامك:
+
+    ```bash
+    sudo nixos-rebuild switch
+    ```
+
+    **لغير مستخدمي NixOS**، ثبّت باستخدام ملف تعريف Nix:
+
+    ```bash
+    # تثبيت أحدث إصدار مستقر
+    nix profile install nixpkgs#clickhouse
+
+    # أو تثبيت إصدار LTS
+    nix profile install nixpkgs#clickhouse-lts
+    ```
+  </Step>
+
+  <Step>
+    ## تشغيل خادم ClickHouse
+
+    بعد التثبيت، يمكنك تشغيل خادم ClickHouse:
+
+    ```bash
+    clickhouse-server
+    ```
+
+    بشكل افتراضي، سيبدأ الخادم بإعداد أساسي ويستمع على `localhost:9000`.
+
+    للاستخدام في بيئة الإنتاج على NixOS، قد ترغب في تهيئة ClickHouse كخدمة نظام. راجع [دليل NixOS](https://search.nixos.org/options?query=clickhouse) للاطلاع على خيارات الإعداد المتاحة.
+  </Step>
+
+  <Step>
+    ## تشغيل عميل ClickHouse
+
+    للاتصال بخادم ClickHouse، افتح طرفية جديدة وشغّل:
+
+    ```bash
+    clickhouse-client
+    ```
+  </Step>
+</Steps>
+
+<div id="about-nix-package">
+  ## نبذة عن حزمة Nix
+</div>
+
+تتضمن حزمة ClickHouse في Nixpkgs ما يلي:
+
+* `clickhouse-server` - خادم قاعدة بيانات ClickHouse
+* `clickhouse-client` - عميل سطر الأوامر للاتصال بـ ClickHouse
+* `clickhouse-local` - أداة لتشغيل استعلامات SQL على الملفات المحلية
+* أدوات ClickHouse أخرى مساعدة
+
+لمزيد من المعلومات حول حزمة ClickHouse في Nixpkgs، يُرجى زيارة:
+
+* [حزمة ClickHouse في Nixpkgs](https://search.nixos.org/packages?query=clickhouse)
+* [خيارات خدمة ClickHouse في NixOS](https://search.nixos.org/options?query=clickhouse)

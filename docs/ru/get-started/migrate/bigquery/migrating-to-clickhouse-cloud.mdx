@@ -1,0 +1,594 @@
+---
+title: 'Миграция из BigQuery в ClickHouse Cloud'
+slug: /migrations/bigquery/migrating-to-clickhouse-cloud
+description: 'Как перенести данные из BigQuery в ClickHouse Cloud'
+keywords: ['BigQuery']
+show_related_blogs: true
+sidebarTitle: 'Руководство по миграции'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<div id="why-use-clickhouse-cloud-over-bigquery">
+  ## Почему стоит использовать ClickHouse Cloud вместо BigQuery?
+</div>
+
+Коротко: ClickHouse быстрее, дешевле и мощнее BigQuery для современной аналитики данных:
+
+<Image img="/images/migrations/bigquery-2.webp" size="md" alt="ClickHouse и BigQuery" />
+
+<div id="loading-data-from-bigquery-to-clickhouse-cloud">
+  ## Загрузка данных из BigQuery в ClickHouse Cloud
+</div>
+
+<div id="dataset">
+  ### Датасет
+</div>
+
+В качестве примера датасета, чтобы показать типичную миграцию из BigQuery в ClickHouse Cloud, мы используем датасет Stack Overflow, описанный [здесь](/ru/get-started/sample-datasets/stackoverflow). Он содержит все `post`, `vote`, `user`, `comment` и `badge`, появившиеся на Stack Overflow с 2008 года по апрель 2024 года. Схема BigQuery для этих данных показана ниже:
+
+<Image img="/images/migrations/bigquery-3.webp" size="lg" alt="Схема" />
+
+Для пользователей, которые хотят загрузить этот датасет в экземпляр BigQuery, чтобы протестировать шаги миграции, мы предоставили данные для этих таблиц в формате Parquet в бакете GCS, а команды DDL для создания и загрузки таблиц в BigQuery доступны [здесь](https://pastila.nl/?003fd86b/2b93b1a2302cfee5ef79fd374e73f431#hVPC52YDsUfXg2eTLrBdbA==).
+
+<div id="migrating-data">
+  ### Миграция данных
+</div>
+
+Миграция данных между BigQuery и ClickHouse Cloud обычно сводится к двум основным типам рабочей нагрузки:
+
+* **Первоначальная пакетная загрузка с периодическими обновлениями** — необходимо перенести исходный датасет вместе с периодическими обновлениями через фиксированные интервалы, например ежедневно. Обновления в этом случае выполняются повторной отправкой изменённых строк, определяемых по столбцу, который можно использовать для сравнения (например, по дате). Удаления обрабатываются периодической полной перезагрузкой датасета.
+* **Репликация в реальном времени или CDC** — необходимо перенести исходный датасет. Изменения в этом датасете должны отражаться в ClickHouse почти в реальном времени, при этом допустима задержка всего в несколько секунд. По сути, это процесс [CDC (фиксации изменений данных)](https://en.wikipedia.org/wiki/Change_data_capture), при котором таблицы в BigQuery должны быть синхронизированы с ClickHouse, то есть вставки, обновления и удаления в таблице BigQuery должны применяться к эквивалентной таблице в ClickHouse.
+
+<div id="bulk-loading-via-google-cloud-storage-gcs">
+  #### Пакетная загрузка через Google Cloud Storage (GCS)
+</div>
+
+BigQuery поддерживает экспорт данных в объектное хранилище Google (GCS). Для нашего набора данных в качестве примера:
+
+1. Экспортируйте 7 таблиц в GCS. Команды для этого доступны [здесь](https://pastila.nl/?014e1ae9/cb9b07d89e9bb2c56954102fd0c37abd#0Pzj52uPYeu1jG35nmMqRQ==).
+
+2. Импортируйте данные в ClickHouse Cloud. Для этого можно использовать [табличную функцию gcs](/ru/reference/functions/table-functions/gcs). DDL и запросы для импорта доступны [здесь](https://pastila.nl/?00531abf/f055a61cc96b1ba1383d618721059976#Wf4Tn43D3VCU5Hx7tbf1Qw==). Обратите внимание: поскольку экземпляр ClickHouse Cloud состоит из нескольких вычислительных узлов, вместо табличной функции `gcs` мы используем [табличную функцию s3Cluster](/ru/reference/functions/table-functions/s3Cluster). Эта функция также работает с бакетами GCS и [задействует все узлы сервиса ClickHouse Cloud](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#parallel-servers), чтобы загружать данные параллельно.
+
+<Image img="/images/migrations/bigquery-4.webp" size="md" alt="Пакетная загрузка" />
+
+У этого подхода есть ряд преимуществ:
+
+* Функция экспорта BigQuery поддерживает фильтрацию и позволяет экспортировать подмножество данных.
+* BigQuery поддерживает экспорт в форматы [Parquet, Avro, JSON и CSV](https://cloud.google.com/bigquery/docs/exporting-data), а также несколько [типов сжатия](https://cloud.google.com/bigquery/docs/exporting-data) — все они поддерживаются ClickHouse.
+* GCS поддерживает [управление жизненным циклом объектов](https://cloud.google.com/storage/docs/lifecycle), что позволяет удалять данные, уже экспортированные и импортированные в ClickHouse, через заданный период времени.
+* [Google позволяет бесплатно экспортировать в GCS до 50 ТБ в день](https://cloud.google.com/bigquery/quotas#export_jobs). Пользователи платят только за хранение в GCS.
+* При экспорте автоматически создается несколько файлов, при этом размер каждого ограничен 1 ГБ табличных данных. Это выгодно для ClickHouse, поскольку позволяет распараллелить импорт.
+
+Прежде чем переходить к следующим примерам, рекомендуем ознакомиться с [разрешениями, необходимыми для экспорта](https://cloud.google.com/bigquery/docs/exporting-data#required_permissions), и [рекомендациями по размещению данных](https://cloud.google.com/bigquery/docs/exporting-data#data-locations), чтобы добиться максимальной производительности экспорта и импорта.
+
+<div id="real-time-replication-or-cdc-via-scheduled-queries">
+  ### Репликация в реальном времени или CDC через запросы по расписанию
+</div>
+
+CDC (фиксация изменений данных) — это процесс, который позволяет синхронизировать таблицы между двумя базами данных. Это значительно сложнее, если нужно обрабатывать обновления и удаления почти в реальном времени. Один из подходов — просто настроить периодический экспорт с помощью [механизма запросов по расписанию](https://cloud.google.com/bigquery/docs/scheduling-queries) в BigQuery. Если вы можете допустить некоторую задержку при вставке данных в ClickHouse, этот подход легко реализовать и поддерживать. Пример приведён в [этом посте блога](https://clickhouse.com/blog/clickhouse-bigquery-migrating-data-for-realtime-queries#using-scheduled-queries).
+
+<div id="designing-schemas">
+  ## Проектирование схем
+</div>
+
+В набор данных Stack Overflow входит несколько связанных таблиц. Мы рекомендуем сначала сосредоточиться на миграции основной таблицы. Это не обязательно будет самая большая таблица, а скорее та, к которой, как ожидается, будет адресовано больше всего аналитических запросов. Это позволит вам познакомиться с основными концепциями ClickHouse. По мере добавления других таблиц модель этой таблицы, возможно, придется переработать, чтобы в полной мере задействовать возможности ClickHouse и добиться оптимальной производительности. Этот процесс моделирования мы рассматриваем в нашей [документации по моделированию данных](/ru/guides/clickhouse/data-modelling/schema-design#next-data-modeling-techniques).
+
+Следуя этому принципу, мы сосредоточимся на основной таблице `posts`. Схема BigQuery для нее показана ниже:
+
+```sql
+CREATE TABLE stackoverflow.posts (
+    id INTEGER,
+    posttypeid INTEGER,
+    acceptedanswerid STRING,
+    creationdate TIMESTAMP,
+    score INTEGER,
+    viewcount INTEGER,
+    body STRING,
+    owneruserid INTEGER,
+    ownerdisplayname STRING,
+    lasteditoruserid STRING,
+    lasteditordisplayname STRING,
+    lasteditdate TIMESTAMP,
+    lastactivitydate TIMESTAMP,
+    title STRING,
+    tags STRING,
+    answercount INTEGER,
+    commentcount INTEGER,
+    favoritecount INTEGER,
+    conentlicense STRING,
+    parentid STRING,
+    communityowneddate TIMESTAMP,
+    closeddate TIMESTAMP
+);
+```
+
+<div id="optimizing-types">
+  ### Оптимизация типов
+</div>
+
+Применение процесса, [описанного здесь](/ru/guides/clickhouse/data-modelling/schema-design), дает следующую схему:
+
+```sql
+CREATE TABLE stackoverflow.posts
+(
+   `Id` Int32,
+   `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+   `AcceptedAnswerId` UInt32,
+   `CreationDate` DateTime,
+   `Score` Int32,
+   `ViewCount` UInt32,
+   `Body` String,
+   `OwnerUserId` Int32,
+   `OwnerDisplayName` String,
+   `LastEditorUserId` Int32,
+   `LastEditorDisplayName` String,
+   `LastEditDate` DateTime,
+   `LastActivityDate` DateTime,
+   `Title` String,
+   `Tags` String,
+   `AnswerCount` UInt16,
+   `CommentCount` UInt8,
+   `FavoriteCount` UInt8,
+   `ContentLicense`LowCardinality(String),
+   `ParentId` String,
+   `CommunityOwnedDate` DateTime,
+   `ClosedDate` DateTime
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+COMMENT 'Optimized types'
+```
+
+Эту таблицу можно заполнить с помощью простого [`INSERT INTO SELECT`](/ru/reference/statements/insert-into), считав экспортированные данные из gcs с помощью [табличной функции `gcs`](/ru/reference/functions/table-functions/gcs). Обратите внимание: в ClickHouse Cloud вы также можете использовать совместимую с gcs [табличную функцию `s3Cluster`](/ru/reference/functions/table-functions/s3Cluster), чтобы распараллелить загрузку на нескольких узлах:
+
+```sql
+INSERT INTO stackoverflow.posts SELECT * FROM gcs( 'gs://clickhouse-public-datasets/stackoverflow/parquet/posts/*.parquet', NOSIGN);
+```
+
+Мы не храним значения NULL в нашей новой схеме. Приведённая выше вставка неявно преобразует их в значения по умолчанию для соответствующих типов — 0 для целых чисел и пустое значение для строк. ClickHouse также автоматически приводит любые числовые значения к нужной точности.
+
+<div id="how-are-clickhouse-primary-keys-different">
+  ## Чем первичные ключи в ClickHouse отличаются?
+</div>
+
+Как описано [здесь](/ru/get-started/migrate/bigquery/index), ClickHouse, как и BigQuery, не обеспечивает уникальность значений в столбцах первичного ключа таблицы.
+
+Как и при кластеризации в BigQuery, данные таблицы ClickHouse хранятся на диске в порядке, заданном столбцами первичного ключа. Этот порядок сортировки используется оптимизатором запросов, чтобы избежать повторной сортировки, сократить использование памяти для JOIN и обеспечить раннее завершение при LIMIT.
+В отличие от BigQuery, ClickHouse автоматически создает [разреженный первичный индекс](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes) на основе значений столбцов первичного ключа. Этот индекс используется для ускорения всех запросов, содержащих фильтры по столбцам первичного ключа. В частности:
+
+* Эффективное использование памяти и диска критически важно для тех масштабов, на которых часто применяется ClickHouse. Данные записываются в таблицы ClickHouse фрагментами, называемыми частями, а затем к этим частям в фоновом режиме применяются правила слияния. В ClickHouse у каждой части есть собственный первичный индекс. Когда части сливаются, первичные индексы также объединяются в индекс слитой части. При этом эти индексы строятся не для каждой строки. Вместо этого первичный индекс части содержит одну запись индекса на группу строк — этот подход называется разреженной индексацией.
+* Разреженная индексация возможна потому, что ClickHouse хранит строки каждой части на диске в порядке, заданном указанным ключом. Вместо прямого поиска отдельных строк (как в индексе на основе B-Tree) разреженный первичный индекс позволяет быстро — с помощью двоичного поиска по записям индекса — определить группы строк, которые потенциально могут соответствовать запросу. Затем найденные группы потенциально подходящих строк параллельно передаются в движок ClickHouse для поиска совпадений. Такая структура индекса позволяет сделать первичный индекс компактным (он полностью помещается в оперативную память) и при этом существенно ускорить выполнение запросов, особенно диапазонных запросов, типичных для аналитики данных. Подробнее см. [в этом подробном руководстве](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes).
+
+<Image img="/images/migrations/bigquery-5.webp" size="md" alt="Первичные ключи ClickHouse" />
+
+Выбранный первичный ключ в ClickHouse определяет не только индекс, но и порядок, в котором данные записываются на диск. Поэтому он может существенно влиять на степень сжатия, что, в свою очередь, сказывается на производительности запросов. Ключ сортировки, при котором значения большинства столбцов записываются последовательно, позволит выбранному алгоритму сжатия (и кодекам) эффективнее сжимать данные.
+
+> Все столбцы в таблице будут отсортированы по значению указанного ключа сортировки, независимо от того, входят ли они в сам ключ. Например, если в качестве ключа используется `CreationDate`, порядок значений во всех остальных столбцах будет соответствовать порядку значений в столбце `CreationDate`. Можно указать несколько ключей сортировки — в этом случае порядок будет задаваться с той же семантикой, что и в секции `ORDER BY` запроса `SELECT`.
+
+<div id="choosing-an-ordering-key">
+  ### Выбор ключа сортировки
+</div>
+
+О том, что следует учитывать при выборе ключа сортировки, и о шагах этого процесса на примере таблицы posts см. [здесь](/ru/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key).
+
+<div id="data-modeling-techniques">
+  ## Методы моделирования данных
+</div>
+
+Пользователям, переходящим с BigQuery, мы рекомендуем ознакомиться с [руководством по моделированию данных в ClickHouse](/ru/guides/clickhouse/data-modelling/schema-design). В этом руководстве используется тот же датасет Stack Overflow и рассматриваются несколько подходов с применением возможностей ClickHouse.
+
+<div id="partitions">
+  ### Партиции
+</div>
+
+Если вы работали с BigQuery, то уже знакомы с концепцией партиционирования таблиц: для повышения производительности и упрощения управления большими базами данных таблицы делятся на меньшие, более удобные части, называемые партициями. Такое партиционирование можно реализовать либо с помощью диапазона по указанному столбцу (например, по датам), либо с помощью заданных списков, либо через hash по ключу. Это позволяет администраторам организовывать данные по определенным критериям, таким как диапазоны дат или географическое расположение.
+
+Партиционирование помогает повысить производительность запросов, обеспечивая более быстрый доступ к данным за счет отсечения партиций и более эффективного индексирования. Оно также упрощает задачи обслуживания, такие как резервное копирование и очистка данных, позволяя выполнять операции над отдельными партициями, а не над всей таблицей. Кроме того, партиционирование может значительно повысить масштабируемость баз данных BigQuery за счет распределения нагрузки между несколькими партициями.
+
+В ClickHouse партиционирование задается для таблицы при ее первоначальном создании с помощью предложения [`PARTITION BY`](/ru/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Это предложение может содержать SQL-выражение по одному или нескольким столбцам, результат которого определяет, в какую партицию будет направлена строка.
+
+<Image img="/images/migrations/bigquery-6.webp" size="md" alt="Партиции" />
+
+Части данных на диске логически связаны с каждой партицией и могут запрашиваться по отдельности. В приведенном ниже примере мы партиционируем таблицу posts по году с помощью выражения [`toYear(CreationDate)`](/ru/reference/functions/regular-functions/date-time-functions#toYear). По мере вставки строк в ClickHouse это выражение будет вычисляться для каждой строки, после чего строки будут направляться в соответствующую партицию в виде новых частей данных, принадлежащих этой партиции.
+
+```sql
+CREATE TABLE posts
+(
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime64(3, 'UTC'),
+...
+        `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate)
+PARTITION BY toYear(CreationDate)
+```
+
+<div id="applications">
+  #### Применение
+</div>
+
+Партиционирование в ClickHouse применяется схожим образом с BigQuery, но с некоторыми небольшими отличиями. В частности:
+
+* **Управление данными** - В ClickHouse партиционирование следует прежде всего рассматривать как средство управления данными, а не как метод оптимизации запросов. Благодаря логическому разделению данных по ключу с каждой партицией можно работать независимо, например удалять её. Это позволяет эффективно перемещать партиции, а значит и подмножества данных, между [уровнями хранения](/ru/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#storage-tiers) по времени или [удалять устаревшие данные/эффективно удалять из кластера](/ru/reference/statements/alter/partition). В примере ниже мы удаляем посты за 2008 год:
+
+```sql
+SELECT DISTINCT partition
+FROM system.parts
+WHERE `table` = 'posts'
+```
+
+```response
+┌─partition─┐
+│ 2008      │
+│ 2009      │
+│ 2010      │
+│ 2011      │
+│ 2012      │
+│ 2013      │
+│ 2014      │
+│ 2015      │
+│ 2016      │
+│ 2017      │
+│ 2018      │
+│ 2019      │
+│ 2020      │
+│ 2021      │
+│ 2022      │
+│ 2023      │
+│ 2024      │
+└───────────┘
+
+17 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+ALTER TABLE posts
+(DROP PARTITION '2008')
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.103 sec.
+```
+
+* **Оптимизация запросов** - Хотя партиции могут помочь повысить производительность запросов, это сильно зависит от шаблонов доступа. Если запросы затрагивают лишь несколько партиций (в идеале одну), производительность может улучшиться. Обычно это имеет смысл только в том случае, если ключ партиционирования не входит в первичный ключ, а фильтрация выполняется по нему. Однако запросы, которым нужно охватить много партиций, могут работать хуже, чем без партиционирования (поскольку из-за партиционирования может образовываться больше частей). Преимущество от обращения к одной партиции будет ещё менее заметным, вплоть до полного отсутствия, если ключ партиционирования уже входит в число первых полей первичного ключа. Партиционирование также можно использовать, чтобы [оптимизировать запросы `GROUP BY`](/ru/reference/engines/table-engines/mergetree-family/custom-partitioning-key#group-by-optimisation-using-partition-key), если значения в каждой партиции уникальны. Однако в целом следует убедиться, что первичный ключ оптимизирован, и рассматривать партиционирование как способ оптимизации запросов только в исключительных случаях, когда шаблоны доступа предполагают обращение к определённому предсказуемому подмножеству данных за день, например при партиционировании по дням, когда большинство запросов выполняется по данным за последний день.
+
+<div id="recommendations">
+  #### Рекомендации
+</div>
+
+Партиционирование следует рассматривать как метод управления данными. Оно особенно полезно, когда при работе с временными рядами данные нужно удалять из кластера — например, самую старую партицию можно [просто удалить](/ru/reference/statements/alter/partition#drop-partitionpart).
+
+Важно: убедитесь, что выражение ключа партиционирования не приводит к множеству высокой мощности, то есть создания более 100 партиций следует избегать. Например, не разбивайте данные на партиции по столбцам с высокой мощностью, таким как идентификаторы клиентов или имена. Вместо этого сделайте идентификатор клиента или имя первым столбцом в выражении `ORDER BY`.
+
+> В ClickHouse [создаются части](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design) для вставляемых данных. По мере вставки новых данных количество частей растет. Чтобы не допустить чрезмерного увеличения числа частей, которое ухудшает производительность запросов (поскольку приходится читать больше файлов), части объединяются в фоновом асинхронном процессе. Если число частей превышает [заранее заданный предел](/ru/reference/settings/merge-tree-settings#parts_to_throw_insert), ClickHouse сгенерирует исключение при вставке в виде [ошибки &quot;too many parts&quot;](/ru/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts). В нормальном режиме работы этого происходить не должно; такое случается только при неправильной конфигурации ClickHouse или некорректном использовании, например при большом количестве мелких вставок. Поскольку части создаются изолированно для каждой партиции, увеличение числа партиций приводит и к увеличению числа частей, то есть число частей становится кратным числу партиций. Поэтому ключи партиционирования с высокой мощностью могут вызывать эту ошибку, и их следует избегать.
+
+<div id="materialized-views-vs-projections">
+  ## Materialized views и проекции
+</div>
+
+Концепция проекций в ClickHouse позволяет задавать для таблицы несколько секций `ORDER BY`.
+
+В разделе [моделирование данных в ClickHouse](/ru/guides/clickhouse/data-modelling/schema-design) мы рассматриваем, как materialized view можно использовать
+в ClickHouse для предварительного вычисления агрегаций, преобразования строк и оптимизации запросов
+для разных сценариев доступа к данным. В последнем случае мы [привели пример](/ru/concepts/features/materialized-views/incremental-materialized-view#lookup-table), где
+materialized view отправляет строки в целевую таблицу с другим ключом сортировки,
+чем у исходной таблицы, принимающей вставки.
+
+Например, рассмотрим следующий запрос:
+
+```sql highlight={8}
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+
+   ┌──────────avg(Score)─┐
+   │ 0.18181818181818182 │
+   └─────────────────────┘
+1 row in set. Elapsed: 0.040 sec. Processed 90.38 million rows, 361.59 MB (2.25 billion rows/s., 9.01 GB/s.)
+Peak memory usage: 201.93 MiB.
+```
+
+Для выполнения этого запроса требуется просканировать все 90 млн строк
+(хотя и быстро), поскольку `UserId` не является ключом сортировки. Ранее
+мы решали эту задачу с помощью materialized view, используемого для поиска по `PostId`. Ту же проблему можно решить с помощью проекции.
+Приведённая ниже команда добавляет проекцию с `ORDER BY user_id`.
+
+```sql
+ALTER TABLE comments ADD PROJECTION comments_user_id (
+SELECT * ORDER BY UserId
+)
+
+ALTER TABLE comments MATERIALIZE PROJECTION comments_user_id
+```
+
+Обратите внимание: сначала нужно создать проекцию, а затем материализовать её.
+Эта команда приводит к тому, что данные сохраняются на диске дважды — в двух разных
+порядках. Проекцию также можно определить при создании таблицы, как показано ниже,
+и тогда она будет автоматически поддерживаться при вставке данных.
+
+```sql highlight={10-14}
+CREATE TABLE comments
+(
+    `Id` UInt32,
+    `PostId` UInt32,
+    `Score` UInt16,
+    `Text` String,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `UserId` Int32,
+    `UserDisplayName` LowCardinality(String),
+    PROJECTION comments_user_id
+    (
+    SELECT *
+    ORDER BY UserId
+    )
+)
+ENGINE = MergeTree
+ORDER BY PostId
+```
+
+Если проекция создаётся с помощью команды `ALTER`, то после выполнения команды
+`MATERIALIZE PROJECTION` её создание происходит асинхронно. Вы можете проверить ход
+этой операции с помощью следующего запроса, дождавшись `is_done=1`.
+
+```sql
+SELECT
+    parts_to_do,
+    is_done,
+    latest_fail_reason
+FROM system.mutations
+WHERE (`table` = 'comments') AND (command LIKE '%MATERIALIZE%')
+```
+
+```response
+   ┌─parts_to_do─┬─is_done─┬─latest_fail_reason─┐
+1. │           1 │       0 │                    │
+   └─────────────┴─────────┴────────────────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+Если мы повторим приведённый выше запрос, то увидим, что производительность значительно улучшилась
+за счёт дополнительного пространства для хранения.
+
+```sql highlight={8}
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+
+   ┌──────────avg(Score)─┐
+1. │ 0.18181818181818182 │
+   └─────────────────────┘
+1 row in set. Elapsed: 0.008 sec. Processed 16.36 thousand rows, 98.17 KB (2.15 million rows/s., 12.92 MB/s.)
+Peak memory usage: 4.06 MiB.
+```
+
+С помощью команды [`EXPLAIN`](/ru/reference/statements/explain) мы также можем подтвердить, что для выполнения этого запроса использовалась проекция:
+
+```sql
+EXPLAIN indexes = 1
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+```
+
+```response
+    ┌─explain─────────────────────────────────────────────┐
+ 1. │ Expression ((Projection + Before ORDER BY))         │
+ 2. │   Aggregating                                       │
+ 3. │   Filter                                            │
+ 4. │           ReadFromMergeTree (comments_user_id)      │
+ 5. │           Indexes:                                  │
+ 6. │           PrimaryKey                                │
+ 7. │           Keys:                                     │
+ 8. │           UserId                                    │
+ 9. │           Condition: (UserId in [8592047, 8592047]) │
+10. │           Parts: 2/2                                │
+11. │           Granules: 2/11360                         │
+    └─────────────────────────────────────────────────────┘
+
+11 rows in set. Elapsed: 0.004 sec.
+```
+
+<div id="when-to-use-projections">
+  ### Когда использовать проекции
+</div>
+
+Проекции — привлекательная возможность для новых пользователей, поскольку они автоматически
+поддерживаются по мере вставки данных. Кроме того, запросы можно отправлять к одной
+таблице, а проекции будут по возможности использоваться для ускорения
+времени отклика.
+
+<Image img="/images/migrations/bigquery-7.webp" size="md" alt="Проекции" />
+
+Это отличается от materialized view, где пользователю нужно выбирать
+подходящую оптимизированную целевую таблицу или переписывать запрос в зависимости от фильтров.
+Это сильнее нагружает пользовательские приложения и повышает
+сложность на стороне клиента.
+
+Несмотря на эти преимущества, у проекций есть ряд ограничений, о которых
+вам следует знать, поэтому использовать их стоит умеренно. Подробнее
+см. в разделе [&quot;materialized views versus projections&quot;](/ru/concepts/features/projections/materialized-views-versus-projections)
+
+Мы рекомендуем использовать проекции, когда:
+
+* Требуется полное переупорядочивание данных. Хотя выражение в проекции теоретически может использовать `GROUP BY,` materialized view лучше подходят для поддержки агрегатов. Оптимизатор запросов также с большей вероятностью будет использовать проекции, в которых применяется простое переупорядочивание, то есть `SELECT * ORDER BY x`. В этом выражении можно выбрать подмножество столбцов, чтобы уменьшить объем хранимых данных.
+* Пользователей устраивает связанное с этим увеличение объема хранилища и дополнительные накладные расходы из-за двукратной записи данных. Проверьте влияние на скорость вставки и [оцените дополнительные затраты на хранение](/ru/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
+
+<div id="rewriting-bigquery-queries-in-clickhouse">
+  ## Как переписать запросы BigQuery в ClickHouse
+</div>
+
+Ниже приведены примеры запросов для сравнения BigQuery и ClickHouse. Этот список показывает, как возможности ClickHouse позволяют значительно упростить запросы. В приведенных здесь примерах используется полный набор данных Stack Overflow по состоянию на апрель 2024 года.
+
+**Users (с более чем 10 вопросами) с наибольшим числом просмотров:**
+
+*BigQuery*
+
+<Image img="/images/migrations/bigquery-8.webp" size="sm" alt="Как переписать запросы BigQuery" border />
+
+*ClickHouse*
+
+```sql
+SELECT
+    OwnerDisplayName,
+    sum(ViewCount) AS total_views
+FROM stackoverflow.posts
+WHERE (PostTypeId = 'Question') AND (OwnerDisplayName != '')
+GROUP BY OwnerDisplayName
+HAVING count() > 10
+ORDER BY total_views DESC
+LIMIT 5
+```
+
+```response
+   ┌─OwnerDisplayName─┬─total_views─┐
+1. │ Joan Venge       │    25520387 │
+2. │ Ray Vega         │    21576470 │
+3. │ anon             │    19814224 │
+4. │ Tim              │    19028260 │
+5. │ John             │    17638812 │
+   └──────────────────┴─────────────┘
+
+5 rows in set. Elapsed: 0.076 sec. Processed 24.35 million rows, 140.21 MB (320.82 million rows/s., 1.85 GB/s.)
+Peak memory usage: 323.37 MiB.
+```
+
+**У каких тегов больше всего просмотров:**
+
+*BigQuery*
+
+<br />
+
+<Image img="/images/migrations/bigquery-9.webp" size="sm" alt="BigQuery 1" border />
+
+*ClickHouse*
+
+```sql
+-- ClickHouse
+SELECT
+    arrayJoin(arrayFilter(t -> (t != ''), splitByChar('|', Tags))) AS tags,
+    sum(ViewCount) AS views
+FROM stackoverflow.posts
+GROUP BY tags
+ORDER BY views DESC
+LIMIT 5
+```
+
+```response
+   ┌─tags───────┬──────views─┐
+1. │ javascript │ 8190916894 │
+2. │ python     │ 8175132834 │
+3. │ java       │ 7258379211 │
+4. │ c#         │ 5476932513 │
+5. │ android    │ 4258320338 │
+   └────────────┴────────────┘
+
+5 rows in set. Elapsed: 0.318 sec. Processed 59.82 million rows, 1.45 GB (188.01 million rows/s., 4.54 GB/s.)
+Peak memory usage: 567.41 MiB.
+```
+
+<div id="aggregate-functions">
+  ## Агрегатные функции
+</div>
+
+По возможности используйте агрегатные функции ClickHouse. Ниже показано, как с помощью [`функции argMax`](/ru/reference/functions/aggregate-functions/argMax) определить самый просматриваемый вопрос для каждого года.
+
+*BigQuery*
+
+<Image img="/images/migrations/bigquery-10.webp" border size="sm" alt="Агрегатные функции 1" />
+
+<Image img="/images/migrations/bigquery-11.webp" border size="sm" alt="Агрегатные функции 2" />
+
+*ClickHouse*
+
+```sql
+-- ClickHouse
+SELECT
+    toYear(CreationDate) AS Year,
+    argMax(Title, ViewCount) AS MostViewedQuestionTitle,
+    max(ViewCount) AS MaxViewCount
+FROM stackoverflow.posts
+WHERE PostTypeId = 'Question'
+GROUP BY Year
+ORDER BY Year ASC
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Year:                    2008
+MostViewedQuestionTitle: How to find the index for a given item in a list?
+MaxViewCount:            6316987
+
+Row 2:
+──────
+Year:                    2009
+MostViewedQuestionTitle: How do I undo the most recent local commits in Git?
+MaxViewCount:            13962748
+
+...
+
+Row 16:
+───────
+Year:                    2023
+MostViewedQuestionTitle: How do I solve "error: externally-managed-environment" every time I use pip 3?
+MaxViewCount:            506822
+
+Row 17:
+───────
+Year:                    2024
+MostViewedQuestionTitle: Warning "Third-party cookie will be blocked. Learn more in the Issues tab"
+MaxViewCount:            66975
+
+17 rows in set. Elapsed: 0.225 sec. Processed 24.35 million rows, 1.86 GB (107.99 million rows/s., 8.26 GB/s.)
+Пиковое потребление памяти: 377.26 MiB.
+```
+
+<div id="conditionals-and-arrays">
+  ## Условные выражения и массивы
+</div>
+
+Условные функции и функции для работы с массивами значительно упрощают запросы. Следующий запрос вычисляет теги (с количеством вхождений более 10000) с наибольшим процентным ростом с 2022 по 2023 год. Обратите внимание, насколько лаконичен следующий запрос к ClickHouse благодаря условным выражениям, функциям для работы с массивами и возможности повторно использовать псевдонимы в секциях `HAVING` и `SELECT`.
+
+*BigQuery*
+
+<Image img="/images/migrations/bigquery-12.webp" size="sm" border alt="Условные выражения и массивы" />
+
+*ClickHouse*
+
+```sql
+SELECT
+    arrayJoin(arrayFilter(t -> (t != ''), splitByChar('|', Tags))) AS tag,
+    countIf(toYear(CreationDate) = 2023) AS count_2023,
+    countIf(toYear(CreationDate) = 2022) AS count_2022,
+    ((count_2023 - count_2022) / count_2022) * 100 AS percent_change
+FROM stackoverflow.posts
+WHERE toYear(CreationDate) IN (2022, 2023)
+GROUP BY tag
+HAVING (count_2022 > 10000) AND (count_2023 > 10000)
+ORDER BY percent_change DESC
+LIMIT 5
+```
+
+```response
+┌─tag─────────┬─count_2023─┬─count_2022─┬──────percent_change─┐
+│ next.js     │      13788 │      10520 │   31.06463878326996 │
+│ spring-boot │      16573 │      17721 │  -6.478189718413183 │
+│ .net        │      11458 │      12968 │ -11.644046884639112 │
+│ azure       │      11996 │      14049 │ -14.613139725247349 │
+│ docker      │      13885 │      16877 │  -17.72826924216389 │
+└─────────────┴────────────┴────────────┴─────────────────────┘
+
+5 rows in set. Elapsed: 0.096 sec. Processed 5.08 million rows, 155.73 MB (53.10 million rows/s., 1.63 GB/s.)
+Peak memory usage: 410.37 MiB.
+```
+
+На этом наше базовое руководство для тех, кто переходит с BigQuery на ClickHouse, завершено. Мы рекомендуем ознакомиться с руководством по [моделированию данных в ClickHouse](/ru/guides/clickhouse/data-modelling/schema-design), чтобы узнать больше о расширенных возможностях ClickHouse.

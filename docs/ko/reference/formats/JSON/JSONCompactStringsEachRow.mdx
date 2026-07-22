@@ -1,0 +1,94 @@
+---
+alias: []
+description: 'JSONCompactStringsEachRow 포맷 문서'
+input_format: true
+keywords: ['JSONCompactStringsEachRow']
+output_format: true
+slug: /interfaces/formats/JSONCompactStringsEachRow
+title: 'JSONCompactStringsEachRow'
+doc_type: 'reference'
+---
+
+| 입력 | 출력 | 별칭 |
+| -- | -- | -- |
+| ✔  | ✔  |    |
+
+<div id="description">
+  ## 설명
+</div>
+
+[`JSONCompactEachRow`](/ko/reference/formats/JSON/JSONCompactEachRow)와의 유일한 차이점은 데이터 필드가 타입이 지정된 JSON 값이 아니라 문자열로 출력된다는 점입니다.
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+<div id="inserting-data">
+  ### 데이터 삽입
+</div>
+
+다음 데이터가 포함된 `football.json` JSON 파일을 사용합니다:
+
+```json
+["2022-04-30", "2021", "Sutton United", "Bradford City", "1", "4"]
+["2022-04-30", "2021", "Swindon Town", "Barrow", "2", "1"]
+["2022-04-30", "2021", "Tranmere Rovers", "Oldham Athletic", "2", "0"]
+["2022-05-02", "2021", "Port Vale", "Newport County", "1", "2"]
+["2022-05-02", "2021", "Salford City", "Mansfield Town", "2", "2"]
+["2022-05-07", "2021", "Barrow", "Northampton Town", "1", "3"]
+["2022-05-07", "2021", "Bradford City", "Carlisle United", "2", "0"]
+["2022-05-07", "2021", "Bristol Rovers", "Scunthorpe United", "7", "0"]
+["2022-05-07", "2021", "Exeter City", "Port Vale", "0", "1"]
+["2022-05-07", "2021", "Harrogate Town A.F.C.", "Sutton United", "0", "2"]
+["2022-05-07", "2021", "Hartlepool United", "Colchester United", "0", "2"]
+["2022-05-07", "2021", "Leyton Orient", "Tranmere Rovers", "0", "1"]
+["2022-05-07", "2021", "Mansfield Town", "Forest Green Rovers", "2", "2"]
+["2022-05-07", "2021", "Newport County", "Rochdale", "0", "2"]
+["2022-05-07", "2021", "Oldham Athletic", "Crawley Town", "3", "3"]
+["2022-05-07", "2021", "Stevenage Borough", "Salford City", "4", "2"]
+["2022-05-07", "2021", "Walsall", "Swindon Town", "0", "3"]
+```
+
+데이터를 삽입하세요:
+
+```sql
+INSERT INTO football FROM INFILE 'football.json' FORMAT JSONCompactStringsEachRow;
+```
+
+<div id="reading-data">
+  ### 데이터 읽기
+</div>
+
+`JSONCompactStringsEachRow` 포맷으로 데이터를 읽습니다:
+
+```sql
+SELECT *
+FROM football
+FORMAT JSONCompactStringsEachRow
+```
+
+출력은 JSON 포맷입니다:
+
+```json
+["2022-04-30", "2021", "Sutton United", "Bradford City", "1", "4"]
+["2022-04-30", "2021", "Swindon Town", "Barrow", "2", "1"]
+["2022-04-30", "2021", "Tranmere Rovers", "Oldham Athletic", "2", "0"]
+["2022-05-02", "2021", "Port Vale", "Newport County", "1", "2"]
+["2022-05-02", "2021", "Salford City", "Mansfield Town", "2", "2"]
+["2022-05-07", "2021", "Barrow", "Northampton Town", "1", "3"]
+["2022-05-07", "2021", "Bradford City", "Carlisle United", "2", "0"]
+["2022-05-07", "2021", "Bristol Rovers", "Scunthorpe United", "7", "0"]
+["2022-05-07", "2021", "Exeter City", "Port Vale", "0", "1"]
+["2022-05-07", "2021", "Harrogate Town A.F.C.", "Sutton United", "0", "2"]
+["2022-05-07", "2021", "Hartlepool United", "Colchester United", "0", "2"]
+["2022-05-07", "2021", "Leyton Orient", "Tranmere Rovers", "0", "1"]
+["2022-05-07", "2021", "Mansfield Town", "Forest Green Rovers", "2", "2"]
+["2022-05-07", "2021", "Newport County", "Rochdale", "0", "2"]
+["2022-05-07", "2021", "Oldham Athletic", "Crawley Town", "3", "3"]
+["2022-05-07", "2021", "Stevenage Borough", "Salford City", "4", "2"]
+["2022-05-07", "2021", "Walsall", "Swindon Town", "0", "3"]
+```
+
+<div id="format-settings">
+  ## 포맷 설정
+</div>

@@ -1,0 +1,608 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/vector
+description: 'Vector를 사용한 ClickStack 데이터 수집 - ClickHouse Observability Stack'
+title: 'Vector를 사용한 수집'
+toc_max_heading_level: 2
+doc_type: 'guide'
+keywords: ['clickstack', 'vector', '트레이스', '관측성', '텔레메트리']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+import InstallingVector from '/snippets/ko/_installing_vector.mdx';
+import VectorSampleData from '/snippets/ko/_vector_sample_data.mdx';
+
+[Vector](https://vector.dev)는 고성능의 벤더 중립적인 관측성 데이터 파이프라인입니다. 다양한 소스의 로그와 메트릭을 수집, 변환, 라우팅하는 데 널리 사용되며, 특히 유연성과 낮은 리소스 사용량 덕분에 로그 수집에 많이 활용됩니다.
+
+ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를 정의해야 합니다. 이러한 스키마는 OpenTelemetry 규약을 따를 수도 있지만, 사용자 정의 이벤트 구조를 나타내는 완전히 맞춤형 형태일 수도 있습니다. 실제로 Vector 수집은 가장 일반적으로 **로그**에 사용되며, 이때 사용자는 데이터가 ClickHouse에 기록되기 전에 파싱과 보강을 완전히 제어하려고 합니다.
+
+이 가이드는 ClickStack Open Source와 Managed ClickStack 모두에서 Vector를 사용해 데이터를 ClickStack에 수집하는 방법에 중점을 둡니다. 간단히 설명하기 위해 Vector 소스나 파이프라인 구성은 자세히 다루지 않습니다. 대신 데이터를 ClickHouse에 기록하는 **싱크**를 구성하고, 그 결과 생성되는 스키마가 ClickStack과 호환되도록 하는 데 초점을 맞춥니다.
+
+오픈 소스 배포와 관리형 배포 중 어떤 ClickStack를 사용하든, ClickStack의 유일한 엄격한 요구 사항은 데이터에 **타임스탬프 컬럼**(또는 이에 해당하는 시간 필드)이 포함되어 있어야 한다는 점입니다. 이 값은 ClickStack UI에서 데이터 소스를 구성할 때 지정할 수 있습니다.
+
+<div id="sending-data-with-vector">
+  ## Vector를 사용해 데이터 전송하기
+</div>
+
+<br />
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    이 가이드는 Managed ClickStack 서비스를 이미 생성하고 서비스 자격 증명을 기록해 두었다고 가정합니다. 아직 완료하지 않으셨다면, Vector 구성 단계가 나타날 때까지 Managed ClickStack의 [시작하기](/ko/clickstack/getting-started/managed) 가이드를 따라 진행하십시오.
+
+    <Steps>
+      <Step>
+        ### 데이터베이스 및 테이블 생성
+
+        Vector에서 데이터를 수집하기 전에 테이블(table)과 스키마(schema)가 미리 정의되어 있어야 합니다.
+
+        먼저 데이터베이스(database)를 생성합니다. 이 작업은 [ClickHouse Cloud 콘솔](/ko/products/cloud/features/sql-console-features/sql-console)에서 수행할 수 있습니다.
+
+        아래 예시에서는 `logs`를 사용합니다:
+
+        ```sql
+        CREATE DATABASE IF NOT EXISTS logs
+        ```
+
+        데이터를 위한 테이블을 생성합니다. 이는 데이터의 출력 스키마와 일치해야 합니다. 아래 예시는 일반적인 Nginx 구조를 가정합니다. 데이터에 맞게 조정하되, [스키마 모범 사례](/ko/concepts/best-practices/select-data-type)를 따르십시오. 또한 [프라이머리 키(Primary key) 개념](/ko/concepts/core-concepts/primary-indexes)을 충분히 숙지하고, [여기](/ko/clickstack/managing/performance-tuning#choosing-a-primary-key)에 설명된 지침에 따라 프라이머리 키를 선택할 것을 **강력히 권장**합니다.
+
+        ```sql
+        CREATE TABLE logs.nginx_logs
+        (
+            `time_local` DateTime,
+            `remote_addr` IPv4,
+            `remote_user` LowCardinality(String),
+            `request` String,
+            `status` UInt16,
+            `body_bytes_sent` UInt64,
+            `http_referer` String,
+            `http_user_agent` String,
+            `http_x_forwarded_for` LowCardinality(String),
+            `request_time` Float32,
+            `upstream_response_time` Float32,
+            `http_host` String
+        )
+        ENGINE = MergeTree
+        ORDER BY (toStartOfMinute(time_local), status, remote_addr)
+        ```
+
+        <Info>
+          **Nginx 기본 키(primary key)**
+
+          위의 기본 키(primary key)는 ClickStack UI에서 Nginx 로그에 대해 일반적인 액세스 패턴을 기준으로 한 것이지만, 프로덕션 환경에서는 워크로드에 따라 조정해야 할 수 있습니다.
+        </Info>
+      </Step>
+
+      <Step>
+        ### Vector 구성에 ClickHouse 싱크 추가
+
+        기존 파이프라인에서 이벤트를 수신할 수 있도록 `inputs` 필드를 업데이트하여 Vector 구성에 ClickHouse 싱크를 추가하십시오.
+
+        이 구성은 상위 Vector 파이프라인이 이미 **대상 ClickHouse 스키마(schema)에 맞게 데이터를 준비해 두었다**고 가정합니다. 즉, 필드가 파싱되고, 이름이 올바르게 지정되며, 삽입에 적합한 유형으로 지정되어 있어야 합니다. 원시 로그 라인을 ClickStack에 적합한 스키마로 파싱하고 정규화하는 전체 과정은 아래의 [**Nginx 예시**](#example-dataset-with-vector)를 참조하십시오.
+
+        ```yaml
+        sinks:
+          clickhouse:
+            type: clickhouse
+            inputs:
+              - your_input
+            endpoint: "<CLICKHOUSE_ENDPOINT>"
+            database: logs
+            format: json_each_row
+            table: nginx_logs
+            skip_unknown_fields: true
+            auth:
+              strategy: "basic"
+              user: "default"
+              password: "<CLICKHOUSE_PASSWORD>"
+        ```
+
+        기본적으로는 각 이벤트를 행당 하나의 JSON 객체로 인코딩하는 **`json_each_row`** 포맷 사용을 권장합니다. 이 포맷은 JSON 데이터를 수집할 때 ClickStack에서 기본값이자 권장 포맷이며, 문자열로 인코딩한 JSON 객체 같은 대체 포맷보다 우선해서 사용하는 것이 좋습니다.
+
+        ClickHouse 싱크는 **Arrow 스트림 인코딩**도 지원합니다(현재 베타). 이 방식은 더 높은 처리량을 제공할 수 있지만, 중요한 제약이 있습니다. 스키마는 시작 시 한 번만 가져오므로 데이터베이스와 테이블은 고정되어 있어야 하며, 동적 라우팅은 지원되지 않습니다. 따라서 Arrow 스트림 인코딩은 고정되고 명확하게 정의된 수집 파이프라인에 가장 적합합니다.
+
+        사용 가능한 싱크 구성 옵션은 [Vector 문서](https://vector.dev/docs/reference/configuration/sinks/clickhouse)에서 검토하는 것을 권장합니다:
+
+        <Note>
+          위 예시에서는 Managed ClickStack의 기본 사용자를 사용합니다. 프로덕션 배포에서는 적절한 권한과 제한이 적용된 [전용 수집 사용자](/ko/clickstack/ingesting-data/collector#creating-an-ingestion-user)를 생성하는 것을 권장합니다.
+        </Note>
+      </Step>
+
+      <Step>
+        ### ClickStack UI로 이동
+
+        Managed ClickStack 서비스로 이동한 다음 왼쪽 메뉴에서 &quot;ClickStack&quot;을 선택합니다. 이미 온보딩을 완료했다면 새 탭에서 ClickStack UI가 열리고 자동으로 인증됩니다. 아직 완료하지 않았다면 온보딩을 진행하면서 입력 소스로 Vector를 선택한 후 “Launch ClickStack”을 선택합니다.
+
+        <Image img="/images/clickstack/launch-clickstack-vector.webp" alt="Vector용 ClickStack 실행" size="lg" />
+      </Step>
+
+      <Step>
+        ### 데이터 소스 생성
+
+        로그 데이터 소스를 생성하세요. 아직 데이터 소스가 없으면 처음 로그인할 때 데이터 소스를 만들라는 안내가 표시됩니다. 이미 있다면 Team Settings로 이동해 새 데이터 소스를 추가하세요.
+
+        <Image img="/images/clickstack/create-vector-datasource.webp" alt="데이터 소스 생성 - vector" size="lg" />
+
+        위 구성은 `time_local` 컬럼을 타임스탬프로 사용하는 Nginx 스타일 스키마를 가정합니다. 가능하면 이 컬럼은 프라이머리 키(primary key)에 선언된 타임스탬프 컬럼이어야 합니다. 이 컬럼은 필수입니다.
+
+        또한 로그 뷰에 어떤 컬럼을 반환할지 명확히 정의하도록 `Default SELECT`를 업데이트하는 것을 권장합니다. 서비스 이름, 로그 레벨, 본문 컬럼과 같은 추가 필드를 사용할 수 있다면 이 역시 구성할 수 있습니다. 타임스탬프 표시 컬럼이 테이블의 프라이머리 키에 사용된 컬럼이나 위에서 구성한 컬럼과 다르면 이 컬럼도 재정의할 수 있습니다.
+
+        위 예시에서는 데이터에 `Body` 컬럼이 없습니다. 대신 사용 가능한 필드를 바탕으로 Nginx 로그 한 줄을 재구성하는 SQL 표현식으로 이를 정의합니다.
+
+        다른 옵션은 [구성 참고](/ko/clickstack/managing/config)를 참조하십시오.
+      </Step>
+
+      <Step>
+        ### 데이터 탐색
+
+        로그 보기로 이동하여 데이터를 탐색하고 ClickStack 사용을 시작하세요.
+
+        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="CLickStack의 Nginx 로그" size="lg" />
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="오픈 소스 ClickStack">
+    <Steps>
+      <Step>
+        ### 데이터베이스와 테이블 생성
+
+        Vector를 사용해 데이터를 수집하려면 미리 테이블(table)과 스키마(schema)를 정의해야 합니다.
+
+        먼저 데이터베이스를 생성하십시오. [ClickHouse Web 사용자 인터페이스](/ko/concepts/features/interfaces/http#web-ui)에서 생성할 수 있습니다: [http://localhost:8123/play](http://localhost:8123/play). 기본 사용자 이름과 비밀번호 `api:api`를 사용하세요.
+
+        <Image img="/images/clickstack/play-ui-clickstack.webp" alt="Play UI ClickStack" size="lg" />
+
+        아래 예시에서는 `logs`를 사용합니다:
+
+        ```sql
+        CREATE DATABASE IF NOT EXISTS logs
+        ```
+
+        데이터용 테이블(table)을 생성합니다. 이는 데이터의 출력 스키마와 일치해야 합니다. 아래 예시는 일반적인 Nginx 구조를 가정합니다. 데이터에 맞게 조정하되, [스키마 모범 사례](/ko/concepts/best-practices/select-data-type)를 따르십시오. 또한 [프라이머리 키(Primary key)의 개념](/ko/concepts/core-concepts/primary-indexes)을 충분히 숙지할 것을 **강력히 권장**하며, [여기](/ko/clickstack/managing/performance-tuning#choosing-a-primary-key)에 설명된 지침에 따라 프라이머리 키를 선택하십시오.
+
+        ```sql
+        CREATE TABLE logs.nginx_logs
+        (
+            `time_local` DateTime,
+            `remote_addr` IPv4,
+            `remote_user` LowCardinality(String),
+            `request` String,
+            `status` UInt16,
+            `body_bytes_sent` UInt64,
+            `http_referer` String,
+            `http_user_agent` String,
+            `http_x_forwarded_for` LowCardinality(String),
+            `request_time` Float32,
+            `upstream_response_time` Float32,
+            `http_host` String
+        )
+        ENGINE = MergeTree
+        ORDER BY (toStartOfMinute(time_local), status, remote_addr)
+        ```
+
+        <Info>
+          **Nginx 기본 키(primary key)**
+
+          위 기본 키(primary key)는 ClickStack UI에서 Nginx 로그를 조회할 때의 일반적인 액세스 패턴을 기준으로 한 것이지만, 프로덕션 환경에서는 워크로드에 따라 조정이 필요할 수 있습니다.
+        </Info>
+      </Step>
+
+      <Step>
+        ### Vector 구성에 ClickHouse 싱크 추가
+
+        Vector에서 ClickStack으로 수집할 때는 collector가 노출하는 OTLP endpoint를 거치지 않고 ClickHouse로 직접 전송해야 합니다.
+
+        기존 파이프라인에서 이벤트를 받도록 `inputs` 필드를 업데이트해 ClickHouse 싱크를 포함하도록 Vector 구성을 수정하세요.
+
+        이 구성은 업스트림 Vector 파이프라인이 이미 **대상 ClickHouse 스키마에 맞게 데이터를 준비해 두었다**고 가정합니다. 즉, 필드가 파싱되어 있고, 이름이 올바르게 지정되어 있으며, 삽입에 적합한 유형으로 맞춰져 있습니다. 원시 로그 줄을 ClickStack에 적합한 스키마로 파싱하고 정규화하는 전체 예시는 아래 [**Nginx 예시**](#example-dataset-with-vector)를 참조하십시오.
+
+        ```yaml
+        sinks:
+          clickhouse:
+            type: clickhouse
+            inputs:
+              - your_input
+            endpoint: "http://localhost:8123"
+            database: logs
+            format: json_each_row
+            table: nginx_logs
+            skip_unknown_fields: true
+            auth:
+              strategy: "basic"
+              user: "api"
+              password: "api"
+        ```
+
+        기본적으로는 각 이벤트를 행마다 단일 JSON 객체로 인코딩하는 **`json_each_row`** 포맷 사용을 권장합니다. 이는 JSON 데이터를 수집할 때 ClickStack에서 기본으로 권장하는 포맷이며, 문자열로 인코딩된 JSON 객체 같은 대체 포맷보다 우선적으로 사용하는 것이 좋습니다.
+
+        ClickHouse 싱크는 **Arrow stream encoding**도 지원합니다(현재 베타). 이 방식은 더 높은 처리량을 제공할 수 있지만 중요한 제약이 있습니다. 시작 시 스키마를 한 번만 가져오므로 데이터베이스와 테이블은 고정되어 있어야 하며, 동적 라우팅은 지원되지 않습니다. 따라서 Arrow 인코딩은 고정적이고 명확히 정의된 수집 파이프라인에 가장 적합합니다.
+
+        사용 가능한 싱크 구성 옵션은 [Vector 문서](https://vector.dev/docs/reference/configuration/sinks/clickhouse)에서 확인하는 것이 좋습니다.
+
+        <Note>
+          위 예시에서는 ClickStack Open Source용 `api` 사용자를 사용합니다. 프로덕션 배포에서는 적절한 권한과 제한을 갖춘 [전용 수집 사용자](/ko/clickstack/ingesting-data/collector#creating-an-ingestion-user)를 생성하는 것이 좋습니다. 또한 위 구성은 Vector가 ClickStack과 동일한 호스트에서 실행된다고 가정합니다. 프로덕션 배포에서는 이와 다를 가능성이 높습니다. 보안이 적용된 HTTPS 포트 8443을 통해 데이터를 전송하는 것을 권장합니다.
+        </Note>
+      </Step>
+
+      <Step>
+        ### ClickStack UI로 이동
+
+        [http://localhost:8080](http://localhost:8080)에서 ClickStack UI에 접속하세요. 온보딩을 완료하지 않았다면 사용자를 생성하세요.
+
+        <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="ClickStack 로그인" size="lg" />
+      </Step>
+
+      <Step>
+        ### 데이터 소스 생성
+
+        Team Settings로 이동해 새 데이터 소스를 추가합니다.
+
+        <Image img="/images/clickstack/create-vector-datasource-oss.webp" alt="데이터 소스 생성 - vector" size="lg" />
+
+        위 구성은 `time_local` 컬럼을 timestamp로 사용하는 Nginx 스타일 스키마(schema)를 가정합니다. 가능하면 이 컬럼은 프라이머리 키(primary key)에 선언된 timestamp 컬럼이어야 합니다. 이 컬럼은 필수입니다.
+
+        또한 로그 보기에서 반환할 컬럼을 명시적으로 정의하도록 `Default SELECT`를 업데이트하는 것을 권장합니다. 서비스 이름, 로그 레벨, 본문 컬럼 등 추가 필드를 사용할 수 있다면 이 역시 구성할 수 있습니다. timestamp 표시 컬럼이 테이블의 프라이머리 키에 사용된 컬럼과 위에서 구성한 컬럼과 다를 경우, 해당 컬럼도 재정의할 수 있습니다.
+
+        위 예시에서는 데이터에 `Body` 컬럼이 없습니다. 대신 사용 가능한 필드를 바탕으로 Nginx 로그 한 줄을 재구성하는 SQL 표현식으로 정의합니다.
+
+        다른 옵션은 [구성 참고](/ko/clickstack/managing/config)를 참조하십시오.
+      </Step>
+
+      <Step>
+        ### 데이터 살펴보기
+
+        로그 보기로 이동해 데이터를 살펴보고 ClickStack 사용을 시작하십시오.
+
+        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="ClickStack의 Nginx 로그" size="lg" />
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+<div id="example-dataset-with-vector">
+  ## Vector를 사용한 데이터셋 예시
+</div>
+
+보다 완전한 예시로, 아래에서는 **Nginx 로그 파일**을 사용합니다.
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    다음 가이드는 Managed ClickStack 서비스를 이미 생성하고 서비스 자격 증명을 기록해 두었다고 가정합니다. 아직 완료하지 않으셨다면, Vector 구성 단계가 나타날 때까지 Managed ClickStack의 [시작하기](/ko/clickstack/getting-started/managed) 가이드를 따르십시오.
+
+    <Steps>
+      <Step>
+        ### Vector 설치
+
+        <InstallingVector />
+      </Step>
+
+      <Step>
+        ### 샘플 데이터 다운로드
+
+        <VectorSampleData />
+      </Step>
+
+      <Step>
+        ### 데이터베이스 및 테이블 생성
+
+        Vector는 데이터 수집 전에 테이블과 스키마가 미리 정의되어 있어야 합니다.
+
+        먼저 데이터베이스를 생성하십시오. 이는 [ClickHouse Cloud 콘솔](/ko/products/cloud/features/sql-console-features/sql-console)에서 수행할 수 있습니다.
+
+        `logs` 데이터베이스를 생성하십시오:
+
+        ```sql
+        CREATE DATABASE IF NOT EXISTS logs
+        ```
+
+        데이터를 저장할 테이블을 생성하세요.
+
+        ```sql
+        CREATE TABLE logs.nginx_logs
+        (
+            `time_local` DateTime,
+            `remote_addr` IPv4,
+            `remote_user` LowCardinality(String),
+            `request` String,
+            `status` UInt16,
+            `body_bytes_sent` UInt64,
+            `http_referer` String,
+            `http_user_agent` String,
+            `http_x_forwarded_for` LowCardinality(String),
+            `request_time` Float32,
+            `upstream_response_time` Float32,
+            `http_host` String
+        )
+        ENGINE = MergeTree
+        ORDER BY (toStartOfMinute(time_local), status, remote_addr)
+        ```
+
+        <Info>
+          **Nginx 기본 키(primary key)**
+
+          위의 기본 키(primary key)는 Nginx 로그에 대해 ClickStack UI에서 일반적인 액세스 패턴을 기준으로 한 것이며, 프로덕션 환경에서는 워크로드에 따라 조정이 필요할 수 있습니다.
+        </Info>
+      </Step>
+
+      <Step>
+        ### Vector 구성 복사
+
+        Vector 구성을 복사한 뒤 `CLICKHOUSE_ENDPOINT`와 `CLICKHOUSE_PASSWORD`를 설정하여 `nginx.yaml` 파일을 만드세요.
+
+        ```yaml
+        data_dir: ./.vector-data
+        sources:
+          nginx_logs:
+            type: file
+            include:
+              - access.log
+            read_from: beginning
+
+        transforms:
+          decode_json:
+            type: remap
+            inputs:
+              - nginx_logs
+            source: |
+              . = parse_json!(to_string!(.message))
+              ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
+              # ClickHouse 호환 DateTime 포맷
+              .time_local = format_timestamp!(ts, format: "%F %T")
+
+        sinks:
+          clickhouse:
+            type: clickhouse
+            inputs:
+              - decode_json
+            endpoint: "<CLICKHOUSE_ENDPOINT>"
+            database: logs
+            format: json_each_row
+            table: nginx_logs
+            skip_unknown_fields: true
+            auth:
+              strategy: "basic"
+              user: "default"
+              password: "<CLICKHOUSE_PASSWORD>"
+        ```
+
+        <Note>
+          위 예시에서는 Managed ClickStack의 기본 사용자를 사용합니다. 프로덕션 환경에 배포할 때는 적절한 권한과 제한이 설정된 [전용 수집 사용자](/ko/clickstack/ingesting-data/collector#creating-an-ingestion-user)를 생성하는 것을 권장합니다.
+        </Note>
+      </Step>
+
+      <Step>
+        ### Vector 시작
+
+        다음 명령으로 Vector를 시작합니다. 그에 앞서 파일 오프셋을 기록할 데이터 디렉터리를 먼저 생성하십시오.
+
+        ```bash
+        mkdir ./.vector-data
+        vector --config nginx.yaml
+        ```
+      </Step>
+
+      <Step>
+        ### ClickStack UI로 이동
+
+        Managed ClickStack 서비스로 이동한 다음 왼쪽 메뉴에서 &quot;ClickStack&quot;을 선택합니다. 이미 온보딩을 완료했다면 새 탭에서 ClickStack UI가 열리며 자동으로 인증됩니다. 아직 완료하지 않았다면 온보딩을 진행한 뒤 입력 source로 Vector를 선택하고 “Launch ClickStack”을 선택합니다.
+
+        <Image img="/images/clickstack/launch-clickstack-vector.webp" alt="Vector용 ClickStack 실행" size="lg" />
+      </Step>
+
+      <Step>
+        ### 데이터 소스 생성
+
+        로그 데이터 소스를 생성합니다. 데이터 소스가 없으면 처음 로그인할 때 생성하라는 안내가 표시됩니다. 그렇지 않으면 Team Settings로 이동해 새 데이터 소스를 추가하세요.
+
+        <Image img="/images/clickstack/create-vector-datasource.webp" alt="데이터 소스 생성 - vector" size="lg" />
+
+        이 구성은 `time_local` 컬럼을 timestamp로 사용하는 Nginx 스키마(schema)를 가정합니다. 이 컬럼은 프라이머리 키(primary key)에 선언된 timestamp 컬럼입니다. 이 컬럼은 필수입니다.
+
+        또한 기본 select를 `time_local, remote_addr, status, request`로 지정했으며, 이는 로그 보기에서 어떤 컬럼을 반환할지 정의합니다.
+
+        위 예시에서 `Body` 컬럼은 데이터에 존재하지 않습니다. 대신 다음 SQL 표현식으로 정의됩니다:
+
+        ```sql
+        concat(
+          remote_addr, ' ',
+          remote_user, ' ',
+          '[', formatDateTime(time_local, '%d/%b/%Y:%H:%M:%S %z'), '] ',
+          '"', request, '" ',
+          toString(status), ' ',
+          toString(body_bytes_sent), ' ',
+          '"', http_referer, '" ',
+          '"', http_user_agent, '" ',
+          '"', http_x_forwarded_for, '" ',
+          toString(request_time), ' ',
+          toString(upstream_response_time), ' ',
+          '"', http_host, '"'
+        )
+        ```
+
+        구조화된 필드로부터 로그 라인을 재구성합니다.
+
+        다른 옵션은 [구성 참고](/ko/clickstack/managing/config)를 참조하십시오.
+      </Step>
+
+      <Step>
+        ### 데이터 탐색
+
+        데이터를 탐색하고 ClickStack 사용을 시작하려면 `October 20th, 2025`의 Search view로 이동하십시오.
+
+        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="HyperDX UI" size="lg" />
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="오픈소스 ClickStack">
+    이 가이드는 [시작하기 가이드](/ko/clickstack/getting-started/oss)를 통해 ClickStack Open Source를 설정했다고 가정합니다.
+
+    <Steps>
+      <Step>
+        ### Vector 설치하기
+
+        <InstallingVector />
+      </Step>
+
+      <Step>
+        ### 샘플 데이터 다운로드하기
+
+        <VectorSampleData />
+      </Step>
+
+      <Step>
+        ### 데이터베이스 및 테이블 생성
+
+        Vector에서 데이터를 수집하기 전에 테이블과 스키마를 먼저 정의해야 합니다.
+
+        먼저 데이터베이스를 생성합니다. [ClickHouse Web UI](/ko/concepts/features/interfaces/http#web-ui)의 [http://localhost:8123/play](http://localhost:8123/play)에서 생성할 수 있습니다. 기본 사용자 이름과 비밀번호 `api:api`를 사용하세요.
+
+        <Image img="/images/clickstack/play-ui-clickstack.webp" alt="실행 UI ClickStack" size="lg" />
+
+        데이터베이스 `logs`를 생성합니다:
+
+        ```sql
+        CREATE DATABASE IF NOT EXISTS logs
+        ```
+
+        데이터를 저장할 테이블을 생성하세요.
+
+        ```sql
+        CREATE TABLE logs.nginx_logs
+        (
+            `time_local` DateTime,
+            `remote_addr` IPv4,
+            `remote_user` LowCardinality(String),
+            `request` String,
+            `status` UInt16,
+            `body_bytes_sent` UInt64,
+            `http_referer` String,
+            `http_user_agent` String,
+            `http_x_forwarded_for` LowCardinality(String),
+            `request_time` Float32,
+            `upstream_response_time` Float32,
+            `http_host` String
+        )
+        ENGINE = MergeTree
+        ORDER BY (toStartOfMinute(time_local), status, remote_addr)
+        ```
+
+        <Info>
+          **Nginx 프라이머리 키(primary key)**
+
+          위의 프라이머리 키(primary key)는 ClickStack UI에서 Nginx 로그에 대한 일반적인 액세스 패턴을 기준으로 한 것이지만, 프로덕션 환경의 워크로드에 따라 조정해야 할 수 있습니다.
+        </Info>
+      </Step>
+
+      <Step>
+        ### Vector 구성 복사
+
+        Vector에서 ClickStack으로 데이터를 수집할 때는 collector가 노출하는 OTLP 엔드포인트를 거치지 않고 ClickHouse로 직접 전송해야 합니다.
+
+        Vector 구성을 복사하고 `nginx.yaml` 파일을 생성하세요.
+
+        ```yaml
+        data_dir: ./.vector-data
+        sources:
+          nginx_logs:
+            type: file
+            include:
+              - access.log
+            read_from: beginning
+
+        transforms:
+          decode_json:
+            type: remap
+            inputs:
+              - nginx_logs
+            source: |
+              . = parse_json!(to_string!(.message))
+              ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
+              # ClickHouse 호환 DateTime 포맷
+              .time_local = format_timestamp!(ts, format: "%F %T")
+
+        sinks:
+          clickhouse:
+            type: clickhouse
+            inputs:
+              - decode_json
+            endpoint: "http://localhost:8123"
+            database: logs
+            format: json_each_row
+            table: nginx_logs
+            skip_unknown_fields: true
+            auth:
+              strategy: "basic"
+              user: "api"
+              password: "api"
+        ```
+
+        <Note>
+          위 예시에서는 ClickStack Open Source에 `api` 사용자를 사용합니다. 프로덕션 배포에서는 적절한 권한과 제한을 갖춘 [전용 수집 사용자 생성](/ko/clickstack/ingesting-data/collector#creating-an-ingestion-user)을 권장합니다. 또한 위 구성은 Vector가 ClickStack과 동일한 호스트에서 실행된다고 가정합니다. 프로덕션 배포 환경에서는 그렇지 않을 가능성이 높습니다. 데이터는 보안 HTTPS 포트 8443을 통해 전송하는 것이 좋습니다.
+        </Note>
+      </Step>
+
+      <Step>
+        ### Vector 시작
+
+        다음 명령을 실행하여 Vector를 시작합니다.
+
+        ```bash
+        mkdir ./.vector-data
+        vector --config nginx-local.yaml
+        ```
+      </Step>
+
+      <Step>
+        ### 데이터 소스 생성
+
+        `Team -> Sources`에서 로그 데이터 소스를 생성합니다
+
+        <Image img="/images/clickstack/create-vector-datasource-oss.webp" alt="데이터 소스 생성 - vector" size="lg" />
+
+        이 구성은 `time_local` 컬럼을 timestamp로 사용하는 Nginx 스키마(schema)를 가정합니다. 이 컬럼은 프라이머리 키(primary key)에 선언된 timestamp 컬럼입니다. 이 컬럼은 필수입니다.
+
+        또한 기본 select를 `time_local, remote_addr, status, request`로 지정했으며, 이는 로그 뷰에 어떤 컬럼을 반환할지 정의합니다.
+
+        위 예시에서 `Body` 컬럼은 데이터에 존재하지 않습니다. 대신 다음 SQL 표현식으로 정의됩니다:
+
+        ```sql
+        concat(
+          remote_addr, ' ',
+          remote_user, ' ',
+          '[', formatDateTime(time_local, '%d/%b/%Y:%H:%M:%S %z'), '] ',
+          '"', request, '" ',
+          toString(status), ' ',
+          toString(body_bytes_sent), ' ',
+          '"', http_referer, '" ',
+          '"', http_user_agent, '" ',
+          '"', http_x_forwarded_for, '" ',
+          toString(request_time), ' ',
+          toString(upstream_response_time), ' ',
+          '"', http_host, '"'
+        )
+        ```
+
+        구조화된 필드에서 로그 한 줄을 재구성합니다.
+
+        다른 옵션은 [구성 참고](/ko/clickstack/managing/config)를 참조하십시오.
+      </Step>
+
+      <Step>
+        ### ClickStack UI로 이동
+
+        [http://localhost:8080](http://localhost:8080)에서 ClickStack UI에 접속하세요. 온보딩을 완료하지 않았다면 사용자를 생성하세요.
+
+        <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="ClickStack 로그인" size="lg" />
+      </Step>
+
+      <Step>
+        ### 데이터 탐색
+
+        데이터를 탐색하고 ClickStack 사용을 시작하려면 `October 20th, 2025`의 Search view로 이동하세요.
+
+        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="HyperDX UI" size="lg" />
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>

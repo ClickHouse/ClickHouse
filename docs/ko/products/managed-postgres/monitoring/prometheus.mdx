@@ -1,0 +1,190 @@
+---
+slug: /cloud/managed-postgres/monitoring/prometheus
+sidebarTitle: 'Prometheus 엔드포인트'
+title: 'Managed Postgres Prometheus 통합'
+description: 'Managed Postgres 메트릭을 Prometheus, Grafana, Datadog 또는 OpenMetrics와 호환되는 모든 collector로 스크레이프합니다'
+keywords: ['managed postgres', 'prometheus', 'grafana', 'datadog', '메트릭', 'openmetrics', '관측성']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-prometheus-beta" />
+
+Managed Postgres는 [ClickHouse Cloud API][cloud-api]를 통해
+Prometheus와 호환되는 메트릭 엔드포인트 2개를 제공합니다.
+
+| Endpoint | Path                                                   | Returns                           |
+| -------- | ------------------------------------------------------ | --------------------------------- |
+| 조직       | `/v1/organizations/{orgId}/postgres/prometheus`        | 조직 내 모든 Managed Postgres 서비스의 메트릭 |
+| 인스턴스     | `/v1/organizations/{orgId}/postgres/{pgId}/prometheus` | 단일 서비스의 메트릭                       |
+
+<Note>
+  조직 수준 엔드포인트는 최대 100개 서비스의 메트릭을 반환합니다. 조직에
+  Managed Postgres 서비스가 100개를 초과하는 경우 [지원팀에
+  문의하십시오](https://clickhouse.com/support/program).
+</Note>
+
+<div id="authentication">
+  ## 인증
+</div>
+
+이 엔드포인트는 OpenAPI의 다른 부분과 동일한 [API Key]를 사용합니다. 생성 방법과
+조직 및 서비스 ID를 확인하는 방법은 [OpenAPI 가이드](/ko/products/managed-postgres/openapi)를
+참조하십시오.
+
+```bash
+KEY_ID=mykeyid
+KEY_SECRET=mykeysecret
+ORG_ID=myorgid
+PG_ID=mypgid
+```
+
+<div id="scrape-org">
+  ## 조직 내 모든 서비스 스크레이핑
+</div>
+
+```bash
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/prometheus"
+```
+
+<div id="scrape-instance">
+  ## 단일 서비스 스크레이핑
+</div>
+
+```bash
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/prometheus"
+```
+
+<div id="sample-response">
+  ## 응답 예시
+</div>
+
+```response
+# HELP PostgresServiceInfo PostgreSQL 서비스에 대한 정보(상태 및 버전 포함).
+# TYPE PostgresServiceInfo gauge
+PostgresServiceInfo{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6f",postgres_service="0c330583-6396-86d0-82cd-ed0f23b0d38c",postgres_service_name="my-postgres",postgres_status="running",postgres_version="18"} 1
+
+# HELP PostgresServer_ActiveConnections 상태별 활성 연결 수.
+# TYPE PostgresServer_ActiveConnections gauge
+PostgresServer_ActiveConnections{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6f",postgres_service="0c330583-6396-86d0-82cd-ed0f23b0d38c",postgres_service_name="my-postgres",state="active"} 1
+PostgresServer_ActiveConnections{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6f",postgres_service="0c330583-6396-86d0-82cd-ed0f23b0d38c",postgres_service_name="my-postgres",state="idle"} 4
+
+# HELP PostgresServer_CacheHitRatio 버퍼 캐시 히트 비율: 캐시에서 제공된 블록 수 대 전체 액세스된 블록 수(%).
+# TYPE PostgresServer_CacheHitRatio gauge
+PostgresServer_CacheHitRatio{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6f",postgres_service="0c330583-6396-86d0-82cd-ed0f23b0d38c",postgres_service_name="my-postgres"} 100
+```
+
+전체 메트릭 목록과 각 메트릭의 의미는
+[메트릭 참고](/ko/products/managed-postgres/monitoring/metrics)를 확인하십시오.
+
+<div id="configuring-prometheus">
+  ## Prometheus 구성
+</div>
+
+이 구성은 조직 수준 엔드포인트를 60초마다 스크레이프합니다:
+
+```yaml
+scrape_configs:
+  - job_name: "managed-postgres"
+    scheme: https
+    metrics_path: "/v1/organizations/<ORG_ID>/postgres/prometheus"
+    static_configs:
+      - targets: ["api.clickhouse.cloud"]
+    basic_auth:
+      username: <KEY_ID>
+      password: <KEY_SECRET>
+    honor_labels: true
+    scrape_interval: 60s
+```
+
+이 엔드포인트는 메트릭을 1분에 한 번 갱신합니다. `60s`보다 더 빠르게
+스크레이프하면 샘플이 중복되고 gauge
+패널에 계단형 pattern이 나타납니다.
+
+`honor_labels: true`로 설정하여 엔드포인트의 `postgres_service` 및
+`postgres_service_name` 레이블이 Prometheus에 의해 덮어써지지 않고 그대로
+유지되도록 하십시오.
+
+단일 서비스를 스크레이프하려면 `metrics_path`에 `/<PG_ID>`를 추가하십시오.
+
+<div id="grafana-dashboard">
+  ## 사전 구축된 Grafana 대시보드
+</div>
+
+사전 구축된 Grafana 대시보드는 엔드포인트에서 노출하는 모든 메트릭을 시각화합니다
+— 정렬 가능한 서비스 테이블, CPU 및 메모리 사용률, 임계값 알림이 포함된 디스크
+사용량, 상태별 연결, 트랜잭션 및 롤백 비율, Tuple 활동, I/O, 데이터베이스별 스토리지,
+그리고 교착 상태를 표시합니다.
+
+<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="Managed Postgres 서비스의 Grafana 대시보드" size="md" border />
+
+<div id="import-dashboard">
+  ### 대시보드 가져오기
+</div>
+
+<Steps>
+  <Step>
+    #### 대시보드 JSON 다운로드
+
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">대시보드 JSON 다운로드</TrackedLink>.
+  </Step>
+
+  <Step>
+    #### Grafana에서 가져오기 화면 열기
+
+    **Dashboards → New → Import**로 이동하세요. JSON 파일을 업로드하거나 내용을 붙여넣으세요.
+  </Step>
+
+  <Step>
+    #### Prometheus 데이터 소스 선택
+
+    `DS_PROMETHEUS` 입력 항목이 표시되면 [이전 섹션](#configuring-prometheus)에서 구성한 엔드포인트를 스크레이프하는 Prometheus 데이터 소스를 선택하세요.
+  </Step>
+</Steps>
+
+프로비저닝된 Grafana 배포에서는 JSON을
+대시보드 프로비저닝 경로에 넣으세요. Grafana는 `${DS_PROMETHEUS}`
+참조를 해당 인스턴스에서 사용할 수 있는 Prometheus 데이터 소스와 일치시킵니다.
+
+<div id="template-variables">
+  ### 템플릿 변수
+</div>
+
+대시보드에는 3개의 변수가 있습니다:
+
+* **데이터 소스** — 대시보드의 기반이 되는 Prometheus 데이터 소스입니다.
+* **서비스** — `postgres_service_name`에 적용되는 다중 선택 필터입니다.
+  기본값은 *All*이며, 하나 이상의 서비스를 선택하면 모든 패널의 범위가 해당 서비스로 제한됩니다.
+* **스크레이프 인터벌** — 숨겨진 상수로, 기본값은 `60s`입니다. 이 값은
+  Grafana의 `$__rate_interval` 계산에 사용됩니다. 스크레이프 인터벌이 다르면
+  JSON에서 이 값을 변경하십시오.
+
+<div id="drill-in">
+  ### 단일 서비스로 필터링하여 드릴인하기
+</div>
+
+여러 패널은 **Service** 변수를 통해 단일
+서비스로 필터링했을 때 드릴인할 수 있도록 설계되었습니다. 예를 들어 CPU by mode 패널은
+`user`, `system`, `iowait`, `steal` 및 기타 CPU
+모드를 누적해서 표시하므로, 급증 현상이 애플리케이션 코드, 커널
+작업, 디스크 대기 또는 하이퍼바이저 경합 때문인지 파악할 수 있습니다.
+
+<div id="third-party-integrations">
+  ## Grafana 및 Datadog와 통합하기
+</div>
+
+이 엔드포인트는 [ClickHouse Prometheus
+엔드포인트](/ko/products/cloud/features/monitoring/prometheus)와 동일한 형식을 따르므로, 해당 문서에 설명된 Grafana Cloud, Grafana
+Alloy, Datadog OpenMetrics 에이전트 구성도
+여기에서 그대로 적용할 수 있습니다. `metrics_path`는 ClickHouse 경로가 아니라 Managed Postgres 조직 또는
+instance 경로를 가리키도록 설정하십시오.
+
+[cloud-api]: /products/cloud/features/admin-features/api/index "Cloud API"
+
+[API keys]: /products/cloud/features/admin-features/api/openapi "API Key 관리"

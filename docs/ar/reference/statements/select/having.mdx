@@ -1,0 +1,50 @@
+---
+description: 'توثيق جملة HAVING'
+sidebarTitle: 'HAVING'
+slug: /sql-reference/statements/select/having
+title: 'جملة HAVING'
+doc_type: 'reference'
+---
+
+تتيح تصفية نتائج التجميع الناتجة عن [GROUP BY](/ar/reference/statements/select/group-by). وهي تشبه جملة [WHERE](/ar/reference/statements/select/where)، إلا أن الفرق هو أن `WHERE` تُنفَّذ قبل التجميع، بينما تُنفَّذ `HAVING` بعده.
+
+يمكن الإشارة إلى نتائج التجميع من جملة `SELECT` داخل جملة `HAVING` باستخدام الاسم المستعار لها. كما يمكن لجملة `HAVING` أيضًا التصفية بناءً على نتائج تجميعات إضافية لا تُعاد ضمن نتائج الاستعلام.
+
+<div id="example">
+  ## مثال
+</div>
+
+إذا كان لديك جدول `sales` على النحو التالي:
+
+```sql
+CREATE TABLE sales
+(
+    region String,
+    salesperson String,
+    amount Float64
+)
+ORDER BY (region, salesperson);
+```
+
+يمكنك الاستعلام عنه على النحو التالي:
+
+```sql
+SELECT
+    region,
+    salesperson,
+    sum(amount) AS total_sales
+FROM sales
+GROUP BY
+    region,
+    salesperson
+HAVING total_sales > 10000
+ORDER BY total_sales DESC;
+```
+
+سيعرض هذا مندوبي المبيعات الذين يزيد إجمالي مبيعاتهم على 10,000 في منطقتهم.
+
+<div id="limitations">
+  ## القيود
+</div>
+
+لا يمكن استخدام `HAVING` إذا لم تُجرَ أي عملية تجميع. استخدم `WHERE` بدلًا منه.

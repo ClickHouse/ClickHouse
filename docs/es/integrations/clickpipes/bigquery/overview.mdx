@@ -1,0 +1,110 @@
+---
+sidebarTitle: 'Descripción general'
+description: 'Cómo exportar datos de BigQuery a ClickHouse Cloud mediante ClickPipes.'
+slug: /integrations/clickpipes/bigquery/overview
+title: 'Integración de BigQuery con ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+import IntroClickPipe from '/snippets/es/_intro.mdx';
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<IntroClickPipe />
+
+<div id="features">
+  ## Funciones
+</div>
+
+<div id="initial-load">
+  ### Carga inicial
+</div>
+
+El ClickPipe de BigQuery cargará las tablas seleccionadas de un [conjunto de datos](https://docs.cloud.google.com/bigquery/docs/datasets-intro) de BigQuery en las tablas de destino de ClickHouse en una sola operación por lotes. Una vez completada la tarea de ingestión, el ClickPipe se detiene automáticamente. El proceso de ingestión de la carga inicial requiere un bucket de Google Cloud Storage (GCS) proporcionado por el usuario para staging. En el futuro, el bucket intermedio será proporcionado y administrado por ClickPipes.
+
+<Note>
+  ClickPipes se basa en trabajos de extracción por lotes para obtener datos de BigQuery y llevarlos al bucket de GCS de staging. Esta operación **no genera cargos de procesamiento** en BigQuery.
+</Note>
+
+<div id="cdc">
+  ### CDC (captura de cambios de datos)
+</div>
+
+CDC **no está disponible** en la vista previa privada, pero será compatible en el futuro. Mientras tanto, recomendamos usar [Google Cloud Storage ClickPipe](/es/integrations/clickpipes/object-storage/google-cloud-storage/overview) para sincronizar continuamente las exportaciones de datos de BigQuery con ClickHouse Cloud una vez completada la carga inicial.
+
+<div id="data-type-mapping">
+  ## Correspondencia de tipos de datos
+</div>
+
+[Tipos de datos de BigQuery](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/data-types).
+
+| Tipo de dato de BigQuery | Tipo de dato de ClickHouse | Detalles                                                                           |
+| ------------------------ | -------------------------- | ---------------------------------------------------------------------------------- |
+| `BOOL`                   | `Bool`                     |                                                                                    |
+| `INT64`                  | `Int64`                    |                                                                                    |
+| `FLOAT64`                | `Float64`                  |                                                                                    |
+| `NUMERIC`                | `Decimal(P, S)`            | Precisión de hasta 38 y escala de hasta 9. Se conservan la precisión y la escala.  |
+| `BIGNUMERIC`             | `Decimal(P, S)`            | Precisión de hasta 76 y escala de hasta 38. Se conservan la precisión y la escala. |
+| `STRING`                 | `String`                   |                                                                                    |
+| `BYTES`                  | `String`                   |                                                                                    |
+| `JSON`                   | `String` (JSON)            |                                                                                    |
+| `DATE`                   | `Date`                     |                                                                                    |
+| `TIME`                   | `String`                   | Precisión de microsegundos.                                                        |
+| `DATETIME`               | `DateTime`                 | Precisión de microsegundos.                                                        |
+| `TIMESTAMP`              | `DateTime64(6)`            | Precisión de microsegundos.                                                        |
+| `GEOGRAPHY`              | `String`                   |                                                                                    |
+| `GEOMETRY`               | `String`                   |                                                                                    |
+| `UUID`                   | `String`                   |                                                                                    |
+| `ARRAY<T>`               | `Array(T)`                 |                                                                                    |
+| `ARRAY<DATE>`            | `Array(Date)`              |                                                                                    |
+| `STRUCT` (RECORD)        | `String`                   |                                                                                    |
+
+<div id="access-control">
+  ## Control de acceso
+</div>
+
+<div id="authentication">
+  ### Autenticación
+</div>
+
+<div id="service-account-credentials">
+  #### Credenciales de la cuenta de servicio
+</div>
+
+ClickPipes se autentica en tu proyecto de Google Cloud mediante una [clave de cuenta de servicio](https://docs.cloud.google.com/iam/docs/keys-create-delete). Recomendamos crear una cuenta de servicio dedicada con el mínimo de [permisos](#permissions) necesarios para que ClickPipes pueda exportar datos desde BigQuery, cargarlos en el bucket de GCS de staging y leerlos en ClickHouse.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="Creación de una clave de cuenta de servicio con permisos de BigQuery y Cloud Storage" size="lg" border />
+
+<div id="permissions">
+  ### Permisos
+</div>
+
+<div id="bigquery">
+  #### BigQuery
+</div>
+
+La cuenta de servicio debe tener los siguientes roles de BigQuery:
+
+* [`roles/bigquery.dataViewer`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.dataViewer)
+* [`roles/bigquery.jobUser`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.jobUser)
+
+Para acotar aún más el acceso, recomendamos usar [condiciones de IAM](https://docs.cloud.google.com/bigquery/docs/conditions) para restringir los recursos a los que puede acceder el rol. Por ejemplo, puede restringir el rol `dataViewer` al conjunto de datos específico que contiene las tablas que desea sincronizar:
+
+```bash
+resource.name.startsWith("projects/<PROJECT_ID>/datasets/<DATASET_NAME>")
+```
+
+<div id="cloud-storage">
+  #### Cloud Storage
+</div>
+
+La cuenta de servicio debe tener los siguientes roles de Cloud Storage:
+
+* [`roles/storage.objectAdmin`](https://docs.cloud.google.com/storage/docs/access-control/iam-roles#storage.objectAdmin)
+* [`roles/storage.bucketViewer`](https://docs.cloud.google.com/storage/docs/access-control/iam-roles#storage.bucketViewer)
+
+Para limitar aún más el acceso, recomendamos usar [condiciones de IAM](https://docs.cloud.google.com/bigquery/docs/conditions) para restringir los recursos a los que puede acceder el rol. Por ejemplo, puede restringir los roles `objectAdmin` y `bucketViewer` al bucket dedicado creado para las sincronizaciones de ClickPipes.
+
+```bash
+resource.name.startsWith("projects/_/buckets/<BUCKET_NAME>")
+```

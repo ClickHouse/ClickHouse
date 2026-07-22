@@ -1,0 +1,393 @@
+---
+description: '投影操作文档'
+sidebarTitle: 'PROJECTION'
+slug: /sql-reference/statements/alter/projection
+title: '投影'
+doc_type: 'reference'
+---
+
+本页介绍投影的概念、使用方式，以及管理投影的各种选项。
+
+<div id="overview">
+  ## 投影概述
+</div>
+
+投影以有利于优化查询执行的格式存储数据，此功能适用于：
+
+* 在不属于主键的列上执行查询
+* 对列进行预聚合，从而同时减少计算和 IO
+
+你可以为一张表定义一个或多个投影；在查询分析期间，ClickHouse 会自动选择扫描数据量最少的投影，而无需修改用户提供的查询。
+
+<Info>
+  **磁盘占用**
+
+  投影会在内部创建一个新的隐藏表，这意味着会需要更多的 IO 和磁盘空间。
+  例如，如果投影定义了不同的主键，原始表中的所有数据都会被复制一份。
+</Info>
+
+你可以在此[页面](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)查看有关投影内部工作原理的更多技术细节。
+
+<div id="examples">
+  ## 使用投影
+</div>
+
+<div id="example-filtering-without-using-primary-keys">
+  ### 不使用主键进行过滤的示例
+</div>
+
+创建表：
+
+```sql
+CREATE TABLE visits_order
+(
+   `user_id` UInt64,
+   `user_name` String,
+   `pages_visited` Nullable(Float64),
+   `user_agent` String
+)
+ENGINE = MergeTree()
+PRIMARY KEY user_agent
+```
+
+使用 `ALTER TABLE`，可以将投影添加到现有表中：
+
+```sql
+ALTER TABLE visits_order ADD PROJECTION user_name_projection (
+    SELECT *
+    ORDER BY user_name
+)
+
+ALTER TABLE visits_order MATERIALIZE PROJECTION user_name_projection
+```
+
+插入数据：
+
+```sql
+INSERT INTO visits_order SELECT
+    number,
+    'test',
+    1.5 * (number / 2),
+    'Android'
+FROM numbers(1, 100);
+```
+
+Projection 使我们能够快速按 `user_name` 进行过滤，即使在原始表中，`user_name` 没有被定义为 `PRIMARY_KEY`。
+在查询时，ClickHouse 会判断使用 projection 后需要处理的数据量更少，因为数据是按 `user_name` 排序的。
+
+```sql
+SELECT
+    *
+FROM visits_order
+WHERE user_name='test'
+LIMIT 2
+```
+
+要确认某个查询是否使用了 projection，可以查看 `system.query_log` 表。`projections` 字段中会显示所使用的 projection 名称；如果未使用任何 projection，则该字段为空：
+
+```sql
+SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
+```
+
+<div id="example-pre-aggregation-query">
+  ### 预聚合查询示例
+</div>
+
+创建带有投影 `projection_visits_by_user` 的表：
+
+```sql
+CREATE TABLE visits
+(
+   `user_id` UInt64,
+   `user_name` String,
+   `pages_visited` Nullable(Float64),
+   `user_agent` String,
+   PROJECTION projection_visits_by_user
+   (
+       SELECT
+           user_agent,
+           sum(pages_visited)
+       GROUP BY user_id, user_agent
+   )
+)
+ENGINE = MergeTree()
+ORDER BY user_agent
+```
+
+插入数据：
+
+```sql
+INSERT INTO visits SELECT
+    number,
+    'test',
+    1.5 * (number / 2),
+    'Android'
+FROM numbers(1, 100);
+```
+
+```sql
+INSERT INTO visits SELECT
+    number,
+    'test',
+    1. * (number / 2),
+   'IOS'
+FROM numbers(100, 500);
+```
+
+使用字段 `user_agent` 执行第一个带 `GROUP BY` 的查询。
+由于预聚合不匹配，此查询不会使用该 projection。
+
+```sql
+SELECT
+    user_agent,
+    count(DISTINCT user_id)
+FROM visits
+GROUP BY user_agent
+```
+
+要使用该投影，你可以执行查询，选择预聚合字段和 `GROUP BY` 字段中的部分或全部字段：
+
+```sql
+SELECT
+    user_agent
+FROM visits
+WHERE user_id > 50 AND user_id < 150
+GROUP BY user_agent
+```
+
+```sql
+SELECT
+    user_agent,
+    sum(pages_visited)
+FROM visits
+GROUP BY user_agent
+```
+
+如前所述，你可以查看 `system.query_log` 表，以确认是否使用了投影。
+`projections` 字段会显示所使用的投影名称。
+如果未使用任何投影，该字段将为空：
+
+```sql
+SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
+```
+
+<div id="projection-indexes">
+  ### 创建和使用投影索引
+</div>
+
+创建[投影索引](/zh/reference/engines/table-engines/mergetree-family/mergetree#projection-index)：
+
+```sql
+CREATE TABLE events
+(
+    `event_time` DateTime,
+    `event_id` UInt64,
+    `user_id` UInt64,
+    `huge_string` String,
+    PROJECTION order_by_user_id INDEX user_id TYPE basic
+)
+ENGINE = MergeTree()
+ORDER BY (event_id);
+```
+
+<details markdown="1">
+  <summary>创建包含显式 `_part_offset` 字段的投影</summary>
+
+  也可以使用以下语法创建投影索引 (不推荐) ：
+
+  ```sql
+  CREATE TABLE events
+  (
+      `event_time` DateTime,
+      `event_id` UInt64,
+      `user_id` UInt64,
+      `huge_string` String,
+      PROJECTION order_by_user_id
+      (
+          SELECT
+              _part_offset
+          ORDER BY user_id
+      )
+  )
+  ENGINE = MergeTree()
+  ORDER BY (event_id);
+  ```
+</details>
+
+插入一些示例数据：
+
+```sql
+INSERT INTO events SELECT * FROM generateRandom() LIMIT 100000;
+```
+
+`_part_offset` 字段在合并和变更后仍会保留其值，因此对二级索引非常有用。我们可以在查询中利用这一点：
+
+```sql
+SELECT
+    count()
+FROM events
+WHERE _part_starting_offset + _part_offset IN (
+    SELECT _part_starting_offset + _part_offset
+    FROM events
+    WHERE user_id = 42
+)
+SETTINGS enable_shared_storage_snapshot_in_query = 1
+```
+
+<div id="manipulating-projections">
+  ## 管理投影
+</div>
+
+可对[投影](/zh/reference/engines/table-engines/mergetree-family/mergetree#projections)执行以下操作：
+
+<div id="add-projection">
+  ### ADD PROJECTION
+</div>
+
+使用以下语句为表元数据添加投影描述：
+
+```sql
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+```
+
+<div id="with-settings">
+  #### `WITH SETTINGS` 子句
+</div>
+
+`WITH SETTINGS` 用于定义**投影级设置**，以自定义投影存储数据的方式 (例如 `index_granularity` 或 `index_granularity_bytes`) 。
+这些设置与 **MergeTree 表设置** 一一对应，但**仅对当前投影生效**。
+
+示例：
+
+```sql
+ALTER TABLE t
+ADD PROJECTION p (
+    SELECT x ORDER BY x
+) WITH SETTINGS (
+    index_granularity = 4096,
+    index_granularity_bytes = 1048576
+);
+```
+
+投影设置会覆盖该投影实际生效的表设置，但必须符合验证规则 (例如，无效或不兼容的覆盖会被拒绝) 。
+
+<div id="drop-projection">
+  ### DROP PROJECTION
+</div>
+
+使用以下语句可从表元数据中移除PROJECTION描述，并删除磁盘上的PROJECTION文件。
+这是通过 [变更](/zh/reference/statements/alter/index#mutations) 实现的。
+
+```sql
+ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name
+```
+
+<div id="materialize-projection">
+  ### MATERIALIZE PROJECTION
+</div>
+
+使用下面的语句重建分区 `partition_name` 中的PROJECTION `name`。
+这是通过[变更](/zh/reference/statements/alter/index#mutations)实现的。
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] MATERIALIZE PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
+```
+
+<div id="clear-projection">
+  ### CLEAR PROJECTION
+</div>
+
+使用以下语句可从磁盘中删除PROJECTION文件，而不删除其定义。
+这是通过 [变更](/zh/reference/statements/alter/index#mutations) 实现的。
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
+```
+
+命令 `ADD`、`DROP` 和 `CLEAR` 都属于轻量级操作，因为它们只会修改元数据或删除文件。
+此外，这些命令支持复制，并通过 ClickHouse Keeper 或 ZooKeeper 同步PROJECTION元数据。
+
+<Note>
+  只有使用 [`*MergeTree`](/zh/reference/engines/table-engines/mergetree-family/mergetree) 引擎的表 (包括[复制](/zh/reference/engines/table-engines/mergetree-family/replication)变体) 才支持PROJECTION操作。
+</Note>
+
+<div id="control-projections-merges">
+  ### 控制投影合并行为
+</div>
+
+执行查询时，ClickHouse 会在读取原始表还是其某个投影之间进行选择。
+读取原始表还是某个投影，这一决策会针对每个表分片单独作出。
+ClickHouse 通常会尽可能少读数据，并采用一些方法来识别最佳读取分片，例如对分片的主键进行采样。
+在某些情况下，源表分片没有对应的投影分片。
+例如，这可能是因为在 SQL 中为表创建投影默认是“惰性”的——它只影响新插入的数据，而不会修改现有分片。
+
+由于某个投影已经包含预先计算好的聚合值，ClickHouse 会尽量从对应的投影分片中读取，以避免在查询运行时再次聚合。如果某个特定分片缺少对应的投影分片，查询执行就会回退到原始分片。
+
+但如果原始表中的行由于非平凡的数据分区片段后台合并而发生了非平凡变化，会怎样呢？
+例如，假设该表使用 `ReplacingMergeTree` 表引擎存储。
+如果在合并期间从多个输入分片中检测到相同的行，则只会保留最新的行版本 (来自最近插入的分片) ，而所有较旧版本都会被丢弃。
+
+类似地，如果该表使用 `AggregatingMergeTree` 表引擎存储，则合并操作可能会将输入分片中的相同行 (基于主键值) 折叠为单个行，以更新部分聚合状态。
+
+在 ClickHouse v24.8 之前，投影分片要么会悄然与主数据失去同步，要么某些操作 (如更新和删除) 根本无法执行，因为如果表包含投影，数据库会自动抛出异常。
+
+从 v24.8 开始，新增了一个表级设置 [`deduplicate_merge_projection_mode`](/zh/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode)，用于控制当前述非平凡后台合并操作发生在原始表分片中时的行为。
+
+删除变更是另一类会删除原始表分片中行的分片合并操作。自 v24.7 起，我们还提供了一个设置，用于控制由轻量级删除触发的删除变更相关行为：[`lightweight_mutation_projection_mode`](/zh/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode)。
+
+下面是 `deduplicate_merge_projection_mode` 和 `lightweight_mutation_projection_mode` 的可能值：
+
+* `throw` (默认) ：抛出异常，防止投影分片失去同步。
+* `drop`：删除受影响的投影表分片。对于受影响的投影分片，查询将回退到原始表分片。
+* `rebuild`：重建受影响的投影分片，使其与原始表分片中的数据保持一致。
+
+<div id="limitations">
+  ## 限制
+</div>
+
+不能在投影的 `ORDER BY` 子句中使用 `ALIAS` 列。例如：
+
+```sql highlight={6}
+CREATE TABLE t
+(
+    id UInt64,
+    a UInt32,
+    ab_sum UInt64 ALIAS a + 1,
+    PROJECTION p (SELECT a ORDER BY ab_sum)
+)
+ENGINE = MergeTree ORDER BY id;
+-- 失败，报错 UNKNOWN_IDENTIFIER
+```
+
+`ALIAS` 列不会被物理存储，而是在查询时动态计算，因此在计算排序表达式时，投影部分的写入路径无法使用这些列。
+
+请改用 `MATERIALIZED` 列，或直接内联表达式：
+
+```sql
+-- 使用 MATERIALIZED 列
+CREATE TABLE t
+(
+    id UInt64,
+    a UInt32,
+    ab_sum UInt64 MATERIALIZED a + 1,
+    PROJECTION p (SELECT a ORDER BY ab_sum)
+)
+ENGINE = MergeTree ORDER BY id;
+
+-- 使用内联表达式
+CREATE TABLE t
+(
+    id UInt64,
+    a UInt32,
+    PROJECTION p (SELECT a ORDER BY a + 1)
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+<div id="see-also">
+  ## 另请参阅
+</div>
+
+* [&quot;合并期间对投影的控制&quot; (博客文章) ](https://clickhouse.com/blog/clickhouse-release-24-08#control-of-projections-during-merges)
+* [&quot;投影&quot; (指南) ](/zh/concepts/features/projections/projections#using-projections-to-speed-up-UK-price-paid)
+* [&quot;materialized views 与投影&quot;](/zh/concepts/features/projections/materialized-views-versus-projections)

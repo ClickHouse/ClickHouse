@@ -1,0 +1,123 @@
+---
+slug: /cloud/reference/shared-merge-tree
+sidebarTitle: 'SharedMergeTree'
+title: 'SharedMergeTree 테이블 엔진'
+keywords: ['SharedMergeTree']
+description: 'SharedMergeTree 테이블 엔진을 설명합니다'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+SharedMergeTree 테이블 엔진 계열은 공유 스토리지(예: Amazon S3, Google Cloud Storage, MinIO, Azure Blob Storage)에서 동작하도록 최적화된 ReplicatedMergeTree 엔진의 클라우드 네이티브 대체재입니다. 각 MergeTree 엔진 유형마다 이에 대응하는 SharedMergeTree 엔진이 있으며, 예를 들어 SharedReplacingMergeTree는 ReplicatedReplacingMergeTree를 대체합니다.
+
+SharedMergeTree 테이블 엔진 계열은 ClickHouse Cloud의 기반입니다. 사용자가 ReplicatedMergeTree 기반 엔진 대신 SharedMergeTree 엔진 계열을 사용하기 위해 변경해야 할 사항은 없습니다. 또한 다음과 같은 추가 이점을 제공합니다:
+
+* 더 높은 삽입 처리량
+* 백그라운드 머지 처리량 향상
+* 뮤테이션 처리량 향상
+* 더 빠른 확장 및 축소 작업
+* select 쿼리에 대한 더 경량화된 강한 일관성
+
+SharedMergeTree의 중요한 개선점 중 하나는 ReplicatedMergeTree에 비해 컴퓨트와 스토리지를 더 철저히 분리한다는 것입니다. 아래에서 ReplicatedMergeTree가 컴퓨트와 스토리지를 어떻게 분리하는지 확인할 수 있습니다:
+
+<Image img="/images/cloud/reference/shared-merge-tree-1.png" alt="ReplicatedMergeTree 다이어그램" size="md" />
+
+보시다시피 ReplicatedMergeTree에 저장된 데이터는 객체 스토리지에 있지만, 메타데이터는 여전히 각 clickhouse-server에 저장됩니다. 이는 모든 복제 작업에서 메타데이터도 모든 레플리카에 복제되어야 함을 의미합니다.
+
+<Image img="/images/cloud/reference/shared-merge-tree-2.png" alt="메타데이터가 포함된 ReplicatedMergeTree 다이어그램" size="md" />
+
+ReplicatedMergeTree와 달리 SharedMergeTree는 레플리카끼리 통신할 필요가 없습니다. 대신 모든 통신은 공유 스토리지와 clickhouse-keeper를 통해 이루어집니다. SharedMergeTree는 비동기 리더리스 복제를 구현하며, coordination 및 메타데이터 저장을 위해 clickhouse-keeper를 사용합니다. 즉, 서비스가 확장 또는 축소될 때 메타데이터를 복제할 필요가 없습니다. 그 결과 복제, 뮤테이션, 머지, 확장 작업이 더 빨라집니다. SharedMergeTree는 각 테이블에 대해 수백 개의 레플리카를 지원하므로, 세그먼트 없이도 동적으로 확장할 수 있습니다. ClickHouse Cloud에서는 하나의 쿼리에 더 많은 컴퓨트 리소스를 활용하기 위해 분산 쿼리 실행 방식을 사용합니다.
+
+<div id="introspection">
+  ## 내부 검사
+</div>
+
+ReplicatedMergeTree의 내부 검사에 사용되는 대부분의 시스템 테이블은 SharedMergeTree에도 존재합니다. 다만 데이터와 메타데이터 복제가 수행되지 않으므로 `system.replication_queue`와 `system.replicated_fetches`는 예외입니다. 하지만 SharedMergeTree에는 이 두 테이블에 대응하는 대체 테이블이 있습니다.
+
+**system.virtual&#95;parts**
+
+이 테이블은 SharedMergeTree에서 `system.replication_queue`를 대체하는 역할을 합니다. 현재 파트의 최신 집합에 대한 정보와 함께, 머지, 뮤테이션, 파티션 삭제처럼 진행 중인 향후 파트에 대한 정보도 저장합니다.
+
+**system.shared&#95;merge&#95;tree&#95;fetches**
+
+이 테이블은 SharedMergeTree에서 `system.replicated_fetches`를 대체합니다. 메모리로 프라이머리 키와 체크섬을 가져오는 현재 진행 중인 fetch에 대한 정보를 포함합니다.
+
+<div id="enabling-sharedmergetree">
+  ## SharedMergeTree 활성화
+</div>
+
+`SharedMergeTree`는 기본적으로 활성화되어 있습니다.
+
+SharedMergeTree 테이블 엔진을 지원하는 서비스에서는 별도로 수동 설정할 필요가 없습니다. 이전과 동일한 방식으로 테이블을 생성하면, CREATE TABLE 쿼리에서 지정한 엔진에 대응하는 SharedMergeTree 기반 테이블 엔진이 자동으로 사용됩니다.
+
+```sql
+CREATE TABLE my_table(
+ key UInt64,
+ value String
+)
+ENGINE = MergeTree
+ORDER BY key
+```
+
+이 명령을 실행하면 SharedMergeTree 테이블 엔진을 사용하는 `my_table` 테이블이 생성됩니다.
+
+ClickHouse Cloud에서는 `default_table_engine=MergeTree`가 기본값이므로 `ENGINE=MergeTree`를 지정할 필요가 없습니다. 다음 쿼리는 위의 쿼리와 동일합니다.
+
+```sql
+CREATE TABLE my_table(
+ key UInt64,
+ value String
+)
+ORDER BY key
+```
+
+Replacing, Collapsing, Aggregating, Summing, VersionedCollapsing 또는 Graphite MergeTree 테이블을 사용하면 해당 테이블은 이에 대응하는 SharedMergeTree 기반 테이블 엔진으로 자동 변환됩니다.
+
+```sql
+CREATE TABLE myFirstReplacingMT
+(
+    `key` Int64,
+    `someCol` String,
+    `eventTime` DateTime
+)
+ENGINE = ReplacingMergeTree
+ORDER BY key;
+```
+
+특정 테이블에 어떤 테이블 엔진이 사용되었는지는 `SHOW CREATE TABLE`로 `CREATE TABLE` 문을 확인하면 알 수 있습니다:
+
+```sql
+SHOW CREATE TABLE myFirstReplacingMT;
+```
+
+```sql
+CREATE TABLE default.myFirstReplacingMT
+( `key` Int64, `someCol` String, `eventTime` DateTime )
+ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+ORDER BY key
+```
+
+<div id="settings">
+  ## 설정
+</div>
+
+일부 설정의 동작이 크게 달라졌습니다:
+
+* `insert_quorum` -- SharedMergeTree에 대한 모든 삽입은 quorum 삽입(공유 스토리지에 기록됨)이므로 SharedMergeTree 테이블 엔진을 사용할 때는 이 설정이 필요하지 않습니다.
+* `insert_quorum_parallel` -- SharedMergeTree에 대한 모든 삽입은 quorum 삽입(공유 스토리지에 기록됨)이므로 SharedMergeTree 테이블 엔진을 사용할 때는 이 설정이 필요하지 않습니다.
+* `select_sequential_consistency` -- quorum 삽입이 필요하지 않지만, `SELECT` 쿼리 시 clickhouse-keeper에 추가 부하를 발생시킵니다
+
+<div id="consistency">
+  ## 일관성
+</div>
+
+SharedMergeTree는 ReplicatedMergeTree보다 더 나은 경량 일관성을 제공합니다. SharedMergeTree에 삽입할 때는 `insert_quorum` 또는 `insert_quorum_parallel` 같은 설정을 지정할 필요가 없습니다. 삽입은 quorum 삽입으로 처리되며, 즉 메타데이터가 ClickHouse-Keeper에 저장되고 해당 메타데이터가 최소 quorum 수의 ClickHouse-keepers에 복제됩니다. 클러스터의 각 레플리카는 ClickHouse-Keeper에서 새 정보를 비동기적으로 가져옵니다.
+
+대부분의 경우 `select_sequential_consistency` 또는 `SYSTEM SYNC REPLICA LIGHTWEIGHT`를 사용할 필요가 없습니다. 비동기 복제는 대부분의 시나리오를 포괄하며 지연 시간이 매우 짧습니다. 드물지만 오래된 데이터 읽기를 반드시 방지해야 하는 경우에는, 우선순위 순서대로 다음 권장 사항을 따르십시오:
+
+1. 읽기와 쓰기 모두에서 동일한 세션 또는 동일한 노드에서 쿼리를 실행하는 경우, 레플리카에 이미 최신 메타데이터가 있으므로 `select_sequential_consistency`를 사용할 필요가 없습니다.
+
+2. 한 레플리카에 쓰고 다른 레플리카에서 읽는 경우, `SYSTEM SYNC REPLICA LIGHTWEIGHT`를 사용해 해당 레플리카가 ClickHouse-Keeper에서 메타데이터를 가져오도록 강제할 수 있습니다.
+
+3. 쿼리 설정의 일부로 `select_sequential_consistency`를 사용합니다.

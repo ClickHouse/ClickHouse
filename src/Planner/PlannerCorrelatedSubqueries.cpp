@@ -44,6 +44,7 @@
 #include <Storages/IStorage.h>
 
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <unordered_map>
 
@@ -212,6 +213,25 @@ QueryPlan decorrelateQueryPlan(
         QueryPlan lhs_plan = context.correlated_query_plan.extractSubplan(node);
         QueryPlan rhs_plan;
 
+        /// The inner subplan can have zero output columns when it only contributes cardinality (e.g. an
+        /// EXISTS body reduced to a bare filter). Such a relation loses its row count on the streamed side
+        /// of a join (Block::rows() == 0 with no columns), so the join would drop all rows. Add a
+        /// materialized placeholder column to carry the row count across the join; it is stripped again
+        /// right after the join (see below) so it stays internal to this branch.
+        std::optional<String> row_marker_name;
+        if (lhs_plan.getCurrentHeader()->columns() == 0)
+        {
+            ActionsDAG marker_dag(lhs_plan.getCurrentHeader()->getNamesAndTypesList());
+            auto marker_type = std::make_shared<DataTypeUInt8>();
+            auto marker_column = marker_type->createColumnConst(0, 0u);
+            row_marker_name = "__correlated_subquery_row_marker_" + context.correlated_subquery.action_node_name;
+            marker_dag.getOutputs() = { &marker_dag.materializeNode(marker_dag.addColumn(std::move(marker_column), marker_type, *row_marker_name)) };
+
+            auto marker_step = std::make_unique<ExpressionStep>(lhs_plan.getCurrentHeader(), std::move(marker_dag));
+            marker_step->setStepDescription("Row marker for zero-column correlated subquery body");
+            lhs_plan.addStep(std::move(marker_step));
+        }
+
         auto default_join_kind = settings[Setting::correlated_subqueries_default_join_kind];
         context.query_plan.addStep(std::make_unique<CommonSubplanStep>(context.query_plan.getCurrentHeader()));
 
@@ -260,6 +280,25 @@ QueryPlan decorrelateQueryPlan(
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
 
         result_plan.unitePlans(std::move(decorrelated_join), {std::move(plans)});
+
+        /// Drop the row marker now that it has carried the row count across the join. It must not
+        /// leave this branch: the ExpressionStep/FilterStep decorrelation handlers restore unused
+        /// inputs, which would otherwise propagate the marker up to a UnionStep and make correlated
+        /// UNION arms have mismatched widths. After the join the domain columns carry the row count,
+        /// so removing the marker leaves at least one column and is safe.
+        if (row_marker_name)
+        {
+            ActionsDAG drop_marker_dag(result_plan.getCurrentHeader()->getNamesAndTypesList());
+            ActionsDAG::NodeRawConstPtrs kept_outputs;
+            for (const auto * input : drop_marker_dag.getInputs())
+                if (input->result_name != *row_marker_name)
+                    kept_outputs.push_back(input);
+            drop_marker_dag.getOutputs() = std::move(kept_outputs);
+
+            auto drop_marker_step = std::make_unique<ExpressionStep>(result_plan.getCurrentHeader(), std::move(drop_marker_dag));
+            drop_marker_step->setStepDescription("Drop row marker for zero-column correlated subquery body");
+            result_plan.addStep(std::move(drop_marker_step));
+        }
 
         return result_plan;
     }
@@ -378,13 +417,15 @@ QueryPlan decorrelateQueryPlan(
         if (aggeregating_step->isGroupingSets())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Decorrelation of GROUP BY GROUPING SETS is not supported yet");
 
-        auto new_aggregator_params = aggeregating_step->getAggregatorParameters();
+        const auto & original_aggregator_params = aggeregating_step->getAggregatorParameters();
 
+        Names new_keys = original_aggregator_params.keys;
         for (const auto & correlated_column_identifier : context.correlated_subquery.correlated_column_identifiers)
         {
-            new_aggregator_params.keys.push_back(correlated_column_identifier);
+            new_keys.push_back(correlated_column_identifier);
         }
-        new_aggregator_params.keys_size = new_aggregator_params.keys.size();
+
+        auto new_aggregator_params = original_aggregator_params.cloneWithKeys(new_keys, original_aggregator_params.only_merge);
 
         auto result_step = std::make_unique<AggregatingStep>(
             std::move(input_header),

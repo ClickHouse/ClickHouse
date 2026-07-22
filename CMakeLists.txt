@@ -138,6 +138,17 @@ endif ()
 
 include (cmake/add_warning.cmake)
 
+# A compiler without zlib accepts -gz but only warns, so -Werror on that warning makes the check fail.
+include (CheckCompilerFlag)
+set (CMAKE_REQUIRED_FLAGS "-Werror=debug-compression-unavailable")
+check_compiler_flag (C   "-gz=zlib" C_COMPILER_SUPPORTS_GZ_ZLIB)
+check_compiler_flag (CXX "-gz=zlib" CXX_COMPILER_SUPPORTS_GZ_ZLIB)
+unset (CMAKE_REQUIRED_FLAGS)
+set (COMPILER_SUPPORTS_GZ_ZLIB OFF)
+if (C_COMPILER_SUPPORTS_GZ_ZLIB AND CXX_COMPILER_SUPPORTS_GZ_ZLIB)
+    set (COMPILER_SUPPORTS_GZ_ZLIB ON)
+endif ()
+
 # Block build-time CMake probes (check_*, try_compile, try_run) project-wide. Compiler and
 # toolchain are fixed (see cmake/tools.cmake), so feature detection is unnecessary - any
 # version-dependent behaviour must be gated on CMAKE_CXX_COMPILER_VERSION explicitly.
@@ -394,6 +405,17 @@ if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     set(DEBUG_INFO_FLAGS "${DEBUG_INFO_FLAGS} -gdwarf-aranges")
 endif ()
 
+# Compress DWARF debug sections (`.debug_*`) in object files with -gz=zlib to shrink the build dir
+# (debug info dominates it). Compile-only via add_compile_options, so binaries stay uncompressed and
+# the symbolizer is unaffected. Defaults on where the compiler supports it (probed above).
+option (COMPRESS_DEBUG_SECTIONS "Compress DWARF debug sections in object files with zlib (-gz)" ${COMPILER_SUPPORTS_GZ_ZLIB})
+
+if (COMPRESS_DEBUG_SECTIONS)
+    # Only C/C++ (and GNU-style ASM handled by clang) understand -gz; scope it away from other
+    # languages such as ASM_NASM (ISA-L on amd64), whose nasm assembler rejects the flag.
+    add_compile_options ($<$<COMPILE_LANGUAGE:C,CXX,ASM>:-gz=zlib>)
+endif ()
+
 # Disable omit frame pointer compiler optimization using -fno-omit-frame-pointer
 option(DISABLE_OMIT_FRAME_POINTER "Disable omit frame pointer compiler optimization" OFF)
 
@@ -434,6 +456,29 @@ option(ENABLE_THINLTO "Clang-specific link time optimization" OFF)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
 
+# CFI requires ThinLTO. Validate here, after ENABLE_THINLTO has been resolved by
+# the option() call above. sanitize.cmake is included earlier (before the option()
+# declaration) so the check must live here where ENABLE_THINLTO is fully defined.
+if (ENABLE_CFI AND NOT ENABLE_THINLTO)
+    message (FATAL_ERROR "ENABLE_CFI requires ENABLE_THINLTO. "
+        "CFI needs -flto=thin and -fwhole-program-vtables which are only applied "
+        "when ThinLTO is enabled. Current configuration has ENABLE_THINLTO=${ENABLE_THINLTO}.")
+endif ()
+
+if (ENABLE_CFI AND ENABLE_TESTS)
+    message (FATAL_ERROR "ENABLE_CFI is incompatible with ENABLE_TESTS. "
+        "ThinLTO (required by CFI) is disabled when building tests. "
+        "Build without tests (ENABLE_TESTS=0) to use CFI.")
+endif ()
+
+# CFI flags are wired into the RelWithDebInfo profile only (CMAKE_*_FLAGS_RELWITHDEBINFO).
+# Other build types would configure successfully and print the CFI status message while
+# silently producing a non-CFI binary, so reject them explicitly.
+if (ENABLE_CFI AND NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
+    message (FATAL_ERROR "ENABLE_CFI is only supported with CMAKE_BUILD_TYPE=RelWithDebInfo. "
+        "Current configuration has CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}.")
+endif ()
+
 # We cannot afford to use LTO when compiling unit tests, and it's not enough
 # to only supply -fno-lto at the final linking stage. So we disable it
 # completely.
@@ -446,6 +491,35 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
     if(LINKER_NAME MATCHES "lld")
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--lto-whole-program-visibility")
     endif()
+
+    if (ENABLE_CFI)
+        # CFI checks: virtual dispatch type safety and bad downcasts via static_cast.
+        # cfi-icall is omitted because C function pointers in contrib libraries (compiled without
+        # CFI) would cause false positives. Start conservative; broaden after baseline is clean.
+        # cfi-vcall and cfi-derived-cast are C++-only checks; do not apply to C compilation.
+        #
+        # Use `-fvisibility=default` rather than the CFI-documented `hidden`: with hidden
+        # visibility the build succeeds (with `-Wunique-object-duplication` suppressed) but the
+        # resulting binary crashes with SIGSEGV before main runs, because inline-static singletons
+        # like `Context::global_context_instance` and `BaseSettings::unknown_settings` get
+        # duplicated per translation unit and singleton identity is broken. Validated empirically
+        # by WeeklyCFI run 25790910376 — `clickhouse-server --version` exited with signal 11.
+        # CFI vtable visibility is still satisfied for in-binary types because
+        # `-fwhole-program-vtables` and `-Wl,--lto-whole-program-visibility` (set above) cause
+        # the linker to treat all vtables as internal to the binary.
+        #
+        # CFI is left in the default trap mode: a violation executes an illegal instruction
+        # (SIGILL) and CI's core-dump handler yields a stack trace pinpointing the bad vcall/cast.
+        # Diagnostic mode (`-fno-sanitize-trap=cfi`, which prints a UBSan-style type/location
+        # report) is deliberately NOT used: it makes Clang link `libclang_rt.ubsan_standalone`,
+        # which this toolchain does not ship (only select compiler-rt libs are built from contrib),
+        # so even host tools like `protoc` fail to link — validated by WeeklyCFI run 28943752776.
+        # `-fno-sanitize-recover=cfi` is redundant in trap mode but kept as an explicit marker that
+        # a violation must never be continued past.
+        set (CFI_FLAGS "-fsanitize=cfi-vcall,cfi-derived-cast -fno-sanitize-recover=cfi -fvisibility=default")
+        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
+        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
+    endif ()
 elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
 endif ()
@@ -594,12 +668,9 @@ endif ()
 macro (clickhouse_add_executable target)
     # invoke built-in add_executable
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
-    # if GLIBC_COMPATIBILITY is ON and ENABLE_THINLTO is on than provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
-    if (ARCH_AMD64 AND GLIBC_COMPATIBILITY AND ENABLE_THINLTO)
-        add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:memcpy>)
-    else ()
-        add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
-    endif ()
+    # Note: for musl builds (-nostartfiles), the CRT startup files are added to every
+    # executable through the link flags, see cmake/linux/default_libs.cmake.
+    add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
 
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
@@ -719,6 +790,7 @@ if (NATIVE_BUILD_TARGETS
     AND NOT(
         CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
         AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
+        AND NOT USE_MUSL
     )
 )
     message (STATUS "Building native targets: ${NATIVE_BUILD_TARGETS}")

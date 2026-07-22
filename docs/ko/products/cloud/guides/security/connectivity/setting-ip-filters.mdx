@@ -1,0 +1,125 @@
+---
+sidebarTitle: 'IP 필터 설정'
+slug: /cloud/security/setting-ip-filters
+title: 'IP 필터 설정'
+description: '이 페이지에서는 ClickHouse Cloud에서 ClickHouse 서비스에 대한 액세스를 제어할 수 있도록 IP 필터를 설정하는 방법을 설명합니다.'
+doc_type: 'guide'
+keywords: ['IP 필터', 'IP 액세스 목록']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="setting-ip-filters">
+  ## IP 필터 설정
+</div>
+
+IP 액세스 목록은 연결을 허용할 소스 주소를 지정하여 ClickHouse 서비스 또는 API Key에 대한 트래픽을 필터링합니다. 이러한 목록은 각 서비스와 각 API Key마다 구성할 수 있습니다. 목록은 서비스 또는 API Key를 생성할 때 또는 생성한 후에 구성할 수 있습니다.
+
+<Warning>
+  **서비스의 IP 액세스 목록을 구성하세요**
+
+  ClickHouse Cloud 서비스를 생성할 때 IP 허용 목록의 기본 설정은 &#39;Allow from anywhere&#39;입니다. 가능한 한 빨리 액세스를 특정 IP 주소 또는 범위로 제한할 것을 강력히 권장합니다. `Allow from anywhere`로 설정된 서비스는 공개 IP를 찾는 인터넷 크롤러와 스캐너로 인해 유휴 상태에서 활성 상태로 주기적으로 전환될 수 있으며, 이로 인해 예상치 못한 비용이 발생할 수 있습니다.
+</Warning>
+
+<div id="prepare">
+  ## 준비
+</div>
+
+시작하기 전에 액세스 목록에 추가할 IP 주소 또는 범위를 정리하십시오. 원격 근무자, 온콜 대응 위치, VPN 등을 고려해야 합니다. IP 액세스 목록 사용자 인터페이스에서는 개별 주소와 CIDR 표기법을 모두 입력할 수 있습니다.
+
+Classless Inter-domain Routing(CIDR) 표기법을 사용하면 기존의 Class A, B 또는 C 서브넷 마스크 크기(8, 6 또는 24)보다 더 작은 IP 주소 범위를 지정할 수 있습니다. 필요하다면 [ARIN](https://account.arin.net/public/cidrCalculator) 및 여러 다른 조직에서 제공하는 CIDR 계산기를 사용할 수 있으며, CIDR 표기법에 대한 자세한 내용은 [Classless Inter-domain Routing (CIDR)](https://www.rfc-editor.org/rfc/rfc4632.html) RFC를 참조하십시오.
+
+<div id="create-or-modify-an-ip-access-list">
+  ## IP 액세스 목록 생성 또는 수정
+</div>
+
+<Info>
+  **PrivateLink 외부 연결에만 적용됩니다**
+
+  IP 액세스 목록은 [PrivateLink](/ko/products/cloud/guides/security/connectivity/private-networking/index) 외부의 퍼블릭 인터넷에서 오는 연결에만 적용됩니다.
+  PrivateLink의 트래픽만 허용하려면 IP 허용 목록에서 `DenyAll`을 설정하십시오.
+</Info>
+
+<Accordion title="ClickHouse 서비스용 IP 액세스 목록">
+  ClickHouse 서비스를 생성하면 IP 허용 목록의 기본 설정은 &#39;Allow from anywhere&#39;입니다.
+
+  ClickHouse Cloud 서비스 목록에서 서비스를 선택한 다음 **설정**을 선택합니다. **Security** 섹션에서 IP 액세스 목록을 찾을 수 있습니다. Add IPs 버튼을 클릭하십시오.
+
+  그러면 다음과 같은 구성 옵션이 있는 사이드바가 나타납니다:
+
+  * 어디서나 서비스로 들어오는 트래픽 허용
+  * 특정 위치에서 서비스에 대한 액세스 허용
+  * 서비스에 대한 모든 액세스 거부
+</Accordion>
+
+<Accordion title="API Key용 IP 액세스 목록">
+  API Key를 생성하면 IP 허용 목록의 기본 설정은 &#39;Allow from anywhere&#39;입니다.
+
+  API Key 목록에서 **Actions** 컬럼의 해당 API Key 옆에 있는 점 3개를 클릭한 다음 **Edit**를 선택합니다. 화면 하단에서 IP 액세스 목록과 다음 구성 옵션을 확인할 수 있습니다:
+
+  * 어디서나 서비스로 들어오는 트래픽 허용
+  * 특정 위치에서 서비스에 대한 액세스 허용
+  * 서비스에 대한 모든 액세스 거부
+</Accordion>
+
+다음 스크린샷은 &quot;NY Office range&quot;로 설명된 IP 주소 범위의 트래픽을 허용하는 액세스 목록을 보여줍니다:
+
+<Image img="/images/cloud/security/ip-filtering-after-provisioning.webp" size="md" alt="ClickHouse Cloud의 기존 액세스 목록" border />
+
+<div id="possible-actions">
+  ### 가능한 작업
+</div>
+
+1. 추가 항목을 넣으려면 **+ Add new IP**를 사용할 수 있습니다
+
+이 예시에서는 설명이 `London server`인 단일 IP 주소를 추가합니다:
+
+<Image img="/images/cloud/security/ip-filter-add-single-ip.webp" size="md" alt="ClickHouse Cloud의 액세스 목록에 단일 IP 추가" border />
+
+2. 기존 항목 삭제
+
+십자(x)를 클릭하면 항목을 삭제할 수 있습니다
+
+3. 기존 항목 편집
+
+항목을 직접 수정합니다
+
+4. **Anywhere**에서의 액세스 허용으로 전환
+
+권장되지는 않지만 허용됩니다. ClickHouse 위에 구축된 애플리케이션을 공개하고, 백엔드 ClickHouse Cloud 서비스에 대한 액세스는 제한하는 것을 권장합니다.
+
+변경 사항을 적용하려면 **Save**를 클릭해야 합니다.
+
+<div id="verification">
+  ## 검증
+</div>
+
+필터를 생성한 후에는 해당 범위 내에서 서비스에 연결되는지 확인하고, 허용된 범위 밖의 연결은 거부되는지도 확인하십시오. 다음과 같은 간단한 `curl` 명령으로 검증할 수 있습니다.
+
+```bash title="Attempt rejected from outside the allow list"
+curl https://<HOSTNAME>.clickhouse.cloud:8443
+```
+
+```response
+curl: (35) error:02FFF036:system library:func(4095):Connection reset by peer
+```
+
+또는
+
+```response
+curl: (35) LibreSSL SSL_connect: SSL_ERROR_SYSCALL in connection to HOSTNAME.clickhouse.cloud:8443
+```
+
+```bash title="Attempt permitted from inside the allow list"
+curl https://<HOSTNAME>.clickhouse.cloud:8443
+```
+
+```response
+Ok.
+```
+
+<div id="limitations">
+  ## 제한 사항
+</div>
+
+* 현재 IP 액세스 목록은 IPv4만 지원됩니다

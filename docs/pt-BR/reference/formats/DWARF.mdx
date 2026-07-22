@@ -1,0 +1,92 @@
+---
+alias: []
+description: 'Documentação do formato DWARF'
+input_format: true
+keywords: ['DWARF']
+output_format: false
+slug: /interfaces/formats/DWARF
+title: 'DWARF'
+doc_type: 'reference'
+---
+
+| Entrada | Saída | Alias |
+| ------- | ----- | ----- |
+| ✔       | ✗     |       |
+
+<div id="description">
+  ## Descrição
+</div>
+
+O formato `DWARF` analisa símbolos de depuração DWARF de um arquivo ELF (executável, biblioteca ou arquivo-objeto).
+Ele é semelhante ao `dwarfdump`, mas muito mais rápido (centenas de MB/s) e com suporte a SQL.
+Ele produz uma linha para cada Debug Information Entry (DIE) na seção `.debug_info`
+e inclui entradas &quot;null&quot; que a codificação DWARF usa para encerrar listas de filhos na árvore.
+
+<Info>
+  `.debug_info` é composto por *unidades*, que correspondem a unidades de compilação:
+
+  * Cada unidade é uma árvore de *DIE*s, com um DIE `compile_unit` como raiz.
+  * Cada DIE tem uma *tag* e uma lista de *atributos*.
+  * Cada atributo tem um *nome* e um *valor* (e também um *form*, que especifica como o valor é codificado).
+
+  Os DIEs representam elementos do código-fonte, e sua *tag* indica de que tipo de elemento se trata. Por exemplo, há:
+
+  * funções (tag = `subprogram`)
+  * classes/structs/enums (`class_type`/`structure_type`/`enumeration_type`)
+  * variáveis (`variable`)
+  * argumentos de função (`formal_parameter`).
+
+  A estrutura em árvore espelha o código-fonte correspondente. Por exemplo, um DIE `class_type` pode conter DIEs `subprogram` que representam métodos da classe.
+</Info>
+
+O formato `DWARF` gera as seguintes colunas:
+
+* `offset` - posição do DIE na seção `.debug_info`
+* `size` - número de bytes no DIE codificado (incluindo atributos)
+* `tag` - tipo do DIE; o prefixo convencional &quot;DW&#95;TAG&#95;&quot; é omitido
+* `unit_name` - nome da unidade de compilação que contém este DIE
+* `unit_offset` - posição da unidade de compilação que contém este DIE na seção `.debug_info`
+* `ancestor_tags` - array com as tags dos ancestrais do DIE atual na árvore, em ordem do mais interno para o mais externo
+* `ancestor_offsets` - offsets dos ancestrais, em paralelo a `ancestor_tags`
+* alguns atributos comuns duplicados do array de atributos por conveniência:
+  * `name`
+  * `linkage_name` - nome totalmente qualificado com mangling; normalmente só as funções o têm (mas não todas)
+  * `decl_file` - nome do arquivo de código-fonte onde esta entidade foi declarada
+  * `decl_line` - número da linha no código-fonte onde esta entidade foi declarada
+* arrays paralelos que descrevem os atributos:
+  * `attr_name` - nome do atributo; o prefixo convencional &quot;DW&#95;AT&#95;&quot; é omitido
+  * `attr_form` - como o atributo é codificado e interpretado; o prefixo convencional &quot;DW&#95;FORM&#95;&quot; é omitido
+  * `attr_int` - valor inteiro do atributo; 0 se o atributo não tiver um valor numérico
+  * `attr_str` - valor de string do atributo; vazio se o atributo não tiver um valor de string
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+O formato `DWARF` pode ser usado para encontrar unidades de compilação com o maior número de definições de função (incluindo instanciações de template e funções de arquivos de cabeçalho incluídos):
+
+```sql title="Query"
+SELECT
+    unit_name,
+    count() AS c
+FROM file('programs/clickhouse', DWARF)
+WHERE tag = 'subprogram' AND NOT has(attr_name, 'declaration')
+GROUP BY unit_name
+ORDER BY c DESC
+LIMIT 3
+```
+
+```text title="Response"
+┌─unit_name──────────────────────────────────────────────────┬─────c─┐
+│ ./src/Core/Settings.cpp                                    │ 28939 │
+│ ./src/AggregateFunctions/AggregateFunctionSumMap.cpp       │ 23327 │
+│ ./src/AggregateFunctions/AggregateFunctionUniqCombined.cpp │ 22649 │
+└────────────────────────────────────────────────────────────┴───────┘
+
+3 linhas no conjunto. Tempo decorrido: 1.487 seg. Processadas 139.76 milhões de linhas, 1.12 GB (93.97 milhões de linhas/s., 752.77 MB/s.)
+Pico de uso de memória: 271.92 MiB.
+```
+
+<div id="format-settings">
+  ## Configurações de formato
+</div>

@@ -1,0 +1,61 @@
+---
+title: Optimize Final 피하기
+---
+
+**MergeTree 엔진**을 사용하는 ClickHouse 테이블은 데이터가 삽입될 때마다 생성되는 **불변 파트** 형태로 디스크에 데이터를 저장합니다.
+
+각 삽입은 정렬되고 압축된 컬럼 파일과 함께 인덱스, 체크섬 등의 메타데이터를 포함하는 새로운 파트를 생성합니다. 파트 구조와 파트가 형성되는 방식에 대한 자세한 설명은 이 [가이드](/ko/concepts/core-concepts/parts)를 참조하십시오.
+
+시간이 지나면 백그라운드 프로세스가 더 작은 파트를 더 큰 파트로 머지하여 단편화를 줄이고 쿼리 성능을 향상시킵니다.
+
+<Image img="/images/bestpractices/simple_merges.webp" size="md" alt="단순 머지" />
+
+다음을 사용해 이 머지를 수동으로 트리거하고 싶을 수 있지만:
+
+```sql
+OPTIMIZE TABLE <table> FINAL;
+```
+
+**대부분의 경우 `OPTIMIZE FINAL` 작업은 피해야 합니다**. 이 작업은
+리소스를 많이 소모하는 연산을 수행하므로 클러스터 성능에 영향을 줄 수 있습니다.
+
+<Info>
+  **`OPTIMIZE FINAL`과 `FINAL`의 차이**
+
+  `OPTIMIZE FINAL`은 `FINAL`과 다릅니다. `ReplacingMergeTree`처럼
+  중복 없는 결과를 얻기 위해 `FINAL`을 사용해야 하는 경우가 있습니다. 일반적으로
+  쿼리가 프라이머리 키에 포함된 컬럼과 동일한 컬럼으로 필터링된다면 `FINAL`은 사용해도 괜찮습니다.
+</Info>
+
+<div id="why-avoid">
+  ## 왜 피해야 하나요?
+</div>
+
+<div id="its-expensive">
+  ### 비용이 많이 듭니다
+</div>
+
+`OPTIMIZE FINAL`을 실행하면 ClickHouse는 이미 큰 규모의 머지가 완료된 경우에도 **모든** 활성 파트를 **하나의 파트**로 머지하도록 강제합니다. 이 과정에는 다음이 포함됩니다.
+
+1. 모든 파트 **압축 해제**
+2. 데이터 **머지**
+3. 데이터 **재압축**
+4. 최종 파트를 디스크 또는 객체 스토리지에 **기록**
+
+이러한 단계는 **CPU와 I/O를 많이 사용**하므로, 특히 대규모 데이터셋을 다룰 때 시스템에 상당한 부담을 줄 수 있습니다.
+
+<div id="it-ignores-safety-limits">
+  ### 안전 제한을 무시합니다
+</div>
+
+일반적으로 ClickHouse는 ~150 GB보다 큰 파트를 머지하지 않도록 합니다([max&#95;bytes&#95;to&#95;merge&#95;at&#95;max&#95;space&#95;in&#95;pool](/ko/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)로 설정 가능). 하지만 `OPTIMIZE FINAL`은 **이 안전장치를 무시**하므로 다음과 같은 문제가 발생할 수 있습니다.
+
+* **여러 개의 150 GB 파트**를 하나의 매우 큰 파트로 머지하려고 시도할 수 있습니다
+* 이로 인해 **머지 시간이 길어지거나**, **메모리 압박**, 심지어 **메모리 부족 오류**까지 발생할 수 있습니다
+* 이렇게 커진 파트는 이후 머지가 어려워질 수 있습니다. 즉, 앞서 설명한 이유로 추가 머지 시도가 실패할 수 있습니다. 올바른 쿼리 시점 동작을 위해 머지가 필요한 경우, [ReplacingMergeTree에서 업서트에 중복 제거를 사용하는 경우](/ko/concepts/features/operations/insert/deduplication#using-replacingmergetree-for-upserts)처럼 중복이 누적되어 쿼리 시점 성능이 저하되는 등 바람직하지 않은 결과가 발생할 수 있습니다.
+
+<div id="let-background-merges-do-the-work">
+  ## 백그라운드 머지에 맡기십시오
+</div>
+
+ClickHouse는 저장소와 쿼리 효율성을 최적화하기 위해 이미 효율적인 백그라운드 머지를 수행합니다. 이러한 작업은 점진적으로 이루어지며, 리소스 사용량을 고려하고, 구성된 임계값을 준수합니다. 아주 구체적인 요구 사항(예: 테이블을 동결하거나 내보내기 전에 데이터를 확정해야 하는 경우)이 없다면, **머지는 ClickHouse가 자체적으로 관리하도록 맡기는 것이 좋습니다**.

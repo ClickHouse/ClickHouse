@@ -1,0 +1,197 @@
+---
+sidebarTitle: '참고'
+description: 'Kafka ClickPipes에서 지원하는 포맷, 소스, 전달 보장 방식, 인증 및 실험적 기능에 대한 세부 정보를 제공합니다.'
+slug: /integrations/clickpipes/kafka/reference
+title: '참고'
+doc_type: 'reference'
+keywords: ['kafka 참고', 'clickpipes', '데이터 소스', 'avro', '가상 컬럼']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+import ExperimentalBadge from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="supported-data-sources">
+  ## 지원되는 데이터 소스
+</div>
+
+| 이름               | 로고                                                                                                 | 유형   | 상태 | 설명                                                                         |
+| ---------------- | -------------------------------------------------------------------------------------------------- | ---- | -- | -------------------------------------------------------------------------- |
+| Apache Kafka     | <img src="/images/integrations/logos/kafka.svg" alt="Apache Kafka 로고" width="32" />                | 스트리밍 | 안정 | ClickPipes를 구성하고 Apache Kafka의 스트리밍 데이터를 ClickHouse Cloud로 수집하기 시작하세요.     |
+| Confluent Cloud  | <img src="/images/integrations/logos/confluent.svg" alt="Confluent Cloud 로고" width="32" />         | 스트리밍 | 안정 | 직접 통합을 통해 Confluent와 ClickHouse Cloud를 함께 활용할 수 있습니다.                      |
+| Redpanda         | <img src="/images/integrations/logos/logo_redpanda.webp" alt="Redpanda 로고" width="32" />            | 스트리밍 | 안정 | ClickPipes를 구성하고 Redpanda의 스트리밍 데이터를 ClickHouse Cloud로 수집하기 시작하세요.         |
+| AWS MSK          | <img src="/images/integrations/logos/msk.svg" alt="AWS MSK 로고" width="32" />                       | 스트리밍 | 안정 | ClickPipes를 구성하고 AWS MSK의 스트리밍 데이터를 ClickHouse Cloud로 수집하기 시작하세요.          |
+| Azure Event Hubs | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Azure Event Hubs 로고" width="32" /> | 스트리밍 | 안정 | ClickPipes를 구성하고 Azure Event Hubs의 스트리밍 데이터를 ClickHouse Cloud로 수집하기 시작하세요. |
+| WarpStream       | <img src="/images/integrations/logos/warpstream.svg" alt="WarpStream 로고" width="32" />             | 스트리밍 | 안정 | ClickPipes를 구성하고 WarpStream의 스트리밍 데이터를 ClickHouse Cloud로 수집하기 시작하세요.       |
+
+<div id="supported-data-formats">
+  ## 지원되는 데이터 포맷
+</div>
+
+지원되는 포맷은 다음과 같습니다:
+
+* [JSON](/ko/guides/clickhouse/data-formats/json/intro)
+* [AvroConfluent](/ko/reference/formats/Avro/AvroConfluent)
+* [Protobuf](/ko/reference/formats/Protobuf/Protobuf)
+
+<div id="supported-data-types">
+  ## 지원되는 데이터 타입
+</div>
+
+<div id="standard-types-support">
+  ### 표준
+</div>
+
+현재 ClickPipes에서는 다음과 같은 표준 ClickHouse 데이터 타입을 지원합니다.
+
+* 기본 숫자 타입 - [U]Int8/16/32/64, Float32/64, BFloat16
+* 대형 정수 타입 - [U]Int128/256
+* Decimal 타입
+* Boolean
+* String
+* FixedString
+* Date, Date32
+* DateTime, DateTime64 (UTC 시간대만 지원)
+* Enum8/Enum16
+* UUID
+* IPv4
+* IPv6
+* Time, Time64
+* JSON
+* 모든 ClickHouse LowCardinality 타입
+* 위 타입 중 임의의 타입을 키와 값으로 사용하는 맵(널 허용 포함)
+* 위 타입 중 임의의 타입을 요소로 사용하는 Tuple 및 배열(널 허용 포함, 1단계 깊이만 지원)
+* SimpleAggregateFunction 타입(AggregatingMergeTree 또는 SummingMergeTree 대상에 사용)
+
+<div id="variant-type-support">
+  ### Variant 타입 지원
+</div>
+
+ClickPipes는 다음과 같은 경우에 Variant 타입을 지원합니다:
+
+* Avro Unions. Avro 스키마에 여러 non-null 타입을 포함하는 유니온이 있으면 ClickPipes가 적절한
+  Variant 타입을 추론합니다. Avro 데이터에서는 이 경우 외에는 Variant 타입이 지원되지 않습니다.
+* JSON 필드. 소스 데이터 스트림의 JSON 필드에 대해 Variant 타입(예: `Variant(String, Int64, DateTime)`)을 수동으로 지정할 수 있습니다.
+  복잡한 하위 타입(배열/맵/튜플)은 지원되지 않습니다. 또한 ClickPipes가
+  사용할 올바른 Variant 하위 타입을 결정하는 방식 때문에 Variant 정의에서는 integer 또는 datetime 타입을 하나만 사용할 수 있습니다. 예를 들어 `Variant(Int64, UInt32)`는 지원되지 않습니다.
+
+<div id="json-type-support">
+  ### JSON 타입 지원
+</div>
+
+ClickPipes는 다음과 같은 경우 JSON 타입을 지원합니다.
+
+* Avro Record 및 Protobuf Message 필드는 항상 JSON 컬럼에 매핑할 수 있습니다.
+* Avro String 및 Bytes 필드는 해당 Avro 필드에 실제로 JSON String 객체가 포함된 경우 JSON 컬럼에 매핑할 수 있습니다.
+* Protobuf String 및 Bytes kind는 해당 Protobuf 필드에 실제로 JSON String 객체가 포함된 경우 JSON 컬럼에 매핑할 수 있습니다.
+* 항상 JSON 객체인 JSON 필드는 JSON 대상 컬럼에 매핑할 수 있습니다.
+
+고정 경로 또는 건너뛴 경로를 포함해, 대상 컬럼은 원하는 JSON 타입으로 수동 변경해야 합니다.
+
+<div id="avro">
+  ### Avro
+</div>
+
+<div id="supported-avro-data-types">
+  #### 지원되는 Avro 데이터 타입
+</div>
+
+ClickPipes는 `local-timestamp-millis` 및 `local_timestamp-micros`를 제외한 모든 Avro Primitive 및 Complex 타입과 모든 Avro Logical 타입을 지원합니다. Avro `record` 타입은 Tuple로, `array` 타입은 배열로, `map` 타입은 맵으로(문자열 키만 지원) 변환됩니다. 일반적으로 [여기](/ko/concepts/features/interfaces/schema-inference#avro)에 나열된 변환을 사용할 수 있습니다. ClickPipes는 타입 변환 시 오버플로우나 정밀도 손실을 검사하지 않으므로, Avro 숫자 타입에는 정확히 일치하는 타입을 사용하는 것이 좋습니다.
+또는 모든 Avro 타입을 `String` 컬럼에 삽입할 수 있으며, 이 경우 유효한 JSON 문자열로 표현됩니다.
+
+<div id="nullable-types-and-avro-unions">
+  #### 널 허용 타입과 Avro 유니온
+</div>
+
+Avro에서 널 허용 타입은 T가 기본 Avro 타입일 때 `(T, null)` 또는 `(null, T)` 형태의 Union 스키마를 사용해 정의됩니다. 스키마 추론 중 이러한 유니온은 ClickHouse의 &quot;Nullable&quot; 컬럼으로 매핑됩니다. ClickHouse는
+`Nullable(Array)`, `Nullable(Map)`, `Nullable(Tuple)` 타입을 지원하지 않는다는 점에 유의하십시오. 이러한 타입에 대한 Avro null 유니온은 null을 허용하지 않는 버전으로 매핑됩니다(Avro Record 타입은 ClickHouse의 named tuple로 매핑됩니다). 이러한 타입의 Avro &quot;null&quot; 값은 다음과 같이 삽입됩니다:
+
+* null Avro 배열의 경우 빈 배열
+* null Avro 맵의 경우 빈 맵
+* null Avro Record의 경우 모든 값이 기본값/0으로 채워진 named tuple
+
+<div id="protobuf">
+  ### Protobuf
+</div>
+
+<div id="supported-protobuf-data-types">
+  #### 지원되는 Protobuf 데이터 타입
+</div>
+
+ClickPipes는 오래전에 사용 중단된 proto 2 `group` 타입을 제외한 모든 Protobuf 2 및 3 타입을 지원합니다. 기본 타입 변환에는
+다음 매핑을 사용합니다:
+
+<Note>
+  모든 기본 타입에 대한 `Array`, `Map`, `Nullable` 변형도 지원합니다.
+</Note>
+
+| Protobuf type                 | ClickHouse type |
+| ----------------------------- | --------------- |
+| `bool`                        | `UInt8`         |
+| `float`                       | `Float32`       |
+| `double`                      | `Float64`       |
+| `int32`, `sint32`, `sfixed32` | `Int32`         |
+| `int64`, `sint64`, `sfixed64` | `Int64`         |
+| `uint32`, `fixed32`           | `UInt32`        |
+| `uint64`, `fixed64`           | `UInt64`        |
+| `string`, `bytes`             | `String`        |
+| `enum`                        | `Enum`          |
+| `repeated T`                  | `Array(T)`      |
+| `message`                     | `Tuple`         |
+
+<Tip>
+  숫자 타입은 오버플로우나 정밀도 손실을 방지하기 위해 정확히 일치시키는 것이 좋습니다.
+</Tip>
+
+다음 [well-known types](https://protobuf.dev/reference/protobuf/google.protobuf/)도 지원합니다:
+
+| Well-known type                                                                              | ClickHouse type          |
+| -------------------------------------------------------------------------------------------- | ------------------------ |
+| `google.protobuf.Timestamp`                                                                  | `DateTime`, `DateTime64` |
+| `google.protobuf.Duration`                                                                   | `Time`, `Time64`         |
+| `google.protobuf.StringValue`, `google.protobuf.BytesValue`                                  | `Nullable(String)`       |
+| `google.protobuf.Int32Value`, `google.protobuf.SInt32Value`, `google.protobuf.SFixed32Value` | `Nullable(Int32)`        |
+| `google.protobuf.Int64Value`, `google.protobuf.SInt64Value`, `google.protobuf.SFixed64Value` | `Nullable(Int64)`        |
+| `google.protobuf.UInt32Value`, `google.protobuf.Fixed32Value`                                | `Nullable(UInt32)`       |
+| `google.protobuf.UInt64Value`, `google.protobuf.Fixed64Value`                                | `Nullable(UInt64)`       |
+| `google.protobuf.FloatValue`                                                                 | `Nullable(Float32)`      |
+| `google.protobuf.DoubleValue`                                                                | `Nullable(Float64)`      |
+| `google.protobuf.BoolValue`                                                                  | `Nullable(UInt8)`        |
+
+<div id="protobuf-one-ofs">
+  #### Protobuf `oneof`
+</div>
+
+스키마 추론 시 Protobuf `oneof` 필드는 기본적으로 이름이 있는 `Tuple`에 매핑되며, 이 경우 기본값이 아닌
+값을 갖는 필드는 최대 하나뿐입니다. 이러한 필드는 설정된 구성 필드에 따라 활성 값의 유형이 결정되는 `Variant` 컬럼으로 자동 매핑될 수도
+있습니다. 또는 각 구성 필드를 각각 별도의 ClickHouse 컬럼에 수동으로 매핑할 수도 있습니다. `oneof`
+필드는 서로 배타적이므로 레코드마다 실제로 값이 채워지는 컬럼은 하나뿐입니다.
+
+<div id="protobuf-message-lists">
+  #### 메시지 목록
+</div>
+
+ClickPipe에 대해 정의된 최상위 Protobuf 스키마에 protobuf Message인 단일 반복 필드가 하나만 포함된 경우, 스키마 추론과 컬럼 매핑은 &quot;포함된&quot; Message 필드를 기준으로 수행됩니다. Kafka 메시지는 이러한 메시지의 목록으로 처리되며, 단일 Kafka 메시지는 여러 개의 ClickHouse 행으로 풀어집니다.
+
+<div id="kafka-virtual-columns">
+  ## Kafka 가상 컬럼
+</div>
+
+다음 가상 컬럼은 Kafka 호환 스트리밍 데이터 소스에서 지원됩니다. 새 대상을 만들 때 `Add Column` 버튼을 사용하여 가상 컬럼을 대상 테이블에 추가할 수 있습니다.
+
+| 이름               | 설명                   | 권장 데이터 타입       |
+| ---------------- | -------------------- | --------------- |
+| `_key`           | Kafka 메시지 키          | `String`        |
+| `_timestamp`     | Kafka 타임스탬프(밀리초 정밀도) | `DateTime64(3)` |
+| `_partition`     | Kafka 파티션            | `Int32`         |
+| `_offset`        | Kafka 오프셋            | `Int64`         |
+| `_topic`         | Kafka 토픽             | `String`        |
+| `_header_keys`   | 레코드 헤더에 포함된 키의 병렬 배열 | `Array(String)` |
+| `_header_values` | 레코드 헤더 값의 병렬 배열      | `Array(String)` |
+| `_raw_message`   | 전체 Kafka 메시지         | `String`        |
+
+`_raw_message` 컬럼은 JSON 데이터에만 사용하는 것을 권장합니다.
+JSON 문자열만 필요한 사용 사례(예: ClickHouse [`JsonExtract*`](/ko/reference/functions/regular-functions/json-functions#jsonextract-functions) 함수를 사용하여
+다운스트림 materialized view를 채우는 경우)에서는 모든 &quot;비가상&quot; 컬럼을 삭제하면 ClickPipes 성능이 향상될 수 있습니다.

@@ -1,0 +1,80 @@
+---
+slug: /cloud/managed-postgres/migrations/overview
+sidebarTitle: '概述'
+title: 'Managed Postgres 数据迁移'
+description: '比较迁移到 ClickHouse Managed Postgres 的四种路径，选择最符合源数据库和停机要求的方案。'
+keywords: ['Managed Postgres', '迁移', 'Postgres 迁移', 'ClickPipes', 'PeerDB', 'pg_dump', 'pg_restore', '逻辑复制']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-overview-beta" />
+
+你可以通过四种不同的方式迁移到 Managed Postgres。具体选择哪一种，
+取决于你是否需要持续复制 (CDC (变更数据捕获) ) 、迁移来源，以及应用在切换期间
+可容忍的停机时长。
+
+| 方法                                                                                         | 持续复制 (CDC (变更数据捕获) )  | 运行位置                 | 最适合                                |
+| ------------------------------------------------------------------------------------------ | ----------- | -------------------- | ---------------------------------- |
+| [ClickPipes](/zh/products/managed-postgres/migrations/clickpipes)                             | 是           | ClickHouse Cloud 控制台 | 适用于大多数迁移——提供开箱即用的引导式向导，支持初始加载和 CDC (变更数据捕获)  |
+| [PeerDB](/zh/products/managed-postgres/migrations/peerdb)                                     | 是           | 自托管 (Docker)         | 适用于 ClickPipes UI 未覆盖的来源或工作流       |
+| [pg&#95;dump 和 pg&#95;restore](/zh/products/managed-postgres/migrations/pg_dump-pg_restore) | 否           | 本地机器                 | 适合小型或静态数据集的一次性迁移，且可以接受停机时间         |
+| [逻辑复制](/zh/products/managed-postgres/migrations/logical-replication)           | 是           | 源端和目标端 Postgres      | 适合希望直接控制原生 Postgres 复制且不依赖第三方工具的场景 |
+
+<div id="clickpipes">
+  ## ClickPipes
+</div>
+
+[ClickPipes](/zh/products/managed-postgres/migrations/clickpipes) 是大多数迁移场景的推荐
+方案。它完全在 ClickHouse Cloud 控制台中运行，
+并引导你完成连接源端、导出和导入
+schema，以及启动有或没有 CDC (变更数据捕获) 的初始加载。预置的源
+连接器支持 Amazon RDS、Aurora、Supabase、Google Cloud SQL、Azure
+Flexible Server、Neon、Crunchy Bridge、TimescaleDB，以及任何通用的 Postgres
+实例。
+
+<div id="peerdb">
+  ## PeerDB
+</div>
+
+[PeerDB](/zh/products/managed-postgres/migrations/peerdb) 是一款通过 Docker 运行的自托管迁移
+工具。当源端或工作流不适合使用
+ClickPipes 向导时，请使用它——例如，当你需要通过脚本在多个数据库中创建
+peer，或将整个迁移过程完全放在自己的网络内运行时。
+PeerDB 不会自动迁移索引、约束或触发器；数据迁移到目标端后，
+你需要在目标端重新创建它们。
+
+<div id="pg-dump-pg-restore">
+  ## pg_dump 和 pg_restore
+</div>
+
+[pg&#95;dump 和 pg&#95;restore](/zh/products/managed-postgres/migrations/pg_dump-pg_restore)
+会获取源端的快照，并在目标端回放。由于没有持续的
+复制，因此在转储和恢复期间，必须停止源端上的写入。
+对于小型或静态数据集，或者可以接受维护窗口的非生产环境，
+这是更合适的选择。
+
+<div id="logical-replication">
+  ## 逻辑复制
+</div>
+
+[逻辑复制](/zh/products/managed-postgres/migrations/logical-replication)
+使用 Postgres 原生的 publication 和订阅，将变更从
+源端流式传输到目标端。你需要自行配置 `wal_level`、replication slots，以及
+`REPLICATION` 权限——整个过程中不会有任何第三方工具介入。
+如果你希望完全掌控复制机制，或者你的环境不允许使用外部迁移工具，请选择这种方式。
+
+<div id="after-migration">
+  ## 迁移后
+</div>
+
+数据开始迁移后，使用[数据验证](/zh/products/managed-postgres/migrations/data-validation)
+在切换应用流量之前确认源端与目标端的行数和内容是否一致。[迁移 FAQ](/zh/products/managed-postgres/migrations/faq)
+介绍了常见错误及恢复步骤。
+
+<div id="supabase">
+  ## 从 Supabase 迁移
+</div>
+
+如果您正从 Supabase 迁移，请参阅 [Supabase 到 Managed Postgres 的迁移指南](https://github.com/iskakaushik/supa-auth-migrate/blob/main/MIGRATION.md)，了解详细的分步操作说明。

@@ -1377,7 +1377,9 @@ String VariantType::insertNumberEntry(
 
 String QBitType::typeName(const bool escape, const bool simplified) const
 {
-    return fmt::format("QBit({}, {})", subtype->typeName(escape, simplified), dimension);
+    if (stride == dimension)
+        return fmt::format("QBit({}, {})", subtype->typeName(escape, simplified), dimension);
+    return fmt::format("QBit({}, {}, {})", subtype->typeName(escape, simplified), dimension, stride);
 }
 
 String QBitType::MySQLtypeName(RandomGenerator &, const bool) const
@@ -1397,7 +1399,7 @@ String QBitType::SQLitetypeName(RandomGenerator &, const bool) const
 
 std::unique_ptr<SQLType> QBitType::typeDeepCopy() const
 {
-    return std::make_unique<QBitType>(subtype->typeDeepCopy(), dimension);
+    return std::make_unique<QBitType>(subtype->typeDeepCopy(), dimension, stride);
 }
 
 String QBitType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
@@ -1830,6 +1832,41 @@ std::unique_ptr<SQLType> StatementGenerator::randomAggregateType(RandomGenerator
     return std::make_unique<AggregateFunctionType>(simple, std::move(aggr), std::move(params), std::move(subtypes));
 }
 
+std::vector<EnumValue> StatementGenerator::setRandomEnumValues(RandomGenerator & rg, const bool bits16, EnumDef * edef)
+{
+    std::vector<EnumValue> evs;
+    const uint32_t nvalues = (rg.nextLargeNumber() % static_cast<uint32_t>(enum_values.size())) + 1;
+
+    if (edef)
+    {
+        edef->set_bits(bits16);
+    }
+    std::shuffle(enum_values.begin(), enum_values.end(), rg.generator);
+    if (bits16)
+    {
+        std::shuffle(enum16_ids.begin(), enum16_ids.end(), rg.generator);
+    }
+    else
+    {
+        std::shuffle(enum8_ids.begin(), enum8_ids.end(), rg.generator);
+    }
+    for (uint32_t i = 0; i < nvalues; i++)
+    {
+        const String & nval = enum_values[i];
+        const int32_t num = static_cast<int32_t>(bits16 ? enum16_ids[i] : enum8_ids[i]);
+
+        if (edef)
+        {
+            EnumDefValue * edf = i == 0 ? edef->mutable_first_value() : edef->add_other_values();
+
+            edf->set_enumv(nval);
+            edf->set_number(num);
+        }
+        evs.emplace_back(EnumValue(nval, num));
+    }
+    return evs;
+}
+
 std::unique_ptr<SQLType>
 StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_types, const bool low_card, BottomTypeName * tp)
 {
@@ -1935,38 +1972,9 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
           [&]
           {
               const bool bits16 = rg.nextBool();
-              std::vector<EnumValue> evs;
-              const uint32_t nvalues = (rg.nextLargeNumber() % static_cast<uint32_t>(enum_values.size())) + 1;
-              EnumDef * edef = tp ? tp->mutable_enum_def() : nullptr;
+              std::vector<EnumValue> evs = setRandomEnumValues(rg, bits16, tp ? tp->mutable_enum_def() : nullptr);
 
-              if (edef)
-              {
-                  edef->set_bits(bits16);
-              }
-              std::shuffle(enum_values.begin(), enum_values.end(), rg.generator);
-              if (bits16)
-              {
-                  std::shuffle(enum16_ids.begin(), enum16_ids.end(), rg.generator);
-              }
-              else
-              {
-                  std::shuffle(enum8_ids.begin(), enum8_ids.end(), rg.generator);
-              }
-              for (uint32_t i = 0; i < nvalues; i++)
-              {
-                  const String & nval = enum_values[i];
-                  const int32_t num = static_cast<const int32_t>(bits16 ? enum16_ids[i] : enum8_ids[i]);
-
-                  if (edef)
-                  {
-                      EnumDefValue * edf = i == 0 ? edef->mutable_first_value() : edef->add_other_values();
-
-                      edf->set_number(num);
-                      edf->set_enumv(nval);
-                  }
-                  evs.emplace_back(EnumValue(nval, num));
-              }
-              res = std::make_unique<EnumType>(bits16 ? 16 : 8, evs);
+              res = std::make_unique<EnumType>(bits16 ? 16 : 8, std::move(evs));
           }},
          {uuid_type,
           [&]
@@ -2112,18 +2120,43 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
           [&]
           {
               std::unique_ptr<SQLType> sub;
-              FloatingPoints nflo = {};
-              const uint32_t dimension = rg.nextSmallNumber();
+              uint32_t dimension = rg.nextSmallNumber();
+              uint32_t stride = dimension;
+              QBit * qbit = tp ? tp->mutable_qbit() : nullptr;
 
-              std::tie(sub, nflo) = randomFloatType(rg, allowed_types);
-              if (tp)
+              /// Occasionally generate a strided QBit. Constraints: dimension % stride == 0 and stride % 8 == 0.
+              if (rg.nextSmallNumber() < 3)
               {
-                  QBit * qbit = tp->mutable_qbit();
-
-                  qbit->set_subtype(nflo);
-                  qbit->set_dimension(dimension);
+                  const uint32_t num_groups = std::max<uint32_t>(1, rg.nextSmallNumber());
+                  stride = 8;
+                  dimension = stride * num_groups;
               }
-              res = std::make_unique<QBitType>(std::move(sub), dimension);
+
+              if (rg.nextSmallNumber() < 3)
+              {
+                  sub = std::make_unique<IntType>(8, false);
+                  if (tp)
+                  {
+                      qbit->set_int8(true);
+                  }
+              }
+              else
+              {
+                  FloatingPoints nflo = {};
+
+                  std::tie(sub, nflo) = randomFloatType(rg, allowed_types);
+                  if (tp)
+                  {
+                      qbit->set_floats(nflo);
+                  }
+              }
+              if (qbit)
+              {
+                  qbit->set_dimension(dimension);
+                  if (stride != dimension)
+                      qbit->set_stride(stride);
+              }
+              res = std::make_unique<QBitType>(std::move(sub), dimension, stride);
           }},
          {geo_type,
           [&]
@@ -2293,6 +2326,29 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
               result = std::make_unique<NestedType>(std::move(subtypes));
           }}});
     return result;
+}
+
+EnumType * getColumnEnumType(SQLType * tp)
+{
+    while (tp)
+    {
+        if (auto * et = dynamic_cast<EnumType *>(tp))
+        {
+            return et;
+        }
+        if (auto * nl = dynamic_cast<Nullable *>(tp))
+        {
+            tp = nl->subtype.get();
+            continue;
+        }
+        if (auto * lc = dynamic_cast<LowCardinality *>(tp))
+        {
+            tp = lc->subtype.get();
+            continue;
+        }
+        break;
+    }
+    return nullptr;
 }
 
 String appendDecimal(RandomGenerator & rg, const bool use_func, const uint32_t left, const uint32_t right)

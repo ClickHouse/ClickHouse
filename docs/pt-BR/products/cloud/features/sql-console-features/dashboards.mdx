@@ -1,0 +1,111 @@
+---
+sidebarTitle: 'Painéis'
+slug: /cloud/manage/dashboards
+title: 'Painéis'
+description: 'O recurso de painéis do SQL Console permite reunir e compartilhar visualizações de consultas salvas.'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'painéis', 'visualização de dados', 'painéis do SQL Console', 'análises em nuvem']
+---
+
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+O recurso de painéis do SQL Console permite reunir e compartilhar visualizações de consultas salvas. Para começar, salve e visualize consultas, adicione visualizações de consultas a um painel e torne o painel interativo usando parâmetros de consulta.
+
+<div id="core-concepts">
+  ## Conceitos fundamentais
+</div>
+
+<div id="query-sharing">
+  ### Compartilhamento de consultas
+</div>
+
+Para compartilhar seu dashboard com colegas, compartilhe também a consulta salva subjacente. Para ver uma visualização, você precisa ter, no mínimo, acesso de somente leitura à consulta salva subjacente.
+
+<div id="interactivity">
+  ### Interatividade
+</div>
+
+Use [parâmetros de consulta](/pt-BR/reference/syntax#defining-and-using-query-parameters) para tornar seu dashboard interativo. Por exemplo, você pode adicionar um parâmetro de consulta a uma cláusula `WHERE` para que ele funcione como filtro.
+
+Você pode ativar ou desativar a entrada do parâmetro de consulta no painel lateral de filtros **Global**, selecionando o tipo “filter” nas configurações da visualização. Também é possível ativar ou desativar a entrada do parâmetro de consulta ao criar um link para outro objeto (como uma tabela) no dashboard. Consulte a seção “[configurar um filtro](/pt-BR/products/cloud/features/sql-console-features/dashboards#configure-a-filter)” do guia de início rápido abaixo.
+
+<div id="quick-start">
+  ## Início rápido
+</div>
+
+Vamos criar um dashboard para monitorar nosso serviço do ClickHouse usando a tabela do sistema [query&#95;log](/pt-BR/reference/system-tables/query_log).
+
+<div id="quick-start">
+  ## Início rápido
+</div>
+
+<div id="create-a-saved-query">
+  ### Criar uma consulta salva
+</div>
+
+Se você já tiver consultas salvas para visualizar, pode pular esta etapa.
+
+Abra uma nova aba de consulta. Vamos escrever uma consulta para contar o volume de consultas por dia de um serviço usando tabelas de sistema do ClickHouse:
+
+<Image img="/images/cloud/dashboards/2_dashboards.webp" size="md" alt="Criar uma consulta salva" border />
+
+Podemos ver os resultados da consulta em formato de tabela ou começar a criar visualizações na visualização de gráfico. Na próxima etapa, vamos salvar a consulta como `queries over time`:
+
+<Image img="/images/cloud/dashboards/3_dashboards.webp" size="md" alt="Salvar consulta" border />
+
+Mais informações sobre consultas salvas podem ser encontradas na [seção Saving a Query](/pt-BR/products/cloud/features/sql-console-features/sql-console#saving-a-query).
+
+Podemos criar e salvar outra consulta, `query count by query kind`, para contar o número de consultas por tipo de consulta. Aqui está uma visualização em gráfico de barras dos dados no SQL Console.
+
+<Image img="/images/cloud/dashboards/4_dashboards.webp" size="md" alt="Uma visualização em gráfico de barras dos resultados de uma consulta" border />
+
+Agora que há duas consultas, vamos criar um dashboard para visualizá-las e reuni-las em um só lugar.
+
+<div id="create-a-dashboard">
+  ### Crie um dashboard
+</div>
+
+No painel Painéis, clique em “New Dashboard”. Depois de dar um nome a ele, você terá criado seu primeiro dashboard com sucesso!
+
+<Image img="/images/cloud/dashboards/5_dashboards.webp" size="md" alt="Criar um novo dashboard" border />
+
+<div id="add-a-visualization">
+  ### Adicione uma visualização
+</div>
+
+Há duas consultas salvas, `queries over time` e `query count by query kind`. Vamos visualizar a primeira como um gráfico de linhas. Dê um título e um subtítulo à visualização e selecione a consulta que será visualizada. Em seguida, selecione o tipo de gráfico “Line” e defina os eixos x e y.
+
+<Image img="/images/cloud/dashboards/6_dashboards.webp" size="md" alt="Adicionar uma visualização" border />
+
+Aqui, você também pode fazer ajustes adicionais de estilo, como formatação de números, layout da legenda e rótulos dos eixos.
+
+Em seguida, vamos visualizar a segunda consulta como uma tabela e posicioná-la abaixo do gráfico de linhas.
+
+<Image img="/images/cloud/dashboards/7_dashboards.webp" size="md" alt="Visualizar resultados da consulta como uma tabela" border />
+
+Você criou seu primeiro dashboard ao visualizar duas consultas salvas!
+
+<div id="configure-a-filter">
+  ### Configure um filtro
+</div>
+
+Vamos tornar este dashboard interativo adicionando um filtro para o tipo de consulta, para que você possa exibir apenas as tendências relacionadas a consultas Insert. Faremos isso usando [parâmetros de consulta](/pt-BR/reference/syntax#defining-and-using-query-parameters).
+
+Clique nos três pontos ao lado do gráfico de linhas e, em seguida, no botão de lápis ao lado da consulta para abrir o editor de consulta embutido. Aqui, podemos editar diretamente do dashboard a consulta salva subjacente.
+
+<Image img="/images/cloud/dashboards/8_dashboards.webp" size="md" alt="Edite a consulta subjacente" border />
+
+Agora, ao clicar no botão amarelo de executar consulta, você verá a mesma consulta de antes, filtrada apenas para consultas insert. Clique no botão Salvar para atualizar a consulta. Quando voltar às configurações do gráfico, você poderá filtrar o gráfico de linhas.
+
+Agora, usando os Filtros globais na barra superior, você pode ativar ou desativar o filtro alterando o valor de entrada.
+
+<Image img="/images/cloud/dashboards/9_dashboards.webp" size="md" alt="Ajuste os filtros globais" border />
+
+Suponha que você queira vincular o filtro do gráfico de linhas à tabela. Para isso, volte às configurações de visualização, altere a origem do valor do parâmetro de consulta query&#95;kind para uma tabela e selecione a coluna query&#95;kind como campo a ser vinculado.
+
+<Image img="/images/cloud/dashboards/10_dashboards.webp" size="md" alt="Alterando o parâmetro de consulta" border />
+
+Agora, você pode controlar o filtro do gráfico de linhas diretamente da tabela de consultas por tipo, tornando seu dashboard interativo.
+
+<Image img="/images/cloud/dashboards/11_dashboards.webp" size="md" alt="Controle o filtro no gráfico de linha" border />

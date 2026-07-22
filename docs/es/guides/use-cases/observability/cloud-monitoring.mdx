@@ -1,0 +1,93 @@
+---
+slug: /use-cases/observability/cloud-monitoring
+title: 'Monitorización de ClickHouse Cloud'
+sidebarTitle: 'Monitorización de ClickHouse Cloud'
+description: 'Guía de monitorización de ClickHouse Cloud'
+doc_type: 'guide'
+keywords: ['observabilidad', 'monitorización', 'nube', 'métricas', 'estado del sistema']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+import ObservabilityIntegrations from '/snippets/es/_observability_integration_options.mdx';
+import DirectIntegrations from '/snippets/es/_direct_observability_integration_options.mdx';
+import CommunityMonitoring from '/snippets/es/_community_monitoring.mdx';
+
+Esta guía proporciona a los equipos empresariales que evalúan ClickHouse Cloud información exhaustiva sobre las capacidades de monitorización y observabilidad para implementaciones de producción. Los clientes empresariales suelen preguntar por las funciones de monitorización listas para usar, la integración con las pilas de observabilidad existentes, incluidas herramientas como Datadog y AWS CloudWatch, y cómo se compara la monitorización de ClickHouse con las implementaciones autogestionadas.
+
+<div id="advanced-observability">
+  ## Dashboard avanzado de observabilidad
+</div>
+
+ClickHouse Cloud proporciona una supervisión integral mediante interfaces de dashboard integradas accesibles desde la sección monitorización. Estos dashboards visualizan métricas del sistema y de rendimiento en tiempo real sin necesidad de configuración adicional y son las herramientas principales para la monitorización de producción en tiempo real dentro de ClickHouse Cloud.
+
+* **Advanced Dashboard**: La interfaz principal del dashboard, accesible desde monitorización → Advanced dashboard, proporciona visibilidad en tiempo real de la tasa de consultas, el uso de recursos, el estado del sistema y el rendimiento del almacenamiento. Este dashboard no requiere autenticación independiente, no impedirá que las instancias entren en estado inactivo y no añade carga de consultas a su sistema de producción. Cada visualización se basa en consultas SQL personalizables, con gráficos predefinidos agrupados en métricas específicas de ClickHouse, de estado del sistema y específicas de Cloud. Puede ampliar la supervisión creando consultas personalizadas directamente en la SQL Console.
+
+<Note>
+  Acceder a estas métricas no ejecuta ninguna consulta en el servicio subyacente ni reactivará servicios inactivos.
+</Note>
+
+<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="Advanced dashboard" />
+
+Los usuarios que deseen ampliar estas visualizaciones pueden usar la funcionalidad de dashboards de ClickHouse Cloud y consultar directamente las tablas del sistema.
+
+* **Dashboard avanzado nativo**: Una interfaz de dashboard alternativa accesible a través de &quot;You can still access the native advanced dashboard&quot; dentro de la sección monitorización. Se abre en una pestaña independiente con autenticación y proporciona una UI alternativa para supervisar el estado del sistema y del servicio. Este dashboard permite análisis avanzados, ya que puede modificar las consultas SQL subyacentes.
+
+<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="Advanced dashboard" />
+
+Ambos dashboards ofrecen visibilidad inmediata del estado y del rendimiento del servicio sin dependencias externas, lo que los diferencia de herramientas externas centradas en la depuración como ClickStack.
+
+Para obtener información detallada sobre las funciones del dashboard y las métricas disponibles, consulte la [documentación del dashboard avanzado](/es/products/cloud/features/monitoring/advanced-dashboard).
+
+<div id="query-insights">
+  ## Query Insights y monitorización de recursos
+</div>
+
+ClickHouse Cloud incluye capacidades adicionales de monitorización:
+
+* Query Insights: interfaz integrada para analizar el rendimiento de las consultas y solucionar problemas
+* Resource Utilization Dashboard: realiza un seguimiento del uso de memoria, la asignación de CPU y los patrones de transferencia de datos. Los gráficos de uso de CPU y de memoria muestran la métrica de utilización máxima en un periodo de tiempo determinado. El gráfico de uso de CPU muestra una métrica de utilización de CPU a nivel del sistema (NO una métrica de utilización de CPU de ClickHouse).
+
+Consulta la documentación de [Query Insights](/es/products/cloud/features/sql-console-features/query-insights) y [utilización de recursos](/es/guides/oss/deployment-and-scaling/monitoring/monitoring#resource-utilization) para obtener información detallada sobre estas funciones.
+
+<div id="prometheus">
+  ## Endpoint de métricas compatible con Prometheus
+</div>
+
+ClickHouse Cloud proporciona un endpoint de Prometheus. Esto le permite mantener los flujos de trabajo actuales, aprovechar la experiencia existente del equipo e integrar las métricas de ClickHouse en plataformas empresariales de monitorización, como Grafana, Datadog y otras herramientas compatibles con Prometheus.
+
+El endpoint a nivel de organización federa las métricas de todos los servicios, mientras que los endpoints por servicio ofrecen una monitorización más granular. Entre sus características principales se incluyen:
+
+* Opción de métricas filtradas: el parámetro opcional filtered&#95;metrics=true reduce el payload de más de 1000 métricas disponibles a 125 métricas &quot;de misión crítica&quot;, lo que optimiza los costos y facilita una monitorización más centrada
+* Entrega de métricas en caché: utiliza vistas materializadas que se actualizan cada minuto para minimizar la carga de consultas en los sistemas de producción
+
+<Note>
+  Este enfoque respeta el comportamiento de inactividad del servicio, lo que permite optimizar los costos cuando los servicios no están procesando consultas activamente. Este endpoint de API utiliza credenciales de la ClickHouse Cloud API. Para obtener todos los detalles sobre la configuración del endpoint, consulte la [documentación de Prometheus de ClickHouse Cloud](/es/products/cloud/features/monitoring/prometheus).
+</Note>
+
+<ObservabilityIntegrations />
+
+<div id="clickstack-deployment">
+  ### Opciones de implementación de ClickStack
+</div>
+
+* **HyperDX en ClickHouse Cloud**  (vista previa privada): HyperDX puede ejecutarse en cualquier servicio de ClickHouse Cloud.
+* [Helm](/es/clickstack/deployment/helm): Recomendado para entornos de depuración basados en Kubernetes. Admite la integración con ClickHouse Cloud y permite una configuración específica del entorno, límites de recursos y escalado mediante `values.yaml`.
+* [Docker Compose](/es/clickstack/deployment/docker-compose): Implementa cada componente (ClickHouse, HyperDX, OTel collector, MongoDB) por separado. Puede modificar el archivo de Compose para eliminar los componentes que no se utilicen al integrarlo con ClickHouse Cloud, concretamente ClickHouse y el OpenTelemetry Collector.
+* [Solo HyperDX](/es/clickstack/deployment/hyperdx-only): Contenedor independiente de HyperDX.
+
+Para consultar todas las opciones de implementación y los detalles de la arquitectura, vea la [documentación de ClickStack](/es/clickstack/overview) y la [guía de ingestión de datos](/es/clickstack/ingesting-data/overview).
+
+<Note>
+  También puede recopilar métricas desde el endpoint de Prometheus de ClickHouse Cloud mediante un OpenTelemetry Collector y reenviarlas a una implementación independiente de ClickStack para su visualización.
+</Note>
+
+<DirectIntegrations />
+
+<CommunityMonitoring />
+
+<div id="system-impact">
+  ## Consideraciones sobre el impacto en el sistema
+</div>
+
+Todos los enfoques anteriores se basan en una combinación de endpoints de Prometheus, gestión por parte de ClickHouse Cloud o consulta directa de tablas del sistema.
+La última de estas opciones depende de consultar el servicio de ClickHouse en producción. Esto añade carga de consultas al sistema observado y evita que las instancias de ClickHouse Cloud queden inactivas, lo que afecta a la optimización de costos. Además, si el sistema de producción falla, la monitorización también puede verse afectada, ya que ambos están acoplados. Este enfoque funciona bien para la introspección profunda y la depuración, pero es menos adecuado para la monitorización de producción en tiempo real. Tenga en cuenta estas contrapartidas entre las capacidades detalladas de análisis del sistema y la sobrecarga operativa al evaluar la integración directa con Grafana frente a los enfoques de integración con herramientas externas analizados en la siguiente sección.

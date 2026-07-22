@@ -1,0 +1,33 @@
+---
+alias: []
+description: 'Документация для формата PrettySpaceNoEscapes'
+input_format: false
+keywords: ['PrettySpaceNoEscapes']
+output_format: true
+slug: /interfaces/formats/PrettySpaceNoEscapes
+title: 'PrettySpaceNoEscapes'
+doc_type: 'справочник'
+---
+
+import PrettyFormatSettings from '/snippets/ru/common-pretty-format-settings.mdx';
+
+| Вход | Выход | Псевдоним |
+| ---- | ----- | --------- |
+| ✗    | ✔     |           |
+
+<div id="description">
+  ## Описание
+</div>
+
+Отличается от формата [`PrettySpace`](/ru/reference/formats/Pretty/PrettySpace) тем, что не использует [ANSI-последовательности экранирования](http://en.wikipedia.org/wiki/ANSI_escape_code).
+Это необходимо для отображения этого формата в браузере, а также для использования утилиты командной строки `watch`.
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+<div id="format-settings">
+  ## Настройки форматов
+</div>
+
+<PrettyFormatSettings />

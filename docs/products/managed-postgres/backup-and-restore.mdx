@@ -1,0 +1,43 @@
+---
+slug: /cloud/managed-postgres/backup-and-restore
+sidebarTitle: 'Backup and restore'
+title: 'Backup and restore'
+description: 'Understand backup strategies and point-in-time recovery for ClickHouse Managed Postgres'
+keywords: ['backup', 'restore', 'point-in-time recovery', 'pitr', 'disaster recovery', 'postgres backup']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.backup-and-restore-beta" />
+
+Managed Postgres ensures the safety and availability of your data through automated backups and point-in-time recovery. You can view your backup history and initiate restores from the **Backups** view of your instance.
+
+<Image img="/images/managed-postgres/backup-and-restore.webp" alt='Backups view showing backup history and point-in-time recovery options' size='lg' border/>
+
+## Backups {#backups}
+
+### Backup frequency {#backup-frequency}
+
+Managed Postgres takes daily full backups of your database. In addition to full backups, Write-Ahead Log (WAL) files are archived every 60 seconds or when 16 MB of WAL data accumulates, whichever comes first. This combination of full backups and continuous WAL archiving enables point-in-time recovery to any moment within the retention window.
+
+### Retention period {#retention-period}
+
+Backups are retained for 7 days, providing a sufficient window for recovery in case of data loss or corruption. If you need a longer backup retention period, contact [support](https://clickhouse.com/support/program).
+
+### Storage and durability {#storage-and-durability}
+
+Backups are replicated across multiple servers using erasure coding, ensuring they remain accessible even if some storage servers become unavailable. Backup storage is isolated at the bucket level—each Managed Postgres instance has its own dedicated storage bucket, and credentials are scoped to only allow access to that instance's backups.
+
+## Point-in-time recovery {#point-in-time-recovery}
+
+Point-in-time recovery allows you to restore your database to any specific moment within the backup retention window. This is useful for recovering from accidental data deletion, corruption, or other issues where you need to roll back to a known good state.
+
+To perform a point-in-time recovery:
+
+1. Navigate to the **Backups** view of your Managed Postgres instance.
+2. In the **Point in time recovery** section, select the target date and time (in UTC) you want to restore to.
+3. Click **Restore to point in time**.
+
+The restore operation creates a new Managed Postgres instance with the state of your database as it was at the selected point in time. Your original instance remains unchanged, allowing you to verify the restored data before making any decisions about which instance to keep.

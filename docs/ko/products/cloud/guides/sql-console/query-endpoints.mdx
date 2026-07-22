@@ -1,0 +1,689 @@
+---
+sidebar_title: 'Query API 엔드포인트'
+slug: /cloud/get-started/query-endpoints
+description: '저장된 쿼리로부터 REST API 엔드포인트를 손쉽게 생성합니다'
+keywords: ['api', 'query api 엔드포인트', 'query 엔드포인트', 'query rest api']
+title: 'Query API 엔드포인트 설정'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+**Query API 엔드포인트** 기능을 사용하면 ClickHouse Cloud 콘솔에 저장된 모든 SQL 쿼리로부터 API 엔드포인트를 직접 생성할 수 있습니다. 네이티브 드라이버로 ClickHouse Cloud 서비스에 연결하지 않아도 HTTP를 통해 API 엔드포인트에 액세스하여 저장된 쿼리를 실행할 수 있습니다.
+
+<div id="quick-start-guide">
+  ## 사전 요구 사항
+</div>
+
+계속하기 전에 다음 항목이 준비되어 있는지 확인하십시오:
+
+* 적절한 권한이 부여된 API Key
+* 관리자 Console 역할
+
+아직 없다면 이 가이드를 따라 [API Key를 생성](/ko/products/cloud/features/admin-features/api/openapi)할 수 있습니다.
+
+<Info>
+  **최소 권한**
+
+  API 엔드포인트를 쿼리하려면 API Key에 `Query Endpoints` 서비스 액세스가 포함된 `Member` 조직 역할이 필요합니다. 데이터베이스 역할은 엔드포인트를 생성할 때 구성됩니다.
+</Info>
+
+<Steps>
+  <Step>
+    ### 저장된 쿼리 만들기
+
+    이미 저장된 쿼리가 있으면 이 단계는 건너뛰어도 됩니다.
+
+    새 쿼리 탭을 여십시오. 예시로는 약 45억 개의 레코드가 포함된 [youtube 데이터셋](/ko/get-started/sample-datasets/youtube-dislikes)을 사용하겠습니다.
+    [&quot;Create table&quot;](/ko/get-started/sample-datasets/youtube-dislikes#create-the-table) 섹션의 단계에 따라 Cloud 서비스에 테이블을 생성하고 데이터를 삽입하십시오.
+
+    <Tip>
+      **행 수를 `LIMIT`로 제한**
+
+      예시 데이터셋 튜토리얼에서는 46억 5천만 개의 행을 삽입하므로 시간이 다소 걸릴 수 있습니다.
+      이 가이드에서는 `LIMIT` 절을 사용해 더 적은 양의 데이터를 삽입하는 것을 권장합니다.
+      예를 들어 1천만 개의 행만 삽입할 수 있습니다.
+    </Tip>
+
+    예시 쿼리에서는 사용자가 입력한 `year` 매개변수를 기준으로 동영상당 평균 조회수가 높은 상위 10명의 업로더를 반환합니다.
+
+    ```sql highlight={11}
+    WITH sum(view_count) AS view_sum,
+      round(view_sum / num_uploads, 2) AS per_upload
+    SELECT
+      uploader,
+      count() AS num_uploads,
+      formatReadableQuantity(view_sum) AS total_views,
+      formatReadableQuantity(per_upload) AS views_per_video
+    FROM
+      youtube
+    WHERE
+      toYear(upload_date) = {year: UInt16}
+    GROUP BY uploader
+    ORDER BY per_upload desc
+      LIMIT 10
+    ```
+
+    이 쿼리에는 위 코드 조각에서 강조 표시된 매개변수(`year`)가 포함되어 있습니다.
+    쿼리 매개변수는 `{ }` 안에 매개변수 유형과 함께 지정할 수 있습니다.
+    SQL 콘솔 쿼리 편집기는 ClickHouse 쿼리 매개변수 표현식을 자동으로 감지하고 각 매개변수에 대한 입력 필드를 제공합니다.
+
+    이제 SQL Editor 오른쪽의 쿼리 변수 입력 상자에 연도 `2010`을 입력하여 쿼리가 정상적으로 동작하는지 빠르게 확인해 보겠습니다:
+
+    <Image img="/images/cloud/sqlconsole/endpoints-testquery.webp" size="md" alt="예시 쿼리 테스트" />
+
+    다음으로 쿼리를 저장합니다:
+
+    <Image img="/images/cloud/sqlconsole/endpoints-savequery.webp" size="md" alt="예시 쿼리 저장" />
+
+    저장된 쿼리에 관한 자세한 내용은 [&quot;Saving a query&quot;](/ko/products/cloud/features/sql-console-features/sql-console#saving-a-query) 섹션에서 확인할 수 있습니다.
+  </Step>
+
+  <Step>
+    ### Query API endpoint 구성
+
+    쿼리 보기에서 **Share** 버튼을 클릭한 다음 `API Endpoint`를 선택하면 Query API endpoint를 직접 구성할 수 있습니다.
+    그러면 어떤 API Key가 엔드포인트에 접근할 수 있는지 지정하라는 안내가 표시됩니다:
+
+    <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="쿼리 엔드포인트 구성" />
+
+    API Key를 선택한 후에는 다음 항목을 설정해야 합니다:
+
+    * 쿼리 실행에 사용할 데이터베이스 역할 선택 (`Full access`, `Read only` 또는 `Create a custom role`)
+    * CORS(Cross-Origin Resource Sharing) 허용 도메인 지정
+
+    이 옵션을 선택하면 Query API endpoint가 자동으로 프로비저닝됩니다.
+
+    테스트 요청을 보낼 수 있도록 예시 `curl` 명령도 표시됩니다:
+
+    <Image img="/images/cloud/sqlconsole/endpoints-completed.webp" size="md" alt="엔드포인트 curl 명령" />
+
+    편의를 위해 인터페이스에 표시되는 `curl` 명령을 아래에도 제공합니다:
+
+    ```bash
+    curl -H "Content-Type: application/json" -s --user '<key_id>:<key_secret>' '<API-endpoint>?format=JSONEachRow&param_year=<value>'
+    ```
+  </Step>
+
+  <Step>
+    ### Query API 매개변수
+
+    쿼리 매개변수는 `{parameter_name: type}` 구문으로 지정할 수 있습니다. 이러한 매개변수는 자동으로 감지되며, 예시 요청 payload에는 `queryVariables` 객체가 포함되어 이 객체를 통해 매개변수를 전달할 수 있습니다.
+  </Step>
+
+  <Step>
+    ### 테스트 및 모니터링
+
+    Query API endpoint가 생성되면 `curl` 또는 다른 HTTP 클라이언트를 사용해 정상적으로 동작하는지 테스트할 수 있습니다:
+
+    <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="엔드포인트 curl 테스트" />
+
+    첫 번째 요청을 보내면 **Share** 버튼 바로 오른쪽에 새 버튼이 즉시 나타납니다. 이 버튼을 클릭하면 쿼리에 대한 모니터링 데이터가 포함된 플라이아웃이 열립니다:
+
+    <Image img="/images/cloud/sqlconsole/endpoints-monitoring.webp" size="sm" alt="엔드포인트 모니터링" />
+  </Step>
+</Steps>
+
+<div id="implementation-details">
+  ## 구현 세부 사항
+</div>
+
+이 엔드포인트는 저장된 Query API endpoint에서 쿼리를 실행합니다.
+여러 버전, 유연한 응답 포맷, 매개변수화된 쿼리, 선택적 스트리밍 응답(버전 2만 지원)을 지원합니다.
+
+**엔드포인트:**
+
+```text
+GET /query-endpoints/{queryEndpointId}/run
+POST /query-endpoints/{queryEndpointId}/run
+```
+
+<div id="http-methods">
+  ### HTTP 메서드
+</div>
+
+| 메서드      | 사용 사례                    | 매개변수                                           |
+| -------- | ------------------------ | ---------------------------------------------- |
+| **GET**  | 매개변수가 있는 단순 쿼리           | URL 매개변수(`?param_name=value`)를 통해 쿼리 변수를 전달합니다 |
+| **POST** | 복잡한 쿼리이거나 요청 본문을 사용하는 경우 | 요청 본문(`queryVariables` 객체)으로 쿼리 변수를 전달합니다      |
+
+**GET를 사용하는 경우:**
+
+* 복잡하게 중첩된 데이터가 없는 단순 쿼리
+* 매개변수를 URL 인코딩하기 쉬운 경우
+* 캐싱이 HTTP GET의 의미 체계로 이점을 얻을 수 있는 경우
+
+**POST를 사용하는 경우:**
+
+* 복잡한 쿼리 변수(배열, 객체, 긴 문자열)
+* 보안 또는 개인정보 보호를 위해 요청 본문을 사용하는 것이 바람직한 경우
+* 스트리밍 파일 업로드 또는 대용량 데이터
+
+<div id="authentication">
+  ### 인증
+</div>
+
+**필수:** 예
+**메서드:** OpenAPI Key/Secret 기반 Basic Auth
+**권한:** 쿼리 엔드포인트에 대한 적절한 권한
+
+<div id="request-configuration">
+  ### 요청 구성
+</div>
+
+<div id="url-params">
+  #### URL 매개변수
+</div>
+
+| 매개변수              | 필수    | 설명                   |
+| ----------------- | ----- | -------------------- |
+| `queryEndpointId` | **예** | 실행할 쿼리 엔드포인트의 고유 식별자 |
+
+<div id="query-params">
+  #### 쿼리 매개변수
+</div>
+
+| 매개변수                  | 필수  | 설명                                                            | 예시                       |
+| --------------------- | --- | ------------------------------------------------------------- | ------------------------ |
+| `format`              | 아니요 | 응답 포맷(모든 ClickHouse 포맷 지원)                                    | `?format=JSONEachRow`    |
+| `param_:name`         | 아니요 | 요청 본문이 스트림일 때 사용하는 쿼리 변수입니다. `:name`을 변수 이름으로 바꾸십시오           | `?param_year=2024`       |
+| `request_timeout`     | 아니요 | 쿼리 타임아웃(밀리초, 기본값: 30000)                                      | `?request_timeout=60000` |
+| `:clickhouse_setting` | 아니요 | 지원되는 모든 [ClickHouse 설정](/ko/reference/settings/session-settings) | `?max_threads=8`         |
+
+<div id="headers">
+  #### 헤더
+</div>
+
+| 헤더                              | 필수 여부 | 설명                                     | 값                              |
+| ------------------------------- | ----- | -------------------------------------- | ------------------------------ |
+| `x-clickhouse-endpoint-version` | 아니요   | endpoint 버전을 지정합니다                     | `1` 또는 `2` (기본값: 마지막으로 저장된 버전) |
+| `x-clickhouse-endpoint-upgrade` | 아니요   | endpoint 버전 업그레이드를 실행합니다(버전 헤더와 함께 사용) | 업그레이드 시 `1`                    |
+
+***
+
+<div id="request-body">
+  ### 요청 본문
+</div>
+
+<div id="params">
+  #### 매개변수
+</div>
+
+| 매개변수             | 유형     | 필수  | 설명          |
+| ---------------- | ------ | --- | ----------- |
+| `queryVariables` | 객체     | 아니요 | 쿼리에서 사용할 변수 |
+| `format`         | string | 아니요 | 응답 포맷       |
+
+<div id="supported-formats">
+  #### 지원되는 포맷
+</div>
+
+| 버전             | 지원 포맷                                                                                                                                                                    |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **버전 2**       | ClickHouse에서 지원하는 모든 포맷                                                                                                                                                  |
+| **버전 1 (제한적)** | TabSeparated <br /> TabSeparatedWithNames <br /> TabSeparatedWithNamesAndTypes <br /> JSON <br /> JSONEachRow <br /> CSV <br /> CSVWithNames <br /> CSVWithNamesAndTypes |
+
+***
+
+<div id="responses">
+  ### 응답
+</div>
+
+<div id="success">
+  #### 성공
+</div>
+
+**상태:** `200 OK`
+쿼리가 정상적으로 실행되었습니다.
+
+<div id="error-codes">
+  #### 오류 코드
+</div>
+
+| 상태 코드              | 설명                      |
+| ------------------ | ----------------------- |
+| `400 Bad Request`  | 요청 형식이 올바르지 않습니다        |
+| `401 Unauthorized` | 인증 정보가 없거나 필요한 권한이 없습니다 |
+| `404 Not Found`    | 지정한 쿼리 엔드포인트를 찾을 수 없습니다 |
+
+<div id="error-handling-best-practices">
+  #### 오류 처리 모범 사례
+</div>
+
+* 요청에 유효한 인증 자격 증명이 포함되어 있는지 확인하세요
+* 전송하기 전에 `queryEndpointId`와 `queryVariables`를 검증하세요
+* 적절한 오류 메시지와 함께 안정적으로 오류를 처리하도록 구현하세요
+
+***
+
+<div id="upgrading-endpoint-versions">
+  ### 엔드포인트 버전 업그레이드
+</div>
+
+버전 1에서 버전 2로 업그레이드하려면 다음을 수행하세요.
+
+1. `x-clickhouse-endpoint-upgrade` 헤더를 `1`로 설정해 포함합니다
+2. `x-clickhouse-endpoint-version` 헤더를 `2`로 설정해 포함합니다
+
+이렇게 하면 다음과 같은 버전 2 기능을 사용할 수 있습니다.
+
+* 모든 ClickHouse 포맷 지원
+* 응답 스트리밍 capability
+* 향상된 성능 및 기능
+
+<div id="examples">
+  ## 예시
+</div>
+
+<div id="basic-request">
+  ### 기본 요청
+</div>
+
+**Query API 엔드포인트 SQL:**
+
+```sql
+SELECT database, name AS num_tables FROM system.tables LIMIT 3;
+```
+
+<div id="version-1">
+  #### 버전 1
+</div>
+
+<Tabs>
+  <Tab title="cURL">
+    ```bash
+    curl -X POST 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'Content-Type: application/json' \
+    -d '{ "format": "JSONEachRow" }'
+    ```
+  </Tab>
+
+  <Tab title="JavaScript">
+    ```javascript
+    fetch(
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Basic <base64_encoded_credentials>",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          format: "JSONEachRow",
+        }),
+      }
+    )
+      .then((response) => response.json())
+      .then((data) => console.log(data))
+      .catch((error) => console.error("Error:", error));
+    ```
+
+    ```json title="응답"
+    {
+      "data": {
+        "columns": [
+          {
+            "name": "database",
+            "type": "String"
+          },
+          {
+            "name": "num_tables",
+            "type": "String"
+          }
+        ],
+        "rows": [
+          ["INFORMATION_SCHEMA", "COLUMNS"],
+          ["INFORMATION_SCHEMA", "KEY_COLUMN_USAGE"],
+          ["INFORMATION_SCHEMA", "REFERENTIAL_CONSTRAINTS"]
+        ]
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<div id="version-2">
+  #### 버전 2
+</div>
+
+<Tabs>
+  <Tab title="GET (cURL)">
+    ```bash
+    curl 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONEachRow' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'x-clickhouse-endpoint-version: 2'
+    ```
+
+    ```application/x-ndjson title="응답"
+    {"database":"INFORMATION_SCHEMA","num_tables":"COLUMNS"}
+    {"database":"INFORMATION_SCHEMA","num_tables":"KEY_COLUMN_USAGE"}
+    {"database":"INFORMATION_SCHEMA","num_tables":"REFERENTIAL_CONSTRAINTS"}
+    ```
+  </Tab>
+
+  <Tab title="POST (cURL)">
+    ```bash
+    curl -X POST 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONEachRow' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'Content-Type: application/json' \
+    -H 'x-clickhouse-endpoint-version: 2'
+    ```
+  </Tab>
+
+  <Tab title="JavaScript">
+    ```javascript
+    fetch(
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONEachRow",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Basic <base64_encoded_credentials>",
+          "Content-Type": "application/json",
+          "x-clickhouse-endpoint-version": "2",
+        },
+      }
+    )
+      .then((response) => response.json())
+      .then((data) => console.log(data))
+      .catch((error) => console.error("Error:", error));
+    ```
+
+    ```application/x-ndjson title="응답"
+    {"database":"INFORMATION_SCHEMA","num_tables":"COLUMNS"}
+    {"database":"INFORMATION_SCHEMA","num_tables":"KEY_COLUMN_USAGE"}
+    {"database":"INFORMATION_SCHEMA","num_tables":"REFERENTIAL_CONSTRAINTS"}
+    ```
+  </Tab>
+</Tabs>
+
+<div id="request-with-query-variables-and-version-2-on-jsoncompacteachrow-format">
+  ### 쿼리 변수와 JSONCompactEachRow 포맷 버전 2를 사용한 요청
+</div>
+
+**Query API 엔드포인트 SQL:**
+
+```sql
+SELECT name, database FROM system.tables WHERE match(name, {tableNameRegex: String}) AND database = {database: String};
+```
+
+<Tabs>
+  <Tab title="GET (cURL)">
+    ```bash
+    curl 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONCompactEachRow&param_tableNameRegex=query.*&param_database=system' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'x-clickhouse-endpoint-version: 2'
+    ```
+
+    ```application/x-ndjson title="응답"
+    ["query_cache", "system"]
+    ["query_log", "system"]
+    ["query_views_log", "system"]
+    ```
+  </Tab>
+
+  <Tab title="POST (cURL)">
+    ```bash
+    curl -X POST 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONCompactEachRow' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'Content-Type: application/json' \
+    -H 'x-clickhouse-endpoint-version: 2' \
+    -d '{ "queryVariables": { "tableNameRegex": "query.*", "database": "system" } }'
+    ```
+  </Tab>
+
+  <Tab title="JavaScript">
+    ```javascript
+    fetch(
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONCompactEachRow",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Basic <base64_encoded_credentials>",
+          "Content-Type": "application/json",
+          "x-clickhouse-endpoint-version": "2",
+        },
+        body: JSON.stringify({
+          queryVariables: {
+            tableNameRegex: "query.*",
+            database: "system",
+          },
+        }),
+      }
+    )
+      .then((response) => response.json())
+      .then((data) => console.log(data))
+      .catch((error) => console.error("Error:", error));
+    ```
+
+    ```application/x-ndjson title="응답"
+    ["query_cache", "system"]
+    ["query_log", "system"]
+    ["query_views_log", "system"]
+    ```
+  </Tab>
+</Tabs>
+
+<div id="request-with-array-in-the-query-variables-that-inserts-data-into-a-table">
+  ### 쿼리 변수에 배열이 포함되어 있고 테이블에 데이터를 삽입하는 요청
+</div>
+
+**테이블 SQL:**
+
+```SQL
+CREATE TABLE default.t_arr
+(
+    `arr` Array(Array(Array(UInt32)))
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+```
+
+**Query API 엔드포인트 SQL:**
+
+```sql
+INSERT INTO default.t_arr VALUES ({arr: Array(Array(Array(UInt32)))});
+```
+
+<Tabs>
+  <Tab title="cURL">
+    ```bash
+    curl -X POST 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'Content-Type: application/json' \
+    -H 'x-clickhouse-endpoint-version: 2' \
+    -d '{
+      "queryVariables": {
+        "arr": [[[12, 13, 0, 1], [12]]]
+      }
+    }'
+    ```
+  </Tab>
+
+  <Tab title="JavaScript">
+    ```javascript
+    fetch(
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Basic <base64_encoded_credentials>",
+          "Content-Type": "application/json",
+          "x-clickhouse-endpoint-version": "2",
+        },
+        body: JSON.stringify({
+          queryVariables: {
+            arr: [[[12, 13, 0, 1], [12]]],
+          },
+        }),
+      }
+    )
+      .then((response) => response.json())
+      .then((data) => console.log(data))
+      .catch((error) => console.error("Error:", error));
+    ```
+
+    ```text title="응답"
+    OK
+    ```
+  </Tab>
+</Tabs>
+
+<div id="request-with-clickhouse-settings-max_threads-set-to-8">
+  ### ClickHouse 설정 `max_threads`를 8로 지정한 요청
+</div>
+
+**Query API 엔드포인트 SQL:**
+
+```sql
+SELECT * FROM system.tables;
+```
+
+<Tabs>
+  <Tab title="GET (cURL)">
+    ```bash
+    curl 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?max_threads=8' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'x-clickhouse-endpoint-version: 2'
+    ```
+  </Tab>
+
+  <Tab title="POST (cURL)">
+    ```bash
+    curl -X POST 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?max_threads=8,' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'Content-Type: application/json' \
+    -H 'x-clickhouse-endpoint-version: 2' \
+    ```
+  </Tab>
+
+  <Tab title="JavaScript">
+    ```javascript
+    fetch(
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?max_threads=8",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Basic <base64_encoded_credentials>",
+          "Content-Type": "application/json",
+          "x-clickhouse-endpoint-version": "2",
+        },
+      }
+    )
+      .then((response) => response.json())
+      .then((data) => console.log(data))
+      .catch((error) => console.error("Error:", error));
+    ```
+  </Tab>
+</Tabs>
+
+<div id="request-and-parse-the-response-as-a-stream">
+  ### 응답을 요청해 스트림으로 파싱하기
+</div>
+
+**Query API 엔드포인트 SQL:**
+
+```sql
+SELECT name, database FROM system.tables;
+```
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    async function fetchAndLogChunks(
+      url: string,
+      openApiKeyId: string,
+      openApiKeySecret: string
+    ) {
+      const auth = Buffer.from(`${openApiKeyId}:${openApiKeySecret}`).toString(
+        "base64"
+      );
+
+      const headers = {
+        Authorization: `Basic ${auth}`,
+        "x-clickhouse-endpoint-version": "2",
+      };
+
+      const response = await fetch(url, {
+        headers,
+        method: "POST",
+        body: JSON.stringify({ format: "JSONEachRow" }),
+      });
+
+      if (!response.ok) {
+        console.error(`HTTP error! Status: ${response.status}`);
+        return;
+      }
+
+      const reader = response.body as unknown as Readable;
+      reader.on("data", (chunk) => {
+        console.log(chunk.toString());
+      });
+
+      reader.on("end", () => {
+        console.log("Stream ended.");
+      });
+
+      reader.on("error", (err) => {
+        console.error("Stream error:", err);
+      });
+    }
+
+    const endpointUrl =
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONEachRow";
+    const openApiKeyId = "<myOpenApiKeyId>";
+    const openApiKeySecret = "<myOpenApiKeySecret>";
+    // 사용 예시
+    fetchAndLogChunks(endpointUrl, openApiKeyId, openApiKeySecret).catch((err) =>
+      console.error(err)
+    );
+    ```
+
+    ```shell title="출력"
+    > npx tsx index.ts
+    > {"name":"COLUMNS","database":"INFORMATION_SCHEMA"}
+    > {"name":"KEY_COLUMN_USAGE","database":"INFORMATION_SCHEMA"}
+    ...
+    > Stream ended.
+    ```
+  </Tab>
+</Tabs>
+
+<div id="insert-a-stream-from-a-file-into-a-table">
+  ### 파일에서 스트림을 테이블에 삽입하기
+</div>
+
+다음 내용으로 `./samples/my_first_table_2024-07-11.csv` 파일을 생성하세요:
+
+```csv
+"user_id","json","name"
+"1","{""name"":""John"",""age"":30}","John"
+"2","{""name"":""Jane"",""age"":25}","Jane"
+```
+
+**테이블 생성 SQL:**
+
+```sql
+create table default.my_first_table
+(
+    user_id String,
+    json String,
+    name String,
+) ENGINE = MergeTree()
+ORDER BY user_id;
+```
+
+**Query API 엔드포인트 SQL:**
+
+```sql
+INSERT INTO default.my_first_table
+```
+
+```bash
+cat ./samples/my_first_table_2024-07-11.csv | curl --user '<openApiKeyId:openApiKeySecret>' \
+                                                   -X POST \
+                                                   -H 'Content-Type: application/octet-stream' \
+                                                   -H 'x-clickhouse-endpoint-version: 2' \
+                                                   "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=CSV" \
+                                                   --data-binary @-
+```

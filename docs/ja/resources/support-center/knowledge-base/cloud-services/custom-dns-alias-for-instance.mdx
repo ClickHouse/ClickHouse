@@ -1,0 +1,128 @@
+---
+title: リバースプロキシを設定してカスタム DNS エイリアスを作成する
+description: リバースプロキシを使用して、インスタンスにカスタム DNS エイリアスを設定する方法を説明します
+date: 2025-05-16
+tags: ['サーバー管理', 'セキュリティと認証']
+keywords: ['カスタム DNS エイリアス', 'DNS']
+hide_title: true
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<br />
+
+<br />
+
+<div id="custom-dns-alias">
+  # リバースプロキシを設定してカスタム DNS エイリアスを作成する
+</div>
+
+> この記事では、ClickHouse native client で Nginx などのリバースプロキシを使用して、ClickHouse Cloud インスタンスにカスタム DNS エイリアスを設定する方法を順を追って説明します。
+
+<div id="create-certificate">
+  ## 自己署名証明書を作成する
+</div>
+
+<Note>
+  署名付き証明書を使用している場合、この手順は不要です。
+</Note>
+
+任意のドメイン名で自己署名証明書を作成します。
+この例では、ドメイン名 `xyz-customdomain.com` を使用し、
+`MyCertificate.crt` という名前の証明書を作成します。詳細については、[&quot;SSL 証明書の作成&quot;](/ja/concepts/features/security/tls/configuring-tls#2-create-tls-certificates)
+を参照してください。
+
+証明書を `/etc/clickhouse-client/config.xml` に追加します。
+
+```yaml highlight={5}
+<clickhouse>
+    <openSSL>
+        <client>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <caConfig>/etc/ssl/certs/MyCertificate.crt</caConfig>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</clickhouse>
+```
+
+<div id="update-nginx-config">
+  ## Nginx の設定を更新する
+</div>
+
+`nginx.conf` ファイルに以下を追加します。
+
+```text
+proxy_ssl_name xyz.us-west-2.aws.clickhouse.cloud;
+proxy_ssl_server_name on;
+```
+
+```text highlight={21-22}
+stream {
+    upstream stream_backend {
+         server xyz.us-west-2.aws.clickhouse.cloud:9440;
+    }
+
+    server {
+        listen                9440 ssl;
+        proxy_pass            stream_backend;
+
+        ssl_certificate       /etc/ssl/certs/MyCertificate.crt;
+        ssl_certificate_key   /etc/ssl/certs/MyKey.key;
+        ssl_protocols         SSLv3 TLSv1 TLSv1.1 TLSv1.2;
+        ssl_ciphers           HIGH:!aNULL:!MD5;
+        ssl_session_cache     shared:SSL:20m;
+        ssl_session_timeout   4h;
+        ssl_handshake_timeout 30s;
+	proxy_ssl on;
+	proxy_ssl_trusted_certificate /etc/ssl/certs/isrgrootx1.pem;
+	proxy_ssl_session_reuse on;
+        proxy_ssl_verify on;
+	proxy_ssl_name xyz.us-west-2.aws.clickhouse.cloud;
+	proxy_ssl_server_name on;
+    }
+}
+```
+
+`isrgrootx1.pem` は ClickHouse Cloud のルート証明書で、
+[こちら](https://letsencrypt.org/certs/isrgrootx1.pem) からダウンロードできます。
+
+<div id="update-hosts-file">
+  ## hosts ファイルを更新する
+</div>
+
+<Note>
+  独自のドメインコントローラーを使用している場合、この手順は不要です
+</Note>
+
+Nginx サーバーの `/etc/hosts` ファイルに次の内容を追加します:
+
+```text title='/etc/hosts'
+127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4
+::1         localhost6 localhost6.localdomain6
+10.X.Y.Z  xyz-customdomain.com
+```
+
+ここで `10.X.Y.Z` は、該当する Nginx サーバーの IP アドレスです。
+
+<div id="connect-to-cloud-using-alias">
+  ## エイリアスを使って Cloud に接続する
+</div>
+
+これで、カスタムエイリアスを使って接続できます。
+
+```bash
+clickhouse-client --host xyz.customdomain.com --secure --password 'xxxxxxx'
+ClickHouse client version 23.12.1.428 (official build).
+Connecting to xyz.customdomain.com:9440 as user default.
+Connected to ClickHouse server version 23.9.2.
+
+clickhouse-cloud :)
+```

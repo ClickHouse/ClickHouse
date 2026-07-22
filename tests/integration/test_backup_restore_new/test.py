@@ -89,6 +89,11 @@ def get_path_to_backup(backup_name):
     return os.path.join(instance.cluster.instances_dir, "backups", name)
 
 
+def read_backup_metadata(backup_name):
+    with open(os.path.join(get_path_to_backup(backup_name), ".backup")) as f:
+        return f.read()
+
+
 def find_files_in_backup_folder(backup_name):
     path = get_path_to_backup(backup_name)
     files = [f for f in glob.glob(path + "/**", recursive=True) if os.path.isfile(f)]
@@ -544,6 +549,25 @@ def test_incremental_backup_overflow():
     assert os.listdir(os.path.join(get_path_to_backup(incremental_backup_name))) == [
         ".backup"
     ]
+
+
+def test_backup_id_in_manifest():
+    create_and_fill_table(n=10)
+
+    # A custom `id` is recorded verbatim as <backup_id> in the manifest.
+    backup_name = new_backup_name()
+    known_id = "my_custom_backup_id"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='{known_id}'")
+    assert f"<backup_id>{known_id}</backup_id>" in read_backup_metadata(backup_name)
+
+    # With no `id`, the recorded backup_id defaults to the backup UUID.
+    backup_name2 = new_backup_name()
+    instance.query(f"BACKUP TABLE test.table TO {backup_name2}")
+    manifest = read_backup_metadata(backup_name2)
+    assert (
+        re.search("<backup_id>(.*?)</backup_id>", manifest).group(1)
+        == re.search("<uuid>(.*?)</uuid>", manifest).group(1)
+    )
 
 
 def test_incremental_backup_after_renaming_table():
@@ -2260,7 +2284,9 @@ def test_async_backup_restore_with_max_execution_time_zero():
     backup_name = new_backup_name()
     inst.query("CREATE DATABASE IF NOT EXISTS test")
     inst.query("CREATE TABLE test.table(x UInt32, y String) ENGINE=MergeTree ORDER BY y PARTITION BY x%10")
-    inst.query("INSERT INTO test.table SELECT number, toString(number) FROM numbers(100)")
+    # The node's 0.5s profile timeout (used below to trigger the bug) also caps this
+    # foreground setup query; disable it so a slow CI lane can't time out the INSERT.
+    inst.query("INSERT INTO test.table SELECT number, toString(number) FROM numbers(100) SETTINGS max_execution_time = 0")
 
     try:
         # Pause backup before it starts so the 500ms profile-level timeout fires.
@@ -2298,7 +2324,11 @@ def test_async_backup_restore_with_max_execution_time_zero():
             TSV([["RESTORED", ""]]),
         )
 
-        assert inst.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+        # Same: don't let the 0.5s profile timeout cap this foreground verification query.
+        assert (
+            inst.query("SELECT count(), sum(x) FROM test.table SETTINGS max_execution_time = 0")
+            == "100\t4950\n"
+        )
     finally:
         inst.query("SYSTEM DISABLE FAILPOINT backup_pause_on_start")
         inst.query("SYSTEM DISABLE FAILPOINT restore_pause_on_start")

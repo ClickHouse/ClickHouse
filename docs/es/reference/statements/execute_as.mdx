@@ -1,0 +1,49 @@
+---
+description: 'Documentación sobre la sentencia EXECUTE AS'
+sidebarTitle: 'EXECUTE AS'
+slug: /sql-reference/statements/execute_as
+title: 'Sentencia EXECUTE AS'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+Permite ejecutar consultas en nombre de otro usuario.
+
+<div id="syntax">
+  ## Sintaxis
+</div>
+
+```sql
+EXECUTE AS target_user;
+EXECUTE AS target_user subquery;
+```
+
+La primera forma (sin `subquery`) establece que todas las consultas posteriores de la sesión actual se ejecutarán en nombre del `target_user` especificado.
+
+La segunda forma (con `subquery`) ejecuta solo la `subquery` especificada en nombre del `target_user` especificado.
+
+Para que ambas formas funcionen, es necesario que la opción de configuración `access_control_improvements.allow_impersonate_user`
+esté establecida en `1` y que se haya otorgado el privilegio `IMPERSONATE`. Por ejemplo, los siguientes comandos
+
+```sql
+GRANT IMPERSONATE ON user1 TO user2;
+GRANT IMPERSONATE ON * TO user3;
+```
+
+permitir al usuario `user2` ejecutar comandos `EXECUTE AS user1 ...` y también permitir al usuario `user3` ejecutar comandos como cualquier usuario.
+
+Al hacerse pasar por otro usuario, la función [currentUser()](/es/reference/functions/regular-functions/other-functions#currentUser) devuelve el nombre de ese otro usuario,
+y la función [authenticatedUser()](/es/reference/functions/regular-functions/other-functions#authenticatedUser) devuelve el nombre del usuario que realmente se ha autenticado.
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+```sql
+SELECT currentUser(), authenticatedUser(); -- muestra "default    default"
+CREATE USER james;
+EXECUTE AS james SELECT currentUser(), authenticatedUser(); -- muestra "james    default"
+```

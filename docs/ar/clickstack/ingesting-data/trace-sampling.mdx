@@ -1,0 +1,56 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/trace-sampling
+title: 'أخذ عينات التتبّع'
+sidebarTitle: 'أخذ عينات التتبّع'
+description: 'هيّئ التجميعات المرجّحة بمعدل أخذ العينات لبيانات التتبّع المأخوذة بالعينات في ClickStack.'
+doc_type: 'guide'
+keywords: ['clickstack', 'أخذ عينات التتبّع', 'أخذ عينات الذيل', 'معدل أخذ العينات', 'التجميعات المرجّحة', 'OpenTelemetry', 'SampleRate']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يمكن للخدمات ذات الإنتاجية العالية إنتاج ملايين spans في الثانية. ونظرًا إلى أن تخزين كل span مكلف، فعادةً ما تشغّل الفرق [معالج tail-sampling](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/tailsamplingprocessor) في OpenTelemetry Collector للاحتفاظ بـ span واحد فقط من كل N. ويحمل كل span مُحتفَظ به سمة `SampleRate` تسجّل القيمة N.
+
+بمجرد أخذ عينات من البيانات، تصبح عمليات التجميع المباشرة غير صحيحة: إذ يعيد `count()` عددًا من الأحداث أقل بمقدار N مما حدث فعليًا، ويصبح كل من `sum()` و`avg()` متحيزًا، كما تنحرف القيم المئينية. وتعرض لوحات المعلومات أعداد الطلبات والإنتاجية ومعدلات الأخطاء على نحو منخفض ومضلل.
+
+يحل ClickStack هذه المشكلة باستخدام محرك استعلامات يراعي أخذ العينات. فعندما تُعدّ تعبير معدل أخذ العينات على مصدر تتبّع، يعيد منشئ الاستعلامات كتابة عمليات التجميع في SQL بحيث يزِن كل span وفقًا لمعدل أخذ العينات الخاص به — وذلك عبر لوحات المعلومات والتنبيهات وعمليات البحث المخصّصة.
+
+<div id="how-it-works">
+  ## آلية العمل
+</div>
+
+عندما يكون `sampleRateExpression` مُعَدًّا في مصدر التتبّع، يغلّفه ClickStack على النحو التالي:
+
+```sql
+greatest(toUInt64OrZero(toString(expr)), 1)
+```
+
+تُسند إلى الـ spans التي لا تحتوي على سمة `SampleRate` قيمة وزن افتراضية قدرها 1، لذا تعطي البيانات غير الخاضعة لأخذ العينات النتائج نفسها التي تعطيها الاستعلامات الأصلية.
+
+ثم يعيد منشئ الاستعلامات صياغة عمليات التجميع:
+
+| التجميع            | قبل                | بعد (مصحح وفق أخذ العينات)                |
+| ------------------ | ------------------ | ----------------------------------------- |
+| count              | `count()`          | `sum(weight)`                             |
+| count + condition  | `countIf(cond)`    | `sumIf(weight, cond)`                     |
+| avg                | `avg(col)`         | `sum(col * weight) / sum(weight)`         |
+| sum                | `sum(col)`         | `sum(col * weight)`                       |
+| quantile(p)        | `quantile(p)(col)` | `quantileTDigestWeighted(p)(col, weight)` |
+| min / max          | دون تغيير          | دون تغيير                                 |
+| count&#95;distinct | دون تغيير          | دون تغيير                                 |
+
+<Note>
+  تستخدم المئينات مع أخذ العينات `quantileTDigestWeighted`، وهو ملخّص T-Digest تقريبي. النتائج متقاربة لكنها ليست مطابقة تمامًا.
+</Note>
+
+<div id="configuring">
+  ## تهيئة تعبير معدل أخذ العينات
+</div>
+
+افتح مصدر التتبّع في **إعدادات المصدر**، ثم أدخل تعبير ClickHouse الذي يُقيَّم إلى معدل أخذ العينات لكل `span` في حقل **تعبير معدل أخذ العينات**.
+
+على سبيل المثال، إذا كان معالج `tail-sampling` في OpenTelemetry يكتب المعدل في `SpanAttributes['SampleRate']`:
+
+<Image img="/images/clickstack/trace-sampling-source-settings.webp" alt="حقل تعبير معدل أخذ العينات في إعدادات المصدر في ClickStack" size="lg" />
+
+بعد إتمام التهيئة، ستطبّق جميع المخططات ولوحات المعلومات والتنبيهات ولوحات معلومات الخدمة تلقائيًا عمليات التجميع الموزونة وفق معدل أخذ العينات. ولا حاجة إلى أي تغييرات في الاستعلامات الفردية.

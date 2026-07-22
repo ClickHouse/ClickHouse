@@ -1,0 +1,180 @@
+---
+title: 単一の ClickHouse サーバーで Let's Encrypt を使って SSL を有効にする方法
+description: 証明書の発行、設定、検証を含め、Let's Encrypt を使用して単一の ClickHouse サーバーで SSL を設定する方法を説明します。
+date: 2024-12-11
+tags: ['セキュリティと認証']
+keywords: ['SSL', 'Let/`s Encrypt']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="steps-to-follow">
+  ## 手順
+</div>
+
+以下の手順では、無料で自動化されたオープンな認証局 (CA) である [Let&#39;s Encrypt](https://letsencrypt.org/) を使用して、単一の ClickHouse サーバー で SSL を有効にする方法を説明します。Let&#39;s Encrypt は、誰でも HTTPS で Web サイトを簡単に保護できるように設計されています。証明書の発行と更新を自動化することで、手動での介入なしに Web サイトの安全性を維持できます。
+
+<Note>
+  このガイドでは、ClickHouse が標準的なパッケージのインストール先に配置されていることを前提としています。すべての例では、ドメイン `product-test-server.clickhouse-dev.com` を使用します。必要に応じてご自身のドメインに置き換えてください。
+</Note>
+
+1. サーバーを指す DNS `A` または `AAAA` レコードが存在することを確認します。これは Linux のツール `dig.` を使って確認できます。たとえば、Cloudflare の DNS サーバー `1.1.1.1` を使用した場合、`product-test-server.clickhouse-dev.com` に対する応答は次のようになります。
+
+<br />
+
+```bash
+dig @1.1.1.1 product-test-server.clickhouse-dev.com
+
+; <<>> DiG 9.18.28-0ubuntu0.22.04.1-Ubuntu <<>> @1.1.1.1 product-test-server.clickhouse-dev.com
+; (1 server found)
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 22315
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 1232
+;; QUESTION SECTION:
+;product-test-server.clickhouse-dev.com.    IN A
+
+;; ANSWER SECTION:
+product-test-server.clickhouse-dev.com. 300 IN A 34.248.59.9
+
+;; Query time: 52 msec
+;; SERVER: 1.1.1.1#53(1.1.1.1) (UDP)
+;; WHEN: Thu Dec 12 09:37:33 UTC 2024
+;; MSG SIZE  rcvd: 83
+```
+
+以下のセクションで、A レコードが存在することを確認します。
+
+```bash
+;; ANSWER SECTION:
+product-test-server.clickhouse-dev.com. 300 IN A 34.248.59.9
+```
+
+2. サーバーでポート80を開放します。このポートは、certbot が ACME プロトコルを使用して証明書を自動更新する際に使われます。AWS では、[インスタンスに関連付けられているセキュリティグループを変更する](https://repost.aws/knowledge-center/connect-http-https-ec2)ことで対応できます。
+
+<br />
+
+<Image img="/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp" size="md" alt="ポート80が開放されている AWS セキュリティグループ設定" border />
+
+3. [`certbot`](https://certbot.eff.org/instructions) をインストールします (例: `apt` を使用) 
+
+<br />
+
+```bash
+sudo apt install certbot
+```
+
+4. SSL証明書を取得する
+
+<br />
+
+```bash
+sudo certbot certonly
+Saving debug log to /var/log/letsencrypt/letsencrypt.log
+
+How would you like to authenticate with the ACME CA?
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+1: Spin up a temporary webserver (standalone)
+2: Place files in webroot directory (webroot)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Select the appropriate number [1-2] then [enter] (press 'c' to cancel): 1
+Please enter the domain name(s) you would like on your certificate (comma and/or
+space separated) (Enter 'c' to cancel): product-test-server.clickhouse-dev.com
+Requesting a certificate for product-test-server.clickhouse-dev.com
+
+Successfully received certificate.
+Certificate is saved at: /etc/letsencrypt/live/product-test-server.clickhouse-dev.com/fullchain.pem
+Key is saved at:         /etc/letsencrypt/live/product-test-server.clickhouse-dev.com/privkey.pem
+This certificate expires on 2025-03-12.
+These files will be updated when the certificate renews.
+Certbot has set up a scheduled task to automatically renew this certificate in the background.
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+If you like Certbot, please consider supporting our work by:
+ * Donating to ISRG / Let's Encrypt:   https://letsencrypt.org/donate
+ * Donating to EFF:                    https://eff.org/donate-le
+```
+
+<Note>
+  サーバー上では Web サーバーを稼働させていないため、(1) を選択して、Certbot が standalone の一時的な Web サーバーを使用できるようにします。
+</Note>
+
+求められたら、サーバーの完全修飾ドメイン名 (例: `product-test-server.clickhouse-dev.com`) を入力します。
+
+<Note>
+  Let&#39;s Encrypt には、特定の種類のドメイン (たとえば、パブリッククラウドプロバイダーが生成したドメイン (例: AWS *.compute.amazonaws.com ドメイン) ) に対して証明書を発行しないポリシーがあります。これらのドメインは共有インフラストラクチャと見なされ、セキュリティおよび不正利用防止の観点からブロックされています。
+</Note>
+
+5. 証明書を ClickHouse ディレクトリにコピーします。
+
+<br />
+
+```bash
+echo '* * * * * root cp -u /etc/letsencrypt/live/product-test-server.clickhouse-dev.com/*.pem /etc/clickhouse-server/ && chown clickhouse:clickhouse /etc/clickhouse-server/*.pem && chmod 400 /etc/clickhouse-server/*.pem' | sudo tee /etc/cron.d/copy-certificates
+```
+
+このコマンドは、ClickHouse サーバー の Let&#39;s Encrypt SSL 証明書の管理を自動化するための cron ジョブを設定します。このジョブは root ユーザーとして毎分実行され、Let&#39;s Encrypt ディレクトリから ClickHouse サーバー の設定ディレクトリへ .pem ファイルをコピーしますが、ファイルが更新されている場合にのみコピーを行います。コピー後、スクリプトはファイルの所有者とグループを clickhouse ユーザーおよびグループに変更し、server が必要なアクセス権を持てるようにします。さらに、厳格なファイルセキュリティを維持するため、コピーしたファイルに安全な読み取り専用権限 (`chmod 400`) を設定します。これにより、ClickHouse サーバー は手動操作なしで常に最新の SSL 証明書にアクセスできるようになり、セキュリティを維持しながら運用負荷を最小限に抑えられます。
+
+6. clickhouse-server でこれらの証明書を使用するように設定します。
+
+<br />
+
+```bash
+echo "https_port: 8443
+tcp_port_secure: 9440
+openSSL:
+ server:
+ certificateFile: '/etc/clickhouse-server/fullchain.pem'
+ privateKeyFile: '/etc/clickhouse-server/privkey.pem'
+ disableProtocols: 'sslv2,sslv3,tlsv1,tlsv1_1'" | sudo tee /etc/clickhouse-server/config.d/ssl.yaml
+```
+
+7. ClickHouseサーバーを再起動する
+
+<br />
+
+```bash
+sudo clickhouse restart
+```
+
+8. ClickHouse が SSL 経由で通信できることを確認する
+
+<br />
+
+```bash
+curl https://product-test-server.clickhouse-dev.com:8443/
+
+Ok.
+```
+
+この最後の手順を機能させるには、ポート 8443 にアクセスできるようにしておく必要がある場合があります。たとえば、AWS のセキュリティグループで許可してください。あるいは、ClickHouse へのアクセスをサーバーからのみにしたい場合は、hosts ファイルを次のように変更します。
+
+```bash
+echo "127.0.0.1 product-test-server.clickhouse-dev.com" | sudo tee -a /etc/hosts
+```
+
+<Warning>
+  ワイルドカードアドレスからの接続を許可する場合は、少なくとも次のいずれかの対策を講じてください。
+
+  * サーバーがファイアウォールで保護されており、信頼できないネットワークからアクセスできないこと。
+  * すべてのユーザーのアクセス元が、ネットワークアドレスの一部に制限されていること (users.xml を参照) 。
+  * すべてのユーザーに十分に強力なパスワードが設定されており、安全な (TLS) インターフェイスのみが公開されていること、または接続が TLS インターフェイス経由に限定されていること。
+  * パスワードのないユーザーは読み取り専用アクセスであること。
+
+  関連項目: https://www.shodan.io/search?query=clickhouse
+
+  ブログ [Building single page applications with ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http) は、公開インスタンスを保護する際の参考になります。
+</Warning>
+
+以下は、ClickHouse が実行されているローカルマシンから接続する場合でも機能するはずです。`product-test-server.clickhouse-dev.com` 経由で接続するには、使用している環境でポート 9440 を開いてください。
+
+```bash
+clickhouse client --secure --user default --password <password>
+```

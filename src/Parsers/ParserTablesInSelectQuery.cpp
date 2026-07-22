@@ -369,8 +369,18 @@ bool ParserTablesInSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     else
         return false;
 
-    while (ParserTablesInSelectQueryElement(false, allow_alias_without_as_keyword).parse(pos, child, expected))
+    while (true)
+    {
+        /// A comma (cross) join right after an ARRAY JOIN is not supported: reject it
+        /// instead of misparsing the item after the comma as a table.
+        const auto * prev = res->children.back()->as<ASTTablesInSelectQueryElement>();
+        if (prev && prev->array_join && pos->type == TokenType::Comma)
+            break;
+
+        if (!ParserTablesInSelectQueryElement(false, allow_alias_without_as_keyword).parse(pos, child, expected))
+            break;
         res->children.emplace_back(child);
+    }
 
     node = res;
     return true;

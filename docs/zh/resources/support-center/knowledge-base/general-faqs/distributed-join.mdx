@@ -1,0 +1,21 @@
+---
+title: 'ClickHouse 支持分布式 JOIN 吗？'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/distributed-join
+description: 'ClickHouse 支持分布式 JOIN'
+doc_type: 'reference'
+keywords: ['分布式', 'JOIN']
+---
+
+是的，ClickHouse 支持在集群上执行分布式 JOIN。
+
+当数据在集群中共置时 (例如，按用户标识符进行 JOIN，而该标识符同时也是分片键) ，ClickHouse 可以在无需通过网络移动数据的情况下执行 JOIN。
+
+当数据不是共置时，ClickHouse 支持广播 JOIN，此时参与 JOIN 的部分数据会分发到集群中的各个节点。
+
+截至 2025 年，ClickHouse 不执行 shuffle join，这意味着 JOIN 的任意一侧都不会根据连接键在集群网络中重新分布。
+
+<Tip>
+  如需了解 ClickHouse 中 JOIN 的更一般信息，请参阅[&quot;JOIN clause&quot;](/zh/reference/statements/select/join#supported-types-of-join)页面。
+</Tip>

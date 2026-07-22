@@ -1,0 +1,42 @@
+---
+title: Как устранить ошибку TOO MANY PARTS при `INSERT...SELECT`?
+description: "Устраните ошибку TOO_MANY_PARTS в ClickHouse при `INSERT...SELECT`, настроив параметры экспертного уровня для увеличения размера блоков и повысив пороговые значения для партиций."
+date: 2023-07-21
+tags: ['Настройки', 'Ошибки и исключения']
+---
+
+<div id="question">
+  ## Вопрос
+</div>
+
+При выполнении оператора `INSERT...SELECT` возникает ошибка Too many parts (TOO&#95;MANY&#95;PARTS).
+
+Как это исправить?
+
+<div id="answer">
+  ## Ответ
+</div>
+
+Ниже приведены некоторые настройки, которые можно скорректировать, чтобы избежать этой ошибки. Это тонкая настройка ClickHouse экспертного уровня, и задавать эти значения следует только после понимания характеристик сервиса ClickHouse Cloud или локального кластера, где они будут использоваться, поэтому не воспринимайте их как «универсальное решение».
+
+[max&#95;insert&#95;block&#95;size](/ru/reference/settings/session-settings#settings-max_insert_block_size) = `100_000_000` (default `1_048_576`)
+
+Увеличение примерно с 1M до 100M позволит формировать более крупные блоки
+
+Примечание: эта настройка применяется только в тех случаях, когда блоки формирует сервер, то есть для INSERT через HTTP-интерфейс, а не для clickhouse-client
+
+[min&#95;insert&#95;block&#95;size&#95;rows](/ru/reference/settings/session-settings#min-insert-block-size-rows) = `100_000_000` (default `1_048_576`)
+
+Увеличение примерно с 1M до 100M позволит формировать более крупные блоки.
+
+[min&#95;insert&#95;block&#95;size&#95;bytes](/ru/reference/settings/session-settings#min-insert-block-size-bytes) = `500_000_000` (default `268_435_456`)
+
+Увеличение с 268.44 MB до 500 MB позволит формировать более крупные блоки.
+
+[parts&#95;to&#95;delay&#95;insert](/ru/reference/settings/merge-tree-settings#parts-to-delay-insert) = `500` (default `150`)
+
+Увеличение этого значения позволяет избежать искусственного замедления INSERT при достижении числа активных частей в одной партиции.
+
+[parts&#95;to&#95;throw&#95;insert](/ru/reference/settings/merge-tree-settings#parts-to-throw-insert) = `1500` (default `3000`)
+
+Увеличение этого значения в целом скажется на производительности запросов к таблице, но для миграции данных это допустимо.

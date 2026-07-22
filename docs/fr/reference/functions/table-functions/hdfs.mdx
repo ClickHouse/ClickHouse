@@ -1,0 +1,150 @@
+---
+description: 'Crée une table à partir de fichiers stockés dans HDFS. Cette fonction de table est similaire aux fonctions de table url et file.'
+sidebarTitle: 'hdfs'
+slug: /sql-reference/table-functions/hdfs
+title: 'hdfs'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="hdfs-table-function">
+  # Fonction de table hdfs
+</div>
+
+Crée une table à partir de fichiers dans HDFS. Cette fonction de table est semblable aux fonctions de table [url](/fr/reference/functions/table-functions/url) et [file](/fr/reference/functions/table-functions/file).
+
+<div id="syntax">
+  ## Syntaxe
+</div>
+
+```sql
+hdfs(URI, format, structure)
+```
+
+<div id="arguments">
+  ## Arguments
+</div>
+
+| Argument    | Description                                                                                                                                                                                                            |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `URI`       | URI relative du fichier dans HDFS. Le chemin du fichier prend en charge les motifs glob suivants en mode lecture seule : `*`, `?`, `{abc,def}` et `{N..M}`, où `N` et `M` sont des nombres, et `'abc'`, `'def'` des chaînes. |
+| `format`    | Le [format](/fr/reference/formats/index) du fichier.                                                                                                                                                                      |
+| `structure` | Structure de la table. Format : `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                         |
+
+<div id="returned_value">
+  ## Valeur retournée
+</div>
+
+Une table dotée de la structure spécifiée, permettant de lire ou d’écrire des données dans le fichier indiqué.
+
+**exemple**
+
+Table issue de `hdfs://hdfs1:9000/test` et sélection de ses deux premières lignes :
+
+```sql
+SELECT *
+FROM hdfs('hdfs://hdfs1:9000/test', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+LIMIT 2
+```
+
+```text
+┌─column1─┬─column2─┬─column3─┐
+│       1 │       2 │       3 │
+│       3 │       2 │       1 │
+└─────────┴─────────┴─────────┘
+```
+
+<div id="globs_in_path">
+  ## Motifs glob dans le chemin
+</div>
+
+Les chemins peuvent utiliser des motifs glob. Les fichiers doivent correspondre à l’intégralité du motif de chemin, et pas seulement au suffixe ou au préfixe.
+
+* `*` — Représente un nombre quelconque de caractères, sauf `/`, y compris la chaîne vide.
+* `**` — Représente tous les fichiers d’un dossier, récursivement.
+* `?` — Représente un caractère unique quelconque.
+* `{some_string,another_string,yet_another_one}` — Remplace par l’une des chaînes `'some_string', 'another_string', 'yet_another_one'`. Les chaînes peuvent contenir le symbole `/`.
+* `{N..M}` — Représente n’importe quel nombre `>= N` et `<= M`.
+
+Les constructions avec `{}` sont similaires aux fonctions de table [remote](/fr/reference/functions/table-functions/remote) et [file](/fr/reference/functions/table-functions/file).
+
+**Exemple**
+
+1. Supposons que nous ayons plusieurs fichiers avec les URI suivantes sur HDFS :
+
+* &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;1&#39;
+* &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;2&#39;
+* &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;3&#39;
+* &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;1&#39;
+* &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;2&#39;
+* &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;3&#39;
+
+2. Comptez le nombre de lignes dans ces fichiers :
+
+{/* */}
+
+```sql
+SELECT count(*)
+FROM hdfs('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV', 'name String, value UInt32')
+```
+
+3. Exécutez une requête pour obtenir le nombre de lignes dans tous les fichiers de ces deux répertoires :
+
+{/* */}
+
+```sql
+SELECT count(*)
+FROM hdfs('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV', 'name String, value UInt32')
+```
+
+<Note>
+  Si votre liste de fichiers contient des plages de nombres avec des zéros en tête, utilisez la construction avec des accolades pour chaque chiffre séparément, ou utilisez `?`.
+</Note>
+
+**Exemple**
+
+Interrogez les données des fichiers nommés `file000`, `file001`, ... , `file999` :
+
+```sql
+SELECT count(*)
+FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32')
+```
+
+<div id="virtual-columns">
+  ## Colonnes virtuelles
+</div>
+
+* `_path` — Chemin du fichier. Type : `LowCardinality(String)`.
+* `_file` — Nom du fichier. Type : `LowCardinality(String)`.
+* `_size` — Taille du fichier en octets. Type : `Nullable(UInt64)`. Si la taille est inconnue, la valeur est `NULL`.
+* `_time` — Date et heure de la dernière modification du fichier. Type : `Nullable(DateTime)`. Si cette information est inconnue, la valeur est `NULL`.
+
+<div id="hive-style-partitioning">
+  ## paramètre use_hive_partitioning
+</div>
+
+Lorsque le paramètre `use_hive_partitioning` est défini sur 1, ClickHouse détecte le partitionnement de type Hive dans le chemin (`/name=value/`) et permet d&#39;utiliser les colonnes de partition comme colonnes virtuelles dans la requête. Ces colonnes virtuelles auront les mêmes noms que dans le chemin de partitionnement.
+
+**Exemple**
+
+Utiliser une colonne virtuelle créée avec le partitionnement de type Hive
+
+```sql
+SELECT * FROM HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
+```
+
+<div id="storage-settings">
+  ## Paramètres de stockage
+</div>
+
+* [hdfs&#95;truncate&#95;on&#95;insert](/fr/reference/settings/session-settings#hdfs_truncate_on_insert) - permet de tronquer le fichier avant d’y insérer des données. Désactivé par défaut.
+* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/fr/reference/settings/session-settings#hdfs_create_new_file_on_insert) - permet de créer un nouveau fichier à chaque insertion si le format comporte un suffixe. Désactivé par défaut.
+* [hdfs&#95;skip&#95;empty&#95;files](/fr/reference/settings/session-settings#hdfs_skip_empty_files) - permet d’ignorer les fichiers vides lors de la lecture. Désactivé par défaut.
+
+<div id="related">
+  ## Voir aussi
+</div>
+
+* [Colonnes virtuelles](/fr/reference/engines/table-engines/index#table_engines-virtual_columns)

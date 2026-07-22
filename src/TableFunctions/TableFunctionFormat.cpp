@@ -160,22 +160,31 @@ StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, Con
 
 const FunctionDocumentation format_table_function_documentation =
 {
-    .description=R"(
-Extracts table structure from data and parses it according to specified input format.
-Syntax: `format(format_name, data)`.
-Parameters:
-    - `format_name` - the format of the data.
-    - `data ` - String literal or constant expression that returns a string containing data in specified format.
-Returned value: A table with data parsed from `data` argument according specified format and extracted schema.
-)",
-    .examples
-    {
-        {
-            "First example",
-            R"(
-Query:
+    .description=R"DOCS_MD(
+Parses data from arguments according to specified input format. If structure argument is not specified, it's extracted from the data.
+
+## Syntax {#syntax}
+
+```sql
+format(format_name, [structure], data)
 ```
-:) select * from format(JSONEachRow,
+
+## Arguments {#arguments}
+
+- `format_name` — The [format](/reference/formats/index) of the data.
+- `structure` - Structure of the table. Optional. Format 'column1_name column1_type, column2_name column2_type, ...'.
+- `data` — String literal or constant expression that returns a string containing data in specified format
+
+## Returned value {#returned_value}
+
+A table with data parsed from `data` argument according to specified format and specified or extracted structure.
+
+## Examples {#examples}
+
+Without `structure` argument:
+
+```sql title="Query"
+SELECT * FROM format(JSONEachRow,
 $$
 {"a": "Hello", "b": 111}
 {"a": "World", "b": 123}
@@ -184,8 +193,7 @@ $$
 $$)
 ```
 
-Result:
-```
+```response title="Response"
 ┌───b─┬─a─────┐
 │ 111 │ Hello │
 │ 123 │ World │
@@ -193,14 +201,9 @@ Result:
 │ 124 │ World │
 └─────┴───────┘
 ```
-)", ""
-        },
-        {
-            "Second example",
-            R"(
-Query:
-```
-:) desc format(JSONEachRow,
+
+```sql title="Query"
+DESC format(JSONEachRow,
 $$
 {"a": "Hello", "b": 111}
 {"a": "World", "b": 123}
@@ -209,14 +212,69 @@ $$
 $$)
 ```
 
-Result:
-```
+```response title="Response"
 ┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ b    │ Nullable(Float64) │              │                    │         │                  │                │
 │ a    │ Nullable(String)  │              │                    │         │                  │                │
 └──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-)", ""
+
+With `structure` argument:
+
+```sql title="Query"
+SELECT * FROM format(JSONEachRow, 'a String, b UInt32',
+$$
+{"a": "Hello", "b": 111}
+{"a": "World", "b": 123}
+{"a": "Hello", "b": 112}
+{"a": "World", "b": 124}
+$$)
+```
+
+```response title="Response"
+┌─a─────┬───b─┐
+│ Hello │ 111 │
+│ World │ 123 │
+│ Hello │ 112 │
+│ World │ 124 │
+└───────┴─────┘
+```
+
+## Related {#related}
+
+- [Formats](/reference/formats/index)
+)DOCS_MD",
+    .examples
+    {
+        {
+            "First example",
+            R"(SELECT * FROM format(JSONEachRow,
+$$
+{"a": "Hello", "b": 111}
+{"a": "World", "b": 123}
+{"a": "Hello", "b": 112}
+{"a": "World", "b": 124}
+$$))",
+            R"(┌───b─┬─a─────┐
+│ 111 │ Hello │
+│ 123 │ World │
+│ 112 │ Hello │
+│ 124 │ World │
+└─────┴───────┘)"
+        },
+        {
+            "Second example",
+            R"(DESCRIBE format(JSONEachRow,
+$$
+{"a": "Hello", "b": 111}
+{"a": "World", "b": 123}
+{"a": "Hello", "b": 112}
+{"a": "World", "b": 124}
+$$))",
+            R"(┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ b    │ Nullable(Float64) │              │                    │         │                  │                │
+│ a    │ Nullable(String)  │              │                    │         │                  │                │
+└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘)"
         },
     },
     .category = FunctionDocumentation::Category::TableFunction

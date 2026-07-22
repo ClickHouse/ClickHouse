@@ -1,0 +1,257 @@
+---
+title: 'Écrire des données vers des formats de table ouverts'
+sidebarTitle: 'Écriture vers des lacs de données'
+slug: /use-cases/data-lake/getting-started/writing-data
+toc_max_heading_level: 3
+description: 'Écrire des données depuis ClickHouse vers des tables Iceberg sur du stockage objet pour un stockage à long terme et une utilisation en aval.'
+keywords: ['lac de données', 'lakehouse', 'écriture', 'iceberg', 'ETL inversé', 'INSERT INTO', 'IcebergS3']
+doc_type: 'guide'
+---
+
+Dans les guides précédents, vous avez interrogé directement des formats de table ouverts et chargé des données dans MergeTree pour des analyses rapides. Dans de nombreuses architectures, les données doivent aussi circuler dans l&#39;autre sens, de ClickHouse vers des formats de table ouverts. Deux scénarios courants motivent cette approche :
+
+* **Déchargement vers un stockage à long terme** - Les données arrivent dans ClickHouse comme couche d&#39;analytique en temps réel, alimentant des tableaux de bord et le reporting opérationnel. Une fois qu&#39;elles sortent de leur fenêtre temps réel, elles peuvent être écrites vers Iceberg sur du stockage objet pour une conservation durable et économique dans un format interopérable.
+* **ETL inversé** - Les transformations, agrégations et enrichissements effectués dans ClickHouse produisent des jeux de données dérivés que des outils en aval et d&#39;autres équipes doivent consommer. Écrire ces résultats dans des tables Iceberg les rend disponibles dans l&#39;ensemble de l&#39;écosystème de données.
+
+Dans les deux cas, `INSERT INTO SELECT` vous permet de déplacer des données depuis des tables ClickHouse vers des tables Iceberg stockées sur du stockage objet.
+
+<Note>
+  L&#39;écriture vers des formats de table ouverts n&#39;est actuellement prise en charge que pour les **tables Iceberg**. La prise en charge partielle des tables Delta Lake est en cours de développement. Les tables ne doivent pas être gérées par un catalog.
+</Note>
+
+<div id="prepare-source">
+  ## Préparer un jeu de données source
+</div>
+
+Pour ce guide, nous utiliserons le jeu de données [UK Price Paid](/fr/get-started/sample-datasets/uk-price-paid) — un registre public de toutes les transactions portant sur des biens résidentiels en Angleterre et au pays de Galles.
+
+<div id="create-source-table">
+  ### Créer et peupler une table MergeTree
+</div>
+
+```sql
+CREATE DATABASE uk;
+
+CREATE TABLE uk.uk_price_paid
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
+    is_new UInt8,
+    duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2);
+```
+
+Remplissez la table directement à partir de la source CSV publique :
+
+```sql
+INSERT INTO uk.uk_price_paid
+SELECT
+    toUInt32(price_string) AS price,
+    parseDateTimeBestEffortUS(time) AS date,
+    splitByChar(' ', postcode)[1] AS postcode1,
+    splitByChar(' ', postcode)[2] AS postcode2,
+    transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+    b = 'Y' AS is_new,
+    transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+    addr1,
+    addr2,
+    street,
+    locality,
+    town,
+    district,
+    county
+FROM url(
+    'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+    'CSV',
+    'uuid_string String,
+    price_string String,
+    time String,
+    postcode String,
+    a String,
+    b String,
+    c String,
+    addr1 String,
+    addr2 String,
+    street String,
+    locality String,
+    town String,
+    district String,
+    county String,
+    d String,
+    e String'
+) SETTINGS max_http_get_redirects=10;
+```
+
+```response
+30906560 rows in set. Elapsed: 59.852 sec. Processed 30.91 million rows, 5.41 GB (516.39 thousand rows/s., 90.40 MB/s.)
+Peak memory usage: 485.15 MiB.
+```
+
+<div id="write-iceberg">
+  ## Écrire des données dans une table Iceberg
+</div>
+
+<div id="create-iceberg-table">
+  ### Créer la table Iceberg
+</div>
+
+Pour écrire des données dans Iceberg, créez une table à l’aide du [table engine `IcebergS3`](/fr/reference/engines/table-engines/integrations/iceberg).
+
+Notez que le schéma doit être simplifié par rapport à celui de la table source MergeTree. ClickHouse prend en charge un système de types plus riche qu’Iceberg et que les fichiers Parquet sous-jacents : des types tels que `Enum`, `LowCardinality` et `UInt8` ne sont pas pris en charge par Iceberg et doivent être convertis en types compatibles.
+
+```sql
+CREATE TABLE uk.uk_iceberg
+(
+    price UInt32,
+    date Date,
+    postcode1 String,
+    postcode2 String,
+    type UInt32,
+    is_new UInt32,
+    duration UInt32,
+    addr1 String,
+    addr2 String,
+    street String,
+    locality String,
+    town String,
+    district String,
+    county String
+)
+ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg_uk_price_paid/', '<aws_access_key>', '<aws_secret_key>', '<session_token>')
+```
+
+<div id="insert-subset">
+  ### Insérer un sous-ensemble de données
+</div>
+
+Utilisez `INSERT INTO SELECT` pour insérer dans la table Iceberg des données provenant de la table MergeTree. Dans cet exemple, nous insérons uniquement les transactions de Londres :
+
+```sql
+SET allow_experimental_insert_into_iceberg = 1;
+
+INSERT INTO uk.uk_iceberg SELECT *
+FROM uk.uk_price_paid
+WHERE town = 'LONDON'
+```
+
+```response
+2346741 rows in set. Elapsed: 1.419 sec. Processed 30.91 million rows, 153.43 MB (21.78 million rows/s., 108.15 MB/s.)
+Peak memory usage: 371.60 MiB.
+```
+
+<div id="query-iceberg">
+  ### Interroger la table Iceberg
+</div>
+
+Les données sont désormais stockées au format Iceberg dans un stockage objet et peuvent être interrogées depuis ClickHouse, ou depuis tout autre outil capable de lire Iceberg :
+
+```sql
+SELECT
+    locality,
+    count()
+FROM uk.uk_iceberg
+WHERE locality != ''
+GROUP BY locality
+ORDER BY count() DESC
+LIMIT 10
+```
+
+```response
+┌─locality────┬─count()─┐
+│ LONDON      │  896796 │
+│ WALTHAMSTOW │    8610 │
+│ LEYTON      │    3525 │
+│ CHINGFORD   │    3133 │
+│ HORNSEY     │    2794 │
+│ STREATHAM   │    2760 │
+│ WOOD GREEN  │    2443 │
+│ ACTON       │    2155 │
+│ LEYTONSTONE │    2102 │
+│ EAST HAM    │    2085 │
+└─────────────┴─────────┘
+
+10 rows in set. Elapsed: 0.329 sec. Processed 457.86 thousand rows, 2.62 MB (1.39 million rows/s., 7.95 MB/s.)
+Peak memory usage: 12.19 MiB.
+```
+
+<div id="write-aggregates">
+  ## Écrire des résultats agrégés
+</div>
+
+Les tables Iceberg ne servent pas uniquement à stocker des lignes brutes. Elles peuvent aussi contenir le résultat d’agrégations et de transformations, c’est-à-dire les résultats de processus ETL exécutés dans ClickHouse. C’est utile pour publier des résumés précalculés dans un lakehouse en vue d’une consommation en aval.
+
+<div id="create-aggregate-table">
+  ### Créer une table Iceberg pour les données agrégées
+</div>
+
+```sql
+CREATE TABLE uk.uk_avg_town
+(
+    price Float64,
+    town String
+)
+ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg_uk_avg_town/', '<aws_access_key>', '<aws_secret_key>', '<session_token>')
+```
+
+<div id="insert-aggregates">
+  ### Insérer des données agrégées
+</div>
+
+Calculez les prix moyens des biens immobiliers par ville et écrivez directement les résultats dans Iceberg :
+
+```sql
+INSERT INTO uk.uk_avg_town SELECT
+    avg(price) AS price,
+    town
+FROM uk.uk_price_paid
+GROUP BY town
+```
+
+```response
+1173 rows in set. Elapsed: 0.480 sec. Processed 30.91 million rows, 185.44 MB (64.34 million rows/s., 386.05 MB/s.)
+Peak memory usage: 4.18 MiB.
+```
+
+<div id="query-aggregates">
+  ### Interroger la table agrégée
+</div>
+
+D&#39;autres outils — et d&#39;autres instances ClickHouse — peuvent désormais lire cet ensemble de données précalculé :
+
+```sql
+SELECT
+    town,
+    price
+FROM uk.uk_avg_town
+ORDER BY price DESC
+LIMIT 10
+```
+
+```response
+┌─town───────────────┬──────────────price─┐
+│ GATWICK            │ 28232811.583333332 │
+│ THORNHILL          │             985000 │
+│ VIRGINIA WATER     │  984633.2938574939 │
+│ CHALFONT ST GILES  │  863347.7280187573 │
+│ COBHAM             │    775251.47313278 │
+│ PURFLEET-ON-THAMES │           772651.8 │
+│ BEACONSFIELD       │  746052.9327405858 │
+│ ESHER              │  686708.4969745865 │
+│ KESTON             │  654541.1774842045 │
+│ GERRARDS CROSS     │  639109.4084023251 │
+└────────────────────┴────────────────────┘
+
+10 rows in set. Elapsed: 0.210 sec.
+```

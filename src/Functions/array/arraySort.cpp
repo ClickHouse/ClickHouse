@@ -2,9 +2,12 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsDateTime.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/array/arraySort.h>
+#include <Common/NaNUtils.h>
 #include <Common/iota.h>
+#include <base/extended_types.h>
 
 namespace DB
 {
@@ -82,6 +85,75 @@ struct GenericLess
     }
 };
 
+template <bool positive, typename ColumnType>
+ColumnPtr sortNumericValues(const ColumnType & column, const ColumnArray & array)
+{
+    using T = typename ColumnType::ValueType;
+
+    typename ColumnType::MutablePtr res_nested;
+    if constexpr (is_decimal<T>)
+        res_nested = ColumnType::create(0, column.getScale());
+    else
+        res_nested = ColumnType::create();
+    typename ColumnType::Container & data = res_nested->getData();
+    data.assign(column.getData());
+
+    auto sort_range = [](T * from, T * to)
+    {
+        if constexpr (positive)
+            ::sort(from, to);
+        else
+            ::sort(from, to, std::greater<T>());
+    };
+
+    const ColumnArray::Offsets & offsets = array.getOffsets();
+    T * base = data.data();
+    ColumnArray::Offset current_offset = 0;
+    for (auto next_offset : offsets)
+    {
+        T * begin = base + current_offset;
+        T * end = base + next_offset;
+        if constexpr (is_floating_point<T>)
+        {
+            /// All NaNs go last in both directions, matching the `nan_direction_hint` that the
+            /// generic path passes to `compareAt`.
+            T * nan_begin = std::partition(begin, end, [](T x) { return !isNaN(x); });
+            sort_range(begin, nan_begin);
+        }
+        else
+        {
+            sort_range(begin, end);
+        }
+        current_offset = next_offset;
+    }
+
+    return ColumnArray::create(std::move(res_nested), array.getOffsetsPtr());
+}
+
+template <bool positive>
+ColumnPtr trySortNumericValues(const ColumnArray & array)
+{
+// NOLINTBEGIN(bugprone-macro-parentheses)
+#define DISPATCH_FOR_NUMERIC_TYPE(TYPE) \
+    if (const auto * column = checkAndGetColumn<ColumnVector<TYPE>>(&array.getData())) \
+        return sortNumericValues<positive>(*column, array);
+#define DISPATCH_FOR_DECIMAL_TYPE(TYPE) \
+    if (const auto * column = checkAndGetColumn<ColumnDecimal<TYPE>>(&array.getData())) \
+        return sortNumericValues<positive>(*column, array);
+// NOLINTEND(bugprone-macro-parentheses)
+
+    FOR_NUMERIC_TYPES(DISPATCH_FOR_NUMERIC_TYPE)
+    DISPATCH_FOR_DECIMAL_TYPE(Decimal32)
+    DISPATCH_FOR_DECIMAL_TYPE(Decimal64)
+    DISPATCH_FOR_DECIMAL_TYPE(Decimal128)
+    DISPATCH_FOR_DECIMAL_TYPE(Decimal256)
+    DISPATCH_FOR_DECIMAL_TYPE(DateTime64)
+#undef DISPATCH_FOR_NUMERIC_TYPE
+#undef DISPATCH_FOR_DECIMAL_TYPE
+
+    return nullptr;
+}
+
 }
 
 template <bool positive, bool is_partial>
@@ -101,6 +173,18 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
                 "Expected fixed arguments to get the limit for partial array sort");
 
         limit_column = fixed_arguments[0].column.get();
+    }
+
+    if constexpr (!is_partial)
+    {
+        /// `mapped` is the array's own data when there is no lambda (and when an identity lambda
+        /// returns its input column unchanged), so sorting a permutation by `mapped` and permuting
+        /// the data is equivalent to sorting the values themselves.
+        if (mapped.get() == &array.getData())
+        {
+            if (ColumnPtr res = trySortNumericValues<positive>(array))
+                return res;
+        }
     }
 
     const ColumnArray::Offsets & offsets = array.getOffsets();

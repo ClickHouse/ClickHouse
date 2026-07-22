@@ -1,0 +1,91 @@
+---
+sidebarTitle: 'Memory'
+slug: /cloud/features/ai-ml/agents/memory
+title: 'Memory'
+description: 'memoria y personalización en ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'memory', 'personalización']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<BetaBadge />
+
+es un almacén por usuario que el agente puede recuperar a lo largo de las conversaciones. Está compuesto por varias entradas, cada una un par clave-valor: tu formato
+de fecha preferido, la base de datos que sueles consultar o lo concisas que quieres las respuestas. El agente incorpora estas entradas al contexto cuando corresponde.
+
+<div id="how-it-works">
+  ## Cómo funciona la memoria
+</div>
+
+Un pequeño agente de memoria funciona junto con la conversación principal. Lee los mensajes recientes, decide qué merece la pena recordar y guarda entradas en un almacenamiento por usuario.
+En la siguiente conversación, esas entradas estarán disponibles como contexto al que el agente principal puede recurrir sin que tengas que repetirte.
+
+Esto se traduce en continuidad: dile una vez a un agente que prefieres la salida SQL en minúsculas y que tu año fiscal termina en marzo, y las conversaciones futuras se ajustarán a ello.
+
+<div id="manage-your-memories">
+  ## Gestiona tus memorias
+</div>
+
+Abre el panel de memoria desde el icono **Memories** (cerebro) de la navegación izquierda. El panel muestra tus memorias guardadas con controles para crear, editar, eliminar y filtrar entradas.
+
+<Image img="/images/cloud/agent-builder/memory/memories.webp" alt="Panel Memories con el icono de cerebro resaltado en la navegación izquierda, un campo de filtro, un botón Add, una casilla Use memory, una entrada de memoria con controles para editar y eliminar, y un botón Admin Settings" size="sm" />
+
+Memory es privado y pertenece solo a tu usuario. Los agentes de otras personas nunca ven tus entradas, y tus agentes nunca ven las suyas.
+
+<div id="create-memory">
+  ### Crear una memoria
+</div>
+
+Haz clic en el botón **+** situado en la parte superior del panel para abrir el cuadro de diálogo **Create Memory**. Introduce una **Key** (solo letras minúsculas y guiones bajos) y un **Value** y, a continuación, haz clic en **Create**.
+
+<Image img="/images/cloud/agent-builder/memory/create.webp" alt="Panel de Memory con el botón + de Create Memory resaltado" size="sm" />
+
+<div id="filter-memories">
+  ### Filtrar memorias
+</div>
+
+Utilice el campo **Filtrar memorias** en la parte superior del panel para buscar una entrada por clave.
+
+<Image img="/images/cloud/agent-builder/memory/filter.webp" alt="Panel de memoria con el campo Filtrar memorias resaltado y 'demo' escrito" size="sm" />
+
+<div id="edit-memory">
+  ### Editar una memoria
+</div>
+
+Haz clic en el icono de lápiz de una memoria para abrir el cuadro de diálogo **Edit Memory**. Modifica la Key o el Value y haz clic en **Save**.
+
+<Image img="/images/cloud/agent-builder/memory/edit.webp" alt="Entrada de memoria con el icono de lápiz de Edit Memory resaltado" size="sm" />
+
+<div id="delete-memory">
+  ### Eliminar una memoria
+</div>
+
+Haz clic en el icono de la papelera de una memoria para eliminarla.
+
+<Image img="/images/cloud/agent-builder/memory/delete.webp" alt="Entrada de memoria con el icono de la papelera «Eliminar memoria» resaltado" size="sm" />
+
+<div id="toggle-memory">
+  ## Activar o desactivar la Memory
+</div>
+
+Activa o desactiva la Memory con la casilla **Use memory** situada en la parte superior del panel de Memory. Desactívala para temas sensibles que no quieras guardar o para conversaciones esporádicas en las que la personalización no resulte útil.
+
+Cuando la Memory está desactivada, el agente no lee ni escribe en tu almacenamiento de Memory.
+
+<Image img="/images/cloud/agent-builder/memory/toggle.webp" alt="Panel de Memory con la casilla Use memory resaltada en la parte superior" size="sm" />
+
+<div id="memory-best-practices">
+  ## Buenas prácticas de memoria
+</div>
+
+memoria puede ayudar cuando:
+
+* Convenciones recurrentes: formatos de fecha preferidos, definiciones de negocio, patrones de nomenclatura.
+* Contexto del proyecto: qué servicio o base de datos sueles consultar, qué paneles te interesan.
+* Estilo de comunicación: respuestas concisas frente a conversacionales, con mucho código frente a mucho texto.
+
+memoria no está pensado para usarse como una base de datos. No es un lugar donde volcar grandes cantidades de material de referencia, por ejemplo.
+En su lugar, deberías usar una [skill](/es/products/cloud/features/ai-ml/agents/builder/skills) o incorporar ese material en las instrucciones del agente.
+Tampoco está pensado para recuperar información de chats anteriores; el propio historial de conversaciones cumple esa función.

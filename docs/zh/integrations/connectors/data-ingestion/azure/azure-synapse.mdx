@@ -1,0 +1,100 @@
+---
+sidebarTitle: 'Azure Synapse'
+slug: /integrations/azure-synapse
+description: 'ClickHouse 与 Azure Synapse 集成简介'
+keywords: ['clickhouse', 'azure synapse', 'azure', 'synapse', 'microsoft', 'azure spark', 'data']
+title: 'Azure Synapse 与 ClickHouse 集成'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+[Azure Synapse](https://azure.microsoft.com/en-us/products/synapse-analytics) 是一项集成分析服务，结合了大数据、数据科学和数据仓库功能，可实现快速的大规模数据分析。
+在 Synapse 中，Spark 池提供按需、可扩展的 [Apache Spark](https://spark.apache.org) 集群，让你能够执行复杂的数据转换、机器学习任务，以及与外部系统集成。
+
+本文将介绍在 Azure Synapse 中使用 Apache Spark 时，如何集成 [ClickHouse Spark connector](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector)。
+
+<div id="add-connector-dependencies">
+  ## 添加连接器依赖项
+</div>
+
+Azure Synapse 支持三个级别的[包管理](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-azure-portal-add-libraries)：
+
+1. 默认包
+2. Spark 池级别
+3. 会话级别
+
+<br />
+
+请按照 [Apache Spark 池库管理指南](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-manage-pool-packages)中的说明，将以下必需依赖项添加到 Spark 应用程序中
+
+* `clickhouse-spark-runtime-{spark_version}_{scala_version}-{connector_version}.jar` - [官方 Maven](https://mvnrepository.com/artifact/com.clickhouse.spark)
+* `clickhouse-jdbc-{java_client_version}-all.jar` - [官方 Maven](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc)
+
+请参阅我们的 [Spark Connector Compatibility Matrix](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#compatibility-matrix) 文档，了解哪些版本适合您的需求。
+
+<div id="add-clickhouse-as-catalog">
+  ## 将 ClickHouse 添加为 catalog
+</div>
+
+可通过多种方式将 Spark 配置添加到当前会话：
+
+* 加载会话时使用自定义配置文件
+* 通过 Azure Synapse UI 添加配置
+* 在 Synapse 笔记本 中添加配置
+
+请按照此文档 [管理 Apache Spark 配置](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-azure-create-spark-configuration)
+并添加[连接器所需的 Spark 配置](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required)。
+
+例如，你可以在 笔记本 中使用以下设置来配置 Spark 会话：
+
+```python
+%%configure -f
+{
+    "conf": {
+        "spark.sql.catalog.clickhouse": "com.clickhouse.spark.ClickHouseCatalog",
+        "spark.sql.catalog.clickhouse.host": "<clickhouse host>",
+        "spark.sql.catalog.clickhouse.protocol": "https",
+        "spark.sql.catalog.clickhouse.http_port": "<port>",
+        "spark.sql.catalog.clickhouse.user": "<username>",
+        "spark.sql.catalog.clickhouse.password": "password",
+        "spark.sql.catalog.clickhouse.database": "default"
+    }
+}
+```
+
+请确保它位于第一个单元格中，如下所示：
+
+<Image img="/images/integrations/data-ingestion/azure-synapse/spark_notebook_conf.webp" size="xl" alt="通过笔记本设置 Spark 配置" border />
+
+如需更多设置，请访问 [ClickHouse Spark 配置页面](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#configurations)。
+
+<Info>
+  使用 ClickHouse Cloud 时，请务必设置[所需的 Spark 配置](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#clickhouse-cloud-settings)。
+</Info>
+
+<div id="setup-verification">
+  ## 设置验证
+</div>
+
+要验证依赖项和配置是否已成功完成设置，请访问当前 会话 的 Spark UI，并转到 `Environment` 选项卡。
+在这里，查找与你的 ClickHouse 相关的设置：
+
+<Image img="/images/integrations/data-ingestion/azure-synapse/spark_ui_ch_settings.webp" size="xl" alt="使用 Spark UI 验证 ClickHouse 设置" border />
+
+<div id="additional-resources">
+  ## 其他资源
+</div>
+
+* [ClickHouse Spark Connector 文档](/zh/integrations/connectors/data-ingestion/apache-spark/index)
+* [Azure Synapse Apache Spark 池概述](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-overview)
+* [优化 Apache Spark 工作负载性能](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-performance)
+* [管理 Synapse 中 Apache Spark 池的库](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-manage-pool-packages)
+* [管理 Synapse 中的 Apache Spark 配置](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-azure-create-spark-configuration)

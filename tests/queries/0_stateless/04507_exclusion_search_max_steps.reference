@@ -1,0 +1,38 @@
+-- { echoOn }
+
+SELECT ltrim(explain) FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM t_exclusion_search_max_steps
+    WHERE b = 5
+    SETTINGS merge_tree_generic_exclusion_search_max_steps = 15
+) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+PrimaryKey
+Keys:
+Condition: (b in [5, 5])
+Parts: 1/1
+Granules: 513/1000
+Search Algorithm: generic exclusion search
+SELECT ltrim(explain) FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM t_exclusion_search_max_steps
+    WHERE b = 5
+    SETTINGS merge_tree_generic_exclusion_search_max_steps = 150
+) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+PrimaryKey
+Keys:
+Condition: (b in [5, 5])
+Parts: 1/1
+Granules: 352/1000
+Search Algorithm: generic exclusion search
+SELECT ltrim(explain) FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM t_exclusion_search_max_steps
+    WHERE b = 5
+    SETTINGS merge_tree_generic_exclusion_search_max_steps = 0
+) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+PrimaryKey
+Keys:
+Condition: (b in [5, 5])
+Parts: 1/1
+Granules: 336/1000
+Search Algorithm: generic exclusion search

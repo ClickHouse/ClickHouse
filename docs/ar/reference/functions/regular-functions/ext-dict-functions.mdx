@@ -1,0 +1,2253 @@
+---
+description: 'توثيق الدوال الخاصة بالتعامل مع القواميس'
+sidebarTitle: 'القواميس'
+slug: /sql-reference/functions/ext-dict-functions
+title: 'دوال للتعامل مع القواميس'
+doc_type: 'مرجع'
+---
+
+<Note>
+  بالنسبة إلى القواميس التي أُنشئت باستخدام [DDL queries](/ar/reference/statements/create/dictionary)، يجب تحديد المعلَمة `dict_name` بشكل كامل، مثل `<database>.<dict_name>`. وإلا فستُستخدم قاعدة البيانات الحالية.
+</Note>
+
+للاطلاع على معلومات حول الاتصال بالقواميس وإعدادها، راجع [القواميس](/ar/reference/statements/create/dictionary).
+
+<div id="example-dictionary">
+  ## قواميس الأمثلة
+</div>
+
+تستخدم الأمثلة في هذا القسم القواميس التالية. يمكنك إنشاؤها في ClickHouse
+لتشغيل أمثلة الدوال الموضّحة أدناه.
+
+<Accordion title="قاموس توضيحي لدالتي dictGet\<T\> و dictGet\<T\>OrDefault">
+  ```sql
+  -- إنشاء جدول يحتوي على جميع أنواع البيانات المطلوبة
+  CREATE TABLE all_types_test (
+      `id` UInt32,
+      
+      -- نوع String
+      `String_value` String,
+      
+      -- أنواع الأعداد الصحيحة غير الموقَّعة
+      `UInt8_value` UInt8,
+      `UInt16_value` UInt16,
+      `UInt32_value` UInt32,
+      `UInt64_value` UInt64,
+      
+      -- أنواع الأعداد الصحيحة الموقَّعة
+      `Int8_value` Int8,
+      `Int16_value` Int16,
+      `Int32_value` Int32,
+      `Int64_value` Int64,
+      
+      -- أنواع الأعداد ذات الفاصلة العائمة
+      `Float32_value` Float32,
+      `Float64_value` Float64,
+      
+      -- أنواع التاريخ/الوقت
+      `Date_value` Date,
+      `DateTime_value` DateTime,
+      
+      -- أنواع الشبكة
+      `IPv4_value` IPv4,
+      `IPv6_value` IPv6,
+      
+      -- نوع UUID
+      `UUID_value` UUID
+  ) ENGINE = MergeTree() 
+  ORDER BY id;
+  ```
+
+  ```sql
+  -- إدراج بيانات الاختبار
+  INSERT INTO all_types_test VALUES
+  (
+      1,                              -- id
+      'ClickHouse',                   -- String
+      100,                            -- UInt8
+      5000,                           -- UInt16
+      1000000,                        -- UInt32
+      9223372036854775807,            -- UInt64
+      -100,                           -- Int8
+      -5000,                          -- Int16
+      -1000000,                       -- Int32
+      -9223372036854775808,           -- Int64
+      123.45,                         -- Float32
+      987654.123456,                  -- Float64
+      '2024-01-15',                   -- Date
+      '2024-01-15 10:30:00',          -- DateTime
+      '192.168.1.1',                  -- IPv4
+      '2001:db8::1',                  -- IPv6
+      '550e8400-e29b-41d4-a716-446655440000' -- UUID
+  )
+  ```
+
+  ```sql
+  -- إنشاء قاموس
+  CREATE DICTIONARY all_types_dict
+  (
+      id UInt32,
+      String_value String,
+      UInt8_value UInt8,
+      UInt16_value UInt16,
+      UInt32_value UInt32,
+      UInt64_value UInt64,
+      Int8_value Int8,
+      Int16_value Int16,
+      Int32_value Int32,
+      Int64_value Int64,
+      Float32_value Float32,
+      Float64_value Float64,
+      Date_value Date,
+      DateTime_value DateTime,
+      IPv4_value IPv4,
+      IPv6_value IPv6,
+      UUID_value UUID
+  )
+  PRIMARY KEY id
+  SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'all_types_test' DB 'default'))
+  LAYOUT(HASHED())
+  LIFETIME(MIN 300 MAX 600);
+  ```
+</Accordion>
+
+<Accordion title="قاموس توضيحي لـ dictGetAll">
+  أنشئ جدولًا لتخزين بيانات قاموس regexp tree:
+
+  ```sql
+  CREATE TABLE regexp_os(
+      id UInt64,
+      parent_id UInt64,
+      regexp String,
+      keys Array(String),
+      values Array(String)
+  )
+  ENGINE = Memory;
+  ```
+
+  أدرِج البيانات في الجدول:
+
+  ```sql
+  INSERT INTO regexp_os 
+  SELECT *
+  FROM s3(
+      'https://datasets-documentation.s3.eu-west-3.amazonaws.com/' ||
+      'user_agent_regex/regexp_os.csv'
+  );
+  ```
+
+  أنشئ قاموس regexp tree:
+
+  ```sql
+  CREATE DICTIONARY regexp_tree
+  (
+      regexp String,
+      os_replacement String DEFAULT 'Other',
+      os_v1_replacement String DEFAULT '0',
+      os_v2_replacement String DEFAULT '0',
+      os_v3_replacement String DEFAULT '0',
+      os_v4_replacement String DEFAULT '0'
+  )
+  PRIMARY KEY regexp
+  SOURCE(CLICKHOUSE(TABLE 'regexp_os'))
+  LIFETIME(MIN 0 MAX 0)
+  LAYOUT(REGEXP_TREE);
+  ```
+</Accordion>
+
+<Accordion title="مثال على قاموس بمفتاح نطاق">
+  أنشئ جدول الإدخال:
+
+  ```sql
+  CREATE TABLE range_key_dictionary_source_table
+  (
+      key UInt64,
+      start_date Date,
+      end_date Date,
+      value String,
+      value_nullable Nullable(String)
+  )
+  ENGINE = TinyLog();
+  ```
+
+  أدرج البيانات في جدول الإدخال:
+
+  ```sql
+  INSERT INTO range_key_dictionary_source_table VALUES(1, toDate('2019-05-20'), toDate('2019-05-20'), 'First', 'First');
+  INSERT INTO range_key_dictionary_source_table VALUES(2, toDate('2019-05-20'), toDate('2019-05-20'), 'Second', NULL);
+  INSERT INTO range_key_dictionary_source_table VALUES(3, toDate('2019-05-20'), toDate('2019-05-20'), 'Third', 'Third');
+  ```
+
+  أنشئ القاموس:
+
+  ```sql
+  CREATE DICTIONARY range_key_dictionary
+  (
+      key UInt64,
+      start_date Date,
+      end_date Date,
+      value String,
+      value_nullable Nullable(String)
+  )
+  PRIMARY KEY key
+  SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'range_key_dictionary_source_table'))
+  LIFETIME(MIN 1 MAX 1000)
+  LAYOUT(RANGE_HASHED())
+  RANGE(MIN start_date MAX end_date);
+  ```
+</Accordion>
+
+<Accordion title="مثال على قاموس بمفتاح مركب">
+  أنشئ الجدول المصدر:
+
+  ```sql
+  CREATE TABLE dict_mult_source
+  (
+  id UInt32,
+  c1 UInt32,
+  c2 String
+  ) ENGINE = Memory;
+  ```
+
+  أدرج البيانات في الجدول المصدر:
+
+  ```sql
+  INSERT INTO dict_mult_source VALUES
+  (1, 1, '1'),
+  (2, 2, '2'),
+  (3, 3, '3');
+  ```
+
+  أنشئ القاموس:
+
+  ```sql
+  CREATE DICTIONARY ext_dict_mult
+  (
+      id UInt32,
+      c1 UInt32,
+      c2 String
+  )
+  PRIMARY KEY id
+  SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'dict_mult_source' DB 'default'))
+  LAYOUT(FLAT())
+  LIFETIME(MIN 0 MAX 0);
+  ```
+</Accordion>
+
+<Accordion title="مثال على قاموس هرمي">
+  أنشئ الجدول المصدر:
+
+  ```sql
+  CREATE TABLE hierarchy_source
+  (
+    id UInt64,
+    parent_id UInt64,
+    name String
+  ) ENGINE = Memory;
+  ```
+
+  أدرج البيانات في الجدول المصدر:
+
+  ```sql
+  INSERT INTO hierarchy_source VALUES
+  (0, 0, 'Root'),
+  (1, 0, 'Level 1 - Node 1'),
+  (2, 1, 'Level 2 - Node 2'),
+  (3, 1, 'Level 2 - Node 3'),
+  (4, 2, 'Level 3 - Node 4'),
+  (5, 2, 'Level 3 - Node 5'),
+  (6, 3, 'Level 3 - Node 6');
+
+  -- 0 (الجذر)
+  -- └── 1 (المستوى 1 - العقدة 1)
+  --     ├── 2 (المستوى 2 - العقدة 2)
+  --     │   ├── 4 (المستوى 3 - العقدة 4)
+  --     │   └── 5 (المستوى 3 - العقدة 5)
+  --     └── 3 (المستوى 2 - العقدة 3)
+  --         └── 6 (المستوى 3 - العقدة 6)
+  ```
+
+  أنشئ القاموس:
+
+  ```sql
+  CREATE DICTIONARY hierarchical_dictionary
+  (
+      id UInt64,
+      parent_id UInt64 HIERARCHICAL,
+      name String
+  )
+  PRIMARY KEY id
+  SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'hierarchy_source' DB 'default'))
+  LAYOUT(HASHED())
+  LIFETIME(MIN 300 MAX 600);
+  ```
+</Accordion>
+
+{/* 
+  يُستبدل المحتوى الداخلي للوسوم أدناه وقت بناء إطار عمل التوثيق بـ
+  توثيق مُولَّد من system.functions. يُرجى عدم تعديل الوسوم أو حذفها.
+  راجع: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+  */}
+
+{/*AUTOGENERATED_START*/}
+
+<div id="dictGet">
+  ## dictGet
+</div>
+
+قُدِّمت في: v18.16.0
+
+تسترجع القيم من القاموس.
+
+**الصيغة**
+
+```sql
+dictGet('dict_name', attr_names, id_expr)
+```
+
+**المعاملات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_names` — اسم عمود القاموس، أو Tuple من أسماء الأعمدة. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع UInt64/Tuple(T). [`UInt64`](/ar/reference/data-types/int-uint) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المعادة**
+
+تعيد قيمة سمة القاموس المقابلة لـ id&#95;expr إذا تم العثور على المفتاح.
+إذا لم يتم العثور على المفتاح، فتعيد محتوى العنصر `<null_value>` المحدد للسمة في تهيئة القاموس.
+
+**أمثلة**
+
+**استرجاع سمة واحدة**
+
+```sql title=Query
+SELECT dictGet('ext_dict_test', 'c1', toUInt64(1)) AS val
+```
+
+```response title=Response
+1
+```
+
+**سمات متعددة**
+
+```sql title=Query
+SELECT
+    dictGet('ext_dict_mult', ('c1','c2'), number + 1) AS val,
+    toTypeName(val) AS type
+FROM system.numbers
+LIMIT 3;
+```
+
+```response title=Response
+┌─val─────┬─type───────────┐
+│ (1,'1') │ Tuple(        ↴│
+│         │↳    c1 UInt32,↴│
+│         │↳    c2 String) │
+│ (2,'2') │ Tuple(        ↴│
+│         │↳    c1 UInt32,↴│
+│         │↳    c2 String) │
+│ (3,'3') │ Tuple(        ↴│
+│         │↳    c1 UInt32,↴│
+│         │↳    c2 String) │
+└─────────┴────────────────┘
+```
+
+<div id="dictGetAll">
+  ## dictGetAll
+</div>
+
+أُضيفت في: v23.5.0
+
+تسترجع قيم السمات لجميع العُقد التي طابقت كل مفتاح في [قاموس شجرة التعبير النمطي](/ar/reference/statements/create/dictionary/layouts/regexp-tree).
+
+وباستثناء أنها تُرجع قيمًا من النوع `Array(T)` بدلًا من `T`، تعمل هذه الدالة بصورة مماثلة لـ [`dictGet`](#dictGet).
+
+**البنية**
+
+```sql
+dictGetAll(dict_name, attr_names, id_expr[, limit])
+```
+
+**الوسيطات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_names` — اسم عمود القاموس، أو Tuple من أسماء الأعمدة. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة Tuple (بحسب تهيئة القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `limit` — اختياري. الحد الأقصى لطول كل مصفوفة قيم مُعادة. عند الاقتطاع، تُمنح العقد الفرعية أولوية على العقد الأصلية، وبخلاف ذلك يُراعى ترتيب القائمة المحدد لقاموس شجرة Regexp. إذا لم يُحدَّد، فسيكون طول المصفوفة غير محدود. [`UInt*`](/ar/reference/data-types/int-uint)
+
+**القيمة المُعادة**
+
+تُرجع مصفوفة من قيم سمات القاموس التي تقابل `id_expr` لكل سمة محددة بواسطة `attr_names`.
+إذا لم يكن في القاموس مفتاح يقابل `id_expr`، فستُرجع مصفوفة فارغة.
+
+<Note>
+  يطرح ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا كانت القيمة لا تطابق نوع بيانات السمة.
+</Note>
+
+[`Array(T)`](/ar/reference/data-types/array)
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT
+    'Mozilla/5.0 (Linux; Android 12; SM-G998B) Mobile Safari/537.36' AS user_agent,
+
+    -- This will match ALL applicable patterns
+    dictGetAll('regexp_tree', 'os_replacement', 'Mozilla/5.0 (Linux; Android 12; SM-G998B) Mobile Safari/537.36') AS all_matches,
+
+    -- This returns only the first match
+    dictGet('regexp_tree', 'os_replacement', 'Mozilla/5.0 (Linux; Android 12; SM-G998B) Mobile Safari/537.36') AS first_match;
+```
+
+```response title=Response
+┌─user_agent─────────────────────────────────────────────────────┬─all_matches─────────────────────────────┬─first_match─┐
+│ Mozilla/5.0 (Linux; Android 12; SM-G998B) Mobile Safari/537.36 │ ['Android','Android','Android','Linux'] │ Android     │
+└────────────────────────────────────────────────────────────────┴─────────────────────────────────────────┴─────────────┘
+```
+
+<div id="dictGetChildren">
+  ## dictGetChildren
+</div>
+
+أُضيف في: v21.4.0
+
+يعيد الأبناء من المستوى الأول في مصفوفة من الفهارس. وهو التحويل العكسي لـ [dictGetHierarchy](#dictGetHierarchy).
+
+**الصياغة**
+
+```sql
+dictGetChildren(dict_name, key)
+```
+
+**الوسيطات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `key` — المفتاح المطلوب التحقق منه. [`const String`](/ar/reference/data-types/string)
+
+**القيمة المُعادة**
+
+تُرجِع الأبناء المباشرين للمفتاح. [`Array(UInt64)`](/ar/reference/data-types/array)
+
+**أمثلة**
+
+**الحصول على الأبناء المباشرين لقاموس**
+
+```sql title=Query
+SELECT dictGetChildren('hierarchical_dictionary', 2);
+```
+
+```response title=Response
+┌─dictGetChild⋯ionary', 2)─┐
+│ [4,5]                    │
+└──────────────────────────┘
+```
+
+<div id="dictGetDate">
+  ## dictGetDate
+</div>
+
+قُدِّم في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `Date` بغضّ النظر عن تهيئة القاموس.
+
+**الصياغة**
+
+```sql
+dictGetDate(dict_name, attr_name, id_expr)
+```
+
+**الوسيطات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجِع قيمة من نوع مفتاح القاموس أو قيمة `Tuple` (بحسب تهيئة القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المُعادة**
+
+تُرجِع قيمة سمة القاموس المقابلة لـ `id_expr`،
+وإلا فتُرجِع محتوى العنصر `<null_value>` المحدد لهذه السمة في تهيئة القاموس.
+
+<Note>
+  يُطلق ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو كانت القيمة لا تطابق نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT dictGetDate('all_types_dict', 'Date_value', 1)
+```
+
+```response title=Response
+┌─dictGetDate(⋯_value', 1)─┐
+│               2020-01-01 │
+└──────────────────────────┘
+```
+
+<div id="dictGetDateOrDefault">
+  ## dictGetDateOrDefault
+</div>
+
+أُضيف في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `Date` بغضّ النظر عن تهيئة القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يُعثر على المفتاح.
+
+**البنية**
+
+```sql
+dictGetDateOrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**الوسيطات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة `Tuple` (بحسب تهيئة القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `default_value_expr` — القيمة (أو القيم) التي تُعاد إذا لم يكن القاموس يحتوي على صف بالمفتاح `id_expr`. [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المُعادة**
+
+تُرجع قيمة سمة القاموس المقابلة لـ `id_expr`،
+وإلا فتُرجع القيمة المُمرَّرة في المعامل `default_value_expr`.
+
+<Note>
+  يُطلق ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا كانت القيمة لا تطابق نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+-- for key which exists
+SELECT dictGetDate('all_types_dict', 'Date_value', 1);
+
+-- for key which does not exist, returns the provided default value
+SELECT dictGetDateOrDefault('all_types_dict', 'Date_value', 999, toDate('1970-01-01'));
+```
+
+```response title=Response
+┌─dictGetDate(⋯_value', 1)─┐
+│               2024-01-15 │
+└──────────────────────────┘
+┌─dictGetDateO⋯70-01-01'))─┐
+│               1970-01-01 │
+└──────────────────────────┘
+```
+
+<div id="dictGetDateTime">
+  ## dictGetDateTime
+</div>
+
+تم تقديمه في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `DateTime` بغض النظر عن تهيئة القاموس.
+
+**البنية**
+
+```sql
+dictGetDateTime(dict_name, attr_name, id_expr)
+```
+
+**الوسائط**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة Tuple (بحسب إعدادات القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المُعادة**
+
+يعيد قيمة سمة القاموس المطابقة لـ `id_expr`،
+وإلا فإنه يعيد محتوى العنصر `<null_value>` المحدد لهذه السمة في إعدادات القاموس.
+
+<Note>
+  يطرح ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو كانت القيمة لا تطابق نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT dictGetDateTime('all_types_dict', 'DateTime_value', 1)
+```
+
+```response title=Response
+┌─dictGetDateT⋯_value', 1)─┐
+│      2024-01-15 10:30:00 │
+└──────────────────────────┘
+```
+
+<div id="dictGetDateTimeOrDefault">
+  ## dictGetDateTimeOrDefault
+</div>
+
+أُضيف في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `DateTime` بغضّ النظر عن تهيئة القاموس، أو يُرجِع القيمة الافتراضية المقدَّمة إذا لم يُعثر على المفتاح.
+
+**البنية**
+
+```sql
+dictGetDateTimeOrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**الوسيطات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة `Tuple` (بحسب إعدادات القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `default_value_expr` — القيمة (أو القيم) المُعادة إذا لم يحتوِ القاموس على صف مفتاحه `id_expr`. [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المعادة**
+
+تعيد قيمة سمة القاموس المطابقة لـ `id_expr`،
+وإلا فتعيد القيمة المُمرَّرة في المعامل `default_value_expr`.
+
+<Note>
+  يطرح ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة، أو إذا كانت القيمة لا تطابق نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+-- for key which exists
+SELECT dictGetDateTime('all_types_dict', 'DateTime_value', 1);
+
+-- for key which does not exist, returns the provided default value
+SELECT dictGetDateTimeOrDefault('all_types_dict', 'DateTime_value', 999, toDateTime('1970-01-01 00:00:00'));
+```
+
+```response title=Response
+┌─dictGetDateT⋯_value', 1)─┐
+│      2024-01-15 10:30:00 │
+└──────────────────────────┘
+┌─dictGetDateT⋯0:00:00'))──┐
+│      1970-01-01 00:00:00 │
+└──────────────────────────┘
+```
+
+<div id="dictGetDescendants">
+  ## dictGetDescendants
+</div>
+
+طُرح في: v21.4.0
+
+يعيد جميع العناصر المتحدّرة كما لو جرى تطبيق الدالة [`dictGetChildren`](#dictGetChildren) تكراريًا `level` مرات.
+
+**البنية**
+
+```sql
+dictGetDescendants(dict_name, key, level)
+```
+
+**المعاملات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `key` — المفتاح المطلوب التحقق منه. [`const String`](/ar/reference/data-types/string)
+* `level` — المفتاح المطلوب التحقق منه. مستوى التسلسل الهرمي. إذا كانت قيمة `level = 0`، فسيُرجِع جميع المتحدرين حتى النهاية. [`UInt8`](/ar/reference/data-types/int-uint)
+
+**القيمة المعادة**
+
+يُرجِع المتحدرين للمفتاح. [`Array(UInt64)`](/ar/reference/data-types/array)
+
+**أمثلة**
+
+**الحصول على الأبناء من المستوى الأول لقاموس**
+
+```sql title=Query
+-- consider the following hierarchical dictionary:
+-- 0 (Root)
+-- └── 1 (Level 1 - Node 1)
+--     ├── 2 (Level 2 - Node 2)
+--     │   ├── 4 (Level 3 - Node 4)
+--     │   └── 5 (Level 3 - Node 5)
+--     └── 3 (Level 2 - Node 3)
+--         └── 6 (Level 3 - Node 6)
+
+SELECT dictGetDescendants('hierarchical_dictionary', 0, 2)
+```
+
+```response title=Response
+┌─dictGetDesce⋯ary', 0, 2)─┐
+│ [3,2]                    │
+└──────────────────────────┘
+```
+
+<div id="dictGetFloat32">
+  ## dictGetFloat32
+</div>
+
+قُدِّم في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `Float32` بغضّ النظر عن إعدادات القاموس.
+
+**الصيغة**
+
+```sql
+dictGetFloat32(dict_name, attr_name, id_expr)
+```
+
+**الوسيطات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يعيد قيمة من نوع مفتاح القاموس أو قيمة `Tuple` (بحسب إعدادات القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المعادة**
+
+يعيد قيمة سمة القاموس المقابلة لـ `id_expr`،
+وإلا فيعيد محتوى العنصر `<null_value>` المحدد لهذه السمة في إعدادات القاموس.
+
+<Note>
+  يُصدر ClickHouse استثناءً إذا تعذر عليه تحليل قيمة السمة أو إذا كانت القيمة لا تطابق نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT dictGetFloat32('all_types_dict', 'Float32_value', 1)
+```
+
+```response title=Response
+┌─dictGetFloat⋯_value', 1)─┐
+│               -123.123   │
+└──────────────────────────┘
+```
+
+<div id="dictGetFloat32OrDefault">
+  ## dictGetFloat32OrDefault
+</div>
+
+أُضيفت في: v1.1.0
+
+تُحوِّل قيمة سمة القاموس إلى نوع البيانات `Float32` بغض النظر عن إعدادات القاموس، أو تُرجِع القيمة الافتراضية المقدَّمة إذا لم يُعثر على المفتاح.
+
+**البنية**
+
+```sql
+dictGetFloat32OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**المعاملات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة Tuple (بحسب تهيئة القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `default_value_expr` — القيمة (أو القيم) المُعادة إذا كان القاموس لا يحتوي على صف بالمفتاح `id_expr`. [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المُعادة**
+
+تعيد قيمة سمة القاموس المقابلة لـ `id_expr`،
+وإلا فتعيد القيمة المُمرَّرة في المعامل `default_value_expr`.
+
+<Note>
+  يطرح ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا لم تطابق القيمة نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+-- for key which exists
+SELECT dictGetFloat32('all_types_dict', 'Float32_value', 1);
+
+-- for key which does not exist, returns the provided default value (-1.0)
+SELECT dictGetFloat32OrDefault('all_types_dict', 'Float32_value', 999, -1.0);
+```
+
+```response title=Response
+┌─dictGetFloat⋯_value', 1)─┐
+│                   123.45 │
+└──────────────────────────┘
+┌─dictGetFloat⋯e', 999, -1)─┐
+│                       -1  │
+└───────────────────────────┘
+```
+
+<div id="dictGetFloat64">
+  ## dictGetFloat64
+</div>
+
+قُدِّم في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `Float64` بغضّ النظر عن تهيئة القاموس.
+
+**البنية**
+
+```sql
+dictGetFloat64(dict_name, attr_name, id_expr)
+```
+
+**المعاملات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة `Tuple` (بحسب تهيئة القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المُعادة**
+
+تُعيد قيمة سمة القاموس المطابقة لـ `id_expr`،
+وإلا فتُعيد محتوى العنصر `<null_value>` المحدد لهذه السمة في تهيئة القاموس.
+
+<Note>
+  يطرح ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا لم تطابق القيمة نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT dictGetFloat64('all_types_dict', 'Float64_value', 1)
+```
+
+```response title=Response
+┌─dictGetFloat⋯_value', 1)─┐
+│                 -123.123 │
+└──────────────────────────┘
+```
+
+<div id="dictGetFloat64OrDefault">
+  ## dictGetFloat64OrDefault
+</div>
+
+أُضيفت في: v1.1.0
+
+تحوِّل قيمة سمة القاموس إلى نوع البيانات `Float64` بغض النظر عن إعدادات القاموس، أو تُرجِع القيمة الافتراضية الموفَّرة إذا لم يُعثر على المفتاح.
+
+**البنية**
+
+```sql
+dictGetFloat64OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**الوسيطات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة Tuple (بحسب إعدادات القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `default_value_expr` — القيمة (أو القيم) المُعادة إذا لم يحتوِ القاموس على صف بالمفتاح `id_expr`. [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المُعادة**
+
+يُرجع قيمة سمة القاموس المطابقة لـ `id_expr`،
+وإلا فسيُرجع القيمة المُمرَّرة في المعامل `default_value_expr`.
+
+<Note>
+  يُطلق ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا لم تطابق القيمة نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+-- for key which exists
+SELECT dictGetFloat64('all_types_dict', 'Float64_value', 1);
+
+-- for key which does not exist, returns the provided default value (nan)
+SELECT dictGetFloat64OrDefault('all_types_dict', 'Float64_value', 999, nan);
+```
+
+```response title=Response
+┌─dictGetFloat⋯_value', 1)─┐
+│            987654.123456 │
+└──────────────────────────┘
+┌─dictGetFloat⋯, 999, nan)─┐
+│                      nan │
+└──────────────────────────┘
+```
+
+<div id="dictGetHierarchy">
+  ## dictGetHierarchy
+</div>
+
+قُدِّم في: v1.1.0
+
+ينشئ مصفوفة تحتوي على جميع أسلاف مفتاح في [القاموس الهرمي](/ar/reference/statements/create/dictionary/layouts/hierarchical#hierarchical-dictionaries).
+
+**الصياغة**
+
+```sql
+dictGetHierarchy(dict_name, key)
+```
+
+**الوسيطات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `key` — قيمة المفتاح. [`const String`](/ar/reference/data-types/string)
+
+**القيمة المُعادة**
+
+يعيد الأسلاف للمفتاح. [`Array(UInt64)`](/ar/reference/data-types/array)
+
+**أمثلة**
+
+**الحصول على التسلسل الهرمي لمفتاح**
+
+```sql title=Query
+SELECT dictGetHierarchy('hierarchical_dictionary', 5)
+```
+
+```response title=Response
+┌─dictGetHiera⋯ionary', 5)─┐
+│ [5,2,1]                  │
+└──────────────────────────┘
+```
+
+<div id="dictGetIPv4">
+  ## dictGetIPv4
+</div>
+
+أُضيف في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `IPv4` بغضّ النظر عن تهيئة القاموس.
+
+**الصيغة**
+
+```sql
+dictGetIPv4(dict_name, attr_name, id_expr)
+```
+
+**الوسيطات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة من نوع `Tuple` (بحسب إعدادات القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المُعادة**
+
+يُرجع قيمة سمة القاموس المقابلة لـ `id_expr`،
+وإلا فيُرجع محتوى العنصر `<null_value>` المحدد لهذه السمة في إعدادات القاموس.
+
+<Note>
+  يُطلق ClickHouse استثناءً إذا تعذر عليه تفسير قيمة السمة، أو إذا لم تتطابق القيمة مع نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT dictGetIPv4('all_types_dict', 'IPv4_value', 1)
+```
+
+```response title=Response
+┌─dictGetIPv4('all_⋯ 'IPv4_value', 1)─┐
+│ 192.168.0.1                         │
+└─────────────────────────────────────┘
+```
+
+<div id="dictGetIPv4OrDefault">
+  ## dictGetIPv4OrDefault
+</div>
+
+أُضيف في: v23.1.0
+
+يحوِّل قيمة سمة القاموس إلى نوع البيانات `IPv4` بغضّ النظر عن تهيئة القاموس، أو يُرجع القيمة الافتراضية المقدَّمة إذا لم يتم العثور على المفتاح.
+
+**الصيغة**
+
+```sql
+dictGetIPv4OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**الوسائط**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة tuple (بحسب إعدادات القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `default_value_expr` — القيمة أو القيم التي تُرجع إذا لم يكن القاموس يحتوي على صف بالمفتاح `id_expr`. [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المُعادة**
+
+تُرجع قيمة سمة القاموس المقابلة لـ `id_expr`،
+وإلا فتُرجع القيمة المُمرَّرة في المعامل `default_value_expr`.
+
+<Note>
+  يُطلِق ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا لم تطابق القيمة نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال للاستخدام**
+
+```sql title=Query
+-- for key which exists
+SELECT dictGetIPv4('all_types_dict', 'IPv4_value', 1);
+
+-- for key which does not exist, returns the provided default value
+SELECT dictGetIPv4OrDefault('all_types_dict', 'IPv4_value', 999, toIPv4('0.0.0.0'));
+```
+
+```response title=Response
+┌─dictGetIPv4('all_⋯ 'IPv4_value', 1)─┐
+│ 192.168.0.1                         │
+└─────────────────────────────────────┘
+┌─dictGetIPv4OrDefa⋯0.0.0.0'))─┐
+│ 0.0.0.0                      │
+└──────────────────────────────┘
+```
+
+<div id="dictGetIPv6">
+  ## dictGetIPv6
+</div>
+
+أُضيف في: v23.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `IPv6` بغضّ النظر عن تهيئة القاموس.
+
+**البنية**
+
+```sql
+dictGetIPv6(dict_name, attr_name, id_expr)
+```
+
+**المعاملات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة `Tuple` (بحسب تهيئة القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المُعادة**
+
+تُرجع قيمة سمة القاموس المقابلة لـ `id_expr`،
+وإلا فتُرجع محتوى العنصر `<null_value>` المحدد للسمة في تهيئة القاموس.
+
+<Note>
+  يُصدر ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو كانت القيمة لا تطابق نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT dictGetIPv6('all_types_dict', 'IPv6_value', 1)
+```
+
+```response title=Response
+┌─dictGetIPv6('all_⋯ 'IPv6_value', 1)─┐
+│ 2001:db8:85a3::8a2e:370:7334        │
+└─────────────────────────────────────┘
+```
+
+<div id="dictGetIPv6OrDefault">
+  ## dictGetIPv6OrDefault
+</div>
+
+أُضيف في: v23.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `IPv6` بغضّ النظر عن إعدادات القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يُعثر على المفتاح.
+
+**البنية**
+
+```sql
+dictGetIPv6OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**المعاملات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يعيد قيمة من نوع مفتاح القاموس أو قيمة tuple (بحسب تهيئة القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `default_value_expr` — القيمة (أو القيم) التي تُعاد إذا لم يحتوِ القاموس على صف بالمفتاح `id_expr`. [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المعادة**
+
+تعيد قيمة سمة القاموس المطابقة لـ `id_expr`،
+وإلا فتعيد القيمة المُمرَّرة عبر المعامل `default_value_expr`.
+
+<Note>
+  يطلق ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا لم تتطابق القيمة مع نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+-- for key which exists
+SELECT dictGetIPv6('all_types_dict', 'IPv6_value', 1);
+
+-- for key which does not exist, returns the provided default value
+SELECT dictGetIPv6OrDefault('all_types_dict', 'IPv6_value', 999, '::1'::IPv6);
+```
+
+```response title=Response
+┌─dictGetIPv6('all_⋯ 'IPv6_value', 1)─┐
+│ 2001:db8:85a3::8a2e:370:7334        │
+└─────────────────────────────────────┘
+┌─dictGetIPv6OrDefa⋯:1'::IPv6)─┐
+│ ::1                          │
+└──────────────────────────────┘
+```
+
+<div id="dictGetInt16">
+  ## dictGetInt16
+</div>
+
+أُضيف في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `Int16` بغضّ النظر عن إعدادات القاموس.
+
+**الصيغة**
+
+```sql
+dictGetInt16(dict_name, attr_name, id_expr)
+```
+
+**المعاملات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة Tuple (بحسب تهيئة القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المعادة**
+
+يعيد قيمة سمة القاموس المطابقة لـ `id_expr`،
+وإلا فيعيد محتوى العنصر `<null_value>` المحدد لهذه السمة في تهيئة القاموس.
+
+<Note>
+  يطرح ClickHouse استثناءً إذا تعذر عليه تحليل قيمة السمة أو كانت القيمة لا تطابق نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT dictGetInt16('all_types_dict', 'Int16_value', 1)
+```
+
+```response title=Response
+┌─dictGetInt16⋯_value', 1)─┐
+│                    -5000 │
+└──────────────────────────┘
+```
+
+<div id="dictGetInt16OrDefault">
+  ## dictGetInt16OrDefault
+</div>
+
+قُدِّم في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `Int16` بغضّ النظر عن إعدادات القاموس، أو يعيد القيمة الافتراضية المحددة إذا لم يتم العثور على المفتاح.
+
+**البنية**
+
+```sql
+dictGetInt16OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**المعاملات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة `Tuple` (بحسب تهيئة القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `default_value_expr` — القيمة (أو القيم) المُعادة إذا كان القاموس لا يحتوي على صف بالمفتاح `id_expr`. [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المُعادة**
+
+يعيد قيمة سمة القاموس المطابقة لـ `id_expr`،
+وإلا فيعيد القيمة المُمرَّرة في المعامل `default_value_expr`.
+
+<Note>
+  يُصدر ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا كانت القيمة لا تطابق نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+-- for key which exists
+SELECT dictGetInt16('all_types_dict', 'Int16_value', 1);
+
+-- for key which does not exist, returns the provided default value (-1)
+SELECT dictGetInt16OrDefault('all_types_dict', 'Int16_value', 999, -1);
+```
+
+```response title=Response
+┌─dictGetInt16⋯_value', 1)─┐
+│                    -5000 │
+└──────────────────────────┘
+┌─dictGetInt16⋯', 999, -1)─┐
+│                       -1 │
+└──────────────────────────┘
+```
+
+<div id="dictGetInt32">
+  ## dictGetInt32
+</div>
+
+قُدِّم في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `Int32` بغضّ النظر عن تهيئة القاموس.
+
+**الصياغة**
+
+```sql
+dictGetInt32(dict_name, attr_name, id_expr)
+```
+
+**الوسائط**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة Tuple (بحسب إعدادات القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المُعادة**
+
+تُرجع قيمة سمة القاموس المطابقة لـ `id_expr`،
+وإلا فتُرجع محتوى العنصر `<null_value>` المحدَّد لهذه السمة في إعدادات القاموس.
+
+<Note>
+  يُطلق ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا لم تطابق القيمة نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT dictGetInt32('all_types_dict', 'Int32_value', 1)
+```
+
+```response title=Response
+┌─dictGetInt32⋯_value', 1)─┐
+│                -1000000  │
+└──────────────────────────┘
+```
+
+<div id="dictGetInt32OrDefault">
+  ## dictGetInt32OrDefault
+</div>
+
+أُضيف في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `Int32` بغضّ النظر عن إعدادات القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يتم العثور على المفتاح.
+
+**البنية**
+
+```sql
+dictGetInt32OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**الوسيطات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة Tuple (بحسب إعدادات القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `default_value_expr` — القيمة (أو القيم) التي تُرجع إذا لم يحتوِ القاموس على صف بالمفتاح `id_expr`. [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المُعادة**
+
+تُرجع قيمة سمة القاموس المقابلة لـ `id_expr`،
+وإلا تُرجع القيمة الممرَّرة في المعامل `default_value_expr`.
+
+<Note>
+  يُصدر ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو كانت القيمة لا تطابق نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+-- for key which exists
+SELECT dictGetInt32('all_types_dict', 'Int32_value', 1);
+
+-- for key which does not exist, returns the provided default value (-1)
+SELECT dictGetInt32OrDefault('all_types_dict', 'Int32_value', 999, -1);
+```
+
+```response title=Response
+┌─dictGetInt32⋯_value', 1)─┐
+│                -1000000  │
+└──────────────────────────┘
+┌─dictGetInt32⋯', 999, -1)─┐
+│                       -1 │
+└──────────────────────────┘
+```
+
+<div id="dictGetInt64">
+  ## dictGetInt64
+</div>
+
+قُدِّم في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `Int64` بغضّ النظر عن تهيئة القاموس.
+
+**الصيغة**
+
+```sql
+dictGetInt64(dict_name, attr_name, id_expr)
+```
+
+**الوسائط**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة `Tuple` (بحسب إعدادات القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المُعادة**
+
+تُرجع قيمة سمة القاموس المقابلة لـ `id_expr`،
+وإلا فتُرجع محتوى العنصر `<null_value>` المحدد لهذه السمة في إعدادات القاموس.
+
+<Note>
+  يُصدر ClickHouse استثناءً إذا تعذر عليه تحليل قيمة السمة أو إذا كانت القيمة لا تطابق نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT dictGetInt64('all_types_dict', 'Int64_value', 1)
+```
+
+```response title=Response
+┌─dictGetInt64⋯_value', 1)───┐
+│       -9223372036854775807 │
+└────────────────────────────┘
+```
+
+<div id="dictGetInt64OrDefault">
+  ## dictGetInt64OrDefault
+</div>
+
+أُضيف في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `Int64` بغض النظر عن تهيئة القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يُعثر على المفتاح.
+
+**الصياغة**
+
+```sql
+dictGetInt64OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**الوسيطات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة Tuple (بحسب إعدادات القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `default_value_expr` — القيمة (أو القيم) التي تُعاد إذا لم يحتوي القاموس على صف يحمل المفتاح `id_expr`. [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المعادة**
+
+يعيد قيمة سمة القاموس المقابلة لـ `id_expr`،
+وإلا فسيعيد القيمة المُمرَّرة في المعامل `default_value_expr`.
+
+<Note>
+  يطرح ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا كانت القيمة لا تطابق نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+-- for key which exists
+SELECT dictGetInt64('all_types_dict', 'Int64_value', 1);
+
+-- for key which does not exist, returns the provided default value (-1)
+SELECT dictGetInt64OrDefault('all_types_dict', 'Int64_value', 999, -1);
+```
+
+```response title=Response
+┌─dictGetInt64⋯_value', 1)─┐
+│     -9223372036854775808 │
+└──────────────────────────┘
+┌─dictGetInt64⋯', 999, -1)─┐
+│                       -1 │
+└──────────────────────────┘
+```
+
+<div id="dictGetInt8">
+  ## dictGetInt8
+</div>
+
+قُدِّمت في: v1.1.0
+
+يحوِّل قيمة سمة القاموس إلى نوع البيانات `Int8` بغض النظر عن تهيئة القاموس.
+
+**الصيغة**
+
+```sql
+dictGetInt8(dict_name, attr_name, id_expr)
+```
+
+**المعاملات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة `Tuple` (بحسب إعدادات القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المُعادة**
+
+تُرجع قيمة سمة القاموس المقابلة لـ `id_expr`،
+وإلا فتُرجع محتوى العنصر `<null_value>` المحدد لهذه السمة في إعدادات القاموس.
+
+<Note>
+  يطرح ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا لم تطابق القيمة نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT dictGetInt8('all_types_dict', 'Int8_value', 1)
+```
+
+```response title=Response
+┌─dictGetInt8(⋯_value', 1)─┐
+│                     -100 │
+└──────────────────────────┘
+```
+
+<div id="dictGetInt8OrDefault">
+  ## dictGetInt8OrDefault
+</div>
+
+تم تقديمه في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `Int8` بغضّ النظر عن تكوين القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يُعثر على المفتاح.
+
+**البنية**
+
+```sql
+dictGetInt8OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**الوسيطات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يعيد قيمة من نوع مفتاح القاموس أو قيمة Tuple (بحسب تهيئة القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `default_value_expr` — القيمة (أو القيم) المعادة إذا كان القاموس لا يحتوي على صف بالمفتاح `id_expr`. [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المعادة**
+
+يعيد قيمة سمة القاموس المقابلة لـ `id_expr`،
+وإلا فيعيد القيمة المُمرَّرة في المعامل `default_value_expr`.
+
+<Note>
+  يطرح ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا لم تطابق القيمة نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+-- for key which exists
+SELECT dictGetInt8('all_types_dict', 'Int8_value', 1);
+
+-- for key which does not exist, returns the provided default value (-1)
+SELECT dictGetInt8OrDefault('all_types_dict', 'Int8_value', 999, -1);
+```
+
+```response title=Response
+┌─dictGetInt8(⋯_value', 1)─┐
+│                     -100 │
+└──────────────────────────┘
+┌─dictGetInt8O⋯', 999, -1)─┐
+│                       -1 │
+└──────────────────────────┘
+```
+
+<div id="dictGetKeys">
+  ## dictGetKeys
+</div>
+
+تم طرحها في: v25.12.0
+
+تعيد مفتاح/مفاتيح القاموس التي تكون سمتها مساوية للقيمة المحددة. وهذه هي معكوس الدالة `dictGet` لسمة واحدة.
+
+استخدم الإعداد `max_reverse_dictionary_lookup_cache_size_bytes` لتحديد حد أقصى لحجم ذاكرة التخزين المؤقت للبحث العكسي الخاصة بكل استعلام والمستخدَمة بواسطة `dictGetKeys`.
+تخزّن ذاكرة التخزين المؤقت Tuples المفاتيح المتسلسلة لكل قيمة سمة لتجنّب إعادة فحص القاموس ضمن الاستعلام نفسه.
+ولا تكون ذاكرة التخزين المؤقت دائمة عبر الاستعلامات. وعند بلوغ الحد الأقصى، تُطرَد الإدخالات وفق آلية LRU.
+ويكون ذلك أكثر فعالية مع القواميس الكبيرة عندما يكون للإدخال عدد قيم مميزة منخفض، وتكون مجموعة العمل ضمن حدود ذاكرة التخزين المؤقت. اضبطه على `0` لتعطيل التخزين المؤقت.
+
+**البنية**
+
+```sql
+dictGetKeys('dict_name', 'attr_name', value_expr)
+```
+
+**المعاملات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — السمة المراد مطابقتها. [`String`](/ar/reference/data-types/string)
+* `value_expr` — القيمة المراد مطابقتها مع السمة. [`Expression`](/ar/reference/data-types/special-data-types/expression)
+
+**القيمة المعادة**
+
+بالنسبة إلى القواميس أحادية المفتاح: مصفوفة من المفاتيح التي تكون سمتها مساوية لـ `value_expr`. وبالنسبة إلى القواميس متعددة المفاتيح: مصفوفة من tuples للمفاتيح التي تكون سمتها مساوية لـ `value_expr`. إذا لم تكن هناك سمة في القاموس تقابل `value_expr`، فستُعاد مصفوفة فارغة. ويطرح ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو تعذّر تحويل القيمة إلى نوع بيانات السمة.
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT dictGetKeys('task_id_to_priority_dictionary', 'priority_level', 'high') AS ids;
+```
+
+```response title=Response
+┌─ids───┐
+│ [4,2] │
+└───────┘
+```
+
+<div id="dictGetOrDefault">
+  ## dictGetOrDefault
+</div>
+
+تم تقديمه في: v18.16.0
+
+يسترجع قيماً من قاموس، مع إرجاع قيمة افتراضية إذا لم يتم العثور على المفتاح.
+
+**الصيغة**
+
+```sql
+dictGetOrDefault('dict_name', attr_names, id_expr, default_value)
+```
+
+**المعاملات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_names` — اسم عمود القاموس، أو `Tuple` من أسماء الأعمدة. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع UInt64/Tuple(T). [`UInt64`](/ar/reference/data-types/int-uint) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `default_value` — القيمة الافتراضية التي تُعاد إذا لم يُعثر على المفتاح. يجب أن يطابق النوع نوع بيانات السمة.
+
+**القيمة المُعادة**
+
+تعيد قيمة سمة القاموس المطابقة لـ `id_expr` إذا وُجد المفتاح.
+إذا لم يُعثر على المفتاح، تُعيد قيمة `default_value` المقدَّمة.
+
+**أمثلة**
+
+**الحصول على قيمة باستخدام قيمة افتراضية**
+
+```sql title=Query
+SELECT dictGetOrDefault('ext_dict_mult', 'c1', toUInt64(999), 0) AS val
+```
+
+```response title=Response
+0
+```
+
+<div id="dictGetOrNull">
+  ## dictGetOrNull
+</div>
+
+أُضيفت في: v21.4.0
+
+تسترجع قيماً من قاموس، وتُرجِع NULL إذا لم يتم العثور على المفتاح.
+
+**الصيغة**
+
+```sql
+dictGetOrNull('dict_name', 'attr_name', id_expr)
+```
+
+**الوسائط**
+
+* `dict_name` — اسم القاموس. قيمة حرفية من نوع String. - `attr_name` — اسم العمود المطلوب استرجاعه. قيمة حرفية من نوع String. - `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس.
+
+**القيمة المُعادة**
+
+تُرجع قيمة سمة القاموس المطابقة لـ `id_expr` إذا تم العثور على المفتاح.
+إذا لم يتم العثور على المفتاح، تُرجع `NULL`.
+
+**أمثلة**
+
+**مثال باستخدام قاموس ذي مفتاح نطاقي**
+
+```sql title=Query
+SELECT
+    (number, toDate('2019-05-20')),
+    dictGetOrNull('range_key_dictionary', 'value', number, toDate('2019-05-20')),
+FROM system.numbers LIMIT 5 FORMAT TabSeparated;
+```
+
+```response title=Response
+(0,'2019-05-20')  \N
+(1,'2019-05-20')  First
+(2,'2019-05-20')  Second
+(3,'2019-05-20')  Third
+(4,'2019-05-20')  \N
+```
+
+<div id="dictGetString">
+  ## dictGetString
+</div>
+
+استُحدث في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `String` بغضّ النظر عن إعدادات القاموس.
+
+**البنية**
+
+```sql
+dictGetString(dict_name, attr_name, id_expr)
+```
+
+**المعاملات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة `Tuple` (بحسب إعدادات القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المُعادة**
+
+تُرجع قيمة سمة القاموس المقابلة لـ `id_expr`،
+وإلا فتُرجع محتوى العنصر `<null_value>` المحدد لهذه السمة في إعدادات القاموس.
+
+<Note>
+  يُطلق ClickHouse استثناءً إذا تعذر عليه تحليل قيمة السمة أو إذا كانت القيمة لا تطابق نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT dictGetString('all_types_dict', 'String_value', 1)
+```
+
+```response title=Response
+┌─dictGetString(⋯_value', 1)─┐
+│ test string                │
+└────────────────────────────┘
+```
+
+<div id="dictGetStringOrDefault">
+  ## dictGetStringOrDefault
+</div>
+
+أُضيف في: v1.1.0
+
+يحوِّل قيمة سمة القاموس إلى نوع البيانات `String` بغضّ النظر عن تهيئة القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يتم العثور على المفتاح.
+
+**الصياغة**
+
+```sql
+dictGetStringOrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**الوسيطات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة `Tuple` (بحسب إعدادات القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `default_value_expr` — القيمة (أو القيم) المُعادة إذا لم يكن القاموس يحتوي على صف بالمفتاح `id_expr`. [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المعادة**
+
+تُرجع قيمة سمة القاموس المطابقة لـ `id_expr`،
+وإلا فتُرجع القيمة المُمرَّرة في المعامل `default_value_expr`.
+
+<Note>
+  يُطلق ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا لم تكن القيمة مطابقة لنوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+-- for key which exists
+SELECT dictGetString('all_types_dict', 'String_value', 1);
+
+-- for key which does not exist, returns the provided default value
+SELECT dictGetStringOrDefault('all_types_dict', 'String_value', 999, 'default');
+```
+
+```response title=Response
+┌─dictGetString(⋯_value', 1)─┐
+│ test string                │
+└────────────────────────────┘
+┌─dictGetStringO⋯ 999, 'default')─┐
+│ default                         │
+└─────────────────────────────────┘
+```
+
+<div id="dictGetUInt16">
+  ## dictGetUInt16
+</div>
+
+قُدِّم في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `UInt16` بغض النظر عن إعدادات القاموس.
+
+**الصيغة**
+
+```sql
+dictGetUInt16(dict_name, attr_name, id_expr)
+```
+
+**الوسيطات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم العمود في القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة Tuple (بحسب إعدادات القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المعادة**
+
+يعيد قيمة سمة القاموس المقابلة لـ `id_expr`،
+وإلا فإنه يعيد محتوى العنصر `<null_value>` المحدد للسمة في إعدادات القاموس.
+
+<Note>
+  يُطلق ClickHouse استثناءً إذا تعذر عليه تحليل قيمة السمة أو كانت القيمة لا تطابق نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT dictGetUInt16('all_types_dict', 'UInt16_value', 1)
+```
+
+```response title=Response
+┌─dictGetUInt1⋯_value', 1)─┐
+│                     5000 │
+└──────────────────────────┘
+```
+
+<div id="dictGetUInt16OrDefault">
+  ## dictGetUInt16OrDefault
+</div>
+
+أُضيف في: v1.1.0
+
+يحوِّل قيمة سمة القاموس إلى نوع البيانات `UInt16` بغض النظر عن إعدادات القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يُعثر على المفتاح.
+
+**الصيغة**
+
+```sql
+dictGetUInt16OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**المعاملات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم العمود في القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يعيد قيمة من نوع مفتاح القاموس أو قيمة `Tuple` (بحسب إعدادات القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `default_value_expr` — القيمة أو القيم المُعادة إذا كان القاموس لا يحتوي على صف بالمفتاح `id_expr`. [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المعادة**
+
+تعيد قيمة سمة القاموس المطابقة لـ `id_expr`،
+وإلا فتعيد القيمة المُمرَّرة في المعامل `default_value_expr`.
+
+<Note>
+  يطرح ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا كانت القيمة لا تطابق نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+-- for key which exists
+SELECT dictGetUInt16('all_types_dict', 'UInt16_value', 1);
+
+-- for key which does not exist, returns the provided default value (0)
+SELECT dictGetUInt16OrDefault('all_types_dict', 'UInt16_value', 999, 0);
+```
+
+```response title=Response
+┌─dictGetUInt1⋯_value', 1)─┐
+│                     5000 │
+└──────────────────────────┘
+┌─dictGetUInt1⋯e', 999, 0)─┐
+│                        0 │
+└──────────────────────────┘
+```
+
+<div id="dictGetUInt32">
+  ## dictGetUInt32
+</div>
+
+قُدِّم في: v1.1.0
+
+يحوِّل قيمة سمة القاموس إلى نوع البيانات `UInt32` بغضّ النظر عن تكوين القاموس.
+
+**البنية**
+
+```sql
+dictGetUInt32(dict_name, attr_name, id_expr)
+```
+
+**المعاملات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة tuple (بحسب تهيئة القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المُعادة**
+
+تُرجِع قيمة سمة القاموس المطابقة لـ `id_expr`،
+وإلا فتُرجِع محتوى العنصر `<null_value>` المحدد لهذه السمة في تهيئة القاموس.
+
+<Note>
+  يُصدر ClickHouse استثناءً إذا تعذر عليه تحليل قيمة السمة أو كانت القيمة لا تطابق نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT dictGetUInt32('all_types_dict', 'UInt32_value', 1)
+```
+
+```response title=Response
+┌─dictGetUInt3⋯_value', 1)─┐
+│                  1000000 │
+└──────────────────────────┘
+```
+
+<div id="dictGetUInt32OrDefault">
+  ## dictGetUInt32OrDefault
+</div>
+
+أُضيف في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `UInt32` بغضّ النظر عن إعدادات القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يتم العثور على المفتاح.
+
+**البنية**
+
+```sql
+dictGetUInt32OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**الوسيطات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة من نوع Tuple (بحسب تهيئة القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `default_value_expr` — القيمة أو القيم المُعادة إذا لم يكن القاموس يحتوي على صف بالمفتاح `id_expr`. [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المُعادة**
+
+يعيد قيمة سمة القاموس المقابلة لـ `id_expr`،
+وإلا فيُعيد القيمة المُمرَّرة في المعامل `default_value_expr`.
+
+<Note>
+  يطرح ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا لم تتطابق القيمة مع نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+-- for key which exists
+SELECT dictGetUInt32('all_types_dict', 'UInt32_value', 1);
+
+-- for key which does not exist, returns the provided default value (0)
+SELECT dictGetUInt32OrDefault('all_types_dict', 'UInt32_value', 999, 0);
+```
+
+```response title=Response
+┌─dictGetUInt3⋯_value', 1)─┐
+│                  1000000 │
+└──────────────────────────┘
+┌─dictGetUInt3⋯e', 999, 0)─┐
+│                        0 │
+└──────────────────────────┘
+```
+
+<div id="dictGetUInt64">
+  ## dictGetUInt64
+</div>
+
+استُحدث في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `UInt64` بغضّ النظر عن إعداد القاموس.
+
+**البنية**
+
+```sql
+dictGetUInt64(dict_name, attr_name, id_expr)
+```
+
+**الوسائط**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة Tuple (بحسب تهيئة القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المُعادة**
+
+تُرجع قيمة سمة القاموس المطابقة لـ `id_expr`،
+وإلا فتُرجع محتوى العنصر `<null_value>` المحدد لهذه السمة في تهيئة القاموس.
+
+<Note>
+  يطرح ClickHouse استثناءً إذا تعذر عليه تحليل قيمة السمة أو إذا كانت القيمة لا تطابق نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1)
+```
+
+```response title=Response
+┌─dictGetUInt6⋯_value', 1)─┐
+│      9223372036854775807 │
+└──────────────────────────┘
+```
+
+<div id="dictGetUInt64OrDefault">
+  ## dictGetUInt64OrDefault
+</div>
+
+أُضيف في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `UInt64` بغضّ النظر عن تهيئة القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يُعثر على المفتاح.
+
+**البنية**
+
+```sql
+dictGetUInt64OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**الوسيطات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة Tuple (بحسب إعدادات القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `default_value_expr` — القيمة (أو القيم) التي تُرجع إذا لم يكن القاموس يحتوي على صف بالمفتاح `id_expr`. [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المُعادة**
+
+تُرجع قيمة سمة القاموس المقابلة لـ `id_expr`،
+وإلا فتُرجع القيمة المُمرَّرة في المعامل `default_value_expr`.
+
+<Note>
+  يُصدر ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا لم تطابق القيمة نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+-- for key which exists
+SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1);
+
+-- for key which does not exist, returns the provideddefault value (0)
+SELECT dictGetUInt64OrDefault('all_types_dict', 'UInt64_value', 999, 0);
+```
+
+```response title=Response
+┌─dictGetUInt6⋯_value', 1)─┐
+│      9223372036854775807 │
+└──────────────────────────┘
+┌─dictGetUInt6⋯e', 999, 0)─┐
+│                        0 │
+└──────────────────────────┘
+```
+
+<div id="dictGetUInt8">
+  ## dictGetUInt8
+</div>
+
+أُضيف في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `UInt8` بغض النظر عن إعدادات القاموس.
+
+**البنية**
+
+```sql
+dictGetUInt8(dict_name, attr_name, id_expr)
+```
+
+**المعاملات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة Tuple (بحسب تهيئة القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المعادة**
+
+يُرجع قيمة سمة القاموس المطابقة لـ `id_expr`،
+وإلا فيُرجع محتوى العنصر `<null_value>` المحدد لهذه السمة في تهيئة القاموس.
+
+<Note>
+  يطرح ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا كانت القيمة لا تطابق نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT dictGetUInt8('all_types_dict', 'UInt8_value', 1)
+```
+
+```response title=Response
+┌─dictGetUInt8⋯_value', 1)─┐
+│                      100 │
+└──────────────────────────┘
+```
+
+<div id="dictGetUInt8OrDefault">
+  ## dictGetUInt8OrDefault
+</div>
+
+أُضيف في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `UInt8` بغضّ النظر عن تهيئة القاموس، أو يعيد القيمة الافتراضية المقدَّمة إذا لم يُعثر على المفتاح.
+
+**البنية**
+
+```sql
+dictGetUInt8OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**الوسيطات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة Tuple (بحسب تهيئة القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `default_value_expr` — القيمة (أو القيم) المُعادة إذا لم يكن القاموس يحتوي على صف بالمفتاح `id_expr`. [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المعادة**
+
+يُرجع قيمة سمة القاموس المطابقة لـ `id_expr`،
+وإلا فيُرجع القيمة المُمرَّرة في الوسيط `default_value_expr`.
+
+<Note>
+  يُطلق ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا كانت القيمة لا تطابق نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+-- for key which exists
+SELECT dictGetUInt8('all_types_dict', 'UInt8_value', 1);
+
+-- for key which does not exist, returns the provided default value (0)
+SELECT dictGetUInt8OrDefault('all_types_dict', 'UInt8_value', 999, 0);
+```
+
+```response title=Response
+┌─dictGetUInt8⋯_value', 1)─┐
+│                      100 │
+└──────────────────────────┘
+┌─dictGetUInt8⋯e', 999, 0)─┐
+│                        0 │
+└──────────────────────────┘
+```
+
+<div id="dictGetUUID">
+  ## dictGetUUID
+</div>
+
+أُضيف في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `UUID` بغض النظر عن إعدادات القاموس.
+
+**الصيغة**
+
+```sql
+dictGetUUID(dict_name, attr_name, id_expr)
+```
+
+**المعاملات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم العمود في القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة Tuple (بحسب تهيئة القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المُعادة**
+
+يُرجع قيمة سمة القاموس المطابقة لـ `id_expr`،
+وإلا فيُرجع محتوى العنصر `<null_value>` المحدد لهذه السمة في تهيئة القاموس.
+
+<Note>
+  يطرح ClickHouse استثناءً إذا تعذر عليه تحليل قيمة السمة أو إذا لم تطابق القيمة نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+SELECT dictGetUUID('all_types_dict', 'UUID_value', 1)
+```
+
+```response title=Response
+┌─dictGetUUID(⋯_value', 1)─────────────┐
+│ 123e4567-e89b-12d3-a456-426614174000 │
+└──────────────────────────────────────┘
+```
+
+<div id="dictGetUUIDOrDefault">
+  ## dictGetUUIDOrDefault
+</div>
+
+أُضيف في: v1.1.0
+
+يحوّل قيمة سمة القاموس إلى نوع البيانات `UUID` بغضّ النظر عن إعدادات القاموس، أو يعيد القيمة الافتراضية المُقدَّمة إذا لم يتم العثور على المفتاح.
+
+**البنية**
+
+```sql
+dictGetUUIDOrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**الوسيطات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `attr_name` — اسم عمود القاموس. [`String`](/ar/reference/data-types/string) أو [`Tuple(String)`](/ar/reference/data-types/tuple)
+* `id_expr` — قيمة المفتاح. تعبير يُرجع قيمة من نوع مفتاح القاموس أو قيمة tuple (بحسب إعداد القاموس). [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+* `default_value_expr` — القيمة أو القيم التي تُرجع إذا لم يكن القاموس يحتوي على صف بالمفتاح `id_expr`. [`Expression`](/ar/reference/data-types/special-data-types/expression) أو [`Tuple(T)`](/ar/reference/data-types/tuple)
+
+**القيمة المعادة**
+
+تُرجع قيمة سمة القاموس المقابلة لـ `id_expr`،
+وإلا فتُرجع القيمة المُمرَّرة في الوسيط `default_value_expr`.
+
+<Note>
+  يطرح ClickHouse استثناءً إذا تعذّر عليه تحليل قيمة السمة أو إذا كانت القيمة لا تطابق نوع بيانات السمة.
+</Note>
+
+**أمثلة**
+
+**مثال على الاستخدام**
+
+```sql title=Query
+-- for key which exists
+SELECT dictGetUUID('all_types_dict', 'UUID_value', 1);
+
+-- for key which does not exist, returns the provided default value
+SELECT dictGetUUIDOrDefault('all_types_dict', 'UUID_value', 999, '00000000-0000-0000-0000-000000000000'::UUID);
+```
+
+```response title=Response
+┌─dictGetUUID('all_t⋯ 'UUID_value', 1)─┐
+│ 550e8400-e29b-41d4-a716-446655440000 │
+└──────────────────────────────────────┘
+┌─dictGetUUIDOrDefa⋯000000000000'::UUID)─┐
+│ 00000000-0000-0000-0000-000000000000   │
+└────────────────────────────────────────┘
+```
+
+<div id="dictHas">
+  ## dictHas
+</div>
+
+أُضيفت في: v1.1.0
+
+يتحقق مما إذا كان المفتاح موجودًا في القاموس.
+
+**البنية**
+
+```sql
+dictHas('dict_name', id_expr)
+```
+
+**الوسائط**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `id_expr` — قيمة المفتاح [`const String`](/ar/reference/data-types/string)
+
+**القيمة المعادة**
+
+تُرجِع `1` إذا كان المفتاح موجودًا، وإلا فتُرجِع `0`. [`UInt8`](/ar/reference/data-types/int-uint)
+
+**أمثلة**
+
+**التحقق من وجود مفتاح في القاموس**
+
+```sql title=Query
+-- consider the following hierarchical dictionary:
+-- 0 (Root)
+-- └── 1 (Level 1 - Node 1)
+--     ├── 2 (Level 2 - Node 2)
+--     │   ├── 4 (Level 3 - Node 4)
+--     │   └── 5 (Level 3 - Node 5)
+--     └── 3 (Level 2 - Node 3)
+--         └── 6 (Level 3 - Node 6)
+
+SELECT dictHas('hierarchical_dictionary', 2);
+SELECT dictHas('hierarchical_dictionary', 7);
+```
+
+```response title=Response
+┌─dictHas('hie⋯ionary', 2)─┐
+│                        1 │
+└──────────────────────────┘
+┌─dictHas('hie⋯ionary', 7)─┐
+│                        0 │
+└──────────────────────────┘
+```
+
+<div id="dictIsIn">
+  ## dictIsIn
+</div>
+
+طُرِحت في: v1.1.0
+
+يتحقق من السلف الخاص بمفتاح عبر السلسلة الهرمية كاملةً في القاموس.
+
+**الصيغة**
+
+```sql
+dictIsIn(dict_name, child_id_expr, ancestor_id_expr)
+```
+
+**الوسيطات**
+
+* `dict_name` — اسم القاموس. [`String`](/ar/reference/data-types/string)
+* `child_id_expr` — المفتاح المراد التحقق منه. [`String`](/ar/reference/data-types/string)
+* `ancestor_id_expr` — السلف المفترض للمفتاح `child_id_expr`. [`const String`](/ar/reference/data-types/string)
+
+**القيمة المعادة**
+
+تُرجع `0` إذا لم يكن `child_id_expr` تابعًا لـ `ancestor_id_expr`، وتُرجع `1` إذا كان `child_id_expr` تابعًا لـ `ancestor_id_expr` أو إذا كان `child_id_expr` هو نفسه `ancestor_id_expr`. [`UInt8`](/ar/reference/data-types/int-uint)
+
+**أمثلة**
+
+**التحقق من العلاقة الهرمية**
+
+```sql title=Query
+-- valid hierarchy
+SELECT dictIsIn('hierarchical_dictionary', 6, 3)
+
+-- invalid hierarchy
+SELECT dictIsIn('hierarchical_dictionary', 3, 5)
+```
+
+```response title=Response
+┌─dictIsIn('hi⋯ary', 6, 3)─┐
+│                        1 │
+└──────────────────────────┘
+┌─dictIsIn('hi⋯ary', 3, 5)─┐
+│                        0 │
+└──────────────────────────┘
+```
+
+{/*AUTOGENERATED_END*/}

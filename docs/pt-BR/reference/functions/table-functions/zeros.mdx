@@ -1,0 +1,37 @@
+---
+description: 'Usada para fins de teste como a forma mais rápida de gerar muitas linhas.
+  Semelhante às tabelas de sistema `system.zeros` e `system.zeros_mt`.'
+sidebarTitle: 'zeros'
+slug: /sql-reference/table-functions/zeros
+title: 'zeros'
+doc_type: 'reference'
+---
+
+* `zeros(N)` – Retorna uma tabela com uma única coluna &#39;zero&#39; (UInt8) que contém o inteiro 0 `N` vezes
+* `zeros_mt(N)` – O mesmo que `zeros`, mas usa várias threads.
+
+Esta função é usada para fins de teste como a forma mais rápida de gerar muitas linhas. Semelhante às tabelas de sistema `system.zeros` e `system.zeros_mt`.
+
+As consultas a seguir são equivalentes:
+
+```sql
+SELECT * FROM zeros(10);
+SELECT * FROM system.zeros LIMIT 10;
+SELECT * FROM zeros_mt(10);
+SELECT * FROM system.zeros_mt LIMIT 10;
+```
+
+```response
+┌─zero─┐
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+└──────┘
+```

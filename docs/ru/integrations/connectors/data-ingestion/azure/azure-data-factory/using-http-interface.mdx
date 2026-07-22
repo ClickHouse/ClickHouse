@@ -1,0 +1,321 @@
+---
+sidebarTitle: 'Использование HTTP-интерфейса'
+slug: /integrations/azure-data-factory/http-interface
+description: 'Использование HTTP-интерфейса ClickHouse для передачи данных из Azure Data Factory в ClickHouse'
+keywords: ['azure data factory', 'azure', 'microsoft', 'данные', 'http-интерфейс']
+title: 'Использование HTTP-интерфейса ClickHouse в Azure Data Factory'
+doc_type: 'guide'
+integration:
+   - support_level: 'core'
+   - category: 'data_ingestion'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+[`azureBlobStorage` — табличная функция](/ru/reference/functions/table-functions/azureBlobStorage),
+которая позволяет быстро и удобно выполнять приём данных из Azure Blob Storage в
+ClickHouse. Однако её использование не всегда подходит по следующим причинам:
+
+* Ваши данные могут храниться не в Azure Blob Storage — например, в Azure SQL Database, Microsoft SQL Server или Cosmos DB.
+* Политики безопасности могут полностью запрещать внешний доступ к Blob Storage — например, если учетная запись хранения закрыта и не имеет публичной конечной точки.
+
+В таких случаях можно использовать Azure Data Factory вместе с
+[HTTP-интерфейсом ClickHouse](/ru/concepts/features/interfaces/http),
+чтобы отправлять данные из сервисов Azure в ClickHouse.
+
+Этот метод меняет направление потока: вместо того чтобы ClickHouse получал данные из
+Azure, Azure Data Factory отправляет их в ClickHouse. Такой подход
+обычно требует, чтобы ваш экземпляр ClickHouse был доступен из публичного
+интернета.
+
+<Info>
+  Можно не открывать экземпляр ClickHouse для доступа из интернета,
+  если использовать Self-hosted Integration Runtime в Azure Data Factory. Такая конфигурация позволяет
+  передавать данные по частной сети. Однако это выходит за рамки данной
+  статьи. Дополнительную информацию см. в официальном руководстве:
+  [Создание и настройка Self-hosted Integration Runtime](https://learn.microsoft.com/en-us/azure/data-factory/create-self-hosted-integration-runtime?tabs=data-factory)
+</Info>
+
+<div id="turning-clickhouse-to-a-rest-service">
+  ## Превращение ClickHouse в REST-сервис
+</div>
+
+Azure Data Factory поддерживает отправку данных во внешние системы по HTTP в формате JSON.
+Мы можем использовать эту возможность, чтобы напрямую вставлять данные в ClickHouse
+через [HTTP-интерфейс ClickHouse](/ru/concepts/features/interfaces/http).
+Подробнее см. в [документации по HTTP-интерфейсу ClickHouse](/ru/concepts/features/interfaces/http).
+
+Для этого примера нам нужно лишь указать целевую таблицу, задать
+формат входных данных JSON и включить параметры, позволяющие более гибко разбирать
+временные метки.
+
+```sql
+INSERT INTO my_table
+SETTINGS 
+    date_time_input_format='best_effort',
+    input_format_json_read_objects_as_strings=1
+FORMAT JSONEachRow
+```
+
+Чтобы отправить этот запрос в составе HTTP-запроса, просто передайте его в виде
+URL-кодированной строки в параметре `query` вашей конечной точки ClickHouse:
+
+```text
+https://your-clickhouse-url.com?query=INSERT%20INTO%20my_table%20SETTINGS%20date_time_input_format%3D%27best_effort%27%2C%20input_format_json_read_objects_as_strings%3D1%20FORMAT%20JSONEachRow%0A
+```
+
+<Info>
+  Azure Data Factory может автоматически выполнять это кодирование с помощью встроенной
+  функции `encodeUriComponent`, поэтому вам не придется делать это вручную.
+</Info>
+
+Теперь вы можете отправлять на этот URL данные в формате JSON. Данные должны соответствовать
+структуре целевой таблицы. Вот простой пример с использованием curl для
+таблицы с тремя столбцами: `col_1`, `col_2` и `col_3`.
+
+```text
+curl \
+    -XPOST "https://your-clickhouse-url.com?query=<our_URL_encded_query>" \
+    --data '{"col_1":9119,"col_2":50.994,"col_3":"2019-06-01 00:00:00"}'
+```
+
+Вы также можете отправлять JSON-массив объектов или JSON Lines (JSON-объекты,
+разделённые символом новой строки). Azure Data Factory использует формат JSON-массива, который
+идеально работает с входным форматом `JSONEachRow` в ClickHouse.
+
+Как видите, на этом шаге вам не нужно делать ничего особенного со стороны ClickHouse.
+HTTP-интерфейс уже предоставляет всё необходимое, чтобы работать как
+REST-подобная конечная точка — никакая дополнительная настройка не требуется.
+
+Теперь, когда ClickHouse работает как REST-конечная точка, пора
+настроить Azure Data Factory для работы с ней.
+
+На следующих шагах мы создадим экземпляр Azure Data Factory, настроим Linked
+Service для вашего экземпляра ClickHouse, определим Dataset для
+[REST-приемника](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest)
+и создадим активность Copy Data для отправки данных из Azure в ClickHouse.
+
+<div id="create-an-azure-data-factory-instance">
+  ## Создание экземпляра Azure Data Factory
+</div>
+
+В этом руководстве предполагается, что у вас есть доступ к учётной записи Microsoft Azure, а
+подписка и группа ресурсов уже настроены. Если Azure Data Factory у вас уже
+настроен, этот шаг можно смело пропустить
+и перейти к следующему, используя существующий сервис.
+
+1. Войдите в [Microsoft Azure Portal](https://portal.azure.com/) и нажмите
+   **Create a resource**.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-page.webp" size="lg" alt="Домашняя страница Azure Portal" border />
+
+2. На панели Categories слева выберите **Analytics**, затем нажмите
+   **Data Factory** в списке популярных сервисов.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-resource-analytics.webp" size="lg" alt="Новый ресурс в Azure Portal" border />
+
+3. Выберите подписку и группу ресурсов, введите имя для нового экземпляра Data
+   Factory, выберите регион и оставьте версию V2.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory.webp" size="lg" alt="Новый Data Factory в Azure Portal" border />
+
+4. Нажмите **Review + Create**, затем **Create**, чтобы запустить развертывание.
+
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-confirm.webp" size="lg" alt="Подтверждение нового Data Factory в Azure Portal" border />
+
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-success.webp" size="lg" alt="Успешное создание нового Data Factory в Azure Portal" border />
+
+После успешного завершения развертывания вы сможете начать использовать новый экземпляр Azure
+Data Factory.
+
+<div id="-creating-new-rest-based-linked-service">
+  ## Создание новой связанной службы на основе REST
+</div>
+
+1. Войдите в Azure Portal и откройте свой экземпляр Data Factory.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp" size="lg" alt="Главная страница Azure Portal с Data Factory" border />
+
+2. На странице обзора Data Factory нажмите **Launch Studio**.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp" size="lg" alt="Страница Data Factory в Azure Portal" border />
+
+3. В меню слева выберите **Manage**, затем перейдите в **Linked services**
+   и нажмите **+ New**, чтобы создать новую связанную службу.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp" size="lg" alt="Кнопка New Linked Service в Azure Data Factory" border />
+
+4. В **строке поиска New linked service** введите **REST**, выберите **REST** и нажмите **Continue**,
+   чтобы создать экземпляр
+   [коннектора REST](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest).
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp" size="lg" alt="Поиск New Linked Service в Azure Data Factory" border />
+
+5. На панели конфигурации связанной службы введите имя новой службы,
+   нажмите поле **Base URL**, затем нажмите **Add dynamic content** (эта ссылка
+   появляется только после выбора поля).
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp" size="lg" alt="Панель New Lined Service" border />
+
+6. На панели динамического содержимого можно создать параметризованный URL,
+   который позволит позже задать запрос при создании датасетов для разных
+   таблиц — так связанную службу можно использовать повторно.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp" size="lg" alt="Пустой Base URL в New Linked Service" border />
+
+7. Нажмите **&quot;+&quot;** рядом с полем фильтра и добавьте новый параметр, назовите его
+   `pQuery`, установите тип String и задайте значение по умолчанию `SELECT 1`.
+   Нажмите **Save**.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp" size="lg" alt="Параметры New Linked Service" border />
+
+8. В поле выражения введите следующий текст и нажмите **OK**. Замените
+   `your-clickhouse-url.com` на фактический адрес вашего экземпляра
+   ClickHouse.
+   ```text
+   @{concat('https://your-clickhouse-url.com:8443/?query=', encodeUriComponent(linkedService().pQuery))}
+   ```
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp" size="lg" alt="Заполненное поле Expression в New Linked Service" border />
+
+9. Вернувшись в основную форму, выберите базовую аутентификацию, введите имя пользователя и
+   пароль, которые используются для подключения к вашему HTTP-интерфейсу ClickHouse, затем нажмите **Test
+   connection**. Если всё настроено правильно, вы увидите сообщение
+   об успешном подключении.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp" size="lg" alt="Проверка соединения в New Linked Service" border />
+
+10. Нажмите **Create**, чтобы завершить настройку.
+    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp" size="lg" alt="Список Linked Services" border />
+
+Теперь в списке должна отображаться ваша новая связанная служба на основе REST.
+
+<div id="creating-a-new-dataset-for-the-clickhouse-http-interface">
+  ## Создание нового набора данных для HTTP-интерфейса ClickHouse
+</div>
+
+Теперь, когда у нас настроена связанная служба для HTTP-интерфейса ClickHouse,
+мы можем создать набор данных, который Azure Data Factory будет использовать для отправки данных в
+ClickHouse.
+
+В этом примере мы выполним вставку небольшой части [данных датчиков
+окружающей среды](/ru/get-started/sample-datasets/environmental-sensors).
+
+1. Откройте консоль запросов ClickHouse по своему выбору — это может быть
+   веб-интерфейс ClickHouse Cloud, CLI-клиент или любой другой интерфейс, который вы используете
+   для выполнения запросов, — и создайте целевую таблицу:
+   ```sql
+   CREATE TABLE sensors
+   (
+       sensor_id UInt16,
+       lat Float32,
+       lon Float32,
+       timestamp DateTime,
+       temperature Float32
+   )
+   ENGINE = MergeTree
+   ORDER BY (timestamp, sensor_id);
+   ```
+
+2. В Azure Data Factory Studio выберите Author на левой панели. Наведите указатель
+   на элемент Dataset, нажмите значок с тремя точками и выберите New dataset.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-item.webp" size="lg" alt="Элемент New Dataset" border />
+
+3. В строке поиска введите **REST**, выберите **REST** и нажмите **Continue**.
+   Введите имя набора данных и выберите **связанную службу**, созданную
+   на предыдущем шаге. Нажмите **OK**, чтобы создать набор данных.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-page.webp" size="lg" alt="Страница New Dataset" border />
+
+4. Теперь в разделе Datasets
+   на панели Factory Resources слева должен отображаться только что созданный набор данных. Выберите его, чтобы
+   открыть свойства. Вы увидите параметр `pQuery`, который был определён в
+   связанной службе. Нажмите текстовое поле **Value**. Затем нажмите **Add dynamic**
+   content.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-properties.webp" size="lg" alt="Свойства New Dataset" border />
+
+5. В открывшуюся панель вставьте следующий запрос:
+   ```sql
+   INSERT INTO sensors
+   SETTINGS 
+       date_time_input_format=''best_effort'', 
+       input_format_json_read_objects_as_strings=1 
+   FORMAT JSONEachRow
+   ```
+
+<Danger>
+  Все одинарные кавычки `'` в запросе необходимо заменить на две одинарные кавычки
+  `''`. Это требуется парсером выражений Azure Data Factory. Если
+  не экранировать их, ошибка может не появиться сразу — но позже всё завершится
+  сбоем, когда вы попытаетесь использовать или сохранить набор данных. Например, `'best_effort'`
+  должно быть записано как `''best_effort''`.
+</Danger>
+
+<Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-query.webp" size="xl" alt="Запрос New Dataset" border />
+
+6. Нажмите OK, чтобы сохранить выражение. Нажмите Test connection. Если всё
+   настроено правильно, появится сообщение Connection successful. Нажмите Publish
+   all в верхней части страницы, чтобы сохранить изменения.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-connection-successful.webp" size="xl" alt="Успешное подключение New Dataset" border />
+
+<div id="setting-up-an-example-dataset">
+  ### Настройка примера набора данных
+</div>
+
+В этом примере мы будем использовать не полный Environmental Sensors Dataset,
+а лишь небольшую выборку, доступную по ссылке
+[Sensors Dataset Sample](https://datasets-documentation.s3.eu-west-3.amazonaws.com/environmental/sensors.csv).
+
+<Info>
+  Чтобы не перегружать это руководство деталями, мы не будем подробно
+  рассматривать точные шаги по созданию исходного набора данных в Azure Data Factory. Вы
+  можете загрузить пример данных в любой выбранный вами сервис хранения —
+  например, в Azure Blob Storage, Microsoft SQL
+  Server или даже в файл другого формата, поддерживаемого Azure Data Factory.
+</Info>
+
+Загрузите набор данных в Azure Blob Storage (или другой предпочитаемый сервис
+хранения), затем в Azure Data Factory Studio перейдите на панель Factory Resources.
+Создайте новый набор данных, указывающий на загруженные данные. Нажмите Publish all,
+чтобы сохранить изменения.
+
+<div id="creating-the-copy-activity-to-transfer-data-to-clickhouse">
+  ## Создание действия Copy Data для передачи данных в ClickHouse
+</div>
+
+Теперь, когда мы настроили входной и выходной наборы данных, можно настроить
+действие **Copy Data**, чтобы перенести данные из нашего тестового набора данных
+в таблицу `sensors` в ClickHouse.
+
+1. Откройте **Azure Data Factory Studio** и перейдите на вкладку **Author**. В
+   панели **Factory Resources** наведите указатель на **Pipeline**, нажмите
+   значок с тремя точками и выберите **New pipeline**.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-pipeline-item.webp" size="lg" alt="Новый элемент Pipeline в ADF" border />
+
+2. В панели **Activities** разверните раздел **Move and transform** и
+   перетащите действие **Copy data** на холст.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-copy-data-item.webp" size="lg" alt="Новый элемент Copy Data" border />
+
+3. Выберите вкладку **Source** и укажите исходный набор данных, который вы создали ранее.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-source.webp" size="lg" alt="Источник Copy Data" border />
+
+4. Перейдите на вкладку **Sink** и выберите набор данных ClickHouse, созданный для
+   таблицы sensors. Установите для **Request method** значение POST. Убедитесь,
+   что для **HTTP compression type** установлено значение **None**.
+
+<Warning>
+  HTTP-сжатие работает некорректно в действии Copy Data в Azure Data Factory.
+  Когда оно включено, Azure отправляет полезную нагрузку, состоящую только из
+  нулевых байтов, — вероятно, это ошибка сервиса. Обязательно оставьте сжатие отключенным.
+</Warning>
+
+<Info>
+  Мы рекомендуем оставить размер батча по умолчанию — 10 000, или даже увеличить
+  его. Подробнее см. в разделе
+  [Выбор стратегии вставки / Батч-вставки при синхронном режиме](/ru/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous).
+</Info>
+
+<Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-sink-select-post.webp" size="lg" alt="Настройка Sink Copy Data с выбором POST" border />
+
+5. Нажмите **Debug** в верхней части холста, чтобы запустить конвейер. После
+   короткого ожидания действие будет поставлено в очередь и выполнено. Если всё
+   настроено правильно, задача должна завершиться со статусом **Success**.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-debug-success.webp" size="lg" alt="Успешный Debug для Copy Data" border />
+
+6. После завершения нажмите **Publish all**, чтобы сохранить изменения в конвейере и наборах данных.
+
+<div id="additional-resources-1">
+  ## Дополнительные ресурсы
+</div>
+
+* [HTTP-интерфейс](/ru/concepts/features/interfaces/http)
+* [Копирование и преобразование данных из REST-конечной точки и обратно с помощью Azure Data Factory](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest?tabs=data-factory)
+* [Выбор стратегии вставки](/ru/concepts/best-practices/selecting-an-insert-strategy)
+* [Создание и настройка Self-hosted Integration Runtime](https://learn.microsoft.com/en-us/azure/data-factory/create-self-hosted-integration-runtime?tabs=data-factory)

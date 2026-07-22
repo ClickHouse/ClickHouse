@@ -1,0 +1,84 @@
+---
+title: Preguntas frecuentes de ClickPipes
+---
+
+<Accordion title="¿Qué son las réplicas de ClickPipes?">
+  ClickPipes ingiere datos de fuentes de datos remotas mediante una infraestructura dedicada
+  que se ejecuta y escala de forma independiente del servicio de ClickHouse Cloud.
+  Por este motivo, utiliza réplicas de cómputo dedicadas.
+  Los diagramas a continuación muestran una arquitectura simplificada.
+
+  En los ClickPipes de streaming, las réplicas de ClickPipes acceden a las fuentes de datos remotas (p. ej., un broker de Kafka),
+  extraen los datos, los procesan y los ingieren en el servicio de ClickHouse de destino.
+
+  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_1.webp" size="lg" alt="Réplicas de ClickPipes - ClickPipes de streaming" border force />
+
+  En el caso de los ClickPipes de almacenamiento de objetos,
+  la réplica de ClickPipes orquesta la tarea de carga de datos
+  (identificar los archivos que se deben copiar, mantener el estado y mover particiones),
+  mientras que los datos se extraen directamente desde el servicio de ClickHouse.
+
+  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_2.webp" size="lg" alt="Réplicas de ClickPipes - ClickPipes de almacenamiento de objetos" border force />
+</Accordion>
+
+<Accordion title="¿Cuál es el número predeterminado de réplicas y su tamaño?">
+  Cada ClickPipe usa de forma predeterminada 1 réplica con 2 GiB de RAM y 0.5 vCPU.
+  Esto corresponde a **0.25** unidades de cómputo de ClickHouse (1 unidad = 8 GiB de RAM, 2 vCPU).
+</Accordion>
+
+<Accordion title="¿Se pueden escalar las réplicas de ClickPipes?">
+  Sí, los ClickPipes de streaming se pueden escalar tanto horizontal como verticalmente.
+  El escalado horizontal agrega más réplicas para aumentar el rendimiento, mientras que el escalado vertical aumenta los recursos (CPU y RAM) asignados a cada réplica para manejar cargas de trabajo más intensivas.
+  Esto puede configurarse durante la creación del ClickPipe o en cualquier otro momento en **Settings** -&gt; **Advanced Settings** -&gt; **Scaling**.
+</Accordion>
+
+<Accordion title="¿Cuántas réplicas de ClickPipes necesito?">
+  Depende del rendimiento de la carga de trabajo y de los requisitos de latencia.
+  Recomendamos comenzar con el valor predeterminado de 1 réplica, medir la latencia y agregar réplicas si es necesario.
+  Ten en cuenta que, para los ClickPipes de Kafka, también debes escalar las particiones del broker de Kafka en consecuencia.
+  Los controles de escalado están disponibles en &quot;settings&quot; para cada ClickPipe de streaming.
+
+  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_3.webp" size="lg" alt="Réplicas de ClickPipes - ¿Cuántas réplicas de ClickPipes necesito?" border force />
+</Accordion>
+
+<Accordion title="¿Cómo es la estructura de precios de ClickPipes?">
+  Consta de dos dimensiones:
+
+  * **Cómputo**: precio por unidad por hora
+    El cómputo representa el costo de ejecutar los pods de las réplicas de ClickPipes, estén ingiriendo datos activamente o no.
+    Se aplica a todos los tipos de ClickPipes.
+  * **Datos ingeridos**: precio por GB
+    La tarifa de datos ingeridos se aplica a todos los ClickPipes de streaming
+    (Kafka, Confluent, Amazon MSK, Amazon Kinesis, Redpanda, WarpStream,
+    Azure Event Hubs) para los datos transferidos a través de los pods de las réplicas.
+    El tamaño de los datos ingeridos (GB) se cobra en función de los bytes recibidos desde la fuente (sin comprimir o comprimidos).
+</Accordion>
+
+<Accordion title="¿Cuáles son los precios públicos de ClickPipes?">
+  * Cómputo: $0.20 por unidad por hora ($0.05 por réplica por hora)
+  * Datos ingeridos: $0.04 por GB
+</Accordion>
+
+<Accordion title="¿Cómo se vería en un ejemplo ilustrativo?">
+  Por ejemplo, ingestar 1 TB de datos durante 24 horas con el conector de Kafka usando una sola réplica (0.25 unidades de cómputo) cuesta:
+
+  $$
+  (0.25 \times 0.20 \times 24) + (0.04 \times 1000) = $41.2
+  $$
+
+  <br />
+
+  Para los conectores de almacenamiento de objetos (S3 y GCS),
+  solo se incurre en el costo de cómputo de ClickPipes, ya que el pod de ClickPipes no está procesando datos,
+  sino únicamente orquestando la transferencia, que realiza el servicio de ClickHouse subyacente:
+
+  $$
+  0.25 \times 0.20 \times 24 = $1.2
+  $$
+</Accordion>
+
+<Accordion title="¿Cómo se compara el precio de ClickPipes con el del mercado?">
+  La filosofía detrás del precio de ClickPipes es
+  cubrir los costos operativos de la plataforma y, al mismo tiempo, ofrecer una forma sencilla y confiable de mover datos a ClickHouse Cloud.
+  Desde esa perspectiva, nuestro análisis de mercado mostró que tenemos un posicionamiento competitivo.
+</Accordion>

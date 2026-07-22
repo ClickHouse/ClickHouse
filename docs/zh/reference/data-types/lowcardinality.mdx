@@ -1,0 +1,71 @@
+---
+description: '关于字符串列 LowCardinality 优化的文档'
+sidebarTitle: 'LowCardinality(T)'
+slug: /sql-reference/data-types/lowcardinality
+title: 'LowCardinality(T)'
+doc_type: 'reference'
+---
+
+将其他数据类型的内部表示转换为字典编码。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+LowCardinality(data_type)
+```
+
+**参数**
+
+* `data_type` — [String](/zh/reference/data-types/string)、[FixedString](/zh/reference/data-types/fixedstring)、[Date](/zh/reference/data-types/date)、[DateTime](/zh/reference/data-types/datetime) 以及除 [Decimal](/zh/reference/data-types/decimal) 之外的数值类型。`LowCardinality` 对某些数据类型的效果并不理想，请参阅 [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/zh/reference/settings/session-settings#allow_suspicious_low_cardinality_types) 设置说明。
+
+<div id="description">
+  ## 说明
+</div>
+
+`LowCardinality` 是一种会改变数据存储方式和数据处理规则的上层结构。ClickHouse 会对 `LowCardinality` 列应用[字典编码](https://en.wikipedia.org/wiki/Dictionary_coder)。对于许多应用来说，处理经过字典编码的数据可显著提升 [SELECT](/zh/reference/statements/select/index) 查询的性能。
+
+使用 `LowCardinality` 数据类型的效果取决于数据的多样性。如果字典中包含的不同值少于 10,000 个，ClickHouse 在数据读取和存储方面通常效率更高。如果字典中包含的不同值超过 100,000 个，那么与使用普通数据类型相比，ClickHouse 的表现可能反而更差。
+
+处理字符串时，建议使用 `LowCardinality` 而不是 [Enum](/zh/reference/data-types/enum)。`LowCardinality` 使用起来更灵活，而且通常能达到相同甚至更高的效率。
+
+<div id="example">
+  ## 示例
+</div>
+
+创建一个带有 `LowCardinality` 列的表：
+
+```sql
+CREATE TABLE lc_t
+(
+    `id` UInt16,
+    `strings` LowCardinality(String)
+)
+ENGINE = MergeTree()
+ORDER BY id
+```
+
+<div id="related-settings-and-functions">
+  ## 相关设置和函数
+</div>
+
+设置：
+
+* [low&#95;cardinality&#95;max&#95;dictionary&#95;size](/zh/reference/settings/session-settings#low_cardinality_max_dictionary_size)
+* [low&#95;cardinality&#95;use&#95;single&#95;dictionary&#95;for&#95;part](/zh/reference/settings/session-settings#low_cardinality_use_single_dictionary_for_part)
+* [low&#95;cardinality&#95;allow&#95;in&#95;native&#95;format](/zh/reference/settings/session-settings#low_cardinality_allow_in_native_format)
+* [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/zh/reference/settings/session-settings#allow_suspicious_low_cardinality_types)
+* [output&#95;format&#95;arrow&#95;low&#95;cardinality&#95;as&#95;dictionary](/zh/reference/settings/formats#output_format_arrow_low_cardinality_as_dictionary)
+
+函数：
+
+* [toLowCardinality](/zh/reference/functions/regular-functions/type-conversion-functions#toLowCardinality)
+
+<div id="related-content">
+  ## 相关内容
+</div>
+
+* 博客：[利用 schema 和编解码器优化 ClickHouse](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
+* 博客：[在 ClickHouse 中处理时间序列数据](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
+* [String 优化 (俄语视频讲座) ](https://youtu.be/rqf-ILRgBdY?list=PL0Z2YDlm0b3iwXCpEFiOOYmwXzVmjJfEt)。[英文幻灯片](https://github.com/ClickHouse/clickhouse-presentations/raw/master/meetup19/string_optimization.pdf)

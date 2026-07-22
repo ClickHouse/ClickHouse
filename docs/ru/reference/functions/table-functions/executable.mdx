@@ -1,0 +1,113 @@
+---
+description: 'Табличная функция `executable` создаёт таблицу на основе вывода пользовательской функции (UDF), которую вы определяете в скрипте, выводящем строки в
+  **stdout**.'
+keywords: ['udf', 'user defined function', 'clickhouse', 'executable', 'table', 'function']
+sidebarTitle: 'executable'
+slug: /engines/table-functions/executable
+title: 'executable'
+doc_type: 'reference'
+---
+
+Табличная функция `executable` создаёт таблицу на основе вывода пользовательской функции (UDF), которую вы определяете в скрипте, выводящем строки в **stdout**. Исполняемый скрипт хранится в каталоге `users_scripts` и может читать данные из любого источника. Убедитесь, что на ClickHouse server установлены все необходимые пакеты для запуска исполняемого скрипта. Например, если это скрипт на Python, убедитесь, что на server установлены нужные пакеты Python.
+
+При необходимости можно указать один или несколько входных запросов, результаты которых передаются в **stdin**, чтобы скрипт мог их прочитать.
+
+<Note>
+  Важное преимущество табличной функции `executable` и движка таблицы `Executable` по сравнению с обычными функциями UDF заключается в том, что обычные функции UDF не могут изменять количество строк. Например, если на вход подаётся 100 строк, то и результат должен вернуть 100 строк. При использовании табличной функции `executable` или движка таблицы `Executable` ваш скрипт может выполнять любые преобразования данных, включая сложные агрегации.
+</Note>
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+Табличная функция `executable` требует указания трёх параметров и поддерживает необязательный список входных запросов:
+
+```sql
+executable(script_name, format, structure, [input_query...] [,SETTINGS ...])
+```
+
+* `script_name`: имя файла скрипта, сохранённого в папке `user_scripts` (папка по умолчанию для настройки `user_scripts_path`)
+* `format`: формат создаваемой таблицы
+* `structure`: схема создаваемой таблицы
+* `input_query`: необязательный запрос (или набор запросов), результаты которого передаются скрипту через **stdin**
+
+<Note>
+  Если вы собираетесь многократно вызывать один и тот же скрипт с одними и теми же входными запросами, рассмотрите возможность использования [движка таблицы `Executable`](/ru/reference/engines/table-engines/special/executable).
+</Note>
+
+Следующий Python-скрипт называется `generate_random.py` и сохраняется в папке `user_scripts`. Он считывает число `i` и выводит `i` случайных строк, перед каждой из которых выводится число, отделённое символом табуляции:
+
+```python
+#!/usr/local/bin/python3.9
+
+import sys
+import string
+import random
+
+def main():
+
+    # Считать входное значение
+    for number in sys.stdin:
+        i = int(number)
+
+        # Сгенерировать несколько случайных строк
+        for id in range(0, i):
+            letters = string.ascii_letters
+            random_string =  ''.join(random.choices(letters ,k=10))
+            print(str(id) + '\t' + random_string + '\n', end='')
+
+        # Сбросить результаты в stdout
+        sys.stdout.flush()
+
+if __name__ == "__main__":
+    main()
+```
+
+Давайте запустим скрипт и сгенерируем с его помощью 10 случайных строк:
+
+```sql
+SELECT * FROM executable('generate_random.py', TabSeparated, 'id UInt32, random String', (SELECT 10))
+```
+
+Ответ выглядит следующим образом:
+
+```response
+┌─id─┬─random─────┐
+│  0 │ xheXXCiSkH │
+│  1 │ AqxvHAoTrl │
+│  2 │ JYvPCEbIkY │
+│  3 │ sWgnqJwGRm │
+│  4 │ fTZGrjcLon │
+│  5 │ ZQINGktPnd │
+│  6 │ YFSvGGoezb │
+│  7 │ QyMJJZOOia │
+│  8 │ NfiyDDhmcI │
+│  9 │ REJRdJpWrg │
+└────┴────────────┘
+```
+
+<div id="settings">
+  ## Настройки
+</div>
+
+* `send_chunk_header` - определяет, отправлять ли количество строк перед передачей фрагмента данных на обработку. Значение по умолчанию — `false`.
+* `pool_size` — Размер пула. Если для `pool_size` указано значение 0, ограничения на размер пула не применяются. Значение по умолчанию — `16`.
+* `max_command_execution_time` — Максимальное время выполнения команды исполняемого скрипта при обработке блока данных. Указывается в секундах. Значение по умолчанию — 10.
+* `command_termination_timeout` — исполняемый скрипт должен содержать основной цикл с возможностью чтения и записи. После завершения работы табличной функции пайп закрывается, и у исполняемого файла будет `command_termination_timeout` секунд на завершение работы, прежде чем ClickHouse отправит дочернему процессу сигнал SIGTERM. Указывается в секундах. Значение по умолчанию — 10.
+* `command_read_timeout` - тайм-аут чтения данных из stdout команды в миллисекундах. Значение по умолчанию — 10000.
+* `command_write_timeout` - тайм-аут записи данных в stdin команды в миллисекундах. Значение по умолчанию — 10000.
+
+<div id="passing-query-results-to-a-script">
+  ## Передача результатов запроса в скрипт
+</div>
+
+Обязательно ознакомьтесь с примером для движка таблицы `Executable`, где показано, [как передавать результаты запроса в скрипт](/ru/reference/engines/table-engines/special/executable#passing-query-results-to-a-script). Ниже показано, как выполнить тот же скрипт из этого примера с помощью табличной функции `executable`:
+
+```sql
+SELECT * FROM executable(
+    'sentiment.py',
+    TabSeparated,
+    'id UInt64, sentiment Float32',
+    (SELECT id, comment FROM hackernews WHERE id > 0 AND comment != '' LIMIT 20)
+);
+```

@@ -1,0 +1,36 @@
+---
+slug: /cloud/guides/data-sources
+title: '数据源'
+hide_title: true
+description: 'ClickHouse Cloud 指南部分的目录页面'
+doc_type: 'landing-page'
+keywords: ['云指南', '文档', '操作指南', '云功能', '教程']
+---
+
+<div id="cloud-integrations">
+  ## Cloud 集成
+</div>
+
+本节包含一些指南和参考资料，介绍如何将 ClickHouse Cloud 与需要额外配置的外部数据源集成。
+
+| Page                                                                         | Description                   |
+| ---------------------------------------------------------------------------- | ----------------------------- |
+| [Cloud IP 地址](/zh/products/cloud/guides/data-sources/cloud-endpoints-api)       | 某些表函数和连接所需的网络信息               |
+| [安全访问 S3 数据](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely) | 使用基于角色的访问安全地访问 AWS S3 中的外部数据源 |
+| [安全访问 GCS 数据](/zh/products/cloud/guides/data-sources/secure-gcs)                | 使用 HMAC 密钥安全地访问 GCS 中的外部数据源   |
+
+<div id="additional-connections-for-external-data-sources">
+  ## 外部数据源的其他连接
+</div>
+
+<div id="clickpipes-for-data-ingestion">
+  ### 用于数据摄取的 ClickPipes
+</div>
+
+ClickPipes 可帮助客户轻松接入来自多种来源的流式数据。更多信息请参阅我们 Integrations 文档中的 [ClickPipes](/zh/integrations/clickpipes/home)。
+
+<div id="table-functions-as-external-data-sources">
+  ### 作为外部数据源的表函数
+</div>
+
+ClickHouse 支持通过多种表函数访问外部数据源。更多信息，请参阅 SQL 参考中的[表函数](/zh/reference/functions/table-functions/index)。

@@ -1,0 +1,201 @@
+---
+description: 'JOIN演算で使用するためのオプションの事前準備済みデータ構造です。'
+sidebarTitle: 'Join'
+slug: /engines/table-engines/special/join
+title: 'Join テーブルエンジン'
+doc_type: 'reference'
+---
+
+[JOIN](/ja/reference/statements/select/join)演算で使用するためのオプションの事前準備済みデータ構造です。
+
+<Note>
+  ClickHouse Cloud では、サービスが 25.4 より前のバージョンで作成されている場合、`SET compatibility=25.4` を使用して互換性を少なくとも 25.4 に設定する必要があります。
+</Note>
+
+<div id="creating-a-table">
+  ## テーブルの作成
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+) ENGINE = Join(join_strictness, join_type, k1[, k2, ...])
+```
+
+[CREATE TABLE](/ja/reference/statements/create/table) クエリの詳細な説明をご覧ください。
+
+<div id="engine-parameters">
+  ## エンジンパラメータ
+</div>
+
+<div id="join_strictness">
+  ### `join_strictness`
+</div>
+
+`join_strictness` – [JOIN strictness](/ja/reference/statements/select/join#supported-types-of-join).
+
+<div id="join_type">
+  ### `join_type`
+</div>
+
+`join_type` – [JOINの種類](/ja/reference/statements/select/join#supported-types-of-join).
+
+<div id="key-columns">
+  ### キーカラム
+</div>
+
+`k1[, k2, ...]` – `JOIN` 操作で使用する `USING` 句のキーカラムです。
+
+`join_strictness` と `join_type` パラメーターは、たとえば `Join(ANY, LEFT, col1)` のようにクォートなしで指定します。これらは、そのテーブルを使用する `JOIN` 操作と一致している必要があります。パラメーターが一致していない場合、ClickHouse は例外を送出せず、不正確なデータを返すことがあります。
+
+<div id="specifics-and-recommendations">
+  ## 詳細と推奨事項
+</div>
+
+<div id="data-storage">
+  ### データの保存
+</div>
+
+`Join` テーブルのデータは常に RAM 上にあります。テーブルに行を挿入すると、サーバーの再起動時に復元できるよう、ClickHouse はデータブロックをディスク上のディレクトリに書き込みます。
+
+サーバーが正常に再起動されなかった場合、ディスク上のデータブロックが失われたり破損したりすることがあります。その場合は、破損したデータを含むファイルを手動で削除する必要があることがあります。
+
+<div id="selecting-and-inserting-data">
+  ### データの選択と挿入
+</div>
+
+`Join` エンジンのテーブルにデータを追加するには、`INSERT` クエリを使用できます。テーブルが `ANY` strictness で作成されている場合、重複するキーのデータは無視されます。`ALL` strictness の場合は、すべての行が追加されます。
+
+`Join` エンジンのテーブルの主な用途は次のとおりです。
+
+* `JOIN` 句の右側にテーブルを配置する。
+* [joinGet](/ja/reference/functions/regular-functions/other-functions#joinGet) 関数を呼び出して、Dictionary から取得するのと同じようにテーブルからデータを抽出する。
+
+<div id="deleting-data">
+  ### データの削除
+</div>
+
+`Join` エンジンのテーブルに対する `ALTER DELETE` クエリは、[ミューテーション](/ja/reference/statements/alter/index#mutations) として実装されています。`DELETE` ミューテーションは、フィルタされたデータを読み取り、メモリ上およびディスク上のデータを上書きします。
+
+<div id="join-limitations-and-settings">
+  ### 制限事項と設定
+</div>
+
+テーブルの作成時には、次の設定が適用されます：
+
+<div id="join_use_nulls">
+  #### `join_use_nulls`
+</div>
+
+[join&#95;use&#95;nulls](/ja/reference/settings/session-settings#join_use_nulls)
+
+<div id="max_rows_in_join">
+  #### `max_rows_in_join`
+</div>
+
+[max&#95;rows&#95;in&#95;join](/ja/reference/settings/session-settings#max_rows_in_join)
+
+<div id="max_bytes_in_join">
+  #### `max_bytes_in_join`
+</div>
+
+[max&#95;bytes&#95;in&#95;join](/ja/reference/settings/session-settings#max_bytes_in_join)
+
+<div id="join_overflow_mode">
+  #### `join_overflow_mode`
+</div>
+
+[join&#95;overflow&#95;mode](/ja/reference/settings/session-settings#join_overflow_mode)
+
+<div id="join_any_take_last_row">
+  #### `join_any_take_last_row`
+</div>
+
+[join&#95;any&#95;take&#95;last&#95;row](/ja/reference/settings/session-settings#join_any_take_last_row)
+
+<div id="join_use_nulls">
+  #### `join_use_nulls`
+</div>
+
+<div id="persistent">
+  #### 永続化
+</div>
+
+Join および [Set](/ja/reference/engines/table-engines/special/set) テーブルエンジンの永続化を無効にします。
+
+I/O のオーバーヘッドを削減します。パフォーマンスを重視し、永続化が不要なシナリオに適しています。
+
+設定可能な値:
+
+* 1 — 有効。
+* 0 — 無効。
+
+デフォルト値: `1`。
+
+`Join` エンジンのテーブルは、`GLOBAL JOIN` JOIN演算では使用できません。
+
+`Join` エンジンでは、`CREATE TABLE` ステートメントで [join&#95;use&#95;nulls](/ja/reference/settings/session-settings#join_use_nulls) 設定を指定できます。[SELECT](/ja/reference/statements/select/index) クエリでも、`join_use_nulls` の値を同じにする必要があります。
+
+<div id="example">
+  ## 使用例
+</div>
+
+左側のテーブルを作成します：
+
+```sql
+CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = TinyLog;
+```
+
+```sql
+INSERT INTO id_val VALUES (1,11), (2,12), (3,13);
+```
+
+右側の`Join`テーブルを作成します。
+
+```sql
+CREATE TABLE id_val_join(`id` UInt32, `val` UInt8) ENGINE = Join(ANY, LEFT, id);
+```
+
+```sql
+INSERT INTO id_val_join VALUES (1,21), (1,22), (3,23);
+```
+
+テーブルの結合:
+
+```sql
+SELECT * FROM id_val ANY LEFT JOIN id_val_join USING (id);
+```
+
+```text
+┌─id─┬─val─┬─id_val_join.val─┐
+│  1 │  11 │              21 │
+│  2 │  12 │               0 │
+│  3 │  13 │              23 │
+└────┴─────┴─────────────────┘
+```
+
+別の方法として、joinキーの値を指定して`Join`テーブルからデータを取得することもできます。
+
+```sql
+SELECT joinGet('id_val_join', 'val', toUInt32(1));
+```
+
+```text
+┌─joinGet('id_val_join', 'val', toUInt32(1))─┐
+│                                         21 │
+└────────────────────────────────────────────┘
+```
+
+`Join` テーブルの行を削除する:
+
+```sql
+ALTER TABLE id_val_join DELETE WHERE id = 3;
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  21 │
+└────┴─────┘
+```

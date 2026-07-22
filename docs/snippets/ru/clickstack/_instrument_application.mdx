@@ -1,0 +1,133 @@
+---
+title: Инструментирование приложения
+---
+
+<Steps>
+  <Step>
+    ## Клонируйте и запустите приложение
+
+    Клонируйте репозиторий, установите зависимости и создайте файл `.env`:
+
+    ```bash
+    git clone https://github.com/ClickHouse/hn-news-analyzer.git
+    cd hn-news-analyzer
+    npm install
+    cp .env.example .env
+    ```
+
+    Источник данных ClickHouse по умолчанию использует общедоступный демо-кластер в режиме только для чтения, поэтому приложение можно запустить без дополнительной настройки. Запустите его:
+
+    ```bash
+    ./run.sh
+    ```
+
+    Откройте [http://localhost:5001](http://localhost:5001). Вы увидите выбор года, сводную статистику, диаграмму активности, таблицы с пользователями и доменами, а также строку поиска. Попробуйте интерфейс: переключайте годы, открывайте истории.
+
+    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="Приложение HackerNews Analyzer, запущенное локально" />
+
+    На этом этапе приложение запущено, но пока без инструментирования. ClickStack не показывает данные: он ждёт поступления телеметрии. Это состояние &quot;до&quot;.
+  </Step>
+
+  <Step>
+    ## Получите сведения о подключении
+
+    Приложению нужны два значения для подключения к коллектору:
+
+    * `OTEL_EXPORTER_OTLP_ENDPOINT`: конечная точка OTLP, которую предоставляет ваш коллектор (обычно это порт `4318` для OTLP по HTTP).
+    * `OTEL_EXPORTER_OTLP_HEADERS`: заголовок авторизации с вашим токеном ингестии в формате `authorization=<token>`.
+
+    Откройте `.env` и задайте их:
+
+    ```bash
+    OTEL_SERVICE_NAME=hn-analyzer-api
+    OTEL_EXPORTER_OTLP_ENDPOINT=https://<your-collector-endpoint>:4318
+    OTEL_EXPORTER_OTLP_HEADERS=authorization=<your-ingestion-token>
+    ```
+
+    SDK использует `OTEL_EXPORTER_OTLP_HEADERS` для задания заголовка авторизации для всех трёх сигналов: трассировок, метрик и журналов. Если ваш коллектор запущен локально и не требует аутентификации, можно оставить значение пустым (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`), но сама переменная должна присутствовать; если она не задана или полностью пуста, SDK вообще пропускает инициализацию.
+  </Step>
+
+  <Step>
+    ## Инструментируйте приложение
+
+    Инструментирование включает три части: установку SDK, изменение команды запуска и включение браузерного SDK. Ничто из этого не меняет бизнес-логику приложения.
+
+    ### Установите SDK
+
+    Установите OpenTelemetry SDK и для backend, и для браузера:
+
+    ```bash
+    npm install @hyperdx/node-opentelemetry @hyperdx/browser
+    ```
+
+    ### Используйте CLI `opentelemetry-instrument`
+
+    Приложение запускается с помощью `run.sh`; в конце файла есть две строки `exec`: одна активная, другая закомментирована. Поменяйте, какая из них активна, чтобы Node запускался через `opentelemetry-instrument`:
+
+    ```diff
+     # BEFORE: plain node, no instrumentation, collector stays silent:
+    -exec node scripts/entrypoint.js
+    +# exec node scripts/entrypoint.js
+
+     # AFTER: same source, wrapped by opentelemetry-instrument CLI.
+    -# exec npx opentelemetry-instrument scripts/entrypoint.js
+    +exec npx opentelemetry-instrument scripts/entrypoint.js
+    ```
+
+    Это всё, что нужно изменить на серверной стороне. Auto-instrumentation загружается через `opentelemetry-instrument` при запуске процесса.
+
+    ### Включите браузерный SDK
+
+    Чтобы собирать распределённые трассировки (от браузера до сервера) и воспроизведения сеансов, включите браузерный SDK в `src/web/telemetry.ts`. Раскомментируйте импорт и блок `HyperDX.init({...})`:
+
+    ```javascript
+    import HyperDX from '@hyperdx/browser';
+
+    export function initTelemetry(): void {
+      HyperDX.init({
+        url: __OTLP_ENDPOINT__,
+        apiKey: __OTLP_AUTH_TOKEN__,
+        service: 'hn-analyzer-web',
+        tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
+        consoleCapture: true,
+        advancedNetworkCapture: true,
+      });
+    }
+    ```
+
+    Дополнительные правки `.env` не нужны. `__OTLP_ENDPOINT__` и `__OTLP_AUTH_TOKEN__` — это константы, подставляемые на этапе сборки через `vite.config.ts`: конечная точка берётся из `OTEL_EXPORTER_OTLP_ENDPOINT`, а токен извлекается из `OTEL_EXPORTER_OTLP_HEADERS` — используются те же значения, что и на стороне сервера.
+
+    <Warning>
+      Токен для ингестии встраивается в публичный браузерный бандл, поэтому его сможет увидеть любой, кто откроет вкладку Network.
+    </Warning>
+  </Step>
+
+  <Step>
+    ## Сгенерируйте трафик и просмотрите телеметрию
+
+    Перезапустите приложение, чтобы вступили в силу новая команда запуска и свежесобранный браузерный бандл:
+
+    ```bash
+    # Ctrl-C the previous run, then:
+    ./run.sh
+    ```
+
+    Перезагрузите вкладку браузера, чтобы Vite отдал обновлённый бандл, затем несколько раз обновите приложение, переключите годы и откройте несколько историй, чтобы сгенерировать трафик.
+
+    Откройте интерфейс ClickStack:
+
+    1. Перейдите в **Search** и отфильтруйте данные за последние 5 минут. Появятся журналы для `hn-analyzer-api`.
+
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="Журналы ClickStack" />
+
+    2. Откройте запрос и поднимитесь вверх по трейсу. Вы увидите спан обработчика Express, дочерний HTTP-спан, указывающий на кластер ClickHouse с реальной длительностью сетевого взаимодействия, а также коррелированные записи `console.log` в том же трейсе.
+
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="Трейсы ClickStack" />
+
+    3. Откройте **Воспроизведение сеанса**, чтобы просмотреть видео сеанса браузера с возможностью перемотки, синхронизированное с временной шкалой трейса.
+
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="Сеансы ClickStack" />
+
+    Журналы, метрики, трейсы и воспроизведения сеансов попадают в один и тот же интерфейс, используют один и тот же язык запросов и автоматически коррелируются.
+  </Step>
+</Steps>

@@ -1,0 +1,126 @@
+---
+slug: /cloud/managed-postgres/monitoring/metrics
+sidebarTitle: 'Справочник по метрикам'
+title: 'Справочник по метрикам Managed Postgres'
+description: 'Полный список метрик, доступных через конечную точку Prometheus для Managed Postgres'
+keywords: ['managed postgres', 'метрики', 'prometheus', 'справочник', 'обсервабилити']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-metrics-beta" />
+
+На этой странице перечислены все метрики, доступные через
+[конечную точку Prometheus для Managed Postgres](/ru/products/managed-postgres/monitoring/prometheus).
+Сведения о настройке и аутентификации см. на странице [конечной точке Prometheus].
+
+<div id="common-labels">
+  ## Общие метки
+</div>
+
+Каждая метрика имеет следующие метки:
+
+| Метка                   | Описание                       |
+| ----------------------- | ------------------------------ |
+| `clickhouse_org`        | Идентификатор организации      |
+| `postgres_service`      | Идентификатор сервиса Postgres |
+| `postgres_service_name` | Имя сервиса Postgres           |
+
+Некоторые метрики также добавляют метку для измерения, по которому они детализируются (например,
+`mode` у метрик CPU, `state` у соединений, `database` у метрик размера
+базы данных). Они перечислены рядом с каждой метрикой.
+
+<div id="information-metric">
+  ## Информационная метрика
+</div>
+
+`PostgresServiceInfo` — это метрика типа gauge, которая всегда равна `1` и содержит
+текущий статус и версию сервиса в своих метках. Используйте её, чтобы через JOIN
+добавлять статус к другим метрикам или настраивать оповещение, когда сервис выходит из
+состояния `running`.
+
+| Метрика               | Тип   | Дополнительные метки                  | Описание                                   |
+| --------------------- | ----- | ------------------------------------- | ------------------------------------------ |
+| `PostgresServiceInfo` | gauge | `postgres_status`, `postgres_version` | Одна серия на сервис; значение всегда `1`. |
+
+`postgres_status` показывает текущее состояние жизненного цикла сервиса
+(например, `running`, `creating`, `stopped`). `postgres_version`
+показывает основную версию Postgres (например, `17`, `18`).
+
+<div id="capacity">
+  ## Выделенные ресурсы
+</div>
+
+Статические лимиты, выделенные для сервиса. Они изменяются только при
+изменении размера сервиса.
+
+| Метрика                            | Тип   | Единица | Описание                             |
+| ---------------------------------- | ----- | ------- | ------------------------------------ |
+| `PostgresServer_CPUCores`          | gauge | cores   | CPU-ядра, выделенные сервису.        |
+| `PostgresServer_MemoryLimitBytes`  | gauge | bytes   | Объем памяти, выделенный сервису.    |
+| `PostgresServer_StorageLimitBytes` | gauge | bytes   | Объем хранилища, выделенный сервису. |
+
+<div id="resource-utilization">
+  ## Использование ресурсов
+</div>
+
+| Метрика                                | Тип     | Дополнительные метки | Описание                                                                                                                         |
+| -------------------------------------- | ------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `PostgresServer_CPUSeconds_Total`      | counter | `mode`               | Использованное процессорное время с разбивкой по режимам: `user`, `system`, `iowait`, `softirq`, `steal`, `irq`, `nice`, `idle`. |
+| `PostgresServer_MemoryUsedPercent`     | gauge   |                      | Используемая память в процентах от `PostgresServer_MemoryLimitBytes`.                                                            |
+| `PostgresServer_MemoryCachePercent`    | gauge   |                      | Память, используемая кэшем и буферами, в процентах от общего объёма памяти.                                                      |
+| `PostgresServer_FilesystemUsedPercent` | gauge   |                      | Используемое пространство файловой системы в процентах от общего объёма хранилища.                                               |
+
+Чтобы вычислить использование CPU в процентах, рассчитайте скорость изменения
+`PostgresServer_CPUSeconds_Total` по интересующим вас режимам и
+разделите её на `PostgresServer_CPUCores`.
+
+<div id="io">
+  ## Дисковый и сетевой ввод-вывод
+</div>
+
+| Метрика                                     | Тип     | Единица | Описание                               |
+| ------------------------------------------- | ------- | ------- | -------------------------------------- |
+| `PostgresServer_DiskReads_Total`            | counter | ops     | Выполненные операции чтения с диска.   |
+| `PostgresServer_DiskWrites_Total`           | counter | ops     | Выполненные операции записи на диск.   |
+| `PostgresServer_NetworkReceiveBytes_Total`  | counter | bytes   | Количество байтов, полученных по сети. |
+| `PostgresServer_NetworkTransmitBytes_Total` | counter | bytes   | Количество байтов, переданных по сети. |
+
+<div id="database-activity">
+  ## Активность базы данных
+</div>
+
+Накопительные счётчики с момента запуска сервиса. Используйте `rate()` или `irate()`,
+чтобы преобразовать их в значения в секунду.
+
+| Метрика                                       | Тип     | Описание                          |
+| --------------------------------------------- | ------- | --------------------------------- |
+| `PostgresServer_TuplesFetched_Total`          | counter | Строки, выбранные запросами.      |
+| `PostgresServer_TuplesInserted_Total`         | counter | Вставленные строки.               |
+| `PostgresServer_TuplesUpdated_Total`          | counter | Обновлённые строки.               |
+| `PostgresServer_TuplesDeleted_Total`          | counter | Удалённые строки.                 |
+| `PostgresServer_TransactionsCommitted_Total`  | counter | Зафиксированные транзакции.       |
+| `PostgresServer_TransactionsRolledBack_Total` | counter | Отменённые транзакции.            |
+| `PostgresServer_Deadlocks_Total`              | counter | Обнаруженные взаимные блокировки. |
+
+<div id="connections-cache-size">
+  ## Подключения, кэш и размер баз данных
+</div>
+
+| Метрика                            | Тип   | Дополнительные метки | Описание                                                                                                                       |
+| ---------------------------------- | ----- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `PostgresServer_ActiveConnections` | gauge | `state`              | Подключения по состояниям (например, `active`, `idle`).                                                                        |
+| `PostgresServer_CacheHitRatio`     | gauge |                      | Коэффициент попаданий в буферный кэш: доля блоков, обслуженных из кэша, от общего числа просмотренных блоков, в процентах.     |
+| `PostgresServer_DatabaseSizeBytes` | gauge | `database`           | Размер каждой базы данных на диске в байтах. Включает базу `postgres` по умолчанию и все базы данных, созданные пользователем. |
+
+<div id="related">
+  ## Связанные страницы
+</div>
+
+* [Конечная точка Prometheus] — настройка, аутентификация и сбор метрик
+* [Панель мониторинга](/ru/products/managed-postgres/monitoring/dashboard) — встроенные диаграммы в Cloud Console
+* [Руководство по OpenAPI](/ru/products/managed-postgres/openapi) — создание API key
+  и получение идентификаторов организации и сервиса
+
+[Конечная точка Prometheus]: /products/managed-postgres/monitoring/prometheus

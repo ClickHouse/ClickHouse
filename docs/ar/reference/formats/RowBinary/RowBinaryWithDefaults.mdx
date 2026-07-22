@@ -1,0 +1,47 @@
+---
+alias: []
+description: 'توثيق لتنسيق RowBinaryWithDefaults'
+input_format: true
+keywords: ['RowBinaryWithDefaults']
+output_format: false
+slug: /interfaces/formats/RowBinaryWithDefaults
+title: 'RowBinaryWithDefaults'
+doc_type: 'مرجع'
+---
+
+import RowBinaryFormatSettings from '/snippets/ar/common-row-binary-format-settings.mdx';
+
+| الإدخال | الإخراج | الاسم المستعار |
+| ------- | ------- | -------------- |
+| ✔       | ✗       |                |
+
+<div id="description">
+  ## الوصف
+</div>
+
+يشبه تنسيق [`RowBinary`](/ar/reference/formats/RowBinary/RowBinary)، لكنه يتضمن بايتًا إضافيًا قبل كل عمود يحدد ما إذا كان ينبغي استخدام القيمة الافتراضية.
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+أمثلة:
+
+```sql title="Query"
+SELECT * FROM FORMAT('RowBinaryWithDefaults', 'x UInt32 default 42, y UInt32', x'010001000000')
+```
+
+```response title="Response"
+┌──x─┬─y─┐
+│ 42 │ 1 │
+└────┴───┘
+```
+
+* بالنسبة إلى العمود `x`، يوجد بايت واحد فقط `01` يشير إلى وجوب استخدام القيمة الافتراضية، ولا تُقدَّم أي بيانات أخرى بعد هذا البايت.
+* بالنسبة إلى العمود `y`، تبدأ البيانات بالبايت `00` الذي يشير إلى أن العمود يحتوي على قيمة فعلية يجب قراءتها من البيانات التالية `01000000`.
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>
+
+<RowBinaryFormatSettings />

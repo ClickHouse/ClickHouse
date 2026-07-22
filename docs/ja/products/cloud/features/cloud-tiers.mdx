@@ -1,0 +1,267 @@
+---
+sidebarTitle: 'ClickHouse Cloud のティア'
+slug: /cloud/manage/cloud-tiers
+title: 'ClickHouse Cloud のティア'
+description: 'ClickHouse Cloud で利用可能なティア'
+keywords: ['cloud tiers', 'サービスプラン', 'cloud 料金ティア', 'cloud サービスレベル']
+doc_type: 'reference'
+---
+
+ClickHouse Cloud では、複数のティアを利用できます。
+ティアは組織単位で割り当てられます。したがって、同一組織内のサービスはすべて同じティアに属します。
+このページでは、特定のユースケースに適したティアについて説明します。
+
+**Cloud ティアの概要:**
+
+<table>
+  <thead>
+    <tr>
+      <th />
+
+      <th>[Basic](#basic)</th>
+      <th>[Scale (推奨) ](#scale)</th>
+      <th>[Enterprise](#enterprise)</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr className="table-category-header">
+      <td>**サービス機能**</td>
+
+      <td colspan="3" />
+    </tr>
+
+    <tr>
+      <td>サービス数</td>
+      <td>✓ 無制限</td>
+      <td>✓ 無制限</td>
+      <td>✓ 無制限</td>
+    </tr>
+
+    <tr>
+      <td>ストレージ</td>
+      <td>✓ サービスあたり最大 1 TB</td>
+      <td>✓ 無制限</td>
+      <td>✓ 無制限</td>
+    </tr>
+
+    <tr>
+      <td>メモリ</td>
+      <td>✓ 合計 8～12 GiB</td>
+      <td>✓ 設定可能</td>
+      <td>✓ 設定可能</td>
+    </tr>
+
+    <tr>
+      <td>可用性</td>
+      <td>✓ 1 ゾーン</td>
+      <td>✓ 2 ゾーン以上</td>
+      <td>✓ 2 ゾーン以上</td>
+    </tr>
+
+    <tr>
+      <td>バックアップ</td>
+      <td>✓ 24 時間ごとに 1 回、1 日保持</td>
+      <td>✓ 設定可能</td>
+      <td>✓ 設定可能</td>
+    </tr>
+
+    <tr>
+      <td>垂直スケーリング</td>
+
+      <td />
+
+      <td>✓ 自動スケーリング</td>
+      <td>✓ 標準プロファイルでは自動、カスタムプロファイルでは手動</td>
+    </tr>
+
+    <tr>
+      <td>水平スケーリング</td>
+
+      <td />
+
+      <td>✓ 手動スケーリング</td>
+      <td>✓ 手動スケーリング</td>
+    </tr>
+
+    <tr>
+      <td>ClickPipes</td>
+      <td>✓</td>
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>早期アップグレード</td>
+
+      <td />
+
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>コンピュート分離</td>
+
+      <td />
+
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>お客様自身のクラウドアカウントへのバックアップのエクスポート</td>
+      <td>✓</td>
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>スケジュールされたアップグレード</td>
+
+      <td />
+
+      <td />
+
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>カスタムハードウェアプロファイル</td>
+
+      <td />
+
+      <td />
+
+      <td>✓</td>
+    </tr>
+
+    <tr className="table-category-header">
+      <td>**セキュリティ**</td>
+
+      <td colspan="3" />
+    </tr>
+
+    <tr>
+      <td>SAML/SSO</td>
+
+      <td />
+
+      <td />
+
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>MFA</td>
+      <td>✓</td>
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>SOC 2 Type II</td>
+      <td>✓</td>
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>ISO 27001</td>
+      <td>✓</td>
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>プライベートネットワーク接続</td>
+
+      <td />
+
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>S3 のロールベースアクセス</td>
+
+      <td />
+
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>透過的データ暗号化 (CMEK for TDE) </td>
+
+      <td />
+
+      <td />
+
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>HIPAA</td>
+
+      <td />
+
+      <td />
+
+      <td>✓</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="basic">
+  ## Basic
+</div>
+
+* 単一レプリカのデプロイをサポートする、コスト効率の高いオプションです。
+* 厳格な信頼性保証を必要としない、小規模なデータ量の部門向けユースケースに最適です。
+
+<Note>
+  Basic ティア のサービスは固定サイズを前提としており、自動・手動を問わずスケーリングできません。
+  サービスをスケーリングするには、Scale ティア または Enterprise ティア にアップグレードできます。
+</Note>
+
+<div id="scale">
+  ## Scale
+</div>
+
+より高い SLA (レプリカが 2 つ以上あるデプロイメント) 、スケーラビリティ、高度なセキュリティが求められるワークロード向けに設計されています。
+
+* 次のような機能をサポートしています:
+  * [プライベートネットワーキングへの対応](/ja/products/cloud/guides/security/connectivity/private-networking/index).
+  * [Compute-compute separation](/ja/products/cloud/features/infrastructure/warehouses#what-is-compute-compute-separation).
+  * [柔軟なスケーリング](/ja/products/cloud/features/autoscaling/overview) オプション (スケールアップ/ダウン、スケールアウト/イン) 。
+  * [設定可能なバックアップ](/ja/products/cloud/guides/backups/configurable-backups)
+
+<div id="enterprise">
+  ## Enterprise
+</div>
+
+厳格なセキュリティ要件とコンプライアンス要件を伴う、大規模かつミッションクリティカルなデプロイメント向けです。
+
+* Scale のすべての機能に、**さらに**
+* 柔軟なスケーリング: 標準プロファイル (`1:4 vCPU:memory ratio`) に加え、`HighMemory (1:8 ratio)` のカスタムプロファイルを利用できます。
+* 最高水準のパフォーマンス保証と耐障害性保証を提供します。
+* エンタープライズグレードのセキュリティをサポート:
+  * シングルサインオン (SSO)
+  * 強化された暗号化: AWS および GCP のサービス向け。サービスはデフォルトで当社の鍵により暗号化されており、顧客管理暗号化キー (CMEK) を有効にするために、お客様自身の鍵へ切り替えることができます。
+* スケジュールされたアップグレードに対応: データベースと Cloud のリリースの両方について、アップグレードを実施する曜日と time window を選択できます。
+* [HIPAA](/ja/products/cloud/reference/security/compliance-overview#hipaa-since-2024) および PCI コンプライアンスに対応しています。
+
+<Note>
+  3 つのティアすべてにおいて、シングルレプリカのサービスは固定サイズ (`8 GiB`, `12 GiB`) を前提としています
+</Note>
+
+<div id="upgrading-to-a-different-tier">
+  ## 別のティアへのアップグレード
+</div>
+
+Basic から Scale、または Scale から Enterprise へはいつでもアップグレードできます。ティアをダウングレードする場合は、プレミアム機能を無効にする必要があります。
+
+***
+
+サービスの種別についてご不明な点がある場合は、[料金ページ](https://clickhouse.com/pricing)をご覧いただくか、support@clickhouse.com までお問い合わせください。
