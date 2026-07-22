@@ -27,4 +27,7 @@ SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_snapshot_strip_race, 
 GROUP BY ALL
 FORMAT Null; -- { serverError TIMEOUT_EXCEEDED }
 
+-- Clear the short `max_execution_time` so the cleanup `DROP` cannot itself hit the timeout on slow
+-- (e.g. sanitizer) builds, which would otherwise make the test flaky.
+SET max_execution_time = 0;
 DROP TABLE t_snapshot_strip_race;
