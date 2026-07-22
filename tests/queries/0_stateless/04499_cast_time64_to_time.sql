@@ -16,3 +16,10 @@ SELECT CAST(CAST(toDecimal64(-3600001, 0) AS Time64(0)) AS Time) = CAST(-3599999
 -- Under throw mode the same out-of-range value must raise instead of clamping, while in-range still converts.
 SELECT CAST(CAST(toDecimal64(3600001, 0) AS Time64(0)) AS Time) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(CAST('10:00:00' AS Time64) AS Time) = CAST('10:00:00' AS Time) SETTINGS date_time_overflow_behavior = 'throw';
+
+-- Constant Time64 inserted into a Time column goes through convertFieldToType, which must drop the fraction too.
+DROP TABLE IF EXISTS t_04499_time;
+CREATE TABLE t_04499_time (c1 Time) ENGINE = Memory;
+INSERT INTO t_04499_time VALUES (CAST('01:02:03.5' AS Time64(1)));
+SELECT c1 = CAST('01:02:03' AS Time) FROM t_04499_time;
+DROP TABLE t_04499_time;

@@ -426,6 +426,18 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return DecimalField<Time64>(DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, 1), scale_to);
         }
 
+        if (which_type.isTime() && src.getType() == Field::Types::Decimal64)
+        {
+            /// A constant Time64 converted to Time: drop the fractional part and clamp to the Time range,
+            /// matching the Time64 -> Time column conversion in FunctionsConversion.
+            static constexpr Int64 max_time_seconds = 3599999; /// 999:59:59, == MAX_TIME_TIMESTAMP
+            const auto & from_type = src.safeGet<Decimal64>();
+            const Int64 whole = from_type.getValue().value / from_type.getScaleMultiplier().value;
+            const Int64 clamped = std::min<Int64>(std::max<Int64>(whole, -max_time_seconds), max_time_seconds);
+            /// Reuse the Int64 -> Time path so the produced Field matches the isTime() integer branch above.
+            return convertNumericType<Int32>(Field(clamped), type);
+        }
+
         /// For toDate('xxx') in 1::Int64. Date is UInt16 under the hood;
         /// range-check so out-of-range integers don't get silently truncated
         /// by the Date serializer downstream.
