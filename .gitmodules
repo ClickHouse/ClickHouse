@@ -416,4 +416,4 @@
 	url = https://github.com/ClickHouse/zxc
 [submodule "contrib/pulsar-client-cpp"]
 	path = contrib/pulsar-client-cpp
-	url = https://github.com/SteveBalayanAKAMedian/pulsar-client-cpp.git
+	url = https://github.com/ClickHouse/pulsar-client-cpp
