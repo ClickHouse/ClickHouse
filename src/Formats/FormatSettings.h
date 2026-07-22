@@ -105,12 +105,10 @@ struct FormatSettings
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
-    /// Read an unquoted number for a `DateTime`/`DateTime64` column (in `JSON`, `Values` and the other
-    /// text input formats, as well as in `JSONExtract` and typed `JSON`) as the raw underlying value —
-    /// seconds for `DateTime`, ticks at the column precision for `DateTime64` — instead of a Unix
-    /// timestamp in seconds. This restores the behavior of versions up to and including 26.6 (see the
-    /// `input_format_read_datetime_number_as_raw_value` setting). It is also set by the `YTsaurus` reader,
-    /// whose `timestamp` types are stored as raw ticks (microseconds for `DateTime64(6)`), not seconds.
+    /// Read an unquoted number for a `DateTime`/`DateTime64` column as the raw underlying value — seconds for
+    /// `DateTime`, ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds.
+    /// Restores the pre-26.7 behavior (see the `input_format_read_datetime_number_as_raw_value` setting). Also
+    /// set by the `YTsaurus` reader, whose `timestamp` types are stored as raw ticks, not seconds.
     bool read_datetime_number_as_raw_value = false;
 
     enum class IntervalOutputFormat : uint8_t

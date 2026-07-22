@@ -7,13 +7,6 @@
 namespace DB
 {
 
-/// Parses an unquoted number as a Unix timestamp (seconds since the epoch), truncating any sub-second
-/// part to whole seconds: the shared conversion behind the JSON/Quoted text paths and the `JSONExtract`
-/// / typed-`JSON` DOM path. Parsing stops at the first character that is not part of the number. Returns
-/// false on a token without digits or one that does not fit the decimal reader's precision (e.g. `1e39`);
-/// an in-range value beyond the `DateTime` bounds is clamped to them.
-bool tryReadDateTimeAsNumber(time_t & x, ReadBuffer & istr);
-
 class SerializationDateTime final : public SerializationNumber<UInt32>, public TimezoneMixin
 {
 private:

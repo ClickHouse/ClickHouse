@@ -8,10 +8,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
-#include <IO/readDecimalText.h>
 #include <Common/assert_cast.h>
-
-#include <limits>
 
 namespace DB
 {
@@ -19,8 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
-    extern const int DECIMAL_OVERFLOW;
-    extern const int CANNOT_PARSE_DATETIME;
 }
 
 SerializationDateTime64::SerializationDateTime64(
@@ -121,87 +116,6 @@ static inline bool tryReadText(DateTime64 & x, UInt32 scale, ReadBuffer & istr, 
         case FormatSettings::DateTimeInputFormat::BestEffortUS:
             return tryParseDateTime64BestEffortUS(x, scale, istr, time_zone, utc_time_zone);
     }
-}
-
-/// An unquoted number in JSON or the Quoted format is a Unix timestamp (seconds since the epoch)
-/// with optional sub-second precision, e.g. `1703363853.035`. It is parsed as a decimal value at
-/// the column scale, exactly like `CAST`, `toDateTime64`, the `Values` format and the `Decimal`
-/// type (`DateTime64` is a `Decimal` underneath). As with the previous `readIntText`, parsing stops
-/// at the first character that is not part of the number (e.g. the `,` or `}` that follows the value
-/// in JSON).
-///
-/// The number is accumulated into a 128-bit temporary rather than directly into the `Int64` ticks of
-/// `DateTime64`. A `DateTime64` spans the whole `Int64` range, so an input near (or beyond) the
-/// `Int64` boundary would otherwise wrap around silently during accumulation; the wide temporary lets
-/// us range-check the final value and report `DECIMAL_OVERFLOW` instead. A 128-bit accumulator holds
-/// up to `max_precision<Decimal128>` (38) decimal digits, which covers the whole valid `DateTime64`
-/// range at every scale.
-static constexpr UInt32 datetime64_number_precision = DecimalUtils::max_precision<Decimal128>;
-
-/// Applies the `unread_scale` decimal places still pending after `readDecimalText` to scale the
-/// parsed `value` to ticks, then writes it into `x`. Returns false on overflow instead of throwing.
-/// The multiplication is bound-checked with truncating division rather than `common::mulOverflow`,
-/// which is a stub for big-int types that never reports overflow. The multiplier is a positive power
-/// of ten, so `value * multiplier` fits the `Int64` tick range iff `value` is within `bound / multiplier`,
-/// and the product is only computed when it cannot overflow.
-static bool scaleAndStoreDateTime64(DateTime64 & x, Int128 value, UInt32 unread_scale)
-{
-    const Int128 multiplier = DecimalUtils::scaleMultiplier<Int128>(unread_scale);
-    if (value > std::numeric_limits<DateTime64::NativeType>::max() / multiplier
-        || value < std::numeric_limits<DateTime64::NativeType>::min() / multiplier)
-        return false;
-    x.value = static_cast<DateTime64::NativeType>(value * multiplier);
-    return true;
-}
-
-static void readDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & istr)
-{
-    Decimal128 tmp;
-    UInt32 unread_scale = scale;
-    /// `readDecimalText` with `digits_only = false` stops at the first non-numeric character (the `,` or `}`
-    /// that follows the value in JSON), but it also accepts a token with no digits at all, such as `.`, `-` or
-    /// `e9`, reading it as zero. Such a malformed value must be rejected rather than stored as the epoch.
-    bool has_digits = false;
-    readDecimalText(istr, tmp, datetime64_number_precision, unread_scale, /*digits_only=*/false, &has_digits);
-    if (!has_digits)
-        throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse a number for DateTime64 timestamp");
-    if (!scaleAndStoreDateTime64(x, tmp.value, unread_scale))
-        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric value is out of range for DateTime64");
-}
-
-bool tryReadDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & istr)
-{
-    Decimal128 tmp;
-    UInt32 unread_scale = scale;
-    bool has_digits = false;
-    if (!readDecimalText<Decimal128, bool>(istr, tmp, datetime64_number_precision, unread_scale, /*digits_only=*/false, &has_digits)
-        || !has_digits)
-        return false;
-    return scaleAndStoreDateTime64(x, tmp.value, unread_scale);
-}
-
-/// Legacy: interpret the number as the raw scaled value (ticks) stored directly into `DateTime64`, enabled
-/// by `input_format_read_datetime_number_as_raw_value`. Only a bare integer is read; a fractional or
-/// exponent form is left unread for the format parser to reject. The integer is read into a 128-bit
-/// temporary with saturation (`readIntText` would wrap a literal wider than `Int128` modulo 2^128, e.g.
-/// accept a 39-digit number as `0` ticks) and range-checked through `scaleAndStoreDateTime64` with no
-/// pending scale, so a value outside the `Int64` tick range reports `DECIMAL_OVERFLOW` rather than being
-/// accepted as a wrapped-around timestamp. This keeps the throwing and try deserializers consistent with
-/// each other and with the default seconds-based path.
-static void readDateTime64AsRawValue(DateTime64 & x, ReadBuffer & istr)
-{
-    Int128 tmp = 0;
-    readIntText128Saturating(tmp, istr);
-    if (!scaleAndStoreDateTime64(x, tmp, /*unread_scale=*/0))
-        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric value is out of range for DateTime64");
-}
-
-static bool tryReadDateTime64AsRawValue(DateTime64 & x, ReadBuffer & istr)
-{
-    Int128 tmp = 0;
-    if (!readIntText128Saturating<bool>(tmp, istr))
-        return false;
-    return scaleAndStoreDateTime64(x, tmp, /*unread_scale=*/0);
 }
 
 SerializationPtr SerializationDateTime64::create(UInt32 scale_, const TimezoneMixin & time_zone_)

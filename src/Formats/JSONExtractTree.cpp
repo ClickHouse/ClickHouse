@@ -46,8 +46,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeDynamic.h>
-#include <DataTypes/Serializations/SerializationDateTime.h>
-#include <DataTypes/Serializations/SerializationDateTime64.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/Serializations/SerializationObject.h>
@@ -738,19 +736,11 @@ public:
         }
         else if (insert_settings.allow_type_conversion && element.isDouble() && !format_settings.read_datetime_number_as_raw_value)
         {
-            /// An unquoted fractional number is a Unix timestamp truncated to whole seconds, like the row input
-            /// serializer, `CAST` and `toDateTime`. Parse the shortest round-trip text of the double with the same
-            /// decimal reader and range check as the row input serializer (`tryReadDateTimeAsNumber`), so a number
-            /// that does not fit the reader's precision (e.g. `1e39`) is rejected rather than silently clamped to
-            /// the `DateTime` maximum, matching the row input path and the adjacent `DateTime64` DOM case. A
-            /// negative (pre-epoch) number is clamped to the `DateTime` epoch by the shared reader, exactly as the
-            /// row input serializer does, rather than being rejected. The parity with the row input path holds only
-            /// up to `Float64` precision: the DOM parser has already rounded the literal to the nearest `Float64`,
-            /// so a value it cannot represent exactly can cross the second boundary before the truncation
-            /// (`1703363853.9999999` reaches this branch as `1703363854.0` and gives the next second, while the row
-            /// input path truncates the original text to `1703363853`). With `read_datetime_number_as_raw_value`
-            /// (i.e. the pre-26.7 behavior) a fractional `DateTime` number is rejected, as the row serializer's
-            /// legacy path did.
+            /// A fractional number is a Unix timestamp truncated to whole seconds. Parse its shortest round-trip
+            /// text through the shared row-input reader so precision-overflow (e.g. `1e39`) is rejected and a
+            /// negative value is clamped to the epoch, matching the row input path. Parity holds only up to
+            /// `Float64` precision: the DOM parser has already rounded the literal, so a value it cannot represent
+            /// exactly can cross the second boundary (`1703363853.9999999` arrives here as `1703363854.0`).
             String str_value = jsonElementToString<JSONParser>(element, format_settings);
             ReadBufferFromMemory buf(str_value);
             if (!tryReadDateTimeAsNumber(value, buf) || !buf.eof())
@@ -957,20 +947,16 @@ public:
                 return false;
 
             /// An unquoted number is a Unix timestamp in seconds (with optional sub-second precision), scaled to
-            /// the column precision, consistent with the row input serializer, `CAST` and `toDateTime64`. With
-            /// `read_datetime_number_as_raw_value` (i.e. the pre-26.7 behavior) an integer is instead the raw
-            /// scaled value (ticks); a fractional number was always the number of seconds.
+            /// the column precision. With `read_datetime_number_as_raw_value` (pre-26.7) an integer is instead the
+            /// raw scaled value (ticks); a fractional number was always seconds.
             switch (element.type())
             {
                 case ElementType::DOUBLE:
                 {
-                    /// Convert through decimal text rather than `Float64` arithmetic so that sub-second precision
-                    /// is preserved: `convertToDecimal` computes `0.58 * 100 = 57.999...` and truncates to 57 ticks,
-                    /// while parsing the shortest round-trip text `0.58` at the column scale gives the exact 58,
-                    /// the same value as the row input serializer, `CAST` and `toDateTime64` produce. The parity
-                    /// holds only up to `Float64` precision: the DOM parser has already rounded the literal to the
-                    /// nearest `Float64`, so a value it cannot represent exactly (e.g. `1703363853.9999999`, which
-                    /// arrives here as `1703363854.0`) can differ from the row input path in the last preserved digit.
+                    /// Convert through decimal text rather than `Float64` arithmetic to preserve sub-second
+                    /// precision: `convertToDecimal` computes `0.58 * 100 = 57.999...` and truncates to 57 ticks,
+                    /// while parsing the text `0.58` at the column scale gives the exact 58 (as the row input path,
+                    /// `CAST` and `toDateTime64` do). Parity holds only up to the `Float64` the DOM parser rounded to.
                     String str_value = jsonElementToString<JSONParser>(element, format_settings);
                     ReadBufferFromMemory buf(str_value);
                     if (!tryReadDateTime64AsNumber(value, scale, buf) || !buf.eof())
@@ -983,10 +969,8 @@ public:
                 case ElementType::UINT64:
                     if (format_settings.read_datetime_number_as_raw_value)
                     {
-                        /// The raw ticks are stored in the `Int64` native type of `DateTime64`. A `UInt64`
-                        /// above `Int64` max would narrow to a negative timestamp, so range-check it and fail
-                        /// on overflow (degrading to the default value, or a clean error in typed `JSON`) just
-                        /// like the `DOUBLE` and non-raw paths do, rather than wrapping around silently.
+                        /// Raw ticks are stored in the `Int64` native type; a `UInt64` above `Int64` max would
+                        /// narrow to a negative timestamp, so range-check and fail on overflow rather than wrapping.
                         const UInt64 raw = element.getUInt64();
                         if (raw > static_cast<UInt64>(std::numeric_limits<DateTime64::NativeType>::max()))
                         {

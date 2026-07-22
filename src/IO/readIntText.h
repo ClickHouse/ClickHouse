@@ -270,16 +270,12 @@ bool tryReadIntText(T & x, ReadBuffer & buf)
 
 
 /// Reads a decimal integer into an `Int128`, saturating to the `Int128` range instead of wrapping:
-/// `readIntText` skips the overflow check for big-int types (see above), so a literal wider than
-/// `Int128` (39 or more digits) is silently accepted modulo 2^128. The overflow is detected with an
-/// explicit threshold check on each digit (`common::mulOverflow` cannot be used: it is a stub for
-/// big-int types that never reports overflow). The whole run of digits is consumed either way, and
-/// the saturated value keeps the sign of the input, so a subsequent range check or clamp in the
-/// caller sees the value on the correct side of its bounds. Like `readIntText`, parsing stops at the
-/// first character that is not part of the number. Unlike `readIntText`, which reads an empty token
-/// as zero, a token without any digits (whether empty or a bare sign) is an error (an exception for
-/// `ReturnType = void`, `false` for `ReturnType = bool`): the raw-value compatibility path must
-/// reject a missing numeric token such as `{"t":}` instead of loading it as the Unix epoch.
+/// `readIntText` skips the overflow check for big-int types, so a literal wider than `Int128` (39+ digits)
+/// is silently accepted modulo 2^128. Overflow is detected with an explicit per-digit threshold check
+/// (`common::mulOverflow` is a no-op stub for big-int types). The whole digit run is consumed and the
+/// saturated value keeps its sign, so a later range check sees the value on the correct side of its bounds.
+/// Unlike `readIntText`, a token without any digits (empty or a bare sign) is an error — an exception for
+/// `ReturnType = void`, `false` for `bool` — so the raw-value path rejects a missing token such as `{"t":}`.
 template <typename ReturnType = void>
 ReturnType readIntText128Saturating(Int128 & x, ReadBuffer & buf)
 {

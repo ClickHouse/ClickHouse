@@ -759,26 +759,18 @@ See also:
 Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to [0, 3, 6],
 corresponding to 'seconds', 'milliseconds', and 'microseconds')", 0) \
     DECLARE(Bool, input_format_read_datetime_number_as_raw_value, false, R"(
-Read a bare unquoted integer for a `DateTime`/`DateTime64` column in the `JSON` and `Values`/`Quoted` input paths
-(as well as in `JSONExtract` and typed `JSON`) as the raw underlying value — seconds for `DateTime`,
-ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds. A number with a fractional
-or exponent part also reverts to its legacy handling: the row input paths accept only a bare integer and reject such
-a number, while in `JSONExtract` and typed `JSON` a floating-point value is still read as a Unix timestamp in seconds
-for `DateTime64` but is rejected for `DateTime`.
+Read an unquoted number for a `DateTime`/`DateTime64` column as the raw underlying value — seconds for `DateTime`,
+ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds.
 
-Disabled by default: in these paths an unquoted number is a Unix timestamp in seconds (with optional sub-second
-precision), consistent with the `Values` format, `CAST` and `toDateTime64`. In `JSONExtract` and typed `JSON` a
-fractional number passes through the JSON parser's `Float64` representation, so its parity with the row input
-paths holds up to `Float64` precision. Enable it (or use `SET compatibility = '26.6'`)
-to restore the behavior of versions up to and including 26.6, where a bare unquoted integer fed to a `DateTime64`
+Disabled by default: an unquoted number is a Unix timestamp in seconds (with optional sub-second precision),
+consistent with the `Values` format, `CAST` and `toDateTime64`. Enable it (or `SET compatibility = '26.6'`) to
+restore the behavior of versions up to and including 26.6, where a bare unquoted integer fed to a `DateTime64`
 column was interpreted as the raw scaled value (ticks).
 
-This setting governs only the `JSON`, `Values`/`Quoted` and `JSONExtract`/typed `JSON` paths. The `Quoted` path
-covers every format that parses fields with the `Quoted` escaping rule: besides the `Values` format, this includes
-`MySQLDump` and the `Template`/`CustomSeparated`/`Regexp` formats when they are configured with `Quoted` field
-escaping. The tab-separated,
-CSV and other escaped/whole-text input formats are not affected by it: there an unquoted `DateTime64` number
-keeps its existing interpretation, where a large value is read as ticks.
+This setting governs only the `JSON`, `Values`/`Quoted` and `JSONExtract`/typed `JSON` paths (the `Quoted` path
+covers every format parsing fields with the `Quoted` escaping rule: `Values`, `MySQLDump`, and
+`Template`/`CustomSeparated`/`Regexp` configured with `Quoted` field escaping). The tab-separated, CSV and other
+escaped/whole-text formats are unaffected: there a large unquoted `DateTime64` number is still read as ticks.
 )", 0) \
     DECLARE(Bool, input_format_ipv4_default_on_conversion_error, false, R"(
 Deserialization of IPv4 will use default values instead of throwing exception on conversion error.

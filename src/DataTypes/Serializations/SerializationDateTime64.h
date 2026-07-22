@@ -6,12 +6,6 @@
 namespace DB
 {
 
-/// Parses an unquoted number as a Unix timestamp (seconds since the epoch) with optional sub-second
-/// precision, scaled to the column scale: the shared conversion behind the JSON/Quoted text paths and
-/// the `JSONExtract` / typed-`JSON` DOM path. Parsing stops at the first character that is not part of
-/// the number. Returns false on a token without digits or when the value does not fit `DateTime64`.
-bool tryReadDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & istr);
-
 class SerializationDateTime64 final : public SerializationDecimalBase<DateTime64>, public TimezoneMixin
 {
 private:

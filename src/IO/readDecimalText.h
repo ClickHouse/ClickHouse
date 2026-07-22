@@ -18,10 +18,9 @@ namespace ErrorCodes
 /// Returns integer 'exponent' factor that x should be multiplied by to get correct Decimal value: result = x * 10^exponent.
 /// Use 'digits' input as max allowed meaning decimal digits in result. Place actual number of meaning digits in 'digits' output.
 /// Does not care about decimal scale, only about meaningful digits in decimal text representation.
-/// When 'has_digits' is provided, it is set to whether at least one digit character (including a leading or
-/// trailing zero) was read. This lets a caller with 'digits_only = false' tell a real number (including a
-/// bare zero, for which the meaningful 'digits' output is 0) apart from a token with no digits at all, such
-/// as ".", "-" or "e9", which is otherwise consumed as zero.
+/// When 'has_digits' is provided, it is set to whether at least one digit character was read. This lets a
+/// caller with 'digits_only = false' tell a real number (including a bare zero) apart from a token with no
+/// digits at all, such as ".", "-" or "e9", which is otherwise consumed as zero.
 template <bool _throw_on_error, typename T>
 inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exponent, bool digits_only = false, bool * has_digits = nullptr)
 {

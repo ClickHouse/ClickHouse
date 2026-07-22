@@ -2,7 +2,6 @@
 #include <DataTypes/Serializations/SerializationDateTime.h>
 
 #include <Columns/ColumnVector.h>
-#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeTime.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
@@ -10,7 +9,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
-#include <IO/readDecimalText.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -19,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
-extern const int CANNOT_PARSE_DATETIME;
 }
 
 UInt128 SerializationDateTime::getHash(const TimezoneMixin & time_zone_)
@@ -62,58 +59,6 @@ readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const D
     x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
 }
 
-/// An unquoted number in JSON or the Quoted format is a Unix timestamp (seconds since the epoch),
-/// e.g. `1703363853`, `1703363853.5` or `1.703363853e9`. It is parsed as a decimal value exactly like
-/// `DateTime64` (see `SerializationDateTime64.cpp`), but at scale 0: `DateTime` has whole-second
-/// resolution, so any sub-second part is truncated to whole seconds, matching `CAST`, `toDateTime` and
-/// the `Values` format. Using `readDecimalText` (instead of the previous `readIntText`) makes the
-/// fractional and exponent forms parse the same way they do for `DateTime64`, rather than leaving the
-/// `.`/`e...` suffix unread. As before, parsing stops at the first character that is not part of the
-/// number (e.g. the `,` or `}` that follows the value in JSON), and an out-of-range number is clamped
-/// to the `DateTime` range.
-constexpr UInt32 datetime_number_precision = DecimalUtils::max_precision<Decimal128>;
-
-/// The multiplication is bound-checked with truncating division rather than `common::mulOverflow`,
-/// which is a stub for big-int types that never reports overflow. The multiplier is a positive power
-/// of ten, so the product exceeds the upper bound iff `value > bound / multiplier`, and it is only
-/// computed when it cannot overflow; a value outside the `DateTime` range clamps to the nearest bound.
-inline time_t timestampNumberToSeconds(Int128 value, UInt32 unread_scale)
-{
-    static constexpr Int128 max_seconds = 0xFFFFFFFF;
-    if (value < 0)
-        return 0;
-    const Int128 multiplier = DecimalUtils::scaleMultiplier<Int128>(unread_scale);
-    if (value > max_seconds / multiplier)
-        return static_cast<time_t>(max_seconds);
-    return static_cast<time_t>(value * multiplier);
-}
-
-inline void readAsIntText(time_t & x, ReadBuffer & istr, bool read_as_raw)
-{
-    if (read_as_raw) /// Legacy: a whole number of seconds (no fractional/exponent forms).
-    {
-        /// Read into a 128-bit temporary with saturation rather than directly into `time_t`: `readIntText`
-        /// does not check for overflow, so a value beyond the `time_t` range (e.g. `18446744073709551615`)
-        /// would wrap around and then clamp to the wrong end, and a literal wider than `Int128` (39 or more
-        /// digits) would wrap modulo 2^128 even in a 128-bit temporary. The saturating read keeps the sign,
-        /// so the clamp to the `DateTime` range matches the default (non-raw) path, and this throwing path
-        /// stays consistent with `tryReadAsIntText`.
-        Int128 tmp = 0;
-        readIntText128Saturating(tmp, istr);
-        x = timestampNumberToSeconds(tmp, 0);
-        return;
-    }
-    Decimal128 tmp;
-    UInt32 unread_scale = 0;
-    /// `readDecimalText` with `digits_only = false` accepts a token with no digits at all, such as `.`, `-`
-    /// or `e9`, reading it as zero; such a malformed value must be rejected rather than stored as the epoch.
-    bool has_digits = false;
-    readDecimalText(istr, tmp, datetime_number_precision, unread_scale, /*digits_only=*/false, &has_digits);
-    if (!has_digits)
-        throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse a number for DateTime timestamp");
-    x = timestampNumberToSeconds(tmp.value, unread_scale);
-}
-
 inline bool tryReadText(
     time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
@@ -135,47 +80,6 @@ inline bool tryReadText(
     return res;
 }
 
-inline bool tryReadAsIntText(time_t & x, ReadBuffer & istr, bool read_as_raw)
-{
-    if (read_as_raw) /// Legacy: a whole number of seconds (no fractional/exponent forms).
-    {
-        /// Read into a 128-bit temporary with saturation and clamp, exactly like the throwing `readAsIntText`
-        /// above, so that an out-of-range integer clamps to the `DateTime` range in both paths instead of
-        /// `tryReadIntText` rejecting the value (which would make plain and `Nullable`/`Variant` columns
-        /// disagree on it) or a literal wider than `Int128` wrapping modulo 2^128.
-        Int128 tmp = 0;
-        if (!readIntText128Saturating<bool>(tmp, istr))
-            return false;
-        x = timestampNumberToSeconds(tmp, 0);
-        return true;
-    }
-    Decimal128 tmp;
-    UInt32 unread_scale = 0;
-    bool has_digits = false;
-    if (!readDecimalText<Decimal128, bool>(istr, tmp, datetime_number_precision, unread_scale, /*digits_only=*/false, &has_digits)
-        || !has_digits)
-        return false;
-    x = timestampNumberToSeconds(tmp.value, unread_scale);
-    return true;
-}
-
-}
-
-/// The number-parsing conversion for the seconds-based path, shared with the `JSONExtract` / typed-`JSON`
-/// DOM serializer (see `DateTimeNode` in `JSONExtractTree.cpp`). It is the non-raw branch of
-/// `tryReadAsIntText` above: the same `readDecimalText` reader and `timestampNumberToSeconds` range check,
-/// so the DOM path rejects a number that does not fit the reader's precision (e.g. `1e39`) instead of
-/// silently clamping it to the `DateTime` maximum, exactly as the row input serializer does.
-bool tryReadDateTimeAsNumber(time_t & x, ReadBuffer & istr)
-{
-    Decimal128 tmp;
-    UInt32 unread_scale = 0;
-    bool has_digits = false;
-    if (!readDecimalText<Decimal128, bool>(istr, tmp, datetime_number_precision, unread_scale, /*digits_only=*/false, &has_digits)
-        || !has_digits)
-        return false;
-    x = timestampNumberToSeconds(tmp.value, unread_scale);
-    return true;
 }
 
 SerializationDateTime::SerializationDateTime(const TimezoneMixin & time_zone_)
@@ -265,9 +169,13 @@ void SerializationDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer &
         readText(x, istr, settings, time_zone, utc_time_zone);
         assertChar('\'', istr);
     }
-    else /// Just 1504193808 or 01504193808
+    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
     {
-        readAsIntText(x, istr, settings.read_datetime_number_as_raw_value);
+        readDateTimeAsRawValue(x, istr);
+    }
+    else /// Just 1504193808 or 1703363853.5 (a Unix timestamp, possibly with a sub-second part)
+    {
+        readDateTimeAsNumber(x, istr);
     }
 
     /// It's important to do this at the end - for exception safety.
@@ -282,9 +190,14 @@ bool SerializationDateTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffe
         if (!tryReadText(x, istr, settings, time_zone, utc_time_zone) || !checkChar('\'', istr))
             return false;
     }
-    else /// Just 1504193808 or 01504193808
+    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
     {
-        if (!tryReadAsIntText(x, istr, settings.read_datetime_number_as_raw_value))
+        if (!tryReadDateTimeAsRawValue(x, istr))
+            return false;
+    }
+    else /// Just 1504193808 or 1703363853.5 (a Unix timestamp, possibly with a sub-second part)
+    {
+        if (!tryReadDateTimeAsNumber(x, istr))
             return false;
     }
 
@@ -309,9 +222,13 @@ void SerializationDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & i
         readText(x, istr, settings, time_zone, utc_time_zone);
         assertChar('"', istr);
     }
+    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
+    {
+        readDateTimeAsRawValue(x, istr);
+    }
     else
     {
-        readAsIntText(x, istr, settings.read_datetime_number_as_raw_value);
+        readDateTimeAsNumber(x, istr);
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
@@ -325,9 +242,14 @@ bool SerializationDateTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer 
         if (!tryReadText(x, istr, settings, time_zone, utc_time_zone) || !checkChar('"', istr))
             return false;
     }
+    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
+    {
+        if (!tryReadDateTimeAsRawValue(x, istr))
+            return false;
+    }
     else
     {
-        if (!tryReadAsIntText(x, istr, settings.read_datetime_number_as_raw_value))
+        if (!tryReadDateTimeAsNumber(x, istr))
             return false;
     }
 
