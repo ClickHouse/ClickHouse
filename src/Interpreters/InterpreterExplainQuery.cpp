@@ -469,6 +469,9 @@ struct QueryAnalyzeSettings
 
     constexpr static char name[] = "ANALYZE";
 
+    /// Collect per-processor work intervals during execution to report per-step and per-branch wall time.
+    bool branch_time = false;
+
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
         {"actions", query_plan_options.actions},
@@ -482,6 +485,7 @@ struct QueryAnalyzeSettings
         {"input_headers", query_plan_options.input_headers},
         {"column_structure", query_plan_options.column_structure},
         {"processors", query_plan_options.processors_profile},
+        {"branch_time", branch_time},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -749,6 +753,7 @@ struct InterpreterExplainQuery::AnalyzedInnerQuery
     bool ignore_limits = false;
     UInt64 planning_ns = 0;
     ExplainPlanOptions query_plan_options;
+    bool branch_time = false;
 };
 
 InterpreterExplainQuery::InterpreterExplainQuery(const ASTPtr & query_, ContextPtr context_, const SelectQueryOptions & options_)
@@ -796,7 +801,9 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
 
     auto result = std::make_unique<AnalyzedInnerQuery>();
 
-    result->query_plan_options = checkAndGetSettings<QueryAnalyzeSettings>(ast.getSettings()).query_plan_options;
+    const auto analyze_settings = checkAndGetSettings<QueryAnalyzeSettings>(ast.getSettings());
+    result->query_plan_options = analyze_settings.query_plan_options;
+    result->branch_time = analyze_settings.branch_time;
 
     Stopwatch watch;
     QueryTreeNodePtr query_tree;
@@ -1238,6 +1245,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             step_wall_clock_registry->populateFromPlan(plan);
             pipeline.setStepWallClockRegistry(std::move(step_wall_clock_registry));
 
+            pipeline.setCollectWorkIntervals(analyzed.branch_time);
+
             CompletedPipelineExecutor executor(pipeline);
 
             if (auto cancel_callback = getContext()->getInteractiveCancelCallback())
@@ -1265,7 +1274,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             UInt64 read_bytes  = analyze_thread_group->performance_counters[ProfileEvents::SelectedBytes];
             Int64  peak_memory = analyze_thread_group->memory_tracker.getPeak();
 
-            AnalyzeStepsStats steps_to_stats(pipeline, execute_ns);
+            AnalyzeStepsStats steps_to_stats(pipeline, plan, execute_ns);
 
             formatHeaderExplainAnalyze(total_time_ns, planning_ns, execute_ns, read_rows, read_bytes, peak_memory, buf);
 

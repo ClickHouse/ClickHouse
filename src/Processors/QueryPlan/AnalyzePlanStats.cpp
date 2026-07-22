@@ -179,7 +179,7 @@ void printStage(const AnalyzedStage & stage, bool label_stages, WriteBuffer & ou
 
 }
 
-AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 execution_query_time_ns_)
+AnalyzeStepsStats::AnalyzeStepsStats(QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_)
 : max_num_threads_per_query(pipeline.getNumThreads())
 , execution_query_time_ns(execution_query_time_ns_)
 {
@@ -188,6 +188,10 @@ AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 exec
     collectIOStats(processors);
     const auto elapsed_per_step_group = collectTimingStats(pipeline, processors);
     computeDistribution(elapsed_per_step_group);
+
+    /// Work intervals are collected only when EXPLAIN ANALYZE requests the `branch_time` setting.
+    if (const auto work_intervals = pipeline.takeWorkIntervals(); !work_intervals.empty())
+        interval_timings.emplace(work_intervals, plan);
 }
 
 void AnalyzeStepsStats::collectIOStats(const Processors & processors)
@@ -324,7 +328,15 @@ AnalyzedStepData AnalyzeStepsStats::analyzeStep(const IQueryPlanStep * step) con
     /// Use the service of a generator, which takes the context (e.g. i/o, total time)
     /// some internal raw metrics, which are specific for each step,  that
     /// with the knowledge of the step will pre-process the metrics before printing
-    return step_stats_generator(context_for_step, std::move(raw_report));
+    AnalyzedStepData result = step_stats_generator(context_for_step, std::move(raw_report));
+
+    if (interval_timings)
+    {
+        result.step_wall_time_ns = interval_timings->getStepTime(step);
+        result.branch_wall_time_ns = interval_timings->getBranchTime(step);
+    }
+
+    return result;
 }
 
 void AnalyzeStepsStats::renderStep(const AnalyzedStepData & report, WriteBuffer & out, const std::string & prefix, bool processors_info) const
@@ -337,6 +349,20 @@ void AnalyzeStepsStats::renderStep(const AnalyzedStepData & report, WriteBuffer 
     }
 
     printIOGroup(makeIOGroup(report.io), out, prefix);
+
+    if (report.step_wall_time_ns != 0 || report.branch_wall_time_ns != 0)
+    {
+        auto with_share = [&](UInt64 time_ns)
+        {
+            String result = formatReadableTime(static_cast<double>(time_ns));
+            if (execution_query_time_ns != 0)
+                result += fmt::format(" ({:.1f}%)", 100.0 * static_cast<double>(time_ns) / static_cast<double>(execution_query_time_ns));
+            return result;
+        };
+
+        out << prefix << "  Time: step " << with_share(report.step_wall_time_ns)
+            << " · branch " << with_share(report.branch_wall_time_ns) << "\n";
+    }
 
     for (const auto & stage : report.stages)
         printStage(stage, report.label_stages, out, prefix, processors_info);

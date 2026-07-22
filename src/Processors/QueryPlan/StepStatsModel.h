@@ -56,6 +56,8 @@ struct AnalyzedStepData
     StepAnalysisReport groups;
     AnalyzedStages stages;
     bool label_stages = false;
+    UInt64 step_wall_time_ns = 0;
+    UInt64 branch_wall_time_ns = 0;
 };
 
 struct StepStatsContext

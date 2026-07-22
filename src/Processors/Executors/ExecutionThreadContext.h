@@ -1,21 +1,12 @@
 #pragma once
 #include <Processors/Executors/ExecutingGraph.h>
+#include <Processors/Executors/WorkInterval.h>
 #include <Processors/StepWallClockRegistry.h>
 #include <queue>
 #include <condition_variable>
 
 namespace DB
 {
-
-
-struct WorkInterval
-{
-    UInt64 start_of_interval_ns;
-    UInt64 duration_of_interval_ns;
-    UInt64 processor_id;
-};
-
-using WorkIntervals = std::vector<WorkInterval>;
 
 class ReadProgressCallback;
 
