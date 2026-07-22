@@ -1325,10 +1325,14 @@ public:
     constexpr static auto EMPTY_PART_TMP_PREFIX = "tmp_empty_";
     /// `metadata_snapshot` must come from the source part being covered
     /// (via `IMergeTreeDataPart::getMetadataSnapshot`) so patch parts get patch-part metadata.
+    /// With `force_sync` the part's files and directory are fsync'd regardless of the (default-off)
+    /// `fsync_after_insert` / `fsync_part_directory` settings; used by destructive DDL (TRUNCATE /
+    /// DROP PARTITION / DROP PART) whose empty covering part is the only on-disk commit record and
+    /// must survive a power loss (see #111348).
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
         const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeTransactionPtr & txn) const;
+        const MergeTreeTransactionPtr & txn, bool force_sync = false) const;
 
     MergeTreeDataFormatVersion format_version;
 

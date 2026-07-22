@@ -13,6 +13,7 @@
 #include <Core/UUID.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/IDatabase.h>
+#include <Disks/IDisk.h>
 #include <Disks/supportWritingWithAppend.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/copyData.h>
@@ -2533,12 +2534,12 @@ static FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector &
 }
 
 static std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_guard>> createEmptyDataParts(
-    MergeTreeData & data, FutureNewEmptyParts & future_parts, const MergeTreeTransactionPtr & txn)
+    MergeTreeData & data, FutureNewEmptyParts & future_parts, const MergeTreeTransactionPtr & txn, bool force_sync = false)
 {
     std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_guard>> data_parts;
     for (auto & part: future_parts)
     {
-        auto [new_data_part, tmp_dir_holder] = data.createEmptyPart(part.part_info, part.partition, part.part_name, part.metadata_snapshot, txn);
+        auto [new_data_part, tmp_dir_holder] = data.createEmptyPart(part.part_info, part.partition, part.part_name, part.metadata_snapshot, txn, force_sync);
         data_parts.first.emplace_back(std::move(new_data_part));
         data_parts.second.emplace_back(std::move(tmp_dir_holder));
     }
@@ -2546,7 +2547,7 @@ static std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_gua
 }
 
 
-void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction)
+void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction, bool force_sync)
 {
     DataPartsVector covered_parts;
     size_t next_part_index = 0;
@@ -2596,6 +2597,25 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
     transaction.renameParts();
     transaction.commit();
 
+    /// Sync the parent table directory: renameParts() changed its entries, and only fsync'ing the
+    /// parent (not the child part dir) makes the renames durable. Done after commit() so a failed
+    /// DDL that rolled back does not get its partial renames force-synced during exception unwinding.
+    /// No-op on disks without directory sync support (e.g. object storage returns nullptr).
+    if (force_sync)
+    {
+        std::unordered_set<String> synced_disks;
+        auto policy = getStoragePolicy();
+        for (const auto & part : new_parts)
+        {
+            const String & disk_name = part->getDataPartStorage().getDiskName();
+            if (!synced_disks.insert(disk_name).second)
+                continue;
+            /// Opening and immediately dropping the guard fdatasyncs the parent table directory.
+            if (SyncGuardPtr guard = policy->getDiskByName(disk_name)->getDirectorySyncGuard(relative_data_path))
+                guard.reset();
+        }
+    }
+
     /// Remove covered parts without waiting for old_parts_lifetime seconds.
     for (auto & part: covered_parts)
         part->remove_time.store(0, std::memory_order_relaxed);
@@ -2641,8 +2661,8 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
                      fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames(parts), ", "),
                      transaction.getTID());
 
-            auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
-            renameAndCommitEmptyParts(new_data_parts, transaction);
+            auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn, /*force_sync=*/true);
+            renameAndCommitEmptyParts(new_data_parts, transaction, /*force_sync=*/true);
 
             PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -2713,8 +2733,12 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
                          fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames({part}), ", "),
                          transaction.getTID());
 
-                auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
-                renameAndCommitEmptyParts(new_data_parts, transaction);
+                /// For DROP (not DETACH) force the covering part durable so the deletion survives a
+                /// power loss; a DETACH must not, since the detached clone is not synced here and
+                /// making only the removal durable could lose the detached copy (#111348).
+                const bool force_sync = !detach;
+                auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn, force_sync);
+                renameAndCommitEmptyParts(new_data_parts, transaction, force_sync);
 
                 PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -2833,8 +2857,10 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                      transaction.getTID());
 
 
-            auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
-            renameAndCommitEmptyParts(new_data_parts, transaction);
+            /// See DROP PART above: force durability for DROP, not for DETACH (#111348).
+            const bool force_sync = !detach;
+            auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn, force_sync);
+            renameAndCommitEmptyParts(new_data_parts, transaction, force_sync);
 
             PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 

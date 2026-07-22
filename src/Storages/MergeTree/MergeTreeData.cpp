@@ -11498,7 +11498,7 @@ void MergeTreeData::incrementMergedPartsProfileEvent(MergeTreeDataPartType type)
 
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition, const String & new_part_name,
-        const StorageMetadataPtr & metadata_snapshot, const MergeTreeTransactionPtr & txn) const
+        const StorageMetadataPtr & metadata_snapshot, const MergeTreeTransactionPtr & txn, bool force_sync) const
 {
     auto settings = getSettings();
 
@@ -11577,7 +11577,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
 
     new_data_part_storage->createDirectories();
 
-    if ((*getSettings())[MergeTreeSetting::fsync_part_directory])
+    if (force_sync || (*getSettings())[MergeTreeSetting::fsync_part_directory])
         sync_guard = new_data_part_storage->getDirectorySyncGuard();
 
     /// An empty part has zero size, so this chooses the minimal compression method:
@@ -11607,7 +11607,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         /*write_settings=*/{},
         /*written_offset_substreams=*/nullptr);
 
-    bool sync_on_insert = (*settings)[MergeTreeSetting::fsync_after_insert];
+    bool sync_on_insert = force_sync || (*settings)[MergeTreeSetting::fsync_after_insert];
 
     out.write(block);
     /// Here is no projections as no data inside
