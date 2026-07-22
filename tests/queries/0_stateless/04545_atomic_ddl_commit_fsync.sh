@@ -55,7 +55,24 @@ rename_id="rename_${tag}"
 exchange_id="exchange_${tag}"
 drop_id="drop_${tag}"
 undrop_id="undrop_${tag}"
-nofsync_id="nofsync_${tag}"
+# Cross-database RENAME syncs two distinct directories (source db + target db).
+rename_xdb_id="rename_xdb_${tag}"
+# Database-level metadata commits are the same durability class (#111348).
+create_db_id="create_db_${tag}"
+rename_db_id="rename_db_${tag}"
+altercomment_db_id="altercomment_db_${tag}"
+drop_db_id="drop_db_${tag}"
+# Negative path: every commit rename/unlink is gated on fsync_metadata; with it off none may sync.
+# Cover one query from each INDEPENDENT gate so making any single gate unconditional fails here.
+nofsync_drop_id="nofsync_drop_${tag}"
+nofsync_create_id="nofsync_create_${tag}"
+nofsync_rename_id="nofsync_rename_${tag}"
+nofsync_alter_id="nofsync_alter_${tag}"
+nofsync_undrop_id="nofsync_undrop_${tag}"
+nofsync_createdb_id="nofsync_createdb_${tag}"
+nofsync_altercommentdb_id="nofsync_altercommentdb_${tag}"
+nofsync_renamedb_id="nofsync_renamedb_${tag}"
+nofsync_dropdb_id="nofsync_dropdb_${tag}"
 
 $CLICKHOUSE_CLIENT -m -q "
     drop table if exists t_${tag} sync;
@@ -63,6 +80,13 @@ $CLICKHOUSE_CLIENT -m -q "
     drop table if exists a_${tag} sync;
     drop table if exists b_${tag} sync;
     drop table if exists c_${tag} sync;
+    drop table if exists c2_${tag} sync;
+    drop database if exists db_${tag} sync;
+    drop database if exists db2_${tag} sync;
+    drop database if exists db3_${tag} sync;
+    drop database if exists db4_${tag} sync;
+    drop database if exists dbsrc_${tag} sync;
+    drop table if exists x_${tag} sync;
 "
 
 # CREATE: the .sql content is already fsynced by the writer; the tmp -> .sql commit
@@ -97,26 +121,98 @@ $CLICKHOUSE_CLIENT --query_id "$drop_id" --fsync_metadata 1 \
 $CLICKHOUSE_CLIENT --query_id "$undrop_id" --fsync_metadata 1 -q \
     "undrop table t2_${tag}"
 
-check_ge "$create_id"   1 "CREATE"   || exit 2
-check_ge "$alter_id"    1 "ALTER"    || exit 3
-check_ge "$rename_id"   1 "RENAME"   || exit 4
-check_ge "$exchange_id" 1 "EXCHANGE" || exit 5
-check_ge "$drop_id"     3 "DROP"     || exit 6
-check_ge "$undrop_id"   2 "UNDROP"   || exit 7
+# Database-level metadata commits are renames of the `<db>.sql` file, the same durability class.
+# CREATE DATABASE: the tmp -> `<db>.sql` commit rename must sync its (single) directory.
+$CLICKHOUSE_CLIENT --query_id "$create_db_id" --fsync_metadata 1 -q \
+    "create database db_${tag} engine=Atomic"
+# ALTER DATABASE MODIFY COMMENT: commits a metadata update via a tmp -> `<db>.sql` replace.
+$CLICKHOUSE_CLIENT --query_id "$altercomment_db_id" --fsync_metadata 1 -q \
+    "alter database db_${tag} modify comment 'c'"
+# RENAME DATABASE: `<db>.sql` moves within the metadata directory (single directory).
+$CLICKHOUSE_CLIENT --query_id "$rename_db_id" --fsync_metadata 1 -q \
+    "rename database db_${tag} to db2_${tag}"
+# DROP DATABASE: the `<db>.sql` unlink is the on-disk commit; its directory must be synced.
+$CLICKHOUSE_CLIENT --query_id "$drop_db_id" --fsync_metadata 1 -q \
+    "drop database db2_${tag} sync"
+# Cross-database RENAME: source and target live in different database metadata directories, so
+# both must be synced (>= 2). Guards against a regression that syncs only the source directory.
+$CLICKHOUSE_CLIENT -m -q "
+    create database dbsrc_${tag} engine=Atomic;
+    create table dbsrc_${tag}.x (id UInt64) engine=MergeTree order by id;
+"
+$CLICKHOUSE_CLIENT --query_id "$rename_xdb_id" --fsync_metadata 1 -q \
+    "rename table dbsrc_${tag}.x to ${CLICKHOUSE_DATABASE}.x_${tag}"
 
-# The commit rename must NOT be forced to sync when fsync_metadata = 0.
-$CLICKHOUSE_CLIENT -q "create table c_${tag} (id UInt64) engine=MergeTree order by id"
-$CLICKHOUSE_CLIENT --query_id "$nofsync_id" --fsync_metadata 0 -q "drop table c_${tag}"
-nofsync_dir_sync=$(directory_sync "$nofsync_id")
-if [[ "$nofsync_dir_sync" != "0" ]]; then
-    echo "fsync_metadata=0 not honored on DROP: DirectorySync=$nofsync_dir_sync" >&2
-    exit 8
-fi
+check_ge "$create_id"          1 "CREATE"            || exit 2
+check_ge "$alter_id"           1 "ALTER"             || exit 3
+check_ge "$rename_id"          1 "RENAME"            || exit 4
+check_ge "$exchange_id"        1 "EXCHANGE"          || exit 5
+check_ge "$drop_id"            3 "DROP"              || exit 6
+check_ge "$undrop_id"          2 "UNDROP"            || exit 7
+check_ge "$create_db_id"       1 "CREATE DATABASE"   || exit 9
+check_ge "$altercomment_db_id" 1 "ALTER DATABASE"    || exit 10
+check_ge "$rename_db_id"       1 "RENAME DATABASE"   || exit 11
+check_ge "$drop_db_id"         1 "DROP DATABASE"     || exit 16
+check_ge "$rename_xdb_id"      2 "RENAME CROSS-DB"   || exit 21
+
+# Every commit rename above is gated on fsync_metadata; with it off none of them must force a
+# directory sync. Cover a representative rename from each guarded family (not just DROP) so that
+# silently dropping any one of the `if (fsync_metadata)` gates later fails this test.
+check_nofsync() {
+    local query_id="$1" what="$2"
+    local got
+    got=$(directory_sync "$query_id")
+    if [[ "$got" != "0" ]]; then
+        echo "fsync_metadata=0 not honored on $what: DirectorySync=$got" >&2
+        return 1
+    fi
+    return 0
+}
+
+# Table-metadata gates: CREATE, ALTER, RENAME, DROP, UNDROP.
+$CLICKHOUSE_CLIENT --query_id "$nofsync_create_id" --fsync_metadata 0 -q \
+    "create table c_${tag} (id UInt64) engine=MergeTree order by id"
+$CLICKHOUSE_CLIENT --query_id "$nofsync_alter_id" --fsync_metadata 0 -q \
+    "alter table c_${tag} add column s String"
+$CLICKHOUSE_CLIENT --query_id "$nofsync_rename_id" --fsync_metadata 0 -q \
+    "rename table c_${tag} to c2_${tag}"
+$CLICKHOUSE_CLIENT --query_id "$nofsync_drop_id" --fsync_metadata 0 \
+    --database_atomic_wait_for_drop_and_detach_synchronously 0 -q \
+    "drop table c2_${tag}"
+$CLICKHOUSE_CLIENT --query_id "$nofsync_undrop_id" --fsync_metadata 0 -q \
+    "undrop table c2_${tag}"
+# Database-metadata gates: CREATE, ALTER COMMENT, RENAME, DROP DATABASE. These commit via the
+# database-catalog metadata-update / rename / unlink paths, which historically read the global
+# setting -- assert each honors the query-level fsync_metadata.
+$CLICKHOUSE_CLIENT --query_id "$nofsync_createdb_id" --fsync_metadata 0 -q \
+    "create database db3_${tag} engine=Atomic"
+$CLICKHOUSE_CLIENT --query_id "$nofsync_altercommentdb_id" --fsync_metadata 0 -q \
+    "alter database db3_${tag} modify comment 'c'"
+$CLICKHOUSE_CLIENT --query_id "$nofsync_renamedb_id" --fsync_metadata 0 -q \
+    "rename database db3_${tag} to db4_${tag}"
+$CLICKHOUSE_CLIENT --query_id "$nofsync_dropdb_id" --fsync_metadata 0 -q \
+    "drop database db4_${tag} sync"
+
+check_nofsync "$nofsync_create_id"         "CREATE"                 || exit 12
+check_nofsync "$nofsync_alter_id"          "ALTER"                  || exit 17
+check_nofsync "$nofsync_rename_id"         "RENAME"                 || exit 13
+check_nofsync "$nofsync_drop_id"           "DROP"                   || exit 8
+check_nofsync "$nofsync_undrop_id"         "UNDROP"                 || exit 18
+check_nofsync "$nofsync_createdb_id"       "CREATE DATABASE"        || exit 14
+check_nofsync "$nofsync_altercommentdb_id" "ALTER DATABASE COMMENT" || exit 15
+check_nofsync "$nofsync_renamedb_id"       "RENAME DATABASE"        || exit 19
+check_nofsync "$nofsync_dropdb_id"         "DROP DATABASE"          || exit 20
 
 $CLICKHOUSE_CLIENT -m -q "
     drop table if exists t2_${tag} sync;
     drop table if exists a_${tag} sync;
     drop table if exists b_${tag} sync;
+    drop table if exists c2_${tag} sync;
+    drop database if exists db2_${tag} sync;
+    drop database if exists db3_${tag} sync;
+    drop database if exists db4_${tag} sync;
+    drop database if exists dbsrc_${tag} sync;
+    drop table if exists x_${tag} sync;
 "
 
 echo "OK"

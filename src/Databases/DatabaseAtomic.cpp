@@ -836,6 +836,12 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     auto old_metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name);
     auto new_metadata_file_path = DatabaseCatalog::getMetadataFilePath(new_name);
     auto default_db_disk = getContext()->getDatabaseDisk();
+    /// Makes the `<db>.sql` rename below durable (#111348). Same-name-space source and target
+    /// dedup to a single guard.
+    std::vector<SyncGuardPtr> db_dir_sync_guards;
+    if (query_context->getSettingsRef()[Setting::fsync_metadata])
+        db_dir_sync_guards = makeDirectorySyncGuards(
+            default_db_disk, {parentDir(old_metadata_file_path), parentDir(new_metadata_file_path)});
     default_db_disk->moveFile(old_metadata_file_path, new_metadata_file_path);
 
     String old_path_to_table_symlinks;

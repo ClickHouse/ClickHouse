@@ -727,6 +727,32 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             throw;
         }
     }
+    /// Databases managed by Shared Catalog keep no metadata on disk.
+    /// Skip the removal to avoid a needless metadata-disk transaction that could fail.
+#if CLICKHOUSE_CLOUD
+    const bool managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(db->getEngineName());
+#else
+    const bool managed_by_shared_catalog = false;
+#endif
+
+    /// Makes the `<db>.sql` unlink below durable (#111348). Must be opened here, before the
+    /// destructive shutdown()/drop() (which for DatabaseReplicated already drops Keeper metadata),
+    /// so a directory-open failure can still reattach; the guard fsyncs on scope exit.
+    SyncGuardPtr metadata_dir_sync_guard;
+    if (drop && !managed_by_shared_catalog && local_context->getSettingsRef()[Setting::fsync_metadata])
+    {
+        try
+        {
+            metadata_dir_sync_guard
+                = getContext()->getDatabaseDisk()->getDirectorySyncGuard(getMetadataFilePath(database_name).parent_path().string());
+        }
+        catch (...)
+        {
+            attachDatabase(database_name, db);
+            throw;
+        }
+    }
+
     db->shutdown();
 
     if (drop)
@@ -744,14 +770,6 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             attachDatabase(database_name, db);
             throw;
         }
-
-        /// Databases managed by Shared Catalog keep no metadata on disk.
-        /// Skip the removal to avoid a needless metadata-disk transaction that could fail.
-#if CLICKHOUSE_CLOUD
-        const bool managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(db->getEngineName());
-#else
-        const bool managed_by_shared_catalog = false;
-#endif
 
         if (!managed_by_shared_catalog)
         {
@@ -819,7 +837,7 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
     }
 }
 
-void DatabaseCatalog::updateMetadataFile(const String & database_name, const ASTPtr & create_query)
+void DatabaseCatalog::updateMetadataFile(const String & database_name, const ASTPtr & create_query, ContextPtr query_context)
 {
     std::lock_guard lock{databases_mutex};
     if (!create_query)
@@ -837,15 +855,20 @@ void DatabaseCatalog::updateMetadataFile(const String & database_name, const AST
     auto metadata_file_path = getMetadataFilePath(database_name);
     auto metadata_tmp_file_path = getMetadataTmpFilePath(database_name);
     auto default_db_disk = getContext()->getDatabaseDisk();
+    const bool fsync_metadata = query_context->getSettingsRef()[Setting::fsync_metadata];
 
     writeMetadataFile(
         default_db_disk,
         /*file_path=*/metadata_tmp_file_path,
         /*content=*/statement,
-        getContext()->getSettingsRef()[Setting::fsync_metadata]);
+        fsync_metadata);
 
     try
     {
+        /// Makes the metadata replace below durable (#111348). tmp and final share one directory.
+        SyncGuardPtr metadata_dir_sync_guard;
+        if (fsync_metadata)
+            metadata_dir_sync_guard = default_db_disk->getDirectorySyncGuard(metadata_file_path.parent_path().string());
         /// rename atomically replaces the old file with the new one.
         default_db_disk->replaceFile(metadata_tmp_file_path, metadata_file_path);
     }
