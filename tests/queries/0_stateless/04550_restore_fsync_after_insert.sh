@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-object-storage, no-random-merge-tree-settings, no-replicated-database, no-shared-merge-tree
+# Tags: no-fasttest, no-object-storage, no-random-merge-tree-settings, no-replicated-database, no-shared-merge-tree
+# no-fasttest: the encrypted case below needs the encrypted disk type, which is built only with SSL.
 # no-object-storage: object storage does not fsync file contents (the fix is gated on !isRemote()).
 # no-random-merge-tree-settings: the test asserts on FileSync counts, which depend on the part layout.
 # no-replicated-database, no-shared-merge-tree: the encrypted case below pins a custom local disk.
