@@ -1,8 +1,11 @@
 #include <Storages/TTLDescription.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Settings.h>
@@ -26,7 +29,11 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -78,6 +85,192 @@ TTLAggregateDescription & TTLAggregateDescription::operator=(const TTLAggregateD
 namespace
 {
 
+/// The product of alternative counts probed for one function node is bounded to keep CREATE TABLE cheap.
+/// A TTL whose validation needs more joint probes than this is rejected as suspicious (fail closed) rather
+/// than partially checked; `allow_suspicious_ttl_expressions` remains the escape hatch.
+constexpr size_t max_probe_combinations = 256;
+
+[[noreturn]] void throwTooManyProbeCombinations(std::string_view expression_kind)
+{
+    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
+        "TTL {}expression uses a function over Variant/Dynamic arguments with too many combinations "
+        "of AggregateFunction alternatives to validate ({} probes at most are allowed). "
+        "Use typed subcolumns instead, or set `allow_suspicious_ttl_expressions` to allow it",
+        expression_kind, max_probe_combinations);
+}
+
+/// Build the list of single-row "suspect" materializations of `type` for the DDL-time TTL probe. Each
+/// returned column is one combination of payloads stored inside the `Variant`/`Dynamic` carriers found in
+/// the type; the consumer must survive every one of them. An empty list means the type contains no carrier
+/// in scope of the check, so the default value is representative and no extra probes are needed.
+///
+/// The carriers do not have to be the argument's top-level type: a consumer over `Array(Dynamic)` or
+/// `Tuple(UInt32, Variant(...))` builds fine (the container's default value is empty/NULL, so the nested
+/// consumer never runs) yet still rebuilds its inner functions per stored payload during TTL execution.
+/// So the materialization recurses through `Array`/`Tuple`/`Map` (and `Variant` alternatives), wrapping
+/// each nested payload back into a single-row container column.
+std::vector<ColumnPtr> collectSuspectMaterializations(const DataTypePtr & type, std::string_view expression_kind)
+{
+    WhichDataType which(type);
+
+    if (which.isDynamic())
+    {
+        /// A `Dynamic` can store any type, so probing a single representative payload is not enough:
+        /// a consumer that happens to accept an AggregateFunction state can still throw on other
+        /// legal payloads (e.g. `finalizeAggregation(dyn)` accepts the state but rejects `UInt64` /
+        /// `String`). Probe a small representative set instead - the AggregateFunction state that
+        /// brings the column into scope, plus a numeric and a string payload - so only a genuinely
+        /// type-agnostic consumer survives every probe. The state goes first so that a consumer failing
+        /// on it gets the aggregate-specific error message.
+        static const std::vector<String> representative_type_names =
+            {"AggregateFunction(max, UInt64)", "UInt64", "String"};
+
+        std::vector<ColumnPtr> payloads;
+        payloads.reserve(representative_type_names.size());
+        for (const auto & type_name : representative_type_names)
+        {
+            auto payload_type = DataTypeFactory::instance().get(type_name);
+            ColumnPtr payload = payload_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+
+            auto dynamic_column = type->createColumn();
+            auto & dynamic = assert_cast<ColumnDynamic &>(*dynamic_column);
+            if (dynamic.addNewVariant(payload_type))
+            {
+                auto discr = dynamic.getVariantInfo().variant_name_to_discriminator.at(payload_type->getName());
+                dynamic.getVariantColumn().insertIntoVariantFrom(discr, *payload, 0);
+            }
+            else
+            {
+                /// The type cannot hold new variants (e.g. `Dynamic(max_types=0)`), so values are
+                /// stored in the shared variant - probe through it as well.
+                dynamic.insertValueIntoSharedVariant(*payload, payload_type, payload_type->getName(), 0);
+            }
+            payloads.push_back(std::move(dynamic_column));
+        }
+        return payloads;
+    }
+
+    if (which.isVariant())
+    {
+        const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
+        const auto & variant_types = variant_type.getVariants();
+
+        /// Only a `Variant` that can actually carry an AggregateFunction state (directly, or through a
+        /// nested carrier inside an alternative) is in scope of this check. But once such a `Variant` is a
+        /// consumer's argument, *every* alternative must be probed, not only the aggregate-carrying ones:
+        /// a state-aware consumer can accept the AggregateFunction branch and still throw
+        /// `ILLEGAL_TYPE_OF_ARGUMENT` on a sibling alternative that a later row happens to store. For
+        /// example `finalizeAggregation(v)` with `v Variant(AggregateFunction(max, UInt32), UInt32)`
+        /// succeeds on the state branch but throws on a row storing the `UInt32` alternative during TTL
+        /// execution. Probing only the aggregate alternative would wrongly accept it.
+        std::vector<std::vector<ColumnPtr>> alternative_payloads(variant_types.size());
+        bool has_suspect_alternative = false;
+        for (size_t discr = 0; discr < variant_types.size(); ++discr)
+        {
+            if (hasAggregateFunctionType(variant_types[discr]))
+                has_suspect_alternative = true;
+            alternative_payloads[discr] = collectSuspectMaterializations(variant_types[discr], expression_kind);
+            if (!alternative_payloads[discr].empty())
+                has_suspect_alternative = true;
+        }
+
+        if (!has_suspect_alternative)
+            return {};
+
+        std::vector<ColumnPtr> result;
+        for (size_t discr = 0; discr < variant_types.size(); ++discr)
+        {
+            auto & payloads = alternative_payloads[discr];
+            if (payloads.empty())
+                payloads.push_back(variant_types[discr]->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst());
+
+            for (const auto & payload : payloads)
+            {
+                auto variant_column = variant_type.createColumn();
+                assert_cast<ColumnVariant &>(*variant_column).insertIntoVariantFrom(
+                    static_cast<ColumnVariant::Discriminator>(discr), *payload, 0);
+                result.push_back(std::move(variant_column));
+            }
+            if (result.size() > max_probe_combinations)
+                throwTooManyProbeCombinations(expression_kind);
+        }
+        return result;
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        auto nested = collectSuspectMaterializations(array_type->getNestedType(), expression_kind);
+        std::vector<ColumnPtr> result;
+        result.reserve(nested.size());
+        for (const auto & payload : nested)
+        {
+            auto offsets = ColumnArray::ColumnOffsets::create();
+            offsets->getData().push_back(1);
+            result.push_back(ColumnArray::create(IColumn::mutate(payload), std::move(offsets)));
+        }
+        return result;
+    }
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        const auto & element_types = tuple_type->getElements();
+        std::vector<std::vector<ColumnPtr>> element_payloads(element_types.size());
+        bool has_suspect_element = false;
+        size_t total_combinations = 1;
+        for (size_t i = 0; i < element_types.size(); ++i)
+        {
+            element_payloads[i] = collectSuspectMaterializations(element_types[i], expression_kind);
+            if (element_payloads[i].empty())
+                element_payloads[i].push_back(element_types[i]->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst());
+            else
+                has_suspect_element = true;
+
+            total_combinations *= element_payloads[i].size();
+            if (total_combinations > max_probe_combinations)
+                throwTooManyProbeCombinations(expression_kind);
+        }
+
+        if (!has_suspect_element)
+            return {};
+
+        /// The cartesian product of the element materializations, by a mixed-radix counter.
+        std::vector<ColumnPtr> result;
+        result.reserve(total_combinations);
+        std::vector<size_t> selection(element_types.size(), 0);
+        while (true)
+        {
+            Columns elements(element_types.size());
+            for (size_t i = 0; i < element_types.size(); ++i)
+                elements[i] = element_payloads[i][selection[i]];
+            result.push_back(ColumnTuple::create(std::move(elements)));
+
+            size_t i = 0;
+            while (i < selection.size() && ++selection[i] == element_payloads[i].size())
+            {
+                selection[i] = 0;
+                ++i;
+            }
+            if (i == selection.size())
+                break;
+        }
+        return result;
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        /// A Map is stored as Array(Tuple(key, value)); reuse the Array/Tuple materializations and wrap
+        /// them back into a Map column.
+        auto nested = collectSuspectMaterializations(map_type->getNestedType(), expression_kind);
+        std::vector<ColumnPtr> result;
+        result.reserve(nested.size());
+        for (const auto & payload : nested)
+            result.push_back(ColumnMap::create(IColumn::mutate(payload)));
+        return result;
+    }
+
+    return {};
+}
+
 /// Reject TTL expressions that feed an AggregateFunction state into a function which cannot consume it
 /// (e.g. `toDateTime(state)`), while still accepting state-aware functions like `finalizeAggregation`.
 ///
@@ -111,6 +304,13 @@ namespace
 /// legal payloads, is rejected here rather than at execution time. Such a TTL is one inserted row
 /// away from breaking every merge of the table, so rejecting it at CREATE is the safer default; the
 /// `allow_suspicious_ttl_expressions` setting and ATTACH remain available as escape hatches.
+///
+/// Both carriers can also sit *inside* a container argument - `Array(Dynamic)`, `Tuple(Dynamic)`,
+/// `Map(String, Dynamic)`, or a `Variant` nested in any of them. The container's default value is empty
+/// (or NULL), so a consumer that processes the elements (e.g. the `equals` built inside `arrayRemove`)
+/// never sees a payload during a default-value probe, yet still rebuilds per stored payload during TTL
+/// execution. The suspect materializations therefore recurse through the container types and wrap each
+/// nested payload back into a single-row container column.
 void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::string_view expression_kind)
 {
     for (const auto & node : actions_dag.getNodes())
@@ -135,7 +335,7 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
             if (hasAggregateFunctionType(child->result_type))
                 consumes_aggregate_state = true;
 
-            if (WhichDataType(child->result_type).isDynamic())
+            if (hasDynamicType(child->result_type))
                 has_dynamic_argument = true;
 
             /// A lambda argument cannot be materialized into a column; the higher-order function that
@@ -192,9 +392,9 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
         /// A state hidden inside a `Variant` or `Dynamic` argument is not covered by the default values:
         /// the default row of both carriers is NULL, so their function adaptors short-circuit and the
         /// consumer never sees the state. Collect a per-argument list of "suspect" materializations - for a
-        /// `Variant` argument a single-row column per AggregateFunction alternative, for a `Dynamic`
-        /// argument a single-row column carrying a representative synthetic state (the stored types cannot
-        /// be enumerated at DDL time; see the note above the function).
+        /// `Variant` a single-row column per alternative, for a `Dynamic` a single-row column per
+        /// representative payload, recursing through `Array`/`Tuple`/`Map` wrappers (the stored types of a
+        /// `Dynamic` cannot be enumerated at DDL time; see `collectSuspectMaterializations`).
         ///
         /// All suspect arguments must then be materialized in the same probe: substituting them one at a
         /// time would leave the other carriers at their all-NULL defaults, letting the adaptor short-circuit
@@ -206,102 +406,25 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
         bool has_dynamic_suspect = false;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            if (WhichDataType(arguments[i].type).isVariant())
-            {
-                const auto & variant_type = assert_cast<const DataTypeVariant &>(*arguments[i].type);
-                const auto & variant_types = variant_type.getVariants();
+            auto materializations = collectSuspectMaterializations(arguments[i].type, expression_kind);
+            if (materializations.empty())
+                continue;
 
-                /// Only a `Variant` that can actually carry an AggregateFunction state is in scope of this
-                /// check. But once such a `Variant` is a consumer's argument, *every* alternative must be
-                /// probed, not only the aggregate-carrying ones: a state-aware consumer can accept the
-                /// AggregateFunction branch and still throw `ILLEGAL_TYPE_OF_ARGUMENT` on a sibling
-                /// alternative that a later row happens to store. For example `finalizeAggregation(v)` with
-                /// `v Variant(AggregateFunction(max, UInt32), UInt32)` succeeds on the state branch but
-                /// throws on a row storing the `UInt32` alternative during TTL execution. Probing only the
-                /// aggregate alternative would wrongly accept it.
-                bool has_aggregate_alternative = false;
-                for (const auto & alternative_type : variant_types)
-                {
-                    if (hasAggregateFunctionType(alternative_type))
-                    {
-                        has_aggregate_alternative = true;
-                        break;
-                    }
-                }
-
-                if (!has_aggregate_alternative)
-                    continue;
-
-                std::vector<ColumnPtr> alternatives;
-                for (size_t discr = 0; discr < variant_types.size(); ++discr)
-                {
-                    auto variant_column = variant_type.createColumn();
-                    ColumnPtr alternative = variant_types[discr]->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
-                    assert_cast<ColumnVariant &>(*variant_column).insertIntoVariantFrom(
-                        static_cast<ColumnVariant::Discriminator>(discr), *alternative, 0);
-                    alternatives.push_back(std::move(variant_column));
-                }
-
-                suspect_indexes.push_back(i);
-                suspect_columns.push_back(std::move(alternatives));
-            }
-            else if (WhichDataType(arguments[i].type).isDynamic())
-            {
-                /// A `Dynamic` can store any type, so probing a single representative payload is not enough:
-                /// a consumer that happens to accept an AggregateFunction state can still throw on other
-                /// legal payloads (e.g. `finalizeAggregation(dyn)` accepts the state but rejects `UInt64` /
-                /// `String`). Probe a small representative set instead - the AggregateFunction state that
-                /// brings the column into scope, plus a numeric and a string payload - so only a genuinely
-                /// type-agnostic consumer survives every probe.
-                static const std::vector<String> representative_type_names =
-                    {"AggregateFunction(max, UInt64)", "UInt64", "String"};
-
-                std::vector<ColumnPtr> payloads;
-                payloads.reserve(representative_type_names.size());
-                for (const auto & type_name : representative_type_names)
-                {
-                    auto payload_type = DataTypeFactory::instance().get(type_name);
-                    ColumnPtr payload = payload_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
-
-                    auto dynamic_column = arguments[i].type->createColumn();
-                    auto & dynamic = assert_cast<ColumnDynamic &>(*dynamic_column);
-                    if (dynamic.addNewVariant(payload_type))
-                    {
-                        auto discr = dynamic.getVariantInfo().variant_name_to_discriminator.at(payload_type->getName());
-                        dynamic.getVariantColumn().insertIntoVariantFrom(discr, *payload, 0);
-                    }
-                    else
-                    {
-                        /// The type cannot hold new variants (e.g. `Dynamic(max_types=0)`), so values are
-                        /// stored in the shared variant - probe through it as well.
-                        dynamic.insertValueIntoSharedVariant(*payload, payload_type, payload_type->getName(), 0);
-                    }
-                    payloads.push_back(std::move(dynamic_column));
-                }
-
-                suspect_indexes.push_back(i);
-                suspect_columns.push_back(std::move(payloads));
+            suspect_indexes.push_back(i);
+            suspect_columns.push_back(std::move(materializations));
+            if (hasDynamicType(arguments[i].type))
                 has_dynamic_suspect = true;
-            }
         }
 
         if (suspect_indexes.empty())
             continue;
 
-        /// The product of alternative counts is bounded to keep CREATE TABLE cheap. A TTL whose validation
-        /// needs more joint probes than this is rejected as suspicious (fail closed) rather than partially
-        /// checked; `allow_suspicious_ttl_expressions` remains the escape hatch.
-        constexpr size_t max_probe_combinations = 256;
         size_t total_combinations = 1;
         for (const auto & columns : suspect_columns)
         {
             total_combinations *= columns.size();
             if (total_combinations > max_probe_combinations)
-                throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
-                    "TTL {}expression uses a function over Variant/Dynamic arguments with too many combinations "
-                    "of AggregateFunction alternatives to validate ({} probes at most are allowed). "
-                    "Use typed subcolumns instead, or set `allow_suspicious_ttl_expressions` to allow it",
-                    expression_kind, max_probe_combinations);
+                throwTooManyProbeCombinations(expression_kind);
         }
 
         std::vector<size_t> selection(suspect_indexes.size(), 0);
