@@ -44,6 +44,7 @@ import shlex
 import shutil
 import sys
 import tempfile
+import time
 from contextlib import contextmanager
 from copy import copy
 from pathlib import Path
@@ -507,6 +508,42 @@ class ReleaseInfo:
         # per release, so the branch name is too.
         return f"auto/version-bump-{self.release_tag}"
 
+    def merge_release_version_bump_pr(self, pr_number: int) -> None:
+        # Release branches have no merge queue (unlike master, which the
+        # changelog PRs enqueue into), so the version-bump PR cannot be
+        # enqueued -- merge it directly. The "Merge only for releases" ruleset
+        # requires no approvals and no status checks and allows the merge
+        # method, so the PR is mergeable as soon as GitHub finishes computing
+        # its mergeability, which it does asynchronously after the head is
+        # pushed (reported UNKNOWN until it settles). Poll until it resolves,
+        # then merge; let a genuine failure propagate rather than silently
+        # leaving the release branch without the bump.
+        for attempt in range(12):
+            mergeable = (
+                Shell.get_output(
+                    f"gh pr view {pr_number} --repo {GITHUB_REPOSITORY} "
+                    "--json mergeable --jq .mergeable"
+                )
+                or ""
+            ).strip()
+            if mergeable == "MERGEABLE":
+                break
+            if mergeable == "CONFLICTING":
+                raise RuntimeError(
+                    f"Release version-bump PR #{pr_number} conflicts with "
+                    f"{self.release_branch} and cannot be merged"
+                )
+            print(
+                f"PR #{pr_number} mergeability not settled yet "
+                f"(mergeable={mergeable or 'UNKNOWN'}); retrying [{attempt + 1}/12]"
+            )
+            time.sleep(5)
+        Shell.check(
+            f"gh pr merge {pr_number} --repo {GITHUB_REPOSITORY} --merge",
+            strict=True,
+            verbose=True,
+        )
+
     def update_version_and_contributors_list(self, dry_run: bool) -> None:
         with checkout(self.commit_sha):
             version = CHVersion.get_current_version()
@@ -549,11 +586,10 @@ class ReleaseInfo:
                 # Release branches are protected by the "Merge only for
                 # releases" ruleset: changes must go through a pull request, so
                 # the version bump cannot be pushed directly to the release
-                # branch. Commit it on a dedicated branch and open a PR into the
-                # release branch. The PR is not auto-merged: release branches
-                # have no merge queue (unlike master, which the changelog PRs
-                # use), so for now the version-bump PR is left to be merged
-                # separately.
+                # branch. Commit it on a dedicated branch, open a PR into the
+                # release branch, and merge it. Release branches have no merge
+                # queue (unlike master), so the PR is merged directly rather
+                # than enqueued (see `merge_release_version_bump_pr`).
                 bump_branch = self.get_release_version_bump_branch()
                 Shell.check(
                     f"{GIT_PREFIX} checkout -B {bump_branch}",
@@ -605,6 +641,10 @@ class ReleaseInfo:
                         )
                     )
                 print(f"Release version-bump PR ready [{bump_pr}]")
+                if not dry_run:
+                    self.merge_release_version_bump_pr(
+                        int(bump_pr.rsplit("/", 1)[-1])
+                    )
             if dry_run:
                 Shell.check(
                     f"{GIT_PREFIX} diff '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}'",

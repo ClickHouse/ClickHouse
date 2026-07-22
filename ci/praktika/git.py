@@ -141,5 +141,52 @@ class Git:
             retries=retries,
         )
 
+    @staticmethod
+    def enable_automerge(pr_number, repo: str) -> None:
+        """Enable auto-merge for PR `pr_number` in `repo` via the merge queue.
+
+        The repo disables the `enablePullRequestAutoMerge` mutation (what
+        `gh pr merge --auto` calls) in favor of a merge queue, so auto-merge is
+        enabled by the `enqueuePullRequest` GraphQL mutation -- the same one the
+        "Merge when ready" button on github.com uses. Idempotent: a PR already
+        in the queue is the desired end state and treated as success. Raises
+        `RuntimeError` on a genuine failure.
+        """
+        pr_node_id = Shell.get_output(
+            f"gh pr view {pr_number} --json id --jq '.id' --repo {shlex.quote(repo)}"
+        ).strip()
+        if not pr_node_id:
+            raise RuntimeError(f"Failed to fetch node ID for PR #{pr_number}")
+        enqueue_cmd = (
+            "gh api graphql "
+            "-f 'query=mutation($id:ID!){enqueuePullRequest(input:{pullRequestId:$id})"
+            "{mergeQueueEntry{position state}}}' "
+            f"-f id={pr_node_id}"
+        )
+        returncode, stdout, stderr = Shell.get_res_stdout_stderr(
+            enqueue_cmd, verbose=True
+        )
+        # GitHub rejects the mutation with "Pull request is already in the queue"
+        # when the PR is already queued (e.g. a prior run enqueued it, or the
+        # "Merge when ready" button was clicked). That is the desired end state,
+        # so treat it as success rather than failing.
+        already_queued = "already in the queue" in (stdout + stderr).lower()
+        if returncode != 0 and not already_queued:
+            # Surface the real gh output so auth/permission/validation/rate-limit
+            # failures stay diagnosable.
+            if stdout:
+                print(stdout)
+            if stderr:
+                print(stderr)
+            raise RuntimeError(
+                f"Failed to add PR #{pr_number} to the merge queue. This often "
+                "happens when mergeStateStatus is UNKNOWN (GitHub is still "
+                "computing mergeability after a recent push) or the PR is not "
+                "yet eligible (failing required checks, missing approvals, out "
+                f"of date with base).\nRetry manually:\n  {enqueue_cmd}"
+            )
+        if already_queued:
+            print(f"PR #{pr_number} is already in the merge queue")
+
     def __init__(self):
         self.latest_tag = Shell.get_output("git describe --tags --abbrev=0") or ""
