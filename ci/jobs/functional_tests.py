@@ -105,9 +105,17 @@ def run_tests(
     random_order=False,
     global_time_limit=0,
     build_type=None,
+    test_list_file=None,
 ):
     test_output_file = f"{temp_dir}/test_result.txt"
-    if batch_num and batch_total:
+    if test_list_file:
+        # The caller precomputed the exact set of tests to run and wrote them to
+        # `test_list_file` (see `distribute_tests_into_batch`). Hand that file to
+        # `clickhouse-test` instead of letting it hash-batch the whole suite, so
+        # `functional_tests.py` fully controls which tests run. `--test-list-file`
+        # supersedes `--run-by-hash-*`.
+        extra_args += f" --test-list-file {test_list_file}"
+    elif batch_num and batch_total:
         extra_args += (
             f" --run-by-hash-total {batch_total} --run-by-hash-num {batch_num-1}"
         )
@@ -151,6 +159,56 @@ def run_tests(
     # `GLOBAL_TIME_LIMIT_EXIT_CODE` stop (which would be reported as "Server died").
     outer_timeout = global_time_limit + 900 if global_time_limit > 0 else None
     return Shell.run(command, verbose=True, timeout=outer_timeout)
+
+
+def list_selected_tests(runner_options):
+    """Ask `clickhouse-test` which tests it would select under `runner_options`.
+
+    `clickhouse-test --list-tests FILE` writes the selected test identities to
+    FILE (the same normalized names `--test-list-file` reads back). Returns the
+    full list, or `None` if listing failed (the caller then fails the job
+    explicitly rather than silently changing the distribution). Runs no test and
+    needs no running server.
+    """
+    list_file = f"{temp_dir}/all_selected_tests.txt"
+    command = (
+        f"clickhouse-test --queries ./tests/queries {runner_options} "
+        f"--list-tests {list_file}"
+    )
+    exit_code = Shell.run(command, verbose=True)
+    if exit_code != 0 or not Path(list_file).is_file():
+        print(f"WARNING: --list-tests failed with exit code {exit_code}")
+        return None
+    with open(list_file, "r", encoding="utf-8") as f:
+        return [line.strip() for line in f if line.strip()]
+
+
+def distribute_tests_into_batch(all_tests, batch_num, batch_total):
+    """Pick this job's share of `all_tests` and write it to a file.
+
+    Batching is done here (in the job), not by `clickhouse-test`'s
+    `--run-by-hash-*`, so the job controls the distribution and can evolve it
+    later (e.g. balance by historical duration). Tests are assigned round-robin
+    over a sorted, deterministic order: batch `k` gets tests at indices
+    `k, k + batch_total, k + 2*batch_total, ...`. This spreads them evenly and
+    deterministically and, because the list is sorted first, keeps consecutive
+    (numerically adjacent) tests in different batches. Returns the path to the
+    written test-list file, or `None` when there is nothing to distribute (the
+    caller then fails the job explicitly).
+    """
+    if not all_tests or not batch_num or not batch_total:
+        return None
+    batch_tests = sorted(all_tests)[batch_num - 1 :: batch_total]
+    print(
+        f"Distributed {len(all_tests)} test(s) into batch {batch_num}/{batch_total}: "
+        f"{len(batch_tests)} test(s) for this job"
+    )
+    if not batch_tests:
+        return None
+    test_list_file = f"{temp_dir}/test_list_batch_{batch_num}_{batch_total}.txt"
+    with open(test_list_file, "w", encoding="utf-8") as f:
+        f.write("\n".join(sorted(batch_tests)) + "\n")
+    return test_list_file
 
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
@@ -963,15 +1021,46 @@ def main():
             )
 
         else:
+            # For a plain hash-batched run (no explicit --test, not bugfix
+            # validation), distribute the tests into this job's batch here
+            # instead of relying on `clickhouse-test --run-by-hash-*`. Ask
+            # `clickhouse-test` for the exact set it would select (so tags,
+            # --no-long, and parallel/sequential flavor filtering all apply),
+            # split it, and pass this job's share via `--test-list-file`. Fail
+            # explicitly if listing/distribution does not yield tests: silently
+            # falling back to hash batching would hide a broken listing behind a
+            # run that no longer matches the intended distribution.
+            batch_test_list_file = None
+            if batch_num and total_batches and not tests and not is_bugfix_validation:
+                all_tests = list_selected_tests(runner_options)
+                if not all_tests:
+                    Result.create_from(
+                        status=Result.Status.ERROR,
+                        info="Could not list selectable tests for batch "
+                        "distribution: 'clickhouse-test --list-tests' returned "
+                        "no tests",
+                    ).complete_job()
+                batch_test_list_file = distribute_tests_into_batch(
+                    all_tests, batch_num, total_batches
+                )
+                if not batch_test_list_file:
+                    Result.create_from(
+                        status=Result.Status.ERROR,
+                        info=f"No tests distributed into batch "
+                        f"{batch_num}/{total_batches} out of {len(all_tests)} "
+                        f"selectable test(s)",
+                    ).complete_job()
+
             runner_exit_code = run_tests(
-                batch_num=batch_num,
-                batch_total=total_batches,
+                batch_num=0,
+                batch_total=0,
                 tests=list(tests) if tests else tests,
                 extra_args=runner_options,
                 random_order=is_bugfix_validation,
                 rerun_count=rerun_count,
                 global_time_limit=global_time_limit,
                 build_type=build_types[0] if is_bugfix_validation else None,
+                test_list_file=batch_test_list_file,
             )
 
         test_result = ft_res_processor.run(runner_exit_code=runner_exit_code)

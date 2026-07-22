@@ -4184,6 +4184,14 @@ class TestSuite:
                 re.search(pattern, test_name) for pattern in self.args.test
             ):
                 continue
+            # Exact allowlist from --test-list-file: unlike the positional
+            # `test` patterns (regexes), this selects tests by exact identity
+            # (O(1) set membership), so the caller can hand over a precomputed
+            # set of thousands of tests without a huge command line or slow
+            # per-pattern regex scanning.
+            test_list = getattr(self.args, "test_list", None)
+            if test_list is not None and test_identity(test_name) not in test_list:
+                continue
             if USE_JINJA and test_name.endswith(".gen.sql"):
                 continue
 
@@ -4220,7 +4228,15 @@ class TestSuite:
         if not os.path.isdir(suite_path):
             return None
 
-        if "stateful" in suite and not args.no_stateful and not is_data_present():
+        if (
+            "stateful" in suite
+            and not args.no_stateful
+            and not args.list_tests
+            and not is_data_present()
+        ):
+            # --list-tests only enumerates test files; it must include stateful
+            # tests even without a loaded dataset (and without a running server),
+            # so the caller sees the same universe that a real run would select.
             print("Won't run stateful tests because test data wasn't loaded.")
             return None
         if "stateless" in suite and args.no_stateless:
@@ -5009,7 +5025,12 @@ def do_run_tests(
         # because the distribution and the amount
         # of failures will be nearly the same for all tests from the group.
         # TODO: add shuffle for sequential tests
-        if jobs > 1:
+        #
+        # But when the caller supplied an explicit test list (--test-list-file),
+        # it already controls the exact set and their order (e.g. a precomputed,
+        # deterministically distributed batch); preserve that order instead of
+        # reshuffling it here.
+        if jobs > 1 and getattr(args, "test_list", None) is None:
             random.shuffle(test_suite.parallel_tests)
 
         workers_to_shed = multiprocessing.Value('i', 0)
@@ -5260,6 +5281,28 @@ def removesuffix(text, *suffixes):
     return text
 
 
+def test_identity(name):
+    """Normalize a test file name to a stable identity independent of its
+    extension.
+
+    Used both to match names in a `--test-list-file` allowlist and to print
+    names for `--list-tests`, so the two always agree. A basename is taken
+    first so a full path in the file still matches. `.gen.sql` (rendered from a
+    `.sql.j2` template) is stripped back to the template's base name, so the
+    rendered and template forms refer to the same test. `.sql.j2` is listed
+    before `.sql` because `removesuffix` returns on the first matching suffix.
+    """
+    return removesuffix(
+        os.path.basename(name.strip()),
+        ".gen.sql",
+        ".sql.j2",
+        ".sql",
+        ".sh",
+        ".py",
+        ".expect",
+    )
+
+
 def reportCoverageFor(args, what, query, permissive=False):
     value = clickhouse_execute(args, query).decode()
 
@@ -5475,7 +5518,36 @@ def try_get_skip_list(base_dir, name, remove_comment=True):
     return test_names_to_skip
 
 
+def list_all_tests(args):
+    """Write the tests that would be selected to `args.list_tests`, then return.
+
+    Builds each suite exactly as a real run does (so the same tag / --no-long /
+    --no-parallel / --no-sequential / --test-list-file filtering applies) but
+    runs no test and needs no server. Writes unique test identities (see
+    `test_identity`), one per line, to the output file - the same format that
+    `--test-list-file` reads back, so a caller can list, split, and feed a
+    subset straight back in.
+    """
+    base_dir = os.path.abspath(args.queries)
+    listed = set()
+    for suite in sorted(os.listdir(base_dir), key=suite_key_func):
+        test_suite = TestSuite.read_test_suite(args, suite)
+        if test_suite is None:
+            continue
+        for test_name in test_suite.parallel_tests + test_suite.sequential_tests:
+            listed.add(test_identity(test_name))
+
+    with open(args.list_tests, "w", encoding="utf-8") as out:
+        for name in sorted(listed):
+            out.write(name + "\n")
+    print(f"Listed {len(listed)} test(s) into '{args.list_tests}'")
+
+
 def main(args):
+    if args.list_tests:
+        list_all_tests(args)
+        return
+
     exit_code = multiprocessing.Value("i", 0)
     stop_testing = multiprocessing.Event()
     runner_process_killed = multiprocessing.Event()
@@ -6348,6 +6420,29 @@ def parse_args():
         type=int,
         help="Total test groups for crc32(test_name) % run_by_hash_total == run_by_hash_num",
     )
+    parser.add_argument(
+        "--test-list-file",
+        type=str,
+        default=None,
+        help="Path to a file listing the exact tests to run, one name per line "
+        "(blank lines and lines starting with '#' are ignored). Only these tests "
+        "are selected, matched by exact identity rather than as regexes. This "
+        "lets the caller control the precise set of tests to run (e.g. a "
+        "precomputed batch) instead of relying on --run-by-hash-*. File "
+        "extensions are optional and ignored when matching.",
+    )
+    parser.add_argument(
+        "--list-tests",
+        type=str,
+        default=None,
+        metavar="FILE",
+        help="Write the tests that would be selected (respecting all other "
+        "selection options: tags, --no-long, --no-parallel/--no-sequential, "
+        "--test-list-file, etc.) to FILE, one name per line, and exit without "
+        "running anything or connecting to a server. The output format matches "
+        "what --test-list-file reads back. Lets a caller learn the exact test "
+        "universe in order to distribute it across jobs.",
+    )
 
     parser.add_argument(
         "--show-whitespaces-in-diff",
@@ -6716,6 +6811,26 @@ if __name__ == "__main__":
         sys.exit(1)
 
     print("Using queries from '" + args.queries + "' directory")
+
+    # Load the exact-match test allowlist, if any. Normalizing every entry to
+    # `test_identity` up front means selection is a plain set-membership check.
+    args.test_list = None
+    if args.test_list_file:
+        if not os.path.isfile(args.test_list_file):
+            print(
+                f"Cannot access the --test-list-file: {args.test_list_file}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        with open(args.test_list_file, encoding="utf-8") as list_file:
+            args.test_list = {
+                test_identity(line)
+                for line in list_file
+                if line.strip() and not line.lstrip().startswith("#")
+            }
+        print(
+            f"Loaded {len(args.test_list)} test name(s) from '{args.test_list_file}'"
+        )
 
     if args.tmp is None:
         args.tmp = args.queries
