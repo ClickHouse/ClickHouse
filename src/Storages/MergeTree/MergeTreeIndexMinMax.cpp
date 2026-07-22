@@ -339,6 +339,21 @@ buildIntersectsAndContains(
     const ActionsDAG::Node * contains_upper = nullptr;
     const ActionsDAG::Node * contains_lower = nullptr;
 
+    /// Float granules need extra care to mirror the `NaN` semantics of
+    /// `KeyCondition::checkInHyperrectangle` (see the final guards below and the
+    /// lower-bound relaxation). Unwrap `LowCardinality` first: a non-nullable
+    /// `LowCardinality(Float)` minmax index still reaches this path, but
+    /// `WhichDataType(LowCardinality(Float64)).isFloat()` is false, which would leave
+    /// the `NaN` handling inactive and wrongly prune `[finite_min, NaN]` granules.
+    const bool is_float = WhichDataType(removeLowCardinality(column_type)).isFloat();
+    const ActionsDAG::Node * min_is_nan = nullptr;
+    const ActionsDAG::Node * max_is_nan = nullptr;
+    if (is_float)
+    {
+        min_is_nan = &addNamedFunction(dag, "isNaN", {&min_node}, context);
+        max_is_nan = &addNamedFunction(dag, "isNaN", {&max_node}, context);
+    }
+
     if (right_is_pos_inf)
     {
         intersects_upper = &addConstUInt8(dag, 1, "const_true");
@@ -366,27 +381,41 @@ buildIntersectsAndContains(
         intersects_lower = &addNamedFunction(dag, range.left_included ? "greaterOrEquals" : "greater", {&max_node, left_lit}, context);
         contains_lower = &addNamedFunction(dag, range.left_included ? "greaterOrEquals" : "greater", {&min_node, left_lit}, context);
 
-        /// Mirror the `NaN` semantics of `KeyCondition::checkInHyperrectangle`. A Float granule that
-        /// mixes finite values with `NaN` is stored as `[finite_min, NaN]`, because `NaN` sorts last.
-        /// The scalar path keeps such a granule for a lower-bounded predicate: it forces `contains`
-        /// to false but leaves `intersects` true, because the finite values may still match. Here
-        /// `greaterOrEquals(NaN, left)` is false, which would wrongly prune the granule, so treat a
-        /// `NaN` granule max as reaching any finite lower bound. `contains_lower` uses the granule min
-        /// (finite in this case) and `contains_upper` (granule max) already evaluates to false against
-        /// `NaN`, so `contains` stays false as the scalar path requires.
-        /// Unwrap `LowCardinality` first: a non-nullable `LowCardinality(Float)` minmax index still
-        /// reaches this path, but `WhichDataType(LowCardinality(Float64)).isFloat()` is false, which
-        /// would leave the `NaN` fix inactive and wrongly prune `[finite_min, NaN]` granules.
-        if (WhichDataType(removeLowCardinality(column_type)).isFloat())
-        {
-            const auto & max_is_nan = addNamedFunction(dag, "isNaN", {&max_node}, context);
-            intersects_lower = &addNamedFunction(dag, "or", {intersects_lower, &max_is_nan}, context);
-        }
+        /// A Float granule that mixes finite values with `NaN` is stored as `[finite_min, NaN]`,
+        /// because `NaN` sorts last. The scalar path keeps such a granule for a lower-bounded
+        /// predicate: it forces `contains` to false but leaves `intersects` true, because the
+        /// finite values may still match. Here `greaterOrEquals(NaN, left)` is false, which would
+        /// wrongly prune the granule, so treat a `NaN` granule max as reaching any finite lower
+        /// bound. The final `min_is_nan` guard below neutralizes this relaxation for all-`NaN`
+        /// granules `[NaN, NaN]`, which the scalar path prunes.
+        if (is_float)
+            intersects_lower = &addNamedFunction(dag, "or", {intersects_lower, max_is_nan}, context);
     }
 
-    const auto & intersects = addNamedFunction(dag, "and", {intersects_upper, intersects_lower}, context);
-    const auto & contains = addNamedFunction(dag, "and", {contains_upper, contains_lower}, context);
-    return {&intersects, &contains};
+    const ActionsDAG::Node * intersects = &addNamedFunction(dag, "and", {intersects_upper, intersects_lower}, context);
+    const ActionsDAG::Node * contains = &addNamedFunction(dag, "and", {contains_upper, contains_lower}, context);
+
+    /// Final `NaN` guards mirroring `KeyCondition::checkInHyperrectangle` exactly:
+    /// - The granule min is `NaN` => the whole granule is `NaN` (`NaN` sorts last), and `NaN`
+    ///   satisfies no comparison => `intersects` and `contains` are both false. Without this
+    ///   guard the lower-bound relaxation above would keep `[NaN, NaN]` granules that the
+    ///   scalar path prunes, losing the speedup on `NaN`-only chunks.
+    /// - The granule max is `NaN` (mixed granule `[finite_min, NaN]`) => the granule extends
+    ///   into `NaN` territory, and its `NaN` rows satisfy no comparison => `contains` must be
+    ///   false. Against a finite right bound `contains_upper` is already false, but for a
+    ///   lower-bounded predicate `contains_upper` is constant true, and reporting
+    ///   `contains` = true (`can_be_false` = false) would make a `NOT` above this leaf skip
+    ///   granules whose `NaN` rows match the negated predicate — a wrong result, not just a
+    ///   missed optimization.
+    if (is_float)
+    {
+        const auto & min_not_nan = addNamedFunction(dag, "not", {min_is_nan}, context);
+        const auto & max_not_nan = addNamedFunction(dag, "not", {max_is_nan}, context);
+        intersects = &addNamedFunction(dag, "and", {intersects, &min_not_nan}, context);
+        contains = &addNamedFunction(dag, "and", {contains, &max_not_nan}, context);
+    }
+
+    return {intersects, contains};
 }
 
 bool isRecoverableMinMaxBulkLoweringException(int code)
