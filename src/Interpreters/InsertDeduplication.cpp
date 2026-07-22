@@ -139,6 +139,38 @@ DeduplicationInfo::FilterResult DeduplicationInfo::deduplicateSelf(bool deduplic
 }
 
 
+DeduplicationInfo::Ptr DeduplicationInfo::filterToPartition(const PaddedPODArray<UInt64> & row_to_partition, size_t partition_index) const
+{
+    /// An empty selector means the block was not split (single partition); with dedup off or a
+    /// single token there is nothing to attribute. Every token then belongs to this partition.
+    if (disabled || row_to_partition.empty() || getCount() <= 1)
+        return cloneSelf();
+
+    /// Keep only tokens that have at least one row in this partition.
+    std::set<size_t> absent_offsets;
+    for (size_t i = 0; i < offsets.size(); ++i)
+    {
+        bool present = false;
+        for (size_t row = getTokenBegin(i); row < getTokenEnd(i); ++row)
+        {
+            if (row_to_partition[row] == partition_index)
+            {
+                present = true;
+                break;
+            }
+        }
+        if (!present)
+            absent_offsets.insert(i);
+    }
+
+    if (absent_offsets.empty())
+        return cloneSelf();
+
+    /// filterImpl drops the absent tokens and keeps the block/offsets consistent.
+    return filterImpl(absent_offsets).deduplication_info;
+}
+
+
 DeduplicationInfo::FilterResult DeduplicationInfo::recalculateBlock(DeduplicationInfo::FilterResult && filtered, const std::string & partition_id, ContextPtr context) const
 {
     if (filtered.removed_rows == 0)
