@@ -1,0 +1,17 @@
+=== VALUES: legacy string-wrapped form with double-quoted elements ===
+1	['apple','banana','cherry']
+=== VALUES: native form with double-quoted and mixed-quoted elements ===
+2	['grape','melon']
+3	['date','fig']
+=== VALUES: native form with single-quoted elements still works ===
+4	['kiwi','lime']
+=== CSV: double-quoted elements inside a quoted cell ===
+5	['pear','plum']
+=== TabSeparated: double-quoted elements ===
+6	['mango','peach']
+=== JSONEachRow: legacy string-wrapped form and native form ===
+7	['lemon','olive']
+8	['guava','papaya']
+=== Empty array and duplicates are merged ===
+9	[]
+10	['dup','other']

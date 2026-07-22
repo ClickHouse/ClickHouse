@@ -2,6 +2,8 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <Common/SipHash.h>
@@ -140,6 +142,54 @@ void deserializeFromValues(IColumn & column, ReadBuffer & istr, const FormatSett
 
         createStateFromValues(function, column, columns_ptrs.data(), array_column.getData().size());
     }
+}
+
+/// Backward compatibility: when `aggregate_function_input_format` was first released (in `v25.12` and `v26.1`),
+/// `array` mode parsed single-argument elements with the argument type's `deserializeTextCSV`, which accepts
+/// double-quoted representations, e.g. `["apple","banana"]` for `AggregateFunction(uniq, String)`. The generic
+/// `SerializationArray` text path parses elements with `deserializeTextQuoted`, which rejects double quotes,
+/// so single-argument `String`-like text arrays are parsed here instead: single-quoted elements with the quoted
+/// serialization (the native form) and everything else with the CSV serialization (the released form).
+bool useLegacyTextArrayParsing(const AggregateFunctionPtr & function, const FormatSettings & settings)
+{
+    if (settings.aggregate_function_input_format != FormatSettings::AggregateFunctionInputFormat::Array)
+        return false;
+
+    const auto & argument_types = function->getArgumentTypes();
+    return argument_types.size() == 1 && isStringOrFixedString(removeNullable(removeLowCardinality(argument_types[0])));
+}
+
+void deserializeFromSingleArgumentTextArray(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const AggregateFunctionPtr & function)
+{
+    const auto & argument_types = function->getArgumentTypes();
+    chassert(argument_types.size() == 1);
+
+    const auto & value_type = argument_types[0];
+    const auto tmp_column = value_type->createColumn();
+    const auto elem_serialization = value_type->getDefaultSerialization();
+
+    assertChar('[', istr);
+    bool first = true;
+    while (!istr.eof())
+    {
+        skipWhitespaceIfAny(istr);
+        if (!istr.eof() && *istr.position() == ']')
+            break;
+        if (!first)
+        {
+            assertChar(',', istr);
+            skipWhitespaceIfAny(istr);
+        }
+        first = false;
+        if (!istr.eof() && *istr.position() == '\'')
+            elem_serialization->deserializeTextQuoted(*tmp_column, istr, settings);
+        else
+            elem_serialization->deserializeTextCSV(*tmp_column, istr, settings);
+    }
+    assertChar(']', istr);
+
+    const IColumn * arg_columns[1] = {tmp_column.get()};
+    createStateFromValues(function, column, arg_columns, tmp_column->size());
 }
 
 }
@@ -307,6 +357,12 @@ void SerializationAggregateFunction::deserializeTextEscaped(IColumn & column, Re
         return;
     }
 
+    if (useLegacyTextArrayParsing(function, settings))
+    {
+        deserializeFromSingleArgumentTextArray(column, istr, settings, function);
+        return;
+    }
+
     auto method = DESERIALIZE_METHOD(deserializeTextEscaped);
     deserializeFromValues<method>(column, istr, settings, function);
 }
@@ -333,6 +389,12 @@ void SerializationAggregateFunction::deserializeTextQuoted(IColumn & column, Rea
         return;
     }
 
+    if (useLegacyTextArrayParsing(function, settings))
+    {
+        deserializeFromSingleArgumentTextArray(column, istr, settings, function);
+        return;
+    }
+
     auto method = DESERIALIZE_METHOD(deserializeTextQuoted);
     deserializeFromValues<method>(column, istr, settings, function);
 }
@@ -343,6 +405,14 @@ void SerializationAggregateFunction::deserializeWholeText(IColumn & column, Read
     if (settings.aggregate_function_input_format == FormatSettings::AggregateFunctionInputFormat::State)
     {
         deserializeFromString(function, column, istr, version, /* check_buffer_consumed */ true);
+        return;
+    }
+
+    if (useLegacyTextArrayParsing(function, settings))
+    {
+        deserializeFromSingleArgumentTextArray(column, istr, settings, function);
+        if (!istr.eof())
+            throwUnexpectedDataAfterParsedValue(column, istr, settings, "Array");
         return;
     }
 
@@ -378,8 +448,7 @@ void SerializationAggregateFunction::deserializeTextJSON(IColumn & column, ReadB
         String s;
         readJSONString(s, istr, settings.json);
         ReadBufferFromString str_buf(s);
-        auto method = DESERIALIZE_METHOD(deserializeWholeText);
-        deserializeFromValues<method>(column, str_buf, settings, function);
+        deserializeWholeText(column, str_buf, settings);
         return;
     }
 
@@ -408,6 +477,15 @@ void SerializationAggregateFunction::deserializeTextCSV(IColumn & column, ReadBu
         readCSV(s, istr, settings.csv);
         ReadBufferFromString str_buf(s);
         deserializeFromString(function, column, str_buf, version, /* check_buffer_consumed */ true);
+        return;
+    }
+
+    if (useLegacyTextArrayParsing(function, settings))
+    {
+        String s;
+        readCSV(s, istr, settings.csv);
+        ReadBufferFromString str_buf(s);
+        deserializeFromSingleArgumentTextArray(column, str_buf, settings, function);
         return;
     }
 
