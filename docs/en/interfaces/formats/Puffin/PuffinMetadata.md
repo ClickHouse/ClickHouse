@@ -15,7 +15,7 @@ Fixed output columns:
 - `blob_type` (`String`) - blob type, for example `deletion-vector-v1`
 - `snapshot_id` (`Int64`) - snapshot id of the blob
 - `sequence_number` (`Int64`) - sequence number of the blob
-- `fields` (`Array(Int32)`) - sorted list of field ids the blob applies to
+- `fields` (`Array(Int32)`) - list of field ids the blob applies to
 - `offset` (`Int64`) - offset of the blob payload in the file
 - `length` (`Int64`) - length of the blob payload in bytes
 - `compression_codec` (`String`) - compression codec of the blob payload, if present
