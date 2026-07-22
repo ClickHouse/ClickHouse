@@ -133,6 +133,72 @@ SELECT extractAllGroupsVertical(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 [['Server','nginx'],['Date','Tue, 22 Jan 2019 00:26:14 GMT'],['Content-Type','text/html; charset=UTF-8'],['Connection','keep-alive']]
 ```
 
+## naiveBayesNgrams {#naiveBayesNgrams}
+
+Introduced in: v26.7.0
+
+Splits text into n-grams using the same tokenization as a Naive Bayes dictionary (the [`NAIVE_BAYES`](/reference/statements/create/dictionary/layouts/naive-bayes) layout): `byte`, `codepoint`, or `token` mode, with optional boundary padding. Use it to build the pre-aggregated `(ngram, class_id, count)` training data such a dictionary consumes, so the training n-grams match exactly what [`naiveBayesClassifier`](/reference/functions/regular-functions/machine-learning-functions#naivebayesclassifier) produces at query time.
+
+**Syntax**
+
+```sql
+naiveBayesNgrams(text, n, mode[, start_token, end_token])
+```
+
+**Arguments**
+
+- `text` — Text to split into n-grams. [`String`](/reference/data-types/string)
+- `n` — N-gram size, from 1 to 1024. [`const UInt`](/reference/data-types/int-uint)
+- `mode` — Tokenization mode: 'byte', 'codepoint', or 'token'. [`const String`](/reference/data-types/string)
+- `start_token` — Optional. Boundary token prepended (n-1) times to the input; a number for 'byte'/'codepoint', a literal for 'token'. Empty means no padding. [`const String`](/reference/data-types/string)
+- `end_token` — Optional. Boundary token appended (n-1) times to the input. [`const String`](/reference/data-types/string)
+
+**Returned value**
+
+The n-grams of the input text. [`Array(String)`](/reference/data-types/array)
+
+**Examples**
+
+**Token bigrams**
+
+```sql title=Query
+SELECT naiveBayesNgrams('the cat sat', 2, 'token');
+```
+
+```response title=Response
+['the cat','cat sat']
+```
+
+**Token bigrams with boundary padding**
+
+```sql title=Query
+SELECT naiveBayesNgrams('cat', 2, 'token', '<s>', '</s>');
+```
+
+```response title=Response
+['<s> cat','cat </s>']
+```
+
+**Byte bigrams with boundary padding (result shown as hex)**
+
+```sql title=Query
+SELECT arrayMap(x -> hex(x), naiveBayesNgrams('xy', 2, 'byte', '0x01', '0xFF'));
+```
+
+```response title=Response
+['0178','7879','79FF']
+```
+
+**Code-point bigrams with boundary padding (result shown as hex)**
+
+```sql title=Query
+SELECT arrayMap(x -> hex(x), naiveBayesNgrams('ab', 2, 'codepoint', '0x10FFFE', '0x10FFFF'));
+```
+
+```response title=Response
+['F48FBFBE61','6162','62F48FBFBF']
+```
+
 ## ngrams {#ngrams}
 
 Introduced in: v21.11.0
@@ -264,9 +330,9 @@ Introduced in: v1.1.0
 Splits a string separated by a specified constant string `separator` of exactly one character into an array of substrings.
 Empty substrings may be selected if the separator occurs at the beginning or end of the string, or if there are multiple consecutive separators.
 
-:::note
+<Note>
 Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
-:::
+</Note>
 
 Empty substrings may be selected when:
 - A separator occurs at the beginning or end of the string
@@ -309,9 +375,9 @@ Introduced in: v21.9.0
 
 Splits a string separated by whitespace and punctuation characters into an array of substrings.
 
-:::note
+<Note>
 Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
-:::
+</Note>
 
 **Syntax**
 
@@ -353,9 +419,9 @@ Empty substrings may be selected when:
 - there are multiple consecutive non-empty regular expression matches
 - the original string string is empty while the regular expression is not empty.
 
-:::note
+<Note>
 Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
-:::
+</Note>
 
 **Syntax**
 
@@ -411,9 +477,9 @@ Empty substrings may be selected when:
 - There are multiple consecutive non-empty separators
 - The original string `s` is empty while the separator is not empty
 
-:::note
+<Note>
 Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
-:::
+</Note>
 
 **Syntax**
 
@@ -463,9 +529,9 @@ Introduced in: v21.9.0
 
 Splits a string which is separated by whitespace characters into an array of substrings.
 
-:::note
+<Note>
 Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
-:::
+</Note>
 
 **Syntax**
 
