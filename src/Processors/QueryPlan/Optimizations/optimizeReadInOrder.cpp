@@ -1,5 +1,11 @@
 #include <Columns/ColumnConst.h>
+#include <Core/Field.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -443,6 +449,107 @@ const ActionsDAG::Node * addMonotonicChain(ActionsDAG & dag, const ActionsDAG::N
     return &dag.addFunction(node->function_base, std::move(args), node->result_name);
 }
 
+template <typename T>
+Field extremeNumericField(bool need_min)
+{
+    return need_min ? Field(std::numeric_limits<T>::min()) : Field(std::numeric_limits<T>::max());
+}
+
+template <typename EnumType>
+Field extremeEnumField(const IDataType & type, bool need_min)
+{
+    const auto & values = assert_cast<const EnumType &>(type).getValues();
+    auto it = need_min
+        ? std::ranges::min_element(values, {}, [](const auto & v) { return v.second; })
+        : std::ranges::max_element(values, {}, [](const auto & v) { return v.second; });
+    return Field(static_cast<Int64>(it->second));
+}
+
+/// A constant that sorts before (or equal to) every value of the type under the given sort
+/// direction and nulls_direction (as in SortColumnDescription), or nullptr when the type has no
+/// representable extreme (e.g. there is no greatest String). Used for virtual row columns whose
+/// values cannot be taken from the primary index.
+ColumnConstPtr tryGetExtremeConstant(const DataTypePtr & type, int direction, int nulls_direction)
+{
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        /// NULLs are placed at the beginning of this sort order.
+        if (direction * nulls_direction < 0)
+            return type->createColumnConst(1, Field());
+
+        auto nested = tryGetExtremeConstant(nullable->getNestedType(), direction, nulls_direction);
+        if (!nested)
+            return nullptr;
+        return type->createColumnConst(1, (*nested)[0]);
+    }
+
+    const bool need_min = direction > 0;
+
+    /// NaNs are placed like NULLs; infinity is an extreme only when they go last.
+    if (WhichDataType(type).isFloat() && direction * nulls_direction < 0)
+        return nullptr;
+
+    std::optional<Field> field;
+    switch (type->getTypeId())
+    {
+        case TypeIndex::UInt8: field = extremeNumericField<UInt8>(need_min); break;
+        case TypeIndex::UInt16: field = extremeNumericField<UInt16>(need_min); break;
+        case TypeIndex::UInt32: field = extremeNumericField<UInt32>(need_min); break;
+        case TypeIndex::UInt64: field = extremeNumericField<UInt64>(need_min); break;
+        case TypeIndex::UInt128: field = extremeNumericField<UInt128>(need_min); break;
+        case TypeIndex::UInt256: field = extremeNumericField<UInt256>(need_min); break;
+        case TypeIndex::Int8: field = extremeNumericField<Int8>(need_min); break;
+        case TypeIndex::Int16: field = extremeNumericField<Int16>(need_min); break;
+        case TypeIndex::Int32: field = extremeNumericField<Int32>(need_min); break;
+        case TypeIndex::Int64: field = extremeNumericField<Int64>(need_min); break;
+        case TypeIndex::Int128: field = extremeNumericField<Int128>(need_min); break;
+        case TypeIndex::Int256: field = extremeNumericField<Int256>(need_min); break;
+        case TypeIndex::Float32: [[fallthrough]];
+        case TypeIndex::Float64:
+            field = Field(need_min ? -std::numeric_limits<Float64>::infinity() : std::numeric_limits<Float64>::infinity());
+            break;
+        case TypeIndex::Date: field = extremeNumericField<UInt16>(need_min); break;
+        case TypeIndex::Date32: field = extremeNumericField<Int32>(need_min); break;
+        case TypeIndex::DateTime: field = extremeNumericField<UInt32>(need_min); break;
+        case TypeIndex::DateTime64:
+            field = DecimalField<DateTime64>(
+                extremeNumericField<Int64>(need_min).safeGet<Int64>(),
+                assert_cast<const DataTypeDateTime64 &>(*type).getScale());
+            break;
+        case TypeIndex::Decimal32:
+            field = DecimalField<Decimal32>(static_cast<Int32>(extremeNumericField<Int32>(need_min).safeGet<Int64>()), getDecimalScale(*type));
+            break;
+        case TypeIndex::Decimal64:
+            field = DecimalField<Decimal64>(extremeNumericField<Int64>(need_min).safeGet<Int64>(), getDecimalScale(*type));
+            break;
+        case TypeIndex::Decimal128:
+            field = DecimalField<Decimal128>(extremeNumericField<Int128>(need_min).safeGet<Int128>(), getDecimalScale(*type));
+            break;
+        case TypeIndex::Decimal256:
+            field = DecimalField<Decimal256>(extremeNumericField<Int256>(need_min).safeGet<Int256>(), getDecimalScale(*type));
+            break;
+        case TypeIndex::String:
+            if (need_min)
+                field = Field(String{});
+            break;
+        case TypeIndex::FixedString:
+            field = Field(String(assert_cast<const DataTypeFixedString &>(*type).getN(), need_min ? '\0' : '\xFF'));
+            break;
+        case TypeIndex::Enum8: field = extremeEnumField<DataTypeEnum8>(*type, need_min); break;
+        case TypeIndex::Enum16: field = extremeEnumField<DataTypeEnum16>(*type, need_min); break;
+        case TypeIndex::UUID: field = Field(UUID(extremeNumericField<UInt128>(need_min).safeGet<UInt128>())); break;
+        case TypeIndex::IPv4: field = Field(IPv4(static_cast<UInt32>(extremeNumericField<UInt32>(need_min).safeGet<UInt64>()))); break;
+        case TypeIndex::IPv6: field = Field(IPv6(extremeNumericField<UInt128>(need_min).safeGet<UInt128>())); break;
+        default:
+            break;
+    }
+
+    if (!field)
+        return nullptr;
+
+    return type->createColumnConst(1, *field);
+}
+
 struct SortingInputOrder
 {
     InputOrderInfoPtr input_order{};
@@ -500,11 +607,20 @@ SortingInputOrder buildInputOrderFromSortDescription(
 
     bool can_optimize_virtual_row = true;
 
+    /// Set when a fixed key column is skipped without a matching ORDER BY column: the columns
+    /// after it are no longer a contiguous key prefix, and the index entry at a mark boundary
+    /// stops bounding their values in the filtered stream (rows with other values of the fixed
+    /// column contribute arbitrary suffixes to the entry).
+    bool key_prefix_gap = false;
+
     struct MatchInfo
     {
         const ActionsDAG::Node * source = nullptr;
         const ActionsDAG::Node * fixed_column = nullptr;
         const MatchedTrees::Match * monotonic = nullptr;
+        /// Set for sort columns whose values cannot be taken from the index (see key_prefix_gap):
+        /// the virtual row announces this extreme constant instead.
+        ColumnConstPtr extreme_padding{};
     };
 
     std::vector<MatchInfo> match_infos;
@@ -600,24 +716,34 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 {
                     current_direction *= match.monotonicity->direction;
                     strict_monotonic = match.monotonicity->strict;
-                    match_infos.push_back({.source = sort_node, .monotonic = &match});
+                }
+
+                if (!key_prefix_gap)
+                {
+                    if (match.monotonicity)
+                        match_infos.push_back({.source = sort_node, .monotonic = &match});
+                    else
+                        match_infos.push_back({.source = sort_node});
+                }
+                else if (auto padding = tryGetExtremeConstant(
+                    sort_node->result_type, sort_column_description.direction, sort_column_description.nulls_direction))
+                {
+                    match_infos.push_back({.source = sort_node, .extreme_padding = std::move(padding)});
                 }
                 else
-                    match_infos.push_back({.source = sort_node});
+                    can_optimize_virtual_row = false;
 
                 ++next_description_column;
                 ++next_sort_key;
             }
             else if (fixed_key_columns.contains(sort_column_node))
             {
-                // Disable virtual row optimization: the key column is skipped without a matching
-                // ORDER BY column, so the later ORDER BY columns are no longer a contiguous key
-                // prefix and the virtual row DAG below would map them onto wrong key columns.
-                // A fixed first key is additionally ambiguous across parts, e.g. for pk (a, b),
-                // a = 1, order by b:
+                // E.g. for pk (a, b), a = 1, order by b the index entry values of b give no bound
+                // for the filtered rows: parts may go like
                 // 1st part (0, 100), (1, 2), (1, 3), (1, 4)
                 // 2nd part (0, 100), (1, 2), (1, 3), (1, 4).
-                can_optimize_virtual_row = false;
+                // The following sort columns are announced as extreme constants instead.
+                key_prefix_gap = true;
 
                 //std::cerr << "+++++++++ Found fixed key by match" << std::endl;
                 ++next_sort_key;
@@ -629,14 +755,18 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 if (!is_fixed_column)
                     break;
 
-                if (!sort_node->column)
-                    /// Virtual row for fixed column from order by is not supported now.
-                    /// TODO: we can do it for the simple case,
-                    /// But it's better to remove fixed columns from ORDER BY completely, e.g:
-                    /// WHERE x = 42 ORDER BY x, y    =>    WHERE x = 42 ORDER BY y
+                if (sort_node->column)
+                    match_infos.push_back({.source = sort_node, .fixed_column = sort_node});
+                else if (auto padding = tryGetExtremeConstant(
+                    sort_node->result_type, sort_column_description.direction, sort_column_description.nulls_direction))
+                {
+                    /// The column is fixed by the filter but its value is not attached to the node,
+                    /// so announce an extreme; equal-or-smaller values keep the boundary correct.
+                    match_infos.push_back({.source = sort_node, .extreme_padding = std::move(padding)});
+                }
+                else
                     can_optimize_virtual_row = false;
 
-                match_infos.push_back({.source = sort_node, .fixed_column = sort_node});
                 order_key_prefix_descr.push_back(sort_column_description);
                 ++next_description_column;
             }
@@ -690,6 +820,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
             const ActionsDAG::Node * output = nullptr;
             if (info.fixed_column)
                 output = &virtual_row_dag.addColumn(info.fixed_column->column, info.fixed_column->result_type, info.fixed_column->result_name);
+            else if (info.extreme_padding)
+                output = &virtual_row_dag.addColumn(info.extreme_padding, info.source->result_type, info.source->result_name);
             else
             {
                 if (info.monotonic)
@@ -706,7 +838,10 @@ SortingInputOrder buildInputOrderFromSortDescription(
 
             virtual_row_dag.getOutputs().push_back(output);
         }
-        virtual_row_conversion = std::move(virtual_row_dag);
+
+        /// All outputs are constants: such a virtual row tells nothing about the part.
+        if (next_pk_name > 0)
+            virtual_row_conversion = std::move(virtual_row_dag);
     }
 
     return {std::move(order_info), std::move(virtual_row_conversion)};
@@ -1204,7 +1339,9 @@ InputOrderInfoPtr buildInputOrderInfo(
             bool uses_virtual_row = false;
             if (order_info.virtual_row_conversion)
             {
-                uses_virtual_row = reading->setVirtualRowConversions(std::move(*order_info.virtual_row_conversion));
+                uses_virtual_row = reading->setVirtualRowConversions(
+                    std::move(*order_info.virtual_row_conversion),
+                    order_info.input_order->used_prefix_of_sorting_key_size);
                 virtual_row_reader = reading;
             }
 
