@@ -208,3 +208,32 @@ def test_rebuild_marker_is_fsynced():
     )
 
     instance.query(f"DROP USER IF EXISTS {user}")
+
+
+def test_deferred_list_write_preserves_session_fsync():
+    """
+    The deferred `.list` rewrite must honor the session `fsync_metadata` of the DDL that
+    scheduled it, not the global value it would otherwise read with no query context.
+
+    A CREATE USER at fsync_metadata=1 records the pending requirement; a following
+    SYSTEM RELOAD USERS at fsync_metadata=0 rewrites the `.list` files synchronously. The
+    reload's own context says "do not sync", so the only thing that can force the `.list`
+    fsync is the requirement carried from the CREATE USER. Restart first so no earlier
+    background writer is mid-wait, making the carry deterministic.
+    """
+    user = "u_deferred_fsync"
+    instance.query(f"DROP USER IF EXISTS {user}")
+    instance.restart_clickhouse()
+
+    instance.query(
+        f"CREATE USER {user} IDENTIFIED WITH no_password",
+        settings={"fsync_metadata": 1},
+    )
+
+    file_sync, _ = _run("SYSTEM RELOAD USERS", 0)
+    assert file_sync >= 1, (
+        "deferred .list rewrite dropped the session fsync_metadata=1 requirement: "
+        f"FileSync={file_sync}"
+    )
+
+    instance.query(f"DROP USER IF EXISTS {user}")

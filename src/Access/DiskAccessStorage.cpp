@@ -317,7 +317,11 @@ void DiskAccessStorage::writeLists()
     if (types_of_lists_to_write.empty())
         return;
 
-    const bool fsync = shouldFsyncMetadata();
+    /// Honor the strongest fsync requirement pending for this batch (a session `fsync_metadata=1`
+    /// carried over from `scheduleWriteLists`) on top of whatever the current context resolves to.
+    /// This matters most in the deferred background thread, which has no query context and would
+    /// otherwise silently downgrade to the global `fsync_metadata` and leave the `.list` unsynced.
+    const bool fsync = pending_lists_fsync || shouldFsyncMetadata();
 
     for (const auto & type : types_of_lists_to_write)
     {
@@ -336,6 +340,9 @@ void DiskAccessStorage::writeLists()
             tryLogCurrentException(getLogger(), "Could not write " + file_path);
             failed_to_write_lists = true;
             types_of_lists_to_write.clear();
+            /// Keep pending_lists_fsync: the batch was not durably written, so the fsync
+            /// obligation must survive to the eventual rebuild (reloadAllAndRebuildLists),
+            /// even if that rebuild's own context has fsync_metadata=0.
             return;
         }
     }
@@ -348,6 +355,7 @@ void DiskAccessStorage::writeLists()
     }
 
     types_of_lists_to_write.clear();
+    pending_lists_fsync = false;
 }
 
 
@@ -361,6 +369,13 @@ void DiskAccessStorage::scheduleWriteLists(AccessEntityType type)
 
     types_of_lists_to_write.insert(type);
 
+    /// Remember the strongest fsync requirement of the DDLs that scheduled this pending `.list`
+    /// rewrite. The rewrite itself runs later in the background thread (or at shutdown) with no
+    /// query context, so `writeLists()` cannot see this DDL's session `fsync_metadata`; carry it
+    /// here so a session `fsync_metadata=1` is not dropped to the global value there.
+    const bool fsync = shouldFsyncMetadata();
+    pending_lists_fsync = pending_lists_fsync || fsync;
+
     /// Create the 'need_rebuild_lists.mark' file.
     /// This file will be used later to find out if writing lists is successful or not.
     /// It must be durable: the marker is what tells the next startup to rescan the (already
@@ -373,7 +388,6 @@ void DiskAccessStorage::scheduleWriteLists(AccessEntityType type)
     /// file with no marker on disk. Fsync the marker file and its parent directory (the
     /// marker's existence is a new directory entry, like a rename), gated on fsync_metadata.
     const auto mark_file_path = getNeedRebuildListsMarkFilePath(directory_path);
-    const bool fsync = shouldFsyncMetadata();
     {
         std::optional<LocalDirectorySyncGuard> dir_sync_guard;
         if (fsync)
