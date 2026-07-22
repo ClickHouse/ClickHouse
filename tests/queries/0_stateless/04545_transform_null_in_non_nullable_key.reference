@@ -1,0 +1,41 @@
+String key IN
+a
+b
+c
+FixedString key IN
+ab
+cd
+Int64 key IN
+1
+2
+3
+LowCardinality(String) key IN
+a
+b
+Date key IN
+2020-01-01
+2020-01-02
+String key IN, transform_null_in=0
+a
+b
+c
+Non-PK String column IN
+a
+b
+c
+String key NOT IN, partition pruning
+
+b
+Int64 key NOT IN, partition pruning
+0
+7
+String key NOT has, partition pruning
+
+b
+Nullable(String) key IN
+a
+b
+c
+\N
+1
+Column count mismatch still rejected

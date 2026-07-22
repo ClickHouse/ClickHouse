@@ -2355,7 +2355,8 @@ static bool tryPrepareSetColumnsForIndex(
     const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
     const DataTypes & data_types,
     const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
-    size_t args_count)
+    size_t args_count,
+    bool & set_is_relaxed)
 {
     Columns new_columns;
     DataTypes new_types;
@@ -2473,6 +2474,16 @@ static bool tryPrepareSetColumnsForIndex(
         {
             for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
             {
+                /// A NULL element of a Nullable source set is kept in the pruning set as the nested
+                /// default (it is not filtered out here), so the set no longer matches the original
+                /// exactly. That weakens `IN` and, after negation, strengthens `NOT IN`, so a
+                /// single-point key range (partition pruning, minmax) could be pruned incorrectly.
+                /// Mark the atom relaxed so `checkInRange()` never reports an exact `can_be_false`.
+                /// Cast-produced NULLs, in contrast, are dropped by the filter below and keep the set
+                /// exact, so they must not relax it.
+                if (i < set_column_null_map->size() && (*set_column_null_map)[i])
+                    set_is_relaxed = true;
+
                 if (nullable_set_column_null_map_size < set_column_null_map->size())
                     filter[i] &= (*set_column_null_map)[i] || !nullable_set_column_null_map[i];
                 else
@@ -2571,8 +2582,9 @@ bool KeyCondition::tryPrepareSetIndexForIn(
         }
     }
 
+    bool set_is_relaxed = false;
     if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count))
+            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count, set_is_relaxed))
         return false;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
@@ -2597,7 +2609,10 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     ///    For partition pruning we may transform set elements via functions from the key expression,
     ///    which relaxes the predicate. Example: `PARTITION BY toDate(ts)` allows turning
     ///    `ts NOT IN ('2026-02-03 19:00:00')` into `toDate(ts) NOT IN ('2026-02-03')`, which is not equivalent.
-    if (adjusted_indexes_mapping.size() < set_types.size())
+    ///
+    /// - `set_is_relaxed` is set when `tryPrepareSetColumnsForIndex` sees a NULL set element that has
+    ///    no exact counterpart in the non-Nullable key (e.g. a NULL from a Nullable source set).
+    if (adjusted_indexes_mapping.size() < set_types.size() || set_is_relaxed)
         out.relaxed = true;
 
     return true;
@@ -2655,8 +2670,9 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     Columns set_columns = {array_elements};
     DataTypes set_types = {array_nested_type};
 
+    bool set_is_relaxed = false;
     if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count))
+            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count, set_is_relaxed))
         return false;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
@@ -2682,7 +2698,10 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     ///    which relaxes the predicate. Example: `PARTITION BY toDate(ts)` allows turning
     ///    `has([toDateTime('2026-02-03 19:00:00')], ts)` into `has([toDate('2026-02-03')], toDate(ts))`,
     ///    which is not equivalent.
-    if (adjusted_indexes_mapping.size() < set_types.size())
+    ///
+    /// - `set_is_relaxed` is set when `tryPrepareSetColumnsForIndex` sees a NULL set element that has
+    ///    no exact counterpart in the non-Nullable key (e.g. a NULL from a Nullable source set).
+    if (adjusted_indexes_mapping.size() < set_types.size() || set_is_relaxed)
         out.relaxed = true;
 
     return true;
