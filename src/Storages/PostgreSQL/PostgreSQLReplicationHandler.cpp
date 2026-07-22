@@ -1307,26 +1307,31 @@ void PostgreSQLReplicationHandler::ensureNestedTablesExist()
         /// the shared Keeper tree are preserved; recreating rejoins the shared tree. This is gated on
         /// `isShutdownCalled` (not merely read-only) so a nested table that is only transiently read-only while
         /// starting up is never dropped. If Keeper is unreachable the drop throws and the startup task retries.
-        if (auto nested = materialized_storage->tryGetNested())
+        bool nested_is_shut_down = false;
         {
-            if (const auto * replicated = nested->as<StorageReplicatedMergeTree>();
-                replicated && replicated->isShutdownCalled())
-            {
-                LOG_WARNING(log,
-                    "The local nested table for `{}`.`{}` was shut down (most likely by a refused coordinated "
-                    "drop) and cannot be restarted in place; dropping and recreating it so this replica rejoins "
-                    "the shared replicated tree",
-                    postgres_database, table_name);
+            /// The StoragePtr must not outlive this scope: the synchronous drop below waits until the dropped
+            /// table is not referenced anywhere, so holding the reference across the drop would deadlock it.
+            auto nested = materialized_storage->tryGetNested();
+            const auto * replicated = nested ? nested->as<StorageReplicatedMergeTree>() : nullptr;
+            nested_is_shut_down = replicated && replicated->isShutdownCalled();
+        }
 
-                /// Use the wrapper's internal nested-table context: for the database engine the nested table
-                /// lives inside the coordinated DatabaseMaterializedPostgreSQL, whose `dropTable` refuses a
-                /// non-internal (user) DROP; an internal context bypasses that guard exactly as the DROP DATABASE
-                /// nested-drop loop does.
-                InterpreterDropQuery::executeDropQuery(
-                    ASTDropQuery::Kind::Drop, getContext(), materialized_storage->getNestedTableContext(),
-                    materialized_storage->getNestedStorageID(), /* sync */ true, /* ignore_sync_setting */ true);
-                materialized_storage->resetNested();
-            }
+        if (nested_is_shut_down)
+        {
+            LOG_WARNING(log,
+                "The local nested table for `{}`.`{}` was shut down (most likely by a refused coordinated "
+                "drop) and cannot be restarted in place; dropping and recreating it so this replica rejoins "
+                "the shared replicated tree",
+                postgres_database, table_name);
+
+            /// Use the wrapper's internal nested-table context: for the database engine the nested table
+            /// lives inside the coordinated DatabaseMaterializedPostgreSQL, whose `dropTable` refuses a
+            /// non-internal (user) DROP; an internal context bypasses that guard exactly as the DROP DATABASE
+            /// nested-drop loop does (`executeDropQuery` propagates the internal-query flag).
+            InterpreterDropQuery::executeDropQuery(
+                ASTDropQuery::Kind::Drop, getContext(), materialized_storage->getNestedTableContext(),
+                materialized_storage->getNestedStorageID(), /* sync */ true, /* ignore_sync_setting */ true);
+            materialized_storage->resetNested();
         }
 
         if (!materialized_storage->tryGetNested())

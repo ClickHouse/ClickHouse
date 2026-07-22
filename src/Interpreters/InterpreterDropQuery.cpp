@@ -915,6 +915,14 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
         if (ignore_sync_setting)
             drop_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", false);
         drop_context->setDDLOrOnClusterInternal(true);
+        /// The copy of the global context above loses the internal-query flag of `current_context`, but the
+        /// interpreter below resolves the target table again through `DatabaseCatalog` with `drop_context`, and
+        /// that resolution can depend on the flag. For example, dropping a nested table of a coordinated
+        /// MaterializedPostgreSQL database with a non-internal context yields a wrapper whose
+        /// `checkTableCanBeDropped` refuses the drop; the internal contexts that engines pass here must keep
+        /// resolving the nested table directly.
+        if (current_context->isInternalQuery())
+            drop_context->setInternalQuery(true);
         if (auto txn = current_context->getZooKeeperMetadataTransaction())
         {
             /// For Replicated database
