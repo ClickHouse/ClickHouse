@@ -64,7 +64,13 @@ static QueryPlan::Node * findReadingStep(QueryPlan::Node * node)
 /// Walk the plan using the same traversal as findReadingStep (following LEFT/RIGHT JOIN logic),
 /// but look for a UnionStep. If found, collect all ReadFromMergeTree steps from each child branch,
 /// recursively handling nested views with their own UNION ALL.
-std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool allow_view_over_mergetree)
+///
+/// `right_branch_selected` (optional out-param) is set to true if the descent to any returned
+/// reading step went through the right child of a `RIGHT JOIN`. The initiator only ever analyzes
+/// the leftmost leaf, so when the parallelized reading step is reached via a right-branch descent
+/// it is a different table expression than the one analyzed, and the pre-analyzed result must not
+/// be reused for it (see `createLocalPlanForParallelReplicas`).
+std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool allow_view_over_mergetree, bool * right_branch_selected)
 {
     auto * node = root;
     while (node)
@@ -85,7 +91,7 @@ std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool all
             std::vector<QueryPlan::Node *> result;
             for (auto * child : node->children)
             {
-                auto child_results = findReadingSteps(child, allow_view_over_mergetree);
+                auto child_results = findReadingSteps(child, allow_view_over_mergetree, right_branch_selected);
                 result.insert(result.end(), child_results.begin(), child_results.end());
             }
             return result;
@@ -97,7 +103,11 @@ std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool all
             const JoinStepLogical * join_logical = typeid_cast<JoinStepLogical *>(node->step.get());
             if ((join && join->getJoin()->getTableJoin().kind() == JoinKind::Right)
                 || (join_logical && join_logical->getJoinOperator().kind == JoinKind::Right))
+            {
+                if (right_branch_selected)
+                    *right_branch_selected = true;
                 node = node->children.at(1);
+            }
             else
                 node = node->children.at(0);
         }
@@ -245,7 +255,8 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     auto query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
 
     const bool allow_view_over_mergetree = context->getSettingsRef()[Setting::parallel_replicas_allow_view_over_mergetree];
-    auto reading_nodes = findReadingSteps(query_plan->getRootNode(), allow_view_over_mergetree);
+    bool right_branch_selected = false;
+    auto reading_nodes = findReadingSteps(query_plan->getRootNode(), allow_view_over_mergetree, &right_branch_selected);
     if (reading_nodes.empty())
     {
         /// it can happen if merge tree table is empty — it'll be replaced with ReadFromPreparedSource
@@ -257,8 +268,16 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     coordinator->setSnapshotReplicaNum(replica_number);
 
     /// For the first reading step, reuse the pre-analyzed result if available.
+    ///
+    /// The initiator analyzes the leftmost leaf and passes that scan here. `findReadingSteps`
+    /// selects the parallelized scan by join kind, descending into the right child for a
+    /// `RIGHT JOIN`. In that case the parallelized scan is a different table expression than the
+    /// analyzed leftmost leaf, so reusing the pre-analyzed result would apply the wrong table's
+    /// parts and columns to it (`NOT_FOUND_COLUMN_IN_BLOCK`). Reuse only when no right-branch
+    /// descent occurred; otherwise let the scan analyze itself (the same path taken when no
+    /// analysis is passed).
     ReadFromMergeTree::AnalysisResultPtr analyzed_result_ptr;
-    if (analyzed_read_from_merge_tree.get())
+    if (!right_branch_selected && analyzed_read_from_merge_tree.get())
     {
         auto * analyzed_merge_tree = typeid_cast<ReadFromMergeTree *>(analyzed_read_from_merge_tree.get());
         if (analyzed_merge_tree)
