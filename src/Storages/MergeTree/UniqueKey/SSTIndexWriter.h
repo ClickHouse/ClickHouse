@@ -28,11 +28,9 @@ class IDataPartStorage;
 /// bloom filter (`NewBloomFilterPolicy(10)`). Instead of staging a local
 /// temp file, RocksDB is driven through a custom `rocksdb::Env` whose
 /// writable file forwards every byte into the part storage's
-/// `WriteBuffer` (`part_storage.writeFile`). This routes through the
-/// `IDataPartStorage` abstraction directly — correct for local disks,
-/// `DiskObjectStorage`, and transactional part builds — with no local
-/// staging and no `replaceFile`. The target file is opened lazily on the
-/// first `addEncoded`, so an empty input produces no `.sst` file.
+/// `WriteBuffer` (`part_storage.writeFile`). The target file is opened
+/// lazily on the first `addEncoded`, so an empty input produces no
+/// `.sst` file.
 ///
 /// Streaming `addEncoded` requires strictly-increasing encoded-key
 /// order (RocksDB `SstFileWriter::Put` invariant). Static helpers below
