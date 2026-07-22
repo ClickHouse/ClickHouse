@@ -108,6 +108,19 @@ DB::AggregatedDataVariants::Type convertToTwoLevelTypeIfPossible(DB::AggregatedD
 void initDataVariantsWithSizeHint(
     DB::AggregatedDataVariants & result, DB::AggregatedDataVariants::Type method_chosen, const DB::Aggregator::Params & params)
 {
+    /// Adaptive aggregation bounds every local table by the freeze threshold, so the size hint is
+    /// applied capped by it: queries below the threshold (which never freeze) keep the full
+    /// benefit of preallocation, and high-cardinality ones pre-size to at most what the table
+    /// reaches before freezing.
+    if (params.enable_adaptive_aggregator)
+    {
+        std::optional<size_t> capped_hint;
+        if (auto hint = getSizeHint(params.stats_collecting_params, /*tables_cnt=*/std::max<size_t>(params.max_threads, 1)))
+            capped_hint = std::min<size_t>(hint->median_size, 2 * params.adaptive_aggregator_freeze_threshold);
+        result.init(method_chosen, capped_hint);
+        return;
+    }
+
     const auto & stats_collecting_params = params.stats_collecting_params;
     const auto max_threads = params.group_by_two_level_threshold != 0 ? std::max(params.max_threads, 1ul) : 1;
     if (auto hint = getSizeHint(stats_collecting_params, /*tables_cnt=*/max_threads))
@@ -342,7 +355,9 @@ Aggregator::Params::Params(
     float min_hit_rate_to_use_consecutive_keys_optimization_,
     const StatsCollectingParams & stats_collecting_params_,
     bool enable_producing_buckets_out_of_order_in_aggregation_,
-    bool serialize_string_with_zero_byte_)
+    bool serialize_string_with_zero_byte_,
+    bool enable_adaptive_aggregator_,
+    UInt64 adaptive_aggregator_freeze_threshold_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -365,6 +380,8 @@ Aggregator::Params::Params(
     , optimize_group_by_constant_keys(optimize_group_by_constant_keys_)
     , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
     , stats_collecting_params(stats_collecting_params_)
+    , enable_adaptive_aggregator(enable_adaptive_aggregator_)
+    , adaptive_aggregator_freeze_threshold(adaptive_aggregator_freeze_threshold_)
     , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
     , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
 {
@@ -960,8 +977,8 @@ void NO_INLINE Aggregator::executeImpl(
     bool all_keys_are_const,
     AggregateDataPtr overflow_row) const
 {
-    UInt64 total_rows = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
-    double cache_hit_rate = total_rows ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_rows) : 1.0;
+    UInt64 total_records = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
+    double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
     bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
 
     if (use_cache)
@@ -1612,7 +1629,8 @@ bool Aggregator::executeOnBlock(Columns columns,
     AggregatedDataVariants & result,
     ColumnRawPtrs & key_columns,
     AggregateColumns & aggregate_columns,
-    bool & no_more_keys) const
+    bool & no_more_keys,
+    AdaptiveAggregationThreadContext * adaptive) const
 {
     /// When tracking the aggregation memory, the aggregator memory tracker is inserted between the thread
     /// and query memory trackers, and accounts for the aggregation state across all threads.
@@ -1697,6 +1715,13 @@ bool Aggregator::executeOnBlock(Columns columns,
             result.aggregates_pool,
             use_compiled_functions);
     }
+    else if (adaptive && adaptive->local_table_frozen)
+    {
+        /// The frozen adaptive path: hits update the local table in place, misses become delayed
+        /// records of the shared table.
+        executeFrozen(
+            columns, row_begin, row_end, result, key_columns, aggregate_functions_instructions.data(), *adaptive, all_keys_are_const);
+    }
     else
     {
         /// This is where data is written that does not fit in `max_rows_to_group_by` with `group_by_overflow_mode = any`.
@@ -1709,6 +1734,26 @@ bool Aggregator::executeOnBlock(Columns columns,
 
     /// Here all the results in the sum are taken into account, from different threads.
     Int64 result_size_bytes = use_own_tracker ? memory_tracker->get() : current_memory_usage - memory_usage_before_aggregation;
+
+    if (adaptive)
+    {
+        /// The freeze replaces the local two-level conversion: from now on the local table only
+        /// updates the keys it already holds, so it stays single-level and bounded by the
+        /// threshold, and the shared table is the only two-level structure of this aggregation.
+        if (!adaptive->local_table_frozen && result_size >= params.adaptive_aggregator_freeze_threshold
+            && result.isConvertibleToTwoLevel())
+        {
+            std::call_once(adaptive->shared_state->init_flag, [&] { initAdaptiveSharedState(result, *adaptive->shared_state); });
+            adaptive->local_table_frozen = true;
+            LOG_TRACE(log, "Adaptive aggregation: local table frozen at {} keys", result_size);
+        }
+
+        /// Checking the constraints.
+        if (!checkLimits(result_size, no_more_keys))
+            return false;
+
+        return true;
+    }
 
     bool worth_convert_to_two_level = worthConvertToTwoLevel(
         params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes);
@@ -1738,6 +1783,706 @@ bool Aggregator::executeOnBlock(Columns columns,
     return true;
 }
 
+
+/// Tuning of the adaptive aggregation.
+namespace
+{
+    /// The probe bypass decides after this many post-freeze rows per thread. It must be reachable
+    /// by every stream: at 64 threads over a 100M-row table a thread only sees ~1.5M rows.
+    constexpr size_t adaptive_bypass_sample_rows = 262'144;
+    /// Probing the frozen table pays off only while at least one row in this many hits it.
+    constexpr size_t adaptive_bypass_hit_rate_inverse = 4;
+    /// The drain reserves a bucket's table after sampling this fraction of its records.
+    constexpr size_t adaptive_reserve_sample_inverse = 8;
+    /// Headroom over the sampled insert rate when reserving.
+    constexpr double adaptive_reserve_headroom = 1.25;
+    /// Fixed lookahead of the drain's hash prefetch.
+    constexpr size_t adaptive_drain_prefetch_look_ahead = 16;
+}
+
+template <typename State>
+bool ALWAYS_INLINE adaptiveKeyViewsAreBlockStable(const State & state)
+{
+    if constexpr (requires { state.use_batch_serialize; })
+        return state.use_batch_serialize;
+    else
+        return true;
+}
+
+struct AdaptiveDelayedBlockPreparation
+{
+    Columns materialized_columns;
+    Aggregator::AggregateColumns aggregate_columns;
+    Aggregator::NestedColumnsHolder nested_columns_holder;
+    Aggregator::AggregateFunctionInstructions instructions;
+};
+
+AdaptiveAggregationSharedState::DelayedBlock::~DelayedBlock() = default;
+
+void Aggregator::prepareDelayedBlock(AdaptiveAggregationSharedState::DelayedBlock & block) const
+{
+    auto prep = std::make_unique<AdaptiveDelayedBlockPreparation>();
+
+
+    prep->aggregate_columns.resize(params.aggregates_size);
+    prepareAggregateInstructions(
+        block.source_columns, prep->aggregate_columns, prep->materialized_columns, prep->instructions, prep->nested_columns_holder);
+
+    block.prepared = std::move(prep);
+}
+
+void Aggregator::initAdaptiveSharedState(AggregatedDataVariants & local_result, AdaptiveAggregationSharedState & shared) const
+{
+    auto routing_variants = std::make_shared<AggregatedDataVariants>();
+    routing_variants->aggregator = this;
+    routing_variants->keys_size = params.keys_size;
+    routing_variants->key_sizes = key_sizes;
+    routing_variants->init(convertToTwoLevelTypeIfPossible(local_result.type));
+
+    shared.routing_variants = std::move(routing_variants);
+    shared.initialized.store(true, std::memory_order_release);
+}
+
+void Aggregator::executeFrozen(
+    const Columns & columns,
+    size_t row_begin,
+    size_t row_end,
+    AggregatedDataVariants & result,
+    ColumnRawPtrs & key_columns,
+    AggregateFunctionInstruction * aggregate_instructions,
+    AdaptiveAggregationThreadContext & adaptive,
+    bool all_keys_are_const) const
+{
+    auto & routing_variants = *adaptive.shared_state->routing_variants;
+
+#define M(NAME) \
+    else if (result.type == AggregatedDataVariants::Type::NAME) \
+        executeFrozenImpl( \
+            *result.NAME, \
+            *routing_variants.NAME##_two_level, \
+            result.aggregates_pool, \
+            columns, \
+            row_begin, \
+            row_end, \
+            key_columns, \
+            aggregate_instructions, \
+            adaptive, \
+            all_keys_are_const);
+
+    if (false) {} // NOLINT
+    APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+#undef M
+    else
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant in the adaptive frozen path.");
+
+}
+
+template <typename LocalMethod, typename SharedMethod>
+void NO_INLINE Aggregator::executeFrozenImpl(
+    LocalMethod & local_method,
+    const SharedMethod & shared_method,
+    Arena * aggregates_pool,
+    const Columns & columns,
+    size_t row_begin,
+    size_t row_end,
+    ColumnRawPtrs & key_columns,
+    AggregateFunctionInstruction * aggregate_instructions,
+    AdaptiveAggregationThreadContext & adaptive,
+    bool all_keys_are_const) const
+{
+    Arena scratch_pool;
+
+    typename LocalMethod::StateNoCache local_find_state(key_columns, key_sizes, aggregation_state_cache);
+    const auto & shared_table = shared_method.data;
+
+    auto update_bypass_sampling = [&](size_t hits, size_t rows)
+    {
+        if (adaptive.bypass_local_probe)
+            return;
+        adaptive.bypass_sampled_hits += hits;
+        adaptive.bypass_sampled_rows += rows;
+        if (adaptive.bypass_sampled_rows >= adaptive_bypass_sample_rows
+            && adaptive.bypass_sampled_hits * adaptive_bypass_hit_rate_inverse < adaptive.bypass_sampled_rows)
+            adaptive.bypass_local_probe = true;
+    };
+    const bool bypass_local_probe = adaptive.bypass_local_probe;
+
+    if (all_keys_are_const)
+    {
+        auto && key_holder = local_find_state.getKeyHolder(0, scratch_pool);
+        const auto & key = keyHolderGetKey(key_holder);
+        const UInt64 hash = shared_table.hash(key);
+
+        bool found = false;
+        AggregateDataPtr found_place = nullptr;
+        if (auto it = local_method.data.find(key, hash))
+        {
+            found = true;
+            if (is_simple_count)
+                getInlineCountState(it->getMapped()) += row_end - row_begin;
+            else
+                found_place = it->getMapped();
+        }
+
+        if (found)
+        {
+            if (!is_simple_count && params.aggregates_size)
+            {
+                /// Apply the whole range to the single place, mirroring the ordinary
+                /// all-keys-are-const handling.
+                PaddedPODArray<AggregateDataPtr> places;
+                places.resize_fill(row_begin + 1, nullptr);
+                places[row_begin] = found_place;
+                executeAggregateInstructions(
+                    aggregates_pool,
+                    row_begin,
+                    row_end,
+                    aggregate_instructions,
+                    places.data(),
+                    /*key_start=*/row_begin,
+                    /*has_only_one_value_since_last_reset=*/false,
+                    /*all_keys_are_const=*/true,
+                    /*use_compiled_functions=*/false);
+            }
+        }
+        else
+        {
+            const UInt64 key_size = [&]() -> UInt64
+            {
+                if constexpr (std::is_same_v<typename SharedMethod::Key, std::string_view>)
+                    return key.size();
+                else
+                    return sizeof(typename SharedMethod::Key);
+            }();
+            const auto bucket = static_cast<UInt8>(SharedMethod::Data::getBucketFromHash(hash));
+
+            if (is_simple_count)
+            {
+                adaptive.miss_hashes.push_back(hash);
+                adaptive.miss_run_lengths.push_back(static_cast<UInt32>(row_end - row_begin));
+                adaptive.miss_key_sizes.push_back(key_size);
+                adaptive.miss_buckets.push_back(bucket);
+            }
+            else
+            {
+                for (size_t i = row_begin; i < row_end; ++i)
+                {
+                    adaptive.miss_source_rows.push_back(static_cast<UInt32>(i));
+                    adaptive.miss_hashes.push_back(hash);
+                    adaptive.miss_buckets.push_back(bucket);
+                    adaptive.miss_key_sizes.push_back(key_size);
+                }
+            }
+            publishDelayedRecords<typename SharedMethod::Key>(
+                columns, row_end, adaptive, local_find_state, scratch_pool, /*value_staged=*/is_simple_count, /*key_row_override=*/0);
+        }
+        keyHolderDiscardKey(key_holder);
+        return;
+    }
+
+    if (is_simple_count)
+    {
+        size_t hits = 0;
+        typename SharedMethod::Key last_staged_key{};
+        [[maybe_unused]] const bool stable_key_views = adaptiveKeyViewsAreBlockStable(local_find_state);
+        for (size_t i = row_begin; i < row_end; ++i)
+        {
+            auto && key_holder = local_find_state.getKeyHolder(i, scratch_pool);
+            const auto & key = keyHolderGetKey(key_holder);
+            const UInt64 hash = shared_table.hash(key);
+
+            if (!bypass_local_probe)
+            {
+                if (auto it = local_method.data.find(key, hash))
+                {
+                    ++hits;
+                    ++getInlineCountState(it->getMapped());
+                    keyHolderDiscardKey(key_holder);
+                    continue;
+                }
+            }
+
+            const typename SharedMethod::Key staged_key = key;
+
+            bool run_continues = !adaptive.miss_hashes.empty() && adaptive.miss_hashes.back() == hash;
+            if constexpr (std::is_same_v<typename SharedMethod::Key, std::string_view>)
+                run_continues = run_continues && stable_key_views && staged_key == last_staged_key;
+            else
+                run_continues = run_continues && staged_key == last_staged_key;
+
+            if (run_continues)
+            {
+                ++adaptive.miss_run_lengths.back();
+            }
+            else
+            {
+                adaptive.miss_hashes.push_back(hash);
+                adaptive.miss_run_lengths.push_back(1);
+                if constexpr (std::is_same_v<typename SharedMethod::Key, std::string_view>)
+                {
+                    adaptive.miss_key_sizes.push_back(staged_key.size());
+                    if (stable_key_views)
+                        last_staged_key = staged_key;
+                }
+                else
+                {
+                    adaptive.miss_key_sizes.push_back(sizeof(staged_key));
+                    last_staged_key = staged_key;
+                }
+                adaptive.miss_source_rows.push_back(static_cast<UInt32>(i));
+                adaptive.miss_buckets.push_back(static_cast<UInt8>(SharedMethod::Data::getBucketFromHash(hash)));
+            }
+            keyHolderDiscardKey(key_holder);
+        }
+        update_bypass_sampling(hits, row_end - row_begin);
+        publishDelayedRecords<typename SharedMethod::Key>(columns, row_end, adaptive, local_find_state, scratch_pool, /*value_staged=*/true);
+        return;
+    }
+
+    AllocatorWithMemoryTracking<AggregateDataPtr> allocator;
+    const size_t places_size = row_end;
+    auto places_deleter = [&allocator, &places_size](auto * ptr)
+    {
+        if (ptr) [[likely]]
+            allocator.deallocate(ptr, places_size);
+    };
+    std::unique_ptr<AggregateDataPtr[], decltype(places_deleter)> places(allocator.allocate(places_size), places_deleter);
+
+    size_t hits = 0;
+    for (size_t i = row_begin; i < row_end; ++i)
+    {
+        auto && key_holder = local_find_state.getKeyHolder(i, scratch_pool);
+        const auto & key = keyHolderGetKey(key_holder);
+        const UInt64 hash = shared_table.hash(key);
+
+        if (!bypass_local_probe)
+        {
+            if (auto it = local_method.data.find(key, hash))
+            {
+                ++hits;
+                places[i] = it->getMapped();
+                keyHolderDiscardKey(key_holder);
+                continue;
+            }
+        }
+
+        places[i] = nullptr;
+        adaptive.miss_source_rows.push_back(static_cast<UInt32>(i));
+        adaptive.miss_hashes.push_back(hash);
+        adaptive.miss_buckets.push_back(static_cast<UInt8>(SharedMethod::Data::getBucketFromHash(hash)));
+
+        if constexpr (std::is_same_v<typename SharedMethod::Key, std::string_view>)
+            adaptive.miss_key_sizes.push_back(key.size());
+        else
+            adaptive.miss_key_sizes.push_back(sizeof(typename SharedMethod::Key));
+        keyHolderDiscardKey(key_holder);
+    }
+    update_bypass_sampling(hits, row_end - row_begin);
+    publishDelayedRecords<typename SharedMethod::Key>(columns, row_end, adaptive, local_find_state, scratch_pool, /*value_staged=*/false);
+
+    if (params.aggregates_size)
+        executeAggregateInstructions(
+            aggregates_pool,
+            row_begin,
+            row_end,
+            aggregate_instructions,
+            places.get(),
+            /*key_start=*/row_begin,
+            /*has_only_one_value_since_last_reset=*/false,
+            /*all_keys_are_const=*/false,
+            /*use_compiled_functions=*/false);
+}
+
+template <typename SharedKey, typename State>
+void NO_INLINE Aggregator::publishDelayedRecords(
+    const Columns & columns,
+    size_t num_rows,
+    AdaptiveAggregationThreadContext & adaptive,
+    State & local_find_state,
+    Arena & scratch_pool,
+    bool value_staged,
+    std::optional<UInt32> key_row_override) const
+{
+    constexpr size_t num_buckets = AdaptiveAggregationSharedState::NUM_BUCKETS;
+
+    const size_t total = adaptive.miss_hashes.size();
+    if (!total)
+        return;
+
+    if (num_rows > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Adaptive aggregation got a block of {} rows; row numbers are 32-bit.", num_rows);
+
+    auto & shared = *adaptive.shared_state;
+
+    auto block = std::make_shared<AdaptiveAggregationSharedState::DelayedBlock>();
+    block->value_staged = value_staged;
+    block->routing_hashes.resize(total);
+
+    /// Counting sort of the staged misses by bucket.
+    std::array<UInt32, num_buckets> cursor{};
+    for (const auto bucket : adaptive.miss_buckets)
+        ++cursor[bucket];
+
+    UInt32 offset = 0;
+    for (size_t b = 0; b < num_buckets; ++b)
+    {
+        block->bucket_offsets[b] = offset;
+        const auto count = cursor[b];
+        cursor[b] = offset;
+        offset += count;
+    }
+    block->bucket_offsets[num_buckets] = offset;
+
+    std::array<UInt64, num_buckets> byte_cursor{};
+
+    block->key_offsets.resize(total + 1);
+
+    UInt64 total_bytes = 0;
+    for (size_t i = 0; i < total; ++i)
+    {
+        byte_cursor[adaptive.miss_buckets[i]] += adaptive.miss_key_sizes[i];
+        total_bytes += adaptive.miss_key_sizes[i];
+    }
+    block->key_bytes.resize(total_bytes);
+
+    UInt64 byte_offset = 0;
+    for (size_t b = 0; b < num_buckets; ++b)
+    {
+        const auto bytes = byte_cursor[b];
+        byte_cursor[b] = byte_offset;
+        byte_offset += bytes;
+    }
+    block->key_offsets[total] = byte_offset;
+
+    if (value_staged)
+        block->run_lengths.resize(total);
+    else
+    {
+        block->source_columns = columns;
+        block->num_source_rows = num_rows;
+        block->source_rows.resize(total);
+    }
+
+    for (size_t i = 0; i < total; ++i)
+    {
+        const auto b = adaptive.miss_buckets[i];
+        const auto pos = cursor[b]++;
+        block->routing_hashes[pos] = adaptive.miss_hashes[i];
+
+        if (value_staged)
+            block->run_lengths[pos] = adaptive.miss_run_lengths[i];
+        else
+            block->source_rows[pos] = adaptive.miss_source_rows[i];
+
+        const auto size = adaptive.miss_key_sizes[i];
+        const auto byte_pos = byte_cursor[b];
+        byte_cursor[b] += size;
+        block->key_offsets[pos] = byte_pos;
+
+        const size_t key_row = key_row_override ? *key_row_override : adaptive.miss_source_rows[i];
+        auto && key_holder = local_find_state.getKeyHolder(key_row, scratch_pool);
+        const auto & key = keyHolderGetKey(key_holder);
+        if constexpr (std::is_same_v<SharedKey, std::string_view>)
+        {
+            memcpy(block->key_bytes.data() + byte_pos, key.data(), size);
+        }
+        else
+        {
+            const SharedKey widened = key;
+            memcpy(block->key_bytes.data() + byte_pos, &widened, sizeof(widened));
+        }
+        keyHolderDiscardKey(key_holder);
+    }
+
+    adaptive.miss_source_rows.clear();
+    adaptive.miss_hashes.clear();
+    adaptive.miss_buckets.clear();
+    adaptive.miss_key_sizes.clear();
+    adaptive.miss_run_lengths.clear();
+
+    for (size_t b = 0; b < num_buckets; ++b)
+    {
+        if (block->bucket_offsets[b] == block->bucket_offsets[b + 1])
+            continue;
+
+        auto & bucket = shared.buckets[b];
+        std::lock_guard lock(bucket.backlog_mutex);
+        bucket.backlog.push_back(block);
+    }
+
+    shared.pending_records.fetch_add(total, std::memory_order_relaxed);
+}
+
+void Aggregator::drainAdaptiveBucketForMerge(
+    AggregatedDataVariants & dest,
+    Arena * arena,
+    size_t bucket_index,
+    AdaptiveAggregationSharedState & shared,
+    std::atomic<bool> & is_cancelled) const
+{
+    if (is_cancelled.load(std::memory_order_relaxed))
+        return;
+
+    auto & bucket = shared.buckets[bucket_index];
+
+    std::vector<AdaptiveAggregationSharedState::DelayedBlockPtr> backlog;
+    {
+        std::lock_guard lock(bucket.backlog_mutex);
+        backlog.swap(bucket.backlog);
+    }
+    if (backlog.empty())
+        return;
+
+    PaddedPODArray<AggregateDataPtr> places_scratch;
+
+    size_t records_drained = 0;
+    for (const auto & block : backlog)
+    {
+        records_drained += block->bucket_offsets[bucket_index + 1] - block->bucket_offsets[bucket_index];
+
+        if (!block->value_staged)
+            std::call_once(block->prepared_flag, [&] { prepareDelayedBlock(*block); });
+    }
+
+#define M(NAME) \
+    else if (dest.type == AggregatedDataVariants::Type::NAME) \
+        drainAdaptiveBucketBacklog(*dest.NAME, arena, backlog, bucket_index, records_drained, places_scratch, is_cancelled);
+
+    if (false) {} // NOLINT
+    APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+#undef M
+    else
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant in the adaptive drain path.");
+
+    shared.pending_records.fetch_sub(records_drained, std::memory_order_relaxed);
+}
+
+template <typename Method>
+void NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
+    Method & method,
+    Arena * arena,
+    const std::vector<AdaptiveAggregationSharedState::DelayedBlockPtr> & backlog,
+    size_t bucket_index,
+    size_t total_records,
+    PaddedPODArray<AggregateDataPtr> & places,
+    std::atomic<bool> & is_cancelled) const
+{
+    auto & impl = method.data.impls[bucket_index];
+
+    const size_t reserve_sample_records = total_records / adaptive_reserve_sample_inverse;
+    const size_t size_before = impl.size();
+    bool reserved = false;
+    size_t processed = 0;
+    size_t sampled_long_keys = 0;
+
+    auto update_reserve = [&](size_t rows)
+    {
+        processed += rows;
+        if (!reserved && processed >= reserve_sample_records && processed < total_records)
+        {
+            reserved = true;
+            const double insert_rate = static_cast<double>(impl.size() - size_before) / static_cast<double>(processed);
+            const auto expected
+                = static_cast<size_t>(static_cast<double>(total_records - processed) * insert_rate * adaptive_reserve_headroom);
+
+            if constexpr (requires { impl.reserveAdditionalLongStrings(size_t{}); })
+            {
+                const double long_fraction = static_cast<double>(sampled_long_keys) / static_cast<double>(processed);
+                impl.reserveAdditionalLongStrings(static_cast<size_t>(static_cast<double>(expected) * long_fraction));
+            }
+            else
+                impl.reserve(impl.size() + expected);
+        }
+    };
+
+    for (const auto & block_ptr : backlog)
+    {
+        if (is_cancelled.load(std::memory_order_relaxed))
+            return;
+
+        const auto & block = *block_ptr;
+        const size_t slice_begin = block.bucket_offsets[bucket_index];
+        const size_t slice_end = block.bucket_offsets[bucket_index + 1];
+
+        if constexpr (requires { impl.reserveAdditionalLongStrings(size_t{}); })
+        {
+            if (!reserved)
+            {
+                for (size_t j = slice_begin; j < slice_end; ++j)
+                {
+                    const std::string_view key(
+                        block.key_bytes.data() + block.key_offsets[j], block.key_offsets[j + 1] - block.key_offsets[j]);
+                    if (impl.keyGoesToLongStringMap(key))
+                        ++sampled_long_keys;
+                }
+            }
+        }
+
+        if (block.value_staged)
+        {
+            constexpr size_t prefetch_look_ahead = adaptive_drain_prefetch_look_ahead;
+            for (size_t j = slice_begin; j < slice_end; ++j)
+            {
+                if (j + prefetch_look_ahead < slice_end)
+                {
+                    if constexpr (requires { impl.prefetchByHash(block.routing_hashes[j]); })
+                    {
+                        impl.prefetchByHash(block.routing_hashes[j + prefetch_look_ahead]);
+                    }
+                    else if constexpr (std::is_same_v<typename Method::Key, std::string_view>)
+                    {
+                        const size_t la = j + prefetch_look_ahead;
+                        std::string_view la_key(
+                            block.key_bytes.data() + block.key_offsets[la], block.key_offsets[la + 1] - block.key_offsets[la]);
+                        impl.prefetch(la_key, block.routing_hashes[la]);
+                    }
+                }
+
+                typename Method::Data::LookupResult it;
+                bool inserted = false;
+                const char * key_pos = block.key_bytes.data() + block.key_offsets[j];
+                if constexpr (std::is_same_v<typename Method::Key, std::string_view>)
+                {
+                    std::string_view key(key_pos, block.key_offsets[j + 1] - block.key_offsets[j]);
+                    method.data.emplace(ArenaKeyHolder{key, *arena}, it, inserted, block.routing_hashes[j]);
+                }
+                else
+                {
+                    method.data.emplace(unalignedLoad<typename Method::Key>(key_pos), it, inserted, block.routing_hashes[j]);
+                }
+
+                if (inserted)
+                    getInlineCountState(it->getMapped()) = block.run_lengths[j];
+                else
+                    getInlineCountState(it->getMapped()) += block.run_lengths[j];
+            }
+        }
+        else
+        {
+            drainAdaptiveBucketImpl(method, arena, block, slice_begin, slice_end, places, bucket_index);
+        }
+
+        update_reserve(slice_end - slice_begin);
+    }
+}
+
+template <typename Method>
+void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
+    Method & method,
+    Arena * bucket_arena,
+    const AdaptiveAggregationSharedState::DelayedBlock & block,
+    size_t slice_begin,
+    size_t slice_end,
+    PaddedPODArray<AggregateDataPtr> & places,
+    size_t bucket_index) const
+{
+    auto & impl = method.data.impls[bucket_index];
+    constexpr size_t prefetch_look_ahead = adaptive_drain_prefetch_look_ahead;
+    auto prefetch = [&](size_t j)
+    {
+        if constexpr (requires { impl.prefetchByHash(block.routing_hashes[j]); })
+            if (j + prefetch_look_ahead < slice_end)
+                impl.prefetchByHash(block.routing_hashes[j + prefetch_look_ahead]);
+    };
+
+    const auto & prep = *block.prepared;
+    const auto & rows = block.source_rows;
+
+    places.resize(slice_end - slice_begin);
+
+    for (size_t j = slice_begin; j < slice_end; ++j)
+    {
+        prefetch(j);
+        typename Method::Data::LookupResult it;
+        bool inserted = false;
+        const char * key_pos = block.key_bytes.data() + block.key_offsets[j];
+        if constexpr (std::is_same_v<typename Method::Key, std::string_view>)
+        {
+            std::string_view key(key_pos, block.key_offsets[j + 1] - block.key_offsets[j]);
+            method.data.emplace(ArenaKeyHolder{key, *bucket_arena}, it, inserted, block.routing_hashes[j]);
+        }
+        else
+        {
+            method.data.emplace(unalignedLoad<typename Method::Key>(key_pos), it, inserted, block.routing_hashes[j]);
+        }
+
+        AggregateDataPtr aggregate_data = nullptr;
+        if (inserted)
+        {
+            it->getMapped() = nullptr;
+            aggregate_data = bucket_arena->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+            createAggregateStates(aggregate_data);
+            it->getMapped() = aggregate_data;
+        }
+        else
+            aggregate_data = it->getMapped();
+
+        places[j - slice_begin] = aggregate_data;
+    }
+
+    if (!params.aggregates_size)
+        return;
+
+    /// Apply the aggregate functions to the delayed rows only.
+    MutableColumnPtr gather_indexes_holder;
+    PaddedPODArray<AggregateDataPtr> full_places;
+    for (size_t i = 0; i < aggregate_functions.size(); ++i)
+    {
+        const AggregateFunctionInstruction * inst = prep.instructions.data() + i;
+
+        if (inst->offsets)
+        {
+            /// Mirrors `addBatchArray`: the aggregated values of row `r` are the flattened rows
+            /// [offsets[r - 1], offsets[r]).
+            for (size_t j = slice_begin; j < slice_end; ++j)
+            {
+                const size_t row = rows[j];
+                const size_t end = inst->offsets[row];
+                for (size_t k = inst->offsets[static_cast<ssize_t>(row) - 1]; k < end; ++k)
+                    inst->batch_that->add(places[j - slice_begin] + inst->state_offset, inst->batch_arguments, k, bucket_arena);
+            }
+        }
+        else if (inst->has_sparse_arguments)
+        {
+            if (full_places.empty())
+            {
+                full_places.resize_fill(block.num_source_rows, nullptr);
+                for (size_t j = slice_begin; j < slice_end; ++j)
+                    full_places[rows[j]] = places[j - slice_begin];
+            }
+            inst->batch_that->addBatchSparse(0, block.num_source_rows, full_places.data(), inst->state_offset, inst->batch_arguments, bucket_arena);
+        }
+        else
+        {
+            const size_t num_arguments = inst->that->getArgumentTypes().size();
+
+            if (num_arguments == 0)
+            {
+                inst->batch_that->addBatch(
+                    0, slice_end - slice_begin, places.data(), inst->state_offset, inst->batch_arguments, bucket_arena);
+                continue;
+            }
+
+            if (!gather_indexes_holder)
+            {
+                auto indexes = ColumnUInt32::create();
+                indexes->getData().insert(rows.begin() + slice_begin, rows.begin() + slice_end);
+                gather_indexes_holder = std::move(indexes);
+            }
+
+            Columns gathered_holder(num_arguments);
+            std::vector<const IColumn *> gathered(num_arguments);
+            for (size_t j = 0; j < num_arguments; ++j)
+            {
+                gathered_holder[j] = inst->batch_arguments[j]->index(*gather_indexes_holder, 0);
+                gathered[j] = gathered_holder[j].get();
+            }
+
+            inst->batch_that->addBatch(
+                0, slice_end - slice_begin, places.data(), inst->state_offset, gathered.data(), bucket_arena);
+        }
+    }
+}
 
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size) const
 {
@@ -3379,8 +4124,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     std::atomic<bool> & is_cancelled,
     Arena * arena_for_keys) const
 {
-    UInt64 total_rows = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
-    double cache_hit_rate = total_rows ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_rows) : 1.0;
+    UInt64 total_records = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
+    double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
     bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
 
     auto merge_count_variant = [&]<typename State>(State & state)
