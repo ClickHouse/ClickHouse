@@ -277,15 +277,17 @@ Pipe StorageSQLite::read(
         /// Use all physical columns (ordinary + the MATERIALIZED generated columns) as the pushdown-eligible
         /// set: SQLite can filter on generated columns too, so a `WHERE` over them is still pushed down.
         ///
-        /// `UInt64` is the exception. SQLite has no unsigned 64-bit integer type, so the sink writes `UInt64`
-        /// as text to preserve values above the signed 64-bit range (see `bindSQLiteValue`). SQLite then
-        /// compares such a text-stored number lexicographically and orders every text value after every
-        /// numeric one, so a numeric predicate pushed down verbatim would match the wrong rows: `WHERE u = 5`
-        /// never matches the text cell `'5'`, and `WHERE u > 2` treats `'10'` as smaller than `'2'`. Exclude
-        /// `UInt64` columns from the eligible set so ClickHouse applies those predicates locally instead.
+        /// The exception is types the sink stores as SQLite TEXT while ClickHouse compares them by value:
+        /// `UInt64` (SQLite has no unsigned 64-bit integer type, so it is written as text to preserve values
+        /// above the signed 64-bit range), the wider integers `Int128`/`UInt128`/`Int256`/`UInt256`,
+        /// `Decimal`, dates and times, and so on (see `isPushdownSafeType`). SQLite compares such a
+        /// text-stored value lexicographically and orders every text value after every numeric one, so a
+        /// predicate pushed down verbatim would drop the wrong rows: `WHERE u = 5` never matches the text
+        /// cell `'5'`, and `WHERE u > 2` treats `'10'` as smaller than `'2'`. Exclude those columns from the
+        /// eligible set so ClickHouse applies such predicates locally instead.
         NamesAndTypesList pushdown_columns;
         for (const auto & column : storage_snapshot->metadata->getColumns().getAllPhysical())
-            if (!WhichDataType(removeLowCardinalityAndNullable(column.type)).isUInt64())
+            if (SQLiteFormatImpl::isPushdownSafeType(column.type))
                 pushdown_columns.push_back(column);
 
         query = transformQueryForExternalDatabase(
@@ -626,7 +628,7 @@ When you explicitly specify ClickHouse column types in the table definition, the
 - [Enum8, Enum16](../../../sql-reference/data-types/enum.md)
 - [Decimal32, Decimal64, Decimal128, Decimal256](../../../sql-reference/data-types/decimal.md)
 - [FixedString](../../../sql-reference/data-types/fixedstring.md)
-- All integer types ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](../../../sql-reference/data-types/int-uint.md))
+- All integer types ([UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256](../../../sql-reference/data-types/int-uint.md))
 - [Float32, Float64](../../../sql-reference/data-types/float.md)
 
 See [SQLite database engine](../../../engines/database-engines/sqlite.md#data_types-support) for the default type mapping.

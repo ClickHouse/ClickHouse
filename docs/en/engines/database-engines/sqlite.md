@@ -39,7 +39,7 @@ When you explicitly define a table with specific ClickHouse types using the [SQL
 - [Enum8, Enum16](../../sql-reference/data-types/enum.md)
 - [Decimal32, Decimal64, Decimal128, Decimal256](../../sql-reference/data-types/decimal.md)
 - [FixedString](../../sql-reference/data-types/fixedstring.md)
-- All integer types ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](../../sql-reference/data-types/int-uint.md))
+- All integer types ([UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256](../../sql-reference/data-types/int-uint.md))
 - [Float32, Float64](../../sql-reference/data-types/float.md)
 
 SQLite has dynamic typing, and its type access functions perform automatic type coercion. For example, reading a TEXT column as an integer will return 0 if the text cannot be parsed as a number. This means that if a ClickHouse table is defined with a different type than the underlying SQLite column, values may be silently coerced rather than causing an error.

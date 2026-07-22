@@ -112,17 +112,31 @@ SQLiteStatementReader::SQLiteStatementReader(
 {
     if (value_read_mode_ == ValueReadMode::Native)
     {
-        ExternalResultDescription description;
-        description.init(sample_block_);
+        columns_info.reserve(sample_block_.columns());
 
-        sample_block = description.sample_block.cloneEmpty();
-        columns_info.reserve(description.sample_block.columns());
-
-        for (size_t i = 0; i != description.sample_block.columns(); ++i)
+        for (const auto & column : sample_block_)
         {
-            const auto & column = description.sample_block.getByPosition(i);
-            const auto & [value_type, is_nullable] = description.types[i];
-            columns_info.push_back(createColumnReadInfoForNative(column, value_type, is_nullable));
+            /// `ExternalResultDescription` (shared with the other external database sources) has no value
+            /// type for the wide integers `Int128`, `UInt128` and `UInt256`, but the sink stores every wide
+            /// integer as its ClickHouse text serialization (see `bindSQLiteValue`), so such columns are
+            /// read through the text path instead of being rejected. A wide-integer value that fit into a
+            /// SQLite INTEGER cell still renders as its decimal text, so the text path round-trips both
+            /// storage classes.
+            WhichDataType which(removeLowCardinalityAndNullable(column.type));
+            if (which.isInt128() || which.isUInt128() || which.isInt256() || which.isUInt256())
+            {
+                sample_block.insert(column.cloneEmpty());
+                columns_info.push_back(createColumnReadInfoForText(column));
+                continue;
+            }
+
+            ExternalResultDescription description;
+            description.init(Block{column});
+
+            const auto & described_column = description.sample_block.getByPosition(0);
+            const auto & [value_type, is_nullable] = description.types[0];
+            sample_block.insert(described_column.cloneEmpty());
+            columns_info.push_back(createColumnReadInfoForNative(described_column, value_type, is_nullable));
         }
 
         return;

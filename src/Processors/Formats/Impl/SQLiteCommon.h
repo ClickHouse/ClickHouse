@@ -240,6 +240,27 @@ inline void bindSQLiteValue(
     bindSQLiteTextValue(db, statement, sqlite_index, column, row, serialization, settings);
 }
 
+/// Whether a `WHERE` predicate on a column of this ClickHouse type may be pushed down to SQLite without the
+/// risk of false negatives. This mirrors the dispatch of `bindSQLiteValue` above: types bound as SQLite
+/// INTEGER or REAL compare numerically on both sides, and `String` is stored as its exact bytes and compares
+/// byte-wise in both systems. Every other type - `UInt64`, `Int128`/`UInt128`/`Int256`/`UInt256`, `Decimal`,
+/// dates and times, `FixedString` (whose stored text keeps the padding bytes), `Enum`, `UUID`, ... - is
+/// stored as its ClickHouse text serialization, so a pushed-down comparison can go wrong on the SQLite side:
+/// SQLite orders every TEXT value after every numeric value and otherwise compares TEXT byte-wise, so a
+/// predicate such as `x > 2` on a text-stored number treats `'10'` as smaller than `'2'` and `x = 5` never
+/// matches the cell `'5'`. Rows wrongly dropped by SQLite cannot be recovered by the local re-filtering, so
+/// such columns must be filtered by ClickHouse only.
+inline bool isPushdownSafeType(const DataTypePtr & type)
+{
+    auto nested_type = removeLowCardinalityAndNullable(type);
+    WhichDataType which(nested_type);
+
+    if (which.isNativeInt() || which.isUInt8() || which.isUInt16() || which.isUInt32() || which.isFloat())
+        return true;
+
+    return which.isString();
+}
+
 }
 
 }

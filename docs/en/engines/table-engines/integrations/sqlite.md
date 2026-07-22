@@ -58,7 +58,7 @@ When you explicitly specify ClickHouse column types in the table definition, the
 - [Enum8, Enum16](../../../sql-reference/data-types/enum.md)
 - [Decimal32, Decimal64, Decimal128, Decimal256](../../../sql-reference/data-types/decimal.md)
 - [FixedString](../../../sql-reference/data-types/fixedstring.md)
-- All integer types ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](../../../sql-reference/data-types/int-uint.md))
+- All integer types ([UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256](../../../sql-reference/data-types/int-uint.md))
 - [Float32, Float64](../../../sql-reference/data-types/float.md)
 
 See [SQLite database engine](../../../engines/database-engines/sqlite.md#data_types-support) for the default type mapping.
