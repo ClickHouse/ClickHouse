@@ -39,6 +39,7 @@ enum class FieldBinaryTypeIndex: uint8_t
     Bool = 0x13,
     Object = 0x14,
     AggregateFunctionState = 0x15,
+    Version = 0x16,
 
     NegativeInfinity = 0xFE,
     PositiveInfinity = 0xFF,
@@ -57,6 +58,7 @@ public:
     void operator() (const UUID & x, WriteBuffer & buf) const;
     void operator() (const IPv4 & x, WriteBuffer & buf) const;
     void operator() (const IPv6 & x, WriteBuffer & buf) const;
+    void operator() (const Version & x, WriteBuffer & buf) const;
     void operator() (const Float64 & x, WriteBuffer & buf) const;
     void operator() (const String & x, WriteBuffer & buf) const;
     void operator() (const Array & x, WriteBuffer & buf) const;
@@ -145,6 +147,12 @@ void FieldVisitorEncodeBinary::operator() (const IPv4 & x, WriteBuffer & buf) co
 void FieldVisitorEncodeBinary::operator() (const IPv6 & x, WriteBuffer & buf) const
 {
     writeBinary(UInt8(FieldBinaryTypeIndex::IPv6), buf);
+    writeBinaryLittleEndian(x, buf);
+}
+
+void FieldVisitorEncodeBinary::operator() (const Version & x, WriteBuffer & buf) const
+{
+    writeBinary(UInt8(FieldBinaryTypeIndex::Version), buf);
     writeBinaryLittleEndian(x, buf);
 }
 
@@ -336,6 +344,8 @@ Field decodeField(ReadBuffer & buf)
             return decodeValueLittleEndian<IPv4>(buf);
         case FieldBinaryTypeIndex::IPv6:
             return decodeValueLittleEndian<IPv6>(buf);
+        case FieldBinaryTypeIndex::Version:
+            return decodeValueLittleEndian<Version>(buf);
         case FieldBinaryTypeIndex::Bool:
         {
             bool value = false;

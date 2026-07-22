@@ -64,6 +64,13 @@ void FieldVisitorHash::operator() (const IPv6 & x) const
     hash.update(x);
 }
 
+void FieldVisitorHash::operator() (const Version & x) const
+{
+    UInt8 type = Field::Types::Version;
+    hash.update(type);
+    hash.update(x);
+}
+
 void FieldVisitorHash::operator() (const Float64 & x) const
 {
     UInt8 type = Field::Types::Float64;

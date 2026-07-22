@@ -28,6 +28,7 @@ public:
     [[noreturn]] void operator() (UUID &) const;
     [[noreturn]] void operator() (IPv4 &) const;
     [[noreturn]] void operator() (IPv6 &) const;
+    [[noreturn]] void operator() (Version &) const;
     [[noreturn]] void operator() (AggregateFunctionStateData &) const;
     [[noreturn]] void operator() (CustomType &) const;
     [[noreturn]] void operator() (bool &) const;

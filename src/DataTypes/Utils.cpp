@@ -124,6 +124,13 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
 
             return false;
         }
+        case TypeIndex::Version:
+        {
+            if (to_which_type.isUInt128() || to_which_type.isString())
+                return true;
+
+            return false;
+        }
         case TypeIndex::Nullable:
         {
             if (to_type_was_nullable)

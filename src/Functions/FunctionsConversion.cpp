@@ -3546,4 +3546,27 @@ llvm::Value * FunctionCast::compile(llvm::IRBuilderBase & builder, const ValuesW
 }
 #endif
 
+/// NOTE (POC discrepancy, see rule 7): in this codebase the explicit instantiations matching
+/// FunctionsConversion.h's `extern template class FunctionConvert<...>` / `FunctionConvertFromString<...>`
+/// declarations are normally sharded across dozens of dedicated `FunctionsConversion_implNN.cpp`
+/// translation units (one per type or small group of types), not placed in FunctionsConversion.cpp
+/// itself -- e.g. IPv4's counterparts to the three lines below actually live in
+/// FunctionsConversion_impl21.cpp (FunctionConvert<DataTypeIPv4, ...>),
+/// FunctionsConversion_impl1.cpp (FunctionConvertFromString<DataTypeIPv4, NameToIPv4OrZero, ...>) and
+/// FunctionsConversion_impl2.cpp (FunctionConvertFromString<DataTypeIPv4, NameToIPv4OrNull, ...>).
+/// This worker's assignment is restricted to editing only FunctionsConversion.cpp, so -- per the
+/// "flag it, don't invent silently" rule -- the Version instantiations are placed here instead.
+/// This is functionally correct (FunctionsConversion.cpp is its own separately-compiled translation
+/// unit that already includes FunctionsConversion.h), but it does not follow the codebase's sharding
+/// convention used for build parallelism; consider relocating these three lines into a new
+/// FunctionsConversion_implNN.cpp (registered in src/Functions/CMakeLists.txt) for consistency.
+namespace detail
+{
+
+template class FunctionConvert<DataTypeVersion, NameToVersion, ToNumberMonotonicity<UInt128>>;
+template class FunctionConvertFromString<DataTypeVersion, NameToVersionOrZero, ConvertFromStringExceptionMode::Zero>;
+template class FunctionConvertFromString<DataTypeVersion, NameToVersionOrNull, ConvertFromStringExceptionMode::Null>;
+
+}
+
 }

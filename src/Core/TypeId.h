@@ -52,6 +52,7 @@ enum class TypeIndex : uint8_t
     Object,
     IPv4,
     IPv6,
+    Version,
     JSONPaths,
     Variant,
     Dynamic
@@ -103,6 +104,12 @@ TYPEID_MAP(Float64)
 TYPEID_MAP(UUID)
 TYPEID_MAP(IPv4)
 TYPEID_MAP(IPv6)
+
+/// Unlike IPv4/IPv6 (forward-declared in Core/Types_fwd.h), Version has no forward declaration
+/// available from an include already pulled in by this header, so it is forward-declared here,
+/// mirroring how Array/Map/Object (below) are forward-declared inline in this same file.
+struct Version;
+TYPEID_MAP(Version)
 
 TYPEID_MAP(Decimal32)
 TYPEID_MAP(Decimal64)

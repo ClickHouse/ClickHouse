@@ -21,6 +21,7 @@
 #include <Core/Types.h>
 #include <Core/DecimalFunctions.h>
 #include <base/IPv4andIPv6.h>
+#include <base/Version.h>
 
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
@@ -53,6 +54,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_UUID;
     extern const int CANNOT_PARSE_IPV4;
     extern const int CANNOT_PARSE_IPV6;
+    extern const int CANNOT_PARSE_VERSION;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int TOO_LARGE_ARRAY_SIZE;
@@ -832,6 +834,81 @@ inline void readIPv6Text(IPv6 & ip, ReadBuffer & buf)
 inline bool tryReadIPv6Text(IPv6 & ip, ReadBuffer & buf)
 {
     return readIPv6TextImpl<bool>(ip, buf);
+}
+
+template <typename ReturnType = void>
+inline ReturnType readVersionTextImpl(Version & v, ReadBuffer & buf)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    /// Version's text form ("major.minor.patch.build", 1 to 4 dot-separated non-negative UInt32
+    /// components, missing trailing components default to 0) has no fixed length or byte-oriented
+    /// shape like IPv4/IPv6, so unlike readIPv4TextImpl/readIPv6TextImpl above there is no
+    /// dedicated (SIMD) parser to delegate to -- components are read directly off the ReadBuffer
+    /// one at a time instead.
+    UInt32 components[4] = {0, 0, 0, 0};
+    size_t num_components = 0;
+
+    while (true)
+    {
+        if (num_components == 4)
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_VERSION, "Cannot parse Version: too many dot-separated components (maximum 4)");
+            else
+                return ReturnType(false);
+        }
+
+        UInt64 value = 0; /// wider than UInt32 so overflow can be detected before truncating
+        size_t num_digits = 0;
+
+        while (!buf.eof() && isNumericASCII(*buf.position()))
+        {
+            value = value * 10 + (*buf.position() - '0');
+            ++num_digits;
+            ++buf.position();
+
+            if (value > std::numeric_limits<UInt32>::max())
+            {
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_VERSION, "Cannot parse Version: component value exceeds UInt32 range");
+                else
+                    return ReturnType(false);
+            }
+        }
+
+        if (num_digits == 0)
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_VERSION, "Cannot parse Version: expected a numeric component");
+            else
+                return ReturnType(false);
+        }
+
+        components[num_components++] = static_cast<UInt32>(value);
+
+        if (buf.eof() || *buf.position() != '.')
+            break;
+
+        ++buf.position();
+    }
+
+    /// Pack as (major << 96) | (minor << 64) | (patch << 32) | build; components beyond what was
+    /// given default to 0 (e.g. "1.2" -> major=1, minor=2, patch=0, build=0).
+    v.toUnderType() = (UInt128(components[0]) << 96) | (UInt128(components[1]) << 64)
+        | (UInt128(components[2]) << 32) | UInt128(components[3]);
+
+    return ReturnType(true);
+}
+
+inline void readVersionText(Version & v, ReadBuffer & buf)
+{
+    readVersionTextImpl<void>(v, buf);
+}
+
+inline bool tryReadVersionText(Version & v, ReadBuffer & buf)
+{
+    return readVersionTextImpl<bool>(v, buf);
 }
 
 template <typename T>
@@ -1643,6 +1720,7 @@ inline bool tryReadText(is_floating_point auto & x, ReadBuffer & buf)
 inline bool tryReadText(UUID & x, ReadBuffer & buf) { return tryReadUUIDText(x, buf); }
 inline bool tryReadText(IPv4 & x, ReadBuffer & buf) { return tryReadIPv4Text(x, buf); }
 inline bool tryReadText(IPv6 & x, ReadBuffer & buf) { return tryReadIPv6Text(x, buf); }
+inline bool tryReadText(Version & x, ReadBuffer & buf) { return tryReadVersionText(x, buf); }
 
 template <typename T>
 requires is_floating_point<T>
@@ -1668,6 +1746,7 @@ inline bool tryReadText(LocalDateTime & x, ReadBuffer & buf)
 inline void readText(UUID & x, ReadBuffer & buf) { readUUIDText(x, buf); }
 inline void readText(IPv4 & x, ReadBuffer & buf) { readIPv4Text(x, buf); }
 inline void readText(IPv6 & x, ReadBuffer & buf) { readIPv6Text(x, buf); }
+inline void readText(Version & x, ReadBuffer & buf) { readVersionText(x, buf); }
 
 /// Generic methods to read value in text format,
 ///  possibly in single quotes (only for data types that use quotes in VALUES format of INSERT statement in SQL).

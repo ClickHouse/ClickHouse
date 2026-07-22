@@ -7,6 +7,7 @@
 #include <Core/Types.h>
 #include <base/DayNum.h>
 #include <base/IPv4andIPv6.h>
+#include <base/Version.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -186,6 +187,7 @@ template <> struct NearestFieldTypeImpl<DayNum> { using Type = UInt64; };
 template <> struct NearestFieldTypeImpl<UUID> { using Type = UUID; };
 template <> struct NearestFieldTypeImpl<IPv4> { using Type = IPv4; };
 template <> struct NearestFieldTypeImpl<IPv6> { using Type = IPv6; };
+template <> struct NearestFieldTypeImpl<Version> { using Type = Version; };
 template <> struct NearestFieldTypeImpl<Int16> { using Type = Int64; };
 template <> struct NearestFieldTypeImpl<Int32> { using Type = Int64; };
 
@@ -301,6 +303,7 @@ public:
             IPv4 = 30,
             IPv6 = 31,
             CustomType = 32,
+            Version = 33,
         };
     };
 
@@ -495,6 +498,7 @@ public:
             case Types::UUID:    return f(field.template get<UUID>());
             case Types::IPv4:    return f(field.template get<IPv4>());
             case Types::IPv6:    return f(field.template get<IPv6>());
+            case Types::Version: return f(field.template get<Version>());
             case Types::Float64: return f(field.template get<Float64>());
             case Types::String:  return f(field.template get<String>());
             case Types::Array:   return f(field.template get<Array>());
@@ -520,7 +524,7 @@ public:
 
 private:
     AlignedUnionT<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
-        Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
+        Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Version, Float64, String, Array, Tuple, Map,
         DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
         AggregateFunctionStateData, CustomType
         > storage; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - raw union storage; the active value is always placement-constructed by `create`/`createConcrete` before any read, and zero-initializing it would clear the whole buffer on every construction of this very hot object
@@ -708,6 +712,7 @@ template <> struct Field::TypeToEnum<Int256>  { static constexpr Types::Which va
 template <> struct Field::TypeToEnum<UUID>    { static constexpr Types::Which value = Types::UUID; };
 template <> struct Field::TypeToEnum<IPv4>    { static constexpr Types::Which value = Types::IPv4; };
 template <> struct Field::TypeToEnum<IPv6>    { static constexpr Types::Which value = Types::IPv6; };
+template <> struct Field::TypeToEnum<Version> { static constexpr Types::Which value = Types::Version; };
 template <> struct Field::TypeToEnum<Float64> { static constexpr Types::Which value = Types::Float64; };
 template <> struct Field::TypeToEnum<String>  { static constexpr Types::Which value = Types::String; };
 template <> struct Field::TypeToEnum<Array>   { static constexpr Types::Which value = Types::Array; };
@@ -734,6 +739,7 @@ template <> struct Field::EnumToType<Field::Types::Int256>  { using Type = Int25
 template <> struct Field::EnumToType<Field::Types::UUID>    { using Type = UUID; };
 template <> struct Field::EnumToType<Field::Types::IPv4>    { using Type = IPv4; };
 template <> struct Field::EnumToType<Field::Types::IPv6>    { using Type = IPv6; };
+template <> struct Field::EnumToType<Field::Types::Version> { using Type = Version; };
 template <> struct Field::EnumToType<Field::Types::Float64> { using Type = Float64; };
 template <> struct Field::EnumToType<Field::Types::String>  { using Type = String; };
 template <> struct Field::EnumToType<Field::Types::Array>   { using Type = Array; };

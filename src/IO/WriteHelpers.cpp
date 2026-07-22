@@ -74,6 +74,22 @@ void writeIPv6Text(const IPv6 & ip, WriteBuffer & buf)
     buf.write(addr, paddr - addr);
 }
 
+void writeVersionText(const Version & v, WriteBuffer & buf)
+{
+    /// Unlike writeIPv4Text's one_byte_to_string_lookup_table trick (which only works for
+    /// byte-sized 0..255 components), Version's components are full UInt32 values, so that
+    /// lookup-table optimization doesn't apply here. This POC deliberately keeps it simple and
+    /// just unpacks the components and writes them with the generic writeIntText/writeChar helpers.
+    UInt128 packed = v.toUnderType();
+    writeIntText(static_cast<UInt32>(packed >> 96), buf);
+    writeChar('.', buf);
+    writeIntText(static_cast<UInt32>(packed >> 64), buf);
+    writeChar('.', buf);
+    writeIntText(static_cast<UInt32>(packed >> 32), buf);
+    writeChar('.', buf);
+    writeIntText(static_cast<UInt32>(packed), buf);
+}
+
 void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trace)
 {
     writeBinaryLittleEndian(e.code(), buf);

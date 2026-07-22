@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
+#include <DataTypes/DataTypeVersion.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/Exception.h>
@@ -95,6 +96,12 @@ template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const IPv6 &) const
 {
     return std::make_shared<DataTypeIPv6>();
+}
+
+template <LeastSupertypeOnError on_error>
+DataTypePtr FieldToDataType<on_error>::operator() (const Version &) const
+{
+    return std::make_shared<DataTypeVersion>();
 }
 
 template <LeastSupertypeOnError on_error>

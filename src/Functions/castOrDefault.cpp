@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
+#include <DataTypes/DataTypeVersion.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
@@ -991,6 +992,43 @@ SELECT
     factory.registerFunction("toIPv6OrDefault", [](ContextPtr context)
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toIPv6OrDefault", std::make_shared<DataTypeIPv6>()); },
         toIPv6OrDefault_documentation);
+
+    FunctionDocumentation::Description toVersionOrDefault_description = R"(
+Converts a string to a [`Version`](../data-types/version.md) value.
+If the string has an invalid format, it returns `0.0.0.0` (0 Version), or the provided Version default.
+    )";
+    FunctionDocumentation::Syntax toVersionOrDefault_syntax = "toVersionOrDefault(string[, default])";
+    FunctionDocumentation::Arguments toVersionOrDefault_arguments = {
+        {"string", "Version string to convert.", {"String"}},
+        {"default", "Optional. The value to return if string is an invalid Version.", {"Version"}}
+    };
+    FunctionDocumentation::ReturnedValue toVersionOrDefault_returned_value = {"Returns a string converted to the current Version, or the default value if conversion fails.", {"Version"}};
+    FunctionDocumentation::Examples toVersionOrDefault_examples = {
+    {
+        "Valid and invalid Version strings",
+        R"(
+WITH
+    '1.2.3.4' AS valid_version_string,
+    '1.2.abc' AS invalid_version_string
+SELECT
+    toVersionOrDefault(valid_version_string) AS valid,
+    toVersionOrDefault(invalid_version_string) AS default_value,
+    toVersionOrDefault(invalid_version_string, toVersion('1.0.0.0')) AS provided_default;
+        )",
+        R"(
+┌─valid───────┬─default_value─┬─provided_default─┐
+│ 1.2.3.4     │ 0.0.0.0       │ 1.0.0.0          │
+└─────────────┴───────────────┴──────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn toVersionOrDefault_introduced_in = {26, 8};
+    FunctionDocumentation::Category toVersionOrDefault_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation toVersionOrDefault_documentation = {toVersionOrDefault_description, toVersionOrDefault_syntax, toVersionOrDefault_arguments, {}, toVersionOrDefault_returned_value, toVersionOrDefault_examples, toVersionOrDefault_introduced_in, toVersionOrDefault_category};
+
+    factory.registerFunction("toVersionOrDefault", [](ContextPtr context)
+        { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toVersionOrDefault", std::make_shared<DataTypeVersion>()); },
+        toVersionOrDefault_documentation);
 }
 
 }

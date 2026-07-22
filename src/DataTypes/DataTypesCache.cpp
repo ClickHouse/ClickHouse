@@ -33,6 +33,7 @@ SimpleDataTypesCache::SimpleDataTypesCache()
     addSimpleType(BinaryTypeIndex::UUID, "UUID");
     addSimpleType(BinaryTypeIndex::IPv4, "IPv4");
     addSimpleType(BinaryTypeIndex::IPv6, "IPv6");
+    addSimpleType(BinaryTypeIndex::Version, "Version");
     addSimpleType(BinaryTypeIndex::Bool, "Bool");
 }
 

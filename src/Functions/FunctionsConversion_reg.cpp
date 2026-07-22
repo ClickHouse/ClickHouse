@@ -1488,6 +1488,47 @@ SELECT toIPv4(2130706433);
 
     factory.registerFunction<detail::FunctionToIPv4>(documentation_toIPv4);
 
+    /// toVersion documentation
+    FunctionDocumentation::Description description_toVersion = R"(
+Converts a string to a value of type [`Version`](../data-types/version.md).
+
+`Version` is a semantic-version-like value made of up to 4 dot-separated components (`major.minor.patch.build`), packed into a `UInt128`. Missing trailing components are padded with zero, so `toVersion('1.2')` equals `toVersion('1.2.0.0')`. Comparisons between `Version` values are performed component-wise (major first, then minor, then patch, then build).
+)";
+    FunctionDocumentation::Syntax syntax_toVersion = "toVersion(x)";
+    FunctionDocumentation::Arguments arguments_toVersion = {
+        {"x", "A string representation of a version number with 1 to 4 dot-separated non-negative integer components.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_toVersion = {"Returns a Version value.", {"Version"}};
+    FunctionDocumentation::Examples examples_toVersion = {
+    {
+        "Usage example",
+        R"(
+SELECT toVersion('1.2.3.4');
+        )",
+        R"(
+┌─toVersion('1.2.3.4')─┐
+│ 1.2.3.4              │
+└──────────────────────┘
+        )"
+    },
+    {
+        "Missing components are padded with zero",
+        R"(
+SELECT toVersion('1.2');
+        )",
+        R"(
+┌─toVersion('1.2')─┐
+│ 1.2.0.0          │
+└──────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_toVersion = {26, 8};
+    FunctionDocumentation::Category category_toVersion = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation documentation_toVersion = {description_toVersion, syntax_toVersion, arguments_toVersion, {}, returned_value_toVersion, examples_toVersion, introduced_in_toVersion, category_toVersion};
+
+    factory.registerFunction<detail::FunctionToVersion>(documentation_toVersion);
+
     /// toIPv6 documentation
     FunctionDocumentation::Description description_toIPv6 = R"(
 onverts a string or a `UInt128` form of IPv6 address to [`IPv6`](../data-types/ipv6.md) type.
@@ -2749,6 +2790,46 @@ SELECT
 
     factory.registerFunction<detail::FunctionToIPv4OrZero>(documentation_toIPv4OrZero);
 
+    /// toVersionOrZero documentation
+    FunctionDocumentation::Description description_toVersionOrZero = R"(
+Converts an input value to a value of type [Version](../data-types/version.md) but returns zero Version (`0.0.0.0`) in case of an error.
+Like [`toVersion`](#toVersion) but returns zero Version instead of throwing an exception on conversion errors.
+
+Supported arguments:
+- String representations of a version number with 1 to 4 dot-separated non-negative integer components.
+
+Unsupported arguments (return zero Version):
+- Strings with a component that is not a non-negative integer (e.g. a pre-release or build-metadata suffix).
+- Strings with more than 4 dot-separated components.
+- Empty strings.
+    )";
+    FunctionDocumentation::Syntax syntax_toVersionOrZero = "toVersionOrZero(x)";
+    FunctionDocumentation::Arguments arguments_toVersionOrZero =
+    {
+        {"x", "A string representation of a version number.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_toVersionOrZero = {"Returns a Version value if successful, otherwise zero Version (`0.0.0.0`).", {"Version"}};
+    FunctionDocumentation::Examples examples_toVersionOrZero = {
+    {
+        "Usage example",
+        R"(
+SELECT
+    toVersionOrZero('1.2.3.4') AS valid_version,
+    toVersionOrZero('1.2.abc') AS invalid_version
+        )",
+        R"(
+┌─valid_version─┬─invalid_version─┐
+│ 1.2.3.4       │ 0.0.0.0         │
+└───────────────┴─────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_toVersionOrZero = {26, 8};
+    FunctionDocumentation::Category category_toVersionOrZero = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation documentation_toVersionOrZero = {description_toVersionOrZero, syntax_toVersionOrZero, arguments_toVersionOrZero, {}, returned_value_toVersionOrZero, examples_toVersionOrZero, introduced_in_toVersionOrZero, category_toVersionOrZero};
+
+    factory.registerFunction<detail::FunctionToVersionOrZero>(documentation_toVersionOrZero);
+
     /// toIPv6OrZero documentation
     FunctionDocumentation::Description description_toIPv6OrZero = R"(
 Converts an input value to a value of type [IPv6](../data-types/ipv6.md) but returns zero IPv6 address in case of an error.
@@ -4007,6 +4088,46 @@ SELECT
     FunctionDocumentation documentation_toIPv4OrNull = {description_toIPv4OrNull, syntax_toIPv4OrNull, arguments_toIPv4OrNull, {}, returned_value_toIPv4OrNull, examples_toIPv4OrNull, introduced_in_toIPv4OrNull, category_toIPv4OrNull};
 
     factory.registerFunction<detail::FunctionToIPv4OrNull>(documentation_toIPv4OrNull);
+
+    /// toVersionOrNull documentation
+    FunctionDocumentation::Description description_toVersionOrNull = R"(
+Converts an input value to a value of type `Version` but returns `NULL` in case of an error.
+Like [`toVersion`](#toVersion) but returns `NULL` instead of throwing an exception on conversion errors.
+
+Supported arguments:
+- String representations of a version number with 1 to 4 dot-separated non-negative integer components.
+
+Unsupported arguments (return `NULL`):
+- Strings with a component that is not a non-negative integer (e.g. a pre-release or build-metadata suffix).
+- Strings with more than 4 dot-separated components.
+- Empty strings.
+    )";
+    FunctionDocumentation::Syntax syntax_toVersionOrNull = "toVersionOrNull(x)";
+    FunctionDocumentation::Arguments arguments_toVersionOrNull =
+    {
+        {"x", "A string representation of a version number.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_toVersionOrNull = {"Returns a Version value if successful, otherwise `NULL`.", {"Version", "NULL"}};
+    FunctionDocumentation::Examples examples_toVersionOrNull = {
+    {
+        "Usage example",
+        R"(
+SELECT
+    toVersionOrNull('1.2.3.4') AS valid_version,
+    toVersionOrNull('1.2.abc') AS invalid_version
+        )",
+        R"(
+┌─valid_version─┬─invalid_version─┐
+│ 1.2.3.4       │            ᴺᵁᴸᴸ │
+└───────────────┴─────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_toVersionOrNull = {26, 8};
+    FunctionDocumentation::Category category_toVersionOrNull = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation documentation_toVersionOrNull = {description_toVersionOrNull, syntax_toVersionOrNull, arguments_toVersionOrNull, {}, returned_value_toVersionOrNull, examples_toVersionOrNull, introduced_in_toVersionOrNull, category_toVersionOrNull};
+
+    factory.registerFunction<detail::FunctionToVersionOrNull>(documentation_toVersionOrNull);
 
     /// toIPv6OrNull documentation
     FunctionDocumentation::Description description_toIPv6OrNull = R"(

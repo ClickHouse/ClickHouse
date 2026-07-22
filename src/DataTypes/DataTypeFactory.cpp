@@ -397,6 +397,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeNothing(*this);
     registerDataTypeUUID(*this);
     registerDataTypeIPv4andIPv6(*this);
+    registerDataTypeVersion(*this);
     registerDataTypeAggregateFunction(*this);
     registerDataTypeNested(*this);
     registerDataTypeInterval(*this);

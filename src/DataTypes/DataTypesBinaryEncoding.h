@@ -74,11 +74,12 @@ enum class BinaryTypeIndex : uint8_t
     /// reserved = 0x35
     QBit = 0x36,
     /// QBit with an explicit stride parameter (stride != dimension). Non-strided QBit keeps using 0x36 for backward compatibility.
-    QBitWithStride = 0x37
+    QBitWithStride = 0x37,
+    Version = 0x38
 };
 
 /// Maximum value of BinaryTypeIndex + 1, used for sizing the index array in SimpleDataTypesCache.
-inline constexpr size_t BINARY_TYPE_INDEX_SIZE = 0x38;
+inline constexpr size_t BINARY_TYPE_INDEX_SIZE = 0x39;
 
 /**
 
