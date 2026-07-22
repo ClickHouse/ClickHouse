@@ -2238,7 +2238,13 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "replicated_merge_tree_paranoid_check_on_drop_range",
         "replicated_merge_tree_paranoid_check_on_startup",
         "test",
-        "include",
+        /// Note: a literal top-level `include` key is intentionally NOT allowlisted here.
+        /// `ConfigProcessor::doIncludesRecursive` either throws on an `<include>` element that
+        /// does not carry exactly one substitution attribute (`incl`, `from_env`, `from_zk`)
+        /// or removes the node after expanding it, so `include` can never appear as a key of
+        /// the merged config this check inspects. The valid substitution forms are handled
+        /// explicitly below by collecting top-level `<include .../>` references from the raw
+        /// pre-merge fragments.
         "include_endpoint",
         "ignore_table_dependencies_on_metadata_loading",
         "allow_reserved_database_name_tmp_convert",
