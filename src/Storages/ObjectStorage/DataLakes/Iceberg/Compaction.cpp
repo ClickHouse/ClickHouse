@@ -999,10 +999,10 @@ static void writeMetadataFiles(
 
     /// The rebuilt history keeps only APPEND snapshots, so an append's original parent (a skipped
     /// DELETE/OVERWRITE) is not present in the metadata we are assembling. Link each retained
-    /// snapshot to the previously generated one instead; 0 is the "no parent" sentinel for the
+    /// snapshot to the previously generated one instead; -1 is the "no parent" sentinel for the
     /// first one. This keeps the parent chain self-consistent for the fail-close check in
     /// `generateNextMetadata`.
-    Int64 last_generated_snapshot_id = 0;
+    Int64 last_generated_snapshot_id = -1;
 
     for (const auto & history_record : plan.history)
     {
