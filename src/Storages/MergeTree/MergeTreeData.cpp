@@ -8497,6 +8497,10 @@ void MergeTreeData::validateDetachedPartName(const String & name)
 
 void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr local_context)
 {
+    /// Declared before `renamed_parts` so the guards outlive it and fsync the `detached/`
+    /// directory after the destructor of `PartsTemporaryRename`, covering the rename and its rollback.
+    std::vector<SyncGuardPtr> dir_sync_guards;
+
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
 
     if (part)
@@ -8520,6 +8524,21 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
     }
 
     LOG_DEBUG(log, "Will drop {} detached parts.", renamed_parts.old_and_new_names.size());
+
+    if ((*getSettings())[MergeTreeSetting::fsync_part_directory])
+    {
+        /// Source `<part>` and renamed `deleting_<part>` share the `detached/` directory, so one
+        /// guard per distinct disk covers both the rename and the unlink. The descriptor is opened
+        /// now (before the rename) and fsync'd on destruction; close-reopen-fsync is kernel-dependent.
+        std::unordered_set<String> synced_disks;
+        for (const auto & rename_info : renamed_parts.old_and_new_names)
+        {
+            if (!synced_disks.emplace(rename_info.disk->getName()).second)
+                continue;
+            if (auto guard = rename_info.disk->getDirectorySyncGuard(fs::path(relative_data_path) / DETACHED_DIR_NAME))
+                dir_sync_guards.push_back(std::move(guard));
+        }
+    }
 
     renamed_parts.tryRenameAll();
 
