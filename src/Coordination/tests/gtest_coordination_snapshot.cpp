@@ -670,7 +670,7 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotSimple)
 
     EXPECT_EQ(snapshot.snapshot_meta->get_last_log_idx(), 2);
     EXPECT_EQ(snapshot.session_id, 7);
-    EXPECT_EQ(snapshot.node_stream->node_count, 4 + this->keeper_context->getSystemNodesWithData().size());
+    EXPECT_EQ(snapshot.view->getNodeCount(), 4 + this->keeper_context->getSystemNodesWithData().size());
     EXPECT_EQ(snapshot.session_and_timeout.size(), 2);
 
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
@@ -730,7 +730,7 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotMoreWrites)
 
     DB::KeeperStorageSnapshot snapshot(&storage, 50, nullptr, this->keeper_context->getWriteSnapshotVersion());
     EXPECT_EQ(snapshot.snapshot_meta->get_last_log_idx(), 50);
-    EXPECT_EQ(snapshot.node_stream->node_count, 52 + this->keeper_context->getSystemNodesWithData().size());
+    EXPECT_EQ(snapshot.view->getNodeCount(), 52 + this->keeper_context->getSystemNodesWithData().size());
 
     for (size_t i = 50; i < 100; ++i)
     {
@@ -838,9 +838,8 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotMode)
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 50).size(), 1);
     EXPECT_EQ(storage.getStorageStats().nodes_count, 27 + this->keeper_context->getSystemNodesWithData().size());
     {
-        auto stream = storage.nodes_storage->beginWritingSnapshot();
-        EXPECT_EQ(stream->node_count, 27 + this->keeper_context->getSystemNodesWithData().size());
-        storage.nodes_storage->finishWritingSnapshot(std::move(stream));
+        auto view = storage.issueReadView();
+        EXPECT_EQ(view->getNodeCount(), 27 + this->keeper_context->getSystemNodesWithData().size());
     }
     for (size_t i = 0; i < 50; ++i)
     {
@@ -1167,10 +1166,10 @@ static nuraft::ptr<nuraft::buffer> makeSingleNodeSnapshotBuffer(
     const std::string & node_path,
     const std::string & node_data)
 {
-    DB::KeeperMemoryStorage storage(500, "", ctx);
-    storage.initializeSystemNodes();
-    addNode(storage, node_path, node_data);
-    return makeInstallBuffer(storage, log_idx, ctx);
+    auto storage = std::make_shared<DB::KeeperMemoryStorage>(500, "", ctx);
+    storage->initializeSystemNodes();
+    addNode(*storage, node_path, node_data);
+    return makeInstallBuffer(*storage, log_idx, ctx);
 }
 
 /// Drain a queued create_snapshot task synchronously (the snapshot thread's job in production)
@@ -1920,7 +1919,7 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotTTLRoundTrip)
     manager.serializeSnapshotBufferToDisk(*buf, zxid);
 
     auto debuf = manager.deserializeSnapshotBufferFromDisk(zxid);
-    std::unique_ptr<DB::KeeperStorage> restored = DB::KeeperStorage::create(500, "", this->keeper_context, /* initialize_system_nodes */ false);
+    std::shared_ptr<DB::KeeperStorage> restored = DB::KeeperStorage::create(500, "", this->keeper_context, /* initialize_system_nodes */ false);
     auto deser_result = manager.deserializeSnapshotFromBuffer(debuf, *restored);
 
     EXPECT_TRUE(restored->containsTTLPath("/ttl_node"));
@@ -2550,7 +2549,7 @@ TEST_P(CoordinationTest, ChunkedSameIndexReceiveDoesNotRewritePublishedSnapshot)
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
     state_machine->init();
 
-    std::unique_ptr<DB::KeeperStorage> original_storage = DB::KeeperStorage::create(500, "", ctx);
+    std::shared_ptr<DB::KeeperStorage> original_storage = DB::KeeperStorage::create(500, "", ctx);
     addNode(*original_storage, "/original", "original");
     auto original_buf = makeSnapshotBufferFromStorage(*original_storage, 10, ctx);
     nuraft::snapshot snapshot(10, 0, std::make_shared<nuraft::cluster_config>());
@@ -2561,7 +2560,7 @@ TEST_P(CoordinationTest, ChunkedSameIndexReceiveDoesNotRewritePublishedSnapshot)
     const fs::path published_snapshot_path = fs::path("./snapshots") / published_files[0];
     const auto published_snapshot_size = fs::file_size(published_snapshot_path);
 
-    std::unique_ptr<DB::KeeperStorage> duplicate_storage = DB::KeeperStorage::create(500, "", ctx);
+    std::shared_ptr<DB::KeeperStorage> duplicate_storage = DB::KeeperStorage::create(500, "", ctx);
     addNode(*duplicate_storage, "/duplicate", "duplicate");
     auto duplicate_buf = makeSnapshotBufferFromStorage(*duplicate_storage, 10, ctx);
     ASSERT_GT(duplicate_buf->size(), 1);
@@ -2581,7 +2580,7 @@ TEST_P(CoordinationTest, ChunkedSameIndexReceiveDoesNotRewritePublishedSnapshot)
     EXPECT_EQ(fs::file_size(published_snapshot_path), published_snapshot_size);
 
     nuraft::snapshot other_snapshot(11, 0, std::make_shared<nuraft::cluster_config>());
-    std::unique_ptr<DB::KeeperStorage> other_storage = DB::KeeperStorage::create(500, "", ctx);
+    std::shared_ptr<DB::KeeperStorage> other_storage = DB::KeeperStorage::create(500, "", ctx);
     /// Serialize over an isolated disk: a throwaway manager over `./snapshots` would run its
     /// ctor incomplete-pair scan and delete the idx-10 receive that is mid-flight here.
     auto other_buf = makeInstallBuffer(*other_storage, 11, ctx);

@@ -1928,10 +1928,10 @@ KeeperStorageStats KeeperStateMachine::getStorageStats() const
     return storage->getStorageStats();
 }
 
-KeeperMemNodesStorage::ReadViewHolder KeeperStateMachine::getStorageReadView() const
+std::unique_ptr<KeeperNodesReadView> KeeperStateMachine::getStorageReadView() const
 {
     KEEPER_STORAGE_LOCK_SHARED(lock);
-    return dynamic_cast<KeeperMemNodesStorage &>(*storage->nodes_storage).issueReadView(storage);
+    return storage->issueReadView();
 }
 
 void KeeperStateMachine::dumpWatches(WriteBufferFromOwnString & buf) const

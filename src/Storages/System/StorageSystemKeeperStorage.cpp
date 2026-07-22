@@ -4,7 +4,7 @@
 #if USE_NURAFT
 
 #include <Coordination/KeeperDispatcher.h>
-#include <Coordination/KeeperMemNodesStorage.h>
+#include <Coordination/KeeperNodesStorage.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStorage.h>
 #include <Core/Field.h>
@@ -50,14 +50,13 @@ namespace
 class SystemKeeperStorageSource final : public ISource
 {
 public:
-    SystemKeeperStorageSource(KeeperMemNodesStorage::ReadViewHolder view_, Block header, std::vector<UInt8> columns_mask_, UInt64 max_block_size_)
+    SystemKeeperStorageSource(std::unique_ptr<KeeperNodesReadView> view_, Block header, std::vector<UInt8> columns_mask_, UInt64 max_block_size_)
         : ISource(std::make_shared<const Block>(std::move(header)))
         , view(std::move(view_))
-        , it(view->begin())
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
     {
-        addTotalRowsApprox(view->nodeCount());
+        addTotalRowsApprox(view->getNodeCount());
     }
 
     String getName() const override { return "SystemKeeperStorage"; }
@@ -68,51 +67,48 @@ protected:
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
         size_t rows_count = 0;
-        while (rows_count < max_block_size && it != view->end())
+        std::string_view path;
+        std::string_view data;
+        KeeperNodeStats stats;
+        while (rows_count < max_block_size && view->next(path, data, stats))
         {
-            const auto & elem = *it;
-            const auto & node = elem.value;
             size_t src_index = 0;
             size_t res_index = 0;
 
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insertData(elem.key.data(), elem.key.size());
+                res_columns[res_index++]->insertData(path.data(), path.size());
             if (columns_mask[src_index++])
-            {
-                const auto data = node.getData();
                 res_columns[res_index++]->insertData(data.data(), data.size());
-            }
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(node.stats.czxid);
+                res_columns[res_index++]->insert(stats.czxid);
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(node.stats.mzxid);
+                res_columns[res_index++]->insert(stats.mzxid);
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(DecimalField<DateTime64>(node.stats.getCTime(), 3));
+                res_columns[res_index++]->insert(DecimalField<DateTime64>(stats.getCTime(), 3));
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(DecimalField<DateTime64>(node.stats.mtime, 3));
+                res_columns[res_index++]->insert(DecimalField<DateTime64>(stats.mtime, 3));
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(node.stats.version);
+                res_columns[res_index++]->insert(stats.version);
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(node.stats.cversion);
+                res_columns[res_index++]->insert(stats.cversion);
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(node.stats.aversion);
+                res_columns[res_index++]->insert(stats.aversion);
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(node.stats.getEphemeralOwner());
+                res_columns[res_index++]->insert(stats.getEphemeralOwner());
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(node.stats.data_size);
+                res_columns[res_index++]->insert(stats.data_size);
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(node.stats.getNumChildren());
+                res_columns[res_index++]->insert(stats.getNumChildren());
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(node.stats.pzxid);
+                res_columns[res_index++]->insert(stats.pzxid);
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(node.stats.getSeqNum());
+                res_columns[res_index++]->insert(stats.getSeqNum());
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(node.stats.getTTL());
+                res_columns[res_index++]->insert(stats.getTTL());
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(node.stats.acl_id);
+                res_columns[res_index++]->insert(stats.acl_id);
 
             ++rows_count;
-            ++it;
         }
 
         if (rows_count == 0)
@@ -122,8 +118,7 @@ protected:
     }
 
 private:
-    KeeperMemNodesStorage::ReadViewHolder view;
-    KeeperMemNodesStorage::Container::ReadView::Iterator it;
+    std::unique_ptr<KeeperNodesReadView> view;
     const std::vector<UInt8> columns_mask;
     const UInt64 max_block_size;
 };

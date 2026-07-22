@@ -94,8 +94,7 @@ struct KeeperMemNodesStorage final : public KeeperNodesStorage
 
     void loadNodesFromSnapshot(KeeperSnapshotReader & reader, KeeperStorage * storage, uint64_t * out_digest) override;
 
-    std::unique_ptr<KeeperNodeStreamForSnapshot> beginWritingSnapshot() override;
-    void finishWritingSnapshot(std::unique_ptr<KeeperNodeStreamForSnapshot> stream) override;
+    std::unique_ptr<KeeperNodesReadView> issueReadView() override;
 
     void getNodeStorageStats(KeeperStorageStats & out) override;
 
@@ -196,54 +195,6 @@ struct KeeperMemNodesStorage final : public KeeperNodesStorage
         }
     };
 
-    struct NodeStreamForSnapshot final : public KeeperNodeStreamForSnapshot
-    {
-        std::unique_ptr<Container::ReadView> view;
-        std::optional<Container::ReadView::Iterator> it;
-
-        bool next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats) override;
-    };
-
-    /// Keeps the storage alive and retires the read view on destruction.
-    class ReadViewHolder
-    {
-    public:
-        ReadViewHolder(ReadViewHolder &&) = default;
-        ReadViewHolder & operator=(ReadViewHolder &&) = delete;
-        ReadViewHolder(const ReadViewHolder &) = delete;
-        ReadViewHolder & operator=(const ReadViewHolder &) = delete;
-
-        ~ReadViewHolder()
-        {
-            if (view)
-                nodes_storage->retireReadView(std::move(view));
-        }
-
-        const Container::ReadView & operator*() const { return *view; }
-        const Container::ReadView * operator->() const { return view.get(); }
-
-    private:
-        friend struct KeeperMemNodesStorage;
-
-        ReadViewHolder(std::shared_ptr<KeeperStorage> storage_, KeeperMemNodesStorage * nodes_storage_, std::unique_ptr<Container::ReadView> view_)
-            : storage(std::move(storage_))
-            , nodes_storage(nodes_storage_)
-            , view(std::move(view_))
-        {
-        }
-
-        std::shared_ptr<KeeperStorage> storage;
-        KeeperMemNodesStorage * nodes_storage;
-        std::unique_ptr<Container::ReadView> view;
-    };
-
-    /// Issue a consistent lock-free read view of the container. `storage` must own this nodes
-    /// storage; the holder keeps it alive.
-    ReadViewHolder issueReadView(std::shared_ptr<KeeperStorage> storage);
-
-    /// Retire a view. When it is the last outstanding view, drains the accumulated stale nodes.
-    void retireReadView(std::unique_ptr<Container::ReadView> view) noexcept;
-
     UncommittedNodesMap uncommitted_nodes;
 
     /// Mapping of uncommitted transaction to all it's modified nodes for a faster cleanup.
@@ -273,6 +224,12 @@ struct KeeperMemNodesStorage final : public KeeperNodesStorage
     // Returns false if it failed to remove the node, true otherwise
     // We don't care about the exact failure because we should've caught it during preprocessing
     bool removeNode(const std::string & path, int32_t version, uint64_t * digest)TSA_NO_THREAD_SAFETY_ANALYSIS;
+
+private:
+    class NodesReadView;
+
+    /// Retire a view. When it is the last outstanding view, drains the accumulated stale nodes.
+    void retireReadView(std::unique_ptr<Container::ReadView> view) noexcept;
 };
 
 }

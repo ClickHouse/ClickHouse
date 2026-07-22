@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Coordination/KeeperMemNodesStorage.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/KeeperContext.h>
@@ -123,7 +122,7 @@ public:
     }
 
     /// Issues a lock-free MVCC-style read view of the storage container.
-    KeeperMemNodesStorage::ReadViewHolder getStorageReadView() const;
+    std::unique_ptr<KeeperNodesReadView> getStorageReadView() const;
 
     void shutdownStorage();
 

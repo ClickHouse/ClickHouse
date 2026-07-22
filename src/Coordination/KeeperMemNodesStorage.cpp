@@ -370,26 +370,35 @@ void KeeperMemNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader,
     }
 }
 
-std::unique_ptr<KeeperNodeStreamForSnapshot> KeeperMemNodesStorage::beginWritingSnapshot()
+class KeeperMemNodesStorage::NodesReadView final : public KeeperNodesReadView
 {
-    auto res = std::make_unique<NodeStreamForSnapshot>();
-    std::lock_guard lock(*storage_mutex);
-    res->view = container.issueReadView();
-    res->node_count = res->view->nodeCount();
-    res->it.emplace(res->view->begin());
-    return res;
-}
+public:
+    NodesReadView(KeeperMemNodesStorage * nodes_storage_, std::unique_ptr<Container::ReadView> view_)
+        : nodes_storage(nodes_storage_)
+        , view(std::move(view_))
+        , it(view->begin())
+    {
+    }
 
-void KeeperMemNodesStorage::finishWritingSnapshot(std::unique_ptr<KeeperNodeStreamForSnapshot> stream)
-{
-    stream->node_count = 0;
-    retireReadView(std::move(static_cast<NodeStreamForSnapshot &>(*stream).view));
-}
+    ~NodesReadView() override
+    {
+        nodes_storage->retireReadView(std::move(view));
+    }
 
-KeeperMemNodesStorage::ReadViewHolder KeeperMemNodesStorage::issueReadView(std::shared_ptr<KeeperStorage> storage)
+    size_t getNodeCount() const override { return view->nodeCount(); }
+
+    bool next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats) override;
+
+private:
+    KeeperMemNodesStorage * nodes_storage;
+    std::unique_ptr<Container::ReadView> view;
+    Container::ReadView::Iterator it;
+};
+
+std::unique_ptr<KeeperNodesReadView> KeeperMemNodesStorage::issueReadView()
 {
     std::lock_guard lock(*storage_mutex);
-    return ReadViewHolder(std::move(storage), this, container.issueReadView());
+    return std::make_unique<NodesReadView>(this, container.issueReadView());
 }
 
 void KeeperMemNodesStorage::retireReadView(std::unique_ptr<Container::ReadView> view) noexcept
@@ -398,17 +407,17 @@ void KeeperMemNodesStorage::retireReadView(std::unique_ptr<Container::ReadView> 
     container.retireReadView(std::move(view));
 }
 
-bool KeeperMemNodesStorage::NodeStreamForSnapshot::next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats)
+bool KeeperMemNodesStorage::NodesReadView::next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats)
 {
-    if (*it == view->end())
+    if (it == view->end())
         return false;
 
-    const auto & elem = **it;
+    const auto & elem = *it;
     out_path = elem.key;
     out_data = elem.value.getData();
     out_stats = elem.value.stats;
 
-    ++*it;
+    ++it;
     return true;
 }
 

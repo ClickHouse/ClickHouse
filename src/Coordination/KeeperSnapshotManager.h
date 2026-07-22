@@ -155,8 +155,6 @@ public:
     KeeperStorageSnapshot(const KeeperStorageSnapshot &) = delete;
     KeeperStorageSnapshot(KeeperStorageSnapshot &&) = default;
 
-    ~KeeperStorageSnapshot();
-
     static void serialize(const KeeperStorageSnapshot & snapshot, WriteBuffer & out, KeeperContextPtr keeper_context);
 
     KeeperStorage * storage;
@@ -166,7 +164,8 @@ public:
     SnapshotMetadataPtr snapshot_meta;
     /// Max session id
     int64_t session_id;
-    std::unique_ptr<KeeperNodeStreamForSnapshot> node_stream;
+    /// Lock-free MVCC-style read view of the storage container.
+    std::unique_ptr<KeeperNodesReadView> view;
     /// Active sessions and their timeouts
     SessionAndTimeout session_and_timeout;
     /// Sessions credentials
