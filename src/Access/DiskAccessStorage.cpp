@@ -21,9 +21,9 @@
 #include <boost/range/adaptor/map.hpp>
 #include <base/range.h>
 #include <filesystem>
-#include <fstream>
 #include <memory>
 #include <optional>
+#include <sstream>
 
 
 namespace DB
@@ -361,17 +361,35 @@ void DiskAccessStorage::scheduleWriteLists(AccessEntityType type)
 
     types_of_lists_to_write.insert(type);
 
+    /// Create the 'need_rebuild_lists.mark' file.
+    /// This file will be used later to find out if writing lists is successful or not.
+    /// It must be durable: the marker is what tells the next startup to rescan the (already
+    /// fsync'd) <id>.sql files instead of trusting the stale .list indexes. If the marker is
+    /// missing on power loss while the background .list rewrite has not run yet, the
+    /// acknowledged CREATE/ALTER/DROP USER would become unreachable after restart even though
+    /// its <id>.sql survived. We must (re)create it even when the writing thread is already
+    /// waiting: `reloadAllAndRebuildLists()` removes the marker without stopping that thread,
+    /// so a following DDL that took the early return below would otherwise commit its entity
+    /// file with no marker on disk. Fsync the marker file and its parent directory (the
+    /// marker's existence is a new directory entry, like a rename), gated on fsync_metadata.
+    const auto mark_file_path = getNeedRebuildListsMarkFilePath(directory_path);
+    const bool fsync = shouldFsyncMetadata();
+    {
+        std::optional<LocalDirectorySyncGuard> dir_sync_guard;
+        if (fsync)
+            dir_sync_guard.emplace(std::filesystem::path{mark_file_path}.parent_path().string());
+        WriteBufferFromFile out{mark_file_path};
+        if (fsync)
+            out.sync();
+        out.close();
+    }
+
     if (lists_writing_thread_is_waiting)
         return; /// If the lists' writing thread is still waiting we can update `types_of_lists_to_write` easily,
-                /// without restarting that thread.
+                /// without restarting that thread. The marker is already (re)created above.
 
     if (lists_writing_thread && lists_writing_thread->joinable())
         lists_writing_thread->join();
-
-    /// Create the 'need_rebuild_lists.mark' file.
-    /// This file will be used later to find out if writing lists is successful or not.
-    std::ofstream out{getNeedRebuildListsMarkFilePath(directory_path)};
-    out.close();
 
     LOG_TRACE(getLogger(), "Created need_rebuild_lists.mark, starting background lists-writing thread");
 
