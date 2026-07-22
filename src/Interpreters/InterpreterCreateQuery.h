@@ -128,11 +128,11 @@ private:
 
     BlockIO executeQueryOnCluster(ASTCreateQuery & create);
 
-    /// Returns a scope guard that reverts the on-disk metadata file to its pre-conversion content.
-    /// The caller must release it once the converted table has been successfully constructed and
-    /// registered, so that a construction-time rejection not caught by the up-front validation
-    /// (e.g. a future setting the target engine refuses) does not leave unloadable metadata on disk.
-    [[nodiscard]] scope_guard convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated);
+    /// Rewrites the on-disk metadata to toggle the engine between MergeTree and ReplicatedMergeTree
+    /// for ATTACH AS [NOT] REPLICATED. Every conversion the target engine refuses is rejected by the
+    /// up-front validation (DatabaseOrdinary::validateEngineSupportsReplicatedConversion) before this
+    /// rewrite, so the persisted metadata is only ever rewritten for a conversion that will construct.
+    void convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated);
 
     /// Remove transaction metadata files (txn_version.txt and txn_version.txt.tmp) from all parts for a table.
     static void clearTransactionMetadata(const String & table_data_path, ContextPtr local_context);

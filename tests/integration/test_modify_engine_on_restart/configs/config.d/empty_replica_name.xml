@@ -1,0 +1,3 @@
+<clickhouse>
+    <default_replica_name></default_replica_name>
+</clickhouse>

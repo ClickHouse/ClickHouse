@@ -29,6 +29,21 @@ ch2 = cluster.add_instance(
     macros={"replica": "node2"},
     stay_alive=True,
 )
+# Third instance with an empty `default_replica_name` server setting. ReplicatedMergeTree rejects
+# an empty replica name in its constructor (NO_REPLICA_NAME_GIVEN), and that name is taken from the
+# server setting, not the table's SETTINGS. So the converter must resolve and reject it up front,
+# before rewriting the metadata; otherwise the table is left as an unloadable ReplicatedMergeTree.
+ch3 = cluster.add_instance(
+    "ch3",
+    main_configs=[
+        "configs/config.d/clusters.xml",
+        "configs/config.d/distributed_ddl.xml",
+        "configs/config.d/empty_replica_name.xml",
+    ],
+    with_zookeeper=True,
+    macros={"replica": "node3"},
+    stay_alive=True,
+)
 
 database_name = "modify_engine_unique_key"
 
@@ -133,3 +148,40 @@ def test_convert_to_replicated_rejected_for_config_table_readonly(started_cluste
     )
 
     ch2.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+
+
+def test_convert_to_replicated_rejected_for_empty_replica_name(started_cluster):
+    # ch3 forces `default_replica_name` empty in config, which ReplicatedMergeTree rejects in its
+    # constructor. The converter must reject the conversion up front (see issue #110854).
+    ch3.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+    ch3.query(f"CREATE DATABASE {database_name}")
+
+    ch3.query(
+        database=database_name,
+        sql="CREATE TABLE rn ( A Int64 ) ENGINE = MergeTree() ORDER BY tuple()",
+    )
+    q(ch3, "INSERT INTO rn VALUES (1), (2)")
+
+    set_convert_flags(ch3, database_name, ["rn"])
+
+    # Capture the data path while the server is still up: the illegal conversion makes the server
+    # refuse to start below, so system.tables is unreachable afterwards.
+    table_data_path = get_table_path(ch3, "rn", database_name)
+
+    # The illegal conversion is rejected during startup, so the server refuses to start.
+    ch3.stop_clickhouse()
+    ch3.start_clickhouse(start_wait_sec=120, expected_to_fail=True)
+
+    # Crucially, the metadata was NOT rewritten: after removing the flag the table loads with its
+    # original MergeTree engine and its data intact (this is the load path that was broken before
+    # the fix, where the metadata had been corrupted to an unloadable ReplicatedMergeTree definition).
+    ch3.exec_in_container(["rm", f"{table_data_path}convert_to_replicated"])
+    ch3.start_clickhouse()
+
+    assert (
+        q(ch3, "SELECT engine FROM system.tables WHERE name = 'rn'").strip()
+        == "MergeTree"
+    )
+    assert q(ch3, "SELECT count() FROM rn").strip() == "2"
+
+    ch3.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")

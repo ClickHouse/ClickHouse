@@ -81,6 +81,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNKNOWN_TABLE;
     extern const int BAD_ARGUMENTS;
+    extern const int NO_REPLICA_NAME_GIVEN;
 }
 
 namespace DatabaseMetadataDiskSetting
@@ -223,6 +224,25 @@ void DatabaseOrdinary::validateEngineSupportsReplicatedConversion(const ASTCreat
                     "Engine {} doesn't work with 's3_with_keeper' disk type, cannot attach table as replicated",
                     target_engine_name);
     }
+
+    /// ReplicatedMergeTree rejects an empty or whitespace replica name in its constructor
+    /// (registerStorageMergeTree: NO_REPLICA_NAME_GIVEN for empty, BAD_ARGUMENTS for '\t'/'\n').
+    /// The name is taken from the `default_replica_name` server setting (setMergeTreeEngine), so a
+    /// broken config value would slip past the AST and be rejected only after the metadata was
+    /// already rewritten. Resolve it exactly as the storage does (TableZnodeInfo::resolve expands
+    /// the replica name with the table UUID cleared) so an unresolvable name (e.g. `{uuid}`) is
+    /// rejected up front by macro expansion here, mirroring the constructor.
+    Macros::MacroExpansionInfo info;
+    info.table_id = StorageID(create_query.getDatabase(), create_query.getTable(), UUIDHelpers::Nil);
+    info.expand_special_macros_only = false;
+    const String replica_name = local_context->getMacros()->expand(
+        local_context->getServerSettings()[ServerSetting::default_replica_name], info);
+    if (replica_name.empty())
+        throw Exception(ErrorCodes::NO_REPLICA_NAME_GIVEN,
+            "No replica name in config, cannot attach table as replicated");
+    if (replica_name.contains('\t') || replica_name.contains('\n'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Replica name must not contain '\\t' or '\\n', cannot attach table as replicated");
 }
 
 void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated)
