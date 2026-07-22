@@ -300,7 +300,8 @@ void preparePostgreSQLArrayInfo(
             /// units of 10^-scale.
             const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*nested);
             readDateTime64Text(time, datetime64_type.getScale(), in, datetime64_type.getTimeZone());
-            time = std::max<time_t>(time, 0);
+            /// No non-negative clamp here: unlike 32-bit `DateTime`, `DateTime64` has a valid
+            /// pre-epoch range, so negative values must be preserved (same as the scalar parser).
             return time;
         };
     else if (which.isDecimal32())
