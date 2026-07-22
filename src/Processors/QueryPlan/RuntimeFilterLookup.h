@@ -185,6 +185,10 @@ public:
         /// ANTI (NOT IN) can't be used as a positive IN predicate on the left side.
         if constexpr (negate)
             return nullptr;
+        /// Read the set only after the last build stream published it (seq_cst acquire); before that a
+        /// merge stream may still be mutating it. Same publication guard as getRecordedKeyRanges().
+        if (!inserts_are_finished.load())
+            return nullptr;
         /// exact_values is released once the set overflows to a bloom filter.
         if (!index_analysis_enabled || !exact_values)
             return nullptr;
