@@ -1,4 +1,6 @@
 #pragma once
+#include <optional>
+
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Aggregator.h>
@@ -71,6 +73,10 @@ struct ManyAggregatedData
 {
     ManyAggregatedDataVariants variants;
     std::atomic<UInt32> num_finished = 0;
+
+    /// Set when the adaptive aggregation is enabled for this aggregation (see
+    /// `AdaptiveAggregationSharedState`); shared by all the participating transforms.
+    AdaptiveAggregationSharedStatePtr adaptive_shared_state;
 
     explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads)
     {
@@ -148,6 +154,11 @@ private:
 
     ManyAggregatedDataPtr many_data;
     AggregatedDataVariants & variants;
+
+    /// Per-transform context of the adaptive aggregation; engaged when the shared state exists
+    /// on `many_data`.
+    std::optional<Aggregator::AdaptiveAggregationThreadContext> adaptive_context;
+
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
     bool should_produce_results_in_order_of_bucket_number = true;

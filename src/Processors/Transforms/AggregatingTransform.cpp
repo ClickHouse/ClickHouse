@@ -222,13 +222,15 @@ public:
         ManyAggregatedDataVariantsPtr data_,
         SharedDataPtr shared_data_,
         Arena * arena_,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+        AdaptiveAggregationSharedStatePtr adaptive_shared_state_)
         : ISource(std::make_shared<const Block>(params_->getHeader()), false)
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::move(shared_data_))
         , arena(arena_)
         , updater(std::move(updater_))
+        , adaptive_shared_state(std::move(adaptive_shared_state_))
     {
     }
 
@@ -255,6 +257,9 @@ protected:
             return {};
         }
 
+        if (adaptive_shared_state)
+            params->aggregator.drainAdaptiveBucketForMerge(*data->at(0), arena, bucket_num, *adaptive_shared_state, shared_data->is_cancelled);
+
         auto agg_chunk = params->aggregator.mergeAndConvertOneBucketToChunk(
             *data, arena, params->final, bucket_num, shared_data->is_cancelled, updater);
         Chunk chunk = convertToChunk(std::move(agg_chunk));
@@ -270,6 +275,7 @@ private:
     SharedDataPtr shared_data;
     Arena * arena;
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+    AdaptiveAggregationSharedStatePtr adaptive_shared_state;
 };
 
 /// Asks Aggregator to convert accumulated aggregation state into blocks (without merging) and pushes them to later steps.
@@ -409,13 +415,15 @@ public:
         AggregatingTransformParamsPtr params_,
         ManyAggregatedDataVariantsPtr data_,
         size_t num_threads_,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+        AdaptiveAggregationSharedStatePtr adaptive_shared_state_)
         : IProcessor({}, {params_->getHeader()})
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::make_shared<ConvertingAggregatedToChunksWithMergingSource::SharedData>())
         , num_threads(num_threads_)
         , updater(std::move(updater_))
+        , adaptive_shared_state(std::move(adaptive_shared_state_))
     {
     }
 
@@ -672,6 +680,7 @@ private:
     size_t num_threads;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+    AdaptiveAggregationSharedStatePtr adaptive_shared_state;
 
     bool is_initialized = false;
     bool finished = false;
@@ -784,7 +793,8 @@ private:
         {
             /// Select Arena to avoid race conditions
             Arena * arena = first->aggregates_pools.at(thread).get();
-            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSource>(params, data, shared_data, arena, updater);
+            auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSource>(
+                params, data, shared_data, arena, updater, adaptive_shared_state);
 
             processors.emplace_back(std::move(source));
         }
@@ -843,6 +853,8 @@ AggregatingTransform::AggregatingTransform(
     , skip_merging(skip_merging_)
     , updater(std::move(updater_))
 {
+    if (many_data->adaptive_shared_state)
+        adaptive_context.emplace(many_data->adaptive_shared_state);
 }
 
 AggregatingTransform::~AggregatingTransform() = default;
@@ -990,7 +1002,15 @@ void AggregatingTransform::consume(Chunk chunk)
     }
     else
     {
-        if (!params->aggregator.executeOnBlock(chunk.detachColumns(), 0, num_rows, variants, key_columns, aggregate_columns, no_more_keys))
+        if (!params->aggregator.executeOnBlock(
+                chunk.detachColumns(),
+                0,
+                num_rows,
+                variants,
+                key_columns,
+                aggregate_columns,
+                no_more_keys,
+                adaptive_context ? &*adaptive_context : nullptr))
             is_consume_finished = true;
     }
 }
@@ -1007,7 +1027,9 @@ void AggregatingTransform::initGenerate()
         if (params->params.only_merge)
             params->aggregator.mergeOnBlock(getInputs().front().getHeader().getColumns(), 0, false, variants, no_more_keys, is_cancelled);
         else
-            params->aggregator.executeOnBlock(getInputs().front().getHeader().getColumns(), 0, 0, variants, key_columns, aggregate_columns, no_more_keys);
+            params->aggregator.executeOnBlock(
+                getInputs().front().getHeader().getColumns(), 0, 0, variants, key_columns, aggregate_columns, no_more_keys,
+                /* adaptive= */ nullptr);
     }
 
     double elapsed_seconds = watch.elapsedSeconds();
@@ -1028,6 +1050,10 @@ void AggregatingTransform::initGenerate()
             params->aggregator.writeToTemporaryFile(variants);
     }
 
+    bool adaptive_engaged = adaptive_context && adaptive_context->shared_state->initialized.load(std::memory_order_acquire);
+    if (adaptive_engaged && variants.isConvertibleToTwoLevel())
+        variants.convertToTwoLevel();
+
     if (many_data->num_finished.fetch_add(1) + 1 < many_data->variants.size())
     {
         /// Note: we reset aggregation state here to release memory earlier.
@@ -1035,6 +1061,14 @@ void AggregatingTransform::initGenerate()
         many_data.reset();
         return;
     }
+
+    adaptive_engaged = adaptive_context && adaptive_context->shared_state->initialized.load(std::memory_order_acquire);
+
+    if (adaptive_engaged)
+        LOG_TRACE(
+            log,
+            "Adaptive aggregation: {} delayed records queued for the merge-time drain",
+            adaptive_context->shared_state->pending_records.load(std::memory_order_relaxed));
 
     /// In the case of two different aggregators existing simultaneously due to a mixed pipeline of aggregate projections,
     /// it is necessary to check whether any of the aggregators contains temporary data.
@@ -1052,8 +1086,8 @@ void AggregatingTransform::initGenerate()
         {
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
-            processors.emplace_back(
-                std::make_shared<ConvertingAggregatedToChunksTransform>(params, std::move(prepared_data_ptr), max_threads, updater));
+            processors.emplace_back(std::make_shared<ConvertingAggregatedToChunksTransform>(
+                params, std::move(prepared_data_ptr), max_threads, updater, adaptive_engaged ? adaptive_context->shared_state : nullptr));
         }
         else
         {
