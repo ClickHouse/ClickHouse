@@ -22,8 +22,15 @@ SHOW CREATE TABLE dist_over_tmp_join;
 -- it is visible to the target table function only when the shard query runs on the local replica. Reading it
 -- over the network path (a remote replica, or the parallel-replicas cluster) would raise `UNKNOWN_TABLE`.
 -- Keeping the unqualified name in the stored definition (asserted above) is the property under test.
-DROP TABLE dist_over_tmp_join;
+
+-- A short `ATTACH TABLE` reads the definition back from the table's own metadata, so it must trust the stored
+-- target AST as is - not re-run the create-time normalization. Reattaching after the temporary table is gone
+-- must therefore keep the target unqualified; re-binding it here would shadow it with `default.tmp_join_src`.
+DETACH TABLE dist_over_tmp_join;
 DROP TEMPORARY TABLE tmp_join_src;
+ATTACH TABLE dist_over_tmp_join;
+SHOW CREATE TABLE dist_over_tmp_join;
+DROP TABLE dist_over_tmp_join;
 
 -- Control: a permanent `Join` table of the same name IS qualified with the current database.
 CREATE TABLE tmp_join_src (k UInt64, v UInt64) ENGINE = Join(ANY, LEFT, k);

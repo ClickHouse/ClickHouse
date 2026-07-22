@@ -2509,6 +2509,18 @@ void registerStorageDistributed(StorageFactory & factory)
         const auto * table_function_ast = engine_args.size() >= 2 ? engine_args[1]->as<ASTFunction>() : nullptr;
         if (table_function_ast && TableFunctionFactory::instance().isTableFunctionName(table_function_ast->name))
         {
+            /// The engine arguments are trusted, previously-validated stored metadata (not a fresh
+            /// user-supplied query) when loading during server startup or a force-restore
+            /// (`isLoadingFromExistingMetadata`), as well as on a short `ATTACH TABLE t` / `ATTACH DATABASE`
+            /// (`attach_short_syntax`), where the definition is read back from the table's own metadata file
+            /// rather than typed by the attaching session. In all these cases the stored target AST must be
+            /// used as is: it must not be re-bound to the attaching session's current database, re-validated,
+            /// or rejected for an argument that a user-supplied query would not be allowed to pass. Only a
+            /// fresh definition (`CREATE`, a full-syntax user `ATTACH TABLE t (...) ENGINE = ...`, a backup
+            /// `RESTORE`) is normalized and validated below.
+            const bool loading_from_existing_metadata
+                = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
+
             /// The `policy_name` parameter of the classic form is not accepted here. It only affects the
             /// `INSERT` path (the storage policy stores temporary files for background send), and this form
             /// rejects every `INSERT` with `NOT_IMPLEMENTED`, so the policy could never be used. Accepting
@@ -2517,7 +2529,7 @@ void registerStorageDistributed(StorageFactory & factory)
             /// any node where that unused policy is absent. Loading from previously-validated metadata must
             /// not fail on an argument that is ignored anyway, so only a fresh user-supplied query is
             /// rejected; on a metadata load any extra argument is ignored and the policy stays "default".
-            if (engine_args.size() > 3 && !isLoadingFromExistingMetadata(args.mode))
+            if (engine_args.size() > 3 && !loading_from_existing_metadata)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                                 "Storage Distributed over a table function requires from 2 to 3 parameters - "
                                 "name of configuration section with list of remote servers, table function, "
@@ -2531,11 +2543,12 @@ void registerStorageDistributed(StorageFactory & factory)
             /// at create time, exactly as `InterpreterCreateQuery` does for `CREATE TABLE ... AS table_function`.
             /// Otherwise, with explicit columns the unsupported combination would be silently written to
             /// metadata and only discovered later at read time.
-            /// The check must cover every fresh user-supplied query, including a user-issued `ATTACH TABLE`
-            /// (`LoadingStrictnessLevel::ATTACH`); only skip it when loading from previously-validated
-            /// metadata (server startup / force-restore), where the object was already validated at creation
-            /// and the cluster may be unavailable.
-            if (!isLoadingFromExistingMetadata(args.mode))
+            /// The check must cover every fresh user-supplied query, including a full-syntax user-issued
+            /// `ATTACH TABLE t (...) ENGINE = ...` (`LoadingStrictnessLevel::ATTACH`); only skip it when the
+            /// definition comes from previously-validated stored metadata (server startup, force-restore, or a
+            /// short `ATTACH TABLE t` / `ATTACH DATABASE`), where the object was already validated at creation,
+            /// the persisted target must be trusted as is, and the cluster may be unavailable.
+            if (!loading_from_existing_metadata)
             {
                 /// Bind the table function to the current database at CREATE time, so that the persisted
                 /// target does not depend on the current database of whatever session queries the table
@@ -2599,9 +2612,6 @@ void registerStorageDistributed(StorageFactory & factory)
             /// server, and the named cluster may be unavailable then, so it must not be forced to resolve. A
             /// backup `RESTORE` (`SECONDARY_CREATE`, `is_restore_from_backup`) introduces the definition under a
             /// possibly different user, so it is validated like a `CREATE`.
-            const bool loading_from_existing_metadata
-                = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
-
             if (!loading_from_existing_metadata)
             {
                 ClusterPtr cluster = context->getCluster(context->getMacros()->expand(cluster_name));

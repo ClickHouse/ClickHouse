@@ -1,3 +1,4 @@
 CREATE TABLE default.dist_over_tmp_join\n(\n    `n` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', numbers(joinGet(\'tmp_join_src\', \'v\', toUInt64(0))))
+CREATE TABLE default.dist_over_tmp_join\n(\n    `n` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', numbers(joinGet(\'tmp_join_src\', \'v\', toUInt64(0))))
 CREATE TABLE default.dist_over_tmp_join\n(\n    `n` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', numbers(joinGet(\'default.tmp_join_src\', \'v\', toUInt64(0))))
 3
