@@ -1,6 +1,7 @@
 #include <Processors/Sources/SQLiteSource.h>
 
 #if USE_SQLITE
+#include <base/sleep.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -9,6 +10,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SQLITE_ENGINE_ERROR;
+}
+
+namespace
+{
+    /// How long to sleep between `sqlite3_prepare_v2` retries when the database is locked (SQLITE_BUSY),
+    /// matching the `sqlite3_step` retry back-off in `SQLiteStatementReader`.
+    constexpr UInt64 sqlite_busy_retry_ms = 10;
 }
 
 SQLiteSource::SQLiteSource(
@@ -22,23 +30,51 @@ SQLiteSource::SQLiteSource(
     , statement_reader(sample_block, FormatSettings{}, SQLiteStatementReader::ValueReadMode::Native)
     , sqlite_db(std::move(sqlite_db_))
 {
-    sqlite3_stmt * compiled_stmt = nullptr;
-    int status = sqlite3_prepare_v2(
-        sqlite_db.get(),
-        query_str.c_str(),
-        static_cast<int>(query_str.size() + 1),
-        &compiled_stmt, nullptr);
+}
 
-    if (status != SQLITE_OK)
+void SQLiteSource::prepareStatement()
+{
+    while (true)
+    {
+        sqlite3_stmt * compiled_stmt = nullptr;
+        int status = sqlite3_prepare_v2(
+            sqlite_db.get(),
+            query_str.c_str(),
+            static_cast<int>(query_str.size() + 1),
+            &compiled_stmt, nullptr);
+
+        if (status == SQLITE_OK)
+        {
+            compiled_statement = std::unique_ptr<sqlite3_stmt, StatementDeleter>(compiled_stmt, StatementDeleter());
+            return;
+        }
+
+        /// The database is locked by another connection. Idle and stay cancellable instead of busy-spinning or
+        /// failing outright, mirroring the `sqlite3_step` retry loop in `SQLiteStatementReader::readChunk`.
+        /// `sqlite3_interrupt` (our cancellation path) makes an in-progress prepare return `SQLITE_INTERRUPT`.
+        if (status == SQLITE_BUSY || status == SQLITE_INTERRUPT)
+        {
+            if (isCancelled())
+                return;
+            if (status == SQLITE_BUSY)
+                sleepForMilliseconds(sqlite_busy_retry_ms);
+            continue;
+        }
+
         throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
                         "Cannot prepare sqlite statement. Status: {}. Message: {}",
                         status, sqlite_db ? sqlite3_errmsg(sqlite_db.get()) : sqlite3_errstr(status));
-
-    compiled_statement = std::unique_ptr<sqlite3_stmt, StatementDeleter>(compiled_stmt, StatementDeleter());
+    }
 }
 
 Chunk SQLiteSource::generate()
 {
+    if (!prepared)
+    {
+        prepared = true;
+        prepareStatement();
+    }
+
     LOG_TEST(getLogger("SQLiteSource"), "Generate a chunk");
 
     if (!compiled_statement)

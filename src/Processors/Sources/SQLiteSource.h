@@ -35,12 +35,20 @@ private:
 
     void onCancel() noexcept override;
 
+    /// Compile the statement, retrying while the database is locked by another connection. Done lazily on the
+    /// first `generate` (rather than in the constructor) so it runs under the executor and stays cancellable:
+    /// `sqlite3_prepare_v2` of a `SELECT` needs a shared lock to read `sqlite_master`, so under a concurrent
+    /// exclusive lock it would otherwise fail outright before the `sqlite3_step` retry loop is ever reached.
+    /// Leaves `compiled_statement` null if the read is cancelled while waiting for the lock.
+    void prepareStatement();
+
     String query_str;
     UInt64 max_block_size;
 
     SQLiteStatementReader statement_reader;
     SQLitePtr sqlite_db;
     std::unique_ptr<sqlite3_stmt, StatementDeleter> compiled_statement;
+    bool prepared = false;
 };
 
 }

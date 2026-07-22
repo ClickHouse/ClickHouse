@@ -148,11 +148,12 @@ BUSY_WAIT_SECONDS = 3
 
 
 def test_kill_query_while_sqlite_busy(started_cluster):
-    # Take an exclusive lock on the SQLite database from a separate connection so that
-    # sqlite3_step in SQLiteSource::generate returns SQLITE_BUSY. Before the fix the
-    # retry loop did a bare `continue`, busy-spinning a full CPU core. The fix sleeps
-    # briefly and checks isCancelled() between retries, so the read idles at ~0 CPU
-    # and stays cancellable.
+    # Take an exclusive lock on the SQLite database from a separate connection so that the read blocks with
+    # SQLITE_BUSY. Each read runs on its own fresh SQLite connection, so the first thing it does under the lock
+    # is sqlite3_prepare_v2, which needs a shared lock to read sqlite_master; both prepare (SQLiteSource) and
+    # sqlite3_step (SQLiteStatementReader) retry on SQLITE_BUSY. Before the fix the retry loop did a bare
+    # `continue`, busy-spinning a full CPU core. The fix sleeps briefly and checks isCancelled() between
+    # retries, so the read idles at ~0 CPU and stays cancellable.
     #
     # This test asserts BOTH properties:
     #  1) no-busy-spin: the OS CPU time the query burns while blocked on the lock is a
@@ -161,11 +162,6 @@ def test_kill_query_while_sqlite_busy(started_cluster):
     #     The test would still pass on `master` (which is already cancellable) if it only
     #     checked cancellation, so this CPU bound is what actually protects the fix.
     #  2) cancellable: KILL cancels the read promptly even while the lock is held.
-
-    # Warm the pooled SQLite connection so its schema is cached. Otherwise the first
-    # sqlite3_prepare_v2 needs a shared lock to read sqlite_master and fails immediately
-    # under the exclusive lock below, before generate() (and the busy-retry loop) runs.
-    node1.query("SELECT count() FROM test_sqlite.big_data_table")
 
     conn = sqlite3.connect(DB_FILE_ON_HOST, isolation_level=None)
     conn.execute("BEGIN EXCLUSIVE")
@@ -186,8 +182,8 @@ def test_kill_query_while_sqlite_busy(started_cluster):
         query_thread.start()
 
         # Wait until the read is running and blocked on the lock. Poll system.processes
-        # rather than the server log: with the fix the read logs "Generate a chunk" only
-        # once and then blocks silently in the retry loop, so a log tail would race.
+        # rather than the server log: the read blocks silently inside the prepare/step
+        # retry loop while the lock is held, so a log tail would race.
         assert_eq_with_retry(
             node1,
             f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
