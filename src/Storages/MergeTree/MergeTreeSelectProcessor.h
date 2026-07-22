@@ -39,16 +39,9 @@ public:
         String stream_id_
     );
 
-    std::optional<InitialAllRangesAnnouncementResponse> sendInitialRequest(
-        CoordinationMode mode,
-        RangesInDataPartsDescription description,
-        size_t mark_segment_size,
-        size_t min_marks_per_request) const;
+    void sendInitialRequest(CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request) const;
 
-    std::optional<ParallelReadResponse> sendReadRequest(CoordinationMode mode, size_t min_marks_per_request) const;
-
-    std::optional<ParallelReadResponse> sendReadInOrderRequest(
-        CoordinationMode mode, size_t min_marks_per_request, const RangesInDataPartsDescription & description) const;
+    std::optional<ParallelReadResponse> sendReadRequest(CoordinationMode mode, size_t min_marks_per_request, const RangesInDataPartsDescription & description) const;
 
     size_t getTotalNodesCount() const { return total_nodes_count; }
     size_t getNumberOfCurrentReplica() const { return number_of_current_replica; }
@@ -191,11 +184,6 @@ private:
     MergeTreeIndexBuildContextPtr merge_tree_index_build_context;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
-
-    StorageID storage_id = StorageID::createEmpty();
-    size_t prewhere_step_offset = 0;
-
-    void logPredicateStatistics() const;
 
     /// For per-block virtual row generation (read-in-order optimization).
     ExpressionActionsPtr virtual_row_conversions;

@@ -87,7 +87,6 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_group_name;
     extern const KafkaSettingsStreamingHandleErrorMode kafka_handle_error_mode;
     extern const KafkaSettingsUInt64 kafka_max_block_size;
-    extern const KafkaSettingsBool kafka_map_virtual_columns_on_write;
     extern const KafkaSettingsUInt64 kafka_max_rows_per_message;
     extern const KafkaSettingsUInt64 kafka_num_consumers;
     extern const KafkaSettingsUInt64 kafka_poll_max_batch_size;
@@ -131,7 +130,7 @@ private:
         if (kafka_storage.shutdown_called)
             throw Exception(ErrorCodes::ABORTED, "Table is detached");
 
-        if (!DatabaseCatalog::instance().getDependentViews(kafka_storage.getStorageID()).empty())
+        if (kafka_storage.mv_attached)
             throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka with attached materialized views");
 
         ProfileEvents::increment(ProfileEvents::KafkaDirectReads);
@@ -174,7 +173,7 @@ StorageKafka::StorageKafka(
     const String & comment,
     std::unique_ptr<KafkaSettings> kafka_settings_,
     const String & collection_name_)
-    : IStreamingStorage(table_id_)
+    : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , kafka_settings(std::move(kafka_settings_))
     , macros_info{.table_id = table_id_}
@@ -267,11 +266,8 @@ SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & 
     size_t poll_timeout = settings[Setting::stream_poll_timeout_ms].totalMilliseconds();
     auto header = metadata_snapshot->getSampleBlockNonMaterialized();
 
-    const bool map_virtual_columns_on_write = (*kafka_settings)[KafkaSetting::kafka_map_virtual_columns_on_write];
-    auto payload_split = StorageKafkaUtils::splitPayloadColumns(header, map_virtual_columns_on_write);
-
     auto producer = std::make_unique<KafkaProducer>(
-        std::make_shared<cppkafka::Producer>(conf), topics[0], std::chrono::milliseconds(poll_timeout), shutdown_called, header, map_virtual_columns_on_write);
+        std::make_shared<cppkafka::Producer>(conf), topics[0], std::chrono::milliseconds(poll_timeout), shutdown_called, header);
 
     LOG_TRACE(log, "Kafka producer created");
 
@@ -279,16 +275,8 @@ SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & 
     /// Need for backward compatibility.
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
         max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
-    auto format_header = std::make_shared<const Block>(std::move(payload_split.format_header));
     return std::make_shared<MessageQueueSink>(
-        std::make_shared<const Block>(std::move(header)),
-        format_header,
-        std::move(payload_split.format_column_indices),
-        getFormatName(),
-        max_rows,
-        std::move(producer),
-        getName(),
-        modified_context);
+        std::make_shared<const Block>(std::move(header)), getFormatName(), max_rows, std::move(producer), getName(), modified_context);
 }
 
 
@@ -300,12 +288,6 @@ void StorageKafka::startup()
         task->holder->activateAndSchedule();
     }
     StreamingStorageRegistry::instance().registerTable(getStorageID());
-}
-
-void StorageKafka::scheduleStreamingTasksImpl()
-{
-    for (auto & task : tasks)
-        task->holder->schedule();
 }
 
 
@@ -365,35 +347,22 @@ void StorageKafka::cleanConsumers()
 
     {
         std::unique_lock lock(mutex);
-        /// Wait until all consumers will be released, with a timeout to avoid hanging forever
-        /// if a consumer is somehow stuck in-use.
-        if (!cv.wait_for(lock, std::chrono::seconds(KAFKA_CONSUMER_CLOSE_TIMEOUT_S), [&, this]()
+        /// Wait until all consumers will be released
+        cv.wait(lock, [&, this]()
         {
             auto it = std::find_if(consumers.begin(), consumers.end(), [](const auto & ptr)
             {
                 return ptr->isInUse();
             });
             return it == consumers.end();
-        }))
-        {
-            LOG_WARNING(log, "Timed out waiting for {} consumer(s) to be released, proceeding with shutdown",
-                std::count_if(consumers.begin(), consumers.end(), [](const auto & ptr) { return ptr->isInUse(); }));
-        }
+        });
 
-        size_t skipped = 0;
         for (const auto & consumer : consumers)
         {
             if (!consumer->hasConsumer())
                 continue;
-            if (consumer->isInUse())
-            {
-                ++skipped;
-                continue;
-            }
             consumers_to_close.push_back(consumer->moveConsumer());
         }
-        if (skipped)
-            LOG_WARNING(log, "Skipped closing {} consumer(s) that are still in use", skipped);
     }
 
     /// First close cppkafka::Consumer (it can use KafkaConsumer object via stat callback)
@@ -604,21 +573,20 @@ size_t StorageKafka::getSchemaRegistrySkipBytes() const
 
 void StorageKafka::threadFunc(size_t idx)
 {
-    chassert(idx < tasks.size());
+    assert(idx < tasks.size());
     auto task = tasks[idx];
     std::string exception_str;
 
     try
     {
         auto table_id = getStorageID();
+        // Check if at least one direct dependency is attached
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-        const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
-        const bool deps_ready = num_views == 0 || StorageKafkaUtils::checkDependencies(table_id, getContext());
-        const bool run_cycle = deps_ready && stream_control.claimCycle(task->last_seen_refresh_epoch);
-
-        if (num_views && run_cycle)
+        if (num_views)
         {
             auto start_time = std::chrono::steady_clock::now();
+
+            mv_attached.store(true);
 
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!task->stream_cancelled)
@@ -632,15 +600,12 @@ void StorageKafka::threadFunc(size_t idx)
                 LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
                 // Exit the loop & reschedule if some stream stalled
-                auto some_stream_is_stalled = streamToViews(cycle_epoch);
+                auto some_stream_is_stalled = streamToViews();
                 if (some_stream_is_stalled)
                 {
                     LOG_TRACE(log, "Stream(s) stalled. Rescheduling in {} ms.", (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
                     break;
                 }
-
-                if (stream_control.isBlocked() || stream_control.isCancelRequested(cycle_epoch))
-                    break;
 
                 auto ts = std::chrono::steady_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time);
@@ -651,10 +616,6 @@ void StorageKafka::threadFunc(size_t idx)
                 }
             }
         }
-        else if (num_views && stream_control.isBlocked())
-            LOG_DEBUG(log, "Consumption is stopped");
-        else if (num_views)
-            ProfileEvents::increment(ProfileEvents::KafkaMVNotReady);
         else
             LOG_DEBUG(log, "No attached views");
 
@@ -676,13 +637,15 @@ void StorageKafka::threadFunc(size_t idx)
         }
     }
 
+    mv_attached.store(false);
+
     // Wait for attached views
     if (!task->stream_cancelled)
         task->holder->scheduleAfter((*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
 }
 
 
-bool StorageKafka::streamToViews(UInt64 cycle_epoch)
+bool StorageKafka::streamToViews()
 {
     Stopwatch watch;
 
@@ -694,8 +657,7 @@ bool StorageKafka::streamToViews(UInt64 cycle_epoch)
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaBackgroundReads};
     ProfileEvents::increment(ProfileEvents::KafkaBackgroundReads);
 
-    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-    auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(getContext(), false), getContext());
 
     // Create an INSERT query for streaming data
     auto insert = make_intrusive<ASTInsertQuery>();
@@ -727,7 +689,7 @@ bool StorageKafka::streamToViews(UInt64 cycle_epoch)
     pipes.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)
     {
-        auto source = std::make_shared<KafkaSource>(*this, storage_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false, cycle_epoch);
+        auto source = std::make_shared<KafkaSource>(*this, storage_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 

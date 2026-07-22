@@ -3,6 +3,7 @@
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/TransposedMetricLog.h>
+#include <Interpreters/HistogramMetricLog.h>
 #include <Interpreters/PeriodicLog.h>
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>

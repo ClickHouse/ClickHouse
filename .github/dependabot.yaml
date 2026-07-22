@@ -6,8 +6,6 @@ updates:
     directory: "/ci/docker"
     schedule:
       interval: "monthly"
-    cooldown:
-      default-days: 90
     open-pull-requests-limit: 0
     ignore:
       - dependency-name: "*"
@@ -16,8 +14,6 @@ updates:
     directory: "/ci/docker"
     schedule:
       interval: "monthly"
-    cooldown:
-      default-days: 90
     open-pull-requests-limit: 0
     ignore:
       - dependency-name: "*"
@@ -26,8 +22,6 @@ updates:
     directory: "/ci/docker"
     schedule:
       interval: "monthly"
-    cooldown:
-      default-days: 90
     open-pull-requests-limit: 0
     ignore:
       - dependency-name: "*"
@@ -36,8 +30,6 @@ updates:
     directory: "/ci/docker"
     schedule:
       interval: "monthly"
-    cooldown:
-      default-days: 90
     open-pull-requests-limit: 0
     ignore:
       - dependency-name: "*"
@@ -47,8 +39,6 @@ updates:
     directory: "/tests/integration"
     schedule:
       interval: "monthly"
-    cooldown:
-      default-days: 90
     open-pull-requests-limit: 0
     ignore:
       - dependency-name: "*"
@@ -57,8 +47,6 @@ updates:
     directory: "/tests/integration"
     schedule:
       interval: "monthly"
-    cooldown:
-      default-days: 90
     open-pull-requests-limit: 0
     ignore:
       - dependency-name: "*"
@@ -67,8 +55,6 @@ updates:
     directory: "/tests/integration"
     schedule:
       interval: "monthly"
-    cooldown:
-      default-days: 90
     open-pull-requests-limit: 0
     ignore:
       - dependency-name: "*"
@@ -77,8 +63,6 @@ updates:
     directory: "/tests/integration"
     schedule:
       interval: "monthly"
-    cooldown:
-      default-days: 90
     open-pull-requests-limit: 0
     ignore:
       - dependency-name: "*"
@@ -88,8 +72,6 @@ updates:
     directory: "/docker/test"
     schedule:
       interval: "monthly"
-    cooldown:
-      default-days: 90
     open-pull-requests-limit: 0
     ignore:
       - dependency-name: "*"
@@ -98,8 +80,6 @@ updates:
     directory: "/docker/test"
     schedule:
       interval: "monthly"
-    cooldown:
-      default-days: 90
     open-pull-requests-limit: 0
     ignore:
       - dependency-name: "*"
@@ -108,8 +88,6 @@ updates:
     directory: "/docker/test"
     schedule:
       interval: "monthly"
-    cooldown:
-      default-days: 90
     open-pull-requests-limit: 0
     ignore:
       - dependency-name: "*"
@@ -118,31 +96,6 @@ updates:
     directory: "/docker/test"
     schedule:
       interval: "monthly"
-    cooldown:
-      default-days: 90
-    open-pull-requests-limit: 0
-    ignore:
-      - dependency-name: "*"
-
-  # Disable Dependabot for all Rust (cargo) dependencies.
-  # Rust crates are pinned via Cargo.lock and built reproducibly; updates must be
-  # done manually together with lockfile and vendored-source refreshes.
-  - package-ecosystem: "cargo"
-    directory: "/rust/chcache"
-    schedule:
-      interval: "monthly"
-    cooldown:
-      default-days: 90
-    open-pull-requests-limit: 0
-    ignore:
-      - dependency-name: "*"
-
-  - package-ecosystem: "cargo"
-    directory: "/rust/workspace"
-    schedule:
-      interval: "monthly"
-    cooldown:
-      default-days: 90
     open-pull-requests-limit: 0
     ignore:
       - dependency-name: "*"

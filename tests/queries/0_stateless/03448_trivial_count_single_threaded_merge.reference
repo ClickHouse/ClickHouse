@@ -5,8 +5,10 @@ EXPLAIN PIPELINE SELECT count() FROM trivial_count;
 ExpressionTransform
   (MergingAggregated)
   MergingAggregatedTransform
-    (ReadFromPreparedSource)
-    SourceFromSingleChunk 0 → 1
+    (Expression)
+    ExpressionTransform
+      (ReadFromPreparedSource)
+      SourceFromSingleChunk 0 → 1
 -- But not if we are filtering or doing other operations (no trivial count)
 EXPLAIN PIPELINE SELECT count() FROM trivial_count WHERE number % 3 = 2;
 (Expression)

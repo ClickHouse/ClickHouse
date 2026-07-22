@@ -1,7 +1,4 @@
-#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
-#include <Core/Block.h>
-#include <Common/assert_cast.h>
 
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -20,14 +17,12 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 
 #include <Storages/StorageMerge.h>
@@ -180,24 +175,7 @@ static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(QueryPlan
         }
         else
         {
-            bool is_filter_const_after = result->is_filter_const_after_push_down;
-
-            /// After push-down, the remaining expression may produce a Const filter column
-            /// even though `is_filter_const_after_push_down` is false (that flag is only set
-            /// when ALL conjunctions are pushed down). This happens when the remaining expression
-            /// contains a NULL constant argument — `defaultImplementationForNulls` short-circuits
-            /// to a ColumnConst, e.g. `plus(count(), NULL)` becomes Const(NULL).
-            /// If uncorrected, the Const output header propagates to parent steps (e.g. UnionStep)
-            /// causing a "Block structure mismatch" exception.
-            if (!is_filter_column_const_before && !is_filter_const_after && !removes_filter)
-            {
-                auto test_header = expression.updateHeader(*filter->getInputHeaders().front());
-                const auto * filter_col = test_header.findByName(filter_column_name);
-                if (filter_col && filter_col->column && isColumnConst(*filter_col->column))
-                    is_filter_const_after = true;
-            }
-
-            materializeFilterColumnIfNeededAfterPushDown(*filter, is_filter_column_const_before, is_filter_const_after);
+            materializeFilterColumnIfNeededAfterPushDown(*filter, is_filter_column_const_before, result->is_filter_const_after_push_down);
         }
     }
     return result;
@@ -371,7 +349,7 @@ struct JoinActionRefPairHash
     }
 };
 
-static std::vector<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperator & join_operator)
+std::vector<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperator & join_operator)
 {
     std::vector<JoinActionRefPair> joining_keys;
     for (const auto & predicate : join_operator.expression)
@@ -394,7 +372,7 @@ static std::vector<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperat
     return joining_keys;
 }
 
-static std::vector<JoinActionRefPair> buildEquialentSetsForJoinStepLogical(
+std::vector<JoinActionRefPair> buildEquialentSetsForJoinStepLogical(
     EquivalentJoinKeySet & equivalent_sets,
     const JoinStepLogical * join_step,
     const std::vector<QueryPlan::Node *> & child_nodes,
@@ -1020,50 +998,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             return updated_steps;
     }
 
-    if (const auto * window = typeid_cast<WindowStep *>(child.get()))
-    {
-        /// A predicate on the PARTITION BY columns of a window is safe to apply before the
-        /// window: it only removes whole partitions, and dropping a partition never changes
-        /// any window value on a surviving row (regardless of the window function or frame).
-        /// Predicates on the window result stay above. Same reasoning as for aggregation keys.
-        Names partition_keys;
-        for (const auto & sort_column : window->getWindowDescription().partition_by)
-            partition_keys.push_back(sort_column.column_name);
-
-        if (partition_keys.empty())
-            return 0;
-
-        /// Pass true (as for aggregation), which disables pushing non-deterministic conjuncts.
-        /// A predicate must be deterministic in the partition key, not merely reference only it:
-        /// a non-deterministic conjunct such as `rand64(key) % 2 = 0` removes arbitrary rows
-        /// inside a surviving partition before the window runs, which can change which row
-        /// becomes row_number() = 1. Unlike SortingStep, the window value depends on the set of
-        /// rows in the partition, so non-deterministic filters are not safe to move below it.
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, partition_keys))
-            return updated_steps;
-    }
-
-    if (const auto * limit_by = typeid_cast<LimitByStep *>(child.get()))
-    {
-        /// A predicate on the LIMIT BY key columns removes whole groups, so the surviving
-        /// per-group rows (and therefore the result) are identical whether it runs above or
-        /// below the LIMIT BY. But it is only safe to push when every non-empty input group
-        /// keeps at least one output row, i.e. `OFFSET 0` and `LIMIT >= 1`. Otherwise a group
-        /// can be fully discarded by the step (OFFSET past its size, or `LIMIT 0 BY`), and a
-        /// pushed key predicate would then be evaluated on rows the original query never
-        /// reached -- changing exception semantics for throwing key expressions
-        /// (e.g. `intDiv(1, key)` on a group that OFFSET would have dropped). This mirrors
-        /// AggregatingStep, where GROUP BY likewise never empties a non-empty group.
-        /// `step_changes_the_number_of_rows = true`: LIMIT BY drops rows, so
-        /// non-deterministic key predicates must NOT be pushed.
-        const auto & keys = limit_by->getColumns();
-        if (keys.empty() || limit_by->getGroupOffset() != 0 || limit_by->getGroupLength() == 0)
-            return 0;
-
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys))
-            return updated_steps;
-    }
-
     if (typeid_cast<CreatingSetsStep *>(child.get()))
     {
         /// CreatingSets does not change header.
@@ -1181,16 +1115,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * union_step = typeid_cast<UnionStep *>(child.get()))
     {
-        /// This rewrite forces every union branch input header to the pushed-down filter's
-        /// output header, which assumes the union forwards each branch unchanged. Skip it
-        /// when the union normalizes a branch (its output differs from some input header),
-        /// e.g. it drops a Const that diverged across branches. Otherwise a branch still
-        /// outputting Const would get a full input header and the mismatch would move here.
-        const auto & union_output = *union_step->getOutputHeader();
-        for (const auto & input_header : union_step->getInputHeaders())
-            if (!blocksHaveEqualStructure(*input_header, union_output))
-                return 0;
-
         /// Union does not change header.
         /// We can push down filter and update header.
         auto union_input_headers = child->getInputHeaders();
@@ -1203,7 +1127,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// Filter - Union - Something
         ///                - Something
 
-        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads(), union_step->isNarrowingAllowed());
+        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads());
 
         std::swap(parent, child);
         std::swap(parent_node->children, child_node->children);

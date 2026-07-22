@@ -56,8 +56,7 @@ RabbitMQSource::RabbitMQSource(
     StreamingHandleErrorMode handle_error_mode_,
     bool nack_broken_messages_,
     bool ack_in_suffix_,
-    LoggerPtr log_,
-    std::optional<UInt64> cancel_epoch_)
+    LoggerPtr log_)
     : RabbitMQSource(
         storage_,
         storage_snapshot_,
@@ -69,8 +68,7 @@ RabbitMQSource::RabbitMQSource(
         handle_error_mode_,
         nack_broken_messages_,
         ack_in_suffix_,
-        log_,
-        cancel_epoch_)
+        log_)
 {
 }
 
@@ -85,8 +83,7 @@ RabbitMQSource::RabbitMQSource(
     StreamingHandleErrorMode handle_error_mode_,
     bool nack_broken_messages_,
     bool ack_in_suffix_,
-    LoggerPtr log_,
-    std::optional<UInt64> cancel_epoch_)
+    LoggerPtr log_)
     : ISource(std::make_shared<const Block>(getSampleBlock(headers.first, headers.second)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -98,7 +95,6 @@ RabbitMQSource::RabbitMQSource(
     , nack_broken_messages(nack_broken_messages_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
-    , cancel_epoch(cancel_epoch_.value_or(storage_.currentCancelEpoch()))
     , log(log_)
     , max_execution_time_ms(max_execution_time_)
 {
@@ -139,16 +135,8 @@ Chunk RabbitMQSource::generate()
     auto chunk = generateImpl();
     if (!chunk && ack_in_suffix)
     {
-        if (consumption_aborted)
-        {
-            LOG_TEST(log, "Will requeue messages on aborted select");
-            sendNack(/*requeue=*/true);
-        }
-        else
-        {
-            LOG_TEST(log, "Will send ack on select");
-            sendAck();
-        }
+        LOG_TEST(log, "Will send ack on select");
+        sendAck();
     }
 
     return chunk;
@@ -227,17 +215,9 @@ Chunk RabbitMQSource::generateImpl()
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
 
-    bool aborted = false;
-
     /// Channel id will not change during read.
     while (true)
     {
-        if (storage.isConsumeCancelRequested(cancel_epoch))
-        {
-            aborted = true;
-            break;
-        }
-
         exception_message.reset();
         size_t new_rows = 0;
         is_dead_letter = false;
@@ -254,7 +234,7 @@ Chunk RabbitMQSource::generateImpl()
                 catch (...)
                 {
                     /// The message was already dequeued by `consume`. Record its
-                    /// delivery tag so that `nackMessages` in `streamToViews`
+                    /// delivery tag so that `nackMessages` in `tryStreamToViews`
                     /// can properly reject it. Without this, the tag is lost and
                     /// the message stays unacked in RabbitMQ forever.
                     /// See https://github.com/ClickHouse/ClickHouse/issues/73541
@@ -320,7 +300,7 @@ Chunk RabbitMQSource::generateImpl()
 
             if (is_dead_letter)
             {
-                chassert(exception_message);
+                assert(exception_message);
                 const auto time_now = std::chrono::system_clock::now();
                 auto storage_id = storage.getStorageID();
 
@@ -371,19 +351,11 @@ Chunk RabbitMQSource::generateImpl()
         }
         if (new_rows == 0)
         {
-            auto is_cancelled = [this]{ return storage.isConsumeCancelRequested(cancel_epoch); };
             if (remaining_execution_time)
-                consumer->waitForMessages(remaining_execution_time, is_cancelled);
+                consumer->waitForMessages(remaining_execution_time);
             else
-                consumer->waitForMessages(std::nullopt, is_cancelled);
+                consumer->waitForMessages();
         }
-    }
-
-    if (aborted || storage.isConsumeCancelRequested(cancel_epoch))
-    {
-        consumption_aborted = true;
-        LOG_TRACE(log, "Consumption interrupted: discarding in-flight block of {} rows", total_rows);
-        return {};
     }
 
     LOG_TEST(
@@ -410,9 +382,9 @@ bool RabbitMQSource::sendAck()
     return consumer && consumer->ackMessages(commit_info);
 }
 
-bool RabbitMQSource::sendNack(bool requeue)
+bool RabbitMQSource::sendNack()
 {
-    return consumer && consumer->nackMessages(commit_info, requeue);
+    return consumer && consumer->nackMessages(commit_info);
 }
 
 }

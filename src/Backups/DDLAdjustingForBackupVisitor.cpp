@@ -1,6 +1,5 @@
 #include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Core/ServerSettings.h>
-#include <Core/UUID.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>

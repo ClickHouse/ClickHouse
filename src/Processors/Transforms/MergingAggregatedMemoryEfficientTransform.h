@@ -63,7 +63,7 @@ namespace DB
 /// Has several inputs and single output.
 /// Read from inputs chunks with partially aggregated data, group them by bucket number
 ///  and write data from single bucket as single chunk.
-class GroupingAggregatedTransform final : public IProcessor
+class GroupingAggregatedTransform : public IProcessor
 {
 public:
     GroupingAggregatedTransform(const Block & header_, size_t num_inputs_, AggregatingTransformParamsPtr params_);
@@ -109,13 +109,11 @@ private:
 };
 
 /// Merge aggregated data from single bucket.
-class MergingAggregatedBucketTransform final : public ISimpleTransform
+class MergingAggregatedBucketTransform : public ISimpleTransform
 {
 public:
     explicit MergingAggregatedBucketTransform(
-        AggregatingTransformParamsPtr params,
-        const SortDescription & required_sort_description_ = {},
-        RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_ = nullptr);
+        AggregatingTransformParamsPtr params, const SortDescription & required_sort_description_ = {});
     String getName() const override { return "MergingAggregatedBucketTransform"; }
 
 protected:
@@ -124,13 +122,12 @@ protected:
 private:
     AggregatingTransformParamsPtr params;
     const SortDescription required_sort_description;
-    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
 };
 
 /// Has several inputs and single output.
 /// Read from inputs merged bucket with aggregated data, sort them by bucket number and write to output.
 /// Presumption: inputs return chunks with increasing bucket number, there is at most one chunk per bucket.
-class SortingAggregatedTransform final : public IProcessor
+class SortingAggregatedTransform : public IProcessor
 {
 public:
     SortingAggregatedTransform(size_t num_inputs, AggregatingTransformParamsPtr params);

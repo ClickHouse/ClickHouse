@@ -17,63 +17,43 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
-Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation, Block * permuted_columns_cache)
+namespace MergeTreeSetting
 {
-    /// The cache is meaningful only when a permutation is applied: it stores the result
-    /// of `permute()` so that subsequent lookups by name return the already-permuted column.
-    /// If `permutation == nullptr`, there is nothing to amortize, so we ignore the cache.
-    Block * cache = permutation ? permuted_columns_cache : nullptr;
+    extern const MergeTreeSettingsString default_compression_codec;
+}
 
+Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation)
+{
     Block result;
     for (size_t i = 0, size = names.size(); i < size; ++i)
     {
-        if (cache && cache->has(names[i]))
-        {
-            result.insert(i, cache->getByName(names[i]));
-            continue;
-        }
-
         auto src_column = block.getColumnOrSubcolumnByName(names[i]);
         src_column.column = removeSpecialRepresentations(src_column.column);
         src_column.column = src_column.column->convertToFullColumnIfConst();
+        result.insert(i, src_column);
 
         /// Reorder primary key columns in advance and add them to `primary_key_columns`.
         if (permutation)
-            src_column.column = src_column.column->permute(*permutation, 0);
-
-        if (cache)
-            cache->insert(src_column);
-
-        result.insert(i, src_column);
+        {
+            auto & column = result.getByPosition(i);
+            column.column = column.column->permute(*permutation, 0);
+        }
     }
 
     return result;
 }
 
-Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache)
+Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation)
 {
-    /// See the comment in `getIndexBlockAndPermute`: the cache only stores genuinely
-    /// permuted columns, so it is ignored when `permutation == nullptr`.
-    Block * cache = permutation ? permuted_columns_cache : nullptr;
-
     Block result;
     for (size_t i = 0; i < block.columns(); ++i)
     {
-        const auto & col = block.getByPosition(i);
-        if (cache && cache->has(col.name))
-        {
-            result.insert(i, cache->getByName(col.name));
-            continue;
-        }
-
-        auto column_with_type = col;
+        result.insert(i, block.getByPosition(i));
         if (permutation)
-            column_with_type.column = column_with_type.column->permute(*permutation, 0);
-
-        if (cache)
-            cache->insert(column_with_type);
-
-        result.insert(i, column_with_type);
+        {
+            auto & column = result.getByPosition(i);
+            column.column = column.column->permute(*permutation, 0);
+        }
     }
     return result;
 }
@@ -149,13 +129,12 @@ SerializationPtr IMergeTreeDataPartWriter::getSerialization(const String & colum
 
 ASTPtr IMergeTreeDataPartWriter::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
-    /// The `default_codec` is already resolved by `MergeTreeData::getCompressionCodecForPart`, which
-    /// honors the table-level `default_compression_codec` setting as well as `RECOMPRESS` TTL codecs.
-    /// We must trust it here: re-reading `default_compression_codec` and overriding `default_codec`
-    /// would make a `RECOMPRESS` TTL merge write column streams with the setting's codec while the
-    /// part metadata (`default_compression_codec.txt`) records the TTL codec, so the metadata and the
-    /// actual on-disk data would diverge and recompression would not be applied.
     ASTPtr default_codec_desc = default_codec->getFullCodecDesc();
+
+    auto default_compression_codec_mergetree_settings = (*storage_settings)[MergeTreeSetting::default_compression_codec].value;
+    // Prioritize the codec from the settings over `default_codec`
+    if (!default_compression_codec_mergetree_settings.empty())
+        default_codec_desc = CompressionCodecFactory::instance().get(default_compression_codec_mergetree_settings)->getFullCodecDesc();
 
     if (const auto * column_desc = metadata_snapshot->columns.tryGet(column_name))
         return column_desc->codec ? column_desc->codec : default_codec_desc;
