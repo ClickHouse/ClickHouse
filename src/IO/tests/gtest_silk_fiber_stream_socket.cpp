@@ -6,6 +6,7 @@
 
 #include <IO/SilkFiberStreamSocketImpl.h>
 #include <IO/SilkSecureFiberStreamSocketImpl.h>
+#include <IO/tests/gtest_silk_environment.h>
 
 #include <Common/Exception.h>
 #include <Common/SilkThrottler.h>
@@ -34,27 +35,7 @@
 namespace
 {
 
-class SilkEnvironment : public ::testing::Environment
-{
-public:
-    void SetUp() override
-    {
-        /// TODO(mstetsyuk): Silk::initializeFiberScheduler and Silk::destroyFiberScheduler are coming in another PR.
-        silk::initialize();
-        silk::FiberScheduler::Options options;
-        /// OpenSSL handshakes run on fiber stacks and need more room than the silk default.
-        options.fiberStackSize = 320 * 1024;
-        silk::FiberScheduler::initialize(&options);
-    }
-
-    void TearDown() override
-    {
-        silk::FiberScheduler::destroy();
-        silk::destroy();
-    }
-};
-
-::testing::Environment * const silk_env = ::testing::AddGlobalTestEnvironment(new SilkEnvironment);
+::testing::Environment * const silk_env = DB::tests::registerSilkEnvironment();
 
 
 struct PlainPolicy
