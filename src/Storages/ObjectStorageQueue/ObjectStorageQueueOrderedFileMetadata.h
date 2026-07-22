@@ -182,9 +182,8 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
     /// Time since the bucket lock node was created or last refreshed.
     double getAgeSeconds() const { return age_watch.elapsedSeconds(); }
 
-    /// Update mtime of the bucket lock node, so that it is not removed as abandoned
-    /// by the TTL cleanup. Throws a logical error on lost lock ownership
-    /// (which must never happen), marking the holder released.
+    /// Update mtime of the bucket lock node, so that it is not removed as abandoned by
+    /// the TTL cleanup. Throws a logical error on lost ownership, marking the holder released.
     void refresh();
 
     bool checkBucketOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
@@ -195,9 +194,8 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
 private:
     BucketInfoPtr bucket_info;
     Stopwatch age_watch;
-    /// Lock node version: 0 at creation, tracked from the set response of every
-    /// refresh. Lets release atomically avoid removing a node re-created by another
-    /// server. Never written concurrently (iterator mutex or iterator destruction).
+    /// Lock node version: 0 at creation, tracked from the set response of every refresh.
+    /// Used by release to atomically avoid removing a node re-created by another server.
     int32_t bucket_lock_version = 0;
     bool released = false;
     bool finished = false;

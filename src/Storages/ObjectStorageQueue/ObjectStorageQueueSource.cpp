@@ -504,9 +504,8 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
             std::lock_guard lock(mutex);
 
-            /// The iterator was invalidated by a failed bucket lock refresh (the detecting
-            /// thread has thrown). Checked under the mutex (the flag is set under it), so no
-            /// thread can keep draining cached keys for a bucket possibly owned by another server.
+            /// Invalidated by a failed bucket lock refresh (the detecting thread has thrown).
+            /// Checked under the mutex (set under it too), so no more cached keys are drained.
             if (bucket_lock_refresh_failed)
             {
                 LOG_WARNING(log, "Bucket lock refresh failed, stopping the file iterator");
@@ -613,15 +612,16 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
 
 void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks()
 {
-    /// Already invalidated (possibly by another thread), nothing to refresh.
-    if (bucket_lock_refresh_failed)
-        return;
-
     const size_t ttl_seconds = metadata->getPersistentProcessingNodeTTLSeconds();
     if (!ttl_seconds)
         return;
 
     std::lock_guard lock(mutex);
+
+    /// Already invalidated (possibly by another thread), nothing to refresh.
+    /// Checked under the mutex to never hit the released holder of the lost lock.
+    if (bucket_lock_refresh_failed)
+        return;
     for (auto & [processor, holders] : bucket_holders)
     {
         for (auto & holder : *holders)

@@ -292,10 +292,9 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::refresh()
 
     if (ownership_lost)
     {
-        /// Must never happen: the lock was removed as abandoned by the TTL cleanup and
-        /// possibly acquired by another server, which can cause duplicates for the client.
-        /// Either `persistent_processing_node_ttl_seconds` is too small or there is a bug.
-        /// released is set so that release and the destructor do not remove someone else's lock.
+        /// Must never happen: the lock was removed as abandoned by the TTL cleanup and possibly
+        /// acquired by another server (`persistent_processing_node_ttl_seconds` too small, or a
+        /// bug), which can cause duplicates. released is set to not remove someone else's lock.
         released = true;
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueBucketLockLostOwnership);
         throw Exception(
