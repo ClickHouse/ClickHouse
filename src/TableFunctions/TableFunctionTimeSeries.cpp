@@ -208,7 +208,7 @@ timeSeriesSelector('time_series_table', 'instant_query', min_time, max_time)
 - `min_time - Start timestamp, inclusive.
 - `max_time - End timestamp, inclusive.
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 The function returns three columns:
 - `id` - Contains the identifiers of time series matching the specified selector.
@@ -243,7 +243,7 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 - `promql_query` - A query written in [PromQL syntax](https://prometheus.io/docs/prometheus/latest/querying/basics/).
 - `evaluation_time - The evaluation timestamp. To evaluate a query at the current time, use `now()` as `evaluation_time`.
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 The function can returns different columns depending on the result type of the query passed to parameter `promql_query`:
 
@@ -313,7 +313,7 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 - `end_time` - The end time of the evaluation range.
 - `step` - The step used to iterate the evaluation time from `start_time` to `end_time` (inclusively).
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 The function can returns different columns depending on the result type of the query passed to parameter `promql_query`:
 
