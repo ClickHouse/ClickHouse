@@ -693,18 +693,11 @@ static bool writeConsolidatedManifestFile(
         }
     }
 
-    /// No live data files remain (e.g. every data file was deleted): nothing to consolidate, and writing an empty manifest list would crash the Avro writer.
-    if (partitions_map.empty())
+    /// Nothing to consolidate: either no live data files remain (empty table; writing an empty manifest list would also crash the Avro writer),
+    /// or the data manifests are already optimally consolidated (at most one per partition) so a rewrite cannot reduce the count.
+    if (partitions_map.empty() || partitions_map.size() >= num_data_manifests)
     {
-        LOG_INFO(log, "No live data files in the current snapshot ({} data manifest(s) contain only deleted files); nothing to consolidate",
-                 num_data_manifests);
-        return true;
-    }
-
-    /// Data manifests already optimally consolidated (at most one per partition): rewriting cannot reduce the count, so report success.
-    if (partitions_map.size() >= num_data_manifests)
-    {
-        LOG_INFO(log, "Manifests already optimally consolidated ({} data manifests, {} unique partitions); nothing to do",
+        LOG_INFO(log, "Nothing to consolidate ({} data manifests, {} unique partitions with live data); reporting success",
                  num_data_manifests, partitions_map.size());
         return true;
     }
