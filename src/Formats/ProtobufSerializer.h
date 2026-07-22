@@ -37,6 +37,7 @@ public:
     virtual void insertDefaults(size_t row_num) = 0;
 
     virtual void describeTree(WriteBuffer & out, size_t indent) const = 0;
+    virtual bool strictOneOfPresenceCheck() const { return true; }
 
     static std::unique_ptr<ProtobufSerializer> create(
         const Strings & column_names,

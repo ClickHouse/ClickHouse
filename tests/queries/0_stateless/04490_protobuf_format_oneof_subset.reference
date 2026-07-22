@@ -11,3 +11,5 @@ outer_string1	string1	string1
 outer_string2		no
 >> repeated_additive_forward_compat
 ['item1','item2']	[10,0]	['int_value','omitted']
+>> empty_additive_forward_compat
+unknown

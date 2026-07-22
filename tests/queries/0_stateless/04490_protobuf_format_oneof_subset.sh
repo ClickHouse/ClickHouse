@@ -84,3 +84,16 @@ CREATE TABLE oneof_repeated_subset_04490 ( \`items.name\` Array(String), \`items
 INSERT INTO oneof_repeated_subset_04490 from INFILE '$CURDIR/data_protobuf/OneofRepeated' SETTINGS format_schema='$SCHEMADIR/03447_oneof_repeated.proto:TestOneOfRepeated' FORMAT ProtobufSingle;
 SELECT \`items.name\`, \`items.int_value\`, \`items.value\` FROM oneof_repeated_subset_04490 FORMAT TSV;
 EOF
+
+# (g) Empty-message oneof branches should follow the same relaxed rule. Here the `.proto` has
+#     two empty oneof cases { nothing=1, nothing2=2 }, but the Enum only lists tag 1. The input
+#     message sets tag 2, which has no table-backed payload column, so ingestion must succeed and
+#     the presence column falls back to 'unknown' (0) instead of rejecting serializer creation.
+$CLICKHOUSE_CLIENT <<EOF
+SET input_format_protobuf_oneof_presence=1;
+DROP TABLE IF EXISTS oneof_empty_subset_04490;
+SELECT '>> empty_additive_forward_compat';
+CREATE TABLE oneof_empty_subset_04490 ( type Enum8('unknown'=0, 'nothing'=1) ) Engine=MergeTree ORDER BY tuple();
+INSERT INTO oneof_empty_subset_04490 from INFILE '$CURDIR/data_protobuf/RecordTotallyEmpty' SETTINGS format_schema='$SCHEMADIR/04046_empty_record.proto:Record' FORMAT ProtobufSingle;
+SELECT type FROM oneof_empty_subset_04490 FORMAT TSV;
+EOF
