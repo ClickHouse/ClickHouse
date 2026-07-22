@@ -6,9 +6,12 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/geometryConverters.h>
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/trim.hpp>
+#include <boost/geometry/core/tags.hpp>
 
 #include <string>
 #include <memory>
+#include <type_traits>
 
 namespace DB
 {
@@ -23,6 +26,20 @@ namespace ErrorCodes
 namespace
 {
 
+/// "POINT EMPTY" is valid WKT, but a ClickHouse Point is a fixed Tuple(Float64, Float64)
+/// with no empty representation. boost::geometry::read_wkt accepts it without writing the
+/// coordinates or throwing, so we detect the empty form here and reject it.
+bool isEmptyPointWKT(const String & str)
+{
+    auto normalized = boost::to_lower_copy(str);
+    boost::trim(normalized);
+    if (!normalized.starts_with("point"))
+        return false;
+    auto rest = normalized.substr(strlen("point"));
+    boost::trim(rest);
+    return rest == "empty";
+}
+
 template <typename T>
 void readWKT(const String & str, T & out)
 {
@@ -34,6 +51,12 @@ void readWKT(const String & str, T & out)
     {
         /// Rethrow a more convenient exception type.
         throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse WKT string: {}", e.what());
+    }
+
+    if constexpr (std::is_same_v<typename boost::geometry::traits::tag<T>::type, boost::geometry::point_tag>)
+    {
+        if (isEmptyPointWKT(str))
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Empty points are not supported: {}", str);
     }
 }
 
@@ -72,11 +95,12 @@ public:
         const auto & column_string = checkAndGetColumn<ColumnString>(*arguments[0].column);
 
         Serializer serializer;
-        Geometry geometry;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const std::string str{column_string.getDataAt(i)};
+            /// Declared inside the loop so a row that read_wkt leaves untouched cannot carry over prior-row contents.
+            Geometry geometry;
             readWKT(str, geometry);
             serializer.add(geometry);
         }
@@ -143,7 +167,10 @@ public:
 
         auto try_deserialize_type = [&] (const std::function<void()> & deserialize_func, const String & data, const String & target_prefix, WKTTypes type) -> bool
         {
+            /// The type prefix may be preceded by whitespace, which the WKT grammar (and the typed
+            /// readWKT* readers) accept; strip it before matching so readWKT stays consistent.
             auto lower_data = boost::to_lower_copy(data);
+            boost::trim_left(lower_data);
             if (lower_data.starts_with(target_prefix))
             {
                 deserialize_func();

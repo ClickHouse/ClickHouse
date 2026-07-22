@@ -66,10 +66,11 @@ static ColumnWithTypeAndName copyLeftKeyColumnToRight(
         right_column.column = JoinCommon::filterWithBlanks(right_column.column, *null_map_filter);
 
     if (!right_column.type->equals(*right_key_type))
-    {
         right_column.column = castColumnAccurate(right_column, right_key_type);
-        right_column.type = right_key_type;
-    }
+
+    /// Types may be equal but not identical, DateTime with different timezones
+    /// share physical representation but affect expressions over the key (issue #111033)
+    right_column.type = right_key_type;
 
     right_column.column = right_column.column->convertToFullColumnIfConst();
     return right_column;
