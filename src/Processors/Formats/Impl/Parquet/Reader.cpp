@@ -1303,6 +1303,12 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
         }
     }
 
+    /// Free the transient `hashes` vector (the `indexes`/`values` allocations were already freed by
+    /// leaving their scope above) before releasing the reservation that covers it: otherwise a
+    /// concurrent pruning task could observe the released budget as free while `hashes` is still
+    /// allocated here, transiently exceeding the watermark.
+    hashes.reset();
+
     /// The value set is kept alive (in its `DictionaryLookup`) until this whole row-group filter
     /// evaluation finishes, so keep its persistent footprint - the real `HashSet` buffer - reserved
     /// against the shared budget and hand the amount to the caller to release when the value set is
@@ -1353,7 +1359,14 @@ struct Reader::DictionaryLookup : public KeyCondition::BloomFilter
     DictionaryLookup(Reader & reader_, ColumnChunk & column_, const PrimitiveColumnInfo & column_info_, PruningMemoryReservation reservation_)
         : reader(reader_), column(column_), column_info(column_info_), reservation(reservation_) {}
 
-    ~DictionaryLookup() override { reservation.release(reserved_bytes); }
+    ~DictionaryLookup() override
+    {
+        /// Free the value set before releasing the reservation that covers it, so a concurrent pruning
+        /// task never observes this budget as free while `value_hashes` is still allocated (members are
+        /// destroyed only after this body runs, so the release must clear it explicitly first).
+        value_hashes.reset();
+        reservation.release(reserved_bytes);
+    }
 
     bool findAnyHash(const std::vector<uint64_t> & hashes) override;
 };

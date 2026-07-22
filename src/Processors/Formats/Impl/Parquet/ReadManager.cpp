@@ -951,9 +951,12 @@ void ReadManager::clearColumnChunk(ColumnChunk & column, MemoryUsageDiff & diff)
     column.data_pages_prefetch.reset(&diff);
     /// Release the live pruning reservation for the decoded dictionary (see `runTask` /
     /// `PruningMemoryReservation`). Must happen before `column = {}` below drops the handle.
+    /// Free the dictionary buffers first, then release the reservation that covers them, so a
+    /// concurrent pruning task never observes this budget as free while the dictionary is still
+    /// allocated (which would let the stage transiently oversubscribe the watermark).
+    column.dictionary.reset();
     column.dictionary_reservation.release(column.dictionary_reserved_bytes);
     column.dictionary_reserved_bytes = 0;
-    column.dictionary.reset();
     for (auto & page : column.data_pages)
         page.prefetch.reset(&diff);
     column.bloom_filter_header_prefetch.reset(&diff);
