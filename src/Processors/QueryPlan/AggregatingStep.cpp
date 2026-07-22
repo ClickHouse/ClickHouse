@@ -59,6 +59,8 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const QueryPlanSerializationSettingsBool optimize_group_by_constant_keys;
     extern const QueryPlanSerializationSettingsBool enable_producing_buckets_out_of_order_in_aggregation;
+    extern const QueryPlanSerializationSettingsBool enable_adaptive_aggregator;
+    extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
 }
 
@@ -346,6 +348,48 @@ bool AggregatingStep::canUseShardedAggregation(const QueryPipelineBuilder & pipe
     return true;
 }
 
+bool AggregatingStep::canUseAdaptiveAggregator(const QueryPipelineBuilder & pipeline) const
+{
+    if (!params.enable_adaptive_aggregator)
+        return false;
+
+    if (pipeline.getNumStreams() <= 1 || params.max_threads <= 1)
+        return false;
+
+    if (params.only_merge)
+        return false;
+
+    /// TODO (nihalzp): Support the group-by limits and the overflow row.
+    if (params.max_rows_to_group_by != 0 || params.overflow_row)
+        return false;
+
+    if (params.keys_size < 1)
+        return false;
+
+
+    if (!sort_description_for_merging.empty() || !grouping_sets_params.empty() || should_produce_results_in_order_of_bucket_number
+        || skip_merging)
+        return false;
+
+    if (params.group_by_two_level_threshold == 0 && params.group_by_two_level_threshold_bytes == 0)
+        return false;
+
+    /// TODO (nihalzp): Support LowCardinality and Nullable keys.
+    for (const auto & key : params.keys)
+    {
+        const auto & type = pipeline.getHeader().getByName(key).type;
+        if (type->lowCardinality() || type->isNullable())
+            return false;
+    }
+
+    Sizes key_sizes;
+    const auto method = AggregatedDataVariants::chooseMethod(pipeline.getHeader(), params.keys, key_sizes);
+    if (!AggregatedDataVariants::isConvertibleToTwoLevel(method))
+        return false;
+
+    return true;
+}
+
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     size_t new_merge_threads = merge_threads;
@@ -392,6 +436,16 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     }
 
     const bool use_sharded_aggregation = canUseShardedAggregation(pipeline);
+
+    const bool use_adaptive_aggregator = !use_sharded_aggregation && canUseAdaptiveAggregator(pipeline);
+    params.enable_adaptive_aggregator = use_adaptive_aggregator;
+    if (use_adaptive_aggregator)
+    {
+        /// TODO (nihalzp): Support external aggregation.
+        params.group_by_two_level_threshold = 0;
+        params.group_by_two_level_threshold_bytes = 0;
+        params.max_bytes_before_external_group_by = 0;
+    }
 
     if (use_sharded_aggregation)
     {
@@ -713,6 +767,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             pipeline.resize(pipeline.getNumStreams(), true, settings.min_outstreams_per_resize_after_split);
 
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
+        if (use_adaptive_aggregator)
+            many_data->adaptive_shared_state = std::make_shared<AdaptiveAggregationSharedState>();
 
         size_t counter = 0;
         pipeline.addSimpleTransform(
@@ -993,6 +1049,9 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation] = params.stats_collecting_params.max_size_to_preallocate;
 
     settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation] = params.enable_producing_buckets_out_of_order_in_aggregation;
+
+    settings[QueryPlanSerializationSetting::enable_adaptive_aggregator] = params.enable_adaptive_aggregator;
+    settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold] = params.adaptive_aggregator_freeze_threshold;
 }
 
 void AggregatingStep::serialize(Serialization & ctx) const
@@ -1132,7 +1191,9 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params,
         ctx.settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation],
-        ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte]};
+        ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte],
+        ctx.settings[QueryPlanSerializationSetting::enable_adaptive_aggregator],
+        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold]};
 
     SortDescription sort_description_for_merging;
 
