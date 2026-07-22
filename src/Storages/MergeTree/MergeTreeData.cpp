@@ -382,6 +382,10 @@ namespace ErrorCodes
     extern const int BAD_DATA_PART_NAME;
     extern const int READONLY_SETTING;
     extern const int ABORTED;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
+    extern const int TIMEOUT_EXCEEDED;
+    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int UNKNOWN_DISK;
     extern const int NOT_ENOUGH_SPACE;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
@@ -8642,8 +8646,17 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
 
         return affected_partition_ids;
     }
-    catch (...)
+    catch (const Exception & e)
     {
+        /// Cancellation, shutdown and resource-limit errors must abort the mutation
+        /// instead of silently continuing with the "all partitions" path.
+        if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED
+            || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
+            || e.code() == ErrorCodes::TIMEOUT_EXCEEDED
+            || e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED
+            || e.code() == ErrorCodes::ABORTED)
+            throw;
+
         /// Partition pruning is an optimization. The mutation analyzes the predicate later
         /// with more context (e.g. it can resolve ALIAS columns), so a predicate that cannot
         /// be analyzed in isolation here must not fail the mutation - just don't prune.
