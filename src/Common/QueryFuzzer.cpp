@@ -1382,16 +1382,25 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
         if (is_distributed && !args.empty() && fuzz_rand() % 5 == 0)
             args[0] = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributed_cluster_names)));
 
-        /// Add / replace / drop the optional sharding key (fourth argument). For Remote/RemoteSecure
-        /// only do this in the credential-free layout (addresses, db, table[, sharding_key]); a
-        /// positional user/password shifts the sharding-key index, so skip to avoid clobbering them.
-        if (fuzz_rand() % 5 == 0 && (is_distributed || args.size() <= 4))
+        /// Add / replace / drop the optional sharding key (fourth argument). A positional
+        /// user/password (Remote(addresses, db, table, 'user'[, 'password'[, sharding_key]])) is a
+        /// string literal / identifier at slot 3, which must not be overwritten or dropped; only a
+        /// non-string fourth argument is an actual sharding-key expression.
+        auto is_credential_arg = [](const ASTPtr & a)
         {
-            if (args.size() >= 4 && fuzz_rand() % 3 == 0)
+            if (a->as<ASTIdentifier>())
+                return true;
+            const auto * lit = a->as<ASTLiteral>();
+            return lit && lit->value.getType() == Field::Types::String;
+        };
+        const bool slot3_is_sharding_key = args.size() >= 4 && !is_credential_arg(args[3]);
+        if (fuzz_rand() % 5 == 0)
+        {
+            if (slot3_is_sharding_key && fuzz_rand() % 3 == 0)
             {
                 args.resize(3); /// drop the sharding key (and any trailing policy_name)
             }
-            else if (args.size() >= 3)
+            else if (args.size() == 3 || slot3_is_sharding_key)
             {
                 ASTPtr sharding_key;
                 switch (fuzz_rand() % 4)
@@ -1412,11 +1421,12 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
                         break;
                     }
                 }
-                if (args.size() >= 4)
-                    args[3] = sharding_key;
+                if (slot3_is_sharding_key)
+                    args[3] = sharding_key; /// replace the existing sharding key, keep any policy_name
                 else
-                    args.emplace_back(std::move(sharding_key));
+                    args.emplace_back(std::move(sharding_key)); /// 3-arg form: append (credential-free)
             }
+            /// else: the fourth argument is a positional credential — leave it untouched
         }
         return;
     }
@@ -3486,7 +3496,7 @@ void QueryFuzzer::fuzzClusterFunctionArguments(ASTFunction & fn)
     if (is_cluster)
         args.front() = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributed_cluster_names)));
     else if (is_remote)
-        args.front() = make_intrusive<ASTLiteral>(makeRemoteHostDescriptor());
+        args.front() = make_intrusive<ASTLiteral>(makeRemoteHostDescriptor(fn.name == "remoteSecure"));
     else if (is_url)
         args.front() = make_intrusive<ASTLiteral>(makeFuzzedUrl());
     else
@@ -3559,23 +3569,26 @@ String QueryFuzzer::makeBraceExpansion()
 }
 
 /// Build a syntactically valid IPv4 or IPv6 host descriptor for remote()/remoteSecure(): the last
-/// group is a 1..4-host brace expansion (loopback, so bounded) with an optional port.
-String QueryFuzzer::makeRemoteHostDescriptor()
+/// group is a 1..4-host brace expansion (loopback, so bounded) with an optional port. The port must
+/// match the transport, so remoteSecure() gets the secure TCP port (9440) and remote() the plain one.
+String QueryFuzzer::makeRemoteHostDescriptor(bool secure)
 {
     const String braces = makeBraceExpansion();
     /// IPv6 addresses are bracketed so the optional :port stays unambiguous.
     String descriptor = fuzz_rand() % 2 == 0 ? "[::" + braces + "]" : "127.0.0." + braces;
     if (fuzz_rand() % 2 == 0)
-        descriptor += ":9000";
+        descriptor += secure ? ":9440" : ":9000";
     return descriptor;
 }
 
 /// Build a syntactically valid loopback URL for url()/urlCluster() over the local HTTP interface,
 /// with a brace-expanded path segment (1..4 globs — the same syntax url() accepts) and http/https.
+/// The port must match the scheme, so https pairs with the secure HTTP port (8443) and http with 8123.
 String QueryFuzzer::makeFuzzedUrl()
 {
-    const String scheme = fuzz_rand() % 2 == 0 ? "http" : "https";
-    return scheme + "://127.0.0.1:8123/data" + makeBraceExpansion();
+    const bool secure = fuzz_rand() % 2 == 0;
+    const String host = secure ? "https://127.0.0.1:8443" : "http://127.0.0.1:8123";
+    return host + "/data" + makeBraceExpansion();
 }
 
 /// Swap a table expression's plain-table or subquery child for the table-function AST `wrapped`,
