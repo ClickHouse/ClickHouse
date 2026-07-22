@@ -48,7 +48,7 @@ public:
         return is_suitable_for_short_circuit_arguments_execution;
     }
 
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// Whether the Impl opts into handling the QBit data type (returns a constant equal to the vector dimension).
     static constexpr bool supportsQBit()

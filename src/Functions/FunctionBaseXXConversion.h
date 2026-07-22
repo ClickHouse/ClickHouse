@@ -319,7 +319,7 @@ public:
     size_t getNumberOfArguments() const override { return has_size_optimization ? 0 : 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     /// With an input-size limit configured the length of each processed row is checked and can throw TOO_LARGE_STRING_SIZE.
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return Func::can_throw || max_input_size != 0; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return Func::can_throw || max_input_size != 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {

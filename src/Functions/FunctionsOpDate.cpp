@@ -31,7 +31,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
     {
         ColumnsWithTypeAndName build_args;
         build_args.reserve(arguments.size());

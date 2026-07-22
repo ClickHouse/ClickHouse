@@ -231,7 +231,7 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// An aggregate function state is serialized to a string per row, which can throw depending on the state's content.
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
     {
         return WhichDataType(removeNullable(removeLowCardinality(arguments[0].type))).isAggregateFunction();
     }
@@ -609,7 +609,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

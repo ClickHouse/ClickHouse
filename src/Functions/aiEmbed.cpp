@@ -91,7 +91,7 @@ public:
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override
     {
         const auto & settings = getContext()->getSettingsRef();
         return settings[Setting::ai_function_throw_on_error] || settings[Setting::ai_function_throw_on_quota_exceeded];

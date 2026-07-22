@@ -48,7 +48,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-    bool canThrow(const DataTypesWithConstInfo &) const override { return true; }
+    bool canThrowImpl(const DataTypesWithConstInfo &) const override { return true; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
     bool useDefaultImplementationForConstants() const override { return true; }

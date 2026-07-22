@@ -36,7 +36,7 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// executeImpl returns the argument column verbatim, so the result type must be exactly the argument
     /// type. The default LowCardinality implementation strips (nested) LowCardinality from the declared

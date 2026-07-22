@@ -140,7 +140,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
     {
         /// A non-string haystack (an Enum) is converted to strings during execution, which can throw.
         if (!isStringOrFixedString(arguments[0].type))

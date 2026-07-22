@@ -43,7 +43,7 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// Throws for a non-empty Nullable(Nothing) argument, i.e. depending on the presence of rows.
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override { return arguments[0].type->onlyNull(); }
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override { return arguments[0].type->onlyNull(); }
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForNulls() const override { return false; }

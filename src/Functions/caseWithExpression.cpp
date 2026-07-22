@@ -48,7 +48,7 @@ public:
     /// caseWhenEquals executes equals(expr, when_i), which can throw for mixed-type comparisons.
     /// The constant-WHEN/THEN fast path delegates to transform, which can throw.
     /// The remaining multiIf path executes equals over resolved supertypes and combines materialized columns, which does not throw.
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
     {
         for (size_t i = 1; i + 1 < arguments.size(); i += 2)
             if (comparisonCanThrow(arguments[0].type, arguments[i].type))

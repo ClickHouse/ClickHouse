@@ -94,7 +94,7 @@ public:
     bool isVariadic() const override { return true; }
 
     /// TODO: refine by delegating to used functions.
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -190,7 +190,7 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
 
     /// Uses negate which doesn't throw.
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -267,7 +267,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
 
     /// TODO: refine by delegating to used functions.
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -351,7 +351,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
 
     /// TODO: refine by delegating to used functions.
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -476,7 +476,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
 
     /// TODO: refine by delegating to used functions.
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -577,7 +577,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
 
     /// TODO: refine by delegating to used functions.
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -744,7 +744,7 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
 
     /// TODO: refine by delegating to used functions.
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -848,7 +848,7 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
 
     /// TODO: refine by delegating to used functions.
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -1003,7 +1003,7 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
 
     /// Uses abs and max2 which don't throw.
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -1109,7 +1109,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
 
     /// TODO: refine by delegating to used functions.
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
@@ -1251,7 +1251,7 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return FuncLabel::name[0] == 'p' ? ColumnNumbers{2} : ColumnNumbers{}; }
 
     /// TODO: refine by delegating to used functions.
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -1311,7 +1311,7 @@ public:
     String getName() const override { return name; }
 
     /// TODO: refine by delegating to used functions.
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override
     {
@@ -1371,7 +1371,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
 
     /// TODO: refine by delegating to used functions.
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -1485,7 +1485,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
     {
         /// Transposed traits have no tuple function.
         if constexpr (IsTransposedTrait<Traits>::value)

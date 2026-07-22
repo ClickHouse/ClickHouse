@@ -59,7 +59,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
     {
         for (const auto & argument : arguments)
             if (!argument.is_const)
@@ -232,7 +232,7 @@ private:
     {
         return impl.isSuitableForShortCircuitArgumentsExecution(arguments);
     }
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
     {
         return impl.canThrow(arguments);
     }

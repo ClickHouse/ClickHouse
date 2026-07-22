@@ -56,7 +56,7 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-#ifdef DEBUG_OR_SANITIZER_BUILD
+#if 1 /// TEMPORARY release testing
 extern const int MEMORY_LIMIT_EXCEEDED;
 extern const int CANNOT_ALLOCATE_MEMORY;
 extern const int CANNOT_SCHEDULE_TASK;
@@ -201,15 +201,13 @@ ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
 }
 
 
-bool IExecutableFunction::canThrowNormalizedTypes(const ColumnsWithTypeAndName & arguments) const
+bool IExecutableFunction::canThrow(const ColumnsWithTypeAndName & arguments) const
 {
     DataTypesWithConstInfo argument_types;
     argument_types.reserve(arguments.size());
     for (const auto & argument : arguments)
     {
-        /// Normalize the types the way execution will, so that canThrow judges the types
-        /// executeImpl actually sees: convertLowCardinalityColumnsToFull and
-        /// createBlockWithNestedColumns remove these wrappers before executeImpl.
+        /// Normalize the types the way execution will, so that canThrow judges the types executeImpl actually sees.
         DataTypePtr type = argument.type;
         if (useDefaultImplementationForLowCardinalityColumns())
             type = recursiveRemoveLowCardinality(type);
@@ -218,7 +216,7 @@ bool IExecutableFunction::canThrowNormalizedTypes(const ColumnsWithTypeAndName &
         argument_types.push_back({type, argument.column && isColumnConst(*argument.column)});
     }
 
-    return canThrow(argument_types);
+    return canThrowImpl(argument_types);
 }
 
 ColumnPtr IExecutableFunction::defaultImplementationForNulls(
@@ -577,7 +575,7 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
     return result;
 }
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
+#if 1 /// TEMPORARY release testing
 void IExecutableFunction::validateCanThrowOnException(
     int code,
     const std::string & message,
@@ -602,7 +600,7 @@ void IExecutableFunction::validateCanThrowOnException(
         || code == ErrorCodes::ABORTED)
         return;
 
-    if (canThrowNormalizedTypes(arguments))
+    if (canThrow(arguments))
         return;
 
     ColumnsWithTypeAndName empty_arguments;
@@ -634,7 +632,7 @@ void IExecutableFunction::validateCanThrowOnException(
 ColumnPtr IExecutableFunction::execute(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
-#ifdef DEBUG_OR_SANITIZER_BUILD
+#if 1 /// TEMPORARY release testing
     try
     {
         return executeInternal(arguments, result_type, input_rows_count, dry_run);
@@ -706,7 +704,7 @@ ColumnPtr IExecutableFunction::executeInternal(
 
         /// In case the function might throw an exception replicated columns must be compacted
         /// to avoid throwing on unused rows in the nested data.
-        if (canThrowNormalizedTypes(arguments))
+        if (canThrow(arguments))
         {
             ColumnIndex column_index(common_replicated_indexes);
             auto res = column_index.buildCompactIndexedColumns(nested_columns);
@@ -1007,6 +1005,23 @@ FunctionBasePtr IFunctionOverloadResolver::buildImpl(const ColumnsWithTypeAndNam
 DataTypePtr IFunctionOverloadResolver::getReturnTypeImpl(const DataTypes & /*arguments*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReturnType is not implemented for {}", getName());
+}
+
+bool IFunction::canThrow(const DataTypesWithConstInfo & arguments) const
+{
+    DataTypesWithConstInfo argument_types;
+    argument_types.reserve(arguments.size());
+    for (const auto & argument : arguments)
+    {
+        /// Normalize the types the way execution will, so that canThrowImpl judges the types executeImpl actually sees.
+        DataTypePtr type = argument.type;
+        if (useDefaultImplementationForLowCardinalityColumns())
+            type = recursiveRemoveLowCardinality(type);
+        if (useDefaultImplementationForNulls())
+            type = removeNullable(type);
+        argument_types.push_back({type, argument.is_const});
+    }
+    return canThrowImpl(argument_types);
 }
 
 IFunctionBase::Monotonicity IFunction::getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const

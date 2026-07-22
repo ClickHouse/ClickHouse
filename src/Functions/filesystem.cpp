@@ -45,7 +45,7 @@ public:
         return false;
     }
 
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override { return arguments.size() == 1; }
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override { return arguments.size() == 1; }
 
     String getName() const override { return function_name; }
 

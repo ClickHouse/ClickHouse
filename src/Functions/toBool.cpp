@@ -39,7 +39,7 @@ namespace
         bool useDefaultImplementationForNulls() const override { return false; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-        bool canThrow(const DataTypesWithConstInfo & arguments) const override
+        bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
         {
             /// This function handles Nullable itself: the CAST compares the nested numbers against
             /// zero under the null map, which cannot throw.

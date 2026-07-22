@@ -28,7 +28,7 @@ protected:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return function->getArgumentsThatAreAlwaysConstant(); }
     bool canBeExecutedOnDefaultArguments() const override { return function->canBeExecutedOnDefaultArguments(); }
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override { return function->canThrow(arguments); }
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override { return function->canThrow(arguments); }
 
 private:
     std::shared_ptr<IFunction> function;

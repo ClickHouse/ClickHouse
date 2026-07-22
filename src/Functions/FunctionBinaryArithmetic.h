@@ -2172,7 +2172,7 @@ public:
         return builder->build(args_for_build)->canThrow(arguments);
     }
 
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
     {
         if constexpr (Op<UInt8, UInt8>::can_throw)
             return true;

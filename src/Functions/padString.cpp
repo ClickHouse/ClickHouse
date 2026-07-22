@@ -163,7 +163,7 @@ namespace
 
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        bool canThrow(const DataTypesWithConstInfo & arguments) const override { return !arguments[1].is_const; }
+        bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override { return !arguments[1].is_const; }
 
         bool useDefaultImplementationForConstants() const override { return false; }
 

@@ -3051,7 +3051,7 @@ public:
         return !(IsDataTypeDateOrDateTime<ToDataType> && isNumber(*arguments[0].type));
     }
 
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
     {
         /// A non-constant extra argument (a time zone) is validated per row during execution.
         for (size_t i = 1; i < arguments.size(); ++i)
@@ -3663,7 +3663,7 @@ public:
 
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return exception_mode == ConvertFromStringExceptionMode::Throw; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return exception_mode == ConvertFromStringExceptionMode::Throw; }
     size_t getNumberOfArguments() const override { return 0; }
 
     bool useDefaultImplementationForConstants() const override { return true; }

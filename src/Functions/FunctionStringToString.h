@@ -48,7 +48,7 @@ public:
         return true;
     }
 
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return Impl::can_throw; }
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return Impl::can_throw; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

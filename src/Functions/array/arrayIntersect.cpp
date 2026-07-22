@@ -60,7 +60,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override;
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override;
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -145,7 +145,7 @@ private:
     };
 };
 
-bool FunctionArrayIntersect::canThrow(const DataTypesWithConstInfo & arguments) const
+bool FunctionArrayIntersect::canThrowImpl(const DataTypesWithConstInfo & arguments) const
 {
     if (arguments.empty())
         return false;

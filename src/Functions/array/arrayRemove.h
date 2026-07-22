@@ -32,7 +32,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
     {
         /// Builds and executes notEquals(element, value), which can throw for mixed-type comparisons.
         const auto * array_type = checkAndGetDataType<DataTypeArray>(removeNullable(removeLowCardinality(arguments[0].type)).get());

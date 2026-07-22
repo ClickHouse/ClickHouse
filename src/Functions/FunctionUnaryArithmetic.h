@@ -205,7 +205,7 @@ public:
         return false;
     }
 
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override
+    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override
     {
         return IsUnaryOperation<Op>::int_exp2 || IsUnaryOperation<Op>::int_exp10 || IsUnaryOperation<Op>::factorial;
     }

@@ -29,7 +29,7 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     /// Builds and executes notEquals over each pair of tuple elements, which can throw for mixed-type
     /// or Dynamic/Variant elements.
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
     {
         return comparisonCanThrow(arguments[0].type, arguments[1].type);
     }
