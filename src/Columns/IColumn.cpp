@@ -240,43 +240,6 @@ void IColumn::updateAt(const IColumn &, size_t, size_t)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateAt is not supported for {}", getName());
 }
 
-namespace
-{
-
-/// Common implementation of compareTrackAt: compare once, then find the end of the run of
-/// lesser rows on the lesser side by galloping. `lhs` is the concrete column type in the
-/// IColumnHelper instantiations, so the probes devirtualize there.
-template <typename Column>
-Int64 compareTrackAtImpl(const Column & lhs, size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, size_t linear_probe)
-{
-    int res = lhs.compareAt(n, m, rhs, nan_direction_hint);
-
-    if (res < 0)
-    {
-        auto is_less = [&](size_t row) { return lhs.compareAt(row, m, rhs, nan_direction_hint) < 0; };
-        /// Resolve a run of length one with a single comparison before paying the run-search setup cost.
-        if (n + 1 >= lhs.size() || !is_less(n + 1))
-            return -1;
-        return -static_cast<Int64>(findEqualRangeEndAssumeSorted(n + 1, lhs.size(), linear_probe, is_less) - n);
-    }
-    if (res > 0)
-    {
-        auto is_greater = [&](size_t row) { return lhs.compareAt(n, row, rhs, nan_direction_hint) > 0; };
-        if (m + 1 >= rhs.size() || !is_greater(m + 1))
-            return 1;
-        return static_cast<Int64>(findEqualRangeEndAssumeSorted(m + 1, rhs.size(), linear_probe, is_greater) - m);
-    }
-    return 0;
-}
-
-}
-
-Int64 IColumn::compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
-{
-    /// Every probe is a virtual compareAt call, which is expensive, so keep the linear probe short.
-    return compareTrackAtImpl(*this, n, m, rhs, nan_direction_hint, 8);
-}
-
 size_t IColumn::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const
 {
     /// Every probe is a virtual compareAt call, which is expensive, so keep the linear probe short.
@@ -513,12 +476,35 @@ bool IColumnHelper<Derived, Parent>::hasEqualValues() const
     return true;
 }
 
+/// Compare once, then find the end of the run of lesser rows on the lesser side by galloping.
+/// Both sides are cast to the concrete column type (rhs must match by the compareAt contract),
+/// so the probes and the size calls devirtualize, and compareAt inlines when its definition is
+/// visible — hence the linear probe can be fairly long.
 template <typename Derived, typename Parent>
-Int64 IColumnHelper<Derived, Parent>::compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+Int64 IColumnHelper<Derived, Parent>::compareTrackAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
 {
-    /// Probes call the concrete column's compareAt directly (and inline it when the definition
-    /// is visible), so the linear probe can be longer than in the virtual fallback.
-    return compareTrackAtImpl(static_cast<const Derived &>(*this), n, m, rhs, nan_direction_hint, 16);
+    constexpr size_t linear_probe = 16;
+    const auto & lhs = static_cast<const Derived &>(*this);
+    const auto & rhs = assert_cast<const Derived &>(rhs_);
+
+    int res = lhs.compareAt(n, m, rhs, nan_direction_hint);
+
+    if (res < 0)
+    {
+        auto is_less = [&](size_t row) { return lhs.compareAt(row, m, rhs, nan_direction_hint) < 0; };
+        /// Resolve a run of length one with a single comparison before paying the run-search setup cost.
+        if (n + 1 >= lhs.size() || !is_less(n + 1))
+            return -1;
+        return -static_cast<Int64>(findEqualRangeEndAssumeSorted(n + 1, lhs.size(), linear_probe, is_less) - n);
+    }
+    if (res > 0)
+    {
+        auto is_greater = [&](size_t row) { return lhs.compareAt(n, row, rhs, nan_direction_hint) > 0; };
+        if (m + 1 >= rhs.size() || !is_greater(m + 1))
+            return 1;
+        return static_cast<Int64>(findEqualRangeEndAssumeSorted(m + 1, rhs.size(), linear_probe, is_greater) - m);
+    }
+    return 0;
 }
 
 template <typename Derived, typename Parent>

@@ -155,7 +155,7 @@ FirstKeyCompare ALWAYS_INLINE trackCursorsFirstKey(const FullMergeJoinCursor & l
     };
 
     /// Resolve a run of length one with a single comparison before paying the run-search setup cost.
-    size_t run_end;
+    size_t run_end = 0;
     if (pos + 1 >= rows || !is_less(pos + 1))
         run_end = pos + 1;
     else

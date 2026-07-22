@@ -287,6 +287,11 @@ int ColumnLazy::doCompareAt(size_t, size_t, const IColumn &, int) const
 }
 #endif
 
+Int64 ColumnLazy::compareTrackAt(size_t, size_t, const IColumn &, int) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compareTrackAt is not supported for {}", getName());
+}
+
 void ColumnLazy::compareColumn(const IColumn &, size_t,
                                PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &,
                                int, int) const

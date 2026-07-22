@@ -480,10 +480,10 @@ public:
       * found by galloping (findEqualRangeEndAssumeSorted), which relies on it.
       *
       * The main reason for the function is to fuse the comparison and the run search into one
-      * virtual call: IColumnHelper overrides it using the concrete column's compareAt; this
-      * base implementation with a virtual compareAt per probe is only a fallback.
+      * virtual call. IColumnHelper implements it for all concrete columns with devirtualized
+      * compareAt probes.
       */
-    [[nodiscard]] virtual Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const;
+    [[nodiscard]] virtual Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
 
     /** Returns the end (exclusive) of the run of values equal to the value at `begin`, i.e. the smallest
       * r in (begin, end] with compareAt(r, begin, ...) != 0, or `end` if all values in [begin, end) equal
