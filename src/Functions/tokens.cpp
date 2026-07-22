@@ -112,13 +112,11 @@ public:
         if (input_rows_count == 0)
             return ColumnArray::create(std::move(col_result), std::move(col_offsets));
 
-        if (tokenizer->getType() == ITokenizer::Type::SparseGrams)
+        /// Stateful tokenizers cannot be shared across threads; use a per-execution clone.
+        if (tokenizer->isStateful())
         {
-            /// The sparse gram tokenizer stores an internal state which modified during the execution.
-            /// This leads to an error while executing this function multi-threaded because that state is not protected.
-            /// To avoid this case, a clone of the sparse gram tokenizer will be used.
-            auto sparse_grams_tokenizer = tokenizer->clone();
-            executeWithTokenizer(*sparse_grams_tokenizer, std::move(col_input), *col_offsets, input_rows_count, *col_result);
+            auto stateful_tokenizer = tokenizer->clone();
+            executeWithTokenizer(*stateful_tokenizer, std::move(col_input), *col_offsets, input_rows_count, *col_result);
         }
         else
         {

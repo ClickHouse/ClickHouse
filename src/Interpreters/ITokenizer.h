@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <Common/assert_cast.h>
 #include <Common/StringUtils.h>
 #include <Columns/IColumn_fwd.h>
@@ -32,6 +34,9 @@ public:
         Array,
         SparseGrams,
         AsciiCJK,
+#if USE_MECAB
+        Japanese,
+#endif
     };
 
     ITokenizer() = delete;
@@ -39,6 +44,9 @@ public:
     ITokenizer(const ITokenizer &) = default;
 
     Type getType() const { return type; }
+
+    /// Mutable state across calls: callers must clone per thread rather than share.
+    virtual bool isStateful() const { return false; }
 
     virtual ~ITokenizer() = default;
     virtual std::unique_ptr<ITokenizer> clone() const = 0;
@@ -352,6 +360,7 @@ struct SparseGramsTokenizer final : public ITokenizerHelper<SparseGramsTokenizer
 
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
     bool supportsStringLike() const override { return true; }
+    bool isStateful() const override { return true; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 private:
@@ -434,6 +443,35 @@ struct AsciiCJKTokenizer final : public ITokenizerHelper<AsciiCJKTokenizer>
     bool supportsStringLike() const override { return true; }
 };
 
+#if USE_MECAB
+/// Splits Japanese text into words using the MeCab morphological analyzer; each token is the surface
+/// form of one MeCab node. The dictionary is loaded at runtime from <tokenizer><japanese> in the
+/// server config (see `MecabDictionaryManager`).
+struct JapaneseTokenizer final : public ITokenizerHelper<JapaneseTokenizer>
+{
+    JapaneseTokenizer();
+    JapaneseTokenizer(const JapaneseTokenizer & other);
+    ~JapaneseTokenizer() override;
+
+    static const char * getName() { return "japanese"; }
+    static const char * getExternalName() { return getName(); }
+    String getDescription() const override { return getName(); }
+
+    bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
+    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
+
+    bool supportsStringLike() const override { return false; }
+    bool isStateful() const override { return true; }
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
+private:
+    struct Impl;
+    /// Shared model + mutable per-string state; like `SparseGramsTokenizer`, not concurrency-safe — clone per thread.
+    std::shared_ptr<Impl> impl;
+};
+#endif
+
 namespace detail
 {
 
@@ -502,6 +540,14 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
             detail::forEachTokenImpl(ascii_cjk_tokenizer, data, length, callback);
             return;
         }
+#if USE_MECAB
+        case ITokenizer::Type::Japanese:
+        {
+            const auto & japanese_tokenizer = assert_cast<const JapaneseTokenizer &>(tokenizer);
+            detail::forEachTokenImpl(japanese_tokenizer, data, length, callback);
+            return;
+        }
+#endif
     }
 }
 
