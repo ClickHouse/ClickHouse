@@ -82,6 +82,16 @@
 - name: 00024_random_counters
   reason: INVESTIGATE - random timeout
   message: Timeout! Processes left in process group
+- name: 03634_autopr_input_bytes_estimation
+  reason: INVESTIGATE - random timeout on debug
+  message: Timeout! Killing process group
+  check_types:
+  - debug
+- name: 04070_url_base_setting
+  reason: INVESTIGATE - fragile timeout on debug
+  message: Timeout! Killing process group
+  check_types:
+  - debug
 - name: 03211_nested_json_merges
   reason: KNOWN - Unstable upstream
 - name: 03644_object_storage_correlated_subqueries
@@ -182,6 +192,11 @@
   message: 'AssertionError: all tasks are killed'
   check_types:
   - tsan
+- name: test_storage_rabbitmq/test.py::test_rabbitmq_mv_combo
+  reason: INVESTIGATE - Unstable on msan
+  message: Time limit of 180 seconds reached
+  check_types:
+  - msan
 - name: test_storage_delta/test.py::test_concurrent_queries[False]
   reason: INVESTIGATE - Unstable test
 - name: test_storage_s3_queue/test_0.py::test_streaming_to_many_views[unordered]

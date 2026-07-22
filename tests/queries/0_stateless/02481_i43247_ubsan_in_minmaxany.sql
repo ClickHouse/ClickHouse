@@ -1,4 +1,6 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/43247
+-- Tags: no-random-settings
+
 SELECT finalizeAggregation(CAST('AggregateFunction(categoricalInformationValue, Nullable(UInt8), UInt8)AggregateFunction(categoricalInformationValue, Nullable(UInt8), UInt8)',
                            'AggregateFunction(min, String)')); -- { serverError CANNOT_READ_ALL_DATA }
 

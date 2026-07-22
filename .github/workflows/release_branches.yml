@@ -3,6 +3,13 @@
 name: ReleaseBranchCI
 
 on:
+  workflow_dispatch:
+    inputs:
+      no_cache:
+        description: Run without cache
+        required: false
+        type: boolean
+        default: false
   push:
     branches: ['2[1-9].[1-9][0-9]', '2[1-9].[1-9]']
 
