@@ -154,6 +154,11 @@ public:
 
     void set(StoragePtr nested_storage);
 
+    /// Forget the cached nested table, so the next `ensureNestedTablesExist` recreates it. Used to recover a
+    /// nested table left shut down (permanently read-only) by a refused coordinated drop: the dead local copy
+    /// is dropped and recreated, and `set` re-populates the wrapper from the fresh nested table.
+    void resetNested() { has_nested.store(false); }
+
     /// Mark this wrapper as belonging to a coordinated (Keeper-managed) MaterializedPostgreSQL database,
     /// so that `checkTableCanBeDetached` / `checkTableCanBeDropped` refuse DETACH/DROP of individual tables.
     void setCoordinated(bool value) { is_coordinated = value; }
