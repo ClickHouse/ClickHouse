@@ -502,6 +502,90 @@ TEST(ObjectStorageParallelListing, PaginatedParentDirectoryFrontierStaysBounded)
     }
 }
 
+TEST(ObjectStorageParallelListing, PendingRangeByteBudgetIsHard)
+{
+    /// Regression test: the pending-range frontier is capped by a hard *byte* budget across the shared
+    /// queue and all private frontiers, not only shaped depth-first. Depth-first walking alone still lets
+    /// each active worker retain a full page of children per tree level, i.e. `num_threads * page_size`
+    /// ranges per level at the extreme settings — hundreds of MB. With a budget, a worker keeps only the
+    /// children that fit and re-lists the parent after the last kept child later, so the peak stays near
+    /// the budget regardless of the tree's width, while the listing stays complete.
+    FakeS3 s3;
+    s3.page_size = 100;
+    constexpr int width = 20;
+    for (int a = 0; a < width; ++a)
+        for (int b = 0; b < width; ++b)
+            for (int c = 0; c < width; ++c)
+                s3.add(fmt::format("t/a={:02}/b={:02}/c={:02}/f.dat", a, b, c));
+    s3.finalize();
+    const auto expected = expectedUnder(s3, "t/");
+
+    constexpr size_t budget = 4096; /// far below what this tree's unbudgeted frontier would occupy
+    for (size_t threads : {1, 4, 16})
+    {
+        ObjectStorageParallelListingIterator iterator(
+            "t/", threads, /* max_buffered_keys */ 256, makeListLevel(s3), makeProbeLevel(s3), descendAll,
+            /* allow_keyspace_split */ true, /* check_cancellation */ {}, budget);
+        auto got = drain(iterator);
+        std::sort(got.begin(), got.end());
+        EXPECT_EQ(got, expected) << "threads=" << threads;
+
+        /// The budget is enforced without blocking, by keeping at least one range per trim for progress, so
+        /// the only overshoot is that minimum: up to two ranges (one child + one resume) per level of each
+        /// worker's active depth-first path. Depth is 3 here and a range of this fixture is well under 300
+        /// bytes, so the slack below is generous — while an unbudgeted 16-thread run retains pages of ~100
+        /// children per level (hundreds of KB), an order of magnitude above this bound.
+        const size_t peak = iterator.getPeakPendingRangeBytes();
+        EXPECT_LE(peak, budget + threads * 2 * 3 * 300)
+            << "pending-range bytes grew to " << peak << " despite a budget of " << budget
+            << " (threads=" << threads << ")";
+    }
+}
+
+TEST(ObjectStorageParallelListing, BudgetTrimKeepsListingExactlyOnce)
+{
+    /// Correctness of the budget trim's "resume" ranges under everything that makes them delicate: pages
+    /// where leaf objects interleave with sub-directories (objects sorting past the resume point must be
+    /// emitted exactly once — from the resume, not the trimmed page), directory-marker objects (`x/dNNN/`,
+    /// simultaneously a key and a group: the kept child lists it, the resume must skip the re-emitted equal
+    /// common prefix), pruned sub-directories after the resume point (re-encountered and re-pruned), a flat
+    /// leaf directory wide enough to be keyspace-split (whose contiguous slices are merged when trimmed),
+    /// and heavy truncation. A tiny budget forces trimming constantly; every key must still be produced
+    /// exactly once at every parallelism.
+    FakeS3 s3;
+    s3.page_size = 7;
+    s3.add("x/aa.csv");
+    s3.add("x/ab.csv");
+    for (int d = 0; d < 60; ++d)
+    {
+        s3.add(fmt::format("x/d{:03}/", d)); /// directory-marker object
+        s3.add(fmt::format("x/d{:03}/f0.csv", d));
+        s3.add(fmt::format("x/d{:03}/f1.csv", d));
+        s3.add(fmt::format("x/d{:03}/skip/deep.bin", d)); /// pruned below
+    }
+    for (size_t i = 0; i < 500; ++i)
+        s3.add("x/flat/" + hexName(i, 10)); /// big flat directory: exercises split-slice merging
+    s3.add("x/zz.csv"); /// plain files sorting after all the groups
+    s3.finalize();
+
+    auto should_descend = [](const std::string & prefix) { return prefix.find("skip") == std::string::npos; };
+    std::vector<std::string> expected;
+    for (const auto & key : s3.keys)
+        if (key.find("skip") == std::string::npos)
+            expected.push_back(key);
+    std::sort(expected.begin(), expected.end());
+
+    for (size_t threads : {1, 2, 4, 16})
+    {
+        ObjectStorageParallelListingIterator iterator(
+            "x/", threads, /* max_buffered_keys */ 256, makeListLevel(s3), makeProbeLevel(s3), should_descend,
+            /* allow_keyspace_split */ true, /* check_cancellation */ {}, /* max_pending_range_bytes */ 1024);
+        auto got = drain(iterator);
+        std::sort(got.begin(), got.end());
+        EXPECT_EQ(got, expected) << "threads=" << threads;
+    }
+}
+
 TEST(ObjectStorageParallelListing, MixedHierarchicalAndFlat)
 {
     /// A '/'-partitioned tree where each leaf directory is itself a big flat directory (needs both

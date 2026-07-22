@@ -48,12 +48,14 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     ProbeLevelFunction probe_level_,
     std::function<bool(const std::string & common_prefix)> should_descend_,
     bool allow_keyspace_split_,
-    std::function<void()> check_cancellation_)
+    std::function<void()> check_cancellation_,
+    size_t max_pending_range_bytes_)
     : num_threads(std::max<size_t>(num_threads_, 1))
     , max_buffered_objects(std::max<size_t>(max_buffered_keys_, 1))
     /// Keep the shared queue big enough to feed every worker with stealable work, but bounded (independent
     /// of the listing size): the bulk of a wide walk lives on the workers' private depth-first frontiers.
     , max_pending_ranges(std::max<size_t>(num_threads * 4, 64))
+    , max_pending_range_bytes(std::max<size_t>(max_pending_range_bytes_, 1))
     , list_level(std::move(list_level_))
     , probe_level(std::move(probe_level_))
     , should_descend(std::move(should_descend_))
@@ -74,9 +76,16 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     /// directory is paginated serially; the hierarchical delimiter walk is unaffected.
     root.split_budget = allow_keyspace_split_ ? FLAT_SPLIT_BUDGET : 0;
     root.use_delimiter = true;
+    pending_range_bytes = rangeBytes(root);
+    peak_pending_range_bytes = pending_range_bytes;
     ranges_to_list.push_back(std::move(root));
     outstanding_ranges = 1;
     peak_outstanding_ranges = 1;
+}
+
+size_t ObjectStorageParallelListingIterator::rangeBytes(const ListRange & range)
+{
+    return sizeof(ListRange) + range.prefix.size() + range.start_after.size() + range.end.size() + range.continuation_token.size();
 }
 
 ObjectStorageParallelListingIterator::~ObjectStorageParallelListingIterator()
@@ -141,6 +150,102 @@ void ObjectStorageParallelListingIterator::donateLocked(
     }
 }
 
+void ObjectStorageParallelListingIterator::trimToBudgetLocked(
+    const ListRange & range,
+    bool hierarchical,
+    std::vector<ListRange> & follow_up,
+    RelativePathsWithMetadata & batch,
+    std::unique_lock<std::mutex> &) const
+{
+    /// A single follow-up range at most replaces the range just consumed, so it cannot grow the frontier;
+    /// trimming below also always keeps at least one range plus its one-range replacement for the rest.
+    if (follow_up.size() <= 2)
+        return;
+
+    size_t total_bytes = 0;
+    for (const auto & r : follow_up)
+        total_bytes += rangeBytes(r);
+    if (pending_range_bytes + total_bytes <= max_pending_range_bytes)
+        return;
+
+    const size_t allowance = max_pending_range_bytes > pending_range_bytes ? max_pending_range_bytes - pending_range_bytes : 0;
+
+    if (hierarchical)
+    {
+        /// `follow_up` is the parent's pending continuation (if the page was truncated) followed by the
+        /// child ranges of this page in ascending order. Keep the leading children that fit the budget (at
+        /// least one, so the walk progresses) and replace everything else with a single "resume" range that
+        /// re-lists the parent strictly after the last kept child: the storage then re-discovers the unkept
+        /// siblings of this page and, past them, the parent's later pages — so the resume also subsumes the
+        /// continuation-token range, which is dropped.
+        const size_t first_child = follow_up.front().continuation_token.empty() ? 0 : 1;
+        chassert(follow_up.size() > first_child);
+
+        std::vector<ListRange> kept;
+        kept.reserve(follow_up.size());
+        size_t kept_bytes = 0;
+        size_t index = first_child;
+        for (; index < follow_up.size(); ++index)
+        {
+            const size_t bytes = rangeBytes(follow_up[index]);
+            if (!kept.empty() && kept_bytes + bytes > allowance)
+                break;
+            kept_bytes += bytes;
+            kept.push_back(std::move(follow_up[index]));
+        }
+
+        ListRange resume;
+        resume.prefix = range.prefix;
+        resume.start_after = kept.back().prefix;
+        resume.end = range.end;
+        resume.split_pos = range.split_pos;
+        resume.split_budget = range.split_budget;
+        resume.use_delimiter = true;
+        /// `start_after` is exactly the last kept child's common prefix: the resumed listing re-emits that
+        /// group (its keys are all greater than `start_after`), and it is already covered by the kept child
+        /// range, so it must be skipped there.
+        resume.skip_prefixes_not_after = true;
+
+        /// Objects of this page sorting after the resume point will be re-listed by the resume range; emit
+        /// them only once, from there. (Objects before it are excluded by `StartAfter` on the resume.)
+        std::erase_if(batch, [&](const RelativePathWithMetadataPtr & object) { return object->getPath() > resume.start_after; });
+
+        /// The resume is the shallowest of the new work: put it first so the depth-first walk (which pops
+        /// the newest range) descends into the kept children before re-listing the parent, and donation
+        /// (which takes from the front) offers it to idle workers first, like the continuation it replaces.
+        follow_up.clear();
+        follow_up.push_back(std::move(resume));
+        for (auto & r : kept)
+            follow_up.push_back(std::move(r));
+    }
+    else
+    {
+        /// `follow_up` is the contiguous, ascending keyspace slices of a flat split. Keep the leading slices
+        /// that fit (at least one) and merge the tail into a single slice — the slices tile the interval
+        /// exactly, so the merge is `(first unkept start, last end)` with no gap or overlap.
+        std::vector<ListRange> kept;
+        kept.reserve(follow_up.size());
+        size_t kept_bytes = 0;
+        size_t index = 0;
+        for (; index < follow_up.size(); ++index)
+        {
+            const size_t bytes = rangeBytes(follow_up[index]);
+            if (!kept.empty() && kept_bytes + bytes > allowance)
+                break;
+            kept_bytes += bytes;
+            kept.push_back(std::move(follow_up[index]));
+        }
+        if (index < follow_up.size())
+        {
+            std::string tail_end = follow_up.back().end;
+            ListRange merged = std::move(follow_up[index]);
+            merged.end = std::move(tail_end);
+            kept.push_back(std::move(merged));
+        }
+        follow_up = std::move(kept);
+    }
+}
+
 void ObjectStorageParallelListingIterator::enqueueLocked(
     std::vector<ListRange> & new_ranges,
     RelativePathsWithMetadata & batch,
@@ -154,7 +259,11 @@ void ObjectStorageParallelListingIterator::enqueueLocked(
         /// Keep new work on this worker's private frontier by default and only donate the shallowest of it
         /// to the shared queue: this is what bounds the shared queue and keeps the walk depth-first.
         for (auto & r : new_ranges)
+        {
+            pending_range_bytes += rangeBytes(r);
             local_frontier.push_back(std::move(r));
+        }
+        peak_pending_range_bytes = std::max(peak_pending_range_bytes, pending_range_bytes);
         donateLocked(local_frontier, lock);
     }
     if (!batch.empty())
@@ -200,6 +309,10 @@ void ObjectStorageParallelListingIterator::worker()
             /// fanning out its siblings (the siblings, if any, were donated to the shared queue).
             range = std::move(local_frontier.back());
             local_frontier.pop_back();
+            /// The range is being listed now, no longer pending; free its share of the byte budget.
+            const size_t bytes = rangeBytes(range);
+            chassert(pending_range_bytes >= bytes);
+            pending_range_bytes -= bytes;
         }
 
         if (!listRange(range, local_frontier))
@@ -360,6 +473,11 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
                     reached_end = true;
                     break;
                 }
+                /// On a budget-trim resume, `start_after` is itself a common prefix whose subtree was kept as
+                /// its own range; `StartAfter` has no group meaning, so the storage re-emits the equal common
+                /// prefix (its keys are all greater than it) and it must be skipped to not list it twice.
+                if (range.skip_prefixes_not_after && common_prefix <= range.start_after)
+                    continue;
                 if (should_descend(common_prefix))
                 {
                     ListRange child;
@@ -435,6 +553,8 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
                 std::unique_lock lock(mutex);
                 if (stop || finished)
                     return true;
+                /// Enforce the hard pending-range byte budget before materializing this page's fan-out.
+                trimToBudgetLocked(range, had_common_prefixes, follow_up, batch, lock);
                 enqueueLocked(follow_up, batch, local_frontier, lock);
             }
 
@@ -597,6 +717,12 @@ size_t ObjectStorageParallelListingIterator::getPeakOutstandingRanges() const
 {
     std::lock_guard lock(mutex);
     return peak_outstanding_ranges;
+}
+
+size_t ObjectStorageParallelListingIterator::getPeakPendingRangeBytes() const
+{
+    std::lock_guard lock(mutex);
+    return peak_pending_range_bytes;
 }
 
 }

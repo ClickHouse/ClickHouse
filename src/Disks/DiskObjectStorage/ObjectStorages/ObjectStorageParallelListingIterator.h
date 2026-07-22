@@ -62,11 +62,31 @@ namespace DB
 /// consumer drains), blocking a producer on the frontier size could deadlock, so overflow is carried
 /// depth-first instead of waited on.
 ///
+/// On top of the depth-first shape there is a hard byte budget (`max_pending_range_bytes`) on the *total*
+/// pending ranges across the shared queue and every worker's private frontier. Depth-first walking alone
+/// bounds the frontier to `O(num_threads * tree_depth * page_size)` ranges, which at the extreme settings
+/// (`s3_list_object_parallelism` and `s3_list_object_keys_size` both at 1000) is still about a million
+/// pending ranges per level — hundreds of MB of per-query memory. The budget is enforced without ever
+/// blocking a producer (which could deadlock, see above) and without dropping work: when materializing a
+/// page's fan-out would exceed it, the worker keeps only the ranges that fit (at least one, so the walk
+/// always progresses) and represents the rest as a single range — for a hierarchical page, a "resume"
+/// range that re-lists the parent strictly after the last kept child (`StartAfter`), re-discovering the
+/// unkept siblings later; for a keyspace split, the contiguous tail slices merged into one. The extra
+/// re-listing requests are paid only while the budget is exhausted, so workloads whose frontier fits the
+/// budget (any realistic parallelism) see no change, while pathological fan-outs are capped at the budget
+/// instead of growing with `num_threads * page_size`.
+///
 /// The iterator is storage-agnostic: it drives a caller-provided `list_level` callback (one delimited
 /// page of one prefix per call, optionally resuming after a key) and a `should_descend` callback.
 class ObjectStorageParallelListingIterator final : public IObjectStorageIterator
 {
 public:
+    /// Hard budget on the total bytes of pending (created but not yet picked up) ranges across the shared
+    /// queue and all private frontiers; see the class comment. Sized so that any realistic configuration
+    /// never trims (a range is typically well under a KiB, so this holds tens of thousands of them) while
+    /// the pathological `num_threads * page_size` fan-out is capped here instead of reaching hundreds of MB.
+    static constexpr size_t DEFAULT_MAX_PENDING_RANGE_BYTES = 32 * 1024 * 1024;
+
     /// Lists a single delimited page. `start_after` (honored only on the first call of a listing, i.e.
     /// when `continuation_token` is empty) resumes strictly after that key; `continuation_token`
     /// resumes pagination. Returns objects + common prefixes + truncation/next-token.
@@ -91,6 +111,8 @@ public:
     /// `check_cancellation`, if set, must throw when the query owning this listing was cancelled; it is
     /// polled while the consumer waits for a batch (a `KILL`/timeout does not notify our condition
     /// variables), so the listing fails fast instead of hanging. Empty in non-query contexts (tests).
+    /// `max_pending_range_bytes` is the hard pending-range byte budget described in the class comment;
+    /// overridable only so tests can shrink it to force trimming on small fixtures.
     ObjectStorageParallelListingIterator(
         std::string root_prefix_,
         size_t num_threads_,
@@ -99,7 +121,8 @@ public:
         ProbeLevelFunction probe_level_,
         std::function<bool(const std::string & common_prefix)> should_descend_,
         bool allow_keyspace_split_ = true,
-        std::function<void()> check_cancellation_ = {});
+        std::function<void()> check_cancellation_ = {},
+        size_t max_pending_range_bytes_ = DEFAULT_MAX_PENDING_RANGE_BYTES);
 
     ~ObjectStorageParallelListingIterator() override;
 
@@ -116,6 +139,12 @@ public:
     /// rather than the total number of directories, which is what stops a wide hierarchical layout from
     /// growing the listing frontier — and thus per-query memory — without limit.
     size_t getPeakOutstandingRanges() const;
+
+    /// For tests/observability: the high-water mark of the total bytes of pending ranges (across the shared
+    /// queue and all private frontiers). Stays within `max_pending_range_bytes` plus a small overshoot — the
+    /// minimum kept for progress, a couple of ranges per tree level of each worker's active depth-first
+    /// path — regardless of the width of the layout being listed.
+    size_t getPeakPendingRangeBytes() const;
 
 private:
     /// A half-open keyspace range `(start_after, end)` of keys under `prefix` left to list.
@@ -134,6 +163,13 @@ private:
                                    /// sub-directories than fit in one page does not buffer one child range
                                    /// per sub-directory before descending). Empty for a fresh range; when
                                    /// set, it resumes pagination and `start_after` is not re-applied.
+        bool skip_prefixes_not_after = false; /// Set on a budget-trim "resume" range, whose `start_after` is
+                                   /// exactly a common prefix whose subtree was kept as its own range: keys
+                                   /// under that subtree are all greater than `start_after`, so the storage
+                                   /// re-emits the equal common prefix on resume (`StartAfter` has no group
+                                   /// meaning), and it must be skipped here to not list that subtree twice.
+                                   /// Never set on keyspace-split slices, whose `start_after` is a plain key
+                                   /// boundary that may fall inside a subtree (skipping would lose keys).
     };
 
     void worker();
@@ -167,6 +203,20 @@ private:
     /// Move the shallowest ranges of a worker's `local_frontier` into the shared queue (bounded by
     /// `max_pending_ranges`) so idle workers can steal them, keeping the walk depth-first. Requires lock.
     void donateLocked(std::deque<ListRange> & local_frontier, std::unique_lock<std::mutex> & lock);
+    /// Enforce the hard pending-range byte budget on a page's fan-out before it is materialized: if adding
+    /// `follow_up` would exceed `max_pending_range_bytes`, keep only the leading ranges that fit (at least
+    /// one, so the walk progresses) and represent the rest as a single range — a `StartAfter` resume of
+    /// `range` after the last kept child for a hierarchical page (`hierarchical`; also subsumes the parent's
+    /// pending continuation, and drops the already-covered tail of `batch`), or the merged contiguous tail
+    /// slice for a keyspace split. Requires lock (it reads `pending_range_bytes`).
+    void trimToBudgetLocked(
+        const ListRange & range,
+        bool hierarchical,
+        std::vector<ListRange> & follow_up,
+        RelativePathsWithMetadata & batch,
+        std::unique_lock<std::mutex> & lock) const;
+    /// Approximate heap + struct footprint of one pending range, the unit of the byte budget.
+    static size_t rangeBytes(const ListRange & range);
 
     const size_t num_threads;
     const size_t max_buffered_objects;
@@ -174,6 +224,9 @@ private:
     /// private frontier (walked depth-first), so the shared queue never grows without limit; it is sized to
     /// keep every worker fed with stealable work while staying small.
     const size_t max_pending_ranges;
+    /// Hard budget on the total bytes of pending ranges (shared queue + all private frontiers); see the
+    /// class comment and `trimToBudgetLocked`.
+    const size_t max_pending_range_bytes;
     const ListLevelFunction list_level;
     /// Tags-free existence probe for the flat keyspace split; see `ProbeLevelFunction`.
     const ProbeLevelFunction probe_level;
@@ -200,6 +253,11 @@ private:
     /// High-water mark of `outstanding_ranges`; a proxy for the peak pending-range memory. See
     /// `getPeakOutstandingRanges`.
     size_t peak_outstanding_ranges = 0;
+    /// Total bytes of the pending ranges currently stored in the shared queue and the private frontiers
+    /// (a range being listed right now is not counted: there is at most one per worker). Kept within
+    /// `max_pending_range_bytes` by `trimToBudgetLocked`, and its high-water mark, for tests.
+    size_t pending_range_bytes = 0;
+    size_t peak_pending_range_bytes = 0;
 
     std::deque<RelativePathsWithMetadata> ready_batches;
     size_t buffered_objects = 0;
