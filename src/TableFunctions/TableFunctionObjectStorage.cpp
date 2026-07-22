@@ -934,7 +934,7 @@ FROM gcs(creds, url='https://s3-object-url.csv')
 
 If you specify `PARTITION BY` expression when inserting data into `GCS` table, a separate file is created for each partition value. Splitting the data into separate files helps to improve reading operations efficiency.
 
-When `compatibility` is set to `26.6` or later, or when current defaults apply, `hive` is the default partition strategy. Because paths containing `{_partition_id}` require `wildcard`, the following examples set `partition_strategy='wildcard'` explicitly.
+A path containing `{_partition_id}` implies the `wildcard` partition strategy, so the explicit `partition_strategy='wildcard'` in the examples below is optional. For paths without the placeholder, the default is `hive` when `compatibility` is `26.6` or later (including current defaults); see the `file_like_engine_default_partition_strategy` setting.
 
 **Examples**
 
@@ -1121,7 +1121,7 @@ LIMIT 5;
 
 ### Writing with partitions {#writing-with-partitions}
 
-When `compatibility` is set to `26.6` or later, or when current defaults apply, `HIVE` is the default partition strategy. Paths containing `{_partition_id}` therefore require an explicit `WILDCARD` strategy.
+A path containing `{_partition_id}` implies the `WILDCARD` partition strategy. For paths without the placeholder, the default is `HIVE` when `compatibility` is `26.6` or later (including current defaults); see the `file_like_engine_default_partition_strategy` setting.
 
 ```sql
 INSERT INTO TABLE FUNCTION azureBlobStorage(

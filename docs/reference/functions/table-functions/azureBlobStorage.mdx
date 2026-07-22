@@ -145,7 +145,7 @@ LIMIT 5;
 
 ### Writing with partitions {#writing-with-partitions}
 
-When `compatibility` is set to `26.6` or later, or when current defaults apply, `HIVE` is the default partition strategy. Paths containing `{_partition_id}` therefore require an explicit `WILDCARD` strategy.
+A path containing `{_partition_id}` implies the `WILDCARD` partition strategy. For paths without the placeholder, the default is `HIVE` when `compatibility` is `26.6` or later (including current defaults); see the `file_like_engine_default_partition_strategy` setting.
 
 ```sql
 INSERT INTO TABLE FUNCTION azureBlobStorage(
