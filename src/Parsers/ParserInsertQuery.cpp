@@ -395,19 +395,19 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         auto collect_top_level_source_settings = [&](ASTPtr & target_settings_ast)
         {
-            auto merge_settings_ast_with_override = [](ASTPtr & target_settings_ast, const ASTPtr & source_settings_ast)
+            auto merge_settings_ast_with_override = [](ASTPtr & target_ast, const ASTPtr & source_ast)
             {
-                if (!source_settings_ast)
+                if (!source_ast)
                     return;
 
-                if (!target_settings_ast)
+                if (!target_ast)
                 {
-                    target_settings_ast = source_settings_ast->clone();
+                    target_ast = source_ast->clone();
                     return;
                 }
 
-                auto & source_settings = source_settings_ast->as<ASTSetQuery &>();
-                auto & target_settings = target_settings_ast->as<ASTSetQuery &>();
+                auto & source_settings = source_ast->as<ASTSetQuery &>();
+                auto & target_settings = target_ast->as<ASTSetQuery &>();
 
                 std::unordered_map<String, size_t> target_change_positions;
                 target_change_positions.reserve(target_settings.changes.size());
@@ -488,7 +488,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     auto children = intersect_except->getListOfSelects();
                     if (!children.empty())
                         self(self, children.back(), false);
-                    merge_settings_ast_with_override(target_settings_ast, intersect_except->settings_ast);
+                    merge_settings_ast_with_override(target_settings_ast, intersect_except->settings());
                     return;
                 }
 
