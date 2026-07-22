@@ -3,14 +3,20 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
+#include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/PartitionPruner.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -35,6 +41,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
@@ -67,6 +75,7 @@
 namespace ProfileEvents
 {
     extern const Event MutationAffectedRowsUpperBound;
+    extern const Event MutationUntouchedPartsByIndexAnalysis;
 }
 
 namespace DB
@@ -80,6 +89,9 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool use_partition_pruning;
+    extern const SettingsBool use_primary_key;
+    extern const SettingsBool use_skip_indexes;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool validate_mutation_query;
     extern const SettingsSetOperationMode union_default_mode;
@@ -224,6 +236,138 @@ ColumnDependencies getAllColumnDependencies(
     return dependencies;
 }
 
+bool containsSubqueryOrTableReference(const IAST & ast)
+{
+    if (ast.as<ASTSubquery>() || ast.as<ASTSelectQuery>() || ast.as<ASTSelectWithUnionQuery>() || ast.as<ASTTableIdentifier>())
+        return true;
+
+    /// A plain identifier on the right side of `IN` is a table reference, not a column.
+    if (const auto * function = ast.as<ASTFunction>();
+        function && functionIsInOrGlobalInOperator(function->name)
+        && function->arguments && function->arguments->children.size() == 2
+        && function->arguments->children[1]->as<ASTIdentifier>())
+        return true;
+
+    for (const auto & child : ast.children)
+        if (containsSubqueryOrTableReference(*child))
+            return true;
+
+    return false;
+}
+
+/// Tries to prove from the part's partition value, minmax index and primary key index that no row
+/// of the part can match the predicates, without building an interpreter. Mirrors the index
+/// analysis the `SELECT count()` check query would perform in `ReadFromMergeTree`, so a proven
+/// exclusion implies the query would have returned `count() = 0`. Conservative: returns false
+/// whenever exclusion cannot be proven, and the caller falls back to executing the check query.
+bool canExcludePartByIndexAnalysis(
+    const MergeTreeData::DataPartPtr & part,
+    const StoragePtr & storage_from_part,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ASTs & predicates,
+    ContextPtr context)
+try
+{
+    if (part->isEmpty())
+        return true;
+
+    /// Sets for subqueries and table references are expensive to build and would be built
+    /// again by the fallback path.
+    for (const auto & predicate : predicates)
+        if (containsSubqueryOrTableReference(*predicate))
+            return false;
+
+    ASTPtr condition;
+    if (predicates.size() == 1)
+    {
+        condition = predicates.front();
+    }
+    else
+    {
+        auto coalesced_predicates = makeASTOperator("or");
+        coalesced_predicates->arguments->children = predicates;
+        condition = std::move(coalesced_predicates);
+    }
+
+    auto syntax_result = TreeRewriter(context).analyze(
+        condition,
+        metadata_snapshot->getColumns().getAllPhysical(),
+        storage_from_part,
+        storage_from_part->getStorageSnapshot(metadata_snapshot, context));
+
+    auto actions = ExpressionAnalyzer(condition, syntax_result, context).getActionsDAG(false);
+    const auto * predicate_node = actions.tryFindInOutputs(condition->getColumnName());
+    if (!predicate_node)
+        return false;
+
+    const auto & settings = context->getSettingsRef();
+    ActionsDAGWithInversionPushDown inverted_dag(predicate_node, context, /*boolean_context=*/true);
+
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+    auto storage_settings = part->storage.getSettings();
+
+    if (metadata_snapshot->hasPartitionKey())
+    {
+        PartitionPruner partition_pruner(
+            metadata_snapshot, inverted_dag, context, /*strict=*/false, /*skip_analysis=*/!settings[Setting::use_partition_pruning]);
+
+        if (!partition_pruner.isUseless() && partition_pruner.canBePruned(*part))
+            return true;
+    }
+
+    if (auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, storage_settings); !minmax_columns.empty())
+    {
+        auto minmax_expression = MergeTreeData::getMinMaxExpr(partition_key, storage_settings, ExpressionActionsSettings(context));
+        KeyCondition minmax_idx_condition(
+            inverted_dag, context, minmax_columns.getNames(), minmax_expression,
+            /*single_point_=*/false,
+            /*skip_analysis_=*/!settings[Setting::use_partition_pruning] || !settings[Setting::use_skip_indexes]);
+
+        if (!minmax_idx_condition.alwaysUnknownOrTrue()
+            && !minmax_idx_condition.checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns.getTypes()).can_be_true)
+            return true;
+    }
+
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    if (!primary_key.column_names.empty())
+    {
+        KeyCondition key_condition(
+            inverted_dag, context, primary_key.column_names, primary_key.expression,
+            /*single_point_=*/false, /*skip_analysis_=*/!settings[Setting::use_primary_key]);
+
+        if (key_condition.alwaysFalse())
+            return true;
+
+        if (!key_condition.alwaysUnknownOrTrue())
+        {
+            auto mark_ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
+                RangesInDataPart(part),
+                metadata_snapshot,
+                key_condition,
+                /*part_offset_condition=*/nullptr,
+                /*total_offset_condition=*/nullptr,
+                /*exact_ranges=*/nullptr,
+                /*pk_to_minmax_slot=*/nullptr,
+                settings,
+                getLogger("MutationsInterpreter"));
+
+            if (mark_ranges.empty())
+                return true;
+        }
+    }
+
+    return false;
+}
+catch (...)
+{
+    /// A genuine error will surface when the fallback path executes the check query.
+    tryLogCurrentException(
+        getLogger("MutationsInterpreter"),
+        "Cannot check the mutation predicate by index analysis, will fall back to executing the query",
+        LogsLevel::debug);
+    return false;
+}
+
 }
 
 
@@ -244,6 +388,10 @@ IsStorageTouched isStorageTouchedByMutations(
 
     auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part, mutations_snapshot);
     bool all_commands_can_be_skipped = true;
+
+    /// A matching `IN PARTITION` clause is dropped from the collected predicates:
+    /// it is a constant `true` for this part.
+    ASTs predicates_for_part;
 
     for (const auto & command : commands)
     {
@@ -269,17 +417,30 @@ IsStorageTouched isStorageTouchedByMutations(
             {
                 const String partition_id = storage_from_part->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
                 if (partition_id == source_part->info.getPartitionId())
+                {
                     all_commands_can_be_skipped = false;
+                    predicates_for_part.push_back(ASTPtr(alter->predicate));
+                }
             }
             else
             {
                 all_commands_can_be_skipped = false;
+                predicates_for_part.push_back(ASTPtr(alter->predicate));
             }
         }
     }
 
     if (all_commands_can_be_skipped)
         return no_rows;
+
+    if (canExcludePartByIndexAnalysis(source_part, storage_from_part, metadata_snapshot, predicates_for_part, context))
+    {
+        ProfileEvents::increment(ProfileEvents::MutationUntouchedPartsByIndexAnalysis);
+        IsStorageTouched result;
+        result.any_rows_affected = false;
+        result.all_rows_affected = (source_part->rows_count == 0);
+        return result;
+    }
 
     std::optional<InterpreterSelectQuery> interpreter_select_query;
     BlockIO io;
