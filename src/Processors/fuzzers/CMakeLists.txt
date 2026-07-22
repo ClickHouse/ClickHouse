@@ -1,0 +1,2 @@
+clickhouse_add_executable(query_plan_deserialize_fuzzer query_plan_deserialize_fuzzer.cpp)
+target_link_libraries(query_plan_deserialize_fuzzer PRIVATE dbms clickhouse_functions clickhouse_aggregate_functions)
