@@ -1,0 +1,50 @@
+---
+alias: []
+description: 'Documentation sur le format One'
+input_format: true
+keywords: ['One']
+output_format: false
+slug: /interfaces/formats/One
+title: 'One'
+doc_type: 'reference'
+---
+
+| Entrée | Sortie | Alias |
+| ------ | ------ | ----- |
+| ✔      | ✗      |       |
+
+<div id="description">
+  ## Description
+</div>
+
+Le format `One` est un format d&#39;entrée spécial qui ne lit aucune donnée à partir d&#39;un fichier et ne renvoie qu&#39;une seule ligne, avec une colonne de type [`UInt8`](/fr/reference/data-types/int-uint), nommée `dummy` et ayant pour valeur `0` (comme la table `system.one`).
+Il peut être utilisé avec les colonnes virtuelles `_file/_path` pour lister tous les fichiers sans lire les données elles-mêmes.
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+Exemple :
+
+```sql title="Query"
+SELECT _file FROM file('path/to/files/data*', One);
+```
+
+```text title="Response"
+┌─_file────┐
+│ data.csv │
+└──────────┘
+┌─_file──────┐
+│ data.jsonl │
+└────────────┘
+┌─_file────┐
+│ data.tsv │
+└──────────┘
+┌─_file────────┐
+│ data.parquet │
+└──────────────┘
+```
+
+<div id="format-settings">
+  ## Paramètres de format
+</div>

@@ -100,11 +100,12 @@ s3transfer==0.16.0
 setuptools==82.0.1
 simplejson==3.20.2
 sortedcontainers==2.4.0
-soupsieve==2.8.3
+soupsieve==2.8.4
 tenacity==8.5.0
 tzlocal==2.1
 websocket-client==1.9.0
 wheel==0.46.3
+zstandard==0.25.0
 filelock==3.25.0
 kazoo @ git+https://github.com/ClickHouse/kazoo.git@879e0b0e4ae367a289847b43a531938f68770125
 apache-sedona==1.6.1

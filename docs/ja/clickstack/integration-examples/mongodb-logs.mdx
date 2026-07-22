@@ -1,0 +1,374 @@
+---
+slug: /use-cases/observability/clickstack/integrations/mongodb-logs
+title: 'ClickStack による MongoDB ログの監視'
+sidebarTitle: 'MongoDB ログ'
+description: 'ClickStack による MongoDB ログの監視'
+doc_type: 'guide'
+keywords: ['MongoDB', 'ログ', 'OTel', 'ClickStack', 'データベース監視', 'スロークエリ']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **要点**
+
+  OTel `filelog` receiver を使用して、MongoDB のサーバーログ (4.4 以降の JSON フォーマット) を ClickStack で収集・可視化します。デモデータセットとあらかじめ用意されたダッシュボードが含まれています。
+</Info>
+
+<div id="existing-mongodb">
+  ## 既存のMongoDBとのインテグレーション
+</div>
+
+このセクションでは、ClickStack OTel collector の設定を変更して、既存の MongoDB 環境から ClickStack にログを送信するよう構成する方法を説明します。
+既存の独自環境を構成する前に MongoDB インテグレーションを試したい場合は、[&quot;デモデータセット&quot;](/ja/clickstack/integration-examples/mongodb-logs#demo-dataset) セクションにある、事前設定済みの環境とサンプルデータを使ってテストできます。
+
+<div id="prerequisites">
+  ### 前提条件
+</div>
+
+* 稼働中の ClickStack インスタンス
+* 既存のセルフマネージド MongoDB 環境 (バージョン 4.4 以降)
+* MongoDB のログファイルへのアクセス
+
+<Steps>
+  <Step>
+    #### MongoDB のロギング設定を確認する
+
+    MongoDB 4.4 以降では、デフォルトで構造化された JSON 形式のログが出力されます。ログファイルの場所を確認してください。
+
+    ```bash
+    cat /etc/mongod.conf | grep -A 5 systemLog
+    ```
+
+    MongoDB の一般的なログ出力先:
+
+    * **Linux (apt/yum)**: `/var/log/mongodb/mongod.log`
+    * **macOS (Homebrew)**: `/usr/local/var/log/mongodb/mongo.log`
+    * **Docker**: 多くの場合 stdout に出力されますが、`/var/log/mongodb/mongod.log` に書き込むように設定することもできます
+
+    MongoDB が stdout にログを出力している場合は、`mongod.conf` を更新してファイルに書き込むよう設定します:
+
+    ```yaml
+    systemLog:
+      destination: file
+      path: /var/log/mongodb/mongod.log
+      logAppend: true
+    ```
+
+    設定を変更したら、MongoDB を再起動します。
+
+    ```bash
+    # systemdの場合
+    sudo systemctl restart mongod
+
+    # Dockerの場合
+    docker restart <mongodb-container>
+    ```
+  </Step>
+
+  <Step>
+    #### MongoDB 用のカスタム OTel collector 設定を作成する
+
+    ClickStack では、カスタム設定ファイルをマウントし、環境変数を設定することで、ベースの OpenTelemetry Collector 設定を拡張できます。カスタム設定は、HyperDX が OpAMP 経由で管理するベース設定にマージされます。
+
+    次の内容で、`mongodb-monitoring.yaml` という名前のファイルを作成します。
+
+    ```yaml
+    receivers:
+      filelog/mongodb:
+        include:
+          - /var/log/mongodb/mongod.log
+        start_at: beginning
+        operators:
+          - type: json_parser
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.t.$$date
+              layout: '2006-01-02T15:04:05.000-07:00'
+              layout_type: gotime
+            severity:
+              parse_from: attributes.s
+              overwrite_text: true
+              mapping:
+                fatal: F
+                error: E
+                warn: W
+                info: I
+                debug:
+                  - D1
+                  - D2
+                  - D3
+                  - D4
+                  - D5
+
+          - type: move
+            from: attributes.msg
+            to: body
+
+          - type: add
+            field: attributes.source
+            value: "mongodb"
+
+          - type: add
+            field: resource["service.name"]
+            value: "mongodb-production"
+
+    service:
+      pipelines:
+        logs/mongodb:
+          receivers: [filelog/mongodb]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    ```
+
+    <Note>
+      * カスタムconfigで新たに定義するのは、receiverとパイプラインのみです。プロセッサ (`memory_limiter`、`transform`、`batch`) とエクスポーター (`clickhouse`) は、ベースのClickStack設定ですでに定義されているため、名前で参照するだけで構いません。
+      * このconfigでは、collectorの起動時に既存のlogsをすべて読み込むため、`start_at: beginning`を使用しています。本番環境のデプロイメントでは、collectorの再起動時にlogsを再取り込みしないよう、`start_at: end`に変更してください。
+    </Note>
+  </Step>
+
+  <Step>
+    #### ClickStack でカスタム設定を読み込むように構成する
+
+    既存の ClickStack デプロイメントでカスタム collector 設定を有効にするには、次の作業が必要です。
+
+    1. カスタム設定ファイルを `/etc/otelcol-contrib/custom.config.yaml` にマウントする
+    2. 環境変数 `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml` を設定する
+    3. collector が MongoDB のログを読み取れるよう、MongoDB のログディレクトリをマウントする
+
+    <Tabs>
+      <Tab title="Docker Compose">
+        ClickStack デプロイメントの設定を更新します。
+
+        ```yaml
+        services:
+          clickstack:
+            # ... 既存の設定 ...
+            environment:
+              - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
+              # ... その他の環境変数 ...
+            volumes:
+              - ./mongodb-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+              - /var/log/mongodb:/var/log/mongodb:ro
+              # ... その他のボリューム ...
+        ```
+      </Tab>
+
+      <Tab title="Docker Run (All-in-One Image)">
+        Docker で all-in-one イメージを使用している場合は、次を実行します。
+
+        ```bash
+        docker run --name clickstack \
+          -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+          -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+          -v "$(pwd)/mongodb-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+          -v /var/log/mongodb:/var/log/mongodb:ro \
+          clickhouse/clickstack-all-in-one:latest
+        ```
+      </Tab>
+    </Tabs>
+
+    <Note>
+      ClickStack collector に MongoDB のログファイルを読み取るための適切な権限があることを確認してください。本番環境では、読み取り専用マウント (`:ro`) を使用し、最小権限の原則に従ってください。
+    </Note>
+  </Step>
+
+  <Step>
+    #### HyperDX でログを確認する
+
+    設定が完了したら、HyperDX にログインして、ログが流れてきていることを確認します。
+
+    <Image img="/images/clickstack/mongodb/search-view.webp" alt="MongoDB ログの検索ビュー" />
+
+    <Image img="/images/clickstack/mongodb/log-view.webp" alt="MongoDB ログの詳細ビュー" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## デモデータセット
+</div>
+
+本番環境を構成する前に、事前生成済みのサンプルデータセットを使って MongoDB インテグレーションをテストできます。
+
+<Steps>
+  <Step>
+    #### サンプルデータセットをダウンロードする
+
+    サンプルのログファイルをダウンロードします。
+
+    ```bash
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mongodb/mongod.log
+    ```
+  </Step>
+
+  <Step>
+    #### テスト用の collector 設定を作成する
+
+    以下の設定内容で、`mongodb-demo.yaml` という名前のファイルを作成します。
+
+    ```yaml
+    cat > mongodb-demo.yaml << 'EOF'
+    receivers:
+      filelog/mongodb:
+        include:
+          - /tmp/mongodb-demo/mongod.log
+        start_at: beginning
+        operators:
+          - type: json_parser
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.t.$$date
+              layout: '2006-01-02T15:04:05.000-07:00'
+              layout_type: gotime
+            severity:
+              parse_from: attributes.s
+              overwrite_text: true
+              mapping:
+                fatal: F
+                error: E
+                warn: W
+                info: I
+                debug:
+                  - D1
+                  - D2
+                  - D3
+                  - D4
+                  - D5
+
+          - type: move
+            from: attributes.msg
+            to: body
+
+          - type: add
+            field: attributes.source
+            value: "mongodb-demo"
+
+          - type: add
+            field: resource["service.name"]
+            value: "mongodb-demo"
+
+    service:
+      pipelines:
+        logs/mongodb-demo:
+          receivers: [filelog/mongodb]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    EOF
+    ```
+  </Step>
+
+  <Step>
+    #### デモ設定で ClickStack を実行する
+
+    デモ用のログと設定を使用して ClickStack を実行します。
+
+    ```bash
+    docker run --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/mongodb-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/mongod.log:/tmp/mongodb-demo/mongod.log:ro" \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    ## HyperDX でログを確認する
+
+    ClickStack の起動後、次の手順を実行します。
+
+    1. [HyperDX](http://localhost:8080/) を開いてアカウントにログインします (先にアカウント作成が必要な場合があります)
+    2. Search ビューに移動し、source を `Logs` に設定します
+    3. 時間範囲に **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)** が含まれるよう設定します
+
+    <Image img="/images/clickstack/mongodb/search-view.webp" alt="MongoDB ログの Search ビュー" />
+
+    <Image img="/images/clickstack/mongodb/log-view.webp" alt="MongoDB ログの詳細ビュー" />
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## ダッシュボードと可視化
+</div>
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mongodb-logs-dashboard.json'} download="mongodb-logs-dashboard.json" eventName="docs.mongodb_logs_monitoring.dashboard_download">ダウンロード</TrackedLink>してダッシュボード設定を取得します
+  </Step>
+
+  <Step>
+    #### あらかじめ用意されたダッシュボードをインポートします
+
+    1. HyperDX を開き、Dashboards セクションに移動します。
+    2. 右上の省略記号メニューから「Import Dashboard」をクリックします。
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="ダッシュボードのインポート" />
+
+    3. mongodb-logs-dashboard.json ファイルをアップロードし、インポートを完了します。
+
+    <Image img="/images/clickstack/mongodb/finish-import.webp" alt="MongoDB ログダッシュボードのインポート完了" />
+  </Step>
+
+  <Step>
+    #### ダッシュボードが作成され、すべての可視化があらかじめ設定された状態になります
+
+    デモデータセットでは、時間範囲に **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)** が含まれるように設定します。
+
+    <Image img="/images/clickstack/mongodb/example-dashboard.webp" alt="MongoDB ログダッシュボード" />
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## トラブルシューティング
+</div>
+
+<div id="no-logs">
+  ### HyperDX にログが表示されない
+</div>
+
+有効な設定に、使用している filelog receiver が含まれていることを確認してください。
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 filelog
+```
+
+collector のログにエラーがないか確認します：
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/agent.log
+```
+
+<div id="logs-not-parsing">
+  ### ログが正しくパースされない
+</div>
+
+MongoDB が JSON 形式のログを出力していることを確認してください (4.4+) :
+
+```bash
+tail -1 /var/log/mongodb/mongod.log | python3 -m json.tool
+```
+
+出力が有効なJSONでない場合は、お使いのMongoDBのバージョンで従来のテキストログ形式 (4.4より前) が使用されている可能性があります。その場合は、`json_parser` オペレーターを `regex_parser` に置き換えるか、MongoDB 4.4以降にアップグレードする必要があります。
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+* エラーの急増やスロークエリのしきい値超過など、重要なイベントに対する[アラート](/ja/clickstack/features/alerts)を設定します
+* レプリカセットの監視や接続状況の追跡など、特定のユースケース向けに追加の[ダッシュボード](/ja/clickstack/features/dashboards/overview)を作成します
+
+<div id="going-to-production">
+  ## 本番環境への移行
+</div>
+
+このガイドでは、迅速にセットアップできるよう、ClickStack に組み込まれた OpenTelemetry Collector を拡張して使用します。本番環境でのデプロイメントでは、独自の OTel Collector を実行し、データを ClickStack の OTLPエンドポイントに送信することを推奨します。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。

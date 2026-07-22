@@ -1,0 +1,99 @@
+---
+description: 'Instala ClickHouse rápidamente con un script de instalación mediante curl'
+keywords: ['ClickHouse', 'instalar', 'rápido', 'curl']
+sidebarTitle: 'Instalación rápida'
+slug: /install/quick-install
+title: 'Instalación rápida'
+hide_title: true
+doc_type: 'guide'
+---
+
+Si no necesitas instalar ClickHouse en producción, puedes ejecutar un script de instalación con curl. El script determinará un binario adecuado para tu sistema operativo.
+
+<Steps>
+  <Step>
+    ## Instala ClickHouse usando curl
+
+    Ejecuta el siguiente comando para descargar un único binario para tu sistema operativo.
+
+    ```bash
+    curl https://clickhouse.com/ | sh
+    ```
+
+    En Linux y macOS, esto también instala [`clickhousectl`](https://github.com/ClickHouse/clickhousectl)
+    en `~/.local/bin` (con un enlace simbólico `chctl`) para que puedas administrar versiones
+    y servidores locales de ClickHouse.
+
+    Para instalar solo el binario `clickhouse` sin `clickhousectl`, establece
+    `CLICKHOUSE_ONLY=1`:
+
+    ```bash
+    curl https://clickhouse.com/ | CLICKHOUSE_ONLY=1 sh
+    ```
+
+    <Note>
+      Para usuarios de Mac: si recibes errores indicando que no se puede verificar el desarrollador del binario, consulta [aquí](/es/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos).
+    </Note>
+  </Step>
+
+  <Step>
+    ## Inicia clickhouse-local
+
+    `clickhouse-local` te permite procesar archivos locales y remotos usando la
+    potente sintaxis SQL de ClickHouse, sin necesidad de configuración. Los datos de las tablas se almacenan
+    en una ubicación temporal, lo que significa que, después de reiniciar `clickhouse-local`,
+    las tablas creadas previamente ya no estarán disponibles.
+
+    Ejecuta el siguiente comando para iniciar [clickhouse-local](/es/concepts/features/tools-and-utilities/clickhouse-local):
+
+    ```bash
+    ./clickhouse
+    ```
+  </Step>
+
+  <Step>
+    ## Inicia clickhouse-server
+
+    Si quieres conservar los datos, te convendrá ejecutar `clickhouse-server`. Puedes
+    iniciar el servidor de ClickHouse con el siguiente comando:
+
+    ```bash
+    ./clickhouse server
+    ```
+  </Step>
+
+  <Step>
+    ## Inicia clickhouse-client
+
+    Con el servidor en funcionamiento, abre una nueva ventana de terminal y ejecuta el siguiente comando
+    para iniciar `clickhouse-client`:
+
+    ```bash
+    ./clickhouse client
+    ```
+
+    Verás algo como esto:
+
+    ```response
+    ./clickhouse client
+    ClickHouse client version 24.5.1.117 (official build).
+    Connecting to localhost:9000 as user default.
+    Connected to ClickHouse server version 24.5.1.
+
+    local-host :)
+    ```
+
+    Los datos de las tablas se almacenan en el directorio actual y seguirán estando disponibles después de reiniciar
+    el servidor de ClickHouse. Si es necesario, puedes pasar
+    `-C config.xml` como argumento adicional de línea de comandos a `./clickhouse server`
+    y proporcionar configuración adicional en un archivo de configuración.
+    Todas las opciones de configuración disponibles están documentadas [aquí](/es/reference/settings/server-settings/settings) y en la
+    [plantilla del archivo de configuración de ejemplo](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml).
+
+    ¡Ya estás listo para empezar a enviar comandos SQL a ClickHouse!
+
+    <Tip>
+      La [Quick Start](/es/get-started/setup/install) te guía por los pasos necesarios para crear tablas e insertar datos.
+    </Tip>
+  </Step>
+</Steps>

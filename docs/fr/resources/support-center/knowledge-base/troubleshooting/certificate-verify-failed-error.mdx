@@ -1,0 +1,53 @@
+---
+title: Résoudre l’erreur de vérification du certificat SSL dans ClickHouse
+description: Découvrez comment résoudre l’erreur SSL Exception CERTIFICATE_VERIFY_FAILED.
+date: 2023-05-02
+tags: ['Sécurité et authentification', 'Erreurs et exceptions']
+keywords: ['Erreur', 'Certificat SSL', '210']
+---
+
+<div id="resolving-code-210-ssl-certificate-verify-error-in-clickhouse">
+  ## Résolution de l’erreur de vérification du certificat SSL (code 210) dans ClickHouse
+</div>
+
+L’erreur est généralement signalée sous la forme suivante :
+
+`Code: 210. DB::NetException: SSL Exception: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED`
+
+<div id="cause-of-the-error">
+  ## Cause de l’erreur
+</div>
+
+Cette erreur se produit lors de la tentative de connexion à un serveur ClickHouse à l’aide de `clickhouse-client`. Elle est due à l’une des causes suivantes :
+
+* le fichier de configuration du client `config.xml` ne contient pas le certificat racine dans le magasin de CA par défaut de la machine, ou
+* un certificat de CA auto-signé ou interne n’est pas configuré
+
+<div id="solution">
+  ## Solution
+</div>
+
+Si vous utilisez une CA interne ou autosignée, configurez le certificat racine de la CA dans le fichier `config.xml` du répertoire client (par ex. `/etc/clickhouse-client`) et désactivez le chargement des certificats racines de CA par défaut depuis leur emplacement par défaut.
+
+Voici un exemple de configuration :
+
+```xml
+<openSSL>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <caConfig>/etc/clickhouse-server/certs/marsnet_ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <invalidCertificateHandler>
+            <name>RejectCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+<div id="additional-resources">
+  ## Ressources supplémentaires
+</div>
+
+Consultez [https://clickhouse.com/docs/interfaces/cli/#configuration&#95;files](/fr/concepts/features/interfaces/cli#configuration_files)

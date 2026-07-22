@@ -1,0 +1,19 @@
+<test>
+    <!--
+        The build size underestimation that leads to selecting hash join instead of concurrent hash join
+        should be corrected with runtime statistics.
+    -->
+    <create_query>CREATE TABLE build (k UInt64, s String) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE probe (k UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>INSERT INTO build SELECT number, toString(number) FROM numbers_mt(5000000)</fill_query>
+    <fill_query>INSERT INTO probe SELECT number FROM numbers_mt(10000000)</fill_query>
+
+    <fill_query>ALTER TABLE build MATERIALIZE STATISTICS ALL SETTINGS mutations_sync=1</fill_query>
+    <fill_query>ALTER TABLE probe MATERIALIZE STATISTICS ALL SETTINGS mutations_sync=1</fill_query>
+
+    <query>SELECT l.k FROM probe AS l INNER JOIN build r ON l.k = r.k WHERE substring(r.s, 1, 1) IN ('1', '2', '3', '4', '5', '6', '7', '8', '9') FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS build</drop_query>
+    <drop_query>DROP TABLE IF EXISTS probe</drop_query>
+</test>

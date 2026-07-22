@@ -1104,7 +1104,7 @@ def test_virtual_columns(started_cluster):
         node,
         table_name,
         dst_table_name,
-        virtual_columns="_path String, _file String, _size UInt64, _time DateTime",
+        virtual_columns="_path String, _file String, _size UInt64, _time DateTime, _etag String",
     )
     expected_values = set([tuple(i) for i in total_values])
     for i in range(20):
@@ -1119,15 +1119,17 @@ def test_virtual_columns(started_cluster):
         time.sleep(1)
     assert selected_values == expected_values
     virtual_values = node.query(
-        f"SELECT count(), _path, _file, _size, _time FROM {dst_table_name} GROUP BY _path, _file, _size, _time"
+        f"SELECT count(), _path, _file, _size, _time, _etag FROM {dst_table_name} GROUP BY _path, _file, _size, _time, _etag"
     ).splitlines()
     assert len(virtual_values) > 0
-    (_, res_path, res_file, res_size, res_time) = virtual_values[0].split("\t")
+    (_, res_path, res_file, res_size, res_time, res_etag) = virtual_values[0].split("\t")
     finish_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     assert f"{files_path}/{res_file}" == res_path
     assert int(res_size) > 0
     assert start_time <= res_time
     assert res_time <= finish_time
+    # _etag must be populated (issue #108605: it was declared but never filled, always empty)
+    assert res_etag != ""
 
 
 def test_message_queue_disable_insertion_does_not_affect_s3queue(started_cluster):

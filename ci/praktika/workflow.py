@@ -142,3 +142,4 @@ class Workflow:
             is_required: bool
             default_value: str
             options: Optional[List] = None
+            is_boolean: bool = False

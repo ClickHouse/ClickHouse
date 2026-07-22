@@ -1,0 +1,82 @@
+---
+slug: /deletes/overview
+title: 'Resumen de eliminación'
+description: 'Cómo eliminar datos en ClickHouse'
+keywords: ['eliminar', 'truncate', 'drop', 'eliminación ligera']
+doc_type: 'guide'
+---
+
+Hay varias formas de eliminar datos en ClickHouse, cada una con sus propias ventajas y características de rendimiento. Debe seleccionar el método adecuado en función de su modelo de datos y de la cantidad de datos que pretenda eliminar.
+
+| Método                                                                         | Sintaxis                     | Cuándo usarlo                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------ | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Eliminación ligera](/es/concepts/features/operations/delete/lightweight-delete)  | `DELETE FROM [table]`        | Úselo para eliminar pequeñas cantidades de datos. Las filas quedan excluidas de inmediato de todas las consultas SELECT posteriores, pero al principio solo se marcan internamente como eliminadas y no se quitan del disco. |
+| [Mutación DELETE](/es/reference/statements/alter/delete)                          | `ALTER TABLE [table] DELETE` | Úselo cuando los datos deban eliminarse del disco de inmediato (por ejemplo, por cumplimiento normativo). Afecta negativamente al rendimiento de SELECT.                                                                     |
+| [Truncar tabla](/es/reference/statements/truncate)                                | `TRUNCATE TABLE [db.table]`  | Elimina de forma eficiente todos los datos de una tabla.                                                                                                                                                                     |
+| [Eliminar partición](/es/reference/statements/alter/partition#drop-partitionpart) | `DROP PARTITION`             | Elimina de forma eficiente todos los datos de una partición.                                                                                                                                                                 |
+
+A continuación, se ofrece un resumen de las distintas formas de eliminar datos en ClickHouse:
+
+<div id="lightweight-deletes">
+  ## Eliminaciones ligeras
+</div>
+
+Las eliminaciones ligeras hacen que las filas se marquen inmediatamente como eliminadas, de modo que puedan excluirse automáticamente de todas las consultas `SELECT` posteriores. La eliminación posterior de estas filas se produce durante los ciclos naturales de merge y, por lo tanto, conlleva menos E/S. Como resultado, es posible que, durante un período no especificado, los datos no se eliminen realmente del almacenamiento y solo queden marcados como eliminados. Si necesita garantizar que los datos se eliminen, considere el comando de mutación anterior.
+
+```sql
+-- delete all data from 2018 with a lightweight delete. Not recommended.
+DELETE FROM posts WHERE toYear(CreationDate) = 2018
+```
+
+Eliminar grandes volúmenes de datos con la sentencia de eliminación ligera `DELETE` también puede afectar negativamente al rendimiento de las consultas `SELECT`. Además, este comando no es compatible con tablas que tengan proyecciones.
+
+Tenga en cuenta que en esta operación se utiliza una mutación para [marcar las filas eliminadas](/es/reference/statements/delete#how-lightweight-deletes-work-internally-in-clickhouse) (añadiendo una columna `_row_exists`), lo que genera cierta E/S.
+
+En general, deben preferirse las eliminaciones ligeras frente a las mutaciones si se puede tolerar que los datos eliminados sigan existiendo en disco (por ejemplo, en casos sin requisitos de cumplimiento). Aun así, debe evitarse este enfoque si es necesario eliminar todos los datos.
+
+Obtenga más información sobre las [eliminaciones ligeras](/es/concepts/features/operations/delete/lightweight-delete).
+
+<div id="delete-mutations">
+  ## Mutaciones de eliminación
+</div>
+
+Las mutaciones de eliminación se pueden ejecutar con un comando `ALTER TABLE ... DELETE`, por ejemplo.
+
+```sql
+-- eliminar todos los datos de 2018 con una mutación. No recomendado.
+ALTER TABLE posts DELETE WHERE toYear(CreationDate) = 2018
+```
+
+Estas pueden ejecutarse de forma síncrona (de forma predeterminada si no son no replicadas) o asíncrona (según lo determine la configuración [mutations&#95;sync](/es/reference/settings/session-settings#mutations_sync)). Son operaciones extremadamente intensivas en I/O, ya que reescriben todas las partes que coinciden con la expresión `WHERE`. Este proceso no tiene atomicidad: las partes se sustituyen por partes mutadas en cuanto están listas, y una consulta `SELECT` que comience a ejecutarse durante una mutación verá datos de partes que ya han sido mutadas junto con datos de partes que aún no han sido mutadas. Los usuarios pueden seguir el progreso mediante la tabla [system.mutations](/es/reference/system-tables/mutations#monitoring-mutations). Estas son operaciones intensivas en I/O y deben usarse con moderación, ya que pueden afectar al rendimiento de `SELECT` en el cluster.
+
+Lea más sobre las [mutaciones de eliminación](/es/reference/statements/alter/delete).
+
+<div id="truncate-table">
+  ## Truncar tabla
+</div>
+
+Si necesita eliminar todos los datos de una tabla, use el comando `TRUNCATE TABLE` que se muestra a continuación. Esta es una operación ligera.
+
+```sql
+TRUNCATE TABLE posts
+```
+
+Más información sobre [TRUNCATE TABLE](/es/reference/statements/truncate).
+
+<div id="drop-partition">
+  ## Eliminar partición
+</div>
+
+Si ha especificado una clave de particionado personalizada para sus datos, las particiones pueden eliminarse de forma eficiente. Evite el particionado de alta cardinalidad.
+
+```sql
+ALTER TABLE posts (DROP PARTITION '2008')
+```
+
+Más información sobre [DROP PARTITION](/es/reference/statements/alter/partition).
+
+<div id="more-resources">
+  ## Más recursos
+</div>
+
+* [Gestión de actualizaciones y eliminaciones en ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

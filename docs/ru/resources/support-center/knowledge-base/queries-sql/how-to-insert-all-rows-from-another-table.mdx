@@ -1,0 +1,134 @@
+---
+title: Как выполнить вставку всех строк из одной таблицы в другую?
+description: "Статья в базе знаний о том, как выполнить вставку всех строк из одной таблицы в другую."
+date: 2024-12-17
+tags: ['Ингестия данных']
+keywords: ['Вставка из таблицы']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## Введение
+</div>
+
+Иногда нужно заново перенести все данные из одной таблицы в другую.
+
+Например, может потребоваться заново перенести данные из staging-таблицы в продукционную таблицу. В этой статье показано, как сделать это с помощью оператора `INSERT INTO`.
+
+<div id="example">
+  ## Пример
+</div>
+
+Ниже приведён простой пример того, как это работает и как это проверить:
+
+* Создайте демонстрационную базу данных
+
+```sql
+CREATE DATABASE db1;
+```
+
+* Создайте тестовую таблицу
+
+```sql
+CREATE TABLE db1.source_table
+(
+    city VARCHAR,
+    country VARCHAR,
+    continent VARCHAR
+)
+engine = MergeTree()
+ORDER BY continent;
+```
+
+* Вставьте немного данных в исходную таблицу
+
+```sql
+INSERT INTO db1.source_table (city, country, continent)
+VALUES
+    ('New York', 'USA', 'North America'),
+    ('Tokyo', 'Japan', 'Asia'),
+    ('Berlin', 'Germany', 'Europe'),
+    ('Paris', 'France', 'Europe'),
+    ('Cairo', 'Egypt', 'Africa'),
+    ('Sydney', 'Australia', 'Australia');
+```
+
+* Проверьте количество строк в исходной таблице
+
+```sql
+SELECT COUNT(*) FROM db1.source_table;
+```
+
+```text
+┌─count()─┐
+│      6  │
+└─────────┘
+```
+
+* Создайте новую таблицу с той же структурой, что и у исходной таблицы.
+
+```sql
+CREATE TABLE db1.target_table AS db1.source_table;
+```
+
+* Вставьте все строки из исходной таблицы в целевую таблицу.
+
+```sql
+INSERT INTO db1.target_table SELECT * FROM db1.source_table;
+```
+
+* Проверьте количество строк в целевой таблице
+
+```sql
+SELECT COUNT(*) FROM db1.target_table;
+```
+
+```text
+┌─count()─┐
+│      6  │
+└─────────┘
+```
+
+Если вы хотите изменить структуру новой таблицы, сначала можно посмотреть структуру исходной таблицы.
+
+```sql
+SHOW CREATE TABLE db1.source_table;
+```
+
+Затем создайте новую таблицу с изменённой структурой. В нашем случае нужно добавить в целевую таблицу новый столбец `population`.
+
+```sql
+CREATE TABLE db1.target_table_population
+(
+    `city` String,
+    `country` String,
+    `continent` String,
+    `population` UInt16,
+)
+ENGINE = MergeTree
+ORDER BY continent;
+```
+
+* Вставьте все строки из исходной таблицы в целевую таблицу, включая новый столбец. Установите для поля population значение 0 во всех строках.
+
+```sql
+INSERT INTO db1.target_table_population (city, country, continent, population)
+SELECT city, country, continent, 0 FROM db1.source_table;
+```
+
+* Проверьте данные в целевой таблице
+
+```sql
+SELECT * FROM db1.target_table_population LIMIT 3;
+```
+
+```text
+┌─city──────┬─country───┬─continent──────┬─population─┐
+│ New York  │ USA       │ North America  │          0 │
+│ Tokyo     │ Japan     │ Asia           │          0 │
+│ Berlin    │ Germany   │ Europe         │          0 │
+└───────────┴───────────┴────────────────┴────────────┘
+```

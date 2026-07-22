@@ -1,0 +1,73 @@
+---
+slug: /best-practices/minimize-optimize-joins
+sidebarTitle: 'JOINを最小限に抑えて最適化する'
+title: 'JOINを最小限に抑えて最適化する'
+description: 'ClickHouse で JOIN を使用する際のベストプラクティスを説明するドキュメント'
+keywords: ['JOIN', 'Parallel Hash JOIN']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickHouse は多種多様な JOIN タイプとアルゴリズムをサポートしており、JOIN のパフォーマンスも最近のリリースで大幅に改善されています。ただし、JOIN は本質的に、単一の非正規化されたテーブルに対するクエリよりもコストが高くなります。非正規化では、計算処理をクエリ実行時から INSERT 時または前処理時に移すため、実行時のレイテンシを大幅に低減できることがよくあります。リアルタイム処理やレイテンシに敏感な分析クエリでは、**非正規化を強く推奨します**。
+
+一般に、次のような場合は非正規化を検討してください。
+
+* テーブルの更新頻度が低い、またはバッチ更新を許容できる。
+* 関係が多対多ではない、またはカーディナリティが極端に高くない。
+* クエリされるカラムが一部に限られており、つまり特定のカラムは非正規化の対象から外せる。
+* [Flink](/ja/integrations/connectors/data-ingestion/apache-flink) のような上流システムに処理を移し、リアルタイムの enrichment やフラット化を管理できる体制がある。
+
+すべてのデータを非正規化する必要はありません。頻繁にクエリされる属性に絞って対応してください。また、サブテーブル全体を複製する代わりに、集計をインクリメンタルに計算する方法として [materialized view](/ja/concepts/best-practices/use-materialized-views) も検討してください。スキーマ更新がまれで、レイテンシが重要な場合、非正規化はパフォーマンス面で最も優れたトレードオフをもたらします。
+
+ClickHouse でのデータの非正規化について詳しくは、[こちら](/ja/guides/clickhouse/data-modelling/denormalization) を参照してください。
+
+<div id="when-joins-are-required">
+  ## JOIN が必要な場合
+</div>
+
+JOIN が必要な場合は、**少なくともバージョン 24.12、できれば最新バージョンを使用してください**。新しいリリースが出るたびに、JOIN のパフォーマンスは改善され続けているためです。ClickHouse 24.12 以降では、クエリプランナーが最適なパフォーマンスを得られるよう、JOIN の右側に小さいテーブルを自動的に配置するようになりました。これは以前は手動で行う必要があった作業です。さらに今後は、より積極的な filter pushdown や、複数 JOIN の自動並べ替えなど、さらなる改善も予定されています。
+
+JOIN のパフォーマンスを向上させるには、次のベストプラクティスに従ってください。
+
+* **Cartesian product を避ける**: 左側の値に対して右側で複数の値が一致すると、JOIN は複数の行を返します。これがいわゆる Cartesian product です。ユースケース上、右側のすべての一致結果ではなく、いずれか 1 件だけが必要であれば、`ANY` JOIN (例: `LEFT ANY JOIN`) を使用できます。通常の JOIN より高速で、使用メモリも少なくなります。
+* **JOIN するテーブルのサイズを小さくする**: JOIN の実行時間とメモリ消費は、左側と右側のテーブルサイズに比例して増加します。JOIN で処理するデータ量を減らすには、クエリの `WHERE` 句または `JOIN ON` 句に追加のフィルタ条件を加えてください。ClickHouse はフィルタ条件をクエリプラン内のできるだけ深い位置、通常は JOIN の前まで押し下げます。何らかの理由でフィルタが自動的に pushdown されない場合は、JOIN の片側をサブクエリに書き換えて、pushdown を強制してください。
+* **適切であれば Dictionary を使った direct JOIN を利用する**: ClickHouse の標準 JOIN は 2 つのフェーズで実行されます。まず build フェーズで右側を走査して ハッシュテーブル を構築し、続いて probe フェーズで左側を走査して、ハッシュテーブル のルックアップにより一致する結合相手を探します。右側が [dictionary](/ja/concepts/features/dictionaries/index) またはキー・バリュー特性を持つ別の テーブルエンジン (例: [EmbeddedRocksDB](/ja/reference/engines/table-engines/integrations/embedded-rocksdb) や [Join テーブルエンジン](/ja/reference/engines/table-engines/special/join)) であれば、ClickHouse は &quot;direct&quot; JOIN アルゴリズム を使用できます。これにより、実質的に ハッシュテーブル の構築が不要になり、クエリ処理が高速化されます。これは `INNER` および `LEFT OUTER` JOIN で機能し、real-time な分析 workload に適しています。
+* **JOIN にテーブルのソート順を活用する**: ClickHouse の各テーブルは、そのテーブルの主キーカラムでソートされています。`full_sorting_merge` や `partial_merge` のようないわゆる sort-merge JOIN アルゴリズムを使うことで、このソート順を活用できます。ハッシュテーブル ベースの標準 JOIN アルゴリズム (後述の `parallel_hash`、`hash`、`grace_hash`) とは異なり、sort-merge JOIN アルゴリズムはまず両方のテーブルをソートし、その後でマージします。クエリが両方のテーブルをそれぞれの主キーカラムで JOIN している場合、sort-merge ではソート処理を省略する最適化が働き、処理時間とオーバーヘッドを削減できます。
+* **ディスクへの spilling が発生する JOIN を避ける**: JOIN の中間状態 (例: ハッシュテーブル) が非常に大きくなり、main memory に収まらなくなることがあります。この場合、ClickHouse はデフォルトで out-of-memory error を返します。一部の JOIN アルゴリズム (後述) 、たとえば [`grace_hash`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2)、[`partial_merge`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3)、[`full_sorting_merge`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3) では、中間状態をディスクに spill してクエリ実行を継続できます。ただし、ディスクアクセスによって join processing が大幅に遅くなる可能性があるため、これらの JOIN アルゴリズム は注意して使用する必要があります。代わりに、中間状態のサイズを減らせるよう、別の方法で JOIN クエリを最適化することを推奨します。
+* **外部 JOIN で一致しなかったことを示すマーカーとしてデフォルト値を使う**: left/right/full outer join では、左側 / 右側 / 両方のテーブルのすべての値が含まれます。ある値に対して他方のテーブルに結合相手が見つからない場合、ClickHouse はその結合相手を特別なマーカーに置き換えます。SQL 標準では、このようなマーカーとして NULL を使用することが定められています。ClickHouse では、そのために結果カラムを Nullable でラップする必要があり、追加のメモリおよびパフォーマンスのオーバーヘッドが発生します。代わりに、設定 `join_use_nulls = 0` を構成し、結果カラムのデータ型のデフォルト値をマーカーとして使用することもできます。
+
+<Info>
+  **Dictionary の使用には注意してください**
+
+  ClickHouse で JOIN に Dictionary を使用する場合は、Dictionary が設計上、重複キーを許可しないことを理解しておくことが重要です。データの読み込み時には、重複したキーは自動的に重複排除され、特定のキーについては最後に読み込まれた値だけが保持されます。この挙動により、Dictionary は、最新の値や信頼できる値だけが必要な一対一または多対一の関係に適しています。しかし、一対多または多対多の関係 (たとえば、1 つの Actor が複数のロールを持てる場合に、ロールを Actor に JOIN するケース) で Dictionary を使用すると、一致した行のうち 1 つを除くすべてが破棄されるため、気付かないうちにデータが失われます。そのため、複数の一致を完全に保持する必要がある場面には、Dictionary は適していません。Dictionary が有効な場合 (およびそうでない場合) について詳しくは、[Dictionary のベストプラクティス](/ja/concepts/features/dictionaries/best-practices) を参照してください。
+</Info>
+
+<div id="choosing-the-right-join-algorithm">
+  ## 適切な JOIN アルゴリズムの選択
+</div>
+
+ClickHouse は、速度とメモリ使用量のトレードオフが異なる複数の JOIN アルゴリズムをサポートしています。
+
+* **Parallel Hash JOIN (デフォルト) :** メモリに収まる小規模〜中規模の右側テーブルに対して高速です。
+* **Direct JOIN:** `INNER` または `LEFT ANY JOIN` でDictionary (またはキー・バリュー特性を持つ他のテーブルエンジン) を使用する場合に最適です。ハッシュテーブルを構築する必要がないため、ポイントルックアップでは最速の方法です。
+* **Full Sorting Merge JOIN:** 両方のテーブルが結合キーでソートされている場合に効率的です。
+* **Partial Merge JOIN:** メモリ使用量を最小限に抑えられますが、速度は遅くなります。メモリが限られた環境で大規模なテーブルを結合するのに最適です。
+* **Grace Hash JOIN:** 柔軟でメモリ使用量を調整しやすく、パフォーマンス特性を調整できる大規模なデータセットに適しています。
+
+<Image img="/images/bestpractices/joins-speed-memory.png" size="md" alt="Joins — speed vs memory" />
+
+<Note>
+  各アルゴリズムでサポートされる JOIN の種類は異なります。各アルゴリズムでサポートされる JOIN タイプの完全な一覧は、[こちら](/ja/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)を参照してください。
+</Note>
+
+`join_algorithm = 'auto'` (デフォルト) を設定して最適なアルゴリズムを ClickHouse に選択させることも、ワークロードに応じて明示的に制御することもできます。パフォーマンスやメモリオーバーヘッドを最適化するために JOIN アルゴリズムを選択する必要がある場合は、[このガイド](/ja/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)をおすすめします。
+
+最適なパフォーマンスを得るには:
+
+* 高パフォーマンスが求められるワークロードでは、JOIN は最小限に抑えてください。
+* 1 つのクエリで 3～4 個を超える JOIN は避けてください。
+* 実データで異なるアルゴリズムをベンチマークしてください。パフォーマンスは JOIN キーの分布やデータサイズによって異なります。
+
+JOIN 最適化戦略、JOIN アルゴリズム、およびそのチューニング方法の詳細については、[ClickHouse ドキュメント](/ja/concepts/features/operations/select/joining-tables)と、この[ブログシリーズ](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1)を参照してください。

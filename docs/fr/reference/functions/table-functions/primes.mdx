@@ -1,0 +1,137 @@
+---
+slug: /sql-reference/table-functions/primes
+sidebarTitle: 'primes'
+title: 'primes'
+description: 'Renvoie une table avec une seule colonne `prime` contenant des nombres premiers.'
+doc_type: 'reference'
+---
+
+* `primes()` – Renvoie une table infinie avec une seule colonne `prime` (UInt64) contenant des nombres premiers par ordre croissant, à partir de 2. Utilisez `LIMIT` (et éventuellement `OFFSET`) pour limiter le nombre de lignes.
+
+* `primes(N)` – Renvoie une table avec une seule colonne `prime` (UInt64) contenant les `N` premiers nombres premiers, à partir de 2.
+
+* `primes(N, M)` – Renvoie une table avec une seule colonne `prime` (UInt64) contenant `M` nombres premiers à partir du `N`-ième nombre premier (indexation à partir de 0).
+
+* `primes(N, M, S)` – Renvoie une table avec une seule colonne `prime` (UInt64) contenant `M` nombres premiers à partir du `N`-ième nombre premier (indexation à partir de 0), avec un pas `S` selon l’indice des nombres premiers. Les nombres premiers renvoyés correspondent aux indices `N, N + S, N + 2S, ..., N + (M - 1)S`. `S` doit être `>= 1`.
+
+Cette fonction est similaire à la table système [`system.primes`](/fr/reference/system-tables/primes).
+
+Les requêtes suivantes sont équivalentes :
+
+```sql
+SELECT * FROM primes(10);
+SELECT * FROM primes(0, 10);
+SELECT * FROM primes() LIMIT 10;
+SELECT * FROM system.primes LIMIT 10;
+SELECT * FROM system.primes WHERE prime IN (2, 3, 5, 7, 11, 13, 17, 19, 23, 29);
+```
+
+Les requêtes suivantes sont également équivalentes :
+
+```sql
+SELECT * FROM primes(10, 10);
+SELECT * FROM primes() LIMIT 10 OFFSET 10;
+SELECT * FROM system.primes LIMIT 10 OFFSET 10;
+```
+
+<div id="examples">
+  ### Exemples
+</div>
+
+Les 10 premiers nombres premiers.
+
+```sql
+SELECT * FROM primes(10);
+```
+
+```response
+  ┌─prime─┐
+  │     2 │
+  │     3 │
+  │     5 │
+  │     7 │
+  │    11 │
+  │    13 │
+  │    17 │
+  │    19 │
+  │    23 │
+  │    29 │
+  └───────┘
+```
+
+Le premier nombre premier supérieur à 1e15.
+
+```sql
+SELECT prime FROM primes() WHERE prime > 1e15 LIMIT 1;
+```
+
+```response
+  ┌────────────prime─┐
+  │ 1000000000000037 │ -- 1.00 quadrillion
+  └──────────────────┘
+```
+
+Résolvez une contrainte modulaire sur les nombres premiers dans un très grand intervalle : trouvez le premier nombre premier `p >= 10^15` tel que `p` modulo `65537` soit égal à `1`.
+
+```sql
+SELECT prime
+FROM primes()
+WHERE prime >= 1e15
+  AND prime % 65537 = 1
+LIMIT 1;
+```
+
+```response
+ ┌────────────prime─┐
+ │ 1000000001218399 │ -- 1.00 quadrillion
+ └──────────────────┘
+```
+
+Les 7 premiers nombres premiers de Mersenne.
+
+```sql
+SELECT prime
+FROM primes()
+WHERE bitAnd(prime, prime + 1) = 0
+LIMIT 7;
+```
+
+```response
+  ┌──prime─┐
+  │      3 │
+  │      7 │
+  │     31 │
+  │    127 │
+  │   8191 │
+  │ 131071 │
+  │ 524287 │
+  └────────┘
+```
+
+<div id="notes">
+  ### Remarques
+</div>
+
+* Les formes les plus rapides sont les requêtes simples de plage et de filtrage par point qui utilisent le pas par défaut (`1`), par exemple `primes(N)` ou `primes() LIMIT N`. Ces formes utilisent un générateur de nombres premiers optimisé pour calculer efficacement de très grands nombres premiers.
+* Pour les sources non bornées (`primes()` / `system.primes`), des filtres simples sur la valeur, tels que `prime BETWEEN ...`, `prime IN (...)` ou `prime = ...`, peuvent être appliqués lors de la génération afin de restreindre les plages de valeurs recherchées. Par exemple, la requête suivante s’exécute presque instantanément :
+
+```sql
+SELECT sum(prime)
+FROM primes()
+WHERE prime BETWEEN 1e6 AND 1e6 + 100
+   OR prime BETWEEN 1e12 AND 1e12 + 100
+   OR prime BETWEEN 1e15 AND 1e15 + 100
+   OR prime IN (9999999967, 9999999971, 9999999973)
+   OR prime = 1000000000000037;
+```
+
+```response
+  ┌───────sum(prime)─┐
+  │ 2004010006000641 │ -- 2.00 quadrillion
+  └──────────────────┘
+
+1 row in set. Elapsed: 0.090 sec. 
+```
+
+* Cette optimisation de plage de valeurs ne s’applique pas aux fonctions de table bornées (`primes(N)`, `primes(offset, count[, step])`) avec `WHERE`, car ces variantes définissent une table finie en fonction de l’indice des nombres premiers, et le filtre doit être évalué après la génération de cette table pour préserver la sémantique.
+* L’utilisation d’un offset non nul et/ou d’un pas supérieur à 1 (`primes(offset, count)` / `primes(offset, count, step)`) peut être plus lente, car il peut être nécessaire de générer puis d’ignorer en interne des nombres premiers supplémentaires. Si vous n’avez pas besoin d’un offset ou d’un pas, omettez-les.

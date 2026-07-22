@@ -236,6 +236,12 @@ static inline auto createHandlersFactoryFromConfig(
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
+            else if (handler_type == "docs")
+            {
+                auto handler = createWebUIHandlerFactory<DocsWebUIRequestHandler>(server, config, prefix + "." + key, common_headers_override);
+                handler->addFiltersFromConfig(config, prefix + "." + key);
+                main_handler_factory->addHandler(std::move(handler));
+            }
             else if (handler_type == "js")
             {
                 /// `JavaScriptWebUIRequestHandler` serves a fixed set of embedded JS/CSS
@@ -410,6 +416,12 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     processors_profile_handler->allowGetAndHeadRequest();
     factory.addPathToHints("/processors-profile");
     factory.addHandler(processors_profile_handler);
+
+    auto docs_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DocsWebUIRequestHandler>>(server);
+    docs_handler->attachNonStrictPath("/docs");
+    docs_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/docs");
+    factory.addHandler(docs_handler);
 
     auto js_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<JavaScriptWebUIRequestHandler>>(server);
     js_handler->attachNonStrictPath("/js/");
