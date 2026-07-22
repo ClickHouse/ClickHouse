@@ -1080,6 +1080,12 @@ void AggregatingTransform::initGenerate()
                 params->aggregator_list_ptr->end(),
                 [](const Aggregator & aggregator) { return aggregator.hasTemporaryData(); });
     };
+
+    if (adaptive_engaged && aggregator_has_temporary_data())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Adaptive aggregation is engaged but an aggregator has spilled to disk; the delayed records cannot be merged.");
+
     if (!aggregator_has_temporary_data())
     {
         if (!skip_merging)
