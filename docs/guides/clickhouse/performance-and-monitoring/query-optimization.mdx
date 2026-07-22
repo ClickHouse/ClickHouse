@@ -1,15 +1,15 @@
 ---
 slug: /optimize/query-optimization
 sidebarTitle: 'Overview'
-title: 'A simple guide for query optimization'
-description: 'A simple guide for query optimization that describe common path to improve query performance'
+title: 'Query optimization'
+description: 'Learn how to diagnose slow ClickHouse queries, isolate bottlenecks, and select targeted optimizations'
 doc_type: 'guide'
 keywords: ['query optimization', 'performance', 'best practices', 'query tuning', 'efficiency', 'query log', 'EXPLAIN']
 ---
 
-This section aims to illustrate through common scenarios how to use different performance and optimization techniques, such as [analyzer](/guides/clickhouse/performance-and-monitoring/analyzer), [query profiling](/concepts/features/performance/troubleshoot/sampling-query-profiler) or [avoid nullable Columns](/concepts/best-practices/avoidnullablecolumns), in order to improve your ClickHouse query performances.
+Use this overview as the entry point for diagnosing and optimizing ClickHouse queries. It introduces the optimization framework, explains the recommended workflow, and links to guides for finding slow queries, isolating bottlenecks, and applying measured improvements.
 
-## Understand query performance {#understand-query-performance}
+## When to optimize queries {#understand-query-performance}
 
 The best moment to think about performance optimization is when you're setting up your [data schema](/guides/clickhouse/data-modelling/schema-design) before ingesting data into ClickHouse for the first time.
 
@@ -21,7 +21,7 @@ ClickHouse has a rich set of tools to help you understand how your query is gett
 
 In this section, we will look at those tools and how to use them.
 
-## General considerations {#general-considerations}
+## How ClickHouse processes a query {#general-considerations}
 
 To understand query performance, let's look at what happens in ClickHouse when a query is executed.
 
@@ -77,6 +77,8 @@ Query optimization starts with understanding where a query spends its time. Inst
 ## Guides in this section {#guides-in-this-section}
 
 The guides follow the sequence below, but each can also be used independently.
+
+The examples in these guides use the NYC Taxi dataset. To run them as written, follow the setup in the [worked optimization example](/guides/clickhouse/performance-and-monitoring/query-optimization-example#dataset). You can also apply the same workflow to your own queries and tables.
 
 <CardGroup cols={1}>
   <Card title="1. Diagnose slow queries" icon="magnifying-glass" href="/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries">

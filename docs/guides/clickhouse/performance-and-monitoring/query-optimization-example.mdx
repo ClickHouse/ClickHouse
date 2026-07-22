@@ -7,6 +7,8 @@ doc_type: 'guide'
 keywords: ['query optimization', 'performance', 'NYC Taxi', 'data types', 'ordering key']
 ---
 
+import NYCTaxiExampleDataset from '/snippets/_nyc_taxi_example_dataset.mdx';
+
 This example applies schema and ordering-key improvements to queries over the NYC Taxi dataset. Start with the [query optimization overview](/optimize/query-optimization), then use this example to see how measurements change as each optimization is introduced.
 
 ## Dataset {#dataset}
@@ -15,20 +17,9 @@ We'll use a real example to illustrate how we approach query performances. 
 
 Let's use the NYC Taxi dataset, which contains taxi ride data in NYC. First, we start by ingesting the NYC taxi dataset with no optimization.
 
-Below is the command to create the table and insert data from an S3 bucket. Note that we infer the schema from the data voluntarily, which isn't optimized.
+Use the following setup to create the `nyc_taxi` database, infer the table schema, and load the data from an S3 bucket. The inferred schema is intentionally unoptimized so that the later changes can be measured against it.
 
-```sql
--- Create table with inferred schema
-CREATE TABLE trips_small_inferred
-ORDER BY () EMPTY
-AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
-
--- Insert data into table with inferred schema
-INSERT INTO trips_small_inferred
-SELECT *
-FROM s3Cluster
-('default','https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
-```
+<NYCTaxiExampleDataset />
 
 Let's have a look to the table schema automatically inferred from the data.
 
@@ -61,7 +52,7 @@ CREATE TABLE nyc_taxi.trips_small_inferred
 ORDER BY tuple()
 ```
 
-## Basic optimization {#basic-optimization}
+## Optimize the schema {#basic-optimization}
 
 Now that we have our framework to test, we can start optimizing.
 
@@ -158,8 +149,8 @@ For numbers, you can check the min/max value in your dataset to check if the cur
 ```sql
 -- Find min/max values for the payment_type field
 SELECT
-    min(payment_type),max(payment_type),
-    min(passenger_count), max(passenger_count)
+    min(payment_type),
+    max(payment_type)
 FROM trips_small_inferred
 ```
 
@@ -240,7 +231,7 @@ Query id: 72b5eb1c-ff33-4fdb-9d29-dd076ac6f532
 
 The new table is considerably smaller than the previous one. We see a reduction of about 34% in disk space for the table (7.38 GiB vs 4.89 GiB).
 
-## The importance of primary keys {#the-importance-of-primary-keys}
+## Optimize the primary key {#the-importance-of-primary-keys}
 
 Primary keys in ClickHouse work differently than in most traditional database systems. In those systems, primary keys enforce uniqueness and data integrity. Any attempt to insert duplicate primary key values is rejected, and a B-tree or hash-based index is usually created for fast lookup. 
 
@@ -252,7 +243,7 @@ Selecting a good set of primary keys is important for performance, and it's actu
 
 Other options supported by ClickHouse, such as Projection or Materialized view, allow you to use a different set of primary keys on the same data. The second part of this blog series will cover this in more detail. 
 
-### Choose primary keys {#choose-primary-keys}
+### Choose a primary key {#choose-primary-keys}
 
 Choosing the correct set of primary keys is a complex topic, and it might require trade-offs and experiments to find the best combination. 
 
@@ -271,7 +262,7 @@ Create a new table with the primary keys and re-ingest the data.
 ```sql
 CREATE TABLE trips_small_pk
 (
-    `vendor_id` UInt8,
+    `vendor_id` LowCardinality(String),
     `pickup_datetime` DateTime,
     `dropoff_datetime` DateTime,
     `passenger_count` UInt8,

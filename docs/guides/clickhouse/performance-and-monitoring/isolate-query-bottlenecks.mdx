@@ -8,16 +8,23 @@ keywords: ['query optimization', 'query bottlenecks', 'performance', 'benchmarki
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
+import NYCTaxiExampleDataset from '/snippets/_nyc_taxi_example_dataset.mdx';
 
 Query optimization is easier when you change one part of a query at a time and compare each result with a stable baseline. Use the following measurement practices before isolating individual execution stages.
 
-## Methodology {#methodology}
-
-### Establish a repeatable baseline {#establish-a-repeatable-baseline}
+## Before you begin {#before-you-begin}
 
 It can be difficult to identify problematic queries on a production deployment, as there are probably a large number of queries being executed at any given time on your ClickHouse deployment. 
 
 If you know which user, database, or tables are having issues, you can use the fields `user`, `tables`, or `databases` from `system.query_log` to narrow down the search. 
+
+You can apply this method to your own query. To use the NYC Taxi examples from the other guides in this section, create and load the example table if you have not already done so:
+
+<Accordion title="Set up the example dataset">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+## Establish a repeatable baseline {#establish-a-repeatable-baseline}
 
 Once you identify the queries you want to optimize, you can start working on them to optimize. One common mistake developers make at this stage is changing multiple things simultaneously, running ad-hoc experiments, and usually ending up with mixed results, but, more importantly, missing a good understanding of what made the query faster. 
 
@@ -32,3 +39,7 @@ Once you have identified potential optimizations, it is recommended that you imp
 <Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="Optimization workflow"/>
 
 _Finally, be cautious of outliers; it's pretty common that a query might run slowly, either because a user tried an ad-hoc expensive query or the system was under stress for another reason. You can group by the field normalized_query_hash to identify expensive queries that are being executed regularly. Those are probably the ones you want to investigate._
+
+## Next steps {#next-steps}
+
+Return to [Diagnose slow queries](/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) to select a representative query, or continue with the [worked optimization example](/guides/clickhouse/performance-and-monitoring/query-optimization-example) to see how schema and primary-key changes affect query performance.

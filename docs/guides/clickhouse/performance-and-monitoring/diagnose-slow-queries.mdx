@@ -7,9 +7,19 @@ doc_type: 'guide'
 keywords: ['query optimization', 'query log', 'slow queries', 'EXPLAIN', 'performance']
 ---
 
-Before optimizing a query, identify a repeatable workload and collect a baseline. This guide introduces the query log and execution-plan tools used to find candidate queries and understand their resource usage. The examples use the NYC Taxi dataset introduced in the [worked optimization example](/guides/clickhouse/performance-and-monitoring/query-optimization-example).
+import NYCTaxiExampleDataset from '/snippets/_nyc_taxi_example_dataset.mdx';
 
-## Tools for finding slow queries {#spot-the-slow-queries}
+Before optimizing a query, identify a repeatable workload and collect a baseline. This guide introduces the query log and execution-plan tools used to find candidate queries and understand their resource usage.
+
+## Before you begin {#before-you-begin}
+
+The examples in this guide use the `nyc_taxi.trips_small_inferred` table. To run them as written, create and load the table if you have not already done so:
+
+<Accordion title="Set up the example dataset">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+## How it works {#how-it-works}
 
 ### Query logs {#query-logs}
 
@@ -18,6 +28,10 @@ By default, ClickHouse collects and logs information about each executed query i
 For each executed query, ClickHouse logs statistics such as query execution time, number of rows read, and resource usage, such as CPU, memory usage, or filesystem cache hits. 
 
 Therefore, the query log is a good place to start when investigating slow queries. You can easily spot the queries that take a long time to execute and display the resource usage information for each one. 
+
+## Diagnose a slow query {#diagnose-a-slow-query}
+
+### Identify candidate queries {#identify-candidate-queries}
 
 Let's find the top five long-running queries on our NYC taxi dataset.
 
@@ -112,7 +126,7 @@ query_duration_ms: 634
 query:             SELECT
 vendor_id,
 avg(total_amount),
-avg(trip_distance),
+avg(trip_distance)
 FROM
 nyc_taxi.trips_small_inferred
 GROUP BY vendor_id
@@ -144,6 +158,8 @@ ORDER BY memory_usage DESC
 LIMIT 30
 ```
 
+### Select a representative query run {#select-a-representative-query-run}
+
 Let's isolate the long-running queries we found and rerun them a few times to understand the response time. 
 
 At this point, it is essential to turn off the filesystem cache by setting the `enable_filesystem_cache` setting to 0 to improve reproducibility.
@@ -163,8 +179,6 @@ FROM
 WHERE
   speed_mph > 30
 FORMAT JSON
-
-----
 ```
 
 ```response
@@ -188,8 +202,6 @@ GROUP BY
     payment_type
 ORDER BY
     trip_count DESC;
-
----
 ```
 
 ```response
@@ -204,8 +216,6 @@ SELECT
 FROM nyc_taxi.trips_small_inferred
 WHERE passenger_count = 1 or passenger_count = 2
 FORMAT JSON
-
----
 ```
 
 ```response
@@ -224,10 +234,14 @@ Summarize in the table for easy reading.
 Let's understand a bit better what the queries achieve. 
 
 -   Query 1 calculates the distance distribution in rides with an average speed of over 30 miles per hour.
--   Query 2 finds the number and average cost of rides per week. 
+-   Query 2 finds the number and average cost of rides by payment type. 
 -   Query 3 calculates the average time of each trip in the dataset.
 
-None of these queries are doing very complex processing, except the first query that calculates the trip time on the fly every time the query executes. However, each of these queries takes more than one second to execute, which, in the ClickHouse world, is a very long time. We can also note the memory usage of these queries; more or less 400 Mb for each query is quite a lot of memory. Also, each query appears to read the same number of rows (i.e., 329.04 million). Let's quickly confirm how many rows are in this table.
+None of these queries are doing very complex processing, except the first query that calculates the trip time on the fly every time the query executes. However, each of these queries takes more than one second to execute, which, in the ClickHouse world, is a very long time. We can also note the memory usage of these queries; more or less 400 Mb for each query is quite a lot of memory. Also, each query appears to read the same number of rows (i.e., 329.04 million).
+
+### Compare rows read with table size {#compare-rows-read-with-table-size}
+
+Let's quickly confirm how many rows are in this table.
 
 ```sql
 -- Count number of rows in table
@@ -245,13 +259,13 @@ Query id: 733372c5-deaf-4719-94e3-261540933b23
 
 The table contains 329.04 million rows, therefore each query is doing a full scan of the table.
 
-### Explain statement {#explain-statement}
+### Inspect the execution plan {#explain-statement}
 
 Now that we have some long-running queries, let's understand how they're executed. For this, ClickHouse supports the [EXPLAIN statement command](/reference/statements/explain). It is a very useful tool that provides a very detailed view of all the query execution stages without actually running the query. While it can be overwhelming to look at for a non-ClickHouse expert, it remains an essential tool for gaining insight into how your query is executed.
 
 The documentation provides a detailed [guide](/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer) on what the EXPLAIN statement is and how to use it to analyze your query execution. Rather than repeating what is in this guide, let's focus on a few commands that will help us find bottlenecks in query execution performance. 
 
-**Explain indexes = 1**
+#### Inspect index use {#inspect-index-use}
 
 Let's start with EXPLAIN indexes = 1 to inspect the query plan. The query plan is a tree showing how the query will be executed. There, you can see in which order the clauses from the query will be executed. The query plan returned by the EXPLAIN statement can be read from bottom to top.
 
@@ -283,7 +297,7 @@ The output is straightforward. The query begins by reading data from the `nyc_ta
 
 Here, we can note that no primary keys are used, which makes sense as we didn't define any when we created the table. As a result, ClickHouse is doing a full scan of the table for the query. 
 
-**Explain Pipeline**
+#### Inspect the query pipeline {#inspect-query-pipeline}
 
 EXPLAIN Pipeline shows the concrete execution strategy for the query. There, you can see how ClickHouse actually executed the generic query plan we looked at previously.
 
@@ -318,3 +332,7 @@ Query id: c7e11e7b-d970-4e35-936c-ecfc24e3b879
 Here, we can note the number of threads used to execute the query: 59 threads, which indicates a high parallelization. This speeds up the query, which would take longer to execute on a smaller machine. The number of threads running in parallel can explain the high volume of memory the query uses. 
 
 Ideally, you would investigate all your slow queries the same way to identify unnecessary complex query plans and understand the number of rows read by each query and the resources consumed.
+
+## Next steps {#next-steps}
+
+Continue with [Isolate query bottlenecks](/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks) to establish a repeatable comparison and determine which part of the query to investigate first.
