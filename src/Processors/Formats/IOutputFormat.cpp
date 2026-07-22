@@ -94,6 +94,15 @@ void IOutputFormat::writeProgressIfNeededUnlocked()
     has_progress_update_to_write = false;
 }
 
+void IOutputFormat::writeFramingPayloadBoundary(FramedPacketKind kind)
+{
+    /// Drain format-owned buffers into the framing payload before taking the boundary
+    /// (see the declaration for the rationale). `out` is the framing's payload buffer here,
+    /// so the `out.next()` inside `flushImpl` is a cheap no-op on a string buffer.
+    flushImpl();
+    framing->onPayload(kind);
+}
+
 void IOutputFormat::work()
 {
     std::lock_guard lock(writing_mutex);
@@ -120,27 +129,27 @@ void IOutputFormat::work()
             result_bytes += current_chunk.allocatedBytes();
             consume(std::move(current_chunk));
             if (framing)
-                framing->onPayload(FramedPacketKind::Data);
+                writeFramingPayloadBoundary(FramedPacketKind::Data);
             break;
         case Totals:
             writeSuffixIfNeeded();
             if (framing)
-                framing->onPayload(FramedPacketKind::Data);
+                writeFramingPayloadBoundary(FramedPacketKind::Data);
             if (auto totals = prepareTotals(std::move(current_chunk)))
             {
                 consumeTotals(std::move(totals));
                 are_totals_written = true;
                 if (framing)
-                    framing->onPayload(FramedPacketKind::Totals);
+                    writeFramingPayloadBoundary(FramedPacketKind::Totals);
             }
             break;
         case Extremes:
             writeSuffixIfNeeded();
             if (framing)
-                framing->onPayload(FramedPacketKind::Data);
+                writeFramingPayloadBoundary(FramedPacketKind::Data);
             consumeExtremes(std::move(current_chunk));
             if (framing)
-                framing->onPayload(FramedPacketKind::Extremes);
+                writeFramingPayloadBoundary(FramedPacketKind::Extremes);
             break;
     }
 
@@ -175,7 +184,7 @@ void IOutputFormat::write(const Block & block)
     consume(Chunk(block.getColumns(), block.rows()));
 
     if (framing)
-        framing->onPayload(FramedPacketKind::Data);
+        writeFramingPayloadBoundary(FramedPacketKind::Data);
 
     if (auto_flush)
         flushImpl();
@@ -219,6 +228,8 @@ void IOutputFormat::finalizeUnlocked()
             /// Emit the format suffix (if any) as the last data packet now, but leave the trailing
             /// logs, profile events, exception packet and stream close to the deferred
             /// `framing->finalize()` call, so logs emitted after this point are captured too.
+            /// Format-owned buffers were already drained by `finalizeBuffers` above (they are
+            /// finalized, so `flushImpl` must not be called here - see `writeFramingPayloadBoundary`).
             framing->onPayload(FramedPacketKind::Data);
         else
             framing->finalize();
@@ -238,11 +249,11 @@ void IOutputFormat::setTotals(const Block & totals)
     std::lock_guard lock(writing_mutex);
     writeSuffixIfNeeded();
     if (framing)
-        framing->onPayload(FramedPacketKind::Data);
+        writeFramingPayloadBoundary(FramedPacketKind::Data);
     consumeTotals(Chunk(totals.getColumns(), totals.rows()));
     are_totals_written = true;
     if (framing)
-        framing->onPayload(FramedPacketKind::Totals);
+        writeFramingPayloadBoundary(FramedPacketKind::Totals);
 }
 
 void IOutputFormat::setExtremes(const Block & extremes)
@@ -250,10 +261,10 @@ void IOutputFormat::setExtremes(const Block & extremes)
     std::lock_guard lock(writing_mutex);
     writeSuffixIfNeeded();
     if (framing)
-        framing->onPayload(FramedPacketKind::Data);
+        writeFramingPayloadBoundary(FramedPacketKind::Data);
     consumeExtremes(Chunk(extremes.getColumns(), extremes.rows()));
     if (framing)
-        framing->onPayload(FramedPacketKind::Extremes);
+        writeFramingPayloadBoundary(FramedPacketKind::Extremes);
 }
 
 void IOutputFormat::onProgress(const Progress & progress)

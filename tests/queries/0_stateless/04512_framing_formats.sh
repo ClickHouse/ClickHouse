@@ -663,3 +663,48 @@ echo '--- JSONEachPacketString accepts JSON with a non-UTF-8 type name when a va
 data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
     -d "SELECT CAST((1, 'x') AS Tuple(\`a\xFFb\` UInt8, c String)) AS t FORMAT JSON" | grep -c '"packet":"data"')
 [ "$data_packets" -ge 1 ] && echo 'JSON (value type validated, meta.type replaced) accepted: OK'
+
+# `XML` serializes the column names and type names into `<name>` / `<type>` elements through XML
+# escaping only, which does not validate UTF-8, and its UTF-8 validation buffer is installed only
+# when some column's value type may itself emit invalid UTF-8 - the same carrier as the
+# full-document JSON formats above.
+echo '--- JSONEachPacketString is rejected for XML with a non-UTF-8 column name'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT 1 AS `a\xFFb` FORMAT XML' \
+    | grep -o -m1 'is not compatible with the output format XML'
+
+echo '--- JSONEachPacketString is rejected for XML with a non-UTF-8 type name'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT XML' \
+    | grep -o -m1 'is not compatible with the output format XML'
+
+echo '--- EventStream base64-encodes XML with a non-UTF-8 type name'
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT XML'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream&output_format_write_statistics=0${SINGLE_BLOCK}" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT XML' \
+    | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' | while IFS= read -r payload; do printf '%s' "$payload" | base64 -d; done \
+    | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}&output_format_write_statistics=0" -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT XML') \
+    && echo 'XML payload with a non-UTF-8 type name round-trips' || echo 'MISMATCH'
+
+echo '--- JSONEachPacketString accepts XML with a valid UTF-8 (multi-byte) column name'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT 1 AS `col\xE2\x9C\x93` FORMAT XML' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'XML (valid UTF-8 column name) accepted: OK'
+
+# When a value type may itself emit invalid UTF-8 (here a `String` column), the validating buffer is
+# installed and also validates the `<name>` / `<type>` metadata strings, so the output is accepted.
+echo '--- JSONEachPacketString accepts XML with a non-UTF-8 column name when a value type is validated'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d "SELECT 'x' AS \`a\xFFb\` FORMAT XML" | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'XML (value type validated, metadata replaced) accepted: OK'
+
+# Formats behind the UTF-8 validation adaptor hold formatted bytes in the adaptor's buffer until a
+# flush. They must be drained into the framing payload at every packet boundary: otherwise the main
+# rows would surface only at a later boundary and the totals / extremes bytes would be mislabeled as
+# `data` packets of the next boundary. `FORMAT JSON` installs the validating buffer here because of
+# the `String` key column, and the packet kinds and contents below pin the correct attribution.
+echo '--- format-owned UTF-8 validation buffers are drained at packet boundaries (JSON with totals and extremes)'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&extremes=1&output_format_write_statistics=0${SINGLE_BLOCK}" \
+    -d "SELECT toString(intDiv(number, 2)) AS k, count() AS c FROM numbers(4) GROUP BY k WITH TOTALS ORDER BY k FORMAT JSON" \
+    | grep -v -e '"packet":"progress"' -e '"packet":"profile_events"'
