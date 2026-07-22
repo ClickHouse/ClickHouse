@@ -490,7 +490,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     merge_settings_ast_with_override(target_settings_ast, select_with_union->settings_ast);
                     const auto & children = select_with_union->list_of_selects->children;
                     if (!children.empty())
-                        self(self, children.back(), false);
+                        self(self, children.back(), true);
                     return;
                 }
 
@@ -499,7 +499,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     merge_settings_ast_with_override(target_settings_ast, intersect_except->settings());
                     auto children = intersect_except->getListOfSelects();
                     if (!children.empty())
-                        self(self, children.back(), false);
+                        self(self, children.back(), true);
                     return;
                 }
 

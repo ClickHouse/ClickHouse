@@ -53,8 +53,8 @@ set-op branch-local source settings stay local
 0
 0
 set-op source settings keep last-branch precedence
-1
-1
+2
+2
 source default settings merged with trailing settings
 3
 3

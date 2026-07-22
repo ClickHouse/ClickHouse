@@ -126,13 +126,13 @@ SELECT id FROM t_ret_settings ORDER BY id;
 SELECT 'set-op source settings keep last-branch precedence';
 TRUNCATE TABLE t_ret_settings;
 INSERT INTO t_ret_settings
-SELECT 1
+SELECT toUInt64(getSettingOrDefault('custom_insert_source', 'unset') = 'x')
 UNION ALL
-(SELECT number FROM numbers(10) SETTINGS max_result_rows = 1, result_overflow_mode = 'break')
-SETTINGS max_result_rows = 5, result_overflow_mode = 'break'
-RETURNING (SELECT count() FROM t_ret_settings);
+(SELECT toUInt64(getSettingOrDefault('custom_insert_source', 'unset') = 'x') SETTINGS custom_insert_source = 'x')
+SETTINGS custom_insert_source = 'y'
+RETURNING (SELECT sum(id) FROM t_ret_settings);
 
-SELECT count() FROM t_ret_settings;
+SELECT sum(id) FROM t_ret_settings;
 
 -- Source DEFAULT settings parsed before RETURNING must survive merge with trailing source settings.
 SELECT 'source default settings merged with trailing settings';
