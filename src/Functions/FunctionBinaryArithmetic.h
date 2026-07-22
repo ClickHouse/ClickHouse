@@ -23,6 +23,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -902,6 +903,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
     FunctionOverloadResolverPtr prepared_merge_intervals_function;
     FunctionOverloadResolverPtr prepared_tuple_function;
     FunctionOverloadResolverPtr prepared_tuple_and_number_function;
+    FunctionOverloadResolverPtr prepared_exponential_time_decaying_add_function;
 
     /// Same-typed sibling built for the array element types. executeArraysImpl/executeArrayWithNumericImpl
     /// evaluate the operation on the array element types, which differ from this function's (array)
@@ -2121,6 +2123,12 @@ public:
             prepared_interval_function = getFunctionForIntervalArithmetic(type0, type1, context_);
             prepared_date_tuple_of_intervals_function = getFunctionForDateTupleOfIntervalsArithmetic(type0, type1, context_);
             prepared_merge_intervals_function = getFunctionForMergeIntervalsArithmetic(type0, type1, context_);
+            if constexpr (is_plus)
+            {
+                if (context_ && isExponentialTimeDecayingFloat64(type0) && isExponentialTimeDecayingFloat64(type1))
+                    prepared_exponential_time_decaying_add_function
+                        = FunctionFactory::instance().get("exponentialTimeDecayingAdd", context_);
+            }
             prepared_tuple_function = getFunctionForTupleArithmetic(type0, type1, context_);
             prepared_tuple_and_number_function = getFunctionForTupleAndNumberArithmetic(type0, type1, context_);
 
@@ -2176,6 +2184,23 @@ public:
 
     static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context_)
     {
+        if constexpr (is_plus)
+        {
+            if (isExponentialTimeDecayingFloat64(arguments[0]) && isExponentialTimeDecayingFloat64(arguments[1]))
+            {
+                const auto & left_time_type = getExponentialTimeDecayingFloat64TimeType(arguments[0]);
+                const auto & right_time_type = getExponentialTimeDecayingFloat64TimeType(arguments[1]);
+                if (!left_time_type->equals(*right_time_type))
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Arguments of function {} must use the same time type, got {} and {}",
+                        name,
+                        left_time_type->getName(),
+                        right_time_type->getName());
+                return arguments[0];
+            }
+        }
+
         /// Special case when multiply aggregate function state
         if (isAggregateMultiply(arguments[0], arguments[1]))
         {
@@ -3163,6 +3188,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         if (prepared_merge_intervals_function)
         {
             return executeIntervalTupleOfIntervalsPlusMinus(arguments, result_type, input_rows_count, prepared_merge_intervals_function);
+        }
+
+        if (prepared_exponential_time_decaying_add_function)
+        {
+            return prepared_exponential_time_decaying_add_function->build(arguments)->execute(
+                arguments, result_type, input_rows_count, /* dry_run = */ false);
         }
 
         /// Special case when the function is plus, minus or multiply, both arguments are tuples.

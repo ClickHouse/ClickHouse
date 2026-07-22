@@ -3750,7 +3750,10 @@ LIMIT 9
     FunctionDocumentation::Description exponentialTimeDecayedSum_description = R"(
 Returns the sum of values weighted by exponential decay relative to the greatest time value.
 The weight is halved for each `x` time units between a value's time and the greatest time.
+For `DateTime` and `DateTime64`, `x` is measured in seconds.
 Aggregate states can be combined independently of the input order, including in an `AggregatingMergeTree`.
+The aggregate form returns `ExponentialTimeDecayingFloat64`, which exposes the greatest time and can be evaluated at another time.
+The window form returns `Float64`.
 The aggregate-function form is experimental and requires `allow_experimental_time_decay_aggregate_functions = 1`.
 The window-function form is not affected by this setting.
     )";
@@ -3760,9 +3763,12 @@ The window-function form is not affected by this setting.
         {"t", "Time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::Parameters exponentialTimeDecayedSum_parameters = {
-        {"x", "Half-life period.", {"(U)Int*", "Float*", "Decimal"}}
+        {"x", "Half-life period in the time argument's units; seconds for DateTime and DateTime64.",
+            {"(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue exponentialTimeDecayedSum_returned_value = {"Returns the exponentially weighted sum relative to the greatest time value.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue exponentialTimeDecayedSum_returned_value = {
+        "The aggregate form returns an ExponentialTimeDecayingFloat64 value; the window form returns Float64.",
+        {"ExponentialTimeDecayingFloat64", "Float64"}};
     FunctionDocumentation::Examples exponentialTimeDecayedSum_examples = {
     {
         "Window function usage with visual representation",
@@ -3777,7 +3783,7 @@ FROM
     SELECT
     (number = 0) OR (number >= 25) AS value,
     number AS time,
-    exponentialTimeDecayedSum(10)(value, time) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS exp_smooth
+    exponentialTimeDecayedSum(6.931471805599453)(value, time) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS exp_smooth
     FROM numbers(50)
     );
         )",
@@ -3861,7 +3867,8 @@ The weight is halved for each `x` time units between a value's time and the grea
         {"timeunit", "Timeunit.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::Parameters exponentialTimeDecayedMax_parameters = {
-        {"x", "Half-life period.", {"(U)Int*", "Float*", "Decimal"}}
+        {"x", "Half-life period in the time argument's units; seconds for DateTime and DateTime64.",
+            {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue exponentialTimeDecayedMax_returned_value = {"Returns the maximum of the exponentially smoothed weighted moving average at `t` and `t-1`.", {"Float64"}};
     FunctionDocumentation::Examples exponentialTimeDecayedMax_examples = {
@@ -3878,7 +3885,7 @@ FROM
     SELECT
     (number = 0) OR (number >= 25) AS value,
     number AS time,
-    exponentialTimeDecayedMax(10)(value, time) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS exp_smooth
+    exponentialTimeDecayedMax(6.931471805599453)(value, time) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS exp_smooth
     FROM numbers(50)
     );
         )",
@@ -3951,7 +3958,10 @@ FROM
     FunctionDocumentation::Description exponentialTimeDecayedCount_description = R"(
 Returns the sum of exponential weights relative to the greatest time value.
 The weight is halved for each `x` time units between a value's time and the greatest time.
+For `DateTime` and `DateTime64`, `x` is measured in seconds.
 Aggregate states can be combined independently of the input order, including in an `AggregatingMergeTree`.
+The aggregate form returns `ExponentialTimeDecayingFloat64`, which exposes the greatest time and can be evaluated at another time.
+The window form returns `Float64`.
 The aggregate-function form is experimental and requires `allow_experimental_time_decay_aggregate_functions = 1`.
 The window-function form is not affected by this setting.
     )";
@@ -3960,9 +3970,12 @@ The window-function form is not affected by this setting.
         {"t", "Time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::Parameters exponentialTimeDecayedCount_parameters = {
-        {"x", "Half-life period.", {"(U)Int*", "Float*", "Decimal"}}
+        {"x", "Half-life period in the time argument's units; seconds for DateTime and DateTime64.",
+            {"(U)Int*", "Float*", "Decimal"}}
     };
-    FunctionDocumentation::ReturnedValue exponentialTimeDecayedCount_returned_value = {"Returns the sum of exponential weights relative to the greatest time value.", {"Float64"}};
+    FunctionDocumentation::ReturnedValue exponentialTimeDecayedCount_returned_value = {
+        "The aggregate form returns an ExponentialTimeDecayingFloat64 value; the window form returns Float64.",
+        {"ExponentialTimeDecayingFloat64", "Float64"}};
     FunctionDocumentation::Examples exponentialTimeDecayedCount_examples = {
     {
         "Window function usage with visual representation",
@@ -3977,7 +3990,7 @@ FROM
     SELECT
         (number % 5) = 0 AS value,
         number AS time,
-        exponentialTimeDecayedCount(10)(time) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS exp_smooth
+        exponentialTimeDecayedCount(6.931471805599453)(time) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS exp_smooth
     FROM numbers(50)
 )
         )",
@@ -4064,7 +4077,8 @@ The window-function form is not affected by this setting.
         {"t", "Time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::Parameters exponentialTimeDecayedAvg_parameters = {
-        {"x", "Half-life period.", {"(U)Int*", "Float*", "Decimal"}}
+        {"x", "Half-life period in the time argument's units; seconds for DateTime and DateTime64.",
+            {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue exponentialTimeDecayedAvg_returned_value = {"Returns the exponentially weighted average relative to the greatest time value.", {"Float64"}};
     FunctionDocumentation::Examples exponentialTimeDecayedAvg_examples = {
@@ -4081,7 +4095,7 @@ FROM
     SELECT
     (number = 0) OR (number >= 25) AS value,
     number AS time,
-    exponentialTimeDecayedAvg(10)(value, time) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS exp_smooth
+    exponentialTimeDecayedAvg(6.931471805599453)(value, time) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS exp_smooth
     FROM numbers(50)
     )
         )",

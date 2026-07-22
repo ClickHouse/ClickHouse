@@ -8237,7 +8237,9 @@ Allows to use the MaterializedPostgreSQL table engine. Disabled by default, beca
 Enable experimental functions for funnel analysis.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_time_decay_aggregate_functions, false, R"(
-Enable the experimental aggregate-function forms of `exponentialTimeDecayedSum`, `exponentialTimeDecayedAvg`, and `exponentialTimeDecayedCount`.
+Enable the experimental aggregate-function forms of `exponentialTimeDecayedSum`, `exponentialTimeDecayedAvg`,
+and `exponentialTimeDecayedCount`,
+and the scalar functions for `ExponentialTimeDecayingFloat64` values.
 The window-function forms are not affected by this setting.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_nlp_functions, false, R"(
