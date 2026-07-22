@@ -867,6 +867,11 @@ struct IcuTextBinding
 }
 #endif
 
+String IcuTokenizer::getDescription() const
+{
+    return fmt::format("icu({})", quoteString(locale));
+}
+
 bool IcuTokenizer::nextInString(
     [[maybe_unused]] const char * data,
     [[maybe_unused]] size_t length,

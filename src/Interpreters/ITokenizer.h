@@ -444,7 +444,7 @@ struct IcuTokenizer final : public ITokenizerHelper<IcuTokenizer>
 
     static const char * getName() { return "icu"; }
     static const char * getExternalName() { return getName(); }
-    String getDescription() const override { return fmt::format("icu('{}')", locale); }
+    String getDescription() const override;
 
     bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
