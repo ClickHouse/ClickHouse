@@ -42,6 +42,8 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
+#include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTUndropQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTWatchQuery.h>
@@ -1182,6 +1184,10 @@ struct CollectTablesData
         /// (recorded by the collector from the AST shape that referenced the table). Used by the
         /// preflight in `reattachTablesUsedInQuery` to keep access-rejected queries side-effect free.
         AccessFlags required_access;
+        /// Whether the outer query fails when this table does not exist (recorded by the collector from
+        /// the AST shape that referenced the table). Used by the existence preflight in
+        /// `reattachTablesUsedInQuery` to keep queries referencing a missing table side-effect free.
+        bool existence_required = true;
     };
 
     explicit CollectTablesData(ContextPtr context_) : context(std::move(context_)) {}
@@ -1189,7 +1195,7 @@ struct CollectTablesData
     const ContextPtr context;
     std::vector<CollectedTable> tables;
 
-    void addTableIfNotEmpty(const String & database, const String & table, const std::unordered_set<String> & active_ctes, const AccessFlags & required_access)
+    void addTableIfNotEmpty(const String & database, const String & table, const std::unordered_set<String> & active_ctes, const AccessFlags & required_access, bool existence_required = true)
     {
         if (table.empty())
             return;
@@ -1202,6 +1208,9 @@ struct CollectTablesData
             ? StorageID("", table)
             : StorageID(database, table);
 
+        /// Note: this resolves only the names (e.g. substitutes the current database) — it does not check
+        /// that the table exists in the catalog. Existence is checked by the existence preflight in
+        /// `reattachTablesUsedInQuery`, which is why `existence_required` is carried in `CollectedTable`.
         auto resolved = context->tryResolveStorageID(storage_id);
         if (!resolved)
             return;
@@ -1210,7 +1219,7 @@ struct CollectTablesData
         if (resolved.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE)
             return;
 
-        tables.emplace_back(CollectedTable{std::move(resolved), required_access});
+        tables.emplace_back(CollectedTable{std::move(resolved), required_access, existence_required});
     }
 };
 
@@ -1255,6 +1264,26 @@ AccessFlags requiredAccessForTableQuery(const IAST & ast)
     if (ast.as<ASTWatchQuery>())
         return AccessType::SELECT;
     return AccessFlags::allFlagsGrantableOnTableLevel();
+}
+
+/// Whether the query fails when its main table does not exist. References for which a missing table is a
+/// legitimate outcome keep the collector's ignore-on-miss behavior instead of raising
+/// `has_unresolved_required_table`: `CREATE`/`ATTACH` name the table they are about to register (for
+/// `CREATE OR REPLACE` an existing table is possible but not required), `EXISTS ...` answers `0` instead of
+/// failing, `DROP`/`DETACH ... IF EXISTS` is a no-op on a missing table, and `UNDROP` names a table that is
+/// currently dropped, hence never resolvable through the catalog. Everything else (e.g. `SHOW CREATE`,
+/// `CHECK TABLE`, `OPTIMIZE`, `ALTER`, `TRUNCATE`, plain `DROP`) requires the table to exist.
+bool mainTableExistenceRequired(const IAST & ast)
+{
+    if (ast.as<ASTCreateQuery>())
+        return false;
+    if (ast.as<ASTExistsTableQuery>() || ast.as<ASTExistsViewQuery>() || ast.as<ASTExistsDictionaryQuery>())
+        return false;
+    if (const auto * drop = ast.as<ASTDropQuery>())
+        return !drop->if_exists;
+    if (ast.as<ASTUndropQuery>())
+        return false;
+    return true;
 }
 
 /// Walk the AST and collect tables, tracking CTE scope so that an in-scope CTE name does not cause us to
@@ -1419,8 +1448,10 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
             /// (`RestorerFromBackup` checks `CREATE_*`/`INSERT` or `SHOW_*` flags depending on the restored
             /// object kind and mode), so require all table-level flags — over-requiring only skips
             /// randomization. `BACKUP TABLE` checks `BACKUP` on the source table.
+            /// The restore destination is intentionally optional: `RESTORE TABLE old AS new` usually creates
+            /// `new`, so a miss is the normal case, not a sign the query is going to fail.
             if (backup->kind == ASTBackupQuery::RESTORE)
-                data.addTableIfNotEmpty(element.new_database_name, element.new_table_name, active_ctes, AccessFlags::allFlagsGrantableOnTableLevel());
+                data.addTableIfNotEmpty(element.new_database_name, element.new_table_name, active_ctes, AccessFlags::allFlagsGrantableOnTableLevel(), /* existence_required */ false);
             else
                 data.addTableIfNotEmpty(element.database_name, element.table_name, active_ctes, AccessType::BACKUP);
         }
@@ -1432,7 +1463,7 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         /// unqualified. Resolving it through the persistent catalog would detach an unrelated persistent
         /// table of the same name that the query never touches, so skip temporary-table references.
         if (!query_with_output->isTemporary())
-            data.addTableIfNotEmpty(query_with_output->getDatabase(), query_with_output->getTable(), active_ctes, requiredAccessForTableQuery(*ast));
+            data.addTableIfNotEmpty(query_with_output->getDatabase(), query_with_output->getTable(), active_ctes, requiredAccessForTableQuery(*ast), mainTableExistenceRequired(*ast));
 
         /// Some `ASTQueryWithTableAndOutput` classes reference additional real tables that live neither in the
         /// main `database`/`table` nor in child AST nodes, yet the outer query's own access check validates them
@@ -1503,10 +1534,27 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             if (inserted)
                 deduped.push_back(std::move(table));
             else
+            {
                 deduped[it->second].required_access |= table.required_access;
+                deduped[it->second].existence_required |= table.existence_required;
+            }
         }
         data.tables = std::move(deduped);
     }
+
+    /// Existence preflight — keep queries referencing a missing table side-effect free. A required
+    /// reference that is absent from the catalog means the query itself is going to fail (typically with
+    /// `UNKNOWN_TABLE`) when its interpreter resolves the same name, so skip the hook for the whole query
+    /// instead of first `DETACH`/`ATTACH`-ing the references that do exist (e.g. `src` in
+    /// `SELECT * FROM src JOIN missing USING a` or `dst` in `CREATE OR REPLACE TABLE dst AS missing`).
+    /// Optional references — ones the query is allowed to create or ignore, such as the destination of
+    /// `RESTORE ... AS new` or the target of a plain `CREATE` — legitimately may not exist and do not
+    /// disable the hook; the reattach loop below skips them individually. Like the access preflight, this
+    /// is a best-effort, point-in-time check: a table dropped concurrently after it is not caught here,
+    /// and the loop below re-resolves each table before detaching it.
+    for (const auto & table : data.tables)
+        if (table.existence_required && !DatabaseCatalog::instance().isTableExist(table.id, context))
+            return;
 
     /// Access preflight — keep access-rejected queries side-effect free. The outer query's own access
     /// checks run only later, when its interpreter is constructed, so without this check a user who may

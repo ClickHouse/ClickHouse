@@ -354,3 +354,35 @@ fi
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_update"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${UPDATE_USER}"
+
+# A required table reference that does not exist means the query itself is going to fail (with
+# UNKNOWN_TABLE, UNKNOWN_IDENTIFIER under the analyzer for the `IN` form, or CANNOT_GET_CREATE_TABLE_QUERY
+# for the `CREATE ... AS src` form), so the hook must skip entirely: the references that do exist must NOT
+# be detached first. Covers FROM/JOIN, the `IN table` form, and the `CREATE ... AS src` string field.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_unres"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_unres (a UInt64) ENGINE = MergeTree ORDER BY a"
+
+function check_fails_without_detach()
+{
+    check_if_detached_impl "$1" "$2"
+    if [ "$REATTACH_STATUS" -eq 0 ]; then
+        echo "FAIL (query unexpectedly succeeded)"
+    elif ! echo "$REATTACH_OUTPUT" | grep -q -e "UNKNOWN_TABLE" -e "UNKNOWN_IDENTIFIER" -e "CANNOT_GET_CREATE_TABLE_QUERY"; then
+        echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+    elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.$2"; then
+        echo "FAIL (table was detached for a query referencing a missing table)"
+    else
+        echo "OK"
+    fi
+}
+
+check_fails_without_detach "SELECT * FROM t_reattach_unres JOIN t_reattach_unres_missing USING a" "t_reattach_unres"
+check_fails_without_detach "SELECT * FROM t_reattach_unres WHERE a IN t_reattach_unres_missing" "t_reattach_unres"
+check_fails_without_detach "CREATE OR REPLACE TABLE t_reattach_unres AS t_reattach_unres_missing" "t_reattach_unres"
+
+# An OPTIONAL miss must not disable the hook: the target of a plain `CREATE ... AS src` does not exist yet
+# (that is the point of the query), and the resolvable source is still detached.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_unres_new"
+check_if_detached "CREATE TABLE t_reattach_unres_new AS t_reattach_unres" "t_reattach_unres"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_unres_new"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_unres"
