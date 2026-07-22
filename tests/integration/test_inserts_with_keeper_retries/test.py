@@ -231,7 +231,7 @@ def test_ambiguous_zk_commit_query_timeout_preserves_data(started_cluster):
         )
 
         error = job.get(timeout=60)
-        assert "UNKNOWN_STATUS_OF_INSERT" in error
+        assert "TIMEOUT_EXCEEDED" in error
 
         node1.query(
             "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
@@ -311,7 +311,7 @@ def test_ambiguous_zk_commit_kill_preserves_data(started_cluster):
         )
 
         error = job.get(timeout=60)
-        assert "UNKNOWN_STATUS_OF_INSERT" in error
+        assert "QUERY_WAS_CANCELLED" in error
 
         node1.query(
             "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
