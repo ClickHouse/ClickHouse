@@ -231,21 +231,22 @@ DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 -- The query-tree surface (EXPLAIN QUERY TREE) must hide the same carriers as the logged query text:
 -- a credential-bearing url (masked whole, since a tree dump cannot represent partial masking), the
 -- positional secrets, and the values of headers(...) / extra_credentials(...).
+-- run_passes = 0 keeps the table function unresolved: the masking visitor runs before the passes
+-- either way, and resolution would touch the storage (URI validation, credential checks), which
+-- varies across test configurations.
 SET enable_analyzer = 1;
-EXPLAIN QUERY TREE SELECT * FROM s3('https://user:SEKRIT_PW@localhost:11111/test/04510qt?X-Amz-Signature=SEKRIT_SIG', 'ak', 'SEKRIT_SAK', 'TSV', 'x UInt8');
-EXPLAIN QUERY TREE SELECT * FROM s3('http://localhost:11111/test/04510qt', NOSIGN, 'TSV', 'x UInt8', headers('Authorization' = 'SEKRIT_HDR'));
-EXPLAIN QUERY TREE SELECT * FROM s3('http://localhost:11111/test/04510qt', 'ak', 'SEKRIT_SAK', 'TSV', 'x UInt8', extra_credentials(external_id = 'SEKRIT_EID'));
+EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3('https://user:SEKRIT_PW@localhost:11111/test/04510qt?X-Amz-Signature=SEKRIT_SIG', 'ak', 'SEKRIT_SAK', 'TSV', 'x UInt8');
+EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3('http://localhost:11111/test/04510qt', NOSIGN, 'TSV', 'x UInt8', headers('Authorization' = 'SEKRIT_HDR'));
+EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3('http://localhost:11111/test/04510qt', 'ak', 'SEKRIT_SAK', 'TSV', 'x UInt8', extra_credentials(external_id = 'SEKRIT_EID'));
 
 -- Identifier-valued secrets (the parsers evaluate identifiers as literals) have no display mask of
 -- their own, so the dump-only tree replaces them with a hidden constant.
-EXPLAIN QUERY TREE SELECT * FROM s3('http://localhost:11111/test/04510qt', 'ak', 'SEKRIT_SAK', 'TSV', 'x UInt8', session_token = SEKRIT_IDTOK);
-EXPLAIN QUERY TREE SELECT * FROM s3('http://localhost:11111/test/04510qt', NOSIGN, 'TSV', 'x UInt8', headers('Authorization' = SEKRIT_BEARER));
+EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3('http://localhost:11111/test/04510qt', 'ak', 'SEKRIT_SAK', 'TSV', 'x UInt8', session_token = SEKRIT_IDTOK);
+EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3('http://localhost:11111/test/04510qt', NOSIGN, 'TSV', 'x UInt8', headers('Authorization' = SEKRIT_BEARER));
 
 -- A named url override is an `equals` node in the tree; its credential-bearing value must be hidden.
--- Collections are a global namespace and their DDL takes no parameterized name, so the collection is
--- created idempotently and never dropped: a drop would race with a parallel run of this test.
-CREATE NAMED COLLECTION IF NOT EXISTS nc_04510_url_override AS format = 'TSV';
-EXPLAIN QUERY TREE SELECT * FROM s3(nc_04510_url_override, url = 'https://user:SEKRIT_PW@localhost:11111/test/04510qt?X-Amz-Signature=SEKRIT_SIG', structure = 'x UInt8');
+-- Without passes the collection need not exist.
+EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3(nc_04510_missing, url = 'https://user:SEKRIT_PW@localhost:11111/test/04510qt?X-Amz-Signature=SEKRIT_SIG', structure = 'x UInt8');
 
 SYSTEM FLUSH LOGS query_log;
 
