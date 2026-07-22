@@ -897,8 +897,48 @@ Below version `8` the announcement is fire-and-forget regardless of mode, and th
 | 10   | MergeTreeReadTaskResponse | not specified       | Parallel read task response |
 | 11   | SSHChallengeRequest       | [SSH auth](#ssh-authentication) | SSH auth challenge request |
 | 12   | SSHChallengeResponse      | [SSH auth](#ssh-authentication) | SSH auth challenge response |
-| 13   | QueryPlan                 | not specified       | Query plan |
+| 13   | QueryPlan                 | [QueryPlan](#queryplan-packet) | Query plan |
 | 14   | MergeTreeAllRangesAnnouncementResponse | [MergeTreeAllRangesAnnouncementResponse](#mergetreeallrangesannouncementresponse) | Initiator's reply to a follower's [`MergeTreeAllRangesAnnouncement`](#packet-type-reference) (gated on `parallel_replicas_protocol_version ≥ 8` — see [VERSIONED_PARALLEL_REPLICAS_PROTOCOL](#feature-table)). Inter-server only — external clients never send. |
+
+### QueryPlan packet {#queryplan-packet}
+
+Inter-server only: carries a pre-built query plan at stage `7` (QueryPlan). External clients
+never send it, and reception requires the server setting `process_query_plan_packet`.
+The sender serializes for the version the receiver advertised in
+[ServerHello](#serverhello) (`query_plan_serialization_version`) and never above it; the
+receiver rejects a version above its own.
+
+The body starts with `VarUInt plan_version`. For `plan_version ≤ 3` the rest of the body is a
+legacy stream whose layout is not specified here. For `plan_version ≥ 4`:
+
+```
+VarUInt plan_version
+VarUInt envelope_size
+bytes   envelope        -- exactly envelope_size bytes
+```
+
+The envelope is three consecutive sections:
+
+1. **Skeleton** — `VarUInt skeleton_size` followed by exactly that many bytes:
+   `VarUInt node_count`, then per node in pre-order: `VarUInt child_count`, `String step_name`,
+   `VarUInt step_format_version`, `UInt8 node_flags` (bit 0: node has an output header),
+   `String step_description`, the output header (if flagged: `VarUInt column_count`, then per
+   column `String name` + binary-encoded data type; constants are not carried), `VarUInt
+   settings_count` with per setting `String name`, `UInt8 flags` (bit 0: ignorable — a reader
+   that does not know the setting skips it; without the bit it must reject), `VarUInt
+   value_size`, value bytes, then `VarUInt payload_size` and `VarUInt node_extra_size` +
+   bytes (reserved for future skeleton fields; readers skip it). After the nodes:
+   `VarUInt set_count`, then per set `UInt128 hash`, `UInt8 kind`, `VarUInt payload_size`,
+   sorted by hash.
+2. **Step payloads** — each node's payload bytes, concatenated in skeleton order; the layout of
+   a payload is step-specific and not part of this specification. A step may append fields to
+   its payload in a newer `step_format_version`; readers of older versions skip the tail via
+   the payload frame.
+3. **Set payloads** — each set's payload bytes in skeleton set order. A subquery set's payload
+   is a complete nested QueryPlan body (starting with its own `plan_version`).
+
+The skeleton alone is sufficient to validate that a plan is decodable and to render its shape;
+trailing bytes inside the envelope are rejected.
 
 ### Server → Client {#server-to-client}
 
