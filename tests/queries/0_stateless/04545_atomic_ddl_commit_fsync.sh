@@ -87,7 +87,11 @@ $CLICKHOUSE_CLIENT --query_id "$exchange_id" --fsync_metadata 1 -q \
 # metadata_dropped's own parent (the disk root) -- the last one guards the custom-metadata-disk
 # case where metadata_dropped may have been created without its own entry fsync'd. Require >= 3
 # so dropping that third guard (the exact regression being fixed) fails the test.
-$CLICKHOUSE_CLIENT --query_id "$drop_id" --fsync_metadata 1 -q \
+# Pin an async drop so the table lingers in the dropped queue for the UNDROP below (the CI
+# default profile sets this to 1, which finalizes the drop before UNDROP can run). The three
+# directory syncs are gated on fsync_metadata, not on this flag, so the count is unchanged.
+$CLICKHOUSE_CLIENT --query_id "$drop_id" --fsync_metadata 1 \
+    --database_atomic_wait_for_drop_and_detach_synchronously 0 -q \
     "drop table t2_${tag}"
 # UNDROP: the inverse move (metadata_dropped -> database metadata), two directories.
 $CLICKHOUSE_CLIENT --query_id "$undrop_id" --fsync_metadata 1 -q \
