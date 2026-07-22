@@ -29,6 +29,10 @@ public:
     /// Whether this subscription backs a bounded stream (read the first snapshot, then finish).
     bool isBounded() const { return bounded; }
 
+    /// Mark the start of an enrichment round: the safe segment stops being determined while the round
+    /// advances safe_block_numbers, and onEnrichmentRound republishes it once pending is known.
+    void beginEnrichmentRound();
+
     /// Record an enrichment round; `pending` means a block is still in flight in some partition's
     /// gap, so the safe segment is not fully determined. A resolved round (`pending == false`) also
     /// wakes a bounded source so it can finish even when nothing was advanced (e.g. an empty table).

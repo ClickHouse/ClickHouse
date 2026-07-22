@@ -53,6 +53,17 @@ void MergeTreeBoundsSubscription::disable()
     wake.notify();
 }
 
+void MergeTreeBoundsSubscription::beginEnrichmentRound()
+{
+    std::lock_guard guard(mutex);
+    if (is_disabled)
+        return;
+    /// While a round advances safe_block_numbers the safe segment is not determined; onEnrichmentRound
+    /// republishes it once pending is known. This keeps a bounded reader from snapshotting a
+    /// partially-advanced map with a stale "determined" flag.
+    safe_segment_determined = false;
+}
+
 void MergeTreeBoundsSubscription::onEnrichmentRound(bool pending)
 {
     {

@@ -117,6 +117,24 @@ TEST(MergeTreeBoundsSubscription, ResolvedRoundResolvesSnapshot)
     ASSERT_TRUE(sub.safeSegmentDetermined());
 }
 
+TEST(MergeTreeBoundsSubscription, BeginRoundClearsDetermined)
+{
+    MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/true);
+
+    /// A resolved round determines the safe segment.
+    sub.onEnrichmentRound(/*pending=*/false);
+    ASSERT_TRUE(sub.safeSegmentDetermined());
+
+    /// While the next round is advancing the map, the segment is no longer determined, so a stale
+    /// wake can't drive a partial read.
+    sub.beginEnrichmentRound();
+    ASSERT_FALSE(sub.safeSegmentDetermined());
+
+    /// The round republishes it once pending is known.
+    sub.onEnrichmentRound(/*pending=*/false);
+    ASSERT_TRUE(sub.safeSegmentDetermined());
+}
+
 TEST(MergeTreeBoundsSubscription, BoundedEnrichmentRoundWakesFd)
 {
     MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/true);
