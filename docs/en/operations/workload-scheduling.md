@@ -148,6 +148,7 @@ SELECT count() FROM my_table WHERE value = 13 SETTINGS workload = 'development'
 
 It is possible to assign a `workload` setting for background activities. Merges and mutations use `merge_workload` and `mutation_workload` server settings correspondingly. These values can also be overridden for specific tables using `merge_workload` and `mutation_workload` merge tree settings.
 
+<a id="cpu_scheduling"></a>
 ## CPU scheduling {#cpu-scheduling}
 
 To enable CPU scheduling for workloads create CPU resource and set a limit for the number of concurrent threads:
