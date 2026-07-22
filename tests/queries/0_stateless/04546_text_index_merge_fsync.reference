@@ -1,6 +1,8 @@
 extra text index file syncs on merge	6
 rows	10000
 hasToken	1428
+materialized index bytes before	0
 materialized part_type	Wide
+materialized index bytes after > 0	1
+materialized index prunes granules	1
 materialized rows	10000
-materialized hasToken	1429
