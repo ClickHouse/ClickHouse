@@ -256,7 +256,7 @@ Pipe StorageSQLite::read(
     /// A read must never materialize a missing SQLite database. In particular, query-backed storages are
     /// read-only and do not have pending generated-column reclassification, so deriving `allow_create` from
     /// that flag would create an empty file on the first read after an `ATTACH` while the file is unavailable.
-    openConnectionIfNeeded(/* throw_on_error */ true, /* allow_create */ false);
+    auto metadata_connection = openConnectionIfNeeded(/* throw_on_error */ true, /* allow_create */ false);
 
     /// Fallback: `updateExternalDynamicMetadataIfExists` normally repairs the pending classification before the
     /// snapshot is taken; this covers any path that reaches `read` without going through that hook. Idempotent.
@@ -277,17 +277,19 @@ Pipe StorageSQLite::read(
         /// Use all physical columns (ordinary + the MATERIALIZED generated columns) as the pushdown-eligible
         /// set: SQLite can filter on generated columns too, so a `WHERE` over them is still pushed down.
         ///
-        /// The exception is types the sink stores as SQLite TEXT while ClickHouse compares them by value:
-        /// `UInt64` (SQLite has no unsigned 64-bit integer type, so it is written as text to preserve values
-        /// above the signed 64-bit range), the wider integers `Int128`/`UInt128`/`Int256`/`UInt256`,
-        /// `Decimal`, dates and times, and so on (see `isPushdownSafeType`). SQLite compares such a
-        /// text-stored value lexicographically and orders every text value after every numeric one, so a
-        /// predicate pushed down verbatim would drop the wrong rows: `WHERE u = 5` never matches the text
-        /// cell `'5'`, and `WHERE u > 2` treats `'10'` as smaller than `'2'`. Exclude those columns from the
-        /// eligible set so ClickHouse applies such predicates locally instead.
+        /// The exceptions are columns whose two sides do not provably compare the same way, in which case a
+        /// pushed-down predicate could drop the wrong rows before the local re-filtering ever sees them (see
+        /// `isPushdownSafeColumn`). That covers both sides of the mapping: ClickHouse types the sink stores
+        /// as SQLite TEXT while ClickHouse compares them by value (`UInt64`, the wider integers, `Decimal`,
+        /// dates and times, ...), for which SQLite's lexicographic TEXT ordering makes `u > 2` treat `'10'`
+        /// as smaller than `'2'`; and remote columns of a pre-existing table whose declared affinity or
+        /// collation disagrees with the ClickHouse type - an `Int64` over a TEXT-affinity column, or a
+        /// `String` over a numeric-affinity or non-BINARY-collation (e.g. NOCASE) column. Such columns are
+        /// excluded from the eligible set so ClickHouse applies their predicates locally instead.
         NamesAndTypesList pushdown_columns;
         for (const auto & column : storage_snapshot->metadata->getColumns().getAllPhysical())
-            if (SQLiteFormatImpl::isPushdownSafeType(column.type))
+            if (SQLiteFormatImpl::isPushdownSafeColumn(
+                    metadata_connection.get(), remote_table_or_query.getTableName(), column.name, column.type))
                 pushdown_columns.push_back(column);
 
         query = transformQueryForExternalDatabase(

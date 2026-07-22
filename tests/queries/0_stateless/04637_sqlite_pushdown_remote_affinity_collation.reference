@@ -1,0 +1,17 @@
+Int64 over TEXT affinity, x > 2 must keep the row storing text 10:
+10
+Int64 over INTEGER affinity stays pushed down and correct:
+10
+String over INTEGER affinity, num_s < \'2\' must keep the row storing 10:
+10
+String with NOCASE collation, s > \'B\' must keep \'a\' (byte-wise order):
+a
+String with RTRIM collation, r > \'a\' must keep \'a \' (trailing space is significant):
+a 	2
+String over plain TEXT (BINARY collation) stays pushed down and correct:
+a
+View columns have no affinity, x > 2 must keep the row storing text 10:
+10
+Query: SELECT "n" FROM "t" WHERE "n" > 2
+Query: SELECT "plain" FROM "t" WHERE "plain" > 'B'
+Query: SELECT "x" FROM "t"

@@ -15,6 +15,7 @@
 #    include <IO/ReadBufferFromFileBase.h>
 #    include <IO/WriteBufferFromString.h>
 #    include <IO/copyData.h>
+#    include <Poco/String.h>
 #    include <Common/Exception.h>
 #    include <Common/NaNUtils.h>
 
@@ -240,16 +241,17 @@ inline void bindSQLiteValue(
     bindSQLiteTextValue(db, statement, sqlite_index, column, row, serialization, settings);
 }
 
-/// Whether a `WHERE` predicate on a column of this ClickHouse type may be pushed down to SQLite without the
-/// risk of false negatives. This mirrors the dispatch of `bindSQLiteValue` above: types bound as SQLite
-/// INTEGER or REAL compare numerically on both sides, and `String` is stored as its exact bytes and compares
-/// byte-wise in both systems. Every other type - `UInt64`, `Int128`/`UInt128`/`Int256`/`UInt256`, `Decimal`,
-/// dates and times, `FixedString` (whose stored text keeps the padding bytes), `Enum`, `UUID`, ... - is
-/// stored as its ClickHouse text serialization, so a pushed-down comparison can go wrong on the SQLite side:
-/// SQLite orders every TEXT value after every numeric value and otherwise compares TEXT byte-wise, so a
-/// predicate such as `x > 2` on a text-stored number treats `'10'` as smaller than `'2'` and `x = 5` never
-/// matches the cell `'5'`. Rows wrongly dropped by SQLite cannot be recovered by the local re-filtering, so
-/// such columns must be filtered by ClickHouse only.
+/// The ClickHouse-side half of the pushdown-safety check (see `isPushdownSafeColumn` below): whether a
+/// `WHERE` predicate on a column of this ClickHouse type may be pushed down to SQLite without the risk of
+/// false negatives. This mirrors the dispatch of `bindSQLiteValue` above: types bound as SQLite INTEGER or
+/// REAL compare numerically on both sides, and `String` is stored as its exact bytes and compares byte-wise
+/// in both systems. Every other type - `UInt64`, `Int128`/`UInt128`/`Int256`/`UInt256`, `Decimal`, dates and
+/// times, `FixedString` (whose stored text keeps the padding bytes), `Enum`, `UUID`, ... - is stored as its
+/// ClickHouse text serialization, so a pushed-down comparison can go wrong on the SQLite side: SQLite orders
+/// every TEXT value after every numeric value and otherwise compares TEXT byte-wise, so a predicate such as
+/// `x > 2` on a text-stored number treats `'10'` as smaller than `'2'` and `x = 5` never matches the cell
+/// `'5'`. Rows wrongly dropped by SQLite cannot be recovered by the local re-filtering, so such columns must
+/// be filtered by ClickHouse only.
 inline bool isPushdownSafeType(const DataTypePtr & type)
 {
     auto nested_type = removeLowCardinalityAndNullable(type);
@@ -259,6 +261,85 @@ inline bool isPushdownSafeType(const DataTypePtr & type)
         return true;
 
     return which.isString();
+}
+
+enum class SQLiteColumnAffinity
+{
+    Integer,
+    Text,
+    Blob,
+    Real,
+    Numeric,
+};
+
+/// The affinity SQLite assigns to a column from its declared type, following the rules of
+/// https://www.sqlite.org/datatype3.html#determination_of_column_affinity, checked in this order:
+/// a declared type containing "INT" gives INTEGER; containing "CHAR", "CLOB" or "TEXT" gives TEXT;
+/// containing "BLOB" or empty gives BLOB; containing "REAL", "FLOA" or "DOUB" gives REAL; anything else
+/// gives NUMERIC. The matching is case-insensitive.
+inline SQLiteColumnAffinity affinityFromDeclaredType(std::string_view declared_type)
+{
+    const String type = Poco::toUpper(String(declared_type));
+
+    if (type.find("INT") != String::npos)
+        return SQLiteColumnAffinity::Integer;
+    if (type.find("CHAR") != String::npos || type.find("CLOB") != String::npos || type.find("TEXT") != String::npos)
+        return SQLiteColumnAffinity::Text;
+    if (type.empty() || type.find("BLOB") != String::npos)
+        return SQLiteColumnAffinity::Blob;
+    if (type.find("REAL") != String::npos || type.find("FLOA") != String::npos || type.find("DOUB") != String::npos)
+        return SQLiteColumnAffinity::Real;
+    return SQLiteColumnAffinity::Numeric;
+}
+
+/// Whether a `WHERE` predicate on this column of the SQLite table `table_name` may be pushed down without
+/// the risk of false negatives (rows wrongly dropped by SQLite cannot be recovered by the local
+/// re-filtering; false positives are harmless because every row that comes back is re-filtered locally).
+///
+/// Two independent conditions must hold. First, the ClickHouse type must be one that compares by value on
+/// both sides (`isPushdownSafeType` above). Second, the *remote* column must actually compare the way
+/// ClickHouse does: the storage can point at an arbitrary pre-existing table, so the ClickHouse type alone
+/// proves nothing about the SQLite side. An explicit `Int64` column over a column declared TEXT stores
+/// `10`/`2` as text, and a pushed-down `x > 2` coerces the literal to text and compares lexicographically
+/// (`'10' < '2'`), dropping the row; a `String` column over a numeric-affinity column stores `'10'` as the
+/// number `10`, so `s < '2'` compares `10 < 2` numerically and drops a row ClickHouse would keep; a
+/// `String` column with a non-BINARY collation such as NOCASE or RTRIM orders differently from ClickHouse's
+/// byte-wise comparison (`'a' > 'B'` is true byte-wise but false under NOCASE). So a numeric ClickHouse type
+/// requires a numeric remote affinity (INTEGER, REAL or NUMERIC, which coerce a text operand to a number),
+/// and `String` requires an affinity that never coerces the stored text into a number (TEXT or BLOB)
+/// together with the byte-wise BINARY collation.
+///
+/// When the remote metadata cannot be fetched - the column vanished remotely, or the "table" is a view,
+/// whose expression columns have no affinity at all - the column fails closed to local filtering.
+inline bool isPushdownSafeColumn(sqlite3 * db, const String & table_name, const String & column_name, const DataTypePtr & type)
+{
+    if (!isPushdownSafeType(type))
+        return false;
+
+    /// `sqlite3_table_column_metadata` takes NUL-terminated names; a name with an embedded NUL byte would be
+    /// silently truncated and could report another column's metadata.
+    if (table_name.find('\0') != String::npos || column_name.find('\0') != String::npos)
+        return false;
+
+    const char * declared_type = nullptr;
+    const char * collation = nullptr;
+    int not_null = 0;
+    int primary_key = 0;
+    int autoincrement = 0;
+    if (SQLITE_OK
+        != sqlite3_table_column_metadata(
+            db, nullptr, table_name.c_str(), column_name.c_str(), &declared_type, &collation, &not_null, &primary_key, &autoincrement))
+        return false;
+
+    const auto affinity = affinityFromDeclaredType(declared_type ? declared_type : "");
+
+    WhichDataType which(removeLowCardinalityAndNullable(type));
+    if (which.isString())
+        return (affinity == SQLiteColumnAffinity::Text || affinity == SQLiteColumnAffinity::Blob) && collation
+            && Poco::toUpper(String(collation)) == "BINARY";
+
+    return affinity == SQLiteColumnAffinity::Integer || affinity == SQLiteColumnAffinity::Real
+        || affinity == SQLiteColumnAffinity::Numeric;
 }
 
 }
