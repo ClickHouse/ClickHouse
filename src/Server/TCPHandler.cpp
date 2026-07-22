@@ -24,6 +24,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -2534,6 +2535,15 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         data += state->query_id;
         data += client_info.initial_user;
         data += received_extra_roles;
+        /// Cover current roles in the auth hash too, mirroring the sender.
+        if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES && client_info.current_roles.has_value())
+        {
+            String current_roles_str;
+            WriteBufferFromString buffer(current_roles_str);
+            writeVectorBinary(*client_info.current_roles, buffer);
+            buffer.finalize();
+            data += current_roles_str;
+        }
 
         std::string calculated_hash = encodeSHA256(data);
         chassert(calculated_hash.size() == 32);
