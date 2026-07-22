@@ -217,9 +217,23 @@ void SQLDefinedHandlersFactory::createReplicated(const ASTCreateHandlerQuery & q
         }
 
         /// Build only after confirming the handler does not already exist, so `IF NOT EXISTS` is a true
-        /// no-op and never fails validating the unused replacement query.
-        auto handler = makeSQLDefinedHandler(query);
-        checkAmbiguity(*handler, current);
+        /// no-op and never fails validating the unused replacement query. If validation rejects the
+        /// statement, first reconcile the local snapshot to the fresh Keeper state it was decided from:
+        /// otherwise the one replica that just proved its cache is stale (e.g. `checkAmbiguity` failed
+        /// against a handler created on another replica) would keep serving the old set until the
+        /// background watch fires.
+        SQLDefinedHandlerPtr handler;
+        try
+        {
+            handler = makeSQLDefinedHandler(query);
+            checkAmbiguity(*handler, current);
+        }
+        catch (...)
+        {
+            loaded_handlers = std::move(current);
+            rebuildSnapshot(lock);
+            throw;
+        }
 
         if (metadata_storage->store(query.handler_name, handler->create_statement, /* replace */ false, version))
         {
@@ -352,8 +366,21 @@ void SQLDefinedHandlersFactory::updateReplicated(const ASTCreateHandlerQuery & a
         }
 
         /// Merge onto the statement from this same version-consistent snapshot (no extra Keeper read).
-        auto updated = metadata_storage->buildUpdatedHandler(it->second->create_statement, alter_query);
-        checkAmbiguity(*updated, current);
+        /// As in `createReplicated`: a validation failure was decided from the fresh Keeper state, so
+        /// reconcile the local snapshot to it before rethrowing, instead of leaving this replica serving
+        /// the stale set until the background watch fires.
+        SQLDefinedHandlerPtr updated;
+        try
+        {
+            updated = metadata_storage->buildUpdatedHandler(it->second->create_statement, alter_query);
+            checkAmbiguity(*updated, current);
+        }
+        catch (...)
+        {
+            loaded_handlers = std::move(current);
+            rebuildSnapshot(lock);
+            throw;
+        }
 
         if (metadata_storage->store(alter_query.handler_name, updated->create_statement, /* replace */ true, version))
         {
