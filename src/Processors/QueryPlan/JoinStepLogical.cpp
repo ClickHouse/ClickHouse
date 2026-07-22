@@ -1417,6 +1417,22 @@ static QueryPlanNode buildPhysicalJoinImpl(
     }
     table_join->setJoinOperator(join_operator);
 
+    if (logical_lookup && prepared_join_storage.storage_join)
+    {
+        /// Right keys of the Join engine whose output type is corrected after the join (USING
+        /// common-type promotion). For a LEFT/FULL join these must be emitted as Nullable so an
+        /// unmatched-left row fills NULL; the raw right key of a `JOIN ... ON` is not corrected here
+        /// and must keep its storage type. See TableJoin::getRequiredRightKeys.
+        NameSet using_promoted_right_keys;
+        for (const auto * action : actions_after_join)
+        {
+            JoinActionRef action_ref(action, expression_actions);
+            if (action->type != ActionsDAG::ActionType::INPUT && action_ref.fromRight())
+                using_promoted_right_keys.insert(action->result_name);
+        }
+        table_join->setUsingPromotedRightKeys(std::move(using_promoted_right_keys));
+    }
+
     SharedHeader left_sample_block = blockWithActionsDAGOutput(left_dag);
     SharedHeader right_sample_block = blockWithActionsDAGOutput(right_dag);
 
