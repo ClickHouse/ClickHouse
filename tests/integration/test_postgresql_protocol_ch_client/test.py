@@ -472,8 +472,10 @@ def test_datetime_scale_roundtrip(started_cluster):
 def test_datetime64_scale0_stays_text(started_cluster):
     # A `DateTime64(0)` must not be advertised as a native `timestamp(0)`: on the wire that is
     # indistinguishable from a 32-bit `DateTime`, which the reader would recover, narrowing the 64-bit
-    # range and corrupting values outside `DateTime`'s 1970..2106 window. Such a column stays on the text
-    # fallback and is read back as `String` with the full value preserved.
+    # range and corrupting values outside `DateTime`'s 1970..2106 window. A scalar such column stays on the
+    # text fallback and is read back as `String` with the full value preserved. A top-level
+    # `Array(DateTime64(0))` is advertised as a generic text array (`text[]`), so it is read back as
+    # `Array(String)` - the array structure is kept and each element carries the full value as text.
     node.query("DROP TABLE IF EXISTS test_dt64_scale0 SYNC")
     node.query(
         "CREATE TABLE test_dt64_scale0 (id UInt32, dt0 DateTime64(0), adt0 Array(DateTime64(0))) "
@@ -489,7 +491,7 @@ def test_datetime64_scale0_stays_text(started_cluster):
     assert node.query(
         "SELECT toTypeName(dt0), toTypeName(adt0) "
         f"FROM {pg_source('default', 'test_dt64_scale0')} LIMIT 1"
-    ) == "String\tString\n"
+    ) == "String\tArray(String)\n"
 
     assert node.query(
         f"SELECT dt0, adt0 FROM {pg_source('default', 'test_dt64_scale0')} ORDER BY dt0"
@@ -853,7 +855,9 @@ def test_copy_from_stdin_compound_table_name(started_cluster):
         conn.close()
 
     assert node.query("SELECT id, s FROM copy_ns.dest ORDER BY id") == "1\tone\n2\ttwo\n"
-    assert sorted(out.getvalue().splitlines()) == ["1,one", "2,two"]
+    # ClickHouse's CSV output format always quotes `String` values, so the round-tripped rows come back as
+    # `1,"one"` / `2,"two"`; the point of this test is that the compound name resolved, not the quoting.
+    assert sorted(out.getvalue().splitlines()) == ['1,"one"', '2,"two"']
     node.query("DROP DATABASE copy_ns SYNC")
 
 
@@ -896,3 +900,43 @@ def test_copy_from_stdin_client_abort_sends_copy_fail(started_cluster):
         assert cur.fetchone()[0] == 42
     finally:
         conn.close()
+
+
+def test_copy_rejects_unsupported_endpoints(started_cluster):
+    # Only the client stream is implemented: `COPY ... TO STDOUT` and `COPY ... FROM STDIN`. Any other copy
+    # endpoint - a server-side `PROGRAM`, a file path, or a mismatched `TO STDIN` / `FROM STDOUT` - must be
+    # rejected with a clean error rather than served as the client stream, which would make the server drive
+    # the wrong side of the protocol (e.g. send a `CopyInResponse` and then block waiting for `CopyData`
+    # frames a client running a server-side `PROGRAM` copy never sends). Like the other rejections, this is
+    # an ordinary error, so the connection survives and can be reused after a rollback.
+    node.query("DROP TABLE IF EXISTS test_copy_endpoint SYNC")
+    node.query(
+        "CREATE TABLE test_copy_endpoint (id UInt32) ENGINE = MergeTree ORDER BY id"
+    )
+
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        with pytest.raises(py_psql.Error, match="a source other than STDIN"):
+            cur = conn.cursor()
+            cur.copy_expert("COPY test_copy_endpoint FROM PROGRAM 'cat /dev/null'", io.StringIO())
+        conn.rollback()
+
+        with pytest.raises(py_psql.Error, match="a destination other than STDOUT"):
+            cur = conn.cursor()
+            cur.copy_expert("COPY test_copy_endpoint TO '/tmp/does_not_matter.csv'", io.StringIO())
+        conn.rollback()
+
+        with pytest.raises(py_psql.Error, match="a source other than STDIN"):
+            cur = conn.cursor()
+            cur.copy_expert("COPY test_copy_endpoint FROM STDOUT", io.StringIO())
+        conn.rollback()
+
+        # The connection is still usable after the rejections.
+        cur = conn.cursor()
+        cur.execute("SELECT 42")
+        assert cur.fetchone()[0] == 42
+    finally:
+        conn.close()
+    node.query("DROP TABLE test_copy_endpoint SYNC")
