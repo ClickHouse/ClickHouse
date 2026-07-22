@@ -107,7 +107,8 @@ public:
         const MergeTreePartInfo & info_,
         const MutableDataPartStoragePtr & data_part_storage_,
         Type part_type_,
-        const IMergeTreeDataPart * parent_part_);
+        const IMergeTreeDataPart * parent_part_,
+        bool part_may_exist_on_disk = true);
 
     virtual bool isStoredOnReadonlyDisk() const = 0;
     virtual bool isStoredOnRemoteDisk() const = 0;
@@ -386,6 +387,7 @@ public:
 
         void update(const Block & block, const NamesAndTypesList & columns);
         void merge(const MinMaxIndex & other);
+        Names getProbablyWrittenFiles(const IMergeTreeDataPart & part) const;
         /// For Store
         static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);
         /// For Load
@@ -495,6 +497,11 @@ public:
 
     /// Calculate column and secondary indices sizes on disk.
     void calculateColumnsAndSecondaryIndicesSizesOnDisk() const;
+
+    /// Returns the list of part files in the order they should be written to disk. This list is used to optimize
+    /// the layout of files in packed storage.
+    /// The list can be incomplete, in that case the remaining files should be written in any order.
+    virtual Strings getPreferredFileOrder() const { return COMMON_METADATA_FILES; }
 
     std::optional<String> getRelativePathForPrefix(const String & prefix, bool detached = false, bool broken = false) const;
 
@@ -691,6 +698,20 @@ public:
     void removeIfNeeded();
 
 protected:
+    inline static const Strings COMMON_METADATA_FILES =
+    {
+        "uuid.txt",
+        "checksums.txt",
+        "columns.txt",
+        "columns_substreams.txt",
+        "count.txt",
+        "metadata_version.txt",
+        "default_compression_codec.txt",
+        "serialization.json",
+        "partition.dat",
+        "ttl.txt",
+    };
+
     /// Primary key (correspond to primary.idx file).
     /// Lazily loaded in RAM. Contains each index_granularity-th value of primary key tuple.
     /// Note that marks (also correspond to primary key) are not always in RAM, but cached. See MarkCache.h.
