@@ -1434,13 +1434,12 @@ ORDER BY id
 SETTINGS serialization_info_version = 'with_column_ids';
 ```
 
-For existing tables, also enable `activate_column_ids_for_existing_tables`.
+For existing tables, set the same setting.
 Column IDs are activated on the first compatible `ALTER` (`ADD COLUMN`, `DROP COLUMN`, or `RENAME COLUMN`):
 
 ```sql
 ALTER TABLE example MODIFY SETTING
-    serialization_info_version = 'with_column_ids',
-    activate_column_ids_for_existing_tables = 1;
+    serialization_info_version = 'with_column_ids';
 
 -- This ALTER activates column IDs and is already metadata-only:
 ALTER TABLE example RENAME COLUMN name TO title;

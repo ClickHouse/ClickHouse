@@ -301,10 +301,6 @@ During rolling upgrades, set this to `basic` so that new servers produce
 data parts compatible with old servers. After the upgrade completes,
 switch to `WITH_TYPES` to enable per-type serialization versions.
 )", 0) \
-    DECLARE(Bool, activate_column_ids_for_existing_tables, false, R"(
-Enables activation of persistent column IDs for existing MergeTree-family tables.
-Requires the session-level `allow_experimental_column_ids` setting to be enabled.
-)", 0) \
     DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "with_size_stream", R"(
 Controls the serialization format for top-level `String` columns.
 
@@ -2330,6 +2326,7 @@ are also created during INSERTs with [materialize_projections_on_insert](/operat
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, cleanup_threads, 128) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, allow_experimental_reverse_key, false) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, use_async_block_ids_cache, true) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, activate_column_ids_for_existing_tables, false) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE

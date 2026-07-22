@@ -64,7 +64,6 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_tuple_element_aggregation;
     extern const MergeTreeSettingsBool allow_floating_point_partition_key;
-    extern const MergeTreeSettingsBool activate_column_ids_for_existing_tables;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
@@ -1064,8 +1063,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
-        if ((*storage_settings)[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS
-            || (*storage_settings)[MergeTreeSetting::activate_column_ids_for_existing_tables])
+        if ((*storage_settings)[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS)
         {
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
@@ -1125,7 +1123,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (args.mode == LoadingStrictnessLevel::CREATE
         && (*storage->getSettings())[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS)
     {
-        auto column_id_mapping = ColumnIdMapping::createForNewTable(metadata.getColumns().getAllPhysical());
+        auto column_id_mapping = ColumnIdMapping::createIdentity(metadata.getColumns().getAllPhysical());
         storage->setColumnIdMapping(std::move(column_id_mapping));
         storage->writeColumnIdMappingToDisk();
     }
