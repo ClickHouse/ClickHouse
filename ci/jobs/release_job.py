@@ -369,13 +369,46 @@ def main():
             )
         )
     changelog_pr_exists = changelog_pr_open or changelog_pr_merged
+
+    # Skip (re)creating the changelog PR for a *recovery* of a release that has
+    # been superseded on its own release branch — i.e. a newer patch on the same
+    # major.minor already has its changelog merged (its line is in
+    # version_date.tsv, which is exactly what a merged changelog PR adds). Such a
+    # recovery is redundant; the newer release's changelog PR already keeps the
+    # registry complete (its full regen re-adds this release's line too), so only
+    # this superseded release's per-release changelog doc is skipped.
+    #
+    # Only applies to recovery (create_new_release is False) — a fresh release is
+    # never superseded. Compared within major.minor, so recovering the latest
+    # release of an older or LTS branch is still allowed even when a newer minor
+    # exists (e.g. recover the latest v25.8 LTS while v26.6 is out).
+    def _release_version(tag):
+        m = re.match(r"^v(\d+)\.(\d+)\.(\d+)\.(\d+)-", tag.strip())
+        return tuple(int(p) for p in m.groups()) if m else None
+
+    superseded_on_branch = False
+    if ok and args.release_type == "patch" and not create_new_release:
+        this_version = _release_version(_release_tag)
+        version_date = os.path.join(REPO_PATH, "utils/list-versions/version_date.tsv")
+        if this_version:
+            with open(version_date) as f:
+                for line in f:
+                    other = _release_version(line.split("\t", 1)[0])
+                    if other and other[:2] == this_version[:2] and other > this_version:
+                        superseded_on_branch = True
+                        break
+
     # Create the PR whenever it is missing (idempotent: skip if already open or
-    # merged). Gates the changelog-generation, PR-creation and git-restore steps
-    # below. The release_type guard matters: a "new" release has no auto/<tag>
-    # changelog PR (it uses a master version-bump PR), so the lookup above is
-    # skipped and changelog_pr_exists stays False — without the guard that would
-    # wrongly trigger changelog generation for a "new" release.
-    do_changelog = args.release_type == "patch" and not changelog_pr_exists
+    # merged) and not superseded on its branch by a newer merged changelog. The
+    # release_type guard matters: a "new" release has no auto/<tag> changelog PR
+    # (it uses a master version-bump PR), so the lookup above is skipped and
+    # changelog_pr_exists stays False — without the guard that would wrongly
+    # trigger changelog generation for a "new" release.
+    do_changelog = (
+        args.release_type == "patch"
+        and not changelog_pr_exists
+        and not superseded_on_branch
+    )
 
     # only-repo / only-docker only re-publish artifacts for an already-created
     # release (repo/Docker recovery). If the ref resolves to a new release, they
@@ -497,9 +530,18 @@ def main():
                 strict=True,
             )
             Shell.check("git config user.name robot-clickhouse", strict=True)
-            # -B so a rerun after a partial failure re-creates the branch instead
-            # of failing on "branch already exists".
-            Shell.check(f"git checkout -B {pr_branch}", strict=True)
+            # Base the changelog branch on origin/master, not the current HEAD, so
+            # the PR contains only the generated changelog/version_date/docker
+            # changes — never the code diff of whatever ref the job ran on. When
+            # the job runs on master this is a no-op; when it runs on a feature
+            # branch (e.g. dispatched via --ref to test recovery) it prevents the
+            # branch's source changes from leaking into the changelog PR. The
+            # generated files were just modified in the working tree and are
+            # carried across the checkout (they don't differ between HEAD and
+            # origin/master except for these working-tree edits). -B so a rerun
+            # after a partial failure re-creates the branch instead of failing on
+            # "branch already exists".
+            Shell.check(f"git checkout -B {pr_branch} origin/master", strict=True)
             Shell.check("git add -A", strict=True)
             # If the changelog PR was already merged on a previous run, master
             # (and this branch, freshly checked out from it) already contain the
