@@ -9,7 +9,6 @@ SELECT toTypeName(CAST(CAST('10:00:00' AS Time64) AS Time));
 -- accurateCastOrNull must also succeed and never null out a valid value.
 SELECT accurateCastOrNull(CAST('01:02:03.5' AS Time64(1)), 'Time') = CAST('01:02:03' AS Time);
 
--- Out-of-range Time64 (reachable via reinterpret; numeric casts already clamp) must clamp the stored
--- value to the Time range, not just its text. reinterpretAsInt32 exposes the raw stored seconds.
-SELECT reinterpretAsInt32(CAST(reinterpret(toInt64(3600001), 'Time64(0)') AS Time)) = 3599999;
-SELECT reinterpretAsInt32(CAST(reinterpret(toInt64(-3600001), 'Time64(0)') AS Time)) = -3599999;
+-- Out-of-range Time64 (built via Decimal64 -> Time64, which does not clamp) must clamp the stored value.
+SELECT CAST(CAST(toDecimal64(3600001, 0) AS Time64(0)) AS Time) = CAST(toInt64(3599999) AS Time);
+SELECT CAST(CAST(toDecimal64(-3600001, 0) AS Time64(0)) AS Time) = CAST(toInt64(-3599999) AS Time);
