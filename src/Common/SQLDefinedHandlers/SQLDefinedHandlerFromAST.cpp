@@ -55,6 +55,11 @@ bool queryKindRequiresMutatingMethod(IAST::QueryKind kind)
         case IAST::QueryKind::Rollback:
         case IAST::QueryKind::SetTransactionSnapshot:
         case IAST::QueryKind::Backup:
+        /// RESTORE follows the same `readonly` contract as BACKUP: `BackupsWorker` rejects it only under the
+        /// strict, user-set `readonly = 1` and explicitly allows it under `readonly = 2` - the mode the HTTP
+        /// execution path sets for safe methods such as `GET` (see `BackupsWorker::startRestoring`). So a
+        /// RESTORE handler is runnable over a safe method and must not require a mutating one.
+        case IAST::QueryKind::Restore:
             return false;
 
         /// Mutating: rejected under `readonly`, so it needs a write-capable HTTP method.
@@ -73,7 +78,6 @@ bool queryKindRequiresMutatingMethod(IAST::QueryKind kind)
         case IAST::QueryKind::System:
         case IAST::QueryKind::KillQuery:
         case IAST::QueryKind::ExternalDDL:
-        case IAST::QueryKind::Restore:
         case IAST::QueryKind::AsyncInsertFlush:
         case IAST::QueryKind::ParallelWithQuery:
         case IAST::QueryKind::Copy:
