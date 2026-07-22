@@ -1371,8 +1371,13 @@ void PostgreSQLReplicationHandler::ensureNestedTablesExist()
             /// would differ and the join would fail. Detect up front that this is a join into an already
             /// existing shared tree, so the failure can be reported as an actionable schema-drift error instead
             /// of a cryptic metadata mismatch that the startup task then retries indefinitely.
+            /// Not applicable when this replica has just dropped its own shut-down copy above: the shared
+            /// tree's Keeper path may then still exist only because its removal (triggered by dropping the
+            /// last replica) is in progress, and the create fails with a transient "dropped right now"
+            /// (ALL_REPLICAS_LOST) error that the startup task resolves by retrying - reporting it as schema
+            /// drift would be wrong and misleading.
             bool joining_existing_shared_tree = false;
-            if (coordination_enabled && engine_spec.replicated)
+            if (coordination_enabled && engine_spec.replicated && !nested_is_shut_down)
             {
                 try
                 {

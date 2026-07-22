@@ -695,6 +695,13 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
         columns_declare_list->set(columns_declare_list->columns, getColumnsExpressionList(ordinary_columns_and_types));
 
         auto primary_key_ast = metadata_snapshot->getPrimaryKeyAST();
+        /// Once the nested table has been attached (`set`), this wrapper carries the nested table's metadata,
+        /// where the primary key is implicit in the sorting key: the nested (Replicated)ReplacingMergeTree is
+        /// created with only an ORDER BY clause. A re-creation of the nested table from such metadata (the
+        /// refused-drop recovery drops a shut-down nested table and rebuilds it here) must fall back to the
+        /// sorting key, which is the same expression the original nested table was created with.
+        if (!primary_key_ast)
+            primary_key_ast = metadata_snapshot->getSortingKeyAST();
         if (!primary_key_ast)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MaterializedPostgreSQL must have primary key");
         storage->set(storage->order_by, primary_key_ast);
