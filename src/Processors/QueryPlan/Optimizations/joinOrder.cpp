@@ -67,6 +67,7 @@ DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_m
 DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
         DPJoinEntryPtr rhs,
         double cost_,
+        double selectivity_,
         std::optional<UInt64> cardinality_,
         JoinOperator join_operator_,
         JoinMethod join_method_)
@@ -74,6 +75,7 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
     , left(std::move(lhs))
     , right(std::move(rhs))
     , cost(cost_)
+    , selectivity(selectivity_)
     , estimated_rows(cardinality_)
     , join_operator(std::move(join_operator_))
     , join_method(join_method_)
@@ -985,7 +987,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                             join_operator.residual_filter.push_back(*e);
                     }
                     applied_edges = std::move(edges);
-                    best_plan = std::make_shared<DPJoinEntry>(left, right, current_cost, cardinality, std::move(join_operator));
+                    best_plan = std::make_shared<DPJoinEntry>(left, right, current_cost, selectivity, cardinality, std::move(join_operator));
                     best_i = i;
                     best_j = j;
                 }
@@ -1059,7 +1061,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable
 
     auto left = buildPhysicalPlan(dptable, entry.left);
     auto right = buildPhysicalPlan(dptable, entry.right);
-    return std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.estimated_rows, std::move(join_operator));
+    return std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.sel, entry.estimated_rows, std::move(join_operator));
 }
 
 /** Implements the `Dpsub` bottom-up dynamic programming algorithm for optimal bushy join tree generation.
@@ -1315,7 +1317,7 @@ DPJoinEntryPtr JoinOrderOptimizer::evaluateJoin(
     JoinOperator join_operator(
         effective_kind, JoinStrictness::All, JoinLocality::Unspecified,
         std::ranges::to<std::vector>(predicates | std::views::transform([](const auto * p) { return *p; })));
-    auto new_entry = std::make_shared<DPJoinEntry>(left, right, new_cost, cardinality, std::move(join_operator));
+    auto new_entry = std::make_shared<DPJoinEntry>(left, right, new_cost, selectivity, cardinality, std::move(join_operator));
 
     LOG_TEST(log, "New best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}, operator: {}",
         new_entry->dump(), left->dump(), right->dump(),

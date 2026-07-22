@@ -6,8 +6,11 @@
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinStatsAnalyzer.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Processors/QueryPlan/StepStatsAnalyzer.h>
+#include <Common/typeid_cast.h>
 #include <Processors/StepWallClock.h>
 #include <Processors/StepWallClockRegistry.h>
 #include <base/defines.h>
@@ -189,6 +192,13 @@ AnalyzeStepsStats::AnalyzeStepsStats(QueryPipeline & pipeline, const QueryPlan &
     const auto elapsed_per_step_group = collectTimingStats(pipeline, processors);
     computeDistribution(elapsed_per_step_group);
 
+    JoinRuntimeReports join_reports;
+    for (const auto & [step, step_stats] : stats_by_step)
+        if (const auto * join_step = typeid_cast<const JoinStep *>(step))
+            join_reports[join_step] = {step->getAnalysisReport(processorsForStep(step)), step_stats.output_rows};
+
+    join_analyzer = JoinStepStatsAnalyzer(plan, join_reports);
+
     /// Work intervals are collected only when EXPLAIN ANALYZE requests the `branch_time` setting.
     if (const auto work_intervals = pipeline.takeWorkIntervals(); !work_intervals.empty())
         interval_timings.emplace(work_intervals, plan);
@@ -210,8 +220,7 @@ void AnalyzeStepsStats::collectIOStats(const Processors & processors)
 
         auto & step_stats = stats_by_step[step];
 
-        const auto step_group_key = std::make_pair(step, proc->getQueryPlanStepGroup());
-        processors_by_step_group[step_group_key].push_back(proc.get());
+        processors_by_step[step][proc->getQueryPlanStepGroup()].push_back(proc.get());
 
         for (const auto & input_port : proc->getInputs())
         {
@@ -312,23 +321,21 @@ StepStatsContext AnalyzeStepsStats::makeContext(const IQueryPlanStep * step) con
     return context;
 }
 
+const ProcessorsByGroup & AnalyzeStepsStats::processorsForStep(const IQueryPlanStep * step) const
+{
+    static const ProcessorsByGroup empty;
+    const auto it = processors_by_step.find(step);
+    return it != processors_by_step.end() ? it->second : empty;
+}
+
 AnalyzedStepData AnalyzeStepsStats::analyzeStep(const IQueryPlanStep * step) const
 {
-    ProcessorsByGroup processors_by_group;
-    for (size_t group : step->getStepGroups())
-        if (const auto group_processors_it = processors_by_step_group.find(std::make_pair(step, group)); group_processors_it != processors_by_step_group.end())
-            processors_by_group[group] = group_processors_it->second;
+    StepAnalysisReport report = step->getAnalysisReport(processorsForStep(step));
+    auto context = makeContext(step);
 
-    StepAnalysisReport raw_report = step->getAnalysisReport(processors_by_group);
-
-    auto context_for_step = makeContext(step);
-    auto step_name = step->getName();
-    StepStatsAnalyzer step_stats_generator = getStepStatsAnalyzer(step_name);
-
-    /// Use the service of a generator, which takes the context (e.g. i/o, total time)
-    /// some internal raw metrics, which are specific for each step,  that
-    /// with the knowledge of the step will pre-process the metrics before printing
-    AnalyzedStepData result = step_stats_generator(context_for_step, std::move(raw_report));
+    AnalyzedStepData result = step->getName() == "Join"
+        ? join_analyzer.analyze(context, std::move(report))
+        : analyzeDefaultStep(context, std::move(report));
 
     if (interval_timings)
     {

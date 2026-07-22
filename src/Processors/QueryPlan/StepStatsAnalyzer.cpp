@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/StepStatsAnalyzer.h>
-#include <Processors/QueryPlan/JoinStatsAnalyzer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <algorithm>
 #include <set>
@@ -83,13 +82,6 @@ AnalyzedStepData buildAnalyzedStepData(const StepStatsContext & context, StepAna
 AnalyzedStepData analyzeDefaultStep(const StepStatsContext & context, StepAnalysisReport report)
 {
     return buildAnalyzedStepData(context, std::move(report));
-}
-
-StepStatsAnalyzer getStepStatsAnalyzer(const String & step_name)
-{
-    if (step_name == "Join")
-        return &analyzeJoinStep;
-    return &analyzeDefaultStep;
 }
 
 }

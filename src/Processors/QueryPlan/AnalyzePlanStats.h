@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/StepStatsModel.h>
 #include <Processors/QueryPlan/StepIntervalTimings.h>
+#include <Processors/QueryPlan/JoinStatsAnalyzer.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/IProcessor.h>
 #include <IO/WriteBuffer.h>
@@ -21,6 +22,8 @@
 namespace DB
 {
 
+class JoinStep;
+
 class AnalyzeStepsStats
 {
     using StepAndGroup = std::pair<const IQueryPlanStep *, size_t>;
@@ -32,7 +35,7 @@ class AnalyzeStepsStats
 
     using StatsByStep = std::unordered_map<const IQueryPlanStep *, StepStats>;
     using StatsByStepAndGroup = std::unordered_map<StepAndGroup, StepGroupStats, boost::hash<StepAndGroup>>;
-    using ProcessorsByStepAndGroup = std::unordered_map<StepAndGroup, std::vector<IProcessor *>, boost::hash<StepAndGroup>>;
+    using ProcessorsByStep = std::unordered_map<const IQueryPlanStep *, ProcessorsByGroup>;
 
 public:
     AnalyzeStepsStats(QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_);
@@ -44,13 +47,16 @@ private:
     ElapsedTimesPerStepGroup collectTimingStats(const QueryPipeline & pipeline, const Processors & processors);
     void computeDistribution(const ElapsedTimesPerStepGroup & elapsed_per_step_group);
 
+    const ProcessorsByGroup & processorsForStep(const IQueryPlanStep * step) const;
+
     StepStatsContext makeContext(const IQueryPlanStep * step) const;
     AnalyzedStepData analyzeStep(const IQueryPlanStep * step) const;
     void renderStep(const AnalyzedStepData & report, WriteBuffer & out, const std::string & prefix, bool processors_info) const;
 
     StatsByStep stats_by_step;
     StatsByStepAndGroup stats_by_step_group;
-    ProcessorsByStepAndGroup processors_by_step_group;
+    ProcessorsByStep processors_by_step;
+    JoinStepStatsAnalyzer join_analyzer;
 
     std::optional<StepIntervalTimings> interval_timings;
 

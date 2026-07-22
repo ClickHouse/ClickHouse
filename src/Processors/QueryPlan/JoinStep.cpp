@@ -315,8 +315,7 @@ void JoinStep::describeActions(FormatSettings & settings) const
         }
         settings.out << '\n';
 
-        if (result_rows_estimation)
-            settings.out << prefix << "Result rows: " << toString(*result_rows_estimation) << '\n';
+        describeJoinEstimation(estimation, settings.out, prefix);
 
         if (locality != JoinLocality::Unspecified)
             settings.out << prefix << "Locality: " << toString(locality) << '\n';
@@ -356,6 +355,9 @@ void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
 
     for (const auto & [name, value] : describeJoinActions(join, dummy_settings))
         map.add(name, value);
+
+    describeJoinEstimation(estimation, map);
+
     if (swap_streams)
         map.add("Swapped", true);
     if (!primary_key_sharding.empty())
@@ -385,8 +387,9 @@ void JoinStep::setJoin(JoinPtr join_, bool swap_streams_)
 void JoinStep::setLogicalJoinInfo(LogicalJoinInfo && logical_join_info)
 {
     join_readable_relation_name = std::move(logical_join_info.readable_relation_name);
-    result_rows_estimation = logical_join_info.result_rows_estimation;
+    estimation = logical_join_info.estimation;
     locality = logical_join_info.locality;
+    cluster_id = logical_join_info.cluster_id;
 }
 
 void JoinStep::updateOutputHeader()

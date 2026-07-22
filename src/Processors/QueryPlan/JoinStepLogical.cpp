@@ -299,8 +299,6 @@ std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties()
     if (!readable_relation_name.empty())
         description.emplace_back("Join", std::move(readable_relation_name));
 
-    description.emplace_back("ResultRows", result_rows_estimation ? toString(result_rows_estimation.value()) : "unknown");
-
     description.emplace_back("Type", toString(join_operator.kind));
     description.emplace_back("Strictness", toString(join_operator.strictness));
     description.emplace_back("Locality", toString(join_operator.locality));
@@ -309,12 +307,25 @@ std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties()
     return description;
 }
 
+JoinEstimation JoinStepLogical::getEstimation() const
+{
+    return JoinEstimation{
+        .output_rows = result_rows_estimation,
+        .left_rows = left_rows_estimation,
+        .right_rows = right_rows_estimation,
+        .cost = estimated_cost,
+        .selectivity = estimated_selectivity,
+    };
+}
+
 void JoinStepLogical::describeActions(FormatSettings & settings) const
 {
     const String & prefix = settings.detail_prefix;
 
     for (const auto & [name, value] : describeJoinProperties())
         settings.out << prefix << name << ": " << value << '\n';
+
+    describeJoinEstimation(getEstimation(), settings.out, prefix);
 
     if (!settings.compact)
     {
@@ -334,6 +345,8 @@ void JoinStepLogical::describeActions(JSONBuilder::JSONMap & map) const
 {
     for (const auto & [name, value] : describeJoinProperties())
         map.add(name, value);
+
+    describeJoinEstimation(getEstimation(), map);
 
     auto actions_dag = expression_actions.getActionsDAG()->clone();
     map.add("Actions", ExpressionActions(std::move(actions_dag)).toTree());
@@ -1514,8 +1527,9 @@ void JoinStepLogical::buildPhysicalJoin(
 
     LogicalJoinInfo logical_join_info{
         .readable_relation_name = join_step->getReadableRelationName(),
-        .result_rows_estimation = join_step->result_rows_estimation,
-        .locality = join_step->join_operator.locality
+        .estimation = join_step->getEstimation(),
+        .locality = join_step->join_operator.locality,
+        .cluster_id = join_step->getClusterId()
     };
 
     auto new_node = buildPhysicalJoinImpl(
