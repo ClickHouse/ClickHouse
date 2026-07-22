@@ -807,21 +807,23 @@ class ReleaseInfo:
         # The PRs opened by the release target master, which is review-gated (a
         # merge queue plus required review), so they cannot be landed unattended
         # here anyway -- they merge through their normal review. This is also the
-        # last release step, so a PR left open is non-destructive. Attempt the
-        # merge but do not fail the release on it (`strict=False`); a failure is
-        # logged loudly and recorded in `prs_merged` so the leftover PR stays
-        # visible rather than silently forgotten.
+        # last release step, so a PR left open is non-destructive. Attempt an
+        # immediate merge but do not fail the release on it (`strict=False`); a
+        # failure is logged loudly and recorded in `prs_merged` so the leftover
+        # PR stays visible rather than silently forgotten.
         #
-        # TODO: `gh pr merge --auto` is rejected on this repo
-        # (`enablePullRequestAutoMerge` is disabled in favor of the merge queue);
-        # replace it with an `enqueuePullRequest` ("merge when ready") call.
+        # `--auto` is deliberately not passed: it calls `enablePullRequestAutoMerge`,
+        # which is disabled on this repo (master uses a merge queue), so it errors
+        # immediately every time. A plain `--merge` at least merges directly when
+        # allowed. TODO: for the master PRs, which are queue-gated, replace this
+        # with an `enqueuePullRequest` ("merge when ready") call.
         res = True
         if self.release_type == "patch":
             assert self.changelog_pr
             print("Merging ChangeLog PR")
             changelog_pr_num = 23456 if dry_run else int(self.changelog_pr.rsplit("/", 1)[-1])
             res = Shell.check(
-                f"gh pr merge {changelog_pr_num} --repo {GITHUB_REPOSITORY} --merge --auto",
+                f"gh pr merge {changelog_pr_num} --repo {GITHUB_REPOSITORY} --merge",
                 verbose=True,
                 dry_run=dry_run,
                 strict=False,
@@ -831,7 +833,7 @@ class ReleaseInfo:
             print("Merging Version Bump PR")
             version_bump_pr_num = 23456 if dry_run else int(self.version_bump_pr.rsplit("/", 1)[-1])
             res = res and Shell.check(
-                f"gh pr merge {version_bump_pr_num} --repo {GITHUB_REPOSITORY} --merge --auto",
+                f"gh pr merge {version_bump_pr_num} --repo {GITHUB_REPOSITORY} --merge",
                 verbose=True,
                 dry_run=dry_run,
                 strict=False,
