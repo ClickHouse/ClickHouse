@@ -1817,6 +1817,58 @@
 
 <script type="text/javascript">
 
+/// A fresh state object for the realtime resource meters (CPU/memory/disk). The state is owned by
+/// the tab whose query produced it (see `readEventStream`), NOT by the shared progress line: the
+/// CPU counters in the `profile_events` packets are per-packet increments, so a batch from a
+/// query running in a background tab must still be accumulated (dropping it would lose those
+/// increments for good), and reopening the tab must continue the meter from its live values.
+function freshResourceState()
+{
+    return {
+        cpu: 0,          /// Smoothed CPU usage, in cores.
+        cpu_ns: 0,       /// Cumulative CPU time (user + system), in nanoseconds.
+        cpu_at_ns: 0,    /// Elapsed time at which CPU was last sampled, in nanoseconds.
+        cpu_sampled_ns: 0, /// Value of `cpu_ns` at the last sample, so packets arriving between samples are not lost.
+        /// Per-host memory/disk gauges, keyed by host name: { memory, peak, disk } in bytes.
+        /// The display shows the total across hosts and, for a distributed query (many hosts),
+        /// the maximum over hosts as "max/host" - like `clickhouse-client`.
+        hosts: {},
+        has: false,
+    };
+}
+
+/// Fold a batch of profile-event objects (from a framing `profile_events` packet) into a resource
+/// state. Only the per-query aggregate (`thread_id == 0`) is considered; memory and disk are
+/// tracked per host (by `host_name`) so a distributed query can show both the total across hosts
+/// and the maximum over hosts. Pure accumulation - no CPU-rate sampling and no rendering - so it
+/// is safe to call for a background tab's stream too.
+function accumulateResourceEvents(state, events)
+{
+    for (const e of events)
+    {
+        if (e.thread_id !== '0') continue;
+        const value = +e.value;
+        if (value < 0) continue;
+
+        if (e.name === 'UserTimeMicroseconds' || e.name === 'SystemTimeMicroseconds')
+        {
+            state.cpu_ns += value * 1000; /// The value is a per-packet increment in microseconds.
+            continue;
+        }
+
+        /// Memory/disk gauges are absolute per host; keep the latest value for each host.
+        let host = state.hosts[e.host_name];
+        if (!host) host = state.hosts[e.host_name] = { memory: 0, peak: 0, disk: 0 };
+        if (e.name === 'MemoryTrackerUsage')
+            host.memory = value;
+        else if (e.name === 'MemoryTrackerPeakUsage')
+            host.peak = value;
+        else if (e.name === 'TemporaryDataOnDiskUsage')
+            host.disk = value;
+    }
+    state.has = true;
+}
+
 class QueryProgressElement extends HTMLElement
 {
     constructor()
@@ -2065,17 +2117,7 @@ class QueryProgressElement extends HTMLElement
     /// packets, divided by the elapsed time from progress packets, like `clickhouse-client` does.
     resetResources()
     {
-        this._resources_state = {
-            cpu: 0,          /// Smoothed CPU usage, in cores.
-            cpu_ns: 0,       /// Cumulative CPU time (user + system), in nanoseconds.
-            cpu_at_ns: 0,    /// Elapsed time at which CPU was last sampled, in nanoseconds.
-            cpu_sampled_ns: 0, /// Value of `cpu_ns` at the last sample, so packets arriving between samples are not lost.
-            /// Per-host memory/disk gauges, keyed by host name: { memory, peak, disk } in bytes.
-            /// The display shows the total across hosts and, for a distributed query (many hosts),
-            /// the maximum over hosts as "max/host" - like `clickhouse-client`.
-            hosts: {},
-            has: false,
-        };
+        this._resources_state = freshResourceState();
         /// The maximum rendered width (in characters) seen for each metric, so a value that becomes
         /// shorter is left-padded to keep its width and the text does not bounce (see `_padMetric`).
         /// The font is monospace, so one padding character equals one digit.
@@ -2096,43 +2138,23 @@ class QueryProgressElement extends HTMLElement
     }
 
     /// Consume a batch of profile-event objects (from a framing `profile_events` packet) and
-    /// update the resource meters. Only the per-query aggregate (`thread_id == 0`) is considered;
-    /// memory and disk are tracked per host (by `host_name`) so a distributed query can show both
-    /// the total across hosts and the maximum over hosts.
+    /// update the resource meters (see `accumulateResourceEvents` for the semantics).
     feedProfileEvents(events)
     {
-        const r = this._resources_state;
-        let cpu_delta_ns = 0;
+        accumulateResourceEvents(this._resources_state, events);
+        this.renderResourcesFrom(this._resources_state);
+    }
 
-        for (const e of events)
-        {
-            if (e.thread_id !== '0') continue;
-            const value = +e.value;
-            if (value < 0) continue;
-
-            if (e.name === 'UserTimeMicroseconds' || e.name === 'SystemTimeMicroseconds')
-            {
-                cpu_delta_ns += value * 1000; /// The value is a per-packet increment in microseconds.
-                continue;
-            }
-
-            /// Memory/disk gauges are absolute per host; keep the latest value for each host.
-            let host = r.hosts[e.host_name];
-            if (!host) host = r.hosts[e.host_name] = { memory: 0, peak: 0, disk: 0 };
-            if (e.name === 'MemoryTrackerUsage')
-                host.memory = value;
-            else if (e.name === 'MemoryTrackerPeakUsage')
-                host.peak = value;
-            else if (e.name === 'TemporaryDataOnDiskUsage')
-                host.disk = value;
-        }
-
-        r.cpu_ns += cpu_delta_ns;
+    /// Show a (tab-owned) resource state in the shared progress line, sampling the CPU rate from
+    /// its cumulative counters. Adopts the state, so subsequent renders continue from it.
+    renderResourcesFrom(r)
+    {
+        this._resources_state = r;
         const elapsed_ns = this._last_elapsed_ns;
         const dt = elapsed_ns - r.cpu_at_ns;
         if (dt > 0)
         {
-            /// Use the cumulative CPU time consumed since the previous sample, not only this
+            /// Use the cumulative CPU time consumed since the previous sample, not only the last
             /// packet's increment: a packet can arrive before a newer elapsed timestamp (dt == 0,
             /// no sample is taken), and its increment must still count towards the next sample.
             const instant = (r.cpu_ns - r.cpu_sampled_ns) / dt; /// Cores used during this interval.
@@ -2142,8 +2164,18 @@ class QueryProgressElement extends HTMLElement
             r.cpu_sampled_ns = r.cpu_ns;
         }
 
-        r.has = true;
         this._renderResources();
+    }
+
+    /// Adopt a tab-owned resource state into the shared progress line on tab activation (see
+    /// `syncActiveTabChrome`) and repaint the meters from it, without sampling the CPU rate: the
+    /// next profile-events batch resumes sampling from the state's own cumulative counters, so a
+    /// still-running background query's meter continues instead of restarting near zero.
+    adoptResourceState(state)
+    {
+        this._resources_state = state;
+        if (state.has)
+            this._renderResources();
     }
 
     _renderResources()
@@ -7363,12 +7395,22 @@ async function readEventStream(response, targetResultEl, abortController, tab, p
     /// (as an image or raw text) once the whole stream has been read.
     const binary_chunks = base64 ? [] : null;
 
+    /// The realtime resource meters are fed from a TAB-OWNED state: the CPU counters in the
+    /// `profile_events` packets are per-packet increments (not cumulative totals), so a batch
+    /// from a backgrounded tab must still be accumulated - dropping it would lose those
+    /// increments and the reopened tab's meter would restart near zero. The shared progress
+    /// line renders the state only while this tab is active; `syncActiveTabChrome` re-adopts
+    /// it when the tab is reopened, so the meter continues from its live values.
+    tab.resources = freshResourceState();
+    if (tab.id === activeTabId)
+        progressEl.adoptResourceState(tab.resources);
+
     const handleEvent = makeEventStreamHandler(targetResultEl, {
         onStop: () => { stop = true; },
-        /// The realtime resource meters live in the shared progress line, which shows the
-        /// ACTIVE tab; a background tab's stream must not feed them (rates are computed from
-        /// cumulative counters, so skipped batches do not corrupt later readings).
-        resourceMeter: (events) => { if (tab.id === activeTabId) progressEl.feedProfileEvents(events); },
+        resourceMeter: (events) => {
+            accumulateResourceEvents(tab.resources, events);
+            if (tab.id === activeTabId) progressEl.renderResourcesFrom(tab.resources);
+        },
         rawText,
         onBytes: base64 ? (bytes) => binary_chunks.push(bytes) : undefined,
         onException: () => { saw_exception = true; },
@@ -7971,7 +8013,17 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 scanForException(tail);
                 ends_mid_line = !tail.endsWith('\n');
             }
-            return { saw_exception, exception_line, truncated: ends_mid_line };
+            /// A recognized prefix alone is not a real exception: the stream may have been cut off
+            /// in the middle of the terminal exception line itself. Report the exception only once
+            /// its line reached `\n` (`exception_done`); an unterminated match stays a truncation
+            /// (`ends_mid_line` is necessarily set then), so the callers render the explicit
+            /// truncation error and synthesize a well-formed carrier instead of persisting - and
+            /// later replaying - the raw partial JSON line as if it were the failure reason.
+            return {
+                saw_exception: saw_exception && exception_done,
+                exception_line: exception_done ? exception_line : null,
+                truncated: ends_mid_line,
+            };
         };
 
         if (!response.ok && content_type.startsWith('text/event-stream')) {
@@ -9861,6 +9913,7 @@ function tabRuntimeDefaults() {
         view: 'result',         /// this tab's selected view ('result' | 'logs' | 'metrics'), replayed by syncActiveTabChrome
         logsAvailable: false,   /// this tab produced server logs (its Logs toggle can be offered)
         metricsAvailable: false,/// this tab produced profile-event metrics (its Metrics toggle can be offered)
+        resources: null,        /// tab-owned resource-meter state (see `freshResourceState` / `readEventStream`)
         colorModes: {},         /// per-column color modes for this tab's result (shared with its element)
         pinnedColumns: {},      /// pinned columns for this tab's result (shared with its element)
         downloadQuery: '',      /// query the download button should re-run for this tab
@@ -9957,6 +10010,9 @@ function clearPanel(tab) {
     tab.view = 'result';
     tab.logsAvailable = false;
     tab.metricsAvailable = false;
+    /// Drop the tab-owned resource-meter state too, so a stale meter from a previous run is not
+    /// re-adopted by `syncActiveTabChrome`; the next framed run creates a fresh one.
+    tab.resources = null;
     if (tab.id === activeTabId) { progressEl.clear(); progressEl.resetViewToggles(); logoEl.style.display = 'block'; elapsed_ns = 0; }
 }
 
@@ -10008,6 +10064,14 @@ function syncActiveTabChrome() {
         progressEl.updateText(tab.finalStats.rowCount, tab.finalStats.elapsedNs, tab.finalStats.incomplete);
         progressEl.style.setProperty('--progress', '0');
     }
+
+    /// The resource meters (CPU/RAM/disk) are tab-owned - profile-event increments keep
+    /// accumulating on the tab even while it is in the background (see `readEventStream`). Re-adopt
+    /// them so a still-running tab's meters continue from their live values (the next
+    /// profile-events batch resumes CPU-rate sampling from the state's cumulative counters) and a
+    /// finished tab's peak RAM reappears.
+    if (tab.resources)
+        progressEl.adoptResourceState(tab.resources);
 
     logoEl.style.display = tab.logoVisible ? 'block' : 'none';
 

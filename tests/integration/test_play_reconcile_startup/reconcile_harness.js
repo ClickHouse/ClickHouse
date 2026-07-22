@@ -208,6 +208,8 @@ function makeElement(tag) {
         enableViews() {},
         finalizeMetrics() {},
         feedProfileEvents() {},
+        adoptResourceState() {},
+        renderResourcesFrom() {},
         appendLog() {},
         updateMetrics() {},
         attachShadow() { return makeElement('shadow-root'); },

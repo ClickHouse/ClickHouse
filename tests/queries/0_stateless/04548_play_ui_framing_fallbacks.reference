@@ -20,6 +20,9 @@ log queue bounded: OK
 metric history bounded: OK
 view is tab-owned: OK
 toggles replayed per tab: OK
+background meter batches accumulate: OK
+meter state re-adopted on tab open: OK
+partial exception line is a truncation: OK
 --- an incompatible explicit format is rejected as a framed exception the page can match
 1
 text/event-stream

@@ -153,6 +153,16 @@ echo "$page" | grep -q -F 'function downsampleHistoryByHalf(' && echo 'metric hi
 # marks availability on the owning tab, and `syncActiveTabChrome` replays both via `setViewState`.
 echo "$page" | grep -q -F 'if (tab) tab.view = e.detail.view;' && echo 'view is tab-owned: OK'
 echo "$page" | grep -q -F 'setViewState(view, logsAvailable, metricsAvailable)' && echo 'toggles replayed per tab: OK'
+# The realtime resource meters are tab-owned too: CPU counters in `profile_events` packets are
+# per-packet increments, so a backgrounded tab's batches keep accumulating on the tab
+# (`accumulateResourceEvents`) instead of being dropped, and `syncActiveTabChrome` re-adopts the
+# state so a reopened tab's meter continues from its live values instead of restarting near zero.
+echo "$page" | grep -q -F 'accumulateResourceEvents(tab.resources, events);' && echo 'background meter batches accumulate: OK'
+echo "$page" | grep -q -F 'progressEl.adoptResourceState(tab.resources);' && echo 'meter state re-adopted on tab open: OK'
+# An NDJSON stream cut off in the middle of its terminal exception line is a truncation, not a real
+# exception: the reader reports `saw_exception` only once the exception line reached its newline
+# (`exception_done`), so the partial JSON line is never persisted or replayed as the failure carrier.
+echo "$page" | grep -q -F 'saw_exception: saw_exception && exception_done,' && echo 'partial exception line is a truncation: OK'
 
 echo '--- an incompatible explicit format is rejected as a framed exception the page can match'
 # The same request shape the page sends for a framed query.
