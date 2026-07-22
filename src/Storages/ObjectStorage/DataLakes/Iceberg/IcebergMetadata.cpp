@@ -235,6 +235,23 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
     return getState(context, metadata_file_path, metadata_version);
 }
 
+std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(
+    const ContextPtr & context, const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier) const
+{
+    const auto [metadata_version, metadata_file_path, _] = getLatestMetadataFileAndVersionWithCatalog(
+        object_storage,
+        catalog,
+        table_identifier,
+        persistent_components.table_path,
+        data_lake_settings,
+        persistent_components.metadata_cache,
+        context,
+        log.get(),
+        persistent_components.table_uuid,
+        persistent_components.metadata_compression_method);
+    return getState(context, metadata_file_path, metadata_version);
+}
+
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
@@ -720,10 +737,7 @@ void IcebergMetadata::checkAlterPartitionIsPossible(const PartitionCommands & co
 }
 
 Pipe IcebergMetadata::alterPartition(
-    const PartitionCommands & commands,
-    ContextPtr context,
-    std::shared_ptr<DataLake::ICatalog> catalog,
-    StorageID /*storage_id*/)
+    const PartitionCommands & commands, ContextPtr context, std::shared_ptr<DataLake::ICatalog> catalog, StorageID storage_id)
 {
     if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg].value)
     {
@@ -731,8 +745,6 @@ Pipe IcebergMetadata::alterPartition(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Alter iceberg is experimental. To allow its usage, enable setting allow_insert_into_iceberg");
     }
-    if (catalog)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP PARTITION is not supported for catalog-backed Iceberg tables");
     if (commands.size() != 1)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -744,12 +756,13 @@ Pipe IcebergMetadata::alterPartition(
     if (command.part || command.detach)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported by Iceberg", command.typeToString());
 
-    alterPartitionDropImpl(command, context);
+    alterPartitionDropImpl(command, context, std::move(catalog), std::move(storage_id));
     persistent_components.invalidateMetadataCache();
     return {};
 }
 
-void IcebergMetadata::alterPartitionDropImpl(const PartitionCommand & command, ContextPtr context)
+void IcebergMetadata::alterPartitionDropImpl(
+    const PartitionCommand & command, ContextPtr context, std::shared_ptr<DataLake::ICatalog> catalog, StorageID storage_id)
 {
     Iceberg::AlterDropPartitionExecutor executor(
         command,
@@ -759,7 +772,9 @@ void IcebergMetadata::alterPartitionDropImpl(const PartitionCommand & command, C
         persistent_components,
         data_lake_settings,
         write_format,
-        log);
+        log,
+        std::move(catalog),
+        std::move(storage_id));
     executor.run();
 }
 

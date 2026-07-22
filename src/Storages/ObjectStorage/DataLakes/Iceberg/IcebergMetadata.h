@@ -197,6 +197,9 @@ public:
 
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata = false) const;
 
+    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(
+        const ContextPtr & context, const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier) const;
+
     const DB::Iceberg::PersistentTableComponents & getPersistentComponents() const
     {
         return persistent_components;
@@ -234,7 +237,8 @@ private:
 
     void backgroundMetadataPrefetcherThread();
 
-    void alterPartitionDropImpl(const PartitionCommand & command, ContextPtr context);
+    void alterPartitionDropImpl(
+        const PartitionCommand & command, ContextPtr context, std::shared_ptr<DataLake::ICatalog> catalog, StorageID storage_id);
 };
 }
 
