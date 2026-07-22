@@ -10,6 +10,7 @@
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
+#include <Core/AccurateComparison.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
@@ -721,6 +722,21 @@ bool ColumnVector<T>::tryInsert(const DB::Field & x)
         }
         return false;
     }
+
+    if constexpr (is_integer<T>)
+    {
+        /// NearestFieldType<T> is wider than T for narrow integers (e.g. Int64 for Int8),
+        /// so a plain static_cast<T> silently wraps out-of-range values (1944 -> -104 for Int8).
+        /// This corrupts data for narrow-integer Variant/Dynamic subcolumns: ColumnDynamic::insert
+        /// treats a successful tryInsert as "the value fit an existing variant" and never widens
+        /// it. Reject overflowing values so the caller can extend the Variant to a wider type.
+        T result;
+        if (!accurate::convertNumeric<NearestFieldType<T>, T, /*strict=*/false>(value, result))
+            return false;
+        data.push_back(result);
+        return true;
+    }
+
     data.push_back(static_cast<T>(value));
     return true;
 }
