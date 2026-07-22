@@ -98,9 +98,19 @@ protected:
     /// See setCancellationHook.
     std::function<bool()> cancellation_hook;
 
+    /// Classifies the sink (cancellation_fd_can_block, cancellation_fd_is_socket) and opens the
+    /// private non-blocking descriptor for a terminal (nonblocking_write_fd). Done once per
+    /// descriptor - when the cancellation hook is installed or on the first writeBestEffort,
+    /// whichever comes first - so writeBestEffort honors its budget even on a buffer that never
+    /// had a hook (a blocking tty write() after POLLOUT could otherwise sleep past it).
+    void initializeResponsiveWriteState();
+
+    /// Whether initializeResponsiveWriteState has run for the current descriptor.
+    bool responsive_write_state_initialized = false;
+
     /// Whether a write to this descriptor can block (true for pipes, sockets and terminals; false
-    /// for regular files, which never block on write). Computed when the cancellation hook is
-    /// installed; only then the responsive write path is used.
+    /// for regular files, which never block on write). Computed by
+    /// initializeResponsiveWriteState; only consulted on the responsive and best-effort paths.
     bool cancellation_fd_can_block = false;
 
     /// Whether the descriptor is a socket. The responsive path then uses send(..., MSG_DONTWAIT),

@@ -50,18 +50,27 @@ void WriteBufferFromFileDescriptor::setCancellationHook(std::function<bool()> ca
 {
     cancellation_hook = std::move(cancellation_hook_);
 
-    /// Decide whether the responsive write path is needed. Only a pipe/FIFO, a socket or a
-    /// terminal can block in write() when the sink is slow or stuck, so while the hook is
-    /// installed we wait for writability and write in a way that cannot sleep indefinitely for
-    /// these to stay responsive. A regular file never blocks on write, and a non-tty character
-    /// device such as /dev/null does not block either, so such descriptors keep using a single
-    /// large write for throughput - otherwise a common pattern like
+    if (cancellation_hook)
+        initializeResponsiveWriteState();
+}
+
+
+void WriteBufferFromFileDescriptor::initializeResponsiveWriteState()
+{
+    if (responsive_write_state_initialized)
+        return;
+    responsive_write_state_initialized = true;
+
+    /// Classify the sink once per descriptor. Only a pipe/FIFO, a socket or a terminal can block
+    /// in write() when the sink is slow or stuck, so only these need the special treatment: the
+    /// responsive write path of nextImpl (while a cancellation hook is installed) waits for
+    /// writability and writes in a way that cannot sleep indefinitely, and writeBestEffort uses
+    /// the same discipline to honor its budget. A regular file never blocks on write, and a
+    /// non-tty character device such as /dev/null does not block either, so such descriptors keep
+    /// using a single large write for throughput - otherwise a common pattern like
     /// `clickhouse-client --query ... > /dev/null` would regress to one poll and one small write
     /// per chunk. If fstat fails, assume the descriptor can block and use the safe (responsive)
     /// path.
-    cancellation_fd_can_block = false;
-    cancellation_fd_is_socket = false;
-    if (cancellation_hook)
     {
         struct stat stat_buf{};
         if (0 != ::fstat(fd, &stat_buf))
@@ -281,20 +290,31 @@ WriteBufferFromFileDescriptor::~WriteBufferFromFileDescriptor()
 
 void WriteBufferFromFileDescriptor::setFD(int fd_)
 {
-    /// The private non-blocking descriptor belongs to the previous sink - drop it.
+    /// The private non-blocking descriptor and the sink classification belong to the previous
+    /// sink - drop them.
     if (nonblocking_write_fd >= 0)
     {
         [[maybe_unused]] int err = ::close(nonblocking_write_fd);
         chassert(!(err && errno == EBADF));
         nonblocking_write_fd = -1;
     }
+    responsive_write_state_initialized = false;
+    cancellation_fd_can_block = false;
+    cancellation_fd_is_socket = false;
     fd = fd_;
 }
 
 void WriteBufferFromFileDescriptor::writeBestEffort(std::string_view data, UInt64 timeout_ms)
 {
-    /// Prefer the private non-blocking descriptor (present when the sink is a terminal and a
-    /// cancellation hook has ever been installed) so this cannot sleep in write() at all.
+    /// This can be called on a buffer that never had a cancellation hook installed (e.g. a
+    /// transient stderr buffer carrying a teardown diagnostic), so classify the sink and open the
+    /// private non-blocking terminal descriptor here as well: poll() + a blocking write alone can
+    /// sleep past the budget on a terminal, because POLLOUT only promises *some* room while a
+    /// blocking tty write() waits for the whole chunk to be accepted.
+    initializeResponsiveWriteState();
+
+    /// Prefer the private non-blocking descriptor (present when the sink is a terminal, unless
+    /// the re-open failed) so this cannot sleep in write() at all.
     const int write_fd = nonblocking_write_fd >= 0 ? nonblocking_write_fd : fd;
 
     Stopwatch watch;
