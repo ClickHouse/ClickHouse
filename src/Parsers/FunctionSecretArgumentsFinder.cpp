@@ -979,9 +979,14 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
                     has_secret |= maskS3URICredentials(value);
                     replacement += "'" + value + "'";
                 }
+                else if (String literal_text; key_value->arguments->at(1)->tryGetLiteralText(&literal_text))
+                {
+                    /// A non-string scalar override, e.g. `use_environment_credentials = 1`.
+                    replacement += literal_text;
+                }
                 else
                 {
-                    /// Cannot reconstruct the literal safely (e.g. a url built from an expression, which
+                    /// Cannot reconstruct the value safely (e.g. a url built from an expression, which
                     /// can embed credentials in its pieces); hide it rather than leak. This counts as a
                     /// secret: otherwise a replacement whose only hidden part is this value would be
                     /// discarded below and the original expression would be formatted verbatim.

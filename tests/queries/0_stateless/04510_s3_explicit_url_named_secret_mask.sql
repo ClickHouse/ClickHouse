@@ -199,6 +199,10 @@ CREATE DATABASE db_04510_ncpos ENGINE = Backup('', S3(nc_dbnc_missing, 'visible_
 CREATE DATABASE db_04510_ncorder ENGINE = Backup('', S3(nc_dbord_missing,
                  secret_access_key = 'SEKRIT_DBORD', 'visible_dbnc_dir2')); -- { serverError BAD_ARGUMENTS }
 
+-- Non-string scalar overrides are valid and non-secret; the reconstructor keeps them visible.
+CREATE DATABASE db_04510_ncenv ENGINE = Backup('', S3(nc_dbenv_missing,
+                 secret_access_key = 'SEKRIT_DBENVKEY', use_environment_credentials = 1)); -- { serverError BAD_ARGUMENTS }
+
 -- The reconstructor masks everything after the url on an invalid positional count too.
 CREATE DATABASE db_04510_mixed ENGINE = Backup('', S3('url_dbmixed',
                  access_key_id = 'ak', 'SEKRIT_DBMIX')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

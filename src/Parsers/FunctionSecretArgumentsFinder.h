@@ -25,6 +25,9 @@ public:
         virtual std::unique_ptr<AbstractFunction> getFunction() const = 0;
         virtual bool isIdentifier() const = 0;
         virtual bool tryGetString(String * res, bool allow_identifier) const = 0;
+        /// The exact literal text of any scalar literal (`1`, `true`, `1.5`), with strings quoted.
+        /// Lets a reconstructor keep non-string values like `use_environment_credentials = 1` visible.
+        virtual bool tryGetLiteralText(String * res) const = 0;
     };
     class Arguments
     {

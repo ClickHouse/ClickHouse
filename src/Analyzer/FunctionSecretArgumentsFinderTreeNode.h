@@ -2,6 +2,7 @@
 
 #include <functional>
 
+#include <Common/FieldVisitorToString.h>
 #include <Parsers/FunctionSecretArgumentsFinder.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -64,6 +65,15 @@ public:
             }
 
             return false;
+        }
+        bool tryGetLiteralText(String * res) const override
+        {
+            const auto * literal = argument->as<ConstantNode>();
+            if (!literal)
+                return false;
+            if (res)
+                *res = applyVisitor(FieldVisitorToString(), literal->getValue());
+            return true;
         }
     private:
         const IQueryTreeNode * argument = nullptr;
