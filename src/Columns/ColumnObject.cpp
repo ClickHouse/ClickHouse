@@ -1214,12 +1214,19 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
             ++dynamic_paths_it;
         }
 
-        /// Deserialize value in temporary column to get its hash.
+        /// Hash the shared-data value the same way ColumnDynamic hashes a value stored in its
+        /// shared variant: decode the type, then hash the type name and the value in a plain
+        /// typed column. This avoids constructing a throwaway ColumnDynamic (and rebuilding its
+        /// Variant info: addNewVariant / DataTypeVariant::getName / ...) for every value, while
+        /// producing the exact same hash (see ColumnDynamic::updateHashWithValue), so persisted
+        /// deduplication block ids are unchanged.
         auto value = shared_data_values->getDataAt(i);
         ReadBufferFromMemory buf(value);
-        auto tmp_column = ColumnDynamic::create();
-        getDynamicSerialization()->deserializeBinary(*tmp_column, buf, getFormatSettings());
+        auto value_type = decodeDataType(buf);
         hash.update(path);
+        hash.update(value_type->getName());
+        auto tmp_column = value_type->createColumn();
+        value_type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, getFormatSettings());
         tmp_column->updateHashWithValue(0, hash);
     }
 

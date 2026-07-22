@@ -6,6 +6,7 @@
 #include <IO/ReadBufferFromString.h>
 
 #include <Common/Arena.h>
+#include <Common/SipHash.h>
 #include <Core/Field.h>
 #include <gtest/gtest.h>
 
@@ -491,4 +492,46 @@ TEST(ColumnObject, TryInsertRestoresSortedDynamicPaths)
     col_object.deserializeAndInsertFromArena(buf, nullptr);
     ASSERT_EQ(col_object.size(), 2u);
     ASSERT_EQ(col_object[1], col_object[0]);
+}
+
+/// updateHashWithValue must produce the same hash for a logically equal object regardless of
+/// whether its paths are stored in dynamic path columns or serialized in shared_data. Because
+/// the dynamic-path hashing is not changed, this also guards that the (optimized) shared-data
+/// hashing stays byte-identical to the previous implementation, so persisted deduplication
+/// block ids do not shift.
+TEST(ColumnObject, HashIsIndependentOfDynamicVsSharedLayout)
+{
+    std::vector<Object> rows = {
+        Object{{"a", Field(1)}, {"b", Field("x")}, {"c", Field(2.5)}, {"d", Array{Field(1), Field(2)}}},
+        Object{{"a", Field(10)}, {"e", Field("y")}, {"f", Field(7u)}},
+        Object{{"g", Field(Null())}, {"a", Field(-3)}},
+    };
+
+    auto build = [&](const String & type_str)
+    {
+        auto type = DataTypeFactory::instance().get(type_str);
+        auto col = type->createColumn();
+        auto & obj = assert_cast<ColumnObject &>(*col);
+        for (const auto & row : rows)
+            obj.insert(row);
+        return col;
+    };
+
+    /// A: generous budget -> every path lives in its own dynamic path column.
+    auto all_dynamic = build("JSON(max_dynamic_types=32, max_dynamic_paths=64)");
+    /// B: tiny budget -> overflow paths spill into shared_data (exercises the shared-data hash path).
+    auto with_shared = build("JSON(max_dynamic_types=32, max_dynamic_paths=2)");
+
+    /// Sanity: B really did store something in shared_data (otherwise the test proves nothing).
+    const auto & shared_offsets = assert_cast<const ColumnObject &>(*with_shared).getSharedDataOffsets();
+    ASSERT_GT(shared_offsets.back(), 0u);
+
+    for (size_t n = 0; n < rows.size(); ++n)
+    {
+        SipHash ha;
+        SipHash hb;
+        all_dynamic->updateHashWithValue(n, ha);
+        with_shared->updateHashWithValue(n, hb);
+        ASSERT_EQ(ha.get128(), hb.get128()) << "hash mismatch at row " << n;
+    }
 }
