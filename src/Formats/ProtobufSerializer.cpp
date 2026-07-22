@@ -3552,7 +3552,7 @@ namespace
             /// schema evolution, while still rejecting an Enum that cannot hold a tag it will be asked
             /// to store (which would otherwise write an out-of-range value into the Enum column).
             auto check_enum
-                = [](const auto * data_type_enum, int field_tag) -> bool
+                = [&throw_incompatible_oneof](const auto * data_type_enum, int field_tag, std::string_view oneof_name, bool strict_oneof_presence_check)
             {
                 bool has_omitted_marker = false;
                 bool has_field_tag = false;
@@ -3564,6 +3564,9 @@ namespace
                     if (has_omitted_marker && has_field_tag)
                         return true;
                 }
+
+                if (!has_omitted_marker || strict_oneof_presence_check)
+                    throw_incompatible_oneof(oneof_name);
 
                 return false;
             };
@@ -3594,25 +3597,18 @@ namespace
 
                         if (ColumnNameWithProtobufFieldNameComparator::equals(name, expected_name))
                         {
+                            bool strict_oneof_presence_check = serializer_ptr_ref->strictOneOfPresenceCheck();
                             if (data_type_id == TypeIndex::Enum8)
                             {
                                 const auto * data_type_enum8 = assert_cast<const DataTypeEnum8 *>(data_types_[idx].get());
-                                if (!check_enum(data_type_enum8, field_tag))
-                                {
-                                    if (!serializer_ptr_ref->strictOneOfPresenceCheck())
-                                        return false;
-                                    throw_incompatible_oneof(oneof_descriptor->name());
-                                }
+                                if (!check_enum(data_type_enum8, field_tag, oneof_descriptor->name(), strict_oneof_presence_check))
+                                    return false;
                             }
                             else if (data_type_id == TypeIndex::Enum16)
                             {
                                 const auto * data_type_enum16 = assert_cast<const DataTypeEnum16 *>(data_types_[idx].get());
-                                if (!check_enum(data_type_enum16, field_tag))
-                                {
-                                    if (!serializer_ptr_ref->strictOneOfPresenceCheck())
-                                        return false;
-                                    throw_incompatible_oneof(oneof_descriptor->name());
-                                }
+                                if (!check_enum(data_type_enum16, field_tag, oneof_descriptor->name(), strict_oneof_presence_check))
+                                    return false;
                             }
                             else
                                 check_int_type_suitable_for_oneof_presence(data_type_id, oneof_descriptor->name());

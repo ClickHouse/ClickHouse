@@ -97,3 +97,13 @@ CREATE TABLE oneof_empty_subset_04490 ( type Enum8('unknown'=0, 'nothing'=1) ) E
 INSERT INTO oneof_empty_subset_04490 from INFILE '$CURDIR/data_protobuf/RecordTotallyEmpty' SETTINGS format_schema='$SCHEMADIR/04046_empty_record.proto:Record' FORMAT ProtobufSingle;
 SELECT type FROM oneof_empty_subset_04490 FORMAT TSV;
 EOF
+
+# (h) Rejected even for an unmaterialized empty-message branch: without the 'omitted' marker 0,
+#     ClickHouse cannot fall back to omitted presence and must raise an exception.
+$CLICKHOUSE_CLIENT <<EOF
+SET input_format_protobuf_oneof_presence=1;
+DROP TABLE IF EXISTS oneof_empty_no_zero_04490;
+SELECT '>> empty_rejected_missing_omitted_marker';
+CREATE TABLE oneof_empty_no_zero_04490 ( type Enum8('nothing'=1) ) Engine=MergeTree ORDER BY tuple();
+INSERT INTO oneof_empty_no_zero_04490 from INFILE '$CURDIR/data_protobuf/RecordTotallyEmpty' SETTINGS format_schema='$SCHEMADIR/04046_empty_record.proto:Record' FORMAT ProtobufSingle; -- { clientError DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD }
+EOF

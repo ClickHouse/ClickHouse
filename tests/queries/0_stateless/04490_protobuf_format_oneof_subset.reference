@@ -13,3 +13,4 @@ outer_string2		no
 ['item1','item2']	[10,0]	['int_value','omitted']
 >> empty_additive_forward_compat
 unknown
+>> empty_rejected_missing_omitted_marker
