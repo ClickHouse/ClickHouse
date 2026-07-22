@@ -495,22 +495,6 @@ void StorageRabbitMQ::initRabbitMQ()
 }
 
 
-namespace
-{
-/// Shared state for AMQP setup/teardown callbacks that may be dispatched after the blocking
-/// loop has already returned (e.g. on the timeout path, when a slow broker responds late).
-/// AMQP-CPP keeps deferred callbacks alive in the connection after the local channel wrapper is
-/// destroyed, so the callbacks must not capture stack locals by reference. They capture this
-/// object by value (shared_ptr) instead; once `abandoned` is set, any late callback is a no-op.
-struct AMQPSetupState
-{
-    std::string error;
-    int error_code = 0;
-    size_t bound_keys = 0;
-    bool abandoned = false;
-};
-}
-
 void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
 {
     /// Exchange hierarchy:
@@ -524,35 +508,30 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
     /// 1. `durable` (survive RabbitMQ server restart)
     /// 2. `autodelete` (auto delete in case of queue bindings are dropped).
 
-    /// State is shared by value into every callback (see AMQPSetupState) so that a late dispatch
-    /// after a timeout cannot touch freed stack memory.
-    auto state = std::make_shared<AMQPSetupState>();
+    std::string error;
+    int error_code = 0;
     rabbit_channel.declareExchange(exchange_name, exchange_type, AMQP::durable)
-    .onError([this, state](const char * message)
+    .onError([&](const char * message)
     {
-        if (state->abandoned)
-            return;
         connection->getHandler().stopBlockingLoop();
         /// This error can be a result of attempt to declare exchange if it was already declared but
         /// 1) with different exchange type.
         /// 2) with different exchange settings.
-        state->error = "Unable to declare exchange. "
+        error = "Unable to declare exchange. "
             "Make sure specified exchange is not already declared. Error: " + std::string(message);
-        state->error_code = ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE;
+        error_code = ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE;
     });
 
     rabbit_channel.declareExchange(bridge_exchange, AMQP::fanout, AMQP::durable | AMQP::autodelete)
-    .onError([this, state](const char * message)
+    .onError([&](const char * message)
     {
-        if (state->abandoned)
-            return;
         connection->getHandler().stopBlockingLoop();
         /// This error is not supposed to happen as this exchange name is always unique to type and its settings.
-        if (state->error.empty())
+        if (error.empty())
         {
-            state->error = fmt::format("Unable to declare bridge exchange ({}). Reason: {}",
+            error = fmt::format("Unable to declare bridge exchange ({}). Reason: {}",
                                 bridge_exchange, std::string(message));
-            state->error_code = ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE;
+            error_code = ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE;
         }
     });
 
@@ -567,34 +546,30 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
 
         /// Declare hash exchange for sharding.
         rabbit_channel.declareExchange(sharding_exchange, AMQP::consistent_hash, AMQP::durable | AMQP::autodelete, binding_arguments)
-        .onError([this, state](const char * message)
+        .onError([&](const char * message)
         {
-            if (state->abandoned)
-                return;
             connection->getHandler().stopBlockingLoop();
             /// This error can be a result of same reasons as above for exchange_name, i.e. it will mean that sharding exchange name appeared
             /// to be the same as some other exchange (which purpose is not for sharding). So probably actual error reason: queue_base parameter
             /// is bad.
-            if (state->error.empty())
+            if (error.empty())
             {
-                state->error = fmt::format("Unable to declare sharding exchange ({}). Reason: {}",
+                error = fmt::format("Unable to declare sharding exchange ({}). Reason: {}",
                                     sharding_exchange, std::string(message));
-                state->error_code = ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE;
+                error_code = ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE;
             }
         });
 
         rabbit_channel.bindExchange(bridge_exchange, sharding_exchange, routing_keys[0])
-        .onError([this, state](const char * message)
+        .onError([&](const char * message)
         {
-            if (state->abandoned)
-                return;
             connection->getHandler().stopBlockingLoop();
-            if (state->error.empty())
+            if (error.empty())
             {
-                state->error = fmt::format(
+                error = fmt::format(
                     "Unable to bind bridge exchange ({}) to sharding exchange ({}). Reason: {}",
                     bridge_exchange, sharding_exchange, std::string(message));
-                state->error_code = ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE;
+                error_code = ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE;
             }
         });
 
@@ -604,6 +579,8 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
     {
         consumer_exchange = bridge_exchange;
     }
+
+    size_t bound_keys = 0;
 
     if (exchange_type == AMQP::ExchangeType::headers)
     {
@@ -616,31 +593,27 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
         }
 
         rabbit_channel.bindExchange(exchange_name, bridge_exchange, routing_keys[0], bind_headers)
-        .onSuccess([this, state]() { if (!state->abandoned) connection->getHandler().stopBlockingLoop(); })
-        .onError([this, state](const char * message)
+        .onSuccess([&]() { connection->getHandler().stopBlockingLoop(); })
+        .onError([&](const char * message)
         {
-            if (state->abandoned)
-                return;
             connection->getHandler().stopBlockingLoop();
-            state->error = fmt::format("Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
+            error = fmt::format("Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
                                 exchange_name, bridge_exchange, std::string(message));
-            state->error_code = ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE;
+            error_code = ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE;
         });
     }
     else if (exchange_type == AMQP::ExchangeType::fanout || exchange_type == AMQP::ExchangeType::consistent_hash)
     {
         rabbit_channel.bindExchange(exchange_name, bridge_exchange, routing_keys[0])
-        .onSuccess([this, state]() { if (!state->abandoned) connection->getHandler().stopBlockingLoop(); })
-        .onError([this, state](const char * message)
+        .onSuccess([&]() { connection->getHandler().stopBlockingLoop(); })
+        .onError([&](const char * message)
         {
-            if (state->abandoned)
-                return;
             connection->getHandler().stopBlockingLoop();
-            if (state->error.empty())
+            if (error.empty())
             {
-                state->error = fmt::format("Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
+                error = fmt::format("Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
                                     exchange_name, bridge_exchange, std::string(message));
-                state->error_code = ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE;
+                error_code = ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE;
             }
         });
     }
@@ -649,49 +622,36 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
         for (const auto & routing_key : routing_keys)
         {
             rabbit_channel.bindExchange(exchange_name, bridge_exchange, routing_key)
-            .onSuccess([this, state]()
+            .onSuccess([&]()
             {
-                if (state->abandoned)
-                    return;
-                ++state->bound_keys;
-                if (state->bound_keys == routing_keys.size())
+                ++bound_keys;
+                if (bound_keys == routing_keys.size())
                     connection->getHandler().stopBlockingLoop();
             })
-            .onError([this, state](const char * message)
+            .onError([&](const char * message)
             {
-                if (state->abandoned)
-                    return;
                 connection->getHandler().stopBlockingLoop();
-                if (state->error.empty())
+                if (error.empty())
                 {
-                    state->error = fmt::format("Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
+                    error = fmt::format("Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
                                         exchange_name, bridge_exchange, std::string(message));
-                    state->error_code = ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE;
+                    error_code = ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE;
                 }
             });
         }
     }
 
-    if (!connection->getHandler().startBlockingLoopWithTimeout(BLOCKING_LOOP_TIMEOUT_MS))
-    {
-        /// Make any late-dispatched callback above a no-op before the captured stack frame unwinds.
-        state->abandoned = true;
-        throw Exception(ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE, "Timed out waiting for exchange setup - RabbitMQ may be unreachable");
-    }
-    if (!state->error.empty())
-        throw Exception(state->error_code, "{}", state->error);
+    connection->getHandler().startBlockingLoop();
+    if (!error.empty())
+        throw Exception(error_code, "{}", error);
 }
 
 
 void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel)
 {
-    /// State is shared by value into every callback (see AMQPSetupState) so that a late dispatch
-    /// after a timeout cannot touch freed stack memory or the destroyed channel.
-    auto state = std::make_shared<AMQPSetupState>();
-    auto success_callback = [this, state, &rabbit_channel, queue_id](const std::string &  queue_name, int msgcount, int /* consumercount */)
+    std::string error;
+    auto success_callback = [&](const std::string &  queue_name, int msgcount, int /* consumercount */)
     {
-        if (state->abandoned)
-            return;
         queues.emplace_back(queue_name);
         LOG_DEBUG(log, "Queue {} is declared", queue_name);
 
@@ -703,29 +663,25 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
         * fanout exchange it can be arbitrary
         */
         rabbit_channel.bindQueue(consumer_exchange, queue_name, std::to_string(queue_id))
-        .onSuccess([this, state] { if (!state->abandoned) connection->getHandler().stopBlockingLoop(); })
-        .onError([this, state](const char * message)
+        .onSuccess([&] { connection->getHandler().stopBlockingLoop(); })
+        .onError([&](const char * message)
         {
-            if (state->abandoned)
-                return;
             connection->getHandler().stopBlockingLoop();
-            state->error = fmt::format("Failed to create queue binding for exchange {}. Reason: {}",
+            error = fmt::format("Failed to create queue binding for exchange {}. Reason: {}",
                                 exchange_name, std::string(message));
         });
     };
 
-    auto error_callback([this, state](const char * message)
+    auto error_callback([&](const char * message)
     {
-        if (state->abandoned)
-            return;
         connection->getHandler().stopBlockingLoop();
         /* This error is most likely a result of an attempt to declare queue with different settings if it was declared before. So for a
          * given queue name either deadletter_exchange parameter changed or queue_size changed, i.e. table was declared with different
          * max_block_size parameter. Solution: client should specify a different queue_base parameter or manually delete previously
          * declared queues via any of the various cli tools.
          */
-         if (state->error.empty())
-             state->error = fmt::format(
+         if (error.empty())
+             error = fmt::format(
                  "Failed to declare queue. Probably queue settings are conflicting: "
                  "max_block_size, deadletter_exchange. Attempt specifying differently those settings "
                  "or use a different queue_base or manually delete previously declared queues, "
@@ -767,14 +723,9 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
     /// AMQP::autodelete setting is not allowed, because in case of server restart there will be no consumers
     /// and deleting queues should not take place.
     rabbit_channel.declareQueue(queue_name, AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
-    if (!connection->getHandler().startBlockingLoopWithTimeout(BLOCKING_LOOP_TIMEOUT_MS))
-    {
-        /// Make any late-dispatched callback above a no-op before the captured stack frame unwinds.
-        state->abandoned = true;
-        throw Exception(ErrorCodes::CANNOT_CREATE_RABBITMQ_QUEUE_BINDING, "Timed out waiting for queue setup - RabbitMQ may be unreachable");
-    }
-    if (!state->error.empty())
-        throw Exception(ErrorCodes::CANNOT_CREATE_RABBITMQ_QUEUE_BINDING, "{}", state->error);
+    connection->getHandler().startBlockingLoop();
+    if (!error.empty())
+        throw Exception(ErrorCodes::CANNOT_CREATE_RABBITMQ_QUEUE_BINDING, "{}", error);
 }
 
 
@@ -798,37 +749,24 @@ void StorageRabbitMQ::unbindExchange()
 
             stopLoop();
             looping_task->deactivate();
-            /// State is shared by value into the callbacks (see AMQPSetupState) so that a late
-            /// dispatch after a timeout cannot touch freed stack memory or the destroyed channel.
-            auto state = std::make_shared<AMQPSetupState>();
+            std::string error;
+
             auto rabbit_channel = connection->createChannel();
             rabbit_channel->removeExchange(bridge_exchange)
-            .onSuccess([this, state]()
+            .onSuccess([&]()
             {
-                if (!state->abandoned)
-                    connection->getHandler().stopBlockingLoop();
-            })
-            .onError([this, state](const char * message)
-            {
-                if (state->abandoned)
-                    return;
                 connection->getHandler().stopBlockingLoop();
-                state->error = fmt::format("Unable to remove exchange. Reason: {}", std::string(message));
+            })
+            .onError([&](const char * message)
+            {
+                connection->getHandler().stopBlockingLoop();
+                error = fmt::format("Unable to remove exchange. Reason: {}", std::string(message));
             });
 
-            /// If the connection is dead the removeExchange callbacks never fire. Bound the wait so
-            /// MV detach / shutdown cannot block forever. The bridge exchange is declared autodelete,
-            /// so the broker reaps it once the dead connection drops - log and continue on timeout.
-            if (!connection->getHandler().startBlockingLoopWithTimeout(BLOCKING_LOOP_TIMEOUT_MS))
-            {
-                /// Make any late-dispatched callback above a no-op before the channel/state go out of scope.
-                state->abandoned = true;
-                LOG_WARNING(log, "Timed out waiting for exchange unbind - RabbitMQ connection may be dead. "
-                                 "The bridge exchange will be auto-deleted by the broker.");
-            }
+            connection->getHandler().startBlockingLoop();
             rabbit_channel->close();
-            if (!state->error.empty())
-                throw Exception(ErrorCodes::CANNOT_REMOVE_RABBITMQ_EXCHANGE, "{}", state->error);
+            if (!error.empty())
+                throw Exception(ErrorCodes::CANNOT_REMOVE_RABBITMQ_EXCHANGE, "{}", error);
         }
         catch (...)
         {
@@ -1033,10 +971,6 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
         return;
 
     connection->heartbeat();
-    /// Run the event loop briefly so that any I/O error triggered by the heartbeat write on a
-    /// dead socket is processed before we check isConnected(). Without this, the error event
-    /// only surfaces inside startBlockingLoop() — after the guard has already passed.
-    connection->getHandler().iterateLoop();
     if (!connection->isConnected())
     {
         String queue_names;
@@ -1053,10 +987,6 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
         return;
     }
 
-    /// State is shared by value into the callbacks (see AMQPSetupState) so that a late dispatch
-    /// after a timeout cannot touch freed stack memory or the destroyed channel. The queue name
-    /// is captured by value for the same reason.
-    auto state = std::make_shared<AMQPSetupState>();
     auto rabbit_channel = connection->createChannel();
     for (const auto & queue : queues)
     {
@@ -1065,28 +995,18 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
         /// AMQP::ifempty is not used on purpose.
 
         rabbit_channel->removeQueue(queue, AMQP::ifunused)
-        .onSuccess([this, state, queue](uint32_t num_messages)
+        .onSuccess([&](uint32_t num_messages)
         {
-            if (state->abandoned)
-                return;
             LOG_TRACE(log, "Successfully deleted queue {}, messages contained {}", queue, num_messages);
             connection->getHandler().stopBlockingLoop();
         })
-        .onError([this, state, queue](const char * message)
+        .onError([&](const char * message)
         {
-            if (state->abandoned)
-                return;
             LOG_ERROR(log, "Failed to delete queue {}. Error message: {}", queue, message);
             connection->getHandler().stopBlockingLoop();
         });
     }
-    if (!connection->getHandler().startBlockingLoopWithTimeout(BLOCKING_LOOP_TIMEOUT_MS))
-    {
-        /// Make any late-dispatched callback above a no-op before the channel/state go out of scope.
-        state->abandoned = true;
-        LOG_WARNING(log, "Timed out waiting for queue cleanup - RabbitMQ connection may be dead. "
-                         "Queues may need to be deleted manually.");
-    }
+    connection->getHandler().startBlockingLoop();
     rabbit_channel->close();
 
     /// Also there is no need to cleanup exchanges as they were created with AMQP::autodelete option. Once queues
