@@ -182,6 +182,7 @@ static struct InitFiu
     ONCE(iceberg_writes_cleanup) \
     REGULAR(storage_cluster_read_sleep) \
     ONCE(backup_add_empty_memory_table) \
+    ONCE(backup_fail_before_writing_metadata) \
     PAUSEABLE_ONCE(backup_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_on_start) \
     PAUSEABLE(sc_state_application_pause) \
