@@ -60,11 +60,8 @@ extern const SettingsUInt64 automatic_parallel_replicas_mode;
 extern const SettingsParallelReplicasMode parallel_replicas_mode;
 extern const SettingsBool use_concurrency_control;
 extern const SettingsBool parallel_replicas_local_plan;
-extern const SettingsBool parallel_replicas_filter_pushdown;
-extern const SettingsBool serialize_query_plan;
 extern const SettingsBool force_index_by_date;
 extern const SettingsBool force_primary_key;
-extern const SettingsMap additional_table_filters;
 extern const SettingsString cluster_for_parallel_replicas;
 }
 
