@@ -40,7 +40,8 @@ echo "== deflate (zlib): max level accepted, output round-trips via ClickHouse =
 out="${CLICKHOUSE_TMP}/04491_out.deflate"
 rm -f "$out"
 ${CLICKHOUSE_LOCAL} -q "$query INTO OUTFILE '$out' COMPRESSION 'deflate' LEVEL ${max_level} FORMAT TSV" >/dev/null
-got=$(${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('$out', 'TSV', 'a UInt64, b String', 'deflate') FORMAT TSV" | md5sum)
+# ORDER BY a: reading back through file() does not preserve row order under input_format_parallel_parsing.
+got=$(${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('$out', 'TSV', 'a UInt64, b String', 'deflate') ORDER BY a FORMAT TSV" | md5sum)
 [ "$got" = "$reference" ] && echo "deflate max level: OK" || echo "deflate max level: MISMATCH"
 rm -f "$out"
 

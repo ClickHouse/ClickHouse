@@ -35,7 +35,7 @@ SELECT * EXCEPT (b, c), upper(b) AS b, toFloat64(c) * 10 AS c FROM t_except_alia
 
 DROP TABLE t_except_alias;
 
--- Now test the same with the new analyzer
+-- Now test the same with the analyzer
 SET allow_experimental_analyzer = 1;
 
 DROP TABLE IF EXISTS t_except_alias;

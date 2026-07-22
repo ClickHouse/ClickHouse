@@ -7,6 +7,8 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/Utils.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/NaNUtils.h>
+#include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -25,6 +27,7 @@ namespace Setting
     extern const SettingsBool optimize_extract_common_expressions;
     extern const SettingsBool optimize_and_compare_chain;
     extern const SettingsUInt64 optimize_and_compare_chain_max_hash_work;
+    extern const SettingsBool optimize_redundant_comparisons;
 }
 
 namespace ErrorCodes
@@ -222,6 +225,864 @@ static std::shared_ptr<FunctionNode> getFlattenedLogicalExpression(const Functio
     resolveOrdinaryFunctionNodeByName(*flattened, function_name, context);
 
     return flattened;
+}
+
+/// Helper types and functions for comparison chain pruning in `tryOptimizeAndCompareNotEqualsChain`.
+
+/// Comparison pruning groups operands by structural equality of the compared expression. By the
+/// documented common subexpression elimination rule, syntactically identical expressions in a query
+/// are considered to have identical values and executed once, so grouping several occurrences of a
+/// non-deterministic expression such as `rand() % 2` would in fact be well-defined. Even so, we
+/// conservatively exclude any operand containing a non-deterministic function from pruning, conflict
+/// detection and NOT IN conversion, rather than letting these rewrites depend on that folding.
+static bool hasNonDeterministicFunction(const QueryTreeNodePtr & node)
+{
+    std::vector<const IQueryTreeNode *> nodes_to_process;
+    nodes_to_process.push_back(node.get());
+
+    while (!nodes_to_process.empty())
+    {
+        const auto * current = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        if (const auto * function_node = current->as<FunctionNode>())
+        {
+            /// Only ordinary functions can be non-deterministic here (e.g. `rand`); aggregate and
+            /// window functions are deterministic within the scope of the query.
+            if (function_node->isOrdinaryFunction() && !function_node->getFunctionOrThrow()->isDeterministicInScopeOfQuery())
+                return true;
+        }
+
+        for (const auto & child : current->getChildren())
+        {
+            if (child)
+                nodes_to_process.push_back(child.get());
+        }
+    }
+
+    return false;
+}
+
+enum class ComparisonFunction : uint8_t
+{
+    EQUALS,
+    NOT_EQUALS,
+    LESS,
+    LESS_OR_EQUALS,
+    GREATER,
+    GREATER_OR_EQUALS
+};
+
+static std::optional<ComparisonFunction> toComparisonFunction(const String & name)
+{
+    static const std::unordered_map<std::string_view, ComparisonFunction> name_to_function =
+    {
+        {"equals", ComparisonFunction::EQUALS},
+        {"notEquals", ComparisonFunction::NOT_EQUALS},
+        {"less", ComparisonFunction::LESS},
+        {"lessOrEquals", ComparisonFunction::LESS_OR_EQUALS},
+        {"greater", ComparisonFunction::GREATER},
+        {"greaterOrEquals", ComparisonFunction::GREATER_OR_EQUALS},
+    };
+
+    auto it = name_to_function.find(name);
+    if (it == name_to_function.end())
+        return std::nullopt;
+    return it->second;
+}
+
+static bool isLessThanCompare(ComparisonFunction f)
+{
+    return f == ComparisonFunction::LESS || f == ComparisonFunction::LESS_OR_EQUALS;
+}
+
+static bool isGreaterThanCompare(ComparisonFunction f)
+{
+    return f == ComparisonFunction::GREATER || f == ComparisonFunction::GREATER_OR_EQUALS;
+}
+
+static ComparisonFunction flipComparisonFunction(ComparisonFunction f)
+{
+    switch (f)
+    {
+    case ComparisonFunction::LESS:
+        return ComparisonFunction::GREATER;
+    case ComparisonFunction::GREATER:
+        return ComparisonFunction::LESS;
+    case ComparisonFunction::LESS_OR_EQUALS:
+        return ComparisonFunction::GREATER_OR_EQUALS;
+    case ComparisonFunction::GREATER_OR_EQUALS:
+        return ComparisonFunction::LESS_OR_EQUALS;
+    case ComparisonFunction::EQUALS:
+        return ComparisonFunction::EQUALS;
+    case ComparisonFunction::NOT_EQUALS:
+        return ComparisonFunction::NOT_EQUALS;
+    }
+    UNREACHABLE();
+}
+
+static String comparisonFunctionToName(ComparisonFunction f)
+{
+    switch (f)
+    {
+    case ComparisonFunction::EQUALS:
+        return "equals";
+    case ComparisonFunction::NOT_EQUALS:
+        return "notEquals";
+    case ComparisonFunction::LESS:
+        return "less";
+    case ComparisonFunction::LESS_OR_EQUALS:
+        return "lessOrEquals";
+    case ComparisonFunction::GREATER:
+        return "greater";
+    case ComparisonFunction::GREATER_OR_EQUALS:
+        return "greaterOrEquals";
+    }
+    UNREACHABLE();
+}
+
+static ComparisonFunction strengthenComparison(ComparisonFunction f)
+{
+    switch (f)
+    {
+    case ComparisonFunction::LESS_OR_EQUALS:
+        return ComparisonFunction::LESS;
+    case ComparisonFunction::GREATER_OR_EQUALS:
+        return ComparisonFunction::GREATER;
+    default:
+        UNREACHABLE();
+    }
+}
+
+/// Result of comparing two filters on the same expression.
+enum class ValueComparisonResult
+{
+    PRUNE_LEFT,        /// The left (existing) filter is weaker and can be removed.
+    PRUNE_RIGHT,       /// The right (new) filter is weaker and can be discarded.
+    STRENGTHEN_LEFT,   /// Left's inclusive comparison is tightened to strict (e.g. <= → <); right is pruned.
+    STRENGTHEN_RIGHT,  /// Right's inclusive comparison is tightened to strict (e.g. <= → <); left is pruned.
+    ALWAYS_FALSE,      /// The two filters are contradictory — the AND is always false.
+    NONE               /// Filters are independent, both must be kept.
+};
+
+/// Result of inserting a new filter into the per-expression filter list.
+enum class AddComparisonFilterResult
+{
+    ALWAYS_FALSE, /// Contradiction detected — the whole AND is always false.
+    ALWAYS_TRUE,  /// The new filter always holds: for the column type (boundary folding) or given
+                  /// the existing filters (pruning), so it can be discarded.
+    ADDED         /// The filter was added (possibly after pruning weaker existing filters).
+};
+
+/// Per-condition state kept in `ComparisonFilterMap` for one `expr op constant` operand.
+struct ComparisonFilterInfo
+{
+    const ConstantNode * constant_node;
+    ComparisonFunction function;
+    QueryTreeNodePtr original_node;          /// Original query tree node of this comparison.
+    std::optional<Field> converted_value;    /// Constant converted to the column type.
+    size_t original_index = 0;               /// Position in the original AND argument list (for stable ordering).
+    /// (e.g. for an Int32 column, `i < 3.5` is internally rewritten to `i <= 3`, with
+    /// `function = LESS_OR_EQUALS` and `converted_value = 3`).  In that case `original_node`
+    /// still references the old literal (3.5) and any later rebuild must substitute it with
+    /// `converted_value`, otherwise the AST goes out of sync with the analysis state.
+    bool constant_rewritten = false;
+    /// Set when folding changed `function` or the constant: the node must be rebuilt on emission,
+    /// so that the tightened predicate reaches downstream analysis.
+    bool modified = false;
+};
+
+/// A `Bool` column constant may be stored as `Types::Bool` (strict conversion) or as an integer
+/// Field (boundary folding); unify so that map lookups agree with `accurateEquals`/`accurateLess`.
+static Field canonicalizeNotEqualsKey(const Field & value)
+{
+    if (value.getType() == Field::Types::Bool)
+        return Field(static_cast<UInt64>(value.safeGet<bool>()));
+    return value;
+}
+
+/// Filters of one expression, split so that long `x != c1 AND x != c2 AND ...` chains stay linear:
+/// notEquals interact only through exact duplicates (one map lookup), a range erases exactly the
+/// values it excludes, and the pairwise scan is confined to the small `range_filters`.
+struct ExpressionFilters
+{
+    /// Convertible equals/range filters: at most one lower and one upper bound, or one equals.
+    std::vector<ComparisonFilterInfo> range_filters;
+    /// Convertible notEquals filters, keyed by their canonicalized converted value.
+    std::map<Field, ComparisonFilterInfo> not_equals_filters;
+    /// Excluded from the analysis: non-lossless conversions (they also veto the fold-to-false
+    /// collapse), NaN constants, and everything when pruning is disabled.
+    std::vector<ComparisonFilterInfo> opaque_filters;
+};
+
+using ComparisonFilterMap = QueryTreeNodePtrWithHashMap<ExpressionFilters>;
+
+static ValueComparisonResult invertComparisonResult(ValueComparisonResult result)
+{
+    switch (result)
+    {
+    case ValueComparisonResult::PRUNE_LEFT:
+        return ValueComparisonResult::PRUNE_RIGHT;
+    case ValueComparisonResult::PRUNE_RIGHT:
+        return ValueComparisonResult::PRUNE_LEFT;
+    case ValueComparisonResult::STRENGTHEN_LEFT:
+        return ValueComparisonResult::STRENGTHEN_RIGHT;
+    case ValueComparisonResult::STRENGTHEN_RIGHT:
+        return ValueComparisonResult::STRENGTHEN_LEFT;
+    default:
+        return result;
+    }
+}
+
+/// Try to convert a constant to the expression's (column) type using strict (lossless) conversion.
+/// Returns the converted Field if successful, or std::nullopt if the conversion is lossy or fails.
+static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant_node, const DataTypePtr & expr_type)
+{
+    const auto & from_type = constant_node->getResultType();
+
+    if (from_type->equals(*expr_type))
+        return constant_node->getValue();
+
+    const Field & original_value = constant_node->getValue();
+    auto converted = tryConvertFieldToType(original_value, *expr_type, from_type.get(), {}, /*strict=*/true);
+    if (converted.isNull())
+        return std::nullopt;
+
+    /// `strict` conversion is supposed to reject any lossy conversion by returning a null `Field`, but
+    /// `convertFieldToType` does not honour that contract for some value-narrowing conversions of a
+    /// typed constant, so `converted.isNull()` alone is not enough:
+    ///   - `DateTime64`/`Time64` scale reduction silently truncates a higher-scale value to a lower one
+    ///     (e.g. `1.23` of scale 2 becomes `1.2` of scale 1). For a `DateTime64(1)` column,
+    ///     `dt = toDateTime64('1970-01-01 00:00:01.20', 1) AND dt != toDateTime64('1970-01-01 00:00:01.23', 2)`
+    ///     must keep the row `1.20` (because `1.20 != 1.23`), but both constants would collapse to `1.2`.
+    ///   - `DateTime`/`DateTime64` -> `Date`/`Date32` truncation drops the intra-day part, even though the
+    ///     comparison is evaluated in the wider (`DateTime`) domain (a `Date` value promotes to midnight).
+    ///     For a `Date` column,
+    ///     `d = toDate('2024-01-01') AND d != toDateTime('2024-01-01 12:34:56')` must keep the row
+    ///     `2024-01-01` (which differs from `2024-01-01 12:34:56`), but the `DateTime` constant would
+    ///     truncate to the day and the whole `AND` would fold to `false`.
+    ///
+    /// Guard against these by requiring the conversion to be exactly reversible: convert the value back to
+    /// the constant's original type and demand it round-trips to the original value; otherwise skip the
+    /// optimization (which only forgoes a fold and never changes results).
+    ///
+    /// The guard is skipped where the strict contract is known to hold or where it would misfire:
+    ///   - conversions between native numeric types are already exact (`accurate::convertNumeric`
+    ///     performs its own bounds and round-trip checks);
+    ///   - a string constant is parsed directly at the column's resolution, so it never carries the
+    ///     finer resolution that triggers the truncation, and round-tripping through the string
+    ///     rendering would spuriously fail even for exact folds (e.g. `Float64` `3.0` renders as `"3"`).
+    if (!isStringOrFixedString(from_type) && !(isNativeNumber(from_type) && isNativeNumber(expr_type)))
+    {
+        auto round_trip = tryConvertFieldToType(converted, *from_type, expr_type.get(), {}, /*strict=*/true);
+        if (round_trip.isNull() || !accurateEquals(round_trip, original_value))
+            return std::nullopt;
+    }
+
+    return converted;
+}
+
+enum class BoundaryCheckResult : uint8_t
+{
+    ABOVE_MAX,
+    BELOW_MIN,
+    AT_MAX,
+    AT_MIN,
+    IN_RANGE
+};
+
+template <typename T>
+static BoundaryCheckResult checkBoundaryImpl(const Field & value)
+{
+    auto check = [](const auto & v) -> BoundaryCheckResult
+    {
+        if (accurate::greaterOp(v, std::numeric_limits<T>::max()))
+            return BoundaryCheckResult::ABOVE_MAX;
+        if (accurate::lessOp(v, std::numeric_limits<T>::lowest()))
+            return BoundaryCheckResult::BELOW_MIN;
+        if (accurate::equalsOp(v, std::numeric_limits<T>::max()))
+            return BoundaryCheckResult::AT_MAX;
+        if (accurate::equalsOp(v, std::numeric_limits<T>::lowest()))
+            return BoundaryCheckResult::AT_MIN;
+        return BoundaryCheckResult::IN_RANGE;
+    };
+
+    switch (value.getType())
+    {
+    case Field::Types::UInt64:
+        return check(value.safeGet<UInt64>());
+    case Field::Types::Int64:
+        return check(value.safeGet<Int64>());
+    case Field::Types::Float64:
+        return check(value.safeGet<Float64>());
+    default:
+        return BoundaryCheckResult::IN_RANGE;
+    }
+}
+
+/// Try to optimize a comparison against a native integer column. Two transformations:
+///
+/// 1. Boundary folding: when the constant is out of range or at the type boundary, fold the
+///    condition to ALWAYS_FALSE / ALWAYS_TRUE, or tighten the operator
+///    (e.g. `Int8_col >= 127` becomes `Int8_col = 127`).
+///
+/// 2. Float literal rewrite: when the Float64 constant is not exactly representable as the
+///    target integer, rewrite it to an equivalent integer predicate via floor/ceil
+///    (e.g. `Int32_col > 3.5` becomes `Int32_col >= 4`).
+///    For equals/notEquals with non-integer floats, fold directly
+///    (e.g. `Int32_col = 3.5` is always false).
+///
+/// May modify filter.function and filter.converted_value in place.
+/// Returns ALWAYS_FALSE, ALWAYS_TRUE, or std::nullopt if no folding occurred.
+static std::optional<AddComparisonFilterResult> tryFoldBoundaryOrRewriteFloatForIntColumn(
+    ComparisonFilterInfo & filter, const DataTypePtr & column_type)
+{
+    if (!isNativeInteger(column_type))
+        return std::nullopt;
+
+    const bool is_unsigned = column_type->isValueRepresentedByUnsignedInteger();
+    const size_t type_size = column_type->getSizeOfValueInMemory();
+
+    auto dispatch_boundary = [&](const Field & value) -> BoundaryCheckResult
+    {
+        if (is_unsigned)
+        {
+            switch (type_size)
+            {
+            case sizeof(UInt8):
+                return checkBoundaryImpl<UInt8>(value);
+            case sizeof(UInt16):
+                return checkBoundaryImpl<UInt16>(value);
+            case sizeof(UInt32):
+                return checkBoundaryImpl<UInt32>(value);
+            case sizeof(UInt64):
+                return checkBoundaryImpl<UInt64>(value);
+            default:
+                UNREACHABLE();
+            }
+        }
+        else
+        {
+            switch (type_size)
+            {
+            case sizeof(Int8):
+                return checkBoundaryImpl<Int8>(value);
+            case sizeof(Int16):
+                return checkBoundaryImpl<Int16>(value);
+            case sizeof(Int32):
+                return checkBoundaryImpl<Int32>(value);
+            case sizeof(Int64):
+                return checkBoundaryImpl<Int64>(value);
+            default:
+                UNREACHABLE();
+            }
+        }
+    };
+
+    auto fold_boundary = [&](const Field & value) -> std::optional<AddComparisonFilterResult>
+    {
+        auto boundary = dispatch_boundary(value);
+
+        if (boundary == BoundaryCheckResult::ABOVE_MAX)
+        {
+            switch (filter.function)
+            {
+            case ComparisonFunction::LESS:
+            case ComparisonFunction::LESS_OR_EQUALS:
+            case ComparisonFunction::NOT_EQUALS:
+                return AddComparisonFilterResult::ALWAYS_TRUE;
+            case ComparisonFunction::GREATER:
+            case ComparisonFunction::GREATER_OR_EQUALS:
+            case ComparisonFunction::EQUALS:
+                return AddComparisonFilterResult::ALWAYS_FALSE;
+            }
+            UNREACHABLE();
+        }
+
+        if (boundary == BoundaryCheckResult::BELOW_MIN)
+        {
+            switch (filter.function)
+            {
+            case ComparisonFunction::GREATER:
+            case ComparisonFunction::GREATER_OR_EQUALS:
+            case ComparisonFunction::NOT_EQUALS:
+                return AddComparisonFilterResult::ALWAYS_TRUE;
+            case ComparisonFunction::LESS:
+            case ComparisonFunction::LESS_OR_EQUALS:
+            case ComparisonFunction::EQUALS:
+                return AddComparisonFilterResult::ALWAYS_FALSE;
+            }
+            UNREACHABLE();
+        }
+
+        if (boundary == BoundaryCheckResult::AT_MAX)
+        {
+            if (filter.function == ComparisonFunction::GREATER)
+                return AddComparisonFilterResult::ALWAYS_FALSE;
+            if (filter.function == ComparisonFunction::LESS_OR_EQUALS)
+                return AddComparisonFilterResult::ALWAYS_TRUE;
+            if (filter.function == ComparisonFunction::GREATER_OR_EQUALS)
+            {
+                filter.function = ComparisonFunction::EQUALS;
+                filter.modified = true;
+            }
+        }
+
+        if (boundary == BoundaryCheckResult::AT_MIN)
+        {
+            if (filter.function == ComparisonFunction::LESS)
+                return AddComparisonFilterResult::ALWAYS_FALSE;
+            if (filter.function == ComparisonFunction::GREATER_OR_EQUALS)
+                return AddComparisonFilterResult::ALWAYS_TRUE;
+            if (filter.function == ComparisonFunction::LESS_OR_EQUALS)
+            {
+                filter.function = ComparisonFunction::EQUALS;
+                filter.modified = true;
+            }
+        }
+
+        return std::nullopt;
+    };
+
+    const Field & value = filter.converted_value
+        ? *filter.converted_value
+        : filter.constant_node->getValue();
+
+    if (filter.converted_value || value.getType() != Field::Types::Float64)
+        return fold_boundary(value);
+
+    const Float64 float_val = value.safeGet<Float64>();
+    if (std::isnan(float_val))
+        return std::nullopt;
+
+    auto make_int_field = [&](Float64 v) -> Field
+    {
+        return is_unsigned ? Field(static_cast<UInt64>(v)) : Field(static_cast<Int64>(v));
+    };
+
+    const Float64 floored = std::floor(float_val);
+    if (float_val == floored)
+    {
+        if (auto result = fold_boundary(Field(floored)))
+            return result;
+
+        filter.converted_value = make_int_field(floored);
+        return fold_boundary(*filter.converted_value);
+    }
+
+    switch (filter.function)
+    {
+    case ComparisonFunction::EQUALS:
+        return AddComparisonFilterResult::ALWAYS_FALSE;
+    case ComparisonFunction::NOT_EQUALS:
+        return AddComparisonFilterResult::ALWAYS_TRUE;
+    case ComparisonFunction::LESS:
+    case ComparisonFunction::LESS_OR_EQUALS:
+    {
+        filter.function = ComparisonFunction::LESS_OR_EQUALS;
+        if (auto result = fold_boundary(Field(floored)))
+            return result;
+        filter.converted_value = make_int_field(floored);
+        filter.constant_rewritten = true;
+        filter.modified = true;
+        break;
+    }
+    case ComparisonFunction::GREATER:
+    case ComparisonFunction::GREATER_OR_EQUALS:
+    {
+        filter.function = ComparisonFunction::GREATER_OR_EQUALS;
+        const Float64 ceiled = std::ceil(float_val);
+        if (auto result = fold_boundary(Field(ceiled)))
+            return result;
+        filter.converted_value = make_int_field(ceiled);
+        filter.constant_rewritten = true;
+        filter.modified = true;
+        break;
+    }
+    }
+
+    return fold_boundary(*filter.converted_value);
+}
+
+/// Determine the relationship between two comparison conditions on the same expression.
+/// Returns PRUNE_LEFT/PRUNE_RIGHT when one condition subsumes the other,
+/// ALWAYS_FALSE when they are contradictory, or NONE when both must be kept.
+static ValueComparisonResult compareComparisonFilters(const ComparisonFilterInfo & left, const ComparisonFilterInfo & right)
+{
+    if (!left.converted_value || !right.converted_value)
+        return ValueComparisonResult::NONE;
+
+    const auto & lc = *left.converted_value;
+    const auto & rc = *right.converted_value;
+    const auto lf = left.function;
+    const auto rf = right.function;
+
+    /// FieldAccurateComparison orders NaN after all ordinary values, but less/lessOrEquals/equals
+    /// in query execution return false for any comparison involving NaN. Relying on range-ordering
+    /// here would unsoundly prune predicates: e.g. for `f = 1 AND f < nan` the EQUALS branch treats
+    /// accurateLess(1, nan) as true and drops `f < nan`, returning f = 1, while the original
+    /// predicate is always false. Skip pruning when either constant is NaN.
+    auto is_nan = [](const Field & f)
+    { return f.getType() == Field::Types::Float64 && isNaN(f.safeGet<Float64>()); };
+    if (is_nan(lc) || is_nan(rc))
+        return ValueComparisonResult::NONE;
+
+    /// equals vs anything: check whether the equals value satisfies the other condition.
+    /// If yes → PRUNE_RIGHT (e.g. `a = 3 AND a < 5`), if no → ALWAYS_FALSE (e.g. `a = 3 AND a > 5`).
+    if (lf == ComparisonFunction::EQUALS)
+    {
+        bool prune_right = false;
+        switch (rf)
+        {
+        case ComparisonFunction::LESS:
+            prune_right = accurateLess(lc, rc);
+            break;
+        case ComparisonFunction::LESS_OR_EQUALS:
+            prune_right = accurateLessOrEqual(lc, rc);
+            break;
+        case ComparisonFunction::GREATER:
+            prune_right = accurateLess(rc, lc);
+            break;
+        case ComparisonFunction::GREATER_OR_EQUALS:
+            prune_right = accurateLessOrEqual(rc, lc);
+            break;
+        case ComparisonFunction::NOT_EQUALS:
+            prune_right = !accurateEquals(lc, rc);
+            break;
+        case ComparisonFunction::EQUALS:
+            prune_right = accurateEquals(lc, rc);
+            break;
+        }
+        return prune_right ? ValueComparisonResult::PRUNE_RIGHT : ValueComparisonResult::ALWAYS_FALSE;
+    }
+
+    /// Right is equals — swap arguments and invert the result.
+    if (rf == ComparisonFunction::EQUALS)
+        return invertComparisonResult(compareComparisonFilters(right, left));
+
+    /// notEquals vs range: if the range already excludes the notEquals value,
+    /// the notEquals is redundant (e.g. `a != 3 AND a < 3` → PRUNE_LEFT).
+    /// When the values are equal and the range is inclusive, strengthen the range
+    /// (e.g. `a != 3 AND a <= 3` → `a < 3`, returned as STRENGTHEN_RIGHT).
+    /// Otherwise both are independent (e.g. `a != 3 AND a < 5` → NONE).
+    /// notEquals vs notEquals: duplicate → PRUNE_RIGHT, otherwise NONE.
+    if (lf == ComparisonFunction::NOT_EQUALS)
+    {
+        bool prune_left = false;
+        bool can_strengthen_right = false;
+        switch (rf)
+        {
+        case ComparisonFunction::LESS:
+            prune_left = !accurateLess(lc, rc);
+            break;
+        case ComparisonFunction::LESS_OR_EQUALS:
+            prune_left = accurateLess(rc, lc);
+            if (!prune_left)
+                can_strengthen_right = accurateEquals(lc, rc);
+            break;
+        case ComparisonFunction::GREATER:
+            prune_left = !accurateLess(rc, lc);
+            break;
+        case ComparisonFunction::GREATER_OR_EQUALS:
+            prune_left = accurateLess(lc, rc);
+            if (!prune_left)
+                can_strengthen_right = accurateEquals(lc, rc);
+            break;
+        case ComparisonFunction::NOT_EQUALS:
+            if (accurateEquals(lc, rc))
+                return ValueComparisonResult::PRUNE_RIGHT;
+            break;
+        case ComparisonFunction::EQUALS:
+            UNREACHABLE();
+        }
+        if (prune_left)
+            return ValueComparisonResult::PRUNE_LEFT;
+        if (can_strengthen_right)
+            return ValueComparisonResult::STRENGTHEN_RIGHT;
+        return ValueComparisonResult::NONE;
+    }
+
+    /// Right is notEquals — swap arguments and invert the result.
+    if (rf == ComparisonFunction::NOT_EQUALS)
+        return invertComparisonResult(compareComparisonFilters(right, left));
+
+    /// Same-direction ranges (both > or both <): the tighter bound wins.
+    /// E.g. `a > 1 AND a > 3` → PRUNE_LEFT.  When values are equal, < beats <=, > beats >=.
+    if (isGreaterThanCompare(lf) && isGreaterThanCompare(rf))
+    {
+        if (accurateLess(rc, lc))
+            return ValueComparisonResult::PRUNE_RIGHT;
+        if (accurateLess(lc, rc))
+            return ValueComparisonResult::PRUNE_LEFT;
+        /// Equal values: > is stricter than >=.
+        if (lf == ComparisonFunction::GREATER_OR_EQUALS)
+            return ValueComparisonResult::PRUNE_LEFT;
+        return ValueComparisonResult::PRUNE_RIGHT;
+    }
+
+    /// Same logic for both-less: tighter (smaller) bound wins.
+    if (isLessThanCompare(lf) && isLessThanCompare(rf))
+    {
+        if (accurateLess(lc, rc))
+            return ValueComparisonResult::PRUNE_RIGHT;
+        if (accurateLess(rc, lc))
+            return ValueComparisonResult::PRUNE_LEFT;
+        /// Equal values: < is stricter than <=.
+        if (lf == ComparisonFunction::LESS_OR_EQUALS)
+            return ValueComparisonResult::PRUNE_LEFT;
+        return ValueComparisonResult::PRUNE_RIGHT;
+    }
+
+    /// Opposite-direction ranges (< vs >): check whether the interval is non-empty.
+    /// E.g. `a < 5 AND a > 1` → NONE, `a < 1 AND a > 5` → ALWAYS_FALSE.
+    /// Both inclusive (<= and >=) allows a single-point interval: `a <= 3 AND a >= 3` → NONE.
+    if (isLessThanCompare(lf))
+    {
+        chassert(isGreaterThanCompare(rf));
+        bool both_inclusive = (lf == ComparisonFunction::LESS_OR_EQUALS && rf == ComparisonFunction::GREATER_OR_EQUALS);
+        if (both_inclusive)
+            return accurateLessOrEqual(rc, lc) ? ValueComparisonResult::NONE : ValueComparisonResult::ALWAYS_FALSE;
+        return accurateLess(rc, lc) ? ValueComparisonResult::NONE : ValueComparisonResult::ALWAYS_FALSE;
+    }
+
+    /// Greater vs less — swap to reuse the less-vs-greater branch above.
+    chassert(isGreaterThanCompare(lf) && isLessThanCompare(rf));
+    return invertComparisonResult(compareComparisonFilters(right, left));
+}
+
+/// Rebuild the `original_node` of a filter after its `function` has been changed (e.g. by strengthening).
+/// Preserves the original argument order.
+static void rebuildComparisonNode(ComparisonFilterInfo & filter, const ContextPtr & context)
+{
+    auto * orig = filter.original_node->as<FunctionNode>();
+    chassert(orig);
+    auto orig_args = orig->getArguments().getNodes();
+    bool constant_on_left = orig_args[0]->as<ConstantNode>() != nullptr;
+    auto output_func = constant_on_left ? flipComparisonFunction(filter.function) : filter.function;
+    auto func_name = comparisonFunctionToName(output_func);
+
+    QueryTreeNodes new_args = std::move(orig_args);
+    if (filter.constant_rewritten)
+    {
+        chassert(filter.converted_value.has_value());
+        const size_t constant_idx = constant_on_left ? 0 : 1;
+        new_args[constant_idx] = std::make_shared<ConstantNode>(*filter.converted_value);
+    }
+
+    auto new_node = std::make_shared<FunctionNode>(func_name);
+    new_node->markAsOperator();
+    new_node->getArguments().getNodes() = std::move(new_args);
+    resolveOrdinaryFunctionNodeByName(*new_node, func_name, context);
+    filter.original_node = std::move(new_node);
+}
+
+/// Insert a new comparison filter for `expression` into `filter_map`.
+/// When `enable_pruning` is true, performs type conversion, boundary folding, and
+/// comparison against existing filters for the same expression.
+/// Returns ALWAYS_FALSE if a contradiction is found, ALWAYS_TRUE if the condition holds
+/// for the column type or is implied by existing filters, or ADDED otherwise.
+static AddComparisonFilterResult addComparisonFilter(
+    ComparisonFilterMap & filter_map,
+    const QueryTreeNodePtr & expression,
+    ComparisonFilterInfo new_filter,
+    bool enable_pruning,
+    const ContextPtr & context)
+{
+    /// Pruning disabled — just store the filter without analysis.
+    if (!enable_pruning)
+    {
+        filter_map[expression].opaque_filters.push_back(std::move(new_filter));
+        return AddComparisonFilterResult::ADDED;
+    }
+
+    /// Step 1: convert the constant to the column's type for uniform comparison.
+    const auto & raw_type = expression->getResultType();
+    chassert(!raw_type->isNullable());
+    auto expr_type = removeLowCardinality(raw_type);
+
+    new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
+
+    /// Step 2: for integer columns, try boundary folding / float-literal rewriting.
+    if (auto result = tryFoldBoundaryOrRewriteFloatForIntColumn(new_filter, expr_type))
+        return *result;
+
+    auto & filters = filter_map[expression];
+
+    auto is_nan_field = [](const Field & f)
+    { return f.getType() == Field::Types::Float64 && isNaN(f.safeGet<Float64>()); };
+
+    /// Non-lossless conversions and NaN constants never interact (`compareComparisonFilters`
+    /// yields NONE for them), so keep them aside as-is.
+    if (!new_filter.converted_value || is_nan_field(*new_filter.converted_value))
+    {
+        filters.opaque_filters.push_back(std::move(new_filter));
+        return AddComparisonFilterResult::ADDED;
+    }
+
+    /// Step 3: compare against the existing equals/range filters.
+    auto & range_filters = filters.range_filters;
+    for (size_t i = 0; i < range_filters.size(); ++i)
+    {
+        auto result = compareComparisonFilters(range_filters[i], new_filter);
+        switch (result)
+        {
+        case ValueComparisonResult::PRUNE_LEFT:
+            range_filters.erase(range_filters.begin() + static_cast<std::ptrdiff_t>(i));
+            --i;
+            break;
+        case ValueComparisonResult::PRUNE_RIGHT:
+            return AddComparisonFilterResult::ALWAYS_TRUE;
+        case ValueComparisonResult::STRENGTHEN_LEFT:
+        {
+            range_filters[i].function = strengthenComparison(range_filters[i].function);
+            rebuildComparisonNode(range_filters[i], context);
+
+            /// The tightened bound may now contradict the other stored range
+            /// (e.g. `a <= 3 AND a >= 3 AND a != 3` must fold to false).
+            for (size_t j = 0; j < range_filters.size(); ++j)
+            {
+                if (j == i)
+                    continue;
+                auto recheck = compareComparisonFilters(range_filters[j], range_filters[i]);
+                if (recheck == ValueComparisonResult::ALWAYS_FALSE)
+                    return AddComparisonFilterResult::ALWAYS_FALSE;
+                /// Only an opposite-direction range can coexist here, and tightening does not
+                /// change the direction, so the verdict is either ALWAYS_FALSE or NONE.
+                chassert(recheck == ValueComparisonResult::NONE);
+            }
+            return AddComparisonFilterResult::ALWAYS_TRUE;
+        }
+        case ValueComparisonResult::STRENGTHEN_RIGHT:
+            new_filter.function = strengthenComparison(new_filter.function);
+            rebuildComparisonNode(new_filter, context);
+            range_filters.erase(range_filters.begin() + static_cast<std::ptrdiff_t>(i));
+            --i;
+            break;
+        case ValueComparisonResult::ALWAYS_FALSE:
+            return AddComparisonFilterResult::ALWAYS_FALSE;
+        case ValueComparisonResult::NONE:
+            break;
+        }
+    }
+
+    auto & not_equals_filters = filters.not_equals_filters;
+    Field key = canonicalizeNotEqualsKey(*new_filter.converted_value);
+
+    /// notEquals interact only through exact duplicates: one lookup replaces the pairwise scan,
+    /// which was quadratic for long `x != c1 AND x != c2 ...` chains.
+    if (new_filter.function == ComparisonFunction::NOT_EQUALS)
+    {
+        auto [it, inserted] = not_equals_filters.try_emplace(std::move(key), std::move(new_filter));
+        if (!inserted)
+            return AddComparisonFilterResult::ALWAYS_TRUE;
+        return AddComparisonFilterResult::ADDED;
+    }
+
+    /// An equals/range filter prunes the notEquals values it makes redundant via ordered erase,
+    /// touching each stored value at most once overall.
+    if (new_filter.function == ComparisonFunction::EQUALS)
+    {
+        /// `expr = c AND expr != c` is always false; any other `expr != v` is implied.
+        if (not_equals_filters.contains(key))
+            return AddComparisonFilterResult::ALWAYS_FALSE;
+        not_equals_filters.clear();
+    }
+    else
+    {
+        switch (new_filter.function)
+        {
+        case ComparisonFunction::LESS:
+            /// `expr < c` makes `expr != v` redundant for all v >= c; similar below.
+            not_equals_filters.erase(not_equals_filters.lower_bound(key), not_equals_filters.end());
+            break;
+        case ComparisonFunction::LESS_OR_EQUALS:
+            not_equals_filters.erase(not_equals_filters.upper_bound(key), not_equals_filters.end());
+            /// `expr != c AND expr <= c` tightens to `expr < c`.
+            if (auto it = not_equals_filters.find(key); it != not_equals_filters.end())
+            {
+                new_filter.function = strengthenComparison(new_filter.function);
+                rebuildComparisonNode(new_filter, context);
+                not_equals_filters.erase(it);
+            }
+            break;
+        case ComparisonFunction::GREATER:
+            not_equals_filters.erase(not_equals_filters.begin(), not_equals_filters.upper_bound(key));
+            break;
+        case ComparisonFunction::GREATER_OR_EQUALS:
+            not_equals_filters.erase(not_equals_filters.begin(), not_equals_filters.lower_bound(key));
+            if (auto it = not_equals_filters.find(key); it != not_equals_filters.end())
+            {
+                new_filter.function = strengthenComparison(new_filter.function);
+                rebuildComparisonNode(new_filter, context);
+                not_equals_filters.erase(it);
+            }
+            break;
+        default:
+            UNREACHABLE();
+        }
+    }
+
+    range_filters.push_back(std::move(new_filter));
+    return AddComparisonFilterResult::ADDED;
+}
+
+using IndexedNode = std::pair<size_t, QueryTreeNodePtr>;
+using IndexedNodes = std::vector<IndexedNode>;
+
+/// Convert surviving notEquals chains to NOT IN when the chain is long enough.
+/// Output is appended to `output` with original indices for deterministic sorting.
+static void convertNotEqualsChainToNotIn(
+    QueryTreeNodePtrWithHashMap<IndexedNodes> & node_to_not_equals_functions,
+    IndexedNodes & output,
+    const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    auto not_in_function_resolver = FunctionFactory::instance().get("notIn", context);
+
+    for (auto & [expression, not_equals_entries] : node_to_not_equals_functions)
+    {
+        if (not_equals_entries.size() < settings[Setting::optimize_min_inequality_conjunction_chain_length]
+            && !expression.node->getResultType()->lowCardinality())
+        {
+            std::move(not_equals_entries.begin(), not_equals_entries.end(), std::back_inserter(output));
+            continue;
+        }
+
+        size_t min_index = not_equals_entries.front().first;
+        Tuple args;
+        args.reserve(not_equals_entries.size());
+        for (auto & [idx, not_equals] : not_equals_entries)
+        {
+            min_index = std::min(min_index, idx);
+            const auto * not_equals_function = not_equals->as<FunctionNode>();
+            chassert(not_equals_function && not_equals_function->getFunctionName() == "notEquals");
+
+            const auto & not_equals_arguments = not_equals_function->getArguments().getNodes();
+            if (const auto * rhs_literal = not_equals_arguments[1]->as<ConstantNode>())
+                args.push_back(rhs_literal->getValue());
+            else
+            {
+                const auto * lhs_literal = not_equals_arguments[0]->as<ConstantNode>();
+                chassert(lhs_literal);
+                args.push_back(lhs_literal->getValue());
+            }
+        }
+
+        auto rhs_node = std::make_shared<ConstantNode>(std::move(args));
+
+        auto not_in_function = std::make_shared<FunctionNode>("notIn");
+        not_in_function->markAsOperator();
+
+        QueryTreeNodes not_in_arguments;
+        not_in_arguments.reserve(2);
+        not_in_arguments.push_back(expression.node);
+        not_in_arguments.push_back(std::move(rhs_node));
+
+        not_in_function->getArguments().getNodes() = std::move(not_in_arguments);
+        not_in_function->resolveAsFunction(not_in_function_resolver);
+
+        output.emplace_back(min_index, std::move(not_in_function));
+    }
 }
 
 struct CommonExpressionExtractionResult
@@ -868,6 +1729,38 @@ public:
             && getTreeHashWorkCounter() - and_compare_chain_hash_work_start > and_compare_chain_max_hash_work;
     }
 
+    /// Memoized "this subtree contains a correlated subquery" bit, keyed by node identity.
+    /// tryOptimizeAndCompareChain runs for every `and` node, and skipping a chain that holds a
+    /// correlated subquery requires walking its subtree; without memoization a deeply nested AND
+    /// chain would rescan the shared suffix at every level, making the guard quadratic and defeating
+    /// the `optimize_and_compare_chain_max_hash_work` budget. The map keys are QueryTreeNodePtr
+    /// (strong references), so cached nodes stay alive and their addresses cannot be reused by newly
+    /// allocated nodes while the pass runs. This pass never introduces a correlated subquery, so a
+    /// cached result stays valid for the rest of the traversal.
+    std::unordered_map<QueryTreeNodePtr, bool> correlated_subquery_cache;
+
+    bool subtreeContainsCorrelatedSubquery(const QueryTreeNodePtr & node)
+    {
+        if (auto it = correlated_subquery_cache.find(node); it != correlated_subquery_cache.end())
+            return it->second;
+
+        bool result = isCorrelatedQueryOrUnionNode(node);
+        if (!result)
+        {
+            for (const auto & child : node->getChildren())
+            {
+                if (child && subtreeContainsCorrelatedSubquery(child))
+                {
+                    result = true;
+                    break;
+                }
+            }
+        }
+
+        correlated_subquery_cache.emplace(node, result);
+        return result;
+    }
+
     void enterImpl(QueryTreeNodePtr & node)
     {
         if (auto * join_node = node->as<JoinNode>())
@@ -894,9 +1787,12 @@ public:
 
         if (function_node->getFunctionName() == "and")
         {
-            tryOptimizeAndEqualsNotEqualsChain(node);
+            /// Run transitive inference first so that the conflict detector can see inferred equalities.
+            /// E.g. `x = 3 AND x = y AND y = 5` — the compare-chain pass infers `x = 5`,
+            /// then the equals-chain pass detects `x = 3` vs `x = 5` and collapses to FALSE.
             if (getSettings()[Setting::optimize_and_compare_chain])
                 tryOptimizeAndCompareChain(node);
+            tryOptimizeAndCompareNotEqualsChain(node);
             return;
         }
 
@@ -936,7 +1832,32 @@ public:
     }
 
 private:
-    void tryOptimizeAndEqualsNotEqualsChain(QueryTreeNodePtr & node)
+    /** Optimize AND chains by analyzing comparison conditions on the same expression.
+      * This method performs two things in a single pass:
+      *
+      * (a) Comparison chain pruning (when `optimize_redundant_comparisons` is enabled):
+      *     Given an AND expression where the same column appears in multiple comparisons
+      *     against constants (e.g. `a = 3 AND a < 5 AND a > 1`), we collect all conditions
+      *     on the same non-constant expression into a per-expression `ComparisonFilterMap`.
+      *     For each new condition added via `addComparisonFilter`, we:
+      *       1. Convert the constant to the column's type via `tryConvertToColumnType`.
+      *       2. For native integer columns, apply boundary folding and float-literal rewriting
+      *          (`tryFoldBoundaryOrRewriteFloatForIntColumn`).
+      *       3. Compare the new condition pairwise against every existing condition for the
+      *          same expression (`compareComparisonFilters`), yielding one of:
+      *            - PRUNE_LEFT:  the existing condition is redundant, remove it.
+      *            - PRUNE_RIGHT: the new condition is redundant, discard it.
+      *            - ALWAYS_FALSE: the conditions are contradictory, the whole AND is false.
+      *            - NONE:        both conditions are independent, keep both.
+      *
+      * (b) notEquals → NOT IN conversion (always active):
+      *     Chains of `expr != c1 AND expr != c2 AND ...` are merged into `expr NOT IN (c1, c2, ...)`
+      *     when the chain is long enough (controlled by `optimize_min_inequality_conjunction_chain_length`).
+      *
+      * After processing all operands, surviving filters are reassembled into the AND.
+      * Non-comparison operands are kept as-is.
+      */
+    void tryOptimizeAndCompareNotEqualsChain(QueryTreeNodePtr & node)
     {
         auto & function_node = node->as<FunctionNode &>();
         chassert(function_node.getFunctionName() == "and");
@@ -944,159 +1865,173 @@ private:
         if (function_node.getResultType()->isNullable())
             return;
 
-        QueryTreeNodes and_operands;
+        const bool enable_pruning = getSettings()[Setting::optimize_redundant_comparisons];
 
-        QueryTreeNodePtrWithHashMap<const ConstantNode *> equals_node_to_constants;
+        ComparisonFilterMap filter_map;
         QueryTreeNodePtrWithHashMap<QueryTreeNodeConstRawPtrWithHashSet> not_equals_node_to_constants;
-        QueryTreeNodePtrWithHashMap<QueryTreeNodes> node_to_not_equals_functions;
+        QueryTreeNodePtrWithHashMap<IndexedNodes> node_to_not_equals_functions;
 
+        /// Pass 1: iterate over AND operands, classify each as comparison-with-constant or other.
+        IndexedNodes all_operands;
+        bool found_conflict = false;
+        size_t argument_index = 0;
         for (const auto & argument : function_node.getArguments())
         {
             auto * argument_function = argument->as<FunctionNode>();
-            const auto valid_functions = std::unordered_set<std::string>{"equals", "notEquals"};
-            if (!argument_function || !valid_functions.contains(argument_function->getFunctionName()))
+            auto comparison_func = argument_function
+                ? toComparisonFunction(argument_function->getFunctionName())
+                : std::nullopt;
+
+            /// Not a comparison — keep as-is.
+            if (!comparison_func)
             {
-                and_operands.push_back(argument);
+                all_operands.emplace_back(argument_index, argument);
+                ++argument_index;
                 continue;
             }
 
-            const auto function_name = argument_function->getFunctionName();
+            /// Identify which side is constant and which is the expression.
             const auto & function_arguments = argument_function->getArguments().getNodes();
             const auto & lhs = function_arguments[0];
             const auto & rhs = function_arguments[1];
 
-            if (function_name == "equals")
+            const ConstantNode * constant = nullptr;
+            QueryTreeNodePtr expression;
+            bool constant_on_left = false;
+
+            if (const auto * lhs_literal = lhs->as<ConstantNode>())
             {
-                /*
-                 * This function checks a pattern of `col = X and col = Y` such that if there are two different constant values are assigned for the same expression.
-                 * That pattern always yields to `FALSE`, except implicit conversion from a string to an integer / a boolean
-                 * which the pattern could be `col = X and col = 'X'`. In such cases, constant values are same.
-                 */
-                const auto has_and_with_different_constant = [&](const QueryTreeNodePtr & expression, const ConstantNode * constant)
-                {
-                    /// This is an implicit conversion from a string to the type of an constant node (`expected`).
-                    const auto convert_and_check_equals = [](const ConstantNode * string_value, const ConstantNode * expected)
-                    {
-                        Field converted = tryConvertFieldToType(string_value->getValue(), *expected->getResultType());
-                        if (!converted.isNull())
-                            return accurateEquals(converted, expected->getValue());
-                        return false;
-                    };
-
-                    if (auto it = equals_node_to_constants.find(expression); it != equals_node_to_constants.end())
-                    {
-                        if (!it->second->isEqual(*constant))
-                        {
-                            if (it->second->getResultType()->equals(DataTypeString()) && convert_and_check_equals(it->second, constant))
-                                return false;
-                            else if (constant->getResultType()->equals(DataTypeString()) && convert_and_check_equals(constant, it->second))
-                                return false;
-                            return true;
-                        }
-                    }
-                    else
-                    {
-                        equals_node_to_constants.emplace(expression, constant);
-                        and_operands.push_back(argument);
-                    }
-
-                    return false;
-                };
-
-                bool collapse_to_false = false;
-
-                if (const auto * lhs_literal = lhs->as<ConstantNode>())
-                    collapse_to_false = has_and_with_different_constant(rhs, lhs_literal);
-                else if (const auto * rhs_literal = rhs->as<ConstantNode>())
-                    collapse_to_false = has_and_with_different_constant(lhs, rhs_literal);
-                else
-                    and_operands.push_back(argument);
-
-                if (collapse_to_false)
-                {
-                    auto false_node = std::make_shared<ConstantNode>(0u, function_node.getResultType());
-                    node = std::move(false_node);
-                    return;
-                }
+                chassert(!lhs_literal->getValue().isNull());
+                constant = lhs_literal;
+                expression = rhs;
+                constant_on_left = true;
             }
-            else if (function_name == "notEquals")
+            else if (const auto * rhs_literal = rhs->as<ConstantNode>())
             {
-                 /// collect all inequality checks (x <> value)
-
-                const auto add_not_equals_function_if_not_present = [&](const auto & expression_node, const ConstantNode * constant)
-                {
-                    auto & constant_set = not_equals_node_to_constants[expression_node];
-                    if (!constant_set.contains(constant))
-                    {
-                        constant_set.insert(constant);
-                        node_to_not_equals_functions[expression_node].push_back(argument);
-                    }
-                };
-
-                if (const auto * lhs_literal = lhs->as<ConstantNode>();
-                    lhs_literal && !lhs_literal->getValue().isNull())
-                    add_not_equals_function_if_not_present(rhs, lhs_literal);
-                else if (const auto * rhs_literal = rhs->as<ConstantNode>();
-                        rhs_literal && !rhs_literal->getValue().isNull())
-                    add_not_equals_function_if_not_present(lhs, rhs_literal);
-                else
-                    and_operands.push_back(argument);
+                chassert(!rhs_literal->getValue().isNull());
+                constant = rhs_literal;
+                expression = lhs;
             }
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function name: '{}'", function_name);
-        }
 
-        auto not_in_function_resolver = FunctionFactory::instance().get("notIn", getContext());
-
-        for (auto & [expression, not_equals_functions] : node_to_not_equals_functions)
-        {
-            const auto & settings = getSettings();
-            if (not_equals_functions.size() < settings[Setting::optimize_min_inequality_conjunction_chain_length]
-                && !expression.node->getResultType()->lowCardinality())
+            /// Both sides are non-constant — keep as-is.
+            if (!constant)
             {
-                std::move(not_equals_functions.begin(), not_equals_functions.end(), std::back_inserter(and_operands));
+                all_operands.emplace_back(argument_index, argument);
+                ++argument_index;
                 continue;
             }
 
-            Tuple args;
-            args.reserve(not_equals_functions.size());
-            /// first we create tuple from RHS of notEquals functions
-            for (const auto & not_equals : not_equals_functions)
+            /// Conservatively skip operands containing a non-deterministic function: while common
+            /// subexpression elimination means structurally identical occurrences (e.g. `rand() % 2`)
+            /// share a single value, we do not want pruning, folding (e.g. `rand() % 2 < 1 AND
+            /// rand() % 2 >= 1` → false) or merging notEquals into NOT IN to rely on that. Keep such
+            /// operands as-is.
+            if (hasNonDeterministicFunction(expression))
             {
-                const auto * not_equals_function = not_equals->as<FunctionNode>();
-                chassert(not_equals_function && not_equals_function->getFunctionName() == "notEquals");
-
-                const auto & not_equals_arguments = not_equals_function->getArguments().getNodes();
-                if (const auto * rhs_literal = not_equals_arguments[1]->as<ConstantNode>())
-                {
-                    args.push_back(rhs_literal->getValue());
-                }
-                else
-                {
-                    const auto * lhs_literal = not_equals_arguments[0]->as<ConstantNode>();
-                    chassert(lhs_literal);
-                    args.push_back(lhs_literal->getValue());
-                }
+                all_operands.emplace_back(argument_index, argument);
+                ++argument_index;
+                continue;
             }
 
-            auto rhs_node = std::make_shared<ConstantNode>(std::move(args));
+            /// Normalize so that expression is always on the left (e.g. `3 < a` → `a > 3`).
+            auto normalized = constant_on_left ? flipComparisonFunction(*comparison_func) : *comparison_func;
+            ComparisonFilterInfo new_filter{constant, normalized, argument, {}, argument_index};
+            auto result = addComparisonFilter(filter_map, expression, std::move(new_filter), enable_pruning, getContext());
 
-            auto not_in_function = std::make_shared<FunctionNode>("notIn");
-            not_in_function->markAsOperator();
+            /// Contradiction detected among the convertible comparisons — the AND is logically false.
+            /// Defer the decision instead of collapsing immediately: keep scanning so that a
+            /// non-convertible comparison appearing later in the chain (e.g. `i > 'str'`) is still
+            /// recorded in `filter_map`.  The collapse is handled after the loop.
+            if (result == AddComparisonFilterResult::ALWAYS_FALSE)
+                found_conflict = true;
 
-            QueryTreeNodes not_in_arguments;
-            not_in_arguments.reserve(2);
-            not_in_arguments.push_back(expression.node);
-            not_in_arguments.push_back(std::move(rhs_node));
-
-            not_in_function->getArguments().getNodes() = std::move(not_in_arguments);
-            not_in_function->resolveAsFunction(not_in_function_resolver);
-
-            and_operands.push_back(std::move(not_in_function));
+            ++argument_index;
         }
 
-        if (and_operands.size() == function_node.getArguments().getNodes().size())
+        /// The convertible comparisons are contradictory, so the AND evaluates to `false`.
+        /// However, if any comparison on some expression could not be losslessly converted to the
+        /// column type (e.g. `i > 'str'` for an `Int32` column), executing that comparison raises an
+        /// exception (here `TYPE_MISMATCH`).  Collapsing the whole AND to `false` would drop that
+        /// operand and suppress the exception, making the query result depend on
+        /// `optimize_redundant_comparisons`.  To keep behavior identical to the unoptimized query,
+        /// leave the AND untouched whenever a non-convertible comparison is present.
+        if (found_conflict)
+        {
+            /// Only `opaque_filters` can hold filters without a converted value.
+            for (const auto & entry : filter_map)
+                for (const auto & filter : entry.second.opaque_filters)
+                    if (!filter.converted_value)
+                        return;
+
+            node = std::make_shared<ConstantNode>(0u, function_node.getResultType());
             return;
+        }
+
+        /// Pass 2: collect surviving filters, separating notEquals for NOT IN conversion.
+        bool any_modified = false;
+        for (auto & [expression, filters] : filter_map)
+        {
+            /// The map iterates by value; restore the query order to keep the NOT IN tuple stable.
+            std::vector<ComparisonFilterInfo *> not_equals_infos;
+            for (auto & [_, filter] : filters.not_equals_filters)
+                not_equals_infos.push_back(&filter);
+
+            for (auto & filter : filters.range_filters)
+            {
+                /// Materialize folds (e.g. `> 3.5` -> `>= 4`, `UInt8 >= 255` -> `= 255`) so that
+                /// the tightened predicate reaches downstream analysis.
+                if (filter.modified)
+                {
+                    rebuildComparisonNode(filter, getContext());
+                    any_modified = true;
+                }
+                all_operands.emplace_back(filter.original_index, std::move(filter.original_node));
+            }
+
+            for (auto & filter : filters.opaque_filters)
+            {
+                if (filter.function == ComparisonFunction::NOT_EQUALS)
+                    not_equals_infos.push_back(&filter);
+                else
+                    all_operands.emplace_back(filter.original_index, std::move(filter.original_node));
+            }
+
+            std::sort(not_equals_infos.begin(), not_equals_infos.end(),
+                [](const auto * a, const auto * b) { return a->original_index < b->original_index; });
+
+            for (auto * filter : not_equals_infos)
+            {
+                auto & constant_set = not_equals_node_to_constants[expression];
+                if (!constant_set.contains(filter->constant_node))
+                {
+                    constant_set.insert(filter->constant_node);
+                    node_to_not_equals_functions[expression].emplace_back(filter->original_index, std::move(filter->original_node));
+                }
+            }
+        }
+
+        /// Merge notEquals chains into NOT IN where possible.
+        convertNotEqualsChainToNotIn(node_to_not_equals_functions, all_operands, getContext());
+
+        /// Reassemble: sort by original index to preserve the original operand order.
+        std::sort(all_operands.begin(), all_operands.end(),
+            [](const auto & a, const auto & b) { return a.first < b.first; });
+
+        QueryTreeNodes and_operands;
+        and_operands.reserve(all_operands.size());
+        for (auto & [_, node_ptr] : all_operands)
+            and_operands.push_back(std::move(node_ptr));
+
+        /// Rebuilt nodes must be written back even when the operand count is unchanged.
+        if (and_operands.size() == function_node.getArguments().getNodes().size() && !any_modified)
+            return;
+
+        /// All conditions were redundant — replace with true.
+        if (and_operands.empty())
+        {
+            node = std::make_shared<ConstantNode>(1u, function_node.getResultType());
+            return;
+        }
 
         if (and_operands.size() == 1)
         {
@@ -1106,12 +2041,56 @@ private:
             auto operand_type = and_operands[0]->getResultType();
             auto function_type = function_node.getResultType();
             chassert(!function_type->isNullable());
+
+            /// The sole remaining operand may be a bare numeric constant (e.g. `256`).
+            /// A plain cast to UInt8 would silently truncate (e.g. 256 → 0),
+            /// so evaluate it as a boolean by checking for non-zero instead.
+            if (const auto * constant = and_operands[0]->as<ConstantNode>())
+            {
+                const auto & field = constant->getValue();
+                auto ft = field.getType();
+                if (ft == Field::Types::Float64)
+                {
+                    node = std::make_shared<ConstantNode>(static_cast<UInt8>(field.safeGet<Float64>() != 0), function_type);
+                    return;
+                }
+                if (ft == Field::Types::Int64)
+                {
+                    node = std::make_shared<ConstantNode>(static_cast<UInt8>(field.safeGet<Int64>() != 0), function_type);
+                    return;
+                }
+                if (ft == Field::Types::UInt64)
+                {
+                    node = std::make_shared<ConstantNode>(static_cast<UInt8>(field.safeGet<UInt64>() != 0), function_type);
+                    return;
+                }
+            }
+
             if (!function_type->equals(*operand_type))
             {
-                /// Result of equality operator can be low cardinality, while AND always returns UInt8.
-                /// In that case we replace `(lc = 1) AND (lc = 1)` with `(lc = 1) AS UInt8`
-                chassert(function_type->equals(*removeLowCardinality(operand_type)));
-                node = createCastFunction(std::move(and_operands[0]), function_type, getContext());
+                if (WhichDataType(removeLowCardinality(operand_type)).isUInt8())
+                {
+                    /// Result of equality operator can be low cardinality, while AND always returns UInt8.
+                    /// In that case we replace `(lc = 1) AND (lc = 1)` with `(lc = 1) AS UInt8`.
+                    node = createCastFunction(std::move(and_operands[0]), function_type, getContext());
+                }
+                else
+                {
+                    /// The sole survivor can be an arbitrary numeric operand (e.g. `x` in
+                    /// `x AND i < 300` after the always-true comparison is pruned). `AND` evaluates
+                    /// operands as booleans, and a plain cast would truncate (`256::UInt32` -> 0),
+                    /// so rewrite to `operand != 0` instead.
+                    auto not_equals_node = std::make_shared<FunctionNode>("notEquals");
+                    not_equals_node->markAsOperator();
+                    not_equals_node->getArguments().getNodes().push_back(std::move(and_operands[0]));
+                    not_equals_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(0u));
+                    resolveOrdinaryFunctionNodeByName(*not_equals_node, "notEquals", getContext());
+
+                    QueryTreeNodePtr new_node = std::move(not_equals_node);
+                    if (!function_type->equals(*new_node->getResultType()))
+                        new_node = createCastFunction(std::move(new_node), function_type, getContext());
+                    node = std::move(new_node);
+                }
             }
             else
             {
@@ -1132,6 +2111,18 @@ private:
 
         auto & function_node = node->as<FunctionNode &>();
         if (function_node.getFunctionName() != "and" || function_node.getResultType()->isNullable())
+            return;
+
+        /// This optimization derives transitive comparisons and clones an operand into each new
+        /// conjunct. When an operand holds a correlated subquery (e.g. `x < exists((SELECT ...))`),
+        /// cloning produces several copies of the subquery that share one action name. Decorrelation
+        /// then adds the same synthetic column on both sides of the generated join and
+        /// `HashJoin::getNonJoinedBlocks` fails the column-count check with `Unexpected number of
+        /// columns in result sample block`. A correlated subquery must be evaluated exactly once, so
+        /// skip the optimization for such a chain and keep the original expression - it executes
+        /// correctly without the transitive conjuncts. The check is memoized so that visiting every
+        /// `and` node in a nested chain stays linear overall (see `correlated_subquery_cache`).
+        if (subtreeContainsCorrelatedSubquery(node))
             return;
 
         /// Stop once this query has spent its AND-compare-chain hashing budget (measured in nodes
@@ -1157,6 +2148,12 @@ private:
         ComparePairs greater_pairs;
         ComparePairs less_pairs;
 
+        /// Filters of the existing `expr op constant` conjuncts (seeded from the flattened view, so
+        /// nested ANDs participate) plus the already-derived conjuncts. A derived conjunct implied
+        /// by one of them is not appended: the later pruning pass sees only the direct arguments of
+        /// this AND and could not remove e.g. `x < 3` derived for `(x < 2 AND x < y) AND y < 3`.
+        ComparisonFilterMap derived_conjunct_filters;
+
         auto flattened_and_node = getFlattenedLogicalExpression(function_node, getContext());
         const auto & arguments = flattened_and_node ? flattened_and_node->getArguments().getNodes()
                                                     : function_node.getArguments().getNodes();
@@ -1181,6 +2178,28 @@ private:
             const auto & function_arguments = argument_function->getArguments().getNodes();
             const auto & lhs = function_arguments[0];
             const auto & rhs = function_arguments[1];
+
+            /// Conservatively skip comparisons whose operands contain a non-deterministic function.
+            /// Common subexpression elimination makes structurally identical occurrences (e.g. two
+            /// `rand() % 2`) share one value, so transitive inference over them (e.g. deriving
+            /// `number % 2 = 1` from `rand() % 2 = number % 2 AND rand() % 2 = 1`) would be consistent
+            /// with that; still, we do not want the inference, or the conflict detection that consumes
+            /// it, to depend on that folding.
+            if (hasNonDeterministicFunction(lhs) || hasNonDeterministicFunction(rhs))
+                continue;
+
+            const auto * lhs_constant = lhs->as<ConstantNode>();
+            const auto * rhs_constant = rhs->as<ConstantNode>();
+            if (static_cast<bool>(lhs_constant) != static_cast<bool>(rhs_constant))
+            {
+                const auto * constant_node = lhs_constant ? lhs_constant : rhs_constant;
+                const auto & expression_node = lhs_constant ? rhs : lhs;
+                auto comparison_func = toComparisonFunction(function_name);
+                chassert(comparison_func);
+                auto normalized = lhs_constant ? flipComparisonFunction(*comparison_func) : *comparison_func;
+                ComparisonFilterInfo seed_filter{constant_node, normalized, argument, {}, 0};
+                addComparisonFilter(derived_conjunct_filters, expression_node, std::move(seed_filter), true, getContext());
+            }
 
             if (function_name == "less")
             {
@@ -1266,7 +2285,7 @@ private:
         }
 
         /// Step 2: populate from constants, to generate new comparing pair with constant in one side
-        std::function<void(const ComparePairs &, QueryTreeNodePtr, const ConstantNode *, CompareType)> findPairs
+        std::function<void(const ComparePairs &, QueryTreeNodePtr, const ConstantNode *, CompareType)> find_pairs
             = [&](const ComparePairs & pairs, QueryTreeNodePtr current, const ConstantNode * constant, CompareType type)
         {
             if (auto it = pairs.find(current); it != pairs.end())
@@ -1304,10 +2323,25 @@ private:
                         and_node->resolveAsFunction(
                             FunctionFactory::instance().get(compare_function_name, getContext()));
                         if (existing_conjuncts.emplace(and_node).second)
-                            function_node.getArguments().getNodes().push_back(and_node);
+                        {
+                            /// Do not append a derived conjunct implied by an existing or already-derived
+                            /// one; contradictions are appended so the next pass folds the AND to `false`.
+                            auto derived_func = toComparisonFunction(compare_function_name);
+                            chassert(derived_func);
+                            ComparisonFilterInfo derived_filter{constant, *derived_func, and_node, {}, 0};
+                            auto add_result = addComparisonFilter(
+                                derived_conjunct_filters, left.first, std::move(derived_filter), true, getContext());
+                            if (add_result != AddComparisonFilterResult::ALWAYS_TRUE)
+                                function_node.getArguments().getNodes().push_back(and_node);
+                        }
                     }
 
-                    findPairs(pairs, left.first, constant ? constant : current->as<ConstantNode>(), compare_type);
+                    /// Don't recurse through constant intermediate nodes — any inference would be
+                    /// redundant. E.g. `x < 3 AND y > 3 AND y < 10` builds the chain
+                    /// 10 > y > 3 > x, and chaining through constant 3 would add `x < 10`
+                    /// which is strictly weaker than the existing `x < 3`.
+                    if (!left.first->as<ConstantNode>())
+                        find_pairs(pairs, left.first, constant ? constant : current->as<ConstantNode>(), compare_type);
                 }
             }
         };
@@ -1316,14 +2350,14 @@ private:
         for (const auto & constant : greater_constants)
         {
             visited.clear();
-            findPairs(greater_pairs, constant.node, nullptr, CompareType::equals);
+            find_pairs(greater_pairs, constant.node, nullptr, CompareType::equals);
         }
 
         /// Start from small constant
         for (const auto & constant : less_constants)
         {
             visited.clear();
-            findPairs(less_pairs, constant.node, nullptr, CompareType::equals);
+            find_pairs(less_pairs, constant.node, nullptr, CompareType::equals);
         }
 
         auto and_function_resolver = FunctionFactory::instance().get("and", getContext());
