@@ -22,7 +22,7 @@ show_current_roles()
 {
     $CLICKHOUSE_CLIENT --user "${user_name}" --query "
         SELECT
-            groupArray(replaceOne(role_name, '_${CLICKHOUSE_DATABASE}', '_test')),
+            groupArray(role_name),
             groupArray(with_admin_option),
             groupArray(is_default)
         FROM
@@ -35,16 +35,6 @@ show_current_roles()
             ORDER BY role_name
         )
     "
-}
-
-check_error()
-{
-    local query="$1"
-    local expected="$2"
-
-    local output
-    output=$($CLICKHOUSE_CLIENT --query "$query" 2>&1 || true)
-    echo "$output" | grep -o "$expected" | uniq
 }
 
 trap cleanup EXIT
@@ -88,8 +78,13 @@ show_current_roles
 echo
 
 echo "errors"
-check_error "SET DEFAULT ROLE NONE TO ${role_x}" "UNKNOWN_USER"
-check_error "SET DEFAULT ROLE ${role_x} TO ${role_y}" "UNKNOWN_USER"
-check_error "SET DEFAULT ROLE ${user_name} TO ${user_name}" "UNKNOWN_ROLE"
-check_error "ALTER USER ${user_name} DEFAULT ROLE ${user_name}" "UNKNOWN_ROLE"
-check_error "ALTER USER ${user_name} DEFAULT ROLE ALL EXCEPT ${user_name}" "UNKNOWN_ROLE"
+$CLICKHOUSE_CLIENT --query "SET DEFAULT ROLE NONE TO ${role_x}; -- { serverError UNKNOWN_USER }"
+echo "UNKNOWN_USER"
+$CLICKHOUSE_CLIENT --query "SET DEFAULT ROLE ${role_x} TO ${role_y}; -- { serverError UNKNOWN_USER }"
+echo "UNKNOWN_USER"
+$CLICKHOUSE_CLIENT --query "SET DEFAULT ROLE ${user_name} TO ${user_name}; -- { serverError UNKNOWN_ROLE }"
+echo "UNKNOWN_ROLE"
+$CLICKHOUSE_CLIENT --query "ALTER USER ${user_name} DEFAULT ROLE ${user_name}; -- { serverError UNKNOWN_ROLE }"
+echo "UNKNOWN_ROLE"
+$CLICKHOUSE_CLIENT --query "ALTER USER ${user_name} DEFAULT ROLE ALL EXCEPT ${user_name}; -- { serverError UNKNOWN_ROLE }"
+echo "UNKNOWN_ROLE"
