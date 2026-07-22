@@ -156,6 +156,40 @@ TEST(RollingHashCDC, Utf8ChunksStartOnCodePointBoundaries)
             reinterpret_cast<const UInt8 *>(input.data()), static_cast<size_t>(start), input.size()));
 }
 
+/// Pin exact hash-defined boundaries: a degenerate implementation that never cuts
+/// before the safety cap (or cuts at fixed positions) must fail these.
+TEST(RollingHashCDC, DeterministicBoundariesByteMode)
+{
+    std::vector<std::string> chunks;
+    std::vector<UInt64> offsets;
+
+    runCdc("abcdefghijklmnop", 4, 5, false, true, chunks, offsets);
+    EXPECT_EQ(offsets, (std::vector<UInt64>{0, 5, 12}));
+    EXPECT_EQ(chunks, (std::vector<std::string>{"abcde", "fghijkl", "mnop"}));
+
+    runCdc("abcdefghijklmnop", 4, 2, false, true, chunks, offsets);
+    EXPECT_EQ(offsets, (std::vector<UInt64>{0, 9, 13}));
+    EXPECT_EQ(chunks, (std::vector<std::string>{"abcdefghi", "jklm", "nop"}));
+
+    runCdc("The quick brown fox jumps over the lazy dog", 4, 4, false, true, chunks, offsets);
+    EXPECT_EQ(offsets, (std::vector<UInt64>{0, 6, 13, 20, 24, 35}));
+    EXPECT_EQ(chunks, (std::vector<std::string>{"The qu", "ick bro", "wn fox ", "jump", "s over the ", "lazy dog"}));
+}
+
+TEST(RollingHashCDC, DeterministicBoundariesUtf8Mode)
+{
+    std::vector<std::string> chunks;
+    std::vector<UInt64> offsets;
+
+    runCdc("привет", 2, 2, true, true, chunks, offsets);
+    EXPECT_EQ(offsets, (std::vector<UInt64>{0, 2, 6, 8}));
+    EXPECT_EQ(chunks, (std::vector<std::string>{"п", "ри", "в", "ет"}));
+
+    runCdc("привет мир", 2, 2, true, true, chunks, offsets);
+    EXPECT_EQ(offsets, (std::vector<UInt64>{0, 2, 6, 8, 12, 15, 17}));
+    EXPECT_EQ(chunks, (std::vector<std::string>{"п", "ри", "в", "ет", " м", "и", "р"}));
+}
+
 TEST(RollingHashCDC, MaxChunkSizeFloor)
 {
     EXPECT_GE(RollingHashCDC::maxChunkSizeForCdc(2), 262144u);
