@@ -3,6 +3,8 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
+#include <Common/AllocatorWithMemoryTracking.h>
+
 #include <DataTypes/DataTypeFactory.h>
 
 #include <boost/geometry.hpp>
@@ -28,9 +30,11 @@ namespace
 constexpr size_t CONVEX_HULL_COMPRESSION_THRESHOLD = 10000;
 constexpr UInt8 GROUP_CONVEX_HULL_SERDE_VERSION = 2;
 
+using CartesianMultiPoint = boost::geometry::model::multi_point<CartesianPoint, std::vector, AllocatorWithMemoryTracking>;
+
 struct GroupConvexHullData
 {
-    boost::geometry::model::multi_point<CartesianPoint> points;
+    CartesianMultiPoint points;
 
     /// Stored point count right after the most recent `compress`. The compression trigger looks
     /// at growth since then, not the total size, so a large valid hull (many points in convex
@@ -107,16 +111,18 @@ struct GroupConvexHullData
         CartesianPolygon hull;
         boost::geometry::convex_hull(points, hull);
 
-        points.clear();
-        points.assign(hull.outer().begin(), hull.outer().end());
+        CartesianMultiPoint compressed_points(hull.outer().begin(), hull.outer().end());
 
         /// boost::geometry::convex_hull returns a closed ring (the first point is duplicated
         /// at the end). The stored points are only an accumulator for recomputing the hull,
         /// so the closing duplicate is redundant. Dropping it keeps the stored point count
         /// from exceeding the state budget by one, which would otherwise let a self-produced
         /// state at the limit serialize but fail to deserialize (INCORRECT_DATA).
-        if (points.size() >= 2 && points.front().get<0>() == points.back().get<0>() && points.front().get<1>() == points.back().get<1>())
-            points.pop_back();
+        if (compressed_points.size() >= 2 && compressed_points.front().get<0>() == compressed_points.back().get<0>()
+            && compressed_points.front().get<1>() == compressed_points.back().get<1>())
+            compressed_points.pop_back();
+
+        points.swap(compressed_points);
 
         size_after_compression = points.size();
     }
