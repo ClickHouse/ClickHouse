@@ -21,19 +21,25 @@ You can apply this method to your own query. To run the NYC Taxi examples as wri
 
 ## How it works {#how-it-works}
 
-This section will introduce the three-query comparison: the original query, a grouped `count`, and an ungrouped `count`.
+Understand how the original query, a grouped `count`, and an ungrouped `count` retain progressively less work.
 
 ## Establish a repeatable baseline {#establish-a-repeatable-baseline}
 
-Define comparable test conditions and record duration, rows and bytes read, and peak memory usage.
+Define comparable test conditions, control caches consistently, and record duration, rows and bytes read, and peak memory usage.
 
 ## Simplify the query in stages {#simplify-the-query-in-stages}
 
 ### Run A: Measure the original query {#run-a-measure-the-original-query}
 
+Run the complete query to establish the baseline measurements.
+
 ### Run B: Retain grouping with count {#run-b-retain-grouping-with-count}
 
+Replace the aggregate expressions with a grouped `count` while preserving the query shape required for comparison.
+
 ### Run C: Remove grouping {#run-c-remove-grouping}
+
+Remove `GROUP BY` and return an ungrouped `count` while preserving the scan and filters.
 
 ## Interpret the differences {#interpret-the-differences}
 
@@ -45,8 +51,8 @@ Compare `read_rows` with the value returned by `count` when the query shape make
 
 ## Validate the suspected bottleneck {#validate-the-suspected-bottleneck}
 
-Validate the hypothesis with query logs, profile events, and `EXPLAIN` before choosing an optimization.
+Validate the hypothesis with query logs, profile events, and `EXPLAIN` before choosing and measuring one targeted optimization.
 
 ## Next steps {#next-steps}
 
-Continue with the [worked optimization example](/guides/clickhouse/performance-and-monitoring/query-optimization-example) to see how measured schema and ordering-key changes affect query performance.
+Continue with [Optimization approaches](/guides/clickhouse/performance-and-monitoring/optimization-approaches) to match the suspected bottleneck to one or more targeted interventions.

@@ -9,7 +9,7 @@ keywords: ['query optimization', 'query log', 'slow queries', 'EXPLAIN', 'perfor
 
 import NYCTaxiExampleDataset from '/snippets/_nyc_taxi_example_dataset.mdx';
 
-Use query history to find recurring slow-query patterns, select a representative query run, and form an initial hypothesis about the bottleneck.
+Use query history to find recurring slow-query patterns, choose a representative run, and form an initial hypothesis before changing the query or schema.
 
 ## Before you begin {#before-you-begin}
 
@@ -21,23 +21,27 @@ The examples in this guide use the `nyc_taxi.trips_small_inferred` table. To run
 
 ## How it works {#how-it-works}
 
-This section will introduce `system.query_log`, cluster-wide and single-node query history, representative query runs, and `EXPLAIN`.
+Understand what `system.query_log` records, where query history is stored, and how query logs and `EXPLAIN` provide different evidence about a slow query.
 
 ## Diagnose a slow query {#diagnose-a-slow-query}
 
-### Identify candidate queries {#identify-candidate-queries}
+### Find recurring slow-query patterns {#identify-candidate-queries}
 
-Find recurring queries with high duration or resource usage.
+Query local or cluster-wide history to find patterns with high duration or resource usage.
 
-### Choose a representative query run {#choose-a-representative-query-run}
+### Choose a representative run {#choose-a-representative-query-run}
 
 Compare several runs of the same normalized query pattern and select one that represents its typical behavior.
+
+### Review duration and resource usage {#review-duration-and-resource-usage}
+
+Compare duration, rows and bytes read, and memory usage across runs of the same query pattern.
 
 ### Compare rows read with table size {#compare-rows-read-with-table-size}
 
 Use rows read as an initial indication of whether the query scans more data than expected.
 
-### Inspect the execution plan {#explain-statement}
+### Inspect the query plan {#explain-statement}
 
 Use `EXPLAIN` to validate the initial hypothesis before changing the query or schema.
 
@@ -49,6 +53,10 @@ Review the parts and granules selected by the query.
 
 Review the pipeline shape and parallelism used to execute the query.
 
+## Interpret the evidence {#interpret-the-evidence}
+
+Combine query-log measurements with the query plan to decide which part of the query warrants a controlled comparison.
+
 ## Next steps {#next-steps}
 
-Continue with [Isolate query bottlenecks](/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks) to compare progressively simpler forms of the query.
+Continue with [Isolate query bottlenecks](/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks) to test the initial hypothesis with progressively simpler forms of the query.

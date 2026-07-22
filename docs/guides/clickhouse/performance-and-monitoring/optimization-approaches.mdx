@@ -1,0 +1,58 @@
+---
+slug: /optimize/optimization-approaches
+sidebarTitle: 'Optimization approaches'
+sidebar_label: 'Optimization approaches'
+sidebar_position: 4
+title: 'Optimization approaches'
+description: 'Use evidence from a slow ClickHouse query to evaluate appropriate optimization approaches'
+doc_type: 'guide'
+keywords: ['query optimization', 'data types', 'ordering key', 'materialized views', 'projections']
+---
+
+Use evidence from query logs, controlled comparisons, and query plans to evaluate optimization approaches that address the measured bottleneck.
+
+## Before you begin {#before-you-begin}
+
+Begin with a repeatable baseline and a hypothesis about the bottleneck. If you have not identified one yet, start with [Diagnose slow queries](/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) and [Isolate query bottlenecks](/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks).
+
+## How it works {#how-it-works}
+
+Use the optimization framework to decide whether to reduce the data footprint, improve filtering, or move repeatable work to ingestion time.
+
+## Match the evidence to an intervention {#match-the-evidence-to-an-intervention}
+
+Map timing differences, rows and bytes read, memory usage, profile events, and the physical plan to the part of the query or table design that warrants further investigation.
+
+## Minimize the data footprint {#minimize-the-data-footprint}
+
+### Avoid unnecessary Nullable columns {#avoid-unnecessary-nullable-columns}
+
+### Use LowCardinality where appropriate {#use-lowcardinality-where-appropriate}
+
+### Choose appropriate data types {#choose-appropriate-data-types}
+
+### Read only the required columns {#read-only-the-required-columns}
+
+## Filter efficiently {#filter-efficiently}
+
+### Choose an effective ordering key {#choose-an-effective-ordering-key}
+
+### Evaluate partition pruning and data-skipping indexes {#evaluate-partition-pruning-and-data-skipping-indexes}
+
+### Use projections selectively {#use-projections-selectively}
+
+Explain the trade-offs between a small number of targeted projections, many projections, and separate purpose-built tables at scale.
+
+## Move repeatable work to ingestion {#move-repeatable-work-to-ingestion}
+
+### Use materialized views for repeated transformations and aggregations {#use-materialized-views-for-repeated-transformations-and-aggregations}
+
+### Consider purpose-built tables {#consider-purpose-built-tables}
+
+## Apply and validate one change {#apply-and-validate-one-change}
+
+Apply one intervention, repeat the original measurements under comparable conditions, and confirm that it reduced the intended work without moving the bottleneck elsewhere.
+
+## Next steps {#next-steps}
+
+Continue with the [worked optimization example](/guides/clickhouse/performance-and-monitoring/query-optimization-example) to see schema and ordering-key changes measured against an original baseline.

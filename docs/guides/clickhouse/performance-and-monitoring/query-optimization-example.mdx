@@ -9,15 +9,19 @@ keywords: ['query optimization', 'performance', 'NYC Taxi', 'data types', 'order
 
 import NYCTaxiExampleDataset from '/snippets/_nyc_taxi_example_dataset.mdx';
 
-Apply the measurement workflow to the NYC Taxi dataset, changing one part of the table design at a time and comparing the results.
+Follow a complete optimization workflow on the NYC Taxi dataset. Establish a baseline, change one part of the table design at a time, and compare each result with the original measurements.
 
 ## Before you begin {#before-you-begin}
 
 <NYCTaxiExampleDataset />
 
+## How it works {#how-it-works}
+
+The example first reduces the table's data footprint, then changes its ordering key so that ClickHouse can read less data for the example query. Each stage is measured independently.
+
 ## Establish the baseline {#establish-the-baseline}
 
-Record the original table size, query duration, rows and bytes read, and peak memory usage.
+Record the original table size, query duration, rows and bytes read, and peak memory usage before changing the schema.
 
 ## Optimize the schema {#basic-optimization}
 
@@ -39,6 +43,10 @@ Record the original table size, query duration, rows and bytes read, and peak me
 
 Compare the optimized table and query measurements with the original baseline.
 
+## Apply the method to your workload {#apply-the-method-to-your-workload}
+
+Use the measured bottleneck in your own query to decide whether to reduce the data footprint, improve filtering, or move repeatable work to ingestion time.
+
 ## Next steps {#next-steps}
 
-Use the measured bottleneck to select additional guidance for projections, materialized views, data-skipping indexes, or query changes.
+Return to [Optimization approaches](/guides/clickhouse/performance-and-monitoring/optimization-approaches) to evaluate projections, materialized views, data-skipping indexes, or other targeted interventions for your workload.
