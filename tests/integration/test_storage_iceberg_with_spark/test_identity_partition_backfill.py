@@ -9,6 +9,7 @@ from helpers.iceberg_utils import (
     default_upload_directory,
     execute_spark_query_general,
     get_creation_expression,
+    get_last_snapshot,
     get_uuid_str,
 )
 
@@ -226,3 +227,80 @@ def test_identity_partition_backfill_row_policy(
             )
     finally:
         instance.query(f"DROP ROW POLICY IF EXISTS {policy} ON {TABLE_NAME}")
+
+
+# Regression for issue #110216: the identity-partition exclusion must stay correct across an
+# identity-column rename queried under time travel (the exclusion is keyed per schema, not per
+# metadata version alone).
+@pytest.mark.parametrize("storage_type", ["s3", "local"])
+def test_identity_partition_backfill_rename_time_travel(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = (
+        "test_identity_partition_backfill_rename_time_travel_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
+
+    def execute_spark_query(query: str):
+        return execute_spark_query_general(
+            spark, started_cluster_iceberg_with_spark, storage_type, TABLE_NAME, query
+        )
+
+    execute_spark_query(
+        f"""
+            CREATE TABLE {TABLE_NAME} (id BIGINT, region STRING, val STRING)
+            USING iceberg
+            PARTITIONED BY (region)
+            OPTIONS('format-version'='2')
+        """
+    )
+    execute_spark_query(f"INSERT INTO {TABLE_NAME} VALUES (1, 'East', 'a'), (2, 'West', 'b')")
+    # region lives only in the manifest partition tuple (identity-partition-absent layout).
+    _strip_column_from_data_files(
+        started_cluster_iceberg_with_spark, storage_type, TABLE_NAME, "region"
+    )
+    old_snapshot = get_last_snapshot(
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/"
+    )
+
+    # Rename the identity-partition column: the source-id is unchanged, only the name changes, and
+    # both schemas are kept in the latest metadata file (same metadata_version).
+    execute_spark_query(f"ALTER TABLE {TABLE_NAME} RENAME COLUMN region TO area")
+
+    # A named table keeps one IcebergMetadata instance (and its exclusion cache) across queries, so
+    # the first query's cache entry must not leak to a later query at a different schema. A table
+    # function would rebuild the metadata per query and hide the bug.
+    create_iceberg_table(
+        storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark
+    )
+
+    # Warm the exclusion cache for this metadata version at the CURRENT schema (excludes `area`).
+    assert (
+        instance.query(f"SELECT id, area, val FROM {TABLE_NAME} ORDER BY id").strip()
+        == "1\tEast\ta\n2\tWest\tb"
+    )
+
+    # Time-travel to the pre-rename snapshot: the old schema names the partition column `region`,
+    # and it must still be backfilled and excluded from PREWHERE. With a version-only cache this
+    # reused the `area` exclusion and pushed `PREWHERE region = ...` below the backfill.
+    for prewhere in ("1", "0"):
+        assert (
+            instance.query(
+                f"SELECT id, val FROM {TABLE_NAME} WHERE region = 'East' ORDER BY id"
+                f" SETTINGS iceberg_snapshot_id = {old_snapshot}, optimize_move_to_prewhere = {prewhere}"
+            ).strip()
+            == "1\ta"
+        )
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {TABLE_NAME} WHERE region = 'East'"
+                f" SETTINGS iceberg_snapshot_id = {old_snapshot}"
+            )
+        )
+        == 1
+    )

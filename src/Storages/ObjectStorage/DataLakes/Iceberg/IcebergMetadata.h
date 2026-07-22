@@ -218,9 +218,9 @@ private:
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot>
     getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version) const;
 
-    /// Identity-partition source columns per metadata version, parsed once from the metadata object
-    /// in getState and kept in the class (so getIdentityPartitionColumns is a lookup, not a re-fetch).
-    void cacheIdentityPartitionColumns(Int32 metadata_version, Int32 schema_id, const Poco::JSON::Object::Ptr & metadata_object) const;
+    /// Identity-partition source columns per (metadata_file_path, schema_id), parsed once from the
+    /// metadata object in getState and kept in the class (so getIdentityPartitionColumns is a lookup).
+    void cacheIdentityPartitionColumns(const String & metadata_file_path, Int32 schema_id, const Poco::JSON::Object::Ptr & metadata_object) const;
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
     StorageObjectStorageConfigurationPtr getConfiguration() const;
@@ -229,11 +229,12 @@ private:
     const ObjectStoragePtr object_storage;
     const DB::Iceberg::PersistentTableComponents persistent_components;
 
-    /// Identity-partition source columns keyed by metadata version. Collected across ALL partition
-    /// specs (not only the default one) when getState parses the metadata object, so the PREWHERE
-    /// exclusion is a pure in-memory lookup and never re-reads the metadata file. See issue #110216.
+    /// Identity-partition source columns keyed by (metadata_file_path, schema_id): the resolved names
+    /// depend on the schema (a rename keeps source_id but changes the name) and on the exact metadata
+    /// file, since REST catalogs write several `vN-<uuid>.metadata.json` files that share the numeric
+    /// version but carry different partition specs. Collected across ALL specs. See #110216.
     mutable std::mutex identity_partition_columns_mutex;
-    mutable std::map<Int32, NamesAndTypesList> identity_partition_columns_by_version;
+    mutable std::map<std::pair<String, Int32>, NamesAndTypesList> identity_partition_columns_by_state;
     const DataLakeStorageSettings & data_lake_settings;
     const String write_format;
     BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;

@@ -617,17 +617,18 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
 
     /// Parse identity-partition source columns from the already-loaded metadata object and retain them
     /// in the class, so getIdentityPartitionColumns is an in-memory lookup, not a metadata re-fetch.
-    cacheIdentityPartitionColumns(metadata_version, table_state_snapshot.schema_id, metadata_object);
+    cacheIdentityPartitionColumns(metadata_path, table_state_snapshot.schema_id, metadata_object);
 
     return {data_snapshot, table_state_snapshot};
 }
 
 void IcebergMetadata::cacheIdentityPartitionColumns(
-    Int32 metadata_version, Int32 schema_id, const Poco::JSON::Object::Ptr & metadata_object) const
+    const String & metadata_file_path, Int32 schema_id, const Poco::JSON::Object::Ptr & metadata_object) const
 {
+    const std::pair<String, Int32> state_key{metadata_file_path, schema_id};
     {
         std::lock_guard lock(identity_partition_columns_mutex);
-        if (identity_partition_columns_by_version.contains(metadata_version))
+        if (identity_partition_columns_by_state.contains(state_key))
             return;
     }
 
@@ -663,7 +664,7 @@ void IcebergMetadata::cacheIdentityPartitionColumns(
     }
 
     std::lock_guard lock(identity_partition_columns_mutex);
-    identity_partition_columns_by_version.emplace(metadata_version, std::move(result));
+    identity_partition_columns_by_state.emplace(state_key, std::move(result));
 }
 
 NamesAndTypesList IcebergMetadata::getIdentityPartitionColumns(
@@ -675,22 +676,29 @@ NamesAndTypesList IcebergMetadata::getIdentityPartitionColumns(
     /// race. See issue #110216.
     try
     {
-        std::optional<Int32> metadata_version;
+        /// The resolved names depend on both fields: schema_id selects the field name for a given
+        /// source_id (a rename keeps the id, changes the name), and metadata_file_path pins the exact
+        /// spec set (REST catalogs write several same-version metadata files with different specs).
+        std::optional<std::pair<String, Int32>> state_key;
         if (pinned_state && std::holds_alternative<Iceberg::TableStateSnapshot>(*pinned_state))
-            metadata_version = std::get<Iceberg::TableStateSnapshot>(*pinned_state).metadata_version;
+        {
+            const auto & s = std::get<Iceberg::TableStateSnapshot>(*pinned_state);
+            state_key.emplace(s.metadata_file_path, s.schema_id);
+        }
 
-        if (metadata_version)
+        if (state_key)
         {
             std::lock_guard lock(identity_partition_columns_mutex);
-            if (auto it = identity_partition_columns_by_version.find(*metadata_version); it != identity_partition_columns_by_version.end())
+            if (auto it = identity_partition_columns_by_state.find(*state_key); it != identity_partition_columns_by_state.end())
                 return it->second;
         }
 
-        /// Not pinned, or this version has not been parsed yet: resolve state (getState populates the
-        /// cache for that version), then look it up. Best-effort fallback only.
-        const auto version = getRelevantState(local_context).second.metadata_version;
+        /// Not pinned, or this state has not been parsed yet: resolve state (getState populates the
+        /// cache for that (metadata_file_path, schema_id)), then look it up. Best-effort fallback only.
+        const auto state = getRelevantState(local_context).second;
         std::lock_guard lock(identity_partition_columns_mutex);
-        if (auto it = identity_partition_columns_by_version.find(version); it != identity_partition_columns_by_version.end())
+        if (auto it = identity_partition_columns_by_state.find({state.metadata_file_path, state.schema_id});
+            it != identity_partition_columns_by_state.end())
             return it->second;
         return {};
     }
