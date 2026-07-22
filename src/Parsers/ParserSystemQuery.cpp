@@ -14,6 +14,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/InstrumentationManager.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 #include <base/EnumReflection.h>
@@ -1028,22 +1029,22 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {
                 /// Decimal/exponent literals parse as NumberLiteral (deferred); resolve to a concrete type.
                 const auto value = arg_ast->as<ASTLiteral &>().value.resolveNumberLiteral();
-                if (value.getType() == Field::Types::String)
+                const auto value_type = value.getType();
+                if (value_type == Field::Types::String)
                     res->instrumentation_arguments.emplace_back(value.safeGet<String>());
-                else if (value.getType() == Field::Types::Int64)
+                else if (value_type == Field::Types::Int64)
                     res->instrumentation_arguments.emplace_back(value.safeGet<Int64>());
-                else if (value.getType() == Field::Types::UInt64)
-                {
-                    UInt64 uint_value = value.safeGet<UInt64>();
-                    if (uint_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
-                    {
-                        expected.add(pos, "integer literal not exceeding Int64 maximum");
-                        return false;
-                    }
-                    res->instrumentation_arguments.emplace_back(static_cast<Int64>(uint_value));
-                }
-                else if (value.getType() == Field::Types::Float64)
-                    res->instrumentation_arguments.emplace_back(value.safeGet<Float64>());
+                else if (value_type == Field::Types::UInt64
+                         && value.safeGet<UInt64>() <= static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                    res->instrumentation_arguments.emplace_back(static_cast<Int64>(value.safeGet<UInt64>()));
+                else if (value_type == Field::Types::UInt64 || value_type == Field::Types::Float64
+                         || value_type == Field::Types::UInt128 || value_type == Field::Types::Int128
+                         || value_type == Field::Types::UInt256 || value_type == Field::Types::Int256)
+                    /// Anything that doesn't fit Int64 is kept as Float64. This also keeps a large float
+                    /// argument stable across a format-parse round-trip: it formats back as plain digits
+                    /// (e.g. 1e20 -> 100000000000000000000) that re-parse as a wide integer, which we
+                    /// convert back to the same Float64 here.
+                    res->instrumentation_arguments.emplace_back(applyVisitor(FieldVisitorConvertToNumber<Float64>(), value));
                 else
                 {
                     expected.add(pos, "string, integer, or float literal argument");
