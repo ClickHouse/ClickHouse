@@ -251,14 +251,16 @@ public:
         if (column_variant)
         {
             /// Geometry (Variant) type path.
+            /// GeometryColumnType matches the global discriminators of the Geometry Variant, while the local
+            /// order can differ (e.g. after a variant-to-variant conversion), so map local to global per row.
             Field field;
-            const auto & descriptors = column_variant->getLocalDiscriminators();
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 column_variant->get(i, field);
-                auto type = magic_enum::enum_cast<GeometryColumnType>(descriptors[i]);
+                auto global_discr = column_variant->globalDiscriminatorAt(i);
+                auto type = magic_enum::enum_cast<GeometryColumnType>(global_discr);
                 if (!type)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of geometry {}", static_cast<Int32>(descriptors[i]));
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of geometry {}", static_cast<Int32>(global_discr));
                 processField(field, *type, res_data);
             }
         }

@@ -1,0 +1,39 @@
+-- Regression test: area* / perimeter* must map Variant local discriminators to global ones.
+-- flipCoordinates over Geometry returns a plain Variant whose alternatives are ordered by name,
+-- while Geometry uses a fixed discriminator order (with MultiPoint appended at the end), so the
+-- cast back to Geometry produces a column whose local discriminators differ from the global ones.
+-- Reading local discriminators as global decoded Point rows as Polygon, Polygon rows as Ring, etc.
+
+-- { echoOn }
+SELECT
+    variantType(g2) AS t,
+    areaCartesian(g2) AS area,
+    perimeterCartesian(g2) AS perimeter
+FROM
+(
+    SELECT CAST(flipCoordinates(g), 'Geometry') AS g2
+    FROM
+    (
+        SELECT arrayJoin([
+            (0., 0.)::Point::Geometry,
+            [(1., 2.), (3., 4.)]::MultiPoint::Geometry,
+            [(0., 0.), (3., 4.)]::LineString::Geometry,
+            [[(0., 0.), (4., 0.), (4., 4.), (0., 4.), (0., 0.)]]::Polygon::Geometry,
+            [(0., 0.), (4., 0.), (4., 4.), (0., 4.), (0., 0.)]::Ring::Geometry,
+            [[(0., 0.), (1., 0.), (1., 1.), (0., 1.), (0., 0.)], [(2., 2.), (3., 2.), (3., 3.), (2., 3.), (2., 2.)]]::MultiLineString::Geometry,
+            [[[(0., 0.), (2., 0.), (2., 2.), (0., 2.), (0., 0.)]]]::MultiPolygon::Geometry
+        ]) AS g
+    )
+);
+
+-- The same through a table: the Memory engine keeps the casted column as is,
+-- so the stored Geometry column preserves the reordered local discriminators.
+DROP TABLE IF EXISTS geo_src;
+DROP TABLE IF EXISTS geo_dst;
+CREATE TABLE geo_src (id Int32, g Geometry) ENGINE = Memory;
+INSERT INTO geo_src VALUES (1, (10., 20.)::Point), (2, [(1., 2.), (3., 4.)]::MultiPoint), (3, [[(0., 0.), (4., 0.), (4., 4.), (0., 4.), (0., 0.)]]::Polygon);
+CREATE TABLE geo_dst (id Int32, g Geometry) ENGINE = Memory;
+INSERT INTO geo_dst SELECT id, flipCoordinates(g) FROM geo_src;
+SELECT id, variantType(g), areaCartesian(g), perimeterCartesian(g) FROM geo_dst ORDER BY id;
+DROP TABLE geo_src;
+DROP TABLE geo_dst;
