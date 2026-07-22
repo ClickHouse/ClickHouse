@@ -15,18 +15,28 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 t="t_${CLICKHOUSE_DATABASE}"
+t2="t2_${CLICKHOUSE_DATABASE}"
 
 ${CLICKHOUSE_CLIENT} --query "
 CREATE DATABASE IF NOT EXISTS shard_0;
 CREATE DATABASE IF NOT EXISTS shard_1;
 DROP TABLE IF EXISTS shard_0.${t} SYNC;
 DROP TABLE IF EXISTS shard_1.${t} SYNC;
+DROP TABLE IF EXISTS shard_0.${t2} SYNC;
+DROP TABLE IF EXISTS shard_1.${t2} SYNC;
 CREATE TABLE shard_0.${t} (w Int64) ENGINE = MergeTree ORDER BY w;
 CREATE TABLE shard_1.${t} (w Int64) ENGINE = MergeTree ORDER BY w;
 INSERT INTO shard_0.${t} SELECT number * 3 FROM numbers(100);        -- max 297
 INSERT INTO shard_1.${t} SELECT number * 3 + 1000 FROM numbers(100); -- max 1297
 CREATE TABLE dist AS shard_0.${t} ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ${t});
 CREATE TABLE merge_t AS dist ENGINE = Merge(currentDatabase(), '^dist\$');
+-- Second Distributed table, disjoint higher range, for a Merge that matches two children.
+CREATE TABLE shard_0.${t2} (w Int64) ENGINE = MergeTree ORDER BY w;
+CREATE TABLE shard_1.${t2} (w Int64) ENGINE = MergeTree ORDER BY w;
+INSERT INTO shard_0.${t2} SELECT number * 3 + 5000 FROM numbers(100); -- max 5297
+INSERT INTO shard_1.${t2} SELECT number * 3 + 9000 FROM numbers(100); -- max 9297
+CREATE TABLE dist2 AS shard_0.${t2} ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ${t2});
+CREATE TABLE merge_multi AS dist ENGINE = Merge(currentDatabase(), '^dist');
 "
 
 # max_threads = 1 is what makes narrowPipe collapse the two per-shard streams into one.
@@ -62,9 +72,22 @@ run "SELECT arraySort(x -> -x, groupArray(w)) = groupArray(w) FROM (SELECT w FRO
 echo 'no limit, monotonic DESC, old analyzer'
 run "SELECT arraySort(x -> -x, groupArray(w)) = groupArray(w) FROM (SELECT w FROM merge_t ORDER BY w DESC) SETTINGS enable_analyzer = 0"
 
+# Two matching children cap the stage at WithMergeableState (not after-aggregation), and
+# distributed_aggregation_memory_efficient = 0 disables the older guard, so only the
+# WithMergeableState arm keeps narrowPipe from concatenating the sorted shard streams.
+# 1 = the whole result is globally descending.
+echo 'no limit, two children, monotonic DESC, analyzer'
+run "SELECT arraySort(x -> -x, groupArray(w)) = groupArray(w) FROM (SELECT w FROM merge_multi ORDER BY w DESC) SETTINGS enable_analyzer = 1, distributed_aggregation_memory_efficient = 0"
+echo 'no limit, two children, monotonic DESC, old analyzer'
+run "SELECT arraySort(x -> -x, groupArray(w)) = groupArray(w) FROM (SELECT w FROM merge_multi ORDER BY w DESC) SETTINGS enable_analyzer = 0, distributed_aggregation_memory_efficient = 0"
+
 ${CLICKHOUSE_CLIENT} --query "
+DROP TABLE merge_multi;
 DROP TABLE merge_t;
 DROP TABLE dist;
+DROP TABLE dist2;
 DROP TABLE shard_0.${t} SYNC;
 DROP TABLE shard_1.${t} SYNC;
+DROP TABLE shard_0.${t2} SYNC;
+DROP TABLE shard_1.${t2} SYNC;
 "

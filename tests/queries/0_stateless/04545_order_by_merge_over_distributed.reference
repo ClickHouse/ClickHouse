@@ -32,3 +32,7 @@ no limit, monotonic DESC, analyzer
 1
 no limit, monotonic DESC, old analyzer
 1
+no limit, two children, monotonic DESC, analyzer
+1
+no limit, two children, monotonic DESC, old analyzer
+1
