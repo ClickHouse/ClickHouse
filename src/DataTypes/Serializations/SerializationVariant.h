@@ -118,7 +118,7 @@ public:
         size_t & total_size_of_variants) const;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
+        IColumn & column,
         size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
@@ -202,7 +202,7 @@ private:
         SubstreamsDeserializeStatesCache * cache);
 
     std::pair<std::vector<size_t>, std::vector<size_t>> deserializeCompactDiscriminators(
-        ColumnPtr & discriminators_column,
+        IColumn & discriminators_column,
         size_t rows_offset,
         size_t limit,
         ReadBuffer * stream,

@@ -109,7 +109,7 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
+        IColumn & column,
         size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,

@@ -195,32 +195,9 @@ namespace
         offset_values.resize(i);
     }
 
-    ColumnPtr arraySizesToOffsets(const IColumn & column)
+    void insertArraySizesToOffsets(IColumn & offsets_column, const ColumnPtr & array_sizes_column, size_t start, size_t end)
     {
-        const auto & column_sizes = assert_cast<const ColumnArray::ColumnOffsets &>(column);
-        MutableColumnPtr column_offsets = column_sizes.cloneEmpty();
-
-        if (column_sizes.empty())
-            return column_offsets;
-
-        const auto & sizes_data = column_sizes.getData();
-        auto & offsets_data = assert_cast<ColumnArray::ColumnOffsets &>(*column_offsets).getData();
-
-        offsets_data.resize(sizes_data.size());
-
-        IColumn::Offset prev_offset = 0;
-        for (size_t i = 0, size = sizes_data.size(); i < size; ++i)
-        {
-            prev_offset += sizes_data[i];
-            offsets_data[i] = prev_offset;
-        }
-
-        return column_offsets;
-    }
-
-    void insertArraySizesToOffsets(ColumnPtr & offsets_column, ColumnPtr & array_sizes_column, size_t start, size_t end)
-    {
-        auto & offsets_data = assert_cast<ColumnArray::ColumnOffsets &>(*offsets_column->assumeMutable()).getData();
+        auto & offsets_data = assert_cast<ColumnArray::ColumnOffsets &>(offsets_column).getData();
         const auto & sizes_data =  assert_cast<const ColumnArray::ColumnOffsets &>(*array_sizes_column).getData();
         offsets_data.reserve(offsets_data.size() + end - start);
         IColumn::Offset prev_offset = offsets_data.back();
@@ -408,40 +385,31 @@ void SerializationArray::serializeBinaryBulkWithMultipleStreams(
 }
 
 bool SerializationArray::deserializeOffsetsBinaryBulk(
-    ColumnPtr & offsets_column,
+    IColumn & offsets_column,
     size_t limit,
     ISerialization::DeserializeBinaryBulkSettings & settings,
     ISerialization::SubstreamsCache * cache)
 {
     if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
     {
-        /// Usually substreams cache contains the whole column from currently deserialized block with rows from multiple ranges.
-        /// It's done to avoid extra data copy, in this case we just use this cached column as the result column.
-        /// But sometimes in cache we might have column with rows from the current range only (for example when we don't store this column but need it for
-        /// constructing another column). In this case we need to insert data into resulting column from cached column.
-        /// To determine what case we have we store number of read rows in last range in cache.
         auto [cached_column, num_read_rows] = *cached_column_with_num_read_rows;
-        if ((settings.insert_only_rows_in_current_range_from_substreams_cache) || (!offsets_column->empty() && cached_column->size() == num_read_rows))
-            insertArraySizesToOffsets(offsets_column, cached_column, cached_column->size() - num_read_rows, cached_column->size());
-        else
-            offsets_column = arraySizesToOffsets(*cached_column);
-
+        insertArraySizesToOffsets(offsets_column, cached_column, cached_column->size() - num_read_rows, cached_column->size());
         return true;
     }
 
     if (auto * stream = settings.getter(settings.path))
     {
-        size_t prev_size = offsets_column->size();
+        size_t prev_size = offsets_column.size();
 
         if (settings.position_independent_encoding)
-            deserializeArraySizesPositionIndependent(*offsets_column->assumeMutable(), *stream, limit);
+            deserializeArraySizesPositionIndependent(offsets_column, *stream, limit);
         else
-            SerializationNumber<ColumnArray::Offset>::create()->deserializeBinaryBulk(*offsets_column->assumeMutable(), *stream, 0, limit, 0);
+            SerializationNumber<ColumnArray::Offset>::create()->deserializeBinaryBulk(offsets_column, *stream, 0, limit, 0);
 
         /// Verify offsets if the data comes over the network
         if (settings.native_format)
         {
-            const auto & offsets = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData();
+            const auto & offsets = assert_cast<const ColumnArray::ColumnOffsets &>(offsets_column).getData();
             const auto * const it = std::adjacent_find(offsets.begin(), offsets.end(), std::greater<>());
             if (it != offsets.end())
             {
@@ -453,7 +421,7 @@ bool SerializationArray::deserializeOffsetsBinaryBulk(
 
         /// Add array sizes read from current range into the cache.
         if (cache)
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(*offsets_column), offsets_column->size() - prev_size);
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(offsets_column), offsets_column.size() - prev_size);
 
         return true;
     }
@@ -462,13 +430,13 @@ bool SerializationArray::deserializeOffsetsBinaryBulk(
 }
 
 std::pair<size_t, size_t> SerializationArray::deserializeOffsetsBinaryBulkAndGetNestedOffsetAndLimit(
-    ColumnPtr & offsets_column,
+    IColumn & offsets_column,
     size_t offset,
     size_t limit,
     ISerialization::DeserializeBinaryBulkSettings & settings,
     ISerialization::SubstreamsCache * cache)
 {
-    const auto & offsets_data = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData();
+    const auto & offsets_data = assert_cast<const ColumnArray::ColumnOffsets &>(offsets_column).getData();
     size_t prev_last_offset = offsets_data.back();
     size_t prev_offset_size = offsets_data.size();
     if (!deserializeOffsetsBinaryBulk(offsets_column, offset + limit, settings, cache))
@@ -477,7 +445,7 @@ std::pair<size_t, size_t> SerializationArray::deserializeOffsetsBinaryBulkAndGet
     size_t skipped_nested_rows = 0;
 
     /// Convert offsets array by removing the first rows_offset number of elements.
-    ColumnArray::Offsets & offset_values = assert_cast<ColumnArray::ColumnOffsets &>(*offsets_column->assumeMutable()).getData();
+    ColumnArray::Offsets & offset_values = assert_cast<ColumnArray::ColumnOffsets &>(offsets_column).getData();
 
     if (offset)
     {
@@ -487,7 +455,7 @@ std::pair<size_t, size_t> SerializationArray::deserializeOffsetsBinaryBulkAndGet
         for (auto i = prev_offset_size; i + offset < offset_values.size(); ++i)
             offset_values[i] = offset_values[i + offset] - skipped_nested_rows;
 
-        offsets_column->assumeMutable()->popBack(offset);
+        offsets_column.popBack(offset);
     }
 
     /// Number of values corresponding with `offset_values` must be read.
@@ -499,23 +467,22 @@ std::pair<size_t, size_t> SerializationArray::deserializeOffsetsBinaryBulkAndGet
 }
 
 void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
+    IColumn & column,
     size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    auto mutable_column = column->assumeMutable();
-    ColumnArray & column_array = typeid_cast<ColumnArray &>(*mutable_column);
+    ColumnArray & column_array = typeid_cast<ColumnArray &>(column);
 
     settings.path.push_back(Substream::ArraySizes);
-    auto [skipped_nested_rows, nested_limit] = deserializeOffsetsBinaryBulkAndGetNestedOffsetAndLimit(column_array.getOffsetsPtr(), rows_offset, limit, settings, cache);
+    auto [skipped_nested_rows, nested_limit] = deserializeOffsetsBinaryBulkAndGetNestedOffsetAndLimit(column_array.getOffsetsColumn(), rows_offset, limit, settings, cache);
 
     settings.path.back() = Substream::ArrayElements;
 
     ColumnArray::Offsets & offset_values = column_array.getOffsets();
-    ColumnPtr & nested_column = column_array.getDataPtr();
+    IColumn & nested_column = column_array.getData();
     size_t last_offset = offset_values.back();
 
     if (unlikely(nested_limit > MAX_ARRAYS_SIZE))
@@ -528,11 +495,9 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
 
     /// Check consistency between offsets and elements subcolumns.
     /// But if elements column is empty - it's ok for columns of Nested types that was added by ALTER.
-    if (!nested_column->empty() && nested_column->size() != last_offset)
+    if (!nested_column.empty() && nested_column.size() != last_offset)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all array values: read just {} of {}",
-            toString(nested_column->size()), toString(last_offset));
-
-    column = std::move(mutable_column);
+            toString(nested_column.size()), toString(last_offset));
 }
 
 

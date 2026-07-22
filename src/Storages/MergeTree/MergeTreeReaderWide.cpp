@@ -153,7 +153,7 @@ void MergeTreeReaderWide::prefetchForAllColumns(
 
 size_t MergeTreeReaderWide::readRows(
     size_t from_mark, size_t current_task_last_mark, bool continue_reading, size_t max_rows_to_read,
-    size_t rows_offset, Columns & res_columns)
+    size_t rows_offset, MutableColumns & res_columns)
 {
     size_t read_rows = 0;
     if (prefetched_from_mark != -1 && static_cast<size_t>(prefetched_from_mark) != from_mark)
@@ -184,12 +184,12 @@ size_t MergeTreeReaderWide::readRows(
 
             const auto & column_to_read = columns_to_read[pos];
 
-            /// The column is already present in the block so we will append the values to the end.
-            bool append = res_columns[pos] != nullptr;
-            if (!append)
-                res_columns[pos] = column_to_read.type->createColumn(*serializations[pos]);
-
+            /// The column may already be present (we append the values to the end) or empty; either way it is
+            /// uniquely owned here, so we read into it directly without cloning.
             auto & column = res_columns[pos];
+            if (!column)
+                column = column_to_read.type->createColumn(*serializations[pos]);
+
             try
             {
                 size_t column_size_before_reading = column->size();
@@ -199,7 +199,7 @@ size_t MergeTreeReaderWide::readRows(
                 readData(
                     column_to_read,
                     serializations[pos],
-                    column,
+                    *column,
                     from_mark,
                     continue_reading,
                     current_task_last_mark,
@@ -601,7 +601,7 @@ void MergeTreeReaderWide::prefetchForColumn(
 void MergeTreeReaderWide::readData(
     const NameAndTypePair & name_and_type,
     const SerializationPtr & serialization,
-    ColumnPtr & column,
+    IColumn & column,
     size_t from_mark,
     bool continue_reading,
     size_t current_task_last_mark,

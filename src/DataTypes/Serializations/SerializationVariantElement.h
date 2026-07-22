@@ -70,7 +70,7 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
+        IColumn & column,
         size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
@@ -109,7 +109,7 @@ private:
     struct DeserializeBinaryBulkStateVariantElement;
 
     static std::pair<size_t, size_t> deserializeCompactDiscriminators(
-        ColumnPtr & discriminators_column,
+        IColumn & discriminators_column,
         ColumnVariant::Discriminator variant_discriminator,
         size_t rows_offset,
         size_t limit,

@@ -178,7 +178,7 @@ private:
     DeserializeStates deserialize_states;
 
     void readPrefix(const NameAndTypePair & name_and_type, ISerialization::SubstreamsCache & cache, ISerialization::SubstreamsDeserializeStatesCache & deserialize_state_cache);
-    void readData(const NameAndTypePair & name_and_type, ColumnPtr & column, size_t max_rows_to_read, ISerialization::SubstreamsCache & cache);
+    void readData(const NameAndTypePair & name_and_type, MutableColumnPtr & column, size_t max_rows_to_read, ISerialization::SubstreamsCache & cache);
     bool isFinished();
 };
 
@@ -266,7 +266,7 @@ void LogSource::fillPhysicalColumns(Columns & result_columns, size_t max_rows_to
     /// Second, read the data of all physical columns/subcolumns.
     for (const auto & name_type : physical_columns)
     {
-        ColumnPtr column;
+        MutableColumnPtr column;
         auto name_type_on_disk = getColumnOnDisk(name_type);
 
         try
@@ -321,7 +321,7 @@ void LogSource::readPrefix(const NameAndTypePair & name_and_type, ISerialization
     serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name_and_type.name], &deserialize_state_cache);
 }
 
-void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & column,
+void LogSource::readData(const NameAndTypePair & name_and_type, MutableColumnPtr & column,
     size_t max_rows_to_read, ISerialization::SubstreamsCache & cache)
 {
     ISerialization::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
@@ -347,7 +347,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
         return &it->second.compressed.value();
     };
 
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, 0, max_rows_to_read, settings, deserialize_states[name], &cache);
+    serialization->deserializeBinaryBulkWithMultipleStreams(*column, 0, max_rows_to_read, settings, deserialize_states[name], &cache);
     if (column->getDataType() != name_and_type.type->getColumnType())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,

@@ -26,7 +26,7 @@ public:
         const SubstreamData & data) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
+        IColumn & column,
         size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
@@ -46,14 +46,14 @@ private:
 
     /// dispatch helpers for deserializeBinaryBulkWithMultipleStreams
     void deserializeBinaryBulkWithSizeStream(
-        ColumnPtr & column,
+        IColumn & column,
         size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const;
     void deserializeBinaryBulkWithoutSizeStream(
-        ColumnPtr & column,
+        IColumn & column,
         size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
@@ -61,15 +61,14 @@ private:
         SubstreamsCache * cache) const;
 
     void deserializeWithStringData(
-        ColumnPtr & column,
+        IColumn & column,
         size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStateStringWithoutSizeStream & string_state,
         SubstreamsCache * cache) const;
 
     void deserializeWithoutStringData(
-        ColumnPtr & column, size_t rows_offset, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache) const;
+        IColumn & column, size_t rows_offset, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache) const;
 };
 
 }

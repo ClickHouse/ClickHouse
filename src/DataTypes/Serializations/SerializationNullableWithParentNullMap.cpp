@@ -59,7 +59,7 @@ void SerializationNullableWithParentNullMap::deserializeBinaryBulkStatePrefix(
 }
 
 void SerializationNullableWithParentNullMap::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
+    IColumn & column,
     size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
@@ -88,19 +88,13 @@ void SerializationNullableWithParentNullMap::deserializeBinaryBulkWithMultipleSt
     }
     settings.path.pop_back();
 
-    size_t prev_size = column->size();
+    size_t prev_size = column.size();
 
-    /// The nested column (or some of its substreams) may already be in the substreams cache from
-    /// deserialization of another subcolumn, and a cached column can contain rows from multiple ranges.
-    /// Force copying only the rows of the current range from the cache, so that the number of rows appended
-    /// to `column` is exactly the size of the current range and the null representation modified below is
-    /// owned by `column` rather than shared with a column produced by another subcolumn read.
-    auto nested_settings = settings;
-    nested_settings.insert_only_rows_in_current_range_from_substreams_cache = true;
-    nested_settings.path.push_back(Substream::NullableElements);
-    nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, nested_settings, state, cache);
+    settings.path.push_back(Substream::NullableElements);
+    nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, state, cache);
+    settings.path.pop_back();
 
-    size_t new_rows = column->size() - prev_size;
+    size_t new_rows = column.size() - prev_size;
     if (new_rows == 0)
         return;
 
@@ -115,9 +109,7 @@ void SerializationNullableWithParentNullMap::deserializeBinaryBulkWithMultipleSt
     const auto & parent_null_map_data = assert_cast<const ColumnUInt8 &>(*parent_null_map).getData();
     size_t parent_offset = parent_null_map_data.size() - parent_num_read_rows;
 
-    auto mutable_column = IColumn::mutate(std::move(column));
-    applyParentNullMapToExtractedSubcolumn(mutable_column, parent_null_map_data, prev_size, parent_offset);
-    column = std::move(mutable_column);
+    applyParentNullMapToExtractedSubcolumn(column, parent_null_map_data, prev_size, parent_offset);
 }
 
 }

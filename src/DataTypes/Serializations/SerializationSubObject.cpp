@@ -224,7 +224,7 @@ void SerializationSubObject::serializeBinaryBulkWithMultipleStreams(const IColum
 }
 
 void SerializationSubObject::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & result_column,
+    IColumn & result_column,
     size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
@@ -235,8 +235,7 @@ void SerializationSubObject::deserializeBinaryBulkWithMultipleStreams(
         return;
 
     auto * sub_object_state = checkAndGetState<DeserializeBinaryBulkStateSubObject>(state);
-    auto mutable_column = result_column->assumeMutable();
-    auto & column_object = assert_cast<ColumnObject &>(*mutable_column);
+    auto & column_object = assert_cast<ColumnObject &>(result_column);
     /// If it's a new object column, set dynamic paths and statistics.
     if (column_object.empty())
     {
@@ -252,7 +251,7 @@ void SerializationSubObject::deserializeBinaryBulkWithMultipleStreams(
     {
         settings.path.push_back(Substream::ObjectTypedPath);
         settings.path.back().object_path_name = path;
-        serialization->deserializeBinaryBulkWithMultipleStreams(typed_paths[path.substr(paths_prefix.size())], rows_offset, limit, settings, sub_object_state->typed_path_states[path], cache);
+        serialization->deserializeBinaryBulkWithMultipleStreams(*typed_paths[path.substr(paths_prefix.size())], rows_offset, limit, settings, sub_object_state->typed_path_states[path], cache);
         settings.path.pop_back();
     }
 
@@ -260,12 +259,12 @@ void SerializationSubObject::deserializeBinaryBulkWithMultipleStreams(
     {
         settings.path.push_back(Substream::ObjectDynamicPath);
         settings.path.back().object_path_name = path;
-        dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(dynamic_paths[path.substr(paths_prefix.size())], rows_offset, limit, settings, sub_object_state->dynamic_path_states[path], cache);
+        dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(*dynamic_paths[path.substr(paths_prefix.size())], rows_offset, limit, settings, sub_object_state->dynamic_path_states[path], cache);
         settings.path.pop_back();
     }
 
     settings.path.push_back(Substream::ObjectSharedData);
-    sub_object_state->shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(column_object.getSharedDataPtr(), rows_offset, limit, settings, sub_object_state->shared_data_state, cache);
+    sub_object_state->shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(column_object.getSharedDataColumn(), rows_offset, limit, settings, sub_object_state->shared_data_state, cache);
     settings.path.pop_back();
 
     settings.path.pop_back();

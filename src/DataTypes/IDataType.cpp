@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
@@ -96,6 +97,8 @@ MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) c
             column = ColumnSparse::create(std::move(column));
         else if (kind == ISerialization::Kind::REPLICATED)
             column = ColumnReplicated::create(std::move(column), ColumnUInt8::create());
+        else if (kind == ISerialization::Kind::DETACHED)
+            column = ColumnBLOB::create(std::move(column));
     }
 
     return column;

@@ -627,7 +627,7 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
 }
 
 void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
+    IColumn & column,
     size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
@@ -637,9 +637,8 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     if (insertDataFromSubstreamsCacheIfAny(cache, settings, column))
         return;
 
-    size_t prev_size = column->size();
-    auto mutable_column = column->assumeMutable();
-    ColumnLowCardinality & low_cardinality_column = typeid_cast<ColumnLowCardinality &>(*mutable_column);
+    size_t prev_size = column.size();
+    ColumnLowCardinality & low_cardinality_column = typeid_cast<ColumnLowCardinality &>(column);
 
     settings.path.push_back(Substream::DictionaryKeys);
     auto * keys_stream = settings.getter(settings.path);
@@ -802,8 +801,8 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
         low_cardinality_state->num_pending_rows -= num_rows_to_read + skipped_rows;
     }
 
-    column = std::move(mutable_column);
-    addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
+    size_t num_read_rows = column.size() - prev_size;
+    addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), num_read_rows);
 }
 
 void SerializationLowCardinality::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const

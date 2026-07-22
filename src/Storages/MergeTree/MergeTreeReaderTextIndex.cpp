@@ -409,7 +409,7 @@ size_t MergeTreeReaderTextIndex::readRows(
     bool continue_reading,
     size_t max_rows_to_read,
     size_t rows_offset,
-    Columns & res_columns)
+    MutableColumns & res_columns)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReaderTotalMicroseconds);
     const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
@@ -472,11 +472,11 @@ size_t MergeTreeReaderTextIndex::readRows(
     Block fallback_block;
     if (any_use_fallback && fallback_reader && max_rows_to_read > 0)
     {
-        Columns fallback_cols(fallback_columns_list.size(), nullptr);
+        MutableColumns fallback_cols(fallback_columns_list.size());
         fallback_reader->readRows(from_mark, current_task_last_mark, continue_reading, max_rows_to_read, rows_offset, fallback_cols);
         size_t col_idx = 0;
         for (const auto & col_name_type : fallback_columns_list)
-            fallback_block.insert({fallback_cols[col_idx++], col_name_type.type, col_name_type.name});
+            fallback_block.insert({std::move(fallback_cols[col_idx++]), col_name_type.type, col_name_type.name});
     }
 
     size_t fallback_offset = 0;
@@ -499,8 +499,7 @@ size_t MergeTreeReaderTextIndex::readRows(
 
         for (size_t i = 0; i < res_columns.size(); ++i)
         {
-            auto mutable_column = IColumn::mutate(std::move(res_columns[i]));
-            auto & column_mutable = *mutable_column;
+            auto & column_mutable = *res_columns[i];
 
             if (is_always_true[i])
             {
@@ -530,8 +529,6 @@ size_t MergeTreeReaderTextIndex::readRows(
             {
                 fillColumn(column_mutable, mark_postings[i], from_row, rows_to_read);
             }
-
-            res_columns[i] = std::move(mutable_column);
         }
 
         ++from_mark;
@@ -549,7 +546,7 @@ size_t MergeTreeReaderTextIndex::readRows(
     return read_rows;
 }
 
-void MergeTreeReaderTextIndex::createEmptyColumns(Columns & columns) const
+void MergeTreeReaderTextIndex::createEmptyColumns(MutableColumns & columns) const
 {
     for (size_t i = 0; i < columns.size(); ++i)
     {

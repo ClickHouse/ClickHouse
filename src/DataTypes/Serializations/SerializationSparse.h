@@ -65,7 +65,7 @@ public:
 
     /// Allows to read only ColumnSparse.
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
+        IColumn & column,
         size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
@@ -179,7 +179,7 @@ public:
         SubstreamsDeserializeStatesCache * cache) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
+        IColumn & column,
         size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,

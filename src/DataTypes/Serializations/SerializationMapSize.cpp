@@ -175,7 +175,7 @@ void collectMapSizeFromBuckets(const VectorWithMemoryTracking<ColumnPtr> & size_
 }
 
 void SerializationMapSize::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
+    IColumn & column,
     size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
@@ -208,12 +208,13 @@ void SerializationMapSize::deserializeBinaryBulkWithMultipleStreams(
         {
             settings.path.push_back(Substream::Bucket);
             settings.path.back().bucket = bucket;
-            size_buckets[bucket] = column->cloneEmpty();
-            size_serialization->deserializeBinaryBulkWithMultipleStreams(size_buckets[bucket], rows_offset, limit, settings, map_size_with_buckets_state->bucket_size_states[bucket], cache);
+            auto mutable_bucket = column.cloneEmpty();
+            size_serialization->deserializeBinaryBulkWithMultipleStreams(*mutable_bucket, rows_offset, limit, settings, map_size_with_buckets_state->bucket_size_states[bucket], cache);
+            size_buckets[bucket] = std::move(mutable_bucket);
             settings.path.pop_back();
         }
 
-        collectMapSizeFromBuckets(size_buckets, *column->assumeMutable());
+        collectMapSizeFromBuckets(size_buckets, column);
     }
 }
 

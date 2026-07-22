@@ -214,7 +214,7 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkStatePrefix(
 }
 
 void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
+    IColumn & column,
     size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
@@ -227,7 +227,7 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
     if (rows_offset + limit == 0)
         return;
 
-    auto & array_column = assert_cast<ColumnArray &>(*column->assumeMutable());
+    auto & array_column = assert_cast<ColumnArray &>(column);
     auto & paths_column = assert_cast<ColumnString &>(array_column.getData());
     auto * object_distinct_paths_state = checkAndGetState<DeserializeBinaryBulkStateObjectDistinctPaths>(state);
     auto * object_structure_state = checkAndGetState<SerializationObject::DeserializeBinaryBulkStateObjectStructure>(object_distinct_paths_state->object_structure_state);
@@ -247,14 +247,12 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
     {
         case SerializationObjectSharedData::SerializationVersion::MAP:
         {
-            ColumnPtr shared_data_paths_column = column->cloneEmpty();
-            auto settings_copy = settings;
-            settings_copy.insert_only_rows_in_current_range_from_substreams_cache = true;
+            auto shared_data_paths_column = column.cloneEmpty();
             shared_data_paths_serialization->deserializeBinaryBulkWithMultipleStreams(
-                shared_data_paths_column,
+                *shared_data_paths_column,
                 rows_offset,
                 limit,
-                settings_copy,
+                settings,
                 object_distinct_paths_state->shared_data_paths_state,
                 cache);
 
@@ -269,9 +267,9 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
             {
                 settings.path.push_back(Substream::Bucket);
                 settings.path.back().bucket = bucket;
-                ColumnPtr bucket_shared_data_paths_column = column->cloneEmpty();
+                auto bucket_shared_data_paths_column = column.cloneEmpty();
                 shared_data_paths_serialization->deserializeBinaryBulkWithMultipleStreams(
-                    bucket_shared_data_paths_column,
+                    *bucket_shared_data_paths_column,
                     rows_offset,
                     limit,
                     settings,

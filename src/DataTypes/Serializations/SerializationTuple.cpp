@@ -840,7 +840,7 @@ void SerializationTuple::serializeBinaryBulkWithMultipleStreams(
 }
 
 void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
+    IColumn & column,
     size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
@@ -855,13 +855,11 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
         }
         else if (ReadBuffer * stream = settings.getter(settings.path))
         {
-            size_t prev_size = column->size();
-            auto mutable_column = column->assumeMutable();
+            size_t prev_size = column.size();
             auto ignored_size = stream->tryIgnore(rows_offset + limit);
             auto delta = ignored_size < rows_offset ? 0 : ignored_size - rows_offset;
-            typeid_cast<ColumnTuple &>(*mutable_column).addSize(delta);
-            column = std::move(mutable_column);
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
+            typeid_cast<ColumnTuple &>(column).addSize(delta);
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);
         }
 
         return;
@@ -869,13 +867,12 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
 
     auto * tuple_state = checkAndGetState<DeserializeBinaryBulkStateTuple>(state);
 
-    auto mutable_column = column->assumeMutable();
-    auto & column_tuple = assert_cast<ColumnTuple &>(*mutable_column);
+    auto & column_tuple = assert_cast<ColumnTuple &>(column);
 
     for (size_t i = 0; i < elems.size(); ++i)
     {
         elems[i]->deserializeBinaryBulkWithMultipleStreams(
-            column_tuple.getColumnPtr(i), rows_offset, limit, settings, tuple_state->states[i], cache);
+            column_tuple.getColumn(i), rows_offset, limit, settings, tuple_state->states[i], cache);
     }
 
     /// Verify that all Tuple elements have the same size.
@@ -886,7 +883,7 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
             throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of tuple element {}: {}. Expected size: {}", i, column_tuple.getColumn(i).size(), expected_size);
     }
 
-    typeid_cast<ColumnTuple &>(*mutable_column).addSize(column_tuple.getColumn(0).size());
+    column_tuple.addSize(column_tuple.getColumn(0).size());
 }
 
 size_t SerializationTuple::getPositionByName(const String & name) const

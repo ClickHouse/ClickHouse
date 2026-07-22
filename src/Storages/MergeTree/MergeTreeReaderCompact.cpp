@@ -186,7 +186,7 @@ static ColumnPtr getFullColumnFromCache(std::unordered_map<String, ColumnPtr> * 
 
 void MergeTreeReaderCompact::readData(
     size_t column_idx,
-    ColumnPtr & column,
+    IColumn & column,
     size_t rows_to_read,
     size_t rows_offset,
     size_t from_mark,
@@ -257,7 +257,10 @@ void MergeTreeReaderCompact::readData(
         auto it = columns_cache.find(name);
         if (it != columns_cache.end() && it->second != nullptr)
         {
-            column = it->second;
+            /// The same physical column was already read for another requested column in this granule
+            /// (e.g. shared Nested offsets). Copy only the newly-read rows from it instead of re-reading.
+            chassert(column.size() <= it->second->size());
+            column.insertRangeFrom(*it->second, column.size(), it->second->size() - column.size());
             return;
         }
 
@@ -278,26 +281,16 @@ void MergeTreeReaderCompact::readData(
 
                 if (!temp_full_column)
                 {
-                    temp_full_column = type_in_storage->createColumn(*serialization);
-                    serialization->deserializeBinaryBulkWithMultipleStreams(temp_full_column, rows_offset, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map_for_subcolumns[name_in_storage], substreams_cache);
+                    auto mutable_temp = type_in_storage->createColumn(*serialization);
+                    serialization->deserializeBinaryBulkWithMultipleStreams(*mutable_temp, rows_offset, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map_for_subcolumns[name_in_storage], substreams_cache);
+                    temp_full_column = std::move(mutable_temp);
 
                     if (columns_cache_for_subcolumns)
                         columns_cache_for_subcolumns->emplace(name_in_storage, temp_full_column);
                 }
 
                 auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), temp_full_column);
-
-                /// TODO: Avoid extra copying.
-                if (column->empty())
-                {
-                    column = IColumn::mutate(subcolumn);
-                }
-                else
-                {
-                    auto mutable_column = IColumn::mutate(std::move(column));
-                    mutable_column->insertRangeFrom(*subcolumn, 0, subcolumn->size());
-                    column = std::move(mutable_column);
-                }
+                column.insertRangeFrom(*subcolumn, 0, subcolumn->size());
             }
         }
         else
@@ -306,9 +299,11 @@ void MergeTreeReaderCompact::readData(
             serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map[name], substreams_cache);
         }
 
-        columns_cache[name] = column;
+        /// Cache the just-read column so other requested columns mapping to the same physical column in this
+        /// granule (e.g. shared Nested offsets) can copy from it. The cache lives only for the current granule.
+        columns_cache[name] = column.getPtr();
 
-        size_t read_rows_in_column = column->size() - column_size_before_reading;
+        size_t read_rows_in_column = column.size() - column_size_before_reading;
         if (read_rows_in_column != rows_to_read)
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
                 "Cannot read all data in MergeTreeReaderCompact. Rows read: {}. Rows expected: {}.",
@@ -493,7 +488,7 @@ void MergeTreeReaderCompact::readPrefix(
     }
 }
 
-void MergeTreeReaderCompact::createColumnsForReading(Columns & res_columns) const
+void MergeTreeReaderCompact::createColumnsForReading(MutableColumns & res_columns) const
 {
     for (size_t i = 0; i < columns_to_read.size(); ++i)
     {

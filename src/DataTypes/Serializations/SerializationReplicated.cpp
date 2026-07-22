@@ -176,7 +176,7 @@ void SerializationReplicated::deserializeBinaryBulkStatePrefix(
 }
 
 void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
+    IColumn & column,
     size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
@@ -195,11 +195,10 @@ void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
     if (rows_offset != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value of rows_offset in Native format: {}. Expected 0", rows_offset);
 
-    if (!column->empty())
+    if (!column.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading into non-empty column ColumnReplicated is not supported in Native format");
 
-    auto mutable_column = column->assumeMutable();
-    auto & column_replicated = assert_cast<ColumnReplicated &>(*mutable_column);
+    auto & column_replicated = assert_cast<ColumnReplicated &>(column);
 
     settings.path.push_back(Substream::ReplicatedIndexes);
     auto * indexes_stream = settings.getter(settings.path);
@@ -252,7 +251,7 @@ void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
 
     size_t num_elements = 0;
     readVarUInt(num_elements, *elements_stream);
-    nested->deserializeBinaryBulkWithMultipleStreams(column_replicated.getNestedColumn(), 0, num_elements, settings, state, cache);
+    nested->deserializeBinaryBulkWithMultipleStreams(*column_replicated.getNestedColumn(), 0, num_elements, settings, state, cache);
 }
 
 void SerializationReplicated::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const

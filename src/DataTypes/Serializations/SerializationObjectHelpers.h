@@ -17,7 +17,7 @@ std::vector<std::pair<String, ColumnPtr>> flattenPaths(const ColumnObject & obje
 std::vector<std::vector<std::pair<String, ColumnPtr>>> flattenAndBucketSharedDataPaths(const IColumn & shared_data_column, size_t start, size_t end, const DataTypePtr & dynamic_type, size_t num_buckets);
 
 /// Insert data from flattened representation of an Object column to a usual Object column.
-void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, Columns && flattened_columns, ColumnObject & object_column, size_t num_rows);
+void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, MutableColumns && flattened_columns, ColumnObject & object_column, size_t num_rows);
 
 /// Get the bucket number for a specific path.
 size_t getSharedDataPathBucket(std::string_view path, size_t num_buckets);

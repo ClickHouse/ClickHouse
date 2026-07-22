@@ -1,6 +1,7 @@
 #include <base/range.h>
 #include <Common/StringUtils.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnReplicated.h>
 #include <Core/Field.h>
@@ -222,10 +223,8 @@ MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serializatio
         return ColumnReplicated::create(createColumn(*serialization_replicated->getNested()), ColumnUInt8::create());
 
     /// We can have Detached serialization over Tuple (for parallel blocks marshalling).
-    /// Create the inner column; SerializationDetached::deserializeBinaryBulkWithMultipleStreams
-    /// will wrap it in ColumnBLOB during deserialization.
     if (const auto * serialization_detached = typeid_cast<const SerializationDetached *>(current_serialization))
-        return createColumn(*serialization_detached->getNested());
+        return ColumnBLOB::create(createColumn(*serialization_detached->getNested()));
 
     const auto * serialization_tuple = typeid_cast<const SerializationTuple *>(current_serialization);
     if (!serialization_tuple)

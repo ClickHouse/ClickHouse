@@ -66,7 +66,7 @@ TEST(StringSerialization, IncorrectStateAfterMemoryLimitExceeded)
     size_t non_empty_result = 0;
     while (memory_limit_exceeded_errors < 10 || non_empty_result < 10)
     {
-        ColumnPtr result_column = type_string->createColumn();
+        auto result_column = type_string->createColumn();
         ReadBufferFromOwnString in(out.str());
 
         auto serialization = type_string->getDefaultSerialization();
@@ -75,15 +75,9 @@ TEST(StringSerialization, IncorrectStateAfterMemoryLimitExceeded)
         settings.position_independent_encoding = false;
         settings.getter = [&in](const auto &) { return &in; };
 
-        run_with_memory_failures([&]() { serialization->deserializeBinaryBulkWithMultipleStreams(result_column, 0, src_column->size(), settings, state, nullptr); });
+        run_with_memory_failures([&]() { serialization->deserializeBinaryBulkWithMultipleStreams(*result_column, 0, src_column->size(), settings, state, nullptr); });
 
-        /// A `MEMORY_LIMIT_EXCEEDED` thrown while deserializing may leave `result_column` null: the COW-safe
-        /// deserialize path moves the column into a mutable clone and only assigns it back to `result_column`
-        /// on success. That is acceptable — we only require that any column that does survive stays consistent.
-        if (!result_column)
-            continue;
-
-        auto & result = assert_cast<ColumnString &>(*result_column->assumeMutable());
+        auto & result = assert_cast<ColumnString &>(*result_column);
         if (!result.empty())
         {
             ++non_empty_result;
@@ -155,8 +149,8 @@ TEST(StringSerialization, WithSizeStreamFaithfulRoundTripIsConsistent)
         settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
         serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
 
-        ColumnPtr result = ColumnString::create();
-        serialization->deserializeBinaryBulkWithMultipleStreams(result, rows_offset, rows - rows_offset, settings, state, nullptr);
+        auto result = ColumnString::create();
+        serialization->deserializeBinaryBulkWithMultipleStreams(*result, rows_offset, rows - rows_offset, settings, state, nullptr);
 
         const auto & result_string = assert_cast<const ColumnString &>(*result);
         ASSERT_EQ(result_string.getOffsets().back(), result_string.getChars().size());
@@ -204,13 +198,13 @@ TEST(StringSerialization, WithSizeStreamShortDataStreamThrows)
     settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
     serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
 
-    ColumnPtr result = ColumnString::create();
+    auto result = ColumnString::create();
     try
     {
-        serialization->deserializeBinaryBulkWithMultipleStreams(result, 0, rows, settings, state, nullptr);
+        serialization->deserializeBinaryBulkWithMultipleStreams(*result, 0, rows, settings, state, nullptr);
         FAIL() << "deserialize accepted a short data stream and produced offsets.back()="
-               << assert_cast<const ColumnString &>(*result).getOffsets().back()
-               << " vs chars.size()=" << assert_cast<const ColumnString &>(*result).getChars().size();
+               << result->getOffsets().back()
+               << " vs chars.size()=" << result->getChars().size();
     }
     catch (const DB::Exception & e)
     {

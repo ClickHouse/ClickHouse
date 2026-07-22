@@ -43,7 +43,7 @@ public:
         bool continue_reading,
         size_t max_rows_to_read,
         size_t offset,
-        Columns & res_columns) override;
+        MutableColumns & res_columns) override;
 
     bool canReadIncompleteGranules() const override { return false; }
     void updateAllMarkRanges(const MarkRanges & ranges) override;
@@ -55,7 +55,7 @@ public:
 private:
     void setIndexGranule(MergeTreeIndexGranulePtr index_granule);
     void initializeFallbackReader(const IMergeTreeReader * main_reader);
-    void createEmptyColumns(Columns & columns) const;
+    void createEmptyColumns(MutableColumns & columns) const;
     std::unique_ptr<MergeTreeReaderStream> makeTextIndexStream(const MergeTreeIndexSubstream & substream) const;
 
     /// Returns combined postings per column for the given mark, clipped to `slice_range`

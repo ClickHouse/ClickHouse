@@ -257,7 +257,7 @@ void ISerialization::serializeBinaryBulkWithMultipleStreams(
 }
 
 void ISerialization::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
+    IColumn & column,
     size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
@@ -272,19 +272,15 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     }
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
-        size_t prev_size = column->size();
-        /// `column` may be shared — e.g. it was placed into the substreams cache by an earlier substream
-        /// read — and appending to it in place would then mutate data still referenced by another owner.
-        /// Clone it when shared; `IColumn::mutate` is a no-op for the common uniquely-owned case.
-        MutableColumnPtr mutable_column = IColumn::mutate(std::move(column));
+        size_t prev_size = column.size();
         double avg_value_size_hint = 0.0;
         if (settings.get_avg_value_size_hint_callback)
             avg_value_size_hint = settings.get_avg_value_size_hint_callback(settings.path);
-        deserializeBinaryBulk(*mutable_column, *stream, rows_offset, limit, avg_value_size_hint);
-        column = std::move(mutable_column);
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
+        deserializeBinaryBulk(column, *stream, rows_offset, limit, avg_value_size_hint);
+        size_t num_read_rows = column.size() - prev_size;
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), num_read_rows);
         if (settings.update_avg_value_size_hint_callback)
-            settings.update_avg_value_size_hint_callback(settings.path, *column);
+            settings.update_avg_value_size_hint_callback(settings.path, column);
     }
 
     settings.path.pop_back();
@@ -789,42 +785,23 @@ void ISerialization::addSubstreamAndCallCallback(ISerialization::SubstreamPath &
     path.pop_back();
 }
 
-bool ISerialization::insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column)
+bool ISerialization::insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, IColumn & result_column)
 {
     auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path);
     if (!cached_column_with_num_read_rows)
         return false;
 
-    insertDataFromCachedColumn(settings, result_column, cached_column_with_num_read_rows->first, cached_column_with_num_read_rows->second, cache, /*update_cache_after_insert=*/ true);
+    insertDataFromCachedColumn(result_column, cached_column_with_num_read_rows->first, cached_column_with_num_read_rows->second);
     return true;
 }
 
-void ISerialization::insertDataFromCachedColumn(const ISerialization::DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows, SubstreamsCache * cache, bool update_cache_after_insert)
+void ISerialization::insertDataFromCachedColumn(IColumn & result_column, const ColumnPtr & cached_column, size_t num_read_rows)
 {
-    /// Usually substreams cache contains the whole column from currently deserialized block with rows from multiple ranges.
-    /// It's done to avoid extra data copy, in this case we just use this cached column as the result column.
-    /// But sometimes in cache we might have column with rows from the current range only (for example when we don't store this column but need it for
-    /// constructing another column). In this case we need to insert data into resulting column from cached column.
-    /// To determine what case we have we store number of read rows in last range in cache.
-    if ((settings.insert_only_rows_in_current_range_from_substreams_cache) || (result_column != cached_column && !result_column->empty() && cached_column->size() == num_read_rows))
-    {
-        /// `result_column` may be shared (it can be handed to the substreams cache below and reused for
-        /// another substream in the same range), so clone it when shared instead of appending in place to
-        /// a buffer still referenced elsewhere. `IColumn::mutate` is a no-op when uniquely owned.
-        MutableColumnPtr mutable_column = IColumn::mutate(std::move(result_column));
-        mutable_column->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
-        result_column = std::move(mutable_column);
-        if (update_cache_after_insert)
-        {
-            /// Replace column in the cache with the new column to avoid inserting into it again
-            /// from currently cached range if this substream will be read again in current range.
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, result_column, num_read_rows);
-        }
-    }
-    else
-    {
-        result_column = cached_column;
-    }
+    /// Copy only the current range out of the cached column; consumers never adopt the cached pointer,
+    /// so each reader keeps its own column (no COW clone needed). result_column must differ from the
+    /// cached column, otherwise this is a self-insert whose source can be invalidated mid-copy.
+    chassert(&result_column != cached_column.get());
+    result_column.insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
 }
 
 bool ISerialization::isVariantSubcolumn(const SubstreamPath & substream_path)

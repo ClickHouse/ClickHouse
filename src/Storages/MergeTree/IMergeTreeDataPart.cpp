@@ -2035,7 +2035,7 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
         size_t rows_to_read = index_granularity->getMarkRows(current_mark);
         continue_reading = (current_mark != 0);
 
-        Columns result;
+        MutableColumns result;
         result.resize(1);
 
         size_t rows_read = reader->readRows(current_mark, total_mark, continue_reading, rows_to_read, 0, result);
@@ -3102,10 +3102,10 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
         ValueSizeMap{},
         ReadBufferFromFileBase::ProfileCallback{});
 
-    Columns result;
+    MutableColumns result;
     result.resize(1);
     reader->readRows(0, total_mark, false, 0, 0, result);
-    return result[0];
+    return std::move(result[0]);
 }
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)

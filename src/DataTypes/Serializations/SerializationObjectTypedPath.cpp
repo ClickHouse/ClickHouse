@@ -79,7 +79,7 @@ void SerializationObjectTypedPath::serializeBinaryBulkWithMultipleStreams(const 
 }
 
 void SerializationObjectTypedPath::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & result_column,
+    IColumn & result_column,
     size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,

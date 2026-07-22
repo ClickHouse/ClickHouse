@@ -1,3 +1,5 @@
+#include <Columns/ColumnBLOB.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -28,8 +30,10 @@ TEST(DataTypeTupleCreateColumn, HandlesSerializationDetached)
     auto detached_serialization = SerializationDetached::create(default_serialization);
 
     /// Before the fix this threw LOGICAL_ERROR (abort in debug/ASan builds).
-    /// After the fix it calls createColumn(*nested) and returns a valid Tuple column.
+    /// After the fix it builds the inner Tuple column and wraps it in a ColumnBLOB, which
+    /// SerializationDetached fills during deserialization.
     MutableColumnPtr column;
     EXPECT_NO_THROW(column = tuple_type->createColumn(*detached_serialization));
     EXPECT_NE(column, nullptr);
+    EXPECT_NE(typeid_cast<const ColumnBLOB *>(column.get()), nullptr);
 }

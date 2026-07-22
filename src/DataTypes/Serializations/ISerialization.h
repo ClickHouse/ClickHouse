@@ -494,12 +494,6 @@ public:
         /// Some serializations may differ from type part for more optimal deserialization.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
 
-        /// Usually substreams cache contains the whole column with rows from
-        /// multiple ranges. But sometimes we need to read a separate column
-        /// with rows only from current range. If this flag is true and
-        /// there is a column in cache, insert only rows from current range from it.
-        bool insert_only_rows_in_current_range_from_substreams_cache = false;
-
         /// If true, call release_stream on all streams used in the prefixes deserialization
         /// even for streams that will be used later for data deserialization.
         bool release_all_prefixes_streams = false;
@@ -547,7 +541,7 @@ public:
     /// Read no more than limit values and append them into column.
     /// If rows_offset is not 0, the deserialization process will skip the first rows_offset rows.
     virtual void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
+        IColumn & column,
         size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
@@ -707,9 +701,10 @@ public:
 
     /// If we have data in substreams cache for substream path from settings insert it
     /// into resulting column and return true, otherwise do nothing and return false.
-    static bool insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column);
-    /// Perform insertion from column found in substreams cache.
-    static void insertDataFromCachedColumn(const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows, SubstreamsCache * cache, bool update_cache_after_insert = false);
+    static bool insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, IColumn & result_column);
+    /// Insert rows from the current deserialized range of cached_column into result_column.
+    /// Always copies data via insertRangeFrom — never shares column pointers.
+    static void insertDataFromCachedColumn(IColumn & result_column, const ColumnPtr & cached_column, size_t num_read_rows);
 
     /// Returns the total number of bytes allocated for this serialization object,
     /// including sizeof(*this) and any heap allocations (strings, vectors, etc.).

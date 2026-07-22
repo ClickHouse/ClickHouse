@@ -37,8 +37,6 @@ struct DeserializeBinaryBulkStateObjectDynamicPath : public ISerialization::Dese
     ISerialization::DeserializeBinaryBulkStatePtr nested_state;
     SerializationPtr shared_data_path_serialization;
     bool read_from_shared_data{};
-    ColumnPtr shared_data;
-    size_t shared_data_size = 0;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
@@ -179,7 +177,7 @@ void SerializationObjectDynamicPath::serializeBinaryBulkWithMultipleStreams(cons
 }
 
 void SerializationObjectDynamicPath::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & result_column,
+    IColumn & result_column,
     size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,

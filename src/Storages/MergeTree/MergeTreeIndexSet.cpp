@@ -121,12 +121,13 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     for (size_t i = 0; i < num_columns; ++i)
     {
         auto & elem = block.getByPosition(i);
-        elem.column = elem.column->cloneEmpty();
+        auto mutable_col = elem.column->cloneEmpty();
 
         ISerialization::DeserializeBinaryBulkStatePtr state;
 
         serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-        serializations[i]->deserializeBinaryBulkWithMultipleStreams(elem.column, 0, rows_to_read, settings, state, nullptr);
+        serializations[i]->deserializeBinaryBulkWithMultipleStreams(*mutable_col, 0, rows_to_read, settings, state, nullptr);
+        elem.column = std::move(mutable_col);
 
         if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(elem.column.get()))
             column_nullable->getExtremesNullLast(min_val, max_val, 0, elem.column->size());
@@ -183,25 +184,23 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
     /// Due to using of position-dependent encoding, we have to read into a temporary block and then move to the accumulating block.
     for (size_t i = 0; i < num_columns; ++i)
     {
-        /// A reference into the scratch block (not a copy), so it stays uniquely owned: `mutate` below is a no-op
-        /// and the `popBack` reset is written back, leaving the scratch column empty for the next granule.
+        /// A reference into the scratch block (not a copy), so it stays uniquely owned and `mutate` is a no-op.
         auto & column = block_for_reading.getByPosition(i).column;
+        auto mutable_col = IColumn::mutate(std::move(column));
         ISerialization::DeserializeBinaryBulkStatePtr state;
 
         serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-        serializations[i]->deserializeBinaryBulkWithMultipleStreams(column, 0, rows_to_read, settings, state, nullptr);
+        serializations[i]->deserializeBinaryBulkWithMultipleStreams(*mutable_col, 0, rows_to_read, settings, state, nullptr);
 
         {
             auto mutable_column = IColumn::mutate(std::move(block.getByPosition(i).column));
-            mutable_column->insertRangeFrom(*column, 0, rows_to_read);
+            mutable_column->insertRangeFrom(*mutable_col, 0, rows_to_read);
             block.getByPosition(i).column = std::move(mutable_column);
         }
 
-        {
-            auto mutable_column = IColumn::mutate(std::move(column));
-            mutable_column->popBack(rows_to_read);
-            column = std::move(mutable_column);
-        }
+        /// Reset the scratch column to empty for the next granule.
+        mutable_col->popBack(rows_to_read);
+        column = std::move(mutable_col);
     }
 
     /// The last column is designating the granule

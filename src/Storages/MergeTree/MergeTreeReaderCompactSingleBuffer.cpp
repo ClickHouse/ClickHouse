@@ -11,7 +11,7 @@ namespace DB
 size_t MergeTreeReaderCompactSingleBuffer::readRows(
     size_t from_mark, size_t current_task_last_mark,
     bool continue_reading, size_t max_rows_to_read,
-    size_t rows_offset, Columns & res_columns)
+    size_t rows_offset, MutableColumns & res_columns)
 try
 {
     init();
@@ -68,7 +68,7 @@ try
             auto * cache_for_subcolumns = columns_for_offsets[pos] ? nullptr : &columns_cache_for_subcolumns;
             auto & deserialize_states_cache = deserialize_states_caches[columns_to_read[pos].getNameInStorage()];
             readPrefix(pos, from_mark, *stream, &deserialize_states_cache);
-            readData(pos, res_columns[pos], rows_to_read, rows_offset, from_mark, res_columns[pos]->size(), *stream, columns_cache, cache_for_subcolumns, nullptr);
+            readData(pos, *res_columns[pos], rows_to_read, rows_offset, from_mark, res_columns[pos]->size(), *stream, columns_cache, cache_for_subcolumns, nullptr);
         }
 
         /// If we have subcolumns and substreams marks, we read subcolumns separately, because we want to
@@ -87,7 +87,7 @@ try
                     if (!res_columns[pos])
                         continue;
 
-                    readData(pos, res_columns[pos], rows_to_read, rows_offset, from_mark, subcolumns_size_before_reading, *stream, columns_cache, &columns_cache_for_subcolumns, &substreams_cache);
+                    readData(pos, *res_columns[pos], rows_to_read, rows_offset, from_mark, subcolumns_size_before_reading, *stream, columns_cache, &columns_cache_for_subcolumns, &substreams_cache);
                 }
             }
         }

@@ -137,7 +137,7 @@ void SerializationObjectCombinedPath::throwNoSerialization()
 }
 
 void SerializationObjectCombinedPath::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & result_column,
+    IColumn & result_column,
     size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
@@ -149,32 +149,24 @@ void SerializationObjectCombinedPath::deserializeBinaryBulkWithMultipleStreams(
 
     auto * combined_state = checkAndGetState<DeserializeBinaryBulkStateObjectCombinedPath>(state);
 
-    /// The literal and sub-object streams may already be cached from reading other subcolumns in the
-    /// same block. Cached columns span the whole block, but we only need rows from the current range.
-    /// Setting this flag makes the cache insert only current-range rows into our temporary columns.
-    auto nested_settings = settings;
-    nested_settings.insert_only_rows_in_current_range_from_substreams_cache = true;
-
     /// Deserialize literal path into a temporary column.
-    ColumnPtr literal_column = dynamic_type->createColumn();
+    auto literal_column = dynamic_type->createColumn();
     literal_serialization->deserializeBinaryBulkWithMultipleStreams(
-        literal_column, rows_offset, limit, nested_settings, combined_state->literal_state, cache);
+        *literal_column, rows_offset, limit, settings, combined_state->literal_state, cache);
 
-    /// Deserialize sub-object into a temporary column.
-    ColumnPtr sub_object_column = sub_object_type->createColumn();
+    /// Deserialize sub-object into a temporary column, then keep it as an immutable pointer (we only read it below).
+    auto mutable_sub_object_column = sub_object_type->createColumn();
     sub_object_serialization->deserializeBinaryBulkWithMultipleStreams(
-        sub_object_column, rows_offset, limit, nested_settings, combined_state->sub_object_state, cache);
+        *mutable_sub_object_column, rows_offset, limit, settings, combined_state->sub_object_state, cache);
+    ColumnPtr sub_object_column = std::move(mutable_sub_object_column);
 
     size_t rows = literal_column->size();
-    auto mutable_column = IColumn::mutate(std::move(result_column));
-    auto & result = *mutable_column;
 
     /// If sub-object contains only empty objects, append literal column directly.
     const auto * sub_object_typed_column = assert_cast<const ColumnObject *>(sub_object_column.get());
     if (!sub_object_typed_column->hasNonEmptyRows())
     {
-        result.insertRangeFrom(*literal_column, 0, rows);
-        result_column = std::move(mutable_column);
+        result_column.insertRangeFrom(*literal_column, 0, rows);
         return;
     }
 
@@ -182,18 +174,16 @@ void SerializationObjectCombinedPath::deserializeBinaryBulkWithMultipleStreams(
     auto casted_sub_object = castColumn({sub_object_column, sub_object_type, ""}, dynamic_type);
 
     /// Merge row-by-row into result: prefer literal, then sub-object, then NULL.
-    result.reserve(result.size() + rows);
+    result_column.reserve(result_column.size() + rows);
     for (size_t i = 0; i < rows; ++i)
     {
         if (!literal_column->isDefaultAt(i))
-            result.insertFrom(*literal_column, i);
+            result_column.insertFrom(*literal_column, i);
         else if (!sub_object_typed_column->isEmptyAt(i))
-            result.insertFrom(*casted_sub_object, i);
+            result_column.insertFrom(*casted_sub_object, i);
         else
-            result.insertDefault();
+            result_column.insertDefault();
     }
-
-    result_column = std::move(mutable_column);
 }
 
 }

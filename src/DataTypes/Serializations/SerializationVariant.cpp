@@ -529,15 +529,14 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
 }
 
 void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
+    IColumn & column,
     size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    auto mutable_column = column->assumeMutable();
-    ColumnVariant & col = assert_cast<ColumnVariant &>(*mutable_column);
+    ColumnVariant & col = assert_cast<ColumnVariant &>(column);
     /// We always serialize Variant column with global variants order,
     /// so while deserialization column should be always with global variants order.
     if (!col.hasGlobalVariantsOrder())
@@ -553,38 +552,15 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     std::vector<size_t> variant_rows_offsets;
     std::vector<size_t> variant_limits;
 
-    size_t num_read_discriminators = 0;
-    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
+    size_t prev_size = col.getLocalDiscriminatorsColumn().size();
+    if (insertDataFromSubstreamsCacheIfAny(cache, settings, col.getLocalDiscriminatorsColumn()))
     {
-        auto [cached_column, num_read_rows] = *cached_column_with_num_read_rows;
-        /// Cached column contains discriminators without applied rows_offset and can be used in other serializations
-        /// so if rows_offset is not 0 we cannot use it as is because we will modify it here later by applying rows_offset.
-        /// Instead we need to insert data from the current range from it.
-        if (rows_offset)
-        {
-            /// `col`'s discriminators may alias `cached_column`: a prior rows_offset == 0 read of this
-            /// substream caches the discriminators column itself (see the deserialize path below, where
-            /// `discriminators_for_cache` is `col.getLocalDiscriminatorsPtr()` and not a `cut()` copy).
-            /// On a later rows_offset > 0 cache hit, appending in place — and the in-place rows_offset
-            /// compaction that follows — would then mutate storage still referenced by the cache, the same
-            /// COW hole the size readers close. Clone when shared; `IColumn::mutate` is a no-op when
-            /// uniquely owned.
-            ColumnPtr & discriminators = col.getLocalDiscriminatorsPtr();
-            MutableColumnPtr mutable_discriminators = IColumn::mutate(std::move(discriminators));
-            mutable_discriminators->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
-            discriminators = std::move(mutable_discriminators);
-        }
-        else
-            insertDataFromCachedColumn(settings, col.getLocalDiscriminatorsPtr(), cached_column, num_read_rows, cache, true);
-
-        num_read_discriminators = num_read_rows;
         variant_state = checkAndGetState<DeserializeBinaryBulkStateVariant>(state);
     }
     else if (auto * discriminators_stream = settings.getter(settings.path))
     {
         variant_state = checkAndGetState<DeserializeBinaryBulkStateVariant>(state);
         auto * discriminators_state = checkAndGetState<DeserializeBinaryBulkStateVariantDiscriminators>(variant_state->discriminators_state);
-        size_t prev_size = col.getLocalDiscriminatorsPtr()->size();
 
         /// Deserialize discriminators according to serialization mode.
         /// Don't skip rows_offset rows now, because we will need to calculate offsets for variants later.
@@ -592,33 +568,26 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         if (discriminators_state->mode.value == DiscriminatorsSerializationMode::BASIC)
         {
             SerializationNumber<ColumnVariant::Discriminator>::create()->deserializeBinaryBulk(
-                *col.getLocalDiscriminatorsPtr()->assumeMutable(), *discriminators_stream, 0, rows_offset + limit, 0);
+                col.getLocalDiscriminatorsColumn(), *discriminators_stream, 0, rows_offset + limit, 0);
         }
         else
         {
             auto variant_pair = deserializeCompactDiscriminators(
-                col.getLocalDiscriminatorsPtr(), rows_offset, limit, discriminators_stream, settings.continuous_reading,
+                col.getLocalDiscriminatorsColumn(), rows_offset, limit, discriminators_stream, settings.continuous_reading,
                 *discriminators_state, settings);
 
             variant_rows_offsets = variant_pair.first;
             variant_limits = variant_pair.second;
         }
 
-        num_read_discriminators = col.getLocalDiscriminatorsPtr()->size() - prev_size;
-
         if (cache)
         {
-            ColumnPtr discriminators_for_cache;
-            /// If rows_offset != 0 we should keep discriminators without applied offsets in the cache to be able
-            /// to calculate variants offsets later. As we will apply offsets to the current discriminators column
-            /// we cannot put in the cache, so we use cut() method to create a separate column with all the data from
-            /// current deserialization.
+            size_t num_read_discriminators = col.getLocalDiscriminatorsColumn().size() - prev_size;
+            /// rows_offset is applied in place below, so cache an unmodified cut() copy for other readers of this substream.
             if (rows_offset)
-                discriminators_for_cache = col.getLocalDiscriminatorsPtr()->cut(prev_size, num_read_discriminators);
+                addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, col.getLocalDiscriminatorsColumn().cut(prev_size, num_read_discriminators), num_read_discriminators);
             else
-                discriminators_for_cache = col.getLocalDiscriminatorsPtr();
-
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, discriminators_for_cache, num_read_discriminators);
+                addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, col.getLocalDiscriminatorsColumn().getPtr(), num_read_discriminators);
         }
     }
     /// It may happen that there is no such stream, in this case just do nothing.
@@ -630,7 +599,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
 
     settings.path.pop_back();
 
-    size_t discriminators_offset = col.getLocalDiscriminators().size() - num_read_discriminators;
+    size_t discriminators_offset = prev_size;
 
     /// Second, calculate offsets and limits for each variant by iterating through new discriminators
     /// if we didn't do it during discriminators deserialization.
@@ -660,7 +629,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
 
         for (size_t i = discriminators_offset; i + rows_offset < discriminators_data.size(); ++i)
             discriminators_data[i] = discriminators_data[i + rows_offset];
-        col.getLocalDiscriminatorsPtr()->assumeMutable()->popBack(rows_offset);
+        col.getLocalDiscriminatorsColumn().popBack(rows_offset);
     }
 
     if (variant_limits.empty())
@@ -679,106 +648,77 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         }
     }
 
+    /// Current variant sizes are the start offsets for the values read in the current range.
+    std::vector<size_t> variant_offsets(variant_serializations.size());
+    size_t num_non_empty_variants = 0;
+    ColumnVariant::Discriminator last_non_empty_discr = 0;
+    for (ColumnVariant::Discriminator i = 0; i != variant_serializations.size(); ++i)
+    {
+        variant_offsets[i] = col.getVariantByLocalDiscriminator(i).size();
+        if (variant_limits[i])
+        {
+            ++num_non_empty_variants;
+            last_non_empty_discr = i;
+        }
+    }
+
     /// Now we can deserialize variants according to their limits.
     settings.path.push_back(Substream::VariantElements);
     for (size_t i = 0; i != variant_serializations.size(); ++i)
     {
-        auto & variant_column = col.getVariantPtrByLocalDiscriminator(i);
-        if (!variant_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column for variant {} is invalid", variant_names[i]);
-
         addVariantElementToPath(settings.path, i);
         variant_serializations[i]->deserializeBinaryBulkWithMultipleStreams(
-            variant_column, variant_rows_offsets[i], variant_limits[i],
+            col.getVariantByLocalDiscriminator(i), variant_rows_offsets[i], variant_limits[i],
             settings, variant_state->variant_states[i], cache);
         settings.path.pop_back();
 
-        /// Verify that we deserialized data of this variant.
-        if (variant_limits[i] && col.getVariantPtrByLocalDiscriminator(i)->empty())
-            throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Variant {} is empty, but expected to be read {} values", variant_names[i], variant_limits[i]);
+        /// Verify that we deserialized the expected number of rows for this variant.
+        if (col.getVariantByLocalDiscriminator(i).size() < variant_offsets[i] + variant_limits[i])
+            throw Exception(
+                settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
+                "Size of variant {} is expected to be not less than {} according to discriminators, but it is {}",
+                variant_names[i],
+                variant_offsets[i] + variant_limits[i],
+                col.getVariantByLocalDiscriminator(i).size());
     }
     settings.path.pop_back();
 
-    /// Fill offsets column.
-    /// It's important to do it after deserialization of all variants, because to fill offsets we need
-    /// initial variants sizes without values in current range, but some variants can be shared with
-    /// other columns via substream cache and they can already contain values from this range even
-    /// before we call deserialize for them. So, before deserialize we cannot know for sure if
-    /// variant columns already contain values from current range or not. But after calling deserialize
-    /// we know for sure that they contain these values, so we can use valiant limits and their
-    /// new sizes to calculate correct offsets.
-    settings.path.push_back(Substream::VariantOffsets);
-    /// If insert_only_rows_in_current_range_from_substreams_cache is set we cannot use offsets from
-    /// cache and need to calculate correct offsets for current read range.
-    if (settings.insert_only_rows_in_current_range_from_substreams_cache || !insertDataFromSubstreamsCacheIfAny(cache, settings, col.getOffsetsPtr()))
+    /// Fill offsets column. Offsets index this reader's own variant sub-columns, so they are always
+    /// recomputed here and never taken from the substreams cache.
+    auto & discriminators_data = col.getLocalDiscriminators();
+    auto & offsets = col.getOffsets();
+    size_t num_new_offsets = discriminators_data.size() - offsets.size();
+    offsets.reserve(offsets.size() + num_new_offsets);
+    /// If only NULLs were read, fill offsets with 0.
+    if (num_non_empty_variants == 0)
     {
-        std::vector<size_t> variant_offsets;
-        variant_offsets.reserve(variant_serializations.size());
-        size_t num_non_empty_variants = 0;
-        ColumnVariant::Discriminator last_non_empty_discr = 0;
-        for (ColumnVariant::Discriminator i = 0; i != variant_serializations.size(); ++i)
-        {
-            if (variant_limits[i])
-            {
-                ++num_non_empty_variants;
-                last_non_empty_discr = i;
-            }
-
-            if (col.getVariantByLocalDiscriminator(i).size() < variant_limits[i])
-                throw Exception(
-                    settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
-                    "Size of variant {} is expected to be not less than {} according to discriminators, but it is {}",
-                    variant_names[i],
-                    variant_limits[i],
-                    col.getVariantByLocalDiscriminator(i).size());
-
-            variant_offsets.push_back(col.getVariantByLocalDiscriminator(i).size() - variant_limits[i]);
-        }
-
-        auto & discriminators_data = col.getLocalDiscriminators();
-        auto & offsets = col.getOffsets();
-        size_t prev_size = offsets.size();
-        size_t num_new_offsets = discriminators_data.size() - offsets.size();
-        offsets.reserve(offsets.size() + num_new_offsets);
-        /// If there are only NULLs were read, fill offsets with 0.
-        if (num_non_empty_variants == 0)
-        {
-            offsets.resize_fill(discriminators_data.size(), 0);
-        }
-        /// If there is only 1 variant and no NULLs was read, fill offsets with sequential offsets of this variant.
-        else if (num_non_empty_variants == 1 && variant_limits[last_non_empty_discr] == num_new_offsets)
-        {
-            size_t first_offset = col.getVariantByLocalDiscriminator(last_non_empty_discr).size() - num_new_offsets;
-            for (size_t i = 0; i != num_new_offsets; ++i)
-                offsets.push_back(first_offset + i);
-        }
-        /// Otherwise iterate through discriminators and fill offsets accordingly.
-        else
-        {
-            size_t start = offsets.size();
-            for (size_t i = start; i != discriminators_data.size(); ++i)
-            {
-                ColumnVariant::Discriminator discr = discriminators_data[i];
-                if (discr == ColumnVariant::NULL_DISCRIMINATOR)
-                    offsets.emplace_back();
-                else
-                    offsets.push_back(variant_offsets[discr]++);
-            }
-        }
-
-        /// Don't cache offsets calculated from a temporary column (when insert_only_rows_in_current_range_from_substreams_cache is set).
-        /// Such offsets are relative to the temporary column's variant sizes (starting from 0) and would be incorrect
-        /// for other readers that have accumulated data from previous read ranges.
-        if (!settings.insert_only_rows_in_current_range_from_substreams_cache)
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, col.getOffsetsPtr(), col.getOffsetsPtr()->size() - prev_size);
+        offsets.resize_fill(discriminators_data.size(), 0);
     }
-    settings.path.pop_back();
+    /// If there is only 1 variant and no NULLs were read, fill offsets with sequential offsets of this variant.
+    else if (num_non_empty_variants == 1 && variant_limits[last_non_empty_discr] == num_new_offsets)
+    {
+        size_t first_offset = variant_offsets[last_non_empty_discr];
+        for (size_t i = 0; i != num_new_offsets; ++i)
+            offsets.push_back(first_offset + i);
+    }
+    /// Otherwise iterate through discriminators and fill offsets accordingly.
+    else
+    {
+        for (size_t i = offsets.size(); i != discriminators_data.size(); ++i)
+        {
+            ColumnVariant::Discriminator discr = discriminators_data[i];
+            if (discr == ColumnVariant::NULL_DISCRIMINATOR)
+                offsets.emplace_back();
+            else
+                offsets.push_back(variant_offsets[discr]++);
+        }
+    }
 
     col.validateState(/*allow_logical_error=*/ !settings.native_format);
 }
 
 std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deserializeCompactDiscriminators(
-    DB::ColumnPtr & discriminators_column,
+    IColumn & discriminators_column,
     size_t rows_offset,
     size_t limit,
     ReadBuffer * stream,
@@ -786,7 +726,7 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
     DeserializeBinaryBulkStateVariantDiscriminators & state,
     const DeserializeBinaryBulkSettings & settings) const
 {
-    auto & discriminators = assert_cast<ColumnVariant::ColumnDiscriminators &>(*discriminators_column->assumeMutable());
+    auto & discriminators = assert_cast<ColumnVariant::ColumnDiscriminators &>(discriminators_column);
     auto & discriminators_data = discriminators.getData();
 
     /// Reset state if we are reading from the start of the granule and not from the previous position in the file.

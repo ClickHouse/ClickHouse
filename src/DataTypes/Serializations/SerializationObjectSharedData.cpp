@@ -1048,8 +1048,8 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
                 SubstreamsCache cache_for_subcolumns;
                 for (auto pos : order)
                 {
-                    ColumnPtr subcolumn = subcolumns_infos[pos].type->createColumn();
-                    subcolumns_substream_data[pos].serialization->deserializeBinaryBulkWithMultipleStreams(subcolumn, 0, structure_granule.num_rows, deserialization_settings, subcolumns_substream_data[pos].deserialize_state, &cache_for_subcolumns);
+                    auto subcolumn = subcolumns_infos[pos].type->createColumn();
+                    subcolumns_substream_data[pos].serialization->deserializeBinaryBulkWithMultipleStreams(*subcolumn, 0, structure_granule.num_rows, deserialization_settings, subcolumns_substream_data[pos].deserialize_state, &cache_for_subcolumns);
                     paths_data_granule.paths_subcolumns_data[requested_path][subcolumns_infos[pos].name] = std::move(subcolumn);
                 }
             }
@@ -1059,9 +1059,9 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
                 deserialization_settings.getter = [&](const SubstreamPath &) -> ReadBuffer * { return data_stream; };
                 settings.seek_stream_to_mark_callback(settings.path, path_info.data_mark);
                 DeserializeBinaryBulkStatePtr path_state;
-                ColumnPtr dynamic_column = dynamic_type->createColumn();
+                auto dynamic_column = dynamic_type->createColumn();
                 dynamic_serialization->deserializeBinaryBulkStatePrefix(deserialization_settings, path_state, nullptr);
-                dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(dynamic_column, 0, structure_granule.num_rows, deserialization_settings, path_state, nullptr);
+                dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(*dynamic_column, 0, structure_granule.num_rows, deserialization_settings, path_state, nullptr);
                 paths_data_granule.paths_data[requested_path] = std::move(dynamic_column);
             }
         }
@@ -1075,7 +1075,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
 
 
 void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
+    IColumn & column,
     size_t rows_offset,
     size_t limit,
     ISerialization::DeserializeBinaryBulkSettings & settings,
@@ -1089,13 +1089,10 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
 
     if (serialization_version.value == SerializationVersion::MAP)
     {
-        /// If we don't have it in cache, deserialize and put deserialized map in cache.
-        if (!insertDataFromSubstreamsCacheIfAny(cache, settings, column))
-        {
-            size_t prev_size = column->size();
-            serialization_map->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, shared_data_state->map_state, cache);
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
-        }
+        /// Deserialize the shared data map and cache it for path subcolumn reads (SerializationObjectSharedDataPath).
+        size_t prev_size = column.size();
+        serialization_map->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, shared_data_state->map_state, cache);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);
     }
     else if (serialization_version.value == SerializationVersion::MAP_WITH_BUCKETS)
     {
@@ -1104,23 +1101,15 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         {
             settings.path.push_back(Substream::Bucket);
             settings.path.back().bucket = bucket;
-            /// Check if we have map column for this bucket in cache.
-            /// Map column for bucket from cache must contain only rows from current deserialization.
-            if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
-            {
-                shared_data_buckets[bucket] = cached_column_with_num_read_rows->first;
-            }
-            /// If we don't have it in cache, deserialize and put deserialized map in cache.
-            else
-            {
-                shared_data_buckets[bucket] = column->cloneEmpty();
-                serialization_map->deserializeBinaryBulkWithMultipleStreams(shared_data_buckets[bucket], rows_offset, limit, settings, shared_data_state->bucket_map_states[bucket], cache);
-                addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, shared_data_buckets[bucket], shared_data_buckets[bucket]->size());
-            }
+            /// Deserialize the bucket's map and cache it for a path subcolumn read of the same bucket.
+            auto mutable_bucket_column = column.cloneEmpty();
+            serialization_map->deserializeBinaryBulkWithMultipleStreams(*mutable_bucket_column, rows_offset, limit, settings, shared_data_state->bucket_map_states[bucket], cache);
+            shared_data_buckets[bucket] = std::move(mutable_bucket_column);
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, shared_data_buckets[bucket], shared_data_buckets[bucket]->size());
             settings.path.pop_back();
         }
 
-        collectSharedDataFromBuckets(shared_data_buckets, *column->assumeMutable());
+        collectSharedDataFromBuckets(shared_data_buckets, column);
     }
     else if (serialization_version.value == SerializationVersion::ADVANCED)
     {
@@ -1128,7 +1117,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         if (insertDataFromSubstreamsCacheIfAny(cache, settings, column))
             return;
 
-        size_t prev_size = column->size();
+        size_t prev_size = column.size();
 
         /// In Compact part we always read one whole granule, so we don't need to worry about reading data from multiple granules.
         if (settings.data_part_type == MergeTreeDataPartType::Compact)
@@ -1187,10 +1176,10 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 deserialization_settings.getter = [&](const SubstreamPath &) -> ReadBuffer * { return data_stream; };
                 for (size_t i = 0; i != structure_granule.num_paths; ++i)
                 {
-                    ColumnPtr path_column = dynamic_type->createColumn();
+                    auto path_column = dynamic_type->createColumn();
                     DeserializeBinaryBulkStatePtr path_state;
                     dynamic_serialization->deserializeBinaryBulkStatePrefix(deserialization_settings, path_state, nullptr);
-                    dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(path_column, structure_granule.num_rows, 0, deserialization_settings, path_state, nullptr);
+                    dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(*path_column, structure_granule.num_rows, 0, deserialization_settings, path_state, nullptr);
                 }
 
                 settings.path.push_back(Substream::ObjectSharedDataPathsMarks);
@@ -1250,9 +1239,9 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             }
 
             /// Now we have the list of paths stored in this granule and can deserialize shared data copy with paths indexes and values.
-            auto & shared_data_array_column = assert_cast<ColumnArray &>(*column->assumeMutable());
+            auto & shared_data_array_column = assert_cast<ColumnArray &>(column);
             auto & shared_data_tuple_column = assert_cast<ColumnTuple &>(shared_data_array_column.getData());
-            auto & offsets_column = shared_data_array_column.getOffsetsPtr();
+            auto & offsets_column = shared_data_array_column.getOffsetsColumn();
             auto & paths_column = shared_data_tuple_column.getColumn(0);
             auto & values_column = shared_data_tuple_column.getColumn(1);
 
@@ -1344,9 +1333,9 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             /// Now we have a list of all paths stored in this granule. Read shared data copy with paths indexes and values.
             settings.path.push_back(Substream::ObjectSharedDataCopy);
 
-            auto & shared_data_array_column = assert_cast<ColumnArray &>(*column->assumeMutable());
+            auto & shared_data_array_column = assert_cast<ColumnArray &>(column);
             auto & shared_data_tuple_column = assert_cast<ColumnTuple &>(shared_data_array_column.getData());
-            auto & offsets_column = shared_data_array_column.getOffsetsPtr();
+            auto & offsets_column = shared_data_array_column.getOffsetsColumn();
             auto & paths_column = shared_data_tuple_column.getColumn(0);
             auto & values_column = shared_data_tuple_column.getColumn(1);
 
@@ -1395,7 +1384,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 for (auto i = prev_offset_size; i + rows_offset < offsets.size(); ++i)
                     offsets[i] = offsets[i + rows_offset] - nested_offset;
 
-                offsets_column->assumeMutable()->popBack(rows_offset);
+                offsets_column.popBack(rows_offset);
             }
 
             size_t nested_limit = offsets.back() - prev_last_offset;
@@ -1409,7 +1398,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             settings.path.pop_back();
         }
 
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);
     }
     else
     {

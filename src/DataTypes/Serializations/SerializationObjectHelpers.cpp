@@ -75,7 +75,7 @@ std::vector<std::pair<String, ColumnPtr>> flattenPaths(const ColumnObject & obje
     return all_paths;
 }
 
-void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, Columns && flattened_columns, ColumnObject & object_column, size_t num_rows)
+void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, MutableColumns && flattened_columns, ColumnObject & object_column, size_t num_rows)
 {
     /// Iterate over paths and try to add them to dynamic paths until the limit is reached.
     /// All remaining paths will be inserted into shared data.
@@ -83,7 +83,7 @@ void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, Column
     for (size_t i = 0; i != flattened_paths.size(); ++i)
     {
         if (object_column.canAddNewDynamicPath())
-            object_column.addNewDynamicPath(flattened_paths[i], IColumn::mutate(std::move(flattened_columns[i])));
+            object_column.addNewDynamicPath(flattened_paths[i], std::move(flattened_columns[i]));
         else
             paths_for_shared_data.emplace(flattened_paths[i], std::move(flattened_columns[i]));
     }
