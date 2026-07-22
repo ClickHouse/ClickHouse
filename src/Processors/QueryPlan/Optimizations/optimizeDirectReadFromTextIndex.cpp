@@ -398,6 +398,26 @@ public:
                 result.removed_columns.push_back(column);
         }
 
+        /// `added_columns` must contain only virtual columns whose input survived
+        /// `removeUnusedActions`. A virtual recorded for a rewritten predicate can be left
+        /// unreferenced when a different index's virtual (or the original expression) is kept instead;
+        /// reading such a column into the output header serves no purpose.
+        for (auto it = result.added_columns.begin(); it != result.added_columns.end();)
+        {
+            VirtualColumnsDescription used_virtual_columns;
+            for (const auto & virtual_column : it->second)
+                if (replaced_columns_set.contains(virtual_column.name))
+                    used_virtual_columns.add(virtual_column);
+
+            if (used_virtual_columns.empty())
+                it = result.added_columns.erase(it);
+            else
+            {
+                it->second = std::move(used_virtual_columns);
+                ++it;
+            }
+        }
+
         return result;
     }
 
