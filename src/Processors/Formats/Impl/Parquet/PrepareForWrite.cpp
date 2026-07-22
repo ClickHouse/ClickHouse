@@ -794,13 +794,16 @@ void prepareColumnRecursive(
 
 }
 
-SchemaElements convertSchema(const Block & sample, const WriteOptions & options, const std::optional<std::unordered_map<String, Int64>> & column_field_ids)
+SchemaElements convertSchema(
+    const Block & sample, const WriteOptions & options, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
+    std::vector<size_t> * out_uuid2_leaf_columns)
 {
     SchemaElements schema;
     auto & root = schema.emplace_back();
     root.__set_name("schema");
     root.__set_num_children(static_cast<Int32>(sample.columns()));
 
+    std::vector<DataTypePtr> leaf_types;
     for (const auto & c : sample)
     {
         /// The field-id map is supplied only on the Iceberg write path. Validate the whole nested
@@ -809,8 +812,16 @@ SchemaElements convertSchema(const Block & sample, const WriteOptions & options,
         if (column_field_ids)
             validateIcebergFieldIds(c.type, c.name, *column_field_ids);
 
-        prepareColumnForWrite(c.column, c.type, c.name, options, nullptr, &schema, column_field_ids);
+        prepareColumnForWrite(
+            c.column, c.type, c.name, options, nullptr, &schema, column_field_ids,
+            out_uuid2_leaf_columns ? &leaf_types : nullptr);
     }
+
+    /// The same condition the encoder uses to pick the `UUID2` byte layout (see `ConverterUUID`).
+    if (out_uuid2_leaf_columns)
+        for (size_t i = 0; i < leaf_types.size(); ++i)
+            if (leaf_types[i]->getTypeId() == TypeIndex::UUID2)
+                out_uuid2_leaf_columns->push_back(i);
 
     return schema;
 }
@@ -901,7 +912,8 @@ static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
 
 void prepareColumnForWrite(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema, const std::optional<std::unordered_map<String, Int64>> & column_field_ids)
+    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
+    std::vector<DataTypePtr> * out_leaf_types)
 {
     if (column->empty() && out_columns_to_write != nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty column passed to Parquet encoder");
@@ -911,6 +923,10 @@ void prepareColumnForWrite(
     if (options.write_geometadata)
         prepareGeoColumn(column, type);
     prepareColumnRecursive(column, type, name, options, states, schemas, column_field_ids);
+
+    if (out_leaf_types)
+        for (const auto & s : states)
+            out_leaf_types->push_back(s.type);
 
     if (out_columns_to_write)
         for (auto & s : states)

@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeUUID2.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -400,6 +401,17 @@ bool isUUIDField(const ArrowField & field)
     return logical != field.custom_metadata.end() && logical->second == "UUID";
 }
 
+bool isUUID2Field(const ArrowField & field)
+{
+    if (!isUUIDField(field))
+        return false;
+    /// ClickHouse-specific discriminator emitted by the writers: Arrow has a single UUID extension type,
+    /// but ClickHouse has two UUID types (`UUID` with the historical half-swapped ordering and the
+    /// correctly-sorting `UUID2`), so the exact type is recorded in an extra field-metadata key.
+    auto it = field.custom_metadata.find("ClickHouse:type");
+    return it != field.custom_metadata.end() && it->second == "UUID2";
+}
+
 namespace
 {
 
@@ -764,13 +776,17 @@ buildField(
 
     /// UUID (and the correctly-sorting UUID2) is an Arrow extension type over fixed_size_binary(16); flag it in
     /// the field metadata. UUID2 is emitted with the same canonical bytes as UUID (see the encoder), so both use
-    /// the `arrow.uuid` extension name and read back as the historical UUID type.
+    /// the `arrow.uuid` extension name. UUID2 additionally carries a ClickHouse-specific discriminator so that
+    /// ClickHouse readers restore the exact type on a round-trip (see `isUUID2Field`); other Arrow
+    /// implementations ignore the extra key and read the column as a regular UUID.
     flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuf::KeyValue>>> custom_metadata_off = 0;
     if (isUUID(t) || isUUID2(t))
     {
         VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::KeyValue>> kvs;
         kvs.push_back(flatbuf::CreateKeyValue(b, b.CreateString("ARROW:extension:name"), b.CreateString("arrow.uuid")));
         kvs.push_back(flatbuf::CreateKeyValue(b, b.CreateString("ARROW:extension:metadata"), b.CreateString("")));
+        if (isUUID2(t))
+            kvs.push_back(flatbuf::CreateKeyValue(b, b.CreateString("ClickHouse:type"), b.CreateString("UUID2")));
         custom_metadata_off = b.CreateVector(kvs);
     }
 
@@ -1082,7 +1098,9 @@ DataTypePtr fieldToCHType(
             result = std::make_shared<DataTypeString>();
             break;
         case TypeKind::FixedSizeBinary:
-            if (isUUIDField(field))
+            if (isUUID2Field(field))
+                result = std::make_shared<DataTypeUUID2>();
+            else if (isUUIDField(field))
                 result = std::make_shared<DataTypeUUID>();
             else
                 result = std::make_shared<DataTypeFixedString>(type.byte_width);

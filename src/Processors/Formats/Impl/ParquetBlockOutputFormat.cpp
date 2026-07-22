@@ -61,9 +61,9 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     options.use_dictionary_encoding = options.max_dictionary_size > 0;
 
     if (format_filter_info_ && format_filter_info_->column_mapper)
-        schema = convertSchema(*header_, options, format_filter_info_->column_mapper->getStorageColumnEncoding());
+        schema = convertSchema(*header_, options, format_filter_info_->column_mapper->getStorageColumnEncoding(), &uuid2_leaf_columns);
     else
-        schema = convertSchema(*header_, options, std::nullopt);
+        schema = convertSchema(*header_, options, std::nullopt, &uuid2_leaf_columns);
 }
 
 ParquetBlockOutputFormat::~ParquetBlockOutputFormat()
@@ -190,7 +190,7 @@ void ParquetBlockOutputFormat::finalizeImpl()
         writeFileHeader(file_state, out);
     }
     Block header = materializeBlock(getPort(PortKind::Main).getHeader());
-    writeFileFooter(file_state, schema, options, out, header);
+    writeFileFooter(file_state, schema, options, out, header, uuid2_leaf_columns);
     chassert(out.count() - base_offset == file_state.offset);
 }
 

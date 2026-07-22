@@ -57,6 +57,10 @@ SELECT CAST('61f0c404-5cb3-11e7-907b-a6006ad3dba0'::UUID AS UUID2);
 
 A `UUID2` value can be converted to and from `String`, `FixedString(16)` (canonical big-endian byte order) and `UInt128` (the plain integer value).
 
+## Formats {#formats}
+
+In the [Arrow](/interfaces/formats/Arrow) and [Parquet](/interfaces/formats/Parquet) formats, both `UUID` and `UUID2` are written as the standard UUID type of the corresponding format (the `arrow.uuid` extension type / the parquet `UUID` logical type) with the same canonical bytes, so other systems read the two ClickHouse types identically. The file additionally records which columns were written from `UUID2` (Arrow field metadata `ClickHouse:type`; parquet footer key-value metadata `ClickHouse:uuid2_leaf_columns`), and ClickHouse schema inference uses it to restore the exact type on a round-trip. An explicitly specified schema takes precedence over the recorded type.
+
 ## Related content {#related-content}
 
 - [UUID](/sql-reference/data-types/uuid)

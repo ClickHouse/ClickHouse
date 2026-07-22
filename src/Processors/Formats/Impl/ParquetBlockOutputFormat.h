@@ -116,6 +116,9 @@ private:
 
     Parquet::WriteOptions options;
     Parquet::SchemaElements schema;
+    /// Leaf columns (in parquet column order) written from the `UUID2` type; recorded in the footer
+    /// key-value metadata so ClickHouse schema inference restores the exact type on a round-trip.
+    std::vector<size_t> uuid2_leaf_columns;
     Parquet::FileWriteState file_state;
     size_t base_offset = 0; // initial out.count(), just for assert
 

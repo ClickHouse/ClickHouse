@@ -2,6 +2,8 @@
 
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -43,6 +45,12 @@ struct SchemaConverter
 
     /// The key is the parquet column name, without ColumnMapper.
     std::unordered_map<String, GeoColumnMetadata> geo_columns;
+
+    /// Indices (in leaf order, i.e. parquet column order) of the leaf columns that the ClickHouse writer
+    /// marked as written from the correctly-sorting `UUID2` type (footer key-value metadata key
+    /// `ClickHouse:uuid2_leaf_columns`). Parquet has a single UUID logical type, so without this
+    /// discriminator schema inference could only restore the historical `UUID` type.
+    std::unordered_set<size_t> uuid2_leaf_columns;
 
     SchemaConverter(const parq::FileMetaData &, const ReadOptions &, const Block *);
 
@@ -139,10 +147,13 @@ private:
     bool processSubtreeArrayInner(TraversalNode & node);
     void processSubtreeTuple(TraversalNode & node);
 
+    /// `uuid2_preferred` says the file-level key-value metadata marks this leaf column as written from
+    /// the ClickHouse `UUID2` type; it only matters when there's no type hint (schema inference).
     void processPrimitiveColumn(
         const parq::SchemaElement & element, DataTypePtr type_hint,
         PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
-        DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata) const;
+        DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata,
+        bool uuid2_preferred) const;
 
     /// Returns element.name or a corresponding name from ColumnMapper.
     /// For nested tuple elements, returns just the element name like `x`, not the whole path like `t.x`.

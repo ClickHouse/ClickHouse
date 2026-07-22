@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeUUID2.h>
 #include <DataTypes/DataTypeObject.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeInterval.h>
@@ -113,6 +114,18 @@ static bool isUUIDField(const arrow::Field & field)
     }
     return field.type()->id() == arrow::Type::EXTENSION &&
            std::static_pointer_cast<arrow::ExtensionType>(field.type())->extension_name() == "arrow.uuid";
+}
+
+/// Whether a UUID field carries the ClickHouse-specific discriminator marking it as the correctly-sorting
+/// `UUID2` type. Arrow has a single UUID extension type, but ClickHouse has two UUID types (`UUID` with the
+/// historical half-swapped ordering and `UUID2`), so the writers record the exact type in an extra
+/// field-metadata key that other Arrow implementations ignore.
+static bool isUUID2Field(const arrow::Field & field)
+{
+    if (!isUUIDField(field) || !field.HasMetadata())
+        return false;
+    auto ch_type = field.metadata()->Get("ClickHouse:type");
+    return ch_type.ok() && *ch_type == "UUID2";
 }
 
 namespace
@@ -1918,9 +1931,12 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 }
             }
 
-            /// Correctly triggers the UUID reader for metadata-flagged columns.
+            /// Correctly triggers the UUID reader for metadata-flagged columns. A field flagged with the
+            /// ClickHouse-specific `UUID2` discriminator reads back as the correctly-sorting `UUID2` type.
             if (arrow_field && isUUIDField(*arrow_field))
             {
+                if (isUUID2Field(*arrow_field))
+                    return readColumnWithUUIDFromFixedBinaryData(arrow_column, column_name, std::make_shared<DataTypeUUID2>(), /*is_uuid2=*/true);
                 return readColumnWithUUIDFromFixedBinaryData(arrow_column, column_name, std::make_shared<DataTypeUUID>());
             }
 

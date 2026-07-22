@@ -24,6 +24,7 @@
 #include <Common/WKB.h>
 #include <Common/config_version.h>
 #include <base/arithmeticOverflow.h>
+#include <fmt/ranges.h>
 #include <Common/formatReadable.h>
 #include <Common/HashTable/HashSet.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -1464,7 +1465,8 @@ void writeFileFooter(FileWriteState & file,
     SchemaElements schema,
     const WriteOptions & options,
     WriteBuffer & out,
-    const Block & header)
+    const Block & header,
+    const std::vector<size_t> & uuid2_leaf_columns)
 {
     chassert(file.offset != 0);
     chassert(file.current_row_group.row_group.columns.empty());
@@ -1558,6 +1560,21 @@ void writeFileFooter(FileWriteState & file,
             meta.key_value_metadata.push_back(std::move(key_value));
             meta.__isset.key_value_metadata = true;
         }
+    }
+
+    /// ClickHouse-specific discriminator: parquet has a single UUID logical type, but ClickHouse has two
+    /// UUID types (`UUID` with the historical half-swapped ordering and the correctly-sorting `UUID2`).
+    /// Record which leaf columns (in parquet column order) were written from `UUID2` so that ClickHouse
+    /// schema inference restores the exact type on a round-trip; other readers ignore this key and read
+    /// the columns as plain UUID.
+    if (!uuid2_leaf_columns.empty())
+    {
+        parquet::format::KeyValue key_value;
+        key_value.__set_key("ClickHouse:uuid2_leaf_columns");
+        key_value.__set_value(fmt::format("{}", fmt::join(uuid2_leaf_columns, ",")));
+
+        meta.key_value_metadata.push_back(std::move(key_value));
+        meta.__isset.key_value_metadata = true;
     }
 
     size_t footer_size = serializeThriftStruct(meta, out);

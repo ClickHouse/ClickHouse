@@ -168,11 +168,17 @@ using ColumnChunkWriteStates = std::vector<ColumnChunkWriteState>;
 /// Parquet schema is a tree of SchemaElements, flattened into a list in depth-first order.
 /// Leaf nodes correspond to physical columns of primitive types. Inner nodes describe logical
 /// groupings of those columns, e.g. tuples or structs.
-SchemaElements convertSchema(const Block & sample, const WriteOptions & options, const std::optional<std::unordered_map<String, Int64>> & column_field_ids);
+/// `out_uuid2_leaf_columns`, when set, receives the indices (in leaf order, i.e. parquet column order) of
+/// the leaf columns written from the correctly-sorting `UUID2` type; parquet has a single UUID logical
+/// type, so the exact ClickHouse type is recorded in the file-level key-value metadata (see writeFileFooter).
+SchemaElements convertSchema(
+    const Block & sample, const WriteOptions & options, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
+    std::vector<size_t> * out_uuid2_leaf_columns = nullptr);
 
 void prepareColumnForWrite(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema = nullptr, const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt);
+    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema = nullptr, const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt,
+    std::vector<DataTypePtr> * out_leaf_types = nullptr);
 
 void writeFileHeader(FileWriteState & file, WriteBuffer & out);
 
@@ -195,6 +201,7 @@ void writeFileFooter(FileWriteState & file,
     SchemaElements schema,
     const WriteOptions & options,
     WriteBuffer & out,
-    const Block & header);
+    const Block & header,
+    const std::vector<size_t> & uuid2_leaf_columns = {});
 
 }

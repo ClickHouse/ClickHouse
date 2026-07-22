@@ -1796,10 +1796,18 @@ namespace DB
             // Inject our UUID metadata if it's a root UUID column
             if (isUUID(removeNullable(header_column.type)) || isUUID2(removeNullable(header_column.type)))
             {
-                auto ext_metadata = arrow::key_value_metadata(
-                    {"ARROW:extension:name", "ARROW:extension:metadata", "PARQUET:logical_type"},
-                    {"arrow.uuid", "", "UUID"}
-                );
+                /// Both UUID types share the `arrow.uuid` extension (same canonical bytes on the wire).
+                /// The correctly-sorting `UUID2` additionally carries a ClickHouse-specific discriminator
+                /// so that ClickHouse readers restore the exact type on a round-trip; other Arrow
+                /// implementations ignore the extra key and read the column as a regular UUID.
+                std::vector<std::string> keys{"ARROW:extension:name", "ARROW:extension:metadata", "PARQUET:logical_type"};
+                std::vector<std::string> values{"arrow.uuid", "", "UUID"};
+                if (isUUID2(removeNullable(header_column.type)))
+                {
+                    keys.push_back("ClickHouse:type");
+                    values.push_back("UUID2");
+                }
+                auto ext_metadata = arrow::key_value_metadata(std::move(keys), std::move(values));
                 field_metadata = field_metadata ? field_metadata->Merge(*ext_metadata) : ext_metadata;
             }
 
