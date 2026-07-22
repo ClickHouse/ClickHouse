@@ -2099,7 +2099,9 @@ struct ConvertImpl
             return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToTimeImpl<date_time_overflow_behavior>>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
-        /// Conversion of Time64 to Time: both store local seconds since midnight, so drop the fractional part.
+        /// Conversion of Time64 to Time: both store local seconds since midnight. Drop the fractional part and
+        /// clamp the whole-second value through the same overflow path as the numeric -> Time casts, because
+        /// Time64 may carry a stored magnitude outside the [-MAX_TIME_TIMESTAMP, MAX_TIME_TIMESTAMP] range of Time.
         else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
             && std::is_same_v<ToDataType, DataTypeTime>)
         {
@@ -2114,7 +2116,15 @@ struct ConvertImpl
 
             const auto scale_mult = DecimalUtils::scaleMultiplier<Time64>(col_from->getScale());
             for (size_t i = 0; i < input_rows_count; ++i)
-                vec_to[i] = static_cast<Int32>(vec_from[i].value / scale_mult);
+            {
+                const Int64 whole = static_cast<Int64>(vec_from[i].value / scale_mult);
+                if constexpr (default_date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+                {
+                    if (whole < -MAX_TIME_TIMESTAMP || whole > MAX_TIME_TIMESTAMP) [[unlikely]]
+                        throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", whole);
+                }
+                vec_to[i] = static_cast<Int32>(std::clamp<Int64>(whole, -MAX_TIME_TIMESTAMP, MAX_TIME_TIMESTAMP));
+            }
 
             if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 return ColumnNullable::create(std::move(col_to), ColumnUInt8::create(input_rows_count, false));
