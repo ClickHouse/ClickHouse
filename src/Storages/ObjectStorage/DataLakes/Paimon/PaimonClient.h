@@ -324,6 +324,14 @@ private:
     /// so the same bytes are not stored twice (once raw in fs cache, once parsed in memory).
     ReadSettings getPaimonMetadataReadSettings(bool disable_filesystem_cache) const;
 
+    /// Read a small JSON metadata object that is mutable in place across a supported external
+    /// DROP + re-CREATE at a reused fixed path (schema-0, snapshot-N).  Uses readObject() rather
+    /// than createReadBuffer() so the read is never wrapped in AsynchronousBoundedReadBuffer,
+    /// whose size cached at open would abort (chassert in nextImpl) if a concurrent recreate grows
+    /// the object mid-read.  ETag is pinned (S3, when s3_validate_etag_on_read) so an in-place
+    /// overwrite is reported as S3_OBJECT_CHANGED_DURING_READ instead of yielding torn bytes.
+    Poco::JSON::Object::Ptr readMutableMetadataJSON(const String & path) const;
+
     const ObjectStoragePtr object_storage;
     const String table_location;
     LoggerPtr log;

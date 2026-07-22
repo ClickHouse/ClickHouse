@@ -149,4 +149,139 @@ TEST(PaimonLatestHint, ConcurrentHintRewriteDoesNotCrash)
     }
 }
 
+/// schema-0 is another mutable metadata object: validateTableIdentity reads it on every
+/// background refresh to detect an external DROP + re-CREATE at the same path, and a recreate can
+/// write a larger schema-0. A concurrent writer that grows schema-0 while the reader is mid-read
+/// used to hit the same AsynchronousBoundedReadBuffer cached-size chassert as the LATEST hint.
+/// The contract getTableSchemaJSON must uphold is fail-closed without process termination: a torn
+/// read may throw a normal parse exception, but the process must never abort, and a clean read
+/// must still return a valid schema.
+TEST(PaimonLatestHint, ConcurrentSchemaZeroRewriteDoesNotCrash)
+{
+    ScopedTempDir tmp("ch_gtest_paimon_schema0_race");
+    auto table = tmp.path / "test.db" / "test_table";
+    auto schema0 = table / Paimon::PAIMON_SCHEMA_DIR / (std::string(Paimon::PAIMON_SCHEMA_PREFIX) + "0");
+
+    /// A small and a larger schema JSON, so the file size changes across the rewrite. Padding lives
+    /// in an ignored field so both documents remain parseable objects.
+    const std::string small_schema = R"({"version":3,"timeMillis":1})";
+    const std::string large_schema = R"({"version":3,"timeMillis":2,"_pad":")" + std::string(64 * 1024, 'x') + R"("})";
+    writeFile(schema0, small_schema);
+
+    /// Pin the async-prefetch read path (same as the LATEST test) so the repro stays tied to the
+    /// failure mode rather than to whatever the global defaults happen to be.
+    auto context = Context::createCopy(getContext().context);
+    context->setSetting("remote_filesystem_read_method", String("threadpool"));
+    context->setSetting("remote_filesystem_read_prefetch", Field(true));
+
+    auto storage = makeLocalObjectStorage(tmp.path.string());
+    PaimonTableClient client(storage, table.string(), context);
+
+    auto schema0_info = client.getTableSchemaInfoById(0);
+
+    {
+        std::atomic<bool> stop{false};
+        std::thread writer(
+            [&]
+            {
+                size_t i = 0;
+                while (!stop.load(std::memory_order_relaxed))
+                    writeFile(schema0, ((i++) & 1u) ? large_schema : small_schema);
+            });
+        /// Join on every exit path (see the LATEST test): a still-joinable std::thread destructor
+        /// would std::terminate and turn a plain test failure into a process abort.
+        SCOPE_EXIT({
+            stop.store(true);
+            writer.join();
+        });
+
+        for (int i = 0; i < 4000; ++i)
+        {
+            /// A torn read yields an unparseable document; getTableSchemaJSON then throws a normal
+            /// exception (never aborts). Either a valid schema object or a thrown parse error is
+            /// tolerated here; the point is that the process must not terminate.
+            try
+            {
+                auto schema_json = client.getTableSchemaJSON(schema0_info);
+                EXPECT_FALSE(schema_json.isNull());
+            }
+            catch (...)
+            {
+            }
+        }
+    }
+
+    /// Writer has stopped and schema-0 is a complete document again: a clean read must succeed and
+    /// return the expected schema. This rejects a degenerate implementation that "passes" the loop
+    /// above only by always throwing.
+    writeFile(schema0, small_schema);
+    auto schema_json = client.getTableSchemaJSON(schema0_info);
+    ASSERT_FALSE(schema_json.isNull());
+    EXPECT_EQ(schema_json->getValue<Int64>("timeMillis"), 1);
+}
+
+namespace
+{
+std::string makeSnapshotJson(Int64 id, const std::string & pad = "")
+{
+    return R"({"id":)" + std::to_string(id) + R"(,"schemaId":0,"baseManifestList":"b","deltaManifestList":"d",)"
+        + R"("commitUser":"u","commitIdentifier":1,"commitKind":"APPEND","timeMillis":1)"
+        + (pad.empty() ? "" : R"(,"_pad":")" + pad + R"(")") + "}";
+}
+}
+
+/// snapshot-N is read on every refresh (in loadLatestState, before validateTableIdentity) at a fixed
+/// path that an external DROP + re-CREATE reuses, so it is mutable in place just like schema-0. The
+/// same contract applies: a concurrent grow may cause a torn parse (a normal exception) but must
+/// never abort the process, and a clean read must still return a valid snapshot.
+TEST(PaimonLatestHint, ConcurrentSnapshotRewriteDoesNotCrash)
+{
+    ScopedTempDir tmp("ch_gtest_paimon_snapshot_race");
+    auto table = tmp.path / "test.db" / "test_table";
+    auto snapshot1 = table / Paimon::PAIMON_SNAPSHOT_DIR / (std::string(Paimon::PAIMON_SNAPSHOT_PREFIX) + "1");
+
+    const std::string small_snapshot = makeSnapshotJson(1);
+    const std::string large_snapshot = makeSnapshotJson(1, std::string(64 * 1024, 'x'));
+    writeFile(snapshot1, small_snapshot);
+
+    auto context = Context::createCopy(getContext().context);
+    context->setSetting("remote_filesystem_read_method", String("threadpool"));
+    context->setSetting("remote_filesystem_read_prefetch", Field(true));
+
+    auto storage = makeLocalObjectStorage(tmp.path.string());
+    PaimonTableClient client(storage, table.string(), context);
+
+    {
+        std::atomic<bool> stop{false};
+        std::thread writer(
+            [&]
+            {
+                size_t i = 0;
+                while (!stop.load(std::memory_order_relaxed))
+                    writeFile(snapshot1, ((i++) & 1u) ? large_snapshot : small_snapshot);
+            });
+        SCOPE_EXIT({
+            stop.store(true);
+            writer.join();
+        });
+
+        for (int i = 0; i < 4000; ++i)
+        {
+            try
+            {
+                auto snapshot = client.getSnapshot({1, snapshot1.string()});
+                EXPECT_EQ(snapshot.id, 1);
+            }
+            catch (...)
+            {
+            }
+        }
+    }
+
+    /// Writer stopped: a clean read must succeed (rejects an always-throwing implementation).
+    writeFile(snapshot1, small_snapshot);
+    auto snapshot = client.getSnapshot({1, snapshot1.string()});
+    EXPECT_EQ(snapshot.id, 1);
+}
+
 #endif

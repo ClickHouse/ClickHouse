@@ -51,6 +51,10 @@ using namespace Paimon;
 
 namespace DB
 {
+namespace Setting
+{
+extern const SettingsBool s3_validate_etag_on_read;
+}
 namespace ErrorCodes
 {
 extern const int FILE_DOESNT_EXIST;
@@ -161,22 +165,26 @@ std::pair<Int32, String> PaimonTableClient::getTableSchemaInfoById(Int32 schema_
     return {schema_id, schema_path};
 }
 
-/// schema
-Poco::JSON::Object::Ptr PaimonTableClient::getTableSchemaJSON(const std::pair<Int32, String> & schema_meta_info)
+Poco::JSON::Object::Ptr PaimonTableClient::readMutableMetadataJSON(const String & path) const
 {
-    const auto [max_schema_version, max_schema_path] = schema_meta_info;
-    /// parse schema json
-    RelativePathWithMetadata object_info(max_schema_path);
-    auto context = getContext();
-    auto read_settings = getPaimonMetadataReadSettings(/*disable_filesystem_cache=*/false);
-    auto buf = createReadBuffer(object_info, object_storage, context, log, read_settings);
+    StoredObject stored_object(path);
+    /// ETag pinning is meaningful only for S3; an empty ETag leaves the read unvalidated.
+    if (getContext()->getSettingsRef()[Setting::s3_validate_etag_on_read]
+        && object_storage->getType() == ObjectStorageType::S3)
+        stored_object.etag = object_storage->getObjectMetadata(path, /*with_tags=*/false).etag;
+    auto buf = object_storage->readObject(stored_object, getPaimonMetadataReadSettings(/*disable_filesystem_cache=*/false));
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
     Poco::JSON::Parser parser;
     Poco::Dynamic::Var json = parser.parse(json_str);
-    const auto & shcema_json = json.extract<Poco::JSON::Object::Ptr>();
+    return json.extract<Poco::JSON::Object::Ptr>();
+}
 
-    return shcema_json;
+/// schema
+Poco::JSON::Object::Ptr PaimonTableClient::getTableSchemaJSON(const std::pair<Int32, String> & schema_meta_info)
+{
+    const auto [max_schema_version, max_schema_path] = schema_meta_info;
+    return readMutableMetadataJSON(max_schema_path);
 }
 
 std::optional<std::pair<Int64, String>> PaimonTableClient::getLatestTableSnapshotInfo()
@@ -272,20 +280,9 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLatestTableSnapsho
 
 PaimonSnapshot PaimonTableClient::getSnapshot(const std::pair<Int64, String> & snapshot_meta_info)
 {
-    /// read latest hint
     const auto [latest_snapshot_version, latest_snapshot_path] = snapshot_meta_info;
-
-    /// read snapshot and parse
-    RelativePathWithMetadata snapshot_object(latest_snapshot_path);
-    auto context = getContext();
-    auto read_settings = getPaimonMetadataReadSettings(/*disable_filesystem_cache=*/false);
-    auto snapshot_buf = createReadBuffer(snapshot_object, object_storage, context, log, read_settings);
-    String json_str;
-    readJSONObjectPossiblyInvalid(json_str, *snapshot_buf);
-    Poco::JSON::Parser parser;
-    Poco::Dynamic::Var json = parser.parse(json_str);
-    const auto & snapshot_json = json.extract<Poco::JSON::Object::Ptr>();
-    return PaimonSnapshot(snapshot_json);
+    /// snapshot-N is also mutable in place across a recreate (read before validateTableIdentity).
+    return PaimonSnapshot(readMutableMetadataJSON(latest_snapshot_path));
 }
 
 std::pair<std::vector<PaimonManifestFileMeta>, size_t> PaimonTableClient::getManifestMeta(String manifest_list_path, bool disable_filesystem_cache)
