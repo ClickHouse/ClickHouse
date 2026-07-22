@@ -2395,6 +2395,13 @@ private:
                     }
                 }
 
+                if (format_settings.try_infer_ipv4)
+                {
+                    IPv4 ipv4_value;
+                    if (IPv4Node<JSONParser>::tryParse(ipv4_value, data))
+                        break; /// Route through dynamic_serialization->serializeBinary to avoid Field/IColumn byte-order mismatch.
+                }
+
                 encodeDataType(getDataTypesCache().getType("String"), buf);
                 writeStringBinary(data, buf);
                 return true;
