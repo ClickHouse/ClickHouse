@@ -141,6 +141,12 @@ void QueryPlanSerializationSettings::readBinary(ReadBuffer & in)
     impl->readBinary(in);
 }
 
+bool QueryPlanSerializationSettings::hasSetting(std::string_view name)
+{
+    const auto & accessor = QueryPlanSerializationSettingsTraits::Accessor::instance();
+    return accessor.find(QueryPlanSerializationSettingsTraits::resolveName(name)) != static_cast<size_t>(-1);
+}
+
 QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
 }

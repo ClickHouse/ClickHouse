@@ -18,9 +18,14 @@ QueryPlanStepRegistry & QueryPlanStepRegistry::instance()
 
 void QueryPlanStepRegistry::registerStep(const std::string & name, StepCreateFunction && create_function)
 {
+    registerStep(name, std::move(create_function), StepSerializationInfo{});
+}
+
+void QueryPlanStepRegistry::registerStep(const std::string & name, StepCreateFunction && create_function, StepSerializationInfo info)
+{
     if (steps.contains(name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query plan step '{}' is already registered", name);
-    steps[name] = std::move(create_function);
+    steps[name] = Entry{std::move(create_function), std::move(info)};
 }
 
 QueryPlanStepPtr QueryPlanStepRegistry::createStep(
@@ -32,9 +37,31 @@ QueryPlanStepPtr QueryPlanStepRegistry::createStep(
         auto it = steps.find(name);
         if (it == steps.end())
             throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown query plan step: {}", name);
-        create_function = it->second;
+        create_function = it->second.create_function;
     }
     return create_function(ctx);
+}
+
+bool QueryPlanStepRegistry::hasStep(const std::string & name) const
+{
+    return steps.contains(name);
+}
+
+const QueryPlanStepRegistry::StepSerializationInfo * QueryPlanStepRegistry::getStepSerializationInfo(const std::string & name) const
+{
+    auto it = steps.find(name);
+    if (it == steps.end())
+        return nullptr;
+    return &it->second.info;
+}
+
+std::vector<std::string> QueryPlanStepRegistry::getAllStepNames() const
+{
+    std::vector<std::string> names;
+    names.reserve(steps.size());
+    for (const auto & [name, entry] : steps)
+        names.push_back(name);
+    return names;
 }
 
 void registerExpressionStep(QueryPlanStepRegistry & registry);

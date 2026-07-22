@@ -56,6 +56,10 @@ struct QueryPlanSerializationSettings
     /// Read settings updating only those present in the stream; missing ones keep defaults.
     void readBinary(ReadBuffer & in);
 
+    /// Whether a setting with this name (or alias) exists. Used by skeleton validation to tell
+    /// unknown settings from known ones without attempting to decode the value.
+    static bool hasSetting(std::string_view name);
+
     /// Generated operator[] overloads for each supported type category.
     QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
