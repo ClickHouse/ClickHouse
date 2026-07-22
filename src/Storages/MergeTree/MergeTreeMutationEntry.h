@@ -33,6 +33,12 @@ struct MergeTreeMutationEntry
     /// mutation against rolled-back metadata. See #80648.
     bool is_registered = false;
 
+    /// Whether `commit` (rename) and `removeFile` (unlink) fsync the parent directory.
+    /// Set from `fsync_part_directory` for entries created by `startMutation`; stays
+    /// `false` for entries loaded by `loadMutations` (`killMutation` sets it before
+    /// removing such an entry). See #111380.
+    bool fsync_directory = false;
+
     /// This flag is set periodically in a background thread.
     /// If it is true, then mutation is done. If it is false,
     /// then mutation may be already done but not processed by this thread.
@@ -54,7 +60,7 @@ struct MergeTreeMutationEntry
 
     /// Create a new entry and write it to a temporary file.
     MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, UInt64 tmp_number,
-                           const TransactionID & tid_, const WriteSettings & settings);
+                           const TransactionID & tid_, const WriteSettings & settings, bool fsync_directory_);
     MergeTreeMutationEntry(const MergeTreeMutationEntry &) = delete;
     /// Must clear the moved-from ownership token (`file_name`, `is_temp`,
     /// `is_registered`); a defaulted move leaves `file_name` unspecified (SSO
