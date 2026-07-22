@@ -31,7 +31,7 @@ ${CLICKHOUSE_CLIENT} --query_id="$query_id" --allow_experimental_analyzer=1 --qu
     FROM numbers(100000000)
     WHERE infinite_loop(1 :: UInt32) = 1
     FORMAT Null
-    SETTINGS webassembly_udf_max_fuel = 0, max_threads = 1, max_block_size = 10000000
+    SETTINGS webassembly_udf_max_fuel = 0, max_threads = 1, max_block_size = 10000000, max_rows_to_read = 0
 " >"$output_file" 2>&1 &
 
 # Wait for the query to start executing the WASM function
