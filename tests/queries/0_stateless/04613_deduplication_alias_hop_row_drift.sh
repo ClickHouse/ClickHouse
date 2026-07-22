@@ -94,18 +94,32 @@ $CLICKHOUSE_CLIENT -q "SELECT (SELECT count() FROM drift_src), (SELECT count() F
 # mapping from the tokens' source rows to the view-output block anymore, so the flush is rejected
 # with NOT_IMPLEMENTED - pre-fix this walked the source-row offsets over the smaller view-output
 # block: an abort in debug builds, an out-of-bounds write in release builds. Both waiting inserts
-# report the flush error. The batch is joined by a count trigger, not a wall-clock window:
+# report the flush error. The batch is joined by a count trigger:
 # async_insert_max_query_number=2 flushes the buffer exactly when the second insert is queued (the
 # has_enough_queries path, which requires deduplication to be enabled), so the two inserts join one
-# flush deterministically no matter how slowly a loaded runner starts the second client - a busy
-# timeout window instead could elapse first and flush them separately. The large busy timeout only
-# keeps the first insert from flushing alone before the second arrives.
+# flush no matter how slowly a loaded runner starts the second client. Joining the batch still
+# cannot be guaranteed: concurrently running tests execute SYSTEM FLUSH ASYNC INSERT QUEUE, which
+# flushes the whole queue server-wide and can flush the first insert alone before the second is
+# queued. A split batch means each flush self-deduplicates nothing and succeeds (the outputs are
+# not both 1), so the attempt is retried; a regression of the fix fails every attempt, because the
+# joined flush then never reports NOT_IMPLEMENTED. The busy timeout is only a bounded fallback so a
+# split attempt's stranded insert flushes promptly instead of hanging the test.
 # grep -m1 -c prints exactly one count per insert: the server also echoes the exception through
 # send_logs_level, so the raw number of matching lines is not stable.
-BATCH_SETTINGS="$ASYNC_SETTINGS --async_insert_max_query_number=2 --async_insert_busy_timeout_min_ms=600000 --async_insert_busy_timeout_max_ms=600000"
-for _ in $(seq 1 4); do seq 1 100; done | $CLICKHOUSE_CLIENT $BATCH_SETTINGS -q "INSERT INTO drift_src FORMAT TSV" 2>&1 | grep -m1 -c "NOT_IMPLEMENTED" &
-for _ in $(seq 1 4); do seq 1 100; done | $CLICKHOUSE_CLIENT $BATCH_SETTINGS -q "INSERT INTO drift_src FORMAT TSV" 2>&1 | grep -m1 -c "NOT_IMPLEMENTED" &
-wait
+BATCH_SETTINGS="$ASYNC_SETTINGS --async_insert_max_query_number=2 --async_insert_busy_timeout_min_ms=5000 --async_insert_busy_timeout_max_ms=5000"
+BATCH_OUT_1="${CLICKHOUSE_TMP}/04613_batch_1.out"
+BATCH_OUT_2="${CLICKHOUSE_TMP}/04613_batch_2.out"
+for _ in $(seq 1 10)
+do
+    for _ in $(seq 1 4); do seq 1 100; done | $CLICKHOUSE_CLIENT $BATCH_SETTINGS -q "INSERT INTO drift_src FORMAT TSV" 2>&1 | grep -m1 -c "NOT_IMPLEMENTED" > "$BATCH_OUT_1" &
+    for _ in $(seq 1 4); do seq 1 100; done | $CLICKHOUSE_CLIENT $BATCH_SETTINGS -q "INSERT INTO drift_src FORMAT TSV" 2>&1 | grep -m1 -c "NOT_IMPLEMENTED" > "$BATCH_OUT_2" &
+    wait
+    if [ "$(cat "$BATCH_OUT_1")" = "1" ] && [ "$(cat "$BATCH_OUT_2")" = "1" ]
+    then
+        break
+    fi
+done
+cat "$BATCH_OUT_1" "$BATCH_OUT_2"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE drift_mv2"
 $CLICKHOUSE_CLIENT -q "DROP TABLE drift_mv1"
