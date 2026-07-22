@@ -359,13 +359,21 @@ StoragePtr TableFunctionURL::getStorage(
     /// old literal/template expansion and read different (or no) files than the non-cluster path.
     const bool use_web_wildcard = !is_insert_query && configuration.http_method.empty() && urlPathHasListableGlobs(source);
 
+    /// A subquery `body(...)` is executed at request time, so on a clustered read every replica
+    /// would re-execute the subquery locally and could send a different payload (and receive a
+    /// response of a different schema) than the one the initiator inferred from. Parallel replicas
+    /// is an opportunistic optimization, so fall back to a plain single-server read instead of
+    /// failing; a constant string body is identical everywhere and stays eligible.
+    const bool has_subquery_body = configuration.body.query != nullptr;
+
     const bool can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
         && settings[Setting::parallel_replicas_for_cluster_engines]
         && context->canUseTaskBasedParallelReplicas()
         && !context->isDistributed()
         && !is_secondary_query
         && !is_insert_query
-        && !use_web_wildcard;
+        && !use_web_wildcard
+        && !has_subquery_body;
 
     if (can_use_parallel_replicas)
     {

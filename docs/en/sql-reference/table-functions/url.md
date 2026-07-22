@@ -104,6 +104,8 @@ SELECT * FROM url(
 Even with an explicit `structure`, the request is not guaranteed to be delivered exactly once: the HTTP layer re-sends the same method and body when following redirects, and retries the request (re-running the subquery that builds the body) on retriable network failures. Endpoints that receive a body should be prepared to handle repeated delivery, for example by being idempotent.
 :::
 
+A subquery body is not supported for clustered reads: [`urlCluster`](urlCluster.md) rejects it, and `url` does not use parallel replicas when the body is a subquery. Every participating server would re-execute the subquery locally, so the request body could differ between the servers. A constant string body is identical everywhere and works with both.
+
 ## Dispatching by URL scheme {#scheme-dispatch}
 
 The `url` function acts as a unified wrapper on top of the other file- and object-storage table functions: it dispatches to the right backend based on the URL scheme. This lets you read from any supported location with a single uniform syntax.
