@@ -146,17 +146,26 @@ void deserializeFromValues(IColumn & column, ReadBuffer & istr, const FormatSett
 
 /// Backward compatibility: when `aggregate_function_input_format` was first released (in `v25.12` and `v26.1`),
 /// `array` mode parsed single-argument elements with the argument type's `deserializeTextCSV`, which accepts
-/// double-quoted representations, e.g. `["apple","banana"]` for `AggregateFunction(uniq, String)`. The generic
-/// `SerializationArray` text path parses elements with `deserializeTextQuoted`, which rejects double quotes,
-/// so single-argument `String`-like text arrays are parsed here instead: single-quoted elements with the quoted
-/// serialization (the native form) and everything else with the CSV serialization (the released form).
+/// double-quoted representations, e.g. `["apple","banana"]` for `AggregateFunction(uniq, String)` or
+/// `["a","b"]` for an `Enum` argument. The generic `SerializationArray` text path parses elements with
+/// `deserializeTextQuoted`, which rejects double quotes, so single-argument text arrays are parsed here instead:
+/// single-quoted `String`-like and `Enum` elements with the quoted serialization (the native form) and everything
+/// else with the CSV serialization (the released form; the scalar CSV parse itself accepts both quote kinds).
+/// Composite argument types stay on the unified path: their quoted elements start with `[`, `(` or `{`,
+/// which the released per-element CSV parse could not handle anyway (the CSV string parse stops at the
+/// first comma), so no released form is lost for them.
 bool useLegacyTextArrayParsing(const AggregateFunctionPtr & function, const FormatSettings & settings)
 {
     if (settings.aggregate_function_input_format != FormatSettings::AggregateFunctionInputFormat::Array)
         return false;
 
     const auto & argument_types = function->getArgumentTypes();
-    return argument_types.size() == 1 && isStringOrFixedString(removeNullable(removeLowCardinality(argument_types[0])));
+    if (argument_types.size() != 1)
+        return false;
+
+    WhichDataType which(removeNullable(removeLowCardinality(argument_types[0])));
+    return !(which.isArray() || which.isTuple() || which.isMap() || which.isObject()
+        || which.isVariant() || which.isDynamic() || which.isAggregateFunction() || which.isNothing());
 }
 
 void deserializeFromSingleArgumentTextArray(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const AggregateFunctionPtr & function)
@@ -167,6 +176,17 @@ void deserializeFromSingleArgumentTextArray(IColumn & column, ReadBuffer & istr,
     const auto & value_type = argument_types[0];
     const auto tmp_column = value_type->createColumn();
     const auto elem_serialization = value_type->getDefaultSerialization();
+
+    /// Types parsed from CSV via the CSV string reader lose single-quoted elements when
+    /// `format_csv_allow_single_quotes` is disabled (the default), so the native single-quoted form is
+    /// dispatched to the quoted serialization for them. Other scalar types (numbers, dates, `UUID`, ...)
+    /// handle both quote kinds in `deserializeTextCSV` itself, and their `deserializeTextQuoted` would
+    /// reject quotes, so they always take the CSV branch. For `Nullable` types, an element starting with
+    /// `N`/`n` is dispatched to the quoted serialization, which recognizes the `NULL` keyword of the native
+    /// form with rollback (and otherwise falls through to the nested quoted parse, e.g. `NaN` for floats).
+    const auto unwrapped_type = removeNullable(removeLowCardinality(value_type));
+    const bool quoted_form_is_string = isStringOrFixedString(unwrapped_type) || isEnum(unwrapped_type);
+    const bool is_nullable = value_type->isNullable() || value_type->isLowCardinalityNullable();
 
     assertChar('[', istr);
     bool first = true;
@@ -181,7 +201,8 @@ void deserializeFromSingleArgumentTextArray(IColumn & column, ReadBuffer & istr,
             skipWhitespaceIfAny(istr);
         }
         first = false;
-        if (!istr.eof() && *istr.position() == '\'')
+        const char first_char = istr.eof() ? 0 : *istr.position();
+        if ((quoted_form_is_string && first_char == '\'') || (is_nullable && (first_char == 'N' || first_char == 'n')))
             elem_serialization->deserializeTextQuoted(*tmp_column, istr, settings);
         else
             elem_serialization->deserializeTextCSV(*tmp_column, istr, settings);
