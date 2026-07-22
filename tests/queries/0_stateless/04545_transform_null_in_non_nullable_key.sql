@@ -50,17 +50,23 @@ DROP TABLE IF EXISTS t_np;
 CREATE TABLE t_np (s String) ENGINE = MergeTree ORDER BY s PARTITION BY s;
 INSERT INTO t_np VALUES ('a'), ('b'), ('');
 SELECT s FROM t_np WHERE s NOT IN (SELECT 'a' UNION ALL SELECT NULL) ORDER BY s;
+-- The result above is also correct if set-index analysis silently declines and the engine
+-- full-scans. Assert the relaxed set-index path stays live: KeyCondition must build a
+-- `notIn ... set` atom (declining yields `Condition: true` instead, which this ILIKE misses).
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_np WHERE s NOT IN (SELECT 'a' UNION ALL SELECT NULL)) WHERE explain ILIKE '%Condition:%not%in%set%';
 
 SELECT 'Int64 key NOT IN, partition pruning';
 DROP TABLE IF EXISTS t_ip;
 CREATE TABLE t_ip (s Int64) ENGINE = MergeTree ORDER BY s PARTITION BY s;
 INSERT INTO t_ip VALUES (5), (7), (0);
 SELECT s FROM t_ip WHERE s NOT IN (SELECT 5 UNION ALL SELECT NULL) ORDER BY s;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_ip WHERE s NOT IN (SELECT 5 UNION ALL SELECT NULL)) WHERE explain ILIKE '%Condition:%not%in%set%';
 
 -- Same relaxation must protect the NOT has() sibling caller (a Nullable array with a NULL element
 -- against a non-Nullable partition key). optimize_rewrite_has_to_in=0 keeps it on the has() path.
 SELECT 'String key NOT has, partition pruning';
 SELECT s FROM t_np WHERE NOT has([CAST('a', 'Nullable(String)'), NULL], s) ORDER BY s SETTINGS optimize_rewrite_has_to_in = 0;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_np WHERE NOT has([CAST('a', 'Nullable(String)'), NULL], s) SETTINGS optimize_rewrite_has_to_in = 0) WHERE explain ILIKE '%Condition:%not%in%set%';
 
 -- A Nullable key must keep working and keep using the set index; NULL on the left matches NULL
 -- in the set under transform_null_in=1.

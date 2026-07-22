@@ -26,12 +26,15 @@ c
 String key NOT IN, partition pruning
 
 b
+1
 Int64 key NOT IN, partition pruning
 0
 7
+1
 String key NOT has, partition pruning
 
 b
+1
 Nullable(String) key IN
 a
 b
