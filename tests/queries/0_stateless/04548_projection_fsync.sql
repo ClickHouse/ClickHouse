@@ -4,7 +4,7 @@
 -- Regression test for issue #111318: projection parts must be fsynced together with the part.
 -- A fully synced part fsyncs several more files when it has a projection, so the durability of
 -- the projection is checked by comparing `ProfileEvents['FileSync']` of a table with a projection
--- against an identical table without one (read back from `system.query_log`), for both the INSERT
+-- against an identical table without one (read back from `system.query_log`), for both the `INSERT`
 -- (`fsync_after_insert`) and the merge (`OPTIMIZE`, gated by the `*_to_fsync_after_merge`
 -- thresholds) paths. `max_bytes_to_merge_at_max_space_in_pool = 1` disables background merges so
 -- the only merger is the `OPTIMIZE FINAL` whose fsyncs are attributed to it.
@@ -27,19 +27,19 @@ SETTINGS fsync_after_insert = 1, fsync_part_directory = 1,
          min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          max_bytes_to_merge_at_max_space_in_pool = 1;
 
--- INSERT path: `fsync_after_insert = 1` must fsync the projection files too.
+-- `INSERT` path: `fsync_after_insert = 1` must fsync the projection files too.
 INSERT INTO t_proj SELECT number, concat('k', toString(number % 7)), number FROM numbers(5000);
 INSERT INTO t_proj SELECT number + 5000, concat('k', toString(number % 7)), number FROM numbers(5000);
 INSERT INTO t_plain SELECT number, concat('k', toString(number % 7)), number FROM numbers(5000);
 INSERT INTO t_plain SELECT number + 5000, concat('k', toString(number % 7)), number FROM numbers(5000);
 
--- Merge path: the projection is rebuilt during the merge and must be fsynced too.
+-- Merge path: the projection parts are merged during the merge and must be fsynced too.
 OPTIMIZE TABLE t_proj FINAL SETTINGS optimize_throw_if_noop = 1, alter_sync = 2;
 OPTIMIZE TABLE t_plain FINAL SETTINGS optimize_throw_if_noop = 1, alter_sync = 2;
 
 SYSTEM FLUSH LOGS query_log;
 
--- The projection INSERT must fsync strictly more files than the identical plain INSERT.
+-- The projection `INSERT` must fsync strictly more files than the identical plain `INSERT`.
 SELECT 'insert projection adds file syncs',
     (SELECT max(ProfileEvents['FileSync']) FROM system.query_log
      WHERE current_database = currentDatabase() AND query_kind = 'Insert'
@@ -70,8 +70,8 @@ CHECK TABLE t_proj SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_proj;
 DROP TABLE t_plain;
 
--- MATERIALIZE PROJECTION (mutation) path: its fsyncs run on the IO thread pool and are not
--- attributed to the ALTER in `system.query_log`, so a fsync delta is not observable here.
+-- `MATERIALIZE PROJECTION` (mutation) path: its fsyncs run on the IO thread pool and are not
+-- attributed to the `ALTER` in `system.query_log`, so a fsync delta is not observable here.
 -- Instead exercise the mutation entry point end to end and check the projection is readable.
 CREATE TABLE t_mat (id UInt64, key String, v UInt64)
 ENGINE = MergeTree ORDER BY id
