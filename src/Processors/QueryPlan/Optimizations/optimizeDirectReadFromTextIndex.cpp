@@ -182,7 +182,10 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
     NameSet all_updated_columns;
     for (const auto & part : unique_parts)
     {
-        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
+        /// Only the conversions' updated-column set is read below, never patch data, so the
+        /// patch reader's mapping is immaterial here: pass the live one.
+        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(
+            part, mutations_snapshot, part->storage.getActiveColumnIdMapping(), context
 #if CLICKHOUSE_CLOUD
             , context->getAccess()->getEnabledMaskingPolicies()
 #endif

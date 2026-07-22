@@ -3105,6 +3105,23 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     return results;
 }
 
+/// Pointer-identity guard for a pinned column-ID mapping. The partition-transfer and
+/// BACKUP paths hold only `lockForShare`, but column-ID ALTERs use `lockForAlter` and
+/// republish the mapping -- a field of `StorageInMemoryMetadata`, installed as a fresh
+/// `make_shared` per publish via `setColumnIdMapping` -- so one can land between pinning a
+/// mapping and committing. A different pointer therefore means a concurrent column-ID ALTER
+/// republished the mapping, which would leave the transferred or backed-up parts resolving
+/// through stale physical IDs; the caller must reject and retry.
+///
+/// Comparing raw addresses is safe only because `pinned` is a retained `ColumnIdMappingPtr`:
+/// the live reference keeps that mapping object alive, so its address cannot be freed and
+/// reused by a different object (no ABA). Callers must hold the pinned pointer across the
+/// whole pin-then-recheck window.
+static bool mappingPointersUnchanged(const ColumnIdMappingPtr & pinned, const ColumnIdMappingPtr & current)
+{
+    return pinned.get() == current.get();
+}
+
 void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr local_context)
 {
     assertNotReadonly();
@@ -3151,14 +3168,9 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
 
-    /// `checkStructureAndGetMergeTreeData` snapshots both column-ID mappings
-    /// once for the structure compatibility check, but the transfer below
-    /// runs under `lockForShare` on both tables.  Column-ID ALTERs use
-    /// `lockForAlter`, so either side could publish a new mapping between
-    /// the check and the commit.  Pin both mapping pointers now; re-check
-    /// just before the transaction commit to keep the cloned parts and the
-    /// destination's mapping coherent (`MultiVersion::set` installs a fresh
-    /// `unique_ptr` per publish, so a different pointer == mapping changed).
+    /// Pin both mapping pointers now and re-check just before commit (see
+    /// mappingPointersUnchanged); the structure check above snapshotted them once, but
+    /// the transfer runs under `lockForShare` and a column-ID ALTER can republish either.
     auto my_mapping_pinned = getColumnIdMapping();
     auto src_mapping_pinned = src_data.getColumnIdMapping();
 
@@ -3322,16 +3334,10 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                 renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock, /*rename_in_transaction=*/ false);
             }
 
-            /// Final coherence gate immediately before commit: a concurrent
-            /// column-ID ALTER does not block on `lockForShare` or `lockParts`
-            /// and calls `setColumnIdMapping` via MultiVersion's atomic swap,
-            /// so it can publish anywhere between the pre-clone pin and here.
-            /// Place the recheck right before `transaction.commit` to minimize
-            /// the remaining window (only the if-check-to-commit instructions).
-            /// The transaction has not yet been committed, so throwing here
-            /// rolls back the dst-parts staging via Transaction RAII.
-            if (getColumnIdMapping().get() != my_mapping_pinned.get()
-                || src_data.getColumnIdMapping().get() != src_mapping_pinned.get())
+            /// Final coherence gate right before `transaction.commit` (minimizes the residual
+            /// window); the uncommitted transaction rolls back the dst-parts staging on throw.
+            if (!mappingPointersUnchanged(my_mapping_pinned, getColumnIdMapping())
+                || !mappingPointersUnchanged(src_mapping_pinned, src_data.getColumnIdMapping()))
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Column ID mapping changed concurrently with REPLACE/ATTACH PARTITION FROM; "
@@ -3522,11 +3528,10 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
             dest_transaction.renameParts();
 
-            /// Recheck goes here, after `renameParts`: its per-part `renameTo` I/O
-            /// yields long enough for a concurrent column-ID ALTER to slip in, so
-            /// place the gate right before `commit` to minimize the residual window.
-            if (src_data.getColumnIdMapping().get() != src_mapping_pinned.get()
-                || dest_table_storage->getColumnIdMapping().get() != dest_mapping_pinned.get())
+            /// Recheck after `renameParts` (its per-part `renameTo` I/O yields), right before
+            /// `commit`, to minimize the residual window (see mappingPointersUnchanged).
+            if (!mappingPointersUnchanged(src_mapping_pinned, src_data.getColumnIdMapping())
+                || !mappingPointersUnchanged(dest_mapping_pinned, dest_table_storage->getColumnIdMapping()))
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Column ID mapping changed concurrently with MOVE PARTITION TO TABLE; "
@@ -3680,7 +3685,7 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
     auto qualified_name = QualifiedTableName{getStorageID().database_name, getStorageID().table_name};
     auto captured_snapshot = backup_entries_collector.getBackupAuxSnapshot(qualified_name);
     auto column_ids_mapping_snapshot = getColumnIdMapping();
-    if (captured_snapshot.get() != column_ids_mapping_snapshot.get())
+    if (!mappingPointersUnchanged(captured_snapshot, column_ids_mapping_snapshot))
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Column ID mapping changed between table metadata and BACKUP data capture; retry.");
@@ -3702,7 +3707,7 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
     backup_entries_collector.addBackupEntries(backupMutations(min_data_version, data_path_in_backup));
 
     /// Re-check after parts/mutations collection (catches ALTER racing with it).
-    if (getColumnIdMapping().get() != column_ids_mapping_snapshot.get())
+    if (!mappingPointersUnchanged(column_ids_mapping_snapshot, getColumnIdMapping()))
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Column ID mapping changed during BACKUP collection; retry.");

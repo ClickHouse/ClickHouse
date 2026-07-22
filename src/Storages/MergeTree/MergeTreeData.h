@@ -1395,9 +1395,16 @@ public:
     static PartsSnapshotInfo getPartsSnapshotInfo(const DataPartsVector & parts);
 
     /// Return alter conversions for part which must be applied on fly.
+    /// @column_id_mapping is the operation's captured mapping (the one the base-part
+    /// reader uses); the patch-part reader built here must use the SAME mapping so a
+    /// concurrent DROP+ADD that reuses a name (fresh ID) cannot split base and patch
+    /// resolution and silently drop the patch. Pass getColumnIdMappingFromSnapshot of
+    /// the operation snapshot; pass nullptr / the live mapping only on paths that read
+    /// no patch data (see the callers).
     static AlterConversionsPtr getAlterConversionsForPart(
         const MergeTreeDataPartPtr & part,
         const MutationsSnapshotPtr & mutations,
+        const ColumnIdMappingPtr & column_id_mapping,
         const ContextPtr & query_context
 #if CLICKHOUSE_CLOUD
         , const EnabledMaskingPoliciesPtr & enabled_masking_policies

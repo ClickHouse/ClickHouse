@@ -906,7 +906,10 @@ static bool partHasStaleTopKIndex(
     if (mutations_snapshot
         && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts()))
     {
-        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context);
+        /// Index-staleness check only inspects the conversions' command/column set, never
+        /// reads patch data, so the patch reader's mapping is immaterial here: pass the live one.
+        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(
+            part, mutations_snapshot, part->storage.getActiveColumnIdMapping(), context);
 
         /// A pending delete hides rows of any value -> the index is stale. This covers both a
         /// lightweight DELETE (rewritten as an UPDATE of _row_exists) and an ordinary ALTER DELETE
@@ -1103,7 +1106,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             if (!skip_indexes.empty())
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
-                auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges.data_part, mutations_snapshot, context
+                /// Only the conversions' updated-column set is read below (canUseIndex), never
+                /// patch data, so the patch reader's mapping is immaterial here: pass the live one.
+                auto alter_conversions = MergeTreeData::getAlterConversionsForPart(
+                    ranges.data_part, mutations_snapshot, ranges.data_part->storage.getActiveColumnIdMapping(), context
 #if CLICKHOUSE_CLOUD
                     , context->getAccess()->getEnabledMaskingPolicies()
 #endif

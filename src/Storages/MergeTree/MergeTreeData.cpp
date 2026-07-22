@@ -11743,6 +11743,7 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
 AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     const MergeTreeDataPartPtr & part,
     const MutationsSnapshotPtr & mutations,
+    const ColumnIdMappingPtr & column_id_mapping,
     const ContextPtr & query_context
 #if CLICKHOUSE_CLOUD
     , const EnabledMaskingPoliciesPtr & enabled_masking_policies
@@ -11778,10 +11779,11 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     {
         auto patch_commands = mutations->getOnFlyMutationCommandsForPart(patch.part);
         auto patch_conversions = std::make_shared<AlterConversions>(patch_commands, PatchPartsForReader{}, query_context);
-        /// current mapping: static helper with no operation snapshot; column IDs are
-        /// stable so this live read is safe for a patch-part reader.
+        /// Resolve the patch part's columns with the operation's captured mapping -- the
+        /// same one the base-part reader uses -- so a concurrent DROP+ADD name reuse cannot
+        /// orphan the patch's stamped column and silently drop the update.
         auto patch_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
-            std::move(patch.part), std::move(patch_conversions), part->storage.getActiveColumnIdMapping());
+            std::move(patch.part), std::move(patch_conversions), column_id_mapping);
 
         patches_for_reader.push_back(PatchPartInfoForReader
         {

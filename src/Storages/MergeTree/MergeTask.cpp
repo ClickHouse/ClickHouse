@@ -883,7 +883,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             infos.add(part_infos);
         }
 
-        global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context
+        global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(
+            part, mutations_snapshot,
+            MergeTreeData::getColumnIdMappingFromSnapshot(*global_ctx->storage_snapshot), global_ctx->context
 #if CLICKHOUSE_CLOUD
             , nullptr
 #endif
