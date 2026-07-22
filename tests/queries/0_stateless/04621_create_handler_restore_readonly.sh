@@ -25,7 +25,9 @@ ${CLICKHOUSE_CLIENT} --query "CREATE HANDLER ${H}_backup URL '${P}/backup' AS BA
 ${CLICKHOUSE_CLIENT} --query "SELECT methods FROM system.handlers WHERE name = '${H}_backup'"
 
 # A genuinely mutating query over GET-only methods must still be rejected at definition time.
-${CLICKHOUSE_CLIENT} --query "CREATE HANDLER ${H}_insert URL '${P}/insert' AS INSERT INTO ${DB}.t VALUES (1)" 2>&1 | grep -o "BAD_ARGUMENTS" | head -1
+# (`INSERT ... SELECT` rather than `INSERT ... VALUES`: inline `VALUES` data is not part of the AST,
+# so it cannot appear inside a handler definition and fails to parse before the method gate runs.)
+${CLICKHOUSE_CLIENT} --query "CREATE HANDLER ${H}_insert URL '${P}/insert' AS INSERT INTO ${DB}.t SELECT 1" 2>&1 | grep -o "BAD_ARGUMENTS" | head -1
 
 ${CLICKHOUSE_CLIENT} --query "DROP HANDLER ${H}_restore"
 ${CLICKHOUSE_CLIENT} --query "DROP HANDLER ${H}_backup"
