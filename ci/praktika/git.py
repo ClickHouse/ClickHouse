@@ -1,5 +1,6 @@
 import re
 import shlex
+import time
 
 from praktika.utils import Shell
 
@@ -142,51 +143,46 @@ class Git:
         )
 
     @staticmethod
-    def enable_automerge(pr_number, repo: str) -> None:
-        """Enable auto-merge for PR `pr_number` in `repo` via the merge queue.
+    def merge_pull_request(
+        pr_number, repo: str, retries: int = 12, delay: int = 5
+    ) -> None:
+        """Merge PR `pr_number` in `repo` directly with the merge-commit method.
 
-        The repo disables the `enablePullRequestAutoMerge` mutation (what
-        `gh pr merge --auto` calls) in favor of a merge queue, so auto-merge is
-        enabled by the `enqueuePullRequest` GraphQL mutation -- the same one the
-        "Merge when ready" button on github.com uses. Idempotent: a PR already
-        in the queue is the desired end state and treated as success. Raises
-        `RuntimeError` on a genuine failure.
+        For a base branch with no merge queue (e.g. a release branch, unlike
+        `master`): the PR cannot be enqueued, so it is merged directly. GitHub
+        computes a PR's `mergeable` asynchronously after its head is pushed,
+        reporting `UNKNOWN` until it settles, so a merge issued right after
+        `gh pr create` can race that computation -- poll `mergeable` until it
+        resolves, then merge. A genuine failure (conflicts, or the merge
+        itself) is raised rather than swallowed, so a broken merge does not
+        pass silently.
         """
-        pr_node_id = Shell.get_output(
-            f"gh pr view {pr_number} --json id --jq '.id' --repo {shlex.quote(repo)}"
-        ).strip()
-        if not pr_node_id:
-            raise RuntimeError(f"Failed to fetch node ID for PR #{pr_number}")
-        enqueue_cmd = (
-            "gh api graphql "
-            "-f 'query=mutation($id:ID!){enqueuePullRequest(input:{pullRequestId:$id})"
-            "{mergeQueueEntry{position state}}}' "
-            f"-f id={pr_node_id}"
-        )
-        returncode, stdout, stderr = Shell.get_res_stdout_stderr(
-            enqueue_cmd, verbose=True
-        )
-        # GitHub rejects the mutation with "Pull request is already in the queue"
-        # when the PR is already queued (e.g. a prior run enqueued it, or the
-        # "Merge when ready" button was clicked). That is the desired end state,
-        # so treat it as success rather than failing.
-        already_queued = "already in the queue" in (stdout + stderr).lower()
-        if returncode != 0 and not already_queued:
-            # Surface the real gh output so auth/permission/validation/rate-limit
-            # failures stay diagnosable.
-            if stdout:
-                print(stdout)
-            if stderr:
-                print(stderr)
-            raise RuntimeError(
-                f"Failed to add PR #{pr_number} to the merge queue. This often "
-                "happens when mergeStateStatus is UNKNOWN (GitHub is still "
-                "computing mergeability after a recent push) or the PR is not "
-                "yet eligible (failing required checks, missing approvals, out "
-                f"of date with base).\nRetry manually:\n  {enqueue_cmd}"
+        for attempt in range(retries):
+            mergeable = (
+                Shell.get_output(
+                    f"gh pr view {pr_number} --repo {shlex.quote(repo)} "
+                    "--json mergeable --jq .mergeable"
+                )
+                or ""
+            ).strip()
+            if mergeable == "MERGEABLE":
+                break
+            if mergeable == "CONFLICTING":
+                raise RuntimeError(
+                    f"PR #{pr_number} conflicts with the base branch in {repo} "
+                    "and cannot be merged"
+                )
+            print(
+                f"PR #{pr_number} mergeability not settled yet "
+                f"(mergeable={mergeable or 'UNKNOWN'}); retrying "
+                f"[{attempt + 1}/{retries}]"
             )
-        if already_queued:
-            print(f"PR #{pr_number} is already in the merge queue")
+            time.sleep(delay)
+        Shell.check(
+            f"gh pr merge {pr_number} --repo {shlex.quote(repo)} --merge",
+            strict=True,
+            verbose=True,
+        )
 
     def __init__(self):
         self.latest_tag = Shell.get_output("git describe --tags --abbrev=0") or ""
