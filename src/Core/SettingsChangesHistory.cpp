@@ -1318,7 +1318,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"merge_selector_small_parts_threshold", 10 * 1024 * 1024, 10 * 1024 * 1024, "Size threshold for the small-parts batching heuristic in merge selector"},
             {"merge_selector_small_parts_min_count", 0, 0, "Minimum part count to allow merging small fresh parts (0 = disabled)"},
             {"merge_selector_small_parts_max_age", 600, 600, "Age limit for the small-parts merge restriction"},
-            {"allow_experimental_text_index_positions", false, false, "New setting"},
             {"allow_experimental_text_index_phrase_search", false, false, "New setting"},
             {"merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once", false, true, "Enable by default"},
             {"compute_exact_num_defaults_for_sparse_columns", false, false, "New setting gating exact per-column num_defaults computation for sparsity-based pruning and trivial-count rewrite"},
