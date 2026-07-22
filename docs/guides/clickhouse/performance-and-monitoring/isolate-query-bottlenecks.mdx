@@ -2,44 +2,51 @@
 slug: /optimize/isolate-query-bottlenecks
 sidebarTitle: 'Isolate query bottlenecks'
 title: 'Isolate query bottlenecks'
-description: 'Learn a repeatable methodology for isolating bottlenecks in slow ClickHouse queries'
+description: 'Learn a repeatable method for isolating bottlenecks in slow ClickHouse queries'
 doc_type: 'guide'
 keywords: ['query optimization', 'query bottlenecks', 'performance', 'benchmarking']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 import NYCTaxiExampleDataset from '/snippets/_nyc_taxi_example_dataset.mdx';
 
-Query optimization is easier when you change one part of a query at a time and compare each result with a stable baseline. Use the following measurement practices before isolating individual execution stages.
+Compare progressively simpler forms of a query to determine which part of its processing warrants further investigation.
 
 ## Before you begin {#before-you-begin}
 
-It can be difficult to identify problematic queries on a production deployment, as there are probably a large number of queries being executed at any given time on your ClickHouse deployment. 
-
-If you know which user, database, or tables are having issues, you can use the fields `user`, `tables`, or `databases` from `system.query_log` to narrow down the search. 
-
-You can apply this method to your own query. To use the NYC Taxi examples from the other guides in this section, create and load the example table if you have not already done so:
+You can apply this method to your own query. To run the NYC Taxi examples as written, create and load the example table if you have not already done so:
 
 <Accordion title="Set up the example dataset">
   <NYCTaxiExampleDataset />
 </Accordion>
 
+## How it works {#how-it-works}
+
+This section will introduce the three-query comparison: the original query, a grouped `count`, and an ungrouped `count`.
+
 ## Establish a repeatable baseline {#establish-a-repeatable-baseline}
 
-Once you identify the queries you want to optimize, you can start working on them to optimize. One common mistake developers make at this stage is changing multiple things simultaneously, running ad-hoc experiments, and usually ending up with mixed results, but, more importantly, missing a good understanding of what made the query faster. 
+Define comparable test conditions and record duration, rows and bytes read, and peak memory usage.
 
-Query optimization requires structure. I'm not talking about advanced benchmarking, but having a simple process in place to understand how your changes affect query performance can go a long way. 
+## Simplify the query in stages {#simplify-the-query-in-stages}
 
-Start by identifying your slow queries from query logs, then investigate potential improvements in isolation. When testing the query, make sure you disable the filesystem cache. 
+### Run A: Measure the original query {#run-a-measure-the-original-query}
 
-> ClickHouse leverages [caching](/concepts/features/performance/caches/caches) to speed up query performance at different stages. This is good for query performance, but during troubleshooting, it could hide potential I/O bottlenecks or poor table schema. For this reason, I suggest turning off the filesystem cache during testing. Make sure to have it enabled in production setup.
+### Run B: Retain grouping with count {#run-b-retain-grouping-with-count}
 
-Once you have identified potential optimizations, it is recommended that you implement them one by one to better track how they affect performance. Below is a diagram describing the general approach.
+### Run C: Remove grouping {#run-c-remove-grouping}
 
-<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="Optimization workflow"/>
+## Interpret the differences {#interpret-the-differences}
 
-_Finally, be cautious of outliers; it's pretty common that a query might run slowly, either because a user tried an ad-hoc expensive query or the system was under stress for another reason. You can group by the field normalized_query_hash to identify expensive queries that are being executed regularly. Those are probably the ones you want to investigate._
+Use the differences between runs to decide whether to investigate scanning and filtering, grouping, or final computation first.
+
+### Compare rows read with matching rows {#compare-rows-read-with-matching-rows}
+
+Compare `read_rows` with the value returned by `count` when the query shape makes that comparison meaningful.
+
+## Validate the suspected bottleneck {#validate-the-suspected-bottleneck}
+
+Validate the hypothesis with query logs, profile events, and `EXPLAIN` before choosing an optimization.
 
 ## Next steps {#next-steps}
 
-Return to [Diagnose slow queries](/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) to select a representative query, or continue with the [worked optimization example](/guides/clickhouse/performance-and-monitoring/query-optimization-example) to see how schema and primary-key changes affect query performance.
+Continue with the [worked optimization example](/guides/clickhouse/performance-and-monitoring/query-optimization-example) to see how measured schema and ordering-key changes affect query performance.
