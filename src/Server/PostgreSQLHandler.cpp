@@ -124,15 +124,20 @@ private:
                 return false;
             }
             /// A `CopyFail` is a normal client-side abort of the copy (libpq sends it when its local data
-            /// source errors or the copy is cancelled), not a protocol violation. Surface the client's
-            /// reason as a regular query error: the handler's outer catch turns it into an `ErrorResponse`
-            /// followed by `ReadyForQuery`, keeping the connection alive.
+            /// source errors or the copy is cancelled), not a protocol violation. Record the abort and throw
+            /// to unwind and cancel the insert pipeline (so the partial input is not committed); the COPY_FROM
+            /// handler recognizes the abort via `clientAborted`, sends a clean `ErrorResponse` and returns the
+            /// query as handled so the run loop follows with `ReadyForQuery`, keeping the connection alive. A
+            /// plain rethrow instead would propagate out of `processQuery` to the run loop and drop the
+            /// connection before `ReadyForQuery`, which a driver such as psycopg2 reports as a lost connection.
             if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_FAILURE)
             {
                 auto copy_fail = transport.receive<PostgreSQLProtocol::Messaging::CopyFail>();
                 received_copy_done = true;
+                client_aborted = true;
+                abort_reason = copy_fail->message;
                 throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS, "COPY FROM STDIN aborted by the client: {}", copy_fail->message);
+                    ErrorCodes::BAD_ARGUMENTS, "COPY FROM STDIN aborted by the client: {}", abort_reason);
             }
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -143,9 +148,18 @@ private:
         }
     }
 
+public:
+    /// Whether the client aborted the copy with a `CopyFail` message, and the reason it sent. Used by the
+    /// COPY_FROM handler to turn the abort into a clean `ErrorResponse` instead of a connection teardown.
+    bool clientAborted() const { return client_aborted; }
+    const String & abortReason() const { return abort_reason; }
+
+private:
     PostgreSQLProtocol::Messaging::MessageTransport & transport;
     String current_frame;
     bool received_copy_done = false;
+    bool client_aborted = false;
+    String abort_reason;
 };
 
 /// Some PostgreSQL drivers issue session-management commands during connection
@@ -689,17 +703,20 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         return true;
     }
 
-    /// A `COPY` that carries a data-formatting option we cannot faithfully honor (a non-default `DELIMITER`,
-    /// a non-default `NULL` marker, `HEADER`, or any option we do not interpret) is rejected here rather than
-    /// silently ignored: honoring only the format while dropping such options would stream output that does
-    /// not match what the client requested. Like the binary rejection above, this is sent as an ordinary
-    /// `ErrorResponse` (not thrown) so the connection stays open for the following `ReadyForQuery`.
+    /// A `COPY` we cannot faithfully serve is rejected here rather than silently mis-served. This covers a
+    /// copy endpoint other than the client stream (only `COPY ... TO STDOUT` and `COPY ... FROM STDIN` are
+    /// implemented - a file path or `PROGRAM '...'` would make us drive the wrong side of the protocol), and
+    /// a data-formatting option we cannot honor (a non-default `DELIMITER`, a non-default `NULL` marker, a
+    /// `HEADER`, or any option we do not interpret): honoring only the format while dropping such options
+    /// would stream output that does not match what the client requested. The parser records the reason in
+    /// `unsupported_option`. Like the binary rejection above, this is sent as an ordinary `ErrorResponse`
+    /// (not thrown) so the connection stays open for the following `ReadyForQuery`.
     if (copy_query_parsed && !copy_query_parsed->as<ASTCopyQuery>()->unsupported_option.empty())
     {
         message_transport->send(
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "0A000",
-                fmt::format("PostgreSQL COPY with {} is not supported; only the format (text/CSV) is honored",
+                fmt::format("PostgreSQL COPY with {} is not supported",
                             copy_query_parsed->as<ASTCopyQuery>()->unsupported_option)),
             true);
         return true;
@@ -795,6 +812,20 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         catch (...)
         {
             executor->cancel();
+
+            /// A client-initiated abort (`CopyFail`) is an ordinary "your copy failed" error, not a fatal
+            /// connection error: reply with an `ErrorResponse` and report the query as handled so the run
+            /// loop follows with `ReadyForQuery` and the connection stays usable (mirroring the binary and
+            /// unsupported-option rejections above). Any other error is a genuine failure - rethrow it.
+            if (copy_in_stream.clientAborted())
+            {
+                message_transport->send(
+                    PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
+                        PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "57014",
+                        fmt::format("COPY FROM STDIN aborted by the client: {}", copy_in_stream.abortReason())),
+                    true);
+                return true;
+            }
             throw;
         }
 

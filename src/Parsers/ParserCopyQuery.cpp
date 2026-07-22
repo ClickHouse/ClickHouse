@@ -193,10 +193,48 @@ String stringLiteralInnerBytes(const String & raw_token)
 
 bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery> node, Expected & expected)
 {
-    ParserIdentifier s_output_identifier;
-    ASTPtr output_name;
-    if (!s_output_identifier.parse(pos, output_name, expected))
-        return false;
+    /// The copy endpoint token right after `TO`/`FROM`. It is normally an identifier (`STDOUT`/`STDIN`, or
+    /// an unsupported `PROGRAM`), but a file-path endpoint is a string literal (`COPY t TO '/path'`).
+    String target;
+    if (pos->type == TokenType::StringLiteral)
+    {
+        /// A file-path endpoint - unsupported; consume the literal, `target` stays empty so the mismatch
+        /// check below rejects it.
+        ++pos;
+    }
+    else
+    {
+        ParserIdentifier s_output_identifier;
+        ASTPtr output_name;
+        if (!s_output_identifier.parse(pos, output_name, expected))
+            return false;
+        target = toLowerCopy(output_name->as<ASTIdentifier &>().full_name);
+    }
+
+    /// The only copy endpoints we implement are the client stream: `COPY ... TO STDOUT` and
+    /// `COPY ... FROM STDIN`. Any other destination or source - a file path, `PROGRAM '...'`, or a
+    /// mismatched `TO STDIN` / `FROM STDOUT` - is rejected: serving it as the client stream would make the
+    /// handler drive the wrong side of the protocol (for a `FROM PROGRAM` it would send a `CopyInResponse`
+    /// and then wait for `CopyData` frames a client performing a server-side copy never sends, hanging the
+    /// connection). Record the reason in `unsupported_option` so the handler answers with a clean
+    /// `ErrorResponse`; the remaining tokens are consumed so the command still parses as a `COPY` (an
+    /// unconsumed tail would make `parseQuery` fail and the handler fall through to the regular-query path,
+    /// tearing the connection down). Like the option handling below, the parser must not throw here.
+    const bool is_copy_to = node->type == ASTCopyQuery::QueryType::COPY_TO;
+    if (is_copy_to && target != "stdout")
+    {
+        while (!pos->isEnd())
+            ++pos;
+        node->unsupported_option = "a destination other than STDOUT";
+        return true;
+    }
+    if (!is_copy_to && target != "stdin")
+    {
+        while (!pos->isEnd())
+            ++pos;
+        node->unsupported_option = "a source other than STDIN";
+        return true;
+    }
 
     /// No options at all: PostgreSQL defaults to the text format, which we map to TSV. This is also the
     /// shape that libpq/pqxx use to read a result set (`COPY (query) TO STDOUT`).
