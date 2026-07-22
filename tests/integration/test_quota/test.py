@@ -1831,6 +1831,24 @@ def test_quota_out_of_range_value_from_users_xml():
     copy_quota_xml("no_quotas.xml")
 
 
+def test_quota_execution_time_out_of_range_value_from_users_xml():
+    # An out-of-range limit for a scaled quota type (execution_time is multiplied by the
+    # output denominator, nanoseconds, before the cast to UInt64) must be rejected on
+    # config load instead of overflowing in the float-to-integer cast.
+    copy_quota_xml("execution_time_out_of_range.xml", reload_immediately=False)
+    error = instance.query_and_get_error("SYSTEM RELOAD CONFIG", user="user_with_no_quota")
+    assert "Quota value 1e19 is out of range" in error
+
+    # A tiny negative value underflows to -0.0 when parsed as a double; the sign bit must
+    # still be rejected on config load instead of being accepted as zero.
+    copy_quota_xml("execution_time_negative.xml", reload_immediately=False)
+    error = instance.query_and_get_error("SYSTEM RELOAD CONFIG", user="user_with_no_quota")
+    assert "Quota value -1e-400 is out of range" in error
+
+    # Restore a clean config so later periodic reloads do not fail.
+    copy_quota_xml("no_quotas.xml")
+
+
 def test_quota_keyed_by_normalized_query_hash_from_users_xml():
     # A quota keyed by normalized_query_hash must load from static config and
     # expose the key type via system.quotas, mirroring the SQL path which
