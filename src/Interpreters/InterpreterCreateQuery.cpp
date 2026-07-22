@@ -755,6 +755,21 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
     ASTCreateQuery & create, LoadingStrictnessLevel mode)
 {
+    /// `CREATE TABLE ... AS other_table` (including `CLONE AS`) copies the schema of `other_table`,
+    /// so when `other_table` is reached through a read-only `Overlay` facade, `SHOW_COLUMNS` is
+    /// required on the underlying source table too: the facade must not widen metadata access
+    /// (see the `Overlay` access-control contract). The check must run before `setEngine` below,
+    /// which already loads the source's create query through the facade, and it is fail-closed
+    /// the same way as `DESCRIBE` / `SHOW CREATE` (a failing existence probe on a remote-catalog
+    /// source is remasked as the same `ACCESS_DENIED` a denied healthy source would produce).
+    if (!create.as_table.empty() && mode <= LoadingStrictnessLevel::SECONDARY_CREATE)
+    {
+        String as_database_name = getContext()->resolveDatabase(create.as_database);
+        if (const auto * facade
+            = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(as_database_name).get()))
+            facade->checkSourceTableAccess(create.as_table, getContext(), AccessType::SHOW_COLUMNS);
+    }
+
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);
 
@@ -815,6 +830,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         String as_database_name = getContext()->resolveDatabase(create.as_database);
         getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, create.as_table);
         StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext());
+
+        /// Re-verify against the loaded storage: the name could have started resolving through a
+        /// read-only `Overlay` facade between the metadata-only check above and the lookup.
+        if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade({as_database_name, create.as_table}, as_storage))
+            getContext()->checkAccess(AccessType::SHOW_COLUMNS, *source_id);
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -2994,7 +3014,22 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
         {
             const auto & target_id = target.table_id;
             if (target_id)
+            {
                 required_access.emplace_back(AccessType::SELECT | AccessType::INSERT, target_id.database_name, target_id.table_name);
+
+                /// A `TO` target reached through a read-only `Overlay` facade resolves to the
+                /// underlying source table at write time, and a plain materialized view (no
+                /// `SQL SECURITY` clause) performs those writes without re-checking the target
+                /// grant. So creating it must prove `SELECT` and `INSERT` on the source table
+                /// too, exactly as a direct `INSERT INTO`/`SELECT FROM` the facade name would:
+                /// the facade must not widen access. Fail-closed the same way as `DESCRIBE`.
+                if (const auto * facade = DatabaseOverlay::asReadonlyFacade(
+                        DatabaseCatalog::instance().tryGetDatabase(getContext()->resolveDatabase(target_id.database_name)).get()))
+                {
+                    facade->checkSourceTableAccess(target_id.table_name, getContext(), AccessType::SELECT);
+                    facade->checkSourceTableAccess(target_id.table_name, getContext(), AccessType::INSERT);
+                }
+            }
         }
     }
 

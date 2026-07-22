@@ -134,7 +134,12 @@ table. This applies to both reads and `INSERT`s:
   `CHECK TABLE` requires the `CHECK` privilege on both the `Overlay` and the underlying source
   table, and `KILL MUTATION` / `KILL PART_MOVE TO SHARD` targeting a facade row of
   `system.mutations` / `system.part_moves_between_shards` require the corresponding `ALTER`
-  privilege on both.
+  privilege on both;
+* create-time paths that read or write through the facade follow the same rule:
+  `CREATE TABLE ... AS` (including `CLONE AS`) a facade name copies the schema of the
+  underlying source table and requires `SHOW COLUMNS` on both the `Overlay` and the source
+  table, and `CREATE MATERIALIZED VIEW ... TO` a facade target funnels writes into the source
+  table and requires the `SELECT` and `INSERT` privileges on both.
 
 Row policies follow the same rule: reading a table through the facade applies the `SELECT` row
 policies of **both** the `Overlay` and the underlying source table (a row is returned only if it

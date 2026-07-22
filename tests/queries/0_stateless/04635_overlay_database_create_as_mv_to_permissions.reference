@@ -1,0 +1,17 @@
+SHOW COLUMNS on the Overlay alone is not enough for CREATE TABLE ... AS through the facade
+ACCESS_DENIED
+... nor with an explicit ENGINE
+ACCESS_DENIED
+... nor for CLONE AS
+ACCESS_DENIED
+No copies were created
+0
+SHOW COLUMNS on both the Overlay and the underlying database allows CREATE TABLE ... AS
+1
+INSERT on the Overlay alone is not enough for CREATE MATERIALIZED VIEW ... TO through the facade
+ACCESS_DENIED
+The materialized view was not created
+0
+INSERT on both the Overlay and the underlying database allows CREATE MATERIALIZED VIEW ... TO
+Writes through the materialized view land in the source table
+2
