@@ -19,9 +19,15 @@ mid-flight removal: the draft entry has no stale param_x
 mid-flight removal: the draft entry has no run=1
 mid-flight removal: the completed result is kept
 completion before rebuild: the raced entry has no run=1
+completion before rebuild: no stale param_x even before the rebuild lands
+completion before rebuild: tab.params is pruned to the draft text
 completion before rebuild: the landing rebuild folds tab.params
 completion before rebuild: the landing rebuild repairs the entry
 completion before rebuild: the repaired entry still has no run=1
 completion before rebuild: the draft is intact
 completion before rebuild: the completed result is kept
+completion before rebuild (kept placeholder): the binding stays in the URL
+completion before rebuild (kept placeholder): the diverged draft still has no run=1
+completion before rebuild (kept placeholder): the landing rebuild keeps the binding
+completion before rebuild (kept placeholder): the draft is intact
 OK

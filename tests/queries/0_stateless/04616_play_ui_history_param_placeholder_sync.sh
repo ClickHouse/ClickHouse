@@ -20,9 +20,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #     comparison (`sameParamValues`) keeps `run=1` on a clean run and keeps the tab reading as
 #     clean (`tabReflectsRun`) for later editor-only history writers;
 #   - a placeholder-removing edit made while a run is IN FLIGHT: the completed run must not leak
-#     the stale binding under the newer draft — whichever side wins the race (the rebuild lands
-#     before the completion, or the completion writes first and the landing rebuild repairs the
-#     entry in place via `refreshCurrentHistoryEntry`).
+#     the stale binding under the newer draft — whichever side wins the race. When the rebuild
+#     lands first, `tab.params` already follows the draft; when the COMPLETION writes first, its
+#     own entry must already be clean (`saveHistory` prunes the map by a conservative textual
+#     placeholder scan of the draft, `queryMentionsParam`, so the stale `param_*` never reaches
+#     the URL even transiently), while a placeholder that SURVIVES the edit keeps its binding;
+#     the landing rebuild then re-folds the inputs authoritatively
+#     (`syncParamsAfterRebuild` -> `refreshCurrentHistoryEntry`).
 # The harness extracts the real functions from the served /play page and drives them under node
 # with stub DOM/history objects; the parameter inputs are real enough for `updateQueryParams` to
 # build (create/remove elements, value carry-over, the trusted-edit listener).
@@ -59,7 +63,7 @@ function extractTopLevel(header_re, name)
 /// from the page. Only rendering and persistence I/O are stubbed below.
 const FUNCS = ['toBase64', 'fromBase64', 'nextDefaultTitle', 'uniqueTitle', 'tabRuntimeDefaults',
     'makeTab', 'nextRunId', 'getActiveTab', 'captureActiveTab', 'buildHistoryParams',
-    'writeHistoryEntry', 'sameParamValues', 'tabReflectsRun', 'liveDivergedFromRun',
+    'writeHistoryEntry', 'sameParamValues', 'queryMentionsParam', 'tabReflectsRun', 'liveDivergedFromRun',
     'effectiveDatabase', 'sameServerAddress', 'effectiveConnectionUser',
     'stampSelectedDatabaseConnection', 'refreshCurrentHistoryEntry', 'saveHistory', 'syncHistory',
     'markBootstrapDirty', 'scheduleSave', 'persist', 'restoreEditor',
@@ -372,8 +376,11 @@ function reset()
     assert_eq('mid-flight removal: the completed result is kept', active().result && active().result.query, 'SELECT {x:Int32}');
 
     /// Same edit, but the COMPLETION wins the race (the rebuild is still awaiting tokenization
-    /// when the response lands): the entry written from the then-stale `tab.params` is repaired
-    /// in place once the rebuild lands (`syncParamsAfterRebuild` -> `refreshCurrentHistoryEntry`).
+    /// when the response lands): the entry the completion writes must ALREADY be clean — no
+    /// window where the URL pairs the new draft with the removed placeholder's binding (a reload
+    /// or copied link taken then would resurrect it). `saveHistory` prunes the stale map by a
+    /// textual placeholder scan of the draft; the landing rebuild then re-folds the inputs
+    /// authoritatively (`syncParamsAfterRebuild` -> `refreshCurrentHistoryEntry`).
     reset();
     await type('SELECT {x:Int32}');
     setTrustedParam('x', '1');
@@ -382,6 +389,8 @@ function reset()
     const rebuild = type('SELECT 1');   /// kicked off, deliberately not awaited yet
     finishRun(in_flight_late);          /// synchronous: writes before the rebuild lands
     assert_eq('completion before rebuild: the raced entry has no run=1', curUrl().includes('run=1'), false);
+    assert_eq('completion before rebuild: no stale param_x even before the rebuild lands', curUrl().includes('param_x'), false);
+    assert_params('completion before rebuild: tab.params is pruned to the draft text', active().params, {});
     await rebuild;
     await drain();
     assert_params('completion before rebuild: the landing rebuild folds tab.params', active().params, {});
@@ -389,6 +398,23 @@ function reset()
     assert_eq('completion before rebuild: the repaired entry still has no run=1', curUrl().includes('run=1'), false);
     assert_eq('completion before rebuild: the draft is intact', active().query, 'SELECT 1');
     assert_eq('completion before rebuild: the completed result is kept', active().result && active().result.query, 'SELECT {x:Int32}');
+
+    /// Control for the textual prune: a mid-flight edit that KEEPS the placeholder must keep its
+    /// binding in the completion's entry — the conservative scan only drops names that are
+    /// certainly gone from the draft text.
+    reset();
+    await type('SELECT {x:Int32}');
+    setTrustedParam('x', '1');
+    await run('SELECT {x:Int32}');
+    const in_flight_keep = await startRun('SELECT {x:Int32}');
+    const rebuild_keep = type('SELECT {x:Int32} + 1');   /// kicked off, deliberately not awaited yet
+    finishRun(in_flight_keep);                           /// synchronous: writes before the rebuild lands
+    assert_eq('completion before rebuild (kept placeholder): the binding stays in the URL', curUrl().includes('param_x=1'), true);
+    assert_eq('completion before rebuild (kept placeholder): the diverged draft still has no run=1', curUrl().includes('run=1'), false);
+    await rebuild_keep;
+    await drain();
+    assert_params('completion before rebuild (kept placeholder): the landing rebuild keeps the binding', active().params, { x: '1' });
+    assert_eq('completion before rebuild (kept placeholder): the draft is intact', active().query, 'SELECT {x:Int32} + 1');
 
     console.log('OK');
 })().catch(e => { console.error('FAIL: ' + (e && e.stack || e)); process.exit(1); });

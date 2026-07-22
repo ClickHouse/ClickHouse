@@ -70,7 +70,7 @@ function extractTopLevel(header_re, name)
 /// DOM rendering, the per-tab run path and persistence I/O are stubbed below.
 const FUNCS = ['toBase64', 'fromBase64', 'nextDefaultTitle', 'uniqueTitle', 'tabRuntimeDefaults',
     'makeTab', 'nextRunId', 'getActiveTab', 'captureActiveTab', 'buildHistoryParams',
-    'writeHistoryEntry', 'sameParamValues', 'tabReflectsRun', 'liveDivergedFromRun', 'effectiveDatabase',
+    'writeHistoryEntry', 'sameParamValues', 'queryMentionsParam', 'tabReflectsRun', 'liveDivergedFromRun', 'effectiveDatabase',
     'sameServerAddress', 'effectiveConnectionUser', 'stampSelectedDatabaseConnection',
     'refreshCurrentHistoryEntry', 'saveHistory', 'syncHistory', 'resolveTabForState',
     'markBootstrapDirty', 'switchToTab', 'addTab', 'closeTab', 'scheduleSave', 'loadFromDb',
@@ -101,8 +101,9 @@ const sandbox = {
     url_pinned_columns: null, pinned_columns_url_malformed: false,
     url_color_modes: null, color_modes_url_malformed: false,
     /// `?run=1` propagation: the run=1 marker is stamped only for an entry produced by a genuine
-    /// run whose editor still reflects it (`run_immediately && fromRun`). Set true so a clean run
-    /// stamps run=1 and the reload cases can observe an unrun draft dropping it.
+    /// run whose editor still reflects it, through the tab's own `runnableUrl` policy bit —
+    /// stamped by `saveHistory` from the load directive (`run_immediately`). Set true so a clean
+    /// run stamps run=1 and the reload cases can observe an unrun draft dropping it.
     run_immediately: true,
     defer_run_for_reconcile: true,
     deferred_run_cancelled: false,
@@ -564,9 +565,9 @@ async function reload()
 
     /// A stale reload — the URL hash is a tab's last-synced query, but IndexedDB holds a newer,
     /// unrun edit — restores the draft as editor text and refuses to auto-run the URL's stale
-    /// `run=1` (an unrun, possibly destructive, edit must stay unrun), dropping the run directive
-    /// so the draft's own re-synced entry is unstamped too (`reconcileStartup`'s `preserve_local_query`
-    /// / `run_immediately = false`).
+    /// `run=1` (an unrun, possibly destructive, edit must stay unrun); the draft's own re-synced
+    /// entry is unstamped too, through the ordinary dirty check (`reconcileStartup`'s
+    /// `preserve_local_query`; `tabReflectsRun` is false for the draft).
     reset();
     await run('SELECT 1');
     type('SELECT 2');
@@ -597,6 +598,51 @@ async function reload()
     await reload();
     assert_eq('reload of a clean run: the run query is restored', active().query, 'SELECT 1');
     assert_eq('reload of a clean run: the run query is auto-run', sandbox.postAllCalled, true);
+
+    /// A stale reload preserves the draft (its entry unstamped) — but the suppression is scoped
+    /// to those draft entries, not to the session: an EXPLICIT run of the draft afterwards is a
+    /// genuine run under a `?run=1` load, so its entry carries `run=1` again and the next reload
+    /// re-runs what the user actually executed.
+    reset();
+    await run('SELECT 1');
+    type('SELECT 2');
+    await reload();
+    assert_eq('stale reload then rerun: the draft is restored unrun', active().query, 'SELECT 2');
+    assert_eq('stale reload then rerun: the preserved draft entry has no run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+    await run('SELECT 2');
+    assert_eq('stale reload then rerun: the explicit rerun entry carries run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), true);
+    await reload();
+    assert_eq('stale reload then rerun: the rerun query is restored on the next reload', active().query, 'SELECT 2');
+    assert_eq('stale reload then rerun: the rerun query is auto-run on the next reload', sandbox.postAllCalled, true);
+
+    /// The suppression must not leak onto OTHER tabs either: after a stale reload preserved one
+    /// tab's draft, switching into a clean run-backed tab whose own runs (under a `?run=1` load)
+    /// made its entries auto-runnable keeps `run=1` on its URL. Conversely a clean tab that only
+    /// ever ran under a PLAIN load stays unstamped — the `run=1` directive of one tab never makes
+    /// another tab's URLs auto-runnable. Both policy bits ride the persisted workspace
+    /// (`runnableUrl`), so they hold across the reload.
+    reset();
+    sandbox.run_immediately = false;   /// tab A's run happens under a plain (no run=1) load
+    await run('SELECT 10');
+    const plainTab = sandbox.activeTabId;
+    sandbox.run_immediately = true;    /// the rest of the session behaves as a `?run=1` load
+    sandbox.addTab();
+    await drain();
+    await run('SELECT 20');
+    const runBackedTab = sandbox.activeTabId;
+    sandbox.addTab();
+    await drain();
+    await run('SELECT 30');
+    type('SELECT 31');
+    await reload();
+    assert_eq('stale reload then switch: the draft is restored unrun', active().query, 'SELECT 31');
+    assert_eq('stale reload then switch: the preserved draft entry has no run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+    await sandbox.switchToTab(runBackedTab);
+    await drain();
+    assert_eq('stale reload then switch: the clean run=1-backed tab keeps run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), true);
+    await sandbox.switchToTab(plainTab);
+    await drain();
+    assert_eq('stale reload then switch: a tab never run under run=1 stays unstamped', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
 
     console.log('OK');
 })().catch(e => { console.error('FAIL: ' + (e && e.stack || e)); process.exit(1); });

@@ -4332,7 +4332,7 @@ let params_restore_pending_token = null;
 /// streaming into its own tab's element in the background. Panels are materialized lazily: a
 /// tab loaded from IndexedDB builds its DOM only when first activated. Per-tab runtime state
 /// (`resultEl`, `controller`, `reqNum`, `inFlight`, `progress`, `colorModes`, …) is transient
-/// and never persisted; only `{id,title,query,params,result,lastSavedQuery}` are saved.
+/// and never persisted; only `{id,title,query,params,result,lastSavedQuery,runnableUrl}` are saved.
 let tabs = [];           /// array of tab objects; display order == array order
 let activeTabId = null;
 let tabSeq = 0;          /// monotonic counter for synthetic, stable tab ids
@@ -4397,9 +4397,15 @@ const current_url = new URL(window.location);
 const opened_locally = location.protocol == 'file:';
 
 /// Run query instantly after page is loaded if the run parameter is present.
-/// Mutable: a stale reload (the URL hash is older than a persisted, never-run local edit)
-/// drops this directive so the edit is not auto-run just because the old URL carried `run=1`.
-let run_immediately = current_url.searchParams.has("run");
+/// An immutable load-time policy bit: whether THIS page load was asked to auto-run. Whether the
+/// deferred startup auto-run actually fires is decided separately by `reconcileStartup` (a stale
+/// reload or a dirty bootstrap spends the directive), and whether a WRITTEN history entry carries
+/// `run=1` is a per-tab decision (`tab.runnableUrl`, see `writeHistoryEntry`), so nothing mutates
+/// this flag after load. Deriving the entry marker from a mutable session-global leaked both
+/// ways: a suppression meant for one stale entry permanently stopped every later genuine run and
+/// clean tab from keeping `run=1`, while the surviving directive could stamp `run=1` onto an
+/// unrelated clean run-backed tab and auto-run it on the next reload.
+const run_immediately = current_url.searchParams.has("run");
 
 /// Restore per-column color coding modes from the URL, so a shared/bookmarked link keeps them.
 /// Seeded into the bootstrap tab's `colorModes` once it is created (see the bootstrap below).
@@ -7791,6 +7797,13 @@ function makeTab(title, query) {
         params: {},
         result: null,          /// last result snapshot (history-state shape) or null
         lastSavedQuery: undefined,
+        /// Whether this tab's history entries may carry `run=1` while the editor still reflects
+        /// the produced run. Set by a genuine run under a `?run=1` load (and adopted from a
+        /// Back/Forward entry whose URL already carries the marker), never by the load directive
+        /// alone — so a `run=1` URL meant for one tab cannot make another tab's URLs
+        /// auto-runnable (see `writeHistoryEntry`). Persisted with the tab, so a clean
+        /// run-backed tab stays reproducible from its shared `run=1` link across sessions.
+        runnableUrl: false,
         ...tabRuntimeDefaults(),
     };
 }
@@ -8366,6 +8379,10 @@ async function persist() {
                 /// reconciliation tell a stale reload (the URL hash is this tab's own last
                 /// synced query, but the tab was edited afterwards) from a fresh external URL.
                 lastSavedQuery: tab.lastSavedQuery,
+                /// The tab's `run=1` policy bit (see `makeTab`): persisted so a clean run-backed
+                /// tab keeps writing auto-runnable URLs across sessions, exactly as its own
+                /// entries were written.
+                runnableUrl: tab.runnableUrl,
             });
         }
         tx.objectStore(META_STORE).put({
@@ -8395,7 +8412,9 @@ function buildHistoryParams(params, tabName, fromRun, colorModes, pinnedColumns,
     const out = [];
     if (user) out.push('user=' + encodeURIComponent(user));
     /// Only carry `run=1` for an entry whose query/params were produced by a genuine run and
-    /// still match it (`fromRun`). `saveHistory` sets it on the run itself; the editor-only
+    /// still match it. `fromRun` here is the caller's FULL decision (`writeHistoryEntry`'s
+    /// `stamp_run`: the raw fromRun, the connection-divergence check AND the tab's own
+    /// `runnableUrl` policy bit). `saveHistory` sets it on the run itself; the editor-only
     /// writers (`syncHistory`/`refreshCurrentHistoryEntry`, driven by tab switch/rename,
     /// parameter edits and startup sync) recompute it from `tabReflectsRun`, preserving the
     /// marker while the editor is unchanged (so a shared `run=1` link whose result is not
@@ -8403,7 +8422,7 @@ function buildHistoryParams(params, tabName, fromRun, colorModes, pinnedColumns,
     /// rename), but dropping it the moment the editor diverges from the produced result. An
     /// unrun edit must never keep `run=1`: reloading would auto-execute it (e.g. a
     /// `DROP`/`INSERT`), because startup treats a `run=1` URL as authoritative.
-    if (run_immediately && fromRun) out.push('run=1');
+    if (fromRun) out.push('run=1');
     if (server_address != location.origin) out.push('url=' + encodeURIComponent(server_address));
     /// The selected database is a connection-scoped setting (like `user`/`url`): carry it so a
     /// shared or reloaded link resolves unqualified table names against the same database, and an
@@ -8553,6 +8572,13 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun) {
     const entry_server = use_snapshot ? run_snapshot.url : url_elem.value;
     const entry_user = use_snapshot ? run_snapshot.user : user_elem.value;
     const carries_run = fromRun && !live_diverged;
+    /// `run=1` additionally requires the tab's own `runnableUrl` policy bit (see `makeTab`): only
+    /// a tab whose entries a genuine run produced under a `?run=1` load — or that adopted such an
+    /// entry on Back/Forward — writes auto-runnable URLs. The load directive alone must not make
+    /// an entry auto-runnable: a `run=1` URL meant for one tab (possibly a pruned or
+    /// stale-reloaded one) would otherwise leak an auto-run onto whichever clean run-backed tab
+    /// an editor-only writer happens to sync next.
+    const stamp_run = carries_run && !!tab.runnableUrl;
     /// This write just made the current entry stop requesting the deferred startup auto-run (see
     /// `deferred_run_cancelled` above `reconcileStartup`): every editor-only writer that can drop
     /// `run=1` — a query/param edit, a tab switch, a database-panel click, a connection-field edit,
@@ -8560,7 +8586,7 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun) {
     /// cancel it individually. Setting it once the gate has already fired (e.g. from `saveHistory`,
     /// when the deferred run itself completes) is harmless: the flag is never consulted again after
     /// `reconcileStartup` has made its decision.
-    if (!carries_run) deferred_run_cancelled = true;
+    if (!stamp_run) deferred_run_cancelled = true;
 
     const state = {
         query: tab.query,
@@ -8602,12 +8628,13 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun) {
         pinned_columns = tab.pinnedColumns;
         if (tab.result) { tab.result.color_modes = tab.colorModes; tab.result.pinned_columns = tab.pinnedColumns; }
     }
-    /// `carries_run` (rather than the raw `fromRun`) drops `run=1` when the live connection/database
+    /// `stamp_run` (rather than the raw `fromRun`) drops `run=1` when the live connection/database
     /// diverged from the one the displayed result was produced against: auto-running the live target
     /// on reload would not reproduce it (and must not fire a write against the wrong server/database).
-    /// The producing user/server/database are serialized into the URL and stamped into the state so
+    /// It further requires the tab's own `runnableUrl` policy bit (see above). The producing
+    /// user/server/database are serialized into the URL and stamped into the state so
     /// Back/Forward can restore this entry's `database=` only while the live connection still matches.
-    const history_params = buildHistoryParams(tab.params, tab.title, carries_run, color_modes, pinned_columns, entry_user, entry_server, entry_database);
+    const history_params = buildHistoryParams(tab.params, tab.title, stamp_run, color_modes, pinned_columns, entry_user, entry_server, entry_database);
     let history_url = window.location.pathname;
     if (history_params.length > 0) history_url += '?' + history_params.join('&');
     history_url += '#' + toBase64(tab.query);
@@ -8638,6 +8665,17 @@ function sameParamValues(a, b)
     const a_names = Object.keys(a);
     if (a_names.length !== Object.keys(b).length) return false;
     return a_names.every(name => Object.prototype.hasOwnProperty.call(b, name) && a[name] === b[name]);
+}
+
+/// Whether the query text still contains a `{name:` parameter-placeholder opener for `name`
+/// (whitespace-tolerant). A conservative TEXTUAL test — no tokenization — for the one place the
+/// authoritative rebuild (`updateQueryParams` -> `syncParamsAfterRebuild`) cannot be awaited: it
+/// can only over-report (the pattern inside a string literal or comment), never miss a real
+/// placeholder, so a binding is dropped only when it is certainly gone from the text.
+function queryMentionsParam(text, name)
+{
+    const escaped = String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp('\\{\\s*' + escaped + '\\s*:').test(text || '');
 }
 
 /// True when the tab's editor (query + params) still exactly matches the query/params that
@@ -8685,9 +8723,10 @@ function tabReflectsRun(tab) {
 /// database-panel click, a connection edit, a tab operation — reaches this bail instead of
 /// `writeHistoryEntry`, yet it moved the live target away from what the deferred `run=1`
 /// auto-run was armed for, so it must cancel that run exactly as the entry write would have
-/// (see `deferred_run_cancelled` above `reconcileStartup`). The same `carries_run` rule as
+/// (see `deferred_run_cancelled` above `reconcileStartup`). The same `stamp_run` rule as
 /// `writeHistoryEntry` is applied: cancel unless the tab still reflects a run whose producing
-/// connection matches the live one. Setting the flag on a post-startup bail is harmless — it is
+/// connection matches the live one AND its own `runnableUrl` policy would keep the entry
+/// auto-runnable. Setting the flag on a post-startup bail is harmless — it is
 /// never consulted again after `reconcileStartup` has made its decision.
 ///
 /// When there is NO state yet we still seed one: a
@@ -8703,7 +8742,7 @@ function refreshCurrentHistoryEntry(tab) {
     if (!tab) return;
     const cur = history.state;
     if (cur && cur.tabId !== tab.id) {
-        if (!(tabReflectsRun(tab) && !liveDivergedFromRun(tab.result))) deferred_run_cancelled = true;
+        if (!(tabReflectsRun(tab) && !liveDivergedFromRun(tab.result) && tab.runnableUrl)) deferred_run_cancelled = true;
         return;
     }
     writeHistoryEntry(tab, undefined, /*forceReplace=*/ true, /*fromRun=*/ tabReflectsRun(tab));
@@ -8750,6 +8789,28 @@ function saveHistory(stateData, titleForDoc, tab) {
         for (const name of Object.keys(tab.params))
         {
             if (Object.prototype.hasOwnProperty.call(launched, name)) pruned[name] = tab.params[name];
+        }
+        tab.params = pruned;
+    }
+    /// When the draft DID move on (`!query_unchanged`), the entry below is written for the newer
+    /// draft (`tab.query`) — but `tab.params` may still describe the LAUNCHED text's placeholder
+    /// set: it is the edit's asynchronous input rebuild (`updateQueryParams`, via
+    /// `syncParamsAfterRebuild`) that folds the surviving inputs into the map, and this
+    /// completion can land before that rebuild does. Writing the entry from the stale map leaves
+    /// an observable window where the URL pairs the new draft with a removed placeholder's
+    /// binding (`/play?param_x=1#SELECT 1`) — a reload or a copied link taken in that window
+    /// resurrects the stale binding under a text that no longer has the placeholder. The rebuild
+    /// cannot be awaited here (the completed run must be recorded now), so prune conservatively
+    /// by TEXT: drop a binding only when the draft nowhere contains a placeholder opener for its
+    /// name (`queryMentionsParam`). A false keep (the pattern inside a string literal or comment)
+    /// is repaired in place when the rebuild lands, exactly as before; a surviving placeholder
+    /// keeps its binding either way.
+    else if (tab.params)
+    {
+        const pruned = {};
+        for (const name of Object.keys(tab.params))
+        {
+            if (queryMentionsParam(tab.query, name)) pruned[name] = tab.params[name];
         }
         tab.params = pruned;
     }
@@ -8808,6 +8869,14 @@ function saveHistory(stateData, titleForDoc, tab) {
         run_id: tab.launchRunId,
         elapsed_ns: stateData.elapsed_ns,
     };
+    /// A genuine run (re)stamps the tab's `run=1` policy (see `makeTab`): its entries may carry
+    /// the marker exactly when the page load that ran it was itself asked to auto-run (`?run=1`).
+    /// Assigned rather than merely set, so a run under a plain load clears a marker inherited
+    /// from an earlier `run=1` session — a plain session never writes auto-runnable URLs, exactly
+    /// as before. This is what lets an explicit run recover `run=1` after a stale reload
+    /// preserved an unrun draft (the suppression is scoped to that draft's entries, which stay
+    /// unstamped via `tabReflectsRun`, not to the whole session).
+    tab.runnableUrl = run_immediately;
     if (tab.id === activeTabId) {
         /// This entry was produced by an actual run, so it may carry `run=1` (a reload/shared link
         /// re-runs it). Editor-only writers (`syncHistory`/`refreshCurrentHistoryEntry`) never do.
@@ -8910,6 +8979,13 @@ window.onpopstate = function(event) {
         }
     }
     const tab = resolveTabForState(event.state);
+    /// Adopt the popped entry's own `run=1` marker into the tab's policy bit (see `makeTab`):
+    /// this entry was demonstrably written as auto-runnable — possibly by a previous session,
+    /// since history entries outlive the page — so later clean editor-only rewrites of this tab
+    /// must preserve the marker rather than dropping it for lack of a run in THIS session. Never
+    /// cleared here: an entry without the marker proves nothing (editor-only entries never carry
+    /// it), and the dirty/divergence checks in `writeHistoryEntry` still gate every future stamp.
+    if (popped_url.searchParams.get('run') !== null) tab.runnableUrl = true;
     /// Keep this history entry's identity in sync with the tab it actually resolves to, restamping
     /// BOTH the state's `tabId`/`tabName` and the URL's `tab=` key. Two cases need it:
     ///   - The entry named a now-closed tab and we recreated a fresh one (`tabId` changed): adopt
@@ -11786,6 +11862,7 @@ async function reconcileStartup() {
                 savedTabs.push({
                     id: r.id, title: r.title, query: r.query || '',
                     params: r.params || {}, result: r.result || null, lastSavedQuery: r.lastSavedQuery,
+                    runnableUrl: !!r.runnableUrl,
                     /// Attach fresh transient runtime state (panels/queries are materialized lazily on
                     /// first activation), seeding color modes and pinned columns from the persisted
                     /// result snapshot.
@@ -11850,14 +11927,12 @@ async function reconcileStartup() {
     /// A `stale_blank_reload_bare` URL is only a stale echo of a blank tab this load just pruned, so
     /// it is non-authoritative in every respect — including its `run=1` directive, which was written
     /// for that pruned tab, not for whichever surviving/bootstrap tab the reconciliation below falls
-    /// back to. The deferred auto-run is already skipped for it (see the `!stale_blank_reload_bare`
-    /// guard on `postAll` below), but the directive must also be dropped from the global
-    /// `run_immediately`: the trailing `syncHistory` recomputes `run=1` as `run_immediately &&
-    /// tabReflectsRun(tab)`, so a clean, run-backed fallback tab (e.g. a surviving `Report`) would
-    /// otherwise be re-stamped with `run=1` and auto-execute on the NEXT reload, inheriting an
-    /// auto-run the user never asked of it. `defer_run_for_reconcile` was captured before startup
-    /// ran, so clearing the flag here leaves that guard's behavior intact and only closes the leak.
-    if (stale_blank_reload_bare) run_immediately = false;
+    /// back to. The deferred auto-run is skipped for it (see the `!stale_blank_reload_bare` guard
+    /// on `postAll` below), and the directive cannot leak into the entries the trailing
+    /// `syncHistory` writes either: an entry carries `run=1` only through the fallback tab's OWN
+    /// `runnableUrl` policy bit (its own runs under a `?run=1` load — see `writeHistoryEntry`),
+    /// never through this load's directive, so a fallback tab that never wrote auto-runnable URLs
+    /// does not start doing so just because the pruned tab's stale URL carried `run=1`.
 
     if (savedTabs.length) {
         if (bootstrap_dirty) {
@@ -11871,13 +11946,12 @@ async function reconcileStartup() {
             /// Once the live bootstrap workspace wins, the startup `run=1` directive is spent: it
             /// was meant to auto-run the URL's original query in the bootstrap tab, but the user's
             /// live interaction superseded it and the deferred auto-run is skipped for a dirty
-            /// startup (see the `!bootstrap_dirty` guard on `postAll` below). It must also be
-            /// dropped from the global `run_immediately`, exactly as for `stale_blank_reload_bare`
-            /// above: otherwise the flag survives, and the next `syncHistory`/`saveHistory`
-            /// recomputes `run=1` as `run_immediately && tabReflectsRun(tab)`, so switching into a
-            /// clean, run-backed tab (e.g. a restored `Report`) would re-stamp `run=1` onto its URL
-            /// and auto-execute it on the NEXT reload — an auto-run the user never asked of it.
-            run_immediately = false;
+            /// startup (see the `!bootstrap_dirty` guard on `postAll` below). Nor can the
+            /// directive leak into later entry writes: `run=1` is stamped only through a tab's own
+            /// `runnableUrl` policy bit (see `writeHistoryEntry`), so switching into a restored
+            /// clean run-backed tab re-stamps the marker exactly when that tab's own runs made its
+            /// URLs auto-runnable — never merely because THIS load carried `run=1` for the
+            /// superseded bootstrap query.
             captureActiveTab();
             const liveTabs = tabs;
             /// Both id sequences start at `t1`, so the saved ids can collide with the live ids.
@@ -11915,8 +11989,10 @@ async function reconcileStartup() {
             /// foreign state first (unless the ids coincide, where the entry is already the live tab's
             /// to replace in place), then seed the entry wholesale from the live tab via
             /// `refreshCurrentHistoryEntry` — rebuilding the URL, `history.state`, hash and
-            /// `lastSavedQuery`, and dropping the stale `?tab=`/hash. (`run_immediately` was cleared
-            /// above, so the rebuilt URL cannot re-stamp `run=1`.) Older load-window entries keep the
+            /// `lastSavedQuery`, and dropping the stale `?tab=`/hash. (The rebuilt URL cannot
+            /// re-stamp `run=1`: the live tab has no clean run backing it — `tabReflectsRun` is
+            /// false — and only its own `runnableUrl` policy could carry the marker anyway, never
+            /// this load's spent directive.) Older load-window entries keep the
             /// stable live `tabId` and are restamped lazily by `onpopstate` on Back/Forward.
             const active_live = getActiveTab();
             if (active_live) {
@@ -11982,11 +12058,15 @@ async function reconcileStartup() {
                         /// and don't let the stale URL parameters override the saved ones.
                         preserve_local_query = true;
                         /// The URL's `run=1` was meant to auto-run the (now stale) URL query, not
-                        /// the newer local edit the user never ran. Drop the stale run directive so
-                        /// the edit is neither auto-run below nor re-stamped with `run=1` into the
-                        /// synced URL (which would auto-run it on the next reload). A destructive
-                        /// edit (e.g. `DROP`/`INSERT`) left unrun must stay unrun.
-                        run_immediately = false;
+                        /// the newer local edit the user never ran. The deferred auto-run below is
+                        /// skipped (`!preserve_local_query`), and the preserved draft's re-synced
+                        /// entry stays unstamped through the ordinary dirty check
+                        /// (`tabReflectsRun` is false for it), so a destructive edit (e.g.
+                        /// `DROP`/`INSERT`) left unrun stays unrun. The suppression is scoped to
+                        /// exactly those entries: a later EXPLICIT run of the draft is a genuine
+                        /// run under a `?run=1` load, so it re-stamps the tab's `runnableUrl`
+                        /// policy (see `saveHistory`) and its entry carries `run=1` again —
+                        /// reloading then re-runs what the user actually executed.
                     }
                 }
                 /// Whenever the URL carries a query and this is not a stale reload, the URL is
@@ -12097,8 +12177,8 @@ async function reconcileStartup() {
             /// (`reown_adopted_entry`) so it runs AFTER the URL parameters below are reconciled into
             /// the tab, letting the rebuilt entry/URL carry the authoritative `param_*` too (seeding
             /// here would rebuild the URL from the tab's not-yet-reconciled params and drop them).
-            /// `run_immediately` is untouched: a `run=1` URL takes the tail `postAll` path instead,
-            /// whose own history write then owns the entry.
+            /// The load's `run=1` directive needs no handling here: a `run=1` URL takes the tail
+            /// `postAll` path instead, whose own history write then owns the entry.
             if (history.state && history.state.tabId !== t.id) {
                 history.replaceState(null, document.title, location.href);
             }
@@ -12167,8 +12247,9 @@ async function reconcileStartup() {
         /// seed it exactly as a first trusted edit on a first-ever visit would, via the same
         /// `refreshCurrentHistoryEntry` — which rebuilds the URL, `history.state` and
         /// `lastSavedQuery` wholesale from the live tab, dropping the stale `?tab=`, `run=1` and
-        /// hash along the way (`run_immediately` was already cleared above, so the rebuilt URL
-        /// cannot re-stamp `run=1` either).
+        /// hash along the way (the rebuilt URL cannot re-stamp `run=1` either: the live edit is
+        /// not a clean run — `tabReflectsRun` is false — and only the tab's own `runnableUrl`
+        /// policy could carry the marker, never this load's stale directive).
         if (url_tab_name) {
             if (bootstrap_dirty) {
                 const live = getActiveTab();
@@ -12181,7 +12262,7 @@ async function reconcileStartup() {
             } else {
                 const cleaned_url = new URL(location.href);
                 cleaned_url.searchParams.delete('tab');
-                /// Drop the stale `run=1` too (`run_immediately` was likewise cleared above): it was
+                /// Drop the stale `run=1` too: it was
                 /// the pruned blank tab's directive, and leaving it in the persisted URL would
                 /// auto-run the fresh bootstrap tab on the next reload (the no-hash case takes the
                 /// synchronous bottom-of-script `postAll`, so this replaceState is what stops it

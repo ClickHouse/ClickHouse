@@ -40,4 +40,13 @@ reload after a color toggle over a draft: the draft is restored as editor text
 reload after a color toggle over a draft: the draft is not auto-run
 reload of a clean run: the run query is restored
 reload of a clean run: the run query is auto-run
+stale reload then rerun: the draft is restored unrun
+stale reload then rerun: the preserved draft entry has no run=1
+stale reload then rerun: the explicit rerun entry carries run=1
+stale reload then rerun: the rerun query is restored on the next reload
+stale reload then rerun: the rerun query is auto-run on the next reload
+stale reload then switch: the draft is restored unrun
+stale reload then switch: the preserved draft entry has no run=1
+stale reload then switch: the clean run=1-backed tab keeps run=1
+stale reload then switch: a tab never run under run=1 stays unstamped
 OK
