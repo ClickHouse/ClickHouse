@@ -289,12 +289,20 @@ void DatabaseOnDisk::createTable(
 
 /// If the table was detached permanently we will have a flag file with
 /// .sql.detached extension, is not needed anymore since we attached the table back
-void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & table_name, const String & table_metadata_path, bool)
+void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr local_context, const String & table_name, const String & table_metadata_path, bool)
 {
     auto db_disk = getDisk();
     try
     {
         fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
+
+        /// fsync the parent directory so the unlink survives a power loss (a directory-entry
+        /// change is durable only after the directory is fsync'd; the guard fsyncs on destruction).
+        /// Only when a marker exists: createTable calls this on every CREATE TABLE, usually without one.
+        SyncGuardPtr dir_sync_guard;
+        if (local_context->getSettingsRef()[Setting::fsync_metadata] && db_disk->existsFile(detached_permanently_flag))
+            dir_sync_guard = db_disk->getDirectorySyncGuard(getMetadataPath());
+
         db_disk->removeFileIfExists(detached_permanently_flag);
     }
     catch (Exception & e)
@@ -337,6 +345,15 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
     try
     {
         auto db_disk = getDisk();
+
+        /// fsync the parent directory so the marker survives a power loss, else the table silently
+        /// re-attaches on restart. The marker is an empty file, so only its directory entry matters
+        /// (a directory-entry change is durable only after the directory is fsync'd; the guard
+        /// fsyncs on destruction).
+        SyncGuardPtr dir_sync_guard;
+        if (query_context->getSettingsRef()[Setting::fsync_metadata])
+            dir_sync_guard = db_disk->getDirectorySyncGuard(getMetadataPath());
+
         db_disk->createFile(detached_permanently_flag);
 
         std::lock_guard lock(mutex);

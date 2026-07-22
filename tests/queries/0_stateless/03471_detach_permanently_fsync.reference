@@ -1,0 +1,3 @@
+detach permanently, fsync_metadata=1: DirectorySync >= 1
+attach, fsync_metadata=1: DirectorySync >= 1
+detach permanently, fsync_metadata=0: DirectorySync = 0
