@@ -104,6 +104,9 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
     extern const SettingsBool use_lightweight_primary_key_index_analysis;
+    extern const SettingsBool use_partition_pruning;
+    extern const SettingsBool use_primary_key;
+    extern const SettingsBool use_skip_indexes;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
@@ -1891,6 +1894,70 @@ size_t MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
             marks = std::max(marks, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
     }
     return std::max(marks, min_marks);
+}
+
+bool MergeTreeDataSelectExecutor::canExcludePartByIndexAnalysis(
+    const MergeTreeData::DataPartPtr & part,
+    const ActionsDAGWithInversionPushDown & filter_dag,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context,
+    LoggerPtr log)
+{
+    const auto & settings = context->getSettingsRef();
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+    auto storage_settings = part->storage.getSettings();
+
+    if (metadata_snapshot->hasPartitionKey())
+    {
+        PartitionPruner partition_pruner(
+            metadata_snapshot, filter_dag, context, /*strict=*/false, /*skip_analysis=*/!settings[Setting::use_partition_pruning]);
+
+        if (!partition_pruner.isUseless() && partition_pruner.canBePruned(*part))
+            return true;
+    }
+
+    if (auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, storage_settings); !minmax_columns.empty())
+    {
+        auto minmax_expression = MergeTreeData::getMinMaxExpr(partition_key, storage_settings, ExpressionActionsSettings(context));
+        KeyCondition minmax_idx_condition(
+            filter_dag, context, minmax_columns.getNames(), minmax_expression,
+            /*single_point_=*/false,
+            /*skip_analysis_=*/!settings[Setting::use_partition_pruning] || !settings[Setting::use_skip_indexes]);
+
+        if (!minmax_idx_condition.alwaysUnknownOrTrue()
+            && !minmax_idx_condition.checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns.getTypes()).can_be_true)
+            return true;
+    }
+
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    if (!primary_key.column_names.empty())
+    {
+        KeyCondition key_condition(
+            filter_dag, context, primary_key.column_names, primary_key.expression,
+            /*single_point_=*/false, /*skip_analysis_=*/!settings[Setting::use_primary_key]);
+
+        if (key_condition.alwaysFalse())
+            return true;
+
+        if (!key_condition.alwaysUnknownOrTrue())
+        {
+            auto mark_ranges = markRangesFromPKRange(
+                RangesInDataPart(part),
+                metadata_snapshot,
+                key_condition,
+                /*part_offset_condition=*/nullptr,
+                /*total_offset_condition=*/nullptr,
+                /*exact_ranges=*/nullptr,
+                /*pk_to_minmax_slot=*/nullptr,
+                settings,
+                log);
+
+            if (mark_ranges.empty())
+                return true;
+        }
+    }
+
+    return false;
 }
 
 /// Calculates a set of mark ranges, that could possibly contain keys, required by condition.
