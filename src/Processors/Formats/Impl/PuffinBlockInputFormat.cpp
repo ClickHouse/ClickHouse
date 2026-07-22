@@ -446,7 +446,10 @@ std::vector<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBuffer & seekab
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Puffin footer length: {}", footer_length_signed);
 
     UInt64 footer_trailer_size = 0;
-    if (common::addOverflow(static_cast<UInt64>(footer_length_signed), PUFFIN_FOOTER_TRAILER_SIZE, footer_trailer_size)
+    if (common::addOverflow(
+            static_cast<UInt64>(footer_length_signed),
+            static_cast<UInt64>(PUFFIN_FOOTER_TRAILER_SIZE),
+            footer_trailer_size)
         || footer_trailer_size > file_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Puffin footer length: {}", footer_length_signed);
 
