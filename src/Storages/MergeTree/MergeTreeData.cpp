@@ -294,6 +294,9 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_suspicious_broken_parts_bytes;
     extern const MergeTreeSettingsUInt64 max_suspicious_broken_parts;
     extern const MergeTreeSettingsUInt64 min_bytes_for_wide_part;
+    extern const MergeTreeSettingsUInt64 min_bytes_for_full_part_storage;
+    extern const MergeTreeSettingsUInt64 min_rows_for_full_part_storage;
+    extern const MergeTreeSettingsUInt32 min_level_for_full_part_storage;
     extern const MergeTreeSettingsUInt64 min_bytes_to_rebalance_partition_over_jbod;
     extern const MergeTreeSettingsUInt64 min_delay_to_insert_ms;
     extern const MergeTreeSettingsUInt64 min_delay_to_mutate_ms;
@@ -5592,6 +5595,10 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     if (satisfies((*settings)[MergeTreeSetting::min_bytes_for_wide_part], (*settings)[MergeTreeSetting::min_rows_for_wide_part], (*settings)[MergeTreeSetting::min_level_for_wide_part]))
         part_type = PartType::Compact;
 
+    auto storage_type = PartStorageType::Full;
+    if (satisfies((*settings)[MergeTreeSetting::min_bytes_for_full_part_storage], (*settings)[MergeTreeSetting::min_rows_for_full_part_storage], (*settings)[MergeTreeSetting::min_level_for_full_part_storage]))
+        storage_type = PartStorageType::Packed;
+
     /// The trained `pq` method of the `Quantize(...)` codec stores a per-part codebook (one artifact for the whole
     /// column, trained at serialization suffix). A compact part serializes each granule with a fresh serialization
     /// state, which would train and write a separate codebook per granule and leave the reader unable to pair each row
@@ -5599,25 +5606,33 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     /// part-level. The data-independent Quantize methods are stateless per row and work in either part format.
     if (part_type == PartType::Compact)
     {
-        const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-        for (const auto & column : metadata_snapshot->getColumns())
+        /// The invariant is about the columns physically written into this part, so for a projection part
+        /// inspect the projection's own columns rather than the base table's: a `Quantize('pq')` column on
+        /// the table that the projection never materializes must not force the projection part to Wide.
+        /// Hold the table metadata snapshot in a local so its columns reference stays alive for the loop.
+        StorageMetadataHandle table_metadata;
+        if (!projection)
+            table_metadata = getInMemoryMetadataPtr(getContext(), false);
+        const auto & columns = projection ? projection->metadata->getColumns() : table_metadata->getColumns();
+        for (const auto & column : columns)
         {
             const auto params = tryExtractQuantizedCodecParams(column.codec);
             if (params && params->method == "product")
             {
                 part_type = PartType::Wide;
+                storage_type = PartStorageType::Full;
                 break;
             }
         }
     }
 
-    return {part_type, PartStorageType::Full};
+    return {part_type, storage_type};
 }
 
 MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
-    const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_) const
+    const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_, bool part_may_exist_on_disk) const
 {
-    return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_);
+    return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_, part_may_exist_on_disk);
 }
 
 void MergeTreeData::changeSettings(
@@ -10256,11 +10271,13 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
 
     /// Check that the storage policy contains the disk where the src_part is located.
     bool on_same_disk = false;
+    DiskPtr same_disk;
     for (const DiskPtr & disk : getStoragePolicy()->getDisks())
     {
         if (disk->getName() == src_part->getDataPartStorage().getDiskName())
         {
             on_same_disk = true;
+            same_disk = disk;
             break;
         }
     }
@@ -10283,9 +10300,26 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     if (params.copy_instead_of_hardlink)
         with_copy = " (copying data)";
 
+    /// Reclaim a stale leftover destination directory (e.g. tmp_clone_* / tmp_* left by a clone that was
+    /// interrupted or rolled back and then retried with the same deterministic name) before freeze
+    /// constructs the destination storage. Otherwise packed storage seeds its archive reader from the
+    /// leftover data.packed, and finalizeWriter carries stale archive members that the current source
+    /// does not rewrite into the new clone. The temporary-directory lock above guarantees no concurrent
+    /// operation owns this name, so an existing directory can only be such a stale leftover.
+    auto reclaim_stale_destination = [&](const DiskPtr & dst_disk)
+    {
+        auto relative_dst_dir = fs::path(relative_data_path) / tmp_dst_part_name;
+        if (dst_disk->existsDirectory(relative_dst_dir))
+        {
+            LOG_WARNING(log, "Removing old temporary directory {}", (fs::path(dst_disk->getPath()) / relative_dst_dir).string());
+            dst_disk->removeRecursive(relative_dst_dir);
+        }
+    };
+
     std::shared_ptr<IDataPartStorage> dst_part_storage{};
     if (on_same_disk)
     {
+        reclaim_stale_destination(same_disk);
         dst_part_storage = src_part_storage->freeze(
             relative_data_path,
             tmp_dst_part_name,
@@ -10302,10 +10336,12 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             const auto & error = reservation_on_dst_or_error.error();
             throw Exception(error.message, error.code);
         }
+        auto dst_disk = (*reservation_on_dst_or_error)->getDisk();
+        reclaim_stale_destination(dst_disk);
         dst_part_storage = src_part_storage->freezeRemote(
             relative_data_path,
             tmp_dst_part_name,
-            /* dst_disk = */ (*reservation_on_dst_or_error)->getDisk(),
+            /* dst_disk = */ dst_disk,
             read_settings,
             write_settings,
             /* save_metadata_callback= */ {},
@@ -10315,7 +10351,13 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     if (params.metadata_version_to_write.has_value())
     {
         chassert(!params.keep_metadata_version);
-        auto out_metadata = dst_part_storage->writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, getContext()->getWriteSettings());
+
+        dst_part_storage->beginTransaction();
+        auto out_metadata = dst_part_storage->writeFile(
+            IMergeTreeDataPart::METADATA_VERSION_FILE_NAME,
+            /*buf_size=*/ 4096,
+            getContext()->getWriteSettings());
+
         writeText(metadata_snapshot->getMetadataVersion(), *out_metadata);
         out_metadata->finalize();
         if ((*getSettings())[MergeTreeSetting::fsync_after_insert])
@@ -10332,7 +10374,14 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         .withPartFormatFromDisk()
         .build();
 
-    if (!params.copy_instead_of_hardlink && params.hardlinked_files)
+    /// When the source is packed and freeze copies the whole data.packed archive (rather than
+    /// hardlinking it), none of the archive's logical members - of the part or its packed projections -
+    /// share a blob with the source. Recording them as hardlinks would make zero-copy keep the source
+    /// blob alive for a child that owns a fresh copy, leaking it once the source is removed. The archive
+    /// is the only thing that could be hardlinked here (the separate files below are excluded anyway),
+    /// so in that case there is nothing to record.
+    if (!params.copy_instead_of_hardlink && params.hardlinked_files
+        && !src_part->getDataPartStorage().cloneCopiesWholeArchive(params))
     {
         params.hardlinked_files->source_part_name = src_part->name;
         params.hardlinked_files->source_table_shared_id = src_part->storage.getTableSharedID();
@@ -10363,6 +10412,10 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             }
         }
     }
+
+    auto & destination_storage = dst_data_part->getDataPartStorage();
+    if (destination_storage.hasActiveTransaction())
+        destination_storage.commitTransaction();
 
     /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
     TransactionID tid = params.txn ? params.txn->tid : Tx::NonTransactionalTID;
@@ -11876,6 +11929,29 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
 
     auto tmp_dir_holder = getTemporaryPartDirectoryHolder(EMPTY_PART_TMP_PREFIX + new_part_name);
+
+    auto empty_part_disk = data_part_volume->getDisk();
+    auto relative_empty_part_dir = fs::path(relative_data_path) / (EMPTY_PART_TMP_PREFIX + new_part_name);
+
+    /// For testing: simulate a stale leftover directory from a previously interrupted operation.
+    fiu_do_on(FailPoints::create_empty_part_inject_stale_dir,
+    {
+        empty_part_disk->createDirectories(relative_empty_part_dir);
+    });
+
+    /// The directory may already exist as a stale leftover: a previous covering operation
+    /// (DROP/DETACH/MOVE/REPLACE PARTITION) that created this empty part can be interrupted after the
+    /// directory is created but before the part is renamed to its persistent name (e.g. a rolled-back
+    /// transaction with a deferred rename, or a crash). The tmp_dir_holder acquired above guarantees no
+    /// concurrent operation owns this name, so an existing directory can only be such a leftover and is
+    /// safe to remove. Remove it BEFORE constructing the storage, so packed storage does not seed its
+    /// archive reader or snapshot the mark layout (index_granularity_info) from the stale contents.
+    if (empty_part_disk->existsDirectory(relative_empty_part_dir))
+    {
+        LOG_WARNING(log, "Removing old temporary directory {}", (fs::path(empty_part_disk->getPath()) / relative_empty_part_dir).string());
+        empty_part_disk->removeRecursive(relative_empty_part_dir);
+    }
+
     auto new_data_part = getDataPartBuilder(new_part_name, data_part_volume, EMPTY_PART_TMP_PREFIX + new_part_name, getReadSettings())
         .withBytesAndRows(0, 0, 0)
         .withPartInfo(new_part_info)
@@ -11910,29 +11986,6 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
     auto new_data_part_storage = new_data_part->getDataPartStoragePtr();
-
-    /// For testing: simulate a stale leftover directory from a previously interrupted operation.
-    fiu_do_on(FailPoints::create_empty_part_inject_stale_dir,
-    {
-        new_data_part_storage->createDirectories();
-    });
-
-    /// The directory may already exist as a stale leftover: a previous covering operation
-    /// (DROP/DETACH/MOVE/REPLACE PARTITION) that created this empty part can be interrupted
-    /// after the directory is created but before the part is renamed to its persistent name
-    /// (e.g. a rolled-back transaction with a deferred rename, or a crash). The in-memory
-    /// `tmp_dir_holder` acquired above guarantees no concurrent operation owns this name right
-    /// now (getTemporaryPartDirectoryHolder throws otherwise), so an existing directory can only
-    /// be such a leftover and is safe to remove. This mirrors the regular INSERT path in
-    /// MergeTreeDataWriter, which reclaims a stale temporary directory instead of failing. Done
-    /// before beginTransaction() so the removal is not staged in the part's own (not yet started)
-    /// write transaction.
-    if (new_data_part_storage->exists())
-    {
-        LOG_WARNING(log, "Removing old temporary directory {}", new_data_part_storage->getFullPath());
-        new_data_part_storage->removeRecursive();
-    }
-
     new_data_part_storage->beginTransaction();
 
     SyncGuardPtr sync_guard;

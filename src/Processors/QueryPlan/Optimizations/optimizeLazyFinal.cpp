@@ -5,6 +5,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/PreparedSets.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/InputSelectorStep.h>
@@ -13,6 +14,7 @@
 #include <Processors/QueryPlan/LazilyUnorderedReadFromMergeTree.h>
 #include <Processors/QueryPlan/LazyFinalKeyAnalysisStep.h>
 #include <Processors/QueryPlan/LazyReadReplacingFinalStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/Sources/LazyFinalSharedState.h>
@@ -266,14 +268,16 @@ struct SplitResult
 
 /// Try to split parts into non-intersecting and intersecting by primary key.
 /// If all parts are non-intersecting, replaces the plan node directly and returns fully_replaced=true.
-/// Otherwise returns a plan for non-intersecting parts (or nullptr if none), and updates
-/// the reading step's analyzed result to contain only intersecting parts.
+/// Otherwise, if allow_partial_split is set, returns a plan for non-intersecting parts (or nullptr
+/// if none), and updates the reading step's analyzed result to contain only intersecting parts;
+/// if not set, leaves the reading step untouched and returns fully_replaced=true to stop.
 static SplitResult trySplitNonIntersectingParts(
     ReadFromMergeTree * reading_step,
     ReadFromMergeTree::AnalysisResultPtr analyzed_result,
     FilterStep * filter_step,
     QueryPlan::Node * read_node,
-    QueryPlan & query_plan)
+    QueryPlan & query_plan,
+    bool allow_partial_split)
 {
     const auto & metadata_snapshot = reading_step->getStorageMetadata();
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
@@ -315,6 +319,11 @@ static SplitResult trySplitNonIntersectingParts(
     /// index. Leave the reading step untouched so the query falls back to a regular FINAL read.
     /// Must come before the `non_intersecting_parts_ranges.empty()` check to cover the all-intersecting case.
     if (!reading_step->getIndexReadTasks().empty())
+        return {.non_intersecting_plan = nullptr, .fully_replaced = true};
+
+    /// For queries that can stop reading early the set-building plan is a pessimization, and the
+    /// partial split alone does not preserve the reading order; keep the regular FINAL read.
+    if (!allow_partial_split)
         return {.non_intersecting_plan = nullptr, .fully_replaced = true};
 
     if (split.non_intersecting_parts_ranges.empty())
@@ -385,9 +394,58 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     if (data.merging_params.mode != MergeTreeData::MergingParams::Replacing)
         return;
 
+    /// The steps above may rely on the reading step producing rows in the order of the
+    /// sorting key, but the set-building replacement plan does not produce rows in any
+    /// particular order. Besides, read-in-order queries can often stop early, while the
+    /// set-building phase would read all filtered rows up front. Such queries may still
+    /// use the full non-intersecting replacement, which preserves both the order and the
+    /// early exit — the flag is checked before the partial split below.
+    const bool reading_in_order = reading_step->readsInOrder();
+
     /// Skip if projection was applied.
     if (reading_step->getAnalyzedResult())
         return;
+
+    /// Find a LIMIT that applies directly to the reading step's output (only Expression/Filter
+    /// steps in between). Such a limit lets the query stop reading early, which the set-building
+    /// phase would defeat. Any other step consumes the whole stream and stops the search.
+    size_t limit_above_reading = 0;
+    for (size_t i = stack.size() - 1; i-- > 0;)
+    {
+        auto * step = stack[i].node->step.get();
+        if (const auto * expression_step = typeid_cast<ExpressionStep *>(step))
+        {
+            /// arrayJoin changes the number of rows, a limit above it is not comparable to selected_rows.
+            if (expression_step->getExpression().hasArrayJoin())
+                break;
+            continue;
+        }
+        if (const auto * filter_step_above = typeid_cast<FilterStep *>(step))
+        {
+            if (filter_step_above->getExpression().hasArrayJoin())
+                break;
+            continue;
+        }
+        /// DISTINCT stops reading as soon as its pushed-down limit hint of distinct rows is produced.
+        /// The DISTINCT transform honors the hint even when the enclosing limit has
+        /// always_read_till_end (e.g. exact_rows_before_limit), so any non-zero hint means the
+        /// query terminates reading early; if the hint seeding ever starts to account for that,
+        /// this check follows automatically.
+        if (const auto * distinct_step = typeid_cast<DistinctStep *>(step))
+        {
+            limit_above_reading = distinct_step->getLimitHint();
+            break;
+        }
+        /// With always_read_till_end (e.g. exact_rows_before_limit or WITH TOTALS) the query
+        /// reads the whole stream anyway, so the limit does not allow to stop reading early.
+        if (const auto * limit_step = typeid_cast<LimitStep *>(step); limit_step && !limit_step->alwaysReadTillEnd())
+        {
+            size_t limit = limit_step->getLimit();
+            size_t offset = limit_step->getOffset();
+            limit_above_reading = limit + offset < limit ? std::numeric_limits<size_t>::max() : limit + offset;
+        }
+        break;
+    }
 
     /// Check the immediate parent for a FilterStep or InputSelectorStep.
     FilterStep * filter_step = nullptr;
@@ -419,12 +477,17 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     if (reading_step->getParts().empty())
         return;
 
+    /// A limit below the number of selected rows means the query is expected to finish early.
+    const bool stops_reading_early = reading_in_order
+        || (limit_above_reading && analyzed_result && limit_above_reading < analyzed_result->selected_rows);
+
     /// Split parts into non-intersecting (unique key ranges, no FINAL needed) and
     /// intersecting (overlapping, need FINAL). This avoids running the expensive
     /// aggregation-based FINAL on parts that have no duplicates.
     /// When all parts are non-intersecting, replaceNodeWithPlan is called inside
     /// and fully_replaced is set — in that case we're done.
-    auto split_result = trySplitNonIntersectingParts(reading_step, analyzed_result, filter_step, read_node, query_plan);
+    auto split_result = trySplitNonIntersectingParts(
+        reading_step, analyzed_result, filter_step, read_node, query_plan, /*allow_partial_split=*/ !stops_reading_early);
 
     if (split_result.fully_replaced)
         return;
