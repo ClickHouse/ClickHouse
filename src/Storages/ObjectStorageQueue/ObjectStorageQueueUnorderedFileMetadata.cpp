@@ -74,7 +74,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     auto result = prepareProcessingRequestsImpl(requests, generateProcessingID());
 
     Coordination::Responses responses;
-    Coordination::Error code = {};
+    Coordination::Error code;
 
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     zk_retry.retryLoop([&]

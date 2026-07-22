@@ -1,7 +1,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTStreamSettings.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
@@ -39,7 +38,6 @@ ASTPtr ASTTableExpression::clone() const
     CLONE(sample_size);
     CLONE(sample_offset);
     CLONE(column_aliases);
-    CLONE(stream_settings);
 
     return res;
 }
@@ -160,18 +158,6 @@ void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & s
             ostr << ' '
                 << "OFFSET ";
             sample_offset->format(ostr, settings, state, frame);
-        }
-    }
-
-    if (stream_settings)
-    {
-        ostr << settings.nl_or_ws << indent_str << "STREAM";
-
-        const auto & typed_stream_settings = stream_settings->as<ASTStreamSettings &>();
-        if (typed_stream_settings.settings.cursor_tree.has_value())
-        {
-            ostr << ' ';
-            stream_settings->format(ostr, settings, state, frame);
         }
     }
 }

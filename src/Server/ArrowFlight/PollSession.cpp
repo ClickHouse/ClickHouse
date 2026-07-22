@@ -2,7 +2,6 @@
 
 #if USE_ARROWFLIGHT
 
-#include <Common/ThreadStatus.h>
 #include <Core/Settings.h>
 #include <Core/Block.h>
 #include <Common/logger_useful.h>

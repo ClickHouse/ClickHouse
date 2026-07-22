@@ -38,35 +38,13 @@ static const auto TEMPORARY_CREDENTIALS_ENDPOINT = "temporary-table-credentials"
 static const std::unordered_set<std::string> READABLE_TABLES = {"TABLE_DELTA", "TABLE_DELTA_EXTERNAL"};
 static const auto READABLE_DATA_SOURCE_FORMAT = "DELTA";
 
-/// A Unity table is readable only if it is a DeltaLake table. `securable_kind`,
-/// `data_source_format` and `storage_location` are in the bulk listing, so this matches `tryGetTableMetadata`.
-static bool isReadableUnityTable(const Poco::JSON::Object::Ptr & table)
-{
-    if (!hasValueAndItsNotNone("storage_location", table))
-        return false;
-
-    const bool has_securable_kind = hasValueAndItsNotNone("securable_kind", table);
-    const bool has_data_source_format = hasValueAndItsNotNone("data_source_format", table);
-
-    if (has_securable_kind && !READABLE_TABLES.contains(table->get("securable_kind").extract<String>()))
-        return false;
-
-    if (has_data_source_format && table->get("data_source_format").extract<String>() != READABLE_DATA_SOURCE_FORMAT)
-        return false;
-
-    if (!has_securable_kind && !has_data_source_format)
-        return false;
-
-    return true;
-}
-
 struct UnityCatalogFullSchemaName
 {
     std::string catalog_name;
     std::string schema_name;
 };
 
-static UnityCatalogFullSchemaName parseFullSchemaName(const std::string & full_name)
+UnityCatalogFullSchemaName parseFullSchemaName(const std::string & full_name)
 {
     auto first_dot = full_name.find('.');
     auto catalog_name = full_name.substr(0, first_dot);
@@ -98,9 +76,9 @@ bool UnityCatalog::empty() const
     return true;
 }
 
-CatalogTables UnityCatalog::getTables() const
+DB::Names UnityCatalog::getTables() const
 {
-    CatalogTables result;
+    DB::Names result;
 
     auto all_schemas = getSchemas("");
     for (const auto & schema : all_schemas)
@@ -110,17 +88,6 @@ CatalogTables UnityCatalog::getTables() const
     }
 
     return result;
-}
-
-DataLake::ICatalog::Namespaces UnityCatalog::getNamespaces() const
-{
-    /// Unity schemas are flat — they cannot contain nested namespaces.
-    return getSchemas("");
-}
-
-CatalogTables UnityCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
-{
-    return getTablesForSchema(namespace_name);
 }
 
 void UnityCatalog::getTableMetadata(
@@ -334,14 +301,14 @@ bool UnityCatalog::existsTable(const std::string & schema_name, const std::strin
     }
 }
 
-CatalogTables UnityCatalog::getTablesForSchema(const std::string & schema, size_t limit) const
+DB::Names UnityCatalog::getTablesForSchema(const std::string & schema, size_t limit) const
 {
     Poco::URI::QueryParameters params;
     params.push_back({"catalog_name", warehouse});
     params.push_back({"schema_name", schema});
     params.push_back({"max_results", DB::toString(limit)});
 
-    CatalogTables tables;
+    DB::Names tables;
     do
     {
         String json_str;
@@ -364,10 +331,7 @@ CatalogTables UnityCatalog::getTablesForSchema(const std::string & schema, size_
                 const auto current_table_json = tables_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
                 const auto table_name = current_table_json->get("name").extract<String>();
 
-                tables.push_back(CatalogTable{
-                    .name = schema + "." + table_name,
-                    .is_readable = isReadableUnityTable(current_table_json),
-                });
+                tables.push_back(schema + "." + table_name);
                 if (limit && tables.size() >= limit)
                     break;
             }

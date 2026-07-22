@@ -4,7 +4,7 @@
 namespace DB
 {
 
-String getHintsErrorMessageSuffix(const VectorWithMemoryTracking<String> & hints)
+String getHintsErrorMessageSuffix(const std::vector<String> & hints)
 {
     if (hints.empty())
         return {};
@@ -12,7 +12,7 @@ String getHintsErrorMessageSuffix(const VectorWithMemoryTracking<String> & hints
     return ". Maybe you meant: " + toString(hints);
 }
 
-void appendHintsMessage(String & message, const VectorWithMemoryTracking<String> & hints)
+void appendHintsMessage(String & message, const std::vector<String> & hints)
 {
     message += getHintsErrorMessageSuffix(hints);
 }

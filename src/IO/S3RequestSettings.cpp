@@ -102,7 +102,12 @@ S3RequestSettings::S3RequestSettings(const S3RequestSettings & settings)
 {
 }
 
-S3RequestSettings::S3RequestSettings(S3RequestSettings && settings) noexcept = default;
+S3RequestSettings::S3RequestSettings(S3RequestSettings && settings) noexcept
+    : request_throttler(std::move(settings.request_throttler))
+    , proxy_resolver(std::move(settings.proxy_resolver))
+    , impl(std::make_unique<S3RequestSettingsImpl>(std::move(*settings.impl)))
+{
+}
 
 S3RequestSettings::S3RequestSettings(
     const Poco::Util::AbstractConfiguration & config,
@@ -117,16 +122,6 @@ S3RequestSettings::S3RequestSettings(
         auto path = fmt::format("{}.{}{}", config_prefix, setting_name_prefix, field.getName());
 
         bool updated = S3::setValueFromConfig(config, path, field);
-
-        /// The storage class option has two interchangeable names: `storage_class_name` (the canonical
-        /// request setting) and `storage_class` (used by the BACKUP command and historical disk configs,
-        /// e.g. `s3_storage_class`). Accept both so configurations are interchangeable. See issue #68551.
-        if (!updated && field.getName() == "storage_class_name")
-        {
-            auto legacy_path = fmt::format("{}.{}storage_class", config_prefix, setting_name_prefix);
-            updated = S3::setValueFromConfig(config, legacy_path, field);
-        }
-
         if (!updated)
         {
             auto setting_name = "s3_" + field.getName();
@@ -143,12 +138,7 @@ S3RequestSettings::S3RequestSettings(const NamedCollection & collection, const D
     auto values = impl->allMutable();
     for (auto & field : values)
     {
-        auto path = field.getName();
-
-        /// `storage_class` is an interchangeable alias for `storage_class_name` (see issue #68551).
-        if (!collection.has(path) && field.getName() == "storage_class_name" && collection.has("storage_class"))
-            path = "storage_class";
-
+        const auto path = field.getName();
         if (collection.has(path))
         {
             auto which = field.getValue().getType();
@@ -169,7 +159,14 @@ S3RequestSettings::~S3RequestSettings() = default;
 
 S3REQUEST_SETTINGS_SUPPORTED_TYPES(S3RequestSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
-S3RequestSettings & S3RequestSettings::operator=(S3RequestSettings && settings) noexcept = default;
+S3RequestSettings & S3RequestSettings::operator=(S3RequestSettings && settings) noexcept
+{
+    request_throttler = std::move(settings.request_throttler);
+    proxy_resolver = std::move(settings.proxy_resolver);
+    *impl = std::move(*settings.impl);
+
+    return *this;
+}
 
 void S3RequestSettings::updateFromSettings(const DB::Settings & settings, bool if_changed, bool validate_settings)
 {
@@ -227,7 +224,7 @@ void S3RequestSettings::validateUploadSettings()
                 ErrorCodes::INVALID_SETTING_VALUE,
                 "Setting upload_part_size_multiply_parts_count_threshold cannot be zero");
 
-        size_t maybe_overflow = 0;
+        size_t maybe_overflow;
         if (common::mulOverflow((*this)[S3RequestSetting::max_upload_part_size].value, (*this)[S3RequestSetting::upload_part_size_multiply_factor].value, maybe_overflow))
             throw Exception(
                             ErrorCodes::INVALID_SETTING_VALUE,
@@ -236,11 +233,11 @@ void S3RequestSettings::validateUploadSettings()
                             (*this)[S3RequestSetting::upload_part_size_multiply_factor].value, ReadableSize((*this)[S3RequestSetting::max_upload_part_size].value));
     }
 
-    NameSet storage_class_names {"STANDARD", "REDUCED_REDUNDANCY", "STANDARD_IA", "ONEZONE_IA", "INTELLIGENT_TIERING", "GLACIER_IR", "EXPRESS_ONEZONE"};
+    std::unordered_set<String> storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};
     if (!(*this)[S3RequestSetting::storage_class_name].value.empty() && !storage_class_names.contains((*this)[S3RequestSetting::storage_class_name]))
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting storage_class has invalid value {}: this storage class is not supported for ClickHouse S3 disks",
+            "Setting storage_class has invalid value {} which only supports STANDARD and INTELLIGENT_TIERING",
             (*this)[S3RequestSetting::storage_class_name].value);
 
     /// TODO: it's possible to set too small limits.
@@ -317,14 +314,6 @@ S3RequestSettings S3RequestSettings::deserialize(ReadBuffer & in, ContextPtr con
     result.finishInit(context->getSettingsRef(), false);
     /// TODO Proxy Configuration
     return result;
-}
-
-std::map<String, String> S3RequestSettings::getSettingsRepresentation() const // STYLE_CHECK_ALLOW_STD_CONTAINERS
-{
-    std::map<String, String> res; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    for (const auto & field : impl->all())
-        res[String{field.getName()}] = field.getValueString();
-    return res;
 }
 
 }

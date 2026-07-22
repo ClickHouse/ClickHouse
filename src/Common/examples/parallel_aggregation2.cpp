@@ -18,7 +18,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
-#include <Examples/clickhouse_examples.h>
 
 
 namespace CurrentMetrics
@@ -61,7 +60,7 @@ struct AggregateIndependent
                 for (auto it = begin; it != end; ++it)
                 {
                     typename Map::LookupResult place;
-                    bool inserted = {};
+                    bool inserted;
                     map.emplace(*it, place, inserted);
 
                     if (inserted)
@@ -102,15 +101,15 @@ struct AggregateIndependentWithSequentialKeysOptimization
                 {
                     if (it != begin && *it == prev_key)
                     {
-                        chassert(place != nullptr);
+                        assert(place != nullptr);
                         updater(place->getMapped()); // NOLINT
                         continue;
                     }
                     prev_key = *it;
 
-                    bool inserted = {};
+                    bool inserted;
                     map.emplace(*it, place, inserted);
-                    chassert(place != nullptr);
+                    assert(place != nullptr);
 
                     if (inserted)
                         creator(place->getMapped());
@@ -192,7 +191,7 @@ struct MergeParallelForTwoLevelTable
                 for (size_t i = 0; i < num_maps; ++i)
                     section[i] = &source_maps[i]->impls[bucket];
 
-                typename Map::Impl * res = nullptr;
+                typename Map::Impl * res;
                 ImplMerge::execute(section.data(), num_maps, res, merger, pool);
             });
 
@@ -239,7 +238,7 @@ struct Work
         for (size_t i = 0; i < num_maps; ++i)
             intermediate_results_ptrs[i] = intermediate_results[i].get();
 
-        Map * result_map = nullptr;
+        Map * result_map;
         Merge::execute(intermediate_results_ptrs.data(), num_maps, result_map, std::forward<Merger>(merger), pool);
 
         watch.stop();

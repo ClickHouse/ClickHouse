@@ -327,7 +327,7 @@ bool ExistsCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuer
 void ExistsCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClientBase * client) const
 {
     auto path = client->getAbsolutePath(query->args[0].safeGet<String>());
-    bool result = false;
+    bool result;
     if (query->args.size() == 2)
     {
         auto watch_id = query->args[1].safeGet<String>();
@@ -769,7 +769,7 @@ bool ReconfigCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQu
     ParserKeyword s_remove(Keyword::REMOVE);
     ParserKeyword s_set(Keyword::SET);
 
-    ReconfigCommand::Operation operation = {};
+    ReconfigCommand::Operation operation;
     if (s_add.ignore(pos, expected))
         operation = ReconfigCommand::Operation::ADD;
     else if (s_remove.ignore(pos, expected))
