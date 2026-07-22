@@ -1656,9 +1656,13 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
     /// the bad metadata cannot reach a mutation writer. Following the normal selection matters beyond
     /// the untyped streams: a mutation reuses the part default as the codec for every rewritten column
     /// without an explicit `CODEC(...)`, and a hardcoded fallback (`LZ4`) would silently move such
-    /// columns off a table default like `ZSTD(3)`. The part's TTL infos are deliberately not passed:
-    /// resolving a matching `RECOMPRESS` codec into the part default would make the part look already
-    /// recompressed (see `PartProperties::buildRecompressTTLInfo`) and suppress the recompression merge.
+    /// columns off a table default like `ZSTD(3)`. The part's actual compressed size is passed (the same
+    /// value the normal full-rewrite mutation path uses, see `MutateTask`), so that a server
+    /// `<compression>` selector with size thresholds picks the case this part's size warrants rather than
+    /// the smallest-part case a zero size would always match. The part's TTL infos are deliberately not
+    /// passed: resolving a matching `RECOMPRESS` codec into the part default would make the part look
+    /// already recompressed (see `PartProperties::buildRecompressTTLInfo`) and suppress the recompression
+    /// merge.
     if (default_codec->requiresColumnTypeToCompress() || default_codec->isExperimental())
     {
         LOG_WARNING(
@@ -1666,7 +1670,7 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
             "Part {} has a default compression codec that cannot be used for untyped streams (it requires a column "
             "type or is experimental); falling back to the table's default codec.",
             name);
-        default_codec = storage.getCompressionCodecForPart(0, {}, time(nullptr));
+        default_codec = storage.getCompressionCodecForPart(getBytesOnDisk(), {}, time(nullptr));
 
         /// The selection above never returns a codec unsafe for untyped data; this is a fail-safe for
         /// a future drift of that invariant, because such a codec would corrupt data at the next write.

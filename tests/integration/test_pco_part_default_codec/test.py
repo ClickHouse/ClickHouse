@@ -14,6 +14,12 @@ cluster = ClickHouseCluster(__file__)
 # metadata. The part-load path must enforce the same invariant (fall back to the server default codec)
 # so the bad metadata cannot reach a mutation writer and fail with a confusing write-time error.
 node = cluster.add_instance("node")
+# A node whose default codec comes from a size-based `<compression>` selector (parts >= 1000 bytes use
+# `ZSTD(3)`, smaller parts fall through to `LZ4`) rather than from the `default_compression_codec`
+# setting, to exercise the selector's size thresholds when sanitizing a part default codec on load.
+node_selector = cluster.add_instance(
+    "node_selector", main_configs=["configs/compression_selector.xml"]
+)
 
 
 @pytest.fixture(scope="module")
@@ -90,3 +96,58 @@ def test_part_default_codec_experimental_is_sanitized_on_load(start_cluster):
     # `<compression>` selector predicate. Without that, `ALP` would slip through and corrupt or reject
     # the opaque statistics bytes at the first mutation.
     check_part_default_codec_is_sanitized_on_load("t_alp_default", "ALP")
+
+
+def test_sanitized_part_default_codec_follows_selector_part_size(start_cluster):
+    # Sanitizing the part default must evaluate the server `<compression>` selector with the part's real
+    # size, not a zero size. Otherwise a large attached / pre-fix part whose recorded default is `PCO`
+    # would sanitize to the selector's smallest-part case (`LZ4`) even though ordinary writes for a part
+    # of this size choose `ZSTD(3)` — and the column-rewrite mutation path reuses that cached part
+    # default codec for every rewritten column, silently moving the data off `ZSTD(3)`.
+    table = "t_selector_default"
+    node_selector.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node_selector.query(
+        f"""
+        CREATE TABLE {table} (key UInt64, value Int64)
+        ENGINE = MergeTree ORDER BY key
+        """
+    )
+    node_selector.query(f"INSERT INTO {table} SELECT number, number FROM numbers(1000)")
+
+    part = node_selector.query(
+        f"SELECT name FROM system.parts WHERE table = '{table}' AND active"
+    ).strip()
+    data_path = node_selector.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database = 'default' AND name = '{table}'"
+    ).strip()
+
+    node_selector.query(f"ALTER TABLE {table} DETACH PART '{part}'")
+    node_selector.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"echo -n 'CODEC(PCO)' > {data_path}detached/{part}/default_compression_codec.txt",
+        ]
+    )
+    node_selector.query(f"ALTER TABLE {table} ATTACH PART '{part}'")
+
+    # The part is well above the selector's `min_part_size = 1000`, so the sanitized default must be
+    # `ZSTD(3)` (the case this size warrants), not the smallest-part `LZ4` a zero size would select.
+    codec = node_selector.query(
+        f"SELECT default_compression_codec FROM system.parts WHERE table = '{table}' AND active"
+    ).strip()
+    assert "ZSTD" in codec and "LZ4" not in codec, codec
+
+    # The column-rewrite mutation reuses the (now size-appropriate) source part default codec, so the
+    # mutated part keeps `ZSTD(3)` rather than drifting to `LZ4`.
+    node_selector.query(
+        f"ALTER TABLE {table} UPDATE value = value + 1 WHERE 1",
+        settings={"mutations_sync": 2},
+    )
+    codec = node_selector.query(
+        f"SELECT default_compression_codec FROM system.parts WHERE table = '{table}' AND active"
+    ).strip()
+    assert "ZSTD" in codec and "LZ4" not in codec, codec
+    assert node_selector.query(f"SELECT count() FROM {table}").strip() == "1000"
+
+    node_selector.query(f"DROP TABLE {table} SYNC")
