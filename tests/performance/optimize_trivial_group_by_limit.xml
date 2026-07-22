@@ -4,6 +4,10 @@
          Compare the optimized path vs the disabled setting on a large input
          with many distinct keys but a small `LIMIT`. -->
 
+    <settings>
+        <enable_group_by_top_k_optimization>0</enable_group_by_top_k_optimization>
+    </settings>
+
     <query tag="optimized">SELECT number FROM numbers_mt(100000000) GROUP BY number LIMIT 5 FORMAT Null SETTINGS optimize_trivial_group_by_limit_query = 1</query>
     <query tag="baseline">SELECT number FROM numbers_mt(100000000) GROUP BY number LIMIT 5 FORMAT Null SETTINGS optimize_trivial_group_by_limit_query = 0</query>
 </test>
