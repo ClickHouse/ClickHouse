@@ -196,6 +196,12 @@ void readPostingList(ReadBuffer & in, std::vector<SpannPostingEntry> & list, siz
         throw Exception(ErrorCodes::INCORRECT_DATA, "vector_spann posting list serialized length is too small");
 
     /// Use cumulative byte counter instead of pointer arithmetic: compressed buffer refills may move `position()`.
+    /// Force completion of any pending lazy seek first. After `seekToMark` with a non-zero
+    /// `offset_in_decompressed_block`, `CompressedReadBufferFromFile` only records that offset in
+    /// `nextimpl_working_buffer_offset` and applies it on the next `next()` call. Sampling `count()`
+    /// before that would make `consumed` include the skipped prefix (e.g. 80+20=100 when expecting 20).
+    /// `nextIfAtEnd()` is a no-op when the buffer already has pending data (sequential read / in-buffer seek).
+    in.nextIfAtEnd();
     const size_t start_count = in.count();
 
     UInt32 count = 0;
@@ -623,8 +629,11 @@ MergeTreeIndexConditionVectorSpann::MergeTreeIndexConditionVectorSpann(
     if (expansion_search == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
 
+    if (index_fetch_multiplier < 1.0)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_index_fetch_multiplier' must be >= 1.0");
+
     if (!std::isfinite(index_fetch_multiplier)
-        || index_fetch_multiplier <= 0.0f || static_cast<double>(index_fetch_multiplier) > MAX_INDEX_FETCH_MULTIPLIER
+        || static_cast<double>(index_fetch_multiplier) > MAX_INDEX_FETCH_MULTIPLIER
         || (parameters && !std::isfinite(static_cast<double>(index_fetch_multiplier) * static_cast<double>(parameters->limit))))
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_index_fetch_multiplier' must be greater than 0.0 and less than {}", MAX_INDEX_FETCH_MULTIPLIER);
 }
