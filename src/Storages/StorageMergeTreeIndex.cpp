@@ -179,7 +179,9 @@ protected:
 private:
     std::shared_ptr<MergeTreeMarksLoader> createMarksLoader(const MergeTreeDataPartPtr & part, const String & prefix_name, size_t num_columns)
     {
-        auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(part, std::make_shared<AlterConversions>());
+        /// current mapping: index-marks load with no operation snapshot; column IDs are stable so this live read is safe.
+        auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
+            part, std::make_shared<AlterConversions>(), part->storage.getActiveColumnIdMapping());
         auto local_context = getContext();
 
         return std::make_shared<MergeTreeMarksLoader>(
@@ -207,7 +209,36 @@ private:
 
         if (isWidePart(part))
         {
-            if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(column_name, ".bin", part->checksums))
+            /// Resolve through the part's stamped column: with column IDs the
+            /// on-disk stream is named by the ID, not the logical column name.
+            const auto unescaped_name = unescapeForFileName(column_name);
+            std::optional<String> stream_name;
+            if (auto column_in_part = part->getColumns().tryGetByName(unescaped_name))
+            {
+                stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                    *column_in_part, {}, ".bin", part->checksums, part->storage.getSettings());
+            }
+            else
+            {
+                /// A metadata-only RENAME does not refresh the part's cached column list, so a
+                /// part loaded before the rename still carries the old logical name while its
+                /// stamped ID is unchanged. Map the current name to its ID via the live mapping,
+                /// then locate the part column by that ID to build the ID-keyed stream name.
+                if (auto column_id_mapping = part->storage.getActiveColumnIdMapping();
+                    column_id_mapping && column_id_mapping->hasLogicalName(unescaped_name))
+                {
+                    const auto index_by_id = part->getColumns().getIndexByStorageColumnId();
+                    if (auto it = index_by_id.find(column_id_mapping->getColumnId(unescaped_name)); it != index_by_id.end())
+                        stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                            *it->second, {}, ".bin", part->checksums, part->storage.getSettings());
+                }
+
+                /// Non-ID tables and truly-absent columns: fall back to raw-name resolution.
+                if (!stream_name)
+                    stream_name = IMergeTreeDataPart::getStreamNameOrHash(column_name, ".bin", part->checksums);
+            }
+
+            if (stream_name)
             {
                 col_idx = 0;
                 has_marks_in_part = true;
@@ -216,20 +247,26 @@ private:
         }
         else if (isCompactPart(part))
         {
-            if (part->index_granularity_info.mark_type.with_substreams)
+            auto unescaped_name = unescapeForFileName(column_name);
+            if (auto column_position = part->getColumnPosition(unescaped_name))
             {
-                if (auto col_idx_opt = part->getColumnsSubstreams().tryGetSubstreamPosition(column_name))
+                if (part->index_granularity_info.mark_type.with_substreams)
                 {
-                    col_idx = *col_idx_opt;
-                    has_marks_in_part = true;
+                    /// Substream maps are keyed by the stamped column ID for id-active
+                    /// parts; resolve through the part's column, as the compact reader does.
+                    /// A streamless-root column (e.g. a Tuple) has no matching substream,
+                    /// so leave has_marks_in_part false and report NULL marks.
+                    auto column_in_part = part->getColumns().tryGetByName(unescaped_name);
+                    if (auto substream_position = part->getColumnsSubstreams().tryGetSubstreamPosition(
+                            *column_position, *column_in_part, {}, part->storage.getSettings()))
+                    {
+                        col_idx = *substream_position;
+                        has_marks_in_part = true;
+                    }
                 }
-            }
-            else
-            {
-                auto unescaped_name = unescapeForFileName(column_name);
-                if (auto col_idx_opt = part->getColumnPosition(unescaped_name))
+                else
                 {
-                    col_idx = *col_idx_opt;
+                    col_idx = *column_position;
                     has_marks_in_part = true;
                 }
             }

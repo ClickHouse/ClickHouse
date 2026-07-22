@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
@@ -73,6 +78,9 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
             });
     }
 
+    const bool part_has_column_ids = std::any_of(
+        columns.begin(), columns.end(), [](const auto & column) { return !column.column_id.empty(); });
+
     NameSet remove_files;
     const String mrk_extension = data_part->getMarksFileExtension();
     for (const auto & column_name : empty_columns)
@@ -82,6 +90,13 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
             continue;
 
         auto column_in_part = columns.tryGetByName(column_name);
+
+        /// Deriving stream names from the logical name alone would produce
+        /// filenames that cannot exist on disk for an ID-stamped part.
+        if (!column_in_part && part_has_column_ids)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Empty column {} is not in the column list of part {} with column IDs",
+                column_name, data_part->name);
 
         ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
@@ -100,7 +115,11 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         };
 
         serialization->enumerateStreams(callback);
+        /// Records may sit under the stamped column ID (canonical) or under the
+        /// logical name (freshly produced by the write path); drop both.
         serialization_infos.erase(column_name);
+        if (column_in_part)
+            serialization_infos.erase(column_in_part->getColumnIdInStorage());
     }
 
     /// Remove files on disk and checksums

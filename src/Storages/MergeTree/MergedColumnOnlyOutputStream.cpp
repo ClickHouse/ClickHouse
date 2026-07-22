@@ -88,6 +88,11 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(M
 
     auto columns = new_part->getColumns();
     auto serialization_infos = new_part->getSerializationInfos();
+
+    /// The part's records are keyed by stamped column ID while the writer
+    /// accumulated fresh data under logical names; align the keys or
+    /// `replaceData` would miss the join and lose the chosen kinds.
+    new_serialization_infos.reKeyToColumnIds(columns);
     serialization_infos.replaceData(new_serialization_infos);
 
     NameSet empty_columns;

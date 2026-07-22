@@ -114,6 +114,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char merge_task_projection_stage_pause[];
+    extern const char merge_task_finalize_pause[];
 }
 
 namespace Setting
@@ -319,22 +320,25 @@ private:
 
 static void addMissedColumnsToSerializationInfos(
     size_t num_rows_in_parts,
-    const Names & part_columns,
-    const ColumnsDescription & storage_columns,
+    const NamesAndTypesList & part_columns,
+    const NamesAndTypesList & storage_columns,
+    const ColumnsDescription & storage_columns_description,
     const SerializationInfo::Settings & info_settings,
     SerializationInfoByName & new_infos)
 {
-    NameSet part_columns_set(part_columns.begin(), part_columns.end());
+    /// Match by stamped column ID: the part's logical names may be stale after a
+    /// metadata-only RENAME, while IDs are stable.
+    NameSet part_column_ids;
+    for (const auto & column : part_columns)
+        part_column_ids.insert(column.getColumnIdInStorage());
 
     for (const auto & column : storage_columns)
     {
-        if (part_columns_set.contains(column.name))
+        if (part_column_ids.contains(column.getColumnIdInStorage()))
             continue;
 
-        if (column.default_desc.kind != ColumnDefaultKind::Default)
-            continue;
-
-        if (column.default_desc.expression)
+        if (auto default_desc = storage_columns_description.getDefault(column.name);
+            default_desc && (default_desc->kind != ColumnDefaultKind::Default || default_desc->expression))
             continue;
 
         auto new_info = column.type->createSerializationInfo(info_settings);
@@ -616,10 +620,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     if (!global_ctx->parent_part)
         global_ctx->temporary_directory_lock = global_ctx->data->getTemporaryPartDirectoryHolder(local_tmp_part_basename);
 
-    global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot);
+    /// The merge's only live read of the column-ID mapping: it stamps the new part's
+    /// columns and, through the snapshot, drives every reader of the source parts.
+    global_ctx->storage_snapshot = global_ctx->data->createSnapshotWithColumnIdMapping(global_ctx->metadata_snapshot);
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
-    if (auto pn_mapping = global_ctx->data->getActiveColumnIdMapping())
-        populateColumnIds(global_ctx->storage_columns, *pn_mapping);
+    if (const auto column_id_mapping = MergeTreeData::getColumnIdMappingFromSnapshot(*global_ctx->storage_snapshot))
+        populateColumnIds(global_ctx->storage_columns, *column_id_mapping);
     global_ctx->virtual_columns = global_ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
     global_ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(global_ctx->metadata_snapshot->getPartitionKey(), global_ctx->data_settings);
 
@@ -861,11 +867,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         if (!info_settings.isAlwaysDefault())
         {
-            auto part_infos = part->getSerializationInfos();
+            /// Translate the source part's ID-keyed records to this merge's logical
+            /// names so `add` matches the keys of `infos`.
+            SerializationInfoByName part_infos
+                = part->getSerializationInfos().reKeyToLogicalNames(global_ctx->storage_columns, /*drop_orphans=*/true);
 
             addMissedColumnsToSerializationInfos(
                 part->rows_count,
-                part->getColumns().getNames(),
+                part->getColumns(),
+                global_ctx->storage_columns,
                 global_ctx->metadata_snapshot->getColumns(),
                 info_settings,
                 part_infos);
@@ -886,6 +896,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->new_data_part->setSourcePartsSet(std::move(set));
     }
 
+    /// The part's records are keyed by stamped column ID; `infos` was accumulated
+    /// in the logical-name domain above.
+    infos.reKeyToColumnIds(global_ctx->storage_columns);
     global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());
 
     ctx->sum_input_rows_upper_bound = global_ctx->merge_list_element_ptr->total_rows_count;
@@ -1368,7 +1381,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
     {
         auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
         auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-            *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+            *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context,
+            MergeTreeData::getColumnIdMappingFromSnapshot(*global_ctx->storage_snapshot));
 
         tmp_part->finalize();
         tmp_part->part->getDataPartStorage().commitTransaction();
@@ -1410,7 +1424,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context,
+                MergeTreeData::getColumnIdMappingFromSnapshot(*global_ctx->storage_snapshot));
 
             temp_part->finalize();
             temp_part->part->getDataPartStorage().commitTransaction();
@@ -2156,6 +2171,11 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
         auto part = task->getFuture().get();
         global_ctx->new_data_part->addProjectionPart(part->name, std::move(part));
     }
+
+    /// Test hook: pause after the part's column IDs are stamped, right before
+    /// `finalizePart` writes columns.txt/serialization.json/minmax from them,
+    /// so a test can inject a concurrent column-ID ALTER.
+    FailPointInjection::pauseFailPoint(FailPoints::merge_task_finalize_pause);
 
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
         global_ctx->to->finalizePart(global_ctx->new_data_part, global_ctx->gathered_data, ctx->need_sync, nullptr);

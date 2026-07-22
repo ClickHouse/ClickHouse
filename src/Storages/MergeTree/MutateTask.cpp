@@ -104,6 +104,7 @@ namespace FailPoints
 {
     extern const char mt_mutate_task_pause_in_prepare[];
     extern const char merge_task_projection_stage_pause[];
+    extern const char mutate_task_finalize_pause[];
     extern const char mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc[];
 }
 
@@ -682,7 +683,8 @@ getColumnsForNewDataPart(
     NamesAndTypesList persistent_virtuals,
     const SerializationInfoByName & serialization_infos,
     const MutationCommands & commands_for_interpreter,
-    const MutationCommands & commands_for_removes)
+    const MutationCommands & commands_for_removes,
+    ColumnIdMappingPtr column_id_mapping)
 {
     MutationCommands all_commands;
     all_commands.insert(all_commands.end(), commands_for_interpreter.begin(), commands_for_interpreter.end());
@@ -697,7 +699,7 @@ getColumnsForNewDataPart(
     bool deleted_mask_updated = false;
     bool affects_all_columns = false;
     bool supports_lightweight_deletes = source_part->supportLightweightDeleteMutate();
-    bool has_column_ids = source_part->storage.getActiveColumnIdMapping() != nullptr;
+    bool has_column_ids = column_id_mapping != nullptr;
 
     NameSet storage_columns_set;
     for (const auto & [name, _] : storage_columns)
@@ -793,9 +795,35 @@ getColumnsForNewDataPart(
     else
         settings = storage_serialization_settings;
 
-    SerializationInfoByName new_serialization_infos(settings);
-    for (const auto & [name, old_info] : serialization_infos)
+    /// Source records are keyed by stamped column ID; the logic below works in the
+    /// source part's logical-name domain (rename maps, part_columns), so translate the
+    /// keys back through the part's stamped list.
+    std::unordered_map<String, String> source_name_by_column_id;
+    if (has_column_ids)
     {
+        for (const auto & column : source_part->getColumns())
+            source_name_by_column_id.emplace(column.getColumnIdInStorage(), column.name);
+    }
+
+    SerializationInfoByName new_serialization_infos(settings);
+    for (const auto & [stored_key, old_info] : serialization_infos)
+    {
+        String name = stored_key;
+        if (has_column_ids)
+        {
+            /// Records of dropped columns (ID no longer in the mapping) must not carry
+            /// into the new part: the same logical name may now belong to a re-added
+            /// column with a different ID. Persistent virtuals and columns renamed by
+            /// a pre-activation rename mutation are never in the mapping — keep them.
+            if (!column_id_mapping->hasColumnId(stored_key)
+                && !isPersistentVirtualColumn(stored_key)
+                && !renamed_columns_from_to.contains(stored_key))
+                continue;
+
+            if (auto source_it = source_name_by_column_id.find(stored_key); source_it != source_name_by_column_id.end())
+                name = source_it->second;
+        }
+
         auto it = renamed_columns_from_to.find(name);
         auto new_name = it == renamed_columns_from_to.end() ? name : it->second;
 
@@ -862,16 +890,16 @@ getColumnsForNewDataPart(
     std::unordered_map<String, DataTypePtr> source_columns_name_to_type;
     std::unordered_map<String, String> source_local_name_by_current_logical;
 
-    if (auto active_mapping = source_part->storage.getActiveColumnIdMapping())
+    if (has_column_ids)
     {
         for (const auto & col : source_columns_raw)
         {
-            const String source_effective_id = col.column_id.empty() ? col.getNameInStorage() : col.column_id;
-            if (!active_mapping->hasColumnId(source_effective_id))
+            const String source_effective_id = col.getColumnIdInStorage();
+            if (!column_id_mapping->hasColumnId(source_effective_id))
                 continue;
             source_columns.push_back(col);
 
-            const String current_logical = active_mapping->getLogicalName(source_effective_id);
+            const String current_logical = column_id_mapping->getLogicalName(source_effective_id);
             source_columns_name_to_type[current_logical] = col.type;
             source_local_name_by_current_logical[current_logical] = col.name;
         }
@@ -1254,10 +1282,9 @@ static NameToNameVector collectFilesForRenames(
     MergeTreeData::DataPartPtr new_part,
     const MutationCommands & commands_for_renames,
     const NameSet & updated_columns_in_patches,
-    const String & mrk_extension)
+    const String & mrk_extension,
+    bool has_column_ids)
 {
-    auto pn_mapping_ptr = source_part->storage.getActiveColumnIdMapping();
-    bool has_column_ids = pn_mapping_ptr != nullptr;
 
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     auto stream_counts = has_column_ids
@@ -1521,10 +1548,9 @@ static void finalizeMutatedPart(
     {
         auto out_serialization = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out_serialization);
-        if (auto mutation_pn_mapping = new_data_part->storage.getActiveColumnIdMapping())
-            serialization_infos.writeJSONWithColumnIds(out_hashing, *mutation_pn_mapping);
-        else
-            serialization_infos.writeJSON(out_hashing);
+        /// In-memory records are keyed by the stamped column IDs (see `setColumns`),
+        /// which is exactly the on-disk key: write them as is.
+        serialization_infos.writeJSON(out_hashing);
         out_hashing.finalize();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
@@ -1538,13 +1564,13 @@ static void finalizeMutatedPart(
     {
         if (isFullPartStorage(new_data_part->getDataPartStorage()))
         {
-            auto out = serializeStatisticsPacked(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, context->getWriteSettings());
+            auto out = serializeStatisticsPacked(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, new_data_part->getColumns(), codec, context->getWriteSettings());
             written_files.push_back(std::move(out));
         }
         /// Write statistics as separate compressed files in packed parts to avoid double buffering.
         else
         {
-            auto files = serializeStatisticsWide(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, context->getWriteSettings());
+            auto files = serializeStatisticsWide(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, new_data_part->getColumns(), codec, context->getWriteSettings());
             std::move(files.begin(), files.end(), std::back_inserter(written_files));
         }
     }
@@ -1640,6 +1666,13 @@ struct MutationContext
     StorageMetadataPtr metadata_snapshot;
     StorageSnapshotPtr storage_snapshot;
     DiskPtr disk;
+
+    /// The mutation's single column-ID mapping, derived from the captured
+    /// `storage_snapshot` (see MergeTreeData::getColumnIdMappingFromSnapshot).
+    ColumnIdMappingPtr getColumnIdMapping() const
+    {
+        return storage_snapshot ? MergeTreeData::getColumnIdMappingFromSnapshot(*storage_snapshot) : nullptr;
+    }
 
     MutationCommandsConstPtr commands;
     time_t time_of_mutation{};
@@ -2036,7 +2069,8 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
         projection,
         ctx->new_data_part.get(),
         ++projection_block_num,
-        ctx->context);
+        ctx->context,
+        ctx->getColumnIdMapping());
 
     tmp_part->finalize();
     tmp_part->part->getDataPartStorage().commitTransaction();
@@ -2816,8 +2850,8 @@ private:
                     if (new_part_columns_set.contains(col.name))
                         columns_for_writer.push_back(col);
             }
-            if (auto pn_m = ctx->data->getActiveColumnIdMapping())
-                populateColumnIds(columns_for_writer, *pn_m);
+            if (const auto column_id_mapping = ctx->getColumnIdMapping())
+                populateColumnIds(columns_for_writer, *column_id_mapping);
 
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
@@ -2922,6 +2956,11 @@ private:
                 ctx->new_data_part->checksums.files.erase(rename_from);
             }
         }
+
+        /// Test hook: pause after the part's column IDs are stamped, right before
+        /// `finalizeMutatedPart` writes serialization.json and checksums from them,
+        /// so a test can inject a concurrent column-ID ALTER.
+        FailPointInjection::pauseFailPoint(FailPoints::mutate_task_finalize_pause);
 
         MutationHelpers::finalizeMutatedPart(
             ctx->source_part,
@@ -3070,8 +3109,8 @@ MutateTask::MutateTask(
     ctx->storage_snapshot = ctx->data->getStorageSnapshotWithoutData(ctx->metadata_snapshot, context_);
     ctx->space_reservation = space_reservation_;
     ctx->storage_columns = metadata_snapshot_->getColumns().getAllPhysical();
-    if (auto pn_m = ctx->data->getActiveColumnIdMapping())
-        populateColumnIds(ctx->storage_columns, *pn_m);
+    if (const auto column_id_mapping = ctx->getColumnIdMapping())
+        populateColumnIds(ctx->storage_columns, *column_id_mapping);
     ctx->txn = txn;
     ctx->source_part = ctx->future_part->parts[0];
     ctx->need_prefix = need_prefix_;
@@ -3634,11 +3673,14 @@ bool MutateTask::prepare()
 
     auto [new_columns, new_infos, new_columns_substreams] = MutationHelpers::getColumnsForNewDataPart(
         ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
-        ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames);
+        ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames, ctx->getColumnIdMapping());
 
-    if (auto pn_m = ctx->data->getActiveColumnIdMapping())
-        populateColumnIds(new_columns, *pn_m);
+    if (const auto column_id_mapping = ctx->getColumnIdMapping())
+        populateColumnIds(new_columns, *column_id_mapping);
 
+    /// The part's records are keyed by stamped column ID; `getColumnsForNewDataPart`
+    /// produced `new_infos` in the logical-name domain.
+    new_infos.reKeyToColumnIds(new_columns);
     ctx->new_data_part->setColumns(new_columns, new_infos, ctx->metadata_snapshot->getMetadataVersion());
     if (!new_columns_substreams.empty())
         ctx->new_data_part->setColumnsSubstreams(new_columns_substreams);
@@ -3741,7 +3783,8 @@ bool MutateTask::prepare()
             ctx->new_data_part,
             ctx->for_file_renames,
             updated_columns_in_patches,
-            ctx->mrk_extension);
+            ctx->mrk_extension,
+            ctx->getColumnIdMapping() != nullptr);
 
         /// In case of replicated merge tree with zero copy replication
         /// Here Clickhouse has to follow the common procedure when deleting new part in temporary state

@@ -20,7 +20,6 @@ class ReadBuffer;
 class WriteBuffer;
 class NamesAndTypesList;
 class Block;
-class ColumnIdMapping;
 
 /** Contains information about kind of serialization of column and its subcolumns.
  *  Also contains information about content of columns,
@@ -131,8 +130,21 @@ public:
     /// it's cloned to current infos.
     void replaceData(const SerializationInfoByName & other);
 
+    /// Re-keys records produced under logical names (write paths accumulate per-block
+    /// stats keyed by name) to the columns' stamped IDs — the canonical key of a part's
+    /// records (matches the on-disk key). The map must be name-keyed: on an ID-keyed map
+    /// a key that is one column's ID and another column's name would be re-bound wrongly.
+    void reKeyToColumnIds(const NamesAndTypesList & columns);
+
+    /// Inverse of reKeyToColumnIds. Returns a name-keyed copy of this
+    /// (ID-keyed) map, resolving each record's stamped ID to its logical name in
+    /// `columns` (the join key is the ID, which is stable across RENAME). Records
+    /// whose ID is absent from `columns` are dropped-column orphans: dropped when
+    /// @drop_orphans, else kept under their ID. Used at part-producing boundaries
+    /// that feed a name-keyed accumulator (see the contract in ColumnIdMapping.h).
+    SerializationInfoByName reKeyToLogicalNames(const NamesAndTypesList & columns, bool drop_orphans) const;
+
     void writeJSON(WriteBuffer & out) const;
-    void writeJSONWithColumnIds(WriteBuffer & out, const ColumnIdMapping & column_id_mapping) const;
 
     SerializationInfoByName clone() const;
 
@@ -143,7 +155,14 @@ public:
     bool needsPersistence() const;
 
     static SerializationInfoByName readJSON(const NamesAndTypesList & columns, ReadBuffer & in);
-    static SerializationInfoByName readJSONWithColumnIds(const NamesAndTypesList & columns, const ColumnIdMapping & column_id_mapping, ReadBuffer & in);
+
+    /// Reads infos of a part written with column IDs active. On-disk records are keyed
+    /// by the same token as the part's columns.txt (the stamped column ID, or the logical
+    /// name for pre-activation parts); they stay keyed by the column ID in memory, so a
+    /// metadata-only RENAME cannot invalidate the keys. `columns` is the part's stamped
+    /// column list, used to resolve each record's data type. Records of columns absent
+    /// from the part (dropped-column orphans) are skipped.
+    static SerializationInfoByName readJSONWithColumnIds(const NamesAndTypesList & columns, ReadBuffer & in);
 
     static SerializationInfoByName readJSONFromString(const NamesAndTypesList & columns, const std::string & str);
 

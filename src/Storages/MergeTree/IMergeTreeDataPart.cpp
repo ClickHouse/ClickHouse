@@ -233,19 +233,16 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
 
 IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::store(
     StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & out_checksums,
-    const MergeTreeSettingsPtr & storage_settings, ColumnIdMappingPtr column_id_mapping) const
+    const MergeTreeSettingsPtr & storage_settings, const NamesAndTypesList & part_columns) const
 {
     auto minmax_columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), storage_settings);
 
-    /// Translate to on-disk column IDs when a mapping is active so the
-    /// `minmax_<id>.idx` filenames remain stable across RENAME.
-    if (column_id_mapping)
+    /// Name minmax files after the stamped column IDs; columns absent from the part
+    /// (e.g. block-number virtuals) keep their name.
+    for (auto & column : minmax_columns)
     {
-        for (auto & column : minmax_columns)
-        {
-            if (column_id_mapping->hasLogicalName(column.name))
-                column.name = column_id_mapping->getColumnId(column.name);
-        }
+        if (auto part_column = part_columns.tryGetByName(column.name))
+            column.name = part_column->getColumnIdInStorage();
     }
 
     return store(minmax_columns, part_storage, out_checksums, storage_settings);
@@ -748,7 +745,7 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
 
     for (const auto & column : columns)
     {
-        auto it = serialization_infos.find(column.name);
+        auto it = serialization_infos.find(column.getColumnIdInStorage());
         auto serialization = it == serialization_infos.end()
             ? IDataType::getSerialization(column, serialization_infos.getSettings())
             : IDataType::getSerialization(column, *it->second);
@@ -848,7 +845,9 @@ void IMergeTreeDataPart::loadIndexMarksToCache(MarkCache * index_mark_cache) con
     if (secondary_indices.empty())
         return;
 
-    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
+    /// current mapping: secondary-index mark load with no operation snapshot; column IDs are stable so this live read is safe.
+    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
+        shared_from_this(), std::make_shared<AlterConversions>(), storage.getActiveColumnIdMapping());
     auto read_settings = storage.getContext()->getReadSettings();
     std::vector<std::unique_ptr<MergeTreeMarksLoader>> loaders;
 
@@ -1164,13 +1163,27 @@ PackedFilesReader * IMergeTreeDataPart::getStatisticsPackedReader() const
     return statistics_reader.get();
 }
 
-static const ColumnDescription * getColumnForStatisticsFile(const String & filename, const ColumnsDescription & all_columns, const NameSet & required_columns)
+static const ColumnDescription * getColumnForStatisticsFile(
+    const String & filename, const ColumnsDescription & all_columns, const NamesAndTypesList & part_columns, const NameSet & required_columns)
 {
     chassert(filename.starts_with(STATS_FILE_PREFIX));
     chassert(filename.ends_with(STATS_FILE_SUFFIX));
 
     size_t num_chars_to_truncate = STATS_FILE_PREFIX.size() + STATS_FILE_SUFFIX.size();
     String column_name = unescapeForFileName(filename.substr(STATS_FILE_PREFIX.size(), filename.size() - num_chars_to_truncate));
+
+    /// New parts name statistics files by the stamped column ID; resolve it to the
+    /// part's logical name first.  Files matching no ID keep the token as a name --
+    /// legacy name-based files and dropped-column orphans (the latter then fail the
+    /// lookups below and are skipped).
+    for (const auto & part_column : part_columns)
+    {
+        if (part_column.getColumnIdInStorage() == column_name)
+        {
+            column_name = part_column.name;
+            break;
+        }
+    }
 
     /// `<col>.null` subcolumn may appear in required_columns when
     /// `optimize_functions_to_subcolumns=1`, keep stats for the parent column in that case.
@@ -1202,7 +1215,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
         if (!filename.ends_with(STATS_FILE_SUFFIX) || !filename.starts_with(STATS_FILE_PREFIX))
             throw Exception(ErrorCodes::CORRUPTED_DATA, "File {} is not a statistics file", filename);
 
-        const auto * column_desc = getColumnForStatisticsFile(filename, *columns_description, required_columns);
+        const auto * column_desc = getColumnForStatisticsFile(filename, *columns_description, columns, required_columns);
         if (!column_desc)
             continue;
 
@@ -1236,7 +1249,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
         if (!filename.ends_with(STATS_FILE_SUFFIX) || !filename.starts_with(STATS_FILE_PREFIX))
             continue;
 
-        const auto * column_desc = getColumnForStatisticsFile(filename, *columns_description, required_columns);
+        const auto * column_desc = getColumnForStatisticsFile(filename, *columns_description, columns, required_columns);
         if (!column_desc)
             continue;
 
@@ -2067,7 +2080,9 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
 
     auto alter_conversions = std::make_shared<AlterConversions>();
-    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
+    /// current mapping: no operation snapshot here; column IDs are stable so this live read is safe.
+    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
+        shared_from_this(), alter_conversions, storage.getActiveColumnIdMapping());
 
     MergeTreeReaderPtr reader = createMergeTreeReader(
         part_info,
@@ -2162,15 +2177,10 @@ void IMergeTreeDataPart::loadUUID()
     }
 }
 
-/// Translates the part's on-disk column list from physical storage names back
-/// to logical names using the table-level column ID mapping.
+/// Translates the part's on-disk column list from physical column IDs back to
+/// logical names (see the mapping contract in `ColumnIdMapping.h`).
 ///
-/// When column IDs are active, columns.txt in each part stores the physical
-/// (counter-allocated) names, not the logical column names from the table schema.
-/// For example, a column added as the third ALTER gets column ID "2" on disk,
-/// while the user sees it as "my_column" in queries.
-///
-/// This function handles four cases for each column in the on-disk list:
+/// Handles four cases for each column in the on-disk list:
 ///
 ///  (a) Column ID known to the mapping (normal case for parts written after
 ///      activation): translate to the current logical name.
@@ -2208,14 +2218,9 @@ NamesAndTypesList IMergeTreeDataPart::remapColumnsWithPhysicalNames(
         /// `with_size_stream`). Default serialization uses `SINGLE_STREAM` for String.
         const auto & infos = getSerializationInfos();
         SerializationPtr serialization;
-        if (auto it_name = infos.find(column_with_column_id.getNameInStorage()); it_name != infos.end())
-            serialization = IDataType::getSerialization(column_with_column_id, *it_name->second);
-        else if (column_with_column_id.getColumnIdInStorage() != column_with_column_id.getNameInStorage())
-        {
-            if (auto it_physical = infos.find(column_with_column_id.getColumnIdInStorage()); it_physical != infos.end())
-                serialization = IDataType::getSerialization(column_with_column_id, *it_physical->second);
-        }
-        if (!serialization)
+        if (auto it = infos.find(column_with_column_id.getColumnIdInStorage()); it != infos.end())
+            serialization = IDataType::getSerialization(column_with_column_id, *it->second);
+        else
             serialization = IDataType::getSerialization(column_with_column_id, infos.getSettings());
 
         serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
@@ -2320,6 +2325,10 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     NamesAndTypesList loaded_columns;
     bool is_readonly_storage = getDataPartStorage().isReadonly();
 
+    /// One mapping snapshot for the whole load: a concurrent column-ID ALTER between
+    /// two reads would make the remapped columns and the serialization infos disagree.
+    const auto column_id_mapping = storage.getActiveColumnIdMapping();
+
     if (auto in = readFileIfExists("columns.txt"))
     {
         loaded_columns.readText(*in);
@@ -2337,8 +2346,8 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
         auto metadata_snapshot = getMetadataSnapshot();
         /// If there is no file with a list of columns, write it down.
         auto columns_to_load = metadata_snapshot->getColumns().getAllPhysical();
-        if (auto physical_mapping_snapshot = storage.getActiveColumnIdMapping())
-            populateColumnIds(columns_to_load, *physical_mapping_snapshot);
+        if (column_id_mapping)
+            populateColumnIds(columns_to_load, *column_id_mapping);
 
         for (const auto & column : columns_to_load)
             if (getFileNameForColumn(column))
@@ -2351,14 +2360,14 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
             writeColumns(loaded_columns, {});
     }
 
-    if (auto physical_mapping = storage.getActiveColumnIdMapping())
-        loaded_columns = remapColumnsWithPhysicalNames(loaded_columns, *physical_mapping);
+    if (column_id_mapping)
+        loaded_columns = remapColumnsWithPhysicalNames(loaded_columns, *column_id_mapping);
 
     SerializationInfoByName infos({});
     if (auto in = readFileIfExists(SERIALIZATION_FILE_NAME))
     {
-        if (auto pn_mapping = storage.getActiveColumnIdMapping())
-            infos = SerializationInfoByName::readJSONWithColumnIds(loaded_columns, *pn_mapping, *in);
+        if (column_id_mapping)
+            infos = SerializationInfoByName::readJSONWithColumnIds(loaded_columns, *in);
         else
             infos = SerializationInfoByName::readJSON(loaded_columns, *in);
     }
@@ -3143,8 +3152,11 @@ bool IMergeTreeDataPart::checkAllTTLCalculated(const StorageMetadataPtr & metada
 
     for (const auto & [column, desc] : metadata_snapshot->getColumnTTLs())
     {
-        /// Part has this column, but we don't calculated TTL for it
-        if (!ttl_infos.columns_ttl.contains(column) && getColumns().contains(column))
+        /// Part has this column, but we don't calculated TTL for it.
+        /// `columns_ttl` is keyed by the stamped column ID, so a stale entry of a
+        /// dropped column with the same logical name does not count as calculated.
+        auto column_in_part = getColumns().tryGetByName(column);
+        if (column_in_part && !ttl_infos.columns_ttl.contains(column_in_part->getColumnIdInStorage()))
             return false;
     }
 
@@ -3303,6 +3315,18 @@ std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     return std::nullopt;
 }
 
+std::optional<String> IMergeTreeDataPart::getStreamNameForColumnOrName(
+    const String & column_name,
+    const ISerialization::SubstreamPath & substream_path,
+    const String & extension,
+    const Checksums & checksums_,
+    const MergeTreeSettingsPtr & settings) const
+{
+    if (auto column = getColumns().tryGetByName(column_name))
+        return getStreamNameForColumn(*column, substream_path, extension, checksums_, settings);
+    return getStreamNameForColumn(column_name, substream_path, extension, checksums_, settings);
+}
+
 void IMergeTreeDataPart::markProjectionPartAsBroken(const String & projection_name, const String & message, int code) const
 {
     auto it = projection_parts.find(projection_name);
@@ -3354,7 +3378,9 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
     settings.read_only_column_sample = true;
 
     auto alter_conversions = std::make_shared<AlterConversions>();
-    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
+    /// current mapping: no operation snapshot here; column IDs are stable so this live read is safe.
+    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
+        shared_from_this(), alter_conversions, storage.getActiveColumnIdMapping());
 
     MergeTreeReaderPtr reader = createMergeTreeReader(
         part_info,

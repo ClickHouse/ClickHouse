@@ -123,13 +123,19 @@ TTLTransform::TTLTransform(
             if (!expired_columns_map.contains(name))
             {
                 auto [default_expression, default_column_name] = build_default_expr(name);
+                /// `columns_ttl` entries are keyed by the part's stamped column ID
+                /// (matching ttl.txt), so a stale entry of a dropped column with the
+                /// same logical name cannot shadow this column's TTL state.
+                auto column_in_part = data_part->getColumns().tryGetByName(name);
+                String column_id = column_in_part ? column_in_part->getColumnIdInStorage() : name;
                 algorithms.emplace_back(std::make_unique<TTLColumnAlgorithm>(
                     getExpressions(description, subqueries_for_sets, context),
                     description,
-                    old_ttl_infos.columns_ttl[name],
+                    old_ttl_infos.columns_ttl[column_id],
                     current_time_,
                     force_,
                     name,
+                    column_id,
                     default_expression,
                     default_column_name,
                     isCompactPart(data_part)));

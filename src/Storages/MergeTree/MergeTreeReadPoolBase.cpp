@@ -221,7 +221,9 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
         .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
         .withSubcolumns();
 
-    LoadedMergeTreeDataPartInfoForReader part_info(part_with_ranges.data_part, read_task_info.alter_conversions);
+    LoadedMergeTreeDataPartInfoForReader part_info(
+        part_with_ranges.data_part, read_task_info.alter_conversions,
+        MergeTreeData::getColumnIdMappingFromSnapshot(*storage_snapshot));
     bool has_lightweight_delete = read_task_info.data_part->hasLightweightDelete() || read_task_info.alter_conversions->hasLightweightDelete();
 
     if (reader_settings.apply_deleted_mask && has_lightweight_delete)

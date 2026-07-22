@@ -289,27 +289,24 @@ void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCac
 
     auto context = storage.getContext();
     auto read_settings = context->getReadSettings();
-    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
+    /// current mapping: mark-cache load with no operation snapshot; column IDs are stable so this live read is safe.
+    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
+        shared_from_this(), std::make_shared<AlterConversions>(), storage.getActiveColumnIdMapping());
 
     LOG_TEST(getLogger("MergeTreeDataPartWide"), "Loading marks into mark cache for columns {} of part {}", toString(column_names), name);
 
     /// Resolve stream names via the NameAndTypePair carrying the column ID so
     /// that on a column-IDs-active table the disk-side keys (e.g. "1.cmrk2")
     /// are looked up instead of the logical-name-derived stream names.
-    const auto & part_columns = getColumns();
     for (const auto & column_name : column_names)
     {
         auto serialization = tryGetSerialization(column_name);
         if (!serialization)
             continue;
 
-        auto column = part_columns.tryGetByName(column_name);
-
         serialization->enumerateStreams([&](const auto & subpath)
         {
-            auto stream_name = column
-                ? getStreamNameForColumn(*column, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings())
-                : getStreamNameForColumn(column_name, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings());
+            auto stream_name = getStreamNameForColumnOrName(column_name, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings());
             if (!stream_name)
                 return;
 
@@ -572,7 +569,9 @@ std::optional<time_t> MergeTreeDataPartWide::getColumnModificationTime(const Str
 {
     try
     {
-        auto stream_name = getStreamNameOrHash(column_name, DATA_FILE_EXTENSION, checksums);
+        /// Streams are named by the stamped column ID for id-active parts; resolve
+        /// through the part's column, as getColumnSizeImpl does.
+        auto stream_name = getStreamNameForColumnOrName(column_name, {}, DATA_FILE_EXTENSION, checksums, storage.getSettings());
         if (!stream_name)
             return {};
 
@@ -656,7 +655,9 @@ std::vector<String> MergeTreeDataPartWide::getListOfStreamsForColumn(const NameA
     settings.read_only_column_sample = true;
 
     auto alter_conversions = std::make_shared<AlterConversions>();
-    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
+    /// current mapping: no operation snapshot here; column IDs are stable so this live read is safe.
+    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
+        shared_from_this(), alter_conversions, storage.getActiveColumnIdMapping());
 
     MergeTreeReaderPtr reader = createMergeTreeReaderWide(
         part_info,

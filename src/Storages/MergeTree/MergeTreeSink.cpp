@@ -347,7 +347,8 @@ void MergeTreeSink::finishDelayedChunk()
 
 MergeTreeTemporaryPartPtr MergeTreeSink::writeNewTempPart(BlockWithPartition & block)
 {
-    return storage.writer.writeTempPart(block, metadata_snapshot, context);
+    return storage.writer.writeTempPart(
+        block, metadata_snapshot, context, MergeTreeData::getColumnIdMappingFromSnapshot(*storage_snapshot));
 }
 
 std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes)

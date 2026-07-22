@@ -158,6 +158,10 @@ public:
     String getTypeName() const { return getType().toString(); }
 
     /// We could have separate method like setMetadata, but it's much more convenient to set it up with columns
+    /// `new_infos` must be keyed by the columns' stamped IDs (`getColumnIdInStorage`).
+    /// Callers holding name-keyed writer stats run `reKeyToColumnIds` first;
+    /// only they know the keying, which is ambiguous when a column's name equals
+    /// another column's ID.
     void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t new_metadata_version);
 
     void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_);
@@ -387,7 +391,9 @@ public:
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
-        [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings, ColumnIdMappingPtr column_id_mapping = nullptr) const;
+        /// `part_columns` is the part's stamped column list: minmax files are named after
+        /// the stamped column IDs so all of the part's artifacts agree by construction.
+        [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings, const NamesAndTypesList & part_columns) const;
         [[nodiscard]] WrittenFiles store(const NamesAndTypesList & columns, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
 
         void update(const Block & block, const NamesAndTypesList & columns);
@@ -692,6 +698,17 @@ public:
         const String & extension,
         const IDataPartStorage & storage_,
         const MergeTreeSettingsPtr & settings);
+
+    /// Resolve a column's stream name for an introspection query that only has the logical
+    /// name in hand. When the name is one of this part's columns we resolve through the
+    /// `NameAndTypePair` overload (id-aware stream naming + old-part settings-compat retry);
+    /// otherwise we fall back to the bare-name overload.
+    std::optional<String> getStreamNameForColumnOrName(
+        const String & column_name,
+        const ISerialization::SubstreamPath & substream_path,
+        const String & extension,
+        const Checksums & checksums_,
+        const MergeTreeSettingsPtr & settings) const;
 
     mutable std::atomic<DataPartRemovalState> removal_state = DataPartRemovalState::NOT_ATTEMPTED;
 

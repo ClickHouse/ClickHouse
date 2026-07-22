@@ -10,11 +10,13 @@ TTLColumnAlgorithm::TTLColumnAlgorithm(
     time_t current_time_,
     bool force_,
     const String & column_name_,
+    const String & column_id_,
     const ExpressionActionsPtr & default_expression_,
     const String & default_column_name_,
     bool is_compact_part_)
     : ITTLAlgorithm(ttl_expressions_, description_, old_ttl_info_, current_time_, force_)
     , column_name(column_name_)
+    , column_id(column_id_)
     , default_expression(default_expression_)
     , default_column_name(default_column_name_)
     , is_compact_part(is_compact_part_)
@@ -103,7 +105,7 @@ void TTLColumnAlgorithm::execute(Block & block)
 
 void TTLColumnAlgorithm::finalize(const MutableDataPartPtr & data_part) const
 {
-    data_part->ttl_infos.columns_ttl[column_name] = new_ttl_info;
+    data_part->ttl_infos.columns_ttl[column_id] = new_ttl_info;
     data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info);
     if (is_fully_empty)
         data_part->expired_columns.insert(column_name);

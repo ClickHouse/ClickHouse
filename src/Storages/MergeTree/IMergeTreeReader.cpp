@@ -75,6 +75,15 @@ IMergeTreeReader::IMergeTreeReader(
 
     const auto physical_mapping = data_part_info_for_read->getColumnIdMapping();
 
+    /// The part's stamped IDs decide what the part contains; the mapping only
+    /// translates requested names to IDs (see the contract in ColumnIdMapping.h).
+    /// Resolving by name instead would bind stale state: after DROP+ADD an old part
+    /// still lists a same-named dead column of the old type, and after RENAME the
+    /// part's cached logical names lag behind the requested ones.
+    std::unordered_map<String, const NameAndTypePair *> part_column_by_id;
+    if (physical_mapping && physical_mapping->isActive())
+        part_column_by_id = data_part_info_for_read->getColumns().getIndexByStorageColumnId();
+
     for (const auto & column : getColumns())
     {
         auto name_in_mapping = column.getNameInStorage();
@@ -101,30 +110,31 @@ IMergeTreeReader::IMergeTreeReader(
         {
             String column_id = physical_mapping->getColumnId(name_in_mapping);
 
+            auto it_part_column = part_column_by_id.find(column_id);
+
             if (is_flattened_nested_with_column_id)
             {
                 /// Each flattened Nested subcolumn has its own column ID and
                 /// is stored independently, so use the flat Array form with the
-                /// full logical name (e.g. "n.x") for correct stream resolution
+                /// full dotted name for correct stream resolution
                 /// (getFileNameForStreamByColumnId needs the dotted name to detect
                 /// shared Nested offsets).
-                auto part_col = part_columns.tryGetColumn(GetColumnsOptions::AllPhysical, name_in_mapping);
-                auto & column_to_read = part_col
-                    ? columns_to_read.emplace_back(*part_col)
+                auto & column_to_read = it_part_column != part_column_by_id.end()
+                    ? columns_to_read.emplace_back(*it_part_column->second)
                     : columns_to_read.emplace_back(NameAndTypePair{name_in_mapping, column.type});
                 column_to_read.setColumnId(column_id);
                 serializations.emplace_back(getSerializationForColumnId(column_to_read));
             }
             else
             {
-                /// Resolve the column type from the part for correctness (MODIFY COLUMN may
-                /// change the type; the part still stores the old type on disk).
-                /// Try the current logical name first, then the column ID.
-                auto resolved = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical,
-                    Nested::concatenateName(column.getNameInStorage(), column.getSubcolumnName()));
-                if (!resolved)
+                /// When the ID is present, resolve the column type from the part
+                /// (MODIFY COLUMN may change the type; the part still stores the old
+                /// type on disk). When it is absent, the column is missing from this
+                /// part and reads as defaults of the requested (current) type.
+                std::optional<NameAndTypePair> resolved;
+                if (it_part_column != part_column_by_id.end())
                     resolved = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical,
-                        Nested::concatenateName(column_id, column.getSubcolumnName()));
+                        Nested::concatenateName(it_part_column->second->name, column.getSubcolumnName()));
 
                 auto & column_to_read = resolved
                     ? columns_to_read.emplace_back(*resolved)
@@ -481,14 +491,16 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
         return serialization;
     }
 
-    if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
-        return IDataType::getSerialization(*column_in_part, *it->second);
-
-    if (column_in_part->getColumnIdInStorage() != column_in_part->getNameInStorage())
+    /// Records are keyed by the stamped column ID; `column_in_part` comes from the
+    /// columns description, which drops IDs, so prefer the requested column's ID.
+    if (!required_column.column_id.empty())
     {
-        if (auto it = infos.find(column_in_part->getColumnIdInStorage()); it != infos.end())
+        if (auto it = infos.find(required_column.getColumnIdInStorage()); it != infos.end())
             return IDataType::getSerialization(*column_in_part, *it->second);
     }
+
+    if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
+        return IDataType::getSerialization(*column_in_part, *it->second);
 
     return IDataType::getSerialization(*column_in_part, infos.getSettings());
 }
@@ -497,9 +509,7 @@ SerializationPtr IMergeTreeReader::getSerializationForColumnId(const NameAndType
 {
     const auto & infos = data_part_info_for_read->getSerializationInfos();
 
-    if (auto it = infos.find(column.getNameInStorage()); it != infos.end())
-        return IDataType::getSerialization(column, *it->second);
-
+    /// Records are keyed by the stamped column ID, so the probe survives renames.
     if (auto it = infos.find(column.getColumnIdInStorage()); it != infos.end())
         return IDataType::getSerialization(column, *it->second);
 
@@ -520,17 +530,19 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
                             "Expected {}, got {}", num_columns, res_columns.size());
         }
 
-        /// We check types manually while iterating to avoid unnecessary copies
+        /// We check types manually while iterating to avoid unnecessary copies.
+        /// `columns_to_read` already resolved each requested column against the part
+        /// (by stamped column ID when active), so use it rather than re-resolving by
+        /// name, which could bind a same-named dead column left from DROP+ADD.
         Block copy_block;
         auto name_and_type = getColumns().begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
             if (res_columns[pos] == nullptr)
                 continue;
-            auto column_in_part = getColumnInPart(*name_and_type);
-            if (column_in_part.type->equals(*name_and_type->type))
+            if (columns_to_read[pos].type->equals(*name_and_type->type))
                 continue;
-            copy_block.insert({res_columns[pos], column_in_part.type, name_and_type->name});
+            copy_block.insert({res_columns[pos], columns_to_read[pos].type, name_and_type->name});
         }
 
         if (copy_block.empty())

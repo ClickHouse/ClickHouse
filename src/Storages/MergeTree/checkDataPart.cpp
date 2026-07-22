@@ -215,7 +215,19 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             else if (pn_mapping->hasLogicalName(col.name))
                 phys = pn_mapping->getColumnId(col.name);
             else
+            {
+                /// A counter-format token below the counter is an orphan of a dropped
+                /// column (expected after DROP + re-ADD); anything else is suspicious.
+                UInt64 numeric_id = 0;
+                bool is_counter_format = tryParse(numeric_id, col.name.substr(0, col.name.find('.')))
+                    && numeric_id < pn_mapping->getNextColumnIdCounter();
+                LOG_TRACE(getLogger("checkDataPart"),
+                    "Token '{}' in columns.txt of part {} {}",
+                    col.name, data_part_storage.getFullPath(),
+                    is_counter_format ? "is an orphaned column ID of a dropped column, skipping"
+                                      : "matches no column ID or logical name of the table, skipping");
                 continue;
+            }
 
             auto it = expected_types.find(phys);
             if (it != expected_types.end() && !col.type->equals(*it->second))
@@ -270,7 +282,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         {
             auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt);
             if (column_ids_active)
-                serialization_infos = SerializationInfoByName::readJSONWithColumnIds(columns_list, *pn_mapping, *serialization_file);
+                serialization_infos = SerializationInfoByName::readJSONWithColumnIds(columns_list, *serialization_file);
             else
                 serialization_infos = SerializationInfoByName::readJSON(columns_txt, *serialization_file);
         }
@@ -287,7 +299,8 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
     auto get_serialization = [&serialization_infos](const auto & column)
     {
-        auto it = serialization_infos.find(column.name);
+        /// Records are keyed by the stamped column ID (identity for parts without IDs).
+        auto it = serialization_infos.find(column.getColumnIdInStorage());
         return it == serialization_infos.end()
             ? column.type->getSerialization(serialization_infos.getSettings())
             : column.type->getSerialization(*it->second);

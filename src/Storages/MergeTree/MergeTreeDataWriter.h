@@ -80,14 +80,16 @@ public:
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
       */
-    MergeTreeTemporaryPartPtr writeTempPart(BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context);
+    MergeTreeTemporaryPartPtr writeTempPart(
+        BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context, ColumnIdMappingPtr column_id_mapping);
 
     MergeTreeTemporaryPartPtr writeTempPatchPart(
         BlockWithPartition & block,
         StorageMetadataPtr metadata_snapshot,
         String partition_id,
         SourcePartsSetForPatch source_parts_set,
-        ContextPtr context);
+        ContextPtr context,
+        ColumnIdMappingPtr column_id_mapping);
 
     MergeTreeData::MergingParams::Mode getMergingMode() const
     {
@@ -102,7 +104,8 @@ public:
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
         bool merge_is_needed,
-        ContextPtr context);
+        ContextPtr context,
+        ColumnIdMappingPtr column_id_mapping);
 
     /// For mutation: MATERIALIZE PROJECTION.
     static MergeTreeTemporaryPartPtr writeTempProjectionPart(
@@ -112,7 +115,8 @@ public:
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
         size_t block_num,
-        ContextPtr context);
+        ContextPtr context,
+        ColumnIdMappingPtr column_id_mapping);
 
     static Block mergeBlock(
         Block && block,
@@ -128,7 +132,8 @@ private:
         String partition_id,
         SourcePartsSetForPatch source_parts_set,
         ContextPtr context,
-        UInt64 block_number);
+        UInt64 block_number,
+        ColumnIdMappingPtr column_id_mapping);
 
     static MergeTreeTemporaryPartPtr writeProjectionPartImpl(
         const String & part_name,
@@ -139,7 +144,8 @@ private:
         Block block,
         const ProjectionDescription & projection,
         MergeTreeIndices indices,
-        bool merge_is_needed);
+        bool merge_is_needed,
+        ColumnIdMappingPtr column_id_mapping);
 
     MergeTreeData & data;
     LoggerPtr log;

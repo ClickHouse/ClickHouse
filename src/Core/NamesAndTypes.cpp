@@ -56,6 +56,9 @@ bool NameAndTypePair::operator<(const NameAndTypePair & rhs) const
 
 bool NameAndTypePair::operator==(const NameAndTypePair & rhs) const
 {
+    /// Equality is intentionally logical (name + type) and ignores `column_id`:
+    /// callers compare schemas, not physical columns.  Two pairs that compare
+    /// equal may still refer to different on-disk columns after DROP + re-ADD.
     return name == rhs.name && type->equals(*rhs.type);
 }
 
@@ -205,6 +208,15 @@ UnorderedMapWithMemoryTracking<std::string, DataTypePtr> NamesAndTypesList::getN
     res.reserve(size());
     for (const NameAndTypePair & column : *this)
         res.emplace(column.name, column.type);
+    return res;
+}
+
+std::unordered_map<String, const NameAndTypePair *> NamesAndTypesList::getIndexByStorageColumnId() const
+{
+    std::unordered_map<String, const NameAndTypePair *> res;
+    res.reserve(size());
+    for (const NameAndTypePair & column : *this)
+        res.emplace(column.getColumnIdInStorage(), &column);
     return res;
 }
 

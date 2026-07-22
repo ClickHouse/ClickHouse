@@ -102,6 +102,11 @@ void StorageSystemPartsColumns::processNextStorage(
         String default_expression;
     };
 
+    /// One live-mapping snapshot per storage: displayed logical names are derived
+    /// from each part column's stamped ID, because a metadata-only RENAME does not
+    /// refresh the parts' cached column lists.
+    const auto column_id_mapping = info.data->getActiveColumnIdMapping();
+
     std::unordered_map<String, ColumnInfo> columns_info;
     auto metadata_snapshot = info.storage->getInMemoryMetadataPtr(context, false);
     for (const auto & column : metadata_snapshot->getColumns())
@@ -154,6 +159,12 @@ void StorageSystemPartsColumns::processNextStorage(
             ++column_position;
             size_t src_index = 0;
             size_t res_index = 0;
+
+            /// IDs no longer in the mapping are dropped-column orphans; for those the
+            /// part's recorded (historical) name is the informative display.
+            String column_name = column.name;
+            if (column_id_mapping && !column.column_id.empty() && column_id_mapping->hasColumnId(column.column_id))
+                column_name = column_id_mapping->getLogicalName(column.column_id);
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->partition.serializeToString(part_metadata_snapshot));
@@ -228,7 +239,7 @@ void StorageSystemPartsColumns::processNextStorage(
             }
 
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(column.name);
+                columns[res_index++]->insert(column_name);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column.getColumnIdInStorage());
             if (columns_mask[src_index++])
@@ -236,7 +247,7 @@ void StorageSystemPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column_position);
 
-            auto column_info_it = columns_info.find(column.name);
+            auto column_info_it = columns_info.find(column_name);
             if (column_info_it != columns_info.end())
             {
                 if (columns_mask[src_index++])
@@ -268,18 +279,19 @@ void StorageSystemPartsColumns::processNextStorage(
                 else
                     columns[res_index++]->insertDefault();
             }
-            bool column_has_ttl = part->ttl_infos.columns_ttl.contains(column.name);
+            const String ttl_key = column.getColumnIdInStorage();
+            bool column_has_ttl = part->ttl_infos.columns_ttl.contains(ttl_key);
             if (columns_mask[src_index++])
             {
                 if (column_has_ttl)
-                    columns[res_index++]->insert(static_cast<UInt32>(part->ttl_infos.columns_ttl[column.name].min));
+                    columns[res_index++]->insert(static_cast<UInt32>(part->ttl_infos.columns_ttl[ttl_key].min));
                 else
                     columns[res_index++]->insertDefault();
             }
             if (columns_mask[src_index++])
             {
                 if (column_has_ttl)
-                    columns[res_index++]->insert(static_cast<UInt32>(part->ttl_infos.columns_ttl[column.name].max));
+                    columns[res_index++]->insert(static_cast<UInt32>(part->ttl_infos.columns_ttl[ttl_key].max));
                 else
                     columns[res_index++]->insertDefault();
             }
@@ -359,7 +371,7 @@ void StorageSystemPartsColumns::processNextStorage(
                 serialization->enumerateStreams([&](const auto & subpath)
                 {
                     auto substream = ISerialization::getFileNameForStream(column.name, subpath, ISerialization::StreamFileNameSettings(*info.data->getSettings()));
-                    auto filename = IMergeTreeDataPart::getStreamNameForColumn(column.name, subpath, ".bin", part->checksums, info.data->getSettings());
+                    auto filename = IMergeTreeDataPart::getStreamNameForColumn(column, subpath, ".bin", part->checksums, info.data->getSettings());
 
                     substreams.push_back(std::move(substream));
                     filenames.push_back(filename.value_or(""));
@@ -396,6 +408,7 @@ void StorageSystemPartsColumns::processNextStorage(
 
                 ColumnSize size;
                 NameAndTypePair subcolumn(column.name, name, column.type, data.type);
+                subcolumn.setColumnId(column.column_id);
 
                 auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(subcolumn, subpath, ".bin", part->checksums, info.data->getSettings());
                 if (stream_name)

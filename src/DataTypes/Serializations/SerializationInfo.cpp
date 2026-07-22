@@ -7,7 +7,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Block.h>
-#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <base/EnumReflection.h>
 
 #include <Poco/JSON/JSON.h>
@@ -448,6 +447,54 @@ void SerializationInfoByName::replaceData(const SerializationInfoByName & other)
     }
 }
 
+void SerializationInfoByName::reKeyToColumnIds(const NamesAndTypesList & columns)
+{
+    if (empty())
+        return;
+
+    bool has_distinct_column_ids = std::any_of(columns.begin(), columns.end(),
+        [](const auto & column) { return !column.column_id.empty() && column.column_id != column.name; });
+
+    if (!has_distinct_column_ids)
+        return;
+
+    std::unordered_map<String, String> id_by_name;
+    for (const auto & column : columns)
+        id_by_name.emplace(column.name, column.getColumnIdInStorage());
+
+    /// Rebuild into a fresh map: re-keying in place would overwrite another
+    /// column's record when a logical name equals that column's ID (RENAME
+    /// keeps the ID, so the freed name can be re-added under a fresh one).
+    std::map<String, MutableSerializationInfoPtr> rekeyed;
+    for (auto & [name, info] : *this)
+    {
+        auto it = id_by_name.find(name);
+        rekeyed.emplace(it == id_by_name.end() ? name : it->second, std::move(info));
+    }
+    swap(rekeyed);
+}
+
+SerializationInfoByName SerializationInfoByName::reKeyToLogicalNames(const NamesAndTypesList & columns, bool drop_orphans) const
+{
+    std::unordered_map<String, String> name_by_id;
+    for (const auto & column : columns)
+        name_by_id.emplace(column.getColumnIdInStorage(), column.name);
+
+    SerializationInfoByName rekeyed(settings);
+    for (const auto & [id, info] : *this)
+    {
+        auto it = name_by_id.find(id);
+        if (it == name_by_id.end())
+        {
+            if (!drop_orphans)
+                rekeyed.emplace(id, info);
+            continue;
+        }
+        rekeyed.emplace(it->second, info);
+    }
+    return rekeyed;
+}
+
 ISerialization::KindStack SerializationInfoByName::getKindStack(const String & column_name) const
 {
     auto it = find(column_name);
@@ -525,14 +572,6 @@ static void writeJSONImpl(const SerializationInfoByName & infos, WriteBuffer & o
 void SerializationInfoByName::writeJSON(WriteBuffer & out) const
 {
     writeJSONImpl(*this, out, [](const String & name) { return name; });
-}
-
-void SerializationInfoByName::writeJSONWithColumnIds(WriteBuffer & out, const ColumnIdMapping & column_id_mapping) const
-{
-    writeJSONImpl(*this, out, [&](const String & name)
-    {
-        return column_id_mapping.getColumnIdOrDefault(name);
-    });
 }
 
 SerializationInfoByName SerializationInfoByName::clone() const
@@ -696,10 +735,7 @@ SerializationInfoByName SerializationInfoByName::readJSON(const NamesAndTypesLis
     return readJSONFromString(columns, json_str);
 }
 
-SerializationInfoByName SerializationInfoByName::readJSONWithColumnIds(
-    const NamesAndTypesList & columns,
-    const ColumnIdMapping & column_id_mapping,
-    ReadBuffer & in)
+SerializationInfoByName SerializationInfoByName::readJSONWithColumnIds(const NamesAndTypesList & columns, ReadBuffer & in)
 {
     String json_str;
     readString(json_str, in);
@@ -709,9 +745,15 @@ SerializationInfoByName SerializationInfoByName::readJSONWithColumnIds(
     if (!columns_array)
         return infos;
 
-    std::unordered_map<std::string_view, const IDataType *> column_type_by_name;
-    for (const auto & [name, type] : columns)
-        column_type_by_name.emplace(name, type.get());
+    /// A record's on-disk key is the columns.txt token: the stamped column ID, or the
+    /// logical name for pre-activation parts.  IDs claim keys first -- a key equal to
+    /// some column's ID belongs to that ID's owner, never to a same-named column.
+    std::unordered_map<String, const NameAndTypePair *> column_by_stored_key = columns.getIndexByStorageColumnId();
+    for (const auto & column : columns)
+    {
+        if (!column.column_id.empty() && column.column_id != column.name)
+            column_by_stored_key.emplace(column.name, &column);
+    }
 
     for (const auto & elem : *columns_array)
     {
@@ -721,22 +763,13 @@ SerializationInfoByName SerializationInfoByName::readJSONWithColumnIds(
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing field '{}' in serialization infos", KEY_NAME);
 
         auto stored_name = elem_object->getValue<String>(KEY_NAME);
-        String logical_name;
-
-        if (column_id_mapping.hasColumnId(stored_name))
-            logical_name = column_id_mapping.getLogicalName(stored_name);
-        else if (column_id_mapping.getColumnIdOrDefault(stored_name) == stored_name && column_type_by_name.contains(stored_name))
-            logical_name = stored_name;
-        else
+        auto it = column_by_stored_key.find(stored_name);
+        if (it == column_by_stored_key.end())
             continue;
 
-        auto it = column_type_by_name.find(logical_name);
-        if (it == column_type_by_name.end())
-            continue;
-
-        auto info = it->second->createSerializationInfo(infos.getSettings());
+        auto info = it->second->type->createSerializationInfo(infos.getSettings());
         info->fromJSON(*elem_object);
-        infos.emplace(logical_name, std::move(info));
+        infos.emplace(it->second->getColumnIdInStorage(), std::move(info));
     }
 
     return infos;

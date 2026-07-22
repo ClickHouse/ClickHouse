@@ -160,9 +160,14 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 {
     Readers new_readers;
 
+    /// The operation's captured mapping, threaded into every reader it builds
+    /// (see MergeTreeData::getColumnIdMappingFromSnapshot).
+    auto column_id_mapping = MergeTreeData::getColumnIdMappingFromSnapshot(*extras.storage_snapshot);
+
     auto create_reader = [&](const NamesAndTypesList & columns_to_read, bool is_prewhere)
     {
-        auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(read_info->data_part, read_info->alter_conversions);
+        auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
+            read_info->data_part, read_info->alter_conversions, column_id_mapping);
 
         return createMergeTreeReader(
             part_info,

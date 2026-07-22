@@ -397,13 +397,9 @@ ReadBuffer * MergeTreeReaderWide::getStream(
     auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", checksums, storage_settings);
     if (!stream_name)
     {
-        /// After DROP + re-ADD of the same column, the current mapping assigns a new
-        /// column ID (e.g. b→2) but parts loaded before the ALTER still carry the
-        /// column under the old column ID (b→1, or for pre-activation parts under
-        /// the logical name b with no column_id at all).  The reader resolves to
-        /// the current mapping's column ID, so streams for the new name will not
-        /// be found in the old part.  Detect this mismatch and return nullptr so
-        /// the reader uses default values instead of throwing.
+        /// A numeric-ID column requested from an old part that predates its current
+        /// ID (DROP + re-ADD reassigns the ID; see ColumnIdMapping.h) has no matching
+        /// stream here — return nullptr so the reader fills defaults instead of throwing.
         if (!name_and_type.column_id.empty()
             && name_and_type.getColumnIdInStorage() != name_and_type.getNameInStorage())
         {

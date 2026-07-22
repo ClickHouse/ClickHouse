@@ -58,9 +58,12 @@ TTLCalcTransform::TTLCalcTransform(
     {
         for (const auto & [name, description] : metadata_snapshot_->getColumnTTLs())
         {
+            /// `columns_ttl` is keyed by the part's stamped column ID (matching ttl.txt).
+            auto column_in_part = data_part->getColumns().tryGetByName(name);
+            String column_id = column_in_part ? column_in_part->getColumnIdInStorage() : name;
             algorithms.emplace_back(std::make_unique<TTLUpdateInfoAlgorithm>(
                 getExpressions(description, subqueries_for_sets, context), description,
-                TTLUpdateField::COLUMNS_TTL, name, old_ttl_infos.columns_ttl[name], current_time_, force_));
+                TTLUpdateField::COLUMNS_TTL, column_id, old_ttl_infos.columns_ttl[column_id], current_time_, force_));
         }
     }
 

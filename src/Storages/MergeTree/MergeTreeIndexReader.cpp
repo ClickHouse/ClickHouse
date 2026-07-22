@@ -25,8 +25,10 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
     auto context = part->storage.getContext();
     auto * load_marks_threadpool = settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
 
+    /// current mapping: index-marks load with no operation snapshot; column IDs are stable so this live read is safe.
     auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
-        std::make_shared<LoadedMergeTreeDataPartInfoForReader>(part, std::make_shared<AlterConversions>()),
+        std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
+            part, std::make_shared<AlterConversions>(), part->storage.getActiveColumnIdMapping()),
         mark_cache,
         part->index_granularity_info.getMarksFilePath(stream_name),
         marks_count,

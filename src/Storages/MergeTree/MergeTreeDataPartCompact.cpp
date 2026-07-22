@@ -196,7 +196,9 @@ void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, Mark
         return;
 
     auto context = storage.getContext();
-    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
+    /// current mapping: mark-cache load with no operation snapshot; column IDs are stable so this live read is safe.
+    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
+        shared_from_this(), std::make_shared<AlterConversions>(), storage.getActiveColumnIdMapping());
 
     LOG_TEST(getLogger("MergeTreeDataPartCompact"), "Loading marks into mark cache for columns {} of part {}", toString(column_names), name);
 

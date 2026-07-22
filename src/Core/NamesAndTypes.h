@@ -130,6 +130,11 @@ public:
     /// Creates a mapping from name to the type
     UnorderedMapWithMemoryTracking<std::string, DataTypePtr> getNameToTypeMap() const;
 
+    /// Index each element by its `getColumnIdInStorage()` (the stamped column ID, or
+    /// the logical name when no ID is stamped). The returned pointers borrow from this
+    /// list, so the list must outlive the map.
+    std::unordered_map<String, const NameAndTypePair *> getIndexByStorageColumnId() const;
+
     /// Remove columns which names are not in the `names`.
     void filterColumns(const NameSet & names);
 
