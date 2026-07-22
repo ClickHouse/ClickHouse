@@ -322,6 +322,16 @@ def generate_missing_required_fields() -> None:
         ),
     )
 
+    case_payload = json.loads(footer_json.decode("utf-8"))
+    case_payload["blobs"][0]["compression-codec"] = None
+    write_fixture(
+        "dv_null_compression_codec.puffin",
+        build_puffin_file(
+            BLOB_PLACEHOLDER,
+            json.dumps(case_payload, separators=(", ", ": ")).encode("utf-8"),
+        ),
+    )
+
 
 def generate_invalid_property_value_types() -> None:
     """Property maps must have string values; non-strings must fail with BAD_ARGUMENTS."""
@@ -410,6 +420,7 @@ def generate_invalid_string_fields() -> None:
     theta_cases = {
         "compression_codec_number.puffin": 1,
         "compression_codec_bool.puffin": True,
+        "compression_codec_null.puffin": None,
     }
     for name, codec_value in theta_cases.items():
         case_payload = {

@@ -33,7 +33,7 @@ do
     id=$((id + 1))
 done
 
-for f in type_number type_bool compression_codec_number compression_codec_bool
+for f in type_number type_bool compression_codec_number compression_codec_bool compression_codec_null
 do
     launch "$id" meta "$DATA/$f.puffin" 'must be a string'
     id=$((id + 1))
@@ -55,6 +55,8 @@ do
 done
 
 launch "$id" meta "$DATA/dv_with_compression_codec.puffin" "must omit 'compression-codec'"
+id=$((id + 1))
+launch "$id" meta "$DATA/dv_null_compression_codec.puffin" "must omit 'compression-codec'"
 id=$((id + 1))
 
 for f in dv_nonzero_snapshot_id dv_nonzero_sequence_number

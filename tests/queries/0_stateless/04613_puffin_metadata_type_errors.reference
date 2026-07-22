@@ -40,6 +40,8 @@ must be a string
 must be a string
 --- compression_codec_bool.puffin ---
 must be a string
+--- compression_codec_null.puffin ---
+must be a string
 --- footer_root_array.puffin ---
 footer JSON must be an object
 --- malformed_footer_json.puffin ---
@@ -53,6 +55,8 @@ field 'properties' must be an object
 --- null_non_dv_properties.puffin ---
 field 'properties' must be an object
 --- dv_with_compression_codec.puffin ---
+must omit 'compression-codec'
+--- dv_null_compression_codec.puffin ---
 must omit 'compression-codec'
 --- dv_nonzero_snapshot_id.puffin ---
 snapshot-id and sequence-number must be -1

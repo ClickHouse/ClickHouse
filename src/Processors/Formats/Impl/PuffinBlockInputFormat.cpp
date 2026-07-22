@@ -270,8 +270,10 @@ String requireBlobMetadataString(const Poco::JSON::Object::Ptr & blob_obj, const
 
 String optBlobMetadataString(const Poco::JSON::Object::Ptr & blob_obj, const char * field_name, size_t blob_index)
 {
-    if (!blob_obj->has(field_name) || blob_obj->isNull(field_name))
+    if (!blob_obj->has(field_name))
         return {};
+    if (blob_obj->isNull(field_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: field '{}' must be a string", blob_index, field_name);
     return requireJSONStringValue(blob_obj->get(field_name), blob_index, field_name);
 }
 
@@ -390,7 +392,6 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_
         blob.sequence_number = requireBlobMetadataInt64(blob_obj, "sequence-number", i);
         blob.offset = requireBlobMetadataInt64(blob_obj, "offset", i);
         blob.length = requireBlobMetadataInt64(blob_obj, "length", i);
-        blob.compression_codec = optBlobMetadataString(blob_obj, "compression-codec", i);
 
         if (blob.type == "deletion-vector-v1")
         {
@@ -400,7 +401,8 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_
                     "Puffin blob {}: deletion-vector-v1 snapshot-id and sequence-number must be -1",
                     i);
 
-            if (blob_obj->has("compression-codec") && !blob_obj->isNull("compression-codec"))
+            /// Spec requires the key to be omitted; present null is not omission.
+            if (blob_obj->has("compression-codec"))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Puffin blob {}: deletion-vector-v1 must omit 'compression-codec'",
@@ -410,7 +412,10 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_
             requireDeletionVectorV1Properties(blob, i);
         }
         else
+        {
+            blob.compression_codec = optBlobMetadataString(blob_obj, "compression-codec", i);
             parseBlobProperties(blob_obj, blob, i, /*required=*/false);
+        }
 
         requireBlobMetadataField(blob_obj, "fields", i);
         auto fields_arr = blob_obj->getArray("fields");
