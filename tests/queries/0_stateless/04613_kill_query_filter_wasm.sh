@@ -53,6 +53,12 @@ for _ in $(seq 1 100); do
     sleep 0.1
 done
 
+# Fail if the UDF never started — passing via the generic cancellation path is not acceptable
+if [[ "$wasm_us" == "" || "$wasm_us" == "0" ]]; then
+    echo "FAIL: WASM UDF did not start executing within 10 seconds"
+    exit 1
+fi
+
 # Kill the query (ASYNC) - this triggers onCancel -> cancelExecution on the WASM function
 # cancelExecution calls interrupt_source.request_stop(), which the WasmEdge runtime checks
 ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
