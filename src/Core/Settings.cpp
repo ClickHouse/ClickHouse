@@ -8778,6 +8778,9 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
 
     void set(std::string_view name, const Field & value) override;
 
+    bool hasSettingsChangedByCompatibility() const { return !settings_changed_by_compatibility_setting.empty(); }
+    void resetSettingsChangedByCompatibility();
+
 private:
     void applyCompatibilitySetting(const String & compatibility);
 
@@ -8916,13 +8919,19 @@ void SettingsImpl::set(std::string_view name, const Field & value)
     BaseSettings::set(name, value);
 }
 
-void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
+void SettingsImpl::resetSettingsChangedByCompatibility()
 {
-    /// First, revert all changes applied by previous compatibility setting
     for (const auto & setting_name : settings_changed_by_compatibility_setting)
         resetToDefault(setting_name);
 
     settings_changed_by_compatibility_setting.clear();
+}
+
+void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
+{
+    /// First, revert all changes applied by previous compatibility setting
+    resetSettingsChangedByCompatibility();
+
     /// If setting value is empty, we don't need to change settings
     if (compatibility_value.empty())
         return;
@@ -9036,6 +9045,16 @@ void Settings::set(std::string_view name, const Field & value)
 void Settings::setDefaultValue(std::string_view name)
 {
     impl->resetToDefault(name);
+}
+
+bool Settings::hasSettingsChangedByCompatibility() const
+{
+    return impl->hasSettingsChangedByCompatibility();
+}
+
+void Settings::resetSettingsChangedByCompatibility()
+{
+    impl->resetSettingsChangedByCompatibility();
 }
 
 VectorWithMemoryTracking<String> Settings::getHints(const String & name) const
