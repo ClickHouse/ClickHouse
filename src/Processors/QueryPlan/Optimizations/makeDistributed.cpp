@@ -156,23 +156,6 @@ bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root)
     return false;
 }
 
-/// True if the plan already contains a logical exchange step, i.e. the tryMakeDistributed*
-/// transforms (the only source of exchanges) already ran on it.
-bool planContainsLogicalExchange(const QueryPlan::Node & root)
-{
-    std::vector<const QueryPlan::Node *> stack = {&root};
-    while (!stack.empty())
-    {
-        const auto * node = stack.back();
-        stack.pop_back();
-        if (dynamic_cast<const LogicalExchangeStep *>(node->step.get()))
-            return true;
-        for (const auto * child : node->children)
-            stack.push_back(child);
-    }
-    return false;
-}
-
 /// Rejects distributed reads a worker cannot reproduce: a pinned snapshot boundary
 /// (select_sequential_consistency) or the part-order virtual columns `_part_index` /
 /// `_part_starting_offset`. Done at planning time so it fails cleanly before the pipeline is built.
