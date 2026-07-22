@@ -26,7 +26,12 @@ function insert_data
     TXN_SETTINGS="session_id=$SESSION_ID&throw_on_unsupported_query_inside_transaction=0&implicit_transaction=$IMPLICIT"
     BEGIN=""
     COMMIT=""
-    SETTINGS="query_id=$ID&$TXN_SETTINGS&max_insert_block_size=110000&min_insert_block_size_rows=110000"
+    # write_through_distributed_cache=0: on the distributed-cache CI variant the default profile enables
+    # write-through, which makes each of a part's ~11 files (mostly tiny metadata) pay a synchronous cache
+    # round-trip; a 1M-row insert then needs ~200 round-trips and can exceed the client timeout. This test
+    # exercises query cancellation / transaction rollback, not the write-through path, so disable it to keep
+    # the insert bounded by data volume. A no-op where distributed cache is not configured.
+    SETTINGS="query_id=$ID&$TXN_SETTINGS&max_insert_block_size=110000&min_insert_block_size_rows=110000&write_through_distributed_cache=0"
     if [[ "$IMPLICIT" -eq 0 ]]; then
         $CLICKHOUSE_CURL -sS -d 'begin transaction' "$CLICKHOUSE_URL&$TXN_SETTINGS"
         SETTINGS="$SETTINGS&session_check=1"
@@ -51,6 +56,7 @@ function insert_data
         # safeExit via interruptSignalHandler) to deadlock acquiring the same lock. The client then ignores
         # SIGTERM too, so without -k the timeout wrapper waits forever, keeping the pipe open.
         timeout -k 5s 120 $CLICKHOUSE_CLIENT --stacktrace --query_id="$ID" --throw_on_unsupported_query_inside_transaction=0 --implicit_transaction="$IMPLICIT" \
+            --write_through_distributed_cache 0 \
             --max_block_size=1000 --max_insert_block_size=1000 -q \
             "${BEGIN}insert into dedup_test settings max_insert_block_size=110000, min_insert_block_size_rows=110000 format TSV$COMMIT" < $DATA_FILE \
             | grep -Fv "Transaction is not in RUNNING state" | grep -Fv "There is no current transaction"
