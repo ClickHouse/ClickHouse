@@ -146,6 +146,23 @@ DeduplicationInfo::Ptr DeduplicationInfo::filterToPartition(const PaddedPODArray
     if (disabled || row_to_partition.empty() || getCount() <= 1)
         return cloneSelf();
 
+    /// Attributing tokens to partitions walks each token's row range over the selector, which is
+    /// only possible while the offsets still describe the block that was split. Behind an `Alias`
+    /// hop over a row-count-changing view the deduplication info is re-anchored to the view-output
+    /// chunks and there is no mapping from the tokens' source rows to the selector anymore. Refuse
+    /// loudly instead of reading out of the selector's bounds (see filterImpl).
+    if (row_to_partition.size() != getRows())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot attribute {} deduplication tokens to the partitions of the insert: the deduplication info "
+            "describes {} rows, but the block was split into partitions over {} rows because a materialized view "
+            "with a row-count-changing inner query was processed before a table with the `Alias` engine. "
+            "Debug: {}",
+            getCount(),
+            getRows(),
+            row_to_partition.size(),
+            debug());
+
     /// Keep only tokens that have at least one row in this partition.
     std::set<size_t> absent_offsets;
     for (size_t i = 0; i < offsets.size(); ++i)
