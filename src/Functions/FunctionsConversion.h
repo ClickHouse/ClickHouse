@@ -2116,7 +2116,7 @@ struct ConvertImpl
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const Int64 whole = static_cast<Int64>(vec_from[i].value / scale_mult);
-                if constexpr (default_date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+                if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
                 {
                     if (whole < -MAX_TIME_TIMESTAMP || whole > MAX_TIME_TIMESTAMP) [[unlikely]]
                         throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", whole);
