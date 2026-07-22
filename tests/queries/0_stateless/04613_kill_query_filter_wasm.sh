@@ -44,6 +44,15 @@ ${CLICKHOUSE_CLIENT} --query_id="$query_id" --allow_experimental_analyzer=1 --qu
 # Wait for the query to start executing the WASM function (fails loudly on timeout)
 wait_for_query_to_start "$query_id" 30
 
+# Phase 2: wait until the first infinite_loop_04613 call enters the WASM runtime
+# (WasmTotalExecuteMicroseconds increments only when UDF bytecode runs).
+# This proves cancelExecution will hit a running function, not a future one.
+for _ in $(seq 1 100); do
+    wasm_us=$(${CLICKHOUSE_CLIENT} -q "SELECT ProfileEvents['WasmTotalExecuteMicroseconds'] FROM system.processes WHERE query_id = '${query_id}'")
+    [[ "$wasm_us" != "" && "$wasm_us" != "0" ]] && break
+    sleep 0.1
+done
+
 # Kill the query (ASYNC) - this triggers onCancel -> cancelExecution on the WASM function
 # cancelExecution calls interrupt_source.request_stop(), which the WasmEdge runtime checks
 ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
