@@ -43,10 +43,20 @@ struct GroupConvexHullData
     /// subsequent row.
     size_t size_after_compression = 0;
 
+    void addOne(CartesianPoint && point, const char * function_name)
+    {
+        points.push_back(std::move(point));
+        finishAdd(function_name);
+    }
+
     void addMany(const std::vector<CartesianPoint> & new_points, const char * function_name) // STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
         points.insert(points.end(), new_points.begin(), new_points.end());
+        finishAdd(function_name);
+    }
 
+    void finishAdd(const char * function_name)
+    {
         /// Compress (recompute the hull) before enforcing the budget, mirroring `merge`: many
         /// input points can collapse to a small hull, so a valid result must not be rejected
         /// based on how the points were batched across rows. If the compressed hull genuinely
@@ -150,26 +160,27 @@ struct GroupConvexHullData
 };
 
 
+void validateConvexHullPoint(const CartesianPoint & point)
+{
+    Float64 x = point.get<0>();
+    Float64 y = point.get<1>();
+    if (std::isnan(x) || std::isnan(y))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Point coordinates must not be NaN");
+    if (std::isinf(x) || std::isinf(y))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Point coordinates must not be infinite");
+}
+
+
 void extractPointsFromField(
     const Field & field,
     GeometryColumnType geo_type,
     std::vector<CartesianPoint> & out) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
-    auto validate = [](const CartesianPoint & p)
-    {
-        Float64 x = p.get<0>();
-        Float64 y = p.get<1>();
-        if (std::isnan(x) || std::isnan(y))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Point coordinates must not be NaN");
-        if (std::isinf(x) || std::isinf(y))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Point coordinates must not be infinite");
-    };
-
     switch (geo_type)
     {
         case GeometryColumnType::Point: {
             auto pt = getPointFromField<CartesianPoint>(field);
-            validate(pt);
+            validateConvexHullPoint(pt);
             out.push_back(pt);
             break;
         }
@@ -177,7 +188,7 @@ void extractPointsFromField(
             auto ring = getRingFromField<CartesianPoint>(field);
             for (const auto & pt : ring)
             {
-                validate(pt);
+                validateConvexHullPoint(pt);
                 out.push_back(pt);
             }
             break;
@@ -186,7 +197,7 @@ void extractPointsFromField(
             auto ls = getLineStringFromField<CartesianPoint>(field);
             for (const auto & pt : ls)
             {
-                validate(pt);
+                validateConvexHullPoint(pt);
                 out.push_back(pt);
             }
             break;
@@ -196,7 +207,7 @@ void extractPointsFromField(
             for (const auto & ls : mls)
                 for (const auto & pt : ls)
                 {
-                    validate(pt);
+                    validateConvexHullPoint(pt);
                     out.push_back(pt);
                 }
             break;
@@ -214,10 +225,10 @@ void extractPointsFromField(
                     "non-empty inner rings");
             for (const auto & inner : poly.inners())
                 for (const auto & pt : inner)
-                    validate(pt);
+                    validateConvexHullPoint(pt);
             for (const auto & pt : poly.outer())
             {
-                validate(pt);
+                validateConvexHullPoint(pt);
                 out.push_back(pt);
             }
             break;
@@ -233,10 +244,10 @@ void extractPointsFromField(
                         "non-empty inner rings");
                 for (const auto & inner : poly.inners())
                     for (const auto & pt : inner)
-                        validate(pt);
+                        validateConvexHullPoint(pt);
                 for (const auto & pt : poly.outer())
                 {
-                    validate(pt);
+                    validateConvexHullPoint(pt);
                     out.push_back(pt);
                 }
             }
@@ -250,6 +261,7 @@ void extractPointsFromField(
 class AggregateFunctionGroupConvexHull final : public IAggregateFunctionDataHelper<GroupConvexHullData, AggregateFunctionGroupConvexHull>
 {
 private:
+    static constexpr auto name = "groupConvexHull";
     GeometryColumnType geo_type;
     bool is_variant = false;
     VariantTypeMap variant_type_map;
@@ -266,7 +278,7 @@ public:
             variant_type_map = buildVariantTypeMap(argument_type);
     }
 
-    String getName() const override { return "groupConvexHull"; }
+    String getName() const override { return name; }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -282,14 +294,22 @@ public:
         if (current_type == GeometryColumnType::Null)
             return;
 
+        if (current_type == GeometryColumnType::Point)
+        {
+            auto point = getPointFromField<CartesianPoint>(field);
+            validateConvexHullPoint(point);
+            AggregateFunctionGroupConvexHull::data(place).addOne(std::move(point), name);
+            return;
+        }
+
         std::vector<CartesianPoint> new_points; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         extractPointsFromField(field, current_type, new_points);
-        AggregateFunctionGroupConvexHull::data(place).addMany(new_points, getName().c_str());
+        AggregateFunctionGroupConvexHull::data(place).addMany(new_points, name);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        AggregateFunctionGroupConvexHull::data(place).merge(AggregateFunctionGroupConvexHull::data(rhs), getName().c_str());
+        AggregateFunctionGroupConvexHull::data(place).merge(AggregateFunctionGroupConvexHull::data(rhs), name);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override

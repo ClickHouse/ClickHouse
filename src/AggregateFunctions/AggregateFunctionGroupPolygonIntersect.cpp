@@ -192,6 +192,7 @@ class AggregateFunctionGroupPolygonIntersect final
     : public IAggregateFunctionDataHelper<GroupPolygonIntersectData, AggregateFunctionGroupPolygonIntersect>
 {
 private:
+    static constexpr auto name = "groupPolygonIntersection";
     GeometryColumnType geo_type;
     bool is_variant = false;
     VariantTypeMap variant_type_map;
@@ -208,7 +209,7 @@ public:
             variant_type_map = buildVariantTypeMap(argument_type);
     }
 
-    String getName() const override { return "groupPolygonIntersection"; }
+    String getName() const override { return name; }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -227,13 +228,13 @@ public:
         if (current_type == GeometryColumnType::Null)
             return;
 
-        auto mp = fieldToMultiPolygon(field, current_type, getName().c_str());
-        AggregateFunctionGroupPolygonIntersect::data(place).add(std::move(mp), getName().c_str());
+        auto mp = fieldToMultiPolygon(field, current_type, name);
+        AggregateFunctionGroupPolygonIntersect::data(place).add(std::move(mp), name);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        AggregateFunctionGroupPolygonIntersect::data(place).merge(AggregateFunctionGroupPolygonIntersect::data(rhs), getName().c_str());
+        AggregateFunctionGroupPolygonIntersect::data(place).merge(AggregateFunctionGroupPolygonIntersect::data(rhs), name);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -296,19 +297,19 @@ public:
             PolygonalStateBudget budget;
             for (UInt64 i = 0; i < chunk_count; ++i)
             {
-                data.chunks[i] = deserializeGeoMultiPolygon(buf, getName().c_str(), budget);
-                validateDeserializedMultiPolygon(data.chunks[i], getName().c_str());
+                data.chunks[i] = deserializeGeoMultiPolygon(buf, name, budget);
+                validateDeserializedMultiPolygon(data.chunks[i], name);
             }
             /// `validateDeserializedMultiPolygon` runs `boost::geometry::correct`, which can
             /// append closing points not charged against `budget.points`. Recount from the
             /// normalized geometry and re-enforce the cap.
-            data.total_points = recountPolygonalPointsAndCheck(data.chunks, getName().c_str());
+            data.total_points = recountPolygonalPointsAndCheck(data.chunks, name);
         }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        auto result = AggregateFunctionGroupPolygonIntersect::data(place).getResult(getName().c_str());
+        auto result = AggregateFunctionGroupPolygonIntersect::data(place).getResult(name);
         insertMultiPolygonIntoColumn(result, to);
     }
 };
