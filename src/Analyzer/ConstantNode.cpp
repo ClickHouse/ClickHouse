@@ -4,7 +4,11 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVariant.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
 #include <DataTypes/FieldToDataType.h>
@@ -84,6 +88,26 @@ bool ConstantNode::receivedFromInitiatorServer() const
     auto * cast_function = getSourceExpression()->as<FunctionNode>();
     if (!cast_function || cast_function->getFunctionName() != "_CAST")
         return false;
+
+    /// The initiator serializes a folded constant as `_CAST('<value>', '<type>')` with a plain literal inside,
+    /// so only that shape means that the constant was received from the initiator. `_CAST(__getScalar('<hash>'), '<type>')`
+    /// is different: it is a live expression in the initiator's query tree (for example, a scalar subquery result
+    /// cast by the `DistanceTransposedPartialReadsPass` optimization), and the initiator names the result column
+    /// after the whole expression. A constant folded from it on a secondary server must be named after its source
+    /// expression as well, or the initiator won't find the expected column in blocks received from remote servers.
+    const auto & cast_arguments = cast_function->getArguments().getNodes();
+    if (!cast_arguments.empty())
+    {
+        const IQueryTreeNode * cast_argument = cast_arguments.front().get();
+        if (const auto * constant_argument = cast_argument->as<ConstantNode>();
+            constant_argument && constant_argument->hasSourceExpression())
+            cast_argument = constant_argument->getSourceExpression().get();
+
+        if (const auto * function_argument = cast_argument->as<FunctionNode>();
+            function_argument && function_argument->getFunctionName() == "__getScalar")
+            return false;
+    }
+
     return true;
 }
 
@@ -95,19 +119,14 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
         buffer << ", alias: " << getAlias();
 
     buffer << ", constant_value: ";
-    if (mask_id)
-    {
-        if (mask_id == std::numeric_limits<decltype(mask_id)>::max())
-            buffer << "[HIDDEN]";
-        else
-            buffer << "[HIDDEN id: " << mask_id << "]";
-    }
+    if (isMasked())
+        buffer << getMaskString();
     else
         buffer << getValue().dump();
 
     buffer << ", constant_value_type: " << constant_value.getType()->getName();
 
-    if (!mask_id && getSourceExpression())
+    if (!isMasked() && getSourceExpression())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION" << '\n';
         getSourceExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
@@ -116,7 +135,16 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
 
 void ConstantNode::convertToNullable()
 {
-    constant_value = { makeNullableSafe(constant_value.getColumn()), makeNullableSafe(constant_value.getType()) };
+    /// Use the LowCardinality-aware variant so that a `LowCardinality(T)` key becomes
+    /// `LowCardinality(Nullable(T))` rather than being left unchanged (a plain `Nullable`
+    /// cannot wrap `LowCardinality`). This keeps the analyzer in sync with `ColumnNode`,
+    /// `FunctionNode` and the planner, which all use `makeNullableOrLowCardinalityNullableSafe`
+    /// when `group_by_use_nulls` is enabled. Otherwise the declared key type would stay
+    /// non-Nullable while the runtime produces a Nullable column, leading to a logical error.
+    const auto & column = constant_value.getColumn();
+    constant_value
+        = {ColumnConst::create(makeNullableOrLowCardinalityNullableSafe(column->getDataColumnPtr()), column->size()),
+           makeNullableOrLowCardinalityNullableSafe(constant_value.getType())};
 }
 
 bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*compare_options*/) const
@@ -138,7 +166,9 @@ void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*c
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const
 {
-    return std::make_shared<ConstantNode>(constant_value, source_expression, is_deterministic);
+    auto result = std::make_shared<ConstantNode>(constant_value, source_expression, is_deterministic);
+    result->mask_id = mask_id;
+    return result;
 }
 
 template <typename F>
@@ -196,7 +226,28 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
         /// For some types we cannot just get a field from a column, because it can loose type information during serialization/deserialization of the literal.
         /// For example, DateTime64 will return Field with Decimal64 and we won't be able to parse it to DateTine64 back in some cases.
         /// Also for Dynamic and Object types we can lose types information, so we need to create a Field carefully.
-        auto constant_value_ast = getCachedAST(from_column);
+        ASTPtr constant_value_ast = getCachedAST(from_column);
+
+        /// A Variant value is serialized as a plain literal of its current member type, while conversion to Variant
+        /// is allowed only for types equal by name to one of its members. The literal does not keep the exact member
+        /// type (e.g. a `Point` value of `Geometry` becomes a plain tuple whose type is inferred back as
+        /// `Tuple(Float64, Float64)`, and a `UInt64` value 42 is inferred back as `UInt8`), so a secondary server
+        /// would fail to resolve `_CAST(<literal>, '<variant type>')`. Cast the literal to the exact member type first.
+        if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(constant_value_type.get()))
+        {
+            ColumnPtr column = constant_value.getColumn();
+            if (isColumnConst(*column))
+                column = assert_cast<const ColumnConst &>(*column).getDataColumnPtr();
+
+            const auto & variant_column = assert_cast<const ColumnVariant &>(*column);
+            auto global_discr = variant_column.globalDiscriminatorAt(0);
+            if (global_discr != ColumnVariant::NULL_DISCRIMINATOR)
+            {
+                auto member_type_name_ast = make_intrusive<ASTLiteral>(variant_type->getVariants()[global_discr]->getName());
+                constant_value_ast = makeASTFunction("_CAST", std::move(constant_value_ast), std::move(member_type_name_ast));
+            }
+        }
+
         auto constant_type_name_ast = make_intrusive<ASTLiteral>(constant_value_type->getName());
         return makeASTFunction("_CAST", std::move(constant_value_ast), std::move(constant_type_name_ast));
     }

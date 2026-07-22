@@ -1,0 +1,80 @@
+---
+title: 'Contrôler la synchronisation d’un Postgres ClickPipe'
+description: 'Documentation sur le contrôle de la synchronisation d’un Postgres ClickPipe'
+slug: /integrations/clickpipes/postgres/sync_control
+sidebarTitle: 'Contrôle des synchronisations'
+keywords: ['contrôle de la synchronisation', 'Postgres', 'ClickPipes', 'taille de lot', 'intervalle de synchronisation']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Ce document décrit comment gérer la synchronisation d’un Postgres ClickPipe lorsque le ClickPipe est en **mode CDC (Running)**.
+
+<div id="overview">
+  ## Vue d’ensemble
+</div>
+
+Les ClickPipes de base de données reposent sur une architecture composée de deux processus parallèles : l’extraction depuis la base de données source et l’envoi vers la base de données cible. Le processus d’extraction est contrôlé par une configuration de synchronisation qui définit la fréquence d’extraction des données et la quantité de données extraite à chaque fois. Par « à chaque fois », nous entendons un lot, puisque le ClickPipe extrait et envoie les données par lots.
+
+Il existe deux principales façons de contrôler la synchronisation d’un Postgres ClickPipe. Le ClickPipe commencera à envoyer les données dès que l’un des paramètres ci-dessous entrera en jeu.
+
+<div id="interval">
+  ### Intervalle de synchronisation
+</div>
+
+L&#39;intervalle de synchronisation du pipe correspond à la durée (en secondes) pendant laquelle le ClickPipe récupère les enregistrements depuis la base de données source. Le temps nécessaire pour envoyer les données récupérées vers ClickHouse n&#39;est pas inclus dans cet intervalle.
+
+La valeur par défaut est de **1 minute**.
+L&#39;intervalle de synchronisation peut être défini sur n&#39;importe quelle valeur entière positive, mais il est recommandé de le maintenir au-dessus de 10 secondes.
+
+<div id="batch-size">
+  ### Taille du lot d’extraction
+</div>
+
+La taille du lot d’extraction correspond au nombre d’enregistrements que le ClickPipe extrait de la base de données source en un seul lot. Par enregistrements, on entend les insertions, mises à jour et suppressions effectuées sur les tables faisant partie du pipe.
+
+La valeur par défaut est de **100,000** enregistrements.
+Un maximum prudent est de 10 millions.
+
+<div id="transactions">
+  ### Une exception : les transactions longues sur la source
+</div>
+
+Lorsqu’une transaction est exécutée sur la base de données source, le ClickPipe attend de recevoir le COMMIT de la transaction avant de poursuivre. Cela **prend le pas sur** l’intervalle de synchronisation et la taille du lot d’extraction.
+
+<div id="configuring">
+  ### Configuration des paramètres de synchronisation
+</div>
+
+Vous pouvez définir l’intervalle de synchronisation et la taille du lot d’extraction lorsque vous créez un ClickPipe ou modifiez un ClickPipe existant.
+Lors de la création d’un ClickPipe, ces paramètres apparaissent à la deuxième étape de l’assistant de création, comme illustré ci-dessous :
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp" alt="Créer les paramètres de synchronisation" size="md" />
+
+Pour modifier un ClickPipe existant, accédez à l’onglet **Paramètres** du pipe, mettez le pipe en pause, puis cliquez sur **Configurer** ici :
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp" alt="Bouton de modification des paramètres de synchronisation" size="md" />
+
+Un volet contenant les paramètres de synchronisation s’ouvre alors, dans lequel vous pouvez modifier l’intervalle de synchronisation et la taille du lot d’extraction :
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp" alt="Modifier les paramètres de synchronisation" size="md" />
+
+<div id="tweaking">
+  ### Ajuster les paramètres de synchronisation pour limiter la croissance du slot de réplication
+</div>
+
+Voyons comment utiliser ces paramètres pour gérer un slot de réplication volumineux pour un pipe CDC.
+Le temps d&#39;envoi vers ClickHouse n&#39;évolue pas linéairement avec le temps d&#39;extraction depuis la base de données source. On peut s&#39;en servir pour réduire la taille d&#39;un slot de réplication volumineux.
+En augmentant à la fois l&#39;intervalle de synchronisation et la taille du lot d&#39;extraction, le ClickPipe extraira une très grande quantité de données de la base de données source en une seule fois, puis les enverra à ClickHouse.
+
+<div id="monitoring">
+  ### Suivi du comportement du contrôle de synchronisation
+</div>
+
+Vous pouvez voir combien de temps prend chaque lot dans le tableau **CDC Syncs** de l’onglet **Metrics** du ClickPipe. Notez que la durée indiquée ici inclut le temps d’envoi et que, même si aucune ligne n’est reçue, le ClickPipe attend ; ce temps d’attente est également inclus dans la durée.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp" alt="tableau CDC Syncs" size="md" />

@@ -143,6 +143,12 @@ protected:
     void processOrdinaryQuery(String query, ASTPtr parsed_query);
     void processInsertQuery(String query, ASTPtr parsed_query);
 
+    /// Settings to transmit to the server: a copy of the client settings with `compatibility`-derived values
+    /// reset, so the server re-derives them from `compatibility` itself and honors its own constraints (a profile
+    /// may pin a setting read-only that `compatibility` would otherwise override). Returns nullopt when nothing
+    /// was derived from `compatibility`, so the caller can send the client settings without copying them.
+    std::optional<Settings> settingsWithoutCompatibilityDerived() const;
+
     void processParsedSingleQuery(
         std::string_view query_,
         ASTPtr parsed_query,
@@ -337,6 +343,11 @@ protected:
     ContextMutablePtr global_context;
     ContextMutablePtr client_context;
 
+    /// The client local time zone, captured on the first connect() before it may switch the
+    /// process default to the server time zone. Used to seed `session_timezone` per query when
+    /// `use_client_time_zone` is set, so server-side literal parsing matches the client side.
+    String client_local_timezone;
+
     String default_database;
     String query_id;
     Int32 suggestion_limit{};
@@ -352,6 +363,7 @@ protected:
     bool echo_queries = false; /// Print queries before execution (defaults to on in interactive mode, off in batch mode).
     bool echo_query_formatted = false; /// Format echoed queries (defaults to on in interactive mode, off in batch mode).
     bool echo_query_id = false; /// Print query_id before execution (defaults to on in interactive mode, off in batch mode).
+    String echo_query_separator; /// Optional separator printed before the formatted echoed query (empty = disabled).
     bool highlight_queries = true; /// Highlight the command prompt and the echoed queries.
     bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool inline_insert_data = false; /// Send INSERT data as is in the query text instead of converting to native blocks.
@@ -464,6 +476,7 @@ protected:
     bool have_error = false;
 
     std::list<ExternalTable> external_tables; /// External tables info.
+    std::list<ExternalTable> external_scalars; /// External scalars info.
     bool send_external_tables = false;
     NameToNameMap query_parameters; /// Dictionary with query parameters for prepared statements.
 

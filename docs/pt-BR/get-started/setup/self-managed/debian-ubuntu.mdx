@@ -1,0 +1,152 @@
+---
+description: 'Instale o ClickHouse em Debian/Ubuntu Linux'
+keywords: ['ClickHouse', 'install', 'Debian', 'Ubuntu', 'deb']
+sidebarTitle: 'Debian/Ubuntu'
+slug: /install/debian_ubuntu
+title: 'Instalar o ClickHouse em Debian/Ubuntu'
+hide_title: true
+doc_type: 'guide'
+---
+
+import Recommendations from '/snippets/pt-BR/recommendations.mdx';
+
+> Recomenda-se usar pacotes `deb` oficiais pré-compilados para **Debian** ou **Ubuntu**.
+
+<Steps>
+  <Step>
+    ## Revise as recomendações
+
+    <Recommendations />
+  </Step>
+
+  <Step>
+    ## Configure o repositório do Debian
+
+    Para instalar o ClickHouse, execute os comandos a seguir:
+
+    ```bash
+    # Instale os pacotes de pré-requisito
+    sudo apt-get install -y apt-transport-https ca-certificates curl gnupg
+
+    # Baixe a chave GPG do ClickHouse e armazene-a no keyring
+    curl -fsSL 'https://packages.clickhouse.com/rpm/lts/repodata/repomd.xml.key' | sudo gpg --dearmor -o /usr/share/keyrings/clickhouse-keyring.gpg
+
+    # Obtenha a arquitetura do sistema
+    ARCH=$(dpkg --print-architecture)
+
+    # Adicione o repositório do ClickHouse às fontes do apt
+    echo "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg arch=${ARCH}] https://packages.clickhouse.com/deb stable main" | sudo tee /etc/apt/sources.list.d/clickhouse.list
+
+    # Atualize as listas de pacotes do apt
+    sudo apt-get update
+    ```
+
+    * Você pode substituir `stable` por `lts` para usar diferentes [tipos de lançamento](/pt-BR/resources/support-center/knowledge-base/setup-installation/production), conforme a sua necessidade.
+    * Você pode baixar e instalar os pacotes manualmente em [packages.clickhouse.com](https://packages.clickhouse.com/deb/pool/main/c/).
+
+    <br />
+
+    <Accordion title="Método antigo para instalar os pacotes deb em distribuições antigas">
+      ```bash
+      # Instale os pacotes de pré-requisito
+      sudo apt-get install apt-transport-https ca-certificates dirmngr
+
+      # Adicione a chave GPG do ClickHouse para autenticar os pacotes
+      sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
+
+      # Adicione o repositório do ClickHouse às fontes do apt
+      echo "deb https://packages.clickhouse.com/deb stable main" | sudo tee \
+          /etc/apt/sources.list.d/clickhouse.list
+          
+      # Atualize as listas de pacotes do apt
+      sudo apt-get update
+
+      # Instale os pacotes do ClickHouse server e do cliente
+      sudo apt-get install -y clickhouse-server clickhouse-client
+
+      # Inicie o serviço do ClickHouse server
+      sudo service clickhouse-server start
+
+      # Inicie o cliente de linha de comando do ClickHouse
+      clickhouse-client # ou "clickhouse-client --password" se você configurou uma senha.
+      ```
+    </Accordion>
+  </Step>
+
+  <Step>
+    ## Instale o ClickHouse server e o cliente
+
+    ```bash
+    sudo apt-get install -y clickhouse-server clickhouse-client
+    ```
+  </Step>
+
+  <Step>
+    ## Inicie o ClickHouse
+
+    Para iniciar o ClickHouse server, execute:
+
+    ```bash
+    sudo service clickhouse-server start
+    ```
+
+    Para iniciar o cliente ClickHouse, execute:
+
+    ```bash
+    clickhouse-client
+    ```
+
+    Se você configurou uma senha para o servidor, precisará executar:
+
+    ```bash
+    clickhouse-client --password
+    ```
+  </Step>
+
+  <Step>
+    ## Instale o ClickHouse Keeper standalone
+
+    <Tip>
+      Em ambientes de produção, recomendamos fortemente executar o ClickHouse Keeper em nós dedicados.
+      Em ambientes de teste, se você decidir executar o ClickHouse server e o ClickHouse Keeper no mesmo servidor,
+      não será necessário instalar o ClickHouse Keeper, pois ele já está incluído no ClickHouse server.
+    </Tip>
+
+    Para instalar o `clickhouse-keeper` em servidores do ClickHouse Keeper standalone, execute:
+
+    ```bash
+    sudo apt-get install -y clickhouse-keeper
+    ```
+  </Step>
+
+  <Step>
+    ## Habilite e inicie o ClickHouse Keeper
+
+    ```bash
+    sudo systemctl enable clickhouse-keeper
+    sudo systemctl start clickhouse-keeper
+    sudo systemctl status clickhouse-keeper
+    ```
+  </Step>
+</Steps>
+
+<div id="packages">
+  ## Pacotes
+</div>
+
+Os pacotes deb disponíveis estão detalhados abaixo:
+
+| Package                        | Description                                                                                                                                                                                                                                                                                               |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `clickhouse-common-static`     | Instala os arquivos binários compilados do ClickHouse.                                                                                                                                                                                                                                                    |
+| `clickhouse-server`            | Cria um link simbólico para `clickhouse-server` e instala a configuração padrão do servidor.                                                                                                                                                                                                              |
+| `clickhouse-client`            | Cria um link simbólico para `clickhouse-client` e outras ferramentas relacionadas ao cliente, além de instalar os arquivos de configuração do cliente.                                                                                                                                                    |
+| `clickhouse-common-static-dbg` | Instala os arquivos binários compilados do ClickHouse com informações de depuração.                                                                                                                                                                                                                       |
+| `clickhouse-keeper`            | Usado para instalar o ClickHouse Keeper em nós dedicados do ClickHouse Keeper. Se você estiver executando o ClickHouse Keeper no mesmo servidor que o ClickHouse server, não será necessário instalar este pacote. Instala o ClickHouse Keeper e os arquivos de configuração padrão do ClickHouse Keeper. |
+
+<br />
+
+<Info>
+  Se você precisar instalar uma versão específica do ClickHouse, deverá instalar todos os pacotes com a mesma versão:
+  `sudo apt-get install clickhouse-server=21.8.5.7 clickhouse-client=21.8.5.7 clickhouse-common-static=21.8.5.7`
+</Info>

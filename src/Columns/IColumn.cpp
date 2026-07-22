@@ -14,22 +14,24 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnQBit.h>
-#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Columns/IColumnDummy.h>
 #include <Columns/IColumn_fwd.h>
-#include <Core/Field.h>
 #include <Core/Block.h>
+#include <Core/Field.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/RowRefs.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 
@@ -267,6 +269,14 @@ Int64 IColumn::compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_d
 #if defined(DEBUG_OR_SANITIZER_BUILD)
     #undef compareAt
 #endif
+}
+
+size_t IColumn::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const
+{
+    /// Every probe is a virtual compareAt call, which is expensive, so keep the linear probe short.
+    static constexpr size_t linear_probe = 8;
+    return findEqualRangeEndAssumeSorted(
+        begin, end, linear_probe, [&](size_t r) { return compareAt(r, begin, *this, nan_direction_hint) == 0; });
 }
 
 #if USE_EMBEDDED_COMPILER
@@ -561,40 +571,95 @@ void IColumnHelper<Derived, Parent>::getIndicesOfNonDefaultRows(IColumn::Offsets
     }
 }
 
-/// Fills column values from RowRefList
+/// Fills column values from encoded join row refs
 /// Implementation with concrete column type allows to de-virtualize col->insertFrom() calls
 template <bool row_refs_are_ranges, typename ColumnType>
-static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, const size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end)
+static void fillColumnFromRowRefs(
+    ColumnType * col,
+    const DataTypePtr & type,
+    const UInt64 * row_refs_begin,
+    const UInt64 * row_refs_end,
+    const IColumn * const * block_columns,
+    const ColumnReplicated * const * block_replicated)
 {
+    /// Emit `len` consecutive rows [start, start + len) of one stored-block column, going through
+    /// the replicated indirection when the source column is a ColumnReplicated.
+    auto emit_range = [&](const IColumn * column, const ColumnReplicated * replicated, size_t start, size_t len)
+    {
+        if (replicated)
+        {
+            const auto & source_nested_column = replicated->getNestedColumn();
+            const auto & source_indexes = replicated->getIndexes();
+            for (size_t i = start; i != start + len; ++i)
+                col->insertFrom(*source_nested_column, source_indexes.getIndexAt(i));
+        }
+        else
+        {
+            chassert(column != nullptr);
+            if (len == 1)
+                col->insertFrom(*column, start);
+            else
+                col->insertRangeFrom(*column, start, len);
+        }
+    };
+
     for (const UInt64 * row_ref = row_refs_begin; row_ref != row_refs_end; ++row_ref)
     {
         if (*row_ref)
         {
-            const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(*row_ref);
             if constexpr (row_refs_are_ranges)
             {
-                row_ref_list->assertIsRange();
-                if (const auto * source_replicated = row_ref_list->columns_info->replicated_columns[source_column_index_in_block])
-                {
-                    const auto & source_nested_column = source_replicated->getNestedColumn();
-                    const auto & source_indexes = source_replicated->getIndexes();
-                    for (size_t i = row_ref_list->row_num; i != row_ref_list->row_num + row_ref_list->rows; ++i)
-                        col->insertFrom(*source_nested_column, source_indexes.getIndexAt(i));
-                }
-                else
-                {
-                    col->insertRangeFrom(*row_ref_list->columns_info->columns[source_column_index_in_block], row_ref_list->row_num, row_ref_list->rows);
-                }
+                const RowRefList ref_list = RowRefList::fromWord(*row_ref);
+                /// A range entry is either a single inline ref (the rerange optimization stores
+                /// single-row keys that way) or a range node; firstWord()/rows() resolve both. The
+                /// chassert keeps the debug-only invariant that a non-range list node never reaches
+                /// this path - it would otherwise be mis-emitted as a run of consecutive rows.
+                chassert(ref_list.isInline() || ref_list.asBatch()->is_range);
+                const UInt64 start_word = ref_list.firstWord();
+                const UInt32 block_no = refWordBlockNo(start_word);
+                emit_range(block_columns[block_no], block_replicated[block_no], refWordRowNo(start_word), ref_list.rows());
             }
             else
             {
-                for (auto it = row_ref_list->begin(); it.ok(); ++it)
+                /// Coalesce a run of consecutive same-block refs into one `insertRangeFrom` (a memcpy
+                /// for fixed-width columns, a batched copy for strings) instead of one `insertFrom` per
+                /// row. A build side ordered by the join key (e.g. a `MergeTree` `ORDER BY` the key, or
+                /// any key whose duplicates were inserted consecutively) stores a key's rows
+                /// contiguously, so its refs form one long run; a scattered build degrades to the
+                /// per-row path (runs of length one) for the cost of one extra comparison per ref.
+                const IColumn * run_column = nullptr;
+                const ColumnReplicated * run_replicated = nullptr;
+                UInt32 run_block_no = 0;
+                size_t run_start_row = 0;
+                size_t run_length = 0;
+
+                auto flush_run = [&]
                 {
-                    if (const auto * source_replicated = it->columns_info->replicated_columns[source_column_index_in_block])
-                        col->insertFrom(*source_replicated->getNestedColumn(), source_replicated->getIndexes().getIndexAt(it->row_num));
+                    if (!run_length)
+                        return;
+                    emit_range(run_column, run_replicated, run_start_row, run_length);
+                    run_length = 0;
+                };
+
+                for (const UInt64 ref_word : refsOf(*row_ref))
+                {
+                    const UInt32 block_no = refWordBlockNo(ref_word);
+                    const UInt32 row_num = refWordRowNo(ref_word);
+                    if (run_length && block_no == run_block_no && row_num == run_start_row + run_length)
+                    {
+                        ++run_length;
+                    }
                     else
-                        col->insertFrom(*it->columns_info->columns[source_column_index_in_block], it->row_num);
+                    {
+                        flush_run();
+                        run_column = block_columns[block_no];
+                        run_replicated = block_replicated[block_no];
+                        run_block_no = block_no;
+                        run_start_row = row_num;
+                        run_length = 1;
+                    }
                 }
+                flush_run();
             }
         }
         else
@@ -602,24 +667,36 @@ static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, co
     }
 }
 
-/// Fills column values from RowRefsList
-void IColumn::fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges)
+/// Fills column values from encoded join row refs
+void IColumn::fillFromRowRefs(
+    const DataTypePtr & type,
+    const UInt64 * row_refs_begin,
+    const UInt64 * row_refs_end,
+    bool row_refs_are_ranges,
+    const IColumn * const * block_columns,
+    const ColumnReplicated * const * block_replicated)
 {
     if (row_refs_are_ranges)
-        fillColumnFromRowRefs<true>(this, type, source_column_index_in_block, row_refs_begin, row_refs_end);
+        fillColumnFromRowRefs<true>(this, type, row_refs_begin, row_refs_end, block_columns, block_replicated);
     else
-        fillColumnFromRowRefs<false>(this, type, source_column_index_in_block, row_refs_begin, row_refs_end);
+        fillColumnFromRowRefs<false>(this, type, row_refs_begin, row_refs_end, block_columns, block_replicated);
 }
 
-/// Fills column values from RowRefsList
+/// Fills column values from encoded join row refs
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges)
+void IColumnHelper<Derived, Parent>::fillFromRowRefs(
+    const DataTypePtr & type,
+    const UInt64 * row_refs_begin,
+    const UInt64 * row_refs_end,
+    bool row_refs_are_ranges,
+    const IColumn * const * block_columns,
+    const ColumnReplicated * const * block_replicated)
 {
     auto & self = static_cast<Derived &>(*this);
     if (row_refs_are_ranges)
-        fillColumnFromRowRefs<true>(&self, type, source_column_index_in_block, row_refs_begin, row_refs_end);
+        fillColumnFromRowRefs<true>(&self, type, row_refs_begin, row_refs_end, block_columns, block_replicated);
     else
-        fillColumnFromRowRefs<false>(&self, type, source_column_index_in_block, row_refs_begin, row_refs_end);
+        fillColumnFromRowRefs<false>(&self, type, row_refs_begin, row_refs_end, block_columns, block_replicated);
 }
 
 /// Fills column values from list of blocks and row numbers

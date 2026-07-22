@@ -5,7 +5,8 @@ SELECT
     square_number
 FROM
 (
-    WITH multiply(number, 2) AS square_number
+    WITH
+        multiply(number, 2) AS square_number
     SELECT
         number,
         square_number

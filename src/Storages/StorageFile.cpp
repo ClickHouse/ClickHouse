@@ -43,6 +43,9 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
+#include <Storages/MergeTree/MarkRange.h>
+#include <Common/Exception.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
@@ -68,6 +71,7 @@
 
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsQuirks.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -77,6 +81,7 @@
 #include <filesystem>
 #include <shared_mutex>
 #include <algorithm>
+#include <unordered_set>
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/String.h>
@@ -112,6 +117,7 @@ namespace Setting
     extern const SettingsBool parallelize_output_from_storages;
     extern const SettingsSchemaInferenceMode schema_inference_mode;
     extern const SettingsBool schema_inference_use_cache_for_file;
+    extern const SettingsSnappyMode snappy_mode;
     extern const SettingsLocalFSReadMethod storage_file_read_method;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsInt64 zstd_window_log_max;
@@ -159,6 +165,7 @@ void listFilesWithRegexpMatchingImpl(
     const std::string & for_match,
     size_t & total_bytes_to_read,
     std::vector<std::string> & result,
+    std::unordered_set<std::string> & matched_paths,
     bool recursive,
     size_t depth)
 {
@@ -172,6 +179,19 @@ void listFilesWithRegexpMatchingImpl(
     if (depth % 16 == 0)
         checkStackSize();
 
+    /// Appends a matched path to the result and counts its bytes, deduplicating by its
+    /// normalized form. Adjacent globstars (e.g. `**/**/*.tsv`) can reach the same filesystem
+    /// entry through both the zero-level branch and the recursive descent, so without this
+    /// guard the query would return duplicate rows and double-count `total_bytes_to_read`.
+    auto add_matched_path = [&](const std::string & path, size_t bytes)
+    {
+        if (matched_paths.emplace(fs::path(path).lexically_normal().string()).second)
+        {
+            total_bytes_to_read += bytes;
+            result.push_back(path);
+        }
+    };
+
     const size_t first_glob_pos = for_match.find_first_of("*?{");
 
     if (first_glob_pos == std::string::npos)
@@ -184,7 +204,14 @@ void listFilesWithRegexpMatchingImpl(
             (void)fs::canonical(path_for_ls + for_match);
             fs::path absolute_path = fs::absolute(path_for_ls + for_match);
             absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
-            result.push_back(absolute_path.string());
+            /// This exact-match branch is reached for suffixes without globs, including the
+            /// zero-level `**/` case (e.g. `data/**/file.txt` matching `data/file.txt`). The file
+            /// is returned and read, so its bytes must be counted towards `total_bytes_to_read`
+            /// for progress reporting. `fs::file_size` errors for non-regular targets (e.g. a
+            /// directory); in that case keep the byte count at zero but still return the path.
+            std::error_code size_ec;
+            const size_t file_size = fs::file_size(absolute_path, size_ec);
+            add_matched_path(absolute_path.string(), size_ec ? 0 : file_size);
         }
         catch (const std::exception &) // NOLINT
         {
@@ -219,6 +246,15 @@ void listFilesWithRegexpMatchingImpl(
 
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
 
+    /// `**/` matches zero or more directory components, so it must also match the current
+    /// directory (zero levels). Apply the remaining suffix to `prefix_without_globs` itself,
+    /// in addition to the recursive descent into subdirectories performed by the loop below.
+    /// The descent below covers one or more directory levels, so this call must not recurse
+    /// (`recursive` is `false`) to avoid producing the same results twice.
+    if (current_glob == "/**" && looking_for_directory)
+        listFilesWithRegexpMatchingImpl(prefix_without_globs + "/", suffix_with_globs.substr(next_slash_after_glob_pos),
+                                        total_bytes_to_read, result, matched_paths, false, depth + 1);
+
     const fs::directory_iterator end;
     std::error_code ec;
     for (fs::directory_iterator it(prefix_without_globs, ec); it != end; it.increment(ec))
@@ -237,27 +273,40 @@ void listFilesWithRegexpMatchingImpl(
         {
             if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
             {
-                total_bytes_to_read += it->file_size(ec);
+                const size_t file_size = it->file_size(ec);
                 if (ec)
                 {
                     ec.clear();
                     continue;
                 }
 
-                result.push_back(it->path().string());
+                add_matched_path(it->path().string(), file_size);
             }
         }
         else if (it->is_directory())
         {
             if (recursive)
             {
+                /// When the current segment is the globstar `**` followed by a suffix (e.g.
+                /// `**/file.txt`), descend into subdirectories keeping the whole `**/...` pattern,
+                /// so the globstar keeps matching at every deeper level (any number of
+                /// directories). The zero-level branch above applies the post-`**` suffix at the
+                /// current level, so the combination matches zero, one, or more directory
+                /// components. Without this, a literal suffix (e.g. `pick.tsv`) would short-circuit
+                /// the recursion at the no-glob exact-match branch after a single level, and only a
+                /// glob suffix (e.g. `*.tsv`) would keep descending. For a trailing `**` (no
+                /// suffix), keep re-applying `current_glob` (`/**`) to list all files recursively,
+                /// as before.
+                const std::string descent_pattern = (current_glob == "/**" && looking_for_directory)
+                    ? suffix_with_globs
+                    : (looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob);
                 listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
-                                                looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob,
-                                                total_bytes_to_read, result, recursive, depth + 1);
+                                                descent_pattern,
+                                                total_bytes_to_read, result, matched_paths, recursive, depth + 1);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                                total_bytes_to_read, result, false, depth + 1);
+                                                total_bytes_to_read, result, matched_paths, false, depth + 1);
         }
     }
 }
@@ -271,7 +320,15 @@ std::vector<std::string> listFilesWithRegexpMatching(
     Strings for_match_paths_expanded = expandSelectionGlob(for_match);
 
     for (const auto & for_match_expanded : for_match_paths_expanded)
-        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false, 0);
+    {
+        /// Tracks the normalized form of every matched path so that adjacent globstars such as
+        /// `**/**/*.tsv` do not emit the same filesystem entry more than once. The set is scoped
+        /// to a single expanded pattern on purpose: independent brace-expanded alternatives
+        /// (e.g. `{top,top}.tsv` or `{a*,*}`) keep their pre-existing behavior of reading the
+        /// same concrete file once per alternative, rather than being silently collapsed.
+        std::unordered_set<std::string> matched_paths;
+        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, matched_paths, false, 0);
+    }
 
     return result;
 }
@@ -425,6 +482,12 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
 {
     auto read_method = context->getSettingsRef()[Setting::storage_file_read_method];
 
+    /// `doSettingsSanityCheckClamp` bounds the setting at apply time for the server and clickhouse-local,
+    /// but it does not run for `ApplicationType::CLIENT`, and this code is reachable in clickhouse-client
+    /// via `INSERT ... FROM INFILE`. Clamp here as well so that an out-of-range value is not passed
+    /// to the allocator.
+    size_t read_buffer_size = std::min<UInt64>(context->getSettingsRef()[Setting::max_read_buffer_size], MAX_SANE_READ_BUFFER_SIZE);
+
     /** Using mmap on server-side is unsafe for the following reasons:
       * - concurrent modifications of a file will result in SIGBUS;
       * - IO error from the device will result in SIGBUS;
@@ -464,9 +527,9 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     if (S_ISREG(file_stat.st_mode) && (read_method == LocalFSReadMethod::pread || read_method == LocalFSReadMethod::mmap))
     {
         if (use_table_fd)
-            res = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd, context->getSettingsRef()[Setting::max_read_buffer_size]);
+            res = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd, read_buffer_size);
         else
-            res = std::make_unique<ReadBufferFromFilePRead>(current_path, context->getSettingsRef()[Setting::max_read_buffer_size]);
+            res = std::make_unique<ReadBufferFromFilePRead>(current_path, read_buffer_size);
 
         ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
     }
@@ -475,7 +538,7 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
 #if USE_LIBURING
         auto & reader = getIOUringReaderOrThrow(context);
         res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
-            reader, Priority{}, current_path, context->getSettingsRef()[Setting::max_read_buffer_size]);
+            reader, Priority{}, current_path, read_buffer_size);
 #else
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Read method io_uring is only supported in Linux");
 #endif
@@ -483,9 +546,9 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     else
     {
         if (use_table_fd)
-            res = std::make_unique<ReadBufferFromFileDescriptor>(table_fd, context->getSettingsRef()[Setting::max_read_buffer_size]);
+            res = std::make_unique<ReadBufferFromFileDescriptor>(table_fd, read_buffer_size);
         else
-            res = std::make_unique<ReadBufferFromFile>(current_path, context->getSettingsRef()[Setting::max_read_buffer_size]);
+            res = std::make_unique<ReadBufferFromFile>(current_path, read_buffer_size);
 
         ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
     }
@@ -511,6 +574,36 @@ struct stat getFileStat(const String & current_path, bool use_table_fd, int tabl
     return file_stat;
 }
 
+/// Sub-second-precision version token for a file, folding in the inode and size so that an
+/// in-place rewrite which lands in the same timestamp tick as the previous write (see the
+/// settle-window comment at its call site) is still distinguishable from a rewrite that isn't.
+String computeFileCacheVersionToken(const struct stat & file_stat)
+{
+#if defined(OS_DARWIN)
+    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
+    const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
+#else
+    const auto mtim_sec = file_stat.st_mtim.tv_sec;
+    const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
+#endif
+    return fmt::format(
+        "{}.{:09}_{}_{}",
+        static_cast<Int64>(mtim_sec),
+        static_cast<Int64>(mtim_nsec),
+        static_cast<Int64>(file_stat.st_ino),
+        file_stat.st_size);
+}
+
+/// Re-stats `path` and reports whether it still produces `expected_token`. Used to bracket a
+/// local-file read (once right after opening, once right before trusting the read for the Query
+/// Condition Cache) so a rewrite by another writer that lands strictly between the initial `stat`
+/// and either checkpoint is caught instead of silently pinning a mismatched generation.
+bool fileCacheVersionTokenStillHolds(const String & path, const String & expected_token)
+{
+    struct stat current_stat{};
+    return 0 == stat(path.c_str(), &current_stat) && computeFileCacheVersionToken(current_stat) == expected_token;
+}
+
 std::unique_ptr<ReadBuffer> createReadBuffer(
     const String & current_path,
     const struct stat & file_stat,
@@ -527,8 +620,9 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
 
     std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context);
 
-    int zstd_window_log_max = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
-    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max);
+    const auto & file_settings = context->getSettingsRef();
+    int zstd_window_log_max = static_cast<int>(file_settings[Setting::zstd_window_log_max]);
+    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max, file_settings[Setting::snappy_mode]);
 }
 
 }
@@ -1619,19 +1713,27 @@ Chunk StorageFileSource::generate()
                 /// Build a sub-second-precision version token for the format metadata cache key.
                 /// `st_mtime` alone is second-resolution, so an in-place rewrite within the same
                 /// second that keeps the file size unchanged would otherwise reuse a stale entry.
+                current_file_cache_version = computeFileCacheVersionToken(file_stat);
+
+                /// The version token above proves a rewrite only after the file has settled.
+                /// Filesystem timestamps are coarser than the wall clock (one clock tick of
+                /// ~1-10 ms on most Linux filesystems, a full second on ext3, two seconds on
+                /// FAT), so a rewrite that keeps the inode and the byte size and lands in the
+                /// same timestamp tick as the previous write produces an identical token. Once
+                /// the last modification is comfortably in the past, its tick is over and any
+                /// further write is guaranteed to change the token. The query condition cache
+                /// skips whole row groups based on this token, so for files modified more
+                /// recently - or with an mtime in the future, e.g. due to clock skew on a
+                /// network mount - it fails close and stays bypassed (see the gates below)
+                /// rather than risking stale results.
 #if defined(OS_DARWIN)
                 const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-                const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
 #else
                 const auto mtim_sec = file_stat.st_mtim.tv_sec;
-                const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
 #endif
-                current_file_cache_version = fmt::format(
-                    "{}.{:09}_{}_{}",
-                    static_cast<Int64>(mtim_sec),
-                    static_cast<Int64>(mtim_nsec),
-                    static_cast<Int64>(file_stat.st_ino),
-                    file_stat.st_size);
+                static constexpr Int64 file_version_settle_seconds = 3;
+                current_file_version_settled
+                    = static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
 
                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                     continue;
@@ -1645,7 +1747,20 @@ Chunk StorageFileSource::generate()
                     read_buf = std::make_unique<EmptyReadBuffer>();
                 }
                 else
+                {
                     read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
+
+                    /// `createReadBuffer` opens the file by path, strictly after the `stat` above computed
+                    /// `current_file_cache_version`. Another writer - e.g. a second `File` table pointing at
+                    /// the same path, which is guarded by its own independent `rwlock` and so isn't excluded
+                    /// by ours - could truncate and rewrite the file in that window. Re-stat right after
+                    /// opening: if the token no longer matches what we just opened, it cannot be trusted to
+                    /// pin this read's generation, so fail close (the gates below skip both the Query
+                    /// Condition Cache lookup and, per the bracketing check further down, its population).
+                    if (!storage->use_table_fd && current_file_version_settled
+                        && !fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+                        current_file_version_settled = false;
+                }
             }
 
             size_t file_num = 0;
@@ -1673,6 +1788,61 @@ Chunk StorageFileSource::generate()
                 md.last_modified = *current_file_last_modified;
                 md.etag = *current_file_cache_version;
                 object_with_metadata.emplace(current_path, std::move(md));
+            }
+
+            /// Consult the Query Condition Cache. If a previous query with the same predicate already
+            /// determined that some row groups in this exact file version contain no matching rows,
+            /// restrict the reader to the surviving row groups (or skip the whole file). This mirrors
+            /// the object-storage read path (`StorageObjectStorageSource`). The file version token
+            /// (`current_file_cache_version`, part of `object_with_metadata`) is folded into the cache
+            /// key so an in-place rewrite yields a cache miss rather than stale results; the cache is
+            /// bypassed entirely while the token has not settled and cannot prove a rewrite. Only
+            /// formats that expose bucket splitting (Parquet) ever populate the cache, so other
+            /// formats miss.
+            FileBucketInfoPtr buckets_to_read;
+            QueryConditionCachePtr query_condition_cache;
+            if (object_with_metadata.has_value() && current_file_version_settled
+                && format_filter_info && format_filter_info->condition_hash)
+                query_condition_cache = getContext()->getQueryConditionCache();
+
+            if (query_condition_cache)
+            {
+                const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
+                auto matching_marks = query_condition_cache->read(
+                    storage->getStorageID().uuid, cache_file_key, *format_filter_info->condition_hash);
+                if (matching_marks.has_value())
+                {
+                    const auto & marks = *matching_marks;
+                    std::vector<size_t> matching_row_groups;
+                    for (size_t i = 0; i < marks.size(); ++i)
+                        if (marks[i])
+                            matching_row_groups.push_back(i);
+
+                    LOG_DEBUG(
+                        getLogger("StorageFile"),
+                        "Query condition cache has dropped {}/{} row groups for condition {} in file {}.",
+                        marks.size() - matching_row_groups.size(),
+                        marks.size(),
+                        format_filter_info->filter_actions_dag->dumpNames(),
+                        current_path);
+
+                    if (matching_row_groups.empty())
+                    {
+                        /// The whole file is known not to match the condition — skip it entirely.
+                        read_buf.reset();
+                        continue;
+                    }
+
+                    if (auto file_bucket_info = FormatFactory::instance().getFileBucketInfo(storage->format_name))
+                    {
+                        buckets_to_read = file_bucket_info->filterByMatchingRowGroups(matching_row_groups);
+                        if (!buckets_to_read)
+                        {
+                            read_buf.reset();
+                            continue;
+                        }
+                    }
+                }
             }
 
             if (object_with_metadata.has_value())
@@ -1711,6 +1881,7 @@ Chunk StorageFileSource::generate()
                     need_only_count);
             }
 
+            input_format->setBucketsToRead(buckets_to_read);
             input_format->setSerializationHints(serialization_hints);
 
             if (need_only_count)
@@ -1785,6 +1956,64 @@ Chunk StorageFileSource::generate()
             addNumRowsToCache(current_path, total_rows_in_file);
 
         total_rows_in_file = 0;
+
+        /// Populate the Query Condition Cache with the row groups that produced no matching rows,
+        /// so subsequent queries with the same predicate can skip them. Mirrors the write path in
+        /// `StorageObjectStorageSource`. Gated on a real local file with a settled version token
+        /// (an unsettled token cannot prove a later rewrite, so caching would risk stale results)
+        /// and a deterministic single-output predicate (`condition_hash`). Only Parquet reports
+        /// matched buckets; other formats return `nullopt` here and are silently skipped. The
+        /// re-stat bracket closes the window opened right after `createReadBuffer`: a rewrite that
+        /// happens while this file was being read would otherwise let a version token, still valid
+        /// at open time, get written together with row groups derived from bytes it no longer
+        /// describes.
+        if (input_format && current_file_cache_version.has_value() && current_file_version_settled
+            && format_filter_info && format_filter_info->condition_hash
+            && fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+        {
+            try
+            {
+                auto buckets_opt = input_format->getMatchedBuckets();
+                if (buckets_opt.has_value())
+                {
+                    const auto & matched_groups = buckets_opt->first;
+                    size_t total_groups = buckets_opt->second;
+
+                    std::unordered_set<size_t> matched_set(matched_groups.begin(), matched_groups.end());
+                    MarkRanges unmatched_ranges;
+                    for (size_t i = 0; i < total_groups; ++i)
+                    {
+                        if (!matched_set.contains(i))
+                        {
+                            if (!unmatched_ranges.empty() && unmatched_ranges.back().end == i)
+                                unmatched_ranges.back().end++;
+                            else
+                                unmatched_ranges.push_back({UInt64(i), UInt64(i + 1)});
+                        }
+                    }
+
+                    if (!unmatched_ranges.empty())
+                    {
+                        if (auto query_condition_cache = getContext()->getQueryConditionCache())
+                        {
+                            const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
+                            query_condition_cache->write(
+                                storage->getStorageID().uuid,
+                                cache_file_key,
+                                *format_filter_info->condition_hash,
+                                format_filter_info->filter_actions_dag->dumpNames(),
+                                unmatched_ranges,
+                                total_groups,
+                                /*has_final_mark=*/false);
+                        }
+                    }
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(getLogger("StorageFile"), "Failed to write to query condition cache");
+            }
+        }
 
         /// Close file prematurely if stream was ended.
         reader.reset();
@@ -2135,7 +2364,8 @@ public:
             std::move(naked_buffer),
             compression_method,
             static_cast<int>(settings[Setting::output_format_compression_level]),
-            static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
+            static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]),
+            settings[Setting::snappy_mode]);
 
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format_name,
                                                                              *write_buf, metadata_snapshot->getSampleBlock(), getContext(), format_settings);

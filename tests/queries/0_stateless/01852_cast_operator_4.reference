@@ -10,7 +10,8 @@ FROM system.one
 SELECT CAST(arrayElement(CAST(\'[1,2,3]\', \'Array(UInt64)\'), CAST(arrayElement(CAST(array(number, number), \'Array(UInt8)\'), number), \'UInt64\')), \'UInt8\')
 FROM numbers(3)
 3
-WITH _CAST([3, 4, 5], \'Array(UInt8)\') AS x
+WITH
+    _CAST([3, 4, 5], \'Array(UInt8)\') AS x
 SELECT CAST(arrayElement(x, 1), \'Int32\')
 FROM system.one
 3
@@ -20,6 +21,7 @@ FROM system.one
 SELECT CAST(tupleElement(CAST(tuple(3, 4, 5), \'Tuple(UInt64, UInt64, UInt64)\'), 1), \'Int32\')
 FROM system.one
 3
-WITH tuple(3, 4, 5) AS x
+WITH
+    tuple(3, 4, 5) AS x
 SELECT CAST(tupleElement(x, 1), \'Int32\')
 FROM system.one

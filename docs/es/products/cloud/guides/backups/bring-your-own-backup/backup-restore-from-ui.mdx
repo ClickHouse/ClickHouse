@@ -1,0 +1,488 @@
+---
+sidebarTitle: 'Crear o restaurar una copia de seguridad desde la UI'
+slug: /cloud/manage/backups/backup-restore-via-ui
+title: 'Copia de seguridad / restauración mediante la interfaz de usuario'
+description: 'Página que describe cómo crear una copia de seguridad o restaurar una copia de seguridad desde la UI con su propio bucket'
+doc_type: 'guide'
+keywords: ['copias de seguridad', 'recuperación ante desastres', 'protección de datos', 'restaurar', 'funcionalidades de Cloud']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<Note>
+  Las copias de seguridad automatizadas en su bucket externo están configuradas para realizar copias de seguridad &quot;completas&quot; cada 24 horas, y no es posible configurar la frecuencia.
+</Note>
+
+<div id="AWS">
+  ## AWS
+</div>
+
+<div id="taking-backups-to-aws">
+  ### Crear copias de seguridad en AWS
+</div>
+
+<div id="aws-steps">
+  #### 1. Pasos a seguir en AWS
+</div>
+
+<Note>
+  Estos pasos son similares a la configuración segura de S3, como se describe en [&quot;Acceder de forma segura a datos de S3&quot;](/es/products/cloud/guides/data-sources/accessing-s3-data-securely); sin embargo, se requieren acciones adicionales en los permisos del rol.
+</Note>
+
+Siga los pasos que se indican a continuación en su cuenta de AWS:
+
+<Steps>
+  <Step>
+    ##### Crear un bucket de S3 en AWS
+
+    Cree un bucket de S3 en AWS en su cuenta donde desee exportar las copias de seguridad.
+  </Step>
+
+  <Step>
+    ##### Crear un rol de IAM
+
+    AWS utiliza autenticación basada en roles, por lo que debe crear un rol de IAM que el servicio de ClickHouse Cloud pueda asumir para escribir en este bucket.
+
+    * a. Obtenga el ARN en la página de configuración del servicio de ClickHouse Cloud, en la sección Información de seguridad de red, que tendrá un aspecto similar a este:
+
+    <Image img="/images/cloud/manage/backups/arn.webp" alt="ARN de AWS S3" size="lg" />
+
+    * b. Para este rol, cree la política de confianza de la siguiente manera:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "backup service",
+          "Effect": "Allow",
+          "Principal": {
+            "AWS":  "arn:aws:iam::463754717262:role/CH-S3-bordeaux-ar-90-ue2-29-Role"
+          },
+          "Action": "sts:AssumeRole"
+        }
+      ]
+    }
+    ```
+  </Step>
+
+  <Step>
+    ##### Actualizar los permisos del rol
+
+    También deberá configurar los permisos de este rol para que el servicio de ClickHouse Cloud pueda escribir en el bucket de S3.
+    Para ello, cree una política de permisos para el rol con un JSON similar a este, sustituyendo en ambos casos el recurso por el ARN de su bucket.
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Action": [
+            "s3:GetBucketLocation",
+            "s3:ListBucket"
+          ],
+          "Resource": [
+            "arn:aws:s3:::byob-ui"
+          ],
+          "Effect": "Allow"
+        },
+        {
+          "Action": [
+            "s3:Get*",
+            "s3:List*",
+            "s3:PutObject"
+          ],
+          "Resource": [
+            "arn:aws:s3:::byob-ui/*"
+          ],
+          "Effect": "Allow"
+        },
+        {
+          "Action": [
+            "s3:DeleteObject"
+          ],
+          "Resource": [
+            "arn:aws:s3:::byob-ui/*/.lock"
+          ],
+          "Effect": "Allow"
+        }
+      ]
+    }
+    ```
+  </Step>
+</Steps>
+
+<div id="cloud-steps">
+  #### 2. Pasos a seguir en ClickHouse Cloud
+</div>
+
+Sigue los pasos que se indican a continuación en la consola de ClickHouse Cloud para configurar el bucket externo:
+
+<Steps>
+  <Step>
+    ##### Cambiar el backup externo
+
+    En la página Settings, haz clic en Set up external backup:
+
+    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Cambiar el backup externo" size="lg" />
+  </Step>
+
+  <Step>
+    ##### Configurar el ARN del rol de IAM de AWS y los detalles del bucket de S3
+
+    En la siguiente pantalla, proporciona el ARN del rol de IAM de AWS que acabas de crear y la URL del bucket de S3 con el siguiente formato:
+
+    <Image img="/images/cloud/manage/backups/configure_arn_s3_details.webp" alt="Configurar el ARN del rol de IAM de AWS y los detalles del bucket de S3" size="lg" />
+  </Step>
+
+  <Step>
+    ##### Guardar cambios
+
+    Haz clic en “Save External Bucket” para guardar la configuración
+  </Step>
+
+  <Step>
+    ##### Cambiar la programación de backups predeterminada
+
+    A partir de ahora, los backups externos se realizarán en tu bucket según la programación predeterminada.
+    Como alternativa, puedes configurar la programación de backups desde la página “Settings”.
+    Si se configura una programación distinta, se usará la programación personalizada para escribir los backups en tu
+    bucket, y la programación predeterminada (backups cada 24 horas) se usará para los backups en
+    el bucket propiedad de ClickHouse Cloud.
+  </Step>
+
+  <Step>
+    ##### Ver los backups almacenados en tu bucket
+
+    La página Backups mostrará estos backups de tu bucket en una tabla independiente,
+    como se muestra a continuación:
+
+    <Image img="/images/cloud/manage/backups/view_backups.webp" alt="Ver los backups almacenados en tu bucket" size="lg" />
+  </Step>
+</Steps>
+
+<div id="restoring-backups-from-aws">
+  ### Restaurar copias de seguridad desde AWS
+</div>
+
+Siga los pasos que se indican a continuación para restaurar copias de seguridad desde AWS:
+
+<Steps>
+  <Step>
+    ##### Crear un servicio nuevo donde restaurar
+
+    Cree un servicio nuevo donde restaurar la copia de seguridad.
+  </Step>
+
+  <Step>
+    ##### Añadir el ARN del servicio
+
+    Añada el ARN del servicio recién creado (desde la página de configuración del servicio en la consola de ClickHouse
+    Cloud) a la política de confianza del rol de IAM. Esto es lo mismo que el
+    [segundo paso](#create-iam-role) de la sección anterior de pasos de AWS. Esto es necesario
+    para que el nuevo servicio pueda acceder al bucket de S3.
+  </Step>
+
+  <Step>
+    ##### Obtener el comando SQL usado para restaurar la copia de seguridad
+
+    Haga clic en el enlace “access or restore a backup”, situado encima de la lista de copias de seguridad en la
+    interfaz de usuario, para obtener el comando SQL con el que restaurar la copia de seguridad. El comando tendrá este aspecto:
+
+    <Image img="/images/cloud/manage/backups/backup_command.webp" alt="Obtener el comando SQL usado para restaurar la copia de seguridad" size="md" />
+
+    <Warning>
+      **Mover copias de seguridad a otra ubicación**
+
+      Si mueve las copias de seguridad a otra ubicación, deberá personalizar el comando de restauración para que apunte a la nueva ubicación.
+    </Warning>
+
+    <Tip>
+      **Comando ASYNC**
+
+      Para el comando `RESTORE`, también puede añadir opcionalmente `ASYNC` al final en restauraciones grandes.
+      Esto permite que las restauraciones se realicen de forma asíncrona, de modo que, si se pierde la conexión, la restauración siga ejecutándose.
+      Es importante tener en cuenta que el comando `ASYNC` devuelve inmediatamente un estado de éxito.
+      Esto no significa que la restauración se haya completado correctamente.
+      Deberá supervisar la tabla `system.backups` para ver si la restauración ha finalizado y si se completó correctamente o falló.
+    </Tip>
+  </Step>
+
+  <Step>
+    ##### Ejecutar el comando de restauración
+
+    Ejecute el comando de restauración desde la consola SQL del servicio recién creado para
+    restaurar la copia de seguridad.
+  </Step>
+</Steps>
+
+<div id="gcp">
+  ## GCP
+</div>
+
+<div id="taking-backups-to-gcp">
+  ### Realizar copias de seguridad en GCP
+</div>
+
+Siga los pasos que se indican a continuación para realizar copias de seguridad en GCP:
+
+<div id="gcp-steps-to-follow">
+  #### Pasos a seguir en GCP
+</div>
+
+<Steps>
+  <Step>
+    ##### Crear un bucket de almacenamiento de GCP
+
+    Cree un bucket de almacenamiento en su cuenta de GCP para exportar backups.
+  </Step>
+
+  <Step>
+    ##### Generar una clave HMAC y un secreto
+
+    Genere una clave HMAC y un secreto, lo cual es necesario para la autenticación basada en contraseña. Siga los pasos a continuación para generar las claves:
+
+    * a. Crear una cuenta de servicio
+      * I.  Vaya a la sección IAM &amp; Admin en Google Cloud Console y seleccione `Service Accounts`.
+      * II. Haga clic en `Create Service Account` y proporcione un nombre y un ID. Haga clic en `Create and Continue`.
+      * III. Conceda el rol Storage Object User a esta cuenta de servicio.
+      * IV. Haga clic en `Done` para finalizar la creación de la cuenta de servicio.
+
+    * b. Generar la clave HMAC
+      * I. Vaya a Cloud Storage en Google Cloud Console y seleccione `Settings`
+      * II Vaya a la pestaña Interoperability.
+      * III. En la sección `Service account HMAC`, haga clic en `Create a key for a service account`.
+      * IV. Elija la cuenta de servicio que creó en el paso anterior en el menú desplegable.
+      * V. Haga clic en `Create key`.
+
+    * c. Almacenar de forma segura las credenciales:
+      * I. El sistema mostrará el Access ID (su clave HMAC) y el Secret (su secreto HMAC). Guarde estos valores, ya que
+        el secreto no volverá a mostrarse después de que cierre esta ventana.
+  </Step>
+</Steps>
+
+<div id="gcp-cloud-steps">
+  #### Pasos a seguir en ClickHouse Cloud
+</div>
+
+Sigue los pasos que se indican a continuación en la consola de ClickHouse Cloud para configurar el bucket externo:
+
+<Steps>
+  <Step>
+    ##### Cambiar el backup externo
+
+    En la página `Settings`, haz clic en `Change external backup`
+
+    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Cambiar el backup externo" size="lg" />
+  </Step>
+
+  <Step>
+    ##### Configurar la clave HMAC y el secreto de GCP
+
+    En el cuadro de diálogo emergente, introduce la ruta del bucket de GCP, la clave HMAC y el secreto creados en la sección anterior.
+
+    <Image img="/images/cloud/manage/backups/gcp_configure.webp" alt="Configurar la clave HMAC y el secreto de GCP" size="md" />
+  </Step>
+
+  <Step>
+    ##### Cambiar la programación de backups predeterminada
+
+    A partir de ahora, los backups externos se realizarán en tu bucket con la programación predeterminada.
+    Como alternativa, puedes configurar la programación de backups desde la página `Settings`.
+    Si configuras una programación distinta, la programación personalizada se usará para escribir los backups en tu
+    bucket, y la programación predeterminada (backups cada 24 horas) se usará para los backups en el
+    bucket propiedad de ClickHouse Cloud.
+  </Step>
+
+  <Step>
+    ##### Guardar el bucket externo
+
+    Haz clic en `Save External Bucket` para guardar la configuración.
+  </Step>
+
+  <Step>
+    ##### Ver los backups almacenados en tu bucket
+
+    La página `Backups` debería mostrar estos backups de tu bucket en una tabla independiente, como se muestra a continuación:
+
+    <Image img="/images/cloud/manage/backups/gcp_stored_backups.webp" alt="Ver los backups almacenados en tu bucket" size="lg" />
+  </Step>
+</Steps>
+
+<div id="gcp-restoring-backups-from-gcp">
+  ### Restaurar copias de seguridad de GCP
+</div>
+
+Sigue estos pasos para restaurar copias de seguridad de GCP:
+
+<Steps>
+  <Step>
+    ##### Crear un nuevo servicio donde restaurar la copia de seguridad
+
+    Crea un nuevo servicio donde restaurar la copia de seguridad.
+  </Step>
+
+  <Step>
+    ##### Obtener el comando SQL para restaurar la copia de seguridad
+
+    Haz clic en el enlace `access or restore a backup`, situado encima de la lista de copias de seguridad en la
+    UI, para obtener el comando SQL con el que restaurar la copia de seguridad. El comando debería tener este aspecto,
+    y puedes elegir la copia de seguridad adecuada en el menú desplegable para obtener el comando de restauración
+    de esa copia de seguridad concreta. Tendrás que añadir tu clave de acceso secreta
+    al comando:
+
+    <Image img="/images/cloud/manage/backups/gcp_restore_command.webp" alt="Obtener el comando SQL para restaurar la copia de seguridad" size="md" />
+
+    <Warning>
+      **Mover copias de seguridad a otra ubicación**
+
+      Si mueves las copias de seguridad a otra ubicación, tendrás que personalizar el comando de restauración para que apunte a la nueva ubicación.
+    </Warning>
+
+    <Tip>
+      **Comando ASYNC**
+
+      En el comando Restore, también puedes añadir opcionalmente `ASYNC` al final si se trata de restauraciones grandes.
+      Esto permite que las restauraciones se realicen de forma asíncrona, de modo que, si se pierde la connection, la restauración siga ejecutándose.
+      Es importante tener en cuenta que el comando ASYNC devuelve inmediatamente un estado de éxito.
+      Esto no significa que la restauración se haya completado correctamente.
+      Tendrás que supervisar la tabla `system.backups` para ver si la restauración ha finalizado y si se completó correctamente o falló.
+    </Tip>
+  </Step>
+
+  <Step>
+    ##### Ejecutar el comando SQL para restaurar la copia de seguridad
+
+    Ejecuta el comando de restauración desde la consola SQL del servicio recién creado para
+    restaurar la copia de seguridad.
+  </Step>
+</Steps>
+
+<div id="azure">
+  ## Azure
+</div>
+
+<div id="taking-backups-to-azure">
+  ### Realizar copias de seguridad en Azure
+</div>
+
+Siga estos pasos para realizar copias de seguridad en Azure:
+
+<div id="steps-to-follow-in-azure">
+  #### Pasos a seguir en Azure
+</div>
+
+<Steps>
+  <Step>
+    ##### Crear una cuenta de almacenamiento
+
+    Cree una cuenta de almacenamiento o seleccione una cuenta de almacenamiento existente en el portal de Azure donde desee almacenar sus copias de seguridad.
+  </Step>
+
+  <Step>
+    ##### Obtener la cadena de conexión
+
+    * a. En la página de información general de su cuenta de almacenamiento, busque la sección `Security + networking` y haga clic en `Access keys`.
+    * b. Aquí verá `key1` y `key2`. Debajo de cada clave, encontrará un campo `Connection string`.
+    * c. Haga clic en `Show` para mostrar la cadena de conexión. Copie la cadena de conexión que utilizará para la configuración en ClickHouse Cloud.
+  </Step>
+</Steps>
+
+<div id="azure-cloud-steps">
+  #### Pasos que debes seguir en ClickHouse Cloud
+</div>
+
+Sigue los pasos que se indican a continuación en la consola de ClickHouse Cloud para configurar el bucket externo:
+
+<Steps>
+  <Step>
+    ##### Cambiar el backup externo
+
+    En la página `Settings`, haz clic en `Change external backup`
+
+    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Cambiar el backup externo" size="lg" />
+  </Step>
+
+  <Step>
+    ##### Proporciona la cadena de conexión y el nombre del contenedor de tu cuenta de almacenamiento de Azure
+
+    En la siguiente pantalla, proporciona la cadena de conexión y el Container Name de la
+    cuenta de almacenamiento de Azure que creaste en la sección anterior:
+
+    <Image img="/images/cloud/manage/backups/azure_connection_details.webp" alt="Proporciona la cadena de conexión y el nombre del contenedor de tu cuenta de almacenamiento de Azure" size="md" />
+  </Step>
+
+  <Step>
+    ##### Guardar el bucket externo
+
+    Haz clic en `Save External Bucket` para guardar la configuración
+  </Step>
+
+  <Step>
+    ##### Cambiar la programación de backups predeterminada
+
+    Los backups externos ahora se realizarán en tu bucket con la programación predeterminada. Como alternativa,
+    puedes configurar la programación de backups desde la página `Settings`. Si se configura una programación distinta,
+    la programación personalizada se utilizará para escribir backups en tu bucket y la programación predeterminada
+    (backups cada 24 horas) se utilizará para los backups en el bucket propiedad de ClickHouse Cloud.
+  </Step>
+
+  <Step>
+    ##### Ver los backups almacenados en tu bucket
+
+    La página Backups debería mostrar estos backups en tu bucket en una tabla independiente,
+    como se muestra a continuación:
+
+    <Image img="/images/cloud/manage/backups/view_backups_azure.webp" alt="Ver los backups almacenados en tu bucket" size="md" />
+  </Step>
+</Steps>
+
+<div id="azure-restore-steps">
+  ### Restaurar copias de seguridad desde Azure
+</div>
+
+Para restaurar copias de seguridad desde Azure, siga los pasos que se indican a continuación:
+
+<Steps>
+  <Step>
+    ##### Cree un nuevo servicio en el que restaurar
+
+    Cree un nuevo servicio en el que restaurar la copia de seguridad. Actualmente, solo admitimos
+    restaurar una copia de seguridad en un servicio nuevo.
+  </Step>
+
+  <Step>
+    ##### Obtenga el comando SQL utilizado para restaurar la copia de seguridad
+
+    Haga clic en el enlace `access or restore a backup`, situado encima de la lista de copias de seguridad de la
+    UI, para obtener el comando SQL para restaurar la copia de seguridad. El comando debería tener este aspecto,
+    y puede elegir la copia de seguridad correspondiente en el menú desplegable para obtener el
+    comando de restauración de esa copia de seguridad concreta. Tendrá que añadir la cadena de conexión de su cuenta de almacenamiento de Azure
+    al comando.
+
+    <Image img="/images/cloud/manage/backups/restore_backups_azure.webp" alt="Restaurar copias de seguridad en Azure" size="md" />
+
+    <Warning>
+      **Mover copias de seguridad a otra ubicación**
+
+      Si mueve las copias de seguridad a otra ubicación, tendrá que personalizar el comando de restauración para que haga referencia a la nueva ubicación.
+    </Warning>
+
+    <Tip>
+      **Comando ASYNC**
+
+      En el comando RESTORE, también puede añadir opcionalmente `ASYNC` al final para restauraciones de gran tamaño.
+      Esto permite que las restauraciones se realicen de forma asíncrona, de modo que, si se pierde la conexión, la restauración siga ejecutándose.
+      Es importante tener en cuenta que el comando ASYNC devuelve inmediatamente un estado de éxito.
+      Esto no significa que la restauración se haya completado correctamente.
+      Tendrá que supervisar la tabla `system.backups` para ver si la restauración ha finalizado y si se completó correctamente o falló.
+    </Tip>
+  </Step>
+
+  <Step>
+    ##### Ejecute el comando SQL para restaurar la copia de seguridad
+
+    Ejecute el comando de restauración desde la consola SQL en el servicio recién creado para
+    restaurar la copia de seguridad.
+  </Step>
+</Steps>

@@ -8,6 +8,8 @@
 #include <base/DayNum.h>
 #include <base/IPv4andIPv6.h>
 #include <Common/AllocatorWithMemoryTracking.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <fmt/format.h>
 
@@ -18,7 +20,7 @@ constexpr Null NEGATIVE_INFINITY{Null::Value::NegativeInfinity};
 constexpr Null POSITIVE_INFINITY{Null::Value::PositiveInfinity};
 
 class Field;
-using FieldVector = std::vector<Field, AllocatorWithMemoryTracking<Field>>;
+using FieldVector = VectorWithMemoryTracking<Field>;
 
 /// Array and Tuple use the same storage type -- FieldVector, but we declare
 /// distinct types for them, so that the caller can choose whether it wants to
@@ -41,7 +43,7 @@ DEFINE_FIELD_VECTOR(Map); /// TODO: use map instead of vector.
 
 #undef DEFINE_FIELD_VECTOR
 
-using FieldMap = std::map<String, Field, std::less<>, AllocatorWithMemoryTracking<std::pair<const String, Field>>>;
+using FieldMap = MapWithMemoryTracking<String, Field, std::less<>>;
 
 #define DEFINE_FIELD_MAP(X) \
 struct X : public FieldMap \
@@ -587,11 +589,24 @@ private:
         ptr->assign(std::move(str));
     }
 
-    void create(const Field & x)
+    /// Array/Tuple/Map/Object nest Fields inside Fields, so a straightforward
+    /// (recursive) copy/destroy overflows the native stack for a deeply nested value.
+    /// These containers are handled by explicit-worklist iterative helpers instead.
+    static bool isContainer(Types::Which w)
     {
-        dispatch([this] (auto & value) { createConcrete(value); }, x);
+        return w == Types::Array || w == Types::Tuple || w == Types::Map || w == Types::Object;
     }
 
+    void create(const Field & x)
+    {
+        if (isContainer(x.which))
+            createContainerIteratively(x);
+        else
+            dispatch([this] (auto & value) { createConcrete(value); }, x);
+    }
+
+    /// Moving a Field just steals the container buffer (no per-element recursion), so
+    /// the move paths only need the iterative teardown of the value being overwritten.
     void create(Field && x)
     {
         dispatch([this] (auto & value) { createConcrete(std::move(value)); }, x);
@@ -599,12 +614,26 @@ private:
 
     void assign(const Field & x)
     {
-        dispatch([this] (auto & value) { assignConcrete(value); }, x);
+        if (isContainer(x.which))
+        {
+            /// A vector/map copy-assignment would recurse per nesting level; rebuild instead.
+            destroy();
+            create(x);
+        }
+        else
+            dispatch([this] (auto & value) { assignConcrete(value); }, x);
     }
 
     void assign(Field && x)
     {
-        dispatch([this] (auto & value) { assignConcrete(std::move(value)); }, x);
+        if (isContainer(x.which))
+        {
+            /// A vector/map move-assignment first destroys the old (possibly deep) value recursively.
+            destroy();
+            create(std::move(x));
+        }
+        else
+            dispatch([this] (auto & value) { assignConcrete(std::move(value)); }, x);
     }
 
     template <typename CharT>
@@ -631,16 +660,10 @@ private:
                 destroy<String>();
                 break;
             case Types::Array:
-                destroy<Array>();
-                break;
             case Types::Tuple:
-                destroy<Tuple>();
-                break;
             case Types::Map:
-                destroy<Map>();
-                break;
             case Types::Object:
-                destroy<Object>();
+                destroyContainerIteratively(old_which);
                 break;
             case Types::AggregateFunctionState:
                 destroy<AggregateFunctionStateData>();
@@ -659,6 +682,14 @@ private:
         T * MAY_ALIAS ptr = reinterpret_cast<T*>(&storage);
         ptr->~T();
     }
+
+    /// Placement-construct an empty container of the given type into raw (or Null) storage.
+    void initEmptyContainer(Types::Which w);
+
+    /// Copy/destroy a (possibly deeply nested) Array/Tuple/Map/Object value using an explicit
+    /// worklist so the native stack depth stays bounded regardless of the nesting depth.
+    void createContainerIteratively(const Field & src);
+    void destroyContainerIteratively(Types::Which old_which) noexcept;
 };
 
 #undef DBMS_MIN_FIELD_SIZE

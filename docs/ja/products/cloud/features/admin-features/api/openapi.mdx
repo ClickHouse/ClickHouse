@@ -1,0 +1,70 @@
+---
+sidebarTitle: 'API キーの管理'
+slug: /cloud/manage/openapi
+title: 'API キーの管理'
+description: 'ClickHouse Cloud では、OpenAPI を利用した API が提供されており、アカウントやサービスの一部機能をプログラムから管理できます。'
+doc_type: 'guide'
+keywords: ['api', 'openapi', 'rest api', 'documentation', 'cloud management']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickHouse Cloud では、OpenAPI を利用した API が提供されており、アカウントやサービスの一部機能をプログラムから管理できます。
+
+<Note>
+  このドキュメントでは ClickHouse Cloud API を扱います。データベースの API エンドポイントについては、[Cloud Endpoints API](/ja/products/cloud/guides/sql-console/query-endpoints) を参照してください。
+</Note>
+
+1. 左側のメニューにある **API Keys** タブから、API キーを作成および管理できます。
+
+<Image img="/images/cloud/manage/openapi1.webp" size="sm" alt="API Keys タブ" border />
+
+2. **API Keys** ページを開くと、最初は以下のように最初の API キーを作成するための案内が表示されます。最初のキーを作成すると、右上に表示される `New API Key` ボタンから新しいキーを作成できるようになります。
+
+<Image img="/images/cloud/manage/openapi2.webp" size="md" alt="API Keys ページ" border />
+
+3. API キーを作成するには、キー名、キーの権限、有効期限を指定し、`Generate API Key` をクリックします。
+
+<br />
+
+<Note>
+  権限は ClickHouse Cloud の[事前定義ロール](/ja/products/cloud/reference/security/console-roles)に対応しています。developer ロールには割り当てられたサービスに対する読み取り専用権限があり、admin ロールには完全な読み取りおよび書き込み権限があります。
+</Note>
+
+<Tip>
+  **クエリ API エンドポイント**
+
+  [クエリ API エンドポイント](/ja/products/cloud/guides/sql-console/query-endpoints) で API キーを使用するには、Organization Role を少なくとも `Member` に設定し、Service Role に `Query Endpoints` へのアクセスを付与してください。
+</Tip>
+
+<Image img="/images/cloud/manage/openapi3.png" size="md" alt="API キー作成フォーム" border />
+
+4. 次の画面に Key ID と Key secret が表示されます。これらの値をコピーし、vault などの安全な場所に保管してください。この画面を離れると、これらの値は再表示されません。
+
+<Image img="/images/cloud/manage/openapi4.webp" size="md" alt="API キーの詳細" border />
+
+5. ClickHouse Cloud API では、[HTTP Basic Authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication) を使用して API キーの有効性を検証します。以下は、`curl` を使用して API キーで ClickHouse Cloud API にリクエストを送信する例です。
+
+```bash
+$ KEY_ID=mykeyid
+$ KEY_SECRET=mykeysecret
+
+$ curl --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organizations
+```
+
+6. **API Keys** ページに戻ると、キー名、Key ID の末尾 4 文字、権限、ステータス、有効期限、作成者が表示されます。この画面から、キー名、権限、有効期限を編集できます。また、キーの無効化や削除もこの画面から行えます。
+
+<br />
+
+<Note>
+  API キーの削除は元に戻せない操作です。このキーを使用しているサービスは、直ちに ClickHouse Cloud へアクセスできなくなります。
+</Note>
+
+<Image img="/images/cloud/manage/openapi5.webp" size="md" alt="API キー管理ページ" border />
+
+<div id="endpoints">
+  ## エンドポイント
+</div>
+
+エンドポイントの詳細については、[API リファレンス](/ja/api-reference/organization/get-list-of-available-organizations)を参照してください。
+base URL `https://api.clickhouse.cloud/v1` を使用し、API キー と API Secret を指定します。

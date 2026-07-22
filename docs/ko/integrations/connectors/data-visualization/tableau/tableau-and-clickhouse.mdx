@@ -1,0 +1,206 @@
+---
+sidebarTitle: 'Tableau Desktop'
+slug: /integrations/tableau
+keywords: ['clickhouse', 'tableau', '연결', '통합', 'UI']
+description: 'Tableau에서 ClickHouse 데이터베이스와 테이블을 데이터 소스로 사용할 수 있습니다.'
+title: 'Tableau를 ClickHouse에 연결'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+  - website: 'https://github.com/analytikaplus/clickhouse-tableau-connector-jdbc'
+---
+
+import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+ClickHouse는 공식 Tableau Connector를 제공하며,
+이는 [Tableau Exchange](https://exchange.tableau.com/products/1064)에서 확인할 수 있습니다.
+이 커넥터는 ClickHouse의 고급 [JDBC 드라이버](/ko/integrations/language-clients/java/jdbc)를 기반으로 합니다.
+
+이 커넥터를 사용하면 Tableau에서 ClickHouse 데이터베이스와 테이블을 데이터 소스로 사용할 수 있습니다. 이 기능을 사용하려면,
+아래 설정 가이드를 따르십시오.
+
+<div id="setup-required-prior-usage">
+  ## 사용 전에 필요한 설정
+</div>
+
+1. 연결 정보를 준비합니다
+   <ConnectionDetails />
+
+2. <a href="https://www.tableau.com/products/desktop/download" target="_blank">Tableau
+   desktop</a>를 다운로드하여 설치합니다.
+
+3. 호환되는 버전의 <a href="https://github.com/ClickHouse/clickhouse-java/releases/" target="_blank">ClickHouse JDBC 드라이버</a>를 다운로드하려면 `clickhouse-tableau-connector-jdbc` 지침을 따르십시오.
+
+<Note>
+  [clickhouse-jdbc-X.X.X-all-dependencies.jar](https://github.com/ClickHouse/clickhouse-java/releases) JAR 파일을 다운로드해야 합니다. 이 파일은 버전 `0.9.2`부터 제공됩니다.
+</Note>
+
+4. JDBC 드라이버를 다음 폴더에 저장합니다(OS에 따라 다르며, 폴더가 없으면 생성할 수 있습니다).
+   * macOS: `~/Library/Tableau/Drivers`
+   * Windows: `C:\Program Files\Tableau\Drivers`
+5. Tableau에서 ClickHouse 데이터 소스를 구성한 후 데이터 시각화를 만들어 보십시오!
+
+<div id="configure-a-clickhouse-data-source-in-tableau">
+  ## Tableau에서 ClickHouse 데이터 소스 구성하기
+</div>
+
+이제 `clickhouse-jdbc` 드라이버를 설치하고 설정했으므로, ClickHouse의 **TPCD** 데이터베이스에 연결되는 데이터 소스를 Tableau에서 정의하는 방법을 살펴보겠습니다.
+
+1. Tableau를 시작합니다. (이미 실행 중이라면 다시 시작합니다.)
+
+2. 왼쪽 메뉴의 **To a Server** 섹션에서 **More**를 클릭합니다. 사용 가능한 커넥터 목록에서 **ClickHouse by ClickHouse**를 검색합니다:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_connecttoserver.webp" alt="ClickHouse by ClickHouse 옵션이 강조 표시된 커넥터 선택 메뉴가 보이는 Tableau 연결 화면" border />
+
+<br />
+
+<Note>
+  커넥터 목록에 **ClickHouse by ClickHouse** 커넥터가 보이지 않습니까? Tableau Desktop 버전이 오래되어 그럴 수 있습니다.
+  이 경우 Tableau Desktop 애플리케이션을 업그레이드하거나 [커넥터를 수동으로 설치](#install-the-connector-manually)하는 방법을 고려해 보십시오.
+</Note>
+
+3. **ClickHouse by ClickHouse**를 클릭하면 다음 대화 상자가 표시됩니다:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_connector_details.webp" alt="ClickHouse JDBC 커넥터 세부 정보와 설치 버튼이 표시된 Tableau 커넥터 설치 대화 상자" border />
+
+<br />
+
+4. **Install and Restart Tableau**를 클릭합니다. 애플리케이션을 다시 시작합니다.
+5. 다시 시작하면 커넥터의 전체 이름이 `ClickHouse JDBC by ClickHouse, Inc.`로 표시됩니다. 이를 클릭하면 다음 대화 상자가 표시됩니다:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_connector_dialog.webp" alt="서버, 포트, 데이터베이스, 사용자 이름 및 비밀번호 필드가 표시된 Tableau의 ClickHouse 연결 대화 상자" border />
+
+<br />
+
+6. 연결 정보를 입력합니다:
+
+   | Setting  | Value                                 |
+   | -------- | ------------------------------------- |
+   | Server   | **접두사나 접미사 없이 ClickHouse 호스트를 입력합니다** |
+   | Port     | **8443**                              |
+   | Database | **default**                           |
+   | Username | **default**                           |
+   | Password | ******                                |
+
+<Note>
+  ClickHouse Cloud를 사용하는 경우 보안 연결을 위해 SSL 체크박스를 활성화해야 합니다.
+</Note>
+
+<br />
+
+<Note>
+  ClickHouse 데이터베이스 이름은 **TPCD**이지만, 위 대화 상자에서는 **Database**를 **default**로 설정한 뒤 다음 단계에서 **Schema**로 **TPCD**를 선택해야 합니다. (이는 커넥터의 버그 때문일 가능성이 있으므로 이 동작은 바뀔 수 있지만, 현재로서는 데이터베이스로 **default**를 사용해야 합니다.)
+</Note>
+
+7. **Sign In** 버튼을 클릭하면 새 Tableau 워크북이 표시됩니다:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_newworkbook.webp" alt="데이터베이스 선택 옵션이 표시된 초기 연결 화면을 보여주는 새 Tableau 워크북" border />
+
+<br />
+
+8. **Schema** 드롭다운에서 **TPCD**를 선택하면 **TPCD**의 테이블 목록이 표시됩니다:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_tpcdschema.webp" alt="CUSTOMER, LINEITEM, NATION, ORDERS 등 TPCD 데이터베이스 테이블이 표시된 Tableau 스키마 선택 화면" border />
+
+<br />
+
+이제 Tableau에서 시각화를 만들 준비가 되었습니다!
+
+<div id="building-visualizations-in-tableau">
+  ## Tableau에서 시각화 만들기
+</div>
+
+이제 Tableau에서 ClickHouse 데이터 소스가 구성되었으므로 데이터를 시각화해 보겠습니다...
+
+1. **CUSTOMER** 테이블을 워크북으로 끌어오십시오. 컬럼은 표시되지만 데이터 테이블은 비어 있습니다:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_workbook1.webp" alt="컬럼 헤더는 표시되지만 데이터는 없는 상태로 CUSTOMER 테이블이 캔버스에 추가된 Tableau 워크북" border />
+
+<br />
+
+2. **Update Now** 버튼을 클릭하면 **CUSTOMER**의 100개 행이 테이블에 표시됩니다.
+
+3. **ORDERS** 테이블을 워크북으로 끌어온 다음, 두 테이블 사이의 관계 필드로 **Custkey**를 설정하십시오:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_workbook2.webp" alt="Custkey 필드를 사용해 CUSTOMER 테이블과 ORDERS 테이블 간 연결을 보여주는 Tableau 관계 편집기" border />
+
+<br />
+
+4. 이제 **ORDERS** 테이블과 **LINEITEM** 테이블이 데이터 소스에서 서로 연결되었으므로, 이 관계를 사용해 데이터에 관한 질문에 답할 수 있습니다. 워크북 하단의 **Sheet 1** 탭을 선택하십시오.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_workbook3.webp" alt="분석에 사용할 수 있는 ClickHouse 테이블의 dimensions와 measures를 보여주는 Tableau 워크시트" border />
+
+<br />
+
+5. 예를 들어, 특정 품목이 매년 몇 개 주문되었는지 알고 싶다고 가정해 보겠습니다. **ORDERS**에서 **OrderDate**를 **Columns** 섹션(가로 필드)으로 끌어온 다음, **LINEITEM**에서 **Quantity**를 **Rows**로 끌어오십시오. 그러면 Tableau가 다음과 같은 선 차트를 생성합니다:
+
+<Image size="sm" img="/images/integrations/data-visualization/tableau_workbook4.webp" alt="ClickHouse 데이터를 기준으로 연도별 주문 수량을 보여주는 Tableau 선 차트" border />
+
+<br />
+
+아주 흥미로운 선 차트는 아니지만, 이 데이터셋은 스크립트로 생성되었고 쿼리 성능 테스트용으로 만들어졌기 때문에 TCPD 데이터의 시뮬레이션된 주문에는 큰 변화가 없다는 점을 알 수 있습니다.
+
+6. 예를 들어, 분기별 평균 주문 금액(달러 기준)을 배송 방식(항공, 우편, 선박, 트럭 등)별로도 알고 싶다고 가정해 보겠습니다:
+
+   * **New Worksheet** 탭을 클릭하여 새 시트를 만드십시오
+   * **ORDERS**에서 **OrderDate**를 **Columns**로 끌어오고 **Year**에서 **Quarter**로 변경하십시오
+   * **LINEITEM**에서 **Shipmode**를 **Rows**로 끌어오십시오
+
+그러면 다음과 같이 표시됩니다:
+
+<Image size="sm" img="/images/integrations/data-visualization/tableau_workbook5.webp" alt="열에는 분기, 행에는 배송 방식이 표시된 Tableau 크로스탭 보기" border />
+
+<br />
+
+7. **Abc** 값은 테이블에 메트릭을 끌어놓기 전까지 공간을 채우기 위한 표시일 뿐입니다. **ORDERS**의 **Totalprice**를 테이블로 끌어오십시오. 기본 계산이 **Totalprices**의 **SUM**으로 설정된 것을 확인할 수 있습니다:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_workbook6.webp" alt="분기 및 배송 방식별 총 주문 금액 합계를 보여주는 Tableau 크로스탭" border />
+
+<br />
+
+8. **SUM**을 클릭하고 **Measure**를 **Average**로 변경하십시오. 같은 드롭다운 메뉴에서 **Format**을 선택한 다음 **Numbers**를 **Currency (Standard)**로 변경하십시오:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_workbook7.webp" alt="통화 포맷이 적용된 상태로 분기 및 배송 방식별 평균 주문 금액을 보여주는 Tableau 크로스탭" border />
+
+<br />
+
+잘하셨습니다! Tableau를 ClickHouse에 성공적으로 연결했으며, 이제 ClickHouse 데이터를 분석하고 시각화할 수 있는 다양한 가능성이 열렸습니다.
+
+<div id="install-the-connector-manually">
+  ## 커넥터를 수동으로 설치하기
+</div>
+
+기본으로 커넥터가 포함되어 있지 않은 구버전 Tableau Desktop을 사용하는 경우, 다음 단계에 따라 수동으로 설치할 수 있습니다.
+
+1. [Tableau Exchange](https://exchange.tableau.com/products/1064)에서 최신 taco 파일을 다운로드합니다
+2. taco 파일을 다음 위치에 저장합니다
+   * macOS: `~/Documents/My Tableau Repository/Connectors`
+   * Windows: `C:\Users\[Windows User]\Documents\My Tableau Repository\Connectors`
+3. Tableau Desktop을 다시 시작합니다. 설치가 성공적으로 완료되었다면 `New Data Source` 섹션에서 커넥터를 확인할 수 있습니다.
+
+<div id="connection-and-analysis-tips">
+  ## 연결 및 분석 팁
+</div>
+
+Tableau-ClickHouse 통합 최적화에 관한 자세한 내용은
+[연결 팁](/ko/integrations/connectors/data-visualization/tableau/tableau-connection-tips) 및 [분석 팁](/ko/integrations/connectors/data-visualization/tableau/tableau-analysis-tips)을 참조하십시오.
+
+<div id="tests">
+  ## 테스트
+</div>
+
+이 커넥터는 [TDVT 프레임워크](https://tableau.github.io/connector-plugin-sdk/docs/tdvt)를 사용해 테스트하고 있으며, 현재 97%의 테스트 커버리지를 유지하고 있습니다.
+
+<div id="summary">
+  ## 요약
+</div>
+
+일반 ODBC/JDBC ClickHouse 드라이버를 사용해 Tableau를 ClickHouse에 연결할 수 있습니다. 하지만 이
+커넥터를 사용하면 연결 설정 과정을 더 간편하게 진행할 수 있습니다. 커넥터와 관련해 문제가 있으면
+<a href="https://github.com/ClickHouse/clickhouse-tableau-connector-jdbc/issues" target="_blank">GitHub</a>에서 언제든지 문의하십시오.

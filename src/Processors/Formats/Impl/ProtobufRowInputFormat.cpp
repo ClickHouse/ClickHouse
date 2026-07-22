@@ -461,7 +461,7 @@ cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --passw
 
 Select the data inserted into the table:
 
-```sql
+```bash
 clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
 ```
 
@@ -497,7 +497,7 @@ cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --passw
 
 Select the data inserted into the table:
 
-```sql
+```bash
 clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
 ```
 
@@ -548,9 +548,9 @@ SYSTEM DROP FORMAT SCHEMA CACHE FOR Protobuf
 
     factory.setDocumentation("ProtobufSingle", Documentation{
         .description = R"DOCS_MD(
-:::note
-This format is not supported in ClickHouse Cloud.
-:::
+import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge/>
 
 | Input | Output | Alias |
 |-------|--------|-------|
@@ -558,7 +558,7 @@ This format is not supported in ClickHouse Cloud.
 
 ## Description {#description}
 
-The `ProtobufSingle` format is the same as the [`Protobuf`](./Protobuf.md) format but it is intended for storing/parsing single Protobuf messages without length delimiters.
+The `ProtobufSingle` format is the same as the [`Protobuf`](/reference/formats/Protobuf/Protobuf) format but it is intended for storing/parsing single Protobuf messages without length delimiters.
 
 ## Example usage {#example-usage}
 

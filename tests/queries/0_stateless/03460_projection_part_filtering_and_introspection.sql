@@ -1,4 +1,5 @@
 -- add_minmax_index_for_numeric_columns=0: Implicit indices will filter before projections
+SET explain_query_plan_default = 'legacy';
 
 -- { echo ON }
 

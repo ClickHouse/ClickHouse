@@ -1,0 +1,112 @@
+---
+sidebarTitle: 'Postgres용 PlanetScale'
+description: 'ClickPipes 소스로 사용할 PlanetScale for Postgres를 설정합니다'
+slug: /integrations/clickpipes/postgres/source/planetscale
+title: 'Postgres용 PlanetScale 소스 설정 가이드'
+doc_type: 'guide'
+keywords: ['ClickPipes', 'postgresql', 'CDC', '데이터 수집', '실시간 동기화']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<Info>
+  Postgres용 PlanetScale은 현재 [조기 액세스](https://planetscale.com/postgres) 상태입니다.
+</Info>
+
+<div id="supported-postgres-versions">
+  ## 지원되는 Postgres 버전
+</div>
+
+ClickPipes는 Postgres 12 이상을 지원합니다.
+
+<div id="enable-logical-replication">
+  ## 논리적 복제 활성화
+</div>
+
+1. Postgres 인스턴스에서 복제를 활성화하려면 먼저 다음 설정이 적용되어 있는지 확인해야 합니다.
+
+   ```sql
+   wal_level = logical
+   ```
+
+   이를 확인하려면 다음 SQL 명령을 실행하십시오.
+
+   ```sql
+   SHOW wal_level;
+   ```
+
+   출력 결과는 기본적으로 `logical`이어야 합니다. 그렇지 않다면 PlanetScale 콘솔에 로그인한 뒤 `Cluster configuration->Parameters`로 이동하고, `Write-ahead log` 항목까지 스크롤하여 값을 변경하십시오.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp" alt="PlanetScale 콘솔에서 wal_level 조정" size="md" border />
+
+<Warning>
+  PlanetScale 콘솔에서 이 값을 변경하면 재시작이 발생합니다.
+</Warning>
+
+2. 또한 `max_slot_wal_keep_size` 설정을 기본값인 4GB보다 더 크게 늘리는 것을 권장합니다. 이 역시 PlanetScale 콘솔에서 `Cluster configuration->Parameters`로 이동한 다음 `Write-ahead log` 항목까지 스크롤하여 변경할 수 있습니다. 새 값을 정하는 데 도움이 필요하면 [여기](/ko/integrations/clickpipes/postgres/faq#recommended-max_slot_wal_keep_size-settings)를 참조하십시오.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp" alt="PlanetScale 콘솔에서 max_slot_wal_keep_size 조정" size="md" border />
+
+<div id="creating-a-user-with-permissions-and-publication">
+  ## 권한 및 publication이 있는 사용자 생성
+</div>
+
+기본 `postgres.<...>` 사용자를 사용해 PlanetScale Postgres 인스턴스에 연결한 다음, 아래 명령을 실행합니다:
+
+1. ClickPipes 전용 사용자를 생성합니다:
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. 이전 단계에서 생성한 사용자에게 스키마 수준의 읽기 전용 액세스 권한을 부여합니다. 다음 예시는 `public` 스키마에 대한 권한을 보여줍니다. 복제하려는 테이블이 포함된 각 스키마에 대해 이 명령을 반복하십시오:
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. 사용자에게 복제 권한을 부여합니다:
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. 복제하려는 테이블을 포함하는 [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html)을 생성합니다. 성능 오버헤드를 피하려면 publication에는 필요한 테이블만 포함하는 것을 강력히 권장합니다.
+
+<Warning>
+  publication에 포함된 모든 테이블에는 **기본 키(primary key)**가 정의되어 있거나 *또는* **레플리카 아이덴티티(replica identity)**가 `FULL`로 설정되어 있어야 합니다. 범위를 어떻게 지정할지에 대한 안내는 [Postgres FAQ](/ko/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication)를 참조하십시오.
+</Warning>
+
+* 특정 테이블에 대한 publication을 생성하려면:
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * 특정 스키마의 모든 테이블에 대한 publication을 생성하려면:
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+`clickpipes` publication에는 지정된 테이블에서 생성된 변경 이벤트 집합이 포함되며, 이후 복제 스트림을 수집하는 데 사용됩니다.
+
+<div id="caveats">
+  ## 주의 사항
+</div>
+
+1. PlanetScale Postgres에 연결하려면 현재 브랜치 정보를 앞서 생성한 사용자 이름 뒤에 붙여야 합니다. 예를 들어 생성한 사용자 이름이 `clickpipes_user`인 경우, ClickPipe 생성 시 입력하는 실제 사용자 이름은 `clickpipes_user`.`branch`여야 합니다. 여기서 `branch`는 현재 PlanetScale Postgres [브랜치](https://planetscale.com/docs/postgres/branching)의 &quot;id&quot;를 의미합니다. 이를 빠르게 확인하려면 앞서 사용자 생성에 사용한 `postgres` 사용자의 사용자 이름을 참고하면 됩니다. 마침표(.) 뒤에 오는 부분이 브랜치 id입니다.
+2. PlanetScale Postgres에 연결하는 CDC 파이프에는 `PSBouncer` 포트(현재 `6432`)를 사용하지 마십시오. 일반 포트 `5432`를 사용해야 합니다. 초기 로드 전용 파이프의 경우에는 두 포트 모두 사용할 수 있습니다.
+3. 반드시 프라이머리 인스턴스에만 연결하십시오. 현재 [레플리카 인스턴스 연결](https://planetscale.com/docs/postgres/scaling/replicas#how-to-query-postgres-replicas)은 지원되지 않습니다.
+
+<div id="whats-next">
+  ## 다음 단계
+</div>
+
+이제 [ClickPipe를 생성](/ko/integrations/clickpipes/postgres/index)하고 Postgres 인스턴스의 데이터를 ClickHouse Cloud로 수집하기 시작할 수 있습니다.
+ClickPipe를 생성하는 과정에서 필요하므로, Postgres 인스턴스를 설정할 때 사용한 연결 정보를 반드시 기록해 두십시오.

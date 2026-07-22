@@ -1,0 +1,63 @@
+---
+description: 'Linux から macOS 向けに ClickHouse をクロスコンパイルするためのガイド'
+sidebarTitle: 'Linux で macOS 向けにビルド'
+slug: /development/build-cross-osx
+title: 'Linux で macOS 向けにビルド'
+doc_type: 'guide'
+---
+
+これは、Linux マシンを使って OS X 上で動作する `clickhouse` バイナリをビルドしたい場合のためのガイドです。
+主なユースケースは、Linux マシン上で実行される継続的インテグレーションのチェックです。
+ClickHouse を macOS 上で直接ビルドする場合は、[ネイティブビルドの手順](/ja/resources/develop-contribute/build/build-osx)に進んでください。
+
+macOS 向けのクロスビルドは [ビルド手順](/ja/resources/develop-contribute/build/build) をベースにしています。まずそちらに従ってください。
+
+以下のセクションでは、`x86_64` macOS 向けに ClickHouse をビルドする手順を順を追って説明します。
+ARM アーキテクチャを対象とする場合は、`x86_64` のすべての出現箇所を `aarch64` に置き換えてください。
+たとえば、各手順で `x86_64-apple-darwin` を `aarch64-apple-darwin` に置き換えます。
+
+<div id="install-cross-compilation-toolset">
+  ## クロスコンパイル用ツールセットをインストールする
+</div>
+
+`cctools` をインストールしたパスを `${CCTOOLS}` として覚えておきましょう
+
+```bash
+mkdir ~/cctools
+export CCTOOLS=$(cd ~/cctools && pwd)
+cd ${CCTOOLS}
+
+git clone https://github.com/tpoechtrager/apple-libtapi.git
+cd apple-libtapi
+git checkout 15dfc2a8c9a2a89d06ff227560a69f5265b692f9
+INSTALLPREFIX=${CCTOOLS} ./build.sh
+./install.sh
+cd ..
+
+git clone https://github.com/tpoechtrager/cctools-port.git
+cd cctools-port/cctools
+git checkout 2a3e1c2a6ff54a30f898b70cfb9ba1692a55fad7
+./configure --prefix=$(readlink -f ${CCTOOLS}) --with-libtapi=$(readlink -f ${CCTOOLS}) --target=x86_64-apple-darwin
+make install
+```
+
+また、作業ツリーにmacOS X SDKをダウンロードしておく必要があります。
+
+```bash
+cd ClickHouse/cmake/toolchain/darwin-x86_64
+curl -L 'https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz' | tar xJ --strip-components=1
+```
+
+<div id="build-clickhouse">
+  ## ClickHouse をビルドする
+</div>
+
+```bash
+cd ClickHouse
+mkdir build-darwin
+cd build-darwin
+cmake -DCMAKE_AR:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ar -DCMAKE_INSTALL_NAME_TOOL=${CCTOOLS}/bin/x86_64-apple-darwin-install_name_tool -DCMAKE_RANLIB:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ranlib -DLINKER_NAME=${CCTOOLS}/bin/x86_64-apple-darwin-ld -DCMAKE_TOOLCHAIN_FILE=cmake/darwin/toolchain-x86_64.cmake ..
+ninja
+```
+
+生成されるバイナリはMach-O実行ファイル形式になるため、Linuxでは実行できません。

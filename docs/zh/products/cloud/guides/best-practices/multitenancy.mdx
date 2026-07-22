@@ -1,0 +1,405 @@
+---
+slug: /cloud/bestpractices/multi-tenancy
+sidebarTitle: '多租户'
+title: '多租户'
+description: '实现多租户的最佳实践'
+doc_type: 'guide'
+keywords: ['multitenancy', 'isolation', 'best practices', 'architecture', 'multi-tenant']
+---
+
+在 SaaS 数据分析平台中，多个租户 (如组织、客户或业务部门) 共享同一数据库基础设施，同时在逻辑上保持数据隔离，是一种很常见的做法。这样一来，不同用户就能在同一平台内安全地访问各自的数据。
+
+根据具体需求，多租户有多种实现方式。下面将介绍如何在 ClickHouse Cloud 中实现这些方案。
+
+<div id="shared-table">
+  ## 共享表
+</div>
+
+在这种方案中，所有租户的数据都存储在同一个共享表中，并使用一个字段 (或一组字段) 来标识每个租户的数据。为最大限度提升性能，应将该字段纳入[主键](/zh/reference/statements/create/table#primary-key)。为了确保你只能访问各自租户的数据，我们使用[基于角色的访问控制](/zh/concepts/features/security/access-rights)，并通过[行策略](/zh/concepts/features/security/access-rights#row-policy-management)来实现。
+
+> **我们推荐这种方案，因为它最易于管理，尤其适用于所有租户共享相同数据 schema 且数据量适中 (&lt; TBs) 的场景**
+
+通过将所有租户的数据整合到单个表中，可以借助更优的压缩效果和更低的元数据开销来提高存储效率。此外，由于所有数据都集中管理，schema 更新也更简单。
+
+这种方法特别适合处理大量租户 (可能多达数百万) 的场景。
+
+不过，如果租户的数据 schema 不同，或者预计会随着时间推移逐渐分化，那么其他方案可能更合适。
+
+如果租户之间的数据量差距很大，较小租户的查询性能可能会受到不必要的影响。需要注意的是，将租户字段纳入主键后，这一问题在很大程度上可以得到缓解。
+
+<div id="shared-table-example">
+  ### 示例
+</div>
+
+这是共享表多租户模型实现的一个示例。
+
+首先，创建一个共享表，并将字段 `tenant_id` 纳入主键。
+
+```sql
+--- 创建表 events，将 tenant_id 作为主键的一部分
+CREATE TABLE events
+(
+    tenant_id UInt32,                 -- 租户标识符
+    id UUID,                    -- 唯一事件 ID
+    type LowCardinality(String), -- 事件类型
+    timestamp DateTime,          -- 事件时间戳
+    user_id UInt32,               -- 触发事件的用户 ID
+    data String,                 -- 事件数据
+)
+ORDER BY (tenant_id, timestamp)
+```
+
+下面插入一些模拟数据。
+
+```sql
+-- 插入一些测试数据行
+INSERT INTO events (tenant_id, id, type, timestamp, user_id, data)
+VALUES
+(1, '7b7e0439-99d0-4590-a4f7-1cfea1e192d1', 'user_login', '2025-03-19 08:00:00', 1001, '{"device": "desktop", "location": "LA"}'),
+(1, '846aa71f-f631-47b4-8429-ee8af87b4182', 'purchase', '2025-03-19 08:05:00', 1002, '{"item": "phone", "amount": 799}'),
+(1, '6b4d12e4-447d-4398-b3fa-1c1e94d71a2f', 'user_logout', '2025-03-19 08:10:00', 1001, '{"device": "desktop", "location": "LA"}'),
+(2, '7162f8ea-8bfd-486a-a45e-edfc3398ca93', 'user_login', '2025-03-19 08:12:00', 2001, '{"device": "mobile", "location": "SF"}'),
+(2, '6b5f3e55-5add-479e-b89d-762aa017f067', 'purchase', '2025-03-19 08:15:00', 2002, '{"item": "headphones", "amount": 199}'),
+(2, '43ad35a1-926c-4543-a133-8672ddd504bf', 'user_logout', '2025-03-19 08:20:00', 2001, '{"device": "mobile", "location": "SF"}'),
+(1, '83b5eb72-aba3-4038-bc52-6c08b6423615', 'purchase', '2025-03-19 08:45:00', 1003, '{"item": "monitor", "amount": 450}'),
+(1, '975fb0c8-55bd-4df4-843b-34f5cfeed0a9', 'user_login', '2025-03-19 08:50:00', 1004, '{"device": "desktop", "location": "LA"}'),
+(2, 'f50aa430-4898-43d0-9d82-41e7397ba9b8', 'purchase', '2025-03-19 08:55:00', 2003, '{"item": "laptop", "amount": 1200}'),
+(2, '5c150ceb-b869-4ebb-843d-ab42d3cb5410', 'user_login', '2025-03-19 09:00:00', 2004, '{"device": "mobile", "location": "SF"}'),
+```
+
+接下来，创建两个用户 `user_1` 和 `user_2`。
+
+```sql
+-- 创建用户 
+CREATE USER user_1 IDENTIFIED BY '<password>'
+CREATE USER user_2 IDENTIFIED BY '<password>'
+```
+
+我们[创建行策略](/zh/reference/statements/create/row-policy)，使 `user_1` 和 `user_2` 只能访问各自租户的数据。
+
+```sql
+-- 创建行策略
+CREATE ROW POLICY user_filter_1 ON default.events USING tenant_id=1 TO user_1
+CREATE ROW POLICY user_filter_2 ON default.events USING tenant_id=2 TO user_2
+```
+
+然后，使用一个通用角色为共享表授予 [`GRANT SELECT`](/zh/reference/statements/grant#usage) 权限。
+
+```sql
+-- 创建角色
+CREATE ROLE user_role
+
+-- 授予 events 表只读权限。
+GRANT SELECT ON default.events TO user_role
+GRANT user_role TO user_1
+GRANT user_role TO user_2
+```
+
+现在你可以以 `user_1` 身份连接并运行一个简单的 select 查询。只会返回第一个租户的行。
+
+```sql
+-- 以 user_1 身份登录
+SELECT *
+FROM events
+```
+
+```response
+   ┌─tenant_id─┬─id───────────────────────────────────┬─type────────┬───────────timestamp─┬─user_id─┬─data────────────────────────────────────┐
+1. │         1 │ 7b7e0439-99d0-4590-a4f7-1cfea1e192d1 │ user_login  │ 2025-03-19 08:00:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+2. │         1 │ 846aa71f-f631-47b4-8429-ee8af87b4182 │ purchase    │ 2025-03-19 08:05:00 │    1002 │ {"item": "phone", "amount": 799}        │
+3. │         1 │ 6b4d12e4-447d-4398-b3fa-1c1e94d71a2f │ user_logout │ 2025-03-19 08:10:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+4. │         1 │ 83b5eb72-aba3-4038-bc52-6c08b6423615 │ purchase    │ 2025-03-19 08:45:00 │    1003 │ {"item": "monitor", "amount": 450}      │
+5. │         1 │ 975fb0c8-55bd-4df4-843b-34f5cfeed0a9 │ user_login  │ 2025-03-19 08:50:00 │    1004 │ {"device": "desktop", "location": "LA"} │
+   └───────────┴──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
+```
+
+<div id="separate-tables">
+  ## 独立表
+</div>
+
+在这种方法中，每个租户的数据都存储在同一数据库中的单独表里，因此无需使用特定字段来标识租户。通过 [GRANT 语句](/zh/reference/statements/grant) 实施用户访问控制，可确保每个用户只能访问包含其租户数据的表。
+
+> **当不同租户的数据 schema 不同时，使用独立表是一个不错的选择。**
+
+对于租户数量较少、但数据集非常庞大且查询性能至关重要的场景，这种方法的表现可能优于共享表模型。由于无需过滤其他租户的数据，查询效率会更高。此外，还可以进一步优化主键，因为不需要在主键中包含额外字段 (例如租户 ID) 。
+
+请注意，这种方法无法扩展到数千个租户的规模。请参阅 [使用限制](/zh/products/cloud/guides/best-practices/usagelimits)。
+
+<div id="shared-table-example">
+  ### 示例
+</div>
+
+以下是独立表多租户模型实现的示例。
+
+首先，创建两张表，一张用于存储来自 `tenant_1` 的事件，另一张用于存储来自 `tenant_2` 的事件。
+
+```sql
+-- 为租户 1 创建表 
+CREATE TABLE events_tenant_1
+(
+    id UUID,                    -- 唯一事件 ID
+    type LowCardinality(String), -- 事件类型
+    timestamp DateTime,          -- 事件时间戳
+    user_id UInt32,               -- 触发事件的用户 ID
+    data String,                 -- 事件数据
+)
+ORDER BY (timestamp, user_id) -- 主键可专注于其他属性
+
+-- 为租户 2 创建表 
+CREATE TABLE events_tenant_2
+(
+    id UUID,                    -- 唯一事件 ID
+    type LowCardinality(String), -- 事件类型
+    timestamp DateTime,          -- 事件时间戳
+    user_id UInt32,               -- 触发事件的用户 ID
+    data String,                 -- 事件数据
+)
+ORDER BY (timestamp, user_id) -- 主键可专注于其他属性
+```
+
+接下来插入一些模拟数据。
+
+```sql
+INSERT INTO events_tenant_1 (id, type, timestamp, user_id, data)
+VALUES
+('7b7e0439-99d0-4590-a4f7-1cfea1e192d1', 'user_login', '2025-03-19 08:00:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('846aa71f-f631-47b4-8429-ee8af87b4182', 'purchase', '2025-03-19 08:05:00', 1002, '{"item": "phone", "amount": 799}'),
+('6b4d12e4-447d-4398-b3fa-1c1e94d71a2f', 'user_logout', '2025-03-19 08:10:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('83b5eb72-aba3-4038-bc52-6c08b6423615', 'purchase', '2025-03-19 08:45:00', 1003, '{"item": "monitor", "amount": 450}'),
+('975fb0c8-55bd-4df4-843b-34f5cfeed0a9', 'user_login', '2025-03-19 08:50:00', 1004, '{"device": "desktop", "location": "LA"}')
+
+INSERT INTO events_tenant_2 (id, type, timestamp, user_id, data)
+VALUES
+('7162f8ea-8bfd-486a-a45e-edfc3398ca93', 'user_login', '2025-03-19 08:12:00', 2001, '{"device": "mobile", "location": "SF"}'),
+('6b5f3e55-5add-479e-b89d-762aa017f067', 'purchase', '2025-03-19 08:15:00', 2002, '{"item": "headphones", "amount": 199}'),
+('43ad35a1-926c-4543-a133-8672ddd504bf', 'user_logout', '2025-03-19 08:20:00', 2001, '{"device": "mobile", "location": "SF"}'),
+('f50aa430-4898-43d0-9d82-41e7397ba9b8', 'purchase', '2025-03-19 08:55:00', 2003, '{"item": "laptop", "amount": 1200}'),
+('5c150ceb-b869-4ebb-843d-ab42d3cb5410', 'user_login', '2025-03-19 09:00:00', 2004, '{"device": "mobile", "location": "SF"}')
+```
+
+接下来，我们创建两个用户 `user_1` 和 `user_2`。
+
+```sql
+-- 创建用户 
+CREATE USER user_1 IDENTIFIED BY '<password>'
+CREATE USER user_2 IDENTIFIED BY '<password>'
+```
+
+然后在对应的表上授予 `GRANT SELECT` 权限。
+
+```sql
+-- 授予 events 表只读权限。
+GRANT SELECT ON default.events_tenant_1 TO user_1
+GRANT SELECT ON default.events_tenant_2 TO user_2
+```
+
+现在，您可以以 `user_1` 身份连接，并对该用户对应的表执行简单的查询。结果将只返回第一个租户的行。
+
+```sql
+-- 以 user_1 身份登录
+SELECT *
+FROM default.events_tenant_1
+```
+
+```response
+   ┌─id───────────────────────────────────┬─type────────┬───────────timestamp─┬─user_id─┬─data────────────────────────────────────┐
+1. │ 7b7e0439-99d0-4590-a4f7-1cfea1e192d1 │ user_login  │ 2025-03-19 08:00:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+2. │ 846aa71f-f631-47b4-8429-ee8af87b4182 │ purchase    │ 2025-03-19 08:05:00 │    1002 │ {"item": "phone", "amount": 799}        │
+3. │ 6b4d12e4-447d-4398-b3fa-1c1e94d71a2f │ user_logout │ 2025-03-19 08:10:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+4. │ 83b5eb72-aba3-4038-bc52-6c08b6423615 │ purchase    │ 2025-03-19 08:45:00 │    1003 │ {"item": "monitor", "amount": 450}      │
+5. │ 975fb0c8-55bd-4df4-843b-34f5cfeed0a9 │ user_login  │ 2025-03-19 08:50:00 │    1004 │ {"device": "desktop", "location": "LA"} │
+   └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
+```
+
+<div id="separate-databases">
+  ## 独立数据库
+</div>
+
+每个租户的数据都存储在同一个 ClickHouse 服务中的独立 database 内。
+
+> **如果每个租户都需要大量表，可能还需要 materialized view，并且拥有不同的 schema，那么这种方法会很有用。不过，如果租户数量很多，管理起来可能会比较困难。**
+
+其实现方式与“独立表”方法类似，但不同之处在于，权限是在 database 级别授予的，而不是在表级别授予。
+
+请注意，这种方法不适用于成千上万个租户的扩展。参见[使用限制](/zh/products/cloud/guides/best-practices/usagelimits)。
+
+<div id="shared-table-example">
+  ### 示例
+</div>
+
+这是独立数据库多租户模型实现的一个示例。
+
+首先，我们来创建两个数据库，一个用于 `tenant_1`，另一个用于 `tenant_2`。
+
+```sql
+-- 为 tenant_1 创建数据库
+CREATE DATABASE tenant_1;
+
+-- 为 tenant_2 创建数据库
+CREATE DATABASE tenant_2;
+```
+
+```sql
+-- 为 tenant_1 创建表
+CREATE TABLE tenant_1.events
+(
+    id UUID,                    -- 唯一事件 ID
+    type LowCardinality(String), -- 事件类型
+    timestamp DateTime,          -- 事件时间戳
+    user_id UInt32,               -- 触发事件的用户 ID
+    data String,                 -- 事件数据
+)
+ORDER BY (timestamp, user_id);
+
+-- 为 tenant_2 创建表
+CREATE TABLE tenant_2.events
+(
+    id UUID,                    -- 唯一事件 ID
+    type LowCardinality(String), -- 事件类型
+    timestamp DateTime,          -- 事件时间戳
+    user_id UInt32,               -- 触发事件的用户 ID
+    data String,                 -- 事件数据
+)
+ORDER BY (timestamp, user_id);
+```
+
+接下来插入一些模拟数据。
+
+```sql
+INSERT INTO tenant_1.events (id, type, timestamp, user_id, data)
+VALUES
+('7b7e0439-99d0-4590-a4f7-1cfea1e192d1', 'user_login', '2025-03-19 08:00:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('846aa71f-f631-47b4-8429-ee8af87b4182', 'purchase', '2025-03-19 08:05:00', 1002, '{"item": "phone", "amount": 799}'),
+('6b4d12e4-447d-4398-b3fa-1c1e94d71a2f', 'user_logout', '2025-03-19 08:10:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('83b5eb72-aba3-4038-bc52-6c08b6423615', 'purchase', '2025-03-19 08:45:00', 1003, '{"item": "monitor", "amount": 450}'),
+('975fb0c8-55bd-4df4-843b-34f5cfeed0a9', 'user_login', '2025-03-19 08:50:00', 1004, '{"device": "desktop", "location": "LA"}')
+
+INSERT INTO tenant_2.events (id, type, timestamp, user_id, data)
+VALUES
+('7162f8ea-8bfd-486a-a45e-edfc3398ca93', 'user_login', '2025-03-19 08:12:00', 2001, '{"device": "mobile", "location": "SF"}'),
+('6b5f3e55-5add-479e-b89d-762aa017f067', 'purchase', '2025-03-19 08:15:00', 2002, '{"item": "headphones", "amount": 199}'),
+('43ad35a1-926c-4543-a133-8672ddd504bf', 'user_logout', '2025-03-19 08:20:00', 2001, '{"device": "mobile", "location": "SF"}'),
+('f50aa430-4898-43d0-9d82-41e7397ba9b8', 'purchase', '2025-03-19 08:55:00', 2003, '{"item": "laptop", "amount": 1200}'),
+('5c150ceb-b869-4ebb-843d-ab42d3cb5410', 'user_login', '2025-03-19 09:00:00', 2004, '{"device": "mobile", "location": "SF"}')
+```
+
+接下来，创建两个用户 `user_1` 和 `user_2`。
+
+```sql
+-- 创建用户 
+CREATE USER user_1 IDENTIFIED BY '<password>'
+CREATE USER user_2 IDENTIFIED BY '<password>'
+```
+
+然后，对相应的表授予 `GRANT SELECT` 权限。
+
+```sql
+-- 授予 events 表只读权限。
+GRANT SELECT ON tenant_1.events TO user_1
+GRANT SELECT ON tenant_2.events TO user_2
+```
+
+现在，你可以以 `user_1` 身份连接，并对相应数据库中的 events 表执行一个简单的 select。返回的只会是第一个租户的行。
+
+```sql
+-- 以 user_1 身份登录
+SELECT *
+FROM tenant_1.events
+```
+
+```response
+   ┌─id───────────────────────────────────┬─type────────┬───────────timestamp─┬─user_id─┬─data────────────────────────────────────┐
+1. │ 7b7e0439-99d0-4590-a4f7-1cfea1e192d1 │ user_login  │ 2025-03-19 08:00:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+2. │ 846aa71f-f631-47b4-8429-ee8af87b4182 │ purchase    │ 2025-03-19 08:05:00 │    1002 │ {"item": "phone", "amount": 799}        │
+3. │ 6b4d12e4-447d-4398-b3fa-1c1e94d71a2f │ user_logout │ 2025-03-19 08:10:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+4. │ 83b5eb72-aba3-4038-bc52-6c08b6423615 │ purchase    │ 2025-03-19 08:45:00 │    1003 │ {"item": "monitor", "amount": 450}      │
+5. │ 975fb0c8-55bd-4df4-843b-34f5cfeed0a9 │ user_login  │ 2025-03-19 08:50:00 │    1004 │ {"device": "desktop", "location": "LA"} │
+   └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
+```
+
+<div id="compute-compute-separation">
+  ## 计算与计算分离
+</div>
+
+上文介绍的三种方法也可以通过使用[仓库](/zh/products/cloud/features/infrastructure/warehouses#what-is-a-warehouse)来进一步隔离。数据通过统一的对象存储共享，但借助具有不同 CPU/Memory 配比的[计算与计算分离](/zh/products/cloud/features/infrastructure/warehouses#what-is-compute-compute-separation)，每个租户都可以拥有自己的计算服务。
+
+用户管理与前文所述的方法类似，因为同一仓库中的所有服务都[共享访问控制](/zh/products/cloud/features/infrastructure/warehouses#database-credentials)。
+
+请注意，一个仓库中的子服务数量上限较低。请参阅[仓库限制](/zh/products/cloud/features/infrastructure/warehouses#limitations)。
+
+<div id="separate-service">
+  ## 独立的云服务
+</div>
+
+最彻底的方法是为每个租户使用单独的 ClickHouse 服务。
+
+> **如果因法律、安全或就近访问等原因，要求将租户数据存储在不同区域，那么这种较少采用的方法可以作为一种解决方案。**
+
+必须在每个服务上创建用户账户，以便用户访问其各自租户的数据。
+
+这种方法更难管理，而且每个服务都会带来额外开销，因为每个服务都需要各自的基础设施来运行。服务可通过 [ClickHouse Cloud API](/zh/products/cloud/features/admin-features/api/api-overview) 进行管理，也可以通过 [官方 Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) 进行编排。
+
+<div id="shared-table-example">
+  ### 示例
+</div>
+
+这是独立服务多租户模型实现的一个示例。请注意，此示例展示了如何在一个 ClickHouse 服务上创建表和用户，而相同的操作也需要在所有服务上进行。
+
+首先，我们来创建表 `events`
+
+```sql
+-- 为 tenant_1 创建表
+CREATE TABLE events
+(
+    id UUID,                    -- 唯一事件 ID
+    type LowCardinality(String), -- 事件类型
+    timestamp DateTime,          -- 事件时间戳
+    user_id UInt32,               -- 触发事件的用户 ID
+    data String,                 -- 事件数据
+)
+ORDER BY (timestamp, user_id);
+```
+
+让我们插入一些模拟数据。
+
+```sql
+INSERT INTO events (id, type, timestamp, user_id, data)
+VALUES
+('7b7e0439-99d0-4590-a4f7-1cfea1e192d1', 'user_login', '2025-03-19 08:00:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('846aa71f-f631-47b4-8429-ee8af87b4182', 'purchase', '2025-03-19 08:05:00', 1002, '{"item": "phone", "amount": 799}'),
+('6b4d12e4-447d-4398-b3fa-1c1e94d71a2f', 'user_logout', '2025-03-19 08:10:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('83b5eb72-aba3-4038-bc52-6c08b6423615', 'purchase', '2025-03-19 08:45:00', 1003, '{"item": "monitor", "amount": 450}'),
+('975fb0c8-55bd-4df4-843b-34f5cfeed0a9', 'user_login', '2025-03-19 08:50:00', 1004, '{"device": "desktop", "location": "LA"}')
+```
+
+接下来，创建两个用户 `user_1`
+
+```sql
+-- 创建用户 
+CREATE USER user_1 IDENTIFIED BY '<password>'
+```
+
+然后，在相应的表上授予 `GRANT SELECT` 权限。
+
+```sql
+-- 授予对 events 表的只读权限。
+GRANT SELECT ON events TO user_1
+```
+
+现在，你可以连接到租户 1 的服务，并以 `user_1` 身份运行一个简单的查询。返回的只会是第一个租户的行。
+
+```sql
+-- 以 user_1 身份登录后执行
+SELECT *
+FROM events
+```
+
+```response
+   ┌─id───────────────────────────────────┬─type────────┬───────────timestamp─┬─user_id─┬─data────────────────────────────────────┐
+1. │ 7b7e0439-99d0-4590-a4f7-1cfea1e192d1 │ user_login  │ 2025-03-19 08:00:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+2. │ 846aa71f-f631-47b4-8429-ee8af87b4182 │ purchase    │ 2025-03-19 08:05:00 │    1002 │ {"item": "phone", "amount": 799}        │
+3. │ 6b4d12e4-447d-4398-b3fa-1c1e94d71a2f │ user_logout │ 2025-03-19 08:10:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+4. │ 83b5eb72-aba3-4038-bc52-6c08b6423615 │ purchase    │ 2025-03-19 08:45:00 │    1003 │ {"item": "monitor", "amount": 450}      │
+5. │ 975fb0c8-55bd-4df4-843b-34f5cfeed0a9 │ user_login  │ 2025-03-19 08:50:00 │    1004 │ {"device": "desktop", "location": "LA"} │
+   └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
+```

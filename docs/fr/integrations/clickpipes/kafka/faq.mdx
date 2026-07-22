@@ -1,0 +1,87 @@
+---
+sidebarTitle: 'FAQ'
+description: 'Questions fréquentes sur ClickPipes for Kafka.'
+slug: /integrations/clickpipes/kafka/faq
+title: 'Kafka ClickPipes FAQ'
+doc_type: 'guide'
+keywords: ['kafka faq', 'clickpipes', 'upstash', 'azure event hubs', 'private link']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<div id="faq">
+  ## Kafka ClickPipes FAQ
+</div>
+
+<div id="general">
+  ### Général
+</div>
+
+<Accordion title="Comment fonctionne ClickPipes for Kafka ?">
+  ClickPipes utilise une architecture dédiée s’appuyant sur la Kafka Consumer API pour lire les données d’un topic donné, puis les insérer dans une table ClickHouse d’un service ClickHouse Cloud spécifique.
+</Accordion>
+
+<Accordion title="Quelle est la différence entre ClickPipes et le moteur de table Kafka de ClickHouse ?">
+  Le moteur de table Kafka est une fonctionnalité native de ClickHouse qui implémente un « modèle pull », dans lequel le serveur ClickHouse lui-même se connecte à Kafka, récupère les événements, puis les écrit localement.
+
+  ClickPipes est un service cloud distinct qui fonctionne indépendamment du service ClickHouse. Il se connecte à Kafka (ou à d’autres sources de données) et envoie les événements vers un service ClickHouse Cloud associé. Cette architecture découplée offre une plus grande flexibilité opérationnelle, une séparation claire des responsabilités, une ingestion évolutive, une gestion fluide des défaillances, une meilleure extensibilité, etc.
+</Accordion>
+
+<Accordion title="Quelles sont les conditions requises pour utiliser ClickPipes for Kafka ?">
+  Pour utiliser ClickPipes for Kafka, vous devez disposer d’un broker Kafka en cours d’exécution et d’un service ClickHouse Cloud avec ClickPipes activé. Vous devez également vous assurer que ClickHouse Cloud peut accéder à votre broker Kafka. Pour cela, vous pouvez autoriser les connexions distantes côté Kafka et placer sur liste blanche les [adresses IP de sortie de ClickHouse Cloud](/fr/products/cloud/guides/data-sources/cloud-endpoints-api) dans votre configuration Kafka. Vous pouvez également utiliser [AWS PrivateLink](/fr/integrations/clickpipes/aws-privatelink) pour connecter ClickPipes for Kafka à vos brokers Kafka.
+</Accordion>
+
+<Accordion title="ClickPipes for Kafka prend-il en charge AWS PrivateLink ?">
+  Oui, AWS PrivateLink est pris en charge. Consultez [la documentation](/fr/integrations/clickpipes/aws-privatelink) pour savoir comment le configurer.
+</Accordion>
+
+<Accordion title="Puis-je utiliser ClickPipes for Kafka pour écrire des données dans un topic Kafka ?">
+  Non, ClickPipes for Kafka est conçu pour lire des données à partir de topics Kafka, et non pour y écrire des données. Pour écrire des données dans un topic Kafka, vous devez utiliser un producteur Kafka dédié.
+</Accordion>
+
+<Accordion title="ClickPipes prend-il en charge plusieurs brokers ?">
+  Oui, si les brokers font partie du même quorum, ils peuvent être configurés ensemble en les séparant par `,`.
+</Accordion>
+
+<Accordion title="Les répliques ClickPipes peuvent-elles être mises à l’échelle ?">
+  Oui, ClickPipes for streaming peut être mis à l’échelle à la fois horizontalement et verticalement.
+  La mise à l’échelle horizontale ajoute davantage de répliques pour augmenter le débit, tandis que la mise à l’échelle verticale augmente les ressources (CPU et RAM) allouées à chaque réplique afin de gérer des workloads plus intensifs.
+  Cela peut être configuré lors de la création du ClickPipe, ou à tout moment sous **Settings** -&gt; **Advanced Settings** -&gt; **Scaling**.
+</Accordion>
+
+<Accordion title="Je ne trouve pas certains de mes topics Kafka dans l’UI de configuration de ClickPipes. Pourquoi ?">
+  L’UI de découverte des topics de ClickPipes répertorie jusqu’à 1 500 topics par défaut. Si votre cluster Kafka compte plus de 1 500 topics, certains peuvent ne pas apparaître dans la liste déroulante. Pour vérifier que votre topic existe, contrôlez-le directement à l’aide d’un client Kafka avec les mêmes identifiants. Si c’est bien le cas et que vous devez augmenter la limite d’affichage au-delà de 1 500, contactez ClickHouse Support.
+</Accordion>
+
+<div id="azure-eventhubs">
+  ### Azure Event Hubs
+</div>
+
+<Accordion title="Le ClickPipe Azure Event Hubs fonctionne-t-il sans l’interface Kafka ?">
+  Non. ClickPipes exige que l’espace de noms Event Hubs ait l’interface Kafka activée. Cette fonctionnalité n’est disponible que dans les tiers supérieurs à **Basic**. Consultez la [documentation Azure Event Hubs](https://learn.microsoft.com/en-us/azure/event-hubs/event-hubs-quickstart-kafka-enabled-event-hubs?tabs=passwordless#create-an-azure-event-hubs-namespace) pour en savoir plus.
+</Accordion>
+
+<Accordion title="Azure Schema Registry fonctionne-t-il avec ClickPipes ?">
+  Non. ClickPipes ne prend en charge que les registres de schémas compatibles avec l’API de Confluent Schema Registry, ce qui n’est pas le cas d’Azure Schema Registry. Si vous avez besoin d’une prise en charge pour ce registre de schémas, [contactez notre équipe](https://clickhouse.com/company/contact?loc=clickpipes).
+</Accordion>
+
+<Accordion title="De quelles permissions ma stratégie a-t-elle besoin pour consommer depuis Azure Event Hubs ?">
+  Pour lister les topics et consommer les événements, la stratégie d’accès partagé fournie à ClickPipes doit disposer au minimum de l’autorisation « Listen ».
+</Accordion>
+
+<Accordion title="Pourquoi mes Event Hubs ne renvoient-ils aucune donnée ?">
+  Si votre instance ClickHouse se trouve dans une région ou sur un continent différent de votre déploiement Event Hubs, vous risquez de rencontrer des dépassements de délai lors de l’onboarding de vos ClickPipes, ainsi qu’une latence plus élevée lors de la consommation des données depuis Event Hub. Nous vous recommandons de déployer ClickHouse Cloud et Azure Event Hubs dans la même région cloud, ou dans des régions proches l’une de l’autre, afin d’éviter une dégradation des performances.
+</Accordion>
+
+<Accordion title="Dois-je inclure le numéro de port pour Azure Event Hubs ?">
+  Oui. ClickPipes exige que vous indiquiez le numéro de port de l’interface Kafka, à savoir `:9093`.
+</Accordion>
+
+<Accordion title="Les ClickPipes IPs s’appliquent-elles encore à Azure Event Hubs ?">
+  Oui. Pour restreindre le trafic vers votre instance Event Hubs, veuillez ajouter les [static NAT IPs documentées](/fr/integrations/clickpipes/home#list-of-static-ips) à .
+</Accordion>
+
+<Accordion title="La chaîne de connexion est-elle celle de l’Event Hub ou de l’espace de noms Event Hub ?">
+  Les deux fonctionnent. Nous vous recommandons vivement d’utiliser une stratégie d’accès partagé au **niveau de l’espace de noms** pour récupérer des échantillons depuis plusieurs Event Hubs.
+</Accordion>

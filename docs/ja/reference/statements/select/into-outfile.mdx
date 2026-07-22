@@ -1,0 +1,45 @@
+---
+description: 'INTO OUTFILE 句のドキュメント'
+sidebarTitle: 'INTO OUTFILE'
+slug: /sql-reference/statements/select/into-outfile
+title: 'INTO OUTFILE 句'
+doc_type: 'reference'
+---
+
+`INTO OUTFILE` 句は、`SELECT` クエリの結果を**クライアント**側のファイルに書き出します。
+
+圧縮ファイルに対応しています。圧縮タイプはファイル名の拡張子から判別されます (既定ではモード `'auto'` が使用されます) 。また、`COMPRESSION` 句で明示的に指定することもできます。特定の圧縮タイプの圧縮レベルは、`LEVEL` 句で指定できます。
+
+**構文**
+
+```sql
+SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMPRESSION type [LEVEL level]]
+```
+
+`file_name` と `type` は文字列リテラルです。サポートされている圧縮タイプは、`'none'`、`'gzip'`、`'deflate'`、`'br'`、`'xz'`、`'zstd'`、`'lz4'`、`'bz2'` です。
+
+`level` は数値リテラルです。次の範囲の正の整数がサポートされます: `lz4` タイプでは `1-12`、`zstd` タイプでは `1-22`、その他の圧縮タイプでは `1-9` です。
+
+<div id="implementation-details">
+  ## 実装の詳細
+</div>
+
+* この機能は、[コマンドラインクライアント](/ja/concepts/features/interfaces/client) と [clickhouse-local](/ja/concepts/features/tools-and-utilities/clickhouse-local) で利用できます。そのため、[HTTPインターフェイス](/ja/concepts/features/interfaces/http) 経由で送信したクエリは失敗します。
+* 同じファイル名のファイルがすでに存在する場合、そのクエリは失敗します。
+* デフォルトの[出力フォーマット](/ja/reference/formats/index) は `TabSeparated` です (コマンドラインクライアントのバッチモードと同様) 。変更するには [FORMAT](/ja/reference/statements/select/format) 句を使用します。
+* クエリに `AND STDOUT` が指定されている場合、ファイルに書き込まれる出力は標準出力にも表示されます。圧縮と併用する場合、標準出力には平文が表示されます。
+* クエリに `APPEND` が指定されている場合、出力は既存のファイルに追記されます。圧縮を使用する場合は、`APPEND` は使用できません。
+* すでに存在するファイルに書き込む場合は、`APPEND` または `TRUNCATE` を使用する必要があります。
+
+**例**
+
+次のクエリを [コマンドラインクライアント](/ja/concepts/features/interfaces/client) で実行します。
+
+```bash title="Query"
+clickhouse-client --query="SELECT 1,'ABC' INTO OUTFILE 'select.gz' FORMAT CSV;"
+zcat select.gz 
+```
+
+```text title="Response"
+1,"ABC"
+```

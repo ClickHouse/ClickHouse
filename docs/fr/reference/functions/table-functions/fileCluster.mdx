@@ -1,0 +1,102 @@
+---
+description: 'Permet le traitement simultané des fichiers correspondant à un chemin spécifié sur
+  plusieurs nœuds d''un cluster. L''initiateur établit des connexions avec les nœuds
+  worker, développe les globs dans le chemin de fichier et délègue aux nœuds worker
+  les tâches de lecture des fichiers. Chaque nœud worker interroge l''initiateur pour
+  obtenir le fichier suivant à traiter, et répète l''opération jusqu''à ce que toutes
+  les tâches soient terminées (tous les fichiers sont lus).'
+sidebarTitle: 'fileCluster'
+slug: /sql-reference/table-functions/fileCluster
+title: 'fileCluster'
+doc_type: 'reference'
+---
+
+Permet le traitement simultané des fichiers correspondant à un chemin spécifié sur plusieurs nœuds d&#39;un cluster. L&#39;initiateur établit des connexions avec les nœuds worker, développe les globs dans le chemin de fichier et délègue aux nœuds worker les tâches de lecture des fichiers. Chaque nœud worker interroge l&#39;initiateur pour obtenir le fichier suivant à traiter, et répète l&#39;opération jusqu&#39;à ce que toutes les tâches soient terminées (tous les fichiers sont lus).
+
+<Note>
+  Cette fonction ne fonctionne *correctement* que si l&#39;ensemble des fichiers correspondant au chemin initialement spécifié est identique sur tous les nœuds et si leur contenu est cohérent d&#39;un nœud à l&#39;autre.
+  Si ces fichiers diffèrent d&#39;un nœud à l&#39;autre, la valeur de retour ne peut pas être déterminée à l&#39;avance et dépend de l&#39;ordre dans lequel les nœuds worker demandent des tâches à l&#39;initiateur.
+</Note>
+
+<div id="syntax">
+  ## Syntaxe
+</div>
+
+```sql
+fileCluster(cluster_name, path[, format, structure, compression_method])
+```
+
+<div id="arguments">
+  ## Arguments
+</div>
+
+| Argument             | Description                                                                                                                                                                                                     |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name`       | Nom d’un cluster servant à constituer un ensemble d’adresses et de paramètres de connexion pour les serveurs distants et locaux.                                                                                |
+| `path`               | Chemin relatif vers le fichier à partir de [user&#95;files&#95;path](/fr/reference/settings/server-settings/settings#user_files_path). Le chemin du fichier prend également en charge les [globs](#globs-in-path). |
+| `format`             | [Format](/fr/reference/formats/index) des fichiers. Type : [String](/fr/reference/data-types/string).                                                                                                                 |
+| `structure`          | Structure de la table au format `'UserID UInt64, Name String'`. Détermine les noms et les types des colonnes. Type : [String](/fr/reference/data-types/string).                                                    |
+| `compression_method` | Méthode de compression. Les types de compression pris en charge sont `gz`, `br`, `xz`, `zst`, `lz4` et `bz2`.                                                                                                   |
+
+<div id="returned_value">
+  ## Valeur retournée
+</div>
+
+Une table au format et à la structure spécifiés, contenant les données des fichiers correspondant au chemin indiqué.
+
+**Exemple**
+
+Étant donné un cluster nommé `my_cluster` et la valeur suivante du paramètre `user_files_path` :
+
+```bash
+$ grep user_files_path /etc/clickhouse-server/config.xml
+    <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+```
+
+De plus, si les fichiers `test1.csv` et `test2.csv` sont présents dans le `user_files_path` de chaque nœud du cluster et que leur contenu est identique sur tous les nœuds :
+
+```bash
+$ cat /var/lib/clickhouse/user_files/test1.csv
+    1,"file1"
+    11,"file11"
+
+$ cat /var/lib/clickhouse/user_files/test2.csv
+    2,"file2"
+    22,"file22"
+```
+
+Par exemple, il est possible de créer ces fichiers en exécutant ces deux requêtes sur chaque nœud du cluster :
+
+```sql
+INSERT INTO TABLE FUNCTION file('file1.csv', 'CSV', 'i UInt32, s String') VALUES (1,'file1'), (11,'file11');
+INSERT INTO TABLE FUNCTION file('file2.csv', 'CSV', 'i UInt32, s String') VALUES (2,'file2'), (22,'file22');
+```
+
+À présent, lisez le contenu de `test1.csv` et `test2.csv` à l’aide de la fonction de table `fileCluster` :
+
+```sql
+SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s String') ORDER BY i, s
+```
+
+```response
+┌──i─┬─s──────┐
+│  1 │ file1  │
+│ 11 │ file11 │
+└────┴────────┘
+┌──i─┬─s──────┐
+│  2 │ file2  │
+│ 22 │ file22 │
+└────┴────────┘
+```
+
+<div id="globs-in-path">
+  ## Globs dans le chemin
+</div>
+
+FileCluster prend en charge tous les motifs gérés par la fonction de table [File](/fr/reference/functions/table-functions/file#globs-in-path).
+
+<div id="related">
+  ## Voir aussi
+</div>
+
+* [Fonction de table File](/fr/reference/functions/table-functions/file)

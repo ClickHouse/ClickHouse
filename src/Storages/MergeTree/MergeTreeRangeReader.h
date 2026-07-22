@@ -14,6 +14,7 @@ namespace DB
 template <typename T>
 class ColumnVector;
 using ColumnUInt8 = ColumnVector<UInt8>;
+using ColumnUInt64 = ColumnVector<UInt64>;
 
 class IMergeTreeReader;
 class MergeTreeIndexGranularity;
@@ -133,17 +134,13 @@ class FilterWithCachedCount
     const IColumn::Filter * data = nullptr;
     mutable size_t cached_count_bytes = -1;
 
+    ColumnPtr sparse_indices_holder;
+    const ColumnUInt64 * sparse_indices = nullptr;
+
 public:
     explicit FilterWithCachedCount() = default;
 
-    explicit FilterWithCachedCount(const ColumnPtr & column_)
-        : const_description(*column_)
-    {
-        ColumnPtr col = column_->convertToFullIfNeeded();
-        FilterDescription desc(*col);
-        column = desc.data_holder ? desc.data_holder : col;
-        data = desc.data;
-    }
+    explicit FilterWithCachedCount(const ColumnPtr & column_);
 
     bool present() const { return !!column; }
 
@@ -154,12 +151,15 @@ public:
 
     const IColumn::Filter & getData() const { return *data; }
 
+    bool isSparse() const { return sparse_indices != nullptr; }
+    const ColumnUInt64 * getSparseIndices() const { return sparse_indices; }
+
     size_t size() const { return column->size(); }
 
     size_t countBytesInFilter() const
     {
         if (cached_count_bytes == size_t(-1))
-            cached_count_bytes = DB::countBytesInFilter(*data);
+            cached_count_bytes = sparse_indices ? sparse_indices->size() : DB::countBytesInFilter(*data);
         return cached_count_bytes;
     }
 };
@@ -444,6 +444,7 @@ public:
         /// Builds updated filter by cutting zeros in granules tails
         void collapseZeroTails(const IColumn::Filter & filter, const NumRows & rows_per_granule_previous, IColumn::Filter & new_filter) const;
         size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails, bool can_read_incomplete_granules_) const;
+        size_t countZeroTailsFromSparse(const ColumnUInt64 & sparse_indices, NumRows & zero_tails, bool can_read_incomplete_granules_) const;
         static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end);
 
         LoggerPtr log;
