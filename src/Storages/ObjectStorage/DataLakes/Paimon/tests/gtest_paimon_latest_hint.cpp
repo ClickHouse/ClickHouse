@@ -205,7 +205,7 @@ TEST(PaimonLatestHint, ConcurrentSchemaZeroRewriteDoesNotCrash)
                 auto schema_json = client.getTableSchemaJSON(schema0_info);
                 EXPECT_FALSE(schema_json.isNull());
             }
-            catch (...)
+            catch (...) // NOLINT(bugprone-empty-catch)
             {
                 /// Ok: a torn read throws a normal parse exception; the test only requires no abort.
             }
@@ -273,7 +273,7 @@ TEST(PaimonLatestHint, ConcurrentSnapshotRewriteDoesNotCrash)
                 auto snapshot = client.getSnapshot({1, snapshot1.string()});
                 EXPECT_EQ(snapshot.id, 1);
             }
-            catch (...)
+            catch (...) // NOLINT(bugprone-empty-catch)
             {
                 /// Ok: a torn read throws a normal parse exception; the test only requires no abort.
             }
