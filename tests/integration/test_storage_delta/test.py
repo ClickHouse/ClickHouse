@@ -4312,6 +4312,71 @@ def test_write_failure_does_not_crash_server(started_cluster, partitioned):
 
 
 @pytest.mark.parametrize("partitioned", [False, True])
+def test_write_failure_does_not_crash_server_s3(started_cluster, partitioned):
+    # S3-backed variant of test_write_failure_does_not_crash_server. The sink fix is
+    # shared by all backends, but the cleanup path is backend-specific: the inner
+    # cancel goes through WriteBufferFromS3 instead of WriteBufferFromFile, and the
+    # orphan removal through S3ObjectStorage::removeObjectIfExists instead of a local
+    # unlink. So a local-only regression could pass while the S3 write path still
+    # aborted the server or leaked an uncommitted object. This exercises the
+    # onException() path (source throws mid-insert) against the deltaLake S3 backend.
+    instance = started_cluster.instances["node1"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    table_name = randomize_table_name("test_write_failure_s3")
+    result_file = f"{table_name}_data"
+
+    # Create an empty Delta table directly on S3 so the table starts with no data
+    # files; any parquet left afterwards is therefore an orphan from the failed insert.
+    schema = pa.schema([("id", pa.int32(), False), ("part", pa.int32(), False)])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.int32())]
+    write_deltalake_with_retry(
+        f"s3://{bucket}/{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        storage_options=get_storage_options(started_cluster),
+        mode="overwrite",
+        partition_by=["part"] if partitioned else [],
+    )
+
+    # Use a named DeltaLake S3 table (like test_writes) so the INSERT ... SELECT maps
+    # columns positionally to id/part; a table function would require the SELECT to
+    # name the columns and fails schema analysis before ever reaching the sink.
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, part Int32) "
+        f"ENGINE = DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
+        f"/{bucket}/{result_file}/', 'minio', '{minio_secret_key}') "
+        f"SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+
+    # max_block_size = 1 makes the source deliver single-row chunks, so the sink
+    # opens its S3 write buffer(s) (for both partitions when partitioned) before
+    # throwIf fires on the last row.
+    error = instance.query_and_get_error(
+        f"INSERT INTO {table_name} "
+        f"SELECT throwIf(number = 9)::Int32 + number::Int32, number::Int32 % 2 "
+        f"FROM numbers(10) SETTINGS max_block_size = 1"
+    )
+    assert "FUNCTION_THROW_IF_VALUE_IS_NON_ZERO" in error
+
+    # Server stays alive after the failed write (would have aborted before the fix).
+    assert "1" == instance.query("SELECT 1").strip()
+
+    # The failed INSERT must not leave any orphan data file behind on S3. The table
+    # started empty, so no non-delta-log parquet must remain in the bucket prefix.
+    s3_objects = list(
+        minio_client.list_objects(bucket, f"{result_file}/", recursive=True)
+    )
+    orphan_parquets = [
+        obj.object_name
+        for obj in s3_objects
+        if obj.object_name.endswith(".parquet") and "_delta_log/" not in obj.object_name
+    ]
+    assert orphan_parquets == [], (
+        f"orphan data file(s) left on S3 after failed insert: {orphan_parquets}"
+    )
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
 def test_write_external_cancel_does_not_crash_server(started_cluster, partitioned):
     # Regression test for https://github.com/ClickHouse/ClickHouse/issues/109311,
     # external-cancellation half. test_write_failure_does_not_crash_server drives
