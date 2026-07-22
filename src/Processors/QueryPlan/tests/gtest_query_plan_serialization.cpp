@@ -55,7 +55,9 @@ void registerStepsOnce()
     static std::once_flag flag;
     std::call_once(flag, []
     {
-        QueryPlanStepRegistry::registerPlanSteps();
+        /// Another suite in this binary may have registered a subset already.
+        if (!QueryPlanStepRegistry::instance().hasStep("Expression"))
+            QueryPlanStepRegistry::registerPlanSteps();
         QueryPlanStepRegistry::instance().registerStep("TestSource", TestSourceStep::deserialize);
     });
 }
@@ -75,28 +77,44 @@ QueryPlan makeSourcePlan()
     return plan;
 }
 
-std::string serializePlan(const QueryPlan & plan)
+std::string serializePlan(const QueryPlan & plan, size_t version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
 {
     WriteBufferFromOwnString out;
-    plan.serialize(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    plan.serialize(out, version);
     out.finalize();
     return out.str();
 }
 
-/// serialize -> deserialize -> serialize must reproduce identical bytes. This pins the current
-/// wire format and per-step determinism; any step whose reader and writer disagree fails here.
+QueryPlan deserializePlan(const std::string & bytes)
+{
+    ReadBufferFromString in(bytes);
+    auto plan_and_sets = QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0);
+    EXPECT_TRUE(in.eof());
+    return QueryPlan::makeSets(std::move(plan_and_sets), getContext().context);
+}
+
+/// For every supported version: serialize -> deserialize -> serialize must reproduce identical
+/// bytes, and the reconstructed plans must explain identically across versions. This pins both
+/// the legacy and the v4 skeleton formats and per-step determinism.
 void checkRoundTrip(QueryPlan plan)
 {
     registerStepsOnce();
 
-    std::string first_bytes = serializePlan(plan);
+    std::string explain_reference;
+    for (size_t version : {size_t(3), size_t(DBMS_QUERY_PLAN_SERIALIZATION_VERSION)})
+    {
+        std::string first_bytes = serializePlan(plan, version);
+        auto restored_plan = deserializePlan(first_bytes);
 
-    ReadBufferFromString in(first_bytes);
-    auto plan_and_sets = QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0);
-    auto restored_plan = QueryPlan::makeSets(std::move(plan_and_sets), getContext().context);
+        std::string second_bytes = serializePlan(restored_plan, version);
+        EXPECT_EQ(first_bytes, second_bytes) << "at version " << version;
 
-    std::string second_bytes = serializePlan(restored_plan);
-    EXPECT_EQ(first_bytes, second_bytes);
+        auto explain = debugExplainPlan(restored_plan);
+        if (explain_reference.empty())
+            explain_reference = explain;
+        else
+            EXPECT_EQ(explain, explain_reference) << "plans diverge between versions";
+    }
 }
 
 }

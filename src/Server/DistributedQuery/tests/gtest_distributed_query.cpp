@@ -468,17 +468,19 @@ void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
 
 void registerPlanSteps()
 {
-    QueryPlanStepRegistry & registry = QueryPlanStepRegistry::instance();
+    /// The registry is shared with other test suites in this binary; register the full production
+    /// set once (whichever suite gets there first) plus this file's test-only steps.
+    static std::once_flag once;
+    std::call_once(once, []
+    {
+        QueryPlanStepRegistry & registry = QueryPlanStepRegistry::instance();
 
-    registerReadFromFileStep(registry);
-    registerShuffleSendStep(registry);
-    registerShuffleReceiveStep(registry);
-    registerJoinStep(registry);
-    registerGatherSendStep(registry);
-    registerGatherReceiveStep(registry);
-    registerPrintTSVStep(registry);
-    registerFilterStep(registry);
-    registerBuildRuntimeFilterStep(registry);
+        if (!registry.hasStep("Expression"))
+            QueryPlanStepRegistry::registerPlanSteps();
+
+        registerReadFromFileStep(registry);
+        registerPrintTSVStep(registry);
+    });
 }
 
 
