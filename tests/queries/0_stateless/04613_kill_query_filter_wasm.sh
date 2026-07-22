@@ -2,7 +2,7 @@
 # Tags: no-fasttest, no-parallel, no-msan
 # Test that KILL QUERY works for WASM UDF in WHERE clause, covering the cancelExecution path
 # inside a single long-running function (UserDefinedWebAssembly).
-# Uses infinite_loop from faulty.wasm with unlimited fuel, then KILL QUERY.
+# Uses infinite_loop_04613 from faulty.wasm (unique name for isolation from 03207_wasm_fault.sh) with unlimited fuel, then KILL QUERY.
 # Asserts QUERY_WAS_CANCELLED — if the test hangs, cancellation is broken.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -12,15 +12,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 query_id="kill_query_filter_wasm_${CLICKHOUSE_DATABASE}_$RANDOM"
 output_file="${CLICKHOUSE_TMP}/kill_query_filter_wasm_${CLICKHOUSE_DATABASE}.out"
 
-# Ensure isolation from earlier tests (03207_wasm_fault.sh) that also insert the faulty module
-${CLICKHOUSE_CLIENT} -q "DELETE FROM system.webassembly_modules WHERE name = 'faulty'"
+# Use module/function names unique to 04613 for isolation from 03207_wasm_fault.sh.
+# Clean up any stale entry from a previous failed 04613 run.
+${CLICKHOUSE_CLIENT} -q "DELETE FROM system.webassembly_modules WHERE name = 'faulty_04613'"
 
 # Load the WASM module with the infinite_loop function
-cat ${CUR_DIR}/wasm/faulty.wasm | ${CLICKHOUSE_CLIENT} --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'faulty', code FROM input('code String') FORMAT RawBlob"
+cat ${CUR_DIR}/wasm/faulty.wasm | ${CLICKHOUSE_CLIENT} --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'faulty_04613', code FROM input('code String') FORMAT RawBlob"
 
-# Create the infinite_loop function
+# Create the infinite_loop_04613 function
 ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q "
-    CREATE OR REPLACE FUNCTION infinite_loop LANGUAGE WASM ABI ROW_DIRECT FROM 'faulty' ARGUMENTS (UInt32) RETURNS UInt32;
+    CREATE OR REPLACE FUNCTION infinite_loop_04613 LANGUAGE WASM ABI ROW_DIRECT FROM 'faulty_04613' ARGUMENTS (UInt32) RETURNS UInt32;
 "
 
 # Start a query that uses infinite_loop in WHERE with unlimited fuel
@@ -29,7 +30,7 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q "
 ${CLICKHOUSE_CLIENT} --query_id="$query_id" --allow_experimental_analyzer=1 --query "
     SELECT count()
     FROM numbers(100000000)
-    WHERE infinite_loop(1 :: UInt32) = 1
+    WHERE infinite_loop_04613(1 :: UInt32) = 1
     FORMAT Null
     SETTINGS webassembly_udf_max_fuel = 0, max_threads = 1, max_block_size = 10000000, max_rows_to_read = 0
 " >"$output_file" 2>&1 &
@@ -50,7 +51,7 @@ wait
 grep -qF "QUERY_WAS_CANCELLED" "$output_file" || { echo "FAIL: query was not cancelled"; exit 1; }
 
 # Clean up
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q "DROP FUNCTION IF EXISTS infinite_loop"
-${CLICKHOUSE_CLIENT} -q "DELETE FROM system.webassembly_modules WHERE name = 'faulty'"
+${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q "DROP FUNCTION IF EXISTS infinite_loop_04613"
+${CLICKHOUSE_CLIENT} -q "DELETE FROM system.webassembly_modules WHERE name = 'faulty_04613'"
 
 echo "OK"
