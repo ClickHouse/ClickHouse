@@ -287,44 +287,30 @@ class LocalInfo:
         return ""
 
 
-def get_master_shas(info, count: int = 600) -> List[str]:
-    """Recent master commits, newest first.
+def get_master_shas(info) -> List[str]:
+    """The PR's master parent chain, newest first.
 
-    `binary_sizes`/`build_time_trace` rows with pull_request_number = 0 come
-    from master AND release branches, so every baseline lookup must intersect
-    with the actual master history.
+    `master_track_commits_sha` (populated by the `store_data` workflow hook) is
+    the first-parent history of the master commit this PR is built on top of -
+    the exact baseline set, anchored to the PR's merge base rather than to the
+    global master tip. `binary_sizes`/`build_time_trace` rows with
+    pull_request_number = 0 come from master AND release branches, so every
+    baseline lookup must intersect with this history.
+
+    `find_baseline` only ever considers the first 100 of these, and the hook
+    already stores ~100 commits, so there is no need to page more from the API.
     """
-    shas = []
     seen = set()
-    for sha in list(info.get_kv_data("master_commits") or []):
-        if sha not in seen:
-            seen.add(sha)
-            shas.append(sha)
-    page = 1
-    while len(shas) < count and page <= (count // 100) + 1:
-        try:
-            raw = subprocess.run(
-                [
-                    "gh",
-                    "api",
-                    f"repos/{info.repo_name}/commits?sha=master&per_page=100&page={page}",
-                    "-q",
-                    ".[].sha",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=60,
-                check=True,
-            ).stdout
-        except Exception:
-            print(f"WARNING: failed to list master commits (page {page})")
-            traceback.print_exc()
-            break
-        for sha in raw.split():
+    shas = []
+    # `master_track_commits_sha` is anchored to the PR's master parent; fall back
+    # to `master_commits` (the global tip) only if the anchored chain is absent.
+    for key in ("master_track_commits_sha", "master_commits"):
+        for sha in list(info.get_kv_data(key) or []):
             if sha not in seen:
                 seen.add(sha)
                 shas.append(sha)
-        page += 1
+        if shas:
+            break
     return shas
 
 
@@ -554,7 +540,11 @@ def compare_compile_times(db: Db, pr_side, base_side, master_shas) -> Section:
     # The recompiled set can be the whole tree (a common-header PR), so the
     # file filter is a subquery rather than a literal IN list.
     base_rows = db.query(
-        f"""SELECT file, argMax(dur, time) AS dur, argMax(commit_sha, time) AS sha
+        f"""SELECT file,
+            argMax(dur, time) AS dur,
+            argMax(commit_sha, time) AS sha,
+            argMax(check_start_time, time) AS check_start_time,
+            argMax(instance_id, time) AS instance_id
         FROM build_time_trace
         WHERE date >= today() - {TU_BASE_DAYS}
             AND pull_request_number = 0
@@ -568,7 +558,21 @@ def compare_compile_times(db: Db, pr_side, base_side, master_shas) -> Section:
             AND commit_sha IN ({in_list(master_shas)})
         GROUP BY file"""
     )
-    base_durs = {row["file"]: (int(row["dur"]), row["sha"]) for row in base_rows}
+    # Carry the exact run (check_start_time, instance_id) that produced each
+    # baseline duration, so drill_down_tu reads its entities from that same run
+    # rather than re-resolving from the commit sha alone - a later rerun of the
+    # same master commit that did not recompile this TU would otherwise pin the
+    # drill-down to a run with no rows for this file, reporting every PR entity
+    # as new.
+    base_durs = {
+        row["file"]: (
+            int(row["dur"]),
+            row["sha"],
+            row["check_start_time"],
+            row["instance_id"],
+        )
+        for row in base_rows
+    }
 
     # Compile times of the PR build and of the (older, different-machine)
     # master baselines carry a uniform machine-speed skew: with enough matched
@@ -577,7 +581,7 @@ def compare_compile_times(db: Db, pr_side, base_side, master_shas) -> Section:
     # the skew itself is reported as an informational line (it can also be a
     # genuine everything-got-slower change, e.g. a heavy common header - that
     # still shows up, just not as per-TU findings).
-    ratios = sorted(pr_durs[file] / max(base_dur, 1) for file, (base_dur, _) in base_durs.items() if file in pr_durs)
+    ratios = sorted(pr_durs[file] / max(base_dur, 1) for file, (base_dur, *_) in base_durs.items() if file in pr_durs)
     skew = ratios[len(ratios) // 2] if len(ratios) >= 10 else 1.0
 
     total_s = sum(pr_durs.values()) / 1e6
@@ -585,12 +589,13 @@ def compare_compile_times(db: Db, pr_side, base_side, master_shas) -> Section:
     for file, pr_dur in pr_durs.items():
         if file not in base_durs:
             continue
-        base_dur, base_tu_sha = base_durs[file]
+        base_dur, base_tu_sha, base_cst, base_iid = base_durs[file]
+        base_tu_side = Side(TU_BASE_DAYS, 0, base_tu_sha, base_cst, base_iid)
         adjusted_base = base_dur * skew
         delta_s = (pr_dur - adjusted_base) / 1e6
         ratio = max(pr_dur, adjusted_base) / max(min(pr_dur, adjusted_base), 1)
         if abs(delta_s) >= TU_REPORT_SECONDS and ratio >= TU_REPORT_RATIO:
-            findings.append((file, pr_dur, base_dur, base_tu_sha, delta_s, ratio))
+            findings.append((file, pr_dur, base_dur, base_tu_side, delta_s, ratio))
     findings.sort(key=lambda f: -abs(f[4]))
 
     lines = [f"{len(pr_durs)} translation units recompiled, {total_s:.0f} s compile time in total, {len(base_durs)} of them have a recent master baseline."]
@@ -605,7 +610,7 @@ def compare_compile_times(db: Db, pr_side, base_side, master_shas) -> Section:
             "| Translation unit | Master | PR | Δ vs median |",
             "|---|---:|---:|---:|",
         ]
-        for file, pr_dur, base_dur, base_tu_sha, delta_s, ratio in findings[:MAX_TABLE_ROWS]:
+        for file, pr_dur, base_dur, base_tu_side, delta_s, ratio in findings[:MAX_TABLE_ROWS]:
             if abs(delta_s) >= TU_SIG_SECONDS and ratio >= TU_SIG_RATIO:
                 section.significant = True
             lines.append(f"| {md_code(strip_build_dir(file))} | {base_dur / 1e6:.1f} s | {pr_dur / 1e6:.1f} s | {format_seconds_delta(delta_s, base_dur * skew / 1e6)} |")
@@ -613,10 +618,10 @@ def compare_compile_times(db: Db, pr_side, base_side, master_shas) -> Section:
 
         # Attribute the biggest slowdowns to concrete frontend/backend entities
         # (template instantiations, included headers, function codegen).
-        for file, pr_dur, base_dur, base_tu_sha, delta_s, ratio in findings[:3]:
+        for file, pr_dur, base_dur, base_tu_side, delta_s, ratio in findings[:3]:
             if delta_s <= 0:
                 continue
-            drill = drill_down_tu(db, pr_side, base_tu_sha, file, skew)
+            drill = drill_down_tu(db, pr_side, base_tu_side, file, skew)
             if drill:
                 lines += ["", f"Slowest changed entities of {md_code(strip_build_dir(file))}:", ""]
                 lines += drill
@@ -630,26 +635,29 @@ def compare_compile_times(db: Db, pr_side, base_side, master_shas) -> Section:
         lines += ["", "Expensive translation units without a recent master baseline:", ""]
         for file, dur in new_tus[:10]:
             lines.append(f"- {md_code(strip_build_dir(file))}: {dur / 1e6:.1f} s")
+        # A large new compile-time cost is significant even without a baseline to
+        # diff against; a missing baseline must not silence the top-level verdict.
+        if any(dur >= TU_SIG_SECONDS * 1e6 for _, dur in new_tus):
+            section.significant = True
+            new_summary = f"{len(new_tus)} new translation units without a master baseline"
+            section.summary = f"{section.summary}; {new_summary}" if section.summary else new_summary
 
     section.body = "\n".join(lines)
     return section
 
 
-def drill_down_tu(db: Db, pr_side, base_tu_sha, file, skew=1.0) -> List[str]:
+def drill_down_tu(db: Db, pr_side, base_side, file, skew=1.0) -> List[str]:
     """Top per-entity compile time changes inside one translation unit.
 
     Entity deltas are filtered against the same median machine-speed ratio as
     the per-TU comparison, so a uniformly slower run does not list every
     entity of the TU.
 
-    The per-TU baseline commit differs from the overall baseline (it is the most
-    recent master build that recompiled this TU), so its build run is resolved
-    separately; if it has no run, the drill-down is skipped rather than mixing
-    runs.
+    `base_side` is the exact run that produced this TU's baseline compile time
+    (carried out of `compare_compile_times` so the drill-down reads its entities
+    from the same run, not from a later rerun of the same commit that may not
+    have recompiled this TU).
     """
-    base_side = resolve_run(db, TU_BASE_DAYS, 0, base_tu_sha, table="build_time_trace")
-    if base_side is None:
-        return []
     rows = db.query(
         f"""SELECT name, detail,
             sumIf(dur, side = 'pr') AS pr_dur,

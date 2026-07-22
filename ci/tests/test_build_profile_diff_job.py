@@ -76,6 +76,22 @@ INSERT INTO binary_sizes (pull_request_number, commit_sha, check_start_time, che
 INSERT INTO binary_symbols (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, address, size, type, symbol) VALUES
     ({_PR}, '{_PR_SHA}', '2026-07-01 00:00:00', 'arm_release', 'I1', '{_MAIN}', 0, 500000, 't', 'stale_symbol'),
     (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release', 'I0', '{_MAIN}', 0, 100000, 't', 'stale_symbol');
+
+-- Compile-time fixture. The PR (pinned run I2) recompiles two TUs:
+--   * ``tu.cpp`` (50 s) has a master baseline (20 s) and a per-entity breakdown;
+--   * ``new_tu.cpp`` (40 s) has no master baseline at all.
+-- Master commit ``basesha`` has TWO runs: the OLDER one (I0/2026-06-30)
+-- recompiled ``tu.cpp`` with entity rows; the NEWER one (I0b/2026-07-01)
+-- recompiled only ``other_tu.cpp`` and never touched ``tu.cpp``. The drill-down
+-- must read ``tu.cpp`` entities from the older run that actually compiled it,
+-- not re-resolve to the newer run (which would report every entity as new).
+INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
+    ({_PR}, '{_PR_SHA}', '2026-07-02 00:00:00', 'arm_release', 'I2', 'tu.cpp', 'ExecuteCompiler', '', 50000000),
+    ({_PR}, '{_PR_SHA}', '2026-07-02 00:00:00', 'arm_release', 'I2', 'tu.cpp', 'InstantiateFunction', 'foo', 30000000),
+    ({_PR}, '{_PR_SHA}', '2026-07-02 00:00:00', 'arm_release', 'I2', 'new_tu.cpp', 'ExecuteCompiler', '', 40000000),
+    (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release', 'I0', 'tu.cpp', 'ExecuteCompiler', '', 20000000),
+    (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release', 'I0', 'tu.cpp', 'InstantiateFunction', 'foo', 5000000),
+    (0, '{_BASE_SHA}', '2026-07-01 00:00:00', 'arm_release', 'I0b', 'other_tu.cpp', 'ExecuteCompiler', '', 10000000);
 """
 
 
@@ -142,3 +158,55 @@ def test_symbols_do_not_fall_back_to_an_older_run():
     section = job.compare_symbols(db, pr_side, base_side)
     assert "stale_symbol" not in section.body
     assert not section.significant
+
+
+def test_drill_down_reads_the_run_that_compiled_the_tu():
+    """The per-TU drill-down uses the master run that actually recompiled the TU.
+
+    ``basesha`` has a newer run (I0b) that never touched ``tu.cpp``. Re-resolving
+    the drill-down from the commit sha alone would pin it to that newer run and
+    find no baseline entities, marking every PR entity as new. The pinned run
+    (I0, carried out of ``compare_compile_times``) does have ``tu.cpp`` entities,
+    so ``foo`` is compared as a real slowdown (5 s -> 30 s), not reported as new.
+    """
+    db = FixtureDb()
+    pr_side = job.resolve_run(db, job.PR_DAYS, _PR, _PR_SHA)
+    base_side = job.resolve_run(db, job.BASE_DAYS, 0, _BASE_SHA)
+    section = job.compare_compile_times(db, pr_side, base_side, [_BASE_SHA])
+    assert "foo" in section.body
+    # The baseline entity time is present, so it is a change, not a "new" entity.
+    assert "5.0 s" in section.body
+
+
+def test_expensive_new_tu_without_baseline_is_significant():
+    """A large new TU with no master baseline still drives the top-level verdict.
+
+    ``new_tu.cpp`` (40 s) has no baseline to diff against; a missing baseline
+    must not silence the section - it is a real, significant compile-time cost.
+    """
+    db = FixtureDb()
+    pr_side = job.resolve_run(db, job.PR_DAYS, _PR, _PR_SHA)
+    base_side = job.resolve_run(db, job.BASE_DAYS, 0, _BASE_SHA)
+    section = job.compare_compile_times(db, pr_side, base_side, [_BASE_SHA])
+    assert "new_tu.cpp" in section.body
+    assert section.significant
+    assert "without a master baseline" in (section.summary or "")
+
+
+def test_get_master_shas_prefers_the_anchored_track():
+    """``master_track_commits_sha`` (PR's master parent chain) wins over the tip."""
+
+    class FakeInfo:
+        def get_kv_data(self, key):
+            return {
+                "master_track_commits_sha": ["a", "b", "c"],
+                "master_commits": ["x", "y"],
+            }.get(key)
+
+    assert job.get_master_shas(FakeInfo()) == ["a", "b", "c"]
+
+    class TipOnlyInfo:
+        def get_kv_data(self, key):
+            return {"master_commits": ["x", "y"]}.get(key)
+
+    assert job.get_master_shas(TipOnlyInfo()) == ["x", "y"]
