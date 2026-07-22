@@ -357,7 +357,8 @@ std::optional<time_t> tryComputeConstantTTLDelta(
     }
     catch (...)
     {
-        /// Any failure to analyze the expressions means we cannot prove the delta is constant.
+        /// Any failure to analyze the expressions means we cannot prove the delta is constant,
+        /// so it is Ok to swallow the exception here: the caller falls back to a full rewrite.
         return {};
     }
 }
@@ -388,6 +389,8 @@ std::optional<time_t> tryComputeConstantTTLDelta(
     }
     catch (...)
     {
+        /// The stored expression may be unparseable or invalid for the current table structure;
+        /// it is Ok to swallow the exception here: the caller falls back to a full rewrite.
         return {};
     }
 }
