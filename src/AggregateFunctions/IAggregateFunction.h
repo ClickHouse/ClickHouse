@@ -1001,6 +1001,20 @@ struct AggregateFunctionProperties
       * `AggregateFunctionFactory::tryGetVariantAdapter`.
       */
     bool is_float_promoting = false;
+
+    /** The function's result contract depends on which of its input values are distinct from each other:
+      * `singleValueOrNull` returns the value only when there is exactly one distinct non-NULL value (it also
+      * implements the `x = ALL (SELECT ...)` rewrite, see ExpressionListParsers.cpp). Two `Variant` values with
+      * different alternative types are distinct even when the underlying values compare equal after a cast to the
+      * common supertype (`1::UInt8` vs `1::UInt64` hash and compare as different `Variant` values, so
+      * `uniq` counts 2), and casting through `Nullable(supertype)` in `AggregateFunctionVariantAdapter` would
+      * silently collapse them and change the result (`singleValueOrNull` would return `1` where its contract
+      * requires `NULL`). Such a function is never routed through the adapter: a `Variant` argument reports the
+      * function's original error, unchanged from before the adapter existed. The Variant-native aggregates that
+      * key on distinctness (`uniq`, `uniqExact`, `topK`, `groupUniqArray`, ...) are unaffected: they declare
+      * `support_variant_argument` and hash the genuine `Variant` values, discriminator included.
+      */
+    bool is_distinctness_sensitive = false;
 };
 
 

@@ -126,7 +126,12 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         auto properties = tryGetProperties(name, action);
         /// Window functions must handle their argument types themselves, so don't adapt them.
         bool is_window_function = properties.has_value() && properties->is_window_function;
-        if (!is_window_function)
+        /// A function whose result depends on the distinctness of its input values (singleValueOrNull) is not
+        /// adapted either: the cast to Nullable(supertype) collapses Variant values that are distinct because
+        /// their alternative types differ (1::UInt8 vs 1::UInt64), which would silently change the result. It
+        /// keeps its original error for a Variant argument. See AggregateFunctionProperties::is_distinctness_sensitive.
+        bool is_distinctness_sensitive = properties.has_value() && properties->is_distinctness_sensitive;
+        if (!is_window_function && !is_distinctness_sensitive)
         {
             /// Whether the function accepts a Variant argument natively is declared by
             /// AggregateFunctionProperties::support_variant_argument, so we do not need to attempt native

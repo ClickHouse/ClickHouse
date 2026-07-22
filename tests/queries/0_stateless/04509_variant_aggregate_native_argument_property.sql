@@ -55,12 +55,13 @@ FROM (SELECT groupFormatState('JSONCompactEachRowWithNamesAndTypes')(CAST(1 AS V
 SELECT 'estimateCompressionRatio keeps Variant', toTypeName(estimateCompressionRatioState(v)) FROM t_variant_native_prop;
 SELECT 'estimateCompressionRatio no-supertype Variant', estimateCompressionRatio(CAST(number AS Variant(String, UInt64))) > 0 FROM numbers(1000);
 
--- singleValueOrNull is deliberately NOT declared Variant-native: its result type is Nullable(argument) and a
--- Variant cannot be wrapped in Nullable, so native resolution of a Variant argument has always thrown. The
--- adapter now handles a Variant with a Nullable-wrappable supertype (previously an error), and a Variant
--- without one keeps failing with the function's own error.
-SELECT 'singleValueOrNull adapted', toTypeName(singleValueOrNull(v)), singleValueOrNull(v) FROM t_variant_native_prop;
-SELECT 'singleValueOrNull adapted single value', singleValueOrNull(CAST(1 AS Variant(UInt8, UInt64)));
+-- singleValueOrNull is excluded from the adapter (is_distinctness_sensitive): its contract is "the value if
+-- there is exactly one distinct non-NULL value, otherwise NULL", and the cast to Nullable(supertype) collapses
+-- Variant values that are distinct because their alternative types differ (1::UInt8 vs 1::UInt64), which would
+-- silently change the result. A Variant argument keeps failing with the function's original error, unchanged
+-- from before the adapter existed.
+SELECT singleValueOrNull(v) FROM t_variant_native_prop; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT singleValueOrNull(CAST(1 AS Variant(UInt8, UInt64))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT singleValueOrNull(CAST('x' AS Variant(String, UInt64))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 DROP TABLE t_variant_native_prop;
