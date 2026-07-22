@@ -1,0 +1,237 @@
+---
+description: 'Google
+  Cloud Storage のデータに対して `SELECT` および `INSERT` を行うためのテーブル形式インターフェイスを提供します。`Storage Object User` IAM role が必要です。'
+keywords: ['gcs', 'バケット']
+sidebarTitle: 'gcs'
+slug: /sql-reference/table-functions/gcs
+title: 'gcs'
+doc_type: 'reference'
+---
+
+[Google Cloud Storage](https://cloud.google.com/storage/) のデータに対して `SELECT` および `INSERT` を行うためのテーブル形式インターフェイスを提供します。[`Storage Object User` IAM role](https://cloud.google.com/storage/docs/access-control/iam-roles) が必要です。
+
+これは [s3 テーブル関数](/ja/reference/functions/table-functions/s3) の別名です。
+
+クラスター内に複数のレプリカがある場合は、代わりに [s3Cluster function](/ja/reference/functions/table-functions/s3Cluster) (GCS でも使用可能) を使うことで、挿入を並列化できます。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+gcs(url [, NOSIGN | hmac_key, hmac_secret] [,format] [,structure] [,compression_method])
+gcs(named_collection[, option=value [,..]])
+```
+
+<Tip>
+  **GCS**
+
+  GCS テーブル関数は、GCS XML API と HMAC キーを使用して Google Cloud Storage と連携します。
+  エンドポイントと HMAC の詳細については、[Google の相互運用性に関するドキュメント](https://cloud.google.com/storage/docs/interoperability) を参照してください。
+</Tip>
+
+<div id="arguments">
+  ## 引数
+</div>
+
+| 引数                           | 説明                                                                                                                                         |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `url`                        | ファイルへの バケット パスです。読み取り専用モードでは、次のワイルドカードをサポートします: `*`, `**`, `?`, `{abc,def}`、`{N..M}`。ここで `N`、`M` は数値、`'abc'`、`'def'` は文字列です。               |
+| `NOSIGN`                     | 認証情報の代わりにこのキーワードを指定すると、すべてのリクエストが署名されなくなります。                                                                                               |
+| `hmac_key` and `hmac_secret` | 指定した エンドポイント で使用する認証情報を指定するオプションです。省略可能です。                                                                                                 |
+| `format`                     | ファイルの [フォーマット](/ja/reference/formats/index) です。                                                                                               |
+| `structure`                  | テーブルの構造です。形式は `'column1_name column1_type, column2_name column2_type, ...'` です。                                                            |
+| `compression_method`         | この parameter は省略可能です。サポートされる値は `none`、`gzip` または `gz`、`brotli` または `br`、`xz` または `LZMA`、`zstd` または `zst` です。デフォルトでは、ファイル拡張子から圧縮方式を自動判別します。 |
+
+<Info>
+  **GCS**
+
+  Google XML API の エンドポイント は JSON API と異なるため、GCS パスは次の形式になります:
+
+  ```text
+    https://storage.googleapis.com/<bucket>/<folder>/<filename(s)>
+  ```
+
+  ~~https://storage.cloud.google.com~~ ではありません。
+</Info>
+
+引数は [named collections](/ja/concepts/features/configuration/server-config/named-collections) を使って渡すこともできます。この場合、`url`、`format`、`structure`、`compression_method` は同様に機能し、追加のパラメータもいくつかサポートされます:
+
+| パラメータ                         | 説明                                                                                                                                                                               |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `access_key_id`               | `hmac_key`、省略可能です。                                                                                                                                                               |
+| `secret_access_key`           | `hmac_secret`、省略可能です。                                                                                                                                                            |
+| `filename`                    | 指定した場合、url に追加されます。                                                                                                                                                              |
+| `use_environment_credentials` | デフォルトで有効です。環境変数 `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`、`AWS_CONTAINER_CREDENTIALS_FULL_URI`、`AWS_CONTAINER_AUTHORIZATION_TOKEN`、`AWS_EC2_METADATA_DISABLED` を使用して追加パラメータを渡せます。 |
+| `no_sign_request`             | デフォルトでは無効です。                                                                                                                                                                     |
+| `expiration_window_seconds`   | デフォルト値は 120 です。                                                                                                                                                                  |
+
+<div id="returned_value">
+  ## 戻り値
+</div>
+
+指定されたファイル内のデータの読み取りまたは書き込みに使用される、指定された構造のテーブル。
+
+<div id="examples">
+  ## 例
+</div>
+
+GCSファイル `https://storage.googleapis.com/my-test-bucket-768/data.csv` からテーブルの先頭2行を選択する例:
+
+```sql
+SELECT *
+FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/data.csv.gz', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+LIMIT 2;
+```
+
+```text
+┌─column1─┬─column2─┬─column3─┐
+│       1 │       2 │       3 │
+│       3 │       2 │       1 │
+└─────────┴─────────┴─────────┘
+```
+
+同様に、`gzip` 圧縮方式のファイルからの場合:
+
+```sql
+SELECT *
+FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/data.csv.gz', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32', 'gzip')
+LIMIT 2;
+```
+
+```text
+┌─column1─┬─column2─┬─column3─┐
+│       1 │       2 │       3 │
+│       3 │       2 │       1 │
+└─────────┴─────────┴─────────┘
+```
+
+<div id="usage">
+  ## 使用例
+</div>
+
+GCS 上に、次の URI を持つ複数のファイルがあるとします。
+
+* &#39;https://storage.googleapis.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;1.csv&#39;
+* &#39;https://storage.googleapis.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;2.csv&#39;
+* &#39;https://storage.googleapis.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;3.csv&#39;
+* &#39;https://storage.googleapis.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;4.csv&#39;
+* &#39;https://storage.googleapis.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;1.csv&#39;
+* &#39;https://storage.googleapis.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;2.csv&#39;
+* &#39;https://storage.googleapis.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;3.csv&#39;
+* &#39;https://storage.googleapis.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;4.csv&#39;
+
+末尾の数字が 1 から 3 のファイルの行数を数えます。
+
+```sql
+SELECT count(*)
+FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+```
+
+```text
+┌─count()─┐
+│      18 │
+└─────────┘
+```
+
+これら2つのディレクトリ内のすべてのファイルに含まれる行数の合計を数えます:
+
+```sql
+SELECT count(*)
+FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/{some,another}_prefix/*', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+```
+
+```text
+┌─count()─┐
+│      24 │
+└─────────┘
+```
+
+<Warning>
+  ファイル一覧に先頭に 0 が付いた数値範囲が含まれる場合は、各桁ごとに波かっこを使った構文を使用するか、`?` を使用してください。
+</Warning>
+
+`file-000.csv`、`file-001.csv`、...、`file-999.csv` という名前のファイル内の行数の合計を数えます。
+
+```sql
+SELECT count(*)
+FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/big_prefix/file-{000..999}.csv', 'CSV', 'name String, value UInt32');
+```
+
+```text
+┌─count()─┐
+│      12 │
+└─────────┘
+```
+
+ファイル `test-data.csv.gz` にデータを挿入します:
+
+```sql
+INSERT INTO FUNCTION gcs('https://storage.googleapis.com/my-test-bucket-768/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip')
+VALUES ('test-data', 1), ('test-data-2', 2);
+```
+
+既存のテーブルのデータをファイル `test-data.csv.gz` に挿入します:
+
+```sql
+INSERT INTO FUNCTION gcs('https://storage.googleapis.com/my-test-bucket-768/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip')
+SELECT name, value FROM existing_table;
+```
+
+Glob ** は、ディレクトリを再帰的にたどるために使用できます。以下の例では、`my-test-bucket-768` ディレクトリ配下のすべてのファイルを再帰的に取得します。
+
+```sql
+SELECT * FROM gcs('https://storage.googleapis.com/my-test-bucket-768/**', 'CSV', 'name String, value UInt32', 'gzip');
+```
+
+以下では、`my-test-bucket` ディレクトリ内の任意のフォルダにあるすべての `test-data.csv.gz` ファイルから、再帰的にデータを取得します:
+
+```sql
+SELECT * FROM gcs('https://storage.googleapis.com/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
+```
+
+本番環境で利用する場合は、[named collections](/ja/concepts/features/configuration/server-config/named-collections)の使用を推奨します。以下はその例です。
+
+```sql
+
+CREATE NAMED COLLECTION creds AS
+        access_key_id = '***',
+        secret_access_key = '***';
+SELECT count(*)
+FROM gcs(creds, url='https://s3-object-url.csv')
+```
+
+<div id="partitioned-write">
+  ## パーティション単位での書き込み
+</div>
+
+`GCS` テーブルへのデータ挿入時に `PARTITION BY` 式を指定すると、パーティション値ごとに個別のファイルが作成されます。データをファイルごとに分割することで、読み取り処理の効率向上につながります。
+
+**例**
+
+1. キーにパーティション ID を使用すると、個別のファイルが作成されます:
+
+```sql
+INSERT INTO TABLE FUNCTION
+    gcs('http://bucket.amazonaws.com/my_bucket/file_{_partition_id}.csv', 'CSV', 'a String, b UInt32, c UInt32')
+    PARTITION BY a VALUES ('x', 2, 3), ('x', 4, 5), ('y', 11, 12), ('y', 13, 14), ('z', 21, 22), ('z', 23, 24);
+```
+
+その結果、データは `file_x.csv`、`file_y.csv`、`file_z.csv` の3つのファイルに書き込まれます。
+
+2. バケット名にパーティション ID を使用すると、ファイルは異なるバケットに作成されます。
+
+```sql
+INSERT INTO TABLE FUNCTION
+    gcs('http://bucket.amazonaws.com/my_bucket_{_partition_id}/file.csv', 'CSV', 'a UInt32, b UInt32, c UInt32')
+    PARTITION BY a VALUES (1, 2, 3), (1, 4, 5), (10, 11, 12), (10, 13, 14), (20, 21, 22), (20, 23, 24);
+```
+
+その結果、データは異なる3つのバケット内の `my_bucket_1/file.csv`、`my_bucket_10/file.csv`、`my_bucket_20/file.csv` という3つのファイルに書き込まれます。
+
+<div id="related">
+  ## 関連
+</div>
+
+* [S3 テーブル関数](/ja/reference/functions/table-functions/s3)
+* [S3 エンジン](/ja/reference/engines/table-engines/integrations/s3)

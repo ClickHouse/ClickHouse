@@ -1,0 +1,72 @@
+---
+description: '이 테이블 함수는 ClickHouse를 Redis와 통합할 수 있게 해줍니다.'
+sidebarTitle: 'redis'
+slug: /sql-reference/table-functions/redis
+title: 'redis'
+doc_type: 'reference'
+---
+
+이 테이블 함수는 ClickHouse를 [Redis](https://redis.io/)와 통합할 수 있게 해줍니다.
+
+<div id="syntax">
+  ## 구문
+</div>
+
+```sql
+redis(host:port, key, structure[, db_index[, password[, pool_size]]])
+```
+
+<div id="arguments">
+  ## 인수
+</div>
+
+| 인수          | 설명                                                            |
+| ----------- | ------------------------------------------------------------- |
+| `host:port` | Redis 서버 주소입니다. 포트는 생략할 수 있으며, 이 경우 기본 Redis 포트인 6379가 사용됩니다. |
+| `key`       | 컬럼 목록에 포함된 임의의 컬럼 이름입니다.                                      |
+| `structure` | 이 함수가 반환하는 ClickHouse 테이블의 스키마입니다.                            |
+| `db_index`  | Redis DB 인덱스이며 0부터 15까지 지정할 수 있고, 기본값은 0입니다.                  |
+| `password`  | 사용자 비밀번호이며, 기본값은 빈 문자열입니다.                                    |
+| `pool_size` | Redis 연결 풀의 최대 크기이며, 기본값은 16입니다.                              |
+| `primary`   | 반드시 지정해야 하며, 기본 키는 하나의 컬럼만 지원합니다. 기본 키는 Redis 키로 바이너리 직렬화됩니다. |
+
+* 기본 키를 제외한 컬럼은 해당 순서대로 Redis 값으로 바이너리 직렬화됩니다.
+* `key`에 대해 `equals` 또는 `in` 필터링이 있는 쿼리는 Redis의 다중 키 조회로 최적화됩니다. `key` 필터링이 없는 쿼리에서는 전체 테이블 스캔이 발생하며, 이는 비용이 큰 작업입니다.
+
+[이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)은 현재 `redis` 테이블 함수에서 지원되지 않습니다.
+
+<div id="returned_value">
+  ## 반환 값
+</div>
+
+key를 Redis 키로 하고, 나머지 컬럼을 함께 묶어 Redis 값으로 하는 테이블 객체입니다.
+
+<div id="usage-example">
+  ## 사용 예시
+</div>
+
+Redis에서 읽기:
+
+```sql
+SELECT * FROM redis(
+    'redis1:6379',
+    'key',
+    'key String, v1 String, v2 UInt32'
+)
+```
+
+Redis에 삽입:
+
+```sql
+INSERT INTO TABLE FUNCTION redis(
+    'redis1:6379',
+    'key',
+    'key String, v1 String, v2 UInt32') values ('1', '1', 1);
+```
+
+<div id="related">
+  ## 관련
+</div>
+
+* [`Redis` 테이블 엔진](/ko/reference/engines/table-engines/integrations/redis)
+* [딕셔너리 소스로 Redis 사용하기](/ko/reference/statements/create/dictionary/sources/redis)

@@ -1,0 +1,189 @@
+---
+sidebarTitle: 'Gerenciar usuários do banco de dados'
+slug: /cloud/security/manage-database-users
+title: 'Gerenciar usuários do banco de dados'
+description: 'Esta página descreve como os administradores podem adicionar usuários do banco de dados, gerenciar atribuições e remover usuários do banco de dados'
+doc_type: 'guide'
+keywords: ['usuários do banco de dados', 'gerenciamento de acesso', 'segurança', 'permissões', 'gerenciamento de usuários']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Este guia mostra duas formas de gerenciar usuários do banco de dados: pelo console SQL e diretamente no banco de dados.
+
+<div id="sql-console-passwordless-authentication">
+  ### Autenticação sem senha no console SQL
+</div>
+
+Os usuários do console SQL são criados para cada sessão e autenticados com certificados X.509 renovados automaticamente. O usuário é removido quando a sessão é encerrada. Ao gerar listas de acesso para auditorias, navegue até a aba Settings do serviço no Console e observe o acesso ao console SQL, além dos usuários do banco de dados existentes no banco de dados. Se funções personalizadas estiverem configuradas, o acesso do usuário será listado na função cujo nome termina com o nome de usuário dele.
+
+<div id="sql-console-users-and-roles">
+  ## Usuários e funções do console SQL
+</div>
+
+As funções básicas do console SQL podem ser atribuídas a usuários com as permissões Service Read Only e Service Admin. Para mais informações, consulte [Gerenciar atribuições de funções do console SQL](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments). Este guia mostra como criar uma função personalizada para um usuário do console SQL.
+
+Para criar uma função personalizada para um usuário do console SQL e atribuir a ela uma função geral, execute os comandos a seguir. O endereço de e-mail deve corresponder ao endereço de e-mail do usuário no console.
+
+<Steps>
+  <Step>
+    #### Criar `database_developer` e conceder permissões
+
+    Crie a função `database_developer` e conceda as permissões `SHOW`, `CREATE`, `ALTER` e `DELETE`.
+
+    ```sql
+    CREATE ROLE OR REPLACE database_developer;
+    GRANT SHOW ON * TO database_developer;
+    GRANT CREATE ON * TO database_developer;
+    GRANT ALTER ON * TO database_developer;
+    GRANT DELETE ON * TO database_developer;
+    ```
+  </Step>
+
+  <Step>
+    #### Criar função de usuário do console SQL
+
+    Crie uma função para o usuário do console SQL my.user@domain.com e atribua a ela a função database&#95;developer.
+
+    ```sql
+    CREATE ROLE OR REPLACE `sql-console-role:my.user@domain.com`;
+    GRANT database_developer TO `sql-console-role:my.user@domain.com`;
+    ```
+  </Step>
+
+  <Step>
+    #### O usuário recebe a nova função ao usar o console SQL
+
+    O usuário receberá a função associada ao endereço de e-mail dele sempre que usar o console SQL.
+  </Step>
+</Steps>
+
+<div id="database-authentication">
+  ## Autenticação do banco de dados
+</div>
+
+<div id="database-user-id--password">
+  ### ID e senha do usuário do banco de dados
+</div>
+
+Use o método SHA256&#95;hash ao [criar contas de usuário](/pt-BR/reference/statements/create/user) para proteger as senhas. As senhas do banco de dados ClickHouse devem conter no mínimo 12 caracteres e atender aos requisitos de complexidade: letras maiúsculas, letras minúsculas, números e/ou caracteres especiais.
+
+<Tip>
+  **Gere senhas com segurança**
+
+  Como usuários sem privilégios administrativos não podem definir a própria senha, peça que o usuário gere o hash da senha com um gerador
+  como [este](https://tools.keycdn.com/sha256-online-generator) antes de fornecê-lo ao administrador para configurar a conta.
+</Tip>
+
+```sql
+CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
+```
+
+<div id="database-ssh">
+  ### Usuário de banco de dados com autenticação SSH
+</div>
+
+Para configurar a autenticação SSH para um usuário de banco de dados do ClickHouse Cloud.
+
+1. Use o ssh-keygen para criar um par de chaves.
+2. Use a chave pública para criar o usuário.
+3. Atribua funções e/ou permissões ao usuário.
+4. Use a chave privada para se autenticar no serviço.
+
+Para um passo a passo detalhado com exemplos, confira [Como se conectar ao ClickHouse Cloud usando chaves SSH](/pt-BR/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys) na nossa Base de conhecimento.
+
+<div id="database-permissions">
+  ## Permissões de banco de dados
+</div>
+
+Configure o seguinte nos serviços e bancos de dados usando a instrução SQL [GRANT](/pt-BR/reference/statements/grant).
+
+| Função        | Descrição                                                               |
+| :------------ | :---------------------------------------------------------------------- |
+| Padrão        | Acesso administrativo total aos serviços                                |
+| Personalizada | Configure usando a instrução SQL [`GRANT`](/pt-BR/reference/statements/grant) |
+
+* As funções de banco de dados são aditivas. Isso significa que, se um usuário for membro de duas funções, ele terá o nível mais alto de acesso concedido entre elas. Ele não perde acesso ao adicionar funções.
+* As funções de banco de dados podem ser concedidas a outras funções, resultando em uma estrutura hierárquica. As funções herdam todas as permissões das funções das quais são membros.
+* As funções de banco de dados são exclusivas de cada serviço e podem ser aplicadas a vários bancos de dados dentro do mesmo serviço.
+
+A ilustração abaixo mostra as diferentes formas pelas quais um usuário pode receber permissões.
+
+<Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt="Uma ilustração mostrando as diferentes formas pelas quais um usuário pode receber permissões" size="md" background="black" />
+
+<div id="initial-settings">
+  ### Configurações iniciais
+</div>
+
+Os bancos de dados têm uma conta chamada `default`, adicionada automaticamente e à qual é concedida a `default`&#95;`role` quando o serviço é criado. O usuário que cria o serviço recebe a senha aleatória gerada automaticamente, atribuída à conta `default` no momento da criação do serviço. A senha não é exibida após a configuração inicial, mas pode ser alterada posteriormente por qualquer usuário com permissões de Service Admin no console. Essa conta, ou uma conta com privilégios de Service Admin no console, pode configurar usuários e funções adicionais do banco de dados a qualquer momento.
+
+<Note>
+  Para alterar a senha atribuída à conta `default` no console, vá para o menu Services à esquerda, acesse o serviço, vá até a guia Settings e clique no botão Reset password.
+</Note>
+
+Recomendamos criar uma nova conta de usuário associada a uma pessoa e conceder ao usuário a `default`&#95;`role`. Assim, as atividades realizadas pelos usuários podem ser identificadas pelos respectivos IDs de usuário, e a conta `default` fica reservada para atividades do tipo break-glass.
+
+```sql
+  CREATE USER userID IDENTIFIED WITH sha256_hash by 'hashed_password';
+  GRANT default_role to userID;
+```
+
+Você pode usar um gerador de hash SHA256 ou uma função de código, como `hashlib` em Python, para converter uma senha de 12+ caracteres com a complexidade adequada em uma string SHA256 e fornecê-la ao administrador do sistema como senha. Isso garante que o administrador não veja nem manipule senhas em texto simples.
+
+<div id="database-access-listings-with-sql-console-users">
+  ### Listagens de acesso ao banco de dados com usuários do console SQL
+</div>
+
+O processo a seguir pode ser usado para gerar uma listagem completa de acesso no console SQL e nos bancos de dados da sua organização.
+
+<Steps>
+  <Step>
+    #### Obtenha uma lista de todos os grants do banco de dados
+
+    Execute as consultas a seguir para obter uma lista de todos os grants no banco de dados.
+
+    ```sql
+    SELECT grants.user_name,
+    grants.role_name,
+    users.name AS role_member,
+    grants.access_type,
+    grants.database,
+    grants.table
+    FROM system.grants LEFT OUTER JOIN system.role_grants ON grants.role_name = role_grants.granted_role_name
+    LEFT OUTER JOIN system.users ON role_grants.user_name = users.name
+
+    UNION ALL
+
+    SELECT grants.user_name,
+    grants.role_name,
+    role_grants.role_name AS role_member,
+    grants.access_type,
+    grants.database,
+    grants.table
+    FROM system.role_grants LEFT OUTER JOIN system.grants ON role_grants.granted_role_name = grants.role_name
+    WHERE role_grants.user_name is null;
+    ```
+  </Step>
+
+  <Step>
+    #### Associe a lista de grants aos usuários do Console com acesso ao console SQL
+
+    Associe esta lista aos usuários do Console que têm acesso ao console SQL.
+
+    a. Vá para o Console.
+
+    b. Selecione o serviço relevante.
+
+    c. Selecione Settings à esquerda.
+
+    d. Role até a seção de acesso ao console SQL.
+
+    e. Clique no link com o número de usuários com acesso ao banco de dados `There are # users with access to this service.` para ver a lista de usuários.
+  </Step>
+</Steps>
+
+<div id="warehouse-users">
+  ## Usuários do warehouse
+</div>
+
+Os usuários de um warehouse são compartilhados entre os serviços do mesmo warehouse. Para mais informações, consulte [os controles de acesso do warehouse](/pt-BR/products/cloud/features/infrastructure/warehouses#access-controls).

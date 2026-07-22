@@ -81,6 +81,35 @@ An `Array` -> `QBit` -> `Array` round trip is lossless for `Int8`, `Float32` and
 
 When the `dimension` is not a multiple of 8, the trailing padding elements present in the internal representation are dropped, so the result always has exactly `dimension` elements.
 
+## Converting between QBit types {#converting-between-qbit-types}
+
+A `QBit` can be cast to another `QBit` as long as the `dimension` (the number of vector elements) stays the same. The `element_type` and the `stride` may both change; casting to a `QBit` with a different `dimension` raises an exception, because that would change the vector itself.
+
+Changing the `element_type` reconstructs the vector and converts each element to the new type, exactly like the corresponding `Array` conversion: widening (for example `QBit(Float32, N)` to `QBit(Float64, N)`) is exact, while narrowing loses precision in the same way a narrowing `Array` cast would.
+
+```sql
+SELECT [1, 2, 3, 4]::QBit(Float32, 4)::QBit(Float64, 4) AS vec;
+```
+
+```text
+┌─vec───────┐
+│ [1,2,3,4] │
+└───────────┘
+```
+
+Changing only the [`stride`](#strides) (keeping the same `element_type`) re-groups the stored bit planes without touching the values, so it is always lossless:
+
+```sql
+SELECT range(16)::Array(Float32)::QBit(Float32, 16)::QBit(Float32, 16, 8)::Array(Float32)
+     = range(16)::Array(Float32) AS is_lossless;
+```
+
+```text
+┌─is_lossless─┐
+│           1 │
+└─────────────┘
+```
+
 ## QBit subcolumns {#qbit-subcolumns}
 
 `QBit` implements a subcolumn access pattern that allows you to access individual bit planes of the stored vectors. Each bit position can be accessed using the `.N` syntax, where `N` is the bit position:

@@ -51,6 +51,7 @@ namespace MySQLSetting
 {
     extern const MySQLSettingsBool connection_auto_close;
     extern const MySQLSettingsUInt64 connection_pool_size;
+    extern const MySQLSettingsMySQLDataTypesSupport mysql_datatypes_support_level;
 }
 
 namespace ErrorCodes
@@ -65,7 +66,9 @@ namespace ErrorCodes
 namespace
 {
 /// Infer the structure of a result of a user-provided query by executing it with a `LIMIT 0` on the MySQL side.
-ColumnsDescription doQueryResultStructure(mysqlxx::PoolWithFailover & pool_, const String & select_query, const ContextPtr & context_);
+ColumnsDescription doQueryResultStructure(
+    mysqlxx::PoolWithFailover & pool_, const String & select_query, const ContextPtr & context_,
+    MultiEnum<MySQLDataTypesSupport> type_support);
 }
 
 StorageMySQL::StorageMySQL(
@@ -94,7 +97,13 @@ StorageMySQL::StorageMySQL(
 
     if (columns_.empty())
     {
-        auto columns = getTableStructureFromData(*pool, remote_database_name, remote_table_or_query, context_);
+        /// Schema inference must honor the type-mapping configuration of this engine instance
+        /// (its own SETTINGS or the value bridged in from the query context at creation time),
+        /// not the global query-context setting, otherwise an explicit per-engine opt-out such as
+        /// `SETTINGS mysql_datatypes_support_level = '...'` would be silently ignored.
+        auto columns = getTableStructureFromData(
+            *pool, remote_database_name, remote_table_or_query, context_,
+            (*mysql_settings)[MySQLSetting::mysql_datatypes_support_level]);
         storage_metadata.setColumns(columns);
     }
     else
@@ -118,14 +127,15 @@ ColumnsDescription StorageMySQL::getTableStructureFromData(
     mysqlxx::PoolWithFailover & pool_,
     const String & database,
     const TableNameOrQuery & table_or_query,
-    const ContextPtr & context_)
+    const ContextPtr & context_,
+    MultiEnum<MySQLDataTypesSupport> type_support)
 {
     if (table_or_query.isQuery())
-        return doQueryResultStructure(pool_, table_or_query.getQuery(), context_);
+        return doQueryResultStructure(pool_, table_or_query.getQuery(), context_, type_support);
 
     const auto & table = table_or_query.getTableName();
     const auto & settings = context_->getSettingsRef();
-    const auto tables_and_columns = fetchTablesColumnsList(pool_, database, {table}, settings, settings[Setting::mysql_datatypes_support_level]);
+    const auto tables_and_columns = fetchTablesColumnsList(pool_, database, {table}, settings, type_support);
 
     const auto columns = tables_and_columns.find(table);
     if (columns == tables_and_columns.end())
@@ -451,6 +461,11 @@ void registerStorageMySQL(StorageFactory & factory)
         MySQLSettings mysql_settings; /// TODO: move some arguments from the arguments to the SETTINGS.
         auto configuration = StorageMySQL::getConfiguration(args.engine_args, args.getLocalContext(), mysql_settings, &args.table_id);
 
+        /// Bridge the query-context value of `mysql_datatypes_support_level` into the engine settings
+        /// (and freeze it into the table definition) so that it is honored during schema inference,
+        /// the same way the MySQL database engine does. An explicit per-engine SETTINGS value, loaded
+        /// right after, takes precedence over it.
+        mysql_settings.loadFromQueryContext(args.getLocalContext(), *args.storage_def);
         if (args.storage_def->settings)
             mysql_settings.loadFromQuery(*args.storage_def);
 
@@ -722,7 +737,9 @@ SETTINGS enable_compression = 1;
 
 namespace
 {
-ColumnsDescription doQueryResultStructure(mysqlxx::PoolWithFailover & pool_, const String & select_query, const ContextPtr & context_)
+ColumnsDescription doQueryResultStructure(
+    mysqlxx::PoolWithFailover & pool_, const String & select_query, const ContextPtr & context_,
+    MultiEnum<MySQLDataTypesSupport> type_support)
 {
     /// Wrap the query in a derived table and run it with `LIMIT 0` to obtain the result columns metadata
     /// without fetching any rows. The wrapping mirrors how the data is read later (see buildQueryForExternalDatabaseSubquery),
@@ -744,7 +761,7 @@ ColumnsDescription doQueryResultStructure(mysqlxx::PoolWithFailover & pool_, con
         columns.add(ColumnDescription(
             query_result.getFieldName(i),
             convertMySQLDataType(
-                settings[Setting::mysql_datatypes_support_level],
+                type_support,
                 field,
                 settings[Setting::external_table_functions_use_nulls])));
     }

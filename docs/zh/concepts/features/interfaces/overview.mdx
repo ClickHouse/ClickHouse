@@ -1,0 +1,46 @@
+---
+description: '用于连接到
+  ClickHouse 的网络接口、驱动和工具概览'
+keywords: ['clickhouse', '网络', '接口', 'http', 'tcp', 'grpc', '命令行',
+  '客户端', 'jdbc', 'odbc', '驱动']
+sidebarTitle: '概览'
+slug: /interfaces/overview
+title: '驱动和接口'
+doc_type: 'reference'
+---
+
+ClickHouse 提供两种网络接口 (也可选择通过 TLS 封装以增强安全性) ：
+
+* [HTTP](/zh/concepts/features/interfaces/http)，文档完善，且易于直接使用。
+* [Native TCP](/zh/concepts/features/interfaces/tcp)，开销更低。
+
+大多数情况下，建议使用合适的工具或库，而不是直接与这些接口交互。以下是 ClickHouse 官方支持的选项：
+
+* [命令行客户端](/zh/concepts/features/interfaces/cli)
+* [JDBC 驱动](/zh/concepts/features/interfaces/jdbc)
+* [ODBC 驱动](/zh/concepts/features/interfaces/odbc)
+* [C++ 客户端库](/zh/concepts/features/interfaces/cpp)
+
+ClickHouse 还支持两种 RPC 协议：
+
+* [gRPC 协议](/zh/concepts/features/interfaces/grpc)，专为 ClickHouse 设计。
+* [Apache Arrow Flight](/zh/concepts/features/interfaces/arrowflight)。
+
+ClickHouse server 为高级用户提供了内置的可视化界面：
+
+* Play UI：在浏览器中打开 `/play`；
+* 高级仪表板：在浏览器中打开 `/dashboard`；
+* 面向 ClickHouse 工程师的二进制符号查看器：在浏览器中打开 `/binary`；
+* 用于可观测性的 ClickStack UI：在浏览器中打开 `/clickstack`；
+
+<Info>
+  **ClickStack**
+
+  此版本的 ClickStack 非常适合本地调试和快速调查，但并非面向生产环境。要获取适用于生产环境且功能完整的 ClickStack，请参阅[开源 ClickStack](/zh/clickstack/getting-started/oss)。
+</Info>
+
+此外，还有大量第三方库可用于配合 ClickHouse 使用：
+
+* [客户端库](/zh/integrations/language-clients/third-party/client-libraries)
+* [Integrations](/zh/integrations/connectors/tools/third-party-libraries)
+* [可视化界面](/zh/integrations/connectors/tools/gui)

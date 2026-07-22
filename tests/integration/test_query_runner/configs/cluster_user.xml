@@ -1,0 +1,15 @@
+<clickhouse>
+    <users>
+        <cluster_user>
+            <password>cluster_secret</password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <grants>
+                <query>GRANT ALL ON *.* WITH GRANT OPTION</query>
+            </grants>
+        </cluster_user>
+    </users>
+</clickhouse>

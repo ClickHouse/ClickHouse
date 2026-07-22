@@ -1,0 +1,76 @@
+---
+sidebarTitle: 'Skills'
+slug: /cloud/features/ai-ml/agents/builder/skills
+title: 'Skills'
+description: 'Ensembles d’instructions réutilisables pour ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'skills', 'SKILL.md']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+Un skill est un pack d’instructions réutilisable qu’un agent peut appliquer à la demande. Utilisez des skills pour les procédures récurrentes d’un agent à l’autre — guide de style de marque, checklist de revue de code, runbook pour un workflow spécifique — au lieu de dupliquer les instructions dans le system prompt de chaque agent.
+
+<div id="anatomy-of-a-skill">
+  ## Anatomie d’un skill
+</div>
+
+Un skill est un fichier Markdown avec un court en-tête frontmatter :
+
+```markdown
+---
+name: revenue-report
+description: Generates the weekly revenue report using our standard segments
+always-apply: false
+user-invocable: true
+---
+
+When asked to generate a revenue report:
+1. Filter to the requested period.
+2. Apply the standard MRR formula:
+     SUM(CASE
+       WHEN billing_cycle = 'monthly' THEN amount
+       WHEN billing_cycle = 'yearly'  THEN amount / 12
+       ELSE 0
+     END)
+3. Break down by segment: Enterprise, Mid-Market, SMB.
+4. Render the result as a Markdown table.
+```
+
+Les paramètres de frontmatter les plus importants :
+
+* **`name`** - identifiant en kebab-case.
+* **`description`** - court résumé utilisé par le modèle pour déterminer quand ce skill est pertinent. Considérez ce champ comme le plus important. Rédigez-le de manière précise ; des descriptions vagues entraînent l’invocation du mauvais skill.
+* **`always-apply`** - lorsque sa valeur est `true`, le skill est inclus d’office à chaque tour au lieu d’être sélectionné. À utiliser avec parcimonie ; les skills en mode always-apply consomment du contexte à chaque message.
+* **`user-invocable`** - lorsque sa valeur est `true` (valeur par défaut), le skill apparaît dans le popover `$` pour une sélection manuelle.
+
+Vous pouvez joindre au skill des fichiers complémentaires — documentation de référence, exemples de requêtes, petits scripts — en téléversant un `.zip` contenant `SKILL.md` et ses ressources.
+
+<div id="use-a-skill">
+  ## Utiliser un skill
+</div>
+
+Un agent peut faire appel à un skill dans une conversation de trois façons :
+
+* **Invocation par l&#39;utilisateur** - appuyez sur `$` dans le composer, puis sélectionnez le skill dans le popover. Le contenu du skill est injecté pour le tour suivant.
+* **Sélection automatique par le modèle** - en fonction de la `description` du skill, l&#39;agent décide lui-même quand l&#39;appliquer.
+* **Always-apply** - injecté à chaque tour pour les skills configurés de cette façon.
+
+<div id="manage-skills">
+  ## Gérer les Skills
+</div>
+
+Le panneau Skills de la console Cloud vous permet de créer des skills directement, de téléverser des fichiers `.md` ou `.zip`, et de gérer les skills actifs pour votre compte utilisateur. Les skills dont vous êtes propriétaire sont actifs par défaut ; désactivez-en un pour le retirer du popover et du catalogue du modèle sans le supprimer.
+
+Les Skills peuvent être partagés avec d&#39;autres utilisateurs (voir [partage et accès](/fr/products/cloud/features/ai-ml/agents/sharing-and-access)).
+
+<div id="skills-vs-instructions">
+  ## Skills vs. instructions
+</div>
+
+* **Les instructions de l’agent** définissent ce qu’est l’agent et la manière dont il se comporte globalement. Elles sont toujours actives pour cet agent.
+* **Les Skills** sont contextuelles — elles s’appliquent lorsqu’elles sont pertinentes et se limitent à des workflows spécifiques.
+
+Utilisez une skill lorsque le même ensemble d’instructions détaillées réapparaît dans plusieurs agents, ou lorsque vous souhaitez qu’elle ne soit déclenchée que pour des demandes utilisateur précises plutôt qu’à chaque échange.

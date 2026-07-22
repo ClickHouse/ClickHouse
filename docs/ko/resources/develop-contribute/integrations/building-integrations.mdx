@@ -1,0 +1,98 @@
+---
+slug: /integrations/integration-development/building-integrations
+title: 'ClickHouse 통합 구축하기'
+sidebarTitle: '통합 구축하기'
+description: 'ClickHouse 통합을 위한 수집, 활용, wire 프로토콜, 클라이언트 규약에 대한 안내입니다.'
+keywords: ['파트너', '통합', '수집', '활용', 'ClickPipes', '언어별 클라이언트', 'user-agent']
+doc_type: 'guide'
+---
+
+이 페이지에서는 수집 및 활용 작업의 범위를 정할 수 있도록 통합 전반을 안내합니다. 검증 및 게시에 대해서는 [통합 테스트하기](/ko/resources/develop-contribute/integrations/testing-your-integration) 및 [통합 문서화하기](/ko/resources/develop-contribute/integrations/documenting-your-integration)를 계속 참조하십시오.
+
+<div id="ingestion">
+  ## 수집
+</div>
+
+데이터를 ClickHouse로 가져오는 방법은 두 가지입니다. 제품이 수집 계층을 직접 담당할지, 아니면 이를 위임할지에 따라 선택하십시오.
+
+<div id="path-a-clickpipes">
+  ### 경로 A: ClickPipes (관리형, ClickHouse Cloud 전용)
+</div>
+
+수집 인프라를 직접 구축하고 운영하고 싶지 않다면, [ClickPipes](/ko/integrations/clickpipes/home)는 고객의 소스에서 고객의 ClickHouse Cloud 서비스로 데이터를 가져오는 관리형 서비스입니다. ClickPipes는 스케일링, 병렬화, 재시도, 지연 보고를 처리합니다.
+
+현재 지원되는 소스는 다음과 같습니다:
+
+* **스트리밍:** Apache Kafka(MSK, Confluent Cloud, Redpanda, Azure Event Hubs, WarpStream 포함), Amazon Kinesis
+* **객체 스토리지:** Amazon S3(S3 호환 스토리지 포함), Google Cloud Storage, Azure Blob Storage
+* **CDC:** PostgreSQL, MySQL, MongoDB, BigQuery
+
+<div id="path-b-language-client">
+  ### 경로 B: 공식 언어 클라이언트를 통한 자체 수집
+</div>
+
+파이프라인을 직접 운영한다면 [공식 언어 클라이언트](/ko/integrations/language-clients/index) 중 하나를 사용하세요. 이러한 클라이언트는 직렬화, 배칭, TLS, 압축, 연결 풀링을 처리합니다. 런타임 기본 타입 값만 전달하면 클라이언트가 wire 형식을 처리합니다.
+
+* 공식 클라이언트: Python, Go, Java, JavaScript, Rust, C#, C++
+* 두 가지 wire 프로토콜 모두 지원: HTTP(모든 클라이언트) 및 네이티브 TCP(Go 및 C++ 클라이언트만)
+* 인증: 기본적으로 TLS를 통한 사용자 이름과 비밀번호를 사용하며, mTLS 및 SSL 클라이언트 인증서 인증도 모든 주요 클라이언트에서 지원됩니다
+* 데이터 포맷은 대개 구현 세부 사항입니다. 클라이언트는 런타임 타입을 ClickHouse Native 또는 RowBinary format으로 변환합니다. 이미 Arrow, Parquet, JSONEachRow 또는 다른 포맷으로 데이터를 생성하고 있다면, 대부분의 클라이언트는 사전 직렬화된 데이터용 raw-bytes API를 제공합니다
+* 처리량을 위해 **10K–100K행**씩 배치하고, 동기 삽입의 상한선으로는 대략 **초당 1회 삽입**을 목표로 하세요. 클라이언트 측 배칭이 현실적이지 않다면 [비동기 삽입](/ko/concepts/features/operations/insert/asyncinserts)을 사용해 배칭을 서버로 넘기세요
+
+관련 항목: [대량 삽입](/ko/concepts/features/operations/insert/bulkinserts).
+
+<div id="consumption">
+  ## 활용
+</div>
+
+HTTP와 네이티브 TCP는 모두 쿼리를 전달합니다. 네이티브는 바이너리 프로토콜이므로 오버헤드가 더 낮습니다. HTTP는 로드 밸런서와 프록시를 통해 사용할 수 있습니다. 둘 다 동등하게 지원되므로 기능 차이가 아니라 인프라를 기준으로 선택하십시오.
+
+* **애플리케이션 코드:** 수집에 사용하는 것과 동일한 [공식 언어 클라이언트](/ko/integrations/language-clients/index)를 사용하세요
+* **BI 및 SQL 도구:** ClickHouse는 공식 [JDBC v2 드라이버](/ko/integrations/language-clients/java/index) (Java)와 [ODBC 드라이버](/ko/concepts/features/interfaces/odbc)를 제공합니다. Tableau, Looker, Power BI, Metabase, Apache Superset, Grafana는 이러한 드라이버나 ClickHouse 및 파트너가 유지 관리하는 전용 커넥터를 통해 통합됩니다
+* **결과 포맷:** 직렬화는 일반적으로 클라이언트가 처리합니다. 제품에 필요하다면 wire 수준에서 Arrow, Parquet 또는 기타 컬럼형 포맷을 요청할 수 있습니다
+
+<div id="result-set-sizing">
+  ### 결과 집합 크기 조절
+</div>
+
+대부분의 분석 쿼리는 작은 결과 집합(집계, 요약, 상위 N개)을 반환하므로, wire가 병목이 되는 경우는 드뭅니다. ClickHouse 테이블은 수십억 개의 행을 저장할 수 있으며, 대규모 팩트 테이블에 대해 제한 없이 `SELECT *`를 실행하면 테라바이트 단위의 데이터가 이동할 수 있습니다. **애플리케이션에서 요청 범위를 적절히 구성하세요:** `LIMIT`, 페이지네이션, 스트리밍 읽기, 명시적인 컬럼 목록을 사용하십시오. 사용자 대상 분석 기능을 구축한다면, 무제한 결과 집합은 전송 문제가 아니라 UX 문제로 다뤄야 합니다.
+
+ClickHouse는 배열, 튜플, 맵, JSON, nested, LowCardinality 등을 포함하는 풍부한 타입 시스템을 제공합니다. 공식 클라이언트는 이를 각 언어에서 자연스러운 타입으로 매핑합니다. 제품에서 ClickHouse 데이터를 최종 사용자에게 노출한다면, 타입 매핑 전략을 초기에 수립하십시오.
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+방향을 정하고 [ClickHouse Cloud 체험판](https://clickhouse.com/cloud)에서 프로토타입을 만들어 본 뒤, [파트너 포털](https://clickhouse.com/partners)에서 통합을 등록하십시오.
+
+<div id="user-agent-string-convention">
+  ## User-agent 문자열 규칙
+</div>
+
+HTTP 클라이언트는 해당 통합을 식별할 수 있는 `User-Agent` 문자열을 설정해야 합니다. ClickHouse는 이를 서버 측에서 파싱하여 도입 현황을 추적하고, 사용 telemetry를 파악하며, 로드맵 수립에 활용합니다.
+
+형식:
+
+```text
+<app_name>/<app_version> <client_name>/<client_version> (<comment>; <key1>: <value1>; <key2>: <value2>)
+```
+
+예시:
+
+* `clickhouse-java/0.8.0`
+* `my-analytics-app/3.1.2 clickhouse-js/1.2.0 (env: staging; region: us-east-1; lv: node/20.10)`
+
+규칙:
+
+* 클라이언트 이름이나 버전에 공백이 있으면 안 됩니다
+* 주석을 포함하는 경우 반드시 맨 앞에 와야 합니다
+* 표준 메타데이터 키: `lv` (언어 또는 프레임워크 버전), `os`, `arch`
+* TCP 및 네이티브 프로토콜 클라이언트는 `User-Agent`가 아니라 프로토콜 필드를 통해 클라이언트 이름과 버전을 전달합니다
+
+JDBC를 사용하는 경우, 드라이버가 `User-Agent` 및 관련 필드를 어떻게 설정하는지는 [클라이언트 식별](/ko/integrations/language-clients/java/jdbc#client-identification)을 참조하십시오.
+
+<div id="sandbox-and-trial-access">
+  ## 샌드박스 및 체험판 이용
+</div>
+
+[ClickHouse Cloud](https://clickhouse.com/cloud)에서는 개발 및 통합 검증을 위한 무료 체험판을 제공합니다. House Mate 파트너인 경우 [파트너 포털](https://clickhouse.com/partners)을 통해 추가 개발 크레딧을 요청할 수 있습니다.

@@ -1,0 +1,33 @@
+---
+title: What is a columnar database?
+description: "A columnar database stores the data of each column independently. This allows reading data from disk only for those columns that are used in any given query."
+date: 2021-09-01
+tags: ['Core Data Concepts']
+keywords: ['Columnar Database']
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+{frontMatter.description}
+{/* truncate */}
+
+## Introduction {#introduction}
+A columnar database stores the data of each column independently. This allows reading data from disk only for those columns used in any given query. The cost is that operations that affect whole rows become proportionally more expensive. A columnar database is a synonym for a column-oriented database management system. ClickHouse is a typical example of such a system.
+
+## Advantages of a columnar database {#advantages-of-a-columnar-database}
+Key columnar database advantages are:
+
+- Queries that use only a few columns out of many.
+- Aggregating queries against large volumes of data.
+- Column-wise data compression.
+
+## Row-oriented vs column-oriented databases {#row-oriented-vs-column-oriented-databases}
+Here is an illustration of the difference between traditional row-oriented systems and columnar databases when building reports:
+
+**Traditional row-oriented**
+<Image img="/images/row-oriented.webp" alt="Illustration of traditional row-oriented database storage" size="md" />
+
+**Columnar**
+<Image img="/images/column-oriented.webp" alt="Illustration of columnar database storage" size="md" />
+
+A columnar database is the preferred choice for analytical applications because it allows having many columns in a table just in case but does not pay the cost for unused columns on read query execution time (a traditional OLTP database reads all of the data during queries as the data is stored in rows and not columns). Column-oriented databases are designed for big data processing and data warehousing. They often natively scale using distributed clusters of low-cost hardware to increase throughput. ClickHouse does it with a combination of [distributed](/reference/engines/table-engines/special/distributed) and [replicated](/reference/engines/table-engines/mergetree-family/replication) tables.

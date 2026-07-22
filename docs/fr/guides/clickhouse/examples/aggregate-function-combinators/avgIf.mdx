@@ -1,0 +1,60 @@
+---
+slug: '/examples/aggregate-function-combinators/avgIf'
+title: 'avgIf'
+description: "Exemple d’utilisation du combinateur avgIf"
+keywords: ['avg', 'if', 'combinateur', 'exemples', 'avgIf']
+sidebarTitle: 'avgIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Description
+</div>
+
+Le combinateur [`If`](/fr/reference/functions/aggregate-functions/combinators#-if) peut être appliqué à la fonction [`avg`](/fr/reference/functions/aggregate-functions/avg)
+pour calculer la moyenne arithmétique des valeurs des lignes pour lesquelles la condition est true,
+à l&#39;aide de la fonction de combinateur d&#39;agrégation `avgIf`.
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+Dans cet exemple, nous allons créer une table qui stocke des données de ventes avec des indicateurs de succès,
+et nous utiliserons `avgIf` pour calculer le montant moyen des ventes pour les transactions réussies.
+
+```sql title="Query"
+CREATE TABLE sales(
+    transaction_id UInt32,
+    amount Decimal(10,2),
+    is_successful UInt8
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO sales VALUES
+    (1, 100.50, 1),
+    (2, 200.75, 1),
+    (3, 150.25, 0),
+    (4, 300.00, 1),
+    (5, 250.50, 0),
+    (6, 175.25, 1);
+
+SELECT
+    avgIf(amount, is_successful = 1) AS avg_successful_sale
+FROM sales;
+```
+
+La fonction `avgIf` calculera le montant moyen uniquement sur les lignes où `is_successful = 1`.
+Dans ce cas, elle fera la moyenne des montants suivants : 100.50, 200.75, 300.00 et 175.25.
+
+```response title="Response"
+   ┌─avg_successful_sale─┐
+1. │              193.88 │
+   └─────────────────────┘
+```
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [`avg`](/fr/reference/functions/aggregate-functions/avg)
+* [`Combinateur If`](/fr/reference/functions/aggregate-functions/combinators#-if)

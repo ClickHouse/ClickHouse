@@ -1,0 +1,206 @@
+---
+description: '日付と時刻で表される時点を、秒精度のタイムスタンプとして格納する ClickHouse の DateTime データ型に関するドキュメント'
+sidebarTitle: 'DateTime'
+slug: /sql-reference/data-types/datetime
+title: 'DateTime'
+doc_type: 'reference'
+---
+
+日付と時刻で表される時点を格納できます。
+
+構文:
+
+```sql
+DateTime([timezone])
+```
+
+対応する値の範囲: [1970-01-01 00:00:00, 2106-02-07 06:28:15]。
+
+分解能: 1 秒。
+
+<div id="speed">
+  ## 速度
+</div>
+
+`Date` データ型は、*ほとんどの* 条件で `DateTime` より高速です。
+
+`Date` 型に必要なストレージは 2 バイトですが、`DateTime` では 4 バイト必要です。ただし、圧縮時には `Date` と `DateTime` のサイズ差はさらに大きくなります。これは、`DateTime` に含まれる分や秒が圧縮されにくいためです。また、`DateTime` ではなく `Date` に対してフィルタリングや集計を行うほうが高速です。
+
+<div id="usage-remarks">
+  ## 使用上の注意
+</div>
+
+時点は、タイムゾーン や夏時間に関係なく、[Unix timestamp](https://en.wikipedia.org/wiki/Unix_time) として保存されます。タイムゾーン は、`DateTime` 型の値がテキスト形式でどのように表示されるか、および文字列として指定された値 (`'2020-01-01 05:00:01'`) がどのように解析されるかに影響します。
+
+タイムゾーン に依存しない Unix timestamp が table に保存され、タイムゾーン は、データのインポート/エクスポート時にそれをテキスト形式に変換したり、その逆変換を行ったり、値に対してカレンダー計算を行ったりするために使用されます (例: `toDate`、`toHour` 関数など) 。タイムゾーン は table の行 (または resultset) には保存されず、カラムのメタデータに保存されます。
+
+サポートされている time zones の一覧は、[IANA Time Zone Database](https://www.iana.org/time-zones) で確認でき、`SELECT * FROM system.time_zones` で問い合わせることもできます。[その一覧](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) は Wikipedia でも参照できます。
+
+table の作成時に、`DateTime` 型のカラムに対して明示的に タイムゾーン を設定できます。例: `DateTime('UTC')`。タイムゾーン が設定されていない場合、ClickHouse は server settings の [timezone](/ja/reference/settings/server-settings/settings#timezone) parameter の値、または ClickHouse server の起動時点における operating system の設定を使用します。
+
+[clickhouse-client](/ja/concepts/features/interfaces/client) は、データ型の初期化時に タイムゾーン が明示的に設定されていない場合、デフォルトで server の タイムゾーン を適用します。client の タイムゾーン を使用するには、`clickhouse-client` を `--use_client_time_zone` parameter 付きで実行します。
+
+ClickHouse は、[date&#95;time&#95;output&#95;format](/ja/reference/settings/formats#date_time_output_format) setting の値に応じて値を出力します。デフォルトのテキスト形式は `YYYY-MM-DD hh:mm:ss` です。さらに、[formatDateTime](/ja/reference/functions/regular-functions/date-time-functions#formatDateTime) 関数で出力形式を変更できます。
+
+ClickHouse にデータを insert する際は、[date&#95;time&#95;input&#95;format](/ja/reference/settings/formats#date_time_input_format) setting の値に応じて、さまざまな日付と時刻の文字列形式を使用できます。
+
+<div id="examples">
+  ## 例
+</div>
+
+**1.** `DateTime` 型のカラムを持つテーブルを作成し、データを挿入する例:
+
+```sql
+CREATE TABLE dt
+(
+    `timestamp` DateTime('Asia/Istanbul'),
+    `event_id` UInt8
+)
+ENGINE = TinyLog;
+```
+
+```sql
+-- DateTimeをパースする
+-- - 文字列から、
+-- - 1970-01-01からの経過秒数として解釈される整数から。
+INSERT INTO dt VALUES ('2019-01-01 00:00:00', 1), (1546300800, 2);
+
+SELECT * FROM dt;
+```
+
+```text
+┌───────────timestamp─┬─event_id─┐
+│ 2019-01-01 00:00:00 │        1 │
+│ 2019-01-01 03:00:00 │        2 │
+└─────────────────────┴──────────┘
+```
+
+* 整数として datetime を insert すると、Unix timestamp (UTC) として扱われます。`1546300800` は UTC の `'2019-01-01 00:00:00'` を表します。ただし、`timestamp` カラムには `Asia/Istanbul` (UTC+3) のタイムゾーンが指定されているため、文字列として出力すると、値は `'2019-01-01 03:00:00'` と表示されます。
+* 文字列の値を datetime として insert すると、そのカラムのタイムゾーンの時刻として扱われます。`'2019-01-01 00:00:00'` は `Asia/Istanbul` タイムゾーンの時刻として扱われ、`1546290000` として保存されます。
+
+**2.** `DateTime` 値のフィルタリング
+
+```sql
+SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Asia/Istanbul')
+```
+
+```text
+┌───────────timestamp─┬─event_id─┐
+│ 2019-01-01 00:00:00 │        1 │
+└─────────────────────┴──────────┘
+```
+
+`DateTime`カラムの値は、`WHERE` 句で文字列値を使ってフィルタできます。この文字列値は自動的に `DateTime` に変換されます。
+
+```sql
+SELECT * FROM dt WHERE timestamp = '2019-01-01 00:00:00'
+```
+
+```text
+┌───────────timestamp─┬─event_id─┐
+│ 2019-01-01 00:00:00 │        1 │
+└─────────────────────┴──────────┘
+```
+
+**3.** `DateTime` 型のカラムのタイムゾーンを取得する：
+
+```sql
+SELECT toDateTime(now(), 'Asia/Istanbul') AS column, toTypeName(column) AS x
+```
+
+```text
+┌──────────────column─┬─x─────────────────────────┐
+│ 2019-10-16 04:12:04 │ DateTime('Asia/Istanbul') │
+└─────────────────────┴───────────────────────────┘
+```
+
+**4.** タイムゾーンの変換
+
+```sql
+SELECT
+toDateTime(timestamp, 'Europe/London') AS lon_time,
+toDateTime(timestamp, 'Asia/Istanbul') AS istanbul_time
+FROM dt
+```
+
+```text
+┌───────────lon_time──┬───────istanbul_time─┐
+│ 2019-01-01 00:00:00 │ 2019-01-01 03:00:00 │
+│ 2018-12-31 21:00:00 │ 2019-01-01 00:00:00 │
+└─────────────────────┴─────────────────────┘
+```
+
+タイムゾーン の変換はメタデータを変更するだけなので、この操作に計算コストは発生しません。
+
+<div id="limitations-on-time-zones-support">
+  ## タイムゾーンのサポートに関する制限
+</div>
+
+一部のタイムゾーンは完全にはサポートされていない場合があります。主なケースは次のとおりです。
+
+UTC からのオフセットが 15 分の倍数でない場合、時間と分の計算が正しく行われないことがあります。たとえば、リベリアのモンロビアのタイムゾーンは 1972 年 1 月 7 日より前は UTC -0:44:30 のオフセットでした。Monrovia タイムゾーンで過去の時刻を計算する場合、時刻処理関数が不正確な結果を返すことがあります。ただし、1972 年 1 月 7 日以降の結果は正しくなります。
+
+時刻の切り替え (夏時間やその他の理由によるもの) が 15 分の倍数でない時点で行われた場合も、その特定の日には不正確な結果が生じることがあります。
+
+単調でない暦日。たとえば、Happy Valley - Goose Bay では、2010 年 11 月 7 日 00:01:00 (深夜 0 時を 1 分過ぎた時点) に時刻が 1 時間戻されました。つまり、11 月 6 日が終わった後、人々は 11 月 7 日の 1 分間を過ごし、その後時刻は 11 月 6 日 23:01 に戻され、さらに 59 分後に 11 月 7 日が再び始まりました。ClickHouse はこの種のやっかいなケースを (まだ) サポートしていません。この期間中は、時刻処理関数の結果がわずかに不正確になることがあります。
+
+同様の問題は、2010 年の南極の Casey station にも存在します。そこでは 3 月 5 日 02:00 に時刻を 3 時間戻しました。南極の観測所で作業している場合でも、ClickHouse の使用をためらう必要はありません。タイムゾーン を UTC に設定するか、不正確さが生じる可能性があることを認識しておいてください。
+
+複数日にまたがる時刻のシフト。一部の太平洋の島々では、タイムゾーン オフセットを UTC+14 から UTC-12 に変更しました。これは問題ありませんが、切り替えが行われた日の過去の時点についてその タイムゾーン で計算を行うと、多少の不正確さが生じる可能性があります。
+
+<div id="handling-daylight-saving-time-dst">
+  ## 夏時間 (DST) の扱い
+</div>
+
+タイムゾーン付きの ClickHouse の DateTime 型は、夏時間 (DST) の切り替え時に予期しない挙動を示すことがあります。特に、次のような場合です。
+
+* [`date_time_output_format`](/ja/reference/settings/formats#date_time_output_format) が `simple` に設定されている場合。
+* 時計が後ろに進む (「Fall Back」) ことで、1時間の重複が発生する場合。
+* 時計が前に進む (「Spring Forward」) ことで、1時間の欠落が発生する場合。
+
+デフォルトでは、ClickHouse は重複する時刻について常に先ではなく前の時刻を選択し、時計が進む切り替え時には存在しない時刻をそのまま解釈することがあります。
+
+たとえば、夏時間 (DST) から標準時への次の切り替えを考えてみましょう。
+
+* 2023年10月29日 02:00:00 に、時計は 01:00:00 に戻ります (BST → GMT) 。
+* 01:00:00 – 01:59:59 の1時間は2回現れます (1回は BST、もう1回は GMT) 。
+* ClickHouse は常に最初の時刻 (BST) を選択するため、時間のインターバルを加算すると予期しない結果になることがあります。
+
+```sql
+SELECT '2023-10-29 01:30:00'::DateTime('Europe/London') AS time, time + toIntervalHour(1) AS one_hour_later
+
+┌────────────────time─┬──────one_hour_later─┐
+│ 2023-10-29 01:30:00 │ 2023-10-29 01:30:00 │
+└─────────────────────┴─────────────────────┘
+```
+
+同様に、標準時から夏時間に切り替わる際には、1時間が飛ばされるように見えることがあります。
+
+例えば:
+
+* 2023年3月26日には、`00:59:59` の次が 02:00:00 になります (GMT → BST) 。
+* `01:00:00` ～ `01:59:59` の時間帯は存在しません。
+
+```sql
+SELECT '2023-03-26 01:30:00'::DateTime('Europe/London') AS time, time + toIntervalHour(1) AS one_hour_later
+
+┌────────────────time─┬──────one_hour_later─┐
+│ 2023-03-26 00:30:00 │ 2023-03-26 02:30:00 │
+└─────────────────────┴─────────────────────┘
+```
+
+この場合、ClickHouse は存在しない時刻 `2023-03-26 01:30:00` を `2023-03-26 00:30:00` に戻します。
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [型変換関数](/ja/reference/functions/regular-functions/type-conversion-functions)
+* [日付と時刻を扱う関数](/ja/reference/functions/regular-functions/date-time-functions)
+* [Arrayを扱う関数](/ja/reference/functions/regular-functions/array-functions)
+* [`date_time_input_format` 設定](/ja/reference/settings/formats#date_time_input_format)
+* [`date_time_output_format` 設定](/ja/reference/settings/formats#date_time_output_format)
+* [`timezone` サーバー設定パラメータ](/ja/reference/settings/server-settings/settings#timezone)
+* [`session_timezone` 設定](/ja/reference/settings/session-settings#session_timezone)
+* [日付と時刻を扱う演算子](/ja/reference/operators/index#operators-for-working-with-dates-and-times)
+* [`Date` データ型](/ja/reference/data-types/date)

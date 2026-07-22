@@ -1,0 +1,498 @@
+---
+description: "Ce moteur assure l’intégration avec l’écosystème Amazon S3. Semblable au moteur HDFS, il offre des fonctionnalités spécifiques à S3."
+sidebarTitle: 'S3'
+slug: /engines/table-engines/integrations/s3
+title: 'Moteur de table S3'
+doc_type: 'reference'
+---
+
+Ce moteur assure l’intégration avec l’écosystème [Amazon S3](https://aws.amazon.com/s3/). Il est similaire au moteur [HDFS](/fr/reference/engines/table-engines/integrations/hdfs), mais offre des fonctionnalités spécifiques à S3.
+
+<div id="example">
+  ## Exemple
+</div>
+
+```sql
+CREATE TABLE s3_engine_table (name String, value UInt32)
+    ENGINE=S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/test-data.csv.gz', 'CSV', 'gzip')
+    SETTINGS input_format_with_names_use_header = 0;
+
+INSERT INTO s3_engine_table VALUES ('one', 1), ('two', 2), ('three', 3);
+
+SELECT * FROM s3_engine_table LIMIT 2;
+```
+
+```text
+┌─name─┬─value─┐
+│ one  │     1 │
+│ two  │     2 │
+└──────┴───────┘
+```
+
+<div id="creating-a-table">
+  ## Créer une table
+</div>
+
+```sql
+CREATE TABLE s3_engine_table (name String, value UInt32)
+    ENGINE = S3(path [, NOSIGN | aws_access_key_id, aws_secret_access_key,] format, [compression], [partition_strategy], [partition_columns_in_data_file], [extra_credentials])
+    [PARTITION BY expr]
+    [SETTINGS ...]
+```
+
+<div id="parameters">
+  ### Paramètres du moteur
+</div>
+
+* `path` — URL du bucket avec le chemin du fichier. Prend en charge les caractères génériques suivants en mode `readonly` : `*`, `**`, `?`, `{abc,def}` et `{N..M}`, où `N` et `M` sont des nombres, et `'abc'`, `'def'` des chaînes. Pour plus d’informations, voir [ci-dessous](#wildcards-in-path).
+* `NOSIGN` - Si ce mot-clé est fourni à la place des informations d’identification, aucune requête ne sera signée.
+* `format` — Le [format](/fr/reference/formats/index#formats-overview) du fichier.
+* `aws_access_key_id`, `aws_secret_access_key` - Informations d’identification à long terme pour l’utilisateur du compte [AWS](https://aws.amazon.com/). Vous pouvez les utiliser pour authentifier vos requêtes. Ce paramètre est facultatif. Si les informations d’identification ne sont pas spécifiées, elles sont récupérées depuis le fichier de configuration. Pour plus d’informations, voir [Using S3 for Data Storage](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
+* `compression` — Type de compression. Valeurs prises en charge : `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Ce paramètre est facultatif. Par défaut, la compression est détectée automatiquement à partir de l’extension du fichier.
+* `partition_strategy` – Options : `WILDCARD` ou `HIVE`. `WILDCARD` nécessite un `{_partition_id}` dans le chemin, qui est remplacé par la clé de partition. `HIVE` n’autorise pas les caractères génériques, suppose que le chemin correspond à la racine de la table et génère des répertoires partitionnés au format Hive avec des Snowflake IDs comme noms de fichiers et le format de fichier comme extension. La valeur par défaut est définie par le paramètre `file_like_engine_default_partition_strategy` (`WILDCARD` pour les paramètres `compatibility` antérieurs à `26.6`, `HIVE` sinon).
+* `partition_columns_in_data_file` - Utilisé uniquement avec la stratégie de partitionnement `HIVE`. Indique à ClickHouse s’il doit s’attendre à ce que les colonnes de partition soient écrites dans le fichier de données. La valeur par défaut est `false`.
+* `storage_class_name` - Options : `STANDARD` ou `INTELLIGENT_TIERING`, permet de spécifier [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
+* `extra_credentials` - Facultatif. Utilisé pour transmettre un `role_arn` pour l’accès basé sur les rôles dans ClickHouse Cloud. Voir [Secure S3](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) pour les étapes de configuration.
+
+<div id="data-cache">
+  ### Cache de données
+</div>
+
+Le moteur de table `S3` prend en charge la mise en cache des données sur le disque local.
+Consultez les options de configuration et l’utilisation du cache du système de fichiers dans cette [section](/fr/concepts/features/configuration/server-config/storing-data#using-local-cache).
+La mise en cache s’effectue en fonction du chemin et de l’ETag de l’objet de stockage, afin que ClickHouse ne lise pas une version périmée du cache.
+
+Pour activer la mise en cache, utilisez les paramètres `filesystem_cache_name = '<name>'` et `enable_filesystem_cache = 1`.
+
+```sql
+SELECT *
+FROM s3('http://minio:10000/clickhouse//test_3.csv', 'minioadmin', 'minioadminpassword', 'CSV')
+SETTINGS filesystem_cache_name = 'cache_for_s3', enable_filesystem_cache = 1;
+```
+
+Il existe deux façons de définir le cache dans le fichier de configuration.
+
+1. Ajoutez la section suivante au fichier de configuration de ClickHouse :
+
+```xml
+<clickhouse>
+    <filesystem_caches>
+        <cache_for_s3>
+            <path>path to cache directory</path>
+            <max_size>10Gi</max_size>
+        </cache_for_s3>
+    </filesystem_caches>
+</clickhouse>
+```
+
+2. réutiliser la configuration du cache (et donc son stockage) de la section `storage_configuration` de ClickHouse, [décrite ici](/fr/concepts/features/configuration/server-config/storing-data#using-local-cache)
+
+<div id="partition-by">
+  ### PARTITION BY
+</div>
+
+`PARTITION BY` — Facultatif. Dans la plupart des cas, vous n’avez pas besoin de clé de partition et, si vous en avez besoin, il n’est généralement pas nécessaire qu’elle soit plus fine qu’un partitionnement mensuel. Le partitionnement n’accélère pas les requêtes (contrairement à l’expression ORDER BY). N’utilisez jamais un partitionnement trop fin. Ne partitionnez pas vos données par identifiant ou nom de client (à la place, faites de l’identifiant ou du nom du client la première colonne de l’expression ORDER BY).
+
+Pour un partitionnement mensuel, utilisez l’expression `toYYYYMM(date_column)`, où `date_column` est une colonne contenant une date de type [Date](/fr/reference/data-types/date). Les noms de partition ont alors le format `"YYYYMM"`.
+
+<div id="partition-strategy">
+  #### Stratégie de partitionnement
+</div>
+
+`WILDCARD` : remplace le caractère générique `{_partition_id}` dans le chemin de fichier par la clé de partition réelle. La lecture n’est pas prise en charge. Cette stratégie est sélectionnée par défaut uniquement avec des paramètres `compatibility` antérieurs à `26.6` ; sinon, la valeur par défaut est `HIVE` (voir le paramètre `file_like_engine_default_partition_strategy`).
+
+`HIVE` implémente le partitionnement de style Hive en lecture et en écriture. La lecture s’appuie sur un motif glob récursif et équivaut à `SELECT * FROM s3('table_root/**.parquet')`.
+L’écriture génère des fichiers au format suivant : `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
+
+Remarque : lors de l’utilisation de la stratégie de partitionnement `HIVE`, le paramètre `use_hive_partitioning` n’a aucun effet.
+
+Exemple de stratégie de partitionnement `HIVE` :
+
+```sql
+arthur :) CREATE TABLE t_03363_parquet (year UInt16, country String, counter UInt8)
+ENGINE = S3(s3_conn, filename = 't_03363_parquet', format = Parquet, partition_strategy='hive')
+PARTITION BY (year, country);
+
+arthur :) INSERT INTO t_03363_parquet VALUES
+    (2022, 'USA', 1),
+    (2022, 'Canada', 2),
+    (2023, 'USA', 3),
+    (2023, 'Mexico', 4),
+    (2024, 'France', 5),
+    (2024, 'Germany', 6),
+    (2024, 'Germany', 7),
+    (1999, 'Brazil', 8),
+    (2100, 'Japan', 9),
+    (2024, 'CN', 10),
+    (2025, '', 11);
+
+arthur :) select _path, * from t_03363_parquet;
+
+    ┌─_path──────────────────────────────────────────────────────────────────────┬─year─┬─country─┬─counter─┐
+ 1. │ test/t_03363_parquet/year=2100/country=Japan/7329604473272971264.parquet   │ 2100 │ Japan   │       9 │
+ 2. │ test/t_03363_parquet/year=2024/country=France/7329604473323302912.parquet  │ 2024 │ France  │       5 │
+ 3. │ test/t_03363_parquet/year=2022/country=Canada/7329604473314914304.parquet  │ 2022 │ Canada  │       2 │
+ 4. │ test/t_03363_parquet/year=1999/country=Brazil/7329604473289748480.parquet  │ 1999 │ Brazil  │       8 │
+ 5. │ test/t_03363_parquet/year=2023/country=Mexico/7329604473293942784.parquet  │ 2023 │ Mexico  │       4 │
+ 6. │ test/t_03363_parquet/year=2023/country=USA/7329604473319108608.parquet     │ 2023 │ USA     │       3 │
+ 7. │ test/t_03363_parquet/year=2025/country=/7329604473327497216.parquet        │ 2025 │         │      11 │
+ 8. │ test/t_03363_parquet/year=2024/country=CN/7329604473310720000.parquet      │ 2024 │ CN      │      10 │
+ 9. │ test/t_03363_parquet/year=2022/country=USA/7329604473298137088.parquet     │ 2022 │ USA     │       1 │
+10. │ test/t_03363_parquet/year=2024/country=Germany/7329604473306525696.parquet │ 2024 │ Germany │       6 │
+11. │ test/t_03363_parquet/year=2024/country=Germany/7329604473306525696.parquet │ 2024 │ Germany │       7 │
+    └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
+```
+
+<div id="querying-partitioned-data">
+  ### Interroger des données partitionnées
+</div>
+
+Cet exemple utilise la [recette Docker Compose](https://github.com/ClickHouse/examples/tree/5fdc6ff72f4e5137e23ea075c88d3f44b0202490/docker-compose-recipes/recipes/ch-and-minio-S3), qui intègre ClickHouse et MinIO. Vous devriez pouvoir reproduire les mêmes requêtes avec S3 en remplaçant les valeurs de l&#39;endpoint et de l&#39;authentification.
+
+Notez que l&#39;endpoint S3 dans la configuration `ENGINE` utilise le jeton de paramètre `{_partition_id}` comme partie de l&#39;objet S3 (nom de fichier), et que les requêtes SELECT portent sur les noms d&#39;objet ainsi générés (par exemple, `test_3.csv`).
+
+<Note>
+  Comme le montre l&#39;exemple, l&#39;interrogation de tables S3 partitionnées
+  n&#39;est pas directement prise en charge pour le moment, mais peut être réalisée en interrogeant les partitions individuelles
+  à l&#39;aide de la fonction de table S3.
+
+  Le principal cas d&#39;usage de l&#39;écriture de
+  données partitionnées dans S3 est de permettre le transfert de ces données vers un autre
+  système ClickHouse (par exemple, lors d&#39;une migration d&#39;un environnement on-prem vers ClickHouse
+  Cloud). Comme les jeux de données ClickHouse sont souvent très volumineux et que la fiabilité du
+  réseau n&#39;est pas toujours parfaite, il est logique de transférer les jeux de données
+  par sous-ensembles, d&#39;où l&#39;intérêt des écritures partitionnées.
+</Note>
+
+<div id="create-the-table">
+  #### Créer la table
+</div>
+
+```sql highlight={8}
+CREATE TABLE p
+(
+    `column1` UInt32,
+    `column2` UInt32,
+    `column3` UInt32
+)
+ENGINE = S3(
+           'http://minio:10000/clickhouse//test_{_partition_id}.csv',
+           'minioadmin',
+           'minioadminpassword',
+           'CSV')
+PARTITION BY column3
+```
+
+<div id="insert-data">
+  #### Insérer des données
+</div>
+
+```sql
+INSERT INTO p VALUES (1, 2, 3), (3, 2, 1), (78, 43, 45)
+```
+
+<div id="select-from-partition-3">
+  #### Sélectionner dans la partition 3
+</div>
+
+<Tip>
+  Cette requête utilise la fonction de table S3
+</Tip>
+
+```sql
+SELECT *
+FROM s3('http://minio:10000/clickhouse//test_3.csv', 'minioadmin', 'minioadminpassword', 'CSV')
+```
+
+```response
+┌─c1─┬─c2─┬─c3─┐
+│  1 │  2 │  3 │
+└────┴────┴────┘
+```
+
+<div id="select-from-partition-1">
+  #### Sélectionner dans la partition 1
+</div>
+
+```sql
+SELECT *
+FROM s3('http://minio:10000/clickhouse//test_1.csv', 'minioadmin', 'minioadminpassword', 'CSV')
+```
+
+```response
+┌─c1─┬─c2─┬─c3─┐
+│  3 │  2 │  1 │
+└────┴────┴────┘
+```
+
+<div id="select-from-partition-45">
+  #### Sélectionner dans la partition 45
+</div>
+
+```sql
+SELECT *
+FROM s3('http://minio:10000/clickhouse//test_45.csv', 'minioadmin', 'minioadminpassword', 'CSV')
+```
+
+```response
+┌─c1─┬─c2─┬─c3─┐
+│ 78 │ 43 │ 45 │
+└────┴────┴────┘
+```
+
+<div id="limitation">
+  #### Limitation
+</div>
+
+Vous serez peut-être tenté d’essayer `Select * from p`, mais, comme indiqué ci-dessus, cette requête échouera ; utilisez plutôt la requête précédente.
+
+```sql
+SELECT * FROM p
+```
+
+```response
+Received exception from server (version 23.4.1):
+Code: 48. DB::Exception: Received from localhost:9000. DB::Exception: Reading from a partitioned S3 storage is not implemented yet. (NOT_IMPLEMENTED)
+```
+
+<div id="inserting-data">
+  ## Insérer des données
+</div>
+
+Notez que les lignes ne peuvent être insérées que dans de nouveaux fichiers. Il n’existe ni cycles de fusion ni opérations de fractionnement de fichiers. Une fois un fichier écrit, les insertions ultérieures échouent. Pour éviter cela, vous pouvez utiliser les paramètres `s3_truncate_on_insert` et `s3_create_new_file_on_insert`. Voir plus de détails [ici](/fr/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
+
+<div id="virtual-columns">
+  ## Colonnes virtuelles
+</div>
+
+* `_path` — Chemin du fichier. Type : `LowCardinality(String)`.
+* `_file` — Nom du fichier. Type : `LowCardinality(String)`.
+* `_size` — Taille du fichier en octets. Type : `Nullable(UInt64)`. Si la taille est inconnue, la valeur est `NULL`.
+* `_time` — Date et heure de dernière modification du fichier. Type : `Nullable(DateTime)`. Si l&#39;heure est inconnue, la valeur est `NULL`.
+* `_etag` — ETag du fichier. Type : `LowCardinality(String)`. Si l&#39;ETag est inconnu, la valeur est `NULL`.
+* `_tags` — Tags du fichier. Type : `Map(String, String)`. S&#39;il n&#39;existe aucun tag, la valeur est une map vide &#96;{}&#39;.
+
+Pour plus d&#39;informations sur les colonnes virtuelles, consultez [ici](/fr/reference/engines/table-engines/index#table_engines-virtual_columns).
+
+<div id="implementation-details">
+  ## Détails d’implémentation
+</div>
+
+* Les lectures et les écritures peuvent s’effectuer en parallèle
+* Non pris en charge :
+  * Les opérations `ALTER` et `SELECT...SAMPLE`.
+  * Les index.
+  * La réplication [zero-copy](/fr/concepts/features/configuration/server-config/storing-data#zero-copy) est possible, mais n’est pas prise en charge.
+
+<Info>
+  **La réplication zero-copy n’est pas prête pour un usage en production**
+
+  La réplication zero-copy est désactivée par défaut dans ClickHouse version 22.8 et ultérieure. Cette fonctionnalité n’est pas recommandée en production.
+</Info>
+
+<div id="wildcards-in-path">
+  ## Caractères génériques dans le chemin
+</div>
+
+L’argument `path` peut spécifier plusieurs fichiers à l’aide de caractères génériques de type bash. Pour être traité, un fichier doit exister et correspondre au motif de chemin complet. La liste des fichiers est déterminée lors du `SELECT` (et non au moment du `CREATE`).
+
+* `*` — Remplace n’importe quelle suite de caractères, à l’exception de `/`, y compris la chaîne vide.
+* `**` — Remplace n’importe quelle suite de caractères, y compris `/`, y compris la chaîne vide.
+* `?` — Remplace un seul caractère quelconque.
+* `{some_string,another_string,yet_another_one}` — Remplace l’une des chaînes `'some_string', 'another_string', 'yet_another_one'`.
+* `{N..M}` — Remplace n’importe quel nombre dans l’intervalle de N à M, bornes incluses. N et M peuvent comporter des zéros initiaux, par exemple `000..078`.
+
+Les constructions avec `{}` sont similaires à la fonction de table [remote](/fr/reference/functions/table-functions/remote).
+
+<Note>
+  Si la liste des fichiers contient des intervalles numériques avec des zéros initiaux, utilisez la construction avec des accolades pour chaque chiffre séparément ou utilisez `?`.
+</Note>
+
+**Exemple avec des caractères génériques 1**
+
+Créez une table avec des fichiers nommés `file-000.csv`, `file-001.csv`, ... , `file-999.csv` :
+
+```sql
+CREATE TABLE big_table (name String, value UInt32)
+    ENGINE = S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/my_folder/file-{000..999}.csv', 'CSV');
+```
+
+**Exemple avec des caractères génériques 2**
+
+Supposons que nous ayons plusieurs fichiers au format CSV avec les URI suivantes sur S3 :
+
+* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/some&#95;folder/some&#95;file&#95;1.csv&#39;
+* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/some&#95;folder/some&#95;file&#95;2.csv&#39;
+* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/some&#95;folder/some&#95;file&#95;3.csv&#39;
+* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/another&#95;folder/some&#95;file&#95;1.csv&#39;
+* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/another&#95;folder/some&#95;file&#95;2.csv&#39;
+* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/another&#95;folder/some&#95;file&#95;3.csv&#39;
+
+Il existe plusieurs façons de créer une table à partir de ces six fichiers :
+
+1. Indiquez une plage de suffixes de fichiers :
+
+```sql
+CREATE TABLE table_with_range (name String, value UInt32)
+    ENGINE = S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/{some,another}_folder/some_file_{1..3}', 'CSV');
+```
+
+2. Prenez tous les fichiers portant le préfixe `some_file_` (il ne doit y avoir aucun fichier supplémentaire portant ce préfixe dans les deux dossiers) :
+
+```sql
+CREATE TABLE table_with_question_mark (name String, value UInt32)
+    ENGINE = S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/{some,another}_folder/some_file_?', 'CSV');
+```
+
+3. Prenez tous les fichiers dans les deux dossiers (tous les fichiers doivent respecter le format et le schéma décrits dans la requête) :
+
+```sql
+CREATE TABLE table_with_asterisk (name String, value UInt32)
+    ENGINE = S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/{some,another}_folder/*', 'CSV');
+```
+
+<div id="storage-settings">
+  ## Paramètres de stockage
+</div>
+
+* [s3&#95;truncate&#95;on&#95;insert](/fr/reference/settings/session-settings#s3_truncate_on_insert) - permet de tronquer le fichier avant d’y effectuer une insertion. Désactivé par défaut.
+* [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/fr/reference/settings/session-settings#s3_create_new_file_on_insert) - permet de créer un nouveau fichier à chaque insertion si le format comporte un suffixe. Désactivé par défaut.
+* [s3&#95;skip&#95;empty&#95;files](/fr/reference/settings/session-settings#s3_skip_empty_files) - permet d’ignorer les fichiers vides lors de la lecture. Activé par défaut.
+
+<div id="settings">
+  ## Paramètres liés à S3
+</div>
+
+Les paramètres suivants peuvent être définis avant l’exécution de la requête ou placés dans le fichier de configuration.
+
+* `s3_max_single_part_upload_size` — Taille maximale de l’objet à téléverser vers S3 en une seule partie. La valeur par défaut est `32Mb`.
+* `s3_min_upload_part_size` — Taille minimale de la partie à téléverser lors d’un téléversement multipartie vers [S3 Multipart upload](https://docs.aws.amazon.com/AmazonS3/latest/dev/uploadobjusingmpu.html). La valeur par défaut est `16Mb`.
+* `s3_max_redirects` — Nombre maximal de redirections S3 autorisées. La valeur par défaut est `10`.
+* `s3_single_read_retries` — Nombre maximal de tentatives pour une lecture unique. La valeur par défaut est `4`.
+* `s3_max_put_rps` — Taux maximal de requêtes PUT par seconde avant limitation. La valeur par défaut est `0` (illimité).
+* `s3_max_put_burst` — Nombre maximal de requêtes pouvant être émises simultanément avant d’atteindre la limite de requêtes par seconde. Par défaut (valeur `0`), il est égal à `s3_max_put_rps`.
+* `s3_max_get_rps` — Taux maximal de requêtes GET par seconde avant limitation. La valeur par défaut est `0` (illimité).
+* `s3_max_get_burst` — Nombre maximal de requêtes pouvant être émises simultanément avant d’atteindre la limite de requêtes par seconde. Par défaut (valeur `0`), il est égal à `s3_max_get_rps`.
+* `s3_upload_part_size_multiply_factor` - Multiplie `s3_min_upload_part_size` par ce facteur chaque fois que `s3_multiply_parts_count_threshold` parties ont été téléversées à partir d’une seule écriture vers S3. La valeur par défaut est `2`.
+* `s3_upload_part_size_multiply_parts_count_threshold` - Chaque fois que ce nombre de parties a été téléversé vers S3, `s3_min_upload_part_size` est multiplié par `s3_upload_part_size_multiply_factor`. La valeur par défaut est `500`.
+* `s3_max_inflight_parts_for_one_file` - Limite le nombre de requêtes PUT pouvant être exécutées simultanément pour un objet. Cette valeur doit être limitée. La valeur `0` signifie illimité. La valeur par défaut est `20`. Chaque partie en cours de transfert utilise un tampon de taille `s3_min_upload_part_size` pour les `s3_upload_part_size_multiply_factor` premières parties, puis davantage lorsque le fichier est suffisamment volumineux, voir `upload_part_size_multiply_factor`. Avec les paramètres par défaut, un fichier téléversé ne consomme pas plus de `320Mb` pour un fichier de moins de `8G`. La consommation est plus élevée pour un fichier plus volumineux.
+
+Considération de sécurité : si un utilisateur malveillant peut spécifier des URL S3 arbitraires, `s3_max_redirects` doit être défini sur zéro afin d’éviter les attaques [SSRF](https://en.wikipedia.org/wiki/Server-side_request_forgery) ; sinon, `remote_host_filter` doit être spécifié dans la configuration du serveur.
+
+<div id="endpoint-settings">
+  ## Paramètres propres à l’endpoint
+</div>
+
+Les paramètres suivants peuvent être spécifiés dans le fichier de configuration pour un endpoint donné (qui sera mis en correspondance avec le préfixe exact d’une URL) :
+
+* `endpoint` — Spécifie le préfixe d’un endpoint. Obligatoire.
+* `access_key_id` et `secret_access_key` — Spécifie les identifiants à utiliser avec l’endpoint donné. Facultatif.
+* `use_environment_credentials` — Si défini sur `true`, le client S3 tentera d’obtenir les identifiants à partir des variables d’environnement et des métadonnées [Amazon EC2](https://en.wikipedia.org/wiki/Amazon_Elastic_Compute_Cloud) pour l’endpoint donné. Facultatif, la valeur par défaut est `false`.
+* `region` — Spécifie le nom de la région S3. Facultatif.
+* `use_insecure_imds_request` — Si défini sur `true`, le client S3 utilisera une requête IMDS non sécurisée lors de l’obtention des identifiants à partir des métadonnées Amazon EC2. Facultatif, la valeur par défaut est `false`.
+* `expiration_window_seconds` — Période de grâce permettant de vérifier si des identifiants expirables ont expiré. Facultatif, la valeur par défaut est `120`.
+* `no_sign_request` - Ignore tous les identifiants afin que les requêtes ne soient pas signées. Utile pour accéder à des buckets publics.
+* `header` — Ajoute l’en-tête HTTP spécifié à une requête vers l’endpoint donné. Facultatif, peut être spécifié plusieurs fois.
+* `access_header` - Ajoute l’en-tête HTTP spécifié à une requête vers l’endpoint donné lorsqu’aucun autre identifiant n’est disponible depuis une autre source.
+* `server_side_encryption_customer_key_base64` — Si spécifié, les en-têtes requis pour accéder à des objets S3 avec un chiffrement SSE-C seront définis. Facultatif.
+* `server_side_encryption_kms_key_id` - Si spécifié, les en-têtes requis pour accéder à des objets S3 avec le [chiffrement SSE-KMS](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html) seront définis. Si une chaîne vide est spécifiée, la clé S3 gérée par AWS sera utilisée. Facultatif.
+* `server_side_encryption_kms_encryption_context` - Si spécifié avec `server_side_encryption_kms_key_id`, l’en-tête de contexte de chiffrement fourni pour SSE-KMS sera défini. Facultatif.
+* `server_side_encryption_kms_bucket_key_enabled` - Si spécifié avec `server_side_encryption_kms_key_id`, l’en-tête permettant d’activer les clés de bucket S3 pour SSE-KMS sera défini. Facultatif, peut être `true` ou `false`, et n’a pas de valeur par défaut (correspond au paramètre défini au niveau du bucket).
+* `max_single_read_retries` — Nombre maximal de tentatives lors d’une lecture unique. La valeur par défaut est `4`. Facultatif.
+* `max_put_rps`, `max_put_burst`, `max_get_rps` et `max_get_burst` - Paramètres de limitation de débit (voir la description ci-dessus) à utiliser pour un endpoint spécifique plutôt que par query. Facultatif.
+
+**Exemple :**
+
+```xml
+<s3>
+    <endpoint-name>
+        <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/</endpoint>
+        <!-- <access_key_id>ACCESS_KEY_ID</access_key_id> -->
+        <!-- <secret_access_key>SECRET_ACCESS_KEY</secret_access_key> -->
+        <!-- <region>us-west-1</region> -->
+        <!-- <use_environment_credentials>false</use_environment_credentials> -->
+        <!-- <use_insecure_imds_request>false</use_insecure_imds_request> -->
+        <!-- <expiration_window_seconds>120</expiration_window_seconds> -->
+        <!-- <no_sign_request>false</no_sign_request> -->
+        <!-- <header>Authorization: Bearer SOME-TOKEN</header> -->
+        <!-- <server_side_encryption_customer_key_base64>BASE64-ENCODED-KEY</server_side_encryption_customer_key_base64> -->
+        <!-- <server_side_encryption_kms_key_id>KMS_KEY_ID</server_side_encryption_kms_key_id> -->
+        <!-- <server_side_encryption_kms_encryption_context>KMS_ENCRYPTION_CONTEXT</server_side_encryption_kms_encryption_context> -->
+        <!-- <server_side_encryption_kms_bucket_key_enabled>true</server_side_encryption_kms_bucket_key_enabled> -->
+        <!-- <max_single_read_retries>4</max_single_read_retries> -->
+    </endpoint-name>
+</s3>
+```
+
+<div id="working-with-archives">
+  ## Utilisation des archives
+</div>
+
+Supposons que nous disposions de plusieurs fichiers d’archive avec les URI suivantes sur S3 :
+
+* &#39;https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-10.csv.zip&#39;
+* &#39;https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-11.csv.zip&#39;
+* &#39;https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-12.csv.zip&#39;
+
+Il est possible d’extraire des données de ces archives à l’aide de ::. Des globs peuvent être utilisés aussi bien dans la partie URL que dans la partie située après :: (qui correspond au nom d’un fichier à l’intérieur de l’archive).
+
+```sql
+SELECT *
+FROM s3(
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
+);
+```
+
+<Note>
+  ClickHouse prend en charge trois formats d’archive :
+  ZIP
+  TAR
+  7Z
+  Si les archives ZIP et TAR sont accessibles depuis n’importe quel emplacement de stockage pris en charge, les archives 7Z ne peuvent être lues que depuis le système de fichiers local sur lequel ClickHouse est installé.
+</Note>
+
+<div id="accessing-public-buckets">
+  ## Accès aux buckets publics
+</div>
+
+ClickHouse essaie de récupérer des identifiants à partir de nombreux types de sources.
+Cela peut parfois poser des problèmes lors de l&#39;accès à certains buckets publics et amener le client à renvoyer le code d&#39;erreur `403`.
+Vous pouvez éviter ce problème en utilisant le mot-clé `NOSIGN`, qui force le client à ignorer tous les identifiants et à ne pas signer les requêtes.
+
+```sql
+CREATE TABLE big_table (name String, value UInt32)
+    ENGINE = S3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv', NOSIGN, 'CSVWithNames');
+```
+
+<div id="optimizing-performance">
+  ## Optimisation des performances
+</div>
+
+Pour en savoir plus sur l’optimisation des performances de la fonction s3, consultez [notre guide détaillé](/fr/integrations/connectors/data-ingestion/AWS/performance).
+
+<div id="role-based-access">
+  ## Accès basé sur les rôles
+</div>
+
+Dans ClickHouse Cloud, vous pouvez utiliser l’accès basé sur les rôles pour vous authentifier auprès de S3 au lieu d’utiliser des clés d’accès. Consultez [Secure S3](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) pour suivre les étapes de configuration.
+
+Une fois la configuration effectuée, un `roleARN` peut être transmis via le paramètre `extra_credentials` :
+
+```sql
+CREATE TABLE my_s3_table(name String, value UInt32)
+ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001'), 'CSV')
+```
+
+Un `external_id` facultatif peut également être fourni avec `role_arn`. Il est transmis en tant que paramètre `ExternalId` dans l’appel AWS STS `AssumeRole`, ce qui permet à la policy de confiance du rôle d’exiger un secret partagé afin d’atténuer le [problème du deputy confus](https://docs.aws.amazon.com/IAM/latest/UserGuide/confused-deputy.html) :
+
+```sql
+CREATE TABLE my_s3_table(name String, value UInt32)
+ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001', external_id = 'my-external-id'), 'CSV')
+```
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [fonction de table S3](/fr/reference/functions/table-functions/s3)
+* [Intégration de S3 avec ClickHouse](/fr/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)
