@@ -804,6 +804,17 @@ class ReleaseInfo:
         self.dump()
 
     def merge_prs(self, dry_run: bool) -> None:
+        # The PRs opened by the release target master, which is review-gated (a
+        # merge queue plus required review), so they cannot be landed unattended
+        # here anyway -- they merge through their normal review. This is also the
+        # last release step, so a PR left open is non-destructive. Attempt the
+        # merge but do not fail the release on it (`strict=False`); a failure is
+        # logged loudly and recorded in `prs_merged` so the leftover PR stays
+        # visible rather than silently forgotten.
+        #
+        # TODO: `gh pr merge --auto` is rejected on this repo
+        # (`enablePullRequestAutoMerge` is disabled in favor of the merge queue);
+        # replace it with an `enqueuePullRequest` ("merge when ready") call.
         res = True
         if self.release_type == "patch":
             assert self.changelog_pr
@@ -813,7 +824,7 @@ class ReleaseInfo:
                 f"gh pr merge {changelog_pr_num} --repo {GITHUB_REPOSITORY} --merge --auto",
                 verbose=True,
                 dry_run=dry_run,
-                strict=True,
+                strict=False,
             )
         if self.release_type == "new":
             assert self.version_bump_pr
@@ -823,11 +834,16 @@ class ReleaseInfo:
                 f"gh pr merge {version_bump_pr_num} --repo {GITHUB_REPOSITORY} --merge --auto",
                 verbose=True,
                 dry_run=dry_run,
-                strict=True,
+                strict=False,
             )
         else:
             if not dry_run:
                 assert not self.version_bump_pr
+        if not res:
+            print(
+                "WARNING: could not auto-merge the release PR(s) — leaving them "
+                "open for their normal review/merge; not failing the release."
+            )
         self.prs_merged = res
 
 
