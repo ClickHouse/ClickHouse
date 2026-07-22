@@ -904,9 +904,12 @@ void addDistinctStep(QueryPlan & query_plan,
     /** If after this stage of DISTINCT
       * 1. ORDER BY is not executed.
       * 2. There is no LIMIT BY.
+      * 3. LIMIT is not negative (a negative LIMIT takes rows from the tail, so it cannot bound
+      *    the number of distinct rows collected from the head).
       * Then you can get no more than limit_length + limit_offset of different rows.
       */
-    if ((!query_node.hasOrderBy() || !before_order) && !query_node.hasLimitBy())
+    if ((!query_node.hasOrderBy() || !before_order) && !query_node.hasLimitBy()
+        && !query_analysis_result.is_limit_length_negative)
     {
         if (limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
             limit_hint_for_distinct = limit_length + limit_offset;

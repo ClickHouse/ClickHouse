@@ -3352,11 +3352,14 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
         /// If after this stage of DISTINCT,
         /// (1) ORDER BY is not executed
         /// (2) there is no LIMIT BY (todo: we can check if DISTINCT and LIMIT BY expressions are match)
+        /// (3) LIMIT is not negative (a negative LIMIT takes rows from the tail, so it cannot bound
+        ///     the number of distinct rows collected from the head)
         /// then you can get no more than limit_length + limit_offset of different rows.
         if ((!query.orderBy() || !before_order) && !query.limitBy())
         {
             const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
-            if (lim_info.limit_length <= std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
+            if (!lim_info.is_limit_length_negative
+                && lim_info.limit_length <= std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
                 limit_for_distinct = lim_info.limit_length + lim_info.limit_offset;
         }
 
