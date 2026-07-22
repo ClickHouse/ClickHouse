@@ -20,7 +20,7 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE t_async_iso_values (id Int64, amount String)
 $CLICKHOUSE_CLIENT "${async[@]}" -q "INSERT INTO t_async_iso_values VALUES (1, '100')"
 $CLICKHOUSE_CLIENT "${async[@]}" -q "INSERT INTO t_async_iso_values VALUES (2, 'hello')"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t_async_iso_values MODIFY COLUMN amount Int64"
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH ASYNC INSERT QUEUE t_async_iso_values"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
 $CLICKHOUSE_CLIENT -q "SELECT id, amount FROM t_async_iso_values ORDER BY id"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_async_iso_values"
 
@@ -30,7 +30,7 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE t_async_iso_block (id Int64, amount String) 
 $CLICKHOUSE_CLIENT -q "SELECT toInt64(1) AS id, '100'::String AS amount FORMAT Native"   | $CLICKHOUSE_CLIENT "${async[@]}" -q "INSERT INTO t_async_iso_block FORMAT Native"
 $CLICKHOUSE_CLIENT -q "SELECT toInt64(2) AS id, 'hello'::String AS amount FORMAT Native" | $CLICKHOUSE_CLIENT "${async[@]}" -q "INSERT INTO t_async_iso_block FORMAT Native"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t_async_iso_block MODIFY COLUMN amount Int64"
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH ASYNC INSERT QUEUE t_async_iso_block"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
 $CLICKHOUSE_CLIENT -q "SELECT id, amount FROM t_async_iso_block ORDER BY id"
 # Verify the bad entry is recorded as a failure in the log, not silently dropped.
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS asynchronous_insert_log"
