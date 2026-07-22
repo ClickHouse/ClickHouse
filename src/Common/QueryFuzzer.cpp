@@ -3583,14 +3583,16 @@ String QueryFuzzer::makeRemoteHostDescriptor(bool secure)
     return "127.0.0." + braces + (fuzz_rand() % 2 == 0 ? port : "");
 }
 
-/// Build a syntactically valid loopback URL for url()/urlCluster() over the local HTTP interface,
-/// with a brace-expanded path segment (1..4 globs — the same syntax url() accepts) and http/https.
-/// The port must match the scheme, so https pairs with the secure HTTP port (8443) and http with 8123.
+/// Build a loopback URL for url()/urlCluster() over the local HTTP interface. It targets the
+/// servable `/?query=` endpoint (a bare `GET /data...` hits NotFoundHandler, a deterministic 404
+/// before any table-function logic), with a brace expansion (1..4 globs — the same syntax url()
+/// accepts) inside the query, so url() fetches one real `SELECT` endpoint per glob. The port must
+/// match the scheme, so https pairs with the secure HTTP port (8443) and http with 8123.
 String QueryFuzzer::makeFuzzedUrl()
 {
     const bool secure = fuzz_rand() % 2 == 0;
     const String host = secure ? "https://127.0.0.1:8443" : "http://127.0.0.1:8123";
-    return host + "/data" + makeBraceExpansion();
+    return host + "/?query=SELECT+" + makeBraceExpansion();
 }
 
 /// Swap a table expression's plain-table or subquery child for the table-function AST `wrapped`,
