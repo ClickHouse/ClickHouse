@@ -413,7 +413,7 @@ A `TimeSeries` table can be exposed through a Prometheus-compatible HTTP API con
 | Endpoint | Description |
 |---|---|
 | `/api/v1/series` | Returns the matching series together with their full label set (the metric name as `__name__` plus all tags). At least one non-empty `match[]` selector is required, as in Prometheus. |
-| `/api/v1/labels` | Returns all distinct label names, always including the virtual `__name__` label. |
+| `/api/v1/labels` | Returns the distinct label names of the matching series, including the virtual `__name__` label whenever at least one series matches. If nothing matches the request (for example, an unknown metric in `match[]` or an out-of-range `start`/`end`), the result is empty, as in Prometheus. |
 | `/api/v1/label/<name>/values` | Returns the distinct values of the label `<name>` (the `metric_name` column for `__name__`, a dedicated column for a tag moved there via `tags_to_columns`, otherwise values from the `tags` map). |
 
 These endpoints read from the [tags](#tags-table) target table and deduplicate by series identity.

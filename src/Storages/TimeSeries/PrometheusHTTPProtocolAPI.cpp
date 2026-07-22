@@ -35,6 +35,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <fmt/format.h>
 
+#include <limits>
+
 
 namespace DB
 {
@@ -837,14 +839,19 @@ void PrometheusHTTPProtocolAPI::getLabels(
             configured);
     }
 
-    /// Query distinct label keys. __name__ is always included as a virtual label.
+    /// Query distinct label keys. __name__ is included as a virtual label whenever at least one series
+    /// matches the request: Prometheus derives label names from the matched series set, so a selector or
+    /// time range matching nothing must produce an empty list, not ["__name__"]. `LEFT ARRAY JOIN` (rather
+    /// than the inner `ARRAY JOIN`) keeps one row with an empty `label_key` for a matching series whose
+    /// label-keys array is empty (a metric carrying only __name__), so such a series still signals its
+    /// existence and the response correctly becomes ["__name__"].
     /// The `ARRAY JOIN` clause is used instead of the `arrayJoin` function on purpose: `arrayJoin`
     /// reports `isDeterministic() = false` (it returns many rows for a single argument), so a query
     /// using it is rejected by the query result cache under the default
     /// `query_cache_nondeterministic_function_handling = 'throw'`, breaking `use_query_cache=1` on
     /// this endpoint. The clause form is semantically identical here and is not a function call.
     String query = fmt::format(
-        "SELECT DISTINCT label_key FROM {} ARRAY JOIN {} AS label_key", tags_table_id.getFullTableName(), label_keys_expr);
+        "SELECT DISTINCT label_key FROM {} LEFT ARRAY JOIN {} AS label_key", tags_table_id.getFullTableName(), label_keys_expr);
 
     std::vector<String> conditions;
     if (String metric_name_condition = makeMetricNameCondition(match_params); !metric_name_condition.empty())
@@ -856,12 +863,14 @@ void PrometheusHTTPProtocolAPI::getLabels(
 
     query += " ORDER BY label_key";
 
-    /// Each result row is emitted as one label name, except the row for `__name__` which is skipped
-    /// (it is always prepended as a virtual label and occurs at most once thanks to `DISTINCT`), so
-    /// `LIMIT limit + 1` gives the emission loop below enough rows to fill the limit and to see
-    /// whether the result was truncated.
+    /// Each result row is emitted as one label name, except the rows for `__name__` (prepended as a
+    /// virtual label instead) and the empty string (the `LEFT ARRAY JOIN` marker for a matching series
+    /// with no label keys), which are skipped. Each of the two occurs at most once thanks to `DISTINCT`,
+    /// so `LIMIT limit + 2` gives the emission loop below enough rows to fill the limit and to see
+    /// whether the result was truncated. The addition saturates: `limit` values near `UInt64` max are
+    /// accepted by the handler, and wrapping around to `LIMIT 0` would return no rows at all.
     if (limit)
-        query += fmt::format(" LIMIT {}", limit + 1);
+        query += fmt::format(" LIMIT {}", limit > std::numeric_limits<UInt64>::max() - 2 ? std::numeric_limits<UInt64>::max() : limit + 2);
 
     LOG_TRACE(log, "Prometheus labels query: {}", query);
 
@@ -888,11 +897,20 @@ void PrometheusHTTPProtocolAPI::getLabels(
         };
         bool has_output = pull_next_nonempty();
 
-        writeString(R"({"status":"success","data":["__name__")", response);
+        writeString(R"({"status":"success","data":[)", response);
 
-        /// The virtual `__name__` label emitted above is the first item and counts towards the limit.
-        UInt64 emitted = 1;
+        UInt64 emitted = 0;
         bool truncated = false;
+
+        /// The virtual `__name__` label is emitted only when at least one series matched the request:
+        /// Prometheus derives label names from the matched series set, so an empty match must produce
+        /// an empty list. When present it is the first item and counts towards the limit.
+        if (has_output)
+        {
+            writeString("\"__name__\"", response);
+            emitted = 1;
+        }
+
         while (has_output)
         {
             const auto & label_col = result_block.getByName("label_key").column;
@@ -900,8 +918,10 @@ void PrometheusHTTPProtocolAPI::getLabels(
             for (size_t i = 0; i < result_block.rows(); ++i)
             {
                 auto label = label_col->getDataAt(i);
-                /// Skip __name__ since we already included it
-                if (label == "__name__")
+                /// Skip __name__ (already prepended above) and the empty string (the `LEFT ARRAY JOIN`
+                /// marker for a matching series with no label keys - it only signals that the series
+                /// exists and is not a real label name).
+                if (label == "__name__" || label.empty())
                     continue;
                 if (limit && emitted == limit)
                 {

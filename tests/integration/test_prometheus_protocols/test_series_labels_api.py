@@ -42,6 +42,12 @@ def send_test_data():
             {"__name__": "http_requests_total", "host": "server1", "method": "GET", "status": "200"},
             {1000: 100, 1015: 150, 1030: 200},
         ),
+        (
+            # A metric carrying only __name__ and no other labels: /api/v1/labels restricted to it
+            # must still return ["__name__"] even though its label-keys array is empty.
+            {"__name__": "bare_metric"},
+            {1000: 1.0},
+        ),
     ]
     protobuf = convert_time_series_to_protobuf(time_series)
     send_protobuf_to_remote_write(node.ip_address, 9093, "/write", protobuf)
@@ -219,8 +225,24 @@ def test_series_with_start_end_out_of_range():
 
 
 def test_labels_with_start_end_out_of_range():
-    """GET /api/v1/labels with an out-of-range [start, end] returns only the virtual __name__."""
+    """GET /api/v1/labels with an out-of-range [start, end] matches no series, so it must return an
+    empty list without the virtual __name__, exactly like Prometheus."""
     data = get_json_from_api("/api/v1/labels?start=100000&end=200000")
+    assert data == []
+
+
+def test_labels_with_no_matching_series_is_empty():
+    """GET /api/v1/labels with a match[] selector matching no series must return an empty list:
+    Prometheus derives label names from the matched series set, so nothing matched means no labels,
+    not ["__name__"]."""
+    data = get_json_from_api("/api/v1/labels?match[]=missing_metric")
+    assert data == []
+
+
+def test_labels_for_metric_without_labels_returns_only_name():
+    """GET /api/v1/labels restricted to a metric that carries only __name__ (an empty tags map) must
+    still return ["__name__"]: the series exists, so its virtual label is part of the result."""
+    data = get_json_from_api("/api/v1/labels?match[]=bare_metric")
     assert data == ["__name__"]
 
 
