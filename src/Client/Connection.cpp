@@ -1122,17 +1122,12 @@ void Connection::sendQueryPlan(const QueryPlan & query_plan)
 {
     writeVarUInt(Protocol::Client::QueryPlan, *out);
 
-    if (query_plan.isSerialized())
-    {
-        // Use cached serialization
-        auto serialized_data = query_plan.getSerializedData();
-        out->write(serialized_data.data(), serialized_data.size());
-    }
-    else
-    {
-        // Fallback: serialize on-the-fly
-        query_plan.serialize(*out, server_query_plan_serialization_version);
-    }
+    /// Serialize for the version this peer advertised in its Hello. The cache is per version:
+    /// without this a plan pre-serialized for a newer version could be sent to a replica that
+    /// only supports an older one, which would reject the stream (or worse, misread it).
+    query_plan.ensureSerialized(server_query_plan_serialization_version);
+    auto serialized_data = query_plan.getSerializedData(server_query_plan_serialization_version);
+    out->write(serialized_data.data(), serialized_data.size());
 }
 
 void Connection::sendCancel()

@@ -10,6 +10,7 @@
 #include <Parsers/IAST_fwd.h>
 
 #include <list>
+#include <map>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -109,14 +110,17 @@ public:
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data = false);
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
 
-    /// Serializes the query plan and store the result
+    /// Serializes the query plan for the given version and caches the result.
+    /// The cache is per effective version: bytes produced for one negotiated version must not be
+    /// sent to a peer that advertised an older one, and different replicas may advertise different
+    /// versions within one query.
     void ensureSerialized(size_t max_supported_version) const;
 
-    /// Get cached serialized data
-    std::string_view getSerializedData() const;
+    /// Get cached serialized data for the given version
+    std::string_view getSerializedData(size_t max_supported_version) const;
 
-    /// Check if already serialized
-    bool isSerialized() const;
+    /// Check if already serialized for the given version
+    bool isSerialized(size_t max_supported_version) const;
 
     void resolveStorages(const ContextPtr & context);
 
@@ -221,9 +225,10 @@ private:
     size_t max_threads = 0;
     bool concurrency_control = false;
 
-    /// Cached serialized representation
+    /// Cached serialized representation, one entry per effective serialization version
+    /// (in practice 1-2 entries: the current version and possibly one older peer's version).
     /// FIXME: temporary measure to avoid changing many methods to bypass serialized plan
-    mutable std::unique_ptr<WriteBufferFromOwnString> serialized_plan;
+    mutable std::map<UInt64, std::unique_ptr<WriteBufferFromOwnString>> serialized_plans;
 };
 
 /// This is a structure which contains a query plan and a list of sets.

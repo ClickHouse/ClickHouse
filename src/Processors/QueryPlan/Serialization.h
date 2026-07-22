@@ -55,4 +55,9 @@ struct IQueryPlanStep::Deserialization
     bool skipping = false;
 };
 
+/// Header encoding shared by the plan stream and the v4 skeleton section: column names and
+/// encoded types only, constants are refilled by steps.
+void serializeQueryPlanHeader(const Block & header, WriteBuffer & out);
+Block deserializeQueryPlanHeader(ReadBuffer & in, size_t max_type_complexity);
+
 }

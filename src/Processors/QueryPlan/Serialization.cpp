@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static void serializeHeader(const Block & header, WriteBuffer & out)
+void serializeQueryPlanHeader(const Block & header, WriteBuffer & out)
 {
     /// Write only names and types.
     /// Constants should be filled by step.
@@ -39,7 +39,7 @@ static void serializeHeader(const Block & header, WriteBuffer & out)
     }
 }
 
-static Block deserializeHeader(ReadBuffer & in, size_t max_type_complexity)
+Block deserializeQueryPlanHeader(ReadBuffer & in, size_t max_type_complexity)
 {
     UInt64 num_columns = 0;
     readVarUInt(num_columns, in);
@@ -121,9 +121,9 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         writeStringBinary(node->step->getStepDescription(), out);
 
         if (node->step->hasOutputHeader())
-            serializeHeader(*node->step->getOutputHeader(), out);
+            serializeQueryPlanHeader(*node->step->getOutputHeader(), out);
         else
-            serializeHeader({}, out);
+            serializeQueryPlanHeader({}, out);
 
         QueryPlanSerializationSettings settings;
         node->step->serializeSettings(settings);
@@ -138,28 +138,40 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
     serializeSets(registry, out, flags);
 }
 
+/// The stream is written at min(max_supported_version, current), so cache entries are keyed by
+/// the version that actually goes on the wire.
+static UInt64 effectiveSerializationVersion(size_t max_supported_version)
+{
+    return std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+}
+
 void QueryPlan::ensureSerialized(size_t max_supported_version) const
 {
-    if (serialized_plan)
-        return;  // Already serialized
+    UInt64 version = effectiveSerializationVersion(max_supported_version);
+    auto & buffer = serialized_plans[version];
+    if (buffer)
+        return;  // Already serialized for this version
 
-    serialized_plan = std::make_unique<WriteBufferFromOwnString>();
-    serialize(*serialized_plan, max_supported_version);
-    serialized_plan->finalize();
+    buffer = std::make_unique<WriteBufferFromOwnString>();
+    serialize(*buffer, version);
+    buffer->finalize();
 }
 
-std::string_view QueryPlan::getSerializedData() const
+std::string_view QueryPlan::getSerializedData(size_t max_supported_version) const
 {
-    if (!serialized_plan)
+    auto it = serialized_plans.find(effectiveSerializationVersion(max_supported_version));
+    if (it == serialized_plans.end() || !it->second)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Query plan is not serialized. Call ensureSerialized() first.");
+            "Query plan is not serialized for version {}. Call ensureSerialized() first.",
+            effectiveSerializationVersion(max_supported_version));
 
-    return serialized_plan->stringView();
+    return it->second->stringView();
 }
 
-bool QueryPlan::isSerialized() const
+bool QueryPlan::isSerialized(size_t max_supported_version) const
 {
-    return serialized_plan != nullptr;
+    auto it = serialized_plans.find(effectiveSerializationVersion(max_supported_version));
+    return it != serialized_plans.end() && it->second != nullptr;
 }
 
 QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data)
@@ -217,7 +229,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         readStringBinary(step_name, in);
         readStringBinary(step_description, in);
 
-        auto output_header  = std::make_shared<const Block>(deserializeHeader(in, max_type_complexity));
+        auto output_header  = std::make_shared<const Block>(deserializeQueryPlanHeader(in, max_type_complexity));
 
         QueryPlanSerializationSettings settings;
         settings.readBinary(in);
