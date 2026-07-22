@@ -652,7 +652,7 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
 
 void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)
 {
-#if defined(SIGEV_THREAD_ID)
+#if defined(SIGEV_THREAD_ID) || defined(OS_DARWIN)
     /// profilers are useless without trace collector
     auto context = Context::getGlobalContextInstance();
     if (!context->hasTraceCollector())
