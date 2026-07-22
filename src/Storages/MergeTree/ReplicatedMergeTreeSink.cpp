@@ -285,7 +285,8 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 
     auto deduplication_info = chunk.getChunkInfos().getSafe<DeduplicationInfo>();
 
-    BlocksWithPartition part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context);
+    IColumn::Selector partition_selector;
+    BlocksWithPartition part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context, &partition_selector);
 
     decltype(delayed_parts) current_parts;
 
@@ -294,14 +295,18 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 
     std::vector<UInt128> all_partitions_block_ids;
 
-    for (auto & current_block : part_blocks)
+    for (size_t part_index = 0; part_index < part_blocks.size(); ++part_index)
     {
+        auto & current_block = part_blocks[part_index];
+
         Stopwatch watch;
 
         ProfileEvents::Counters part_counters;
         auto profile_events_scope = std::make_unique<ProfileEventsScope>(&part_counters);
 
-        auto current_deduplication_info = deduplication_info->cloneSelf();
+        /// Keep only the tokens whose own rows landed in this partition, so a coalesced async
+        /// insert does not register a token in partitions it never wrote to.
+        auto current_deduplication_info = deduplication_info->filterToPartition(partition_selector, part_index);
 
         {
             ProfileEventTimeIncrement<Microseconds> duplication_elapsed(ProfileEvents::DuplicationElapsedMicroseconds);
