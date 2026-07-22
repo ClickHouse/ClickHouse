@@ -7,6 +7,7 @@
 #include <Core/BaseSettingsProgramOptions.h>
 #include <Core/MergeSelectorAlgorithm.h>
 #include <Core/MergeTreeSerializationEnums.h>
+#include <Core/SettingsEnums.h>
 #include <Core/SettingsChangesHistory.h>
 #include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -736,18 +737,12 @@ Possible values:
 Merge parts if every part in the range is older than the value of
 `min_age_to_force_merge_seconds`.
 
-By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool`
-(see `enable_max_bytes_limit_for_min_age_to_force_merge`).
-
 Possible values:
 - Positive integer.
 )", 0) \
     DECLARE(Bool, min_age_to_force_merge_on_partition_only, false, R"(
 Whether `min_age_to_force_merge_seconds` should be applied only on the entire
 partition and not on subset.
-
-By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool` (see
-`enable_max_bytes_limit_for_min_age_to_force_merge`).
 
 Possible values:
 - true, false
@@ -845,15 +840,15 @@ table can have a superset of the source table's indices and projections.
     DECLARE(MergeSelectorAlgorithm, merge_selector_algorithm, MergeSelectorAlgorithm::SIMPLE, R"(
 The algorithm to select parts for merges assignment
 )", EXPERIMENTAL) \
-    DECLARE(Bool, merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once, false, R"(
-Enable heuristic for simple merge selector which will lower maximum limit for merge choice.
-By doing so number of concurrent merges will increase which can help with TOO_MANY_PARTS
-errors but at the same time this will increase the write amplification.
-)", EXPERIMENTAL) \
     DECLARE(UInt64, merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent, 5, R"(
 Controls the exponent value used in formulae building lowering curve. Lowering exponent will
 lower merge widths which will trigger increase in write amplification. The reverse is also true.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once, true, R"(
+Enable heuristic for simple merge selector which will lower maximum limit for merge choice.
+By doing so number of concurrent merges will increase which can help with TOO_MANY_PARTS
+errors but at the same time this will increase the write amplification.
+)", 0) \
     DECLARE(Bool, merge_selector_enable_heuristic_to_remove_small_parts_at_right, true, R"(
 Enable heuristic for selecting parts for merge which removes parts from right
 side of range, if their size is less than specified ratio (0.01) of sum_size.
@@ -1949,7 +1944,7 @@ When enabled, an implicit min-max (skipping) index is added for the persistent v
 Requires `enable_block_offset_column = 1` to take effect. The index is built only during merges,
 not during inserts.
 )", 0) \
-    DECLARE(String, auto_statistics_types, "basic, uniq", R"(
+    DECLARE(String, auto_statistics_types, "basic, uniq_v2", R"(
 Comma-separated list of statistics types to calculate automatically on all suitable columns.
 Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
 The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
@@ -2032,6 +2027,9 @@ Maximum time between runs of merge coordinator thread
 )", 0) \
     DECLARE(Float, shared_merge_tree_merge_coordinator_factor, 1.1f, R"(
 Time changing factor for delay of coordinator thread
+)", 0) \
+    DECLARE(MergeCoordinatorDistributionAlgorithm, shared_merge_tree_merge_coordinator_distribution_algorithm, MergeCoordinatorDistributionAlgorithm::WATER_FILLING, R"(
+What algorithm will be used by merge coordinator thread to distribute merges between replicas
 )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
 Timeout that merge worker thread will use if it is needed to update it's state after immediate action
