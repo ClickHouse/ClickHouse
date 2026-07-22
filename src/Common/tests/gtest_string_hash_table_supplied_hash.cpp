@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -113,7 +114,9 @@ TEST(StringHashTableSuppliedHash, EmplaceWithSuppliedHash)
 TEST(StringHashTableSuppliedHash, TwoLevelBucketRouting)
 {
     using Map = TwoLevelStringHashMap<UInt64>;
-    Map map;
+    /// The two-level table holds its 256 sub-tables inline and does not fit a stack frame.
+    auto map_holder = std::make_unique<Map>();
+    auto & map = *map_holder;
 
     const auto keys = testKeys();
     for (size_t i = 0; i < keys.size(); ++i)
@@ -147,7 +150,9 @@ TEST(StringHashTableSuppliedHash, TwoLevelBucketRouting)
 TEST(StringHashTableSuppliedHash, TwoLevelEmplaceWithSuppliedHash)
 {
     using Map = TwoLevelStringHashMap<UInt64>;
-    Map map;
+    /// The two-level table holds its 256 sub-tables inline and does not fit a stack frame.
+    auto map_holder = std::make_unique<Map>();
+    auto & map = *map_holder;
 
     const auto keys = testKeys();
     for (size_t i = 0; i < keys.size(); ++i)
