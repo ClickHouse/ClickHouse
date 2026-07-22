@@ -88,6 +88,8 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Parsers/ASTSystemQuery.h>
@@ -1575,6 +1577,32 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
                 }
             }
             if (has_dynamic_structure)
+                continue;
+        }
+
+        /// Tables with parts involved in `MergeTree` transactions are not safe to reattach yet.
+        /// A part created (or being removed) by a still-running transaction keeps the storage
+        /// referenced by that transaction until it commits or rolls back, so the internal
+        /// `DETACH TABLE ... SYNC` below blocks until then — firing the hook on a non-transactional
+        /// query while another session of a sequential test script holds such a part deadlocks the
+        /// script (the other session cannot advance while this query is blocked). Independently,
+        /// reloading parts with transactional version metadata on `ATTACH` is not hardened: CSN
+        /// update and unknown-state resolution can race with the reattach and leave intersecting
+        /// parts that fail the next server startup. Until that is hardened, skip tables having any
+        /// active part involved in a transaction. Like the action-lock check above, this is a
+        /// best-effort, point-in-time check.
+        if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(table.get()))
+        {
+            bool has_transactional_parts = false;
+            for (const auto & part : merge_tree->getDataPartsVectorForInternalUsage())
+            {
+                if (part->version->getInfo().wasInvolvedInTransaction())
+                {
+                    has_transactional_parts = true;
+                    break;
+                }
+            }
+            if (has_transactional_parts)
                 continue;
         }
 
