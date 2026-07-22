@@ -60,7 +60,7 @@ using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 class RuntimeDataflowStatisticsCacheUpdater;
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
-/// Shared state of the adaptive aggregation. 
+/// Shared state of the adaptive aggregation.
 /// One instance per aggregation, created by `AggregatingStep` when the query qualifies,
 /// owned by `ManyAggregatedData` and shared by all its transforms.
 ///
@@ -102,7 +102,8 @@ struct AdaptiveAggregationSharedState
     /// One record batch per block, rather than one per (block, bucket).
     struct DelayedBlock
     {
-        /// The row-reference mode's retained source block.
+        /// The row-reference mode's retained source block: only the aggregate-argument columns
+        /// are kept (the drain emplaces the keys from the staged bytes).
         Columns source_columns;
         size_t num_source_rows = 0;
         PaddedPODArray<UInt32> source_rows;

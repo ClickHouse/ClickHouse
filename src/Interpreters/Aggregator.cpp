@@ -2158,7 +2158,10 @@ void NO_INLINE Aggregator::publishDelayedRecords(
         block->run_lengths.resize(total);
     else
     {
-        block->source_columns = columns;
+        block->source_columns.assign(columns.size(), nullptr);
+        for (const auto & argument_positions : aggregates_positions)
+            for (const auto position : argument_positions)
+                block->source_columns[position] = columns[position];
         block->num_source_rows = num_rows;
         block->source_rows.resize(total);
     }
