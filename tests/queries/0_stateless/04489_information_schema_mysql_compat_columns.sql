@@ -3,6 +3,7 @@
 -- MySQL-flavored catalog queries without hitting UNKNOWN_IDENTIFIER.
 
 DROP TABLE IF EXISTS test_infoschema_compat;
+DROP VIEW IF EXISTS test_infoschema_compat_view;
 
 SELECT '-- schemata: the exact MySQL-dialect introspection query';
 SELECT DEFAULT_COLLATION_NAME, DEFAULT_ENCRYPTION
@@ -29,6 +30,18 @@ SELECT engine, version, row_format, avg_row_length, max_data_length,
        checksum, create_options
 FROM information_schema.tables
 WHERE table_schema = currentDatabase() AND table_name = 'test_infoschema_compat';
+
+CREATE VIEW test_infoschema_compat_view AS SELECT id FROM test_infoschema_compat;
+
+SELECT '-- tables: ENGINE is NULL for views, as in MySQL';
+SELECT table_type, engine, ENGINE
+FROM information_schema.tables
+WHERE table_schema = currentDatabase() AND table_name = 'test_infoschema_compat_view';
+
+SELECT '-- tables: ENGINE is NULL for system views too';
+SELECT table_type, engine
+FROM information_schema.tables
+WHERE table_schema = 'system' AND table_name = 'one';
 
 SELECT '-- columns: MySQL-specific columns (lowercase)';
 SELECT column_name, column_key, privileges, generation_expression, srs_id
@@ -57,4 +70,5 @@ SELECT COLLATION_NAME, CHARACTER_SET_NAME, ID, IS_DEFAULT, IS_COMPILED, SORTLEN,
 FROM INFORMATION_SCHEMA.COLLATIONS
 WHERE COLLATION_NAME = 'binary';
 
+DROP VIEW test_infoschema_compat_view;
 DROP TABLE test_infoschema_compat;

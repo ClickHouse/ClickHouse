@@ -48,10 +48,10 @@ AS SELECT
     database             AS table_catalog,
     database             AS table_schema,
     name                 AS table_name,
-    multiIf(is_temporary,          'LOCAL TEMPORARY',
-            engine LIKE '%View',   'VIEW',
-            engine LIKE 'System%', 'SYSTEM VIEW',
-            has_own_data = 0,      'FOREIGN TABLE',
+    multiIf(is_temporary,            'LOCAL TEMPORARY',
+            t.engine LIKE '%View',   'VIEW',
+            t.engine LIKE 'System%', 'SYSTEM VIEW',
+            has_own_data = 0,        'FOREIGN TABLE',
             'BASE TABLE'
             )            AS table_type,
     total_rows           AS table_rows,
@@ -71,7 +71,10 @@ AS SELECT
     table_collation      AS TABLE_COLLATION,
     table_comment        AS TABLE_COMMENT,
     -- MySQL-compatibility columns, appended after the standard columns to preserve their ordinal positions
-    engine               AS engine,           -- MySQL-specific
+    -- In MySQL, ENGINE is a real storage engine and is NULL for views; report it only for
+    -- BASE TABLE rows so MySQL-aware tools don't see internal names like 'View' or 'System...'
+    if(table_type = 'BASE TABLE', t.engine, NULL)
+                         AS engine,            -- MySQL-specific
     NULL                 AS version,           -- MySQL-specific
     NULL                 AS row_format,        -- MySQL-specific
     NULL                 AS avg_row_length,    -- MySQL-specific

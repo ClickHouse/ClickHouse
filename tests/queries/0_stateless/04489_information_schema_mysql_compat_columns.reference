@@ -4,6 +4,10 @@ utf8mb4_0900_ai_ci	NO
 utf8mb4_0900_ai_ci	NO
 -- tables: MySQL-specific columns
 MergeTree	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+-- tables: ENGINE is NULL for views, as in MySQL
+VIEW	\N	\N
+-- tables: ENGINE is NULL for system views too
+SYSTEM VIEW	\N
 -- columns: MySQL-specific columns (lowercase)
 a			id + 1	\N
 id	PRI			\N

@@ -911,6 +911,21 @@ def test_collation_consistency(started_cluster):
         "Pad_attribute": "NO PAD",
     } in collations
 
+    # The filtered forms of the statement are honored server-side: the dispatcher is
+    # prefix-based, so a LIKE / WHERE tail must narrow the result, not be dropped.
+    cursor.execute("SHOW COLLATION LIKE 'utf8mb4%'")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["utf8mb4_0900_ai_ci"]
+
+    # MySQL matches collation names case-insensitively.
+    cursor.execute("SHOW COLLATION LIKE 'UTF8MB4%'")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["utf8mb4_0900_ai_ci"]
+
+    cursor.execute("SHOW COLLATION LIKE 'no_such_collation%'")
+    assert list(cursor.fetchall()) == []
+
+    cursor.execute("SHOW COLLATION WHERE Charset = 'binary'")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["binary"]
+
     # INFORMATION_SCHEMA.COLLATIONS contains it with the same charset and id.
     cursor.execute(
         "SELECT CHARACTER_SET_NAME, ID FROM INFORMATION_SCHEMA.COLLATIONS "

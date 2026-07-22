@@ -24,6 +24,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
 #include <Server/TCPServer.h>
@@ -259,16 +260,16 @@ static String killConnectionIdReplacementQuery(const String & query)
     return query;
 }
 
-/// Replace "SHOW COLLATION" with a response enumerating every collation the server actually
-/// puts on the wire, in the shape MySQL uses for this statement: `utf8mb4_0900_ai_ci` (advertised
-/// in the handshake and stamped on string columns in result-set metadata) and `binary` (stamped on
-/// numeric and other non-string columns). The set must be complete: MySQL Connector/NET builds its
-/// charset-id dictionary from this result and fails on any `ColumnDefinition41.character_set` id
-/// missing from it (an empty result makes it skip the lookup, a partial one makes it throw).
-static String showCollationsReplacementQuery(const String & /*query*/)
+/// Replace "SHOW COLLATION [LIKE 'pattern' | WHERE <expr>]" with a response enumerating every
+/// collation the server actually puts on the wire, in the shape MySQL uses for this statement:
+/// `utf8mb4_0900_ai_ci` (advertised in the handshake and stamped on string columns in result-set
+/// metadata) and `binary` (stamped on numeric and other non-string columns). The set must be
+/// complete: MySQL Connector/NET builds its charset-id dictionary from this result and fails on
+/// any `ColumnDefinition41.character_set` id missing from it (an empty result makes it skip the
+/// lookup, a partial one makes it throw).
+static String showCollationsReplacementQuery(const String & query)
 {
-    return
-        "SELECT"
+    static constexpr auto collations = "SELECT"
         " 'utf8mb4_0900_ai_ci' AS `Collation`,"
         " 'utf8mb4' AS `Charset`,"
         " 255 AS `Id`,"
@@ -284,6 +285,49 @@ static String showCollationsReplacementQuery(const String & /*query*/)
         " 'Yes' AS `Compiled`,"
         " 1 AS `Sortlen`,"
         " 'NO PAD' AS `Pad_attribute`";
+
+    const String prefix = "SHOW COLLATION";
+    const String tail = query.size() > prefix.size() ? String(query.data() + prefix.size()) : String();
+
+    /// The dispatcher is only a byte-prefix check; a word character right after the prefix means
+    /// a different statement (e.g. "SHOW COLLATIONX"), so leave it untranslated to error naturally.
+    if (!tail.empty() && isWordCharASCII(tail[0]))
+        return query;
+
+    /// The dispatcher routes every prefix match here, so the filtered forms of the statement
+    /// ("SHOW COLLATION LIKE 'pattern'", "SHOW COLLATION WHERE <expr>") also land in this
+    /// function and their filter must be honored, not dropped. Parse the tail and re-serialize
+    /// the filter instead of concatenating the raw client suffix (which would allow SQL injection
+    /// over the MySQL wire). Any malformed tail is left untranslated so the client gets a syntax
+    /// error rather than a silently unfiltered result.
+    Tokens tokens(tail.data(), tail.data() + tail.size(), DBMS_DEFAULT_MAX_QUERY_SIZE);
+    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    Expected expected;
+
+    String filter;
+    if (ParserKeyword(Keyword::LIKE).ignore(pos, expected))
+    {
+        ASTPtr ast;
+        if (!ParserStringLiteral().parse(pos, ast, expected))
+            return query;
+        /// MySQL matches collation names case-insensitively, so use ILIKE.
+        filter = " WHERE `Collation` ILIKE " + quoteString(ast->as<ASTLiteral &>().value.safeGet<String>());
+    }
+    else if (ParserKeyword(Keyword::WHERE).ignore(pos, expected))
+    {
+        ASTPtr ast;
+        if (!ParserExpression().parse(pos, ast, expected))
+            return query;
+        filter = " WHERE " + ast->formatWithSecretsOneLine();
+    }
+
+    /// Accept one optional trailing ';' then end-of-stream (executeQuery treats ';' as
+    /// end-of-query). Anything else is a tail this translation does not understand.
+    ParserToken(TokenType::Semicolon).ignore(pos, expected);
+    if (!pos->isEnd())
+        return query;
+
+    return "SELECT * FROM (" + String(collations) + ")" + filter;
 }
 
 
