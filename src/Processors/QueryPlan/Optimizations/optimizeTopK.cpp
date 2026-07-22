@@ -136,7 +136,13 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 
     const auto & sort_column = sorting_step->getInputHeaders().front()->getByName(sort_column_name);
 
-    const bool where_clause = filter_step || read_from_mergetree_step->getPrewhereInfo();
+    /// A row-level policy filter restricts rows inside the reader just like a `WHERE` / `PREWHERE`, so it
+    /// must count as a `where_clause`. Otherwise a query filtered only by a hidden row policy leaves
+    /// `where_clause == false`, `MergeTreeDataSelectExecutor` enables `perform_top_k_optimization` and narrows
+    /// the read to the top-K marks before the policy runs: the policy can then discard the rows in those marks
+    /// and the query returns nothing, even though later marks hold rows the policy would keep - unlike a
+    /// visible `WHERE`, which takes the filtered-query path.
+    const bool where_clause = filter_step || read_from_mergetree_step->getPrewhereInfo() || read_from_mergetree_step->getRowLevelFilter();
 
     ///remove alias
     if (sort_column_name.contains('.'))
