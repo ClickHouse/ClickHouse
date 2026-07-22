@@ -1759,7 +1759,11 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     if (const auto & filter_actions_dag = select_query_info.filter_actions_dag)
     {
         const auto * output = filter_actions_dag->getOutputs().front();
-        auto stats = drop_mark_ranges(output, /*apply_top_k_salt=*/ true);
+        /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is disabled, so the WHERE
+        /// consult must not partition its lookup key by the TopK plan (and must not take the predicate-only
+        /// reuse path). Consult with the plain condition hash, restoring the behavior from before PR #104478.
+        /// This is safe because the disabled write paths never store TopK-salted entries anymore.
+        auto stats = drop_mark_ranges(output, /*apply_top_k_salt=*/ false);
         LOG_DEBUG(log,
                 "Query condition cache has dropped {}/{} granules for WHERE condition {}.",
                 stats.granules_dropped,
