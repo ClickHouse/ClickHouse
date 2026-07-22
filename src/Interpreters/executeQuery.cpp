@@ -1175,6 +1175,18 @@ using ImplicitTransactionControlExecutorPtr = std::shared_ptr<ImplicitTransactio
 namespace
 {
 
+/// The object kind a query reference demands from the table it names. `EXISTS VIEW` / `SHOW CREATE VIEW`
+/// and `EXISTS DICTIONARY` / `SHOW CREATE DICTIONARY` are metadata probes for a specific object kind: on a
+/// name that resolves to a plain table they answer `0` or fail without ever touching that table's storage,
+/// so reattaching the table first would be a side effect the outer query never implies. The reattach loop
+/// skips a collected table whose resolved storage does not match the expected kind.
+enum class ExpectedObjectKind : uint8_t
+{
+    Any,
+    View,
+    Dictionary,
+};
+
 struct CollectTablesData
 {
     struct CollectedTable
@@ -1188,6 +1200,9 @@ struct CollectTablesData
         /// the AST shape that referenced the table). Used by the existence preflight in
         /// `reattachTablesUsedInQuery` to keep queries referencing a missing table side-effect free.
         bool existence_required = true;
+        /// The object kind the reference demands (recorded by the collector from the AST shape); the
+        /// reattach loop skips the table when its resolved storage is not of this kind.
+        ExpectedObjectKind expected_kind = ExpectedObjectKind::Any;
     };
 
     explicit CollectTablesData(ContextPtr context_) : context(std::move(context_)) {}
@@ -1195,7 +1210,7 @@ struct CollectTablesData
     const ContextPtr context;
     std::vector<CollectedTable> tables;
 
-    void addTableIfNotEmpty(const String & database, const String & table, const std::unordered_set<String> & active_ctes, const AccessFlags & required_access, bool existence_required = true)
+    void addTableIfNotEmpty(const String & database, const String & table, const std::unordered_set<String> & active_ctes, const AccessFlags & required_access, bool existence_required = true, ExpectedObjectKind expected_kind = ExpectedObjectKind::Any)
     {
         if (table.empty())
             return;
@@ -1219,7 +1234,7 @@ struct CollectTablesData
         if (resolved.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE)
             return;
 
-        tables.emplace_back(CollectedTable{std::move(resolved), required_access, existence_required});
+        tables.emplace_back(CollectedTable{std::move(resolved), required_access, existence_required, expected_kind});
     }
 };
 
@@ -1284,6 +1299,18 @@ bool mainTableExistenceRequired(const IAST & ast)
     if (ast.as<ASTUndropQuery>())
         return false;
     return true;
+}
+
+/// The object kind the query's main-table reference demands (see `ExpectedObjectKind`). Everything not
+/// enumerated here — including `SHOW CREATE TABLE` and `EXISTS TABLE`, which accept any object kind —
+/// places no constraint on the resolved storage.
+ExpectedObjectKind mainTableExpectedObjectKind(const IAST & ast)
+{
+    if (ast.as<ASTExistsViewQuery>() || ast.as<ASTShowCreateViewQuery>())
+        return ExpectedObjectKind::View;
+    if (ast.as<ASTExistsDictionaryQuery>() || ast.as<ASTShowCreateDictionaryQuery>())
+        return ExpectedObjectKind::Dictionary;
+    return ExpectedObjectKind::Any;
 }
 
 /// Walk the AST and collect tables, tracking CTE scope so that an in-scope CTE name does not cause us to
@@ -1463,7 +1490,7 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         /// unqualified. Resolving it through the persistent catalog would detach an unrelated persistent
         /// table of the same name that the query never touches, so skip temporary-table references.
         if (!query_with_output->isTemporary())
-            data.addTableIfNotEmpty(query_with_output->getDatabase(), query_with_output->getTable(), active_ctes, requiredAccessForTableQuery(*ast), mainTableExistenceRequired(*ast));
+            data.addTableIfNotEmpty(query_with_output->getDatabase(), query_with_output->getTable(), active_ctes, requiredAccessForTableQuery(*ast), mainTableExistenceRequired(*ast), mainTableExpectedObjectKind(*ast));
 
         /// Some `ASTQueryWithTableAndOutput` classes reference additional real tables that live neither in the
         /// main `database`/`table` nor in child AST nodes, yet the outer query's own access check validates them
@@ -1537,6 +1564,10 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             {
                 deduped[it->second].required_access |= table.required_access;
                 deduped[it->second].existence_required |= table.existence_required;
+                /// References demanding different kinds can only coexist when at least one of them uses
+                /// the table as a plain table, which legitimizes reattaching it — drop the constraint.
+                if (deduped[it->second].expected_kind != table.expected_kind)
+                    deduped[it->second].expected_kind = ExpectedObjectKind::Any;
             }
         }
         data.tables = std::move(deduped);
@@ -1593,6 +1624,14 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             || !table
             || !table->storesDataOnDisk()
             || context->getActionLocksManager()->hasAny(table))
+            continue;
+
+        /// A kind-specific metadata probe (`EXISTS VIEW`, `SHOW CREATE DICTIONARY`, ...) on a name that
+        /// resolved to a different object kind never touches this table's storage — the outer query
+        /// answers `0` or fails on the kind mismatch — so reattaching it would be a side effect the
+        /// query never implies.
+        if ((collected.expected_kind == ExpectedObjectKind::View && !table->isView())
+            || (collected.expected_kind == ExpectedObjectKind::Dictionary && !table->isDictionary()))
             continue;
 
         /// Replicated tables (e.g. `ReplicatedMergeTree`) re-run their startup sequence on `ATTACH`,

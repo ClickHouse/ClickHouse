@@ -386,3 +386,32 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_unres_new"
 check_if_detached "CREATE TABLE t_reattach_unres_new AS t_reattach_unres" "t_reattach_unres"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_unres_new"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_unres"
+
+# A kind-specific metadata probe on a name that resolves to a plain table never touches that table's
+# storage: `EXISTS VIEW` / `EXISTS DICTIONARY` answer 0, and `SHOW CREATE VIEW` / `SHOW CREATE DICTIONARY`
+# fail with BAD_ARGUMENTS ("... is not a VIEW" / "... is not a DICTIONARY"). The reattach hook must NOT
+# detach the unrelated table in either case.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_kind"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_kind (a UInt64) ENGINE = MergeTree ORDER BY a"
+
+check_if_not_detached "EXISTS VIEW t_reattach_kind" "t_reattach_kind"
+check_if_not_detached "EXISTS DICTIONARY t_reattach_kind" "t_reattach_kind"
+
+function check_fails_kind_without_detach()
+{
+    check_if_detached_impl "$1" "$2"
+    if [ "$REATTACH_STATUS" -eq 0 ]; then
+        echo "FAIL (query unexpectedly succeeded)"
+    elif ! echo "$REATTACH_OUTPUT" | grep -q "BAD_ARGUMENTS"; then
+        echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+    elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.$2"; then
+        echo "FAIL (table was detached for a kind-mismatched metadata query)"
+    else
+        echo "OK"
+    fi
+}
+
+check_fails_kind_without_detach "SHOW CREATE VIEW t_reattach_kind" "t_reattach_kind"
+check_fails_kind_without_detach "SHOW CREATE DICTIONARY t_reattach_kind" "t_reattach_kind"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_kind"
