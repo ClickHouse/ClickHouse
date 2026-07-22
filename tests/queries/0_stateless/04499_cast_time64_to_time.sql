@@ -10,5 +10,5 @@ SELECT toTypeName(CAST(CAST('10:00:00' AS Time64) AS Time));
 SELECT accurateCastOrNull(CAST('01:02:03.5' AS Time64(1)), 'Time') = CAST('01:02:03' AS Time);
 
 -- Out-of-range Time64 (built via Decimal64 -> Time64, which does not clamp) must clamp the stored value.
-SELECT CAST(CAST(toDecimal64(3600001, 0) AS Time64(0)) AS Time) = CAST(toInt64(3599999) AS Time);
-SELECT CAST(CAST(toDecimal64(-3600001, 0) AS Time64(0)) AS Time) = CAST(toInt64(-3599999) AS Time);
+SELECT CAST(CAST(toDecimal64(3600001, 0) AS Time64(0)) AS Time) = CAST(3599999 AS Time);
+SELECT CAST(CAST(toDecimal64(-3600001, 0) AS Time64(0)) AS Time) = CAST(-3599999 AS Time);
