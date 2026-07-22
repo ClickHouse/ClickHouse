@@ -21,7 +21,6 @@
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
-#include <Storages/IStreamingStorage.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
@@ -49,6 +48,11 @@ namespace Setting
 {
     extern const SettingsMaxThreads max_parsing_threads;
     extern const SettingsUInt64 keeper_max_retries;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
 }
 
 namespace ObjectStorageQueueSetting
@@ -951,10 +955,8 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     const StorageID & storage_id_,
     LoggerPtr log_,
     bool commit_once_processed_,
-    bool is_direct_select_,
     bool add_deduplication_info_,
-    bool is_deduplication_v2_,
-    IStreamingStorage & streaming_storage_)
+    bool is_deduplication_v2_)
     : ISource(std::make_shared<const Block>(read_from_format_info_.source_header))
     , WithContext(context_)
     , name(std::move(name_))
@@ -976,11 +978,9 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , system_queue_log(system_queue_log_)
     , storage_id(storage_id_)
     , commit_once_processed(commit_once_processed_)
-    , is_direct_select(is_direct_select_)
-    , streaming_storage(streaming_storage_)
-    , cancel_epoch(streaming_storage_.currentCancelEpoch())
     , add_deduplication_info(add_deduplication_info_)
     , is_deduplication_v2(is_deduplication_v2_)
+    , insert_deduplication_version(context_->getServerSettings()[ServerSetting::insert_deduplication_version].value)
     , log(log_)
 {
     if (commit_once_processed)
@@ -1030,9 +1030,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
 {
     while (true)
     {
-        if (is_direct_select && streaming_storage.isConsumeCancelRequested(cancel_epoch))
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Consumption aborted by SYSTEM STOP or SYSTEM CANCEL");
-
         if (isCancelled())
         {
             if (reader)
@@ -1153,7 +1150,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 if (old_processed_files >= commit_settings.max_processed_files_before_commit)
                 {
                     LOG_DEBUG(log, "Number of max processed files before commit reached "
-                            "(rows: {}, bytes: {}, files: {}, time: {:.3f})",
+                            "(rows: {}, bytes: {}, files: {}, time: {})",
                             progress->processed_rows.load(), progress->processed_bytes.load(),
                             progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
 
@@ -1263,7 +1260,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 /// Create unique token per chunk: etag + row offset
                 dedup_token = fmt::format("{}:{}", etag, row_offset);
 
-                auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true);
+                auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true, insert_deduplication_version);
                 deduplication_info->setUserToken(dedup_token, chunk.getNumRows());
                 chunk.getChunkInfos().add(std::move(deduplication_info));
             }
@@ -1296,7 +1293,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     .storage_id = storage_id,
                     .size = object_metadata->size_bytes,
                     .last_modified = object_metadata->last_modified,
-                    .etag = &(object_metadata->etag),
                 },
                 getContext(),
                 format_settings);
@@ -1319,7 +1315,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             && progress->processed_files >= commit_settings.max_processed_files_before_commit)
         {
             LOG_DEBUG(log, "Number of max processed files before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {:.3f})",
+                      "(rows: {}, bytes: {}, files: {}, time: {})",
                       progress->processed_rows.load(), progress->processed_bytes.load(), progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
             break;
         }
@@ -1328,7 +1324,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             && progress->processed_rows >= commit_settings.max_processed_rows_before_commit)
         {
             LOG_DEBUG(log, "Number of max processed rows before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {:.3f})",
+                      "(rows: {}, bytes: {}, files: {}, time: {})",
                       progress->processed_rows.load(), progress->processed_bytes.load(), progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
             break;
         }
@@ -1337,7 +1333,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             && progress->processed_bytes >= commit_settings.max_processed_bytes_before_commit)
         {
             LOG_DEBUG(log, "Number of max processed bytes before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {:.3f})",
+                      "(rows: {}, bytes: {}, files: {}, time: {})",
                       progress->processed_rows.load(), progress->processed_bytes.load(), progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
             break;
         }
@@ -1346,7 +1342,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
             && progress->elapsed_time.elapsedSeconds() >= static_cast<double>(commit_settings.max_processing_time_sec_before_commit))
         {
             LOG_DEBUG(log, "Max processing time before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {:.3f})",
+                      "(rows: {}, bytes: {}, files: {}, time: {})",
                       progress->processed_rows.load(), progress->processed_bytes.load(), progress->processed_files.load(), progress->elapsed_time.elapsedSeconds());
             break;
         }

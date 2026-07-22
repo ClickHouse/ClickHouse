@@ -23,9 +23,7 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
-#include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexCache.h>
-#include <absl/container/inlined_vector.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnTuple.h>
@@ -161,8 +159,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     else
         tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, local_cache_max_size, 0, 1.0);
 
-    use_global_header_cache = settings[Setting::use_text_index_header_cache];
-    if (use_global_header_cache)
+    if (settings[Setting::use_text_index_header_cache])
         header_cache = context_->getTextIndexHeaderCache();
     else
         header_cache = std::make_shared<TextIndexHeaderCache>(cache_policy, local_cache_max_size, 0, 1.0);
@@ -360,100 +357,14 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
          RPNElement::FUNCTION_HAS_ANY_ELEMENTS});
 }
 
-namespace
-{
-
-/// Returns whether a text search query may match some row in current_range,
-/// given the per-granule analysis state of the query (query_builder).
-///
-/// A query in `Any` mode folds postings by union, so the folded
-/// posting list is complete only when the postings of all tokens have been read.
-///
-/// A query in `All` mode folds postings by intersection, so a partially folded
-/// posting list is a superset of the result and can be used for pruning right away.
-bool queryMayBeTrueInRange(
-    const TextSearchQuery & query,
-    const TextIndexAnalyzer::QueryBuilder & query_builder,
-    const std::optional<RowsRange> & current_range,
-    TextSearchMode search_mode)
-{
-    /// Failure dominates bypass — a proven-empty query stays empty even when pattern analysis is incomplete.
-    if (query_builder.is_failed)
-        return false;
-
-    /// Pattern bypass means analysis is incomplete, so conservatively return true.
-    if (query_builder.is_bypassed && !query.getPatterns().empty())
-        return true;
-
-    if (!current_range.has_value())
-        return true;
-
-    if (!query_builder.rows_range.has_value())
-        return false;
-
-    if (!query_builder.rows_range->intersectWith(*current_range))
-        return false;
-
-    if (!query_builder.postings.has_value())
-        return true;
-
-    if (search_mode == TextSearchMode::All || !query_builder.needReadPostings())
-    {
-        /// An allocation-free check that the folded posting list has a value in the closed range of rows.
-        return roaring::api::roaring_bitmap_intersect_with_range(
-            &query_builder.postings->roaring,
-            current_range->begin,
-            static_cast<UInt64>(current_range->end) + 1);
-    }
-
-    return true;
-}
-
-bool hasAnyTokensInRange(const TextSearchQuery & query, const TextIndexAnalyzer::QueryBuilder & query_builder, const std::optional<RowsRange> & current_range)
-{
-    if (query.getTokens().empty())
-        return false;
-
-    return queryMayBeTrueInRange(query, query_builder, current_range, TextSearchMode::Any);
-}
-
-bool hasAnyPatternsInRange(const TextSearchQuery & query, const TextIndexAnalyzer::QueryBuilder & query_builder, const std::optional<RowsRange> & current_range)
-{
-    if (query.getPatterns().empty())
-        return false;
-
-    return queryMayBeTrueInRange(query, query_builder, current_range, TextSearchMode::Any);
-}
-
-bool hasAllTokensOrEmptyInRange(const TextSearchQuery & query, const TextIndexAnalyzer::QueryBuilder & query_builder, const std::optional<RowsRange> & current_range)
-{
-    if (query.getTokens().empty())
-        return true;
-
-    return queryMayBeTrueInRange(query, query_builder, current_range, TextSearchMode::All);
-}
-
-bool hasAllTokensInRange(const TextSearchQuery & query, const TextIndexAnalyzer::QueryBuilder & query_builder, const std::optional<RowsRange> & current_range)
-{
-    if (query.getTokens().empty())
-        return false;
-
-    return queryMayBeTrueInRange(query, query_builder, current_range, TextSearchMode::All);
-}
-
-}
-
 bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
     const auto * granule = typeid_cast<const MergeTreeIndexGranuleText *>(idx_granule.get());
     if (!granule)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index condition got a granule with the wrong type.");
 
-    const auto & analyzer = granule->getAnalyzer();
-    const auto & current_range = granule->getCurrentRange();
-
     /// Check like in KeyCondition.
-    absl::InlinedVector<BoolMask, 8> rpn_stack;
+    std::vector<BoolMask> rpn_stack;
     size_t element_idx = 0;
     for (const auto & element : rpn)
     {
@@ -465,8 +376,7 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
         {
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
-            const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-            bool exists_in_granule = hasAnyPatternsInRange(*text_search_query, query_builder, current_range);
+            bool exists_in_granule = granule->hasAnyQueryPatterns(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
 
         }
@@ -474,16 +384,14 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
         {
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
-            const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-            bool exists_in_granule = hasAnyTokensInRange(*text_search_query, query_builder, current_range);
+            bool exists_in_granule = granule->hasAnyQueryTokens(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
         else if (element.function == RPNElement::FUNCTION_HAS_ALL_TOKENS)
         {
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
-            const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-            bool exists_in_granule = hasAllTokensInRange(*text_search_query, query_builder, current_range);
+            bool exists_in_granule = granule->hasAllQueryTokens(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
         else if (element.function == RPNElement::FUNCTION_HAS_PHRASE)
@@ -492,16 +400,14 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             /// Actual positional phrase checking is done at the row level via position data.
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
-            const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-            bool exists_in_granule = hasAllTokensInRange(*text_search_query, query_builder, current_range);
+            bool exists_in_granule = granule->hasAllQueryTokens(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
         else if (element.function == RPNElement::FUNCTION_EQUALS)
         {
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
-            const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-            bool exists_in_granule = hasAllTokensOrEmptyInRange(*text_search_query, query_builder, current_range);
+            bool exists_in_granule = granule->hasAllQueryTokensOrEmpty(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
         else if (element.function == RPNElement::FUNCTION_HAS_ANY_ELEMENTS)
@@ -511,9 +417,7 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
 
             for (const auto & text_search_query : element.text_search_queries)
             {
-                const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-
-                if (hasAllTokensOrEmptyInRange(*text_search_query, query_builder, current_range))
+                if (granule->hasAllQueryTokensOrEmpty(*text_search_query))
                 {
                     exists_in_granule = true;
                     break;
@@ -984,16 +888,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "equals")
     {
-        /// Special case: Don't use the index if the needle is empty.
-        /// - Reason 1: The index doesn't index empty values (regardless of the tokenizer). So this needle
-        ///   is invalid.
-        /// - Reason 2: We also end up here if optimizer rule `optimize_empty_string_comparisons` (default: 1)
-        ///   is disabled, i.e. `col = ''` is _not_ rewritten into `empty(col)`. The latter doesn't
-        ///   use the index (because it doesn't support `empty`). For consistency, make sure `equals('')`
-        ///   behaves the same.
-        if (value_field.safeGet<String>().empty())
-            return false;
-
         auto tokens = stringToTokens(value_field);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
@@ -1108,26 +1002,21 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
-        // hasToken and hasTokenOrNull are legacy functions which assume splitByNonAlpha as
-        /// tokenizer. The text index can answer it only correctly if this is the index tokenizer.
-        /// In all other cases, bypass the index.
-        if (tokenizer->getType() != ITokenizer::Type::SplitByNonAlpha)
-            return false;
-
-        /// Unlike hasToken, hasTokenOrNull is never rewritten to direct-read, so the pre/postprocessor
-        /// is also not applied to its needle. Using the index here (where stringToTokens does apply them,
-        /// e.g. mapping a dropped token to the empty sentinel that prunes every granule) would disagree
-        /// with the scan result. Bail out so the index is not used for hasTokenOrNull when a
-        /// pre/postprocessor is configured; the plain index path is unaffected.
+        /// Unlike hasToken, hasTokenOrNull is never rewritten on the direct-read / row-scan path, so the
+        /// pre/postprocessor is not applied to its row-level needle. Using the index here (where
+        /// stringToTokens does apply them, e.g. mapping a dropped token to the empty sentinel that prunes
+        /// every granule) would disagree with the row-level result. Bail out so the index is not used for
+        /// hasTokenOrNull when a pre/postprocessor is configured; the plain index path is unaffected.
         if (function_name == "hasTokenOrNull" && (has_preprocessor || has_postprocessor))
             return false;
 
-        /// A needle containing a token separator is invalid for `hasToken` and the brute-force scan raises
-        /// BAD_ARGUMENTS for this. hasToken uses Exact direct read, so the index would tokenize the needle and
-        /// silently replace the predicate (or prune the granule that would have thrown), hiding the exception.
-        /// Therefore bypass the index and do a brute-force scan. hasTokenOrNull is not affected: it returns NULL
-        ///
-        /// A separator is any ASCII non-alphanumeric character.
+        /// stringToTokens applies both preprocessor and postprocessor.
+        /// A needle containing a token separator is invalid for hasToken and raises BAD_ARGUMENTS during a
+        /// brute-force scan. hasToken uses Exact direct read, so the index would tokenize the needle and
+        /// silently replace the predicate (or prune the granule that would have thrown), hiding the exception;
+        /// bypass the index so the row-level function runs. hasTokenOrNull is not affected: it returns NULL
+        /// instead of throwing and only uses the index for granule pruning, which never changes its result.
+        /// A separator is any ASCII non-alphanumeric character, matching HasTokenImpl.
         if (function_name == "hasToken"
             && std::ranges::any_of(value_field.safeGet<String>(), [](unsigned char c) { return isASCII(c) && !isAlphaNumericASCII(c); }))
             return false;
@@ -1150,8 +1039,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 if (std::ranges::none_of(string_needle, [](unsigned char c) { return !isASCII(c) || isAlphaNumericASCII(c); }))
                     return false;
             }
-            /// - If the needle does contain word characters (e.g. "abc" with ngrams(4)), it is valid but too short for the index's tokenizer:
-            ///   Fall through but push "" so all granules are pruned and the query returns 0 rows.
             tokens.push_back("");
         }
 
@@ -1373,17 +1260,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 return false;
             }
 
-            /// `multiMatchAny` is executed by vectorscan, which compiles each pattern as a NUL-terminated
-            /// C-string (`hs_compile_multi` takes no length), so it stops at the first NUL byte. The regexp
-            /// analyzer below is binary-safe and keeps the NUL as a literal, so it would extract a required
-            /// substring spanning the NUL that the matcher never requires, and the index would wrongly prune
-            /// granules that the function matches. Truncate the pattern at the first NUL to analyze exactly
-            /// what vectorscan sees. (This differs from `match`, which is executed by binary-safe re2.)
-            String pattern_string = pattern.safeGet<String>();
-            if (const auto nul_pos = pattern_string.find('\0'); nul_pos != String::npos)
-                pattern_string.resize(nul_pos);
-
-            auto tokens_for_queries = regexpToTokensForQueries(pattern_string);
+            auto tokens_for_queries = regexpToTokensForQueries(pattern.safeGet<String>());
 
             if (tokens_for_queries.empty())
             {

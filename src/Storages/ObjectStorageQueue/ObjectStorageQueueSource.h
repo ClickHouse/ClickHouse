@@ -16,7 +16,6 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-class IStreamingStorage;
 struct ObjectMetadata;
 
 class ObjectStorageQueueSource final : public ISource, WithContext
@@ -184,12 +183,10 @@ public:
         const StorageID & storage_id_,
         LoggerPtr log_,
         bool commit_once_processed_,
-        bool is_direct_select_,
         bool add_deduplication_info_,
-        bool is_deduplication_v2_,
-        IStreamingStorage & streaming_storage_);
+        bool is_deduplication_v2_);
 
-    static Block getHeader(Block sample_block, const NamesAndTypes & requested_virtual_columns);
+    static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
     String getName() const override;
 
@@ -260,12 +257,10 @@ private:
     const std::shared_ptr<ObjectStorageQueueLog> system_queue_log;
     const StorageID storage_id;
     const bool commit_once_processed;
-    const bool is_direct_select;
-    IStreamingStorage & streaming_storage;
-    const UInt64 cancel_epoch;
     const bool add_deduplication_info;
     /// Effective dedup: gates whether shutdown can abort mid-file.
     const bool is_deduplication_v2;
+    const InsertDeduplicationVersions insert_deduplication_version;
     time_t transaction_start_time;
 
     LoggerPtr log;

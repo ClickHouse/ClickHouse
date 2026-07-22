@@ -1,4 +1,3 @@
-SET explain_query_plan_default = 'legacy';
 drop table if exists tab_v;
 drop table if exists tab;
 create table tab (x UInt64, y UInt64) engine MergeTree() order by (x, y);
