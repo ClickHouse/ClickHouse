@@ -1,3 +1,6 @@
 extra text index file syncs on merge	6
 rows	10000
 hasToken	1428
+materialized part_type	Wide
+materialized rows	10000
+materialized hasToken	1429
