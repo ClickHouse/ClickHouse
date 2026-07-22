@@ -30,7 +30,7 @@ constexpr UInt8 GROUP_CONVEX_HULL_SERDE_VERSION = 2;
 
 struct GroupConvexHullData
 {
-    std::vector<CartesianPoint> points; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    boost::geometry::model::multi_point<CartesianPoint> points;
 
     /// Stored point count right after the most recent `compress`. The compression trigger looks
     /// at growth since then, not the total size, so a large valid hull (many points in convex
@@ -104,10 +104,8 @@ struct GroupConvexHullData
             return;
         }
 
-        boost::geometry::model::multi_point<CartesianPoint> mp(points.begin(), points.end());
-
         CartesianPolygon hull;
-        boost::geometry::convex_hull(mp, hull);
+        boost::geometry::convex_hull(points, hull);
 
         points.clear();
         points.assign(hull.outer().begin(), hull.outer().end());
@@ -136,10 +134,8 @@ struct GroupConvexHullData
         if (points.empty())
             return {};
 
-        boost::geometry::model::multi_point<CartesianPoint> mp(points.begin(), points.end());
-
         CartesianPolygon hull;
-        boost::geometry::convex_hull(mp, hull);
+        boost::geometry::convex_hull(points, hull);
 
         CartesianRing result;
         result.assign(hull.outer().begin(), hull.outer().end());
