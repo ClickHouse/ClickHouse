@@ -973,9 +973,9 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
         Coordination::Error multi_code = zookeeper->tryMultiNoThrow(ops, responses, /* check_session_valid */ true); /// 1 RTT
         if (multi_code == Coordination::Error::ZOK)
         {
-            part->new_part_was_committed_to_zookeeper_after_rename_on_disk = true;
             sleep_before_commit_for_tests();
             transaction.commit();
+            part->new_part_was_committed_to_zookeeper_after_rename_on_disk = true;
 
             /// Lock nodes have been already deleted, do not delete them in destructor
             block_number_lock.assumeUnlocked();
@@ -1070,9 +1070,9 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
             if (node_exists)
             {
                 LOG_DEBUG(log, "Insert of part {} recovered from keeper successfully. It will be committed", part->name);
-                part->new_part_was_committed_to_zookeeper_after_rename_on_disk = true;
                 sleep_before_commit_for_tests();
                 transaction.commit();
+                part->new_part_was_committed_to_zookeeper_after_rename_on_disk = true;
                 block_number_lock.assumeUnlocked();
                 return CommitRetryContext::SUCCESS;
             }
