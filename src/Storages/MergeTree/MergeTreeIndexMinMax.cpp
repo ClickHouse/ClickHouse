@@ -381,13 +381,17 @@ buildIntersectsAndContains(
         intersects_lower = &addNamedFunction(dag, range.left_included ? "greaterOrEquals" : "greater", {&max_node, left_lit}, context);
         contains_lower = &addNamedFunction(dag, range.left_included ? "greaterOrEquals" : "greater", {&min_node, left_lit}, context);
 
-        /// A Float granule that mixes finite values with `NaN` is stored as `[finite_min, NaN]`,
-        /// because `NaN` sorts last. The scalar path keeps such a granule for a lower-bounded
-        /// predicate: it forces `contains` to false but leaves `intersects` true, because the
-        /// finite values may still match. Here `greaterOrEquals(NaN, left)` is false, which would
-        /// wrongly prune the granule, so treat a `NaN` granule max as reaching any finite lower
+        /// A granule whose stored max is `NaN` may still hold finite values that reach a finite
+        /// lower bound, and the scalar path keeps such a granule (`Range::intersectsRange` uses
+        /// the `NaN`-sorts-last total order). Here `greaterOrEquals(NaN, left)` is false, which
+        /// would wrongly prune it, so treat a `NaN` granule max as reaching any finite lower
         /// bound. The final `min_is_nan` guard below neutralizes this relaxation for all-`NaN`
         /// granules `[NaN, NaN]`, which the scalar path prunes.
+        ///
+        /// Note: the skip-index aggregator computes extremes via `IColumn::getExtremes`, which
+        /// skips `NaN`s, so today a stored `NaN` max implies an all-`NaN` granule (`NaN` min).
+        /// The relaxation still mirrors the scalar semantics of any `[finite, NaN]` granule
+        /// exactly, in case a serialized granule ever carries one.
         if (is_float)
             intersects_lower = &addNamedFunction(dag, "or", {intersects_lower, max_is_nan}, context);
     }
@@ -396,17 +400,18 @@ buildIntersectsAndContains(
     const ActionsDAG::Node * contains = &addNamedFunction(dag, "and", {contains_upper, contains_lower}, context);
 
     /// Final `NaN` guards mirroring `KeyCondition::checkInHyperrectangle` exactly:
-    /// - The granule min is `NaN` => the whole granule is `NaN` (`NaN` sorts last), and `NaN`
-    ///   satisfies no comparison => `intersects` and `contains` are both false. Without this
-    ///   guard the lower-bound relaxation above would keep `[NaN, NaN]` granules that the
-    ///   scalar path prunes, losing the speedup on `NaN`-only chunks.
-    /// - The granule max is `NaN` (mixed granule `[finite_min, NaN]`) => the granule extends
-    ///   into `NaN` territory, and its `NaN` rows satisfy no comparison => `contains` must be
-    ///   false. Against a finite right bound `contains_upper` is already false, but for a
-    ///   lower-bounded predicate `contains_upper` is constant true, and reporting
-    ///   `contains` = true (`can_be_false` = false) would make a `NOT` above this leaf skip
-    ///   granules whose `NaN` rows match the negated predicate — a wrong result, not just a
-    ///   missed optimization.
+    /// - The granule min is `NaN` => the whole granule is `NaN` (`getExtremes` skips `NaN`s and
+    ///   returns `NaN` only when every value is `NaN`), and `NaN` satisfies no comparison =>
+    ///   `intersects` and `contains` are both false. Without this guard the lower-bound
+    ///   relaxation above would keep `[NaN, NaN]` granules that the scalar path prunes
+    ///   (`key_range.left.isNaN()`), losing the speedup on `NaN`-only chunks.
+    /// - The granule max is `NaN` => the granule extends into `NaN` territory, and `NaN` rows
+    ///   satisfy no comparison => `contains` must be false (`key_range.right.isNaN()` in the
+    ///   scalar path). For a lower-bounded predicate `contains_upper` is constant true, so
+    ///   without this guard a `[finite, NaN]` granule would report `contains` = true
+    ///   (`can_be_false` = false), making a `NOT` above this leaf skip granules whose `NaN`
+    ///   rows match the negated predicate. Defensive today (see the note above), but keeps
+    ///   bulk equivalent to scalar for every granule shape.
     if (is_float)
     {
         const auto & min_not_nan = addNamedFunction(dag, "not", {min_is_nan}, context);

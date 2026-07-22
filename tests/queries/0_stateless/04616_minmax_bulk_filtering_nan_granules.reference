@@ -1,0 +1,11 @@
+all-NaN, lower bound, granules selected (bulk)
+Parts: 0 | Granules: 0
+Granules: 0/16
+all-NaN, lower bound, granules selected (scalar)
+Parts: 0 | Granules: 0
+Granules: 0/16
+all-NaN, lower bound, count parity	1
+all-NaN, strict lower bound, count parity	1
+mixed NaN, NOT lower bound, count parity	1
+mixed NaN, NOT BETWEEN, count parity	1
+mixed NaN, lower bound, absolute count (bulk)	1040
