@@ -923,27 +923,15 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
     {
         auto common_used_flags = hash_joins[0]->data->getUsedFlags();
 
-        bool use_per_row_flags = std::ranges::any_of(
-            hash_joins,
-            [&](const auto & hash_join)
-            {
-                auto used_flags = hash_join->data->getUsedFlags();
-                return !used_flags->per_row_flags.empty();
-            });
+        /// Move every slot's pending per-row flags into one dense vector indexed by block_no.
+        const size_t num_blocks = getData(hash_joins[0])->stored_columns_index->size();
+        for (const auto & hash_join : hash_joins)
+            common_used_flags->finalizePerRowFlags(*hash_join->data->getUsedFlags(), num_blocks);
 
         //     2. Copy this common map to all the `HashJoin` instances along with the `used_flags` data structure.
         for (size_t i = 1; i < slots; ++i)
         {
             getData(hash_joins[i])->maps = getData(hash_joins[0])->maps;
-
-            if (use_per_row_flags)
-            {
-                /// In case flag per row is used, we need to merge flags, rows in different slots can differ.
-                auto current_used_flags = hash_joins[i]->data->getUsedFlags();
-                common_used_flags->per_row_flags.merge(current_used_flags->per_row_flags);
-                if (!current_used_flags->per_row_flags.empty())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "ConcurrentHashJoin: unexpected non-disjoint per_row_flags in slot {}", i);
-            }
             hash_joins[i]->data->setUsedFlags(common_used_flags);
         }
     }

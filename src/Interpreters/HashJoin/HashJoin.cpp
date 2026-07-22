@@ -848,6 +848,10 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
         /// referencing this block we must not pop the block later
         bool nullmap_stored_for_block = false;
 
+        /// The per-row used flags of the stored block are initialized on the first clause only:
+        /// their content does not depend on the inserts, and JoinUsedFlags expects one entry per block.
+        bool per_row_flags_initialized = false;
+
         for (size_t onexpr_idx = 0; onexpr_idx < onexprs.size(); ++onexpr_idx)
         {
             ColumnRawPtrs key_columns;
@@ -922,9 +926,12 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                             is_inserted,
                             all_values_unique);
 
-                        if (flag_per_row)
+                        if (flag_per_row && !per_row_flags_initialized)
+                        {
                             used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(
                                 stored_columns->block_no, stored_columns->columns.at(0)->size(), stored_columns->selector);
+                            per_row_flags_initialized = true;
+                        }
                     });
             }
 
@@ -2700,6 +2707,10 @@ void HashJoin::tryConvertToFixedHashMap()
 void HashJoin::onBuildPhaseFinish()
 {
     reinitUsedFlags();
+
+    /// Two-level maps per-row flags will be finalized by ConcurrentHashJoin.
+    if (!twoLevelMapIsUsed())
+        used_flags->finalizePerRowFlags(*used_flags, data->stored_columns_index->size());
 
     if (all_values_unique && strictness == JoinStrictness::All && isInnerOrLeft(kind) && data->maps.size() == 1)
     {
