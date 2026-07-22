@@ -1170,17 +1170,23 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
     return function_node;
 }
 
+/// With `database_qualified = false`, the qualifier is the first identifier part matched against
+/// aliases and table names. With `database_qualified = true`, the first two identifier parts are
+/// matched against the database and table names of the leaf table expressions (`db.table.column`);
+/// this binding is weaker and must not compete with a successful alias / table-name resolution,
+/// it is only used to rescue a miss (see tryResolveIdentifierFromJoin).
 static bool qualifierBindsToJoinSubtree(
     const QueryTreeNodePtr & join_tree_node,
     const Identifier & identifier,
-    const IdentifierResolveScope & scope)
+    const IdentifierResolveScope & scope,
+    bool database_qualified)
 {
     if (!join_tree_node)
         return false;
 
     const auto & qualifier = identifier.front();
 
-    if (join_tree_node->hasAlias() && join_tree_node->getAlias() == qualifier)
+    if (!database_qualified && join_tree_node->hasAlias() && join_tree_node->getAlias() == qualifier)
         return true;
 
     switch (join_tree_node->getNodeType())
@@ -1188,21 +1194,21 @@ static bool qualifierBindsToJoinSubtree(
         case QueryTreeNodeType::JOIN:
         {
             const auto & join = join_tree_node->as<JoinNode &>();
-            return qualifierBindsToJoinSubtree(join.getLeftTableExpression(), identifier, scope)
-                || qualifierBindsToJoinSubtree(join.getRightTableExpression(), identifier, scope);
+            return qualifierBindsToJoinSubtree(join.getLeftTableExpression(), identifier, scope, database_qualified)
+                || qualifierBindsToJoinSubtree(join.getRightTableExpression(), identifier, scope, database_qualified);
         }
         case QueryTreeNodeType::CROSS_JOIN:
         {
             const auto & cross = join_tree_node->as<CrossJoinNode &>();
             for (const auto & expr : cross.getTableExpressions())
-                if (qualifierBindsToJoinSubtree(expr, identifier, scope))
+                if (qualifierBindsToJoinSubtree(expr, identifier, scope, database_qualified))
                     return true;
             return false;
         }
         case QueryTreeNodeType::ARRAY_JOIN:
         {
             const auto & arr = join_tree_node->as<ArrayJoinNode &>();
-            return qualifierBindsToJoinSubtree(arr.getTableExpression(), identifier, scope);
+            return qualifierBindsToJoinSubtree(arr.getTableExpression(), identifier, scope, database_qualified);
         }
         default:
             break;
@@ -1211,12 +1217,10 @@ static bool qualifierBindsToJoinSubtree(
     auto it = scope.table_expression_node_to_data.find(join_tree_node);
     if (it == scope.table_expression_node_to_data.end())
         return false;
-    if (!it->second.table_name.empty() && it->second.table_name == qualifier)
-        return true;
-    /// The identifier can also be qualified with the database name and the table name of this table
-    /// expression (`db.table.column`), so the subtree must not be pruned from resolution in that case.
-    return !it->second.database_name.empty() && it->second.database_name == qualifier
-        && it->second.table_name == identifier[1];
+    if (database_qualified)
+        return !it->second.database_name.empty() && it->second.database_name == qualifier
+            && it->second.table_name == identifier[1];
+    return !it->second.table_name.empty() && it->second.table_name == qualifier;
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
@@ -1277,8 +1281,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     bool binds_right = true;
     if (prefer_alias && identifier_lookup.isExpressionLookup() && identifier_lookup.identifier.getPartsSize() > 1)
     {
-        binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpression(), identifier_lookup.identifier, scope);
-        binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpression(), identifier_lookup.identifier, scope);
+        binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpression(), identifier_lookup.identifier, scope, /*database_qualified=*/ false);
+        binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpression(), identifier_lookup.identifier, scope, /*database_qualified=*/ false);
     }
 
     QueryTreeNodePtr left_resolved_identifier = nullptr;
@@ -1287,6 +1291,21 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpression(), join_kind == JoinKind::Right);
     if (!binds_left || binds_right)
         right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpression(), join_kind != JoinKind::Right);
+
+    /** The alias / table-name qualifier can restrict resolution to one side while the identifier is
+      * actually a database-qualified reference (`db.table.column`) to the pruned side (the same token
+      * is the table name of one side and the database name of the other). The database-qualified
+      * interpretation must not compete with a successful alias / table-name resolution — that would
+      * turn the precedence the setting establishes into `AMBIGUOUS_IDENTIFIER` — so it is attempted
+      * only when the restricted side produced no result.
+      */
+    if (binds_left != binds_right && !left_resolved_identifier && !right_resolved_identifier)
+    {
+        if (binds_left && qualifierBindsToJoinSubtree(from_join_node.getRightTableExpression(), identifier_lookup.identifier, scope, /*database_qualified=*/ true))
+            right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpression(), join_kind != JoinKind::Right);
+        else if (binds_right && qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpression(), identifier_lookup.identifier, scope, /*database_qualified=*/ true))
+            left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpression(), join_kind == JoinKind::Right);
+    }
 
     if (!identifier_lookup.isExpressionLookup())
     {

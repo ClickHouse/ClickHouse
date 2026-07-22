@@ -59,6 +59,18 @@ FROM {CLICKHOUSE_DATABASE:Identifier}.{CLICKHOUSE_DATABASE_1:Identifier}
 JOIN {CLICKHOUSE_DATABASE_1:Identifier}.tbl USING (id)
 SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
 
+-- The database-qualified interpretation must not compete with a successful lookup behind the
+-- table-name qualifier on the other JOIN side. Here the left table is named like the database of
+-- the right table and has a real `tbl.value` subcolumn, so under the compat setting the subcolumn
+-- wins and the database-qualified side stays pruned instead of raising `AMBIGUOUS_IDENTIFIER`.
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.{CLICKHOUSE_DATABASE_1:Identifier} (id Int32, tbl Tuple(value Int32)) ENGINE = MergeTree ORDER BY ();
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.{CLICKHOUSE_DATABASE_1:Identifier} VALUES (42, (99));
+
+SELECT {CLICKHOUSE_DATABASE_1:Identifier}.tbl.value
+FROM {CLICKHOUSE_DATABASE_1:Identifier}.{CLICKHOUSE_DATABASE_1:Identifier}
+JOIN {CLICKHOUSE_DATABASE_1:Identifier}.tbl USING (id)
+SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+
 -- The table name interpretation still takes precedence when the lookup behind it succeeds.
 SELECT {CLICKHOUSE_DATABASE_1:Identifier}.id
 FROM {CLICKHOUSE_DATABASE:Identifier}.{CLICKHOUSE_DATABASE_1:Identifier}
