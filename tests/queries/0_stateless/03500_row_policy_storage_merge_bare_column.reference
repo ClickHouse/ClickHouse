@@ -39,3 +39,15 @@ query alias equal to helper name, no optimizations
 1
 1
 0
+quoted column equal to predicate name, filters on a>1 not the column
+2	0
+3	0
+quoted column, single column
+2
+3
+quoted column, no optimizations
+2
+3
+quoted string column equal to predicate name
+2	r
+3	s

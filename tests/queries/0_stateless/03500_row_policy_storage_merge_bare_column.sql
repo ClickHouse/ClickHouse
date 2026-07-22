@@ -108,3 +108,46 @@ DROP ROW POLICY 03500_p_alias6 ON 03500_t6;
 DROP TABLE 03500_m5;
 DROP TABLE 03500_t6;
 DROP TABLE 03500_t5;
+
+-- A child table may have a real quoted column whose name equals the policy predicate's column name
+-- (e.g. `greater(a, 1)` for USING a > 1). The helper alias binds to the computed predicate node, not
+-- to that user column: the row-policy actions DAG's inputs are only the columns the predicate
+-- references (a), so the user column is not a node there and cannot shadow the predicate in
+-- findInOutputs. The Merge filters on a > 1, not on the user column, so no silent wrong result and no
+-- AMBIGUOUS_COLUMN_NAME. Values are chosen so a mis-bind would filter on the user column and return a
+-- different set (a = 0, 1) than the correct a > 1 (a = 2, 3).
+DROP TABLE IF EXISTS 03500_t7;
+DROP TABLE IF EXISTS 03500_m7;
+
+CREATE TABLE 03500_t7 (a Int32, `greater(a, 1)` UInt8) ENGINE = MergeTree ORDER BY a;
+INSERT INTO 03500_t7 VALUES (0, 1), (1, 1), (2, 0), (3, 0);
+CREATE TABLE 03500_m7 AS 03500_t7 ENGINE = Merge(currentDatabase(), '03500_t7');
+
+CREATE ROW POLICY 03500_p_quoted7 ON 03500_t7 USING a > 1 AS PERMISSIVE TO ALL;
+SELECT 'quoted column equal to predicate name, filters on a>1 not the column';
+SELECT * FROM 03500_m7 ORDER BY a;
+SELECT 'quoted column, single column';
+SELECT a FROM 03500_m7 ORDER BY a;
+SELECT 'quoted column, no optimizations';
+SELECT a FROM 03500_m7 ORDER BY a SETTINGS query_plan_enable_optimizations = 0;
+DROP ROW POLICY 03500_p_quoted7 ON 03500_t7;
+
+DROP TABLE 03500_m7;
+DROP TABLE 03500_t7;
+
+-- Same as above with a String-typed quoted column: a mis-bind would put a String where a UInt8 filter
+-- is expected and throw. It must instead filter on a > 1 and pass.
+DROP TABLE IF EXISTS 03500_t8;
+DROP TABLE IF EXISTS 03500_m8;
+
+CREATE TABLE 03500_t8 (a Int32, `greater(a, 1)` String) ENGINE = MergeTree ORDER BY a;
+INSERT INTO 03500_t8 VALUES (0, 'p'), (1, 'q'), (2, 'r'), (3, 's');
+CREATE TABLE 03500_m8 AS 03500_t8 ENGINE = Merge(currentDatabase(), '03500_t8');
+
+CREATE ROW POLICY 03500_p_quoted8 ON 03500_t8 USING a > 1 AS PERMISSIVE TO ALL;
+SELECT 'quoted string column equal to predicate name';
+SELECT * FROM 03500_m8 ORDER BY a;
+DROP ROW POLICY 03500_p_quoted8 ON 03500_t8;
+
+DROP TABLE 03500_m8;
+DROP TABLE 03500_t8;
