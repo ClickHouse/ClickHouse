@@ -13,6 +13,7 @@
 #include <DataTypes/Serializations/SerializationNullableWithParentNullMap.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Common/CurrentThread.h>
 #include <Common/assert_cast.h>
 
 
@@ -34,6 +35,14 @@ static bool isNullableTupleInExtractedSubcolumnsEnabledByGlobalSetting()
 {
     auto context = Context::getGlobalContextInstance();
     return context && context->getSettingsRef()[Setting::allow_nullable_tuple_in_extracted_subcolumns];
+}
+
+static bool isNullableArrayInExtractedSubcolumnsEnabledBySetting()
+{
+    auto context = CurrentThread::tryGetQueryContext();
+    if (!context)
+        context = Context::getGlobalContextInstance();
+    return context && context->getSettingsRef()[Setting::allow_experimental_nullable_array_type];
 }
 
 bool allowNullableArrayType(const Settings & settings)
@@ -237,7 +246,7 @@ void applyParentNullMapToExtractedSubcolumn(
 
 DataTypePtr NullableSubcolumnCreator::create(const DataTypePtr & prev) const
 {
-    if (isArray(prev))
+    if (isArray(prev) && isNullableArrayInExtractedSubcolumnsEnabledBySetting())
         return makeNullableAllowingArray(prev);
 
     /// Wrap into `Nullable(...)` when possible, or `LowCardinality(Nullable(T))` for a non-nullable
@@ -248,7 +257,7 @@ DataTypePtr NullableSubcolumnCreator::create(const DataTypePtr & prev) const
 
 SerializationPtr NullableSubcolumnCreator::create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const
 {
-    if (prev_type && isArray(prev_type))
+    if (prev_type && isArray(prev_type) && isNullableArrayInExtractedSubcolumnsEnabledBySetting())
         return SerializationNullable::create(prev_serialization);
     if (prev_type && !canExtractedSubcolumnsBeInsideNullable(prev_type))
     {
@@ -273,7 +282,7 @@ SerializationPtr NullableSubcolumnCreator::create(const SerializationPtr & prev_
 
 ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
 {
-    if (checkAndGetColumn<ColumnArray>(prev.get()))
+    if (checkAndGetColumn<ColumnArray>(prev.get()) && isNullableArrayInExtractedSubcolumnsEnabledBySetting())
         return ColumnNullable::create(prev, null_map);
     if (canExtractedSubcolumnsBeInsideNullable(prev))
         return ColumnNullable::create(prev, null_map);
