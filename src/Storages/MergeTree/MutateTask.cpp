@@ -38,6 +38,7 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeStatisticsBuildOptions.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/StatisticsSerialization.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
@@ -1591,6 +1592,7 @@ struct MutationContext
     /// truncating) the source's skp_idx.packed inode.
     NameSet preserved_skip_index_archive_file_names;
     ColumnsStatistics stats_to_recalc;
+    StatisticsBuildOptions statistics_build_options;
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
     NameSet files_to_skip;
     NameToNameVector files_to_rename;
@@ -1814,7 +1816,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             ctx->minmax_idx->update(cur_block, ctx->minmax_idx_columns);
 
         if (!ctx->all_gathered_data.statistics.empty())
-            ctx->all_gathered_data.statistics.buildIfExists(cur_block);
+            ctx->all_gathered_data.statistics.buildIfExists(cur_block, ctx->statistics_build_options);
 
         /// TODO: move this calculation to DELETE FROM mutation
         if (ctx->count_lightweight_deleted_rows)
@@ -3574,6 +3576,7 @@ bool MutateTask::prepare()
     ctx->mrk_extension = ctx->source_part->index_granularity_info.mark_type.getFileExtension();
 
     const auto data_settings = ctx->data->getSettings();
+    ctx->statistics_build_options = getStatisticsBuildOptions(*data_settings);
     ctx->need_sync = data_settings->needSyncPart(ctx->source_part->rows_count, ctx->source_part->getBytesOnDisk());
     ctx->execute_ttl_type = ExecuteTTLType::NONE;
 

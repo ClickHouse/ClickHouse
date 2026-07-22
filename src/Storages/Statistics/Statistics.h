@@ -1,10 +1,13 @@
 #pragma once
 
+#include <boost/core/noncopyable.hpp>
+#include <optional>
 #include <Core/Range.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <Storages/StatisticsDescription.h>
-#include <boost/core/noncopyable.hpp>
+#include <Storages/Statistics/StatisticsFwd.h>
+#include <Storages/Statistics/UniqAssumedAllDistinctPolicy.h>
 
 namespace DB
 {
@@ -54,8 +57,13 @@ struct StatisticsUtils
     static bool isSame(const IAggregateFunction & a, const IAggregateFunction & b);
 };
 
-class IStatistics;
-using StatisticsPtr = std::shared_ptr<IStatistics>;
+struct StatisticsBuildOptions
+{
+    bool assume_floats_distinct = false;
+    bool assume_long_strings_distinct = false;
+    UInt64 long_string_distinct_min_length = 64;
+    UInt64 long_string_distinct_probe_rows = 1000;
+};
 
 /// Interface for a single statistics object for a column within a part.
 ///
@@ -68,6 +76,7 @@ public:
     virtual ~IStatistics() = default;
 
     virtual void build(const ColumnPtr & column) = 0;
+    virtual void build(const ColumnPtr & column, const StatisticsBuildOptions & options);
     virtual void merge(const StatisticsPtr & other_stats) = 0;
 
     virtual void serialize(WriteBuffer & buf) = 0;
@@ -81,9 +90,11 @@ public:
     /// Returns std::nullopt when the statistics object cannot produce a meaningful estimate
     /// (e.g. the value cannot be converted to the column type).
     virtual Float64 estimateEqual(const Field & val) const; /// cardinality of val in the column
-    virtual std::optional<Float64> estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
+    virtual std::optional<Float64> estimateLess(const Field & val) const; /// summarized cardinality of values < val in the column
     virtual Float64 estimateRange(const Range & range) const;
     virtual String getNameForLogs() const = 0;
+
+    const SingleStatisticsDescription & getDescription() const { return stat; }
 
     /// Returns true iff `other` can be safely merged into this statistics object.
     /// Incompatible state layouts (e.g. a Nullable vs non-Nullable column type change that
@@ -114,13 +125,14 @@ using Estimates = std::unordered_map<String, Estimate>;
 class ColumnStatistics
 {
 public:
-    using StatsMap = std::map<StatisticsType, StatisticsPtr>;
+    using StatsMap = StatisticsMap;
     explicit ColumnStatistics(const ColumnStatisticsDescription & stats_desc_);
 
     void serialize(WriteBuffer & buf) const;
     static std::shared_ptr<ColumnStatistics> deserialize(ReadBuffer & buf, const DataTypePtr & data_type);
 
     void build(const ColumnPtr & column);
+    void build(const ColumnPtr & column, const StatisticsBuildOptions & options);
     void merge(const ColumnStatisticsPtr & other);
 
     UInt64 getNumRows() const { return rows; }
@@ -153,10 +165,14 @@ public:
     std::shared_ptr<ColumnStatistics> cloneEmpty() const;
 
 private:
+    void mergeRegularStatistics(
+        const ColumnStatisticsPtr & other, const std::optional<AssumedAllDistinctMergeDecision> & merge_decision);
+
     friend class MergeTreeStatisticsFactory;
     ColumnStatisticsDescription stats_desc;
     StatsMap stats;
     UInt64 rows = 0; /// the number of rows in the column
+    UniqAssumedAllDistinctPolicy assumed_all_distinct_policy;
 };
 
 class ColumnsStatistics : public std::map<String, ColumnStatisticsPtr>
@@ -172,7 +188,9 @@ public:
     ColumnsStatistics cloneEmpty() const;
 
     void build(const Block & block);
+    void build(const Block & block, const StatisticsBuildOptions & options);
     void buildIfExists(const Block & block);
+    void buildIfExists(const Block & block, const StatisticsBuildOptions & options);
     void merge(const ColumnsStatistics & other);
     Estimates getEstimates() const;
 };

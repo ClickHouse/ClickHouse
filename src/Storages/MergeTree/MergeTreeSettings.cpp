@@ -1946,6 +1946,18 @@ Comma-separated list of statistics types to calculate automatically on all suita
 Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
 The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
 )", 0) \
+    DECLARE(Bool, auto_statistics_assume_floats_distinct, false, R"(
+When enabled, automatic cardinality statistics for Float columns are materialized with an all-distinct assumption instead of scanning values.
+)", 0) \
+    DECLARE(Bool, auto_statistics_assume_long_strings_distinct, false, R"(
+When enabled, automatic cardinality statistics for String and FixedString columns whose probed average value length is at least [auto_statistics_long_string_distinct_min_length](#auto_statistics_long_string_distinct_min_length) are materialized with an all-distinct assumption instead of scanning all values.
+)", 0) \
+    DECLARE(UInt64, auto_statistics_long_string_distinct_min_length, 64, R"(
+Average string byte length threshold used by [auto_statistics_assume_long_strings_distinct](#auto_statistics_assume_long_strings_distinct).
+)", 0) \
+    DECLARE(UInt64, auto_statistics_long_string_distinct_probe_rows, 1000, R"(
+Number of initial rows probed to decide whether [auto_statistics_assume_long_strings_distinct](#auto_statistics_assume_long_strings_distinct) applies. Set to `0` to disable the long-string all-distinct assumption.
+)", 0) \
     DECLARE(UInt64, packed_skip_index_max_bytes, 0, R"(
 Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
 chain) below which a skip-index substream is bundled into a single `skp_idx.packed`

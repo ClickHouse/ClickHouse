@@ -6,23 +6,28 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
-#include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Storages/MergeTree/RPNBuilder.h>
-#include <Storages/Statistics/Statistics.h>
-#include <Storages/Statistics/StatisticsMinMax.h>
-#include <Storages/StatisticsDescription.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/Statistics/StatisticsTDigest.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/Statistics/Statistics.h>
+#include <Storages/Statistics/StatisticsAssumedAllDistinct.h>
+#include <Storages/Statistics/StatisticsMinMax.h>
+#include <Storages/Statistics/StatisticsTDigest.h>
+#include <Storages/StatisticsDescription.h>
+#include <Common/Exception.h>
 
 using namespace DB;
 
@@ -205,13 +210,130 @@ namespace
 /// Build a `ColumnStatistics` carrying the requested types over `data_type`.
 ColumnStatisticsPtr createTestStats(
     const std::vector<StatisticsType> & types,
-    const DataTypePtr & data_type)
+    const DataTypePtr & data_type,
+    bool is_implicit = false,
+    StatisticsMaterialization materialization = StatisticsMaterialization::Default)
 {
     ColumnStatisticsDescription desc;
     desc.data_type = data_type;
     for (auto type : types)
-        desc.types_to_desc.emplace(type, SingleStatisticsDescription(type, nullptr, false));
+        desc.types_to_desc.emplace(type, SingleStatisticsDescription(type, nullptr, is_implicit, materialization));
     return MergeTreeStatisticsFactory::instance().get(desc);
+}
+
+TEST(Statistics, AssumedCardinalityPolicyReplacesUniqLikeImplementation)
+{
+    auto data_type = std::make_shared<DataTypeFloat64>();
+
+    StatisticsBuildOptions options;
+    options.assume_floats_distinct = true;
+
+    auto implicit_stats = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/true);
+    auto implicit_column = data_type->createColumn();
+    for (UInt64 i = 0; i < 100; ++i)
+        implicit_column->insert(static_cast<Float64>(i % 5));
+
+    implicit_stats->build(static_cast<const IColumn &>(*implicit_column).getPtr(), options);
+    ASSERT_TRUE(implicit_stats->getStats().contains(StatisticsType::UniqV2));
+    EXPECT_TRUE(isAssumedAllDistinctStatistics(*implicit_stats->getStats().at(StatisticsType::UniqV2)));
+    EXPECT_EQ(implicit_stats->estimateCardinality(), 100);
+
+    auto explicit_stats = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/false);
+    auto explicit_column = data_type->createColumn();
+    for (UInt64 i = 0; i < 100; ++i)
+        explicit_column->insert(static_cast<Float64>(i % 5));
+
+    explicit_stats->build(static_cast<const IColumn &>(*explicit_column).getPtr(), options);
+    ASSERT_TRUE(explicit_stats->getStats().contains(StatisticsType::UniqV2));
+    EXPECT_TRUE(isAssumedAllDistinctStatistics(*explicit_stats->getStats().at(StatisticsType::UniqV2)));
+    EXPECT_EQ(explicit_stats->estimateCardinality(), 100);
+}
+
+TEST(Statistics, AssumedLongStringPolicyStopsBuildingUniqAfterProbeThreshold)
+{
+    auto data_type = std::make_shared<DataTypeString>();
+    auto stats = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/true);
+
+    StatisticsBuildOptions options;
+    options.assume_long_strings_distinct = true;
+    options.long_string_distinct_min_length = 64;
+    options.long_string_distinct_probe_rows = 10;
+
+    auto first_column = data_type->createColumn();
+    for (UInt64 i = 0; i < 5; ++i)
+        first_column->insert(String(80, 'x'));
+
+    stats->build(static_cast<const IColumn &>(*first_column).getPtr(), options);
+    ASSERT_TRUE(stats->getStats().contains(StatisticsType::UniqV2));
+    EXPECT_FALSE(isAssumedAllDistinctStatistics(*stats->getStats().at(StatisticsType::UniqV2)));
+
+    auto second_column = data_type->createColumn();
+    for (UInt64 i = 0; i < 10; ++i)
+        second_column->insert(String(80, 'x'));
+
+    stats->build(static_cast<const IColumn &>(*second_column).getPtr(), options);
+    ASSERT_TRUE(stats->getStats().contains(StatisticsType::UniqV2));
+    EXPECT_TRUE(isAssumedAllDistinctStatistics(*stats->getStats().at(StatisticsType::UniqV2)));
+    EXPECT_EQ(stats->estimateCardinality(), 15);
+}
+
+TEST(Statistics, AssumedCardinalityMergeConvertsAllLogicalUniqVariants)
+{
+    auto data_type = std::make_shared<DataTypeUInt64>();
+
+    auto uniq_stats = createTestStats({StatisticsType::Uniq, StatisticsType::UniqV2}, data_type);
+    auto uniq_column = data_type->createColumn();
+    for (UInt64 i = 0; i < 5; ++i)
+        uniq_column->insert(i);
+    uniq_stats->build(static_cast<const IColumn &>(*uniq_column).getPtr());
+
+    auto assumed_stats
+        = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/false, StatisticsMaterialization::AssumedAllDistinct);
+    auto assumed_column = data_type->createColumn();
+    for (UInt64 i = 0; i < 7; ++i)
+        assumed_column->insert(i);
+    assumed_stats->build(static_cast<const IColumn &>(*assumed_column).getPtr());
+
+    uniq_stats->merge(assumed_stats);
+    ASSERT_TRUE(uniq_stats->getStats().contains(StatisticsType::Uniq));
+    ASSERT_TRUE(uniq_stats->getStats().contains(StatisticsType::UniqV2));
+    EXPECT_TRUE(isAssumedAllDistinctStatistics(*uniq_stats->getStats().at(StatisticsType::Uniq)));
+    EXPECT_TRUE(isAssumedAllDistinctStatistics(*uniq_stats->getStats().at(StatisticsType::UniqV2)));
+    EXPECT_EQ(uniq_stats->estimateCardinality(), 12);
+}
+
+TEST(Statistics, AssumedAllDistinctRoundTripPreservesLogicalType)
+{
+    auto data_type = std::make_shared<DataTypeUInt64>();
+    auto stats = createTestStats({StatisticsType::UniqV2}, data_type, /*is_implicit=*/false, StatisticsMaterialization::AssumedAllDistinct);
+
+    auto column = data_type->createColumn();
+    for (UInt64 i = 0; i < 123; ++i)
+        column->insert(i);
+    stats->build(std::move(column));
+    EXPECT_EQ(stats->estimateCardinality(), 123);
+
+    String serialized;
+    WriteBufferFromString out(serialized);
+    stats->serialize(out);
+    out.finalize();
+
+    ReadBufferFromString version_in(serialized);
+    UInt16 version_raw{};
+    readIntBinary(version_raw, version_in);
+    EXPECT_EQ(static_cast<StatisticsFileVersion>(version_raw), StatisticsFileVersion::V4);
+    UInt64 stat_types_mask{};
+    readIntBinary(stat_types_mask, version_in);
+    EXPECT_TRUE(stat_types_mask & (1ULL << static_cast<UInt8>(StatisticsType::UniqV2AssumedAllDistinct)));
+    EXPECT_FALSE(stat_types_mask & (1ULL << static_cast<UInt8>(StatisticsType::UniqV2)));
+
+    ReadBufferFromString in(serialized);
+    auto restored = ColumnStatistics::deserialize(in, data_type);
+    ASSERT_TRUE(restored);
+    EXPECT_EQ(restored->getNumRows(), 123);
+    ASSERT_TRUE(restored->getStats().contains(StatisticsType::UniqV2));
+    EXPECT_TRUE(isAssumedAllDistinctStatistics(*restored->getStats().at(StatisticsType::UniqV2)));
+    EXPECT_EQ(restored->estimateCardinality(), 123);
 }
 
 /// Build a `Nullable(Int32)` column with `total` rows where every `null_every`-th row is NULL.

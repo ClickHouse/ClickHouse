@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
+#include <Storages/MergeTree/MergeTreeStatisticsBuildOptions.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/MergeTask.h>
@@ -177,9 +178,11 @@ class BuildStatisticsTransform final : public ISimpleTransform
 public:
     BuildStatisticsTransform(
         SharedHeader header,
-        ColumnsStatistics statistics_to_build_)
+        ColumnsStatistics statistics_to_build_,
+        StatisticsBuildOptions build_options_ = {})
         : ISimpleTransform(header, header, false)
-        , statistics_to_build(std::move(statistics_to_build_))
+        , statistics_to_build(statistics_to_build_)
+        , build_options(build_options_)
     {
     }
 
@@ -189,13 +192,14 @@ public:
     {
         auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
-        statistics_to_build.buildIfExists(block);
+        statistics_to_build.buildIfExists(block, build_options);
     }
 
     const ColumnsStatistics & getStatistics() const { return statistics_to_build; }
 
 private:
     ColumnsStatistics statistics_to_build;
+    StatisticsBuildOptions build_options;
 };
 
 class BuildStatisticsStep : public ITransformingStep
@@ -2976,7 +2980,8 @@ BuildStatisticsTransformPtr MergeTask::addBuildStatisticsStep(QueryPlan & plan, 
 
     auto transform = std::make_shared<BuildStatisticsTransform>(
         plan.getCurrentHeader(),
-        std::move(statistics_to_build));
+        std::move(statistics_to_build),
+        getStatisticsBuildOptions(*global_ctx->data_settings));
 
     auto build_statistics_step = std::make_unique<BuildStatisticsStep>(plan.getCurrentHeader(), transform);
     plan.addStep(std::move(build_statistics_step));

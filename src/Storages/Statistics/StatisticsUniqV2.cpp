@@ -1,11 +1,12 @@
-#include <Storages/Statistics/StatisticsUniqV2.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnSparse.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/Statistics/StatisticsUniqV2.h>
+#include <Storages/Statistics/StatisticsUniqBuildProbe.h>
 
 namespace DB
 {
@@ -37,23 +38,8 @@ StatisticsUniqV2::~StatisticsUniqV2()
 
 void StatisticsUniqV2::build(const ColumnPtr & column)
 {
-    const IColumn * raw_column_ptr = nullptr;
-
-    /// For sparse and low cardinality columns an extra default
-    /// value may be added. That is ok since the uniq count is an estimation.
-    if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(column.get()))
-    {
-        raw_column_ptr = &column_sparse->getValuesColumn();
-    }
-    else if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
-    {
-        raw_column_ptr = column_low_cardinality->getDictionary().getNestedColumn().get();
-    }
-    else
-    {
-        raw_column_ptr = column.get();
-    }
-
+    auto raw_column = getRawColumnForUniqBuild(column);
+    const IColumn * raw_column_ptr = raw_column.get();
     collector->addBatchSinglePlace(0, raw_column_ptr->size(), data, &(raw_column_ptr), nullptr);
 }
 
