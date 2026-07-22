@@ -502,9 +502,9 @@ void BackupImpl::writeBackupMetadata()
         *out << "<name>" << xml << info.file_name << "</name>";
         *out << "<size>" << info.size << "</size>";
 
-        if (!info.object_key.empty())
+        if (!info.getObjectKey().empty())
         {
-            *out << "<object_key>" << info.object_key << "</object_key>";
+            *out << "<object_key>" << info.getObjectKey() << "</object_key>";
             if (original_endpoint.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "In lightweight snapshot backup, the endpoint should not be empty. Do not run this command with `ON CLUSTER`");
         }
@@ -681,7 +681,8 @@ void BackupImpl::readBackupMetadata()
         BackupFileInfo info;
         info.file_name = req("name");
         validateFileNameFromBackup(info.file_name, "name", backup_name_for_logging);
-        info.object_key = opt("object_key", "");
+        if (String object_key = opt("object_key", ""); !object_key.empty())
+            info.ensureExtras().object_key = std::move(object_key);
         info.size = to_uint64(req("size"), "size");
         if (info.size)
         {
@@ -720,7 +721,7 @@ void BackupImpl::readBackupMetadata()
         }
 
         file_names.emplace(info.file_name, std::pair{info.size, info.checksum});
-        if (!info.object_key.empty())
+        if (!info.getObjectKey().empty())
         {
             if (original_endpoint.empty() || original_namespace.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "In lightweight snapshot backup, the endpoint or namespace should be not empty. We cannot restore this file.");
@@ -728,8 +729,8 @@ void BackupImpl::readBackupMetadata()
             if (open_mode == OpenMode::READ)
                 lightweight_snapshot_reader = lightweight_snapshot_reader_creator(original_endpoint, original_namespace);
 
-            file_object_keys.emplace(info.file_name, info.object_key);
-            lightweight_snapshot_file_infos.try_emplace(info.object_key, info);
+            file_object_keys.emplace(info.file_name, info.getObjectKey());
+            lightweight_snapshot_file_infos.try_emplace(info.getObjectKey(), info);
         }
         else if (info.size)
             file_infos.try_emplace(std::pair{info.size, info.checksum}, info);
@@ -965,10 +966,10 @@ std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFileByObjectKey(const Ba
     if (open_mode == OpenMode::WRITE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
-    if (info.object_key.empty())
+    if (info.getObjectKey().empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Object key of {} is empty string", info.data_file_name);
 
-    return lightweight_snapshot_reader->readFile(info.object_key);
+    return lightweight_snapshot_reader->readFile(info.getObjectKey());
 }
 
 std::unique_ptr<ReadBufferFromFileBase>
@@ -1267,7 +1268,7 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
         };
     }
 
-    std::ranges::for_each(info.data_file_copies, copy_file_inside_backup);
+    std::ranges::for_each(info.getDataFileCopies(), copy_file_inside_backup);
 
     {
         std::lock_guard lock{mutex};

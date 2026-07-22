@@ -108,7 +108,7 @@ void BackupCoordinationFileInfos::prepare() const
                     ErrorCodes::LOGICAL_ERROR,
                     "Couldn't resolve reference {} with target {}",
                     reference->file_name,
-                    reference->reference_target);
+                    reference->getReferenceTarget());
         }
     };
 
@@ -116,13 +116,13 @@ void BackupCoordinationFileInfos::prepare() const
     {
         const auto try_resolve_reference = [&](BackupFileInfo & reference)
         {
-            auto it = file_name_to_info.find(reference.reference_target);
+            auto it = file_name_to_info.find(reference.getReferenceTarget());
 
             if (it == file_name_to_info.end())
                 return false;
 
             auto & target_info = it->second;
-            target_info->data_file_copies.push_back(reference.file_name);
+            target_info->ensureExtras().data_file_copies.push_back(reference.file_name);
             copyFileInfoToReference(*target_info, reference);
             total_size_of_files += reference.size;
             return true;
@@ -137,7 +137,7 @@ void BackupCoordinationFileInfos::prepare() const
             info.base_size = 0; /// Base backup must not be used while creating a plain backup.
             info.base_checksum = 0;
 
-            if (info.reference_target.empty())
+            if (info.getReferenceTarget().empty())
             {
                 file_name_to_info.emplace(info.file_name, &info);
                 total_size_of_files += info.size;
@@ -156,7 +156,7 @@ void BackupCoordinationFileInfos::prepare() const
     {
         const auto try_resolve_reference = [&](BackupFileInfo & reference)
         {
-            auto it = file_name_to_info.find(reference.reference_target);
+            auto it = file_name_to_info.find(reference.getReferenceTarget());
 
             if (it == file_name_to_info.end())
                 return false;
@@ -176,7 +176,7 @@ void BackupCoordinationFileInfos::prepare() const
         {
             auto & info = *(file_infos_for_all_hosts[i]);
 
-            if (!info.reference_target.empty())
+            if (!info.getReferenceTarget().empty())
             {
                 if (!try_resolve_reference(info))
                     unresolved_references.push_back(&info);

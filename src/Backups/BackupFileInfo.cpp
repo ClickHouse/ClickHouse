@@ -90,15 +90,15 @@ String BackupFileInfo::describe() const
     String result;
     result += fmt::format("file_name: {};\n", file_name);
     result += fmt::format("size: {};\n", size);
-    result += fmt::format("object_key: {};\n", object_key);
+    result += fmt::format("object_key: {};\n", getObjectKey());
     result += fmt::format("checksum: {};\n", getHexUIntLowercase(checksum));
     result += fmt::format("base_size: {};\n", base_size);
     result += fmt::format("base_checksum: {};\n", getHexUIntLowercase(checksum));
     result += fmt::format("data_file_name: {};\n", data_file_name);
     result += fmt::format("data_file_index: {};\n", data_file_index);
     result += fmt::format("encrypted_by_disk: {};\n", encrypted_by_disk);
-    if (!reference_target.empty())
-        result += fmt::format("reference_target: {};\n", reference_target);
+    if (!getReferenceTarget().empty())
+        result += fmt::format("reference_target: {};\n", getReferenceTarget());
     return result;
 }
 
@@ -118,7 +118,7 @@ BackupFileInfo buildFileInfoForBackupEntry(
     /// If it's a "reference" just set the target to a concrete file
     if (backup_entry->isReference())
     {
-        info.reference_target = removeLeadingSlash(backup_entry->getReferenceTarget());
+        info.ensureExtras().reference_target = removeLeadingSlash(backup_entry->getReferenceTarget());
         return info;
     }
 
@@ -127,7 +127,7 @@ BackupFileInfo buildFileInfoForBackupEntry(
 
     if (backup_entry->isFromRemoteFile())
     {
-        info.object_key = backup_entry->getRemotePath();
+        info.ensureExtras().object_key = backup_entry->getRemotePath();
         return info;
     }
 

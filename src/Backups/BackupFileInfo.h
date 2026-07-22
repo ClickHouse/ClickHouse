@@ -4,6 +4,8 @@
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Logger.h>
 
+#include <memory>
+
 namespace DB
 {
 
@@ -15,7 +17,6 @@ using BackupEntries = std::vector<std::pair<String, BackupEntryPtr>>;
 struct ReadSettings;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
-
 
 /// Information about a file stored in a backup.
 struct BackupFileInfo
@@ -40,16 +41,56 @@ struct BackupFileInfo
     /// Whether this file is encrypted by an encrypted disk.
     bool encrypted_by_disk = false;
 
-    /// Set if this file is just a reference to another file
-    String reference_target;
+    /// Fields that are only populated for a minority of entries (references, plain backups, lightweight
+    /// snapshots). They are kept out of line so a regular backup - which can contain millions of files -
+    /// pays only a null pointer for them instead of several empty strings per entry.
+    struct Extras
+    {
+        /// Set if this file is just a reference to another file.
+        String reference_target;
 
-    /// (While writing a backup) if this list is not empty then after writing
-    /// `data_file_name` it should be copied to this list of destinations too.
-    /// This is used for plain backups.
-    Strings data_file_copies;
+        /// (While writing a backup) if this list is not empty then after writing `data_file_name`
+        /// it should be copied to this list of destinations too. Used for plain backups.
+        Strings data_file_copies;
 
-    /// if this file uses lightwegith backup, we only store object key in the metafile.
-    String object_key;
+        /// If this file uses a lightweight backup, we only store the object key in the metafile.
+        String object_key;
+
+#if CLICKHOUSE_CLOUD
+        /// Name of the disk where the remote object identified by object_key is stored (snapshot entries).
+        String disk_name;
+#endif
+    };
+
+    /// Shared, not owned, because BackupFileInfo is copyable (e.g. copied by getFileInfos()). Extras is
+    /// only written at construction / during coordination `prepare()`, before any copy is made, so
+    /// sharing it between copies is safe.
+    std::shared_ptr<Extras> extras;
+
+    Extras & ensureExtras()
+    {
+        if (!extras)
+            extras = std::make_shared<Extras>();
+        return *extras;
+    }
+
+    static const String & emptyString()
+    {
+        static const String empty;
+        return empty;
+    }
+
+    const String & getReferenceTarget() const { return extras ? extras->reference_target : emptyString(); }
+    const String & getObjectKey() const { return extras ? extras->object_key : emptyString(); }
+    bool hasDataFileCopies() const { return extras && !extras->data_file_copies.empty(); }
+    const Strings & getDataFileCopies() const
+    {
+        static const Strings empty;
+        return extras ? extras->data_file_copies : empty;
+    }
+#if CLICKHOUSE_CLOUD
+    const String & getDiskName() const { return extras ? extras->disk_name : emptyString(); }
+#endif
 
     struct LessByFileName
     {
