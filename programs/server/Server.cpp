@@ -1473,10 +1473,11 @@ try
     bool has_trace_collector = config().has("trace_log");
     LOG_INFO(log, "Query Profiler will use frame-pointer-based stack unwinding under sanitizers.");
 #else
-    bool has_trace_collector = hasPHDRCache() && config().has("trace_log");
-    if (!hasPHDRCache())
-        LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
-            " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
+    bool has_trace_collector = hasAsyncSignalSafeUnwind() && config().has("trace_log");
+    if (!hasAsyncSignalSafeUnwind())
+        LOG_INFO(log, "Query Profiler and TraceCollector are disabled because async-signal-safe stack unwinding"
+            " is not available in this build (on Linux this requires the lock-free PHDR cache, otherwise"
+            " 'dl_iterate_phdr' is not lock free and not async-signal safe).");
 #endif
 
     // Settings validation for page cache. Ensure that page_cache_max_size is > page_cache_min_size.
