@@ -1,6 +1,6 @@
 ---
 slug: /optimize/query-optimization
-sidebarTitle: 'Query optimization'
+sidebarTitle: 'Overview'
 title: 'A simple guide for query optimization'
 description: 'A simple guide for query optimization that describe common path to improve query performance'
 doc_type: 'guide'
@@ -27,27 +27,39 @@ To understand query performance, let's look at what happens in ClickHouse when a
 
 The following part is deliberately simplified and takes some shortcuts; the idea here isn't to drown you with details but to get you up to speed with the basic concepts. For more information you can read about [query analyzer](/guides/clickhouse/performance-and-monitoring/analyzer).
 
-From a very high-level standpoint, when ClickHouse executes a query, the following happens:
+From a very high-level standpoint, ClickHouse processes a query in four stages:
 
-- **Query parsing and analysis**
+<Steps>
+<Step title="Parse and analyze the query" id="parse-and-analyze-the-query">
+ClickHouse parses and analyzes the query, then creates a generic query execution plan.
+</Step>
 
-The query is parsed and analyzed, and a generic query execution plan is created.
+<Step title="Optimize the query plan" id="optimize-the-query-plan">
+ClickHouse optimizes the query execution plan, prunes unnecessary data, and builds a query pipeline from the plan.
+</Step>
 
-- **Query optimization**
+<Step title="Execute the query pipeline" id="execute-the-query-pipeline">
+ClickHouse reads and processes data in parallel, including filtering, aggregation, and sorting.
+</Step>
 
-The query execution plan is optimized, unnecessary data is pruned, and a query pipeline is built from the query plan.
-
-- **Query pipeline execution**
-
-The data is read and processed in parallel. This is the stage where ClickHouse actually executes the query operations such as filtering, aggregations, and sorting.
-
-- **Final processing**
-
-The results are merged, sorted, and formatted into a final result before being sent to the client.
+<Step title="Prepare the result" id="prepare-the-result">
+ClickHouse merges, sorts, and formats the result before sending it to the client.
+</Step>
+</Steps>
 
 In reality, many [optimizations](/get-started/about/why-clickhouse-is-so-fast) are taking place, and we will discuss them a bit more in this guide, but for now, those main concepts give us a good understanding of what is happening behind the scenes when ClickHouse executes a query.
 
 With this high-level understanding, let's examine the tooling ClickHouse provides and how we can use it to track the metrics that affect query performance.
+
+## Optimization framework {#optimization-framework}
+
+Approach query optimization in three layers:
+
+1. Start with efficient fundamentals, including appropriate data types and avoiding unnecessary `Nullable` columns.
+2. Filter efficiently so that ClickHouse reads only the data required by the query.
+3. Move repeatable work from query time to ingestion time when appropriate, for example with materialized views.
+
+The diagnostic guides in this section focus primarily on the second layer. They help you identify how much data a query reads and which part of the query warrants further investigation before you choose an intervention.
 
 ## Optimization workflow {#optimization-workflow}
 
@@ -64,20 +76,21 @@ Query optimization starts with understanding where a query spends its time. Inst
 
 ## Guides in this section {#guides-in-this-section}
 
-<CardGroup cols={2}>
-  <Card title="Diagnose slow queries" icon="magnifying-glass" href="/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries">
+The guides follow the sequence below, but each can also be used independently.
+
+<CardGroup cols={1}>
+  <Card title="1. Diagnose slow queries" icon="magnifying-glass" href="/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries">
     Find recurring slow queries and inspect their execution characteristics.
   </Card>
-  <Card title="Isolate query bottlenecks" icon="layer-group" href="/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks">
+  <Card title="2. Isolate query bottlenecks" icon="layer-group" href="/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks">
     Establish a repeatable baseline and isolate the work responsible for query latency.
   </Card>
-  <Card title="Worked optimization example" icon="flask" href="/guides/clickhouse/performance-and-monitoring/query-optimization-example">
+  <Card title="3. Worked optimization example" icon="flask" href="/guides/clickhouse/performance-and-monitoring/query-optimization-example">
     Follow schema and ordering-key improvements using the NYC Taxi dataset.
   </Card>
-  <Card title="Understand query execution" icon="diagram-project" href="/guides/developer/understanding-query-execution-with-the-analyzer">
-    Learn how the analyzer builds and optimizes a query execution plan.
-  </Card>
 </CardGroup>
+
+For a deeper explanation of query plans and pipelines, see [Understand query execution](/guides/developer/understanding-query-execution-with-the-analyzer).
 
 ## Related optimization guidance {#related-optimization-guidance}
 
