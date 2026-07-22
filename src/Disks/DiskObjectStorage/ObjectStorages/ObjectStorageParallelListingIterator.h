@@ -76,6 +76,11 @@ namespace DB
 /// budget (any realistic parallelism) see no change, while pathological fan-outs are capped at the budget
 /// instead of growing with `num_threads * page_size`.
 ///
+/// The listed objects buffered ahead of the consumer (`ready_batches`) are bounded the same way, by a hard
+/// byte budget (`max_buffered_object_bytes`) in addition to the caller's count cap — see
+/// `DEFAULT_MAX_BUFFERED_OBJECT_BYTES`. Here blocking the producers is safe (the consumer drains the buffer
+/// independently of the worker pool), so workers simply wait for space before listing another page.
+///
 /// The iterator is storage-agnostic: it drives a caller-provided `list_level` callback (one delimited
 /// page of one prefix per call, optionally resuming after a key) and a `should_descend` callback.
 class ObjectStorageParallelListingIterator final : public IObjectStorageIterator
@@ -86,6 +91,15 @@ public:
     /// never trims (a range is typically well under a KiB, so this holds tens of thousands of them) while
     /// the pathological `num_threads * page_size` fan-out is capped here instead of reaching hundreds of MB.
     static constexpr size_t DEFAULT_MAX_PENDING_RANGE_BYTES = 32 * 1024 * 1024;
+
+    /// Hard budget on the total bytes of listed objects buffered ahead of the consumer (`ready_batches`).
+    /// The count cap (`max_buffered_keys`) passed by the caller scales with the user-set parallelism and
+    /// page size, so at extreme settings it alone would admit millions of buffered `RelativePathWithMetadata`
+    /// entries; this byte budget bounds the buffered-object memory independently of those settings. Unlike
+    /// pending ranges, buffered objects are drained by the external consumer, so workers can safely *block*
+    /// on this budget (no deadlock): a worker publishes its already-listed page (the budget is checked
+    /// before listing the next one), which keeps the overshoot to at most one in-flight page per worker.
+    static constexpr size_t DEFAULT_MAX_BUFFERED_OBJECT_BYTES = 32 * 1024 * 1024;
 
     /// Lists a single delimited page. `start_after` (honored only on the first call of a listing, i.e.
     /// when `continuation_token` is empty) resumes strictly after that key; `continuation_token`
@@ -113,6 +127,8 @@ public:
     /// variables), so the listing fails fast instead of hanging. Empty in non-query contexts (tests).
     /// `max_pending_range_bytes` is the hard pending-range byte budget described in the class comment;
     /// overridable only so tests can shrink it to force trimming on small fixtures.
+    /// `max_buffered_object_bytes` is the hard byte budget on buffered listed objects (see
+    /// `DEFAULT_MAX_BUFFERED_OBJECT_BYTES`); overridable only so tests can shrink it.
     ObjectStorageParallelListingIterator(
         std::string root_prefix_,
         size_t num_threads_,
@@ -122,7 +138,8 @@ public:
         std::function<bool(const std::string & common_prefix)> should_descend_,
         bool allow_keyspace_split_ = true,
         std::function<void()> check_cancellation_ = {},
-        size_t max_pending_range_bytes_ = DEFAULT_MAX_PENDING_RANGE_BYTES);
+        size_t max_pending_range_bytes_ = DEFAULT_MAX_PENDING_RANGE_BYTES,
+        size_t max_buffered_object_bytes_ = DEFAULT_MAX_BUFFERED_OBJECT_BYTES);
 
     ~ObjectStorageParallelListingIterator() override;
 
@@ -145,6 +162,11 @@ public:
     /// minimum kept for progress, a couple of ranges per tree level of each worker's active depth-first
     /// path — regardless of the width of the layout being listed.
     size_t getPeakPendingRangeBytes() const;
+
+    /// For tests/observability: the high-water mark of the total bytes of listed objects buffered ahead of
+    /// the consumer. Stays within `max_buffered_object_bytes` plus at most one in-flight page per worker
+    /// (the budget is checked before a worker lists its next page, never blocking an already-listed one).
+    size_t getPeakBufferedObjectBytes() const;
 
 private:
     /// A half-open keyspace range `(start_after, end)` of keys under `prefix` left to list.
@@ -217,9 +239,14 @@ private:
         std::unique_lock<std::mutex> & lock) const;
     /// Approximate heap + struct footprint of one pending range, the unit of the byte budget.
     static size_t rangeBytes(const ListRange & range);
+    /// Approximate heap + struct footprint of one buffered batch of listed objects, the unit of the
+    /// buffered-object byte budget.
+    static size_t batchBytes(const RelativePathsWithMetadata & batch);
 
     const size_t num_threads;
     const size_t max_buffered_objects;
+    /// Hard byte budget on buffered listed objects (`ready_batches`); see the public constant.
+    const size_t max_buffered_object_bytes;
     /// Cap on the shared pending-range queue. Discovered ranges beyond it stay on the discovering worker's
     /// private frontier (walked depth-first), so the shared queue never grows without limit; it is sized to
     /// keep every worker fed with stealable work while staying small.
@@ -261,6 +288,10 @@ private:
 
     std::deque<RelativePathsWithMetadata> ready_batches;
     size_t buffered_objects = 0;
+    /// Total approximate bytes of the batches in `ready_batches`, kept within `max_buffered_object_bytes`
+    /// by worker backpressure, and its high-water mark, for tests.
+    size_t buffered_object_bytes = 0;
+    size_t peak_buffered_object_bytes = 0;
 
     bool started = false;
     bool finished = false;

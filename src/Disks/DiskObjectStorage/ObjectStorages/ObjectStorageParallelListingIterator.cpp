@@ -49,9 +49,11 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     std::function<bool(const std::string & common_prefix)> should_descend_,
     bool allow_keyspace_split_,
     std::function<void()> check_cancellation_,
-    size_t max_pending_range_bytes_)
+    size_t max_pending_range_bytes_,
+    size_t max_buffered_object_bytes_)
     : num_threads(std::max<size_t>(num_threads_, 1))
     , max_buffered_objects(std::max<size_t>(max_buffered_keys_, 1))
+    , max_buffered_object_bytes(std::max<size_t>(max_buffered_object_bytes_, 1))
     /// Keep the shared queue big enough to feed every worker with stealable work, but bounded (independent
     /// of the listing size): the bulk of a wide walk lives on the workers' private depth-first frontiers.
     , max_pending_ranges(std::max<size_t>(num_threads * 4, 64))
@@ -86,6 +88,14 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
 size_t ObjectStorageParallelListingIterator::rangeBytes(const ListRange & range)
 {
     return sizeof(ListRange) + range.prefix.size() + range.start_after.size() + range.end.size() + range.continuation_token.size();
+}
+
+size_t ObjectStorageParallelListingIterator::batchBytes(const RelativePathsWithMetadata & batch)
+{
+    size_t bytes = sizeof(RelativePathsWithMetadata) + batch.capacity() * sizeof(RelativePathWithMetadataPtr);
+    for (const auto & object : batch)
+        bytes += sizeof(RelativePathWithMetadata) + object->relative_path.size();
+    return bytes;
 }
 
 ObjectStorageParallelListingIterator::~ObjectStorageParallelListingIterator()
@@ -269,6 +279,8 @@ void ObjectStorageParallelListingIterator::enqueueLocked(
     if (!batch.empty())
     {
         buffered_objects += batch.size();
+        buffered_object_bytes += batchBytes(batch);
+        peak_buffered_object_bytes = std::max(peak_buffered_object_bytes, buffered_object_bytes);
         ready_batches.push_back(std::move(batch));
         result_available.notify_one();
     }
@@ -453,7 +465,13 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
         {
             {
                 std::unique_lock lock(mutex);
-                space_available.wait(lock, [this] { return buffered_objects < max_buffered_objects || finished || stop; });
+                space_available.wait(
+                    lock,
+                    [this]
+                    {
+                        return (buffered_objects < max_buffered_objects && buffered_object_bytes < max_buffered_object_bytes)
+                            || finished || stop;
+                    });
                 if (stop || finished)
                     return true;
             }
@@ -612,6 +630,9 @@ std::optional<RelativePathsWithMetadata> ObjectStorageParallelListingIterator::p
     auto batch = std::move(ready_batches.front());
     ready_batches.pop_front();
     buffered_objects -= batch.size();
+    const size_t bytes = batchBytes(batch);
+    chassert(buffered_object_bytes >= bytes);
+    buffered_object_bytes -= bytes;
     accumulated_size.fetch_add(batch.size(), std::memory_order_relaxed);
     space_available.notify_all();
     return batch;
@@ -723,6 +744,12 @@ size_t ObjectStorageParallelListingIterator::getPeakPendingRangeBytes() const
 {
     std::lock_guard lock(mutex);
     return peak_pending_range_bytes;
+}
+
+size_t ObjectStorageParallelListingIterator::getPeakBufferedObjectBytes() const
+{
+    std::lock_guard lock(mutex);
+    return peak_buffered_object_bytes;
 }
 
 }

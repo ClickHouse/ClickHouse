@@ -1607,6 +1607,10 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
             if (auto query_status = local_context->getProcessListElementSafe())
                 check_cancellation = [query_status] { query_status->throwIfKilled(); };
 
+            /// The count cap below scales with the user-set parallelism and page size, so on its own it
+            /// would admit millions of buffered keys at extreme settings; the iterator's built-in
+            /// buffered-object byte budget (`DEFAULT_MAX_BUFFERED_OBJECT_BYTES`) bounds the buffered-key
+            /// memory independently of these settings.
             object_storage_iterator = std::make_shared<ObjectStorageParallelListingIterator>(
                 key_prefix,
                 parallelism,

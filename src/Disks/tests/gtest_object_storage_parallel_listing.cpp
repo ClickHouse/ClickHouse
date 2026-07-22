@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <future>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -538,6 +539,45 @@ TEST(ObjectStorageParallelListing, PendingRangeByteBudgetIsHard)
         const size_t peak = iterator.getPeakPendingRangeBytes();
         EXPECT_LE(peak, budget + threads * 2 * 3 * 300)
             << "pending-range bytes grew to " << peak << " despite a budget of " << budget
+            << " (threads=" << threads << ")";
+    }
+}
+
+TEST(ObjectStorageParallelListing, BufferedObjectByteBudgetBoundsSlowConsumer)
+{
+    /// Regression test: the listed objects buffered ahead of the consumer (`ready_batches`) are capped by a
+    /// hard *byte* budget, not only by the caller's count cap. Production derives that count cap from
+    /// `list_object_keys_size * parallelism * 2`, so at extreme settings it alone would admit millions of
+    /// buffered keys (hundreds of MB); here the count cap is made deliberately inert (huge) so any bound on
+    /// the buffered bytes can only come from the byte budget. Workers may safely block on it because the
+    /// buffer is drained by the external consumer, and the budget is checked before a worker lists its next
+    /// page, so the only overshoot is one already-listed in-flight page per worker.
+    FakeS3 s3;
+    s3.page_size = 50;
+    constexpr size_t num_keys = 20000;
+    for (size_t i = 0; i < num_keys; ++i)
+        s3.add("big/" + hexName(i) + ".txt.zst");
+    s3.finalize();
+    const auto expected = expectedUnder(s3, "big/");
+
+    constexpr size_t budget = 4096; /// far below the ~MBs the full key set would occupy if buffered at once
+    /// One page is 50 keys; a buffered entry (shared_ptr + struct + ~25-char key) is well under 600 bytes,
+    /// so one in-flight page per worker stays under this per-thread slack.
+    constexpr size_t page_slack = 50 * 600;
+    for (size_t threads : {1, 4, 16})
+    {
+        ObjectStorageParallelListingIterator iterator(
+            "big/", threads, /* max_buffered_keys */ std::numeric_limits<size_t>::max(),
+            makeListLevel(s3), makeProbeLevel(s3), descendAll,
+            /* allow_keyspace_split */ true, /* check_cancellation */ {},
+            ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES, budget);
+        auto got = drain(iterator);
+        std::sort(got.begin(), got.end());
+        EXPECT_EQ(got, expected) << "threads=" << threads;
+
+        const size_t peak = iterator.getPeakBufferedObjectBytes();
+        EXPECT_LE(peak, budget + threads * page_slack)
+            << "buffered-object bytes grew to " << peak << " despite a budget of " << budget
             << " (threads=" << threads << ")";
     }
 }
