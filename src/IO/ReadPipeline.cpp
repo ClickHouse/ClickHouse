@@ -27,6 +27,7 @@
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/SilkScheduler.h>
 #include <Common/logger_useful.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -449,6 +450,13 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     executor_options.max_tail_for_drain = settings.reader_executor.max_tail_for_drain;
     executor_options.fill_ahead_lead = settings.reader_executor.fill_ahead_lead;
     executor_options.prefetch_pool = prefetch_pool;
+    /// Fibers replace the pool as the read-ahead substrate but must respect the same async
+    /// gate the caller applied to the pool: no `prefetch_pool` attached means the caller
+    /// requires synchronous reads (`remote_filesystem_read_method='read'`), fibers included.
+    executor_options.use_fiber_runner = settings.reader_executor.use_fiber_runner && executor_options.prefetch_pool != nullptr;
+    if (executor_options.use_fiber_runner && !isSilkSchedulerInitialized())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Setting reader_executor_use_fibers requires the server setting disk_connections_use_silk (Silk scheduler is not running)");
     executor_options.long_connection_limit = long_connection_limit;
     if (settings.reader_executor.log_enabled)
     {

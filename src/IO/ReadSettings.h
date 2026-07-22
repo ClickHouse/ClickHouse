@@ -169,6 +169,8 @@ struct ReadSettings
         /// Fill-ahead (prefetch) lead. Not user-facing; internal readers
         /// (merges) shrink it for streaming patterns.
         size_t fill_ahead_lead = 16 * 1_MiB;
+        /// Run fetch steps as Silk fibers (requires a running Silk scheduler).
+        bool use_fiber_runner = false;
     };
     ReaderExecutorSettings reader_executor;
 

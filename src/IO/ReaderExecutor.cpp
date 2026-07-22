@@ -2,6 +2,7 @@
 #include <IO/PrefetchThreadPool.h>
 #include <IO/FetchMachineRunner.h>
 #include <IO/LocalFetchMachineRunner.h>
+#include <IO/FiberFetchMachineRunner.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -39,6 +40,7 @@ namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace DB::FailPoints
@@ -90,6 +92,29 @@ ReaderExecutorFetchMachine::ReaderExecutorFetchMachine()
 {
 }
 
+namespace
+{
+
+/// Selects the async read-ahead runner: a Silk fiber runner when requested (Silk build only -
+/// otherwise fails fast, no silent fallback to the pool), else the pool runner when a pool was
+/// provided, else null (no async read-ahead).
+std::unique_ptr<IFetchMachineRunner> makeReadAheadRunner(
+    bool use_fiber_runner, const std::shared_ptr<PrefetchThreadPool> & prefetch_pool)
+{
+#if USE_SILK
+    if (use_fiber_runner)
+        return std::make_unique<FiberFetchMachineRunner>();
+#else
+    if (use_fiber_runner)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Reader executor fiber runner requires a build with Silk");
+#endif
+    if (prefetch_pool)
+        return std::make_unique<PoolFetchMachineRunner>(prefetch_pool);
+    return nullptr;
+}
+
+}
+
 // ─── Construction / teardown ───────────────────────────────────────────────
 
 ReaderExecutor::ReaderExecutor(
@@ -111,7 +136,7 @@ ReaderExecutor::ReaderExecutor(
     , long_connection_max_bound(options.long_connection_max_bound)
     , fill_ahead_lead(options.fill_ahead_lead)
     , prefetch_pool(std::move(options.prefetch_pool))
-    , runner(prefetch_pool ? std::make_unique<PoolFetchMachineRunner>(prefetch_pool) : nullptr)
+    , runner(makeReadAheadRunner(options.use_fiber_runner, prefetch_pool))
     , local_runner(std::make_unique<LocalFetchMachineRunner>())
     , long_connection_limit(std::move(options.long_connection_limit))
     , reader_executor_log(std::move(options.reader_executor_log))
@@ -1854,14 +1879,14 @@ void ReaderExecutor::launchRetrieve(size_t ri)
     if (chunk == capacity && capacity < fillAheadLead() / 2 && base + chunk < r.range.end())
         return;
 
-    /// Read-ahead runs on the pool (async), committing cells progressively; the serve cursor
-    /// reads the committed prefix live.
+    /// Read-ahead runs on the async runner (pool thread or Silk fiber), committing cells
+    /// progressively; the serve cursor reads the committed prefix live.
     launchMachineForWindow(ri, ByteRange{base, chunk}, *runner);
 }
 
 void ReaderExecutor::prefetch()
 {
-    if (!prefetch_pool)
+    if (!runner)
         return;
     /// Finalize the in-flight machine FIRST - before the `atEnd()` early-return below, so the
     /// machine that fills the tail up to the extent/EOF is still collected. Collect as soon as

@@ -167,6 +167,8 @@ public:
         /// file's encryption headers (see `DiskEncrypted::prepareRead`).
         std::shared_ptr<EncryptionHeaderCache> encryption_header_cache;
         std::shared_ptr<ReaderExecutorLog> reader_executor_log;
+        /// Drive read-ahead fetch machines on Silk fibers instead of the pool.
+        bool use_fiber_runner = false;
     };
 
     ReaderExecutor(
@@ -718,9 +720,12 @@ private:
         return s != MachineState::Scheduled && s != MachineState::Running;
     }
 
-    /// The runner that drives the in-flight machine's revoke/release verbs at collect: the pool
-    /// runner when read-ahead launched it, else the inline runner (no pool). The verbs branch on
-    /// the machine's `current_step`, so a settled inline machine no-ops through either.
+    /// The runner that drives the in-flight machine's revoke/release verbs at collect: the async
+    /// (pool or fiber) runner when read-ahead launched it, else the inline runner (no async
+    /// runner). Each runner no-ops on a machine it didn't schedule, but by its own mechanism:
+    /// the pool runner and the inline runner branch on the machine's `current_step` (null when
+    /// settled/never scheduled by them), while the fiber runner branches on its own `inflight`
+    /// pointer instead (it never sets `current_step`).
     IFetchMachineRunner & collectRunner() { return runner ? *runner : *local_runner; }
 
     /// The cancel verb: drop the in-flight machine. `cancelled` is true for a
@@ -828,14 +833,15 @@ private:
 
     /// Machines / pool.
     std::shared_ptr<PrefetchThreadPool> prefetch_pool;
-    /// The machine driver over `prefetch_pool`: state writes, scheduling and
-    /// the revoke/release edges live there; every policy decision stays here.
-    /// Created in the constructor from `Options::prefetch_pool`; null without a pool.
-    /// Drives the read-ahead (pool) FETCH machines only.
+    /// The async read-ahead driver: a pool runner over `prefetch_pool`, or a Silk fiber runner
+    /// when `Options::use_fiber_runner` is set; state writes, scheduling and the revoke/release
+    /// edges live there; every policy decision stays here. Created in the constructor by
+    /// `makeReadAheadRunner`; null when neither a pool nor the fiber runner was requested.
+    /// Drives the read-ahead FETCH machines only.
     std::unique_ptr<IFetchMachineRunner> runner;
     /// Inline driver, always present: runs a foreground serve machine synchronously on the read
-    /// thread. Also the fallback collect-runner when there is no pool - its verbs no-op on a
-    /// settled inline machine (null `current_step`).
+    /// thread. Also the fallback collect-runner when there is no async runner - its verbs no-op
+    /// on a settled inline machine (null `current_step`).
     std::unique_ptr<IFetchMachineRunner> local_runner;
     /// The producer's lane (see `ReaderExecutorFillLane.h`): owns the long
     /// connection, the in-flight pin, the ahead cursor and the bank.
