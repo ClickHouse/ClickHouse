@@ -57,14 +57,14 @@ If both are enabled, the `rustls-tls` feature will take precedence.
 
 The client is compatible with the LTS or newer versions of ClickHouse, as well as ClickHouse Cloud.
 
-ClickHouse server older than v22.6 handles RowBinary [incorrectly in some rare cases](https://github.com/ClickHouse/ClickHouse/issues/37420). 
+ClickHouse server older than v22.6 handles RowBinary [incorrectly in some rare cases](https://github.com/ClickHouse/ClickHouse/issues/37420).
 You could use v0.11+ and enable `wa-37420` feature to solve this problem. Note: this feature shouldn't be used with newer ClickHouse versions.
 
 ## Examples {#examples}
 
 We aim to cover various scenarios of client usage with the [examples](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples) in the client repository. The overview is available in the [examples README](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/README.md#overview).
 
-If something is unclear or missing from the examples or from the following documentation, feel free to [contact us](/integrations/language-clients/rust#contact-us).
+If something is unclear or missing from the examples or from the following documentation, feel free to [contact us](/integrations/language-clients/rust/index#contact-us).
 
 ## Usage {#usage}
 
@@ -110,7 +110,7 @@ let client = Client::default()
     .with_password(read_env_var("CLICKHOUSE_PASSWORD"));
 ```
 
-See also: 
+See also:
 - [HTTPS with ClickHouse Cloud example](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/clickhouse_cloud.rs) in the client repo. This should be applicable to on-premise HTTPS connections as well.
 
 ### Selecting rows {#selecting-rows}
@@ -509,7 +509,7 @@ See [the example](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples
 
 ### CANNOT_READ_ALL_DATA {#cannot_read_all_data}
 
-The most common cause for the `CANNOT_READ_ALL_DATA` error is that the row definition on the application side does match that in ClickHouse. 
+The most common cause for the `CANNOT_READ_ALL_DATA` error is that the row definition on the application side does match that in ClickHouse.
 
 Consider the following table:
 

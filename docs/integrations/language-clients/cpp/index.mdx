@@ -11,7 +11,7 @@ doc_type: 'reference'
 interface to ClickHouse using its native binary protocol.
 
 Build instructions, usage examples, and additional documentation are available in the project’s
-GitHub repository: [https://github.com/ClickHouse/clickhouse-cpp](https://github.com/ClickHouse/clickhouse-cpp). 
+GitHub repository: [https://github.com/ClickHouse/clickhouse-cpp](https://github.com/ClickHouse/clickhouse-cpp).
 
 <Note>
 The library is under active development. While it already supports core ClickHouse functionality,
@@ -26,7 +26,7 @@ share your observations or feature requests through the issue tracker at 
 ## Including the library into your project {#including-library-into-project}
 The simplest way to incorporate the library into your project is using CMake’s `FetchContent`
 module. This approach lets you pin an exact library version and build it as part of your normal
-CMake workflow. 
+CMake workflow.
 
 ```cmake
 include(FetchContent)
@@ -93,7 +93,7 @@ client.Execute(R"(
     CREATE TABLE IF NOT EXISTS greetings (
         id UInt64,
         message String,
-        language String) 
+        language String)
     ENGINE = MergeTree ORDER BY id)");
 ```
 
