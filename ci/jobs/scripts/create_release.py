@@ -475,19 +475,30 @@ class ReleaseInfo:
         print(
             f"Create and push new release branch [{new_release_branch}], commit [{self.commit_sha}]"
         )
-        # Cut the branch from the exact released commit, not ambient master:
-        # the workflow may be dispatched with a SHA, and master can move between
-        # release selection and this step, which would otherwise point the tag
-        # and the branch at different commits.
-        with checkout(self.commit_sha):
-            with checkout_new(new_release_branch):
-                Git.push(
-                    GITHUB_REPOSITORY,
-                    f"HEAD:refs/heads/{new_release_branch}",
-                    dry_run=dry_run,
-                    strict=True,
-                    retries=3,  # transient workflow-scope timeout (see push_release_tag)
-                )
+        if Git.branch_exists(new_release_branch):
+            # Rerun-safe: creating the branch is a one-time operation. If it
+            # already exists (a prior run created it, possibly with later
+            # commits such as the version bump on top), re-pushing the original
+            # released commit would be a non-fast-forward and rejected -- and
+            # force-pushing would drop those later commits -- so skip the push.
+            print(
+                f"Release branch [{new_release_branch}] already exists"
+                " — skipping create/push (rerun)"
+            )
+        else:
+            # Cut the branch from the exact released commit, not ambient master:
+            # the workflow may be dispatched with a SHA, and master can move
+            # between release selection and this step, which would otherwise
+            # point the tag and the branch at different commits.
+            with checkout(self.commit_sha):
+                with checkout_new(new_release_branch):
+                    Git.push(
+                        GITHUB_REPOSITORY,
+                        f"HEAD:refs/heads/{new_release_branch}",
+                        dry_run=dry_run,
+                        strict=True,
+                        retries=3,  # transient workflow-scope timeout (see push_release_tag)
+                    )
 
         print("Create and push backport tags for new release branch")
         ReleaseInfo._create_gh_label(
