@@ -232,8 +232,13 @@ void SerializationDynamicElement::enumerateStreams(
             continue;
 
         settings.path.push_back(Substream::DynamicData);
+        /// A reader that reads the nested subcolumn directly wraps `nested_serialization`, which
+        /// produces the requested subcolumn type, not the variant type, so it must be enumerated
+        /// with the subcolumn type (e.g. `SerializationString::enumerateStreamsWithSize` would
+        /// otherwise be given the enclosing `Variant` type and fail with a bad cast).
         auto variant_data = SubstreamData(reader.serialization ? reader.serialization : reader.null_map_serialization)
-                                .withType(reader.type)
+                                .withType(reader.reads_nested_subcolumn_directly ? data.type : reader.type)
+                                .withColumn(reader.reads_nested_subcolumn_directly ? data.column : nullptr)
                                 .withSerializationInfo(data.serialization_info)
                                 .withDeserializeState(reader.serialization ? reader.state : reader.null_map_state);
         settings.path.back().data = variant_data;
