@@ -202,6 +202,14 @@ function makeElement(tag) {
         finish() {},
         updateProgress() {},
         updateText() {},
+        resetViewToggles() {},
+        setViewState() {},
+        showView() {},
+        enableViews() {},
+        finalizeMetrics() {},
+        feedProfileEvents() {},
+        appendLog() {},
+        updateMetrics() {},
         attachShadow() { return makeElement('shadow-root'); },
     };
     return el;
