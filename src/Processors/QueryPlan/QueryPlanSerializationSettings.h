@@ -60,8 +60,11 @@ struct QueryPlanSerializationSettings
     void readBinary(ReadBuffer & in);
 
     /// The minimum query plan serialization version required to serialize these settings without
-    /// loss, i.e. the version below which `writeChangedBinary` would silently drop a changed setting.
-    /// Returns the baseline version 1 when no version-gated setting differs from its default.
+    /// changing the receiver's behavior, i.e. the version below which `writeChangedBinary` would
+    /// omit a version-gated setting whose value actually matters. Returns the baseline version 1
+    /// when omitting the version-gated settings degrades gracefully (the receiver then behaves like
+    /// an older server); in particular, a version-4 setting merely being marked changed does not
+    /// raise the version, because steps mark every serialized setting changed even at its default.
     UInt64 getMinRequiredVersion() const;
 
     /// Generated operator[] overloads for each supported type category.

@@ -66,13 +66,17 @@ TEST(QueryPlanSerializationSettings, JoinCompressionSettingsOmittedForOlderVersi
     }
 }
 
-/// getMinRequiredVersion reports the lowest serialization version that keeps every changed setting.
-/// It drives the stateless-worker path, which has no version negotiation: only settings that a step
-/// actually changed away from their defaults raise the version above the baseline, so a fragment that
-/// touches no version-4 setting stays serializable for an older worker.
+/// getMinRequiredVersion reports the lowest serialization version at which serializing these settings
+/// does not change the receiver's behavior. It drives the stateless-worker path, which has no version
+/// negotiation. It must be keyed on the values, not on the "changed" flags: a join step assigns every
+/// setting it serializes (marking it changed even at the default value), so a flag-based check would
+/// raise every join fragment - including a `full_sorting_merge` join, or a hash join with compression
+/// off but a non-default `max_memory_usage` - to version 4 and get it rejected by a version-3 worker
+/// during a rolling upgrade. Only an actually enabled `enable_join_in_memory_compression` requires
+/// version 4; omitting the other version-4 settings reproduces pre-version-4 behavior.
 TEST(QueryPlanSerializationSettings, MinRequiredVersion)
 {
-    /// Nothing changed, or only pre-version-4 settings changed: the baseline version is enough.
+    /// Nothing set, or only pre-version-4 settings set: the baseline version is enough.
     {
         QueryPlanSerializationSettings settings;
         EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
@@ -81,20 +85,30 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
         EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
     }
 
-    /// Each version-4 setting, when changed from its default, requires version 4.
+    /// Enabled in-memory join compression is the one case where a version-1 stream would silently
+    /// drop the requested feature, so it requires version 4.
     {
         QueryPlanSerializationSettings settings;
         settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = true;
         EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
     }
+
+    /// The other version-4 settings are only the compression trigger and tuning: with compression
+    /// disabled they do not alter execution, so they must not raise the version even when assigned
+    /// (a join step assigns them - changed-flagged - on every serialization, e.g. the query-level
+    /// `max_memory_usage`). A version-3 worker then simply behaves like a pre-version-4 server.
     {
         QueryPlanSerializationSettings settings;
         settings[QueryPlanSerializationSetting::max_memory_usage] = 12345;
-        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+        settings[QueryPlanSerializationSetting::join_decompressed_columns_cache_bytes] = 4096;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
     }
+
+    /// Explicitly assigning the default (disabled) value must not raise the version either.
     {
         QueryPlanSerializationSettings settings;
-        settings[QueryPlanSerializationSetting::join_decompressed_columns_cache_bytes] = 4096;
-        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+        settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = false;
+        settings[QueryPlanSerializationSetting::max_memory_usage] = 12345;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
     }
 }

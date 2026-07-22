@@ -171,9 +171,18 @@ void QueryPlanSerializationSettings::readBinary(ReadBuffer & in)
 
 UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
 {
-    for (const auto & name : settings_since_version_4)
-        if (impl->isChanged(name))
-            return 4;
+    /// This cannot be keyed on the "changed" flags of the version-4 settings: a step assigns every
+    /// setting it serializes, and assignment marks a setting changed even when the value equals the
+    /// default (see JoinSettings::updatePlanSettings), so e.g. `max_memory_usage` is flagged on every
+    /// serialized join step and a flag-based check would raise every join fragment to version 4.
+    /// Key it on behavior instead: the version-4 settings alter execution only when in-memory join
+    /// compression is enabled (`max_memory_usage` and `join_decompressed_columns_cache_bytes` are
+    /// consumed solely as its trigger and tuning), so a version-1 stream that omits all of them makes
+    /// the receiver behave exactly like a pre-version-4 server - a graceful degradation - unless
+    /// compression was requested, in which case dropping the settings would silently disable the
+    /// requested feature and the higher version is required.
+    if ((*this)[QueryPlanSerializationSetting::enable_join_in_memory_compression])
+        return 4;
     return 1;
 }
 

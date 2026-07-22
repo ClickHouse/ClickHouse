@@ -605,14 +605,16 @@ static String serializeQueryPlan(const QueryPlan & query_plan)
     /// serialized at the pinned version every deployed worker understands, not at this server's newest
     /// DBMS_QUERY_PLAN_SERIALIZATION_VERSION: a not-yet-upgraded worker in a rolling upgrade would
     /// reject a newer-versioned stream in QueryPlan::deserialize before executing the task.
-    /// Exception: a fragment that carries a version-gated setting (e.g. the in-memory join compression
-    /// settings, which the pinned version's writeChangedBinary would otherwise silently drop) is
-    /// serialized at the higher version it requires, so the feature is not lost on this path. The
-    /// version is derived from the fragment itself, not from a session setting: a fragment with no
-    /// hash join (or none that changed a gated setting) stays at the pinned version and remains
-    /// byte-compatible for a not-yet-upgraded worker, while one that needs the newer version makes
-    /// such a worker fail closed with a clear unsupported-version error in QueryPlan::deserialize
-    /// instead of running the join without the requested compression.
+    /// Exception: a fragment whose behavior depends on a version-gated setting (a join step with
+    /// `enable_join_in_memory_compression` enabled, which the pinned version's writeChangedBinary
+    /// would otherwise silently drop) is serialized at the higher version it requires, so the feature
+    /// is not lost on this path. The version is derived from the fragment itself, not from a session
+    /// setting: a fragment with no hash join, or whose joins do not enable compression (even when
+    /// they carry an incidental gated setting such as the query-level `max_memory_usage`, which is
+    /// only compression's trigger), stays at the pinned version and remains byte-compatible for a
+    /// not-yet-upgraded worker, while one that needs the newer version makes such a worker fail
+    /// closed with a clear unsupported-version error in QueryPlan::deserialize instead of running
+    /// the join without the requested compression.
     UInt64 version = std::max<UInt64>(
         DBMS_STATELESS_WORKER_QUERY_PLAN_SERIALIZATION_VERSION, query_plan.getRequiredSerializationVersion());
     query_plan.serialize(out, version);

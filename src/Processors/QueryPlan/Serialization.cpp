@@ -81,10 +81,11 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
 
 UInt64 QueryPlan::getRequiredSerializationVersion() const
 {
-    /// The version below which serializing this plan would silently drop a version-gated setting of
-    /// some step (see QueryPlanSerializationSettings::writeChangedBinary). This lets a caller on a
-    /// path without version negotiation raise the version only for plans that actually need it,
-    /// instead of keying off a session setting that may not correspond to anything in this fragment.
+    /// The version below which serializing this plan would silently change the behavior of some
+    /// step on the receiver (see QueryPlanSerializationSettings::getMinRequiredVersion). This lets
+    /// a caller on a path without version negotiation raise the version only for plans that
+    /// actually need it, instead of keying off a session setting that may not correspond to
+    /// anything in this fragment.
     UInt64 version = 1;
     for (const auto & node : nodes)
     {
