@@ -34,9 +34,9 @@ class VersionType:
     VALID = {NEW, TESTING, STABLE, LTS, CLOUD}
 
 
-def _read_versions() -> dict:
+def _parse_versions(text: str) -> dict:
     versions = {}
-    for line in Path(FILE_WITH_VERSION_PATH).read_text(encoding="utf-8").splitlines():
+    for line in text.splitlines():
         line = line.strip()
         if not line.startswith("SET("):
             continue
@@ -49,6 +49,19 @@ def _read_versions() -> dict:
             pass
         versions[name] = value
     return versions
+
+
+def _read_versions() -> dict:
+    return _parse_versions(Path(FILE_WITH_VERSION_PATH).read_text(encoding="utf-8"))
+
+
+def _clean_sha(value) -> str:
+    """Normalize a commit-SHA field to a plain string, treating an absent value
+    or the all-zero placeholder (see `to_dict`) as "" so callers can fall back
+    (`_read_versions` int-coerces the all-digit placeholder, so it may arrive as
+    int 0)."""
+    sha = "" if value is None else str(value)
+    return "" if set(sha) <= {"0"} else sha
 
 
 def _write_version_file(version_dict: dict) -> None:
@@ -111,8 +124,9 @@ class CHVersion:
         self.version_type = version_type
         # The commit SHA of the previous release (the changelog interval start).
         # Recorded so `changelog.py` reads it straight from the version file
-        # instead of guessing the predecessor from git tags.
-        self.previous_sha = previous_sha
+        # instead of guessing the predecessor from git tags. Normalized to "" when
+        # absent (or the all-zero placeholder) so callers can fall back to githash.
+        self.previous_sha = _clean_sha(previous_sha)
         self._refresh()
 
     def _refresh(self) -> "CHVersion":
@@ -158,11 +172,9 @@ class CHVersion:
         )
 
     @classmethod
-    def get_release_version(cls) -> "CHVersion":
-        """The release version exactly as stored in the file -- githash and tweak
-        as committed, without recomputing anything from git. For the CreateRelease
-        workflow."""
-        versions = _read_versions()
+    def _from_versions(cls, versions: dict) -> "CHVersion":
+        """Build a release version from a parsed version-file dict -- githash and
+        tweak exactly as stored, nothing recomputed from git."""
         string = str(versions.get("string", ""))
         tweak = int(string.rsplit(".", 1)[1]) if string.count(".") >= 3 else 1
         return cls(
@@ -175,6 +187,28 @@ class CHVersion:
             version_type=_version_type_from_describe(versions),
             previous_sha=str(versions.get("previous_sha", "")),
         )
+
+    @classmethod
+    def get_release_version(cls) -> "CHVersion":
+        """The release version exactly as stored in the file -- githash and tweak
+        as committed, without recomputing anything from git. For the CreateRelease
+        workflow."""
+        return cls._from_versions(_read_versions())
+
+    @classmethod
+    def get_release_version_at_ref(cls, ref: str) -> "CHVersion":
+        """The release version stored in the version file at git `ref` (e.g. a
+        release tag), read with `git show` -- no working-tree checkout of `ref`
+        needed. `changelog.py` uses it to recover the changelog interval start
+        (`previous_sha`, falling back to `githash`) straight from the tag."""
+        # Drop the leading "./": a `git show <ref>:<path>` pathspec starting with
+        # "./" resolves relative to the current directory, while a plain path is
+        # relative to the repo root -- so this works regardless of cwd. Raise
+        # (rather than silently return "") if the ref/file is missing, so the git
+        # error surfaces instead of a later KeyError on an empty version dict.
+        path = FILE_WITH_VERSION_PATH.removeprefix("./")
+        text = Shell.get_output_or_raise(f"git show {ref}:{path}", verbose=True)
+        return cls._from_versions(_parse_versions(text))
 
     @classmethod
     def get_current_version_from_ci_pipeline(cls):
