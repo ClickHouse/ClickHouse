@@ -378,6 +378,14 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
+    release_build_jobs_with_examples = [
+        job.set_command(f"{job.command} --build-examples").set_provides(
+            ArtifactNames.CLICKHOUSE_EXAMPLES
+        )
+        if f"({BuildTypes.ARM_RELEASE})" in job.name
+        else job
+        for job in release_build_jobs
+    ]
     cfi_build_job = common_build_job_config.parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_CFI,

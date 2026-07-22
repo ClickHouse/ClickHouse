@@ -96,6 +96,11 @@ def parse_args():
         help="Optional user-defined job start stage (for local run)",
         default=None,
     )
+    parser.add_argument(
+        "--build-examples",
+        help="Build `clickhouse-examples` in addition to the regular targets",
+        action="store_true",
+    )
     return parser.parse_args()
 
 
@@ -172,8 +177,13 @@ def main():
     assert (
         build_type in BUILD_TYPE_TO_CMAKE
     ), f"--build_type option is invalid [{build_type}]"
+    assert not args.build_examples or build_type == BuildTypes.ARM_RELEASE, (
+        "--build-examples is only supported for the ARM release build"
+    )
 
     cmake_cmd = BUILD_TYPE_TO_CMAKE[build_type]
+    if args.build_examples:
+        cmake_cmd += " -DENABLE_EXAMPLES=1"
     info = Info()
 
     # Cache-warmup build (MasterCI): compile with the PR release build's cmake
@@ -370,6 +380,8 @@ def main():
     if res and JobStages.BUILD in stages:
         if build_type == BuildTypes.ARM_FUZZERS:
             targets = "fuzzers"
+        elif args.build_examples:
+            targets = "clickhouse-bundle clickhouse-examples"
         elif build_type == BuildTypes.ARM_BINARY:
             targets = "clickhouse-bundle"
         elif build_type in (

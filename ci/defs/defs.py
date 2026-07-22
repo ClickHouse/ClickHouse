@@ -497,6 +497,7 @@ class ArtifactNames:
 
     ARM_FUZZERS = "ARM_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
+    CLICKHOUSE_EXAMPLES = "CLICKHOUSE_EXAMPLES"
 
     TOOLCHAIN_PGO_BOLT_AMD = "TOOLCHAIN_PGO_BOLT_AMD"
     TOOLCHAIN_PGO_BOLT_ARM = "TOOLCHAIN_PGO_BOLT_ARM"
@@ -695,6 +696,11 @@ class ArtifactConfigs:
         name=ArtifactNames.FUZZERS_CORPUS,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/programs/*_seed_corpus.zip",
+    )
+    clickhouse_examples = Artifact.Config(
+        name=ArtifactNames.CLICKHOUSE_EXAMPLES,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/src/Examples/clickhouse-examples",
     )
     toolchain_pgo_bolt_amd = Artifact.Config(
         name=ArtifactNames.TOOLCHAIN_PGO_BOLT_AMD,
