@@ -1,5 +1,4 @@
 did:plc:a
 did:plc:b
 app.bsky.feed.post
-Prewhere info
-Prewhere filter column: equals(data.kind, 'commit'_String) (removed)
+Prewhere filter column:  data.kind = 'commit'
