@@ -650,11 +650,14 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         /// Enforce the server's outbound-host policy, exactly like the table engine and the table
         /// function do in `StoragePostgreSQL::getConfiguration`: a user must not be able to open a
         /// long-lived replication connection to a host that `remote_url_allow_hosts` forbids elsewhere.
-        /// Only on CREATE: server startup rebuilds every database from persisted metadata with an
-        /// ATTACH query and `loadMetadata` aborts on the first exception, so enforcing the policy
-        /// on ATTACH would turn one database created before the whitelist was tightened into a
-        /// server that cannot boot.
-        if (!args.create_query.attach)
+        /// Skip it only for an internal metadata replay (server startup / restore, the same
+        /// distinction `DatabaseDataLake` uses): startup rebuilds every database from persisted
+        /// metadata with an ATTACH query and `loadMetadata` aborts on the first exception, so
+        /// enforcing the policy there would turn one database created before the whitelist was
+        /// tightened into a server that cannot boot. A user-issued `ATTACH DATABASE` is not a
+        /// replay and stays fail-closed, otherwise it would be a direct bypass of the policy.
+        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+        if (!is_internal_metadata_replay)
         {
             for (const auto & address : configuration.addresses)
                 args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));

@@ -11,6 +11,7 @@ node = cluster.add_instance(
     main_configs=["configs/remote_host_filter.xml", "configs/named_collections.xml"],
     user_configs=["configs/users.xml"],
     with_postgres=True,
+    stay_alive=True,
 )
 
 # A host that `remote_url_allow_hosts` does not permit (only `postgres1` is allowed,
@@ -212,18 +213,35 @@ def test_materialized_postgresql_table_engine_named_collection_addresses_expr(st
     node.query("DROP TABLE mpg_nc_allowed_tbl SYNC")
 
 
-def test_attach_and_startup_skip_remote_host_filter(started_cluster):
-    # The host filter is enforced only on CREATE. Server startup rebuilds every database from
-    # persisted metadata with an ATTACH query, and `loadMetadata` aborts on the first exception,
-    # so a database created before the whitelist was tightened must keep loading -- otherwise one
-    # such database would prevent the whole server from booting after an upgrade. ATTACH therefore
-    # skips the filter, both for an explicit user query and on the startup path.
-    node.query("DROP DATABASE IF EXISTS pg_db_persisted")
-    node.query(f"ATTACH DATABASE pg_db_persisted ENGINE = PostgreSQL('{BLOCKED_HOST}:5432', 'postgres', 'postgres', '{pg_pass}')")
-    assert node.query("SELECT count() FROM system.databases WHERE name = 'pg_db_persisted'").strip() == "1"
+def test_user_attach_respects_remote_host_filter(started_cluster):
+    # A user-issued `ATTACH DATABASE` is not a startup replay: exempting it would be a direct
+    # bypass of `remote_url_allow_hosts` (attach a blocked but reachable host, and the engine is
+    # free to connect to it later). Only the internal metadata replay skips the filter.
+    node.query("DROP DATABASE IF EXISTS pg_db_user_attach")
+    error = node.query_and_get_error(f"ATTACH DATABASE pg_db_user_attach ENGINE = PostgreSQL('{BLOCKED_HOST}:5432', 'postgres', 'postgres', '{pg_pass}')")
+    assert "UNACCEPTABLE_URL" in error
 
-    # The metadata is persisted now; a restart replays it through the same ATTACH path that
-    # `loadMetadata` uses at startup, and the server must come back up with the database in place.
-    node.restart_clickhouse()
+    node.query("DROP DATABASE IF EXISTS mpg_user_attach")
+    error = node.query_and_get_error(
+        f"ATTACH DATABASE mpg_user_attach ENGINE = MaterializedPostgreSQL('{BLOCKED_HOST}:5432', 'postgres', 'postgres', '{pg_pass}')",
+        settings={"allow_experimental_database_materialized_postgresql": 1},
+    )
+    assert "UNACCEPTABLE_URL" in error
+
+
+def test_startup_metadata_replay_skips_remote_host_filter(started_cluster):
+    # Server startup rebuilds every database from persisted metadata with an internal ATTACH
+    # query, and `loadMetadata` aborts on the first exception, so a database created before the
+    # whitelist was tightened must keep loading -- otherwise one such database would prevent the
+    # whole server from booting after an upgrade. Simulate that history by creating the database
+    # against the allowed host and rewriting the persisted metadata to the blocked host while the
+    # server is down.
+    node.query("DROP DATABASE IF EXISTS pg_db_persisted")
+    node.query(f"CREATE DATABASE pg_db_persisted ENGINE = PostgreSQL('{PG_HOST}:5432', 'postgres', 'postgres', '{pg_pass}')")
+
+    node.stop_clickhouse()
+    node.exec_in_container(["bash", "-c", f"sed -i 's/{PG_HOST}:5432/{BLOCKED_HOST}:5432/' /var/lib/clickhouse/metadata/pg_db_persisted.sql"])
+    node.start_clickhouse()
+
     assert node.query("SELECT count() FROM system.databases WHERE name = 'pg_db_persisted'").strip() == "1"
     node.query("DROP DATABASE pg_db_persisted")
