@@ -6,6 +6,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <algorithm>
+#include <tuple>
+
 #include <Analyzer/Identifier.h>
 #include <Analyzer/TableNode.h>
 #include <Columns/ColumnSet.h>
@@ -39,13 +42,6 @@ namespace Setting
     extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
-enum class SetSerializationKind : UInt8
-{
-    StorageSet = 1,
-    TupleValues = 2,
-    SubqueryPlan = 3,
-};
-
 QueryPlanAndSets::QueryPlanAndSets() = default;
 QueryPlanAndSets::~QueryPlanAndSets() = default;
 QueryPlanAndSets::QueryPlanAndSets(QueryPlanAndSets &&) noexcept = default;
@@ -70,14 +66,31 @@ struct QueryPlanAndSets::SetFromSubquery : public QueryPlanAndSets::Set
     QueryPlanAndSets plan_and_sets;
 };
 
+std::vector<std::pair<FutureSet::Hash, FutureSet *>> SerializedSetsRegistry::orderedEntries() const
+{
+    std::vector<std::pair<FutureSet::Hash, FutureSet *>> ordered;
+    ordered.reserve(sets.size());
+    for (const auto & [hash, set] : sets)
+        ordered.emplace_back(hash, set.get());
+    std::sort(ordered.begin(), ordered.end(), [](const auto & lhs, const auto & rhs)
+    {
+        return std::tie(lhs.first.high64, lhs.first.low64) < std::tie(rhs.first.high64, rhs.first.low64);
+    });
+    return ordered;
+}
+
 void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out, const SerializationFlags & flags)
 {
-    writeVarUInt(registry.sets.size(), out);
-    for (const auto & [hash, set] : registry.sets)
+    /// Write sets in the canonical (hash-sorted) order, not in the unordered map's iteration order,
+    /// so the same plan serializes to the same bytes in every process.
+    auto ordered_sets = registry.orderedEntries();
+
+    writeVarUInt(ordered_sets.size(), out);
+    for (const auto & [hash, set_ptr] : ordered_sets)
     {
         writeBinary(hash, out);
 
-        if (auto * from_storage = typeid_cast<FutureSetFromStorage *>(set.get()))
+        if (auto * from_storage = typeid_cast<FutureSetFromStorage *>(set_ptr))
         {
             writeIntBinary(SetSerializationKind::StorageSet, out);
             const auto & storage_id = from_storage->getStorageID();
@@ -87,7 +100,7 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
             auto storage_name = storage_id->getFullTableName();
             writeStringBinary(storage_name, out);
         }
-        else if (auto * from_tuple = typeid_cast<FutureSetFromTuple *>(set.get()))
+        else if (auto * from_tuple = typeid_cast<FutureSetFromTuple *>(set_ptr))
         {
             writeIntBinary(SetSerializationKind::TupleValues, out);
 
@@ -117,7 +130,7 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
                 NativeWriter::writeData(*serialization, columns[col], out, {}, 0, 0, 0);
             }
         }
-        else if (auto * from_subquery = typeid_cast<FutureSetFromSubquery *>(set.get()))
+        else if (auto * from_subquery = typeid_cast<FutureSetFromSubquery *>(set_ptr))
         {
             writeIntBinary(SetSerializationKind::SubqueryPlan, out);
             const auto * plan = from_subquery->getQueryPlan();
@@ -128,7 +141,7 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
         }
         else
         {
-            const auto & set_ref = *set;
+            const auto & set_ref = *set_ptr;
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown FutureSet type {}", typeid(set_ref).name());
         }
     }
