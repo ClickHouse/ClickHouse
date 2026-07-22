@@ -1010,10 +1010,10 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
                     auto parts_lock = storage.lockParts();
                     if (part->getState() == MergeTreeDataPartState::PreActive)
                     {
-                        /// The Keeper commit may have succeeded, so `writeExistingPart` must not
-                        /// move the preserved part back to its original directory.
-                        part->new_part_was_committed_to_zookeeper_after_rename_on_disk = true;
                         transaction.commit(parts_lock);
+                        /// The Keeper commit may have succeeded, so `writeExistingPart` must not
+                        /// move the locally committed part back to its original directory.
+                        part->new_part_was_committed_to_zookeeper_after_rename_on_disk = true;
                     }
                     else
                     {
