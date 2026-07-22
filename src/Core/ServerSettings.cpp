@@ -478,6 +478,7 @@ A value of `0` means "never". The default value corresponds to 1 day.
     \
     \
     DECLARE(UInt64, max_remote_read_connections, 1000, R"(Maximum number of open remote read connections kept alive by `ReaderExecutor` for sequential read optimization. 0 disables connection reuse.)", EXPERIMENTAL) \
+    DECLARE(Bool, disk_connections_use_silk, false, R"(Create HTTP connections of the disk connection group (object storage disks) on Silk fiber sockets and start the Silk fiber scheduler at server startup. Requires a build with Silk (Linux, io_uring). Used by the reader executor fiber path.)", 0) \
     DECLARE(UInt64, max_concurrent_queries, 0, R"(
 Limit on total number of concurrently executed queries. Note that limits on `INSERT` and `SELECT` queries, and on the maximum number of queries for users must also be considered.
 

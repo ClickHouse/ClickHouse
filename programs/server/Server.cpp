@@ -2,6 +2,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
 #include <Common/MemoryPressureMonitor.h>
+#include <Common/SilkScheduler.h>
 #include <IO/LongConnectionLimit.h>
 
 #include <memory>
@@ -250,6 +251,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 disk_connections_warn_limit;
     extern const ServerSettingsUInt64 disk_connections_rcvbuf;
     extern const ServerSettingsUInt64 disk_connections_sndbuf;
+    extern const ServerSettingsBool disk_connections_use_silk;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv4;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv6;
     extern const ServerSettingsUInt64 dns_cache_max_entries;
@@ -1719,6 +1721,16 @@ try
         server_settings[ServerSetting::max_backups_io_thread_pool_size],
         server_settings[ServerSetting::max_backups_io_thread_pool_free_size],
         server_settings[ServerSetting::backups_io_thread_pool_queue_size]);
+
+    if (server_settings[ServerSetting::disk_connections_use_silk])
+    {
+#if USE_SILK
+        initializeSilkScheduler();
+        LOG_INFO(log, "Silk fiber scheduler started (disk_connections_use_silk = 1)");
+#else
+        LOG_WARNING(log, "Setting disk_connections_use_silk is ignored: the build has no Silk support");
+#endif
+    }
 
     getFetchPartitionThreadPool().initialize(
         server_settings[ServerSetting::max_fetch_partition_thread_pool_size],
