@@ -8,11 +8,9 @@ Test 4: percentileFromTDigest p95
 1
 Test 5: percentileFromTDigest empty sketch returns NaN
 1
-Test 6: percentileFromTDigest invalid sketch returns NaN
-1
+Test 6: percentileFromTDigest invalid sketch throws
 Test 7: centroidsFromTDigest basic
-1
+1	1
 Test 8: centroidsFromTDigest empty sketch
 1
-Test 9: centroidsFromTDigest invalid sketch returns {}
-1
+Test 9: centroidsFromTDigest invalid sketch throws

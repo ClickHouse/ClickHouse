@@ -20,16 +20,18 @@ SELECT 'Test 5: percentileFromTDigest empty sketch returns NaN';
 SELECT isNaN(percentileFromTDigest(mergeSerializedTDigest(sketch), 0.5))
 FROM (SELECT serializedTDigest(number) AS sketch FROM numbers(0));
 
-SELECT 'Test 6: percentileFromTDigest invalid sketch returns NaN';
-SELECT isNaN(percentileFromTDigest('invalid', 0.5));
+SELECT 'Test 6: percentileFromTDigest invalid sketch throws';
+SELECT percentileFromTDigest('invalid', 0.5); -- { serverError INCORRECT_DATA }
 
 SELECT 'Test 7: centroidsFromTDigest basic';
-SELECT centroidsFromTDigest(serializedTDigest(number)) != '{}'
+WITH centroidsFromTDigest(serializedTDigest(number)) AS j
+SELECT length(JSONExtractArrayRaw(j, 'means')) > 0,
+       length(JSONExtractArrayRaw(j, 'means')) = length(JSONExtractArrayRaw(j, 'weights'))
 FROM numbers(1000);
 
 SELECT 'Test 8: centroidsFromTDigest empty sketch';
-SELECT centroidsFromTDigest(mergeSerializedTDigest(sketch)) = '{}'
+SELECT centroidsFromTDigest(mergeSerializedTDigest(sketch)) = '{"means":[],"weights":[]}'
 FROM (SELECT serializedTDigest(number) AS sketch FROM numbers(0));
 
-SELECT 'Test 9: centroidsFromTDigest invalid sketch returns {}';
-SELECT centroidsFromTDigest('invalid') = '{}';
+SELECT 'Test 9: centroidsFromTDigest invalid sketch throws';
+SELECT centroidsFromTDigest('invalid'); -- { serverError INCORRECT_DATA }

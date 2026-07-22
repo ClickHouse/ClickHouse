@@ -21,8 +21,9 @@ latencyValuesAndWeights(sketch)
 
 ## Returned Value
 
-- JSON-formatted string containing value-weight pairs from the sketch. Type: [String](../../sql-reference/data-types/string).
-- Returns empty JSON object if the sketch is empty.
+- JSON-formatted string of the form `{"values":[...],"weights":[...]}` with parallel arrays of the values retained in the sketch and their weights. Parallel arrays are used because a Quantiles sketch can retain the same value multiple times. Type: [String](../../sql-reference/data-types/string).
+- Returns `{"values":[],"weights":[]}` if the sketch is empty.
+- Throws an exception if the input is not a valid serialized Quantiles sketch.
 
 ## Examples
 

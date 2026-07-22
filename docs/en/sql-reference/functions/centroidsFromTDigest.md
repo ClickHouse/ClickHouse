@@ -21,8 +21,9 @@ centroidsFromTDigest(sketch)
 
 ## Returned Value
 
-- JSON-formatted String containing centroid mean-to-weight pairs. Type: [String](../../sql-reference/data-types/string).
-- Returns `{}` if the sketch is empty or invalid.
+- JSON-formatted string of the form `{"means":[...],"weights":[...]}` with parallel arrays of centroid means and weights. Parallel arrays are used because a TDigest can contain multiple centroids with the same mean. Type: [String](../../sql-reference/data-types/string).
+- Returns `{"means":[],"weights":[]}` if the sketch is empty.
+- Throws an exception if the input is not a valid serialized TDigest sketch.
 
 ## Examples
 
