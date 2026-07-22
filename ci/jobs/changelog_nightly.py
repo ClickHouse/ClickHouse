@@ -633,7 +633,7 @@ def edit_raw_entries(version):
         _reset_worktree(base_sha, pre_untracked)
         # The GitHub App token expires after an hour and an editing attempt
         # can run long; refresh so the agent's `gh pr view` calls work.
-        GHAuth.auth_from_settings()
+        GHAuth.auth(no_strict=True)
         try:
             with tempfile.TemporaryDirectory(dir="./ci/tmp") as codex_home:
                 subprocess.run(
@@ -714,7 +714,7 @@ def push_branch(branch, exists_on_remote):
 
 def ensure_pr(branch, version):
     # Refresh the App token: the preceding editing step may have outlived it.
-    GHAuth.auth_from_settings()
+    GHAuth.auth(no_strict=True)
     states = get_pr_states(branch)
     open_prs = [num for num, state in states if state == "OPEN"]
     if open_prs:
@@ -851,7 +851,7 @@ def process_version(version, master_version, results):
 def main():
     # The GitHub App token from enable_gh_auth expires; re-issue it at job
     # start so the whole run (git push, gh, changelog.py) has a fresh one.
-    GHAuth.auth_from_settings()
+    GHAuth.auth(no_strict=True)
     os.makedirs("./ci/tmp", exist_ok=True)
 
     results = []
