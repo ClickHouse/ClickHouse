@@ -1,0 +1,13 @@
+Date32 TTL shortened so every row expires
+1000
+0
+DateTime64 TTL shortened so every row expires
+0
+MODIFY TTL whose result type becomes DateTime64 must not throw (was a logical error)
+0
+Calendar month interval falls back and still expires the right rows
+0
+Column-dependent TTL falls back and still expires the right rows
+500
+Stale part TTL info (materialize_ttl_after_modify = 0) must not delete live rows
+1000
