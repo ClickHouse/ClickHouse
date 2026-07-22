@@ -73,10 +73,16 @@ namespace
 
 Int64 getCurrentQueryMemoryUsage()
 {
-    /// Use query-level memory tracker
+    /// Use query-level memory tracker, skipping Scope-level trackers between the thread
+    /// and the query (Scope groups are accounting roll-ups inside a query, see ThreadGroup::createForScope).
     if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
-        if (auto * memory_tracker = memory_tracker_child->getParent())
+    {
+        auto * memory_tracker = memory_tracker_child->getParent();
+        while (memory_tracker && memory_tracker->level == VariableContext::Scope)
+            memory_tracker = memory_tracker->getParent();
+        if (memory_tracker)
             return memory_tracker->get();
+    }
     return 0;
 }
 
