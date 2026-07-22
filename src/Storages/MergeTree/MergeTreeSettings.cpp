@@ -228,17 +228,14 @@ it is recommended to set it below the maximum filename length (usually 255
 bytes) with some gap to avoid filesystem errors.
 )", 0) \
     DECLARE(UInt64, min_bytes_for_full_part_storage, 0, R"(
-Only available in ClickHouse Cloud. Minimal uncompressed size in bytes to
-use full type of storage for data part instead of packed
-)", 0) \
+    Minimal uncompressed size in bytes to use full type of storage for data part instead of packed
+    )", 0) \
     DECLARE(UInt32, min_level_for_full_part_storage, 0, R"(
-Only available in ClickHouse Cloud. Minimal part level to
-use full type of storage for data part instead of packed
-)", 0) \
+    Minimal part level to use full type of storage for data part instead of packed
+    )", 0) \
     DECLARE(UInt64, min_rows_for_full_part_storage, 0, R"(
-Only available in ClickHouse Cloud. Minimal number of rows to use full type
-of storage for data part instead of packed
-)", 0) \
+    Minimal number of rows to use full type of storage for data part instead of packed
+    )", 0) \
     DECLARE(UInt64, compact_parts_max_bytes_to_buffer, 128 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal number of bytes to write in a
 single stripe in compact parts
