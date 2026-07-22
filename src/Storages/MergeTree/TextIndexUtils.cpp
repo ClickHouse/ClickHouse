@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int CORRUPTED_DATA;
 }
 
 namespace MergeTreeSetting
@@ -42,6 +43,51 @@ CompressionCodecPtr makeMarksCompressionCodec(const String & marks_compression_c
     ParserCodec codec_parser;
     auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     return CompressionCodecFactory::instance().get(ast, nullptr);
+}
+
+/// Merge-path decode of blocked positions: the stream stores per-posting-rank position lists with
+/// no document ids, so it is paired with the token's posting lists (its rank space, in pre-remap
+/// doc order) to rebuild roaringish entries the merge can remap and re-encode.
+PODArray<RoaringishEntry> decodeBlockedPositions(
+    ReadBuffer & in,
+    const std::vector<PostingListPtr> & postings,
+    UInt64 position_cardinality,
+    size_t available_bytes,
+    TextIndexBlockedPositionsCodec::DecodeScratch & scratch)
+{
+    PaddedPODArray<UInt32> doc_offsets;
+    PaddedPODArray<UInt32> positions;
+    TextIndexBlockedPositionsCodec::decodeAll(in, position_cardinality, available_bytes, doc_offsets, positions, scratch);
+
+    PODArray<RoaringishEntry> entries;
+    entries.reserve(positions.size());
+
+    size_t rank = 0;
+    for (const auto & posting : postings)
+    {
+        for (const UInt32 doc : *posting)
+        {
+            if (rank + 1 >= doc_offsets.size())
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Corrupt text index positions (blocked): more posting documents than position lists ({})", rank);
+
+            for (UInt32 i = doc_offsets[rank]; i < doc_offsets[rank + 1]; ++i)
+            {
+                const auto entry = RoaringishEntry::make(doc, positions[i]);
+                if (!entries.empty() && entries.back().sameBucket(entry))
+                    entries.back().mergeBitmap(entry);
+                else
+                    entries.push_back(entry);
+            }
+            ++rank;
+        }
+    }
+
+    if (rank + 1 != doc_offsets.size())
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions (blocked): {} posting documents but {} position lists", rank, doc_offsets.size() - 1);
+
+    return entries;
 }
 
 std::pair<MergeTreeIndexOutputStreams, std::vector<std::unique_ptr<MergeTreeIndexWriterStream>>>
@@ -219,14 +265,6 @@ static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex &
     return PostingsSerialization(std::move(codec_copy), static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec));
 }
 
-static PostingsSerialization createSourcePostingsSerialization(MergeTreeIndexReaderStream & header_stream)
-{
-    header_stream.seekToStart();
-    /// Only the version and codec are needed here, so skip deserializing the sparse index.
-    auto header = TextIndexSerialization::deserializeHeaderPrefix(*header_stream.getDataBuffer());
-    return PostingsSerialization(PostingListCodecFactory::createPostingListCodec(header.codec_type), header.version);
-}
-
 MergeTextIndexesTask::MergeTextIndexesTask(
     std::vector<TextIndexSegment> segments_,
     MergeTreeMutableDataPartPtr new_data_part_,
@@ -278,13 +316,17 @@ MergeTextIndexesTask::MergeTextIndexesTask(
         }
     }
 
-    /// Resolve each source part's codec from its own header.
+    /// Resolve each source part's codecs (postings + positions) from its own header.
     source_postings_serializations.reserve(segments.size());
 
     for (size_t i = 0; i < segments.size(); ++i)
     {
         auto * stream = input_streams[i].at(MergeTreeIndexSubstream::Type::Regular);
-        source_postings_serializations.emplace_back(createSourcePostingsSerialization(*stream));
+        stream->seekToStart();
+        /// Only the version and codecs are needed here, so skip deserializing the sparse index.
+        auto header = TextIndexSerialization::deserializeHeaderPrefix(*stream->getDataBuffer());
+        source_postings_serializations.emplace_back(
+            PostingListCodecFactory::createPostingListCodec(header.codec_type), header.version);
     }
 }
 
@@ -396,9 +438,10 @@ void MergeTextIndexesTask::flushPostingList()
 
         token_info.header |= PostingsSerialization::Flags::HasPositions;
         token_info.position_offset = positions_stream->plain_hashing.count();
-        token_info.position_cardinality = static_cast<UInt32>(output_positions.size());
+        /// Blocked cardinality is the document count, not roaringish bucket count.
+        token_info.position_cardinality = static_cast<UInt32>(TextIndexBlockedPositionsCodec::countDocuments(output_positions));
 
-        TextIndexPositionCodec::encode(output_positions, positions_stream->plain_hashing);
+        TextIndexBlockedPositionsCodec::encode(output_positions, positions_stream->plain_hashing);
     }
 
     output_infos.push_back(token_info);
@@ -503,42 +546,54 @@ bool MergeTextIndexesTask::executeStep()
 
         auto read_postings = readPostingLists(current->order);
 
+        /// Read position data if positions are enabled. Blocked streams carry no document ids and
+        /// must be paired with this token's postings in pre-remap doc order, so positions are
+        /// decoded before adjustPartOffsets rewrites the posting lists.
+        PODArray<RoaringishEntry> position_entries;
+        bool has_positions = false;
+        if (params.positions)
+        {
+            const auto & token_info = inputs[current->order].token_infos[current->getRow()];
+            if (token_info.header & PostingsSerialization::Flags::HasPositions)
+            {
+                has_positions = true;
+                auto * pos_stream = input_streams[current->order].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
+                auto * pos_data_buffer = pos_stream->getDataBuffer();
+                pos_stream->seekToMark({token_info.position_offset, 0});
+
+                /// Bytes left for this token; decode rejects a larger declared size.
+                const size_t pos_file_size = pos_stream->getFileSize();
+                const size_t pos_available = pos_file_size > token_info.position_offset ? pos_file_size - token_info.position_offset : 0;
+
+                position_entries = decodeBlockedPositions(
+                    *pos_data_buffer, read_postings, token_info.position_cardinality, pos_available, blocked_decode_scratch);
+            }
+        }
+
         for (auto & posting : read_postings)
         {
             posting = adjustPartOffsets(current->order, posting);
             output_postings |= *posting;
         }
 
-        /// Read and merge position data if positions are enabled.
-        if (params.positions)
+        if (has_positions)
         {
-            const auto & token_info = inputs[current->order].token_infos[current->getRow()];
-            if (token_info.header & PostingsSerialization::Flags::HasPositions)
+            /// Adjust doc_ids if merging parts with offset remapping.
+            if (merged_part_offsets)
             {
-                auto * pos_stream = input_streams[current->order].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
-                auto * pos_data_buffer = pos_stream->getDataBuffer();
-                pos_stream->seekToMark({token_info.position_offset, 0});
-
-                PODArray<RoaringishEntry> position_entries;
-                TextIndexPositionCodec::decode(*pos_data_buffer, position_entries);
-
-                /// Adjust doc_ids if merging parts with offset remapping.
-                if (merged_part_offsets)
+                size_t part_index = segments[current->order].part_index;
+                for (auto & entry : position_entries)
                 {
-                    size_t part_index = segments[current->order].part_index;
-                    for (auto & entry : position_entries)
-                    {
-                        UInt64 new_doc_id = (*merged_part_offsets)[part_index, entry.doc_id];
-                        if (new_doc_id > std::numeric_limits<UInt32>::max())
-                            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                                "Cannot merge text index: remapped row id {} exceeds the maximum supported row id {}",
-                                new_doc_id, std::numeric_limits<UInt32>::max());
-                        entry = entry.withDocId(static_cast<UInt32>(new_doc_id));
-                    }
+                    UInt64 new_doc_id = (*merged_part_offsets)[part_index, entry.doc_id];
+                    if (new_doc_id > std::numeric_limits<UInt32>::max())
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Cannot merge text index: remapped row id {} exceeds the maximum supported row id {}",
+                            new_doc_id, std::numeric_limits<UInt32>::max());
+                    entry = entry.withDocId(static_cast<UInt32>(new_doc_id));
                 }
-
-                output_positions.insert(output_positions.end(), position_entries.begin(), position_entries.end());
             }
+
+            output_positions.insert(output_positions.end(), position_entries.begin(), position_entries.end());
         }
 
         if (!current->isLast())
@@ -568,7 +623,9 @@ void MergeTextIndexesTask::finalize()
 
     auto serialization_version = static_cast<MergeTreeIndexVersion>(
         params.positions ? TextIndexHeader::Version::WithPositions : TextIndexHeader::Version::WithCodec);
-    TextIndexSerialization::serializeHeader(sparse_index, postings_serialization.getPostingListCodec()->getType(), serialization_version, params.positions, index_stream->compressed_hashing);
+    TextIndexSerialization::serializeHeader(
+        sparse_index, postings_serialization.getPostingListCodec()->getType(), serialization_version, params.positions,
+        static_cast<UInt8>(TextIndexPositionCodec::Encoding::Blocked), index_stream->compressed_hashing);
 
     for (auto & stream : output_streams_holders)
         stream->finalize();

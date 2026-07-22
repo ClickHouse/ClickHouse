@@ -3622,7 +3622,7 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsCodecType)
     DictionarySparseIndex sparse_index(tokens->getPtr(), offsets->getPtr());
 
     WriteBufferFromOwnString out;
-    TextIndexSerialization::serializeHeader(sparse_index, IPostingListCodec::Type::Bitpacking, static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec), /*has_positions=*/ false, out);
+    TextIndexSerialization::serializeHeader(sparse_index, IPostingListCodec::Type::Bitpacking, static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec), /*has_positions=*/ false, /*positions_codec=*/ 0, out);
 
     ReadBufferFromString in(out.str());
     auto sparse_index_data = TextIndexSerialization::deserializeHeader(in);
