@@ -41,11 +41,8 @@ ${CLICKHOUSE_CLIENT} --query_id="$query_id" --allow_experimental_analyzer=1 --qu
     SETTINGS webassembly_udf_max_fuel = 0, max_threads = 1, max_block_size = 10000000, max_rows_to_read = 0
 " >"$output_file" 2>&1 &
 
-# Wait for the query to start executing the WASM function
-for _ in $(seq 1 300); do
-    [[ "$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.processes WHERE query_id = '$query_id'")" == "1" ]] && break
-    sleep 0.1
-done
+# Wait for the query to start executing the WASM function (fails loudly on timeout)
+wait_for_query_to_start "$query_id" 30
 
 # Kill the query (ASYNC) - this triggers onCancel -> cancelExecution on the WASM function
 # cancelExecution calls interrupt_source.request_stop(), which the WasmEdge runtime checks
