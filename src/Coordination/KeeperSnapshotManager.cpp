@@ -103,6 +103,16 @@ namespace
         }
     }
 
+    /// Remove the completion marker and fsync the snapshot directory so the unlink is durable
+    /// (a file fsync does not persist a directory-entry change). Open the directory fd before
+    /// the unlink so the guard's destructor fsyncs it afterwards. Snapshots live at the disk
+    /// root; getDirectorySyncGuard("") is a no-op (nullptr) on non-local disks.
+    void removeSnapshotMarker(const DiskPtr & disk, const std::string & tmp_snapshot_file_name)
+    {
+        SyncGuardPtr dir_sync_guard = disk->getDirectorySyncGuard("");
+        disk->removeFile(tmp_snapshot_file_name);
+    }
+
     void writeNode(std::string_view data, const KeeperNodeStats & stats, SnapshotVersion version, WriteBuffer & out)
     {
         writeBinary(data, out);
@@ -560,7 +570,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager::writeSnapshotBufferToFile(nuraft::buf
         ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
 
         plain_buf.reset();
-        disk->removeFile(tmp_snapshot_file_name);
+        removeSnapshotMarker(disk, tmp_snapshot_file_name);
     }
     catch (...)
     {
@@ -647,7 +657,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager::finalizeSnapshotReceiveToDisk(Snapsho
         ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
 
         ctx.write_buf.reset();
-        ctx.disk->removeFile(tmp_snapshot_file_name);
+        removeSnapshotMarker(ctx.disk, tmp_snapshot_file_name);
     }
     catch (...)
     {
@@ -930,7 +940,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager::writeSnapshotFile(const KeeperStorage
 
         compressed_writer.reset();
         writer.reset();
-        disk->removeFile(tmp_snapshot_file_name);
+        removeSnapshotMarker(disk, tmp_snapshot_file_name);
     }
     catch (...)
     {

@@ -7,8 +7,11 @@
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
+#include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/SnapshotableHashTable.h>
 #include <Coordination/KeeperStorage.h>
+
+#include <IO/copyData.h>
 
 #include <Common/SipHash.h>
 #include <Common/tests/gtest_global_context.h>
@@ -268,6 +271,29 @@ private:
     std::string block_path_prefix;
     std::shared_ptr<BlockingSnapshotWriteState> state;
     std::atomic_bool armed{true};
+};
+
+/// Counts getDirectorySyncGuard() calls so a test can assert the snapshot write path
+/// fsyncs the directory around the tmp_ marker unlink (issue #111339). Delegates to the
+/// real DiskLocal implementation so a genuine directory fsync still happens.
+class DirSyncCountingDisk : public DB::DiskLocal
+{
+public:
+    DirSyncCountingDisk(const std::string & disk_name, const std::string & disk_path)
+        : DB::DiskLocal(disk_name, disk_path)
+    {
+    }
+
+    DB::SyncGuardPtr getDirectorySyncGuard(const String & path) const override
+    {
+        ++dir_sync_guards;
+        return DB::DiskLocal::getDirectorySyncGuard(path);
+    }
+
+    size_t dirSyncGuards() const { return dir_sync_guards.load(); }
+
+private:
+    mutable std::atomic<size_t> dir_sync_guards{0};
 };
 
 /// All persisted snapshot names are unique (snapshot_<idx>_<uuid>.bin[.zstd]) — tests
@@ -641,6 +667,67 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotSimple)
     /// Verify seq_num round-trip (int64_t, value > INT32_MAX)
     ASSERT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/", &stats, /*out_data=*/nullptr));
     EXPECT_EQ(stats.getSeqNum(), large_seq_num);
+}
+
+/// Regression test for https://github.com/ClickHouse/ClickHouse/issues/111339: every snapshot
+/// write path must fsync the snapshot directory around the tmp_ marker unlink. A counting disk
+/// asserts the directory sync guard is acquired, rather than simulating power loss. All three
+/// marker-removal sites are exercised: writeSnapshotFile (local create), writeSnapshotBufferToFile
+/// (remote create), and finalizeSnapshotReceiveToDisk (chunked install).
+TEST_P(CoordinationTestWithCompression, TestStorageSnapshotDirectoryFsync)
+{
+    ChangelogDirTest test("./snapshots");
+
+    auto counting_disk = std::make_shared<DirSyncCountingDisk>("SnapshotDisk", "./snapshots");
+    this->keeper_context->setSnapshotDisk(counting_disk);
+
+    DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    addNode(storage, "/hello", "world");
+
+    /// After a write, the directory sync guard was acquired, the snapshot file is present, and
+    /// no tmp_ marker is left behind: the on-disk state is unambiguously complete, so a restart
+    /// keeps the snapshot instead of deleting it as incomplete.
+    const auto assert_synced_and_complete = [&](uint64_t idx, size_t dir_syncs_before)
+    {
+        EXPECT_GT(counting_disk->dirSyncGuards(), dir_syncs_before);
+        EXPECT_EQ(snapshotFilesForIdx("./snapshots", idx).size(), 1);
+        EXPECT_EQ(snapshotFilesForIdx("./snapshots", idx, /*include_tmp_markers=*/true).size(), 1);
+    };
+
+    /// writeSnapshotBufferToFile: KeeperStateMachine routes remote snapshot disks here.
+    {
+        DB::KeeperStorageSnapshot snapshot(&storage, 1, nullptr, this->keeper_context->getWriteSnapshotVersion());
+        auto buf = manager.serializeSnapshotToBuffer(snapshot);
+        size_t before = counting_disk->dirSyncGuards();
+        manager.writeSnapshotBufferToFile(*buf, 1);
+        assert_synced_and_complete(1, before);
+    }
+
+    /// finalizeSnapshotReceiveToDisk: chunked snapshot install from the leader.
+    {
+        DB::KeeperStorageSnapshot snapshot(&storage, 2, nullptr, this->keeper_context->getWriteSnapshotVersion());
+        auto buf = manager.serializeSnapshotToBuffer(snapshot);
+        auto receive_ctx = manager.beginSnapshotReceiveToDisk(2);
+        DB::ReadBufferFromNuraftBuffer reader(*buf);
+        DB::copyData(reader, *receive_ctx->write_buf);
+        size_t before = counting_disk->dirSyncGuards();
+        manager.finalizeSnapshotReceiveToDisk(*receive_ctx);
+        assert_synced_and_complete(2, before);
+    }
+
+    /// writeSnapshotFile: KeeperStateMachine routes local snapshot disks here. Exercised in the
+    /// default zstd mode only; the non-zstd branch has an unrelated pre-existing finalization
+    /// issue in the underlying file buffer, out of scope for this fix.
+    if (this->enable_compression)
+    {
+        DB::KeeperStorageSnapshot snapshot(&storage, 3, nullptr, this->keeper_context->getWriteSnapshotVersion());
+        size_t before = counting_disk->dirSyncGuards();
+        manager.writeSnapshotFile(snapshot);
+        assert_synced_and_complete(3, before);
+    }
 }
 
 TEST_P(CoordinationTestWithCompression, TestStorageSnapshotMoreWrites)
