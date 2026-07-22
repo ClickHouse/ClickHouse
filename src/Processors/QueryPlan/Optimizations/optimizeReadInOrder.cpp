@@ -1,12 +1,8 @@
 #include <Columns/ColumnConst.h>
 #include <Core/Field.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -181,7 +177,9 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
 /// FixedColumns are columns which values become constants after filtering.
 /// In a query "SELECT x, y, z FROM table WHERE x = 1 AND y = 'a' ORDER BY x, y, z"
 /// Fixed columns are 'x' and 'y'.
-using FixedColumns = std::unordered_set<const ActionsDAG::Node *>;
+/// The mapped value is the constant node the column is fixed to, or nullptr when the value is
+/// not directly available (e.g. a column fixed through an injective function).
+using FixedColumns = std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *>;
 
 /// Right now we find only simple cases like 'and(..., and(..., and(column = value, ...), ...'
 /// Injective functions are supported here. For a condition 'injectiveFunction(x) = 5' column 'x' is fixed.
@@ -205,19 +203,26 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
             else if (name == "equals")
             {
                 const ActionsDAG::Node * maybe_fixed_column = nullptr;
+                const ActionsDAG::Node * constant_column = nullptr;
                 size_t num_constant_columns = 0;
                 for (const auto & child : node->children)
                 {
                     if (child->column)
+                    {
                         ++num_constant_columns;
+                        constant_column = child;
+                    }
                     else
                         maybe_fixed_column = child;
                 }
 
                 if (maybe_fixed_column && num_constant_columns + 1 == node->children.size())
                 {
+                    if (node->children.size() != 2)
+                        constant_column = nullptr;
+
                     //std::cerr << "====== Added fixed column " << maybe_fixed_column->result_name << ' ' << static_cast<const void *>(maybe_fixed_column) << std::endl;
-                    fixed_columns.insert(maybe_fixed_column);
+                    fixed_columns.emplace(maybe_fixed_column, constant_column);
 
                     /// Support injective functions chain.
                     const ActionsDAG::Node * maybe_injective = maybe_fixed_column;
@@ -226,7 +231,7 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
                         && maybe_injective->function_base->isInjective({}))
                     {
                         maybe_injective = maybe_injective->children.front();
-                        fixed_columns.insert(maybe_injective);
+                        fixed_columns.emplace(maybe_injective, nullptr);
                     }
                 }
             }
@@ -345,18 +350,21 @@ void enrichFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
     /// This is needed because after DAG merging, there can be multiple INPUT nodes
     /// with the same column name (e.g., one from filter expression and one from SELECT).
     /// If any INPUT node with a given name is fixed, all INPUT nodes with that name should be fixed.
-    std::unordered_set<std::string_view> fixed_input_names;
-    for (const auto * node : fixed_columns)
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> fixed_input_names;
+    for (const auto & [node, value] : fixed_columns)
     {
         if (node->type == ActionsDAG::ActionType::INPUT)
-            fixed_input_names.insert(node->result_name);
+            fixed_input_names.emplace(node->result_name, value);
     }
 
     /// Add all INPUT nodes with matching names to fixed_columns.
     for (const auto & node : dag.getNodes())
     {
-        if (node.type == ActionsDAG::ActionType::INPUT && fixed_input_names.contains(node.result_name))
-            fixed_columns.insert(&node);
+        if (node.type == ActionsDAG::ActionType::INPUT)
+        {
+            if (auto it = fixed_input_names.find(node.result_name); it != fixed_input_names.end())
+                fixed_columns.emplace(&node, it->second);
+        }
     }
 
     struct Frame
@@ -395,8 +403,8 @@ void enrichFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
                 {
                     if (frame.node->type == ActionsDAG::ActionType::ALIAS)
                     {
-                        if (fixed_columns.contains(frame.node->children.at(0)))
-                            fixed_columns.insert(frame.node);
+                        if (auto it = fixed_columns.find(frame.node->children.at(0)); it != fixed_columns.end())
+                            fixed_columns.emplace(frame.node, it->second);
                     }
                     else if (frame.node->type == ActionsDAG::ActionType::FUNCTION)
                     {
@@ -416,7 +424,7 @@ void enrichFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
                             if (all_args_fixed_or_const)
                             {
                                 //std::cerr << "*** enrichFixedColumns add " << frame.node->result_name << ' ' << static_cast<const void *>(frame.node) << std::endl;
-                                fixed_columns.insert(frame.node);
+                                fixed_columns.emplace(frame.node, nullptr);
                             }
                         }
                     }
@@ -449,105 +457,24 @@ const ActionsDAG::Node * addMonotonicChain(ActionsDAG & dag, const ActionsDAG::N
     return &dag.addFunction(node->function_base, std::move(args), node->result_name);
 }
 
-template <typename T>
-Field extremeNumericField(bool need_min)
+/// The constant column a filter fixes the sort column to (e.g. `x = 42`), converted to the
+/// sort column type, or nullptr when the value is unknown or does not convert exactly.
+ColumnConstPtr tryGetFixedValueColumn(const ActionsDAG::Node * constant_node, const DataTypePtr & result_type)
 {
-    return need_min ? Field(std::numeric_limits<T>::min()) : Field(std::numeric_limits<T>::max());
-}
-
-template <typename EnumType>
-Field extremeEnumField(const IDataType & type, bool need_min)
-{
-    const auto & values = assert_cast<const EnumType &>(type).getValues();
-    auto it = need_min
-        ? std::ranges::min_element(values, {}, [](const auto & v) { return v.second; })
-        : std::ranges::max_element(values, {}, [](const auto & v) { return v.second; });
-    return Field(static_cast<Int64>(it->second));
-}
-
-/// A constant that sorts before (or equal to) every value of the type under the given sort
-/// direction and nulls_direction (as in SortColumnDescription), or nullptr when the type has no
-/// representable extreme (e.g. there is no greatest String). Used for virtual row columns whose
-/// values cannot be taken from the primary index.
-ColumnConstPtr tryGetExtremeConstant(const DataTypePtr & type, int direction, int nulls_direction)
-{
-    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
-    {
-        /// NULLs are placed at the beginning of this sort order.
-        if (direction * nulls_direction < 0)
-            return type->createColumnConst(1, Field());
-
-        auto nested = tryGetExtremeConstant(nullable->getNestedType(), direction, nulls_direction);
-        if (!nested)
-            return nullptr;
-        return type->createColumnConst(1, (*nested)[0]);
-    }
-
-    const bool need_min = direction > 0;
-
-    /// NaNs are placed like NULLs; infinity is an extreme only when they go last.
-    if (WhichDataType(type).isFloat() && direction * nulls_direction < 0)
+    if (!constant_node || !constant_node->column)
         return nullptr;
 
-    std::optional<Field> field;
-    switch (type->getTypeId())
-    {
-        case TypeIndex::UInt8: field = extremeNumericField<UInt8>(need_min); break;
-        case TypeIndex::UInt16: field = extremeNumericField<UInt16>(need_min); break;
-        case TypeIndex::UInt32: field = extremeNumericField<UInt32>(need_min); break;
-        case TypeIndex::UInt64: field = extremeNumericField<UInt64>(need_min); break;
-        case TypeIndex::UInt128: field = extremeNumericField<UInt128>(need_min); break;
-        case TypeIndex::UInt256: field = extremeNumericField<UInt256>(need_min); break;
-        case TypeIndex::Int8: field = extremeNumericField<Int8>(need_min); break;
-        case TypeIndex::Int16: field = extremeNumericField<Int16>(need_min); break;
-        case TypeIndex::Int32: field = extremeNumericField<Int32>(need_min); break;
-        case TypeIndex::Int64: field = extremeNumericField<Int64>(need_min); break;
-        case TypeIndex::Int128: field = extremeNumericField<Int128>(need_min); break;
-        case TypeIndex::Int256: field = extremeNumericField<Int256>(need_min); break;
-        case TypeIndex::Float32: [[fallthrough]];
-        case TypeIndex::Float64:
-            field = Field(need_min ? -std::numeric_limits<Float64>::infinity() : std::numeric_limits<Float64>::infinity());
-            break;
-        case TypeIndex::Date: field = extremeNumericField<UInt16>(need_min); break;
-        case TypeIndex::Date32: field = extremeNumericField<Int32>(need_min); break;
-        case TypeIndex::DateTime: field = extremeNumericField<UInt32>(need_min); break;
-        case TypeIndex::DateTime64:
-            field = DecimalField<DateTime64>(
-                extremeNumericField<Int64>(need_min).safeGet<Int64>(),
-                assert_cast<const DataTypeDateTime64 &>(*type).getScale());
-            break;
-        case TypeIndex::Decimal32:
-            field = DecimalField<Decimal32>(static_cast<Int32>(extremeNumericField<Int32>(need_min).safeGet<Int64>()), getDecimalScale(*type));
-            break;
-        case TypeIndex::Decimal64:
-            field = DecimalField<Decimal64>(extremeNumericField<Int64>(need_min).safeGet<Int64>(), getDecimalScale(*type));
-            break;
-        case TypeIndex::Decimal128:
-            field = DecimalField<Decimal128>(extremeNumericField<Int128>(need_min).safeGet<Int128>(), getDecimalScale(*type));
-            break;
-        case TypeIndex::Decimal256:
-            field = DecimalField<Decimal256>(extremeNumericField<Int256>(need_min).safeGet<Int256>(), getDecimalScale(*type));
-            break;
-        case TypeIndex::String:
-            if (need_min)
-                field = Field(String{});
-            break;
-        case TypeIndex::FixedString:
-            field = Field(String(assert_cast<const DataTypeFixedString &>(*type).getN(), need_min ? '\0' : '\xFF'));
-            break;
-        case TypeIndex::Enum8: field = extremeEnumField<DataTypeEnum8>(*type, need_min); break;
-        case TypeIndex::Enum16: field = extremeEnumField<DataTypeEnum16>(*type, need_min); break;
-        case TypeIndex::UUID: field = Field(UUID(extremeNumericField<UInt128>(need_min).safeGet<UInt128>())); break;
-        case TypeIndex::IPv4: field = Field(IPv4(static_cast<UInt32>(extremeNumericField<UInt32>(need_min).safeGet<UInt64>()))); break;
-        case TypeIndex::IPv6: field = Field(IPv6(extremeNumericField<UInt128>(need_min).safeGet<UInt128>())); break;
-        default:
-            break;
-    }
-
-    if (!field)
+    /// Note: a DAG constant may carry a column of size 0.
+    const auto * constant_column = checkAndGetColumn<ColumnConst>(constant_node->column.get());
+    if (!constant_column)
         return nullptr;
 
-    return type->createColumnConst(1, *field);
+    Field value = constant_column->getField();
+    Field converted = tryConvertFieldToType(value, *result_type, constant_node->result_type.get(), {}, /*strict=*/ true);
+    if (converted.isNull() && !value.isNull())
+        return nullptr;
+
+    return result_type->createColumnConst(1, converted);
 }
 
 struct SortingInputOrder
@@ -588,7 +515,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
             if (!match.monotonicity || match.monotonicity->strict)
             {
                 if (match.node && fixed_columns.contains(node))
-                    fixed_key_columns.insert(match.node);
+                    fixed_key_columns.emplace(match.node, fixed_columns.find(node)->second);
             }
         }
 
@@ -607,20 +534,25 @@ SortingInputOrder buildInputOrderFromSortDescription(
 
     bool can_optimize_virtual_row = true;
 
-    /// Set when a fixed key column is skipped without a matching ORDER BY column: the columns
-    /// after it are no longer a contiguous key prefix, and the index entry at a mark boundary
-    /// stops bounding their values in the filtered stream (rows with other values of the fixed
-    /// column contribute arbitrary suffixes to the entry).
-    bool key_prefix_gap = false;
+    /// Whether the index entry at a mark boundary still bounds the values of the next key
+    /// columns in the filtered stream. A key column fixed by the filter resets it: the entry may
+    /// hold a filtered-out value for that column, and then its later components bound nothing.
+    bool key_index_values_usable = true;
+
+    /// The virtual row conversion outputs form a prefix of the sort description: index values
+    /// while the key prefix is contiguous, exact constants for fixed columns. The first column
+    /// that is neither ends the prefix; the merge compares the virtual row only up to it.
+    size_t num_virtual_row_columns = 0;
+    bool virtual_row_prefix_open = true;
 
     struct MatchInfo
     {
         const ActionsDAG::Node * source = nullptr;
         const ActionsDAG::Node * fixed_column = nullptr;
         const MatchedTrees::Match * monotonic = nullptr;
-        /// Set for sort columns whose values cannot be taken from the index (see key_prefix_gap):
-        /// the virtual row announces this extreme constant instead.
-        ColumnConstPtr extreme_padding{};
+        /// The constant the filter fixes this sort column to; announced in the virtual row
+        /// instead of the index value (which may belong to a filtered-out row).
+        ColumnConstPtr fixed_value{};
     };
 
     std::vector<MatchInfo> match_infos;
@@ -670,6 +602,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
             //std::cerr << "====== (no dag) Found direct match" << std::endl;
 
             match_infos.push_back({.source = sort_column_node});
+            if (virtual_row_prefix_open)
+                ++num_virtual_row_columns;
             ++next_description_column;
             ++next_sort_key;
         }
@@ -692,14 +626,28 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 /// don't let it determine read direction - skip to next columns.
                 /// Example: ORDER BY tenant, event_time DESC with WHERE tenant='42'
                 /// tenant is constant, so read direction should come from event_time DESC.
-                if (fixed_columns.contains(sort_node))
+                if (auto fixed_it = fixed_columns.find(sort_node); fixed_it != fixed_columns.end())
                 {
-                    /// Virtual row for fixed column from order by is not supported now.
-                    can_optimize_virtual_row = false;
+                    MatchInfo info{.source = sort_node};
+
+                    if (virtual_row_prefix_open)
+                    {
+                        /// The index value at the boundary may belong to a filtered-out row, so
+                        /// announce the constant the filter fixes the column to.
+                        info.fixed_value = tryGetFixedValueColumn(fixed_it->second, sort_node->result_type);
+                        if (info.fixed_value)
+                            ++num_virtual_row_columns;
+                        else
+                            virtual_row_prefix_open = false;
+                    }
+
+                    /// This key column is announced with a constant, not with its index value,
+                    /// so the index entry does not bound the later key columns anymore.
+                    key_index_values_usable = false;
 
                     /// Still add the fixed column to the sort description (required for sort matching)
                     /// but don't set current_direction so it won't influence read_direction.
-                    match_infos.push_back({.source = sort_node, .fixed_column = sort_node});
+                    match_infos.push_back(std::move(info));
                     order_key_prefix_descr.push_back(sort_column_description);
                     ++next_description_column;
                     ++next_sort_key;
@@ -718,32 +666,31 @@ SortingInputOrder buildInputOrderFromSortDescription(
                     strict_monotonic = match.monotonicity->strict;
                 }
 
-                if (!key_prefix_gap)
+                if (virtual_row_prefix_open)
                 {
-                    if (match.monotonicity)
-                        match_infos.push_back({.source = sort_node, .monotonic = &match});
+                    if (key_index_values_usable)
+                        ++num_virtual_row_columns;
                     else
-                        match_infos.push_back({.source = sort_node});
+                        virtual_row_prefix_open = false;
                 }
-                else if (auto padding = tryGetExtremeConstant(
-                    sort_node->result_type, sort_column_description.direction, sort_column_description.nulls_direction))
-                {
-                    match_infos.push_back({.source = sort_node, .extreme_padding = std::move(padding)});
-                }
+
+                if (match.monotonicity)
+                    match_infos.push_back({.source = sort_node, .monotonic = &match});
                 else
-                    can_optimize_virtual_row = false;
+                    match_infos.push_back({.source = sort_node});
 
                 ++next_description_column;
                 ++next_sort_key;
             }
             else if (fixed_key_columns.contains(sort_column_node))
             {
-                // E.g. for pk (a, b), a = 1, order by b the index entry values of b give no bound
-                // for the filtered rows: parts may go like
+                // The skipped key column is constant after filtering, but the index entry at a
+                // mark boundary may hold a filtered-out value for it, e.g. for pk (a, b), a = 1,
+                // order by b:
                 // 1st part (0, 100), (1, 2), (1, 3), (1, 4)
                 // 2nd part (0, 100), (1, 2), (1, 3), (1, 4).
-                // The following sort columns are announced as extreme constants instead.
-                key_prefix_gap = true;
+                // So the index entry does not bound the later key columns anymore.
+                key_index_values_usable = false;
 
                 //std::cerr << "+++++++++ Found fixed key by match" << std::endl;
                 ++next_sort_key;
@@ -751,22 +698,26 @@ SortingInputOrder buildInputOrderFromSortDescription(
             else
             {
                 //std::cerr << "====== Check for fixed const : " << bool(sort_node->column) << " fixed : " << fixed_columns.contains(sort_node) << std::endl;
-                bool is_fixed_column = sort_node->column || fixed_columns.contains(sort_node);
+                auto fixed_it = fixed_columns.find(sort_node);
+                bool is_fixed_column = sort_node->column || fixed_it != fixed_columns.end();
                 if (!is_fixed_column)
                     break;
 
+                MatchInfo info{.source = sort_node};
                 if (sort_node->column)
-                    match_infos.push_back({.source = sort_node, .fixed_column = sort_node});
-                else if (auto padding = tryGetExtremeConstant(
-                    sort_node->result_type, sort_column_description.direction, sort_column_description.nulls_direction))
-                {
-                    /// The column is fixed by the filter but its value is not attached to the node,
-                    /// so announce an extreme; equal-or-smaller values keep the boundary correct.
-                    match_infos.push_back({.source = sort_node, .extreme_padding = std::move(padding)});
-                }
+                    info.fixed_column = sort_node;
                 else
-                    can_optimize_virtual_row = false;
+                    info.fixed_value = tryGetFixedValueColumn(fixed_it->second, sort_node->result_type);
 
+                if (virtual_row_prefix_open)
+                {
+                    if (info.fixed_column || info.fixed_value)
+                        ++num_virtual_row_columns;
+                    else
+                        virtual_row_prefix_open = false;
+                }
+
+                match_infos.push_back(std::move(info));
                 order_key_prefix_descr.push_back(sort_column_description);
                 ++next_description_column;
             }
@@ -810,18 +761,19 @@ SortingInputOrder buildInputOrderFromSortDescription(
     auto order_info = std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, read_direction, limit);
 
     std::optional<ActionsDAG> virtual_row_conversion;
-    if (can_optimize_virtual_row)
+    if (can_optimize_virtual_row && num_virtual_row_columns > 0)
     {
         ActionsDAG virtual_row_dag;
-        virtual_row_dag.getOutputs().reserve(match_infos.size());
+        virtual_row_dag.getOutputs().reserve(num_virtual_row_columns);
         size_t next_pk_name = 0;
-        for (const auto & info : match_infos)
+        for (size_t i = 0; i < num_virtual_row_columns; ++i)
         {
+            const auto & info = match_infos[i];
             const ActionsDAG::Node * output = nullptr;
             if (info.fixed_column)
                 output = &virtual_row_dag.addColumn(info.fixed_column->column, info.fixed_column->result_type, info.fixed_column->result_name);
-            else if (info.extreme_padding)
-                output = &virtual_row_dag.addColumn(info.extreme_padding, info.source->result_type, info.source->result_name);
+            else if (info.fixed_value)
+                output = &virtual_row_dag.addColumn(info.fixed_value, info.source->result_type, info.source->result_name);
             else
             {
                 if (info.monotonic)
@@ -893,7 +845,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
             if (!match.monotonicity || match.monotonicity->strict)
             {
                 if (match.node && fixed_columns.contains(node))
-                    fixed_key_columns.insert(match.node);
+                    fixed_key_columns.emplace(match.node, fixed_columns.find(node)->second);
             }
         }
 
@@ -1133,11 +1085,18 @@ void buildCombinedDAGForMergeChildPlan(
         {
             combined_dag.emplace(std::move(outer_clone));
 
-            for (const auto * outer_node : outer_fixed_columns)
+            for (const auto & [outer_node, outer_value] : outer_fixed_columns)
             {
                 auto it = clone_mapping.find(outer_node);
-                if (it != clone_mapping.end())
-                    combined_fixed_columns.insert(it->second);
+                if (it == clone_mapping.end())
+                    continue;
+
+                const ActionsDAG::Node * mapped_value = nullptr;
+                if (outer_value)
+                    if (auto value_it = clone_mapping.find(outer_value); value_it != clone_mapping.end())
+                        mapped_value = value_it->second;
+
+                combined_fixed_columns.emplace(it->second, mapped_value);
             }
         }
         else
@@ -1145,15 +1104,23 @@ void buildCombinedDAGForMergeChildPlan(
             ActionsDAG::NodeMapping inputs_map;
             combined_dag->mergeInplace(std::move(outer_clone), inputs_map, /*remove_dangling_inputs=*/ false);
 
-            for (const auto * outer_node : outer_fixed_columns)
+            auto remap = [&](const ActionsDAG::Node * outer_node) -> const ActionsDAG::Node *
             {
                 auto it = clone_mapping.find(outer_node);
                 if (it == clone_mapping.end())
-                    continue;
+                    return nullptr;
                 const auto * mapped = it->second;
                 if (auto remap_it = inputs_map.find(mapped); remap_it != inputs_map.end())
                     mapped = remap_it->second;
-                combined_fixed_columns.insert(mapped);
+                return mapped;
+            };
+
+            for (const auto & [outer_node, outer_value] : outer_fixed_columns)
+            {
+                const auto * mapped = remap(outer_node);
+                if (!mapped)
+                    continue;
+                combined_fixed_columns.emplace(mapped, outer_value ? remap(outer_value) : nullptr);
             }
         }
     }

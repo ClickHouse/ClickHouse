@@ -3114,10 +3114,10 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
 
     /// The virtual row conversion was built for a previously requested key prefix. A wider
     /// re-request (e.g. from distinct-in-order) keeps it valid: the in-order merges inside this
-    /// step take exact index values for the whole prefix, and the downstream merge still sorts
-    /// only by columns the conversion covers. A narrower prefix, or one not fully backed by the
-    /// primary index, would leave sort columns filled with defaults, announcing a wrong merge
-    /// boundary, so drop the conversion.
+    /// step take exact index values for the whole prefix, and the downstream merge compares the
+    /// virtual row only on the columns the conversion covers. A narrower prefix could leave the
+    /// conversion without some of its inputs, and a prefix not fully backed by the primary index
+    /// would leave the in-order merges with uncovered sort columns, so drop the conversion.
     if (virtual_row_conversion
         && (prefix_size < virtual_row_key_prefix_size
             || prefix_size > storage_snapshot->metadata->primary_key.column_names.size()))

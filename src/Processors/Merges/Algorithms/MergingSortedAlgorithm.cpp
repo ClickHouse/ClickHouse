@@ -22,9 +22,11 @@ static void rememberVirtualRowBoundary(const SortCursorImpl & cursor, Columns & 
     if (cursor.rows == 0)
         return;
 
-    /// A virtual row announces the boundary of the source's next output: remember its sort key.
-    for (const auto * sort_column : cursor.sort_columns)
-        virtual_row_boundary.push_back(sort_column->cut(cursor.getRow(), 1));
+    /// A virtual row announces the boundary of the source's next output: remember the covered
+    /// prefix of its sort key (the columns beyond it hold meaningless defaults).
+    size_t num_covered = std::min(cursor.sort_columns.size(), cursor.sort_prefix_limit);
+    for (size_t i = 0; i < num_covered; ++i)
+        virtual_row_boundary.push_back(cursor.sort_columns[i]->cut(cursor.getRow(), 1));
 }
 
 static void checkVirtualRowBoundary(const SortCursorImpl & cursor, Columns & virtual_row_boundary, const SortDescription & description, size_t source_num)
@@ -33,7 +35,7 @@ static void checkVirtualRowBoundary(const SortCursorImpl & cursor, Columns & vir
         return;
 
     size_t row = cursor.getRow();
-    for (size_t i = 0; i < description.size(); ++i)
+    for (size_t i = 0; i < virtual_row_boundary.size(); ++i)
     {
         int cmp = description[i].direction * virtual_row_boundary[i]->compareAt(0, row, *cursor.sort_columns[i], description[i].nulls_direction);
         if (cmp == 0)
@@ -108,14 +110,37 @@ void MergingSortedAlgorithm::addInput()
     virtual_row_boundary.emplace_back();
 }
 
+/// A virtual row bounds its source only on the sort columns present in its pk block (a prefix
+/// of the sort description); its remaining columns are meaningless defaults. Limit the cursor
+/// comparisons to the covered prefix.
+void MergingSortedAlgorithm::limitVirtualRowToCoveredSortPrefix(SortCursorImpl & cursor, const Block & pk_block) const
+{
+    size_t num_covered = 0;
+    for (const auto & column_description : description)
+    {
+        if (!pk_block.has(column_description.column_name))
+            break;
+        ++num_covered;
+    }
+
+    if (num_covered == 0 && !description.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Virtual row does not cover the first sort column '{}'", description.front().column_name);
+
+    if (num_covered < description.size())
+        cursor.sort_prefix_limit = num_covered;
+}
+
 void MergingSortedAlgorithm::initialize(Inputs inputs)
 {
-    for (auto & input : inputs)
+    std::vector<Block> virtual_row_blocks(inputs.size());
+    for (size_t i = 0; i < inputs.size(); ++i)
     {
+        auto & input = inputs[i];
         if (!isVirtualRow(input.chunk))
             continue;
 
-        setVirtualRow(input.chunk, *header, apply_virtual_row_conversions);
+        virtual_row_blocks[i] = setVirtualRow(input.chunk, *header, apply_virtual_row_conversions);
         input.skip_last_row = true;
     }
 
@@ -132,6 +157,8 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
             continue;
 
         cursors[source_num] = SortCursorImpl(*header, chunk.getColumns(), chunk.getNumRows(), description, source_num);
+        if (virtual_row_blocks[source_num].columns())
+            limitVirtualRowToCoveredSortPrefix(cursors[source_num], virtual_row_blocks[source_num]);
     }
 
 #ifndef NDEBUG
@@ -163,9 +190,10 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
 void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
     bool is_virtual_row = isVirtualRow(input.chunk);
+    Block virtual_row_block;
     if (is_virtual_row)
     {
-        setVirtualRow(input.chunk, *header, apply_virtual_row_conversions);
+        virtual_row_block = setVirtualRow(input.chunk, *header, apply_virtual_row_conversions);
         input.skip_last_row = true;
     }
 
@@ -173,9 +201,10 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
     removeConstAndSparse(input);
     current_inputs[source_num].swap(input);
     cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), *header, current_inputs[source_num].chunk.getNumRows());
+    if (virtual_row_block.columns())
+        limitVirtualRowToCoveredSortPrefix(cursors[source_num], virtual_row_block);
 
 #ifndef NDEBUG
-    /// See `initialize` for why we gate on `apply_virtual_row_conversions`.
     if (is_virtual_row && !has_collation)
         rememberVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num]);
     else

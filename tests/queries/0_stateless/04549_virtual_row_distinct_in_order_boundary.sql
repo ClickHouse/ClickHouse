@@ -71,13 +71,13 @@ SELECT
 
 DROP TABLE t_virtual_row_widen;
 
--- A fixed MIDDLE key (WHERE b = 1 ORDER BY a, c on key (a, b, c)) is skipped without adding it to
--- the virtual row, so the index entry at a mark boundary stops bounding the values of the later
--- sort columns in the filtered stream. Previously the columns after the skipped key were mapped
--- onto wrong key columns: a wrong value tripped "Virtual row boundary violated" (STID 2651-3359)
--- and a wrong type (e.g. Nullable key) tripped "Virtual row has different type" (STID 1637-309b).
--- Now the columns after the skipped key are announced as extreme constants for their sort
--- direction, so the virtual row stays enabled and the reads must not throw and stay correct.
+-- A fixed MIDDLE key (WHERE b = 1 ORDER BY a, c on key (a, b, c)) is skipped, and the index entry
+-- at a mark boundary stops bounding the values of the later sort columns in the filtered stream.
+-- Previously the columns after the skipped key were mapped onto wrong key columns: a wrong value
+-- tripped "Virtual row boundary violated" (STID 2651-3359) and a wrong type (e.g. Nullable key)
+-- tripped "Virtual row has different type" (STID 1637-309b). Now the virtual row covers only the
+-- sort-description prefix before the skipped key and the merge compares it up to that prefix, so
+-- the optimization stays enabled and the reads must not throw and stay correct.
 DROP TABLE IF EXISTS t_virtual_row_fixed_key;
 
 CREATE TABLE t_virtual_row_fixed_key (a UInt32, b UInt32, c UInt32)
@@ -98,10 +98,21 @@ SELECT
     (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_fixed_key WHERE b = 1 ORDER BY a, c SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1))
   = (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_fixed_key WHERE b = 1 ORDER BY a, c SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
 
--- In reverse order the padding is the type maximum.
+-- Reverse order relies on the same covered-prefix comparison.
 SELECT
     (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_fixed_key WHERE b = 1 ORDER BY a DESC, c DESC SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1))
   = (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_fixed_key WHERE b = 1 ORDER BY a DESC, c DESC SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
+
+-- A fixed key that stays in ORDER BY is announced with the constant the filter fixes it to
+-- (the index value at the boundary may belong to a filtered-out row).
+SELECT count()
+FROM (EXPLAIN actions = 1 SELECT a, b, c FROM t_virtual_row_fixed_key WHERE b = 1 ORDER BY a, b, c
+      SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1)
+WHERE explain ILIKE '%Virtual row conversions%';
+
+SELECT
+    (SELECT groupArray((a, b, c)) FROM (SELECT a, b, c FROM t_virtual_row_fixed_key WHERE b = 1 ORDER BY a, b, c SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1))
+  = (SELECT groupArray((a, b, c)) FROM (SELECT a, b, c FROM t_virtual_row_fixed_key WHERE b = 1 ORDER BY a, b, c SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
 
 DROP TABLE t_virtual_row_fixed_key;
 
@@ -122,9 +133,9 @@ SELECT
 
 DROP TABLE t_virtual_row_fixed_key_nullable;
 
--- A String column after the skipped key: ascending, the empty string is a valid extreme and the
--- virtual row stays enabled; descending, there is no greatest String, so the virtual row must be
--- disabled. Both reads must stay correct.
+-- A String column after the skipped key: the covered-prefix comparison does not depend on the
+-- type having an extreme value, so the virtual row stays enabled in both directions and the
+-- reads must stay correct.
 DROP TABLE IF EXISTS t_virtual_row_fixed_key_string;
 
 CREATE TABLE t_virtual_row_fixed_key_string (a UInt32, b UInt32, s String)
