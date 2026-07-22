@@ -106,7 +106,8 @@ void MergeTreeSink::consume(Chunk & chunk)
     auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
     auto deduplication_info = chunk.getChunkInfos().getSafe<DeduplicationInfo>();
-    auto part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context);
+    IColumn::Selector partition_selector;
+    auto part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context, &partition_selector);
 
     using DelayedPartitions = std::vector<MergeTreeDelayedChunk::Partition>;
     DelayedPartitions partitions;
@@ -117,8 +118,10 @@ void MergeTreeSink::consume(Chunk & chunk)
 
     auto process_list_element = context->getProcessListElement();
 
-    for (auto & current_block : part_blocks)
+    for (size_t part_index = 0; part_index < part_blocks.size(); ++part_index)
     {
+        auto & current_block = part_blocks[part_index];
+
         /// A single INSERT can split into very many parts (e.g. high-cardinality partition key with
         /// max_partitions_per_insert_block); honor cancellation/timeout between them.
         if (process_list_element)
@@ -127,7 +130,9 @@ void MergeTreeSink::consume(Chunk & chunk)
         auto thread_group = ThreadGroup::createForScope();
         ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
-        auto current_deduplication_info = deduplication_info->cloneSelf();
+        /// Keep only the tokens whose own rows landed in this partition, so a coalesced async
+        /// insert does not register a token in partitions it never wrote to.
+        auto current_deduplication_info = deduplication_info->filterToPartition(partition_selector, part_index);
 
         {
             ProfileEventTimeIncrement<Microseconds> duplication_elapsed(ProfileEvents::DuplicationElapsedMicroseconds);
@@ -313,6 +318,9 @@ void MergeTreeSink::finishDelayedChunk()
                 partition.block_with_partition.block = result.filtered_block;
                 partition.deduplication_info = std::move(result.deduplication_info);
 
+                /// writeTempPart moves the partition value out of block_with_partition into the part,
+                /// so restore it from the just-written part before rewriting the filtered block.
+                partition.block_with_partition.partition = MergeTreePartition(partition.temp_part->part->partition.value);
                 partition.temp_part = writeNewTempPart(partition.block_with_partition);
 
                 /// If optimize_on_insert setting is true, the rewritten partition.block_with_partition

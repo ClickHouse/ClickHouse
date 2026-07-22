@@ -17,8 +17,9 @@ DEBUG_LOG = os.path.join(
     os.path.basename(os.path.abspath(__file__)).strip(".python") + ".debuglog",
 )
 
-# The gray SGR sequence replxx uses for the as-you-type hint (Color::GRAY -> "0;1;30").
-HINT_COLOR = "\x1b[0;1;30m"
+# The gray SGR sequence replxx uses for the as-you-type hint (Color::GRAY -> "0;90", the
+# aixterm bright-black code; replxx used to emit the bold+dark fallback "0;1;30" instead).
+HINT_COLOR = "\x1b[0;90m"
 
 
 def read_until(master, debug_log_fd, predicate, timeout):

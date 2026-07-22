@@ -27,6 +27,9 @@ namespace ErrorCodes
     DECLARE(Milliseconds, dead_session_check_period_ms, 500, "How often leader will check sessions to consider them dead and remove", 0) \
     DECLARE(Milliseconds, ttl_gc_period_ms, 250, "How often leader scans TTL nodes and enqueues TryRemove for expired nodes", 0) \
     DECLARE(NonZeroUInt64, ttl_gc_batch_size, 256, "The size of the batch of nodes to be removed by the garbage collector", 0) \
+    DECLARE(Milliseconds, container_gc_period_ms, 60000, "How often leader scans container nodes and enqueues TryRemove for childless ones", 0) \
+    DECLARE(NonZeroUInt64, container_gc_batch_size, 256, "The size of the batch of container nodes to be removed by the garbage collector", 0) \
+    DECLARE(Milliseconds, container_gc_max_never_used_interval_ms, 0, "How long an empty container node that never had any children is kept before GC deletes it. 0 = disabled (default, container is kept indefinitely).", 0) \
     DECLARE(Milliseconds, heart_beat_interval_ms, 500, "Heartbeat interval between quorum nodes", 0) \
     DECLARE(Milliseconds, election_timeout_lower_bound_ms, 1000, "Lower bound of election timer (avoid too often leader elections)", 0) \
     DECLARE(Milliseconds, election_timeout_upper_bound_ms, 2000, "Upper bound of election timer (avoid too often leader elections)", 0) \
@@ -44,7 +47,7 @@ namespace ErrorCodes
     DECLARE(UInt64, stale_log_gap, 10000, "When node became stale and should receive snapshots from leader", 0) \
     DECLARE(UInt64, fresh_log_gap, 200, "When node became fresh", 0) \
     DECLARE(UInt64, max_request_queue_size, 100000, "Maximum number of request that can be in queue for processing", 0) \
-    DECLARE(UInt64, max_requests_batch_size, 100, "Max size of batch of requests that can be sent to RAFT", HOT_RELOAD) \
+    DECLARE(NonZeroUInt64, max_requests_batch_size, 100, "Max size of batch of requests that can be sent to RAFT", HOT_RELOAD) \
     DECLARE(UInt64, max_requests_batch_bytes_size, 100*1024, "Max size in bytes of batch of requests that can be sent to RAFT", HOT_RELOAD) \
     DECLARE(UInt64, max_read_batch_size, 100000, "Max size of batch of consecutive read requests that can be executed at once, possibly in parallel", HOT_RELOAD) \
     DECLARE(UInt64, max_read_batch_bytes_size, 10000000, "Max size in bytes of batch of consecutive read requests that can be executed at once, possibly in parallel", HOT_RELOAD) \
@@ -52,7 +55,7 @@ namespace ErrorCodes
     DECLARE(UInt64, parallel_read_chunk_size, 16, "Number of read requests each worker picks up atomically when parallel reads are enabled.", HOT_RELOAD) \
     DECLARE(UInt64, parallel_read_min_batch, 128, "Minimum batch size to trigger parallel read processing. Smaller batches are processed sequentially.", HOT_RELOAD) \
     DECLARE(UInt64, max_request_size, 0, "Max request size (in bytes). Zero means unlimited.", HOT_RELOAD) \
-    DECLARE(UInt64, max_requests_append_size, 100, "Max size of batch of requests that can be sent to replica in append request", 0) \
+    DECLARE(NonZeroUInt64, max_requests_append_size, 100, "Max size of batch of requests that can be sent to replica in append request", 0) \
     DECLARE(UInt64, max_requests_append_bytes_size, 10*1024*1024, "Max size in bytes of batch of requests that can be sent to replica in append request", 0) \
     DECLARE(UInt64, max_flush_batch_size, 1000, "Max size of batch of requests that can be flushed together", 0) \
     DECLARE(UInt64, max_requests_quick_batch_size, 100, "Obsolete setting, does nothing." , SettingsTierType::OBSOLETE) \
@@ -79,7 +82,7 @@ namespace ErrorCodes
     DECLARE(Bool, use_xid_64, false, "Enable 64-bit XID. It is disabled by default because of backward compatibility", 0) \
     DECLARE(Bool, check_node_acl_on_remove, false, "When trying to remove a node, check ACLs from both the node itself and the parent node. If disabled, default behaviour will be used where only ACL from the parent node is checked", 0) \
     DECLARE(UInt64, snapshot_transfer_chunk_size, 0, "Chunk size in bytes for snapshot transfer between Keeper nodes. Larger values reduce round-trips but increase per-message memory usage. 0 means disabled: the whole snapshot is sent as a single NuRaft object (compatibility behaviour).", 0) \
-    DECLARE(UInt64, write_snapshot_version, 6, "Snapshot format version to write (supported: 8 and above). Increase only after all nodes in the cluster are upgraded to a version that supports the new format", 0) \
+    DECLARE(UInt64, write_snapshot_version, 6, "Snapshot format version to write. Increase only after all nodes in the cluster are upgraded to a version that supports the new format", 0) \
     DECLARE(Bool, nuraft_test_mode, false, "Nuraft test mode. not enabled for production use", 0) \
     DECLARE(Bool, use_new_dispatcher, true, "Use new request dispatcher implementation (KeeperRequestDispatcher)", 0) \
     DECLARE(UInt64, max_in_flight_request_batches, 20, "Maximum number of request batches in flight in the new dispatcher pipeline", 0) \
