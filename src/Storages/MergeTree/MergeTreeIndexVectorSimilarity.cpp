@@ -558,8 +558,8 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
         granule->scalar_kind, ErrorCodes::INCORRECT_QUERY, "reference vector in the SELECT query");
 
     size_t limit = parameters->limit;
-    if (parameters->additional_filters_present || is_rescoring)
-        /// Additional filters mean post-filtering which means that matches may be removed. To compensate, allow to fetch more rows by a factor.
+    if (parameters->post_read_row_reduction || is_rescoring)
+        /// A post-read row reduction (a WHERE/PREWHERE filter or a DISTINCT) may remove matches. To compensate, allow to fetch more rows by a factor.
         /// Similarly, if rescoring is on, fetch more neighbours from the index and pass them for the final re-ranking by ORDER BY ... LIMIT.
         limit = std::min(static_cast<size_t>(static_cast<double>(limit) * static_cast<double>(index_fetch_multiplier)), max_limit);
 

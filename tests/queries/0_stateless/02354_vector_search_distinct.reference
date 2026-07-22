@@ -1,0 +1,20 @@
+DISTINCT should use the vector index
+1
+DISTINCT on multiple columns should use the vector index
+1
+DISTINCT with a WHERE clause should use the vector index
+1
+Non-DISTINCT still uses the vector index
+1
+DISTINCT should use the vector index (old analyzer)
+1
+DISTINCT over a non-value-preserving index expression should be brute force
+0
+Brute-force DISTINCT result
+1
+2
+3
+Indexed DISTINCT result (equal with sufficient over-fetch)
+1
+2
+3

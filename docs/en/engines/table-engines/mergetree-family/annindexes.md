@@ -356,6 +356,8 @@ ClickHouse will fetch 3.0 x 10 = 30 nearest neighbors from the vector index in e
 Only the ten closest neighbors will be returned.
 We note that setting `vector_search_index_fetch_multiplier` can mitigate the problem but in extreme cases (very selective WHERE condition), it is still possible that less than N requested rows returned.
 
+A `SELECT DISTINCT` query behaves the same way: the vector similarity index is used, but because duplicate rows are removed after the index read, fewer than `LIMIT` rows may be returned. Setting `vector_search_index_fetch_multiplier` mitigates this in the same manner.
+
 **Rescoring**
 
 Skip indexes in ClickHouse generally filter at the granule level, i.e. a lookup in a skip index (internally) returns a list of potentially matching granules which reduces the number of read data in the subsequent scan.

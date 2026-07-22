@@ -15,7 +15,9 @@ struct VectorSearchParameters
     VectorWithMemoryTracking<Float64> reference_vector;
 
     /// Other metadata
-    bool additional_filters_present; /// SELECT contains a WHERE or PREWHERE clause
+    /// True if rows may be removed after the index read (a WHERE/PREWHERE filter or a DISTINCT), so the index
+    /// should over-fetch neighbours (by 'vector_search_index_fetch_multiplier') to still satisfy the LIMIT.
+    bool post_read_row_reduction;
     bool return_distances;
 };
 

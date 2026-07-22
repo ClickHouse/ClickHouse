@@ -157,7 +157,7 @@ std::pair<Scalars, std::string> buildAnalyzeIndexQuery(const StorageID & storage
         query += fmt::format(", 'vector_search_index_analysis', array('{}', '{}', {}, {}, {}, {})",
                         vector_search_parameters->column, vector_search_parameters->distance_function,
                         vector_search_parameters->limit, vector_search_parameters->reference_vector,
-                        vector_search_parameters->additional_filters_present, vector_search_parameters->return_distances);
+                        vector_search_parameters->post_read_row_reduction, vector_search_parameters->return_distances);
     }
     query += ")";
 

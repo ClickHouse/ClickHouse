@@ -7,6 +7,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -53,15 +54,25 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     constexpr size_t no_layers_updated = 0;
 
     bool additional_filters_present = false; /// WHERE or PREWHERE
+    bool distinct_present = false; /// SELECT DISTINCT
 
     /// Expect this query plan:
     /// LimitStep
+    ///    ^
+    ///    |
+    /// (optional: DistinctStep)         -- SELECT DISTINCT (final)
     ///    ^
     ///    |
     /// SortingStep
     ///    ^
     ///    |
     /// ExpressionStep
+    ///    ^
+    ///    |
+    /// (optional: DistinctStep)         -- SELECT DISTINCT (preliminary)
+    ///    ^
+    ///    |
+    /// (optional: ExpressionStep)       -- present only together with the preliminary DistinctStep
     ///    ^
     ///    |
     /// (optional: FilterStep)
@@ -76,6 +87,14 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     if (node->children.size() != 1)
         return no_layers_updated;
     node = node->children.front();
+    /// SELECT DISTINCT inserts the final DistinctStep between LimitStep and SortingStep (issue #111343).
+    if (auto * final_distinct_step = typeid_cast<DistinctStep *>(node->step.get()); final_distinct_step && !final_distinct_step->isPreliminary())
+    {
+        distinct_present = true;
+        if (node->children.size() != 1)
+            return no_layers_updated;
+        node = node->children.front();
+    }
     auto * sorting_step = typeid_cast<SortingStep *>(node->step.get());
     if (!sorting_step)
         return no_layers_updated;
@@ -83,6 +102,32 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     if (node->children.size() != 1)
         return no_layers_updated;
     node = node->children.front();
+    /// Steps over a preliminary DistinctStep if the current node is one. Returns whether it did; sets
+    /// `stepped_ok` to false if the tree shape is unexpected (a step with multiple children).
+    bool stepped_ok = true;
+    auto step_over_preliminary_distinct = [&]() -> bool
+    {
+        if (auto * preliminary_distinct_step = typeid_cast<DistinctStep *>(node->step.get());
+            preliminary_distinct_step && preliminary_distinct_step->isPreliminary())
+        {
+            distinct_present = true;
+            if (node->children.size() != 1)
+            {
+                stepped_ok = false;
+                return false;
+            }
+            node = node->children.front();
+            return true;
+        }
+        return false;
+    };
+
+    /// The old analyzer places the preliminary DistinctStep BELOW the SortingStep and ABOVE the ORDER BY
+    /// ExpressionStep.
+    step_over_preliminary_distinct();
+    if (!stepped_ok)
+        return no_layers_updated;
+
     auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
     if (!expression_step)
         return no_layers_updated;
@@ -90,6 +135,21 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     if (node->children.size() != 1)
         return no_layers_updated;
     node = node->children.front();
+    /// The analyzer instead places the preliminary DistinctStep BELOW the ORDER BY ExpressionStep,
+    /// followed by a projection ExpressionStep. Step over both.
+    if (step_over_preliminary_distinct())
+    {
+        /// A projection ExpressionStep usually sits between the preliminary DistinctStep and the read.
+        /// Step over it if present; if it was merged away, we are already at the read/filter node.
+        if (typeid_cast<ExpressionStep *>(node->step.get()))
+        {
+            if (node->children.size() != 1)
+                return no_layers_updated;
+            node = node->children.front();
+        }
+    }
+    if (!stepped_ok)
+        return no_layers_updated;
     auto * read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
     FilterStep * filter_step = nullptr;
     if (!read_from_mergetree_step)
@@ -244,8 +304,11 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
             "The `_distance` column is an internal virtual column of vector search and cannot be referenced directly in queries. "
             "Use the distance function (e.g. `L2Distance`, `cosineDistance`) in ORDER BY instead");
 
+    /// DISTINCT, like a filter, can remove rows after the read (see VectorSearchParameters::post_read_row_reduction).
+    const bool post_read_row_reduction = additional_filters_present || distinct_present;
+
     /// All set for 2nd pass
-    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector, additional_filters_present, true);
+    auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector, post_read_row_reduction, true);
     read_from_mergetree_step->setVectorSearchParameters(std::move(vector_search_parameters));
 
     return no_layers_updated;

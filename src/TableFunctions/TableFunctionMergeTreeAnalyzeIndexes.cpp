@@ -223,7 +223,7 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsForOptimizations(const 
             vector_search_args[1].safeGet<String>(), /// distance function
             vector_search_args[2].safeGet<UInt64>(), /// limit
             reference_vector, /// search vector
-            static_cast<bool>(vector_search_args[4].safeGet<bool>()), /// additional filters
+            static_cast<bool>(vector_search_args[4].safeGet<bool>()), /// post-read row reduction (filter or DISTINCT)
             static_cast<bool>(vector_search_args[5].safeGet<bool>())}; /// return distances
     }
 }
