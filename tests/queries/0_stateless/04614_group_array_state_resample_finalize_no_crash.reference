@@ -1,5 +1,2 @@
-resample hit memory limit: 1
-resample tuple hit memory limit: 1
-resample if tuple hit memory limit: 1
 [[0,5,10,15],[1,6,11,16],[2,7,12,17],[3,8,13,18],[4,9,14,19]]
 45	55
