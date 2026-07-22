@@ -28,7 +28,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Only the `preprocessor` and `postprocessor` arguments are column expressions; the rest are literals or tokenizer specs.
+/// Only the `preprocessor` and `postprocessor` arguments contain column expressions.
 void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDescription & columns)
 {
     using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;

@@ -33,7 +33,7 @@ public:
     struct Data
     {
         const ColumnsDescription & columns;
-        /// Names shadowed by an enclosing lambda parameter, which must not be expanded as ALIASes.
+        /// Names bound by an enclosing lambda parameter; not expanded as ALIASes.
         NameSet private_aliases;
     };
 

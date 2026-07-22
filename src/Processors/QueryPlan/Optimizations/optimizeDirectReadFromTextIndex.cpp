@@ -74,9 +74,8 @@ String getNameWithoutAliases(const ActionsDAG::Node * node)
         return result_name;
     }
 
-    /// A constant can be named differently depending on how the ActionsDAG was built (query analyzer vs the
-    /// preprocessor's ExpressionAnalyzer), e.g. an ALIAS column defined as `ifNull(col, 'x')`. Render it by
-    /// value so the haystack and the preprocessor expression compare equal regardless of the source name.
+    /// Render a constant by value: its result_name can differ between the query and preprocessor DAGs,
+    /// so comparing by value keeps the haystack and preprocessor names consistent.
     if (node->type == ActionsDAG::ActionType::COLUMN && node->column)
         return applyVisitor(FieldVisitorToString(), node->column->getField());
 

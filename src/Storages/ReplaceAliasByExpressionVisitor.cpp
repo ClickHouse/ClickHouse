@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 bool ReplaceAliasByExpressionMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
 {
-    /// A lambda visits its own body itself (see the ASTFunction overload) so it can mask its parameters.
+    /// A lambda visits its own body (see the ASTFunction overload) to mask its parameters.
     if (const auto * function = node->as<ASTFunction>())
         return function->name != "lambda";
     return true;
@@ -37,7 +37,7 @@ void ReplaceAliasByExpressionMatcher::visit(const ASTFunction & function, ASTPtr
     if (function.name != "lambda")
         return;
 
-    /// Mask the lambda parameters so a lambda-local name that shadows an ALIAS column is not expanded.
+    /// Mask lambda parameters so a name shadowing an ALIAS column is not expanded.
     Names local_aliases;
     for (const auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(function))
         if (data.private_aliases.insert(name).second)
@@ -61,23 +61,31 @@ void ReplaceAliasByExpressionMatcher::visit(const ASTIdentifier & column, ASTPtr
         /// Alias expr is saved in default expr.
         if (auto col_default = data.columns.getDefault(column_name))
         {
-            auto check_alias_not_captured_by_lambda = [&column_name](this auto && self, const ASTPtr & sub_ast, const NameSet & names) -> void
+            /// Reject an ALIAS whose free identifiers would be captured by an enclosing lambda parameter.
+            /// Parameters of lambdas inside the ALIAS body shadow their own scope, so drop them from `bound`.
+            auto check_alias_not_captured_by_lambda = [&column_name](this auto && self, const ASTPtr & sub_ast, NameSet bound) -> void
             {
-                if (const auto * identifier = sub_ast->as<ASTIdentifier>(); identifier && names.contains(identifier->name()))
+                if (const auto * func = sub_ast->as<ASTFunction>(); func && func->name == "lambda")
+                {
+                    for (const auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(*func))
+                        bound.erase(name);
+                }
+                else if (const auto * identifier = sub_ast->as<ASTIdentifier>(); identifier && bound.contains(identifier->name()))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "ALIAS column '{}' cannot be expanded inside a lambda: its expression references '{}', "
                         "which is bound by a lambda parameter of the same name", column_name, identifier->name());
 
                 for (const auto & child : sub_ast->children)
-                    self(child, names);
+                    self(child, bound);
             };
 
-            /// Reject inlining an ALIAS whose expression references a column shadowed by an enclosing
-            /// lambda parameter, which would silently rebind it to the parameter.
             if (!data.private_aliases.empty())
                 check_alias_not_captured_by_lambda(col_default->expression, data.private_aliases);
 
             ast = col_default->expression->clone();
+
+            /// Revisit the result to expand chained ALIASes (a -> b -> c).
+            Visitor(data).visit(ast);
         }
     }
 }
