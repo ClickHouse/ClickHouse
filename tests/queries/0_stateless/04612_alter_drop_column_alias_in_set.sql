@@ -38,7 +38,7 @@ SELECT 'after drop', id, is_special, label FROM t_alias_in_set ORDER BY id;
 SELECT 'subquery select', id, 'YES' IS DISTINCT FROM (SELECT label) FROM t_alias_in_set ORDER BY id;
 SELECT 'subquery where', count() FROM t_alias_in_set WHERE 'YES' IS DISTINCT FROM (SELECT label);
 -- In a mutation filter a correlated subquery is rejected with a regular error, not a LOGICAL_ERROR.
-ALTER TABLE t_alias_in_set DELETE WHERE 'YES' IS DISTINCT FROM (SELECT label); -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE t_alias_in_set DELETE WHERE 'YES' IS DISTINCT FROM (SELECT label); -- { serverError NOT_IMPLEMENTED, UNKNOWN_IDENTIFIER }
 
 -- Mutation predicate references ALIAS -> ALIAS -> IN (MutationsInterpreter).
 ALTER TABLE t_alias_in_set DELETE WHERE label = 'YES';
