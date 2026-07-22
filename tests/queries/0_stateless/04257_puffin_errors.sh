@@ -21,6 +21,12 @@ launch "$id" puffin "$DATA/invalid_roaring_bitmap.puffin" 'Failed to deserialize
 id=$((id + 1))
 launch "$id" puffin "$DATA/invalid_bitmap_key.puffin" 'Invalid deletion vector bitmap key'
 id=$((id + 1))
+launch "$id" puffin "$DATA/dv_envelope_length_mismatch.puffin" 'does not match combined length'
+id=$((id + 1))
+launch "$id" puffin "$DATA/dv_envelope_bad_magic.puffin" 'Invalid deletion vector magic'
+id=$((id + 1))
+launch "$id" puffin "$DATA/dv_envelope_crc_mismatch.puffin" 'Deletion vector CRC mismatch'
+id=$((id + 1))
 launch "$id" puffin "$DATA/cardinality_mismatch_large_bitmap.puffin" 'exceeds declared cardinality'
 id=$((id + 1))
 launch "$id" puffin "$DATA/cardinality_exceeds_materialization_limit.puffin" 'exceeds materialization limit' 'BAD_ARGUMENTS'

@@ -11,6 +11,12 @@ Failed to deserialize deletion vector roaring bitmap
 BAD_ARGUMENTS
 --- invalid_bitmap_key.puffin ---
 Invalid deletion vector bitmap key
+--- dv_envelope_length_mismatch.puffin ---
+does not match combined length
+--- dv_envelope_bad_magic.puffin ---
+Invalid deletion vector magic
+--- dv_envelope_crc_mismatch.puffin ---
+Deletion vector CRC mismatch
 --- cardinality_mismatch_large_bitmap.puffin ---
 exceeds declared cardinality
 --- cardinality_exceeds_materialization_limit.puffin ---

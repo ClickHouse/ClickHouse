@@ -177,6 +177,36 @@ def generate_invalid_bitmap_key() -> None:
     write_fixture("invalid_bitmap_key.puffin", build_puffin_file(blob, footer_json_for_blob(blob)))
 
 
+def generate_invalid_dv_envelope() -> None:
+    """Corrupt deletion-vector-v1 framing so extractDeletionVectorPayload cannot silently regress."""
+    bitmap = pyroaring.BitMap([2, 5])
+    vector = struct.pack("<qi", 1, 0) + bitmap.serialize()
+    base = bytearray(wrap_deletion_vector_blob(vector))
+    properties = default_dv_properties(cardinality="2")
+
+    # Footer length matches on-disk bytes, but combined_length claims a different size.
+    length_mismatch = bytearray(base)
+    length_mismatch[0:4] = struct.pack(">I", len(DELETION_VECTOR_MAGIC) + len(vector) + 1)
+    write_fixture(
+        "dv_envelope_length_mismatch.puffin",
+        build_puffin_file(bytes(length_mismatch), footer_json_for_blob(bytes(length_mismatch), properties)),
+    )
+
+    bad_magic = bytearray(base)
+    bad_magic[4:8] = b"XXXX"
+    write_fixture(
+        "dv_envelope_bad_magic.puffin",
+        build_puffin_file(bytes(bad_magic), footer_json_for_blob(bytes(bad_magic), properties)),
+    )
+
+    crc_mismatch = bytearray(base)
+    crc_mismatch[-1] ^= 0xFF
+    write_fixture(
+        "dv_envelope_crc_mismatch.puffin",
+        build_puffin_file(bytes(crc_mismatch), footer_json_for_blob(bytes(crc_mismatch), properties)),
+    )
+
+
 def generate_inflated_lz4_content_size(source: Path) -> None:
     puffin = source.read_bytes()
     blob, footer_json = extract_blob_and_footer_json(puffin)
@@ -686,6 +716,7 @@ def main() -> None:
     generate_invalid_blob_bounds()
     generate_invalid_roaring_bitmap()
     generate_invalid_bitmap_key()
+    generate_invalid_dv_envelope()
     generate_inflated_lz4_content_size(spark_fixture)
     generate_lz4_content_size_within_ratio_over_absolute_cap(spark_fixture)
     generate_missing_lz4_content_size()
