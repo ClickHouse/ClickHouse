@@ -566,7 +566,9 @@ class LakeDataGenerator:
                 )
             )
             return [
-                self._random_value_for_type(dtype.elementType, elem_null_rate, elem_hint)
+                self._random_value_for_type(
+                    dtype.elementType, elem_null_rate, elem_hint
+                )
                 for _ in range(n)
             ]
         if isinstance(dtype, MapType):

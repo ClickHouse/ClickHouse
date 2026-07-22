@@ -100,7 +100,13 @@ class SparkAndClickHouseCheck:
             return True, engine
         return engine.startswith(expected), engine
 
-    def check_table(self, cluster, spark: SparkSession, table: SparkTable) -> bool:
+    def check_table(
+        self,
+        cluster,
+        spark: SparkSession,
+        table: SparkTable,
+        extra_ch_settings: str = "",
+    ) -> bool:
         try:
             clickhouse_predicate = ""
             spark_predicate = ""
@@ -150,6 +156,16 @@ class SparkAndClickHouseCheck:
                 clickhouse_predicate = f" SETTINGS iceberg_timestamp_ms = {int(next_time.timestamp() * 1000)}"
                 spark_predicate = f" TIMESTAMP AS OF '{next_time}'"
                 extra_predicate = f" on timestamp {next_time}"
+
+            # Fold in caller-supplied ClickHouse settings (e.g. the File-table reader's
+            # engine_file_skip_empty_files / missing-column pins) so the count and hash queries
+            # below run under the same settings as the caller's probe, not the randomized defaults
+            if extra_ch_settings:
+                clickhouse_predicate += (
+                    f", {extra_ch_settings}"
+                    if clickhouse_predicate
+                    else f" SETTINGS {extra_ch_settings}"
+                )
 
             # Start by checking counts
             spark_query = spark.sql(

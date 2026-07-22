@@ -3569,16 +3569,18 @@ String QueryFuzzer::makeBraceExpansion()
 }
 
 /// Build a syntactically valid IPv4 or IPv6 host descriptor for remote()/remoteSecure(): the last
-/// group is a 1..4-host brace expansion (loopback, so bounded) with an optional port. The port must
-/// match the transport, so remoteSecure() gets the secure TCP port (9440) and remote() the plain one.
+/// group is a 1..4-host brace expansion (loopback, so bounded) with a port. The port must match the
+/// transport, so remoteSecure() gets the secure TCP port (9440) and remote() the plain one.
 String QueryFuzzer::makeRemoteHostDescriptor(bool secure)
 {
     const String braces = makeBraceExpansion();
-    /// IPv6 addresses are bracketed so the optional :port stays unambiguous.
-    String descriptor = fuzz_rand() % 2 == 0 ? "[::" + braces + "]" : "127.0.0." + braces;
-    if (fuzz_rand() % 2 == 0)
-        descriptor += secure ? ":9440" : ":9000";
-    return descriptor;
+    const String port = secure ? ":9440" : ":9000";
+    const bool ipv6 = fuzz_rand() % 2 == 0;
+    /// Bracketed IPv6 is only accepted as [addr]:port, so the port is mandatory there; for IPv4
+    /// it is optional (the server falls back to the default port).
+    if (ipv6)
+        return "[::" + braces + "]" + port;
+    return "127.0.0." + braces + (fuzz_rand() % 2 == 0 ? port : "");
 }
 
 /// Build a syntactically valid loopback URL for url()/urlCluster() over the local HTTP interface,

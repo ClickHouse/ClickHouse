@@ -449,7 +449,9 @@ def _spark_compatible_arrow_type(t):
             _spark_compatible_field(t.item_field),
         )
     if pa.types.is_struct(t):
-        return pa.struct([_spark_compatible_field(t.field(i)) for i in range(t.num_fields)])
+        return pa.struct(
+            [_spark_compatible_field(t.field(i)) for i in range(t.num_fields)]
+        )
     return t
 
 
@@ -608,10 +610,13 @@ class FileHandler:
             command=cluster.client_bin_path,
         )
         # Force a full decode of every column: tablecheck swallows exceptions as a pass,
-        # while an error thrown here propagates and fails the external command
+        # while an error thrown here propagates and fails the external command. Compute the
+        # settings once and reuse them for the count/hash comparison below, so a file ClickHouse
+        # truncated to 0 bytes is skipped consistently instead of passing here and throwing there.
+        decode_settings = self._full_decode_settings(table)
         client.query(
             f"SELECT * FROM {table.get_clickhouse_path()} FORMAT Null"
-            f" SETTINGS {self._full_decode_settings(table)};"
+            f" SETTINGS {decode_settings};"
         )
         if isinstance(data_read, list):
             # Avro records: rebuild rows in the declared column order
@@ -631,9 +636,9 @@ class FileHandler:
         else:
             df = next_session.createDataFrame(_to_spark_compatible_arrow(data_read))
         df.createOrReplaceTempView(table.get_table_full_path())
-        # Compare only the columns both sides share
+        # Compare only the columns both sides share, under the same reader settings as the probe
         return self.spark.table_check.check_table(
-            cluster, next_session, table.for_check()
+            cluster, next_session, table.for_check(), extra_ch_settings=decode_settings
         )
 
     def update_or_check_table(self, cluster, next_session, data) -> bool:
