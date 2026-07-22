@@ -70,10 +70,21 @@ public:
         }
         else if constexpr (std::is_integral_v<Key> && sizeof(Key) <= sizeof(UInt64))
         {
+            /// Dispatch to the width-matching DataSketches overload. This is required for
+            /// interoperability: DataSketches hashes uint8/16/32 through the same-width signed
+            /// type (sign-extending it to int64), so widening them to UInt64 here would produce
+            /// sketches incompatible with native DataSketches producers for values above the
+            /// signed range of the type.
             if constexpr (std::is_signed_v<Key>)
                 getHLLUpdate()->update(static_cast<Int64>(value));
+            else if constexpr (sizeof(Key) == 1)
+                getHLLUpdate()->update(static_cast<uint8_t>(value));
+            else if constexpr (sizeof(Key) == 2)
+                getHLLUpdate()->update(static_cast<uint16_t>(value));
+            else if constexpr (sizeof(Key) == 4)
+                getHLLUpdate()->update(static_cast<uint32_t>(value));
             else
-                getHLLUpdate()->update(static_cast<UInt64>(value));
+                getHLLUpdate()->update(static_cast<uint64_t>(value));
         }
         else
         {
