@@ -509,8 +509,8 @@ void processMatch(
     {
         setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
         used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
-        auto used_flags_opt = join_features.need_flags ? &used_flags : nullptr;
-        addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
+        /// setUsed already marked every row of the key's list, so addFoundRowAll does not need to call setUsedOnce on the rows it emits.
+        addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, nullptr);
     }
     else if constexpr ((join_features.is_any_join || join_features.is_semi_join) && join_features.right)
     {
