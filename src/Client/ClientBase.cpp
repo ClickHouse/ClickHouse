@@ -3029,23 +3029,38 @@ void ClientBase::processParsedSingleQuery(
         else
             output_stream << std::endl << std::endl;
     }
-    else
+    /// The remaining post-query diagnostics go to the same stdout/stderr that may still be a stuck
+    /// terminal after a Ctrl+C (the interrupt handler is already stopped here, like for the summary
+    /// above), so none of them may be a plain blocking iostream write: that could re-hang the client
+    /// in the epilogue right after the result-set write was made interruptible. Collect the
+    /// stderr-side ones into one string and emit it below with a single bounded best-effort write.
+    /// The elapsed time is printed with fixed 3-decimal precision to match the
+    /// `std::fixed << std::setprecision(3)` the clients set on error_stream at startup.
+    String stderr_epilogue;
+
+    if (!is_interactive)
     {
         const auto & config = getClientConfiguration();
         if (config.getBool("print-time-to-stderr", false))
-            error_stream << progress_indication.elapsedSeconds() << "\n";
+            stderr_epilogue += fmt::format("{:.3f}\n", progress_indication.elapsedSeconds());
 
         const auto & print_memory_mode = config.getString("print-memory-to-stderr", "");
         auto peak_memory_usage = std::max<Int64>(progress_indication.getMemoryUsage().peak, 0);
         if (print_memory_mode == "default")
-            error_stream << peak_memory_usage << "\n";
+            stderr_epilogue += fmt::format("{}\n", peak_memory_usage);
         else if (print_memory_mode == "readable")
-            error_stream << formatReadableSizeWithBinarySuffix(peak_memory_usage) << "\n";
+            stderr_epilogue += formatReadableSizeWithBinarySuffix(peak_memory_usage) + "\n";
     }
 
     if (!is_interactive && getClientConfiguration().getBool("print-num-processed-rows", false))
     {
-        output_stream << "Processed rows: " << processed_rows << "\n";
+        if (std_out)
+        {
+            output_stream.flush();
+            std_out->writeBestEffort(fmt::format("Processed rows: {}\n", processed_rows), /*timeout_ms*/ 1000);
+        }
+        else
+            output_stream << "Processed rows: " << processed_rows << "\n";
     }
 
     /// Optional ASCII `BEL` chime when a query finishes after running for at least
@@ -3063,8 +3078,17 @@ void ClientBase::processParsedSingleQuery(
         && stderr_is_a_tty
         && progress_indication.elapsedSeconds() >= static_cast<double>(chime_threshold_seconds))
     {
-        error_stream << '\x07';
+        stderr_epilogue += '\x07';
+    }
+
+    if (!stderr_epilogue.empty())
+    {
+        /// Every write to error_stream ends with an explicit "\n" or flush, so this flush is
+        /// normally a no-op; it keeps the output ordered if anything is still buffered there.
         error_stream.flush();
+        WriteBufferFromFileDescriptor stderr_buf(stderr_fd);
+        stderr_buf.writeBestEffort(stderr_epilogue, /*timeout_ms*/ 1000);
+        stderr_buf.finalize();
     }
 }
 
