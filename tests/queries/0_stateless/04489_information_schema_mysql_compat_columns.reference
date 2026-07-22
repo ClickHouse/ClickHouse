@@ -14,3 +14,7 @@ a			id + 1	\N
 id	PRI			\N
 m			id * 2	\N
 s				\N
+-- collations: the collation advertised in SCHEMATA/TABLES is discoverable
+utf8mb4_0900_ai_ci	utf8mb4	255	Yes	Yes	0	NO PAD
+-- collations: lowercase aliases resolve too
+utf8mb4_0900_ai_ci	utf8mb4	255	Yes	Yes	0	NO PAD

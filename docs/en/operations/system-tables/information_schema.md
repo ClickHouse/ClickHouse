@@ -37,6 +37,7 @@ SHOW TABLES FROM information_schema;
 
 `INFORMATION_SCHEMA` contains the following views:
 
+- [COLLATIONS](#collations)
 - [COLUMNS](#columns)
 - [KEY_COLUMN_USAGE](#key_column_usage)
 - [REFERENTIAL_CONSTRAINTS](#referential_constraints)
@@ -388,3 +389,17 @@ Columns:
 ## STATISTICS {#statistics}
 
 Provides information about table indexes. Currently returns an empty result (no rows) which is just enough to provide compatibility with 3rd party tools like Tableau Online.
+
+## COLLATIONS {#collations}
+
+Provides information about available collations. Contains the collations from [system.collations](../../operations/system-tables/collations.md) plus one MySQL-compatibility row for `utf8mb4_0900_ai_ci` — the collation that the MySQL protocol advertises in the handshake, in `SCHEMATA.DEFAULT_COLLATION_NAME`, and in `TABLES.TABLE_COLLATION` — so that a MySQL-aware client following the advertised collation into this view finds it.
+
+Columns:
+
+- `collation_name` ([String](../../sql-reference/data-types/string.md)) — The name of the collation.
+- `character_set_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The associated character set (`utf8mb4` for the MySQL-compatibility row, otherwise `NULL`). Provided for MySQL compatibility.
+- `id` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The MySQL collation id (`255` for the MySQL-compatibility row, otherwise `NULL`). Provided for MySQL compatibility.
+- `is_default` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Whether the collation is the default of its character set (`Yes` for the MySQL-compatibility row, otherwise `NULL`). Provided for MySQL compatibility.
+- `is_compiled` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Whether the collation is compiled into the server (`Yes` for the MySQL-compatibility row, otherwise `NULL`). Provided for MySQL compatibility.
+- `sortlen` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The minimum sort length (`0` for the MySQL-compatibility row, otherwise `NULL`). Provided for MySQL compatibility.
+- `pad_attribute` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The pad attribute, `NO PAD` or `PAD SPACE` (`NO PAD` for the MySQL-compatibility row, otherwise `NULL`). Provided for MySQL compatibility.

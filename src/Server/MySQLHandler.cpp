@@ -259,10 +259,21 @@ static String killConnectionIdReplacementQuery(const String & query)
     return query;
 }
 
-/// Replace "SHOW COLLATIONS" into empty response.
+/// Replace "SHOW COLLATION" with a response enumerating the collation the server actually
+/// advertises in the handshake and in result-set metadata (`CharacterSet::utf8mb4_0900_ai_ci`),
+/// in the shape MySQL uses for this statement. Previously this returned an empty set, so a client
+/// that followed the advertised collation into `SHOW COLLATION` got "not found".
 static String showCollationsReplacementQuery(const String & /*query*/)
 {
-    return "SELECT 1 LIMIT 0";
+    return
+        "SELECT"
+        " 'utf8mb4_0900_ai_ci' AS `Collation`,"
+        " 'utf8mb4' AS `Charset`,"
+        " 255 AS `Id`,"
+        " 'Yes' AS `Default`,"
+        " 'Yes' AS `Compiled`,"
+        " 0 AS `Sortlen`,"
+        " 'NO PAD' AS `Pad_attribute`";
 }
 
 
@@ -556,8 +567,11 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr(session_context, false);
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
+        /// The charset must match the collation advertised in the handshake (`CharacterSet::utf8mb4_0900_ai_ci`):
+        /// every field is reported as `MYSQL_TYPE_STRING` here, and drivers that validate
+        /// `ColumnDefinition41.character_set` reject a session that mixes charset ids across packet types.
         ColumnDefinition column_definition(
-            database, packet.table, packet.table, column.name, column.name, CharacterSet::binary, 100, ColumnType::MYSQL_TYPE_STRING, 0, 0, true
+            database, packet.table, packet.table, column.name, column.name, CharacterSet::utf8mb4_0900_ai_ci, 100, ColumnType::MYSQL_TYPE_STRING, 0, 0, true
         );
         packet_endpoint->sendPacket(column_definition);
     }

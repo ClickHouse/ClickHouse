@@ -868,6 +868,63 @@ def test_python_client(started_cluster):
     cursor.execute("DROP DATABASE x")
 
 
+def test_collation_consistency(started_cluster):
+    # The MySQL compatibility surface must advertise a single collation everywhere:
+    # the handshake, SHOW COLLATION, INFORMATION_SCHEMA, and result-set column metadata.
+    utf8mb4_0900_ai_ci = 255
+
+    client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="default",
+        password="123",
+        database="default",
+        port=server_port,
+    )
+
+    # Handshake: the charset id sent in the initial handshake packet.
+    assert client.server_language == utf8mb4_0900_ai_ci
+
+    cursor = client.cursor(pymysql.cursors.DictCursor)
+
+    # SHOW COLLATION enumerates the advertised collation.
+    cursor.execute("SHOW COLLATION")
+    assert {
+        "Collation": "utf8mb4_0900_ai_ci",
+        "Charset": "utf8mb4",
+        "Id": utf8mb4_0900_ai_ci,
+        "Default": "Yes",
+        "Compiled": "Yes",
+        "Sortlen": 0,
+        "Pad_attribute": "NO PAD",
+    } in cursor.fetchall()
+
+    # INFORMATION_SCHEMA.COLLATIONS contains it with the same charset and id.
+    cursor.execute(
+        "SELECT CHARACTER_SET_NAME, ID FROM INFORMATION_SCHEMA.COLLATIONS "
+        "WHERE COLLATION_NAME = 'utf8mb4_0900_ai_ci'"
+    )
+    assert cursor.fetchall() == [
+        {"CHARACTER_SET_NAME": "utf8mb4", "ID": utf8mb4_0900_ai_ci}
+    ]
+
+    # INFORMATION_SCHEMA.SCHEMATA advertises the same default collation.
+    cursor.execute(
+        "SELECT DEFAULT_COLLATION_NAME FROM INFORMATION_SCHEMA.SCHEMATA "
+        "WHERE SCHEMA_NAME = 'default'"
+    )
+    assert cursor.fetchall() == [{"DEFAULT_COLLATION_NAME": "utf8mb4_0900_ai_ci"}]
+
+    # Result-set metadata: textual columns are stamped with the same charset id
+    # in ColumnDefinition41 packets, not with utf8_general_ci or binary.
+    cursor.execute("SELECT 'text' AS t, 1 AS n")
+    fields = {f.name: f.charsetnr for f in cursor._result.fields}
+    assert fields["t"] == utf8mb4_0900_ai_ci
+    binary_charset = 63
+    assert fields["n"] == binary_charset
+
+    client.close()
+
+
 def test_golang_client(started_cluster, golang_container):
     with open(os.path.join(SCRIPT_DIR, "golang.reference"), "rb") as fp:
         reference = fp.read()

@@ -42,4 +42,14 @@ FROM INFORMATION_SCHEMA.COLUMNS
 WHERE TABLE_SCHEMA = currentDatabase() AND TABLE_NAME = 'test_infoschema_compat'
 ORDER BY COLUMN_NAME;
 
+SELECT '-- collations: the collation advertised in SCHEMATA/TABLES is discoverable';
+SELECT COLLATION_NAME, CHARACTER_SET_NAME, ID, IS_DEFAULT, IS_COMPILED, SORTLEN, PAD_ATTRIBUTE
+FROM INFORMATION_SCHEMA.COLLATIONS
+WHERE COLLATION_NAME = 'utf8mb4_0900_ai_ci';
+
+SELECT '-- collations: lowercase aliases resolve too';
+SELECT collation_name, character_set_name, id, is_default, is_compiled, sortlen, pad_attribute
+FROM information_schema.collations
+WHERE collation_name = 'utf8mb4_0900_ai_ci';
+
 DROP TABLE test_infoschema_compat;
