@@ -59,6 +59,23 @@ static size_t estimateSelectedColumnsSize(const RangesInDataPart & part, const N
     return static_cast<size_t>(static_cast<double>(full_size) * fraction);
 }
 
+/// Return the columns cache for a pool, or nullptr when it should not be used.
+/// A zero-sized cache (`columns_cache_size = 0`) accepts no entries, so treat it
+/// as absent: this turns off not only the writes but also the read-side probes
+/// (`getIntersecting` lookups counted as misses) and the prefetch-skipping walk
+/// in `canServeWholeRangeFromCache`, making size 0 mean "fully disabled".
+static ColumnsCachePtr getColumnsCacheIfEnabled(const ContextPtr & context, bool use_columns_cache)
+{
+    if (!use_columns_cache)
+        return nullptr;
+
+    ColumnsCachePtr cache = context->getGlobalContext()->getColumnsCache();
+    if (cache && cache->maxSizeInBytes() == 0)
+        return nullptr;
+
+    return cache;
+}
+
 /// Compute the columns cache write policy for a pool.
 /// Two budgets, both enforced per query (shared via ColumnsCacheWriteBudget across all
 /// of the query's read pools, not per pool):
@@ -149,14 +166,14 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , reader_settings(adjustReaderSettingsForColumnsCacheWrites(
           reader_settings_,
           context_,
-          pool_settings_.use_columns_cache ? context_->getGlobalContext()->getColumnsCache() : nullptr,
+          getColumnsCacheIfEnabled(context_, pool_settings_.use_columns_cache),
           pool_settings_.use_columns_cache))
     , column_names(column_names_)
     , pool_settings(pool_settings_)
     , block_size_params(block_size_params_)
     , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
     , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
-    , owned_columns_cache(pool_settings_.use_columns_cache ? context_->getGlobalContext()->getColumnsCache() : nullptr)
+    , owned_columns_cache(getColumnsCacheIfEnabled(context_, pool_settings_.use_columns_cache))
     , patch_join_cache(std::make_shared<PatchJoinCache>(context_->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]))
     , header(storage_snapshot->getSampleBlockForColumns(column_names))
     , ranges_in_patch_parts(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size])
@@ -186,7 +203,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , block_size_params(block_size_params_)
     , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
     , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
-    , owned_columns_cache(pool_settings_.use_columns_cache ? context_->getGlobalContext()->getColumnsCache() : nullptr)
+    , owned_columns_cache(getColumnsCacheIfEnabled(context_, pool_settings_.use_columns_cache))
     , patch_join_cache(std::make_shared<PatchJoinCache>(context_->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]))
     , header(storage_snapshot->getSampleBlockForColumns(column_names))
     , ranges_in_patch_parts(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size])
