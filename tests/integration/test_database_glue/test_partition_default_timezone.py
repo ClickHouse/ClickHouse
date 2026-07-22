@@ -47,6 +47,9 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
+            # Asia/Istanbul: empty iceberg_partition_timezone must follow server TZ,
+            # not a hardwired UTC default. Do not set iceberg_partition_timezone here.
+            main_configs=["configs/timezone.xml"],
             stay_alive=True,
             with_glue_catalog=True,
             with_zookeeper=True,
@@ -130,10 +133,10 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     )
 
 
-def test_partition_timezone(started_cluster):
+def test_partition_default_timezone(started_cluster):
     catalog = load_catalog_impl(started_cluster)
     namespace = f"timezone_ns_{uuid.uuid4()}"
-    table_name = f"tz_table__{uuid.uuid4()}"
+    table_name = f"default_tz_table__{uuid.uuid4()}"
     catalog.create_namespace(namespace)
     table = create_table(
         catalog,
@@ -151,19 +154,24 @@ def test_partition_timezone(started_cluster):
     node = started_cluster.instances["node1"]
     create_clickhouse_glue_database(node, CATALOG_NAME)
 
-    # server timezone is default UTC
+    # Server timezone is Asia/Istanbul (UTC+3); iceberg_partition_timezone is unset,
+    # so pruning uses the server/session timezone (historical behavior).
     assert node.query(f"""
                       SELECT datetime, value
                       FROM {CATALOG_NAME}.`{namespace}.{table_name}`
                       ORDER BY datetime
                       """, timeout=10) == TSV(
         [
-            ["2024-01-01 20:00:00.000000", 1],
-            ["2024-01-01 23:00:00.000000", 2],
-            ["2024-01-02 02:00:00.000000", 3],
+            ["2024-01-01 23:00:00.000000", 1],
+            ["2024-01-02 02:00:00.000000", 2],
+            ["2024-01-02 05:00:00.000000", 3],
         ])
-    
-    # partitioning works correctly
+
+    # Empty setting → session TZ pruning on UTC-partitioned data: the boundary row
+    # (value=2, UTC 2024-01-01 23:00 / Istanbul 2024-01-02 02:00) lives in UTC
+    # partition 20240101 and is incorrectly pruned. That is intentional here — it
+    # proves empty is not hardwired to UTC. Correct UTC pruning is covered by
+    # test_partition_timezone.py with iceberg_partition_timezone='UTC'.
     assert node.query(f"""
                       SELECT datetime, value
                       FROM {CATALOG_NAME}.`{namespace}.{table_name}`
@@ -171,7 +179,7 @@ def test_partition_timezone(started_cluster):
                       ORDER BY datetime
                       """, timeout=10) == TSV(
         [
-            ["2024-01-02 02:00:00.000000", 3],
+            ["2024-01-02 05:00:00.000000", 3],
         ])
 
     assert node.query(f"""
@@ -181,6 +189,5 @@ def test_partition_timezone(started_cluster):
                       ORDER BY datetime
                       """, timeout=10) == TSV(
         [
-            ["2024-01-01 20:00:00.000000", 1],
-            ["2024-01-01 23:00:00.000000", 2],
+            ["2024-01-01 23:00:00.000000", 1],
         ])
