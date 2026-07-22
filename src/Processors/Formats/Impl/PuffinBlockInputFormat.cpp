@@ -50,8 +50,14 @@ constexpr size_t PUFFIN_FOOTER_TRAILER_SIZE = 12;
 constexpr size_t PUFFIN_FOOTER_LZ4_MAX_RATIO = 255;
 /// Absolute cap on footer payload size (uncompressed JSON bytes, or declared LZ4 contentSize).
 /// Prevents crafted FooterPayloadSize / contentSize values from forcing huge allocations.
+/// Intentionally a compile-time safety ceiling (same class as other format hard caps), not a
+/// FormatSettings / input_format_puffin_* knob: oversized footers are never legitimate input.
 constexpr size_t PUFFIN_FOOTER_MAX_PAYLOAD_SIZE = 16 * 1024 * 1024;
 /// Absolute cap on materialized deleted positions (~800 MiB of UInt64s at this limit).
+/// Applied only when `deleted_rows` is requested; subset reads that skip materialization do not
+/// enforce it. Intentionally not a FormatSettings knob: this is a fail-closed amplification
+/// guard for Array(UInt64) expansion of roaring bitmaps, not a tunable acceptance policy.
+/// Global `max_memory_usage` still applies later; this rejects before allocating the array.
 constexpr UInt64 PUFFIN_DV_MAX_MATERIALIZED_POSITIONS = 100'000'000;
 constexpr UInt8 DELETION_VECTOR_MAGIC[4] = {0xD1, 0xD3, 0x39, 0x64};
 /// Matches Iceberg `RoaringPositionBitmap.MAX_POSITION` / iceberg-cpp `kMaxPosition`.
@@ -692,6 +698,7 @@ std::string_view extractDeletionVectorPayload(std::string_view blob)
 
 void deserializeDeletionVectorV1(std::string_view blob, UInt64 expected_cardinality, ColumnUInt64 & positions)
 {
+    // See PUFFIN_DV_MAX_MATERIALIZED_POSITIONS: hard ceiling before payload parse / array reserve.
     if (expected_cardinality > PUFFIN_DV_MAX_MATERIALIZED_POSITIONS)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
