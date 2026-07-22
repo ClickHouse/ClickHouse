@@ -16,3 +16,4 @@ convex_hull_rejects_inf
 intersect_rejects_inf
 union_rejects_nan_geometry
 intersect_rejects_inf_geometry
+Ring

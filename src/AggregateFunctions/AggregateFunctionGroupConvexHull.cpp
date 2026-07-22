@@ -49,12 +49,6 @@ struct GroupConvexHullData
         finishAdd(function_name);
     }
 
-    void addMany(const std::vector<CartesianPoint> & new_points, const char * function_name) // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    {
-        points.insert(points.end(), new_points.begin(), new_points.end());
-        finishAdd(function_name);
-    }
-
     void finishAdd(const char * function_name)
     {
         /// Compress (recompute the hull) before enforcing the budget, mirroring `merge`: many
@@ -174,7 +168,7 @@ void validateConvexHullPoint(const CartesianPoint & point)
 void extractPointsFromField(
     const Field & field,
     GeometryColumnType geo_type,
-    std::vector<CartesianPoint> & out) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    CartesianMultiPoint & out)
 {
     switch (geo_type)
     {
@@ -187,29 +181,29 @@ void extractPointsFromField(
         case GeometryColumnType::Ring: {
             auto ring = getRingFromField<CartesianPoint>(field);
             for (const auto & pt : ring)
-            {
                 validateConvexHullPoint(pt);
-                out.push_back(pt);
-            }
+            out.insert(out.end(), ring.begin(), ring.end());
             break;
         }
         case GeometryColumnType::Linestring: {
             auto ls = getLineStringFromField<CartesianPoint>(field);
             for (const auto & pt : ls)
-            {
                 validateConvexHullPoint(pt);
-                out.push_back(pt);
-            }
+            out.insert(out.end(), ls.begin(), ls.end());
             break;
         }
         case GeometryColumnType::MultiLinestring: {
             auto mls = getMultiLineStringFromField<CartesianPoint>(field);
+            size_t point_count = 0;
             for (const auto & ls : mls)
+            {
+                point_count += ls.size();
                 for (const auto & pt : ls)
-                {
                     validateConvexHullPoint(pt);
-                    out.push_back(pt);
-                }
+            }
+            out.reserve(out.size() + point_count);
+            for (const auto & ls : mls)
+                out.insert(out.end(), ls.begin(), ls.end());
             break;
         }
         case GeometryColumnType::Polygon: {
@@ -227,14 +221,13 @@ void extractPointsFromField(
                 for (const auto & pt : inner)
                     validateConvexHullPoint(pt);
             for (const auto & pt : poly.outer())
-            {
                 validateConvexHullPoint(pt);
-                out.push_back(pt);
-            }
+            out.insert(out.end(), poly.outer().begin(), poly.outer().end());
             break;
         }
         case GeometryColumnType::MultiPolygon: {
             auto mpoly = getMultiPolygonFromField<CartesianPoint>(field);
+            size_t point_count = 0;
             for (const auto & poly : mpoly)
             {
                 if (poly.outer().empty() && !poly.inners().empty())
@@ -246,11 +239,12 @@ void extractPointsFromField(
                     for (const auto & pt : inner)
                         validateConvexHullPoint(pt);
                 for (const auto & pt : poly.outer())
-                {
                     validateConvexHullPoint(pt);
-                    out.push_back(pt);
-                }
+                point_count += poly.outer().size();
             }
+            out.reserve(out.size() + point_count);
+            for (const auto & poly : mpoly)
+                out.insert(out.end(), poly.outer().begin(), poly.outer().end());
             break;
         }
         case GeometryColumnType::Null: break;
@@ -302,9 +296,9 @@ public:
             return;
         }
 
-        std::vector<CartesianPoint> new_points; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        extractPointsFromField(field, current_type, new_points);
-        AggregateFunctionGroupConvexHull::data(place).addMany(new_points, name);
+        auto & data = AggregateFunctionGroupConvexHull::data(place);
+        extractPointsFromField(field, current_type, data.points);
+        data.finishAdd(name);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -358,7 +352,7 @@ public:
                 size_after_compression,
                 size);
 
-        /// `addMany` and `merge` compress immediately when growth since the previous compression
+        /// `finishAdd` and `merge` compress immediately when growth since the previous compression
         /// exceeds this threshold. Therefore the writer can never emit a state whose watermark
         /// lags farther behind. Enforce the same invariant on untrusted serialized states so a
         /// crafted watermark cannot defer compression for a point set the writer would already
@@ -381,7 +375,7 @@ public:
         /// coordinate payload, so `points.resize(size)` would force an allocation for up to
         /// `MAX_POINTS_IN_CONVEX_HULL_STATE` `CartesianPoint` values before `readBinaryLittleEndian`
         /// hits EOF. Append points incrementally with a bounded initial reservation so memory grows
-        /// only with the bytes actually present. Do not call `addMany`: it can compress the partial
+        /// only with the bytes actually present. Do not call `finishAdd`: it can compress the partial
         /// payload and make the restored state depend on the deserialization batch size.
         constexpr UInt64 deserialize_initial_capacity = 4096;
         auto & data = AggregateFunctionGroupConvexHull::data(place);
@@ -439,7 +433,11 @@ AggregateFunctionPtr createAggregateFunctionGroupConvexHull(
         return std::make_shared<AggregateFunctionGroupConvexHull>(
             arg_type, parameters, GeometryColumnType::Point /* unused for variant */, true);
 
-    auto geo_type = getUnambiguousGeometryColumnTypeFromDataType(arg_type, name);
+    auto geo_type = getGeometryColumnTypeFromDataType(arg_type);
+    /// An unnamed `Array(Tuple(Float64, Float64))` can be either `Ring` or `LineString`, but
+    /// `groupConvexHull` uses all points for both, so losing the custom name is harmless here.
+    if (!geo_type || *geo_type != GeometryColumnType::Ring || arg_type->getName() == "Ring")
+        geo_type = getUnambiguousGeometryColumnTypeFromDataType(arg_type, name);
     if (!geo_type)
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,

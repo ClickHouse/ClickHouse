@@ -92,9 +92,9 @@ SELECT groupPolygonIntersection(g) FROM (
     SELECT [[(inf, 0.), (1., 0.), (1., 1.), (0., 1.), (inf, 0.)]]::Polygon::Geometry AS g
 ); -- { serverError BAD_ARGUMENTS }
 
--- Expressions can strip the custom geo name. Reject the two ambiguous structural types instead
--- of silently treating LineString as Ring or MultiLineString as Polygon.
-SELECT groupConvexHull(arrayMap(p -> (p.1, p.2), [(0., 0.), (1., 0.)]::LineString)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- Expressions can strip the custom geo name. `groupConvexHull` can accept the shared Ring/LineString
+-- structure because it uses all points for both, but Polygon/MultiLineString remains ambiguous.
+SELECT toTypeName(groupConvexHull(arrayMap(p -> (p.1, p.2), [(0., 0.), (1., 0.)]::LineString)));
 SELECT groupConvexHull(arrayMap(line -> arrayMap(p -> (p.1, p.2), line), [[(0., 0.), (1., 0.)]]::MultiLineString)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT groupPolygonUnion(arrayMap(p -> (p.1, p.2), [(0., 0.), (1., 0.)]::LineString)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT groupPolygonUnion(arrayMap(line -> arrayMap(p -> (p.1, p.2), line), [[(0., 0.), (1., 0.)]]::MultiLineString)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
