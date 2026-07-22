@@ -542,6 +542,13 @@ enum class MergeTreePartMinMaxIndexColumns : uint64_t
 
 DECLARE_SETTING_ENUM(MergeTreePartMinMaxIndexColumns)
 
+enum class MergeCoordinatorDistributionAlgorithm : uint64_t
+{
+    WATER_FILLING = 0,
+};
+
+DECLARE_SETTING_ENUM(MergeCoordinatorDistributionAlgorithm)
+
 enum class DecorrelationJoinKind : uint8_t
 {
     LEFT = 0,

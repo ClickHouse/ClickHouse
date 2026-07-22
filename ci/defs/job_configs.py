@@ -1480,7 +1480,7 @@ class JobConfigs:
             # introduced under ./docs.
             exclude_paths=[
                 "./docs/README.md",
-                "./docs/_description_templates/",
+                "./docs/_templates/",
                 "./docs/_includes/",
                 "./docs/changelog_entry_guidelines.md",
                 "./docs/changelogs/",
