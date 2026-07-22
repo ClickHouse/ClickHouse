@@ -1,0 +1,34 @@
+empty analyzer=1
+0
+1
+2
+3
+4
+empty analyzer=0
+0
+1
+2
+3
+4
+data analyzer=1
+0
+1
+2
+100
+100
+data analyzer=0
+0
+1
+2
+100
+100
+no push down limit analyzer=1
+0
+1
+2
+3
+4
+step analyzer=1
+0
+2
+4
