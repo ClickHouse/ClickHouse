@@ -53,6 +53,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
     extern const SettingsDistributedProductMode distributed_product_mode;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 max_bytes_to_transfer;
@@ -864,7 +865,9 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     createUniqueAliasesIfNecessary(query_tree_to_modify, planner_context->getQueryContext());
 
     /// Reject `JOIN USING` keys that no remote server can resolve; keys the shard can re-resolve are shipped.
-    rejectUnshippableJoinUsingKeys(query_tree_to_modify);
+    /// Such keys can only be produced by the projection-alias resolution, so check only when it is enabled.
+    if (planner_context->getQueryContext()->getSettingsRef()[Setting::analyzer_compatibility_join_using_top_level_identifier])
+        rejectUnshippableJoinUsingKeys(query_tree_to_modify);
 
     // Get rid of the settings clause so we don't send them to remote. Thus newly non-important
     // settings won't break any remote parser. It's also more reasonable since the query settings
