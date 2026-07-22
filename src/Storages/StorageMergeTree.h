@@ -5,6 +5,7 @@
 #include <Core/Names.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/ColumnIdAlterPlanner.h>
 #include <Storages/MergeTree/MergeTreeCleanupThread.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -192,31 +193,6 @@ private:
     /// Load and initialize deduplication logs. Even if deduplication setting
     /// equals zero creates object with deduplication window equals zero.
     void loadDeduplicationLog();
-
-    /// Encapsulates the result of preparing column ID mapping changes for
-    /// an ALTER: the updated mapping, whether column IDs are active (for
-    /// deciding mutation strategy), and old logical names from two-phase
-    /// renames that must be finalized after metadata commit.
-    struct ColumnIdAlterPlan
-    {
-        std::optional<ColumnIdMapping> new_mapping;
-        std::vector<String> rename_old_names;
-        /// Columns whose mapping entries should be removed post-commit
-        /// (two-phase drop for crash safety).
-        std::vector<String> drop_names;
-        /// DROP + re-ADD same column: forces a mutation for crash safety
-        /// because we cannot atomically swap the column ID.
-        std::set<String> force_mutation_columns;
-        bool column_ids_active = false;
-    };
-
-    /// Compute how the column ID mapping should change for the given ALTER.
-    /// Handles first-time activation, two-phase renames, column adds/drops, and
-    /// the flattened Nested guard.
-    ColumnIdAlterPlan prepareColumnIdMappingForAlter(
-        const AlterCommands & commands,
-        const StorageInMemoryMetadata & old_metadata,
-        const StorageInMemoryMetadata & new_metadata) const;
 
     /// Finalize two-phase renames and deferred drops after metadata commit:
     /// remove old logical names from the mapping and persist.

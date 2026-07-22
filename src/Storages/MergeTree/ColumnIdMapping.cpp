@@ -261,27 +261,16 @@ Names ColumnIdMapping::logicalNames() const
     return names;
 }
 
-ColumnIdMapping ColumnIdMapping::createForExistingTable(const NamesAndTypesList & columns)
+ColumnIdMapping ColumnIdMapping::createIdentity(const NamesAndTypesList & columns)
 {
     ColumnIdMapping mapping;
     mapping.active = true;
-    /// Identity mapping: column_id == column_name for every existing column.
-    /// This is safe because files on disk were written using the column name,
-    /// so the identity mapping matches the actual file layout.
     mapping.next_column_id = getNextColumnId(columns);
 
     for (const auto & column : columns)
         mapping.addColumn(column.name, column.name);
 
     return mapping;
-}
-
-ColumnIdMapping ColumnIdMapping::createForNewTable(const NamesAndTypesList & columns)
-{
-    /// Same as existing-table activation: initial columns use identity mapping.
-    /// A separate entry point exists so that future work can diverge
-    /// (e.g. assign numeric names from the start for new tables).
-    return createForExistingTable(columns);
 }
 
 void ColumnIdMapping::serialize(WriteBuffer & buf) const

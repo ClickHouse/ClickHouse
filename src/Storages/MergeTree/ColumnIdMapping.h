@@ -29,10 +29,27 @@ using ColumnIdMappingPtr = std::shared_ptr<const ColumnIdMapping>;
 /// Names not present in the mapping (virtual columns, `_row_exists`, etc.)
 /// pass through unchanged via `getColumnIdOrDefault`.
 ///
-/// Thread safety: instances are immutable once published through
-/// `MultiVersion<ColumnIdMapping>` in `MergeTreeData`.  Mutation methods
-/// (`addColumn`, `renameColumn`, ...) are only called on local copies
-/// inside engine `alter()` before atomic publication.
+/// Thread safety: instances are immutable once published. The mapping is folded into
+/// the versioned `StorageInMemoryMetadata` (a `shared_ptr`-to-const field), so it is
+/// published atomically with the schema through the metadata `MultiVersion`.  Mutation
+/// methods (`addColumn`, `renameColumn`, ...) are only called on local copies inside
+/// engine `alter()` before that atomic publication.
+///
+/// Concurrency contract (no lock stops an ALTER from publishing a new mapping in the
+/// middle of a merge, mutation, SELECT, or part load):
+///  1. Parts speak only IDs. Any question about a specific part — stream names,
+///     columns.txt, serialization.json, minmax files — is answered from the part's
+///     stamped column IDs (`part->getColumns()`, each pair carrying `column_id`),
+///     never from the live mapping. In-memory structures loaded from ID-keyed disk
+///     files stay keyed by ID.
+///  2. An operation captures ONE mapping snapshot at entry and threads it (SELECTs
+///     via `StorageSnapshot`, merges/mutations via their context) — the same
+///     discipline as `metadata_snapshot`.
+///  3. The live mapping is read only at operation entry and in table-level actions
+///     under the alter lock; any other call is a defect.
+/// One stale snapshot is safe: IDs are stable under RENAME and never recycled, so a
+/// snapshot can lag only in names; every artifact of a part produced from one
+/// snapshot agrees by construction.
 class ColumnIdMapping
 {
 public:
@@ -106,17 +123,11 @@ public:
 
     Names logicalNames() const;
 
-    /// For existing tables: every column gets column_id == column_name.
+    /// Identity mapping: every column gets column_id == column_name — the
+    /// initial state of both a new table and an existing one at activation.
     /// The counter is initialized past the highest numeric column name to
     /// avoid collisions (e.g. a table with column "2" starts the counter at 3).
-    static ColumnIdMapping createForExistingTable(const NamesAndTypesList & columns);
-
-    /// Currently identical to `createForExistingTable` — new tables also
-    /// start with identity mapping because the initial column set has no
-    /// reason to use counter-allocated names.  Kept as a separate entry
-    /// point for future divergence (e.g. new tables could start all columns
-    /// with numeric names).
-    static ColumnIdMapping createForNewTable(const NamesAndTypesList & columns);
+    static ColumnIdMapping createIdentity(const NamesAndTypesList & columns);
 
     void serialize(WriteBuffer & buf) const;
     static ColumnIdMapping deserialize(ReadBuffer & buf);

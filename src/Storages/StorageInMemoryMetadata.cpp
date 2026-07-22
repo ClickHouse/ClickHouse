@@ -69,6 +69,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , comment(other.comment)
     , metadata_version(other.metadata_version)
     , datalake_table_state(other.datalake_table_state)
+    , column_id_mapping(other.column_id_mapping)
 {
 }
 
@@ -110,6 +111,7 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     comment = other.comment;
     metadata_version = other.metadata_version;
     datalake_table_state = other.datalake_table_state;
+    column_id_mapping = other.column_id_mapping;
 
     return *this;
 }

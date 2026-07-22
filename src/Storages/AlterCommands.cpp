@@ -2013,7 +2013,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 /// Cross-parent Nested rename (n.x -> m.x) is only safe when the
                 /// table actively uses column IDs: the column-ID planning path
-                /// in `StorageMergeTree::prepareColumnIdMappingForAlter` handles
+                /// in `prepareColumnIdMappingForAlter` handles
                 /// the shared Nested offsets stream, while the legacy mutation
                 /// rename path does not rename `n.size0` and would leave reads
                 /// looking for `m.size0` files that do not exist.  A `with_size`

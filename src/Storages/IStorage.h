@@ -242,6 +242,8 @@ public:
     /// data capture during BACKUP.  Called by `BackupEntriesCollector` once
     /// the per-table share lock is held; `backupData` later compares against
     /// the current state and fails closed on divergence.  Default: no check.
+    /// The token is opaque to the backup machinery: it is only null-checked
+    /// and identity-compared, never dereferenced.
     virtual ColumnIdMappingPtr captureBackupAuxSnapshot() const { return nullptr; }
 
     /// Extracts data from the backup and put it to the storage.

@@ -677,7 +677,25 @@ public:
         RangesInDataPartsPtr parts;
 
         MutationsSnapshotPtr mutations_snapshot;
+
+        /// Column-ID mapping captured with the snapshot (see getColumnIdMappingFromSnapshot).
+        ColumnIdMappingPtr column_id_mapping;
     };
+
+    /// Snapshot capture mechanism for the column-ID mapping.
+    ///
+    /// An operation captures ONE mapping snapshot at entry and threads it, so every
+    /// name->ID resolution inside the operation sees one consistent version even if an
+    /// ALTER republishes the mapping mid-operation (see the contract in ColumnIdMapping.h).
+    /// The mapping rides in `SnapshotData` alongside the parts/mutations snapshot; this
+    /// helper reads it back. Returns nullptr when the snapshot carries no MergeTree data
+    /// (a bare part load then captures the live mapping once itself).
+    static ColumnIdMappingPtr getColumnIdMappingFromSnapshot(const StorageSnapshot & snapshot);
+
+    /// Builds a mapping-only StorageSnapshot for a merge: it captures the active mapping
+    /// once (the merge's only live read) and, unlike the query factories, omits the
+    /// parts/mutations snapshot (a merge reads its own `future_part` sources).
+    StorageSnapshotPtr createSnapshotWithColumnIdMapping(const StorageMetadataPtr & metadata_snapshot) const;
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
@@ -696,33 +714,53 @@ public:
     /// names have been activated for this table). Returns nullptr otherwise.
     ColumnIdMappingPtr getActiveColumnIdMapping() const
     {
-        auto mapping = column_id_mapping.get();
+        auto mapping = getColumnIdMapping();
         if (mapping && mapping->isActive())
             return mapping;
         return nullptr;
     }
 
-    /// Returns the raw column ID mapping pointer regardless of activation
-    /// state. Needed during ALTER when transitioning from inactive to active.
+    /// Raw mapping pointer regardless of activation state, read off the live metadata
+    /// (bypassing the per-query cache). A fresh pointer per mapping change, so pointer
+    /// identity still discriminates "did it change".
     ColumnIdMappingPtr getColumnIdMapping() const
     {
-        return column_id_mapping.get();
+        auto metadata = getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true);
+        return metadata->column_id_mapping;
     }
 
     /// Snapshot the column-ID mapping pointer at BACKUP-lock time.
-    /// `MultiVersion::set` installs a fresh pointer per publish, so a
-    /// different pointer at `backupData` time means an ALTER landed.
+    /// A fresh mapping pointer is installed per publish, so a different pointer at
+    /// `backupData` time means an ALTER landed.
     ColumnIdMappingPtr captureBackupAuxSnapshot() const override
     {
         return getColumnIdMapping();
     }
 
+    /// Republishes the current in-memory metadata carrying @mapping_ (the mapping is a
+    /// metadata field). Read-modify-write on the live metadata, correct only because
+    /// every metadata publish is serialized under the alter lock.
     void setColumnIdMapping(ColumnIdMapping mapping_)
     {
-        column_id_mapping.set(std::make_unique<const ColumnIdMapping>(std::move(mapping_)));
+        auto metadata = getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true);
+        StorageInMemoryMetadata new_metadata = *metadata;
+        new_metadata.column_id_mapping = std::make_shared<const ColumnIdMapping>(std::move(mapping_));
+        setInMemoryMetadata(new_metadata);
     }
 
-    void loadColumnIdMappingFromDisk();
+    /// Publishes @mapping in-memory, then persists that published mapping to disk.
+    /// Pairs setColumnIdMapping + writeColumnIdMappingToDisk, the standing sequence
+    /// at every mapping-commit site (mapping visible to readers stays durable).
+    void persistMapping(ColumnIdMapping mapping)
+    {
+        setColumnIdMapping(std::move(mapping));
+        writeColumnIdMappingToDisk();
+    }
+
+    /// `attach` distinguishes a pre-existing table (which must have the file
+    /// when it opted into column IDs) from CREATE, which writes the file only
+    /// after the storage is constructed.
+    void loadColumnIdMappingFromDisk(bool attach);
     void writeColumnIdMappingToDisk() const;
     void writeColumnIdMappingToDisk(const ColumnIdMapping & mapping) const;
     /// Variant that targets an explicit storage policy.  Used by `changeSettings`
@@ -1696,8 +1734,6 @@ protected:
     /// protected by @data_parts_mutex.
     SerializationInfoByName serialization_hints{{}};
 
-    MultiVersion<ColumnIdMapping> column_id_mapping;
-
     /// A cache for metadata snapshots for patch parts.
     /// The key is a partition id of patch part.
     /// Patch parts in one partition always have the same structure.
@@ -1823,6 +1859,10 @@ protected:
     void addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const;
     void addPartContributionToColumnAndSecondaryIndexSizesUnlocked(const DataPartPtr & part) const;
     void removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const;
+
+    /// Re-keys the table-level `column_sizes` aggregate when a metadata-only
+    /// RENAME flips the mapping; per-part state is untouched.
+    void renameColumnSizesEntry(const String & old_name, const String & new_name) const;
 
     /// If there is no part in the partition with ID `partition_id`, returns empty ptr. Should be called under the lock.
     DataPartPtr getAnyPartInPartition(const String & partition_id, const DataPartsAnyLock & data_parts_lock) const;

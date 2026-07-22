@@ -255,7 +255,6 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsBool activate_column_ids_for_existing_tables;
     extern const MergeTreeSettingsBool allow_dimensions_outside_sorting_key;
     extern const MergeTreeSettingsBool allow_nullable_key;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
@@ -566,7 +565,7 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
     }
 }
 
-void MergeTreeData::loadColumnIdMappingFromDisk()
+void MergeTreeData::loadColumnIdMappingFromDisk(bool attach)
 {
     const auto column_ids_path = fs::path(relative_data_path) / COLUMN_IDS_FILE_NAME;
 
@@ -578,10 +577,12 @@ void MergeTreeData::loadColumnIdMappingFromDisk()
     /// `format_version.txt` pattern above.
     std::optional<String> mapping_json;
     String first_disk;
+    bool has_usable_disk = false;
     for (const auto & disk : getDisks())
     {
         if (disk->isBroken())
             continue;
+        has_usable_disk = true;
 
         auto buf = disk->readFileIfExists(column_ids_path, getReadSettings());
         if (!buf)
@@ -611,7 +612,20 @@ void MergeTreeData::loadColumnIdMappingFromDisk()
         setColumnIdMapping(ColumnIdMapping::deserialize(buf));
         skipWhitespaceIfAny(buf);
         assertEOF(buf);
+        return;
     }
+
+    /// CREATE always writes the mapping, so a healthy pre-existing table can never
+    /// lack it.  Loading without it would resurrect dropped columns' orphaned files
+    /// and lose numeric-ID columns -- silently.  Fail closed, like broken metadata.
+    if (attach && has_usable_disk
+        && (*getSettings())[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Table {} has `serialization_info_version = 'with_column_ids'` but no disk "
+            "has `{}`. The mapping cannot be rebuilt safely because DROP + re-ADD of "
+            "the same column name makes on-disk files indistinguishable from their "
+            "column ID alone. Restore the table from backup or restore `{}` manually.",
+            getStorageID().getNameForLogs(), column_ids_path.string(), COLUMN_IDS_FILE_NAME);
 }
 
 void MergeTreeData::writeColumnIdMappingToDisk() const
@@ -727,7 +741,8 @@ void MergeTreeData::reconcileColumnIdMappingWithMetadata()
         return;
 
     auto mapping = getColumnIdMapping();
-    auto metadata_columns = getInMemoryMetadataPtr(nullptr, false)->getColumns().getAllPhysical();
+    auto metadata_snapshot = getInMemoryMetadataPtr(nullptr, false);
+    auto metadata_columns = metadata_snapshot->getColumns().getAllPhysical();
 
     /// Fail loud if metadata names a column the mapping does not cover.
     /// This is the mapping-behind-schema window: `column_ids.json` was
@@ -773,10 +788,7 @@ void MergeTreeData::reconcileColumnIdMappingWithMetadata()
     }
 
     if (changed)
-    {
-        setColumnIdMapping(std::move(reconciled));
-        writeColumnIdMappingToDisk();
-    }
+        persistMapping(std::move(reconciled));
 
     /// Fail loud on duplicate-physical-ID corruption.  Two-phase rename
     /// produces a transient state where the old and new logical names map
@@ -4977,11 +4989,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
         MergeTreeSettings effective_settings(*settings_from_storage);
         if (check_metadata.settings_changes)
-            effective_settings.applyChanges(check_metadata.settings_changes->as<const ASTSetQuery &>().changes);
+            effective_settings.applyChanges(
+                check_metadata.settings_changes->as<const ASTSetQuery &>().changes,
+                local_context,
+                /*is_loading_from_existing_metadata=*/true);
 
         bool settings_enable_pn =
-            effective_settings[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS
-            && effective_settings[MergeTreeSetting::activate_column_ids_for_existing_tables];
+            effective_settings[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS;
         bool has_compat_alter = std::any_of(commands.begin(), commands.end(), [](const auto & c)
         {
             return c.type == AlterCommand::RENAME_COLUMN || c.type == AlterCommand::DROP_COLUMN || c.type == AlterCommand::ADD_COLUMN;
@@ -4997,6 +5011,35 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                             "The following alter commands: '{}' will modify data on disk, "
                             "but setting `allow_non_metadata_alters` is disabled",
                             mutation_commands.ast()->formatForErrorMessage());
+    }
+
+    bool has_settings_commands = std::any_of(commands.begin(), commands.end(), [](const AlterCommand & c)
+    {
+        return c.type == AlterCommand::MODIFY_SETTING || c.type == AlterCommand::RESET_SETTING;
+    });
+    if (hasColumnIdMapping() && has_settings_commands)
+    {
+        /// Recompute effective settings from defaults, the way `changeSettings`
+        /// does -- applying onto the current settings would let `RESET SETTING`
+        /// slip through unnoticed.
+        StorageInMemoryMetadata result_metadata = *storage_metadata_snapshot;
+        commands.apply(result_metadata, local_context);
+
+        auto result_settings = getDefaultSettings();
+        if (result_metadata.settings_changes)
+            result_settings->applyChanges(
+                result_metadata.settings_changes->as<const ASTSetQuery &>().changes,
+                local_context,
+                /*is_loading_from_existing_metadata=*/true);
+
+        /// The table's files are already named by column IDs, so the mapping stays
+        /// authoritative no matter what the settings say -- reject the lie.
+        if ((*result_settings)[MergeTreeSetting::serialization_info_version] != MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Cannot change `serialization_info_version` away from 'with_column_ids' for table {}: "
+                "the table has a column ID mapping and its data files are named by column IDs. "
+                "Column IDs cannot be deactivated once active.",
+                getStorageID().getNameForLogs());
     }
 
     /// Block the case of alter table add projection for special merge trees.
@@ -5900,9 +5943,9 @@ void MergeTreeData::changeSettings(
         MergeTreeSettings::resolveDiskSetting(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
 
         StoragePolicyPtr new_storage_policy = nullptr;
-        /// Capture the new policy out of the per-change loop so we can push
-        /// `column_ids.json` onto its disks before publishing the new
-        /// `storage_settings` (the throw-on-disk-write path must leave
+        /// Capture the new policy out of the per-change loop so the mapping block
+        /// below can push `column_ids.json` onto its disks before publishing the
+        /// new `storage_settings` (the throw-on-disk-write path must leave
         /// `storage_settings`/metadata unchanged for settings-only ALTERs,
         /// which lack a rollback wrapper).
         StoragePolicyPtr pending_storage_policy = nullptr;
@@ -5942,6 +5985,9 @@ void MergeTreeData::changeSettings(
                         disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
                     }
                     /// FIXME how would that be done while reloading configuration???
+                    /// TODO(column-ids): a disk added via config reload also misses its `column_ids.json`
+                    /// copy (same gap as `format_version.txt`); the missing-mapping load check fails
+                    /// loudly only once every disk that has the file is removed.
 
                     has_storage_policy_changed = true;
                     pending_storage_policy = new_storage_policy;
@@ -5949,26 +5995,12 @@ void MergeTreeData::changeSettings(
             }
         }
 
-        /// Persist `column_ids.json` onto the NEW policy's writable disks
-        /// BEFORE `storage_settings.set` / `setInMemoryMetadata` below.  A
-        /// disk-full / read-only / I/O exception here must leave the
-        /// in-memory and on-disk state of the table unchanged, otherwise
-        /// settings-only ALTERs (which have no rollback wrapper around
-        /// `changeSettings`) would publish the new policy while leaving
-        /// newly added disks without a mapping copy.
-        if (pending_storage_policy)
-        {
-            if (auto current_mapping = getColumnIdMapping())
-                writeColumnIdMappingToDisk(*current_mapping, pending_storage_policy);
-        }
-
         /// Reset to default settings before applying existing.
         auto copy = getDefaultSettings();
         copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
 
         if (supportsReplication()
-            && ((*copy)[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS
-                || (*copy)[MergeTreeSetting::activate_column_ids_for_existing_tables]))
+            && (*copy)[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS)
         {
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
@@ -5987,11 +6019,62 @@ void MergeTreeData::changeSettings(
                 getContext()->wasBackgroundPoolAutoLowered());
         }
 
+        /// All `column_ids.json` disk writes stay BEFORE `storage_settings.set` /
+        /// `setInMemoryMetadata` below, so a disk-full / read-only / I/O exception
+        /// leaves the table's state unchanged (settings-only ALTERs have no
+        /// rollback wrapper around `changeSettings`).
+        std::optional<ColumnIdMapping> mapping_to_publish;
+        if ((*copy)[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS
+            && !hasColumnIdMapping())
+        {
+            /// The settings commit that turns column IDs ON must create the identity
+            /// mapping in the same commit: the load path fails closed when the setting
+            /// says `with_column_ids` but `column_ids.json` is absent.
+            auto current_metadata = getInMemoryMetadataPtr(getContext(), false);
+            mapping_to_publish = ColumnIdMapping::createIdentity(current_metadata->getColumns().getAllPhysical());
+            try
+            {
+                writeColumnIdMappingToDisk(*mapping_to_publish);
+                if (pending_storage_policy)
+                    writeColumnIdMappingToDisk(*mapping_to_publish, pending_storage_policy);
+            }
+            catch (...)
+            {
+                /// Clear any disks already written -- on the pending policy too:
+                /// a partial multi-disk publish would otherwise activate the
+                /// table on restart (or diverge across disks after the policy
+                /// change is retried).
+                try
+                {
+                    writeColumnIdMappingToDisk(ColumnIdMapping{});
+                    if (pending_storage_policy)
+                        writeColumnIdMappingToDisk(ColumnIdMapping{}, pending_storage_policy);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Failed to clear partially written column ID mapping");
+                }
+                throw;
+            }
+        }
+        else if (pending_storage_policy)
+        {
+            /// Policy change on a table that already has a mapping: newly added
+            /// disks need their `column_ids.json` copy.
+            if (auto current_mapping = getColumnIdMapping())
+                writeColumnIdMappingToDisk(*current_mapping, pending_storage_policy);
+        }
+
         bool has_escape_index_filenames_changed
             = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames] != (*copy)[MergeTreeSetting::escape_index_filenames];
 
         UInt64 has_refresh_statistics_interval_changed
             = (*storage_settings.get())[MergeTreeSetting::refresh_statistics_interval].totalSeconds() != (*copy)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
+
+        /// Publish the mapping before the settings so no reader can observe
+        /// `with_column_ids` without a mapping.
+        if (mapping_to_publish)
+            setColumnIdMapping(std::move(*mapping_to_publish));
 
         storage_settings.set(std::move(copy));
 
@@ -6012,6 +6095,10 @@ void MergeTreeData::changeSettings(
                 idx.escape_filenames = new_value;
         }
 
+        /// The mapping is folded into the metadata: carry the live mapping (possibly the
+        /// identity just published above) into this republish so it is not clobbered.
+        /// `storage_metadata_snapshot` may be a cached copy that predates that publish.
+        new_metadata.column_id_mapping = getColumnIdMapping();
         setInMemoryMetadata(new_metadata);
 
         if (has_storage_policy_changed)
@@ -6918,6 +7005,12 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
         return std::nullopt;
     }
 
+    /// Per-part serialization records are keyed by the stamped column ID; translate the
+    /// requested name once (IDs are stable, so one snapshot serves all parts).
+    String record_key = column_name;
+    if (auto mapping_snapshot = getActiveColumnIdMapping())
+        record_key = mapping_snapshot->getColumnIdOrDefault(column_name);
+
     ColumnDefaultnessStats aggregate;
     for (const auto & part : getActivePartsForColumnDefaultnessStats(query_context))
     {
@@ -6925,7 +7018,7 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
             continue;
 
         const auto & infos = part->getSerializationInfos();
-        auto it = infos.find(column_name);
+        auto it = infos.find(record_key);
         if (it == infos.end())
         {
             LOG_DEBUG(log, "No defaultness stats for column {}: not present in serialization info of part {}", column_name, part->name);
@@ -7545,11 +7638,22 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const Data
     addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
 }
 
+/// Aggregate sizes are keyed by CURRENT logical name.  A part loaded before a
+/// metadata-only RENAME still stamps the old name, so derive the key from the
+/// stamped column ID; `renameColumnSizesEntry` re-keys the aggregate on RENAME.
+static String columnSizesKey(const NameAndTypePair & column, const ColumnIdMapping * mapping)
+{
+    if (mapping && !column.column_id.empty() && mapping->hasColumnId(column.column_id))
+        return mapping->getLogicalName(column.column_id);
+    return column.name;
+}
+
 void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(const DataPartPtr & part) const
 {
+    auto mapping = getActiveColumnIdMapping();
     for (const auto & column : part->getColumns())
     {
-        ColumnSize & total_column_size = column_sizes[column.name];
+        ColumnSize & total_column_size = column_sizes[columnSizesKey(column, mapping.get())];
         ColumnSize part_column_size = part->getColumnSize(column.name);
         total_column_size.add(part_column_size);
     }
@@ -7608,9 +7712,10 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
     if (!are_columns_and_secondary_indices_sizes_calculated)
         return;
 
+    auto mapping = getActiveColumnIdMapping();
     for (const auto & column : part->getColumns())
     {
-        ColumnSize & total_column_size = column_sizes[column.name];
+        ColumnSize & total_column_size = column_sizes[columnSizesKey(column, mapping.get())];
         ColumnSize part_column_size = part->getColumnSize(column.name);
 
         auto log_subtract = [&](size_t & from, size_t value, const char * field)
@@ -7648,6 +7753,22 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
         log_subtract(total_secondary_index_size.data_uncompressed, part_secondary_index_size.data_uncompressed, ".data_uncompressed");
         log_subtract(total_secondary_index_size.marks, part_secondary_index_size.marks, ".marks");
     }
+}
+
+void MergeTreeData::renameColumnSizesEntry(const String & old_name, const String & new_name) const
+{
+    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    if (!are_columns_and_secondary_indices_sizes_calculated)
+        return;
+
+    auto it = column_sizes.find(old_name);
+    if (it == column_sizes.end())
+        return;
+
+    /// Merge rather than overwrite: a previously dropped column with the new
+    /// name may have left an entry that live parts still contribute to.
+    column_sizes[new_name].add(it->second);
+    column_sizes.erase(it);
 }
 
 void MergeTreeData::checkAlterPartitionIsPossible(
@@ -8351,15 +8472,13 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
 
             if (restored.getNextColumnIdCounter() > current->getNextColumnIdCounter())
             {
-                setColumnIdMapping(std::move(restored));
-                writeColumnIdMappingToDisk();
+                persistMapping(std::move(restored));
             }
             /// Else: destination's counter is at least as high — leave it alone.
         }
         else
         {
-            setColumnIdMapping(std::move(restored));
-            writeColumnIdMappingToDisk();
+            persistMapping(std::move(restored));
         }
     }
 
@@ -11659,7 +11778,10 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     {
         auto patch_commands = mutations->getOnFlyMutationCommandsForPart(patch.part);
         auto patch_conversions = std::make_shared<AlterConversions>(patch_commands, PatchPartsForReader{}, query_context);
-        auto patch_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(std::move(patch.part), std::move(patch_conversions));
+        /// current mapping: static helper with no operation snapshot; column IDs are
+        /// stable so this live read is safe for a patch-part reader.
+        auto patch_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
+            std::move(patch.part), std::move(patch_conversions), part->storage.getActiveColumnIdMapping());
 
         patches_for_reader.push_back(PatchPartInfoForReader
         {
@@ -12044,18 +12166,35 @@ ReservationPtr MergeTreeData::balancedReservation(
 }
 
 template <typename DataPartPtr>
-static void updateSerializationHintsForPart(const DataPartPtr & part, const ColumnsDescription & storage_columns, SerializationInfoByName & hints, bool remove)
+static void updateSerializationHintsForPart(
+    const DataPartPtr & part,
+    const ColumnsDescription & storage_columns,
+    const ColumnIdMappingPtr & column_id_mapping,
+    SerializationInfoByName & hints,
+    bool remove)
 {
     const auto & part_columns = part->getColumnsDescription();
-    for (const auto & [name, info] : part->getSerializationInfos())
+    const auto & part_infos = part->getSerializationInfos();
+
+    for (const auto & part_column : part->getColumns())
     {
-        auto new_hint = hints.tryGet(name);
+        /// Part records are keyed by the stamped column ID; hints by the current
+        /// logical name. Join them through the part's stamped column list.
+        auto info = part_infos.tryGet(part_column.getColumnIdInStorage());
+        if (!info)
+            continue;
+
+        String hint_name = part_column.name;
+        if (column_id_mapping && column_id_mapping->hasColumnId(part_column.getColumnIdInStorage()))
+            hint_name = column_id_mapping->getLogicalName(part_column.getColumnIdInStorage());
+
+        auto new_hint = hints.tryGet(hint_name);
         if (!new_hint)
             continue;
 
         /// Structure may change after alter. Do not add info for such items.
         /// Instead it will be updated on commit of the result part of alter.
-        if (part_columns.tryGetPhysical(name) != storage_columns.tryGetPhysical(name))
+        if (part_columns.tryGetPhysical(part_column.name) != storage_columns.tryGetPhysical(hint_name))
             continue;
 
         chassert(new_hint->structureEquals(*info));
@@ -12090,8 +12229,9 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
     serialization_hints = SerializationInfoByName(storage_columns.getAllPhysical(), settings);
     auto range = getDataPartsStateRange(DataPartState::Active);
 
+    const auto mapping_snapshot = getActiveColumnIdMapping();
     for (const auto & part : range)
-        updateSerializationHintsForPart(part, storage_columns, serialization_hints, false);
+        updateSerializationHintsForPart(part, storage_columns, mapping_snapshot, serialization_hints, false);
 }
 
 template <typename AddedParts, typename RemovedParts>
@@ -12103,12 +12243,13 @@ void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, con
 
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     const auto & storage_columns = metadata_snapshot->getColumns();
+    const auto mapping_snapshot = getActiveColumnIdMapping();
 
     for (const auto & part : added_parts)
-        updateSerializationHintsForPart(part, storage_columns, serialization_hints, false);
+        updateSerializationHintsForPart(part, storage_columns, mapping_snapshot, serialization_hints, false);
 
     for (const auto & part : removed_parts)
-        updateSerializationHintsForPart(part, storage_columns, serialization_hints, true);
+        updateSerializationHintsForPart(part, storage_columns, mapping_snapshot, serialization_hints, true);
 }
 
 SerializationInfoByName MergeTreeData::getSerializationHints() const
@@ -12217,10 +12358,15 @@ StorageMetadataHandle MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_con
 StorageSnapshotPtr
 MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const
 {
-    if (without_data)
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::make_unique<SnapshotData>());
-
     auto snapshot_data = std::make_unique<SnapshotData>();
+    /// Read the mapping off the pinned metadata (folded there), not the live mapping,
+    /// so it cannot skew against the schema this snapshot resolves names against.
+    if (const auto & mapping = metadata_snapshot->column_id_mapping; mapping && mapping->isActive())
+        snapshot_data->column_id_mapping = mapping;
+
+    if (without_data)
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
+
     snapshot_data->storage = shared_from_this();
 
     auto [query_ranges, query_parts] = getPossiblySharedVisibleDataPartsRanges(query_context);
@@ -12278,6 +12424,22 @@ StorageSnapshotPtr
 MergeTreeData::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
     return createStorageSnapshot(metadata_snapshot, query_context, true);
+}
+
+ColumnIdMappingPtr MergeTreeData::getColumnIdMappingFromSnapshot(const StorageSnapshot & snapshot)
+{
+    if (const auto * snapshot_data = dynamic_cast<const SnapshotData *>(snapshot.data.get()))
+        return snapshot_data->column_id_mapping;
+    return nullptr;
+}
+
+StorageSnapshotPtr MergeTreeData::createSnapshotWithColumnIdMapping(const StorageMetadataPtr & metadata_snapshot) const
+{
+    auto snapshot_data = std::make_unique<SnapshotData>();
+    /// Read the mapping off the pinned metadata (folded there), not the live mapping.
+    if (const auto & mapping = metadata_snapshot->column_id_mapping; mapping && mapping->isActive())
+        snapshot_data->column_id_mapping = mapping;
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
 }
 
 void MergeTreeData::incrementInsertedPartsProfileEvent(MergeTreeDataPartType type)

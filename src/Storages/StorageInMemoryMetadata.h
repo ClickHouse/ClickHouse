@@ -21,6 +21,8 @@ namespace DB
 
 class ClientInfo;
 class ASTSQLSecurity;
+class ColumnIdMapping;
+using ColumnIdMappingPtr = std::shared_ptr<const ColumnIdMapping>;
 
 /// Common metadata for all storages. Contains all possible parts of CREATE
 /// query from all storages, but only some subset used.
@@ -85,6 +87,10 @@ struct StorageInMemoryMetadata
 
     ///  Current state of a datalake table.
     std::optional<DataLakeTableStateSnapshot> datalake_table_state;
+
+    /// Column-ID mapping (physical column names), folded in so it is captured atomically
+    /// with the schema. Null unless the table opted into column IDs. Shallow-copied below.
+    ColumnIdMappingPtr column_id_mapping;
 
     /// If metadata was cloned we need to extend lifetime of previous metadata.
     std::shared_ptr<const StorageInMemoryMetadata> cloned_from = nullptr;
