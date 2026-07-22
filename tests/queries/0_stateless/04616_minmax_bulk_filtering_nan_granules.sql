@@ -8,6 +8,13 @@ SET secondary_indices_enable_bulk_filtering = 1;
 SET use_skip_indexes_on_data_read = 0;
 SET use_minmax_index_bulk_filtering = 1;
 
+-- The test runner materializes statistics on insert (`materialize_statistics_on_insert`),
+-- and statistics-based part pruning would then drop the all-NaN part before the minmax
+-- skip index runs, adding an extra `Statistics` entry (and an extra `Granules:` line) to
+-- `EXPLAIN indexes = 1` and leaving the skip index unexercised. Disable it: this test
+-- observes the minmax skip index specifically.
+SET use_statistics_for_part_pruning = 0;
+
 -- NaN semantics of the bulk minmax path must mirror `KeyCondition::checkInHyperrectangle`:
 --   * granule min is NaN => the whole granule is NaN (`getExtremes` skips NaNs, so a NaN
 --     min implies every value is NaN) => prune it (intersects = false);
