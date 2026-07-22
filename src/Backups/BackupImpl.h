@@ -110,6 +110,11 @@ private:
     String getObjectKey(const String & file_name) const;
     std::unique_ptr<ReadBufferFromFileBase> readFileByObjectKey(const BackupFileInfo & info) const;
 
+    /// Copies a lightweight-snapshot (object-key) entry to the destination through a live write buffer
+    /// and fsyncs it (the optimized object-key copy exposes no buffer to fsync). Reached only in the
+    /// cloud build, where object keys are present; defined unconditionally so it is type-checked everywhere.
+    size_t copyObjectKeyEntryToDiskSynced(const String & object_key, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const;
+
     /// Returns the base backup or null if there is no base backup.
     std::shared_ptr<const IBackup> getBaseBackupUnlocked() const TSA_REQUIRES(mutex);
 
