@@ -257,6 +257,38 @@ protected:
     T3 m3;
     Ts ms;
 
+    /// The size-class submaps by index, for `dispatchOnKeyClass` resolvers: 0 = empty key,
+    /// 1..3 = the fixed-size classes, 4 = the generic (long / trailing-zero) submap.
+    template <size_t key_class>
+    auto & submapForClass()
+    {
+        if constexpr (key_class == 0)
+            return m0;
+        else if constexpr (key_class == 1)
+            return m1;
+        else if constexpr (key_class == 2)
+            return m2;
+        else if constexpr (key_class == 3)
+            return m3;
+        else
+            return ms;
+    }
+
+    template <size_t key_class>
+    const auto & submapForClass() const
+    {
+        if constexpr (key_class == 0)
+            return m0;
+        else if constexpr (key_class == 1)
+            return m1;
+        else if constexpr (key_class == 2)
+            return m2;
+        else if constexpr (key_class == 3)
+            return m3;
+        else
+            return ms;
+    }
+
 public:
     using Key = std::string_view;
     using key_type = Key;
@@ -314,27 +346,26 @@ public:
     // 2. Use switch case extension to generate fast dispatching table
     // 3. Funcs are named callables that can be force_inlined
     //
-    //
-    // NOTE: It requires padded to 8 bytes keys (IOW you cannot pass
-    // std::string here, but you can pass i.e. ColumnString::getDataAt()),
-    // since it copies 8 bytes at a time.
-    template <typename Self, typename KeyHolder, typename Func>
-    static auto ALWAYS_INLINE dispatch(Self & self, KeyHolder && key_holder, Func && func)
+    /// Note: the key bytes must be readable in 8-byte chunks (a `std::string` cannot be passed
+    /// here, while e.g. `ColumnString::getDataAt` can), because the packing copies 8 bytes at a
+    /// time.
+    template <typename Resolver, typename KeyHolder, typename HashProvider, typename Func>
+    static auto ALWAYS_INLINE dispatchOnKeyClass(Resolver && resolver, KeyHolder && key_holder, HashProvider && hash_of, Func && func)
     {
-        StringHashTableHash hash;
         const auto & x = keyHolderGetKey(key_holder);
         const size_t sz = x.size();
         if (sz == 0)
         {
             keyHolderDiscardKey(key_holder);
-            return func(self.m0, VoidKey{}, 0);
+            return func(resolver(std::integral_constant<size_t, 0>{}, 0), VoidKey{}, 0);
         }
 
         if (x[sz - 1] == 0)
         {
             // Strings with trailing zeros are not representable as fixed-size
             // string keys. Put them to the generic table.
-            return func(self.ms, std::forward<KeyHolder>(key_holder), hash(x));
+            const size_t res = hash_of(x);
+            return func(resolver(std::integral_constant<size_t, 4>{}, res), std::forward<KeyHolder>(key_holder), res);
         }
 
         const char * p = x.data();
@@ -369,8 +400,9 @@ public:
                     else
                         n[0] <<= s;
                 }
+                const size_t res = hash_of(k8);
                 keyHolderDiscardKey(key_holder);
-                return func(self.m1, k8, hash(k8));
+                return func(resolver(std::integral_constant<size_t, 1>{}, res), k8, res);
             }
             case 1: // 9..16 bytes
             {
@@ -381,8 +413,9 @@ public:
                     n[1] >>= s;
                 else
                     n[1] <<= s;
+                const size_t res = hash_of(k16);
                 keyHolderDiscardKey(key_holder);
-                return func(self.m2, k16, hash(k16));
+                return func(resolver(std::integral_constant<size_t, 2>{}, res), k16, res);
             }
             case 2: // 17..24 bytes
             {
@@ -393,14 +426,26 @@ public:
                     n[2] >>= s;
                 else
                     n[2] <<= s;
+                const size_t res = hash_of(k24);
                 keyHolderDiscardKey(key_holder);
-                return func(self.m3, k24, hash(k24));
+                return func(resolver(std::integral_constant<size_t, 3>{}, res), k24, res);
             }
             default: // >= 25 bytes
             {
-                return func(self.ms, std::forward<KeyHolder>(key_holder), hash(x));
+                const size_t res = hash_of(x);
+                return func(resolver(std::integral_constant<size_t, 4>{}, res), std::forward<KeyHolder>(key_holder), res);
             }
         }
+    }
+
+    template <typename Self, typename KeyHolder, typename Func>
+    static auto ALWAYS_INLINE dispatch(Self & self, KeyHolder && key_holder, Func && func)
+    {
+        return dispatchOnKeyClass(
+            [&](auto key_class, size_t) -> auto & { return self.template submapForClass<decltype(key_class)::value>(); },
+            std::forward<KeyHolder>(key_holder),
+            StringHashTableHash{},
+            std::forward<Func>(func));
     }
 
     struct EmplaceCallable
