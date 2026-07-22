@@ -448,6 +448,26 @@ public:
             std::forward<Func>(func));
     }
 
+    /// Same as `dispatch`, but uses a hash the caller saved from an earlier `hash(x)` instead of recomputing it.
+    template <typename Self, typename KeyHolder, typename Func>
+    static auto ALWAYS_INLINE dispatchWithHash(Self & self, KeyHolder && key_holder, size_t saved_hash, Func && func)
+    {
+        return dispatchOnKeyClass(
+            [&](auto key_class, size_t) -> auto & { return self.template submapForClass<decltype(key_class)::value>(); },
+            std::forward<KeyHolder>(key_holder),
+            [saved_hash](const auto &) { return saved_hash; },
+            std::forward<Func>(func));
+    }
+
+    size_t ALWAYS_INLINE hash(const Key & x) const
+    {
+        return dispatchOnKeyClass(
+            [&](auto, size_t) -> const auto & { return m0; },
+            x,
+            StringHashTableHash{},
+            [](const auto &, const auto &, size_t res) { return res; });
+    }
+
     struct EmplaceCallable
     {
         LookupResult & mapped;
@@ -469,6 +489,12 @@ public:
     void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted)
     {
         this->dispatch(*this, key_holder, EmplaceCallable(it, inserted));
+    }
+
+    template <typename KeyHolder>
+    void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted, size_t saved_hash)
+    {
+        this->dispatchWithHash(*this, key_holder, saved_hash, EmplaceCallable(it, inserted));
     }
 
     struct PrefetchCallable
@@ -510,6 +536,17 @@ public:
     LookupResult ALWAYS_INLINE find(const Key & x)
     {
         return dispatch(*this, x, FindCallable{});
+    }
+
+    LookupResult ALWAYS_INLINE find(const Key & x, size_t saved_hash)
+    {
+        return dispatchWithHash(*this, x, saved_hash, FindCallable{});
+    }
+
+    template <typename KeyHolder>
+    void ALWAYS_INLINE prefetch(KeyHolder && key_holder, size_t saved_hash)
+    {
+        this->dispatchWithHash(*this, std::forward<KeyHolder>(key_holder), saved_hash, PrefetchCallable{});
     }
 
     ConstLookupResult ALWAYS_INLINE find(const Key & x) const

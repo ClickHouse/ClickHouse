@@ -98,6 +98,23 @@ public:
     }
 
     template <typename KeyHolder>
+    void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted, size_t saved_hash)
+    {
+        impls[getBucketFromHash(saved_hash)].emplace(std::forward<KeyHolder>(key_holder), it, inserted, saved_hash);
+    }
+
+    LookupResult ALWAYS_INLINE find(const Key & x, size_t saved_hash)
+    {
+        return impls[getBucketFromHash(saved_hash)].find(x, saved_hash);
+    }
+
+    template <typename KeyHolder>
+    void ALWAYS_INLINE prefetch(KeyHolder && key_holder, size_t saved_hash)
+    {
+        impls[getBucketFromHash(saved_hash)].prefetch(std::forward<KeyHolder>(key_holder), saved_hash);
+    }
+
+    template <typename KeyHolder>
     void ALWAYS_INLINE prefetch(KeyHolder && key_holder)
     {
         dispatch(*this, std::forward<KeyHolder>(key_holder), typename Impl::PrefetchCallable{});
