@@ -163,6 +163,21 @@ echo "$page" | grep -q -F 'progressEl.adoptResourceState(tab.resources);' && ech
 # exception: the reader reports `saw_exception` only once the exception line reached its newline
 # (`exception_done`), so the partial JSON line is never persisted or replayed as the failure carrier.
 echo "$page" | grep -q -F 'saw_exception: saw_exception && exception_done,' && echo 'partial exception line is a truncation: OK'
+# The meter state is one aggregate per RUN, not per stream: "Run all" executes a parallelizable
+# group concurrently, so several framed statements of one tab can stream at once. The run's first
+# stream creates the aggregate (`clearPanel` dropped the previous run's) and every stream
+# accumulates into it, so a sibling statement cannot reset away increments already collected; the
+# per-host peak keeps the maximum, so a sibling's smaller peak cannot erase a larger one.
+echo "$page" | grep -q -F 'if (!tab.resources) tab.resources = freshResourceState();' && echo 'meter aggregate is per run: OK'
+echo "$page" | grep -q -F 'host.peak = Math.max(host.peak, value);' && echo 'peak gauge keeps the maximum: OK'
+# A transport failure (network drop / cancellation) striking a framed stream mid-flight keeps the
+# snapshot's framing kind and synthesizes the failure carrier in the form that kind replays, so a
+# restored tab replays the framed prefix with the error beneath it instead of falling back to the
+# non-framing-aware failure replay; the replay itself skips an unparseable partial block rather
+# than throwing out of the whole restore.
+echo "$page" | grep -q -F "exception_carrier = 'event: exception\ndata: ' + JSON.stringify({ exception: display_error });" && echo 'transport catch keeps event-stream framing: OK'
+echo "$page" | grep -q -F "? JSON.stringify({ packet: 'exception', exception: display_error })" && echo 'transport catch keeps ndjson framing: OK'
+echo "$page" | grep -q -F 'try { dispatchEventStreamBlock(block, handleEvent); }' && echo 'replay skips broken frames: OK'
 
 echo '--- an incompatible explicit format is rejected as a framed exception the page can match'
 # The same request shape the page sends for a framed query.

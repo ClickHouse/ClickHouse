@@ -1862,7 +1862,11 @@ function accumulateResourceEvents(state, events)
         if (e.name === 'MemoryTrackerUsage')
             host.memory = value;
         else if (e.name === 'MemoryTrackerPeakUsage')
-            host.peak = value;
+            /// The peak gauge is per query: within one stream it only grows, but the state is the
+            /// whole run's aggregate shared by all statements of a `Run all` (see
+            /// `readEventStream`), so keep the maximum - a sibling statement's smaller peak must
+            /// not erase a larger one already observed by another statement.
+            host.peak = Math.max(host.peak, value);
         else if (e.name === 'TemporaryDataOnDiskUsage')
             host.disk = value;
     }
@@ -7355,7 +7359,15 @@ function renderEventStreamText(text, targetResultEl, rawText, base64, imageMime)
         onBytes: base64 ? (bytes) => binary_chunks.push(bytes) : undefined,
     });
     for (const block of text.split('\n\n'))
-        dispatchEventStreamBlock(block, handleEvent);
+    {
+        /// A snapshot of a stream that broke mid-frame (a transport failure or a truncated
+        /// response) can hold a partial block whose JSON payload does not parse. It must not throw
+        /// out of the whole restore: skip it and keep replaying - the synthesized terminal
+        /// exception block that follows carries the failure (see the transport catch in `postImpl`
+        /// and the residual handling in `readEventStream`).
+        try { dispatchEventStreamBlock(block, handleEvent); }
+        catch (e) { console.log(e); }
+    }
     /// The whole (already-finished) stream has been replayed: show the metric totals.
     targetResultEl.finalizeMetrics();
     return binary_chunks ? renderBinaryPayload(targetResultEl, binary_chunks, imageMime) : false;
@@ -7401,7 +7413,14 @@ async function readEventStream(response, targetResultEl, abortController, tab, p
     /// increments and the reopened tab's meter would restart near zero. The shared progress
     /// line renders the state only while this tab is active; `syncActiveTabChrome` re-adopts
     /// it when the tab is reopened, so the meter continues from its live values.
-    tab.resources = freshResourceState();
+    ///
+    /// The state is one aggregate per RUN, not per stream: `Run all` executes a parallelizable
+    /// group concurrently (see `postMulti`), so several framed statements of the same tab can be
+    /// inside this function at once - resetting here would discard the increments a sibling
+    /// statement already accumulated and make the meter nondeterministic. `clearPanel` drops the
+    /// previous run's state when a new run starts; the run's first stream creates the aggregate
+    /// and every stream accumulates into it, so the meter shows the run's combined resources.
+    if (!tab.resources) tab.resources = freshResourceState();
     if (tab.id === activeTabId)
         progressEl.adoptResourceState(tab.resources);
 
@@ -8466,9 +8485,31 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             display_error = e.toString();
         }
         targetResultEl.renderError(display_error);
-        /// A caught error replays as the streamed prefix with `display_error` beneath it, never as a
-        /// framing stream, so record an empty framing kind for the snapshot restore path.
-        return { format, exception_tag, reply, display_error, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true, framing_kind: '' };
+        /// A framed stream (`framing_kind` was already recorded) may have replayed partial output
+        /// into `reply` before the transport failed. Clearing the kind here would send the restore
+        /// through `renderFailedSnapshot`, which is not framing-aware: an `event:` snapshot would
+        /// no longer replay its partial rows/logs/metrics, and a packet stream would skip the raw
+        /// `ndjson_packets` replay path. Keep the kind and synthesize the failure carrier in the
+        /// form the kind replays (`renderEventStreamText` / `updateRaw`), appended to the capped
+        /// snapshot after a terminator for any partial frame, so a restored tab replays the framed
+        /// prefix with this error beneath it - matching what was shown live. The carrier is built
+        /// from `display_error` (never from the broken residual), so the replay cannot trip over
+        /// the truncated frame; an unparseable partial block is skipped by the replay anyway (see
+        /// `renderEventStreamText`). An oversized `reply` stops growing at the cap, and
+        /// `compactFailureSnapshot` then persists the carrier returned alongside.
+        if (framing_kind === 'event_stream')
+        {
+            exception_carrier = 'event: exception\ndata: ' + JSON.stringify({ exception: display_error });
+            reply = appendCappedSnapshot(reply, (reply === '' || reply.endsWith('\n\n') ? '' : '\n\n') + exception_carrier + '\n\n');
+        }
+        else if (framing_kind === 'ndjson_packets')
+        {
+            exception_carrier = user_framing
+                ? JSON.stringify({ packet: 'exception', exception: display_error })
+                : JSON.stringify({ exception: display_error });
+            reply = appendCappedSnapshot(reply, (reply === '' || reply.endsWith('\n') ? '' : '\n') + exception_carrier + '\n');
+        }
+        return { format, exception_tag, reply, display_error, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true, is_base64, framing_kind, exception_carrier };
     }
 }
 

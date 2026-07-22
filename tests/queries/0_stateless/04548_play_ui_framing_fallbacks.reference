@@ -23,6 +23,11 @@ toggles replayed per tab: OK
 background meter batches accumulate: OK
 meter state re-adopted on tab open: OK
 partial exception line is a truncation: OK
+meter aggregate is per run: OK
+peak gauge keeps the maximum: OK
+transport catch keeps event-stream framing: OK
+transport catch keeps ndjson framing: OK
+replay skips broken frames: OK
 --- an incompatible explicit format is rejected as a framed exception the page can match
 1
 text/event-stream
