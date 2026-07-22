@@ -6,6 +6,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/FieldToDataType.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -24,20 +26,38 @@ std::pair<Field, DataTypePtr> resolveNumberLiteralForFunction(
 
         if (is_comparison && isDecimal(*ref_unwrapped))
         {
-            /// For comparisons: use Decimal with the literal's own scale, parsed from text.
-            /// Skip scientific notation (scale can't be derived from exponent form).
-            bool has_exponent = text.find_first_of("eE") != String::npos;
-            if (!has_exponent)
+            /// For comparisons, pick a wide Decimal target whose scale matches the literal's own
+            /// digits, so the text is parsed straight into Decimal below (exact) instead of through
+            /// Float64. Fold the exponent into the scale (scale = fractional_digits - exponent) so
+            /// `1.5e-3` and `0.0015` produce the same scale; the String-to-Decimal parse handles the
+            /// exponent, so both resolve to the same Decimal value.
+            std::string_view sv = text;
+            size_t mantissa_end = sv.size();
+            Int64 exponent = 0;
+            if (auto e_pos = sv.find_first_of("eE"); e_pos != std::string_view::npos)
             {
-                size_t literal_scale = 0;
-                if (auto dot_pos = text.find('.'); dot_pos != String::npos)
-                    literal_scale = text.size() - dot_pos - 1;
-
-                /// Guard against scale exceeding Decimal256 max precision.
-                if (literal_scale <= DataTypeDecimal<Decimal256>::maxPrecision())
-                    target_type = std::make_shared<DataTypeDecimal<Decimal256>>(
-                        DataTypeDecimal<Decimal256>::maxPrecision(), static_cast<UInt32>(literal_scale));
+                mantissa_end = e_pos;
+                size_t i = e_pos + 1;
+                const bool exp_negative = i < sv.size() && sv[i] == '-';
+                if (i < sv.size() && (sv[i] == '+' || sv[i] == '-'))
+                    ++i;
+                /// The cap keeps `exponent` from overflowing on absurd input; such a scale is rejected below anyway.
+                for (; i < sv.size() && exponent < 100000; ++i)
+                    exponent = exponent * 10 + (sv[i] - '0');
+                if (exp_negative)
+                    exponent = -exponent;
             }
+
+            Int64 fractional_digits = 0;
+            if (auto dot_pos = sv.substr(0, mantissa_end).find('.'); dot_pos != std::string_view::npos)
+                fractional_digits = static_cast<Int64>(mantissa_end - dot_pos - 1);
+
+            const Int64 literal_scale = std::max<Int64>(0, fractional_digits - exponent);
+
+            /// Guard against scale exceeding Decimal256 max precision.
+            if (literal_scale <= static_cast<Int64>(DataTypeDecimal<Decimal256>::maxPrecision()))
+                target_type = std::make_shared<DataTypeDecimal<Decimal256>>(
+                    DataTypeDecimal<Decimal256>::maxPrecision(), static_cast<UInt32>(literal_scale));
         }
         else if (which_default.isInt() && which_ref.isInt()
                  && default_type->getSizeOfValueInMemory() <= ref_unwrapped->getSizeOfValueInMemory())
