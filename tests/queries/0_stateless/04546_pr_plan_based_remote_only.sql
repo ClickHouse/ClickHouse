@@ -17,7 +17,7 @@ SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_local
 SET parallel_replicas_plan_based = 1;
 SET automatic_parallel_replicas_mode = 0;
 -- No local plan: exercise the remote-only branch of createParallelReplicasPlan.
-SET parallel_replicas_prefer_local_replica = 0;
+SET parallel_replicas_local_plan = 0;
 
 SELECT count(), sum(b), min(a), max(a) FROM t_pr_remote_only WHERE a > 5;
 

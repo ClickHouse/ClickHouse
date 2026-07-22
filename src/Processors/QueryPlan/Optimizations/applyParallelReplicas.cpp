@@ -67,14 +67,9 @@ public:
         if (!typeid_cast<UnionStep *>(node->step.get()) || node->children.empty())
             return;
 
-        ContextPtr context;
         for (const auto * child : node->children)
-        {
-            const auto * split = typeid_cast<const ParallelReplicasSplitStep *>(child->step.get());
-            if (!split)
+            if (!typeid_cast<const ParallelReplicasSplitStep *>(child->step.get()))
                 return;
-            context = split->getContext();
-        }
 
         auto & union_node = nodes.emplace_back();
         union_node.step = std::move(node->step);
@@ -82,7 +77,7 @@ public:
         for (auto * child : node->children)
             union_node.children.push_back(child->children.front());
 
-        node->step = std::make_unique<ParallelReplicasSplitStep>(union_node.step->getOutputHeader(), context);
+        node->step = std::make_unique<ParallelReplicasSplitStep>(union_node.step->getOutputHeader());
         node->children = {&union_node};
     }
 
@@ -130,8 +125,7 @@ public:
 
             /// Add gather
             auto & new_split_node = nodes.emplace_back();
-            new_split_node.step = std::make_unique<ParallelReplicasSplitStep>(
-                partial_aggregation_node.step->getOutputHeader(), original_split_step->getContext());
+            new_split_node.step = std::make_unique<ParallelReplicasSplitStep>(partial_aggregation_node.step->getOutputHeader());
             new_split_node.children = {&partial_aggregation_node};
 
             /// Replace original aggregation step with MergingAggregated step
@@ -188,9 +182,9 @@ public:
             return;
 
         // build plan fragment
-        auto plan_fragment = buildPlanFragment(current_node);
+        auto [plan_fragment, context] = buildPlanFragment(current_node);
 
-        auto parallel_replicas_plan = ClusterProxy::createParallelReplicasPlan(std::move(plan_fragment), split_step->getContext());
+        auto parallel_replicas_plan = ClusterProxy::createParallelReplicasPlan(std::move(plan_fragment), context);
         if (!parallel_replicas_plan)
             return;
 
@@ -198,13 +192,14 @@ public:
     }
 
 private:
-    QueryPlanPtr buildPlanFragment(QueryPlan::Node * split_node)
+    std::pair<QueryPlanPtr, ContextPtr> buildPlanFragment(QueryPlan::Node * split_node)
     {
         /// The split marker is a unary pass-through; the fragment to distribute is the subtree below
         /// it. Clone it structurally: `QueryPlan::addStep` can only replay a linear chain and would
         /// throw on a branching fragment (e.g. a view expanding to UNION ALL, or a JOIN).
         auto plan_fragment = std::make_unique<QueryPlan>(QueryPlan::cloneSubtree(split_node->children.front()));
 
+        ContextPtr context;
         /// Mark the reads so the shipped fragment is deserialized in parallel-reading mode on replicas.
         Stack stack;
         traverseQueryPlan(
@@ -214,10 +209,13 @@ private:
             [&](auto & node)
             {
                 if (auto * read_step = typeid_cast<ReadFromMergeTree *>(node.step.get()))
+                {
                     read_step->enableParallelReadingFromReplicasForSerialization();
+                    context = read_step->getContext();
+                }
             });
 
-        return plan_fragment;
+        return {std::move(plan_fragment), context};
     }
 };
 
@@ -288,8 +286,7 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
     auto make_split_above = [&](QueryPlan::Node * read_node) -> QueryPlan::Node *
     {
         auto & split_node = nodes.emplace_back();
-        auto context = typeid_cast<ReadFromMergeTree &>(*read_node->step).getContext();
-        split_node.step = std::make_unique<ParallelReplicasSplitStep>(read_node->step->getOutputHeader(), context);
+        split_node.step = std::make_unique<ParallelReplicasSplitStep>(read_node->step->getOutputHeader());
         split_node.children = {read_node};
         return &split_node;
     };
