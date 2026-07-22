@@ -1,3 +1,4 @@
+import re
 import sys
 import traceback
 from pathlib import Path
@@ -64,7 +65,9 @@ _REQUIRED_ARTIFACTS = {
     "arm_release": ("profile.json", "binary_sizes.txt", "binary_symbols.txt"),
     # The warmup build does not link: no binaries, no link trace, no symbols
     # (the per-object nm pass is skipped under LTO). On a master push where
-    # every TU is an sccache hit even the time trace is legitimately empty.
+    # every TU is an sccache hit even the time trace is legitimately empty -
+    # a broken trace extractor is told apart from that case by
+    # _verify_trace_extraction instead.
     "arm_release_pr_cache_warmup": ("binary_sizes.txt",),
 }
 
@@ -88,6 +91,48 @@ def _has_data(file):
     """
     file = Path(file)
     return file.exists() and file.stat().st_size > 0
+
+
+# The raw -ftime-trace outputs clang leaves in the build directory - the same
+# pattern prepare-time-trace.sh extracts from. One file appears per actually
+# compiled TU (an sccache hit does not run the compiler) plus one per linked
+# binary, so their presence is the ground truth for whether this build was
+# expected to produce time-trace rows.
+_RAW_TRACE_RE = re.compile(r"\.(c|cpp|cc|cxx)\.json$|\.time-trace$")
+
+
+def _raw_traces_exist(directory):
+    directory = Path(directory)
+    if not directory.is_dir():
+        return False
+    for pattern in ("*.json", "*.time-trace"):
+        for file in directory.rglob(pattern):
+            if _RAW_TRACE_RE.search(file.name):
+                return True
+    return False
+
+
+def _verify_trace_extraction(build_directory, profile_data_file):
+    """Fail when the compiler emitted raw traces but extraction produced nothing.
+
+    The warmup build's time trace cannot be unconditionally required
+    (_REQUIRED_ARTIFACTS): when every TU is an sccache hit it is legitimately
+    empty. That makes a regression in the trace extractor indistinguishable
+    from the all-cache-hit case downstream - binary_sizes.txt alone keeps
+    find_warmup_baseline succeeding while the "Build profile diff" per-TU
+    compile-time section quietly loses its baseline rows. Disambiguate with
+    the ground truth: raw trace files exist iff the compiler actually ran, so
+    raw traces present + nothing extracted = a broken producer, and the hook
+    must fail loudly instead of uploading a silently incomplete profile.
+    """
+    if _has_data(profile_data_file):
+        return
+    if _raw_traces_exist(build_directory):
+        raise RuntimeError(
+            f"The build left raw -ftime-trace files in [{build_directory}] but "
+            f"nothing was extracted into [{profile_data_file}]: the trace "
+            "extraction (prepare-time-trace.sh) is broken"
+        )
 
 
 def _upload_profile_artifacts(build_type, start_time, artifacts):
@@ -141,6 +186,7 @@ def check():
                 ):
                     with open(profile_source, "rb") as ps_fd:
                         profile_fd.write(ps_fd.read())
+        _verify_trace_extraction(build_dir, profile_data_file)
         check_start_time = Utils.timestamp_to_str(
             Result.from_fs(Info().job_name).start_time
         )

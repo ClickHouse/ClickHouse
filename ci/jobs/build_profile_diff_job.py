@@ -41,7 +41,8 @@ Notes on data coverage:
     compile times are therefore compared against the most recent warmup build
     that recompiled the same TU.
   * The ThinLTO link runs on every linking build, so per-function OptFunction
-    events are always present on both sides.
+    events are present on both sides for every final binary that is actually
+    linked (clickhouse-keeper has none when built as a symlink to clickhouse).
   * `binary_sizes` is complete on both sides; `binary_symbols` is complete on
     the PR side and on master builds since this check was introduced.
 
@@ -79,7 +80,10 @@ MAIN_BINARY = f"{BUILD_DIR}/programs/clickhouse"
 HEADLINE_BINARIES = [
     f"{BUILD_DIR}/programs/clickhouse-stripped",
 ]
-SYMBOL_BINARIES = [
+# The final linked binaries: both the per-symbol size diff and the per-function
+# ThinLTO time diff cover each of them (clickhouse-keeper produces no data of
+# its own when it is built as a symlink to clickhouse).
+FINAL_BINARIES = [
     f"{BUILD_DIR}/programs/clickhouse",
     f"{BUILD_DIR}/programs/clickhouse-keeper",
 ]
@@ -533,11 +537,17 @@ def compare_objects(db: Db, pr_side, base_side) -> Section:
 
 
 def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
-    """Per-function ThinLTO optimization time of the main binary.
+    """Per-function ThinLTO optimization time of the final linked binaries.
 
     This is the per-function 'how long does the backend chew on it' signal; it
     is present on every linking build (the link is never cached) and it is
     where a new heavyweight function or template instantiation shows up first.
+    It covers every binary in FINAL_BINARIES, keyed by (binary, function), so
+    a keeper-only PR cannot regress the `clickhouse-keeper` ThinLTO time
+    without showing up here. Like the symbol section, a binary is compared
+    only when both sides have its link trace (`clickhouse-keeper` produces
+    none when built as a symlink to `clickhouse`), and a PR-side binary
+    without a master baseline is called out instead of silently dropped.
 
     The baseline is the official master build, which runs on a different
     machine and with different flags (debug info, official-build flag,
@@ -547,17 +557,35 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
     compile-time section normalizes its machine-speed skew.
     """
     section = Section(title="Slowest function optimization changes (ThinLTO)")
-    where = f"file = {quote(MAIN_BINARY)} AND name = 'OptFunction' AND dur >= 50000"
+    trace_where = "name = 'OptFunction' AND dur >= 50000"
+    sides = db.query(
+        f"""SELECT file,
+            countIf(side = 'pr') AS pr_count,
+            countIf(side = 'base') AS base_count
+        FROM {both_sides("build_time_trace", "file", pr_side, base_side, f"file IN ({in_list(FINAL_BINARIES)}) AND {trace_where}")}
+        GROUP BY file"""
+    )
+    comparable = [row["file"] for row in sides if int(row["pr_count"]) and int(row["base_count"])]
+    missing_base = [row["file"] for row in sides if int(row["pr_count"]) and not int(row["base_count"])]
+    lines = []
+    if missing_base:
+        names = ", ".join(md_code(strip_build_dir(f)) for f in missing_base)
+        lines.append(f"No master baseline link trace for {names}; its functions are not compared.")
+        lines.append("")
+    if not comparable:
+        section.body = "\n".join(lines).rstrip()
+        return section
+    where = f"file IN ({in_list(comparable)}) AND {trace_where}"
     # The systematic skew between the sides, as the median PR/master time
     # ratio over functions matched on both sides with a non-trivial baseline.
     skew_rows = db.query(
         f"""SELECT medianExact(pr_dur / base_dur) AS skew, count() AS matched
         FROM (
-            SELECT detail,
+            SELECT file, detail,
                 sumIf(dur, side = 'pr') AS pr_dur,
                 sumIf(dur, side = 'base') AS base_dur
-            FROM {both_sides("build_time_trace", "detail, dur", pr_side, base_side, where)}
-            GROUP BY detail
+            FROM {both_sides("build_time_trace", "file, detail, dur", pr_side, base_side, where)}
+            GROUP BY file, detail
             HAVING pr_dur >= 500000 AND base_dur >= 500000
         )"""
     )
@@ -569,21 +597,21 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
     # thousands; a function can only reach the report threshold if one side
     # exceeds it anyway, and a missing side renders as "new"/"gone".
     rows = db.query(
-        f"""SELECT detail,
+        f"""SELECT file, detail,
             sumIf(dur, side = 'pr') AS pr_dur,
             sumIf(dur, side = 'base') AS base_dur,
             toInt64(pr_dur) - toInt64(base_dur * {skew}) AS delta
-        FROM {both_sides("build_time_trace", "detail, dur", pr_side, base_side, where)}
-        GROUP BY detail
+        FROM {both_sides("build_time_trace", "file, detail, dur", pr_side, base_side, where)}
+        GROUP BY file, detail
         HAVING abs(delta) >= {report_us}
             AND (pr_dur = 0 OR base_dur = 0
-                 OR greatest(pr_dur, base_dur * {skew}) >= least(pr_dur, base_dur * {skew}) * {OPTFN_REPORT_RATIO})
+                 OR greatest(toFloat64(pr_dur), base_dur * {skew}) >= least(toFloat64(pr_dur), base_dur * {skew}) * {OPTFN_REPORT_RATIO})
         ORDER BY abs(delta) DESC
         LIMIT {MAX_TABLE_ROWS}"""
     )
     if not rows:
+        section.body = "\n".join(lines).rstrip()
         return section
-    lines = []
     if abs(skew - 1.0) >= 0.05:
         lines += [
             f"Median per-function time ratio to the master baseline is ×{skew:.2f} "
@@ -591,8 +619,8 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
             "",
         ]
     lines += [
-        "| Function | Master | PR | Δ vs median |",
-        "|---|---:|---:|---:|",
+        "| Binary | Function | Master | PR | Δ vs median |",
+        "|---|---|---:|---:|---:|",
     ]
     for row in rows:
         pr_s, base_s = int(row["pr_dur"]) / 1e6, int(row["base_dur"]) / 1e6
@@ -602,7 +630,7 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
             section.significant = True
         base_text = f"{base_s:.1f} s" if base_s else "new"
         pr_text = f"{pr_s:.1f} s" if pr_s else "gone"
-        lines.append(f"| {md_code(demangle(row['detail']))} | {base_text} | {pr_text} | {format_seconds_delta(delta, adjusted_base_s)} |")
+        lines.append(f"| {md_code(strip_build_dir(row['file']))} | {md_code(demangle(row['detail']))} | {base_text} | {pr_text} | {format_seconds_delta(delta, adjusted_base_s)} |")
     section.body = "\n".join(lines)
     return section
 
@@ -799,7 +827,7 @@ def compare_symbols(db: Db, pr_side, base_side) -> Section:
         f"""SELECT file,
             countIf(side = 'pr') AS pr_count,
             countIf(side = 'base') AS base_count
-        FROM {both_sides("binary_symbols", "file", pr_side, base_side, f"file IN ({in_list(SYMBOL_BINARIES)})")}
+        FROM {both_sides("binary_symbols", "file", pr_side, base_side, f"file IN ({in_list(FINAL_BINARIES)})")}
         GROUP BY file"""
     )
     comparable = [row["file"] for row in sides if int(row["pr_count"]) and int(row["base_count"])]

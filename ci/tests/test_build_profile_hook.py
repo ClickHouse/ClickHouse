@@ -36,6 +36,7 @@ from ci.jobs.scripts.job_hooks.build_profile_hook import (
     _has_data,
     _should_profile,
     _upload_profile_artifacts,
+    _verify_trace_extraction,
 )
 from ci.jobs.scripts.log_cluster import LogCluster, LogClusterBuildProfileQueries
 
@@ -331,6 +332,63 @@ def test_upload_rejection_propagates(tmp_path):
         _upload_profile_artifacts(
             "amd_release", "2026-06-11 00:00:00", [(failing_insert, f)]
         )
+
+
+# --- trace extraction verification ------------------------------------------
+
+
+def test_trace_extraction_fails_when_raw_traces_yield_nothing(tmp_path):
+    """Raw -ftime-trace files present + empty profile.json = broken extractor.
+
+    The warmup build's time trace cannot be unconditionally required: when
+    every TU is an sccache hit it is legitimately empty. But the compiler
+    leaves one raw trace file per TU it actually ran on, so raw traces with
+    nothing extracted means prepare-time-trace.sh regressed - and silently
+    uploading would let the "Build profile diff" per-TU compile-time section
+    lose its baseline without any signal.
+    """
+    build_dir = tmp_path / "build"
+    (build_dir / "src" / "CMakeFiles" / "dbms.dir").mkdir(parents=True)
+    (build_dir / "src" / "CMakeFiles" / "dbms.dir" / "foo.cpp.json").write_text("{}")
+    profile = tmp_path / "profile.json"
+    profile.write_text("")
+
+    with pytest.raises(RuntimeError, match="extraction"):
+        _verify_trace_extraction(build_dir, profile)
+
+    # A link trace counts as a raw trace too.
+    for f in build_dir.rglob("*.json"):
+        f.unlink()
+    (build_dir / "programs").mkdir()
+    (build_dir / "programs" / "clickhouse.time-trace").write_text("{}")
+    with pytest.raises(RuntimeError, match="extraction"):
+        _verify_trace_extraction(build_dir, profile)
+
+
+def test_trace_extraction_accepts_all_cache_hit_build(tmp_path):
+    """No raw traces (every TU an sccache hit) -> an empty profile is fine.
+
+    Non-trace JSON files in the build tree (compile_commands.json, cmake
+    artifacts) must not be mistaken for compiler trace output.
+    """
+    build_dir = tmp_path / "build"
+    build_dir.mkdir()
+    (build_dir / "compile_commands.json").write_text("[]")
+    profile = tmp_path / "profile.json"
+    profile.write_text("")
+
+    _verify_trace_extraction(build_dir, profile)
+
+
+def test_trace_extraction_accepts_extracted_profile(tmp_path):
+    """Raw traces present and extraction produced data: nothing to flag."""
+    build_dir = tmp_path / "build"
+    build_dir.mkdir()
+    (build_dir / "foo.cpp.json").write_text("{}")
+    profile = tmp_path / "profile.json"
+    profile.write_text('["row"]')
+
+    _verify_trace_extraction(build_dir, profile)
 
 
 # --- upload transport: parallel parsing disabled --------------------------

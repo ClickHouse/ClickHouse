@@ -34,6 +34,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 _MAIN = job.MAIN_BINARY  # ./ci/tmp/build/programs/clickhouse
+_KEEPER = job.FINAL_BINARIES[1]  # ./ci/tmp/build/programs/clickhouse-keeper
 _STRIPPED = job.HEADLINE_BINARIES[0]  # ./ci/tmp/build/programs/clickhouse-stripped
 _OBJ = f"{job.BUILD_DIR}/src/CMakeFiles/dbms.dir/foo.cpp.o"
 
@@ -104,6 +105,15 @@ INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time,
     (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release_pr_cache_warmup', 'W0', 'tu.cpp', 'ExecuteCompiler', '', 20000000),
     (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release_pr_cache_warmup', 'W0', 'tu.cpp', 'InstantiateFunction', 'foo', 5000000),
     (0, '{_BASE_SHA}', '2026-07-01 00:00:00', 'arm_release_pr_cache_warmup', 'W0b', 'other_tu.cpp', 'ExecuteCompiler', '', 10000000);
+
+-- ThinLTO link-trace fixture: both final binaries have OptFunction rows on
+-- both sides. ``main_fn`` (clickhouse) is unchanged; ``keeper_fn``
+-- (clickhouse-keeper) regresses 5 s -> 30 s, above the significance bar.
+INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
+    ({_PR}, '{_PR_SHA}', '2026-07-02 00:00:00', 'arm_release', 'I2', '{_MAIN}', 'OptFunction', 'main_fn', 10000000),
+    ({_PR}, '{_PR_SHA}', '2026-07-02 00:00:00', 'arm_release', 'I2', '{_KEEPER}', 'OptFunction', 'keeper_fn', 30000000),
+    (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release', 'I0', '{_MAIN}', 'OptFunction', 'main_fn', 10000000),
+    (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release', 'I0', '{_KEEPER}', 'OptFunction', 'keeper_fn', 5000000);
 """
 
 
@@ -237,6 +247,44 @@ def test_expensive_new_tu_without_baseline_is_significant():
     assert "new_tu.cpp" in section.body
     assert section.significant
     assert "without a master baseline" in (section.summary or "")
+
+
+def test_opt_functions_cover_the_keeper_binary():
+    """A keeper-only ThinLTO regression shows up, keyed by (binary, function).
+
+    The section used to hard-wire ``programs/clickhouse``, so a PR could
+    regress ``clickhouse-keeper``'s ThinLTO time without ever appearing in
+    the report. Both final binaries must be diffed, and the row must be
+    attributed to the binary it comes from.
+    """
+    db = FixtureDb()
+    pr_side = job.resolve_run(db, job.PR_DAYS, _PR, _PR_SHA)
+    base_side = job.resolve_run(db, job.BASE_DAYS, 0, _BASE_SHA)
+    section = job.compare_opt_functions(db, pr_side, base_side)
+    # keeper_fn regressed 5 s -> 30 s: reported, significant, and attributed
+    # to clickhouse-keeper.
+    assert "keeper_fn" in section.body
+    assert f"`{job.strip_build_dir(_KEEPER)}`" in section.body
+    assert section.significant
+    # main_fn is unchanged: below the report threshold.
+    assert "main_fn" not in section.body
+
+
+def test_opt_functions_missing_baseline_is_called_out():
+    """A PR-side link trace without a master baseline is noted, not dropped.
+
+    With no baseline rows at all, no binary is comparable: the section must
+    say so explicitly instead of rendering an empty (all-green) body while
+    the advertised ThinLTO comparison silently did not happen.
+    """
+    db = FixtureDb()
+    pr_side = job.resolve_run(db, job.PR_DAYS, _PR, _PR_SHA)
+    no_data_base = job.Side(job.BASE_DAYS, 0, "sha-without-any-data", "2026-06-30 00:00:00", "I0")
+    section = job.compare_opt_functions(db, pr_side, no_data_base)
+    assert "No master baseline link trace" in section.body
+    assert f"`{job.strip_build_dir(_MAIN)}`" in section.body
+    assert f"`{job.strip_build_dir(_KEEPER)}`" in section.body
+    assert not section.significant
 
 
 def test_get_master_shas_prefers_the_anchored_track():
