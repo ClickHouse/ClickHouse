@@ -206,6 +206,69 @@ SELECT a, d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, d ORDER BY a ASC, d ASC NULLS LAST LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
+SELECT 'trailing_agg_one_key';
+SELECT a, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a ORDER BY a ASC, count() DESC LIMIT 10
+SETTINGS enable_group_by_top_k_optimization = 1
+EXCEPT
+SELECT a, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a ORDER BY a ASC, count() DESC LIMIT 10
+SETTINGS enable_group_by_top_k_optimization = 0;
+
+SELECT 'trailing_agg_all_keys';
+SELECT a, b, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a, b ORDER BY a ASC, b ASC, count() DESC LIMIT 10
+SETTINGS enable_group_by_top_k_optimization = 1
+EXCEPT
+SELECT a, b, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a, b ORDER BY a ASC, b ASC, count() DESC LIMIT 10
+SETTINGS enable_group_by_top_k_optimization = 0;
+
+SELECT 'trailing_agg_key_desc';
+SELECT a, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a ORDER BY a DESC, count() ASC LIMIT 10
+SETTINGS enable_group_by_top_k_optimization = 1
+EXCEPT
+SELECT a, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a ORDER BY a DESC, count() ASC LIMIT 10
+SETTINGS enable_group_by_top_k_optimization = 0;
+
+SELECT 'trailing_nullable_nulls_first';
+SELECT a, d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a, d ORDER BY a ASC, d ASC NULLS FIRST, count() DESC LIMIT 10
+SETTINGS enable_group_by_top_k_optimization = 1
+EXCEPT
+SELECT a, d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a, d ORDER BY a ASC, d ASC NULLS FIRST, count() DESC LIMIT 10
+SETTINGS enable_group_by_top_k_optimization = 0;
+
+SELECT 'trailing_nullable_nulls_last';
+SELECT a, d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a, d ORDER BY a ASC, d ASC NULLS LAST, count() DESC LIMIT 10
+SETTINGS enable_group_by_top_k_optimization = 1
+EXCEPT
+SELECT a, d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a, d ORDER BY a ASC, d ASC NULLS LAST, count() DESC LIMIT 10
+SETTINGS enable_group_by_top_k_optimization = 0;
+
+SELECT 'trailing_collate';
+SELECT a, max(c), count()
+FROM t_gbylimit_comp GROUP BY a ORDER BY a ASC, max(c) ASC COLLATE 'en' LIMIT 10
+SETTINGS enable_group_by_top_k_optimization = 1
+EXCEPT
+SELECT a, max(c), count()
+FROM t_gbylimit_comp GROUP BY a ORDER BY a ASC, max(c) ASC COLLATE 'en' LIMIT 10
+SETTINGS enable_group_by_top_k_optimization = 0;
+
+SELECT 'trailing_duplicate_key';
+SELECT a, b, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a, b ORDER BY a ASC, b ASC, a ASC LIMIT 10
+SETTINGS enable_group_by_top_k_optimization = 1
+EXCEPT
+SELECT a, b, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a, b ORDER BY a ASC, b ASC, a ASC LIMIT 10
+SETTINGS enable_group_by_top_k_optimization = 0;
+
 DROP TABLE t_gbylimit_comp;
 
 -- A projection that reuses a GROUP BY key's name for a different expression
@@ -246,3 +309,13 @@ INNER JOIN (
     SELECT -k AS k, count() AS c FROM (SELECT number % 1000 AS k FROM numbers(20000)) GROUP BY k ORDER BY 1 ASC LIMIT 5
     SETTINGS prefer_column_name_to_alias = 1, enable_group_by_top_k_optimization = 0
 ) AS r USING (k, c);
+
+SELECT 'order by longer than group by: still optimized';
+SELECT count() FROM (EXPLAIN actions = 1
+    SELECT k, count() AS c FROM (SELECT number % 1000 AS k FROM numbers(1000)) GROUP BY k ORDER BY k ASC, c DESC LIMIT 5
+) WHERE explain LIKE '%Top-K%';
+
+SELECT 'non-key sort column before a key: not optimized';
+SELECT count() FROM (EXPLAIN actions = 1
+    SELECT k1, k2, count() AS c FROM (SELECT number % 10 AS k1, number % 7 AS k2 FROM numbers(1000)) GROUP BY k1, k2 ORDER BY k1 ASC, c DESC LIMIT 5
+) WHERE explain LIKE '%Top-K%';

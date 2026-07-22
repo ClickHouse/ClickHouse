@@ -121,13 +121,15 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
     if (sorting_step)
     {
         const auto & sort_description = sorting_step->getSortDescription();
-        if (sort_description.empty() || sort_description.size() > params.keys.size())
+        if (sort_description.empty())
             return 0;
 
-        directions.reserve(sort_description.size());
-        nulls_directions.reserve(sort_description.size());
+        num_key_columns = std::min(sort_description.size(), params.keys.size());
 
-        for (size_t i = 0; i < sort_description.size(); ++i)
+        directions.reserve(num_key_columns);
+        nulls_directions.reserve(num_key_columns);
+
+        for (size_t i = 0; i < num_key_columns; ++i)
         {
             if (sort_description[i].column_name != params.keys[i])
                 return 0;
@@ -141,8 +143,6 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
             directions.push_back(sort_description[i].direction);
             nulls_directions.push_back(sort_description[i].nulls_direction);
         }
-
-        num_key_columns = sort_description.size();
     }
     else
     {

@@ -14,9 +14,20 @@ nullable_nulls_first_desc
 nullable_nulls_last_desc
 composite_nullable_nulls_first
 composite_nullable_nulls_last
+trailing_agg_one_key
+trailing_agg_all_keys
+trailing_agg_key_desc
+trailing_nullable_nulls_first
+trailing_nullable_nulls_last
+trailing_collate
+trailing_duplicate_key
 aliased key passes through: still optimized
 1
 aliased key, prefer_column_name_to_alias = 1: result matches optimization off
 5
 aliased key, ORDER BY position: result matches optimization off
 5
+order by longer than group by: still optimized
+1
+non-key sort column before a key: not optimized
+0
