@@ -74,8 +74,9 @@ void MetadataStorageFromDisk::syncMetadataFile(const std::string & path)
 
     if (-1 == res)
     {
-        ::close(fd);
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, full_path.string(), "Cannot fsync {}", full_path.string());
+        const int fsync_errno = errno; /// close() below may overwrite errno
+        [[maybe_unused]] int close_err = ::close(fd);
+        ErrnoException::throwFromPathWithErrno(ErrorCodes::CANNOT_FSYNC, full_path.string(), fsync_errno, "Cannot fsync {}", full_path.string());
     }
 
     if (-1 == ::close(fd))
