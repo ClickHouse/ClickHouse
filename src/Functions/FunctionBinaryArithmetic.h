@@ -2874,6 +2874,50 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             using ColVecT1 = ColumnVectorOrDecimal<T1>;
             using ColVecResult = ColumnVectorOrDecimal<ResultType>;
 
+            /// Whether to avoid instantiating a dedicated kernel for this pair of types and execute
+            /// the operation via a conversion to a common type instead (to reduce the code size).
+            constexpr bool is_wide_mixed_number_pair = !std::is_same_v<T0, T1>
+                && (is_over_big_int<T0> || is_over_big_int<T1>)
+                && IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>;
+
+            /// Floating division computes `static_cast<ResultType>(a) / static_cast<ResultType>(b)`,
+            /// so converting the arguments to `ResultType` beforehand yields bit-identical results.
+            /// The same holds for `plus`, `minus` and `multiply`, but they keep their fused kernels:
+            /// they are memory-bound, and materializing a widened copy of the narrow operand made
+            /// them up to 1.6x slower on column-column arguments (the `bigint_arithm` perf test),
+            /// while their fused kernels are compact (~100 KB per translation unit for all mixed
+            /// wide pairs together). The division and modulo kernels below are compute-bound, so
+            /// the conversion does not slow them down measurably.
+            constexpr bool op_computes_in_result_type = IsOperation<Op>::div_floating || is_div_floating_or_null;
+
+            /// Integer division casts both operands to the signed type of the dividend size when
+            /// either operand is signed (`DivideIntegralImpl`), so when the dividend is at least as
+            /// wide as the divisor, pre-converting both operands to that type is exact, including
+            /// the checks for division by zero and division of the minimal signed number by minus
+            /// one (the check is done on the same type either way). A narrower dividend is exact
+            /// only when both operands are unsigned - otherwise the minimal-signed-number check
+            /// would be performed on the wider type and stop matching.
+            constexpr bool op_is_prunable_int_div = (is_int_div || is_int_div_or_zero || is_int_div_or_null)
+                && is_integer<T0> && is_integer<T1>
+                && (sizeof(T0) >= sizeof(T1) || (is_unsigned_v<T0> && is_unsigned_v<T1>));
+
+            /// Modulo is computed in the type of the wider operand (`ModuloImpl` casts the other
+            /// operand into it), so pre-converting the operands to it is exact except when the
+            /// division-by-minimal-signed-number check would move to a wider type: a narrower
+            /// signed dividend with a signed divisor, or a sign-flipping conversion of the dividend
+            /// to an equally sized signed divisor type.
+            constexpr bool op_is_prunable_modulo = (is_modulo || IsOperation<Op>::modulo_or_null || IsOperation<Op>::modulo_legacy)
+                && is_integer<T0> && is_integer<T1>
+                && (sizeof(T0) > sizeof(T1)
+                    || (!(is_signed_v<T0> && is_signed_v<T1>) && !(sizeof(T0) == sizeof(T1) && is_signed_v<T1>)));
+
+            /// `positiveModulo` additionally branches on the sign of the original divisor type when
+            /// adjusting a negative remainder (and throws for the minimal signed divisor value), so
+            /// it is only pruned for a strictly narrower unsigned divisor, where the adjustment
+            /// arithmetic provably coincides.
+            constexpr bool op_is_prunable_positive_modulo = (IsOperation<Op>::positive_modulo || IsOperation<Op>::positive_modulo_or_null)
+                && is_integer<T0> && is_integer<T1> && sizeof(T0) > sizeof(T1) && is_unsigned_v<T1>;
+
             ColumnPtr left_col = nullptr;
             ColumnPtr right_col = nullptr;
 
@@ -2936,6 +2980,65 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     return castColumn(col, std::make_shared<ResultDataType>());
                 }
                 return nullptr;
+            }
+            else if constexpr (is_wide_mixed_number_pair
+                && (op_computes_in_result_type || op_is_prunable_int_div || op_is_prunable_modulo || op_is_prunable_positive_modulo))
+            {
+                /// Mixed-type pairs involving a 128/256-bit integer are rare, but their kernels are
+                /// the largest ones (wide multiplication and division do not vectorize and inline a
+                /// lot of library code), and they dominate the code size of arithmetic functions.
+                /// Do not instantiate a dedicated kernel for every such combination: convert both
+                /// arguments to a common type chosen so that the same-type kernel performs exactly
+                /// the same arithmetic as the fused kernel for the original pair would, and execute
+                /// the same-type kernel.
+                auto execute_via_common_type = [&]<typename CommonDataType>() -> ColumnPtr
+                {
+                    const auto common_type = std::make_shared<CommonDataType>();
+                    ColumnsWithTypeAndName converted_arguments
+                    {
+                        {castColumn(arguments[0], common_type), common_type, arguments[0].name},
+                        {castColumn(arguments[1], common_type), common_type, arguments[1].name},
+                    };
+
+                    ColumnPtr res = executeNumeric(converted_arguments, *common_type, *common_type, right_nullmap, result_nullmap);
+                    if (!res)
+                        return nullptr;
+
+                    /// The result type of the same-type kernel can be wider than the declared result
+                    /// type (e.g. `modulo(UInt256, UInt8)` is `UInt8` while `modulo(UInt256, UInt256)`
+                    /// is `UInt256`). Narrowing is exact: the fused kernel casts its result to the
+                    /// declared type in the same way.
+                    using CommonResultDataType = typename BinaryOperationTraits<Op, CommonDataType, CommonDataType>::ResultDataType;
+                    if constexpr (!std::is_same_v<CommonResultDataType, ResultDataType>)
+                        res = castColumn({res, std::make_shared<CommonResultDataType>(), ""}, std::make_shared<ResultDataType>());
+
+                    return res;
+                };
+
+                if constexpr (op_computes_in_result_type)
+                {
+                    return execute_via_common_type.template operator()<ResultDataType>();
+                }
+                else if constexpr (op_is_prunable_int_div)
+                {
+                    /// `DivideIntegralImpl` casts both operands to the signed type of the wider
+                    /// operand size when either operand is signed, and to the wider unsigned
+                    /// type otherwise.
+                    using WiderType = std::conditional_t<(sizeof(T0) >= sizeof(T1)), T0, T1>;
+                    using CommonType = std::conditional_t<is_signed_v<T0> || is_signed_v<T1>, make_signed_t<WiderType>, WiderType>;
+                    return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
+                }
+                else if constexpr (op_is_prunable_positive_modulo)
+                {
+                    /// See `op_is_prunable_positive_modulo`: the divisor is strictly narrower.
+                    return execute_via_common_type.template operator()<DataTypeNumber<T0>>();
+                }
+                else
+                {
+                    /// `ModuloImpl` computes in the type of the wider operand.
+                    using CommonType = std::conditional_t<(sizeof(T0) > sizeof(T1)), T0, T1>;
+                    return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
+                }
             }
             else // can't avoid else and another indentation level, otherwise the compiler would try to instantiate
                  // ColVecResult for Decimals which would lead to a compile error.
@@ -3421,6 +3524,38 @@ public:
                         return {false, true, false}; // variable / 0 is undefined, let's treat it as non-monotonic
                     bool is_constant_positive = accurateLess(Field(0), constant);
 
+                    auto arg_type = removeNullable(recursiveRemoveLowCardinality(left.type));
+                    auto divisor_type = removeNullable(recursiveRemoveLowCardinality(right.type));
+
+                    // `intDiv` or `divide` by a Decimal constant computes in the decimal's native signed
+                    // width (`DecimalBinaryOperation` feeds both operands into
+                    // `DivideIntegralImpl<NativeResultType, NativeResultType>` for both functions): the
+                    // dividend is cast into that width and pre-multiplied by the scale, so it wraps or
+                    // truncates at a boundary that depends on the decimal width and scale, not on the
+                    // dividend width. That boundary is not cheaply modelled, so do not claim monotonicity.
+                    // Only a Decimal divisor takes this integral path; a Float divisor computes through
+                    // floating point and stays monotonic.
+                    if ((name_view == "intDiv" || name_view == "divide") && isDecimal(divisor_type))
+                        return {false, true, false, false};
+
+                    // `intDiv(unsigned, signed-integer-const)` reinterprets the dividend through a signed
+                    // cast (see `DivideIntegralImpl`/`intDivRangeCrossesSignedWrap`); a Float divisor
+                    // computes through floating point and never wraps. An unbounded range over an unsigned
+                    // domain always contains the discontinuity, so it is never always-monotonic; report
+                    // monotonicity only when an endpoint keeps the range on one side of it.
+                    if (name_view == "intDiv" && isUInt(arg_type) && isInt(divisor_type))
+                    {
+                        if (intDivRangeCrossesSignedWrap(arg_type, left_point, right_point))
+                            return {false, true, false, false};
+                        return {true, is_constant_positive, false};
+                    }
+
+                    // Mirror case: a signed dividend with an unsigned constant divisor whose high bit
+                    // is set reinterprets the divisor as negative (see `intDivConstReinterpretsNegative`),
+                    // so the function is monotonic decreasing even though the raw constant looks positive.
+                    if (name_view == "intDiv" && intDivConstReinterpretsNegative(arg_type, divisor_type, constant))
+                        is_constant_positive = false;
+
                     // division is saturated to `inf`, thus it doesn't have overflow issues.
                     return {true, is_constant_positive, true};
                 }
@@ -3553,7 +3688,42 @@ public:
                     return {false, true, false, false}; // variable / 0 is undefined, let's treat it as non-monotonic
 
                 bool is_constant_positive = accurateLess(Field(0), constant);
-                // division is saturated to `inf`, thus it doesn't have overflow issues.
+
+                auto arg_type = removeNullable(recursiveRemoveLowCardinality(left.type));
+                auto divisor_type = removeNullable(recursiveRemoveLowCardinality(right.type));
+
+                // `intDiv` or `divide` by a Decimal constant computes in the decimal's native signed
+                // width (`DecimalBinaryOperation` feeds both operands into
+                // `DivideIntegralImpl<NativeResultType, NativeResultType>` for both functions): the
+                // dividend is cast into that width and pre-multiplied by the scale, so it wraps or
+                // truncates at a boundary that depends on the decimal width and scale, not on the
+                // dividend width. That boundary is not cheaply modelled, so do not claim monotonicity.
+                // Only a Decimal divisor takes this integral path; a Float divisor computes through
+                // floating point and stays monotonic.
+                if ((name_view == "intDiv" || name_view == "divide") && isDecimal(divisor_type))
+                    return {false, true, false, false};
+
+                // `intDiv(unsigned, signed-integer-const)` is a step function (see
+                // `intDivRangeCrossesSignedWrap`): a range crossing the discontinuity is non-monotonic,
+                // so reject it (no pruning); a range on one side is monotonic on that range but not
+                // always-monotonic. The wrap is exclusive to the signed-integer divisor path; a Float
+                // divisor computes through floating point and never wraps.
+                if (name_view == "intDiv" && isUInt(arg_type) && isInt(divisor_type))
+                {
+                    if (intDivRangeCrossesSignedWrap(arg_type, left_point, right_point))
+                        return {false, true, false, false};
+                    return {true, is_constant_positive, false, is_strict};
+                }
+
+                // Mirror case: a signed dividend with an unsigned constant divisor whose high bit
+                // is set reinterprets the divisor as negative (see `intDivConstReinterpretsNegative`),
+                // so the function is monotonic decreasing even though the raw constant looks positive.
+                if (name_view == "intDiv" && intDivConstReinterpretsNegative(arg_type, divisor_type, constant))
+                    is_constant_positive = false;
+
+                // `divide` is floating-point (saturates, order-preserving), `intDiv` by a Float divisor
+                // computes through floating point, and `intDiv` with an unsigned result never wraps, so
+                // all are always monotonic.
                 return {true, is_constant_positive, true, is_strict};
             }
         }
@@ -3653,6 +3823,52 @@ public:
             }
         }
         return {false, true, false};
+    }
+
+    /// `intDiv` casts the dividend to a signed type when the divisor is signed (see `DivideIntegralImpl`),
+    /// so an unsigned dividend whose value is >= 2^(width-1) reinterprets as negative
+    /// (e.g. `intDiv(UInt64, Int64-const)` has an `Int64` result, and `intDiv(2^63, c)` flips sign
+    /// relative to `intDiv(2^63 - 1, c)`). `intDiv` is therefore a step function with a single
+    /// discontinuity at `D = 2^(width-1)`: it is monotonic on each side of `D` but not across it.
+    /// Returns true when the range [left_point, right_point] contains `D` in its interior, i.e. when
+    /// `left_point < D <= right_point` over the unsigned input domain. A null endpoint means the range
+    /// is unbounded there, so it extends to the unsigned domain limits (0 on the left, max on the right),
+    /// which always places `D` strictly inside. Endpoint comparison of the transformed values cannot
+    /// detect this because both endpoints can map to the same output while the interior jumps.
+    /// `arg_type` is the unsigned dividend type (already stripped of Nullable/LowCardinality).
+    static bool intDivRangeCrossesSignedWrap(const DataTypePtr & arg_type, const Field & left_point, const Field & right_point)
+    {
+        const size_t width_bytes = arg_type->getSizeOfValueInMemory();
+        // `D = 2^(8 * width_bytes - 1)` is the first unsigned value that reinterprets as negative.
+        const UInt256 wrap_point = UInt256(1) << (8 * width_bytes - 1);
+        const Field wrap_field(wrap_point);
+
+        // left_point < D: a null left bound is -inf over the unsigned domain (== 0 < D), so it crosses.
+        const bool left_below = left_point.isNull() || accurateLess(left_point, wrap_field);
+        // D <= right_point: a null right bound is +inf over the unsigned domain (== max >= D), so it crosses.
+        const bool right_at_or_above = right_point.isNull() || accurateLessOrEqual(wrap_field, right_point);
+        return left_below && right_at_or_above;
+    }
+
+    /// Mirror of the unsigned-dividend wrap: when the dividend is signed and the divisor is an
+    /// unsigned constant, `DivideIntegralImpl` reinterprets the divisor through `make_signed_t` of
+    /// the wider operand type. With `sizeof(dividend) <= sizeof(divisor)` an unsigned constant whose
+    /// high bit is set (`>= 2^(8 * divisor_width - 1)`) becomes negative, so `intDiv` divides by an
+    /// effectively negative value and is monotonic decreasing even though the raw constant compares
+    /// as positive (e.g. `intDiv(Int8, toUInt8(200))` == `intDiv(Int8, toInt8(-56))`). With
+    /// `sizeof(dividend) > sizeof(divisor)` the divisor widens into the dividend's signed type and
+    /// stays positive, so no flip occurs. The signed dividend is never reinterpreted, so there is no
+    /// discontinuity (unlike `intDivRangeCrossesSignedWrap`): the function is fully monotonic, only
+    /// its direction is reversed. Returns true when the divisor reinterprets as negative.
+    static bool intDivConstReinterpretsNegative(const DataTypePtr & arg_type, const DataTypePtr & divisor_type, const Field & constant)
+    {
+        if (!isInt(arg_type) || !isUInt(divisor_type))
+            return false;
+        if (arg_type->getSizeOfValueInMemory() > divisor_type->getSizeOfValueInMemory())
+            return false;
+        const size_t divisor_width_bytes = divisor_type->getSizeOfValueInMemory();
+        const Field wrap_field(UInt256(1) << (8 * divisor_width_bytes - 1));
+        return accurateLessOrEqual(wrap_field, constant);
     }
 
 private:
