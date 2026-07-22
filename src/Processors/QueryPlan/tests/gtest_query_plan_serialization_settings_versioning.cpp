@@ -11,7 +11,6 @@ namespace DB::QueryPlanSerializationSetting
 extern const QueryPlanSerializationSettingsUInt64 max_bytes_in_join;
 extern const QueryPlanSerializationSettingsUInt64 max_memory_usage;
 extern const QueryPlanSerializationSettingsBool enable_join_in_memory_compression;
-extern const QueryPlanSerializationSettingsUInt64 join_decompressed_columns_cache_bytes;
 extern const QueryPlanSerializationSettingsJoinAlgorithm join_algorithm;
 }
 
@@ -43,7 +42,6 @@ TEST(QueryPlanSerializationSettings, JoinCompressionSettingsOmittedForOlderVersi
     settings[QueryPlanSerializationSetting::max_bytes_in_join] = 777;
     settings[QueryPlanSerializationSetting::max_memory_usage] = 12345;
     settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = true;
-    settings[QueryPlanSerializationSetting::join_decompressed_columns_cache_bytes] = 4096;
 
     /// A version-4 receiver gets all of the settings, including the new ones.
     {
@@ -51,7 +49,6 @@ TEST(QueryPlanSerializationSettings, JoinCompressionSettingsOmittedForOlderVersi
         EXPECT_EQ(v4[QueryPlanSerializationSetting::max_bytes_in_join].value, 777u);
         EXPECT_EQ(v4[QueryPlanSerializationSetting::max_memory_usage].value, 12345u);
         EXPECT_EQ(v4[QueryPlanSerializationSetting::enable_join_in_memory_compression].value, true);
-        EXPECT_EQ(v4[QueryPlanSerializationSetting::join_decompressed_columns_cache_bytes].value, 4096u);
     }
 
     /// A receiver older than version 4 (version 3, version 2 and version 1) does not get the new
@@ -63,7 +60,6 @@ TEST(QueryPlanSerializationSettings, JoinCompressionSettingsOmittedForOlderVersi
         EXPECT_EQ(old[QueryPlanSerializationSetting::max_bytes_in_join].value, 777u);
         EXPECT_EQ(old[QueryPlanSerializationSetting::max_memory_usage].value, 0u);
         EXPECT_EQ(old[QueryPlanSerializationSetting::enable_join_in_memory_compression].value, false);
-        EXPECT_EQ(old[QueryPlanSerializationSetting::join_decompressed_columns_cache_bytes].value, 128ull * 1024 * 1024);
     }
 }
 
@@ -74,7 +70,7 @@ TEST(QueryPlanSerializationSettings, JoinCompressionSettingsOmittedForOlderVersi
 /// raise every join fragment - including a `full_sorting_merge` join, or a hash join with compression
 /// off but a non-default `max_memory_usage` - to version 4 and get it rejected by a version-3 worker
 /// during a rolling upgrade. Only an actually enabled `enable_join_in_memory_compression` requires
-/// version 4; omitting the other version-4 settings reproduces pre-version-4 behavior.
+/// version 4; omitting the other version-4 setting reproduces pre-version-4 behavior.
 TEST(QueryPlanSerializationSettings, MinRequiredVersion)
 {
     /// Nothing set, or only pre-version-4 settings set: the baseline version is enough.
@@ -94,14 +90,13 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
         EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
     }
 
-    /// The other version-4 settings are only the compression trigger and tuning: with compression
-    /// disabled they do not alter execution, so they must not raise the version even when assigned
-    /// (a join step assigns them - changed-flagged - on every serialization, e.g. the query-level
-    /// `max_memory_usage`). A version-3 worker then simply behaves like a pre-version-4 server.
+    /// The other version-4 setting (`max_memory_usage`) is only the compression trigger: with
+    /// compression disabled it does not alter execution, so it must not raise the version even when
+    /// assigned (a join step assigns it - changed-flagged - on every serialization, e.g. the
+    /// query-level `max_memory_usage`). A version-3 worker then simply behaves like a pre-version-4 server.
     {
         QueryPlanSerializationSettings settings;
         settings[QueryPlanSerializationSetting::max_memory_usage] = 12345;
-        settings[QueryPlanSerializationSetting::join_decompressed_columns_cache_bytes] = 4096;
         EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
     }
 

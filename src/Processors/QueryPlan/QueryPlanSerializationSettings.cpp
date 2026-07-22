@@ -82,7 +82,6 @@ namespace DB
     DECLARE(UInt64, cross_join_min_rows_to_compress, 10000000, "Minimal count of rows to compress block in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.", 0) \
     DECLARE(UInt64, cross_join_min_bytes_to_compress, 1_GiB, "Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.", 0) \
     DECLARE(Bool, enable_join_in_memory_compression, false, "Compress the right-side blocks held in memory by hash-based joins under memory pressure instead of only shrinking them.", 0) \
-    DECLARE(UInt64, join_decompressed_columns_cache_bytes, 128_MiB, "Maximum size in bytes of the per-join cache of decompressed right-side blocks used when enable_join_in_memory_compression is on.", 0) \
     \
     DECLARE(UInt64, partial_merge_join_left_table_buffer_bytes, 0, "If not 0 group left table blocks in bigger ones for left-side table in partial merge join. It uses up to 2x of specified memory per joining thread.", 0) \
     DECLARE(UInt64, partial_merge_join_rows_in_right_blocks, 65536, "Limits sizes of right-hand join data blocks in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.", 0) \
@@ -142,11 +141,10 @@ QueryPlanSerializationSettings::~QueryPlanSerializationSettings() = default;
 /// not know these names and BaseSettings::readBinary throws on unknown setting names, which would break
 /// mixed-version distributed queries (with serialize_query_plan) even when these settings are at
 /// their defaults.
-static constexpr std::array<std::string_view, 3> settings_since_version_4 =
+static constexpr std::array<std::string_view, 2> settings_since_version_4 =
 {
     "max_memory_usage",
     "enable_join_in_memory_compression",
-    "join_decompressed_columns_cache_bytes",
 };
 
 void QueryPlanSerializationSettings::writeChangedBinary(WriteBuffer & out, UInt64 version) const
@@ -203,8 +201,8 @@ UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
     /// default (see JoinSettings::updatePlanSettings), so e.g. `max_memory_usage` is flagged on every
     /// serialized join step and a flag-based check would raise every join fragment to version 4.
     /// Key it on behavior instead: the version-4 settings alter execution only when in-memory join
-    /// compression is enabled (`max_memory_usage` and `join_decompressed_columns_cache_bytes` are
-    /// consumed solely as its trigger and tuning), so a version-1 stream that omits all of them makes
+    /// compression is enabled (`max_memory_usage` is
+    /// consumed solely as its trigger), so a version-1 stream that omits all of them makes
     /// the receiver behave exactly like a pre-version-4 server - a graceful degradation - unless
     /// compression was requested, in which case dropping the settings would silently disable the
     /// requested feature and the higher version is required.

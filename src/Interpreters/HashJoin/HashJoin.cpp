@@ -46,12 +46,6 @@
 
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric HashJoinDecompressedColumnsCacheBytes;
-    extern const Metric HashJoinDecompressedColumnsCacheCells;
-}
-
 namespace ProfileEvents
 {
     extern const Event JoinInMemoryCompressedColumns;
@@ -211,10 +205,6 @@ HashJoin::HashJoin(
     , instance_id(instance_id_)
     , asof_inequality(table_join->getAsofInequality())
     , data(std::make_shared<RightTableData>())
-    , decompressed_columns_cache(std::make_shared<DecompressedColumnsCache>(
-          CurrentMetrics::HashJoinDecompressedColumnsCacheBytes,
-          CurrentMetrics::HashJoinDecompressedColumnsCacheCells,
-          table_join->joinDecompressedColumnsCacheBytes()))
     , tmp_data(table_join_->getTempDataOnDisk())
     , right_sample_block(*right_sample_block_)
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
@@ -1038,30 +1028,16 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
-size_t DecompressedColumnsWeightFunction::operator()(const StoredBlock & info) const
-{
-    size_t res = 0;
-    for (const auto & column : info.columns)
-        res += column->allocatedBytes();
-    return res;
-}
-
 DecompressedColumnsPtr HashJoin::getDecompressedColumns(const StoredBlock * compressed) const
 {
-    auto [res, _] = decompressed_columns_cache->getOrSet(
-        compressed,
-        [&]
-        {
-            Columns decompressed;
-            decompressed.reserve(compressed->columns.size());
-            for (const auto & column : compressed->columns)
-                decompressed.push_back(column->decompress());
-            /// A fresh StoredBlock over the decompressed columns; its `replicated_columns` are rebuilt
-            /// (all null, since decompressed columns are ordinary) so the read paths resolve to a direct
-            /// `IColumn *`. `selector`/`block_no` are unused on this decompressed view.
-            return std::make_shared<StoredBlock>(std::move(decompressed));
-        });
-    return res;
+    Columns decompressed;
+    decompressed.reserve(compressed->columns.size());
+    for (const auto & column : compressed->columns)
+        decompressed.push_back(column->decompress());
+    /// A fresh StoredBlock over the decompressed columns; its `replicated_columns` are rebuilt
+    /// (all null, since decompressed columns are ordinary) so the read paths resolve to a direct
+    /// `IColumn *`. `selector`/`block_no` are unused on this decompressed view.
+    return std::make_shared<StoredBlock>(std::move(decompressed));
 }
 
 void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize)

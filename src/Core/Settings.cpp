@@ -3650,12 +3650,7 @@ For `hash` and `parallel_hash`, compression kicks in adaptively, using the same 
 
 For standalone `grace_hash`, compression is applied as a one-time compaction of the active in-memory bucket when it reaches `max_bytes_in_join`, just before that bucket would otherwise be rehashed or spilled to disk. The `max_memory_usage` trigger does not apply to a `grace_hash` bucket, and blocks inserted into the bucket after it has been compacted are not compressed again.
 
-This trades probe-time CPU (right-side blocks must be decompressed on the fly, with a bounded cache controlled by `join_decompressed_columns_cache_bytes`) for lower peak memory, allowing larger joins to run in memory before reaching an out-of-memory condition or spilling to disk.
-)", 0) \
-    DECLARE(UInt64, join_decompressed_columns_cache_bytes, 128_MiB, R"(
-Maximum size in bytes of the per-join cache of decompressed right-side blocks used when `enable_join_in_memory_compression` is on. The cache avoids decompressing the same block repeatedly during the probe phase. A larger cache reduces decompression work but uses more memory. The bound applies to the logical join: `parallel_hash` shares one cache across all its internal slots rather than keeping a full-size cache per slot.
-
-This setting bounds the cache that provides reuse of decompressed blocks across output batches; it is not a hard cap on the total decompressed data in memory. Independently of the cache, each distinct stored block referenced by the output batch currently being materialized stays decompressed until that batch is finished, because the batched fill reads all of its source blocks in one pass. That per-batch working set is limited to the distinct stored blocks one output batch references (at most one block per output row), released as soon as the batch is materialized, and accounted by the query memory tracker as usual.
+This trades probe-time CPU (right-side blocks must be decompressed on the fly) for lower peak memory, allowing larger joins to run in memory before reaching an out-of-memory condition or spilling to disk. Decompressed data is not kept around: each output batch decompresses the distinct stored blocks it references (each at most once per batch), holds them only while that batch is materialized, and releases them as soon as it is finished. That per-batch working set is accounted by the query memory tracker as usual.
 )", 0) \
     DECLARE(UInt64, default_max_bytes_in_join, 1000000000, R"(
 Maximum size of right-side table if limit is required but `max_bytes_in_join` is not set.

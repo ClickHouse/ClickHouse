@@ -70,7 +70,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 ///            replica to rebuild the read in parallel-reading mode. An older replica would ignore the bit and
 ///            do a full non-parallel read, so the serializer fails closed when this flag is set below version 3.
 /// Version 4: serialized join steps may carry the in-memory join compression settings
-///            (`max_memory_usage`, `enable_join_in_memory_compression`, `join_decompressed_columns_cache_bytes`).
+///            (`max_memory_usage`, `enable_join_in_memory_compression`).
 ///            These names are omitted when serializing for a receiver older than version 4, because
 ///            `BaseSettings::readBinary` throws on unknown setting names.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 4;

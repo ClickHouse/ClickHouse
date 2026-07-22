@@ -18,7 +18,6 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 #include <Common/Arena.h>
-#include <Common/CacheBase.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTableTraits.h>
@@ -108,17 +107,8 @@ class HashJoinMethods;
   * If it is true, we always generate Nullable column and substitute NULLs for non-joined rows,
   *  as in standard SQL.
   */
-/// Weight (approximate size in bytes) of a decompressed block stored in the decompressed-columns cache.
-struct DecompressedColumnsWeightFunction
-{
-    size_t operator()(const StoredBlock & info) const;
-};
-
-/// Cache of decompressed right-side blocks, used during the probe phase when
-/// `enable_join_in_memory_compression` compressed the stored blocks. Keyed by the address of the
-/// stored (compressed) `StoredBlock`, which is stable for the lifetime of the join.
-using DecompressedColumnsCache
-    = CacheBase<const StoredBlock *, StoredBlock, std::hash<const StoredBlock *>, DecompressedColumnsWeightFunction>;
+/// A decompressed view of a stored (compressed) `StoredBlock`, produced by `getDecompressedColumns`
+/// for the probe phase when `enable_join_in_memory_compression` compressed the stored blocks.
 using DecompressedColumnsPtr = std::shared_ptr<const StoredBlock>;
 
 class HashJoin : public IJoin
@@ -514,14 +504,6 @@ public:
 
     RightTableDataPtr getJoinedData() const { return data; }
 
-    /// The decompressed-blocks cache is per logical join: `ConcurrentHashJoin` shares one instance
-    /// across its internal per-slot `HashJoin`s so that `join_decompressed_columns_cache_bytes`
-    /// bounds the logical join rather than each slot separately. Sharing is safe because the cache
-    /// is keyed by stored-block address (globally unique across slots) and `CacheBase` is
-    /// thread-safe. Must only be called right after construction, before any blocks are stored.
-    std::shared_ptr<DecompressedColumnsCache> getDecompressedColumnsCache() const { return decompressed_columns_cache; }
-    void setDecompressedColumnsCache(std::shared_ptr<DecompressedColumnsCache> cache_) { decompressed_columns_cache = std::move(cache_); }
-
     /// When this HashJoin is one slot of a `ConcurrentHashJoin` (`parallel_hash`), points to the
     /// concurrent join's global byte counter, so that the `max_bytes_in_join` half-threshold in
     /// `shrinkStoredBlocksToFit` fires on the logical join's total instead of the slot-local count.
@@ -615,8 +597,11 @@ public:
     /// as an ordinary column.
     void setHaveCompressed(bool value) { have_compressed = value; }
 
-    /// Returns a decompressed view of the given stored (compressed) `StoredBlock`, using an internal
-    /// per-join cache so that the same block is not decompressed repeatedly during the probe phase.
+    /// Returns a decompressed view of the given stored (compressed) `StoredBlock`. Every call
+    /// decompresses anew: keeping decompressed data resident would defeat the purpose of
+    /// `enable_join_in_memory_compression` (saving memory), so there is deliberately no cross-batch
+    /// cache. The callers (`DecompressResolver` / `NonJoinedDecompressResolver`) deduplicate within
+    /// one output batch and hold the result only while that batch is materialized.
     /// Must only be called when `haveCompressed()` is true.
     DecompressedColumnsPtr getDecompressedColumns(const StoredBlock * compressed) const;
 
@@ -658,11 +643,6 @@ private:
     mutable std::shared_ptr<JoinStuff::JoinUsedFlags> used_flags;
     RightTableDataPtr data;
     bool have_compressed = false;
-
-    /// Cache of decompressed right-side blocks for the probe phase. Thread-safe (CacheBase has its own lock),
-    /// so it can be shared across the threads probing a single HashJoin instance, and across the per-slot
-    /// instances of one `ConcurrentHashJoin` (see setDecompressedColumnsCache).
-    mutable std::shared_ptr<DecompressedColumnsCache> decompressed_columns_cache;
 
     /// See setLogicalJoinTotalBytesCounter. Null unless this instance is a `ConcurrentHashJoin` slot
     /// with `enable_join_in_memory_compression` on.

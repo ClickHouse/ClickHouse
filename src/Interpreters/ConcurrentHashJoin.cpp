@@ -248,13 +248,6 @@ ConcurrentHashJoin::ConcurrentHashJoin(
         auto shared_index = getData(hash_joins[0])->stored_columns_index;
         for (size_t i = 1; i < slots; ++i)
             getData(hash_joins[i])->stored_columns_index = shared_index;
-
-        /// Share one decompressed-blocks cache across all slots, so that
-        /// `join_decompressed_columns_cache_bytes` bounds the logical join rather than each slot
-        /// separately, and a block stored by one slot is decompressed at most once for all slots.
-        auto shared_decompressed_cache = hash_joins[0]->data->getDecompressedColumnsCache();
-        for (size_t i = 1; i < slots; ++i)
-            hash_joins[i]->data->setDecompressedColumnsCache(shared_decompressed_cache);
     }
     catch (...)
     {

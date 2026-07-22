@@ -110,7 +110,6 @@ struct JoinSettings
 
     /* In-memory compression of right-side blocks */
     bool enable_join_in_memory_compression;
-    UInt64 join_decompressed_columns_cache_bytes;
     /// Query memory limit (`max_memory_usage`), used as the secondary trigger for shrinking / compressing
     /// stored blocks under memory pressure (half of it), alongside `max_bytes_in_join`.
     UInt64 max_memory_usage;
