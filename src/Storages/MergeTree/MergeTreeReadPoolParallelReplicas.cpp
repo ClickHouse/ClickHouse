@@ -210,11 +210,11 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
             per_part_infos,
             [&current_task](const auto & part)
             {
-                if (!part->data_part->isProjectionPart())
-                    return part->data_part->info == current_task.info;
+                if (!part->data_part_info->isProjectionPart())
+                    return part->data_part_info->getPartInfo() == current_task.info;
 
                 chassert(part->parent_part && !current_task.projection_name.empty());
-                return part->parent_part->info == current_task.info && current_task.projection_name == part->data_part->name;
+                return part->parent_part->info == current_task.info && current_task.projection_name == part->data_part_info->getPartName();
             });
     if (part_it == per_part_infos.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Assignment contains an unknown part (current_task: {})", current_task.describe());

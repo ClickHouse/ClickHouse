@@ -91,9 +91,12 @@ MergeTreeReadTask::MergeTreeReadTask(
             = [&](const ColumnsWithTypeAndName & columns, size_t read_bytes, std::optional<bool> & should_continue_sampling) -> void
         {
             chassert(updater);
-            const auto & part_columns = info->data_part->getColumns();
-            auto column_sizes = info->data_part->getColumnSizes();
-            updater->recordInputColumns(columns, part_columns, *column_sizes, read_bytes, should_continue_sampling);
+            const auto & part_columns = info->data_part_info->getColumns();
+            /// Cached map by shared pointer -- no per-block copy; null for borrowed parts (no size info).
+            static const std::unordered_map<String, ColumnSize> no_column_sizes;
+            auto column_sizes = info->data_part_info->getColumnSizes();
+            updater->recordInputColumns(
+                columns, part_columns, column_sizes ? *column_sizes : no_column_sizes, read_bytes, should_continue_sampling);
         };
     }
 }
@@ -162,13 +165,11 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 
     auto create_reader = [&](const NamesAndTypesList & columns_to_read, bool is_prewhere)
     {
-        auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(read_info->data_part, read_info->alter_conversions);
-
         return createMergeTreeReader(
-            part_info,
+            read_info->data_part_info,
             columns_to_read,
             extras.storage_snapshot,
-            read_info->data_part->storage.getSettings(),
+            read_info->data_part_info->getStorageSettings(),
             ranges,
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
@@ -187,7 +188,12 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 
     for (const auto & pre_columns_per_step : read_info->task_columns.pre_columns)
     {
-        if (const auto * index_read_task = getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step, *read_info->data_part))
+        /// Index-read-tasks (skip-index-on-data-read) are coordinator-only, so the concrete part
+        /// is present whenever the list is non-empty; skip the concrete access otherwise.
+        const IndexReadTask * index_read_task = read_info->index_read_tasks.empty()
+            ? nullptr
+            : getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step, *read_info->data_part_info->getDataPart());
+        if (index_read_task)
         {
             new_readers.prewhere.push_back(createMergeTreeReaderIndex(
                 new_readers.main.get(),
@@ -210,7 +216,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             read_info->patch_parts[part_idx].part,
             read_info->task_columns.patch_columns[part_idx],
             extras.storage_snapshot,
-            read_info->data_part->storage.getSettings(),
+            read_info->data_part_info->getStorageSettings(),
             patches_ranges[part_idx],
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
@@ -402,8 +408,8 @@ UInt64 MergeTreeReadTask::estimateNumRows() const
     if (unread_rows_in_current_granule >= rows_to_read)
         return rows_to_read;
 
-    const auto & index_granularity = info->data_part->index_granularity;
-    return index_granularity->countRowsForRows(readers_chain.currentMark(), rows_to_read, readers_chain.numReadRowsInCurrentGranule());
+    const auto & index_granularity = info->data_part_info->getIndexGranularity();
+    return index_granularity.countRowsForRows(readers_chain.currentMark(), rows_to_read, readers_chain.numReadRowsInCurrentGranule());
 }
 
 MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()

@@ -58,12 +58,25 @@ public:
 
     std::optional<size_t> getColumnPosition(const String & column_name) const override { return data_part->getColumnPosition(column_name); }
 
+    std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const override { return data_part->tryGetColumn(column_name); }
+
     AlterConversionsPtr getAlterConversions() const override { return alter_conversions; }
 
     String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const override
     {
         return data_part->getColumnNameWithMinimumCompressedSize(available_columns);
     }
+
+    String getParentPartName() const override { return data_part->getParentPartName(); }
+
+    ColumnSize getColumnSize(const String & column_name) const override { return data_part->getColumnSize(column_name); }
+
+    std::shared_ptr<const std::unordered_map<String, ColumnSize>> getColumnSizes() const override
+    {
+        return data_part->getColumnSizes();
+    }
+
+    ColumnSize getSubcolumnSize(const String & subcolumn_name) const override { return data_part->getSubcolumnSize(subcolumn_name); }
 
     const MergeTreeDataPartChecksums & getChecksums() const override { return data_part->checksums; }
 
@@ -83,7 +96,9 @@ public:
 
     String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
 
-    MergeTreeData::DataPartPtr getDataPart() const { return data_part; }
+    MergeTreeSettingsPtr getStorageSettings() const override { return data_part->storage.getSettings(); }
+
+    std::shared_ptr<const IMergeTreeDataPart> getDataPart() const override { return data_part; }
 
     void setReadHints(const RangesInDataPartReadHints & read_hints_, const NamesAndTypesList & read_columns) override
     {
