@@ -1,0 +1,19 @@
+-- view created with old analyzer, aliased CTE reference
+1
+1
+-- view created with new analyzer
+1
+1
+-- qualification by both cte name and alias
+1	1
+1	1
+-- unaliased CTE reference
+1
+1
+-- UNION CTE body
+1
+2
+1
+2
+-- SHOW CREATE is unchanged
+WITH c AS (SELECT 1 AS x) SELECT c.x AS f FROM c AS s
