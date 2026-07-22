@@ -156,6 +156,26 @@ bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root)
     return false;
 }
 
+/// True if the plan contains an in-order aggregation (the planner builds one when
+/// `force_aggregation_in_order` is set). It relies on its input arriving ordered by the
+/// group keys, which the exchanges do not preserve.
+bool planHasInOrderAggregation(const QueryPlan::Node & root);
+bool planHasInOrderAggregation(const QueryPlan::Node & root)
+{
+    std::vector<const QueryPlan::Node *> stack = {&root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(node->step.get());
+            aggregating_step && (aggregating_step->inOrder() || aggregating_step->explicitSortingRequired()))
+            return true;
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+    return false;
+}
+
 /// Rejects distributed reads a worker cannot reproduce: a pinned snapshot boundary
 /// (select_sequential_consistency) or the part-order virtual columns `_part_index` /
 /// `_part_starting_offset`. Done at planning time so it fails cleanly before the pipeline is built.

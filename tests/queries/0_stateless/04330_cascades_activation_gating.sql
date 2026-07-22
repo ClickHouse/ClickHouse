@@ -102,4 +102,15 @@ SELECT '-- 12. A STREAM read is rejected (fail-close)';
 SELECT count() FROM t_gating STREAM
 SETTINGS enable_streaming_queries = 1, enable_cascades_optimizer = 1, make_distributed_plan = 1; -- { serverError SUPPORT_IS_DISABLED }
 
+-- In-order aggregation relies on its input order, which the exchanges do not preserve: the
+-- in-order rewrite is skipped under `make_distributed_plan` (hash aggregation runs instead),
+-- and a planner-forced in-order aggregation is rejected up front on both planner paths.
+SELECT '-- 13. optimize_aggregation_in_order works via hash aggregation, force_ is rejected (fail-close)';
+SELECT k, sum(x) FROM t_gating GROUP BY k ORDER BY k
+SETTINGS optimize_aggregation_in_order = 1, make_distributed_plan = 1, enable_cascades_optimizer = 0,
+    distributed_plan_execute_locally = 1;
+SELECT k, sum(x) FROM t_gating GROUP BY k ORDER BY k
+SETTINGS force_aggregation_in_order = 1, make_distributed_plan = 1, enable_cascades_optimizer = 0,
+    distributed_plan_execute_locally = 1; -- { serverError SUPPORT_IS_DISABLED }
+
 DROP TABLE t_gating;

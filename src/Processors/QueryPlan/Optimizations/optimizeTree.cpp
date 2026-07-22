@@ -187,6 +187,7 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 void optimizeExchanges(QueryPlan::Node & root);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
+bool planHasInOrderAggregation(const QueryPlan::Node & root);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
 void checkCascadesSupported(const QueryPlan::Node & root);
@@ -345,6 +346,11 @@ void optimizeTreeSecondPass(
     if (make_distributed_plan && planHasUnsupportedDistributedStep(root))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan does not support WITH TOTALS, ROLLUP, CUBE, extremes or PASTE JOIN");
+    /// An in-order aggregation (from `force_aggregation_in_order`) relies on its input order,
+    /// which the exchanges do not preserve.
+    if (make_distributed_plan && planHasInOrderAggregation(root))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan does not support in-order aggregation");
     /// Reject reads whose coordinator snapshot/part-order state a worker cannot reproduce.
     if (make_distributed_plan)
         checkDistributedReadSupported(root);
@@ -399,7 +405,9 @@ void optimizeTreeSecondPass(
                     if (auto applied_projection = optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings))
                         applied_projection_names.insert(*applied_projection);
 
-                if (optimization_settings.aggregation_in_order && !cascades_active)
+                /// Exchanges do not preserve the order an in-order aggregation needs, so keep
+                /// hash aggregation whenever a distributed plan is intended.
+                if (optimization_settings.aggregation_in_order && !optimization_settings.make_distributed_plan)
                     optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
             }
 
