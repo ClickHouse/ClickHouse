@@ -650,8 +650,15 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         /// Enforce the server's outbound-host policy, exactly like the table engine and the table
         /// function do in `StoragePostgreSQL::getConfiguration`: a user must not be able to open a
         /// long-lived replication connection to a host that `remote_url_allow_hosts` forbids elsewhere.
-        for (const auto & address : configuration.addresses)
-            args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
+        /// Only on CREATE: server startup rebuilds every database from persisted metadata with an
+        /// ATTACH query and `loadMetadata` aborts on the first exception, so enforcing the policy
+        /// on ATTACH would turn one database created before the whitelist was tightened into a
+        /// server that cannot boot.
+        if (!args.create_query.attach)
+        {
+            for (const auto & address : configuration.addresses)
+                args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
+        }
 
         auto connection_info = postgres::formatConnectionString(
             configuration.database,

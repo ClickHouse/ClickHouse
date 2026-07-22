@@ -210,3 +210,20 @@ def test_materialized_postgresql_table_engine_named_collection_addresses_expr(st
     )
     assert_eq_with_retry(node, "SELECT count() FROM mpg_nc_allowed_tbl", "10", retry_count=120)
     node.query("DROP TABLE mpg_nc_allowed_tbl SYNC")
+
+
+def test_attach_and_startup_skip_remote_host_filter(started_cluster):
+    # The host filter is enforced only on CREATE. Server startup rebuilds every database from
+    # persisted metadata with an ATTACH query, and `loadMetadata` aborts on the first exception,
+    # so a database created before the whitelist was tightened must keep loading -- otherwise one
+    # such database would prevent the whole server from booting after an upgrade. ATTACH therefore
+    # skips the filter, both for an explicit user query and on the startup path.
+    node.query("DROP DATABASE IF EXISTS pg_db_persisted")
+    node.query(f"ATTACH DATABASE pg_db_persisted ENGINE = PostgreSQL('{BLOCKED_HOST}:5432', 'postgres', 'postgres', '{pg_pass}')")
+    assert node.query("SELECT count() FROM system.databases WHERE name = 'pg_db_persisted'").strip() == "1"
+
+    # The metadata is persisted now; a restart replays it through the same ATTACH path that
+    # `loadMetadata` uses at startup, and the server must come back up with the database in place.
+    node.restart_clickhouse()
+    assert node.query("SELECT count() FROM system.databases WHERE name = 'pg_db_persisted'").strip() == "1"
+    node.query("DROP DATABASE pg_db_persisted")
