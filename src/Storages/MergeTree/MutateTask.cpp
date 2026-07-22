@@ -3,6 +3,7 @@
 #include <Parsers/ASTAssignment.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MutateTask.h>
+#include <Storages/TTLDescription.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -3023,10 +3024,27 @@ bool MutateTask::prepare()
         if (ctx->commands->size() != 1)
             throw Exception(ErrorCodes::ABORTED, "FAST_MATERIALIZE_TTL must be the only mutation command, cancelling mutation.");
 
-        const time_t ttl_delta = ctx->commands->front().ttl_delta;
+        /// Recompute the shift for THIS part against the rows-TTL expression that its stored timestamps
+        /// were actually computed under (its `table_ttl_expression` fingerprint), rather than trusting the
+        /// table-wide delta from the ALTER. This keeps the optimization correct even if the part is stale
+        /// w.r.t. the current metadata (for example after an earlier
+        /// `MODIFY TTL ... SETTINGS materialize_ttl_after_modify = 0` that changed the metadata without
+        /// recalculating parts). When the stored expiry times do not map to the new TTL by a single
+        /// constant shift, or the part's fingerprint is unknown, `delta` stays empty and we fall back to a
+        /// regular `MATERIALIZE TTL` rewrite for this part below.
+        std::optional<time_t> delta;
+        String new_ttl_expression;
+        if (ctx->metadata_snapshot->hasRowsTTL())
+        {
+            auto rows_ttl = ctx->metadata_snapshot->getRowsTTL();
+            new_ttl_expression = rows_ttl.result_column;
+            delta = tryComputeConstantTTLDelta(
+                ctx->source_part->ttl_infos.table_ttl_expression, rows_ttl,
+                ctx->metadata_snapshot->getColumns(), ctx->metadata_snapshot->getPrimaryKey(), ctx->context);
+        }
 
         /// The whole part is expired under the new TTL: replace it with an empty part.
-        if (ctx->source_part->ttl_infos.part_max_ttl + ttl_delta <= ctx->time_of_mutation)
+        if (delta && ctx->source_part->ttl_infos.part_max_ttl + *delta <= ctx->time_of_mutation)
         {
             LOG_TRACE(ctx->log, "Part {} is fully expired after MODIFY TTL, creating empty part with mutation version {}",
                 ctx->source_part->name, ctx->future_part->part_info.mutation);
@@ -3042,17 +3060,19 @@ bool MutateTask::prepare()
         }
 
         /// No row in the part is expired under the new TTL: clone the part and shift its TTL infos.
-        if (ctx->source_part->ttl_infos.part_min_ttl + ttl_delta >= ctx->time_of_mutation)
+        if (delta && ctx->source_part->ttl_infos.part_min_ttl + *delta >= ctx->time_of_mutation)
         {
             LOG_TRACE(ctx->log, "Part {} is not expired after MODIFY TTL, cloning and shifting TTL by {} seconds to mutation version {}",
-                ctx->source_part->name, ttl_delta, ctx->future_part->part_info.mutation);
+                ctx->source_part->name, *delta, ctx->future_part->part_info.mutation);
 
             auto [part, lock] = clone_part();
 
-            part->ttl_infos.table_ttl.min += ttl_delta;
-            part->ttl_infos.table_ttl.max += ttl_delta;
-            part->ttl_infos.part_min_ttl += ttl_delta;
-            part->ttl_infos.part_max_ttl += ttl_delta;
+            part->ttl_infos.table_ttl.min += *delta;
+            part->ttl_infos.table_ttl.max += *delta;
+            part->ttl_infos.part_min_ttl += *delta;
+            part->ttl_infos.part_max_ttl += *delta;
+            /// The part now reflects the new rows-TTL expression, so update its fingerprint accordingly.
+            part->ttl_infos.table_ttl_expression = new_ttl_expression;
 
             /// Rewrite the file with ttl infos in json format.
             part->getDataPartStorage().removeFile("ttl.txt");
@@ -3080,7 +3100,9 @@ bool MutateTask::prepare()
             return false;
         }
 
-        /// The part is partially expired: fall back to a regular `MATERIALIZE TTL` rewrite below.
+        /// The part is only partially expired, or its per-part delta could not be proven constant
+        /// (unknown/stale fingerprint, calendar/DST interval, or column-dependent TTL): fall back to a
+        /// regular `MATERIALIZE TTL` rewrite below, which recomputes the TTL from the actual data.
         MutationCommand materialize_ttl;
         materialize_ttl.type = MutationCommand::MATERIALIZE_TTL;
         materialize_ttl.ast_text = "MATERIALIZE TTL";

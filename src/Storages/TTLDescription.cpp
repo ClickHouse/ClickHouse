@@ -21,6 +21,13 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnsDateTime.h>
+#include <Common/assert_cast.h>
+#include <Common/intExp.h>
+#include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
+#include <base/DayNum.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -211,6 +218,178 @@ ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & contex
     }
 
     return {};
+}
+
+namespace
+{
+
+/// Representative "seed" values (Unix seconds) used to probe a TTL expression. They span many decades,
+/// daylight-saving-time transitions, and leap-year boundaries, plus a few small and negative values.
+/// Any dependence of the TTL delta on the row (calendar month/year intervals, DST-sensitive day/week
+/// intervals, or column-dependent expressions) shows up as unequal deltas across these probes.
+constexpr Int64 ttl_delta_probe_seeds[] = {
+    0, 1, -1, 3600, 86400, 90061,
+    951782400,   /// 2000-02-29 (leap day)
+    1000000000,  /// 2001-09-09
+    1234567890,  /// 2009-02-13
+    1300000000, 1400000000, 1500000000, 1600000000, 1700000000, 1800000000, 1900000000, 2000000000,
+    1583020800,  /// 2020-03-01 (before spring DST in the northern hemisphere)
+    1585699200,  /// 2020-04-01 (after spring DST)
+    1601510400,  /// 2020-10-01 (before autumn DST)
+    1604188800,  /// 2020-11-01 (after autumn DST)
+    1614556800,  /// 2021-03-01
+    -2208988800, /// 1900-01-01 (negative, exercises the Date32 range)
+    4102444800,  /// 2100-01-01
+    2145916800,  /// 2038-01-01 (near the 32-bit DateTime limit)
+};
+
+constexpr size_t ttl_delta_probe_rows = std::size(ttl_delta_probe_seeds);
+
+/// Fill `column` (which must be of `type`) with one probe value per row, converting each seed into the
+/// column's native representation. Only date/time types are supported; the caller guarantees that.
+void fillTTLProbeColumn(const DataTypePtr & type, IColumn & column)
+{
+    WhichDataType which(type);
+    for (Int64 seed : ttl_delta_probe_seeds)
+    {
+        if (which.isDate())
+            assert_cast<ColumnUInt16 &>(column).getData().push_back(
+                static_cast<UInt16>(std::clamp<Int64>(seed / 86400, 0, DATE_LUT_MAX_DAY_NUM)));
+        else if (which.isDate32())
+            assert_cast<ColumnInt32 &>(column).getData().push_back(static_cast<Int32>(seed / 86400));
+        else if (which.isDateTime())
+            assert_cast<ColumnUInt32 &>(column).getData().push_back(
+                static_cast<UInt32>(std::clamp<Int64>(seed, 0, static_cast<Int64>(0xFFFFFFFF))));
+        else if (which.isDateTime64())
+        {
+            const UInt32 scale = assert_cast<const DataTypeDateTime64 &>(*type).getScale();
+            const Int64 multiplier = intExp10OfSize<Int64>(scale);
+            /// Guard against overflow when scaling seconds into the column's sub-second units.
+            const Int64 max_seconds = std::numeric_limits<Int64>::max() / multiplier;
+            const Int64 seconds = std::clamp<Int64>(seed, -max_seconds, max_seconds);
+            assert_cast<ColumnDateTime64 &>(column).getData().push_back(DateTime64(seconds * multiplier));
+        }
+    }
+}
+
+/// Extract the expiry timestamp (Unix seconds) for a single row from a TTL result column. Returns
+/// std::nullopt for an unexpected result type, so the caller can fall back instead of failing.
+std::optional<Int64> extractTTLTimestamp(const IColumn & column, size_t row)
+{
+    const auto & date_lut = DateLUT::serverTimezoneInstance();
+
+    if (const auto * col = typeid_cast<const ColumnUInt16 *>(&column))
+        return static_cast<Int64>(date_lut.fromDayNum(DayNum(col->getData()[row])));
+    if (const auto * col = typeid_cast<const ColumnUInt32 *>(&column))
+        return static_cast<Int64>(col->getData()[row]);
+    if (const auto * col = typeid_cast<const ColumnInt32 *>(&column))
+        return static_cast<Int64>(date_lut.fromDayNum(ExtendedDayNum(static_cast<Int32>(col->getData()[row]))));
+    if (const auto * col = typeid_cast<const ColumnDateTime64 *>(&column))
+        return col->getData()[row] / intExp10OfSize<Int64>(col->getScale());
+
+    return {};
+}
+
+}
+
+std::optional<time_t> tryComputeConstantTTLDelta(
+    const TTLDescription & old_ttl, const TTLDescription & new_ttl, const ContextPtr & context)
+{
+    if (!old_ttl.expression_ast || !new_ttl.expression_ast)
+        return {};
+
+    /// Build a probe block holding the union of both expressions' input columns. The optimization is
+    /// only sound when the delta is independent of the row, so we require every referenced column to be
+    /// a date/time type: an expression that reads any other column (for example `if(id = 0, ...)`) is
+    /// treated as potentially row-dependent and rejected here, falling back to a regular rewrite.
+    Block probe_block;
+    NameSet seen;
+    for (const auto * columns : {&old_ttl.expression_columns, &new_ttl.expression_columns})
+    {
+        for (const auto & column : *columns)
+        {
+            if (!seen.insert(column.name).second)
+                continue;
+
+            WhichDataType which(column.type);
+            if (!(which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64()))
+                return {};
+
+            auto probe_column = column.type->createColumn();
+            fillTTLProbeColumn(column.type, *probe_column);
+            probe_block.insert({std::move(probe_column), column.type, column.name});
+        }
+    }
+
+    try
+    {
+        auto evaluate = [&](const TTLDescription & ttl) -> ColumnPtr
+        {
+            auto expression = ttl.buildExpression(context).expression;
+            Block block_copy;
+            for (const auto & name : expression->getRequiredColumns())
+                block_copy.insert(probe_block.getByName(name));
+
+            size_t num_rows = ttl_delta_probe_rows;
+            expression->execute(block_copy, num_rows);
+            return block_copy.getByName(ttl.result_column).column->convertToFullColumnIfConst();
+        };
+
+        ColumnPtr old_column = evaluate(old_ttl);
+        ColumnPtr new_column = evaluate(new_ttl);
+
+        std::optional<Int64> delta;
+        for (size_t row = 0; row < ttl_delta_probe_rows; ++row)
+        {
+            auto old_timestamp = extractTTLTimestamp(*old_column, row);
+            auto new_timestamp = extractTTLTimestamp(*new_column, row);
+            if (!old_timestamp || !new_timestamp)
+                return {};
+
+            const Int64 row_delta = *new_timestamp - *old_timestamp;
+            if (!delta)
+                delta = row_delta;
+            else if (*delta != row_delta)
+                return {};
+        }
+
+        return delta;
+    }
+    catch (...)
+    {
+        /// Any failure to analyze the expressions means we cannot prove the delta is constant.
+        return {};
+    }
+}
+
+std::optional<time_t> tryComputeConstantTTLDelta(
+    const String & old_ttl_expression, const TTLDescription & new_ttl,
+    const ColumnsDescription & columns, const KeyDescription & primary_key, const ContextPtr & context)
+{
+    if (old_ttl_expression.empty())
+        return {};
+
+    try
+    {
+        ParserTTLExpressionList parser;
+        ASTPtr definition_ast = parseQuery(
+            parser, old_ttl_expression.data(), old_ttl_expression.data() + old_ttl_expression.size(),
+            "rows TTL expression", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+        /// The stored fingerprint is a single unconditional DELETE TTL expression, so `is_attach = true`
+        /// merely skips the suspicious-expression check (the expression was already validated on write).
+        TTLTableDescription old_ttl = TTLTableDescription::getTTLForTableFromAST(
+            definition_ast, columns, context, primary_key, /*is_attach=*/ true);
+
+        if (!old_ttl.rows_ttl.expression_ast)
+            return {};
+
+        return tryComputeConstantTTLDelta(old_ttl.rows_ttl, new_ttl, context);
+    }
+    catch (...)
+    {
+        return {};
+    }
 }
 
 TTLDescription TTLDescription::getTTLFromAST(

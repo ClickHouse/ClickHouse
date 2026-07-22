@@ -40,6 +40,13 @@ struct MergeTreeDataPartTTLInfos
     TTLInfoMap columns_ttl;
     MergeTreeDataPartTTLInfo table_ttl;
 
+    /// The rows-TTL (DELETE) expression under which `table_ttl` was computed, stored as its serialized
+    /// result-column expression (matching the keys used in the other TTL maps). Empty means unknown:
+    /// e.g. a part written by an older server, or a merge whose source parts disagree on the expression.
+    /// The fast `MODIFY TTL` optimization uses this to verify that a part's stored TTL timestamps really
+    /// correspond to the expression it is shifting from; otherwise it falls back to a full rewrite.
+    String table_ttl_expression;
+
     /// `part_min_ttl` and `part_max_ttl` are TTLs which are used for selecting parts
     /// to merge in order to remove expired rows.
     time_t part_min_ttl = 0;

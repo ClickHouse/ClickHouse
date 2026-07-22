@@ -59,6 +59,18 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
     for (const auto & [expression, ttl_info] : other_infos.moves_ttl)
         moves_ttl[expression].update(ttl_info);
 
+    /// Propagate the rows-TTL expression fingerprint. The result is a known expression only if every
+    /// merged part that carries rows-TTL data agrees on it; otherwise it becomes empty (unknown), which
+    /// forces the fast `MODIFY TTL` path to fall back to a full rewrite. Presence of rows-TTL data is
+    /// detected via `table_ttl.min`, so this must run before merging `table_ttl` below.
+    if (other_infos.table_ttl.min != 0)
+    {
+        if (table_ttl.min == 0)
+            table_ttl_expression = other_infos.table_ttl_expression;
+        else if (table_ttl_expression != other_infos.table_ttl_expression)
+            table_ttl_expression.clear();
+    }
+
     table_ttl.update(other_infos.table_ttl);
     updatePartMinMaxTTL(table_ttl.min, table_ttl.max);
 }
@@ -97,6 +109,9 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
 
         if (table.has("finished"))
             table_ttl.ttl_finished = table["finished"].getUInt();
+
+        if (table.has("expression"))
+            table_ttl_expression = table["expression"].getString();
 
         updatePartMinMaxTTL(table_ttl.min, table_ttl.max);
     }
@@ -177,6 +192,11 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
         writeIntText(table_ttl.max, out);
         writeString(R"(,"finished":)", out);
         writeIntText(static_cast<uint8_t>(table_ttl.finished()), out);
+        if (!table_ttl_expression.empty())
+        {
+            writeString(R"(,"expression":)", out);
+            writeString(doubleQuoteString(table_ttl_expression), out);
+        }
         writeString("}", out);
     }
 

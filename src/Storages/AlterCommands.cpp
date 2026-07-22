@@ -125,41 +125,6 @@ AlterCommand::RemoveProperty removePropertyFromString(const String & property)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove unknown property '{}'", property);
 }
 
-struct ReplaceLiteralVisitorData
-{
-    using TypeToVisit = ASTFunction;
-
-    void visit(ASTFunction & func, ASTPtr &) const
-    {
-        for (auto & argument : func.arguments->children)
-        {
-            if (auto * literal = typeid_cast<ASTLiteral *>(argument.get()); literal)
-                argument = make_intrusive<ASTLiteral>(Field(0));
-        }
-    }
-};
-
-using ReplaceLiteralVisitor = InDepthNodeVisitor<OneTypeMatcher<ReplaceLiteralVisitorData>, true>;
-
-/// Replace literals and compare expressions to see if they are the same.
-bool isSameExpressionTemplate(const ASTPtr & lhs, const ASTPtr & rhs)
-{
-    ReplaceLiteralVisitor::Data data;
-    ReplaceLiteralVisitor visitor(data);
-
-    ASTPtr lhs_clone = lhs->clone();
-    visitor.visit(lhs_clone);
-    SipHash lhs_hash;
-    lhs_hash.update(lhs_clone->getTreeHash(false));
-
-    ASTPtr rhs_clone = rhs->clone();
-    visitor.visit(rhs_clone);
-    SipHash rhs_hash;
-    rhs_hash.update(rhs_clone->getTreeHash(false));
-
-    return lhs_hash.get64() == rhs_hash.get64();
-}
-
 DataTypePtr tryCreateAddToEnumType(const ASTPtr & type_ast, bool is_enum16)
 {
     if (!type_ast || !type_ast->as<ASTExpressionList>())
@@ -2174,10 +2139,10 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
                     /// Try optimizing TTL changes for the same column.
                     /// Use `original_metadata`: `metadata` already has the new TTL applied above,
                     /// so the old TTL needed to compute the delta is only available in the original copy.
-                    time_t delta = tryOptimizeModifyTLL(original_metadata, context, alter_cmd);
-                    if (delta != 0)
+                    /// A zero delta (the TTL is unchanged) falls through to the regular rewrite.
+                    if (auto delta = tryOptimizeModifyTLL(original_metadata, context, alter_cmd); delta.value_or(0) != 0)
                     {
-                       result.push_back(createFastMaterializeTTLCommand(delta));
+                       result.push_back(createFastMaterializeTTLCommand(*delta));
                        break;
                     }
                 }
@@ -2190,70 +2155,30 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     return result;
 }
 
-time_t AlterCommands::tryOptimizeModifyTLL(const StorageInMemoryMetadata & metadata, ContextPtr context, const AlterCommand & alter_cmd) const
+std::optional<time_t> AlterCommands::tryOptimizeModifyTLL(const StorageInMemoryMetadata & metadata, ContextPtr context, const AlterCommand & alter_cmd) const
 {
     if (alter_cmd.type != AlterCommand::MODIFY_TTL || !alter_cmd.ttl || !metadata.hasAnyTableTTL())
-        return 0;
+        return {};
 
     TTLTableDescription new_table_ttl = TTLTableDescription::getTTLForTableFromAST(
         alter_cmd.ttl, metadata.columns, context, metadata.primary_key, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
+
+    /// Only optimize a change of the single unconditional rows TTL (`TTL <expr>`). Any WHERE / MOVE /
+    /// RECOMPRESS / GROUP BY TTL falls back to the regular rewrite.
     if (!new_table_ttl.rows_ttl.expression_ast || !new_table_ttl.rows_where_ttl.empty() || !new_table_ttl.move_ttl.empty()
         || !new_table_ttl.recompression_ttl.empty() || !new_table_ttl.group_by_ttl.empty())
-        return 0;
+        return {};
 
     const TTLTableDescription & old_table_ttl = metadata.table_ttl;
-    if (!old_table_ttl.rows_ttl.expression_ast ||
-        !isSameExpressionTemplate(new_table_ttl.rows_ttl.expression_ast, old_table_ttl.rows_ttl.expression_ast))
-        return 0;
+    if (!old_table_ttl.rows_ttl.expression_ast)
+        return {};
 
-    /**
-     * old_ttl : col + toIntervalDay(100).
-     * new_ttl : col + toIntervalDay(1).
-     * delta =  (0 + toIntervalDay(100)) - (0 + toIntervalDay(1))
-     */
-    Block block;
-    for (const auto & ttl_column : new_table_ttl.rows_ttl.expression_columns)
-    {
-        ColumnWithTypeAndName column;
-        column.name = ttl_column.name;
-        column.type = ttl_column.type;
-        column.column = column.type->createColumnConst(0, Field(0));
-        block.insert(std::move(column));
-    }
-
-    auto get_ttl_timestamp = [&](const TTLDescription & ttl) -> time_t
-    {
-        auto ttl_expr = ttl.buildExpression(context);
-        auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(ttl_expr.expression, block, ttl.result_column);
-
-        if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(ttl_column.get()))
-        {
-            const auto & date_lut = DateLUT::serverTimezoneInstance();
-            return date_lut.fromDayNum(DayNum(column_date->getData()[0]));
-        }
-        else if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(ttl_column.get()))
-        {
-            return column_date_time->getData()[0];
-        }
-        else if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(ttl_column.get()))
-        {
-            if (typeid_cast<const ColumnUInt16 *>(&column_const->getDataColumn()))
-            {
-                const auto & date_lut = DateLUT::serverTimezoneInstance();
-                return date_lut.fromDayNum(DayNum(column_const->getValue<UInt16>()));
-            }
-            else if (typeid_cast<const ColumnUInt32 *>(&column_const->getDataColumn()))
-            {
-                return column_const->getValue<UInt32>();
-            }
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of result TTL column");
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of result TTL column");
-    };
-
-    return get_ttl_timestamp(new_table_ttl.rows_ttl) - get_ttl_timestamp(old_table_ttl.rows_ttl);
+    /// The fast path merely shifts each part's stored TTL timestamps by a constant. That is correct
+    /// only when `new_ttl(row) - old_ttl(row)` is the same constant for every row. `tryComputeConstantTTLDelta`
+    /// verifies this over a dense grid of probe values and returns std::nullopt for the unsafe cases
+    /// (calendar month/year intervals, DST-sensitive day/week intervals, column-dependent expressions,
+    /// or unsupported result types), so we transparently fall back to the regular `MATERIALIZE TTL`.
+    return tryComputeConstantTTLDelta(old_table_ttl.rows_ttl, new_table_ttl.rows_ttl, context);
 }
 
 }

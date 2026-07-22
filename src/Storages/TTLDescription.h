@@ -142,4 +142,29 @@ struct TTLTableDescription
     static TTLTableDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_attach);
 };
 
+/// Used by the fast `MODIFY TTL` optimization to decide whether a rows-TTL change can be applied by
+/// merely shifting each part's stored TTL timestamps instead of rewriting the data. That is correct
+/// only when the change adds the same constant number of seconds to every row's expiry time, i.e.
+/// when `new_ttl(row) - old_ttl(row)` does not depend on the row.
+///
+/// This checks that condition by evaluating both TTL expressions over a dense grid of representative
+/// input values (a range of timestamps spanning DST and leap-year boundaries across many decades, plus
+/// varied values for any other referenced columns) and requiring every per-row delta to be identical.
+/// It returns that constant delta in seconds, or `std::nullopt` when the delta is not provably constant
+/// (calendar month/year intervals, DST-sensitive day/week intervals, column-dependent expressions such
+/// as `if(...)`, or an unsupported/unexpected result type). A `std::nullopt` result means the fast path
+/// must not be used and the caller must fall back to a regular `MATERIALIZE TTL` rewrite.
+///
+/// The function never throws for an unoptimizable input; it returns `std::nullopt` instead.
+std::optional<time_t> tryComputeConstantTTLDelta(
+    const TTLDescription & old_ttl, const TTLDescription & new_ttl, const ContextPtr & context);
+
+/// Overload where the old rows-TTL is given as its serialized expression string (as stored in a part's
+/// TTL info fingerprint). It is parsed and built against `columns`/`primary_key`; any parse/build failure
+/// yields `std::nullopt` (fall back). Used by the fast `MODIFY TTL` path to verify, per part, that the
+/// part's stored TTL timestamps really shift to the new TTL by a single constant.
+std::optional<time_t> tryComputeConstantTTLDelta(
+    const String & old_ttl_expression, const TTLDescription & new_ttl,
+    const ColumnsDescription & columns, const KeyDescription & primary_key, const ContextPtr & context);
+
 }

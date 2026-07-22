@@ -53,6 +53,8 @@ void TTLUpdateInfoAlgorithm::finalize(const MutableDataPartPtr & data_part) cons
     else if (ttl_update_field == TTLUpdateField::TABLE_TTL)
     {
         data_part->ttl_infos.table_ttl = new_ttl_info;
+        /// Record the rows-TTL expression these timestamps were computed under (see `MergeTreeDataPartTTLInfos`).
+        data_part->ttl_infos.table_ttl_expression = description.result_column;
         data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
     }
     else if (ttl_update_field == TTLUpdateField::COLUMNS_TTL)

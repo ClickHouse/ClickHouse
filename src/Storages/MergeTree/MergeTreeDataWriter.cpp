@@ -920,7 +920,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     }
 
     if (metadata_snapshot->hasRowsTTL())
-        updateTTL(context, metadata_snapshot->getRowsTTL(), new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
+    {
+        const auto & rows_ttl = metadata_snapshot->getRowsTTL();
+        updateTTL(context, rows_ttl, new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
+        /// Record the rows-TTL expression these timestamps were computed under, so the fast `MODIFY TTL`
+        /// path can later verify the part is not stale (see `MergeTreeDataPartTTLInfos`).
+        new_data_part->ttl_infos.table_ttl_expression = rows_ttl.result_column;
+    }
 
     for (const auto & ttl_entry : metadata_snapshot->getGroupByTTLs())
         updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.group_by_ttl[ttl_entry.result_column], block, true);

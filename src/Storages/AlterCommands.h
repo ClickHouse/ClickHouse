@@ -244,8 +244,10 @@ public:
     /// Check if commands have any vector similarity index
     static bool hasVectorSimilarityIndex(const StorageInMemoryMetadata & metadata);
 
-    /// Try to optimize MODIFY TTL, and return the delta of the modified TTL.
-    time_t tryOptimizeModifyTLL(const StorageInMemoryMetadata & metadata, ContextPtr context, const AlterCommand & alter_cmd) const;
+    /// Try to optimize MODIFY TTL. Returns the constant delta (in seconds) between the new and old
+    /// rows-TTL when the change can be applied by shifting each part's stored TTL metadata instead of
+    /// rewriting the data, or std::nullopt when the regular `MATERIALIZE TTL` rewrite must be used.
+    std::optional<time_t> tryOptimizeModifyTLL(const StorageInMemoryMetadata & metadata, ContextPtr context, const AlterCommand & alter_cmd) const;
 };
 
 }
