@@ -324,6 +324,13 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     {
         auto file_name = it->name();
 
+        /// Skip temporary metadata files (e.g. checksums.txt.tmp) that an interrupted metadata
+        /// rewrite may have left behind. They are not part of the part's data and must not be
+        /// checksummed: doing so would record a file that the next rewrite deletes, making the
+        /// recalculated checksums self-invalidating.
+        if (file_name.ends_with(".tmp"))
+            continue;
+
         /// We will check projections later.
         if (data_part_storage.existsDirectory(file_name) && file_name.ends_with(".proj"))
         {

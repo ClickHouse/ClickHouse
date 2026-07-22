@@ -42,6 +42,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/JSON.h>
+#include <base/getThreadId.h>
 #include <Common/StackTrace.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -1656,15 +1657,39 @@ void IMergeTreeDataPart::writeMetadata(const String & filename, const WriteSetti
 {
     auto & data_part_storage = getDataPartStorage();
 
-    data_part_storage.beginTransaction();
+    /// Rewrite the metadata file atomically and durably (write to a temp file, fsync, rename),
+    /// because it goes into an already-committed part directory with no enclosing rename to rely
+    /// on. An interrupted in-place write could otherwise leave an empty checksums.txt, which
+    /// bricks the whole part. Mirrors VersionMetadataOnDisk::storeInfoToDataPartStorage.
+    /// The temp name carries the thread id so two concurrent repairs of the same part (from
+    /// separate CHECK TABLE queries) do not rename each other's half-written file. It keeps the
+    /// .tmp suffix so checkDataPart skips it if a crash leaves it behind.
+    const String tmp_filename = fmt::format("{}.{}.tmp", filename, getThreadId());
 
+    try
     {
-        auto out = data_part_storage.writeFile(filename, 4096, settings);
+        auto out = data_part_storage.writeFile(tmp_filename, 4096, settings);
         writer(*out);
         out->finalize();
-    }
+        out->sync();
 
-    data_part_storage.commitTransaction();
+        SyncGuardPtr sync_guard;
+        if ((*storage.getSettings())[MergeTreeSetting::fsync_part_directory])
+            sync_guard = data_part_storage.getDirectorySyncGuard();
+        data_part_storage.replaceFile(tmp_filename, filename);
+    }
+    catch (...)
+    {
+        try
+        {
+            data_part_storage.removeFileIfExists(tmp_filename);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(storage.log, __PRETTY_FUNCTION__);
+        }
+        throw;
+    }
 }
 
 void IMergeTreeDataPart::writeChecksums(const MergeTreeDataPartChecksums & checksums_, const WriteSettings & settings)
@@ -1819,7 +1844,12 @@ void IMergeTreeDataPart::loadChecksums(bool require)
     /// long as the part. Its tree-node allocations belong in the parts arena.
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
-    if (auto buf = readFileIfExists("checksums.txt"))
+    auto buf = readFileIfExists("checksums.txt");
+
+    /// An existing but empty checksums.txt is treated like an absent one (recalculated from the
+    /// data files), not as fatal: a zero-byte file left by an interrupted repair would otherwise
+    /// brick an intact part, which is strictly worse than the missing-file state that self-heals.
+    if (buf && !buf->eof())
     {
         if (checksums.read(*buf))
         {
@@ -1835,9 +1865,17 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         if (require)
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No checksums.txt in part {}", name);
 
-        /// If the checksums file is not present, calculate the checksums and write them to disk.
-        /// Check the data while we are at it.
-        LOG_WARNING(storage.log, "Checksums for part {} not found. Will calculate them from data on disk.", name);
+        /// If the checksums file is not present (or empty), calculate the checksums and write
+        /// them to disk. Check the data while we are at it.
+        LOG_WARNING(storage.log, "Checksums for part {} not found or empty. Will calculate them from data on disk.", name);
+
+        /// An empty checksums.txt on disk would be re-read (and rejected) by checkDataPart, so
+        /// drop it first. Any leftover .tmp from an interrupted rewrite is skipped by checkDataPart.
+        if (buf && !getDataPartStorage().isReadonly())
+        {
+            buf.reset();
+            getDataPartStorage().removeFileIfExists("checksums.txt");
+        }
 
         bool noop = false;
         checksums = checkDataPart(shared_from_this(), false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */false);
