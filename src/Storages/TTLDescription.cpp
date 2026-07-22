@@ -103,9 +103,12 @@ namespace
 /// `Dynamic` erases its value types entirely: the static type never mentions AggregateFunction, yet any
 /// row may carry a state (e.g. inserted via CAST to `Dynamic`), and a consumer like `toDateTime` would
 /// only fail later, during TTL execution. Since the stored types cannot be enumerated at DDL time, we
-/// probe every `Dynamic` argument with a single-row column carrying a representative synthetic state
-/// (`AggregateFunction(max, UInt64)`): type-agnostic consumers (`toString`, `dynamicType`, ...) pass,
-/// while consumers with type requirements are rejected as suspicious. Such a TTL is one inserted row
+/// probe every `Dynamic` argument with a *set* of representative single-row payloads - the
+/// AggregateFunction state that brings the column into scope (`AggregateFunction(max, UInt64)`) plus a
+/// numeric (`UInt64`) and a string (`String`) payload. Only a genuinely type-agnostic consumer
+/// (`isNotNull`, `dynamicType`, `toString`, ...) survives every probe; a state-aware consumer such as
+/// `finalizeAggregation(dyn)`, which accepts the state but throws `ILLEGAL_TYPE_OF_ARGUMENT` on other
+/// legal payloads, is rejected here rather than at execution time. Such a TTL is one inserted row
 /// away from breaking every merge of the table, so rejecting it at CREATE is the safer default; the
 /// `allow_suspicious_ttl_expressions` setting and ATTACH remain available as escape hatches.
 void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::string_view expression_kind)
@@ -244,25 +247,40 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
             }
             else if (WhichDataType(arguments[i].type).isDynamic())
             {
-                auto aggregate_state_type = DataTypeFactory::instance().get("AggregateFunction(max, UInt64)");
-                ColumnPtr aggregate_state = aggregate_state_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+                /// A `Dynamic` can store any type, so probing a single representative payload is not enough:
+                /// a consumer that happens to accept an AggregateFunction state can still throw on other
+                /// legal payloads (e.g. `finalizeAggregation(dyn)` accepts the state but rejects `UInt64` /
+                /// `String`). Probe a small representative set instead - the AggregateFunction state that
+                /// brings the column into scope, plus a numeric and a string payload - so only a genuinely
+                /// type-agnostic consumer survives every probe.
+                static const std::vector<String> representative_type_names =
+                    {"AggregateFunction(max, UInt64)", "UInt64", "String"};
 
-                auto dynamic_column = arguments[i].type->createColumn();
-                auto & dynamic = assert_cast<ColumnDynamic &>(*dynamic_column);
-                if (dynamic.addNewVariant(aggregate_state_type))
+                std::vector<ColumnPtr> payloads;
+                payloads.reserve(representative_type_names.size());
+                for (const auto & type_name : representative_type_names)
                 {
-                    auto discr = dynamic.getVariantInfo().variant_name_to_discriminator.at(aggregate_state_type->getName());
-                    dynamic.getVariantColumn().insertIntoVariantFrom(discr, *aggregate_state, 0);
-                }
-                else
-                {
-                    /// The type cannot hold new variants (e.g. `Dynamic(max_types=0)`), so states would be
-                    /// stored in the shared variant - probe through it as well.
-                    dynamic.insertValueIntoSharedVariant(*aggregate_state, aggregate_state_type, aggregate_state_type->getName(), 0);
+                    auto payload_type = DataTypeFactory::instance().get(type_name);
+                    ColumnPtr payload = payload_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+
+                    auto dynamic_column = arguments[i].type->createColumn();
+                    auto & dynamic = assert_cast<ColumnDynamic &>(*dynamic_column);
+                    if (dynamic.addNewVariant(payload_type))
+                    {
+                        auto discr = dynamic.getVariantInfo().variant_name_to_discriminator.at(payload_type->getName());
+                        dynamic.getVariantColumn().insertIntoVariantFrom(discr, *payload, 0);
+                    }
+                    else
+                    {
+                        /// The type cannot hold new variants (e.g. `Dynamic(max_types=0)`), so values are
+                        /// stored in the shared variant - probe through it as well.
+                        dynamic.insertValueIntoSharedVariant(*payload, payload_type, payload_type->getName(), 0);
+                    }
+                    payloads.push_back(std::move(dynamic_column));
                 }
 
                 suspect_indexes.push_back(i);
-                suspect_columns.push_back({std::move(dynamic_column)});
+                suspect_columns.push_back(std::move(payloads));
                 has_dynamic_suspect = true;
             }
         }

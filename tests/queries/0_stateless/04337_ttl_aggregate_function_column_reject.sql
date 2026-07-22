@@ -675,3 +675,44 @@ TTL d + INTERVAL 1 DAY DELETE WHERE isNotNull(finalizeAggregation(v));
 DROP TABLE test_ttl_agg_mixed_variant_suspicious;
 
 SET allow_suspicious_ttl_expressions = 0;
+
+-- A state-aware consumer over a Dynamic is rejected even when it can consume an AggregateFunction state,
+-- because a Dynamic can store any type and the consumer still throws on other legal payloads:
+-- `finalizeAggregation` accepts the synthetic state but throws ILLEGAL_TYPE_OF_ARGUMENT on a UInt64 / String row.
+CREATE TABLE test_ttl_agg_dynamic_finalize
+(
+    key UInt64,
+    dyn Dynamic,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE isNotNull(finalizeAggregation(dyn)); -- { serverError BAD_TTL_EXPRESSION }
+
+-- A type-agnostic Dynamic consumer that handles every representative payload is still accepted.
+CREATE TABLE test_ttl_agg_dynamic_finalize_agnostic
+(
+    key UInt64,
+    d DateTime,
+    dyn Dynamic
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE isNotNull(dyn) AND dynamicType(dyn) != 'UInt64';
+
+DROP TABLE test_ttl_agg_dynamic_finalize_agnostic;
+
+-- The escape hatch also covers the state-aware Dynamic case.
+SET allow_suspicious_ttl_expressions = 1;
+
+CREATE TABLE test_ttl_agg_dynamic_finalize_suspicious
+(
+    key UInt64,
+    dyn Dynamic,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE isNotNull(finalizeAggregation(dyn));
+
+DROP TABLE test_ttl_agg_dynamic_finalize_suspicious;
