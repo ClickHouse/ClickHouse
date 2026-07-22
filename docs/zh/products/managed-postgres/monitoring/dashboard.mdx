@@ -1,0 +1,51 @@
+---
+slug: /cloud/managed-postgres/monitoring/dashboard
+sidebarTitle: '仪表板'
+title: 'Managed Postgres 监控仪表板'
+description: 'Managed Postgres 服务内置的 Cloud Console 仪表板'
+keywords: ['Managed Postgres', '监控', '仪表板', 'Cloud Console', 'CPU', '内存', 'IOPS']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-dashboard-beta" />
+
+实例左侧边栏中的 **监控** 选项卡会显示所选时间范围内资源使用情况和数据库活动的实时图表。
+
+<Image img="/images/managed-postgres/monitoring/dashboard.webp" alt="显示 IOPS、CPU 使用率、内存、磁盘、网络流量、数据库大小、连接数、吞吐量、事务、缓存命中率和死锁的监控仪表板" size="lg" border />
+
+<div id="panels">
+  ## 面板
+</div>
+
+该仪表板将指标分组到以下面板中：
+
+* **IOPS** — 每秒磁盘读写操作数
+* **CPU usage** — 按 `user`、`system`、`iowait`、`softirq`
+  和 `steal` 细分
+* **Memory usage** — 已用内存、缓存和缓冲区占总内存的百分比
+* **Disk usage** — 已用文件系统空间占分配给该服务的存储空间百分比
+* **Network traffic** — 接收和发送的字节数
+* **Database size** — 每个数据库的字节数 (包括默认的 `postgres`
+  以及任何用户创建的数据库)
+* **Connection count** — 活跃和空闲连接数
+* **Operation throughput** — 每秒拉取、插入、更新和删除操作数
+* **Transactions** — 每秒提交和回滚次数
+* **Cache hit ratio** — 块读取由缓冲区缓存而非磁盘提供的百分比
+* **Deadlocks** — 由 server 检测到的死锁
+
+<div id="time-period">
+  ## 时间范围
+</div>
+
+使用 **时间范围** 选择器，可切换到最近一小时、一天、
+一周或自定义时间范围。
+
+<div id="related">
+  ## 相关页面
+</div>
+
+* [Prometheus 端点](/zh/products/managed-postgres/monitoring/prometheus) — 在您自己的可观测性堆栈中抓取相同的指标
+* [指标参考](/zh/products/managed-postgres/monitoring/metrics) — 含类型和标记的完整指标列表

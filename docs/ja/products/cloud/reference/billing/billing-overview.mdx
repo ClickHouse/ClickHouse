@@ -1,0 +1,494 @@
+---
+sidebarTitle: '概要'
+slug: /cloud/manage/billing/overview
+title: '料金'
+description: 'ClickHouse Cloud の料金概要ページ'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', '料金', '請求', 'クラウドコスト', 'コンピュート料金']
+---
+
+料金については、[ClickHouse Cloud Pricing](https://clickhouse.com/pricing#pricing-calculator) ページを参照してください。
+ClickHouse Cloud は、コンピュート、ストレージ、[データ転送](/ja/products/cloud/reference/billing/network-data-transfer) (インターネットへの送信およびリージョン間通信) 、ならびに [ClickPipes](/ja/integrations/clickpipes/home) の使用量に基づいて課金されます。
+請求額に影響する要因や、支出を管理する方法については、このまま読み進めてください。
+
+<div id="amazon-web-services-aws-example">
+  ## Amazon Web Services (AWS) の例
+</div>
+
+<Note>
+  * 価格は AWS の us-east-1 リージョンの料金に基づいています。
+  * 該当するデータ転送料金と ClickPipes の料金については、[こちら](/ja/products/cloud/reference/billing/network-data-transfer)をご覧ください。
+</Note>
+
+<div id="basic-from-6652-per-month">
+  ### Basic: 月額 $66.52 から
+</div>
+
+適した用途: 高い信頼性保証を必要としない、データ量が少なめの部門向けユースケース。
+
+**Basic tier のサービス**
+
+* 1 レプリカ x 8 GiB RAM、2 vCPU
+* 500 GB の圧縮データ
+* 500 GB のデータバックアップ
+* 10 GB のパブリックインターネット向けエグレスデータ転送
+* 5 GB のリージョン間データ転送
+
+この例の料金内訳:
+
+<table>
+  <thead>
+    <tr>
+      <th />
+
+      <th>1 日あたり 6 時間稼働</th>
+      <th>1 日あたり 12 時間稼働</th>
+      <th>1 日あたり 24 時間稼働</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>コンピュート</td>
+      <td>$39.91</td>
+      <td>$79.83</td>
+      <td>$159.66</td>
+    </tr>
+
+    <tr>
+      <td>ストレージ</td>
+      <td>$25.30</td>
+      <td>$25.30</td>
+      <td>$25.30</td>
+    </tr>
+
+    <tr>
+      <td>パブリックインターネット向けエグレスデータ転送</td>
+      <td>$1.15</td>
+      <td>$1.15</td>
+      <td>$1.15</td>
+    </tr>
+
+    <tr>
+      <td>リージョン間データ転送</td>
+      <td>$0.16</td>
+      <td>$0.16</td>
+      <td>$0.16</td>
+    </tr>
+
+    <tr>
+      <td>合計</td>
+      <td>$66.52</td>
+      <td>$106.44</td>
+      <td>$186.27</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="scale-always-on-auto-scaling-from-49938-per-month">
+  ### Scale (常時稼働、オートスケーリング) : 月額 $499.38 から
+</div>
+
+最適な用途: SLA の強化 (2 レプリカ以上のサービス) 、スケーラビリティ、高度なセキュリティを必要とするワークロード。
+
+**Scale ティアのサービス**
+
+* ワークロードがほぼ 100% の時間アクティブ
+* 想定外の請求額増加を防ぐため、オートスケーリングの上限を設定可能
+* パブリックインターネット向けエグレスデータ転送 100 GB
+* リージョン間データ転送 10 GB
+
+この例の料金内訳:
+
+<table>
+  <thead>
+    <tr>
+      <th />
+
+      <th>例 1</th>
+      <th>例 2</th>
+      <th>例 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>コンピュート</td>
+      <td>2 レプリカ × 8 GiB RAM、2 vCPU<br />$436.95</td>
+      <td>2 レプリカ × 16 GiB RAM、4 vCPU<br />$873.89</td>
+      <td>3 レプリカ × 16 GiB RAM、4 vCPU<br />$1,310.84</td>
+    </tr>
+
+    <tr>
+      <td>ストレージ</td>
+      <td>データ 1 TB + バックアップ 1 件<br />$50.60</td>
+      <td>データ 2 TB + バックアップ 1 件<br />$101.20</td>
+      <td>データ 3 TB + バックアップ 1 件<br />$151.80</td>
+    </tr>
+
+    <tr>
+      <td>パブリックインターネット向けエグレスデータ転送</td>
+      <td>$11.52</td>
+      <td>$11.52</td>
+      <td>$11.52</td>
+    </tr>
+
+    <tr>
+      <td>リージョン間データ転送</td>
+      <td>$0.31</td>
+      <td>$0.31</td>
+      <td>$0.31</td>
+    </tr>
+
+    <tr>
+      <td>合計</td>
+      <td>$499.38</td>
+      <td>$986.92</td>
+      <td>$1,474.47</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="enterprise-starting-prices-vary">
+  ### Enterprise: 開始価格は変動します
+</div>
+
+最適な用途: 厳格なセキュリティ要件やコンプライアンス要件が求められる、大規模でミッションクリティカルなデプロイメント
+
+**Enterprise tierのサービス**
+
+* ワークロードがほぼ常時アクティブ
+* パブリックインターネット向けエグレスのデータ転送 1 TB
+* リージョン間データ転送 500 GB
+
+<table>
+  <thead>
+    <tr>
+      <th />
+
+      <th>例 1</th>
+      <th>例 2</th>
+      <th>例 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>コンピュート</td>
+      <td>2 レプリカ x 32 GiB RAM、8 vCPU<br />$2,285.60</td>
+      <td>2 レプリカ x 64 GiB RAM、16 vCPU<br />$4,571.19</td>
+      <td>2 x 120 GiB RAM、30 vCPU<br />$8,570.99</td>
+    </tr>
+
+    <tr>
+      <td>ストレージ</td>
+      <td>5 TB + 1 バックアップ<br />$253.00</td>
+      <td>10 TB + 1 バックアップ<br />$506.00</td>
+      <td>20 TB + 1 バックアップ<br />$1,012.00</td>
+    </tr>
+
+    <tr>
+      <td>パブリックインターネット向けエグレスデータ転送</td>
+      <td>$115.20</td>
+      <td>$115.20</td>
+      <td>$115.20</td>
+    </tr>
+
+    <tr>
+      <td>リージョン間データ転送</td>
+      <td>$15.60</td>
+      <td>$15.60</td>
+      <td>$15.60</td>
+    </tr>
+
+    <tr>
+      <td>合計</td>
+      <td>$2,669.40</td>
+      <td>$5,207.99</td>
+      <td>$9,713.79</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="faqs">
+  ## よくある質問
+</div>
+
+<div id="what-is-chc">
+  ### ClickHouse Credit (CHC) とは何ですか？
+</div>
+
+ClickHouse Credit は、お客様の ClickHouse Cloud 利用料金に充当されるクレジット単位です。1 ClickHouse Credit は 1 米ドルに相当し、ClickHouse がその時点で公開している価格表に基づいて適用されます。
+
+<Note>
+  Stripe 経由で請求されている場合、Stripe の請求書では 1 CHC は $0.01 USD と表示されます。これは、Stripe では当社の標準 SKU である 1 CHC = $1 USD を小数単位で請求できないため、正確に請求できるようにするためです。
+</Note>
+
+<div id="find-legacy-pricing">
+  ### 旧料金体系はどこで確認できますか？
+</div>
+
+旧料金体系に関する情報は[こちら](https://clickhouse.com/pricing?legacy=true)で確認できます。
+
+<div id="how-is-compute-metered">
+  ### コンピュートはどのように課金されますか？
+</div>
+
+ClickHouse Cloud では、コンピュートは 8G RAM ごとに 1 分単位で課金されます。
+コンピュートのコストは、ティア、リージョン、クラウドサービスプロバイダーによって異なります。
+
+<div id="how-is-storage-on-disk-calculated">
+  ### ディスク上のストレージはどのように算出されますか？
+</div>
+
+ClickHouse Cloud はクラウドオブジェクトストレージを使用しており、使用量は ClickHouse テーブルに保存されたデータの圧縮サイズに基づいて計測されます。
+ストレージコストはすべてのティアで共通ですが、地域とクラウドサービスプロバイダーによって異なります。
+
+<div id="do-backups-count-toward-total-storage">
+  ### バックアップは合計ストレージ容量に含まれますか？
+</div>
+
+ストレージとバックアップはどちらもストレージ費用の対象となり、個別に請求されます。
+すべてのサービスでは、デフォルトで1つのバックアップが1日間保持されます。
+追加のバックアップが必要な場合は、Cloud Console の Settings タブで追加の[バックアップ](/ja/products/cloud/guides/backups/review-and-restore-backups)を設定できます。
+
+<div id="how-do-i-estimate-compression">
+  ### 圧縮率はどのように見積もればよいですか？
+</div>
+
+圧縮率はデータセットごとに異なります。
+どの程度変わるかは、まずデータ自体がどれだけ圧縮しやすいか (高カーディナリティのフィールドと低カーディナリティのフィールドの数) 、
+さらにユーザーがスキーマをどのように設計しているか (たとえばオプションのコーデックを使うかどうか) に左右されます。
+一般的な分析データでは 10 倍程度になることもありますが、それより大幅に低くなる場合もあれば、高くなる場合もあります。
+指針については[最適化に関するドキュメント](/ja/concepts/features/operations/insert/asyncinserts)を、ロギングの詳しいユースケース例についてはこの [Uber のブログ](https://www.uber.com/blog/logging/)を参照してください。
+正確に知るための現実的な方法は、データセットを ClickHouse に取り込み、元のデータセットのサイズと ClickHouse に保存されたサイズを比較することだけです。
+
+次のクエリを使用できます。
+
+```sql title="Estimating compression"
+SELECT formatReadableSize(total_bytes) 
+FROM system.tables 
+WHERE name = <your table name>
+```
+
+<div id="what-tools-does-clickhouse-offer-to-estimate-the-cost-of-running-a-service-in-the-cloud-if-i-have-a-self-managed-deployment">
+  ### セルフマネージド環境を利用している場合、クラウドでサービスを実行するコストを見積もるために ClickHouse にはどのようなツールがありますか？
+</div>
+
+ClickHouse のクエリログには、ClickHouse Cloud でワークロードを実行するコストの見積もりに利用できる[主要なメトリクス](/ja/reference/system-tables/query_log)が記録されます。
+セルフマネージドから ClickHouse Cloud への移行の詳細については、[移行ドキュメント](/ja/get-started/migrate/oss-to-cloud/clickhouse-to-cloud)を参照してください。さらにご不明な点がある場合は、[ClickHouse Cloud Support](https://console.clickhouse.cloud/support) までお問い合わせください。
+
+<div id="what-billing-options-are-available-for-clickhouse-cloud">
+  ### ClickHouse Cloud ではどのような請求オプションを利用できますか？
+</div>
+
+ClickHouse Cloud では、以下の請求オプションを利用できます。
+
+* セルフサービスの月額プラン (米ドル建て、クレジットカード払い) 。
+* 営業経由の年額 / 複数年契約 (前払いの「ClickHouse Credits」を利用する米ドル建てで、追加の支払い方法にも対応) 。
+* AWS、GCP、Azure のマーケットプレイス経由 (従量課金制 (PAYG) またはマーケットプレイス経由で ClickHouse Cloud と契約) 。
+
+<Note>
+  PAYG の ClickHouse Cloud クレジットは $0.01 単位で請求されるため、利用量に応じて ClickHouse クレジットの端数分もお客様に請求できます。これは、事前に $1 単位で購入するコミットメント利用分の ClickHouse クレジットとは異なります。
+</Note>
+
+<div id="can-i-delete-my-credit-card">
+  ### クレジットカードを削除できますか？
+</div>
+
+Billing UI ではクレジットカードを削除できませんが、いつでも更新できます。これにより、組織で常に有効な支払い方法が設定されていることを確保できます。クレジットカードを削除する必要がある場合は、[ClickHouse Cloud Support](https://console.clickhouse.cloud/support) までお問い合わせください。
+
+<div id="where-can-i-see-my-refunds">
+  ### 返金はどこで確認できますか？
+</div>
+
+ClickHouse Cloud コンソールで Organization &gt; Billing に移動します。Refunds セクションは、Invoices と Credits の下に表示されます。表示するには、Organization Admin または Billing Admin である必要があります。
+
+<div id="how-long-does-it-take-for-a-refund-to-appear">
+  ### 払い戻しが反映されるまでどのくらいかかりますか？
+</div>
+
+払い戻しは、当社で処理され次第反映されます。クレジットカードへの払い戻しが明細に表示されるまでには、銀行によってさらに時間がかかる場合があります。
+
+<div id="how-long-is-the-billing-cycle">
+  ### 請求サイクルの長さはどのくらいですか？
+</div>
+
+請求は月単位で行われ、開始日は ClickHouse Cloud の組織が作成された日として扱われます。
+
+<div id="committed-credits-consumed-first-with-active-payg-subscription">
+  ### 有効な PAYG マーケットプレイスサブスクリプションがある状態でコミットメント契約を結んだ場合、コミットメントクレジットが先に消費されますか？
+</div>
+
+はい。使用量は、以下の支払い方法の順に消費されます。
+
+* コミットメント (前払い) クレジット
+* マーケットプレイスサブスクリプション (PAYG)
+* クレジットカード
+
+<div id="what-controls-does-clickhouse-cloud-offer-to-manage-costs-for-scale-and-enterprise-services">
+  ### ClickHouse Cloud には、Scale および Enterprise サービスのコストを管理するためにどのような機能がありますか？
+</div>
+
+* Trial および Annual Commit のお客様には、消費量が特定のしきい値 (`50%`、`75%`、`90%`) に達すると、自動的にメール通知が送信されます。これにより、利用状況を事前に把握して管理できます。
+* ClickHouse Cloud では、分析ワークロードにおける重要なコスト要因であるコンピュートについて、[高度なスケーリング制御](/ja/products/cloud/features/autoscaling/overview) により、オートスケーリングの最大上限を設定できます。
+* [高度なスケーリング制御](/ja/products/cloud/features/autoscaling/overview) では、非アクティブ時の一時停止やアイドル状態の動作を制御するオプションとあわせて、メモリ制限を設定できます。
+
+<div id="what-controls-does-clickhouse-cloud-offer-to-manage-costs-for-basic-services">
+  ### Basicサービスのコスト管理のために、ClickHouse Cloud にはどのような制御機能がありますか？
+</div>
+
+* [高度なスケーリング制御](/ja/products/cloud/features/autoscaling/overview)を使うと、非アクティブ時の一時停止/アイドル化の動作を制御できます。Basicサービスでは、メモリ割り当ての調整はサポートされていません。
+* デフォルト設定では、一定期間非アクティブな状態が続くとサービスは一時停止される点に注意してください。
+
+<div id="if-i-have-multiple-services-do-i-get-an-invoice-per-service-or-a-consolidated-invoice">
+  ### 複数のサービスがある場合、サービスごとに請求書が発行されますか、それとも請求書は1つにまとめられますか？
+</div>
+
+特定の組織内のすべてのサービスについて、請求期間ごとに1通の統合請求書が発行されます。
+
+<div id="if-i-add-my-credit-card-and-upgrade-before-my-trial-period-and-credits-expire-will-i-be-charged">
+  ### クレジットカードを追加し、トライアル期間とトライアルクレジットの有効期限が切れる前にアップグレードした場合、料金は発生しますか？
+</div>
+
+ユーザーが30日間のトライアル期間が終了する前にトライアルから有料プランへ移行し、トライアルで付与されたクレジットがまだ残っている場合は、
+最初の30日間のトライアル期間中は引き続きそのトライアルクレジットから差し引かれ、30日間の終了後にクレジットカードへ請求されます。
+
+<div id="how-can-i-keep-track-of-my-spending">
+  ### 支出をどのように把握できますか？
+</div>
+
+ClickHouse Cloud コンソールには、サービスごとの利用状況を詳しく確認できる Usage 表示があります。この内訳は利用状況の次元ごとに整理されており、各従量課金単位に対応するコストを把握するのに役立ちます。
+
+<div id="how-do-i-access-my-invoice-for-my-subscription-to-the-clickhouse-cloud-service">
+  ### ClickHouse Cloud service のサブスクリプションの請求書はどこで確認できますか？
+</div>
+
+クレジットカードによる直接サブスクリプションの場合:
+
+請求書を表示するには、ClickHouse Cloud UI の左側のナビゲーションバーで組織を選択し、[Billing] に移動します。すべての請求書は [Invoices] セクションに一覧表示されます。
+
+クラウドマーケットプレイス経由のサブスクリプションの場合:
+
+すべてのマーケットプレイスサブスクリプションの課金と請求は、マーケットプレイスによって行われます。請求書は、各クラウドプロバイダーのマーケットプレイスから直接確認できます。
+
+<div id="why-do-the-dates-on-the-usage-statements-not-match-my-marketplace-invoice">
+  ### Usage statements の日付が Marketplace の請求書と一致しないのはなぜですか？
+</div>
+
+AWS Marketplace の請求は、暦月サイクルに従います。
+たとえば、2024年12月1日から2025年1月1日までの利用分については、
+2025年1月3日から1月5日の間に請求書が発行されます。
+
+ClickHouse Cloud の usage statements はこれとは異なる請求サイクルに従っており、利用量は
+登録日を起点として30日間にわたり計測・レポートされます。
+
+これらの日付が一致していない場合、利用明細の日付と請求書の日付は異なります。usage statements では特定のサービスの利用状況が日単位で追跡されるため、コストの内訳を確認する際には statements を参照できます。
+
+<div id="are-there-any-restrictions-around-the-usage-of-prepaid-credits">
+  ### 前払いクレジットの利用に関して何か制限はありますか？
+</div>
+
+ClickHouse Cloud の前払いクレジット (ClickHouse から直接購入した場合、またはクラウドプロバイダーのマーケットプレイス経由で購入した場合) は、契約期間内でのみ利用できます。
+つまり、適用できるのは契約の受諾日またはそれ以降の日付であり、それ以前の期間には適用できません。
+前払いクレジットでカバーされない超過分は、クレジットカードによる支払い、またはマーケットプレイス経由の月次請求で精算する必要があります。
+
+<div id="is-there-a-difference-in-clickhouse-cloud-pricing-whether-paying-through-the-cloud-provider-marketplace-or-directly-to-clickhouse">
+  ### クラウドプロバイダーのマーケットプレイス経由で支払う場合と、ClickHouse に直接支払う場合とで、ClickHouse Cloud の料金に違いはありますか？
+</div>
+
+マーケットプレイス経由の課金でも、ClickHouse に直接申し込む場合でも、料金に違いはありません。
+いずれの場合も、ClickHouse Cloud の利用量は ClickHouse Cloud Credits (CHCs) で管理され、
+同じ方法で計測され、それに応じて課金されます。
+
+<div id="how-is-compute-compute-separation-billed">
+  ### Compute-compute separation はどのように課金されますか？
+</div>
+
+既存のサービスに加えて新しいサービスを作成する際、
+その新しいサービスで既存のサービスと同じデータを共有するかどうかを選択できます。
+共有する場合、これら 2 つのサービスは [warehouse](/ja/products/cloud/features/infrastructure/warehouses) を構成します。
+warehouse ではデータは 1 か所に保存され、複数のコンピュートサービスがそのデータにアクセスします。
+
+データは 1 回しか保存されないため、複数のサービスからアクセスしていても、料金が発生するのはデータ 1 コピー分のみです。
+コンピュートについては通常どおり課金され、compute-compute separation / warehouse に追加料金はかかりません。
+この構成では共有ストレージを活用することで、ストレージとバックアップの両方のコストを削減できます。
+
+場合によっては、compute-compute separation によって ClickHouse Credits を大幅に節約できます。
+その一例が次の構成です。
+
+1. 24 時間 365 日稼働する ETL ジョブがあり、サービスにデータを取り込んでいます。これらの ETL ジョブはそれほど多くのメモリを必要としないため、たとえば 32 GiB の RAM を持つ小規模なインスタンスで実行できます。
+
+2. 同じチームのデータサイエンティストがアドホックなレポート作成のために、大量のメモリを必要とするクエリ (236 GiB が必要) を実行したいとしています。ただし、高可用性は不要で、最初の実行に失敗しても待って再実行できます。
+
+この例では、データベース管理者として次のように構成できます。
+
+1. それぞれ 16 GiB のレプリカを 2 つ持つ小規模なサービスを作成します。これにより ETL ジョブの要件を満たし、高可用性も確保できます。
+
+2. データサイエンティスト向けには、同じ warehouse 内に 236 GiB のレプリカを 1 つだけ持つ 2 つ目のサービスを作成できます。このサービスでは idling を有効にできるため、データサイエンティストが使用していない間は料金が発生しません。
+
+この例の **Scale Tier** におけるコスト見積もり (月額) :
+
+* 親サービスは 1 日 24 時間稼働: 2 レプリカ x 16 GiB、各レプリカ 4 vCPU
+* 子サービス: 1 レプリカ x 236 GiB、各レプリカ 59 vCPU
+* 圧縮データ 3 TB + バックアップ 1 件
+* パブリックインターネット向けエグレスデータ転送 100 GB
+* リージョン間データ転送 50 GB
+
+<table class="nowrap-header">
+  <thead>
+    <tr>
+      <th />
+
+      <th><span>子サービス</span><br /><span>1 日 1 時間稼働</span></th>
+      <th><span>子サービス</span><br /><span>1 日 2 時間稼働</span></th>
+      <th><span>子サービス</span><br /><span>1 日 4 時間稼働</span></th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>コンピュート</td>
+      <td>$1,142.43</td>
+      <td>$1,410.97</td>
+      <td>$1,948.05</td>
+    </tr>
+
+    <tr>
+      <td>ストレージ</td>
+      <td>$151.80</td>
+      <td>$151.80</td>
+      <td>$151.80</td>
+    </tr>
+
+    <tr>
+      <td>パブリックインターネット向けエグレスデータ転送</td>
+      <td>$11.52</td>
+      <td>$11.52</td>
+      <td>$11.52</td>
+    </tr>
+
+    <tr>
+      <td>リージョン間データ転送</td>
+      <td>$1.56</td>
+      <td>$1.56</td>
+      <td>$1.56</td>
+    </tr>
+
+    <tr>
+      <td>合計</td>
+      <td>$1,307.31</td>
+      <td>$1,575.85</td>
+      <td>$2,112.93</td>
+    </tr>
+  </tbody>
+</table>
+
+warehouse を使わない場合、データエンジニアのクエリに必要なメモリ量に合わせて料金を支払う必要があります。
+しかし、2 つのサービスを 1 つの warehouse にまとめ、そのうち 1 つで idling を有効にすることで、コストを節約できます。
+
+<div id="clickpipes-pricing">
+  ## ClickPipes の料金
+</div>
+
+ClickPipes の課金については、専用の[「ClickPipes の課金」セクション](/ja/products/cloud/reference/billing/clickpipes/index)をご覧ください。

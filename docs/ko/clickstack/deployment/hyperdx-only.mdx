@@ -1,0 +1,88 @@
+---
+slug: /use-cases/observability/clickstack/deployment/hyperdx-only
+title: 'HyperDX만 배포'
+description: 'HyperDX만 배포'
+doc_type: 'guide'
+keywords: ['HyperDX 독립형 배포', 'HyperDX ClickHouse 통합', 'HyperDX만 배포', 'HyperDX Docker 설치', 'ClickHouse 시각화 도구']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import JSONSupport from '/snippets/ko/_json_support.mdx';
+
+이 옵션은 이미 실행 중이고 관측성 또는 이벤트 데이터가 적재된 ClickHouse 인스턴스가 있는 경우에 적합하도록 설계되었습니다.
+
+HyperDX는 스택의 다른 구성 요소와 독립적으로 사용할 수 있으며, OpenTelemetry(OTel)뿐 아니라 모든 데이터 스키마와 호환됩니다. 따라서 이미 ClickHouse 기반으로 구축된 사용자 지정 관측성 파이프라인에 적합합니다.
+
+전체 기능을 사용하려면 대시보드, 저장된 검색, 사용자 설정, 알림을 포함한 애플리케이션 상태를 저장할 MongoDB 인스턴스를 제공해야 합니다.
+
+이 모드에서는 데이터 수집을 전적으로 사용자가 직접 구성해야 합니다. 자체 호스팅 OpenTelemetry collector, 클라이언트 라이브러리의 직접 수집, ClickHouse 네이티브 테이블 엔진(예: Kafka 또는 S3), ETL 파이프라인, 또는 ClickPipes와 같은 관리형 수집 서비스를 사용해 데이터를 ClickHouse로 수집할 수 있습니다. 이 방식은 가장 높은 유연성을 제공하며, 이미 ClickHouse를 운영하고 있고 그 위에 시각화, 검색, 알림을 위해 HyperDX를 추가하려는 팀에 적합합니다.
+
+<div id="suitable-for">
+  ### 적합한 대상
+</div>
+
+* 기존 ClickHouse 사용자
+* 맞춤형 이벤트 파이프라인
+
+<div id="deployment-steps">
+  ## 배포 단계
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### Docker로 배포
+
+    필요에 따라 `YOUR_MONGODB_URI`를 수정한 후 다음 명령을 실행하세요.
+
+    ```shell
+    docker run -e MONGO_URI=mongodb://YOUR_MONGODB_URI -p 8080:8080 docker.hyperdx.io/hyperdx/hyperdx
+    ```
+  </Step>
+
+  <Step>
+    ### HyperDX UI로 이동
+
+    HyperDX UI에 액세스하려면 [http://localhost:8080](http://localhost:8080)에 접속하세요.
+
+    요구 사항을 충족하는 사용자 이름과 비밀번호를 입력하여 사용자를 생성하세요.
+
+    `Create`를 클릭하면 연결 정보를 입력하라는 메시지가 표시됩니다.
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+  </Step>
+
+  <Step>
+    ### 연결 정보 입력 완료
+
+    자체 외부 ClickHouse 클러스터(예: ClickHouse Cloud)에 연결하세요.
+
+    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="HyperDX 로그인" size="md" />
+
+    source를 생성하라는 메시지가 표시되면 모든 기본값을 유지하고 `Table` 필드에 `otel_logs` 값을 입력하세요. 나머지 설정은 모두 자동으로 감지되므로 `Save New Source`를 클릭하면 됩니다.
+
+    <Info>
+      **source 생성**
+
+      source를 생성하려면 ClickHouse에 테이블(table)이 있어야 합니다. 데이터가 없다면 테이블을 생성할 수 있도록 ClickStack OpenTelemetry collector를 배포하는 것을 권장합니다.
+    </Info>
+  </Step>
+</Steps>
+
+<div id="using-docker-compose">
+  ## Docker Compose 사용
+</div>
+
+[Docker Compose 구성](/ko/clickstack/deployment/docker-compose)을 수정하면 이 가이드와 동일한 효과를 낼 수 있으며, 매니페스트에서 OTel collector와 ClickHouse 인스턴스를 제거하면 됩니다.
+
+<div id="otel-collector">
+  ## ClickStack OpenTelemetry collector
+</div>
+
+스택의 다른 구성 요소와는 별도로 자체 OpenTelemetry collector를 관리하더라도, ClickStack에서 제공하는 collector를 사용하는 것을 권장합니다. 이렇게 하면 기본 스키마가 사용되고 수집 모범 사례가 적용됩니다.
+
+독립 실행형 collector의 배포 및 구성에 대한 자세한 내용은 [&quot;OpenTelemetry로 수집하기&quot;](/ko/clickstack/ingesting-data/collector#modifying-otel-collector-configuration)를 참조하십시오.
+
+<JSONSupport />

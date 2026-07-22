@@ -1,0 +1,137 @@
+---
+title: Managed 수집 설정
+---
+
+<img src="/images/clickstack/getting-started/start_ingestion.webp" alt="" />
+
+&quot;Start Ingestion&quot;을 선택하면 수집 소스를 선택하라는 안내가 표시됩니다. Managed ClickStack는 주요 수집 소스로 OpenTelemetry와 [Vector](https://vector.dev/)를 지원합니다. 또한 사용자는 [ClickHouse Cloud support integrations](/ko/integrations/home)을 사용해 자체 스키마로 데이터를 ClickHouse에 직접 전송할 수도 있습니다.
+
+<img src="/images/clickstack/getting-started/select_source.webp" alt="" />
+
+<Info>
+  **OpenTelemetry 권장**
+
+  수집 포맷으로는 OpenTelemetry 사용을 강력히 권장합니다.
+  OpenTelemetry는 ClickStack에서 효율적으로 작동하도록 특별히 설계된 기본 제공 스키마를 제공하므로, 가장 간단하면서도 최적화된 사용 경험을 제공합니다.
+</Info>
+
+<Tabs>
+  <Tab title="OpenTelemetry">
+    Managed ClickStack로 OpenTelemetry 데이터를 보내려면 OpenTelemetry Collector를 사용하는 것이 좋습니다. collector는 애플리케이션(및 다른 collector)으로부터 OpenTelemetry 데이터를 수신하는 게이트웨이 역할을 하며, 이를 ClickHouse Cloud로 전달합니다.
+
+    아직 실행 중인 collector가 없다면 아래 단계에 따라 시작하세요. 기존 collector가 있다면 구성 예시도 함께 제공됩니다.
+
+    ### collector 시작
+
+    다음 내용은 **ClickStack 배포판의 OpenTelemetry Collector**를 사용하는 권장 방식을 기준으로 합니다. 이 배포판에는 추가 처리 기능이 포함되어 있으며 ClickHouse Cloud에 맞게 특별히 최적화되어 있습니다. 자체 OpenTelemetry Collector를 사용하려면 [&quot;기존 collector 구성&quot;](#configure-existing-collectors)을 참조하세요.
+
+    빠르게 시작하려면 아래에 표시된 Docker 명령을 복사해 실행하세요.
+
+    <img src="/images/clickstack/getting-started/otel_collector_start.webp" alt="" />
+
+    이 명령에는 연결 자격 증명이 미리 채워져 있습니다.
+
+    <Info>
+      **프로덕션 배포**
+
+      이 명령은 Managed ClickStack에 연결할 때 `default` 사용자를 사용하지만, [프로덕션으로 전환](/ko/clickstack/managing/production#create-a-database-ingestion-user-managed)하고 구성을 변경할 때는 전용 사용자를 생성해야 합니다.
+    </Info>
+
+    이 명령 하나로 4317(gRPC) 및 4318(HTTP) 포트에서 OTLP 엔드포인트가 노출된 ClickStack collector가 시작됩니다. 이미 OpenTelemetry 계측과 agent를 사용하고 있다면 즉시 이 엔드포인트로 텔레메트리 데이터를 보내기 시작할 수 있습니다.
+
+    ### 기존 collector 구성
+
+    기존 OpenTelemetry Collector를 직접 구성하거나 자체 collector 배포판을 사용하는 것도 가능합니다.
+
+    <Info>
+      **ClickHouse exporter 필요**
+
+      예를 들어 [contrib image](https://github.com/open-telemetry/opentelemetry-collector-contrib)와 같은 자체 배포판을 사용하는 경우, [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter)가 포함되어 있는지 확인하세요.
+    </Info>
+
+    이를 위해 적절한 설정으로 ClickHouse exporter를 사용하고 OTLP 수신기를 노출하는 OpenTelemetry Collector 구성 예시가 제공됩니다. 이 구성은 ClickStack 배포판이 기대하는 인터페이스와 동작에 맞춰져 있습니다.
+
+    <ExampleOTelConfig />
+
+    <img src="/images/clickstack/getting-started/otel_collector_start.webp" alt="" />
+
+    OpenTelemetry collector 구성에 대한 자세한 내용은 [&quot;OpenTelemetry로 수집하기&quot;](/ko/clickstack/ingesting-data/opentelemetry)를 참조하세요.
+
+    ### 수집 시작(선택 사항)
+
+    OpenTelemetry로 계측할 기존 애플리케이션이나 인프라가 있다면 UI에서 연결된 관련 가이드로 이동하세요.
+
+    애플리케이션을 계측해 trace와 로그를 수집하려면 [지원되는 언어 SDK](/ko/clickstack/ingesting-data/sdks/index)를 사용하세요. 이 SDK는 Managed ClickStack으로 수집하기 위한 게이트웨이 역할을 하는 OpenTelemetry Collector로 데이터를 전송합니다.
+
+    로그는 agent 모드로 실행되는 [OpenTelemetry Collector를 사용해 수집](/ko/clickstack/integration-examples/host-logs)할 수 있으며, 동일한 collector로 데이터를 전달합니다. Kubernetes 모니터링은 [전용 가이드](/ko/clickstack/integration-examples/kubernetes)를 따르세요. 다른 통합은 [quickstart 가이드](/ko/clickstack/integration-examples/index)를 참조하세요.
+
+    ### 데모 데이터
+
+    또는 기존 데이터가 없다면 샘플 데이터셋 중 하나를 사용해 보세요.
+
+    * [예시 데이터셋](/ko/clickstack/example-datasets/sample-data) - 공개 데모의 예시 데이터셋을 로드합니다. 간단한 문제를 진단해 보세요.
+    * [로컬 파일 및 메트릭](/ko/clickstack/example-datasets/local-data) - 로컬 OTel collector를 사용해 로컬 파일을 로드하고 OSX 또는 Linux에서 시스템을 모니터링합니다.
+
+    <br />
+  </Tab>
+
+  <Tab title="벡터">
+    [Vector](https://vector.dev)는 고성능의 벤더 중립적 관측성 데이터 파이프라인으로, 특히 유연성과 적은 리소스 사용량 덕분에 로그 수집에 널리 사용됩니다.
+
+    ClickStack와 함께 Vector를 사용할 때는 사용자가 직접 스키마를 정의해야 합니다. 이러한 스키마는 OpenTelemetry 규약을 따를 수도 있지만, 사용자 정의 이벤트 구조를 나타내는 완전히 맞춤형 스키마일 수도 있습니다.
+
+    <Info>
+      **Timestamp 필수**
+
+      Managed ClickStack에서 엄격하게 요구하는 유일한 사항은 데이터에 **timestamp 컬럼**(또는 이에 해당하는 시간 필드)이 포함되어 있어야 한다는 점이며, 이는 ClickStack UI에서 데이터 소스를 구성할 때 지정할 수 있습니다.
+    </Info>
+
+    다음 내용은 수집 파이프라인이 미리 구성되어 데이터를 전달하도록 설정된 Vector 인스턴스가 이미 실행 중이라고 가정합니다.
+
+    ### 데이터베이스와 테이블 생성
+
+    Vector는 데이터 수집 전에 테이블과 스키마가 미리 정의되어 있어야 합니다.
+
+    먼저 데이터베이스를 생성합니다. 이는 [ClickHouse Cloud 콘솔](/ko/products/cloud/features/sql-console-features/sql-console)에서 수행할 수 있습니다.
+
+    예를 들어, 로그용 데이터베이스를 생성합니다:
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS logs
+    ```
+
+    그런 다음 로그 데이터 구조에 맞는 스키마(schema)의 테이블을 생성하세요. 아래 예시는 전형적인 Nginx 액세스 로그 포맷을 가정합니다:
+
+    ```sql
+    CREATE TABLE logs.nginx_logs
+    (
+        `time_local` DateTime,
+        `remote_addr` IPv4,
+        `remote_user` LowCardinality(String),
+        `request` String,
+        `status` UInt16,
+        `body_bytes_sent` UInt64,
+        `http_referer` String,
+        `http_user_agent` String,
+        `http_x_forwarded_for` LowCardinality(String),
+        `request_time` Float32,
+        `upstream_response_time` Float32,
+        `http_host` String
+    )
+    ENGINE = MergeTree
+    ORDER BY (toStartOfMinute(time_local), status, remote_addr);
+    ```
+
+    테이블은 Vector가 생성하는 출력 스키마와 일치해야 합니다. 데이터에 맞게 필요에 따라 스키마를 조정하되, 권장되는 [스키마 모범 사례](/ko/concepts/best-practices/select-data-type)를 따르십시오.
+
+    ClickHouse에서 [기본 키](/ko/concepts/core-concepts/primary-indexes)가 어떻게 작동하는지 이해하고, 액세스 패턴에 따라 정렬 키를 선택할 것을 강력히 권장합니다. 기본 키 선택에 대해서는 [ClickStack 관련](/ko/clickstack/managing/performance-tuning#choosing-a-primary-key) 지침도 참조하십시오.
+
+    테이블을 생성한 후에는 표시된 구성 스니펫을 복사하십시오. 필요에 따라 기존 파이프라인을 사용하도록 입력 구성을 조정하고, 대상 테이블과 데이터베이스도 수정하십시오. 자격 증명은 미리 입력되어 있습니다.
+
+    <img src="/images/clickstack/getting-started/vector_config.webp" alt="" />
+
+    Vector를 사용해 데이터를 수집하는 추가 예시는 [&quot;Vector로 수집하기&quot;](/ko/clickstack/ingesting-data/vector)를 참조하고, 고급 옵션은 [Vector ClickHouse 싱크 문서](https://vector.dev/docs/reference/configuration/sinks/clickhouse/)를 확인하십시오.
+
+    <br />
+  </Tab>
+</Tabs>

@@ -1,0 +1,566 @@
+---
+slug: /use-cases/observability/clickstack/integrations/aws-cloudwatch-logs
+title: 'مراقبة CloudWatch Logs من AWS باستخدام ClickStack'
+sidebarTitle: 'CloudWatch Logs من AWS'
+description: 'مراقبة CloudWatch Logs من AWS باستخدام ClickStack'
+doc_type: 'guide'
+keywords: ['AWS', 'CloudWatch', 'OTEL', 'ClickStack', 'logs']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **باختصار**
+
+  أرسِل سجلات AWS CloudWatch إلى ClickStack باستخدام CloudWatch مستقبِل الخاص بـ OpenTelemetry Collector. يدعم مجموعات السجلات المُسمّاة والاكتشاف التلقائي. يتضمن مجموعة بيانات تجريبية ولوحة معلومات مُعدّة مسبقًا.
+</Info>
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+تُعد AWS CloudWatch خدمة مراقبة لموارد AWS وتطبيقاتها. ورغم أن CloudWatch يوفّر تجميع السجلات، فإن توجيه السجلات إلى ClickStack يتيح لك ما يلي:
+
+* تحليل السجلات إلى جانب المقاييس والتتبعات ضمن منصة موحّدة
+* الاستعلام عن السجلات باستخدام واجهة SQL في ClickHouse
+* خفض التكاليف من خلال أرشفة بيانات CloudWatch Logs أو تقليل مدة الاحتفاظ بها في CloudWatch
+
+يوضّح هذا الدليل كيفية توجيه سجلات CloudWatch إلى ClickStack باستخدام OpenTelemetry Collector.
+
+<div id="existing-cloudwatch">
+  ## التكامل مع مجموعات سجلات CloudWatch الحالية
+</div>
+
+يوضح هذا القسم كيفية تهيئة OpenTelemetry Collector لسحب السجلات من مجموعات سجلات CloudWatch الحالية لديك وتمريرها إلى ClickStack.
+
+إذا أردت اختبار هذا التكامل قبل تهيئة بيئة الإنتاج لديك، يمكنك استخدام مجموعة البيانات التجريبية الخاصة بنا في [قسم مجموعة البيانات التجريبية](#demo-dataset).
+
+<div id="prerequisites">
+  ### المتطلبات الأساسية
+</div>
+
+* مثيل ClickStack قيد التشغيل
+* حساب AWS يتضمن مجموعات سجلات CloudWatch
+* بيانات اعتماد AWS مع أذونات IAM المناسبة
+
+<Note>
+  بخلاف تكاملات السجلات المعتمدة على الملفات (nginx وRedis)، يتطلب CloudWatch تشغيل OpenTelemetry Collector منفصل يستقصي واجهة برمجة تطبيقات CloudWatch. ولا يمكن تشغيله داخل الصورة المتكاملة الخاصة بـ ClickStack، لأنه يحتاج إلى بيانات اعتماد AWS وإمكانية الوصول إلى واجهة برمجة تطبيقات.
+</Note>
+
+<Steps>
+  <Step>
+    #### الحصول على مفتاح API لـ ClickStack
+
+    يرسل OpenTelemetry Collector البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack، والتي تتطلب المصادقة.
+
+    1. افتح HyperDX على عنوان URL الخاص بـ ClickStack (على سبيل المثال، http://localhost:8080)
+    2. أنشئ حسابًا أو سجّل الدخول إذا لزم الأمر
+    3. انتقل إلى **إعدادات الفريق → مفاتيح API**
+    4. انسخ **مفتاح API للاستيعاب** الخاص بك
+
+    <Image img="/images/clickstack/api-key.webp" alt="مفتاح API لـ ClickStack" />
+
+    احفظ هذا في متغير بيئة:
+
+    ```bash
+    export CLICKSTACK_API_KEY="your-api-key-here"
+    ```
+  </Step>
+
+  <Step>
+    #### تهيئة بيانات اعتماد AWS
+
+    صدِّر بيانات اعتماد AWS كمتغيرات بيئة. وتعتمد الطريقة على نوع authentication المستخدم لديك:
+
+    **لمستخدمي AWS SSO (موصى به لمعظم organizations):**
+
+    ```bash
+    # Login to SSO
+    aws sso login --profile YOUR_PROFILE_NAME
+
+    # Export credentials to environment variables
+    eval $(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env)
+
+    # Verify credentials work
+    aws sts get-caller-identity
+    ```
+
+    استبدل `YOUR_PROFILE_NAME` باسم ملف تعريف AWS SSO لديك (على سبيل المثال، `AccountAdministrators-123456789`).
+
+    **لمستخدمي IAM الذين لديهم بيانات اعتماد طويلة الأجل:**
+
+    ```bash
+    export AWS_ACCESS_KEY_ID="your-access-key-id"
+    export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
+    export AWS_REGION="us-east-1"
+
+    # Verify credentials work
+    aws sts get-caller-identity
+    ```
+
+    **أذونات IAM المطلوبة:**
+
+    يحتاج حساب AWS المرتبط ببيانات الاعتماد هذه إلى سياسة IAM التالية لقراءة السجلات من CloudWatch Logs:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "CloudWatchLogsRead",
+          "Effect": "Allow",
+          "Action": [
+            "logs:DescribeLogGroups",
+            "logs:FilterLogEvents"
+          ],
+          "Resource": "arn:aws:logs:*:YOUR_ACCOUNT_ID:log-group:*"
+        }
+      ]
+    }
+    ```
+
+    استبدل `YOUR_ACCOUNT_ID` بمعرّف حساب AWS لديك.
+  </Step>
+
+  <Step>
+    #### تهيئة مستقبِل CloudWatch
+
+    أنشئ ملف `otel-collector-config.yaml` يتضمن تهيئة مستقبِل CloudWatch.
+
+    <Accordion title="اكتشاف مجموعات السجلات المتاحة في حسابك">
+      قبل تعديل الإعداد، اعرض مجموعات السجلات الموجودة في منطقتك حتى تتمكن من اختيار أسماء فعلية (والتأكد من أن المنطقة صحيحة):
+
+      ```bash
+      aws logs describe-log-groups --region us-east-1 \
+        --query 'logGroups[].logGroupName' --output table
+      ```
+
+      مثال على المخرجات:
+
+      ```text
+      -------------------------------
+      |      DescribeLogGroups      |
+      +-----------------------------+
+      |  /aws-glue/jobs/error       |
+      |  /aws-glue/jobs/logs-v2     |
+      |  /aws-glue/jobs/output      |
+      |  /aws-glue/sessions/error   |
+      |  /aws-glue/sessions/output  |
+      +-----------------------------+
+      ```
+
+      استخدم الأسماء الواردة في هذه القائمة مباشرةً في كتلة `groups.named` ضمن المثال 1 أدناه. بالنسبة إلى الحساب أعلاه، سيصبح قسم `named-groups` كما يلي:
+
+      ```yaml
+      groups:
+        named:
+          /aws-glue/jobs/error:
+          /aws-glue/jobs/logs-v2:
+          /aws-glue/jobs/output:
+          /aws-glue/sessions/error:
+          /aws-glue/sessions/output:
+      ```
+
+      بدلاً من ذلك، إذا كانت المجموعات التي تريدها تشترك في بادئة واحدة (هنا `/aws-glue/`)، فاستخدم المثال 2 مع `prefix: /aws-glue/` بدلاً من إدراجها بشكل فردي.
+    </Accordion>
+
+    **المثال 1: مجموعات سجلات محددة بالاسم (مُوصى به)**
+
+    تجمع هذه التهيئة السجلات من مجموعات سجلات محددة بالاسم:
+
+    ```yaml
+    receivers:
+      awscloudwatch:
+        region: us-east-1
+        logs:
+          poll_interval: 1m
+          max_events_per_request: 100
+          groups:
+            named:
+              /aws/lambda/my-function:
+              /aws/ecs/my-service:
+              /aws/eks/my-cluster/cluster:
+
+    processors:
+      batch:
+        timeout: 10s
+
+    exporters:
+      otlphttp:
+        endpoint: http://localhost:4318
+        headers:
+          authorization: ${CLICKSTACK_API_KEY}
+
+    service:
+      pipelines:
+        logs:
+          receivers: [awscloudwatch]
+          processors: [batch]
+          exporters: [otlphttp]
+    ```
+
+    **مثال 2: الاكتشاف التلقائي لمجموعات السجلات ذات البادئة**
+
+    تكتشف هذه التهيئة تلقائيًا ما يصل إلى 100 مجموعة سجلات تبدأ بالبادئة `/aws/lambda`، وتجمع السجلات منها:
+
+    ```yaml
+    receivers:
+      awscloudwatch:
+        region: us-east-1
+        logs:
+          poll_interval: 1m
+          max_events_per_request: 100
+          groups:
+            autodiscover:
+              limit: 100
+              prefix: /aws/lambda
+
+    processors:
+      batch:
+        timeout: 10s
+
+    exporters:
+      otlphttp:
+        endpoint: http://localhost:4318
+        headers:
+          authorization: ${CLICKSTACK_API_KEY}
+
+    service:
+      pipelines:
+        logs:
+          receivers: [awscloudwatch]
+          processors: [batch]
+          exporters: [otlphttp]
+    ```
+
+    **معلمات التهيئة:**
+
+    * `region`: منطقة AWS التي توجد فيها مجموعات السجلات
+    * `poll_interval`: عدد مرات التحقق من السجلات الجديدة (على سبيل المثال، `1m`، `5m`)
+    * `max_events_per_request`: الحد الأقصى لعدد أحداث السجل التي يمكن جلبها في كل طلب
+    * `groups.autodiscover.limit`: الحد الأقصى لعدد مجموعات السجلات التي يمكن اكتشافها
+    * `groups.autodiscover.prefix`: تصفية مجموعات السجلات حسب البادئة
+    * `groups.named`: إدراج أسماء مجموعات السجلات المطلوب جمعها صراحةً
+
+    للاطلاع على مزيد من خيارات التهيئة، راجع [وثائق CloudWatch receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver).
+
+    **استبدل ما يلي:**
+
+    * `${CLICKSTACK_API_KEY}` → يستخدم متغير البيئة الذي عيّنته سابقًا
+    * `http://localhost:4318` → نقطة نهاية ClickStack الخاصة بك (استخدم مضيف ClickStack إذا كنت تشغّله عن بُعد)
+    * `us-east-1` → منطقة AWS الخاصة بك
+    * أسماء/بادئات مجموعات السجلات → مجموعات سجلات CloudWatch الفعلية لديك
+
+    <Note>
+      لا يجلب CloudWatch receiver سوى السجلات من نوافذ زمنية حديثة (استنادًا إلى `poll_interval`). وعند تشغيله لأول مرة، يبدأ من الوقت الحالي. ولا تُسترجع السجلات التاريخية افتراضيًا.
+    </Note>
+  </Step>
+
+  <Step>
+    #### ابدأ تشغيل المُجمِّع
+
+    أنشئ ملف `docker-compose.yaml`:
+
+    ```yaml
+    services:
+      otel-collector:
+        image: otel/opentelemetry-collector-contrib:latest
+        command: ["--config=/etc/otel-config.yaml"]
+        volumes:
+          - ./otel-collector-config.yaml:/etc/otel-config.yaml
+        environment:
+          - AWS_ACCESS_KEY_ID
+          - AWS_SECRET_ACCESS_KEY
+          - AWS_SESSION_TOKEN
+          - AWS_REGION
+          - CLICKSTACK_API_KEY
+        restart: unless-stopped
+        extra_hosts:
+          - "host.docker.internal:host-gateway"
+    ```
+
+    ثم شغّل المجمِّع:
+
+    ```bash
+    docker compose up -d
+    ```
+
+    اعرض سجلات المجمِّع:
+
+    ```bash
+    docker compose logs -f otel-collector
+    ```
+  </Step>
+
+  <Step>
+    #### تحقّق من السجلات في HyperDX
+
+    بمجرد تشغيل الـ collector:
+
+    1. افتح HyperDX على http://localhost:8080 (أو على عنوان URL الخاص بـ ClickStack)
+    2. انتقل إلى عرض **السجلات**
+    3. انتظر دقيقة إلى دقيقتين حتى تظهر السجلات (بحسب فترة الاستطلاع لديك)
+    4. ابحث عن السجلات القادمة من مجموعات سجلات CloudWatch الخاصة بك
+
+    <Image img="/images/clickstack/cloudwatch/log-search-view.webp" alt="عرض البحث في السجلات" />
+
+    ابحث عن هذه السمات الأساسية في السجلات:
+
+    * `ResourceAttributes['aws.region']`: منطقة AWS الخاصة بك (على سبيل المثال: &quot;us-east-1&quot;)
+    * `ResourceAttributes['cloudwatch.log.group.name']`: اسم مجموعة سجلات CloudWatch
+    * `ResourceAttributes['cloudwatch.log.stream']`: اسم دفق السجل
+    * `Body`: المحتوى الفعلي لرسالة السجل
+
+    <Image img="/images/clickstack/cloudwatch/error-log-column-values.webp" alt="قيم عمود سجل الخطأ" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## مجموعة البيانات التجريبية
+</div>
+
+للمستخدمين الذين يرغبون في اختبار تكامل سجلات CloudWatch قبل تهيئة بيئة AWS الإنتاجية، نوفر مجموعة بيانات تجريبية تحتوي على سجلات مُولَّدة مسبقًا تعرض أنماطًا واقعية من عدة خدمات AWS.
+
+<Steps>
+  <Step>
+    #### تنزيل مجموعة البيانات التجريبية
+
+    ```bash
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/aws/cloudwatch/cloudwatch-logs.jsonl
+    ```
+
+    تتضمن مجموعة البيانات 24 ساعة من سجلات CloudWatch من عدة خدمات:
+
+    * **وظائف Lambda**: معالجة المدفوعات، وإدارة الطلبات، والمصادقة
+    * **خدمات ECS**: بوابة واجهة برمجة تطبيقات مع تحديد المعدل ومهلات
+    * **المهام الخلفية**: معالجة على دفعات مع أنماط إعادة المحاولة
+  </Step>
+
+  <Step>
+    #### تشغيل ClickStack
+
+    إذا لم يكن ClickStack قيد التشغيل بالفعل:
+
+    ```bash
+    docker run -d --name clickstack \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    انتظر بضع لحظات حتى يكتمل تشغيل ClickStack بالكامل.
+  </Step>
+
+  <Step>
+    #### استيراد مجموعة البيانات التجريبية
+
+    ```bash
+    docker exec -i clickstack clickhouse-client --query="
+      INSERT INTO default.otel_logs FORMAT JSONEachRow
+    " < cloudwatch-logs.jsonl
+    ```
+
+    يؤدي هذا إلى استيراد السجلات مباشرةً إلى جدول السجلات في ClickStack.
+  </Step>
+
+  <Step>
+    #### التحقق من البيانات التجريبية
+
+    بعد الاستيراد:
+
+    1. افتح HyperDX على http://localhost:8080 وسجّل الدخول (أنشئ حسابًا إذا لزم الأمر)
+    2. انتقل إلى عرض **Logs**
+    3. اضبط النطاق الزمني على **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)**
+    4. ابحث عن `cloudwatch-demo` أو رشّح باستخدام `LogAttributes['source'] = 'cloudwatch-demo'`
+
+    من المفترض أن ترى سجلات من عدة مجموعات سجلات CloudWatch.
+
+    <Image img="/images/clickstack/cloudwatch/demo-search-view.webp" alt="عرض البحث التجريبي" />
+
+    <Info>
+      **عرض المنطقة الزمنية**
+
+      يعرض HyperDX الطوابع الزمنية وفقًا للمنطقة الزمنية المحلية في متصفحك. تمتد البيانات التجريبية عبر **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)**. اضبط النطاق الزمني على **2025-12-06 00:00:00 - 2025-12-09 00:00:00** لضمان ظهور السجلات التجريبية بغض النظر عن موقعك. بعد ظهور السجلات، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أوضح.
+    </Info>
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## لوحات المعلومات والتصورات
+</div>
+
+لمساعدتك في مراقبة سجلات CloudWatch باستخدام ClickStack، نوفر لوحة معلومات مُعدّة مسبقًا تتضمن التصورات الأساسية.
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">نزّل</TrackedLink> ملف إعدادات لوحة المعلومات
+  </Step>
+
+  <Step>
+    #### استورد لوحة المعلومات
+
+    1. افتح HyperDX وانتقل إلى قسم لوحات المعلومات
+    2. انقر على **استيراد لوحة المعلومات** في الزاوية العلوية اليمنى من قائمة النقاط الثلاث
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="زر استيراد لوحة المعلومات" />
+
+    3. ارفع الملف `cloudwatch-logs-dashboard.json` ثم انقر على **إنهاء الاستيراد**
+
+    <Image img="/images/clickstack/cloudwatch/finish-import.webp" alt="مربع حوار إنهاء الاستيراد" />
+  </Step>
+
+  <Step>
+    #### اعرض لوحة المعلومات
+
+    ستُنشأ لوحة المعلومات مع ضبط جميع التصورات مسبقًا:
+
+    <Image img="/images/clickstack/cloudwatch/logs-dashboard.webp" alt="لوحة معلومات CloudWatch Logs" />
+
+    <Note>
+      بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني على **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)** (مع تعديله بحسب منطقتك الزمنية المحلية). لن تتضمن لوحة المعلومات المستوردة نطاقًا زمنيًا محددًا افتراضيًا.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## استكشاف الأخطاء وإصلاحها
+</div>
+
+<div id="no-logs">
+  ### عدم ظهور أي سجلات في HyperDX
+</div>
+
+**تحقق من تهيئة بيانات اعتماد AWS:**
+
+```bash
+aws sts get-caller-identity
+```
+
+إذا تعذّر ذلك، فبيانات الاعتماد لديك غير صالحة أو انتهت صلاحيتها.
+
+**تحقق من أذونات IAM:**
+تأكد من أن بيانات اعتماد AWS لديك تتضمن أذونات `logs:DescribeLogGroups` و`logs:FilterLogEvents` المطلوبة.
+
+**تحقق من سجلات الـ مجمِّع بحثًا عن أخطاء:**
+
+```bash
+# If using Docker directly, logs appear in stdout
+# If using Docker Compose:
+docker compose logs otel-collector
+```
+
+الأخطاء الشائعة:
+
+* `The security token included in the request is invalid`: بيانات الاعتماد غير صالحة أو منتهية الصلاحية. إذا كنت تستخدم بيانات اعتماد مؤقتة (SSO)، فتأكد من تعيين `AWS_SESSION_TOKEN`.
+* `operation error CloudWatch Logs: FilterLogEvents, AccessDeniedException`: أذونات IAM غير كافية
+* `failed to refresh cached credentials, no EC2 IMDS role found`: متغيرات بيئة بيانات اعتماد AWS غير مضبوطة
+* `connection refused`: يتعذر الوصول إلى endpoint الخاص بـ ClickStack
+
+**تحقق من وجود مجموعات سجلات CloudWatch وأنها تحتوي على logs حديثة:**
+
+```bash
+# List your log groups
+aws logs describe-log-groups --region us-east-1
+
+# Check if a specific log group has recent logs (last hour)
+aws logs filter-log-events \
+  --log-group-name /aws/lambda/my-function \
+  --region us-east-1 \
+  --start-time $(date -u -v-1H +%s)000 \
+  --max-items 5
+```
+
+<div id="missing-recent">
+  ### لا تظهر إلا السجلات القديمة أو لا تظهر السجلات الحديثة
+</div>
+
+**يبدأ مستقبِل CloudWatch من &quot;الآن&quot; افتراضيًا:**
+
+عند بدء تشغيل المُجمِّع لأول مرة، ينشئ نقطة تحقّق عند الوقت الحالي ولا يجلب إلا السجلات التي تلي تلك النقطة. ولا تُسترجع السجلات التاريخية.
+
+**لجمع السجلات التاريخية الحديثة:**
+
+أوقِف المُجمِّع واحذف نقطة التحقّق الخاصة به، ثم أعد تشغيله:
+
+```bash
+# Stop the collector
+docker stop <container-id>
+
+# Restart fresh (checkpoints are stored in container, so removing it resets)
+docker run --rm ...
+```
+
+سيُنشئ المستقبِل نقطة تحقّق جديدة، ثم يبدأ بجلب السجلات من الوقت الحالي فصاعدًا.
+
+<div id="expired-credentials">
+  ### رمز الأمان غير صالح / انتهت صلاحية بيانات الاعتماد
+</div>
+
+إذا كنت تستخدم بيانات اعتماد مؤقتة (AWS SSO أو دورًا مفترضًا)، فستنتهي صلاحيتها بعد مدة من الزمن.
+
+**أعِد تصدير بيانات اعتماد محدَّثة:**
+
+```bash
+# For SSO users:
+aws sso login --profile YOUR_PROFILE_NAME
+eval $(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env)
+
+# For IAM users:
+export AWS_ACCESS_KEY_ID="your-key"
+export AWS_SECRET_ACCESS_KEY="your-secret"
+
+# Restart the collector
+docker restart <container-id>
+```
+
+<div id="latency">
+  ### ارتفاع زمن الكمون أو فقدان السجلات الحديثة
+</div>
+
+**قلّل فاصل الاستقصاء:**
+القيمة الافتراضية لـ `poll_interval` هي دقيقة واحدة. للحصول على سجلات شبه فورية، قلّله:
+
+```yaml
+logs:
+  poll_interval: 30s  # Poll every 30 seconds
+```
+
+**ملاحظة:** تؤدي الفواصل الزمنية الأقصر بين عمليات الاستقصاء إلى زيادة عدد استدعاءات واجهة برمجة تطبيقات AWS، وقد تترتب عليها تكاليف أعلى لواجهة برمجة تطبيقات CloudWatch.
+
+<div id="memory">
+  ### يستهلك المجمِّع ذاكرةً كبيرة جدًا
+</div>
+
+**قلّل حجم الدفعة أو زِد المهلة:**
+
+```yaml
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 100
+```
+
+**تقييد الاكتشاف التلقائي:**
+
+```yaml
+groups:
+  autodiscover:
+    limit: 50  # Reduce from 100 to 50
+```
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* قم بإعداد [التنبيهات](/ar/clickstack/features/alerts) للأحداث الحرجة (إخفاقات الاتصال وازدياد الأخطاء)
+* خفّض تكاليف CloudWatch عبر ضبط فترات الاحتفاظ أو الأرشفة إلى S3، بعد أن أصبحت السجلات لديك في ClickStack
+* رشّح مجموعات السجلات كثيرة الضوضاء بإزالتها من إعدادات المجمّع لتقليل حجم الإدخال
+
+<div id="going-to-production">
+  ## الانتقال إلى بيئة الإنتاج
+</div>
+
+يوضح هذا الدليل كيفية تشغيل OpenTelemetry Collector محليًا باستخدام Docker Compose لأغراض الاختبار. أما في عمليات النشر في بيئة الإنتاج، فشغّل المجمِّع على بنية تحتية لديها وصول إلى AWS ‏(EC2 مع أدوار IAM، أو EKS مع IRSA، أو ECS مع أدوار المهام) لتجنّب الحاجة إلى إدارة مفاتيح الوصول. انشر المجمِّعات في منطقة AWS نفسها التي توجد فيها مجموعات سجلات CloudWatch لتقليل زمن الاستجابة والتكاليف.
+
+راجع [إدخال البيانات باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على أنماط النشر في بيئة الإنتاج وأمثلة على تهيئة المجمِّع.

@@ -1,0 +1,983 @@
+---
+slug: /use-cases/observability/clickstack/performance_tuning
+title: 'ClickStack - パフォーマンスチューニング'
+sidebarTitle: 'パフォーマンスチューニング'
+description: 'ClickStack のパフォーマンスチューニング - ClickHouse オブザーバビリティスタック'
+doc_type: 'guide'
+keywords: ['clickstack', 'オブザーバビリティ', 'ログ', 'パフォーマンス', '最適化']
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+import OtelLogsSchema from '/snippets/ja/clickstack/_schema_otel_logs.mdx';
+import OtelTracesSchema from '/snippets/ja/clickstack/_schema_otel_traces.mdx';
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="introduction">
+  ## はじめに
+</div>
+
+このガイドでは、ClickStack における最も一般的で効果的なパフォーマンス最適化に焦点を当てます。これらは、実環境における大半のオブザーバビリティ ワークロードを最適化するのに十分であり、通常は 1 日あたり数十テラバイト規模までのデータ量に対応できます。
+
+最適化は、最も簡単で効果の大きい手法から始めて、より高度で専門的なチューニングへ進むよう、意図した順序で紹介しています。まずは前半の最適化から適用してください。それだけでも大幅な改善が得られることがよくあります。データ量が増え、ワークロードの要求が厳しくなるにつれて、後半の手法を検討する価値はますます高まります。
+
+<div id="clickhouse-concepts">
+  ## ClickHouse の概念
+</div>
+
+このガイドで説明する最適化を適用する前に、ClickHouse のいくつかの基本的な概念を理解しておくことが重要です。
+
+ClickStack では、各**データソースは 1 つ以上の ClickHouse テーブルに直接対応**します。OpenTelemetry を使用している場合、ClickStack は logs、traces、metrics データを格納する一連のデフォルトテーブルを作成し、管理します。カスタムスキーマを使用していたり、独自のテーブルを管理していたりする場合は、これらの概念にすでに馴染みがあるかもしれません。一方、単に OpenTelemetry Collector 経由でデータを送信しているだけであれば、これらのテーブルは自動的に作成され、以下で説明するすべての最適化はこれらのテーブルに対して適用されます。
+
+| Data type                        | Table                                                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Logs                             | [otel&#95;logs](/ja/clickstack/ingesting-data/schemas#logs)                                               |
+| Traces                           | [otel&#95;traces](/ja/clickstack/ingesting-data/schemas#traces)                                           |
+| Metrics (gauges)                 | [otel&#95;metrics&#95;gauge](/ja/clickstack/ingesting-data/schemas#gauge)                                 |
+| Metrics (sums)                   | [otel&#95;metrics&#95;sum](/ja/clickstack/ingesting-data/schemas#sum)                                     |
+| Metrics (histogram)              | [otel&#95;metrics&#95;histogram](/ja/clickstack/ingesting-data/schemas#histogram)                         |
+| Metrics (Exponential histograms) | [otel&#95;metrics&#95;exponentialhistogram](/ja/clickstack/ingesting-data/schemas#exponential-histograms) |
+| Metrics (summary)                | [otel&#95;metrics&#95;summary](/ja/clickstack/ingesting-data/schemas#summary-table)                       |
+| Sessions                         | [hyperdx&#95;sessions](/ja/clickstack/ingesting-data/schemas#sessions)                                    |
+
+ClickHouse では、テーブルは[データベース](/ja/reference/statements/create/database)に属します。デフォルトでは `default` データベースが使用されますが、これは [OpenTelemetry collector で変更できます](/ja/clickstack/managing/config#otel-collector)。
+
+<Warning>
+  **logs と traces に注目**
+
+  ほとんどの場合、パフォーマンスチューニングの対象となるのは logs テーブルと traces テーブルです。metrics テーブルもフィルタリング向けに最適化できますが、そのスキーマは Prometheus スタイルのワークロード向けに意図的に設計されており、通常は標準的なチャート表示のために変更する必要はありません。一方、logs と traces はより幅広いアクセスパターンをサポートするため、チューニングの効果が最も得られやすい対象です。session データはユーザー体験が固定されているため、スキーマを変更する必要はほとんどありません。
+</Warning>
+
+最低限、次の ClickHouse の基本事項を理解しておく必要があります。
+
+| Concept                     | Description                                                                                                                                                       |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Tables**                  | ClickStack のデータソースが、基盤となる ClickHouse テーブルにどのように対応しているか。ClickHouse のテーブルでは主に [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) エンジンが使用されます。 |
+| **Parts**                   | データが不変のパーツとしてどのように書き込まれ、時間の経過とともにどのようにマージされるか。                                                                                                                    |
+| **Partitions**              | パーティションは、テーブルのデータパーツを整理された論理単位にグループ化します。これにより、管理、クエリ、最適化がしやすくなります。                                                                                                |
+| **Merges**                  | クエリ対象となるパーツ数を減らすために、パーツ同士をマージする内部プロセス。クエリ性能を維持するうえで不可欠です。                                                                                                         |
+| **グラニュール**                | ClickHouse がクエリ実行時に読み取りや pruning を行う最小のデータ単位。                                                                                                                     |
+| **Primary (ordering) keys** | `ORDER BY` キーが、ディスク上のデータ配置、圧縮、クエリ pruning にどのように影響するか。                                                                                                            |
+
+これらの概念は、ClickHouse のパフォーマンスの中核を成します。データがどのように書き込まれるか、ディスク上でどのように構成されるか、そしてクエリ時に ClickHouse がどれだけ効率的に不要なデータの読み取りをスキップできるかは、これらによって決まります。このガイドで扱うあらゆる最適化、たとえば マテリアライズドカラム、スキップ索引、主キー、projections、materialized view は、こうした基本的な仕組みの上に成り立っています。
+
+チューニングを始める前に、以下の ClickHouse ドキュメントを確認しておくことをお勧めします。
+
+* [ClickHouse でのテーブル作成](/ja/get-started/quickstarts/creating-tables) - テーブルの簡単な入門です。
+* [Parts](/ja/concepts/core-concepts/parts)
+* [Partitions](/ja/concepts/core-concepts/partitions)
+* [Merges](/ja/concepts/core-concepts/merges)
+* [主キー/索引](/ja/concepts/core-concepts/primary-indexes)
+* [ClickHouse がデータを保存する方法: parts と グラニュール](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes) - ClickHouse でデータがどのように構成され、どのようにクエリされるかを詳しく説明した、より高度なガイドです。グラニュール と主キーも詳しく扱っています。
+* [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree)- コマンドや内部仕様の理解に役立つ高度な MergeTree リファレンスガイドです。
+
+以下で説明する最適化はすべて、標準のClickHouse SQLを使って、[ClickHouse Cloud SQL Console](/ja/integrations/connectors/sql-clients/sql-console)または [clickhouse client](/ja/concepts/features/interfaces/cli) から基になるテーブルに直接適用できます。
+
+<div id="materialize-frequently-queried-attributes">
+  ## 最適化 1. 頻繁にクエリされる属性をマテリアライズする
+</div>
+
+ClickStack ユーザーにとって、最初に行うべき最もシンプルな最適化は、`LogAttributes`、`ScopeAttributes`、`ResourceAttributes` 内で頻繁にクエリされる属性を特定し、マテリアライズドカラムを使ってそれらをトップレベルのカラムに昇格させることです。
+
+この最適化だけでも、ClickStack のデプロイメントを 1 日あたり数十テラバイト規模までスケールさせるのに十分な場合が多く、より高度なチューニング手法を検討する前に適用すべきです。
+
+<div id="why-materialize-attributes">
+  ### 属性をマテリアライズする理由
+</div>
+
+ClickStack は、Kubernetes のラベル、サービスのメタデータ、カスタム属性などのメタデータを `Map(String, String)` カラムに格納します。これは柔軟性が高い一方で、マップのサブキーをクエリする際にはパフォーマンス上の重要な影響があります。
+
+Map カラムから単一のキーをクエリする場合、ClickHouse はディスクからマップカラム全体を読み込む必要があります。マップに多数のキーが含まれていると、専用のカラムを読み込む場合に比べて不要な IO が発生し、クエリも遅くなります。
+
+頻繁にアクセスされる属性をマテリアライズすると、挿入時に値を抽出して独立したカラムとして保存できるため、このオーバーヘッドを回避できます。
+
+マテリアライズドカラムの特長:
+
+* 挿入時に自動的に計算される
+* INSERT ステートメントで明示的に設定できない
+* 任意の ClickHouse 式をサポートする
+* String から、より効率的な数値型や日付型へ型変換できる
+* スキップ索引と主キーを利用できる
+* マップ全体へのアクセスを避けることでディスク読み取りを削減できる
+
+<Note>
+  ClickStack は、マップから抽出されたマテリアライズドカラムを自動的に検出し、ユーザーが元の属性パスを引き続きクエリしている場合でも、クエリ実行時に透過的にそれらを使用します。
+</Note>
+
+<div id="materialize-column-example">
+  ### 例
+</div>
+
+Kubernetes のメタデータが `ResourceAttributes` に格納される、トレース向けのデフォルトの ClickStack スキーマを見てみましょう。
+
+<OtelTracesSchema />
+
+ユーザーは、Lucene構文を使ってトレースを絞り込めます。たとえば、`ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"` のように指定します。
+
+<Image img="/images/clickstack/performance_guide/trace_filtering.webp" size="lg" alt="トレースのフィルタリング" />
+
+その結果、次のようなSQL述語になります。
+
+```sql
+ResourceAttributes['k8s.pod.name'] = 'checkout-675775c4cc-f2p9c'
+```
+
+これは Map のキーにアクセスするため、ClickHouse は一致した各行について `ResourceAttributes` カラム全体を読み取る必要があります。Map に多くのキーが含まれている場合、このカラムは非常に大きくなる可能性があります。
+
+この属性を頻繁にクエリする場合は、トップレベルのカラムとしてマテリアライズする必要があります。
+
+挿入時にポッド名を抽出するには、マテリアライズドカラムを追加します:
+
+```sql
+ALTER TABLE otel_v2.otel_traces
+ADD COLUMN PodName String
+MATERIALIZED ResourceAttributes['k8s.pod.name']
+```
+
+この時点以降、**新しい**データでは、ポッド名が専用のカラム `PodName` として保存されます。
+
+これにより、ユーザーは Lucene 構文を使ってポッド名を効率よくクエリできるようになります。たとえば `PodName:"checkout-675775c4cc-f2p9c"` のように指定できます。
+
+<Image img="/images/clickstack/performance_guide/trace_filtering_v2.webp" size="lg" alt="トレースのフィルタリング v2" />
+
+新たに挿入されるデータでは、これにより map へのアクセスが不要になり、I/O も大幅に削減されます。
+
+ただし、ユーザーが元の属性パス、たとえば `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"` を使って引き続きクエリする場合でも、**ClickStack はクエリを内部で自動的に書き換え**、マテリアライズされた `PodName` カラムを使用します。つまり、次の述語が使われます:
+
+```sql
+PodName = 'checkout-675775c4cc-f2p9c'
+```
+
+これにより、ダッシュボード、アラート、保存クエリを変更しなくても、ユーザーはこの最適化の恩恵を受けられます。
+
+<Note>
+  デフォルトでは、マテリアライズドカラムは `SELECT * queries` には含まれません。これにより、クエリ結果を常にそのテーブルに再挿入できるという不変条件が保たれます。
+</Note>
+
+<div id="materializing-historical-data">
+  ### 過去データのマテリアライズ
+</div>
+
+マテリアライズドカラムが自動的に適用されるのは、そのカラムの作成後に挿入されたデータだけです。既存データについては、マテリアライズドカラムに対するクエリは透過的に元の Map の読み取りにフォールバックします。
+
+過去データのパフォーマンスが重要な場合は、ミューテーションを使ってカラムをバックフィルできます。例:
+
+```sql
+ALTER TABLE otel_v2.otel_traces
+MATERIALIZE COLUMN PodName
+```
+
+これにより、既存の[パーツ](/ja/concepts/core-concepts/parts)が書き換えられ、カラムに値が設定されます。ミューテーションはパーツごとに単一スレッドで実行されるため、大規模なデータセットでは完了までに時間がかかることがあります。影響を抑えるため、ミューテーションの対象を特定のパーティションに限定できます:
+
+```sql
+ALTER TABLE otel_v2.otel_traces
+MATERIALIZE COLUMN PodName
+IN PARTITION '2026-01-02'
+```
+
+ミューテーションの進行状況は、たとえば `system.mutations` テーブルで確認できます。
+
+```sql
+SELECT *
+FROM system.mutations
+WHERE database = 'otel'
+  AND table = 'otel_traces'
+ORDER BY create_time DESC;
+```
+
+対応するミューテーションの `is_done = 1` になるまで待機します。
+
+<Warning>
+  ミューテーションでは追加の IO と CPU オーバーヘッドが発生するため、使用は必要最小限にとどめるべきです。多くの場合、古いデータは自然に期限切れになるままにしておき、新しく取り込まれたデータで得られるパフォーマンス向上を利用するだけで十分です。
+</Warning>
+
+<div id="adding-skip-indexes">
+  ## 最適化 2. スキップ索引の追加
+</div>
+
+頻繁にクエリされる属性をマテリアライズしたら、次の最適化として、クエリ実行時に ClickHouse が読み込むデータ量をさらに減らすためにデータスキッピングインデックスを追加します。
+
+スキップ索引を使うと、一致する値が存在しないと判断できる場合に、ClickHouse はデータブロック全体のスキャンを回避できます。従来のセカンダリ索引とは異なり、スキップ索引は グラニュール レベルで機能し、クエリフィルターによってデータセットの大部分が除外される場合に特に効果を発揮します。適切に使えば、クエリの意味を変えることなく、カーディナリティの高い属性に対するフィルタリングを大幅に高速化できます。
+
+スキップ索引を含む ClickStack のデフォルトの traces スキーマを見てみましょう。
+
+<OtelTracesSchema />
+
+これらの索引は、よくある次の 3 つのパターンに対応しています。
+
+* TraceId、セッション識別子、attribute キー、値など、カーディナリティの高い文字列のフィルタリング
+* [`*AttributeItems`](#map-direct-read-optimization) カラムの [テキスト索引](#text-indexes) によって高速化される Map サブキーのフィルタリング
+* スパンの所要時間など、数値範囲のフィルタリング
+
+logs テーブルでは、ブルームフィルタの代わりに一貫して `text(tokenizer = 'array')` 索引を使用し、さらに全文検索用に `lower(Body)` に `text(tokenizer = 'splitByNonAlpha')` 索引を追加しています。完全な DDL については、[&quot;ClickStack で使用されるテーブルとスキーマ&quot;](/ja/clickstack/ingesting-data/schemas#logs) を参照してください。
+
+<div id="bloom-filters">
+  ### ブルームフィルタ
+</div>
+
+ブルームフィルタ索引は、ClickStack で最もよく使われるスキップ索引タイプです。高いカーディナリティを持つ文字列カラムに適しており、一般的には少なくとも数万件の異なる値がある場合に有効です。偽陽性率 0.01、グラニュラリティ 1 は、ストレージオーバーヘッドと効果的な絞り込みのバランスが取れた、適切なデフォルトの出発点です。
+
+Optimization 1 の例を続けると、Kubernetes のポッド名が ResourceAttributes からマテリアライズされているとします:
+
+```sql
+ALTER TABLE otel_traces
+ADD COLUMN PodName String
+MATERIALIZED ResourceAttributes['k8s.pod.name']
+```
+
+次に、このカラムに対するフィルタを高速化するために、ブルームフィルタのスキップ索引を追加できます。
+
+```sql
+ALTER TABLE otel_traces
+ADD INDEX idx_pod_name PodName
+TYPE bloom_filter(0.01)
+GRANULARITY 1
+```
+
+追加したら、スキップ索引は実体化する必要があります。詳細は[&quot;スキップ索引を実体化する&quot;](#materialize-skip-index)を参照してください。
+
+作成して実体化すると、ClickHouse は要求されたポッド名を含まないことが確実なグラニュール全体をスキップできるようになり、`PodName:"checkout-675775c4cc-f2p9c"` のようなクエリで読み取るデータ量を削減できる可能性があります。
+
+ブルームフィルタが最も効果を発揮するのは、特定の値が比較的少数のパーツにしか現れないような値の分布になっている場合です。これは、ポッド名、トレースID、セッション識別子のようなメタデータが時間と相関し、その結果、テーブルの順序キーに沿ってクラスター化されるオブザーバビリティのワークロードで自然によく見られます。
+
+すべてのスキップ索引と同様に、ブルームフィルタも選択的に追加し、実際のクエリパターンに対して検証して、測定可能な効果が得られることを確認する必要があります。詳細は[&quot;スキップ索引の有効性を評価する&quot;](#evaluating-skip-index-effectiveness)を参照してください。
+
+<div id="text-indexes">
+  ### テキスト索引
+</div>
+
+[テキスト索引](/ja/reference/engines/table-engines/mergetree-family/textindexes)は、ブルームフィルタに代わる選択肢です。ブルームフィルタは、グラニュールを確実に除外できる確率的な構造ですが、偽陽性率があるため、除外されなかったグラニュールは引き続き読み込んで `WHERE` 条件に照らして評価する必要があります。テキスト索引は、トークンをパーツ内の正確なオフセットに対応付ける転置索引です。グラニュールではなくオフセットを評価し、偽陽性も発生しないため、通常は基になるカラムを読み込まずに `WHERE` 条件を満たすかどうかを判断できます。これは [direct read](https://github.com/ClickHouse/clickhouse-docs/pull/6356/%E2%80%A6) と呼ばれる最適化です。データの読み込みは多くの場合、クエリ時間の最大の要因となるため、direct read によってクエリのレイテンシを大きく減らせます。
+
+さらに、テキスト索引自体もクエリ可能で、ClickStack のオートコンプリートやその他のイントロスペクションを支えています。
+
+ほとんどの ClickStack のパターンは、次の 2 つのトークナイザーでカバーできます。
+
+| トークナイザー           | 用途                                   | 代表的なカラム                           |
+| ----------------- | ------------------------------------ | --------------------------------- |
+| `array`           | `Array(String)` の要素をトークン全体として索引化する場合 | `mapKeys(...)`, `*AttributeItems` |
+| `splitByNonAlpha` | 自然文の String に対する単語レベルの全文検索           | `Body`, `lower(Body)`, `SpanName` |
+
+<div id="array-tokenizer">
+  #### Map と Array カラム向けの Array トークナイザー
+</div>
+
+デフォルトのログ用スキーマでは、`array` トークナイザーを使って `mapKeys` とマテリアライズされた item の配列に索引を作成します:
+
+```sql
+INDEX idx_log_attr_key mapKeys(LogAttributes) TYPE text(tokenizer = 'array'),
+INDEX idx_log_attr_items LogAttributeItems TYPE text(tokenizer = 'array')
+```
+
+各 Map の key (または配列要素) は、それぞれ 1 つのトークンになります。既知の
+属性キーでフィルタリングすると、それを含まない行を、該当する
+Map カラム全体をスキャンすることなく除外できます。これが、[Map direct read optimization](#map-direct-read-optimization)を
+有効にする仕組みです。
+
+<div id="text-index-body">
+  #### ログのボディ向け `splitByNonAlpha`
+</div>
+
+`Body` カラムに対する全文検索では、`splitByNonAlpha` テキスト
+索引を使用すると効果的です。ClickStack ではこの索引を `lower(Body)` に定義しているため、
+大文字と小文字を区別しない Lucene 検索で利用できます:
+
+```sql
+INDEX idx_lower_body lower(Body) TYPE text(tokenizer = 'splitByNonAlpha')
+```
+
+ClickStack が `lower(Body)` 上の `text(tokenizer = 'splitByNonAlpha')` 索引を
+検出すると、`error` や
+`"connection refused"` のような暗黙的なカラム指定の Lucene クエリを `hasAllTokens(lower(Body), lower(...))` に書き換えます。これにより、
+`Body` カラム全体を読み込むことなく、索引だけで処理できます。ほとんどの
+オブザーバビリティのログワークロードでは、これは利用可能な
+フィルタリング高速化の中で最も大きな効果があります。
+
+<Info>
+  **テキスト索引と `tokenbf_v1` の比較**
+
+  古い `tokenbf_v1` 索引タイプ (デフォルトのトレーススキーマで
+  `lower(SpanName)` に今も使われています) は機能面では似ていますが、ClickHouse 26.2
+  以降では非推奨です。新しいテキスト検索索引には `text(tokenizer = ...)` を使用してください。
+</Info>
+
+トークナイザーのオプション、プリプロセッサ、検証について詳しくは、[全文検索ドキュメント](/ja/reference/engines/table-engines/mergetree-family/textindexes)を参照してください。
+
+<div id="text-indexes-in-default-logs-schema">
+  #### デフォルトのログスキーマにおけるテキスト索引
+</div>
+
+アップストリームから同期されるデフォルトの `otel_logs` スキーマには、前述のテキスト索引がすべて含まれています。具体的には、`TraceId`、各 `mapKeys(...)` および `*AttributeItems` 配列に対する `text(tokenizer = 'array')` と、全文検索用の `lower(Body)` に対する `text(tokenizer = 'splitByNonAlpha')` です。正式な DDL については、[&quot;ClickStack で使用されるテーブルとスキーマ&quot;](/ja/clickstack/ingesting-data/schemas#logs) を参照してください。同じスキーマを以下にも再掲しています。
+
+<OtelLogsSchema />
+
+<div id="min-max-indexes">
+  ### Min-max 索引
+</div>
+
+Minmax 索引は、グラニュールごとに最小値と最大値を格納する、非常に軽量な索引です。特に数値カラムや範囲クエリに効果的です。すべてのクエリを高速化できるわけではありませんが、低コストで、数値フィールドにはほとんどの場合追加する価値があります。
+
+Minmax 索引が最も効果を発揮するのは、数値が自然に順序付けられている場合、または各パーツ内で狭い範囲に収まっている場合です。
+
+たとえば、`SpanAttributes` 内の Kafka オフセットが頻繁にクエリされるとします。
+
+```sql
+SpanAttributes['messaging.kafka.offset']
+```
+
+この値はマテリアライズし、数値型にCASTできます：
+
+```sql
+ALTER TABLE otel_traces
+ADD COLUMN KafkaOffset UInt64
+MATERIALIZED toUInt64(SpanAttributes['messaging.kafka.offset'])
+```
+
+minmax索引は次のように追加できます:
+
+```sql
+ALTER TABLE otel_traces
+ADD INDEX idx_kafka_offset KafkaOffset TYPE minmax GRANULARITY 1
+```
+
+これにより、たとえばコンシューマラグやリプレイ動作のデバッグ時に、Kafka のオフセット範囲でフィルタリングする際、ClickHouse はパーツを効率よくスキップできるようになります。
+
+繰り返しになりますが、索引を利用できるようになる前に、[マテリアライズ](#materialize-skip-index)しておく必要があります。
+
+<div id="materialize-skip-index">
+  ### スキップ索引をマテリアライズする
+</div>
+
+スキップ索引は、追加しただけでは新たに取り込まれるデータにしか適用されません。過去のデータは、明示的にマテリアライズするまでその索引の恩恵を受けません。
+
+たとえば、すでにスキップ索引を追加している場合：
+
+```sql
+ALTER TABLE otel_traces ADD INDEX idx_kafka_offset KafkaOffset TYPE minmax GRANULARITY 1;
+```
+
+既存データに対しては、索引を明示的に作成する必要があります：
+
+```sql
+ALTER TABLE otel_traces MATERIALIZE INDEX idx_kafka_offset;
+```
+
+<Info>
+  **スキップ索引のマテリアライズ**
+
+  スキップ索引のマテリアライズは、通常は軽量で安全に実行できます。特に minmax 索引ではその傾向が顕著です。大規模なデータセットに対する ブルームフィルタ 索引では、リソース使用量をより適切に制御するため、パーティション単位でマテリアライズするほうがよい場合があります。例:
+
+  ```sql
+  ALTER TABLE otel_v2.otel_traces
+  MATERIALIZE INDEX idx_kafka_offset
+  IN PARTITION '2026-01-02';
+  ```
+</Info>
+
+スキップ索引のマテリアライズはミューテーションとして実行されます。進行状況はシステムテーブルで確認できます。
+
+```sql
+
+SELECT *
+FROM system.mutations
+WHERE database = 'otel'
+  AND table = 'otel_traces'
+ORDER BY create_time DESC;
+```
+
+該当するミューテーションが `is_done = 1` になるまで待ちます。
+
+完了したら、索引データが作成されていることを確認します。
+
+```sql
+SELECT database, table, name,
+       data_compressed_bytes,
+       data_uncompressed_bytes,
+       marks_bytes
+FROM system.data_skipping_indices
+WHERE database = 'otel'
+  AND table = 'otel_traces'
+  AND name = 'idx_kafka_offset';
+```
+
+ゼロ以外の値は、索引が正常にマテリアライズされたことを示します。
+
+重要なのは、スキップ索引のサイズがクエリ性能に直接影響するという点です。数十 GB から数百 GB 級の非常に大きなスキップ索引は、クエリ実行時の評価に無視できない時間がかかることがあり、その結果、利点が薄れたり、場合によっては利点そのものがなくなったりすることさえあります。
+
+実際には、minmax 索引は通常きわめて小さく、評価コストも低いため、ほとんどの場合は安心してマテリアライズできます。一方、ブルームフィルタ 索引は、カーディナリティ、粒度、偽陽性確率によっては大きく増える可能性があります。
+
+ブルームフィルタ のサイズは、許容する偽陽性率を高くすることで小さくできます。たとえば、確率パラメータを `0.01` から `0.05` に引き上げると、より小さく、より高速に評価できる索引になりますが、その代わりプルーニングの効果は弱まります。スキップできるグラニュールは少なくなる可能性がありますが、索引評価が速くなることで、クエリ全体のレイテンシが改善する場合があります。
+
+したがって、ブルームフィルタ パラメータの調整はワークロード依存の最適化であり、実際のクエリパターンと本番環境に近いデータ量で検証する必要があります。
+
+スキップ索引の詳細については、ガイド [&quot;ClickHouse のデータスキッピングインデックスを理解する&quot;](/ja/concepts/features/performance/skip-indexes/skipping-indexes-examples) を参照してください。
+
+<div id="evaluating-skip-index-effectiveness">
+  ### スキップ索引の有効性を評価する
+</div>
+
+スキップ索引のプルーニングを評価する最も確実な方法は、`EXPLAIN indexes = 1` を使用することです。これにより、クエリプランの各段階で、どれだけの [パーツ](/ja/concepts/core-concepts/parts) と [グラニュール](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) が除外されるかを確認できます。多くの場合、主キーによって検索範囲がすでに絞り込まれたあとに、Skip ステージで グラニュール が大幅に減っているのが理想です。スキップ索引はパーティションプルーニングと主キープルーニングのあとに評価されるため、その効果は、残ったパーツと グラニュール に対してどれだけ削減できたかで見るのが最も適切です。
+
+`EXPLAIN` を使えばプルーニングが実際に行われているかは確認できますが、それだけで全体として高速化されるとは限りません。スキップ索引の評価にはコストがかかり、特に索引が大きい場合はその影響が大きくなります。実際に性能が向上していることを確認するため、索引を追加してマテリアライズする前後で、必ずクエリをベンチマークしてください。
+
+たとえば、デフォルトの Traces スキーマに含まれる、TraceId 用のデフォルトのブルームフィルタースキップ索引を見てみましょう。
+
+```sql
+INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1
+```
+
+選択性の高いクエリに対してどの程度効果があるかは、`EXPLAIN indexes = 1` を使うと確認できます:
+
+```sql
+EXPLAIN indexes = 1
+SELECT *
+FROM otel_v2.otel_traces
+WHERE (ServiceName = 'accounting')
+  AND (TraceId = 'aeea7f401feb75fc5af8eb25ebc8e974');
+
+ReadFromMergeTree (otel_v2.otel_traces)
+Indexes:
+  PrimaryKey
+    Keys:
+      ServiceName
+    Parts: 6/18
+    Granules: 255/35898
+  Skip
+    Name: idx_trace_id
+    Description: bloom_filter GRANULARITY 1
+    Parts: 1/6
+    Granules: 1/255
+```
+
+この場合、まず主キーフィルタによってデータセットが大幅に絞り込まれ (35898 グラニュールから 255 まで) 、その後ブルームフィルタによってさらに 1 つのグラニュール (1/255) まで削減されます。これはスキップ索引にとって理想的なパターンです。主キーによる プルーニング で検索範囲を狭め、その後スキップ索引が残りの大半を除外します。
+
+実際の効果を確認するには、同じ設定でクエリをベンチマークし、実行時間を比較します。結果のシリアライゼーションのオーバーヘッドを避けるために `FORMAT Null` を使用し、実行結果の再現性を保つためにクエリ条件 cache を無効にします:
+
+```sql
+SELECT *
+FROM otel_traces
+WHERE (ServiceName = 'accountingservice') AND (TraceId = '4512e822ca3c0c68bbf5d4a263f9943d')
+SETTINGS use_query_condition_cache = 0
+```
+
+```response
+2 rows in set. Elapsed: 0.025 sec. Processed 8.52 thousand rows, 299.78 KB (341.22 thousand rows/s., 12.00 MB/s.)
+Peak memory usage: 41.97 MiB.
+```
+
+次に、スキップ索引を無効にして同じクエリを実行します。
+
+```sql
+SELECT *
+FROM otel_traces
+WHERE (ServiceName = 'accountingservice') AND (TraceId = '4512e822ca3c0c68bbf5d4a263f9943d')
+FORMAT Null
+SETTINGS use_query_condition_cache = 0, use_skip_indexes = 0;
+```
+
+```response
+0 rows in set. Elapsed: 0.702 sec. Processed 1.62 million rows, 56.62 MB (2.31 million rows/s., 80.71 MB/s.)
+Peak memory usage: 198.39 MiB.
+```
+
+`use_query_condition_cache` を無効にすると、キャッシュされたフィルタリング判定の影響を結果が受けないようにでき、`use_skip_indexes = 0` を設定すると、比較のためのクリーンなベースラインを確保できます。絞り込みが効果的で、かつ索引の評価コストが低い場合は、上の例のように、索引付きクエリのほうが大幅に高速になるはずです。
+
+<Tip>
+  `EXPLAIN` で グラニュール の絞り込みがほとんど行われていない場合や、スキップ索引が非常に大きい場合は、索引の評価コストによって利点が相殺されることがあります。まず `EXPLAIN indexes = 1` を使って絞り込みを確認し、そのうえでベンチマークを実行してエンドツーエンドの性能向上を確認してください。
+</Tip>
+
+<div id="when-to-add-skip-indexes">
+  ### スキップ索引を追加するタイミング
+</div>
+
+スキップ索引は、ユーザーが最も頻繁に実行するフィルタの種類と、パーツやグラニュール内のデータの分布に応じて、必要なものだけを選んで追加するべきです。目的は、索引自体の評価コストを上回るだけのグラニュールを除外することです。そのため、本番環境に近いデータでのベンチマークが不可欠です。
+
+**フィルタに使われる数値カラムでは、minmax スキップ索引はほぼ常に有力な選択肢です。** 軽量で評価コストも低く、範囲条件に対して効果を発揮します。特に、値がおおまかに順序付けられている場合や、パーツ内で狭い範囲に収まっている場合に有効です。たとえ minmax が特定のクエリパターンで効果を発揮しなくても、通常はオーバーヘッドが十分小さいため、そのまま維持しておくのは妥当です。
+
+**文字列カラムでは、サポートされている場合はテキスト索引を優先し、そうでなければブルームフィルタを使用してください。** テキスト索引は、ブルームフィルタと同じ等価条件や `IN` フィルタを高速化できるだけでなく、全文検索や [Map direct read 最適化](#map-direct-read-optimization) で使われるトークンベースの条件 (`hasToken`、`hasAllTokens`、`has`) にも対応します。まだテキスト索引をサポートしていない古いクラスターでは、ブルームフィルタは引き続き有力な選択肢です。
+
+ブルームフィルタは、各値の出現頻度が比較的低い高カーディナリティの文字列カラム、つまり検索対象の値がほとんどのパーツやグラニュールに含まれていない場合に最も効果を発揮します。経験則として、ブルームフィルタが有望なのは、そのカラムに少なくとも 10,000 個の異なる値がある場合で、100,000 個以上の異なる値があるとさらに効果が高いことがよくあります。また、一致する値が少数の連続したパーツにまとまっている場合にも有効で、これは通常、そのカラムが順序付けキーと相関しているときに起こります。とはいえ、実際の効果はケースバイケースです。実環境での検証に勝るものはありません。
+
+<div id="map-direct-read-optimization">
+  ## Optimization 3. Map direct read
+</div>
+
+`LogAttributes['k8s.pod.name'] =
+'checkout'` のように Map のサブキーでフィルタすると、ClickHouse はディスクから `LogAttributes` Map カラム全体を読み込み、述語を評価するためにすべての行を展開する必要があります。[頻繁にクエリされる属性のマテリアライズ](#materialize-frequently-queried-attributes)
+は、事前に把握しているキーについてはこの問題を解決できますが、ユーザーがその場で任意にフィルタする属性には対応しきれません。
+
+スキーマに `mapKeys` と `mapValues` の索引があっても、それらの索引で分かるのは、ある行に特定のキーがあるか、特定の値があるかまでであり、そのキーと値が同じエントリに属しているかどうかまでは分かりません。言い換えると、`mapKeys` は `mapContainsKey(ResourceAttributes, 'foo')` に答え、`mapValues` は `mapContainsValue(ResourceAttributes, 'bar')` に答えますが、どちらも `ResourceAttributes['foo'] = 'bar'` には答えられません。
+
+キーと値を単一の `Array(String)` カラムに連結することで、Map direct read 最適化では、基になる map を読み込まずに `ResourceAttributes['foo'] = 'bar'` に答えられるようになります。Map は大きくなりがちで、データ量の増加に伴ってサイズも増大します。さらに、これをアプリケーションレベルのクエリの書き換えと組み合わせることで、任意の Map サブキーに対する等価フィルタは、その索引を利用する単一の `has(...)` 呼び出しになり、クエリ時の Map のデシリアライゼーションが不要になります。加えて、発生するストレージコストはテキスト索引分のみです。基になるカラムは `ALIAS` カラムであり、保存されないためです。
+
+この最適化は自動的に適用されます。ClickStack では、デフォルトの logs テーブルと trace テーブルに必要なカラムと索引が含まれており、接続先の ClickHouse server が基盤となる Primitive をサポートしている場合、実行時に Map の添字フィルタを書き換えます。スキーマにこれらのカラムが含まれていない場合や、デフォルト以外にも高速化したい追加の Map カラムがある場合は、以下を読んで有効化してください。
+
+<div id="map-direct-read-schema">
+  ### スキーマ
+</div>
+
+高速化したい各 Map カラムに対して、ClickStack は
+各キーと値を `=` で連結した `Array(String)` `ALIAS` カラムを定義します:
+
+```sql
+ALTER TABLE otel_logs
+ADD COLUMN LogAttributeItems Array(String)
+ALIAS arrayMap(
+  (arr) -> concat(arr.1, '=', arr.2),
+  LogAttributes::Array(Tuple(String, String))
+)
+```
+
+`ALIAS` 形式では、この配列によってディスク上の使用容量は一切増えません。ClickHouse はこれを
+クエリ実行時および索引構築時に計算します。`ALIAS` カラム上の `text(tokenizer = 'array')` スキップ索引は、
+各 `key=value` ペアごとに 1 つのトークンを格納し、ClickHouse はこれを使って元の Map にアクセスすることなく
+不要なグラニュールを読み飛ばします:
+
+```sql
+ALTER TABLE otel_logs
+ADD INDEX idx_log_attr_items LogAttributeItems
+TYPE text(tokenizer = 'array')
+```
+
+既存のテーブルに索引を作成したら、履歴データでも使用できるようにマテリアライズします ([&quot;スキップ索引のマテリアライズ&quot;](#materialize-skip-index) を参照) 。
+
+デフォルトの ClickStack スキーマには、以下のカラムと索引が含まれています。
+
+| テーブル          | ALIAS カラム                                                            | テキスト索引                                                             |
+| ------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `otel_logs`   | `ResourceAttributeItems`, `ScopeAttributeItems`, `LogAttributeItems` | `idx_res_attr_items`, `idx_scope_attr_items`, `idx_log_attr_items` |
+| `otel_traces` | `ResourceAttributeItems`, `SpanAttributeItems`                       | `idx_res_attr_items`, `idx_span_attr_items`                        |
+
+<div id="map-direct-read-rewrite">
+  ### クエリの書き換え
+</div>
+
+ユーザーが ClickStack UI または SDK を介して Map のサブキーに対してフィルタを適用すると、ClickStack は次のように書き換えます。
+
+```sql
+LogAttributes['k8s.pod.name'] = 'checkout'
+```
+
+以下のようになります:
+
+```sql
+has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
+```
+
+書き換え後の形式では `LogAttributeItems` のテキスト索引が利用され、`key=value`
+トークンを含まない行全体が刈り込まれ、一致しない行では
+元の `LogAttributes` Map がデシリアライズされることもありません。高カーディナリティの
+オブザーバビリティ ワークロードでは、通常、Map の添字アクセスに比べて I/O を
+1 桁分削減できます。
+
+この書き換えは自動的に行われるため、`LogAttributes['key']` を参照する保存クエリ、ダッシュボード、アラートは
+何も変更しなくても高速化の恩恵を受けられます。
+
+<div id="map-direct-read-version">
+  ### ClickHouse のバージョン要件
+</div>
+
+このクエリの書き換えには、テキスト索引付きの配列カラムに対する
+トークン単位の直接プルーニングをサポートする ClickHouse バージョンが必要です。
+ClickStack は接続先サーバーのバージョン (`SELECT version()`、接続ごとにキャッシュ)
+を検出し、サーバーがしきい値以上の場合にのみ
+書き換え後の形式を出力します。古いサーバーでは、自動的に元の
+Map 添字形式にフォールバックします。
+
+| ClickHouse ブランチ | 最小バージョン    |
+| --------------- | ---------- |
+| 26.2            | 26.2.19.43 |
+| 26.3            | 26.3.12.3  |
+| 26.4            | 26.4.3.37  |
+| 26.5+           | すべてのバージョン  |
+
+<Info>
+  **なぜ MATERIALIZED ではなく ALIAS なのか**
+
+  items 配列は、Map カラムにすでに存在するデータを参照するためのものです。
+  これを 2 回保存すると — 1 回は Map に、もう 1 回は配列に —
+  新しいクエリパターンが使えるようになるわけでもないのに、書き込み I/O だけが 2 倍になります。
+  `ALIAS` カラム上のテキスト索引は、同じ元データから挿入時に
+  構築されるため、この最適化でディスクに追加されるのは
+  索引の分だけです。
+</Info>
+
+<div id="modifying-the-primary-key">
+  ## 最適化 4. 主キーの変更
+</div>
+
+主キーは、ほとんどのワークロードにおける ClickHouse のパフォーマンスチューニングで最も重要な要素の 1 つです。効果的に調整するには、その仕組みとクエリパターンとの関係を理解する必要があります。最終的には、主キーはユーザーがどのようにデータへアクセスするか、特にどのカラムで最も頻繁にフィルタするかに沿っているべきです。
+
+主キーは圧縮やストレージレイアウトにも影響しますが、主目的はクエリ性能の向上です。ClickStack では、標準の主キーが一般的なオブザーバビリティのアクセスパターンと高い圧縮率を考慮して、あらかじめ最適化されています。ログ、トレース、メトリクステーブルのデフォルトキーは、典型的なワークフローで良好な性能を発揮するよう設計されています。
+
+主キーの先頭に近いカラムでフィルタするほうが、後ろにあるカラムでフィルタするよりも効率的です。デフォルト設定は大半のユーザーにとって十分ですが、特定のワークロードでは主キーを変更することで性能が向上する場合があります。
+
+<Info>
+  **用語に関する補足**
+
+  このドキュメント全体では、「ソートキー」という用語を「主キー」と同じ意味で使っています。厳密には ClickHouse では両者は異なりますが、ClickStack では通常、テーブルの `ORDER BY` 句で指定される同じカラムを指します。詳細は、ソートキーと異なる主キーの選び方についての [ClickHouse ドキュメント](/ja/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key) を参照してください。
+</Info>
+
+主キーを変更する前に、ClickHouse における[プライマリインデックスの仕組みを理解するためのガイド](/ja/concepts/core-concepts/primary-indexes)を読んでおくことを強く推奨します。
+
+主キーのチューニングは、テーブルやデータ型ごとに異なります。あるテーブルやデータ型で有効な変更が、ほかでも有効とは限りません。目的は常に、たとえばログのような特定のデータ型に対して最適化することです。
+
+**通常、最適化の対象となるのはログテーブルとトレーステーブルです。その他のデータ型で主キーの変更が必要になることはまれです。**
+
+以下は、ログとトレース用の ClickStack テーブルにおけるデフォルトの主キーです。
+
+* ログ ([`otel_logs`](/ja/clickstack/ingesting-data/schemas#logs)) - `(toStartOfFiveMinutes(Timestamp), ServiceName, Timestamp)`
+* トレース ([`otel_traces`](/ja/clickstack/ingesting-data/schemas#traces)) - `(ServiceName, SpanName, toDateTime(Timestamp))`
+
+他のデータ型のテーブルで使われる主キーについては、[&quot;Tables and schemas used by ClickStack&quot;](/ja/clickstack/ingesting-data/schemas) を参照してください。トレーステーブルは、service name、span name、続いて timestamp でのフィルタリングに最適化されています。ログテーブルでは、5 分単位の time bucket を先頭に置くことで、時間範囲のスキャンが最初にプライマリインデックスにヒットし、その後、各 bucket 内で service name によって絞り込まれるようになっています。これは、一般的な「直近 N 分間に service X で何が起きたか」というワークフローに適したレイアウトです。最も効率的なのは主キーの順序どおりにフィルタを適用することですが、これらのカラムのいずれかで任意の順序にフィルタしても、ClickHouse が[読み取り前にデータをプルーニング](/ja/concepts/features/performance/skip-indexes/skipping-indexes)するため、クエリは大きな恩恵を受けます。
+
+主キーを選ぶ際には、カラムの最適な並び順を決めるうえで考慮すべき点がほかにもあります。[&quot;Choosing a primary key.&quot;](#choosing-a-primary-key) を参照してください。
+
+**主キーはテーブルごとに個別に変更してください。ログに適した内容が、トレースやメトリクスにも適しているとは限りません。**
+
+<div id="choosing-a-primary-key">
+  ### 主キーの選択
+</div>
+
+まず、特定のテーブルについて、アクセスパターンがデフォルトと大きく異なるかどうかを確認します。たとえば、通常はまず Kubernetes ノードでログを絞り込み、その後にサービス名で絞り込むことが多く、これが主要なワークフローになっている場合は、主キーの変更を検討する価値があります。
+
+<Info>
+  **デフォルトの主キーの変更**
+
+  デフォルトの主キーは、ほとんどのケースで十分です。変更は慎重に行い、クエリパターンを明確に理解したうえでのみ実施してください。主キーを変更すると、他のワークフローのパフォーマンスが低下する可能性があるため、テストは不可欠です。
+</Info>
+
+必要なカラムを洗い出したら、ソートキー/主キーの最適化を始められます。
+
+ソートキーを選ぶ際に役立つ、いくつかの基本的なルールがあります。以下の項目は互いに競合することもあるため、この順序で検討してください。このプロセスでは、キーは最大でも 4〜5 個に抑えることを目指してください。
+
+1. 一般的なフィルタ条件やアクセスパターンに合うカラムを選択します。たとえば、オブザーバビリティの調査を通常は特定のカラム (例: ポッド名) で絞り込むことから始める場合、そのカラムは `WHERE` 句で頻繁に使用されます。使用頻度の低いカラムよりも、こうしたカラムを優先してキーに含めてください。
+2. フィルタ時に全行の大部分を除外できるカラムを優先します。これにより、読み込む必要のあるデータ量を減らせます。サービス名やステータスコードは有力な候補になることがよくあります。後者については、大半の行を除外できる値でフィルタする場合に限ります。たとえば、多くのシステムでは 200 コードでフィルタすると大半の行に一致しますが、500 エラーであれば一致するのは小さな部分集合です。
+3. テーブル内の他のカラムと高い相関がある可能性の高いカラムを優先します。これにより、それらの値も連続して格納されやすくなり、圧縮の改善につながります。
+4. ソートキーに含まれるカラムに対する `GROUP BY` (チャート用の集計) および `ORDER BY` (ソート) の操作は、メモリ効率が向上する場合があります。
+
+ソートキーに含めるカラムの部分集合を特定したら、それらを特定の順序で定義する必要があります。この順序は、クエリにおける後続のキーカラムでのフィルタ効率と、テーブルのデータファイルの圧縮率の両方に大きく影響する可能性があります。一般に、キーはカーディナリティの低い順に並べるのが最適です。ただし、ソートキーの後ろに現れるカラムでのフィルタは、タプルの前の方に現れるカラムより効率が落ちる点とのバランスを取る必要があります。これらの特性のバランスを取りつつ、アクセスパターンを考慮してください。最も重要なのは、複数のパターンをテストすることです。ソートキーとその最適化方法をさらに理解するには、[&quot;主キーの選択&quot;](/ja/concepts/best-practices/choosing-a-primary-key) を読むことをお勧めします。主キーのチューニングや内部データ構造についてさらに詳しく知るには、[&quot;ClickHouse におけるプライマリインデックスの実践的入門&quot;](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes) も参照してください。
+
+<div id="changing-the-primary-key">
+  ### 主キーの変更
+</div>
+
+データのインジェスト前にアクセスパターンを十分把握できている場合は、対象のデータ型に対応するテーブルを削除して再作成するだけで済みます。
+
+以下の例は、既存のスキーマを使いながら、`ServiceName` の前に `SeverityText` カラムを含む新しい主キーを持つログテーブルを簡単に作成する方法を示しています。
+
+<Steps>
+  <Step>
+    #### 新しいテーブルを作成する
+
+    ```sql
+    CREATE TABLE otel_logs_temp AS otel_logs
+    PRIMARY KEY (SeverityText, ServiceName, Timestamp)
+    ORDER BY (SeverityText, ServiceName, Timestamp)
+    ```
+
+    <Info>
+      **ORDER BY と主キー**
+
+      上記の例では、`PRIMARY KEY` と `ORDER BY` の両方を指定する必要があります。
+      ClickStack では、これらはほとんどの場合同じです。
+      `ORDER BY` は物理的なデータレイアウトを制御し、`PRIMARY KEY` はスパースインデックスを定義します。
+      まれに、非常に大規模なワークロードでは両者が異なることもありますが、ほとんどのユーザーは一致させておくべきです。
+    </Info>
+  </Step>
+
+  <Step>
+    #### テーブルを入れ替えて削除する
+
+    `EXCHANGE` ステートメントは、テーブル名を[アトミックに](/ja/concepts/core-concepts/glossary#atomicity)入れ替えるために使用します。一時テーブル (この時点では以前のデフォルトテーブル) は削除できます。
+
+    ```sql
+    EXCHANGE TABLES otel_logs_temp AND otel_logs
+    DROP TABLE otel_logs_temp
+    ```
+  </Step>
+</Steps>
+
+ただし、**既存のテーブルの主キーは変更できません**。変更するには、新しいテーブルを作成する必要があります。
+
+以下の手順を使うと、古いデータを保持したまま透過的にクエリできるようになります (必要であれば、ClickStack UI では既存のキーを使って参照を続けつつ、新しいデータはユーザーのアクセスパターンに最適化された新しいテーブル経由で参照できます) 。この方法であればインジェストパイプラインを変更する必要はなく、データは引き続きデフォルトのテーブル名に送信され、変更はすべてユーザーに対して透過的です。
+
+<Note>
+  既存データを新しいテーブルにバックフィルすることは、大規模環境ではめったに見合いません。通常はコンピュートと I/O のコストが高く、性能向上のメリットに見合わないためです。代わりに、古いデータは[有効期限 (TTL)](/ja/clickstack/managing/ttl)で期限切れになるままにし、新しいデータが改善されたキーの恩恵を受けるようにしてください。
+</Note>
+
+以下でも、主キーの先頭カラムとして `SeverityText` を導入する同じ例を使用します。この場合は、新しいデータ用のテーブルを作成し、履歴分析のために古いテーブルは保持します。
+
+<Steps>
+  <Step>
+    #### 新しいテーブルを作成する
+
+    必要な主キーで新しいテーブルを作成します。接尾辞 `_23_01_2025` に注目してください。これは現在の日付に合わせて変更してください。例:
+
+    ```sql
+    CREATE TABLE otel_logs_23_01_2025 AS otel_logs
+    PRIMARY KEY (SeverityText, ServiceName, Timestamp)
+    ORDER BY (SeverityText, ServiceName, Timestamp)
+    ```
+  </Step>
+
+  <Step>
+    #### Merge テーブルを作成する
+
+    [Merge engine](/ja/reference/engines/table-engines/special/merge) は (MergeTree と混同しないでください) 、それ自体ではデータを保存しませんが、複数の他のテーブルを同時に読み取ることができます。
+
+    ```sql
+    CREATE TABLE otel_logs_merge
+    AS otel_logs
+    ENGINE = Merge(currentDatabase(), 'otel_logs*')
+    ```
+
+    <Note>
+      `currentDatabase()` は、コマンドを正しいデータベースで実行していることを前提としています。そうでない場合は、データベース名を明示的に指定してください。
+    </Note>
+
+    このテーブルにクエリを実行して、`otel_logs` のデータが返されることを確認できます。
+  </Step>
+
+  <Step>
+    #### Merge テーブルを読み取るように ClickStack UI を更新する
+
+    ログのログソースで使用するテーブルとして `otel_logs_merge` を設定するよう、ClickStack UI を更新します。
+
+    <Image img="/images/clickstack/performance_guide/select_merge_table.webp" size="lg" alt="Select Merge Table" />
+
+    この時点では、書き込みは引き続き元の主キーを持つ `otel_logs` に対して行われ、読み取りには Merge テーブルが使用されます。ユーザーに見える変更はなく、インジェストへの影響もありません。
+  </Step>
+
+  <Step>
+    #### テーブルを入れ替える
+
+    ここでは、`EXCHANGE` ステートメントを使用して、`otel_logs` テーブルと `otel_logs_23_01_2025` テーブルの名前をアトミックに入れ替えます。
+
+    ```sql
+    EXCHANGE TABLES otel_logs AND otel_logs_23_01_2025
+    ```
+
+    以降、書き込みは更新後の主キーを持つ新しい `otel_logs` テーブルに対して行われます。既存のデータは `otel_logs_23_01_2025` に残り、Merge テーブル経由で引き続きアクセスできます。この接尾辞は変更が適用された日付を示しており、そのテーブルに含まれる最新の timestamp を表しています。
+
+    この手順により、インジェストを中断することなく、またユーザーに見える影響もなく主キーを変更できます。
+  </Step>
+</Steps>
+
+この手順は、主キーをさらに変更する必要が生じた場合にも応用できます。たとえば、1 週間後に、`SeverityText` ではなく `SeverityNumber` を主キーに含めるべきだと判断した場合です。以下の手順は、主キーの変更が必要になるたびに何度でも繰り返し応用できます。
+
+<Steps>
+  <Step>
+    #### 新しいテーブルを作成する
+
+    必要な主キーで新しいテーブルを作成します。
+    以下の例では、テーブルの日付を表す接尾辞として `30_01_2025` を使用しています。例:
+
+    ```sql
+    CREATE TABLE otel_logs_30_01_2025 AS otel_logs
+    PRIMARY KEY (SeverityNumber, ServiceName, TimestampTime)
+    ORDER BY (SeverityNumber, ServiceName, TimestampTime)
+    ```
+  </Step>
+
+  <Step>
+    #### テーブルを入れ替える
+
+    ここでは、`EXCHANGE` ステートメントを使用して、`otel_logs` テーブルと `otel_logs_30_01_2025` テーブルの名前をアトミックに入れ替えます。
+
+    ```sql
+    EXCHANGE TABLES otel_logs AND otel_logs_30_01_2025
+    ```
+
+    以降、書き込みは更新後の主キーを持つ新しい `otel_logs` テーブルに対して行われます。古いデータは `otel_logs_30_01_2025` に残り、merge テーブル経由で引き続きアクセスできます。
+  </Step>
+</Steps>
+
+<Info>
+  **不要になったテーブル**
+
+  有効期限 (TTL) ポリシーを設定している場合 (推奨) 、書き込みを受けなくなった古い主キーのテーブルは、データの有効期限切れに伴って徐々に空になります。これらのテーブルは監視し、データがなくなった段階で定期的にクリーンアップする必要があります。現時点では、このクリーンアップは手動で行います。
+</Info>
+
+<div id="row-lookup-block-columns">
+  ### blockカラムによる行ルックアップの高速化
+</div>
+
+デフォルトのClickStackログスキーマでは、クエリパフォーマンスに直接
+影響するわけではないものの、ClickStack UIでの行詳細のルックアップを
+大幅に高速化する2つのMergeTree設定が有効になっています:
+
+```sql
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1
+```
+
+これらの設定により、テーブル内のすべての行は、part
+内でその行を一意に識別する暗黙的な
+`(_block_number, _block_offset)` の組を持つようになります。ClickStack UI でログの行をクリックして詳細パネルを開くと、ClickStack
+はその 1 行を取得するための後続クエリを発行します。block カラムがない場合、その
+行の `WHERE` 句には、通常は主キー
+に `Body` と `SeverityText` を加えた、行を一意に特定するのに十分な数のカラムを含める必要があります。block カラムがある場合は、
+主キーに `_block_number` と `_block_offset` を加えるだけで十分です。`Body` のような大きな
+カラムはルックアップ時に読み取られないため、結果としてクエリが高速化されます。
+
+ClickStack はテーブルの `CREATE` ステートメントからこの設定を検出し、
+両方のカラムが有効になっている場合は、より簡潔な `WHERE` 句を自動的に生成します。アプリケーションの
+設定を変更する必要はありません。
+
+既存のログまたはトレース テーブルでこの最適化を有効にするには:
+
+```sql
+ALTER TABLE otel_logs
+MODIFY SETTING enable_block_number_column = 1, enable_block_offset_column = 1
+```
+
+これらの設定は、`ALTER` 後に書き込まれたデータに適用されます。既存のパーツは、
+マージによって書き換えられるまでは引き続き古い行単位のルックアップを使用します。
+
+<div id="exploiting-materialized-views">
+  ## 最適化 5. materialized view の活用
+</div>
+
+<BetaBadge />
+
+ClickStack では、時間の経過に沿って1分ごとの平均リクエスト時間を計算するような、集約処理の多いクエリに依存する可視化を高速化するために、[インクリメンタルmaterialized view](/ja/concepts/features/materialized-views/incremental-materialized-view)を活用できます。この機能によりクエリ性能を大幅に向上でき、通常は1日あたり約10 TB以上の大規模なデプロイメントで特に効果を発揮し、1日あたりPB規模へのスケーリングも可能になります。インクリメンタルmaterialized view はベータであるため、注意して使用してください。
+
+ClickStack でこの機能を使用する方法の詳細については、専用ガイド[&quot;ClickStack - Materialized Views.&quot;](/ja/clickstack/managing/materialized-views)を参照してください。
+
+<div id="exploting-projections">
+  ## 最適化 6. PROJECTION の活用
+</div>
+
+PROJECTION は、materialized columns、スキップ索引、主キー、materialized view を検討したうえで、最後に考慮できる高度な最適化です。PROJECTION と materialized view は似ているように見えるかもしれませんが、ClickStack では役割が異なり、適した利用シナリオもそれぞれ異なります。
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/6CdnUdZSEG0?si=1zUyrP-tCvn9tXse" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+実際には、**PROJECTION は、同じ行を** **異なる物理順序** **で保持する、追加の隠れたテーブルコピー** と考えることができます。これにより、PROJECTION は基となるテーブルの `ORDER BY` キーとは異なる独自のプライマリインデックスを持ち、元の並び順に合わないアクセスパターンに対しても、ClickHouse がより効率よくデータを絞り込めるようになります。
+
+materialized view でも、異なるソートキーを持つ別のターゲットテーブルに行を明示的に書き込むことで、同様の効果を得られます。重要な違いは、**PROJECTION は ClickHouse によって自動かつ透過的に維持される** のに対し、materialized view は ClickStack が意図的に登録し、選択して使う必要のある明示的なテーブルだという点です。
+
+クエリが基となるテーブルを対象にすると、ClickHouse は基底レイアウトと利用可能な PROJECTION を評価し、それぞれのプライマリインデックスを確認したうえで、正しい結果を返しつつ読み取る グラニュール 数が最も少ないレイアウトを選択します。この判断はクエリアナライザによって自動的に行われます。
+
+したがって ClickStack では、PROJECTION は **純粋なデータの並べ替え** に最も適しており、具体的には次のような場合です。
+
+* アクセスパターンがデフォルトの主キーと本質的に異なる
+* 単一のソートキーですべてのワークフローをカバーするのが現実的でない
+* 最適な物理レイアウトを ClickHouse に透過的に選択させたい
+
+事前集計や metric の高速化には、ClickStack は **明示的な materialized views** を強く推奨します。これにより、アプリケーション層がビューの選択と利用を完全に制御できます。
+
+追加の背景情報については、次を参照してください。
+
+* [PROJECTION のガイド](/ja/concepts/features/projections/projections)
+* [PROJECTION を使用すべき場合](/ja/concepts/features/projections/projections#when-to-use-projections)
+* [materialized view と PROJECTION の比較](/ja/concepts/features/projections/materialized-views-versus-projections)
+
+<div id="example-projections">
+  ### PROJECTION の例
+</div>
+
+traces テーブルが、ClickStack のデフォルトのアクセスパターン向けに最適化されているとします。
+
+```sql
+ORDER BY (ServiceName, SpanName, toDateTime(Timestamp))
+```
+
+TraceId でフィルタする主なワークフローもある場合 (または TraceId を軸に頻繁にグループ化やフィルタを行う場合) は、TraceId と time でソートされた行を格納する PROJECTION を追加できます。
+
+```sql
+ALTER TABLE otel_v2.otel_traces
+ADD PROJECTION prj_traceid_time
+(
+    SELECT *
+    ORDER BY (TraceId, toDateTime(Timestamp))
+);
+```
+
+<Info>
+  **ワイルドカードを使用**
+
+  上記の PROJECTION の例では、ワイルドカード (`SELECT *`) を使用しています。選択するカラムを一部に絞ると書き込み時のオーバーヘッドは減らせますが、その一方で PROJECTION を利用できる場面も限られます。というのも、それらのカラムだけで完全に処理できるクエリしか対象にならないためです。ClickStack では、その結果 PROJECTION の用途がごく限られたケースに狭まりがちです。このため、一般には適用範囲を最大化するためにワイルドカードを使うことが推奨されます。
+</Info>
+
+他のデータレイアウト変更と同様に、PROJECTION が影響するのは新たに書き込まれるパーツだけです。既存データに対してこれを構築するには、マテリアライズします。
+
+```sql
+ALTER TABLE otel_v2.otel_traces
+MATERIALIZE PROJECTION prj_traceid_time;
+```
+
+<Note>
+  プロジェクションのマテリアライズには長時間を要し、多くのリソースを消費する可能性があります。オブザーバビリティデータは通常、有効期限 (TTL) によって期限切れになるため、これは本当に必要な場合にのみ実行してください。ほとんどの場合、プロジェクションは新しく取り込まれたデータにのみ適用されるようにしておけば十分で、直近 24 時間など、最も頻繁にクエリされる時間範囲の最適化に役立ちます。
+</Note>
+
+ClickHouse は、プロジェクションのほうがベースレイアウトより少ないグラニュールしかスキャンしないと見積もった場合、自動的にそのプロジェクションを選択することがあります。プロジェクションは、完全な行セット (`SELECT *`) を単純に並べ替えたものを表しており、クエリのフィルタ条件がプロジェクションの `ORDER BY` と強く一致している場合に、最も確実に機能します。
+
+TraceId でフィルタリングし (特に等価条件) 、かつ時間範囲を含むクエリでは、上記のプロジェクションの効果が期待できます。たとえば次のとおりです。
+
+```sql
+-- 特定のトレースを素早く取得する
+SELECT *
+FROM otel_traces
+WHERE TraceId = 'aeea7f401feb75fc5af8eb25ebc8e974'
+  AND Timestamp >= now() - INTERVAL 1 DAY
+ORDER BY Timestamp;
+
+-- トレーススコープの集計
+SELECT
+  toStartOfMinute(Timestamp) AS t,
+  count() AS spans
+FROM otel_traces
+WHERE TraceId = 'aeea7f401feb75fc5af8eb25ebc8e974'
+  AND Timestamp >= now() - INTERVAL 1 DAY
+GROUP BY t
+ORDER BY t;
+```
+
+`TraceId` に条件をかけないクエリや、プロジェクションの並び順キーの先頭にない他の次元で主に絞り込むクエリでは、通常は効果がなく、代わりにベースレイアウト経由で読み取られることがあります。
+
+<Note>
+  プロジェクションには、集計結果を格納することもできます (materialized view と同様です) 。ただし ClickStack では、プロジェクションベースの集計は一般に推奨されません。どの PROJECTION が選ばれるかは ClickHouse アナライザに依存するため、利用を制御しにくく、挙動も把握しづらいからです。代わりに、ClickStack がアプリケーション層で明示的に登録し、意図して選択できる materialized view を優先してください。
+</Note>
+
+実運用では、プロジェクションは、より広い検索からトレース中心のドリルダウンへ頻繁に切り替えるワークフロー (たとえば、特定の TraceId に対応するすべての span を取得する場合) に最も適しています。
+
+<div id="projection-costs-and-guidance">
+  ### コストと指針
+</div>
+
+* **挿入時のオーバーヘッド**: 異なる順序キーを持つ `SELECT *` PROJECTION では、実質的にデータを2回書き込むことになるため、書き込み I/O が増加し、インジェストを維持するには追加の CPU とディスクスループットが必要になる場合があります。
+* **必要な場合に限って使用**: PROJECTION は、アクセスパターンが明確に異なり、2つ目の物理的な順序付けによって多くのクエリで有意なプルーニング効果が得られる場合に使うのが最適です。たとえば、2つのチームが同じデータセットに対して根本的に異なる方法でクエリするケースです。
+* **ベンチマークで検証する**: ほかのチューニングと同様に、PROJECTION を追加してマテリアライズする前後で、実際のクエリレイテンシとリソース使用量を比較してください。
+
+さらに詳しい背景については、以下を参照してください。
+
+* [ClickHouse PROJECTION ガイド](/ja/concepts/features/projections/projections#when-to-use-projections)
+* [materialized view と PROJECTION の比較](/ja/concepts/features/projections/materialized-views-versus-projections)
+
+<div id="lightweight-projections">
+  ### `_part_offset` を使った軽量 PROJECTION
+</div>
+
+<BetaBadge />
+
+<Info>
+  **ClickStack における軽量 PROJECTION はベータです**
+
+  `_part_offset-based` 軽量 PROJECTION は、ClickStack のワークロードには推奨されません。ストレージ使用量と書き込み I/O は削減できますが、その一方でクエリ時のランダムアクセスが増える可能性があり、オブザーバビリティ規模の本番環境での挙動は現在も評価中です。この推奨事項は、機能の成熟と運用データの蓄積に伴って変更される可能性があります。
+</Info>
+
+新しいバージョンの ClickHouse では、完全な行を複製する代わりに、PROJECTION のソートキーと基となるテーブルへの `_part_offset` ポインタのみを格納する、より軽量な PROJECTION もサポートされています。これによりストレージのオーバーヘッドを大幅に削減でき、最近の改善によって グラニュール 単位のプルーニングも可能になったため、真のセカンダリ索引により近い動作をするようになりました。詳細は次を参照してください。
+
+* [&#95;part&#95;offset によるよりスマートなストレージ](/ja/concepts/features/projections/projections#smarter_storage_with_part_offset)
+* [ブログでの説明と例](https://clickhouse.com/blog/projections-secondary-indices#example-combining-multiple-projection-indexes)
+
+<div id="projection-alternatives">
+  ### 代替手段
+</div>
+
+複数のソートキーが必要な場合、選択肢はプロジェクションだけではありません。運用上の制約や、ClickStack でクエリをどのように振り分けたいかに応じて、次の方法を検討してください。
+
+* OpenTelemetry collector を設定し、異なる `ORDER BY` キーを持つ 2 つのテーブルに書き込むようにして、各テーブルに対して個別の ClickStack ログソースを作成する。
+* materialized view をコピーパイプラインとして作成する。つまり、メインテーブルに materialized view をアタッチし、生の行を別のソートキーを持つ secondary table にそのまま SELECT する (非正規化またはルーティングのパターン) 。このターゲットテーブル用のログソースを作成します。例は [こちら](/ja/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation) を参照してください。

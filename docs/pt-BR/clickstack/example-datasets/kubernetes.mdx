@@ -1,0 +1,506 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/kubernetes
+title: 'Monitoramento de Kubernetes'
+description: 'Primeiros passos com o ClickStack e o monitoramento de Kubernetes'
+doc_type: 'guide'
+keywords: ['clickstack', 'kubernetes', 'logs', 'observabilidade', 'monitoramento de contêineres']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+import DemoArchitecture from '/snippets/pt-BR/_demo.mdx';
+
+Este guia permite coletar logs e métricas do seu sistema Kubernetes, enviando-os ao **ClickStack** para visualização e análise. Para dados de demonstração, também é possível usar o fork do ClickStack da demo oficial do OpenTelemetry.
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/winI7256Ejk?si=TRThhzCJdq87xg_x" title="Player de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+Este guia requer que você tenha:
+
+* Um **cluster Kubernetes** (v1.20+ recomendado) com pelo menos 32 GiB de RAM e 100 GB de espaço em disco disponíveis em um nó para o ClickHouse.
+* **[Helm](https://helm.sh/)** v3+
+* **`kubectl`**, configurado para interagir com seu cluster
+
+<div id="deployment-options">
+  ## Opções de implantação
+</div>
+
+Você pode seguir este guia usando qualquer uma das seguintes opções de implantação:
+
+* **Open Source ClickStack**: implante o ClickStack inteiramente no seu cluster Kubernetes, incluindo:
+  * ClickHouse
+  * HyperDX
+  * MongoDB (usado para o estado e a configuração do dashboard)
+
+* **Managed ClickStack**, com o ClickHouse e a UI do ClickStack (HyperDX) gerenciados no ClickHouse Cloud. Isso elimina a necessidade de executar o ClickHouse ou o HyperDX dentro do seu cluster.
+
+Para simular o tráfego da aplicação, você também pode implantar o fork da ClickStack da [**OpenTelemetry Demo Application**](https://github.com/ClickHouse/opentelemetry-demo). Isso gera dados de telemetria, incluindo logs, métricas e traces. Se você já tiver workloads em execução no seu cluster, pode pular esta etapa e monitorar os pods, nós e contêineres existentes.
+
+<Steps>
+  <Step>
+    ### Instale o cert-manager (opcional)
+
+    Se a sua configuração exigir certificados TLS, instale o [cert-manager](https://cert-manager.io/) usando o Helm:
+
+    ```shell
+    # Adicionar repositório do cert-manager 
+
+    helm repo add jetstack https://charts.jetstack.io 
+
+    helm install cert-manager jetstack/cert-manager --namespace cert-manager --create-namespace --set startupapicheck.timeout=5m --set installCRDs=true --set global.leaderElection.namespace=cert-manager
+    ```
+  </Step>
+
+  <Step>
+    ### Implante o OpenTelemetry Demo (Opcional)
+
+    Este **passo é opcional e foi pensado para quem não tem pods existentes para monitorar**. Embora usuários com serviços já implantados em seu ambiente Kubernetes possam pular esta etapa, esta demonstração inclui microsserviços instrumentados que geram dados de traces e session replay, permitindo explorar todos os recursos do ClickStack.
+
+    O conteúdo a seguir implanta o fork do ClickStack da pilha da aplicação OpenTelemetry Demo em um cluster Kubernetes, adaptado para testes de observabilidade e demonstração de instrumentação. Ele inclui microsserviços de back-end, geradores de carga, pipelines de telemetria, infraestrutura de suporte (por exemplo, Kafka e Redis) e integrações de SDK com o ClickStack.
+
+    Todos os serviços são implantados no espaço de nomes `otel-demo`. Cada implantação inclui:
+
+    * Instrumentação automática com OTel e ClickStack SDKS para traces, métricas e logs.
+    * Todos os serviços enviam sua instrumentação para um collector OpenTelemetry `my-hyperdx-hdx-oss-v2-otel-collector` (não implantado)
+    * [Encaminhamento de tags de recurso](/pt-BR/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods) para correlacionar logs, métricas e traces por meio da variável de ambiente `OTEL_RESOURCE_ATTRIBUTES`.
+
+    ```shell
+    ## baixar o arquivo de manifesto Kubernetes da demo
+    curl -O https://raw.githubusercontent.com/ClickHouse/opentelemetry-demo/refs/heads/main/kubernetes/opentelemetry-demo.yaml
+    # alternativa com wget
+    # wget https://raw.githubusercontent.com/ClickHouse/opentelemetry-demo/refs/heads/main/kubernetes/opentelemetry-demo.yaml
+    kubectl apply --namespace otel-demo -f opentelemetry-demo.yaml
+    ```
+
+    Ao implantar a demo, confirme que todos os pods foram criados com sucesso e estão no estado `Running`:
+
+    ```shell
+    kubectl get pods -n=otel-demo
+
+    NAME                                 READY   STATUS    RESTARTS   AGE
+    accounting-fd44f4996-fcl4k           1/1     Running   0          13m
+    ad-769f968468-qq8mw                  1/1     Running   0          13m
+    artillery-loadgen-7bc4bdf47d-5sb96   1/1     Running   0          13m
+    cart-5b4c98bd8-xm7m2                 1/1     Running   0          13m
+    checkout-784f69b785-cnlpp            1/1     Running   0          13m
+    currency-fd7775b9c-rf6cr             1/1     Running   0          13m
+    email-5c54598f99-2td8s               1/1     Running   0          13m
+    flagd-5466775df7-zjb4x               2/2     Running   0          13m
+    fraud-detection-5769fdf75f-cjvgh     1/1     Running   0          13m
+    frontend-6dcb696646-fmcdz            1/1     Running   0          13m
+    frontend-proxy-7b8f6cd957-s25qj      1/1     Running   0          13m
+    image-provider-5fdb455756-fs4xv      1/1     Running   0          13m
+    kafka-7b6666866d-xfzn6               1/1     Running   0          13m
+    load-generator-57cbb7dfc9-ncxcf      1/1     Running   0          13m
+    payment-6d96f9bcbd-j8tj6             1/1     Running   0          13m
+    product-catalog-7fb77f9c78-49bhj     1/1     Running   0          13m
+    quote-576c557cdf-qn6pr               1/1     Running   0          13m
+    recommendation-546cc68fdf-8x5mm      1/1     Running   0          13m
+    shipping-7fc69f7fd7-zxrx6            1/1     Running   0          13m
+    valkey-cart-5f7b667bb7-gl5v4         1/1     Running   0          13m
+    ```
+
+    <DemoArchitecture />
+  </Step>
+
+  <Step>
+    ### Adicione o repositório do Chart do Helm do ClickStack
+
+    Para implantar o ClickStack, usamos o [Chart do Helm oficial](/pt-BR/clickstack/deployment/helm).
+
+    Para isso, é necessário adicionar o repositório Helm do HyperDX:
+
+    ```shell
+    helm repo add hyperdx https://hyperdxio.github.io/helm-charts
+    helm repo update
+    ```
+  </Step>
+
+  <Step>
+    ### Implante o ClickStack
+
+    Com o chart do Helm instalado, você pode implantar o ClickStack no seu cluster. Você pode executar todos os componentes, incluindo ClickHouse e HyperDX, no seu ambiente Kubernetes, ou implantar apenas o collector e usar o Managed ClickStack para o ClickHouse e a interface do HyperDX.
+
+    <br />
+
+    <Accordion title="ClickStack Open Source (autogerenciado)">
+      O comando a seguir instala o ClickStack no espaço de nomes `otel-demo`. O chart do Helm implanta:
+
+      * Uma instância do ClickHouse
+      * HyperDX
+      * A distribuição do OTel collector do ClickStack
+      * MongoDB para armazenar o estado da aplicação HyperDX
+
+      <Note>
+        Talvez seja necessário ajustar o `storageClassName` de acordo com a configuração do seu cluster Kubernetes.
+      </Note>
+
+      Quem não estiver implantando a demo do OTel pode alterar isso e selecionar um espaço de nomes apropriado.
+
+      ```shell
+      helm install my-hyperdx hyperdx/hdx-oss-v2   --set clickhouse.persistence.dataSize=100Gi --set global.storageClassName="standard-rwo" -n otel-demo
+      ```
+
+      <Warning>
+        **ClickStack em produção**
+
+        Este chart também instala o ClickHouse e o OTel collector. Para produção, recomenda-se usar os operadores do ClickHouse e do OTel collector e/ou usar o Managed ClickStack.
+
+        Para desabilitar o ClickHouse e o OTel collector, defina os seguintes valores:
+
+        ```shell
+        helm install myrelease <chart-name-or-path> --set clickhouse.enabled=false --set clickhouse.persistence.enabled=false --set otel.enabled=false
+        ```
+      </Warning>
+    </Accordion>
+
+    <Accordion title="Managed ClickStack">
+      Se você preferir usar o Managed ClickStack, poderá implantar o ClickStack e [desabilitar o ClickHouse incluído](/pt-BR/clickstack/deployment/helm#using-clickhouse-cloud).
+
+      <Note>
+        Atualmente, o chart sempre implanta o HyperDX e o MongoDB. Embora esses componentes ofereçam um caminho alternativo de acesso, eles não são integrados à autenticação do ClickHouse Cloud. Neste modelo de implantação, esses componentes se destinam aos administradores, [fornecendo acesso à chave segura de ingestão](#retrieve-ingestion-api-key) necessária para fazer a ingestão por meio do OTel collector implantado, mas não devem ser expostos aos usuários finais.
+      </Note>
+
+      ```shell
+      # especifique as credenciais do ClickHouse Cloud
+      export CLICKHOUSE_URL=<CLICKHOUSE_CLOUD_URL> # URL https completa
+      export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+      export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+
+      helm install my-hyperdx hyperdx/hdx-oss-v2  --set clickhouse.enabled=false --set clickhouse.persistence.enabled=false --set otel.clickhouseEndpoint=${CLICKHOUSE_URL} --set clickhouse.config.users.otelUserName=${CLICKHOUSE_USER} --set clickhouse.config.users.otelUserPassword=${CLICKHOUSE_PASSWORD} --set global.storageClassName="standard-rwo" -n otel-demo
+      ```
+    </Accordion>
+
+    Para verificar o status da implantação, execute o comando a seguir e confirme que todos os componentes estão no estado `Running`. Observe que o ClickHouse não aparecerá se você estiver usando Managed ClickStack:
+
+    ```shell
+    kubectl get pods -l "app.kubernetes.io/name=hdx-oss-v2" -n otel-demo
+
+    NAME                                                    READY   STATUS    RESTARTS   AGE
+    my-hyperdx-hdx-oss-v2-app-78876d79bb-565tb              1/1     Running   0          14m
+    my-hyperdx-hdx-oss-v2-clickhouse-57975fcd6-ggnz2        1/1     Running   0          14m
+    my-hyperdx-hdx-oss-v2-mongodb-984845f96-czb6m           1/1     Running   0          14m
+    my-hyperdx-hdx-oss-v2-otel-collector-64cf698f5c-8s7qj   1/1     Running   0          14m
+    ```
+  </Step>
+
+  <Step>
+    ### Acesse a UI do HyperDX
+
+    <Note>
+      Mesmo ao usar Managed ClickStack, a instância local do HyperDX implantada no cluster do Kubernetes ainda é necessária. Ela fornece uma chave de ingestão gerenciada pelo servidor OpAMP incluído no HyperDX, o que protege a ingestão por meio do OTel collector implantado — um recurso que ainda não está disponível no Managed ClickStack.
+    </Note>
+
+    Por segurança, o serviço usa `IP de cluster` e não é exposto externamente por padrão.
+
+    Para acessar a UI do HyperDX, faça o encaminhamento da porta 3000 para a porta local 8080.
+
+    ```shell
+    kubectl port-forward \
+     pod/$(kubectl get pod -l app.kubernetes.io/name=hdx-oss-v2 -o jsonpath='{.items[0].metadata.name}' -n otel-demo) \
+      8080:3000 \
+     -n otel-demo
+    ```
+
+    Acesse [http://localhost:8080](http://localhost:8080) para acessar a UI do HyperDX.
+
+    Crie um usuário, fornecendo um nome de usuário e uma senha que atendam aos requisitos de complexidade.
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="UI do HyperDX" size="lg" />
+  </Step>
+
+  <Step>
+    ### Obter API key de ingestão
+
+    A ingestão no OTel collector implantado pelo ClickStack collector é protegida por uma API key de ingestão.
+
+    Acesse [`Team Settings`](http://localhost:8080/team) e copie a `Ingestion API Key` na seção `API Keys`. Essa API key garante que a ingestão de dados pelo OpenTelemetry collector seja segura.
+
+    <Image img="/images/use-cases/observability/copy_api_key.webp" alt="Copiar API key" size="lg" />
+  </Step>
+
+  <Step>
+    ### Criar Secret do Kubernetes com API key
+
+    Crie um novo Secret do Kubernetes com a API key de ingestão e um ConfigMap contendo a localização do OTel collector implantado com o Chart do Helm do ClickStack. Os componentes das próximas etapas usarão isso para permitir a ingestão no collector implantado com o Chart do Helm do ClickStack:
+
+    ```shell
+    # cria um Secret com a API key de ingestão
+    kubectl create secret generic hyperdx-secret \
+    --from-literal=HYPERDX_API_KEY=<ingestion_api_key> \
+    -n otel-demo
+
+    # cria um ConfigMap apontando para o ClickStack OTel collector implantado acima
+    kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=http://my-hyperdx-hdx-oss-v2-otel-collector:4318
+    ```
+
+    Reinicie os pods do OpenTelemetry Demo Application para aplicar a API key de ingestão.
+
+    ```shell
+    kubectl rollout restart deployment -n otel-demo -l app.kubernetes.io/part-of=opentelemetry-demo
+    ```
+
+    Os traces e logs dos serviços de demonstração agora devem começar a chegar ao HyperDX.
+
+    <Image img="/images/use-cases/observability/hyperdx-kubernetes-data.webp" alt="Dados do Kubernetes no HyperDX" size="lg" />
+  </Step>
+
+  <Step>
+    ### Adicione o repositório Helm do OpenTelemetry
+
+    Para coletar métricas do Kubernetes, vamos implantar um OTel collector padrão, configurando-o para enviar dados com segurança ao nosso ClickStack collector usando a API key de ingestão acima.
+
+    Isso exige a instalação do repositório Helm do OpenTelemetry:
+
+    ```shell
+    # Adicionar repositório OTel Helm
+    helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts 
+    ```
+  </Step>
+
+  <Step>
+    ### Implantar componentes do collector no Kubernetes
+
+    Para coletar logs e métricas tanto do próprio cluster quanto de cada nó, será necessário implantar dois OpenTelemetry Collectors separados, cada um com seu próprio manifesto. Os dois manifestos fornecidos — `k8s_deployment.yaml` e `k8s_daemonset.yaml` — trabalham em conjunto para coletar dados de telemetria completos do seu cluster Kubernetes.
+
+    * `k8s_deployment.yaml` implanta uma **única instância do OpenTelemetry Collector** responsável por coletar **eventos e metadados de todo o cluster**. Ele coleta eventos do Kubernetes, métricas do cluster e enriquece os dados de telemetria com labels e anotações dos pods. Esse coletor é executado como uma implantação independente com uma única réplica para evitar dados duplicados.
+
+    * `k8s_daemonset.yaml` implanta um **coletor baseado em um Conjunto de Daemon** que é executado em cada nó do seu cluster. Ele coleta **métricas em nível de nó e de pod do Kubernetes**, bem como logs de contêineres, usando componentes como `kubeletstats`, `hostmetrics` e Kubernetes Attribute Processors. Esses coletores enriquecem os logs com metadados e os enviam para o HyperDX usando o exportador OTLP.
+
+    Juntos, esses manifestos habilitam a observabilidade full-stack em todo o cluster, da infraestrutura à telemetria em nível de aplicação, e enviam os dados enriquecidos ao ClickStack para análise centralizada.
+
+    Primeiro, instale o collector como uma Implantação:
+
+    ```shell
+    # baixar o arquivo de manifesto
+    curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_deployment.yaml
+    # instalar o chart do Helm
+    helm install --namespace otel-demo k8s-otel-deployment open-telemetry/opentelemetry-collector -f k8s_deployment.yaml
+    ```
+
+    <Accordion title="k8s_deployment.yaml">
+      ```yaml
+      # k8s_deployment.yaml
+      mode: deployment
+
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: 0.123.0
+       
+      # Queremos apenas um desses coletores - mais do que isso geraria dados duplicados
+      replicaCount: 1
+       
+      presets:
+        kubernetesAttributes:
+          enabled: true
+          # Quando habilitado, o processador extrairá todos os labels de um pod associado e os adicionará como atributos de recurso.
+          # O nome exato do label será a chave.
+          extractAllPodLabels: true
+          # Quando habilitado, o processador extrairá todas as annotations de um pod associado e as adicionará como atributos de recurso.
+          # O nome exato da annotation será a chave.
+          extractAllPodAnnotations: true
+        # Configura o coletor para coletar eventos do Kubernetes.
+        # Adiciona o k8sobject receiver ao pipeline de logs e coleta eventos do Kubernetes por padrão.
+        # Mais informações: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
+        kubernetesEvents:
+          enabled: true
+        # Configura o Kubernetes Cluster Receiver para coletar métricas no nível do cluster.
+        # Adiciona o k8s_cluster receiver ao pipeline de métricas e inclui as regras necessárias ao ClusterRole.
+        # Mais informações: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
+        clusterMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: HYPERDX_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hyperdx-secret
+              key: HYPERDX_API_KEY
+              optional: true
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+       
+      config:
+        exporters:
+          otlphttp:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+            headers:
+              authorization: "${env:HYPERDX_API_KEY}"
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlphttp
+            metrics:
+              exporters:
+                - otlphttp
+      ```
+    </Accordion>
+
+    Em seguida, implante o collector como um Conjunto de Daemon para métricas e logs em nível de nó e pod:
+
+    ```shell
+    # baixar o arquivo de manifesto
+    curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_daemonset.yaml
+    # instalar o chart do Helm
+    helm install --namespace otel-demo k8s-otel-daemonset open-telemetry/opentelemetry-collector -f k8s_daemonset.yaml
+    ```
+
+    <Accordion title="k8s_daemonset.yaml">
+      ```yaml
+      # k8s_daemonset.yaml
+      mode: daemonset
+
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: 0.123.0
+         
+      # Necessário para usar as métricas de utilização de cpu/memória do kubeletstats
+      clusterRole:
+        create: true
+        rules:
+          - apiGroups:
+              - ''
+            resources:
+              - nodes/proxy
+            verbs:
+              - get
+       
+      presets:
+        logsCollection:
+          enabled: true
+        hostMetrics:
+          enabled: true
+        # Configura o Processador do Kubernetes para adicionar metadados do Kubernetes.
+        # Adiciona o processador k8sattributes a todos os pipelines e adiciona as regras necessárias à Função de cluster.
+        # Mais informações: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
+        kubernetesAttributes:
+          enabled: true
+          # Quando habilitado, o processador extrairá todos os rótulos de um pod associado e os adicionará como atributos de recurso.
+          # O nome exato do rótulo será a chave.
+          extractAllPodLabels: true
+          # Quando habilitado, o processador extrairá todas as anotações de um pod associado e as adicionará como atributos de recurso.
+          # O nome exato da anotação será a chave.
+          extractAllPodAnnotations: true
+        # Configura o coletor para coletar métricas de nó, pod e contêiner do servidor de API no agente de nó do Kubernetes.
+        # Adiciona o receiver kubeletstats ao pipeline de métricas e adiciona as regras necessárias à Função de cluster.
+        # Mais informações: https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
+        kubeletMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: HYPERDX_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hyperdx-secret
+              key: HYPERDX_API_KEY
+              optional: true
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        receivers:
+          # Configura métricas adicionais do agente de nó do Kubernetes
+          kubeletstats:
+            collection_interval: 20s
+            auth_type: 'serviceAccount'
+            endpoint: '${env:K8S_NODE_NAME}:10250'
+            insecure_skip_verify: true
+            metrics:
+              k8s.pod.cpu_limit_utilization:
+                enabled: true
+              k8s.pod.cpu_request_utilization:
+                enabled: true
+              k8s.pod.memory_limit_utilization:
+                enabled: true
+              k8s.pod.memory_request_utilization:
+                enabled: true
+              k8s.pod.uptime:
+                enabled: true
+              k8s.node.uptime:
+                enabled: true
+              k8s.container.cpu_limit_utilization:
+                enabled: true
+              k8s.container.cpu_request_utilization:
+                enabled: true
+              k8s.container.memory_limit_utilization:
+                enabled: true
+              k8s.container.memory_request_utilization:
+                enabled: true
+              container.uptime:
+                enabled: true
+       
+        exporters:
+          otlphttp:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+            headers:
+              authorization: "${env:HYPERDX_API_KEY}"
+       
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlphttp
+            metrics:
+              exporters:
+                - otlphttp
+      ```
+    </Accordion>
+  </Step>
+
+  <Step>
+    ### Explore os dados do Kubernetes no HyperDX
+
+    Navegue até a interface do HyperDX — usando a instância implantada no Kubernetes ou via Managed ClickStack.
+
+    <p />
+
+    <Accordion title="Managed ClickStack">
+      Se estiver usando Managed ClickStack, basta fazer login no seu serviço ClickHouse Cloud e selecionar &quot;ClickStack&quot; no menu à esquerda. Você será autenticado automaticamente e não precisará criar um usuário.
+
+      As fontes de dados de logs, métricas e traces serão pré-criadas para você.
+    </Accordion>
+
+    <Accordion title="ClickStack Open Source">
+      Para acessar o HyperDX implantado localmente, você pode fazer um redirecionamento de porta usando o comando local e acessar o HyperDX em [http://localhost:8080](http://localhost:8080).
+
+      ```shell
+      kubectl port-forward \
+       pod/$(kubectl get pod -l app.kubernetes.io/name=hdx-oss-v2 -o jsonpath='{.items[0].metadata.name}' -n otel-demo) \
+        8080:3000 \
+       -n otel-demo
+      ```
+
+      <Info>
+        **ClickStack em produção**
+
+        Em produção, recomendamos usar uma entrada com TLS se você não estiver usando Managed ClickStack. Por exemplo:
+
+        ```shell
+        helm upgrade my-hyperdx hyperdx/hdx-oss-v2 \
+        --set hyperdx.ingress.enabled=true \
+        --set hyperdx.ingress.host=your-domain.com \
+        --set hyperdx.ingress.tls.enabled=true
+        ```
+      </Info>
+    </Accordion>
+
+    Para explorar os dados do Kubernetes, navegue até o dashboard dedicado em `/kubernetes`, por exemplo [http://localhost:8080/kubernetes](http://localhost:8080/kubernetes).
+
+    Cada uma das abas — Pods, Nodes e Namespaces — deve estar preenchida com dados.
+  </Step>
+</Steps>
+
+<Image img="/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp" alt="ClickHouse no Kubernetes" size="lg" />

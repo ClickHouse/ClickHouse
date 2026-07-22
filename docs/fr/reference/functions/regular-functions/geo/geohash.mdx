@@ -1,0 +1,131 @@
+---
+description: 'Documentation sur Geohash'
+sidebarTitle: 'Geohash'
+slug: /sql-reference/functions/geo/geohash
+title: 'Fonctions pour utiliser Geohash'
+doc_type: 'reference'
+---
+
+<div id="geohash">
+  ## Geohash
+</div>
+
+[Geohash](https://en.wikipedia.org/wiki/Geohash) est un système de géocodage qui subdivise la surface de la Terre en cellules formant une grille et encode chaque cellule sous la forme d’une courte chaîne de lettres et de chiffres. Il s’agit d’une structure de données hiérarchique : plus la chaîne geohash est longue, plus la localisation géographique est précise.
+
+Si vous devez convertir manuellement des coordonnées géographiques en chaînes geohash, vous pouvez utiliser [geohash.org](http://geohash.co/)
+
+<div id="geohashencode">
+  ## geohashEncode
+</div>
+
+Encode la latitude et la longitude sous forme de chaîne de [geohash](#geohash).
+
+**Syntaxe**
+
+```sql
+geohashEncode(longitude, latitude, [precision])
+```
+
+**Valeurs d&#39;entrée**
+
+* `longitude` — Composante longitude de la coordonnée que vous souhaitez encoder. Nombre à virgule flottante dans l&#39;intervalle `[-180°, 180°]`. [Float](/fr/reference/data-types/float).
+* `latitude` — Composante latitude de la coordonnée que vous souhaitez encoder. Nombre à virgule flottante dans l&#39;intervalle `[-90°, 90°]`. [Float](/fr/reference/data-types/float).
+* `precision` (facultatif) — Longueur de la chaîne encodée résultante. La valeur par défaut est `12`. Entier dans l&#39;intervalle `[1, 12]`. [Int8](/fr/reference/data-types/int-uint).
+
+<Note>
+  - Tous les paramètres de coordonnées doivent être du même type : `Float32` ou `Float64`.
+  - Pour le paramètre `precision`, toute valeur inférieure à `1` ou supérieure à `12` est convertie silencieusement en `12`.
+</Note>
+
+**Valeurs renvoyées**
+
+* Chaîne alphanumérique correspondant à la coordonnée encodée (une version modifiée de l&#39;alphabet d&#39;encodage base32 est utilisée). [String](/fr/reference/data-types/string).
+
+**Exemple**
+
+```sql title="Query"
+SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res;
+```
+
+```text title="Response"
+┌─res──────────┐
+│ ezs42d000000 │
+└──────────────┘
+```
+
+<div id="geohashdecode">
+  ## geohashDecode
+</div>
+
+Décode toute chaîne encodée en [geohash](#geohash) en coordonnées de longitude et de latitude.
+
+**Syntaxe**
+
+```sql
+geohashDecode(hash_str)
+```
+
+**Valeurs d&#39;entrée**
+
+* `hash_str` — Chaîne encodée au format geohash.
+
+**Valeurs renvoyées**
+
+* Tuple `(longitude, latitude)` composé de valeurs `Float64` correspondant à la longitude et à la latitude. [Tuple](/fr/reference/data-types/tuple)([Float64](/fr/reference/data-types/float))
+
+**Exemple**
+
+```sql
+SELECT geohashDecode('ezs42') AS res;
+```
+
+```text
+┌─res─────────────────────────────┐
+│ (-5.60302734375,42.60498046875) │
+└─────────────────────────────────┘
+```
+
+<div id="geohashesinbox">
+  ## geohashesInBox
+</div>
+
+Renvoie un tableau de chaînes encodées en [geohash](#geohash), à la précision donnée, qui se trouvent dans le cadre donné et en intersectent les limites, soit essentiellement une grille 2D aplatie sous forme de tableau.
+
+**Syntaxe**
+
+```sql
+geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precision)
+```
+
+**Arguments**
+
+* `longitude_min` — Longitude minimale. Plage : `[-180°, 180°]`. [Float](/fr/reference/data-types/float).
+* `latitude_min` — Latitude minimale. Plage : `[-90°, 90°]`. [Float](/fr/reference/data-types/float).
+* `longitude_max` — Longitude maximale. Plage : `[-180°, 180°]`. [Float](/fr/reference/data-types/float).
+* `latitude_max` — Latitude maximale. Plage : `[-90°, 90°]`. [Float](/fr/reference/data-types/float).
+* `precision` — Précision du geohash. Plage : `[1, 12]`. [UInt8](/fr/reference/data-types/int-uint).
+
+<Note>
+  Tous les paramètres de coordonnées doivent être du même type : `Float32` ou `Float64`.
+</Note>
+
+**Valeurs renvoyées**
+
+* Tableau de chaînes de geohash de longueur `precision` représentant les boîtes couvrant la zone fournie ; ne vous fiez pas à l’ordre des éléments. [Array](/fr/reference/data-types/array)([String](/fr/reference/data-types/string)).
+* `[]` - Tableau vide si les valeurs minimales de latitude et de longitude ne sont pas inférieures aux valeurs maximales correspondantes.
+
+<Note>
+  La fonction lève une exception si le tableau résultant contient plus de 10&#39;000&#39;000 éléments.
+</Note>
+
+**Exemple**
+
+```sql title="Query"
+SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos;
+```
+
+```text title="Response"
+┌─thasos──────────────────────────────────────┐
+│ ['sx1q','sx1r','sx32','sx1w','sx1x','sx38'] │
+└─────────────────────────────────────────────┘
+```

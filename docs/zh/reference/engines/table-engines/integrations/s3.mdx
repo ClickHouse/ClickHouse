@@ -1,0 +1,497 @@
+---
+description: '此引擎提供与亚马逊 S3 生态系统的集成。与 HDFS 引擎类似，但提供 S3 专有功能。'
+sidebarTitle: 'S3'
+slug: /engines/table-engines/integrations/s3
+title: 'S3 表引擎'
+doc_type: 'reference'
+---
+
+此引擎提供与 [亚马逊 S3](https://aws.amazon.com/s3/) 生态系统的集成。它与 [HDFS](/zh/reference/engines/table-engines/integrations/hdfs) 引擎类似，但提供 S3 专有功能。
+
+<div id="example">
+  ## 示例
+</div>
+
+```sql
+CREATE TABLE s3_engine_table (name String, value UInt32)
+    ENGINE=S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/test-data.csv.gz', 'CSV', 'gzip')
+    SETTINGS input_format_with_names_use_header = 0;
+
+INSERT INTO s3_engine_table VALUES ('one', 1), ('two', 2), ('three', 3);
+
+SELECT * FROM s3_engine_table LIMIT 2;
+```
+
+```text
+┌─name─┬─value─┐
+│ one  │     1 │
+│ two  │     2 │
+└──────┴───────┘
+```
+
+<div id="creating-a-table">
+  ## 创建表
+</div>
+
+```sql
+CREATE TABLE s3_engine_table (name String, value UInt32)
+    ENGINE = S3(path [, NOSIGN | aws_access_key_id, aws_secret_access_key,] format, [compression], [partition_strategy], [partition_columns_in_data_file], [extra_credentials])
+    [PARTITION BY expr]
+    [SETTINGS ...]
+```
+
+<div id="parameters">
+  ### 引擎参数
+</div>
+
+* `path` — 包含文件路径的存储桶 URL。在 `readonly` 模式下支持以下通配符：`*`、`**`、`?`、`{abc,def}` 和 `{N..M}`，其中 `N`、`M` 表示数字，`'abc'`、`'def'` 表示字符串。更多信息请参见[下文](#wildcards-in-path)。
+* `NOSIGN` - 如果提供此关键字来代替凭证，则所有请求都不会签名。
+* `format` — 文件的[格式](/zh/reference/formats/index#formats-overview)。
+* `aws_access_key_id`, `aws_secret_access_key` - [AWS](https://aws.amazon.com/) 账户用户的长期凭证。你可以使用它们对请求进行身份验证。该参数是可选的。如果未指定凭证，则会使用配置文件中的凭证。更多信息请参见 [Using S3 for Data Storage](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3)。
+* `compression` — 压缩类型。支持的值：`none`、`gzip/gz`、`brotli/br`、`xz/LZMA`、`zstd/zst`。该参数是可选的。默认情况下，会根据文件扩展名自动检测压缩类型。
+* `partition_strategy` – 可选值：`WILDCARD` 或 `HIVE`。`WILDCARD` 要求路径中包含 `{_partition_id}`，它会被替换为分区键。`HIVE` 不允许使用通配符，假定该路径是表根路径，并生成 Hive 风格的分区目录，以 Snowflake IDs 作为文件名、文件格式作为扩展名。默认值为 `file_like_engine_default_partition_strategy` 设置 (在早于 `26.6` 的 `compatibility` 设置下为 `WILDCARD`，否则为 `HIVE`) 。
+* `partition_columns_in_data_file` - 仅与 `HIVE` 分区策略一起使用。用于告知 ClickHouse 是否应在数据文件中包含分区列。默认为 `false`。
+* `storage_class_name` - 可选值：`STANDARD` 或 `INTELLIGENT_TIERING`，可用于指定 [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/)。
+* `extra_credentials` - 可选。用于在 ClickHouse Cloud 中传递用于基于角色的访问控制的 `role_arn`。配置步骤请参见 [Secure S3](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。
+
+<div id="data-cache">
+  ### 数据缓存
+</div>
+
+`S3` 表引擎支持将数据缓存在本地磁盘上。
+有关文件系统缓存的配置选项和用法，请参见本[节](/zh/concepts/features/configuration/server-config/storing-data#using-local-cache)。
+缓存依据存储对象的 path 和 ETag 确定，因此 ClickHouse 不会读取陈旧的缓存版本。
+
+要启用缓存，请使用设置 `filesystem_cache_name = '<name>'` 和 `enable_filesystem_cache = 1`。
+
+```sql
+SELECT *
+FROM s3('http://minio:10000/clickhouse//test_3.csv', 'minioadmin', 'minioadminpassword', 'CSV')
+SETTINGS filesystem_cache_name = 'cache_for_s3', enable_filesystem_cache = 1;
+```
+
+在配置文件中定义缓存有两种方法。
+
+1. 将以下部分添加到 ClickHouse 配置文件中：
+
+```xml
+<clickhouse>
+    <filesystem_caches>
+        <cache_for_s3>
+            <path>缓存目录路径</path>
+            <max_size>10Gi</max_size>
+        </cache_for_s3>
+    </filesystem_caches>
+</clickhouse>
+```
+
+2. 复用 ClickHouse 的 `storage_configuration` 部分中的缓存配置 (以及相应的缓存存储) ，[此处有说明](/zh/concepts/features/configuration/server-config/storing-data#using-local-cache)
+
+<div id="partition-by">
+  ### PARTITION BY
+</div>
+
+`PARTITION BY` —— 可选。在大多数情况下，你不需要分区键；即使需要，通常也无需使用比按月更细的分区键。分区不会加快查询速度 (与 `ORDER BY` 表达式不同) 。绝不要使用粒度过细的分区。不要按客户标识符或名称对数据进行分区 (应改为将客户标识符或名称作为 `ORDER BY` 表达式中的第一列) 。
+
+如果按月分区，请使用 `toYYYYMM(date_column)` 表达式，其中 `date_column` 是一个 [Date](/zh/reference/data-types/date) 类型的日期列。这里的分区名称采用 `"YYYYMM"` 格式。
+
+<div id="partition-strategy">
+  #### 分区策略
+</div>
+
+`WILDCARD`：将文件路径中的 `{_partition_id}` 通配符替换为实际分区键。不支持读取。仅在 `compatibility` 设置早于 `26.6` 时默认选用；否则默认值为 `HIVE` (请参见 `file_like_engine_default_partition_strategy` 设置) 。
+
+`HIVE` 在读写时采用 Hive 风格分区。读取通过递归 glob 模式实现，等同于 `SELECT * FROM s3('table_root/**.parquet')`。
+写入会按以下格式生成文件：`<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`。
+
+注意：使用 `HIVE` 分区策略时，`use_hive_partitioning` 设置不生效。
+
+`HIVE` 分区策略示例：
+
+```sql
+arthur :) CREATE TABLE t_03363_parquet (year UInt16, country String, counter UInt8)
+ENGINE = S3(s3_conn, filename = 't_03363_parquet', format = Parquet, partition_strategy='hive')
+PARTITION BY (year, country);
+
+arthur :) INSERT INTO t_03363_parquet VALUES
+    (2022, 'USA', 1),
+    (2022, 'Canada', 2),
+    (2023, 'USA', 3),
+    (2023, 'Mexico', 4),
+    (2024, 'France', 5),
+    (2024, 'Germany', 6),
+    (2024, 'Germany', 7),
+    (1999, 'Brazil', 8),
+    (2100, 'Japan', 9),
+    (2024, 'CN', 10),
+    (2025, '', 11);
+
+arthur :) select _path, * from t_03363_parquet;
+
+    ┌─_path──────────────────────────────────────────────────────────────────────┬─year─┬─country─┬─counter─┐
+ 1. │ test/t_03363_parquet/year=2100/country=Japan/7329604473272971264.parquet   │ 2100 │ Japan   │       9 │
+ 2. │ test/t_03363_parquet/year=2024/country=France/7329604473323302912.parquet  │ 2024 │ France  │       5 │
+ 3. │ test/t_03363_parquet/year=2022/country=Canada/7329604473314914304.parquet  │ 2022 │ Canada  │       2 │
+ 4. │ test/t_03363_parquet/year=1999/country=Brazil/7329604473289748480.parquet  │ 1999 │ Brazil  │       8 │
+ 5. │ test/t_03363_parquet/year=2023/country=Mexico/7329604473293942784.parquet  │ 2023 │ Mexico  │       4 │
+ 6. │ test/t_03363_parquet/year=2023/country=USA/7329604473319108608.parquet     │ 2023 │ USA     │       3 │
+ 7. │ test/t_03363_parquet/year=2025/country=/7329604473327497216.parquet        │ 2025 │         │      11 │
+ 8. │ test/t_03363_parquet/year=2024/country=CN/7329604473310720000.parquet      │ 2024 │ CN      │      10 │
+ 9. │ test/t_03363_parquet/year=2022/country=USA/7329604473298137088.parquet     │ 2022 │ USA     │       1 │
+10. │ test/t_03363_parquet/year=2024/country=Germany/7329604473306525696.parquet │ 2024 │ Germany │       6 │
+11. │ test/t_03363_parquet/year=2024/country=Germany/7329604473306525696.parquet │ 2024 │ Germany │       7 │
+    └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
+```
+
+<div id="querying-partitioned-data">
+  ### 查询分区数据
+</div>
+
+本示例使用 [docker compose recipe](https://github.com/ClickHouse/examples/tree/5fdc6ff72f4e5137e23ea075c88d3f44b0202490/docker-compose-recipes/recipes/ch-and-minio-S3)，其中集成了 ClickHouse 和 MinIO。你也可以通过替换端点和身份验证配置值，使用 S3 复现相同的查询。
+
+请注意，`ENGINE` 配置中的 S3 端点将参数标记 `{_partition_id}` 用作 S3 对象 (文件名) 的一部分，而 `SELECT` 查询则是针对这些生成的对象名进行查询 (例如 `test_3.csv`) 。
+
+<Note>
+  如示例所示，目前尚不直接支持从已分区的 S3 表中查询，
+  但可以通过使用 S3 表函数查询各个分区来实现。
+
+  将
+  分区数据写入 S3 的主要用途，是为了便于将这些数据传输到另一个
+  ClickHouse 系统中 (例如，从本地系统迁移到 ClickHouse
+  Cloud) 。由于 ClickHouse 数据集通常非常庞大，而网络
+  可靠性有时也并不理想，因此按子集传输数据更为合理，
+  这也正是分区写入的意义所在。
+</Note>
+
+<div id="create-the-table">
+  #### 创建表
+</div>
+
+```sql highlight={8}
+CREATE TABLE p
+(
+    `column1` UInt32,
+    `column2` UInt32,
+    `column3` UInt32
+)
+ENGINE = S3(
+           'http://minio:10000/clickhouse//test_{_partition_id}.csv',
+           'minioadmin',
+           'minioadminpassword',
+           'CSV')
+PARTITION BY column3
+```
+
+<div id="insert-data">
+  #### 插入数据
+</div>
+
+```sql
+INSERT INTO p VALUES (1, 2, 3), (3, 2, 1), (78, 43, 45)
+```
+
+<div id="select-from-partition-3">
+  #### 查询分区 3
+</div>
+
+<Tip>
+  此查询使用 S3 表函数
+</Tip>
+
+```sql
+SELECT *
+FROM s3('http://minio:10000/clickhouse//test_3.csv', 'minioadmin', 'minioadminpassword', 'CSV')
+```
+
+```response
+┌─c1─┬─c2─┬─c3─┐
+│  1 │  2 │  3 │
+└────┴────┴────┘
+```
+
+<div id="select-from-partition-1">
+  #### 查询分区 1 中的数据
+</div>
+
+```sql
+SELECT *
+FROM s3('http://minio:10000/clickhouse//test_1.csv', 'minioadmin', 'minioadminpassword', 'CSV')
+```
+
+```response
+┌─c1─┬─c2─┬─c3─┐
+│  3 │  2 │  1 │
+└────┴────┴────┘
+```
+
+<div id="select-from-partition-45">
+  #### 查询分区 45 中的数据
+</div>
+
+```sql
+SELECT *
+FROM s3('http://minio:10000/clickhouse//test_45.csv', 'minioadmin', 'minioadminpassword', 'CSV')
+```
+
+```response
+┌─c1─┬─c2─┬─c3─┐
+│ 78 │ 43 │ 45 │
+└────┴────┴────┘
+```
+
+<div id="limitation">
+  #### 限制
+</div>
+
+你可能会很自然地想尝试 `Select * from p`，但如上所述，这条查询会失败；请使用前面的查询语句。
+
+```sql
+SELECT * FROM p
+```
+
+```response
+Received exception from server (version 23.4.1):
+Code: 48. DB::Exception: Received from localhost:9000. DB::Exception: Reading from a partitioned S3 storage is not implemented yet. (NOT_IMPLEMENTED)
+```
+
+<div id="inserting-data">
+  ## 插入数据
+</div>
+
+请注意，只能向新文件中插入行。不存在合并周期或文件拆分操作。文件一旦写入，后续插入就会失败。为避免这种情况，你可以使用 `s3_truncate_on_insert` 和 `s3_create_new_file_on_insert` 设置。更多详情请参见[这里](/zh/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data)。
+
+<div id="virtual-columns">
+  ## 虚拟列
+</div>
+
+* `_path` — 文件路径。类型：`LowCardinality(String)`。
+* `_file` — 文件名。类型：`LowCardinality(String)`。
+* `_size` — 文件大小 (以字节为单位) 。类型：`Nullable(UInt64)`。如果大小未知，则值为 `NULL`。
+* `_time` — 文件的最后修改时间。类型：`Nullable(DateTime)`。如果时间未知，则值为 `NULL`。
+* `_etag` — 文件的 ETag。类型：`LowCardinality(String)`。如果 ETag 未知，则值为 `NULL`。
+* `_tags` — 文件的标签。类型：`Map(String, String)`。如果不存在标签，则值为空映射 &#96;{}&#39;。
+
+有关虚拟列的更多信息，请参见[此处](/zh/reference/engines/table-engines/index#table_engines-virtual_columns)。
+
+<div id="implementation-details">
+  ## 实现细节
+</div>
+
+* 读写可并行进行
+* 不支持：
+  * `ALTER` 和 `SELECT...SAMPLE` 操作。
+  * 索引。
+  * 可以进行 [Zero-copy](/zh/concepts/features/configuration/server-config/storing-data#zero-copy) 复制，但官方不提供支持。
+
+<Info>
+  **Zero-copy 复制尚不能用于生产环境**
+
+  在 ClickHouse 22.8 及更高版本中，Zero-copy 复制默认已禁用。不建议在生产环境中使用此功能。
+</Info>
+
+<div id="wildcards-in-path">
+  ## `path` 中的通配符
+</div>
+
+`path` 参数可使用类似 bash 的通配符来指定多个文件。要处理某个文件，该文件必须存在，并且与整个路径模式完全匹配。文件列表是在执行 `SELECT` 时确定的 (而不是在 `CREATE` 时) 。
+
+* `*` — 匹配任意数量的任意字符 (`/` 除外) ，也可匹配空字符串。
+* `**` — 匹配任意数量的任意字符 (包括 `/`) ，也可匹配空字符串。
+* `?` — 匹配任意单个字符。
+* `{some_string,another_string,yet_another_one}` — 匹配字符串 `'some_string'`、`'another_string'`、`'yet_another_one'` 中的任意一个。
+* `{N..M}` — 匹配从 N 到 M 范围内的任意数字，包含两个边界值。N 和 M 可以带前导零，例如 `000..078`。
+
+带有 `{}` 的构造与 [remote](/zh/reference/functions/table-functions/remote) 表函数类似。
+
+<Note>
+  如果文件列表包含带前导零的数字范围，请为每一位分别使用大括号构造，或使用 `?`。
+</Note>
+
+**通配符示例 1**
+
+创建一个表，其文件名为 `file-000.csv`、`file-001.csv`、...、`file-999.csv`：
+
+```sql
+CREATE TABLE big_table (name String, value UInt32)
+    ENGINE = S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/my_folder/file-{000..999}.csv', 'CSV');
+```
+
+**通配符示例 2**
+
+假设我们在 S3 上有多个 CSV 格式的文件，其 URI 如下所示：
+
+* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/some&#95;folder/some&#95;file&#95;1.csv&#39;
+* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/some&#95;folder/some&#95;file&#95;2.csv&#39;
+* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/some&#95;folder/some&#95;file&#95;3.csv&#39;
+* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/another&#95;folder/some&#95;file&#95;1.csv&#39;
+* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/another&#95;folder/some&#95;file&#95;2.csv&#39;
+* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/another&#95;folder/some&#95;file&#95;3.csv&#39;
+
+可以通过以下几种方式创建一个包含这 6 个文件的表：
+
+1. 指定文件后缀的范围：
+
+```sql
+CREATE TABLE table_with_range (name String, value UInt32)
+    ENGINE = S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/{some,another}_folder/some_file_{1..3}', 'CSV');
+```
+
+2. 取出所有以 `some_file_` 为前缀的文件 (两个文件夹中都不应有带此前缀的其他文件) ：
+
+```sql
+CREATE TABLE table_with_question_mark (name String, value UInt32)
+    ENGINE = S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/{some,another}_folder/some_file_?', 'CSV');
+```
+
+3. 取两个文件夹中的所有文件 (所有文件都应符合查询中描述的格式和 schema) ：
+
+```sql
+CREATE TABLE table_with_asterisk (name String, value UInt32)
+    ENGINE = S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/{some,another}_folder/*', 'CSV');
+```
+
+<div id="storage-settings">
+  ## 存储设置
+</div>
+
+* [s3&#95;truncate&#95;on&#95;insert](/zh/reference/settings/session-settings#s3_truncate_on_insert) - 允许在插入前先截断文件。默认禁用。
+* [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/zh/reference/settings/session-settings#s3_create_new_file_on_insert) - 如果 format 带有 suffix，则允许在每次 insert 时创建新文件。默认禁用。
+* [s3&#95;skip&#95;empty&#95;files](/zh/reference/settings/session-settings#s3_skip_empty_files) - 允许在读取时跳过空文件。默认启用。
+
+<div id="settings">
+  ## S3 相关设置
+</div>
+
+以下设置可在查询执行前设置，也可以写入配置文件。
+
+* `s3_max_single_part_upload_size` — 使用单段上传向 S3 上传对象时，对象的最大大小。默认值为 `32Mb`。
+* `s3_min_upload_part_size` — 通过 [S3 Multipart upload](https://docs.aws.amazon.com/AmazonS3/latest/dev/uploadobjusingmpu.html) 进行分段上传时，单个分段的最小大小。默认值为 `16Mb`。
+* `s3_max_redirects` — 允许的 S3 重定向跳转最大次数。默认值为 `10`。
+* `s3_single_read_retries` — 单次读取的最大重试次数。默认值为 `4`。
+* `s3_max_put_rps` — 触发限流前，每秒允许的最大 PUT 请求速率。默认值为 `0` (无限制) 。
+* `s3_max_put_burst` — 达到每秒请求数限制前，可同时发出的最大请求数。默认情况下 (值为 `0`) 等于 `s3_max_put_rps`。
+* `s3_max_get_rps` — 触发限流前，每秒允许的最大 GET 请求速率。默认值为 `0` (无限制) 。
+* `s3_max_get_burst` — 达到每秒请求数限制前，可同时发出的最大请求数。默认情况下 (值为 `0`) 等于 `s3_max_get_rps`。
+* `s3_upload_part_size_multiply_factor` - 每当单次写入到 S3 已上传 `s3_multiply_parts_count_threshold` 个分段时，就将 `s3_min_upload_part_size` 乘以该系数。默认值为 `2`。
+* `s3_upload_part_size_multiply_parts_count_threshold` - 每当上传到 S3 的分段数达到该数值时，`s3_min_upload_part_size` 就会乘以 `s3_upload_part_size_multiply_factor`。默认值为 `500`。
+* `s3_max_inflight_parts_for_one_file` - 限制单个对象可并发执行的 PUT 请求数量。该数量应加以限制。值 `0` 表示无限制。默认值为 `20`。每个正在传输的分段都会占用一个大小为 `s3_min_upload_part_size` 的缓冲区，前 `s3_upload_part_size_multiply_factor` 个分段如此；如果文件足够大，缓冲区还会更大，参见 `upload_part_size_multiply_factor`。在默认设置下，对于小于 `8G` 的文件，单个上传文件的占用不会超过 `320Mb`。文件更大时，占用也会更高。
+
+安全注意事项：如果恶意用户可以指定任意 S3 URL，则必须将 `s3_max_redirects` 设为零，以避免 [SSRF](https://en.wikipedia.org/wiki/Server-side_request_forgery) 攻击；或者，必须在服务器配置中指定 `remote_host_filter`。
+
+<div id="endpoint-settings">
+  ## 基于端点的设置
+</div>
+
+以下设置可在配置文件中为指定端点设置 (将按 URL 的精确前缀匹配) ：
+
+* `endpoint` — 指定端点前缀。必填。
+* `access_key_id` and `secret_access_key` — 指定用于该端点的凭据。可选。
+* `use_environment_credentials` — 如果设为 `true`，S3 客户端会尝试从环境变量和 [Amazon EC2](https://en.wikipedia.org/wiki/Amazon_Elastic_Compute_Cloud) 元数据中获取该端点的凭据。可选，默认值为 `false`。
+* `region` — 指定 S3 区域名称。可选。
+* `use_insecure_imds_request` — 如果设为 `true`，S3 客户端在从 Amazon EC2 元数据获取凭据时会使用不安全的 IMDS 请求。可选，默认值为 `false`。
+* `expiration_window_seconds` — 用于检查基于过期时间的凭据是否已过期的宽限期。可选，默认值为 `120`。
+* `no_sign_request` - 忽略所有凭据，使请求不带签名。适用于访问公共存储桶。
+* `header` — 向发往该端点的请求添加指定的 HTTP 请求头。可选，可指定多次。
+* `access_header` - 在没有来自其他来源的凭据时，向发往该端点的请求添加指定的 HTTP 请求头。
+* `server_side_encryption_customer_key_base64` — 如果指定，将设置访问使用 SSE-C 加密的 S3 对象所需的请求头。可选。
+* `server_side_encryption_kms_key_id` - 如果指定，将设置访问使用 [SSE-KMS encryption](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html) 的 S3 对象所需的请求头。如果指定空字符串，将使用 AWS 托管的 S3 密钥。可选。
+* `server_side_encryption_kms_encryption_context` - 如果与 `server_side_encryption_kms_key_id` 一起指定，将设置给定的 SSE-KMS 加密上下文请求头。可选。
+* `server_side_encryption_kms_bucket_key_enabled` - 如果与 `server_side_encryption_kms_key_id` 一起指定，将设置用于为 SSE-KMS 启用 S3 存储桶 key 的请求头。可选，可为 `true` 或 `false`，默认不设置 (与存储桶级别设置一致) 。
+* `max_single_read_retries` — 单次读取的最大重试次数。默认值为 `4`。可选。
+* `max_put_rps`, `max_put_burst`, `max_get_rps` and `max_get_burst` - 用于特定端点而非按查询应用的 throttling 设置 (见上文说明) 。可选。
+
+**示例：**
+
+```xml
+<s3>
+    <endpoint-name>
+        <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/</endpoint>
+        <!-- <access_key_id>ACCESS_KEY_ID</access_key_id> -->
+        <!-- <secret_access_key>SECRET_ACCESS_KEY</secret_access_key> -->
+        <!-- <region>us-west-1</region> -->
+        <!-- <use_environment_credentials>false</use_environment_credentials> -->
+        <!-- <use_insecure_imds_request>false</use_insecure_imds_request> -->
+        <!-- <expiration_window_seconds>120</expiration_window_seconds> -->
+        <!-- <no_sign_request>false</no_sign_request> -->
+        <!-- <header>Authorization: Bearer SOME-TOKEN</header> -->
+        <!-- <server_side_encryption_customer_key_base64>BASE64-ENCODED-KEY</server_side_encryption_customer_key_base64> -->
+        <!-- <server_side_encryption_kms_key_id>KMS_KEY_ID</server_side_encryption_kms_key_id> -->
+        <!-- <server_side_encryption_kms_encryption_context>KMS_ENCRYPTION_CONTEXT</server_side_encryption_kms_encryption_context> -->
+        <!-- <server_side_encryption_kms_bucket_key_enabled>true</server_side_encryption_kms_bucket_key_enabled> -->
+        <!-- <max_single_read_retries>4</max_single_read_retries> -->
+    </endpoint-name>
+</s3>
+```
+
+<div id="working-with-archives">
+  ## 处理归档文件
+</div>
+
+假设 S3 上有以下几个归档文件 URI：
+
+* &#39;https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-10.csv.zip&#39;
+* &#39;https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-11.csv.zip&#39;
+* &#39;https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-12.csv.zip&#39;
+
+可以使用 :: 从这些归档文件中提取数据。通配符既可用于 URL 部分，也可用于 :: 后面的部分 (用于指定归档内文件名) 。
+
+```sql
+SELECT *
+FROM s3(
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
+);
+```
+
+<Note>
+  ClickHouse 支持三种归档格式：
+  ZIP
+  TAR
+  7Z
+  虽然 ZIP 和 TAR 归档可以从任何受支持的存储位置访问，但 7Z 归档只能在安装了 ClickHouse 的本地文件系统上读取。
+</Note>
+
+<div id="accessing-public-buckets">
+  ## 访问公共存储桶
+</div>
+
+ClickHouse 会尝试从多种不同类型的来源获取凭证。
+有时，访问某些公共存储桶时可能会因此出现问题，导致客户端返回 `403` 错误码。
+可以使用 `NOSIGN` 关键字来避免此问题，强制客户端忽略所有凭证，并且不对请求进行签名。
+
+```sql
+CREATE TABLE big_table (name String, value UInt32)
+    ENGINE = S3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv', NOSIGN, 'CSVWithNames');
+```
+
+<div id="optimizing-performance">
+  ## 优化性能
+</div>
+
+有关如何优化 `s3` 函数性能的详细信息，请参阅[详细指南](/zh/integrations/connectors/data-ingestion/AWS/performance)。
+
+<div id="role-based-access">
+  ## 基于角色的访问控制
+</div>
+
+在 ClickHouse Cloud 中，您可以使用基于角色的访问控制通过 S3 进行身份验证，而无需使用访问密钥。有关配置步骤，请参见 [Secure S3](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。
+
+配置完成后，可以通过 `extra_credentials` 参数传入 `roleARN`：
+
+```sql
+CREATE TABLE my_s3_table(name String, value UInt32)
+ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001'), 'CSV')
+```
+
+还可以与 `role_arn` 一起提供可选的 `external_id`。它会作为 AWS STS `AssumeRole` 调用中的 `ExternalId` 参数传递，使该角色的信任策略可以要求提供一个共享密钥，以缓解[混淆代理问题](https://docs.aws.amazon.com/IAM/latest/UserGuide/confused-deputy.html)：
+
+```sql
+CREATE TABLE my_s3_table(name String, value UInt32)
+ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001', external_id = 'my-external-id'), 'CSV')
+```
+
+<div id="see-also">
+  ## 另请参阅
+</div>
+
+* [S3 表函数](/zh/reference/functions/table-functions/s3)
+* [将 S3 与 ClickHouse 集成](/zh/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)

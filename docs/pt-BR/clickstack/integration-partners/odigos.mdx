@@ -1,0 +1,321 @@
+---
+slug: /use-cases/observability/clickstack/integration-partners/odigos
+title: 'Enviando OpenTelemetry para o ClickStack com Odigos'
+sidebarTitle: 'Odigos'
+description: 'Instrumente automaticamente workloads do Kubernetes com o Odigos e exporte a telemetria para o ClickStack via OTLP'
+doc_type: 'guide'
+keywords: ['Odigos', 'ClickStack', 'ClickHouse', 'OpenTelemetry', 'eBPF', 'auto-instrumentação']
+---
+
+import PartnerBadge from "/snippets/pt-BR/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<Info>
+  **Resumo**
+
+  Este guia mostra como exportar a telemetria do Odigos para o ClickStack. Você aprenderá a:
+
+  * Implantar o Odigos no Kubernetes com Helm
+  * Adicionar fontes na UI do Odigos
+  * Adicionar um destino OTLP HTTP apontando para o ClickStack
+  * Verificar logs, métricas e traces no ClickStack
+
+  O Odigos instrumenta aplicações automaticamente, sem alterações no código nem reinicializações; o ClickStack armazena e consulta os dados no ClickHouse.
+
+  Tempo necessário: 10–20 minutos
+</Info>
+
+{/* vale off */}
+
+<div id="what-is-odigos">
+  ## O que é Odigos?
+</div>
+
+{/* vale on */}
+
+[Odigos](https://odigos.io/) é um plano de controle de instrumentação para Kubernetes e VMs que instrumenta aplicações diretamente no kernel usando **eBPF**. Como a coleta é executada no kernel, a sobrecarga nas aplicações permanece baixa, enquanto a visibilidade continua alta. Você obtém traces, métricas, logs e perfis do OpenTelemetry prontos para produção sem precisar adicionar novos agentes ao código da aplicação nem esperar por atualizações de bibliotecas em cada serviço.
+
+Essa camada de eBPF é o que torna possível uma telemetria detalhada e consistente em escala. O Odigos pode ativar e desativar automaticamente uma instrumentação mais aprofundada quando necessário para ajudar na depuração ou na solução de problemas:
+
+* **Contexto em nível de código** — atributos vinculados a funções e ao comportamento em tempo de execução
+* **Tráfego HTTP** — requisições e respostas entre seus serviços
+* **Sistemas de mensageria** — payloads e mensagens do Kafka e de brokers semelhantes
+* **Detalhes dos erros** — stack traces quando algo falha
+* **Instrumentação personalizada** — amplie a cobertura onde a instrumentação automática não alcança, sem exigir alterações no código nem reinicializações
+
+Nos bastidores, o Odigos cria e gerencia um pipeline OpenTelemetry completo para seu cluster: coletores que escalam com a carga, roteamento para os backends que você escolher e lógica de pipeline que você controla pela UI. Defina **sampling** para gerenciar o volume, **mascaramento de PII** para manter dados sensíveis fora das exportações e **regras OTTL** para filtrar, transformar ou enriquecer a telemetria antes que ela saia do cluster.
+
+{/* vale off */}
+
+<div id="why-odigos-clickstack">
+  ## Por que Odigos + ClickStack?
+</div>
+
+{/* vale on */}
+
+Implantar o OpenTelemetry em muitos serviços costuma ser demorado e oferece apenas visibilidade superficial das aplicações. O Odigos cuida da instrumentação com eBPF para uma telemetria mais profunda e da operação dos collectors no Kubernetes; o ClickStack fornece armazenamento no ClickHouse e a UI do HyperDX para consultar a telemetria em escala.
+
+<Tip>
+  **Principais pontos**
+
+  * **Odigos** instrumenta automaticamente qualquer workload do Kubernetes sem exigir reinícios e gerencia pipelines do OpenTelemetry automaticamente.
+  * **ClickStack** armazena logs, métricas e traces no ClickHouse e os exibe no HyperDX.
+</Tip>
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+* **ClickStack** instalado e acessível a partir do seu cluster Kubernetes. Consulte [Primeiros passos com o ClickStack open source](/pt-BR/clickstack/getting-started/oss) ou [Primeiros passos com o ClickStack gerenciado](/pt-BR/clickstack/getting-started/managed).
+* Seu **endpoint HTTP OTLP** do ClickStack (porta `4318`) e o valor de autenticação que o Odigos passará no header `Authorization`. No ClickStack open source, isso corresponde à **chave de ingestão da API** em **Team Settings → API Keys** na UI do HyperDX. No ClickStack gerenciado, isso corresponde ao **`OTLP_AUTH_TOKEN`** que você definiu ao iniciar seu próprio ClickStack collector standalone.
+* Um **cluster Kubernetes** (nós Linux com kernel 4.18 ou posterior para instrumentação eBPF)
+* **Helm**, **kubectl** e credenciais do cluster para instalar no espaço de nomes `odigos-system`
+* Um **token on-prem do Odigos Enterprise** — entre em contato com a [equipe do Odigos](https://odigos.io/) para obter acesso
+
+{/* vale off */}
+
+<div id="integrate-odigos-clickstack">
+  ## Integre o ClickStack ao Odigos
+</div>
+
+{/* vale on */}
+
+<Steps>
+  <Step>
+    #### Implante o Odigos com Helm
+
+    O Odigos Enterprise requer um token de licença on-prem. Exporte-o no shell:
+
+    ```bash
+    export ODIGOS_ONPREM_TOKEN="<your-enterprise-token>"
+    ```
+
+    Como alternativa, você pode armazenar o token em um Secret do Kubernetes chamado `odigos-pro` antes da instalação. Consulte a [instalação do Odigos Enterprise](https://docs.odigos.io/enterprise/setup/installation).
+
+    Adicione o repositório Helm do Odigos e instale o chart em `odigos-system`:
+
+    ```bash
+    helm repo add odigos https://odigos-io.github.io/odigos/
+    helm repo update
+
+    helm upgrade --install odigos odigos/odigos \
+      --namespace odigos-system \
+      --create-namespace \
+      --set onPremToken=$ODIGOS_ONPREM_TOKEN
+    ```
+
+    Você pode passar sobrescritas de configuração adicionais com as flags `--set` ou com um arquivo de valores personalizado (`-f`). Os valores padrão do chart estão em [helm/odigos/values.yaml](https://github.com/odigos-io/odigos/blob/main/helm/odigos/values.yaml) no GitHub.
+
+    Verifique se os pods do Odigos estão em execução:
+
+    ```bash
+    kubectl get pods -n odigos-system
+    ```
+  </Step>
+
+  <Step>
+    #### Adicione fontes na UI do Odigos
+
+    1. Faça o redirecionamento de porta para o serviço da UI do Odigos:
+
+    ```bash
+    kubectl port-forward svc/ui -n odigos-system 3000:3000
+    ```
+
+    2. Abra [http://localhost:3000](http://localhost:3000) no seu navegador.
+    3. Vá para **Sources** e selecione os espaços de nomes ou as cargas de trabalho que você quer instrumentar.
+    4. Clique em done na parte inferior depois de marcar todas as cargas de trabalho para instrumentação.
+    5. Verifique se as cargas de trabalho foram instrumentadas com sucesso na coluna Sources.
+  </Step>
+
+  <Step>
+    #### Adicione o ClickStack como destino na UI do Odigos
+
+    Para enviar telemetria para o ClickStack, adicione um destino **OTLP HTTP** no Odigos. A configuração exata depende de como o ClickStack foi implantado. Com o Open Source ClickStack, o OpenTelemetry Collector já vem incluído e a API key de ingestão é gerada para você na UI do HyperDX. Com o Managed ClickStack, você executa seu próprio coletor do ClickStack em modo standalone e escolhe o token de authentication ao iniciar o contêiner.
+
+    <Tip>
+      **Alternativa: gravar diretamente no ClickHouse**
+
+      Se o ClickHouse estiver acessível a partir do seu cluster Kubernetes, você pode dispensar totalmente o coletor OTLP e usar o destino [native **ClickHouse** do Odigos](#native-clickhouse-destination). Isso funciona tanto com o Open Source ClickStack quanto com o Managed ClickStack.
+    </Tip>
+
+    <Tabs>
+      <Tab title="Open Source ClickStack">
+        Com o Open Source ClickStack, por exemplo na imagem all-in-one, o OpenTelemetry Collector em modo gateway já está incluído, e a API key de ingestão é gerada automaticamente pelo HyperDX.
+
+        1. Na UI do Odigos, clique em **Add Destination** e selecione **OTLP HTTP**.
+        2. Defina **OTLP HTTP Endpoint** como o endpoint do seu coletor do ClickStack (por exemplo, `http://clickstack.example.com:4318`). Veja [Ingestão com OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry#sending-data-to-collector-oss) para detalhes sobre o endpoint.
+        3. Copie sua API key de ingestão na UI do ClickStack em **Team Settings → API Keys**.
+        4. Em **Headers**, adicione:
+           * **Key**: `Authorization`
+           * **Value**: sua API key de ingestão
+        5. Ative **Logs**, **Metrics** e **Traces**.
+        6. Salve o destino.
+      </Tab>
+
+      <Tab title="Managed ClickStack">
+        O Managed ClickStack não inclui um OpenTelemetry Collector hospedado nem exibe uma chave de ingestão na UI. Em vez disso, você mesmo executa a [distribuição do coletor do ClickStack em modo standalone](/pt-BR/clickstack/ingesting-data/collector#configuring-the-collector) e define o token de authentication por meio da variável de ambiente `OTLP_AUTH_TOKEN` ao iniciar o contêiner. O Odigos então envia tráfego OTLP HTTP para esse coletor com o mesmo token no header `Authorization`.
+
+        1. Inicie o coletor do ClickStack em modo standalone, apontando para seu serviço do ClickHouse Cloud e protegendo-o com um `OTLP_AUTH_TOKEN` de sua escolha:
+
+           ```shell
+           export CLICKHOUSE_ENDPOINT=<HTTPS_ENDPOINT>
+           export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+           export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+           export OTLP_AUTH_TOKEN="a_very_secure_string"
+
+           docker run \
+             -e OTLP_AUTH_TOKEN=${OTLP_AUTH_TOKEN} \
+             -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+             -e CLICKHOUSE_USER=${CLICKHOUSE_USER} \
+             -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+             -p 4317:4317 \
+             -p 4318:4318 \
+             clickhouse/clickstack-otel-collector:latest
+           ```
+
+           Para TLS, usuários dedicados de ingestão e outras recomendações para produção, veja [Protegendo o coletor](/pt-BR/clickstack/ingesting-data/collector#securing-the-collector).
+        2. Na UI do Odigos, clique em **Add Destination** e selecione **OTLP HTTP**.
+        3. Defina **OTLP HTTP Endpoint** como o coletor standalone que você acabou de iniciar (por exemplo, `http://my-collector.example.com:4318`).
+        4. Em **Headers**, adicione:
+           * **Key**: `Authorization`
+           * **Value**: o valor de `OTLP_AUTH_TOKEN` definido no coletor
+        5. Ative **Logs**, **Metrics** e **Traces**.
+        6. Salve o destino.
+
+        <Info>
+          **Opcional: manifest do Kubernetes**
+
+          Você pode configurar o mesmo destino com um manifest `Destination` em vez de usar a UI. Veja [Configurar destinos com manifests do Kubernetes](#destination-manifest) em Configuração avançada.
+        </Info>
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step>
+    #### Verifique a telemetria no ClickStack
+
+    1. Abra a interface do ClickStack (HyperDX):
+       * **Open source ClickStack**: por exemplo, `http://<host>:8080` na imagem all-in-one.
+       * **Managed ClickStack**: abra seu serviço no [console do ClickHouse Cloud](https://console.clickhouse.cloud) e clique em **Launch ClickStack**. Consulte [Acesse a UI do ClickStack](/pt-BR/clickstack/getting-started/managed#navigate-to-clickstack-ui-cloud) para mais detalhes.
+    2. Verifique **Logs**, **Metrics** e **Traces** para conferir os dados dos seus serviços instrumentados.
+    3. Filtre os traces por `odigos.version` para validar a exportação de ponta a ponta.
+
+    Se faltarem dados, verifique os logs do collector: `kubectl logs deploy/odigos-gateway -n odigos-system`
+  </Step>
+</Steps>
+
+<div id="advanced-configuration">
+  ## Configuração avançada
+</div>
+
+<div id="hyperdx-log-normalizer">
+  ### Normalizador de logs do HyperDX
+</div>
+
+Se você exportar diretamente para o ClickHouse com o destino **ClickHouse** nativo do Odigos (em vez de OTLP HTTP para o ClickStack), habilite o **normalizador de logs do HyperDX** (`HYPERDX_LOG_NORMALIZER: true`). Ele faz o parse do conteúdo JSON dos logs e normaliza os atributos para melhorar as consultas na UI do ClickStack.
+
+<div id="native-clickhouse-destination">
+  ### Destino nativo do ClickHouse
+</div>
+
+Quando o ClickHouse estiver diretamente acessível a partir do seu cluster, você poderá usar o destino **ClickHouse** nativo do Odigos em vez de OTLP HTTP. Configure o endpoint do ClickHouse, o nome do banco de dados e as opções de esquema na UI ou com um manifesto — consulte [destino ClickHouse do Odigos](https://docs.odigos.io/backends/clickhouse).
+
+* **Esquema de produção**: defina `CLICKHOUSE_CREATE_SCHEME` como `false` e aplique sua própria DDL.
+* **TLS / autenticação**: use `CLICKHOUSE_TLS_ENABLED`, `CLICKHOUSE_USERNAME` e um Secret do Kubernetes para a senha.
+
+<div id="destination-manifest">
+  ### Configure destinos usando manifests do Kubernetes
+</div>
+
+**OTLP HTTP (ClickStack)**
+
+```yaml
+apiVersion: odigos.io/v1alpha1
+kind: Destination
+metadata:
+  name: clickstack
+  namespace: odigos-system
+spec:
+  type: otlphttp
+  destinationName: otlphttp
+  signals:
+    - TRACES
+    - METRICS
+    - LOGS
+  data:
+    OTLP_HTTP_ENDPOINT: 'http://clickstack.example.com:4318'
+    # Chave de ingestão de API para o ClickStack open source, ou OTLP_AUTH_TOKEN para o Managed ClickStack
+    OTLP_HTTP_HEADERS: 'Authorization:<YOUR_AUTHORIZATION_VALUE>'
+```
+
+**ClickHouse (direto)**
+
+```yaml
+apiVersion: odigos.io/v1alpha1
+kind: Destination
+metadata:
+  name: clickhouse
+  namespace: odigos-system
+spec:
+  type: clickhouse
+  destinationName: clickhouse
+  signals:
+    - TRACES
+    - METRICS
+    - LOGS
+  data:
+    CLICKHOUSE_ENDPOINT: 'http://clickstack.example.com:8123'
+    CLICKHOUSE_DATABASE_NAME: 'otel'
+    CLICKHOUSE_CREATE_SCHEME: 'true'
+```
+
+Aplique o manifesto:
+
+```bash
+kubectl apply -f destination.yaml
+```
+
+{/* vale off */}
+
+<div id="odigos-vm-agent">
+  ### Agente de VM do Odigos
+</div>
+
+{/* vale on */}
+
+O [Odigos VM Agent](https://docs.odigos.io/vmagent/overview) instrumenta processos Linux, serviços do systemd e/ou contêineres Docker usando eBPF. A telemetria é exportada para os mesmos destinos do Odigos baseado em cluster, incluindo o ClickStack via OTLP HTTP.
+
+O VM Agent faz parte do Odigos Pro. Consulte a [visão geral do VM Agent](https://docs.odigos.io/vmagent/overview) para ver a configuração, as fontes e a configuração de destinos.
+
+{/* vale off */}
+
+<div id="odigos-central">
+  ### Odigos Central
+</div>
+
+{/* vale on */}
+
+[Odigos Central](https://docs.odigos.io/central/overview) é um plano de controle centralizado para gerenciar a instrumentação, os destinos e a configuração de pipelines em vários clusters Kubernetes a partir de uma única UI, em vez de configurar cada cluster separadamente.
+
+O Odigos Central está disponível no Odigos Enterprise. Consulte a [visão geral do Odigos Central](https://docs.odigos.io/central/overview) para gerenciamento de múltiplos clusters, SSO e regras unificadas de sampling.
+
+<div id="next-steps">
+  ## Próximos passos
+</div>
+
+* **Explore traces** nos serviços instrumentados no ClickStack
+* **Crie dashboards** com as métricas exportadas pelo Odigos
+* **Ajuste o esquema e o TTL do ClickHouse** de acordo com sua retenção e seus padrões de consulta
+
+<div id="read-more">
+  ## Saiba mais
+</div>
+
+* [Instalação do Odigos Enterprise](https://docs.odigos.io/enterprise/setup/installation)
+* [Destino ClickHouse do Odigos](https://docs.odigos.io/backends/clickhouse)
+* [Visão geral do Odigos VM Agent](https://docs.odigos.io/vmagent/overview)
+* [Visão geral do Odigos Central](https://docs.odigos.io/central/overview)
+* [Chega de adivinhar em produção: tracing com fidelidade total em escala com ClickHouse e Odigos](https://clickhouse.com/blog/odigos-full-fidelity-tracing)
+* [Primeiros passos com o ClickStack de código aberto](/pt-BR/clickstack/getting-started/oss)

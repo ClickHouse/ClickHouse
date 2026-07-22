@@ -1,0 +1,263 @@
+---
+slug: /use-cases/observability/clickstack/sdks/golang
+description: 'ClickStack용 Golang SDK - ClickHouse 관측성 스택'
+title: 'Golang'
+doc_type: 'guide'
+keywords: ['Golang ClickStack SDK', 'Go OpenTelemetry 통합', 'Golang 관측성', 'Go 트레이싱 인스트루먼테이션', 'ClickStack Go SDK']
+---
+
+ClickStack은 텔레메트리 데이터(로그 및
+트레이스) 수집에 OpenTelemetry 표준을 사용합니다. 트레이스는 자동 인스트루먼테이션으로 생성되므로, 트레이싱을 활용하기 위해 수동
+인스트루먼테이션을 할 필요는 없습니다.
+
+**이 가이드에서 통합하는 항목:**
+
+<table>
+  <tbody>
+    <tr>
+      <td className="pe-2">✅ 로그</td>
+      <td className="pe-2">✅ 메트릭</td>
+      <td className="pe-2">✅ 트레이스</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="getting-started">
+  ## 시작하기
+</div>
+
+<div id="install-opentelemetry">
+  ### OpenTelemetry instrumentation 패키지 설치
+</div>
+
+OpenTelemetry 및 HyperDX Go 패키지를 설치하려면 아래 명령을 사용하세요. 추적 정보가 올바르게 추가되도록 [현재 제공되는 instrumentation 패키지](https://github.com/open-telemetry/opentelemetry-go-contrib/tree/v1.4.0/instrumentation#instrumentation-packages)를 확인하고 필요한 패키지를 설치하는 것이 좋습니다.
+
+```shell
+go get -u go.opentelemetry.io/otel
+go get -u github.com/hyperdxio/otel-config-go
+go get -u github.com/hyperdxio/opentelemetry-go
+go get -u github.com/hyperdxio/opentelemetry-logs-go
+```
+
+<div id="native-http-server-example">
+  ### 네이티브 HTTP server 예시 (net/http)
+</div>
+
+이 예시에서는 `net/http/otelhttp`를 사용하겠습니다.
+
+```shell
+go get -u go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
+```
+
+주석이 포함된 섹션을 참고하여 Go 애플리케이션에 계측을 추가하는 방법을 알아보십시오.
+
+```go
+
+package main
+
+import (
+  "context"
+  "io"
+  "log"
+  "net/http"
+  "os"
+
+  "github.com/hyperdxio/opentelemetry-go/otelzap"
+  "github.com/hyperdxio/opentelemetry-logs-go/exporters/otlp/otlplogs"
+  "github.com/hyperdxio/otel-config-go/otelconfig"
+  "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+  "go.opentelemetry.io/otel/trace"
+  "go.uber.org/zap"
+  sdk "github.com/hyperdxio/opentelemetry-logs-go/sdk/logs"
+  semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
+  "go.opentelemetry.io/otel/sdk/resource"
+)
+
+// 모든 로그에 공통 속성 설정
+func newResource() *resource.Resource {
+  hostName, _ := os.Hostname()
+  return resource.NewWithAttributes(
+    semconv.SchemaURL,
+    semconv.ServiceVersion("1.0.0"),
+    semconv.HostName(hostName),
+  )
+}
+
+// 로그에 트레이스 ID 첨부
+func WithTraceMetadata(ctx context.Context, logger *zap.Logger) *zap.Logger {
+  spanContext := trace.SpanContextFromContext(ctx)
+  if !spanContext.IsValid() {
+    // ctx에 유효한 스팬이 없습니다.
+    // 추가할 트레이스 메타데이터가 없습니다.
+    return logger
+  }
+  return logger.With(
+    zap.String("trace_id", spanContext.TraceID().String()),
+    zap.String("span_id", spanContext.SpanID().String()),
+  )
+}
+
+func main() {
+  // OTel 설정을 초기화하고 앱 전체에서 사용
+  otelShutdown, err := otelconfig.ConfigureOpenTelemetry()
+  if err != nil {
+    log.Fatalf("error setting up OTel SDK - %e", err)
+  }
+  defer otelShutdown()
+
+  ctx := context.Background()
+
+  // OpenTelemetry 로거 프로바이더 설정
+  logExporter, _ := otlplogs.NewExporter(ctx)
+  loggerProvider := sdk.NewLoggerProvider(
+    sdk.WithBatcher(logExporter),
+  )
+  // 프로그램 종료 전 누적된 시그널을 플러시하기 위해 로거를 정상적으로 종료
+  defer loggerProvider.Shutdown(ctx)
+
+  // OpenTelemetry zap 코어로 새 로거를 생성하고 전역으로 설정
+  logger := zap.New(otelzap.NewOtelCore(loggerProvider))
+  zap.ReplaceGlobals(logger)
+  logger.Warn("hello world", zap.String("foo", "bar"))
+
+  http.Handle("/", otelhttp.NewHandler(wrapHandler(logger, ExampleHandler), "example-service"))
+
+  port := os.Getenv("PORT")
+  if port == "" {
+    port = "7777"
+  }
+
+  logger.Info("** Service Started on Port " + port + " **")
+  if err := http.ListenAndServe(":"+port, nil); err != nil {
+    logger.Fatal(err.Error())
+  }
+}
+
+// 모든 핸들러를 래핑하여 로거에 트레이스 메타데이터를 추가할 때 사용
+func wrapHandler(logger *zap.Logger, handler http.HandlerFunc) http.HandlerFunc {
+  return func(w http.ResponseWriter, r *http.Request) {
+    logger := WithTraceMetadata(r.Context(), logger)
+    logger.Info("request received", zap.String("url", r.URL.Path), zap.String("method", r.Method))
+    handler(w, r)
+    logger.Info("request completed", zap.String("path", r.URL.Path), zap.String("method", r.Method))
+  }
+}
+
+func ExampleHandler(w http.ResponseWriter, r *http.Request) {
+  w.Header().Add("Content-Type", "application/json")
+  io.WriteString(w, `{"status":"ok"}`)
+}
+```
+
+<div id="gin-application-example">
+  ### Gin 애플리케이션 예시
+</div>
+
+이 예시에서는 `gin-gonic/gin`을 사용하겠습니다.
+
+```shell
+go get -u go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin
+```
+
+주석이 있는 섹션을 참고하여 Go 애플리케이션에 계측을 적용하는 방법을 알아보십시오.
+
+```go
+
+package main
+
+import (
+  "context"
+  "log"
+  "net/http"
+
+  "github.com/gin-gonic/gin"
+  "github.com/hyperdxio/opentelemetry-go/otelzap"
+  "github.com/hyperdxio/opentelemetry-logs-go/exporters/otlp/otlplogs"
+  sdk "github.com/hyperdxio/opentelemetry-logs-go/sdk/logs"
+  "github.com/hyperdxio/otel-config-go/otelconfig"
+  "go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+  "go.opentelemetry.io/otel/trace"
+  "go.uber.org/zap"
+)
+
+// 로그에 트레이스 ID를 첨부합니다
+func WithTraceMetadata(ctx context.Context, logger *zap.Logger) *zap.Logger {
+  spanContext := trace.SpanContextFromContext(ctx)
+  if !spanContext.IsValid() {
+    // ctx에 유효한 스팬이 없습니다.
+    // 추가할 트레이스 메타데이터가 없습니다.
+    return logger
+  }
+  return logger.With(
+    zap.String("trace_id", spanContext.TraceID().String()),
+    zap.String("span_id", spanContext.SpanID().String()),
+  )
+}
+
+func main() {
+  // OTel 설정을 초기화하고 앱 전체에서 사용합니다
+  otelShutdown, err := otelconfig.ConfigureOpenTelemetry()
+  if err != nil {
+    log.Fatalf("error setting up OTel SDK - %e", err)
+  }
+
+  defer otelShutdown()
+
+  ctx := context.Background()
+
+  // OpenTelemetry 로거 프로바이더를 설정합니다
+  logExporter, _ := otlplogs.NewExporter(ctx)
+  loggerProvider := sdk.NewLoggerProvider(
+    sdk.WithBatcher(logExporter),
+  )
+
+  // 프로그램 종료 전 누적된 신호를 플러시하기 위해 로거를 정상적으로 종료합니다
+  defer loggerProvider.Shutdown(ctx)
+
+  // OpenTelemetry zap 코어로 새 로거를 생성하고 전역으로 설정합니다
+  logger := zap.New(otelzap.NewOtelCore(loggerProvider))
+  zap.ReplaceGlobals(logger)
+
+  // 새 Gin 라우터를 생성합니다
+  router := gin.Default()
+
+  router.Use(otelgin.Middleware("service-name"))
+
+  // 루트 URL의 GET 요청에 응답하는 라우트를 정의합니다
+  router.GET("/", func(c *gin.Context) {
+    _logger := WithTraceMetadata(c.Request.Context(), logger)
+    _logger.Info("Hello World!")
+    c.String(http.StatusOK, "Hello World!")
+  })
+
+  // 포트 7777에서 서버를 실행합니다
+  router.Run(":7777")
+}
+```
+
+<div id="configure-environment-variables">
+  ### 환경 변수 설정
+</div>
+
+그런 다음 셸에서 다음 환경 변수를 설정하여 OpenTelemetry collector를 통해 텔레메트리를 ClickStack으로 전송하십시오:
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector:4318 \
+    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    ```
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector:4318 \
+    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
+    ```
+  </Tab>
+</Tabs>
+
+`OTEL_EXPORTER_OTLP_HEADERS` 환경 변수에는 HyperDX 앱의 `Team Settings → API Keys`에서 확인할 수 있는 API Key가 포함됩니다.

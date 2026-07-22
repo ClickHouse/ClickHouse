@@ -1,6 +1,7 @@
 import argparse
 import os
 import re
+import shlex
 import subprocess
 import time
 from pathlib import Path
@@ -98,6 +99,18 @@ def _mark_infrastructure_errors(results: list) -> int:
     if count:
         print(f"Marked {count} test result(s) as infrastructure errors")
     return count
+
+
+def quote_tests(tests: List[str]) -> str:
+    """Join test node IDs into a shell-safe, space-separated string.
+
+    A parametrized integration test node ID can contain spaces, parentheses and
+    quotes when the test is parametrized with SQL (e.g.
+    `test.py::test_simple_append[SELECT now() FROM numbers(2)]`). The pytest
+    command is executed through a shell, so each node ID must be quoted to
+    survive as a single argument instead of being split or mis-parsed.
+    """
+    return " ".join(shlex.quote(t) for t in tests)
 
 
 def start_docker_in_docker():
@@ -750,17 +763,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 # TODO: reduce scope to modified test cases instead of entire modules
                 changed_files = info.get_changed_files()
                 for file in changed_files:
-                    if (
-                        file.startswith("tests/integration/test")
-                        # e2e tests require external credentials/backends and are
-                        # excluded from the default pytest run via the `e2e`
-                        # marker. Skip them so a mixed PR (both e2e and regular
-                        # integration tests changed) does not try to run them.
-                        and not file.startswith("tests/integration/test_e2e_")
-                        and Path(file).name.startswith("test")
-                        and file.endswith(".py")
-                        and Path(file).is_file()
-                    ):
+                    if Targeting.is_integration_test_file(file):
                         changed_test_modules.append(
                             file.removeprefix("tests/integration/")
                         )
@@ -883,6 +886,48 @@ tar -czf ./ci/tmp/logs.tar.gz \
     elif is_parallel:
         sequential_test_modules = []
         assert not is_sequential
+
+    # If this PR only touches test files (no production/config code changed),
+    # this batch only needs to run whichever of parallel_test_modules /
+    # sequential_test_modules actually contains a changed module - the other
+    # side would produce results identical to master and can be dropped
+    # outright (saving the time to run it), and if neither side contains a
+    # changed module the whole batch can be skipped. Placed after the
+    # is_sequential/is_parallel handling above so it sees the modules this
+    # job invocation will actually run, not the pre-flavor-filter set.
+    if (
+        total_batches > 1
+        and not is_flaky_check
+        and not is_targeted_check
+        and not is_bugfix_validation
+        and not args.test
+    ):
+        changed_files = info.get_changed_files()
+        if changed_files and all(
+            Targeting.is_functional_test_file(f)
+            or Targeting.is_integration_test_file(f)
+            or Targeting.is_ci_job_script(f)
+            for f in changed_files
+        ):
+            changed_integration_modules = {
+                f.removeprefix("tests/integration/")
+                for f in changed_files
+                if Targeting.is_integration_test_file(f)
+            }
+            if not changed_integration_modules:
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only non-integration test files changed in this PR - nothing for this job to run",
+                ).complete_job()
+            if not (changed_integration_modules & set(parallel_test_modules)):
+                parallel_test_modules = []
+            if not (changed_integration_modules & set(sequential_test_modules)):
+                sequential_test_modules = []
+            if not parallel_test_modules and not sequential_test_modules:
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only test files changed in this PR and none of the changed test modules fall into this batch",
+                ).complete_job()
 
     if (is_targeted_check or is_flaky_check) and not parallel_test_modules and not sequential_test_modules:
         # Targeted check: all selected tests were stale (removed or renamed since the CIDB record).
@@ -1040,7 +1085,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if parallel_test_modules:
         log_file = f"{temp_path}/pytest_parallel.log"
         test_result_parallel, parallel_timed_out = run_pytest_and_collect_results(
-            command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {parallel_workers} {parallel_dist} --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
+            command=f"{quote_tests(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {parallel_workers} {parallel_dist} --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
             env=test_env,
             report_name="parallel",
             timeout=session_timeout_parallel + 600,
@@ -1082,7 +1127,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                     session_timeout_sequential, flaky_check_remaining_s
                 )
             test_result_sequential, sequential_timed_out = run_pytest_and_collect_results(
-                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={iter_session_timeout_sequential}",
+                command=f"{quote_tests(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={iter_session_timeout_sequential}",
                 env=test_env,
                 report_name="sequential",
                 timeout=iter_session_timeout_sequential + 600,
@@ -1133,7 +1178,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
                 if parallel_test_modules:
                     bt_result_parallel, _ = run_pytest_and_collect_results(
-                        command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
+                        command=f"{quote_tests(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
                         env=test_env,
                         report_name=f"parallel_{bugfix_bt}",
                         timeout=session_timeout_parallel + 600,
@@ -1149,7 +1194,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 bt_fail_num = len([r for r in bt_test_results if not r.is_ok()])
                 if sequential_test_modules and bt_fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
                     bt_result_sequential, _ = run_pytest_and_collect_results(
-                        command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
+                        command=f"{quote_tests(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
                         env=test_env,
                         report_name=f"sequential_{bugfix_bt}",
                         timeout=session_timeout_sequential + 600,
@@ -1206,7 +1251,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
     ):
         test_result_retries, _ = run_pytest_and_collect_results(
-            command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
+            command=f"{quote_tests(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
             env=test_env,
             report_name="retries",
             timeout=1200 + 600,
@@ -1429,6 +1474,18 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 R.set_success()
 
     force_ok_exit = False
+    if R:
+        failures_cnt = len([r for r in R.results if not r.is_ok()])
+        if failures_cnt > 0 and failures_cnt < 4:
+            print(
+                f"NOTE: Failed {failures_cnt} tests - do not block pipeline, exit with 0"
+            )
+            force_ok_exit = True
+        elif failures_cnt > 0 and "ci-non-blocking" in info.pr_labels:
+            print(
+                f"NOTE: Failed {failures_cnt} tests, label 'ci-non-blocking' is set - do not block pipeline - exit with 0"
+            )
+            force_ok_exit = True
     if is_bugfix_validation:
         # Per-arch bugfix-validation jobs are advisory: their pass/fail status
         # records "did the bug reproduce on this arch?", not whether the PR

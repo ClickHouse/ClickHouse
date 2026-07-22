@@ -1,0 +1,189 @@
+---
+position: 3
+slug: /clickhouse-operator/guides/storage
+title: 저장소 및 볼륨
+keywords: ['kubernetes', '저장소', '볼륨', 'pvc', 'jbod', 'disks']
+description: '이 문서에서는 연산자가 ClickHouse 클러스터에 영구 저장소를 프로비저닝하는 방법(주 데이터 볼륨, 다중 디스크(JBOD) 레이아웃, 용량 확장, 생성 후 변경할 수 없는 항목 포함)을 설명합니다.'
+doc_type: 'guide'
+---
+
+이 가이드에서는 연산자가
+`ClickHouseCluster`에 영구 저장소를 프로비저닝하는 방법을 설명합니다. 여기에는
+주 데이터 볼륨, 다중 디스크(JBOD) 레이아웃에서 추가 디스크를 연결하는 방법,
+용량 확장, 그리고 클러스터 생성 후 변경할 수 있는 항목과 변경할 수 없는 항목에
+대한 규칙이 포함됩니다.
+
+항목별 참고 정보는 다음을 참조하십시오.
+[구성 → Storage configuration](/ko/products/kubernetes-operator/guides/configuration#storage-configuration)
+및 [API 참조](/ko/products/kubernetes-operator/reference/api-reference).
+
+<div id="primary-data-volume">
+  ## 프라이머리 데이터 볼륨
+</div>
+
+`spec.dataVolumeClaimSpec`는 표준 Kubernetes `PersistentVolumeClaimSpec`입니다.
+연산자는 이를 StatefulSet `volumeClaimTemplate`로 변환하므로, StatefulSet
+컨트롤러가 레플리카마다 PersistentVolumeClaim을 하나씩 생성해 유지하고 이를
+ClickHouse 데이터 경로 `/var/lib/clickhouse`에 마운트합니다.
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: my-cluster
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd   # optional; depends on the installed CSI driver
+    resources:
+      requests:
+        storage: 100Gi
+```
+
+* `accessModes`를 생략하면 연산자가 기본값으로 `ReadWriteOnce`를 사용합니다.
+* cluster가 삭제되더라도 레플리카별 PVC는 유지되므로, 사용자 지정 리소스를
+  삭제한 후 다시 생성해도 데이터는 보존됩니다.
+* 동일한 필드는 `KeeperCluster`에도 있으며 동일하게 동작합니다.
+
+<div id="ephemeral-storage">
+  ## 영구 데이터 볼륨 없이 실행하기
+</div>
+
+`dataVolumeClaimSpec`은 선택 사항입니다. 이를 생략하고 데이터 경로에 별도의 볼륨도
+마운트하지 않으면 ClickHouse는 컨테이너의 임시 파일 시스템에 기록하며,
+클러스터가 다시 시작될 때 데이터가 손실될 수 있다는 경고를 admission webhook이 반환합니다.
+
+이 방식은 일회성 또는 테스트용 클러스터에서만 사용해야 합니다. `dataVolumeClaimSpec`
+대신 자체 스토리지를 제공하려면 — 예를 들어 `emptyDir` 또는 사전 프로비저닝된
+볼륨을 사용하는 경우 — `spec.podTemplate.volumes`에서 이를 정의하고
+`spec.containerTemplate.volumeMounts`로 `/var/lib/clickhouse`에 마운트하십시오.
+
+<Note>
+  `dataVolumeClaimSpec`과 데이터 경로의 사용자 지정 볼륨은 함께 사용할 수 없습니다.
+  `dataVolumeClaimSpec`이 설정된 경우 `/var/lib/clickhouse`에 사용자 지정 볼륨을
+  마운트하면 거부됩니다. 예약된 볼륨 이름인 `clickhouse-storage-volume`,
+  `clickhouse-server-tls-volume`, `clickhouse-server-custom-ca-volume`은
+  `podTemplate.volumes`에서 사용할 수 없습니다.
+</Note>
+
+<div id="expanding-storage">
+  ## 스토리지 확장
+</div>
+
+볼륨을 확장하려면 `resources.requests.storage` 값을 늘린 후 변경 사항을 적용하세요. 그러면
+연산자가 기존 PVC를 그대로 업데이트합니다.
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 200Gi   # was 100Gi
+```
+
+<Note>
+  확장은 기본 StorageClass에
+  `allowVolumeExpansion: true`가 설정된 경우에만 가능합니다. Kubernetes는 PVC 축소를 지원하지 않으므로,
+  새 크기는 현재 크기보다 크거나 같아야 합니다.
+</Note>
+
+<div id="multi-disk-jbod">
+  ## 다중 디스크(JBOD) 스토리지
+</div>
+
+`spec.additionalVolumeClaimTemplates`는 기본 `dataVolumeClaimSpec`에 더해 각 ClickHouse
+레플리카에 추가 디스크를 연결합니다. 각 항목은 이름이 지정된 PVC
+템플릿으로, `metadata.name`과 PVC `spec`으로 구성되며 프라이머리 데이터 디스크와
+동일한 방식으로 reconcile되므로 StatefulSet 컨트롤러가
+각 레플리카마다 `<name>-<statefulset>-0` 형식의 PVC 1개를 생성하고 유지합니다.
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd
+    resources:
+      requests:
+        storage: 100Gi
+  additionalVolumeClaimTemplates:
+    - metadata:
+        name: disk1
+      spec:
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 100Gi
+    - metadata:
+        name: disk2
+      spec:
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 100Gi
+```
+
+연산자는 각 추가 볼륨을 `/var/lib/clickhouse/disks/<name>`에 마운트하고
+**ClickHouse `storage_configuration`을 자동으로 생성해 줍니다** — 사용자가 직접
+수동으로 작성할 필요는 없습니다. 모든 추가 디스크를 등록하고 기본 제공 `default`
+스토리지 정책에 추가합니다.
+
+프라이머리 데이터 디스크(`default`)와 모든 추가 디스크는 `default` 정책의 단일 볼륨을
+공유하므로, ClickHouse는 새 데이터 파트를 이들 전체에 라운드 로빈 방식으로 분산합니다.
+사용 가능한 용량은 모든 디스크 용량의 합이며, 자체 `storage_policy`를 설정하지 않은 모든
+테이블(`system.*` 테이블 포함)은 이 결합된 디스크 집합을 사용합니다.
+
+<Note>
+  마운트 경로에는 템플릿 이름이 그대로 유지되지만, `storage_configuration` 내부의 디스크 식별자에서는
+  하이픈이 밑줄로 바뀝니다. `cold-disk`라는 이름의 템플릿은 `/var/lib/clickhouse/disks/cold-disk`에 마운트되며,
+  생성된 구성에서는 `cold_disk`로 표시됩니다.
+</Note>
+
+<div id="custom-storage-policies">
+  ## 사용자 지정 저장소 정책
+</div>
+
+위의 JBOD 레이아웃에는 `extraConfig`가 **필요하지 않습니다** — 연산자가
+`default` 정책을 자동으로 생성합니다. 생성된 기본 정책 외의 저장소 정책이 필요할 때만
+`spec.settings.extraConfig`를 사용하십시오. 예를 들어 `move_factor`와 `prefer_not_to_merge`를 사용하는
+계층형 hot/cold 정책이나 S3 기반 디스크를 구성하려는 경우입니다.
+여기에 추가한 구성은 생성된 `storage_configuration` 위에 병합됩니다.
+
+정책 필드는
+[ClickHouse 저장소 문서](https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)를
+참조하십시오.
+
+<div id="immutability">
+  ## 생성 후에는 변경할 수 없는 사항
+</div>
+
+클러스터가 생성되고 나면 스토리지 레이아웃은 대부분 고정됩니다. admission webhook은
+PersistentVolumeClaims가 고아 상태가 되거나 다시 바인딩되게 만드는 업데이트를 거부합니다.
+
+* `dataVolumeClaimSpec`의 존재 여부는 변경할 수 없습니다. 즉, 이것 없이 생성된 클러스터에는 데이터
+  볼륨을 **추가**할 수 없고, 이것과 함께 생성된 클러스터에서는 이를 **제거**할 수도 없습니다.
+* `additionalVolumeClaimTemplates`의 집합은 고정됩니다. 즉, 생성 후에는 항목을 **추가**,
+  **제거** 또는 **이름 변경**할 수 없습니다.
+* 기존 항목의 `resources.requests.storage`를 확장하는 것은 허용됩니다(단,
+  StorageClass가 지원해야 합니다. [스토리지 확장](#expanding-storage)을 참고하십시오).
+
+<div id="validation-reference">
+  ## 검증 참고
+</div>
+
+| 조건                                                                     | 결과                                 |
+| ---------------------------------------------------------------------- | ---------------------------------- |
+| `dataVolumeClaimSpec`가 없고 `/var/lib/clickhouse`에 사용자 지정 볼륨도 없음         | 경고 — 재시작 시 데이터가 손실될 수 있습니다         |
+| `/var/lib/clickhouse`에 사용자 지정 볼륨이 마운트되어 있는데 `dataVolumeClaimSpec`도 설정됨 | 거부됨                                |
+| `additionalVolumeClaimTemplates`는 설정되었지만 `dataVolumeClaimSpec`가 없음     | 거부됨                                |
+| 이름이 `default`인 추가 디스크                                                  | 거부됨 — ClickHouse 기본 디스크에 예약된 이름입니다 |
+| 이름이 `clickhouse-storage-volume`인 추가 디스크                                | 거부됨 — 프라이머리 데이터 볼륨 이름과 충돌합니다       |
+| 중복된 추가 디스크 이름                                                          | 거부됨                                |
+| 이름이 `^[a-z]([-a-z0-9]*[a-z0-9])?$` 패턴과 일치하지 않거나 63자를 초과함               | CRD 스키마에 의해 거부됨                    |
+| 생성 후 `dataVolumeClaimSpec`를 추가하거나 제거함                                  | 거부됨                                |
+| 생성 후 `additionalVolumeClaimTemplates`를 추가, 제거하거나 이름을 변경함               | 거부됨                                |
+| `podTemplate.volumes`에서 예약된 볼륨 이름 사용                                   | 거부됨                                |
+
+<div id="related-guides">
+  ## 관련 가이드
+</div>
+
+* [구성](/ko/products/kubernetes-operator/guides/configuration) — `extraConfig`를 포함한 전체 필드 참고입니다.
+* [클러스터 스케일링](/ko/products/kubernetes-operator/guides/scaling) — 레플리카와 세그먼트를 추가하거나 제거하는 방법을 설명합니다.

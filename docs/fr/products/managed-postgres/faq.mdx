@@ -1,0 +1,160 @@
+---
+slug: /cloud/managed-postgres/faq
+sidebarTitle: 'FAQ'
+title: 'FAQ sur Managed Postgres'
+description: 'Questions fréquentes sur ClickHouse Managed Postgres'
+keywords: ['faq managed postgres', 'questions postgres', 'métriques', 'extensions', 'migration', 'terraform', 'pgbouncer', 'requêtes préparées']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.faq-beta" />
+
+<div id="monitoring-and-metrics">
+  ## Monitoring et métriques
+</div>
+
+<div id="metrics-access">
+  ### Comment puis-je accéder aux métriques de mon instance Managed Postgres ?
+</div>
+
+Vous pouvez surveiller l’utilisation du CPU, de la mémoire, des IOPS et du stockage directement dans la console ClickHouse Cloud, dans l’onglet **Monitoring** de votre instance Managed Postgres.
+
+De plus, vous pouvez consulter [Query Performance Insights](https://clickhouse.com/blog/postgres-query-insights-clickhouse-cloud) pour obtenir une analyse détaillée de vos requêtes dans l’onglet **Query Insights**.
+
+<div id="backup-and-recovery">
+  ## Sauvegarde et restauration
+</div>
+
+<div id="backup-options">
+  ### Quelles options de sauvegarde sont disponibles ?
+</div>
+
+Managed Postgres inclut des sauvegardes automatiques quotidiennes avec archivage continu du WAL, permettant une restauration à un instant donné à tout moment dans une période de rétention de 7 jours. Les sauvegardes sont stockées dans S3.
+
+Pour plus de détails sur la fréquence des sauvegardes, la rétention et la procédure de restauration à un instant donné, consultez la documentation [Sauvegarde et restauration](/fr/products/managed-postgres/backup-and-restore).
+
+<div id="infrastructure-and-automation">
+  ## Infrastructure et automatisation
+</div>
+
+<div id="terraform-support">
+  ### Terraform est-il pris en charge pour Managed Postgres ?
+</div>
+
+Terraform n&#39;est pas actuellement pris en charge pour Managed Postgres. Nous recommandons d&#39;utiliser la console ClickHouse Cloud ou [OpenAPI](/fr/products/managed-postgres/openapi) pour créer et gérer vos instances.
+
+<div id="extensions-and-configuration">
+  ## Extensions et configuration
+</div>
+
+<div id="extensions-supported">
+  ### Quelles extensions sont prises en charge ?
+</div>
+
+Managed Postgres inclut plus de 90 extensions PostgreSQL, dont des extensions populaires comme PostGIS, pgvector, pg&#95;cron et bien d’autres. Pour consulter la liste complète des extensions disponibles ainsi que les instructions d’installation, reportez-vous à la documentation [Extensions](/fr/products/managed-postgres/extensions).
+
+<div id="config-customization">
+  ### Puis-je personnaliser les paramètres de configuration de PostgreSQL ?
+</div>
+
+Oui, vous pouvez modifier les paramètres de configuration de PostgreSQL et de PgBouncer via l’onglet **Settings** de la console. Pour en savoir plus sur les paramètres disponibles et sur la manière de les modifier, consultez la documentation [Settings](/fr/products/managed-postgres/settings).
+
+<Tip>
+  Si vous avez besoin d’un paramètre qui n’est pas disponible pour le moment, contactez le [support](https://clickhouse.com/support/program) pour en faire la demande.
+</Tip>
+
+<div id="connection-pooling">
+  ## Pool de connexions
+</div>
+
+<div id="prepared-statement-errors">
+  ### Pourquoi est-ce que je vois des erreurs `prepared statement does not exist` avec PgBouncer ?
+</div>
+
+Managed Postgres exécute PgBouncer en mode **transaction pooling**. Dans ce mode, une connexion backend Postgres n’est attribuée à votre client que pendant une seule transaction, puis remise dans le pool — la transaction suivante du même client peut être dirigée vers un autre backend.
+
+Cela casse les **prepared statements côté serveur**, qui sont liés au backend précis ayant exécuté le `PREPARE` (ou le `Parse` de la requête étendue). Lorsque l’`EXECUTE` correspondant est envoyé à un autre backend, vous obtenez des erreurs comme :
+
+```text
+ERROR:  prepared statement "..." does not exist
+ERROR:  unnamed prepared statement does not exist
+```
+
+Symptômes qui remontent souvent à cette même cause profonde :
+
+* Des rafales d’erreurs `prepared statement does not exist`, en particulier pendant les backfills ou les écritures à forte concurrence
+* Des insertions qui semblent « échouer silencieusement » — l’instruction renvoie une erreur, le driver réessaie, et un batch peut se retrouver partiellement appliqué ou abandonné
+* Des valeurs renvoyées avec le mauvais type (par exemple, une colonne `BIGINT` décodée comme un motif de bits `float64`) — cela se produit lorsqu’un plan côté client mis en cache réutilise des codes de type/format obsolètes sur un backend qui n’a jamais reçu le `Parse` correspondant
+
+**Correctif : désactivez les prepared statements côté serveur dans votre driver.** Le réglage exact dépend de votre bibliothèque cliente :
+
+| Pilote                           | Paramètre                                                                                          |
+| -------------------------------- | -------------------------------------------------------------------------------------------------- |
+| **pgx** (Go)                     | `statement_cache_capacity=0` et `default_query_exec_mode=exec` (ou `simple_protocol`)              |
+| **psycopg3** (Python)            | `prepare_threshold=None`                                                                           |
+| **asyncpg** (Python)             | `statement_cache_size=0`                                                                           |
+| **JDBC** (Java)                  | `prepareThreshold=0`                                                                               |
+| **node-postgres / pg** (Node.js) | Ne passez pas de `name` à `query()` (les requêtes nommées deviennent alors préparées côté serveur) |
+
+Si votre workload dépend des prepared statements, connectez-vous **directement à PostgreSQL** (port 5432) plutôt qu’au pooler PgBouncer — les connexions directes prennent en charge les prepared statements normalement. Consultez [Connection](/fr/products/managed-postgres/connection) pour plus de détails sur le choix entre les endpoints mutualisés et directs.
+
+<div id="pgbouncer-vs-pg-connections">
+  ### Que signifie le paramètre `max_client_conn` dans PgBouncer, et comment se compare-t-il à `max_connections` dans Postgres ?
+</div>
+
+Ils ne contrôlent pas la même chose :
+
+* **Postgres `max_connections`** fixe le nombre maximal de connexions **backend** à PostgreSQL lui-même. C’est la limite la plus coûteuse : chaque backend consomme de la mémoire et un slot de processus.
+* **PgBouncer `max_client_conn`** fixe le nombre maximal de connexions **client** pouvant être ouvertes simultanément dans le pooler. PgBouncer multiplexe ce grand nombre de connexions client sur un ensemble bien plus réduit de connexions backend.
+
+Une instance Managed Postgres typique est configurée pour que PgBouncer accepte environ **10× plus de connexions client que de backends Postgres** (par ex. 5 000 clients / 500 backends). Si vous voyez des erreurs de connexion au niveau du pooler, il est bien plus probable que vous atteigniez une limite backend par pool (`default_pool_size`) plutôt que la limite client globale.
+
+<div id="database-capabilities">
+  ## Fonctionnalités de la base de données
+</div>
+
+<div id="multiple-databases-schemas">
+  ### Puis-je créer plusieurs bases de données et schémas ?
+</div>
+
+Oui. Managed Postgres offre toutes les fonctionnalités natives de PostgreSQL, notamment la prise en charge de plusieurs bases de données et schémas au sein d’une même instance. Vous pouvez créer et gérer des bases de données et des schémas à l’aide des commandes PostgreSQL standard.
+
+<div id="rbac-support">
+  ### Le contrôle d’accès basé sur les rôles (RBAC) est-il pris en charge ?
+</div>
+
+Vous bénéficiez d’un accès superutilisateur complet à votre instance Managed Postgres, ce qui vous permet de créer des rôles et de gérer les autorisations à l’aide des commandes PostgreSQL standard.
+
+<Note>
+  Des fonctionnalités RBAC avancées avec intégration à la Console sont prévues cette année.
+</Note>
+
+<div id="upgrades">
+  ## Mises à niveau
+</div>
+
+<div id="version-upgrades">
+  ### Comment les mises à niveau de version de PostgreSQL sont-elles gérées ?
+</div>
+
+Les mises à niveau, mineures comme majeures, sont effectuées par basculement et n&#39;entraînent généralement que quelques secondes d&#39;indisponibilité. Vous pouvez configurer une fenêtre de maintenance pour contrôler le moment où les mises à niveau sont appliquées. Pour plus de détails, consultez la documentation [Mises à niveau](/fr/products/managed-postgres/upgrades).
+
+<div id="migration">
+  ## Migration
+</div>
+
+<div id="migration-tools">
+  ### Quels outils sont disponibles pour migrer vers Managed Postgres ?
+</div>
+
+Managed Postgres prend en charge plusieurs méthodes de migration :
+
+* **pg&#95;dump and pg&#95;restore** : pour les bases de données de petite taille ou les migrations ponctuelles. Consultez le guide [pg&#95;dump and pg&#95;restore](/fr/products/managed-postgres/migrations/pg_dump-pg_restore).
+* **réplication logique** : pour les bases de données plus volumineuses nécessitant un minimum d’indisponibilité. Consultez le guide [réplication logique](/fr/products/managed-postgres/migrations/logical-replication).
+* **PeerDB** : pour la réplication basée sur le CDC à partir d’autres sources Postgres. Consultez le guide [migration avec PeerDB](/fr/products/managed-postgres/migrations/peerdb).
+
+<Note>
+  Une expérience de migration entièrement gérée sera bientôt disponible.
+</Note>

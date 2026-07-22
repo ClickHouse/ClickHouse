@@ -1,0 +1,85 @@
+---
+noindex: true
+title: "Escalar verticalmente um cluster do ClickHouse"
+sidebarTitle: "Escalar um cluster"
+description: "Ajuste os recursos de CPU e memória de um cluster do ClickHouse usando a API Private."
+---
+
+Ajuste os recursos de CPU e memória de um cluster do ClickHouse usando a API Private.
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+* ClickHouse Private API instalada e acessível (por exemplo, via redirecionamento de porta para `http://localhost:8080/`)
+* Pelo menos um cluster do ClickHouse implantado (este guia usa `default-xx-01`)
+
+<Steps>
+  <Step>
+    ## 1. Criar a solicitação de escalonamento
+
+    Crie um arquivo JSON com a alocação de recursos desejada:
+
+    ```json
+    {
+      "vertical": {
+        "resources": {
+          "cpu": "4",
+          "memory": "16Gi"
+        }
+      }
+    }
+    ```
+
+    Salve-o como `scale.json`.
+  </Step>
+
+  <Step>
+    ## 2. Enviar a solicitação
+
+    ```bash
+    curl -X POST "http://localhost:8080/api/v1/instances/default-xx-01/scale" \
+        -H "Content-Type: application/json" \
+        --data-binary "@scale.json"
+    ```
+  </Step>
+
+  <Step>
+    ## 3. Aplicação da proporção CPU:memória
+
+    A API aplica uma **proporção de 1:4 entre CPU e memória** (1 núcleo de CPU para cada 4 GiB de memória), com uma margem de 5%.
+
+    Se você informar apenas um tipo de recurso, a API calculará automaticamente o outro. Por exemplo, especificar apenas `"memory": "16Gi"` define a CPU como 4 núcleos.
+
+    **Formatos aceitos para quantidades de recursos:**
+
+    | Tipo    | Exemplos                                                 |
+    | ------- | -------------------------------------------------------- |
+    | CPU     | `"4"` (núcleos), `"2.5"` (decimal), `"500m"` (milicores) |
+    | Memória | `"16Gi"` (gibibytes), `"4096Mi"` (mebibytes)             |
+
+    Unidades binárias (Ki, Mi, Gi) são recomendadas para memória.
+  </Step>
+
+  <Step>
+    ## 4. Monitorar o progresso do escalonamento
+
+    Verifique o status do cluster para acompanhar a operação de escalonamento:
+
+    ```bash
+    curl "http://localhost:8080/api/v1/instances/default-xx-01/status"
+    ```
+
+    A resposta inclui: - `state`: Estado atual do cluster - `previousState`: Estado anterior à transição - `message`: Detalhes sobre a transição de estado
+
+    O escalonamento é concluído quando o cluster retorna ao estado em execução.
+  </Step>
+</Steps>
+
+<div id="rolling-restart-behavior">
+  ## Comportamento da reinicialização gradual
+</div>
+
+A API atualiza a `ServerPodPolicy` do recurso personalizado `ClickhouseCluster`. Em seguida, o operador realiza uma reinicialização gradual dos StatefulSets com a nova alocação de recursos.
+
+> **Importante:** Ao contrário do ClickHouse Cloud, o ClickHouse Private não usa [Make Before Break (MBB)](https://clickhouse.com/docs/manage/scaling#how-scaling-works-in-clickhouse-cloud). O escalonamento vertical pode causar breves interrupções no serviço durante a reinicialização gradual.

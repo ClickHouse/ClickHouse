@@ -1,0 +1,123 @@
+---
+slug: /integrations/integration-development/documenting-your-integration
+sidebarTitle: 'インテグレーションのドキュメント作成'
+title: 'ClickHouse 連携のドキュメント作成'
+description: '必須セクションやコピーして使えるひな形を含め、clickhouse-docs にインテグレーションページを追加する方法。'
+keywords: ['partner', 'integration', 'documentation', 'contributing', 'pull request', 'integration docs']
+doc_type: 'guide'
+---
+
+このサイトのインテグレーションに関するドキュメントは、エンドユーザーがセットアップの検討やトラブルシューティングを一か所で行えるようにするものです。このページでは、含めるべき内容、ファイルの配置先、プルリクエストの作成方法について説明します。
+
+まだ確認していない場合は、まず [Building integrations](/ja/resources/develop-contribute/integrations/building-integrations) と [Testing your integration](/ja/resources/develop-contribute/integrations/testing-your-integration) を参照してください。
+
+<div id="where-docs-live">
+  ## ドキュメントの配置場所
+</div>
+
+* **リポジトリ:** [`ClickHouse/clickhouse-docs`](https://github.com/ClickHouse/clickhouse-docs)
+* **フォーマット:** Markdown (Docusaurus でビルド)
+* **場所:** `/docs/integrations/<category>/<your-integration>/`。`<category>` には、製品の種類を表すカテゴリ (`data-visualization`、`data-ingestion`、`language-clients` など) を指定します
+* **プロセス:** `main` 向けにプルリクエストを作成します。ClickHouse のインテグレーションチームがレビューします。初回コントリビューターは、PR でボットの案内に従って Contributor License Agreement に署名します
+
+このリポジトリ内のインテグレーションページは、エンドユーザー向けの主要な参照先です。製品固有の詳細については、インテグレーションページから自社サイト上の補足ドキュメントにリンクできます。
+
+参考になる例: [Tableau](/ja/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse) と [Metabase](/ja/integrations/connectors/data-visualization/metabase-and-clickhouse)。
+
+<div id="choosing-a-category">
+  ## カテゴリを選択する
+</div>
+
+製品の内容に最も合ったカテゴリを選んでください。PR を作成する前に、[Integrations](/ja/integrations/home) にある既存のカテゴリを確認してください。判断に迷う場合は、PR の説明に提案するカテゴリを記載してください。インテグレーションチームがページの適切な配置をサポートします。
+
+<div id="required-sections">
+  ## 必須セクション
+</div>
+
+すべてのインテグレーションページでは、理想的には次の順序で以下の内容を扱う必要があります。
+
+1. **目的。** そのインテグレーションで解決できる問題を、2～3文で説明します。マーケティング的な表現は避けてください。読者の多くは、導入構成を検討しているエンジニアです
+2. **前提条件とサポート対象バージョンの対応表。** ユーザーに必要なインストール項目と、**ClickHouse Cloud とセルフホスト (オープンソース) の両方**でサポートするバージョンを示します。小さな表にすると分かりやすくなります
+3. **セットアップ手順。** 動作する接続を確立するまでの手順を、順を追って説明します。違いがある箇所 (ホスト、ポート、TLS) については、**Cloud とセルフホストを並べて**説明してください
+4. **認証。** サポートする認証方式を示します (少なくとも TLS 上でのユーザー名とパスワード。加えて、該当する場合は mTLS、SSL クライアント証明書、IP 許可リストに関する注意も含めます)
+5. **エンドツーエンドの例。** 接続から意味のある結果が得られるまでを含む、現実的な例を少なくとも 1 つ示します。読者が再現できるよう、[ClickHouse のサンプルデータセット](/ja/get-started/sample-datasets/index) を使用してください
+6. **既知の制限事項と性能特性。** 型システム上の制約、結果セットのしきい値、スループットに関する注意、未対応の機能を記載します。ここを率直に書いておくと、サポート対応の負担を減らせます
+7. **トラブルシューティング。** よくあるエラーとその解決方法を示します。初版であれば、頻出するケースを 2～3 件挙げれば十分です
+
+<div id="style-notes">
+  ## スタイルに関する注意事項
+</div>
+
+* **Cloud とセルフホストの両方を記載してください。** Cloud では通常、ポート `8443` で HTTPS、`9440` でネイティブ TCP を使用します。セルフホストのデフォルトは `8123` と `9000` です
+* コールアウトには太字の段落ではなく、**Docusaurus の admonitions** (`:::note`、`:::warning`、`:::tip`) を使用してください
+* **詳しい説明はリンク先に任せてください。** データ型、フォーマット、JDBC、ClickPipes などのトピックは、ここで再説明するのではなく、既存のドキュメントにリンクしてください
+* **マーケティング色は不要です。** ここでのインテグレーションページは技術リファレンスです。宣伝的な内容はあなたのサイトに掲載し、こちらからはパートナーディレクトリ経由でリンクできます
+
+<div id="copy-paste-skeleton">
+  ## コピー＆ペースト用のひな形
+</div>
+
+角括弧で囲まれた部分を埋めて、`/docs/integrations/<category>/<your-integration>/index.md` として保存し、PR を作成してください。
+
+```markdown
+# [Your product] and ClickHouse
+
+[One to three sentences: what the integration does and why a
+ClickHouse user would want it.]
+
+## Prerequisites
+
+- [Your product, version X.Y or later]
+- ClickHouse Cloud, or self-hosted ClickHouse version [X.Y] or later
+- [Anything else: driver, plugin, network access requirements]
+
+### Version matrix
+
+| [Your product] | ClickHouse Cloud | ClickHouse open source | Notes    |
+| -------------- | ---------------- | ---------------------- | -------- |
+| X.Y            | ✅               | ✅ 24.x+               | [if any] |
+
+## Setup
+
+### Connect to ClickHouse Cloud
+
+1. In the ClickHouse Cloud console, select your service and click **Connect**.
+2. Choose **HTTPS**. Copy the host, port (8443), username, and password.
+3. In [your product], [steps to configure the connection].
+
+### Connect to self-hosted ClickHouse
+
+1. [How to point at a self-hosted instance — host, port 8123 or 9000, TLS notes.]
+2. In [your product], [steps to configure the connection].
+
+## Authentication
+
+[List supported auth modes — username/password over TLS, mTLS, etc. — and how
+to configure each.]
+
+## Example: querying the [dataset] dataset
+
+[Walkthrough using one of the ClickHouse example datasets, end-to-end.]
+
+## Known limits
+
+- [Types not yet supported, e.g., deeply nested JSON]
+- [Result-set size thresholds or other performance notes]
+- [Feature gaps]
+
+## Troubleshooting
+
+### [Common error message]
+
+[Cause and resolution.]
+
+### [Another common error]
+
+[Cause and resolution.]
+```
+
+<div id="review">
+  ## レビュー
+</div>
+
+ClickHouse のインテグレーションチームが、技術的な正確性、Cloud とセルフホストの対応状況、ドキュメントのスタイルを確認するために PR をレビューします。レビュー担当者の承認が得られるまで、PR 上で修正を重ねてください。その承認がマージの条件になります。
