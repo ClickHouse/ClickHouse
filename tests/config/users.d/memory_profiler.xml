@@ -4,6 +4,13 @@
             <max_untracked_memory>1Mi</max_untracked_memory>
             <memory_profiler_step>1Mi</memory_profiler_step>
             <memory_profiler_sample_probability>0.001</memory_profiler_sample_probability>
+            <!-- Sample only large allocations, matching total_memory_profiler_sample_min_allocation_size
+                 in config.d/memory_profiler.yaml. With max_untracked_memory = 1Mi, small allocations reach
+                 the memory tracker as ~1MiB batches, so without this threshold the suite-wide sampling
+                 floods system.trace_log with MemorySample rows and SYSTEM FLUSH LOGS in unrelated tests
+                 (01473_event_time_microseconds, 03096_order_by_system_tables) exceeds the 60s per-test
+                 timeout of the fast test. -->
+            <memory_profiler_sample_min_allocation_size>4Mi</memory_profiler_sample_min_allocation_size>
         </default>
     </profiles>
 </clickhouse>
