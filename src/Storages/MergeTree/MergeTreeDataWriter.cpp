@@ -998,7 +998,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             if (projection_block.rows())
             {
                 auto proj_temp_part
-                    = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false, context);
+                    = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false,
+                        /*sync=*/ (*data_settings)[MergeTreeSetting::fsync_after_insert], context);
                 new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
 
                 if (global_settings[Setting::finalize_projection_parts_synchronously])
@@ -1046,7 +1047,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     Block block,
     const ProjectionDescription & projection,
     MergeTreeIndices indices,
-    bool merge_is_needed)
+    bool merge_is_needed,
+    bool sync)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     const auto & metadata_snapshot = projection.metadata;
@@ -1176,7 +1178,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
     out->finalizeIndexGranularity();
-    auto finalizer = out->finalizePartAsync(new_data_part, IMergedBlockOutputStream::GatheredData{}, false);
+    auto finalizer = out->finalizePartAsync(new_data_part, IMergedBlockOutputStream::GatheredData{}, sync);
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
 
@@ -1194,6 +1196,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part,
     bool merge_is_needed,
+    bool sync,
     ContextPtr context)
 {
     const auto & query_settings = context->getSettingsRef();
@@ -1205,7 +1208,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         *data.getSettings());
 
     return writeProjectionPartImpl(
-        projection.name, false /* is_temp */, parent_part, data, log, std::move(block), projection, std::move(indices), merge_is_needed);
+        projection.name, false /* is_temp */, parent_part, data, log, std::move(block), projection, std::move(indices), merge_is_needed, sync);
 }
 
 /// This is used for projection materialization process which may contain multiple stages of
@@ -1217,6 +1220,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part,
     size_t block_num,
+    bool sync,
     ContextPtr context)
 {
     const auto & table_settings = data.getSettings();
@@ -1229,7 +1233,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
 
     auto part_name = fmt::format("{}_{}", projection.name, block_num);
     auto new_part = writeProjectionPartImpl(
-        part_name, /*is_temp=*/ true, parent_part, data, log, std::move(block), projection, std::move(indices), /*merge_is_needed=*/true);
+        part_name, /*is_temp=*/ true, parent_part, data, log, std::move(block), projection, std::move(indices), /*merge_is_needed=*/true, sync);
 
     new_part->part->temp_projection_block_number = block_num;
     return new_part;

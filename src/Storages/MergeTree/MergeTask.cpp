@@ -1355,7 +1355,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
     {
         auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
         auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-            *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+            *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, ctx->need_sync, global_ctx->context);
 
         tmp_part->finalize();
         tmp_part->part->getDataPartStorage().commitTransaction();
@@ -1397,7 +1397,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, ctx->need_sync, global_ctx->context);
 
             temp_part->finalize();
             temp_part->part->getDataPartStorage().commitTransaction();
@@ -1443,7 +1443,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::constructTaskForProjectionPart
         global_ctx->time_of_merge,
         global_ctx->new_data_part,
         global_ctx->space_reservation,
-        !global_ctx->projection ? (*global_ctx->merge_entry)->ptr() : nullptr
+        !global_ctx->projection ? (*global_ctx->merge_entry)->ptr() : nullptr,
+        ctx->need_sync
     );
 }
 
@@ -1590,6 +1591,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
 void MergeTask::ExecuteAndFinalizeHorizontalPart::finalize() const
 {
     mergeBuiltStatistics(std::move(ctx->build_statistics_transforms), global_ctx);
+
+    /// Computed before finalizeProjections() so the projection temp parts written there honor it.
+    /// force_sync: a projection sub-merge inherits the parent operation's sync decision.
+    const size_t sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
+    ctx->need_sync = global_ctx->force_sync
+        || global_ctx->data_settings->needSyncPart(ctx->sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound);
+
     finalizeProjections();
     global_ctx->to->finalizeIndexGranularity();
     global_ctx->merging_executor.reset();
@@ -1600,9 +1608,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalize() const
 
     if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with expired TTL");
-
-    const size_t sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
-    ctx->need_sync = global_ctx->data_settings->needSyncPart(ctx->sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound);
 }
 
 bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const

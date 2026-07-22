@@ -94,7 +94,7 @@ public:
         return data.merging_params.mode;
     }
 
-    /// For insertion.
+    /// For insertion. `sync` fsyncs the produced projection part (from `fsync_after_insert`).
     static MergeTreeTemporaryPartPtr writeProjectionPart(
         const MergeTreeData & data,
         LoggerPtr log,
@@ -102,9 +102,11 @@ public:
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
         bool merge_is_needed,
+        bool sync,
         ContextPtr context);
 
-    /// For mutation: MATERIALIZE PROJECTION.
+    /// For mutation: MATERIALIZE PROJECTION. `sync` fsyncs the produced projection part
+    /// (from the mutation/merge `need_sync` decision).
     static MergeTreeTemporaryPartPtr writeTempProjectionPart(
         const MergeTreeData & data,
         LoggerPtr log,
@@ -112,6 +114,7 @@ public:
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
         size_t block_num,
+        bool sync,
         ContextPtr context);
 
     static Block mergeBlock(
@@ -139,7 +142,8 @@ private:
         Block block,
         const ProjectionDescription & projection,
         MergeTreeIndices indices,
-        bool merge_is_needed);
+        bool merge_is_needed,
+        bool sync);
 
     MergeTreeData & data;
     LoggerPtr log;

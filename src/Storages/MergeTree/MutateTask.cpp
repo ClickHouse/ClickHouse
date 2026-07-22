@@ -1929,6 +1929,7 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
         projection,
         ctx->new_data_part.get(),
         ++projection_block_num,
+        ctx->need_sync,
         ctx->context);
 
     tmp_part->finalize();
@@ -1977,7 +1978,8 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
             ctx->time_of_mutation,
             ctx->new_data_part,
             ctx->space_reservation,
-            (*ctx->mutate_entry)->ptr()
+            (*ctx->mutate_entry)->ptr(),
+            ctx->need_sync
         );
 
         merge_subtasks.push_back(std::move(merge_task));

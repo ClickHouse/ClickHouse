@@ -108,7 +108,8 @@ public:
         MergeTreeData * data_,
         MergeTreeDataMergerMutator * mutator_,
         PartitionActionBlocker * merges_blocker_,
-        ActionBlocker * ttl_merges_blocker_)
+        ActionBlocker * ttl_merges_blocker_,
+        bool force_sync_ = false)
         {
             global_ctx = std::make_shared<GlobalRuntimeContext>();
 
@@ -127,6 +128,7 @@ public:
             global_ctx->deduplicate_by_columns = std::move(deduplicate_by_columns_);
             global_ctx->cleanup = std::move(cleanup_);
             global_ctx->projection = projection_;
+            global_ctx->force_sync = force_sync_;
             global_ctx->parent_part = std::move(parent_part_);
             global_ctx->merged_part_offsets = std::move(merged_part_offsets_);
             global_ctx->data = std::move(data_);
@@ -217,6 +219,9 @@ private:
         FutureMergedMutatedPartPtr future_part{nullptr};
         std::vector<AlterConversionsPtr> alter_conversions;
         ProjectionDescriptionRawPtr projection{nullptr};
+        /// Force fsync of the produced part regardless of the size thresholds. Set for a
+        /// projection sub-merge so the final projection part inherits the parent's sync decision.
+        bool force_sync{false};
         /// This will be either nullptr or new_data_part, so raw pointer is ok.
         IMergeTreeDataPart * parent_part{nullptr};
         MergedPartOffsetsPtr merged_part_offsets;

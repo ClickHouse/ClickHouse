@@ -117,7 +117,8 @@ bool MergeProjectionPartsTask::executeStep()
             /* need_prefix */ true,
             &projection,
             new_data_part.get(),
-            ".tmp_proj");
+            ".tmp_proj",
+            /* force_sync */ need_sync);
 
         next_level_parts.push_back(executeHere(tmp_part_merge_task));
 

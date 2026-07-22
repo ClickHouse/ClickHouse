@@ -94,7 +94,10 @@ public:
         bool need_prefix = true,
         ProjectionDescriptionRawPtr projection = nullptr,
         IMergeTreeDataPart * parent_part = nullptr,
-        const String & suffix = "");
+        const String & suffix = "",
+        /// When true, fsync the produced part regardless of the size thresholds. Used for a
+        /// projection sub-merge so its final part inherits the parent operation's sync decision.
+        bool force_sync = false);
 
     /** Mutate a single data part with the specified commands. Will create and return a temporary part.
       */

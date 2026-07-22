@@ -26,7 +26,8 @@ public:
         time_t time_of_merge_,
         MergeTreeData::MutableDataPartPtr new_data_part_,
         ReservationSharedPtr space_reservation_,
-        MergeListElement * parent_merge_list_element_ = nullptr)
+        MergeListElement * parent_merge_list_element_ = nullptr,
+        bool need_sync_ = false)
         : name(std::move(name_))
         , projection(projection_)
         , block_num(block_num_)
@@ -38,6 +39,7 @@ public:
         , new_data_part(new_data_part_)
         , space_reservation(space_reservation_)
         , parent_merge_list_element(parent_merge_list_element_)
+        , need_sync(need_sync_)
         , log(getLogger("MergeProjectionPartsTask"))
         {
             LOG_DEBUG(log, "Selected {} projection_parts from {} to {}", parts_.size(), parts_.front()->name, parts_.back()->name);
@@ -71,6 +73,8 @@ private:
     MergeTreeData::MutableDataPartPtr new_data_part;
     ReservationSharedPtr space_reservation;
     MergeListElement * parent_merge_list_element;
+    /// Whether the produced projection part must be fsynced (inherited from the parent op).
+    bool need_sync;
 
     LoggerPtr log;
 
