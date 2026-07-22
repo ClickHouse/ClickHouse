@@ -11,6 +11,7 @@
 /// Run:   `clickhouse-examples timeseries_to_grid_two_stack_vs_recompute`
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesLinearRegression.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesOverTime.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
 
 #include <Common/Stopwatch.h>
@@ -140,7 +141,34 @@ int mainEntryExampleTimeSeriesToGridTwoStackVsRecompute(int, char **)
         [](size_t stack_size) { return LinearRegressionTraits::Aggregator{stack_size, /* base */ UInt32(0), /* predict_offset */ Float64(0)}; },
         checksum);
 
-    /// Add other non-invertible functions here.
+    /// Non-invertible overtime summaries. Each shared `Summary` is measured once (min covers max; ts_of_min
+    /// covers ts_of_max; quantile covers mad). Invertible overtime kinds (sum/avg/count/...) never use two-stacks.
+    using namespace TimeseriesOverTimeDetails;
+    using Timestamp = UInt32;
+    using Value = Float64;
+
+    runFunction("timeSeriesMinOverTimeToGrid (ExtremumSummary)", dataset,
+        [](size_t stack_size)
+        {
+            return SlidingAggregator<Kind::Min, Timestamp, Value, ExtremumSummary<Timestamp, Value, false>>{
+                stack_size, /* timestamp_scale_multiplier */ Timestamp(1)};
+        },
+        checksum);
+
+    runFunction("timeSeriesTsOfMinOverTimeToGrid (TsOfExtremumSummary)", dataset,
+        [](size_t stack_size)
+        {
+            return SlidingAggregator<Kind::TsOfMin, Timestamp, Value, TsOfExtremumSummary<Timestamp, Value, false>>{
+                stack_size, /* timestamp_scale_multiplier */ Timestamp(1)};
+        },
+        checksum);
+
+    runFunction("timeSeriesQuantileOverTimeToGrid (ValuesSummary)", dataset,
+        [](size_t stack_size)
+        {
+            return QuantileAggregator<Timestamp, Value>{stack_size, /* phi */ 0.5};
+        },
+        checksum);
 
     /// Use the checksum so the measured work cannot be optimised away.
     if (checksum < 0)

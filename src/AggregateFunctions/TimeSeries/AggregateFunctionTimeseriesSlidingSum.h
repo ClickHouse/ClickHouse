@@ -150,6 +150,16 @@ public:
         }
     }
 
+    bool empty() const
+    {
+        if constexpr (is_invertible)
+            return window.empty();
+        else if (use_two_stacks)
+            return front_stack.empty() && back_stack.empty();
+        else
+            return window.empty();
+    }
+
 private:
     struct StackEntry
     {

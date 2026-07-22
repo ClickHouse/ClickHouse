@@ -91,6 +91,8 @@ public:
         });
     }
 
+    bool empty() const { return buffer.empty(); }
+
     /// Invokes `f(timestamp, value)` for every sample, in arbitrary order. Used by the per-function sliding
     /// aggregators for order-independent aggregates (e.g. linear regression moments).
     template <typename F>
