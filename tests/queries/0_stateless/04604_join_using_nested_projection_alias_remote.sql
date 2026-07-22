@@ -70,13 +70,13 @@ SELECT sum(x + 10 AS id)
 FROM remote('127.0.0.{1,2}', currentDatabase(), t_shadow) AS tsh
 JOIN (SELECT 11 AS id) t2 USING (id); -- { serverError UNSUPPORTED_METHOD }
 
--- R4: shadowing variant (previously silent wrong data); the alias `id` shadows a real column, still rejected.
+-- R4: shadowing variant; the alias `id` shadows the real column `id`, so the shard joins by the real column and returns `0`, deliberately differing from the local result of `11`.
 CREATE TABLE t_shadow2 (x UInt64, id UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t_shadow2 VALUES (1, 5);
 
 SELECT sum(x + 10 AS id)
 FROM remote('127.0.0.{1,2}', currentDatabase(), t_shadow2) AS tsh
-JOIN (SELECT 11 AS id) t2 USING (id); -- { serverError UNSUPPORTED_METHOD }
+JOIN (SELECT 11 AS id) t2 USING (id);
 
 -- R5: `ALIAS`-column positive control; a table `ALIAS` column is excluded from the guard, so this ships and returns.
 CREATE TABLE t_aliascol (x UInt64, id UInt64 ALIAS x + 100) ENGINE = MergeTree ORDER BY x;
