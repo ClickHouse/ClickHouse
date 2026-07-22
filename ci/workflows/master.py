@@ -27,13 +27,13 @@ workflow = Workflow.Config(
         *JobConfigs.build_jobs,
         *JobConfigs.build_llvm_coverage_job,
         *JobConfigs.release_build_jobs,
+        *JobConfigs.sccache_warmup_build_jobs,
         *[
             job.set_run_after(
                 REGULAR_BUILD_NAMES + [JobConfigs.tidy_build_arm_jobs[0].name]
             )
             for job in JobConfigs.special_build_jobs
         ],
-        *JobConfigs.darwin_fast_test_jobs,
         *JobConfigs.unittest_jobs,
         *JobConfigs.unittest_llvm_coverage_job,
         JobConfigs.docker_server,
@@ -54,9 +54,10 @@ workflow = Workflow.Config(
         *JobConfigs.buzz_fuzzer_jobs,
         *JobConfigs.performance_comparison_with_master_head_jobs,
         *JobConfigs.performance_comparison_with_release_base_jobs,
-        *JobConfigs.clickbench_master_jobs,
+        *JobConfigs.clickbench_jobs,
         JobConfigs.sqltest_master_job,
         JobConfigs.sqllogic_test_master_job,
+        JobConfigs.sqlstorm_test_job,
         JobConfigs.llvm_coverage_job,
     ],
     artifacts=[

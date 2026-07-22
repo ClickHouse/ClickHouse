@@ -43,7 +43,7 @@ Named collection parameters:
 |---|---|---|---|
 | `host` or `hostname` | No | `""` | Server hostname. |
 | `port` | Yes | — | Server port. |
-| `dataset` | Yes | — | Dataset name or descriptor. |
+| `dataset` | No | `""` | Dataset name or descriptor. |
 | `use_basic_authentication` | No | `true` | Enable basic authentication. |
 | `user` or `username` | If auth enabled | — | Username for authentication. |
 | `password` | No | `""` | Password for authentication. |

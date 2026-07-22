@@ -27,7 +27,6 @@
 
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Utils.h>
-#include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
@@ -240,8 +239,7 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
-    collectSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
-    collectSets(expression, *planner_context);
+    collectSetsAndSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
 
     auto actions = buildActionsDAGFromExpressionNode(expression, header.getColumnsWithTypeAndName(), planner_context, {}).first;
     chassert(expression->getChildren().size() == actions.getOutputs().size());
@@ -495,10 +493,17 @@ void fillMissingColumns(
             Names tuple_elements;
             SerializationPtr serialization = IDataType::getSerialization(*requested_column);
 
-            /// For Nested columns collect names of tuple elements and skip them while getting the base type of array.
-            IDataType::forEachSubcolumn([&](const auto & path, const auto &, const auto &)
+            /// Collect names of tuple elements on the path to the requested subcolumn, so they are skipped while
+            /// getting the base type of array. Elements below the requested subcolumn belong to its own value type
+            /// and must be kept, otherwise the Tuple wrapper is lost.
+            const auto & requested_subcolumn_name = requested_column->getSubcolumnName();
+            IDataType::forEachSubcolumn([&](const auto & path, const auto & subcolumn_name, const auto &)
             {
-                if (path.back().type == ISerialization::Substream::TupleElement)
+                if (path.back().type != ISerialization::Substream::TupleElement)
+                    return;
+
+                if (subcolumn_name == requested_subcolumn_name
+                    || requested_subcolumn_name.starts_with(subcolumn_name + "."))
                     tuple_elements.push_back(path.back().name_of_substream);
             }, ISerialization::SubstreamData(serialization));
 

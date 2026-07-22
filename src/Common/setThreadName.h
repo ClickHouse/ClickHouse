@@ -25,6 +25,7 @@ namespace DB
     M(AZURE_LIST_POOL, "AzureObjList") \
     M(BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL, "BgBufSchPool") \
     M(BACKGROUND_SCHEDULE_POOL, "BgSchPool") \
+    M(BACKGROUND_STREAMING_SCHEDULE_POOL, "BgStrmSchPool") \
     M(BACKUP_ASYNC, "BackupAsync") \
     M(BACKUP_ASYNC_INTERNAL, "BackupAsyncInt") \
     M(BACKUP_COLLECTOR, "BackupCollect") \
@@ -39,7 +40,6 @@ namespace DB
     M(CONFIG_RELOADER, "ConfigReloader") \
     M(CONCURRENT_JOIN, "ConcurrentJoin") \
     M(CREATE_TABLES, "CreateTables") \
-    M(CUSTOM_RESOURCE_MANAGER, "CustomResMgr") \
     M(DATABASE_BACKUP, "DatabaseBackup") \
     M(DATABASE_ON_DISK, "DatabaseOnDisk") \
     M(DATABASE_REPLICAS, "DBReplicas") \
@@ -79,6 +79,8 @@ namespace DB
     M(KEEPER_COMMIT, "KeeperCommit") \
     M(KEEPER_APPEND, "KeeperAppend") \
     M(KEEPER_READ, "KeeperRead") \
+    M(KEEPER_TTL_GARBAGE_COLLECTOR, "KeeperTTLGC") \
+    M(KEEPER_CONTAINER_GARBAGE_COLLECTOR, "KeeperCntrGC") \
     M(KAFKA_BACKGROUND, "KafkaBackgrd") \
     M(KAFKA_BROKER, "KafkaBroker") \
     M(KAFKA_CLEANUP, "KafkaClnup") \
@@ -128,6 +130,8 @@ namespace DB
     M(PUSHING_ASYNC_EXECUTOR, "QueryPushPipeEx") \
     M(PRETTY_WRITER, "PrettyWriter") \
     M(QUERY_ASYNC_EXECUTOR, "QueryPipelineEx") \
+    M(QUERY_PROFILER, "QueryProfiler") \
+    M(QUERY_RUNNER, "QueryRunner") \
     M(READER_POOL, "Reader") \
     M(READ_TASK_ITERATOR, "ReadTaskIteratr") \
     M(READ_THREAD_POOL, "ThreadPoolRead") \
@@ -158,6 +162,7 @@ namespace DB
     M(TRACE_COLLECTOR, "TraceCollector") \
     M(TRANSPOSED_METRIC_LOG, "TMetricLog") \
     M(TRUNCATE_TABLE, "TruncTbls") \
+    M(UDF_DRIVER, "UDFDriver") \
     M(UNIQ_EXACT_CONVERT, "UniqExaConvert") \
     M(UNIQ_EXACT_MERGER, "UniqExactMerger") \
     M(USER_DEFINED_WATCH, "UserDefWatch") \
@@ -188,7 +193,9 @@ enum class ThreadName : uint8_t
   *  On Linux 5.17+ also names the current thread's stack VMA via
   *  `prctl(PR_SET_VMA_ANON_NAME, ..., THREAD_STACK_VMA_NAME)`, so
   *  `AsynchronousMetrics` can attribute the matching `/proc/self/smaps`
-  *  entry to thread stacks (`MemoryThreadStacks*`).
+  *  entry to thread stacks (`MemoryThreadStacks*`). On Darwin the same
+  *  metrics are derived directly from the Mach VM map (regions tagged
+  *  `VM_MEMORY_STACK`), so no naming step is needed here.
   */
 void setThreadName(ThreadName name);
 ThreadName getThreadName();
@@ -205,7 +212,9 @@ inline constexpr const char * THREAD_STACK_VMA_NAME = "clickhouse_stack";
 /// True if any thread observed EINVAL from `prctl(PR_SET_VMA_ANON_NAME)`,
 /// i.e. running on a Linux kernel older than 5.17. Used by
 /// `ServerAsynchronousMetrics` to surface the limitation via
-/// `system.warnings`. Always `false` on non-Linux (the metric does not
-/// exist there, so there is nothing to warn about).
+/// `system.warnings`. Always `false` on non-Linux: on Darwin the
+/// `MemoryThreadStacks*` metrics are populated from the Mach VM map and
+/// have no such kernel-version dependency, and on other platforms the
+/// metrics are simply absent, so there is nothing to warn about.
 bool isThreadStackVMANamingUnsupported() noexcept;
 }

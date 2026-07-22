@@ -1,0 +1,105 @@
+---
+description: '`Atomic` エンジンは、非ブロッキングの `DROP TABLE` および `RENAME TABLE`
+  クエリと、アトミックな `EXCHANGE TABLES` クエリをサポートします。`Atomic` データベースエンジンはデフォルトで使用されます。'
+sidebarTitle: 'Atomic'
+slug: /engines/database-engines/atomic
+title: 'Atomic'
+doc_type: 'reference'
+---
+
+`Atomic` エンジンは、非ブロッキングの [`DROP TABLE`](#drop-detach-table) および [`RENAME TABLE`](#rename-table) クエリと、アトミックな [`EXCHANGE TABLES`](#exchange-tables) クエリをサポートします。オープンソース版 ClickHouse では、`Atomic` データベースエンジンがデフォルトで使用されます。
+
+<Note>
+  ClickHouse Cloud では、[`Shared` データベースエンジン](/ja/products/cloud/features/infrastructure/shared-catalog#shared-database-engine) がデフォルトで使用されており、
+  上記の操作もサポートしています。
+</Note>
+
+<div id="creating-a-database">
+  ## データベースの作成
+</div>
+
+```sql
+CREATE DATABASE test [ENGINE = Atomic] [SETTINGS disk=...];
+```
+
+<div id="specifics-and-recommendations">
+  ## 詳細と推奨事項
+</div>
+
+<div id="table-uuid">
+  ### テーブル UUID
+</div>
+
+`Atomic` データベース内の各テーブルには永続的な [UUID](/ja/reference/data-types/uuid) が割り当てられており、そのデータは次のディレクトリに保存されます。
+
+```text
+/clickhouse_path/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/
+```
+
+ここで、`xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy` はテーブルの UUID を表します。
+
+デフォルトでは、UUID は自動的に生成されます。ただし、テーブルの作成時に UUID を明示的に指定することもできますが、これは推奨されません。
+
+たとえば:
+
+```sql
+CREATE TABLE name UUID '28f1c61c-2970-457a-bffe-454156ddcfef' (n UInt64) ENGINE = ...;
+```
+
+<Note>
+  UUID を `SHOW CREATE` クエリで表示するには、[show&#95;table&#95;uuid&#95;in&#95;table&#95;create&#95;query&#95;if&#95;not&#95;nil](/ja/reference/settings/session-settings#show_table_uuid_in_table_create_query_if_not_nil) 設定を使用できます。
+</Note>
+
+<div id="rename-table">
+  ### RENAME TABLE
+</div>
+
+[`RENAME`](/ja/reference/statements/rename) クエリでは、UUID は変更されず、テーブルデータも移動されません。これらのクエリは即座に実行され、対象のテーブルを使用中の他のクエリの完了を待ちません。
+
+<div id="drop-detach-table">
+  ### DROP/DETACH TABLE
+</div>
+
+`DROP TABLE` を使用しても、データは削除されません。`Atomic` エンジンは、メタデータを `/clickhouse_path/metadata_dropped/` に移動してテーブルを drop 済みとしてマークし、バックグラウンドスレッドに通知するだけです。最終的にテーブルデータが削除されるまでの遅延は、[`database_atomic_delay_before_drop_table_sec`](/ja/reference/settings/server-settings/settings#database_atomic_delay_before_drop_table_sec) 設定で指定します。
+`SYNC` 修飾子を使用すると、同期モードを指定できます。これを行うには、[`database_atomic_wait_for_drop_and_detach_synchronously`](/ja/reference/settings/session-settings#database_atomic_wait_for_drop_and_detach_synchronously) 設定を使用します。この場合、`DROP` は、そのテーブルを使用している実行中の `SELECT`、`INSERT`、およびその他のクエリが終了するまで待機します。テーブルは、使用されなくなった時点で削除されます。
+
+<div id="exchange-tables">
+  ### EXCHANGE TABLES/辞書
+</div>
+
+[`EXCHANGE`](/ja/reference/statements/exchange)クエリは、テーブルまたは辞書をアトミックに入れ替えます。たとえば、次のような非アトミックな操作ではなく:
+
+```sql title="Non-atomic"
+RENAME TABLE new_table TO tmp, old_table TO new_table, tmp TO old_table;
+```
+
+Atomic データベースを使用できます。
+
+```sql title="Atomic"
+EXCHANGE TABLES new_table AND old_table;
+```
+
+<div id="replicatedmergetree-in-atomic-database">
+  ### Atomic データベース内の ReplicatedMergeTree
+</div>
+
+[`ReplicatedMergeTree`](/ja/reference/engines/table-engines/mergetree-family/replication) テーブルでは、ZooKeeper 内のパスとレプリカ名についてエンジンパラメータを指定しないことを推奨します。この場合、設定パラメータ [`default_replica_path`](/ja/reference/settings/server-settings/settings#default_replica_path) と [`default_replica_name`](/ja/reference/settings/server-settings/settings#default_replica_name) が使用されます。エンジンパラメータを明示的に指定する場合は、`{uuid}` マクロを使用することを推奨します。これにより、ZooKeeper 内で各テーブルに対して一意のパスが自動的に生成されます。
+
+<div id="metadata-disk">
+  ### メタデータ用ディスク
+</div>
+
+`SETTINGS` で `disk` を指定すると、そのディスクにテーブルのメタデータファイルが保存されます。
+例:
+
+```sql
+CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path='/var/lib/clickhouse-disks/db_disk');
+```
+
+指定しない場合は、デフォルトで `database_disk.disk` に定義されたディスクが使用されます。
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [system.databases](/ja/reference/system-tables/databases) システムテーブル

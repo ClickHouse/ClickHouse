@@ -8,7 +8,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumn_fwd.h>
-#include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressedSizeCalculator.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/Defines.h>
@@ -16,7 +16,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/ISerialization.h>
-#include <IO/NullWriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/VarInt.h>
 #include <IO/WriteBuffer.h>
@@ -49,17 +48,14 @@ struct AggregationFunctionEstimateCompressionRatioData
     UInt64 merged_compressed_size = 0;
     UInt64 merged_uncompressed_size = 0;
 
-    std::unique_ptr<NullWriteBuffer> null_buf;
-    std::unique_ptr<CompressedWriteBuffer> compressed_buf;
+    std::unique_ptr<CompressedSizeCalculator> calculator;
 
     [[maybe_unused]] ~AggregationFunctionEstimateCompressionRatioData()
     {
         /// Real cancellation can happen only in case of exception
         /// In other cases the data will be read via finalizeAndGetSizes()
-        if (compressed_buf)
-            compressed_buf->cancel();
-        if (null_buf)
-            null_buf->cancel();
+        if (calculator)
+            calculator->cancel();
     }
 };
 
@@ -72,20 +68,17 @@ private:
     std::optional<UInt64> block_size_bytes;
 
 
-    void resetBuffersIfNeeded(AggregateDataPtr __restrict place) const
+    void resetCalculatorIfNeeded(AggregateDataPtr __restrict place) const
     {
         Data & data_ref = data(place);
-
-        if (!data_ref.null_buf || data_ref.null_buf->isFinalized())
-            data_ref.null_buf = std::make_unique<NullWriteBuffer>();
 
         /// When aggregating on windows transformed columns, the function WindowTransform::appendChunk
         /// calls updateAggregationState + writeOutCurrentRow in a loop.
         /// writeOutCurrentRow finalizes the buffer to flush and compute sizes, but doesn't deletes it.
         /// Ideally on finalized buffers we could "reinitialize" without reconstructing the whole object buffer.
-        if (!data_ref.compressed_buf || data_ref.compressed_buf->isFinalized())
-            data_ref.compressed_buf = std::make_unique<CompressedWriteBuffer>(
-                *data_ref.null_buf, getCodecOrDefault(), block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE));
+        if (!data_ref.calculator || data_ref.calculator->isFinalized())
+            data_ref.calculator = std::make_unique<CompressedSizeCalculator>(
+                getCodecOrDefault(), block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE));
     }
 
     std::pair<UInt64, UInt64> finalizeAndGetSizes(ConstAggregateDataPtr __restrict place) const
@@ -95,15 +88,12 @@ private:
         UInt64 uncompressed_size = data_ref.merged_uncompressed_size;
         UInt64 compressed_size = data_ref.merged_compressed_size;
 
-        if (data_ref.compressed_buf)
+        if (data_ref.calculator)
         {
-            chassert(data_ref.null_buf != nullptr);
+            data_ref.calculator->finalize();
 
-            data_ref.compressed_buf->finalize();
-            data_ref.null_buf->finalize();
-
-            uncompressed_size += data_ref.compressed_buf->getUncompressedBytes();
-            compressed_size += data_ref.compressed_buf->getCompressedBytes();
+            uncompressed_size += data_ref.calculator->getUncompressedBytes();
+            compressed_size += data_ref.calculator->getCompressedBytes();
         }
 
         return {uncompressed_size, compressed_size};
@@ -142,13 +132,13 @@ public:
     {
         const auto & column = columns[0];
 
-        resetBuffersIfNeeded(place);
+        resetCalculatorIfNeeded(place);
 
         DataTypePtr type_ptr = argument_types[0];
         SerializationInfoPtr info = type_ptr->getSerializationInfo(*column);
         SerializationPtr type_serialization_ptr = type_ptr->getSerialization(*info);
 
-        type_serialization_ptr->serializeBinary(*column, row_num, *data(place).compressed_buf, {});
+        type_serialization_ptr->serializeBinary(*column, row_num, *data(place).calculator, {});
     }
 
     void addBatchSparseSinglePlace(
@@ -174,7 +164,7 @@ public:
     {
         const auto & column = columns[0];
 
-        resetBuffersIfNeeded(place);
+        resetCalculatorIfNeeded(place);
 
         DataTypePtr type_ptr = argument_types[0];
         SerializationInfoPtr info = type_ptr->getSerializationInfo(*column);
@@ -182,7 +172,7 @@ public:
 
         ISerialization::SerializeBinaryBulkSettings settings;
 
-        settings.getter = [place](ISerialization::SubstreamPath) -> WriteBuffer * { return data(place).compressed_buf.get(); };
+        settings.getter = [place](ISerialization::SubstreamPath) -> WriteBuffer * { return data(place).calculator.get(); };
 
         ISerialization::SerializeBinaryBulkStatePtr state;
         type_serialization_ptr->serializeBinaryBulkStatePrefix(*column, settings, state);
@@ -190,7 +180,7 @@ public:
         type_serialization_ptr->serializeBinaryBulkStateSuffix(settings, state);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto [uncompressed_size, compressed_size] = finalizeAndGetSizes(rhs);
 
@@ -216,18 +206,17 @@ public:
     {
         auto [uncompressed_size, compressed_size] = finalizeAndGetSizes(place);
 
-        /// Persist finalized sizes so the next add()/resetBuffersIfNeeded() cycle
+        /// Persist finalized sizes so the next add()/resetCalculatorIfNeeded() cycle
         /// preserves all previously accumulated data. Without this, window functions
         /// with growing frames (e.g. UNBOUNDED PRECEDING AND CURRENT ROW) lose all
         /// prior data when the buffer is recreated after finalization.
         data(place).merged_uncompressed_size = uncompressed_size;
         data(place).merged_compressed_size = compressed_size;
 
-        /// Reset buffers so that a repeated insertResultInto without an
+        /// Reset the calculator so that a repeated insertResultInto without an
         /// intervening add (unchanged window frame) does not re-count the
         /// already-persisted finalized bytes.
-        data(place).compressed_buf.reset();
-        data(place).null_buf.reset();
+        data(place).calculator.reset();
 
         Float64 ratio = 0;
         if (compressed_size > 0)

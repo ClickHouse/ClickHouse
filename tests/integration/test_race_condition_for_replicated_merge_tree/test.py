@@ -78,7 +78,7 @@ def wait_for_queue_to_process(node, database, table, timeout=60):
 
 def test_partition_move_drop_race(started_cluster):
     for node in [node1, node2, node3]:
-        node.query(f"DROP DATABASE IF EXISTS test_db SYNC")
+        node.query("DROP DATABASE IF EXISTS test_db SYNC")
 
     node1.query("SYSTEM ENABLE FAILPOINT rmt_delay_execute_drop_range")
     node1.query("SYSTEM ENABLE FAILPOINT rmt_delay_commit_part")
@@ -92,7 +92,7 @@ def test_partition_move_drop_race(started_cluster):
         )
 
     node1.query(
-        f"""
+        """
         CREATE TABLE test_db.tbl (id UInt32, val String)
         ENGINE = ReplicatedMergeTree
         PARTITION BY id % 10 ORDER BY id
@@ -110,8 +110,8 @@ def test_partition_move_drop_race(started_cluster):
         "SELECT uuid FROM system.tables WHERE database='test_db' AND name='tbl'"
     ).strip()
 
-    node2.query(f"SYSTEM STOP FETCHES test_db.tbl")
-    node3.query(f"SYSTEM STOP FETCHES test_db.tbl")
+    node2.query("SYSTEM STOP FETCHES test_db.tbl")
+    node3.query("SYSTEM STOP FETCHES test_db.tbl")
 
     prev_block_number = get_last_block_number_for_partition(node1, table_uuid, 0)
 
@@ -136,21 +136,21 @@ def test_partition_move_drop_race(started_cluster):
                     )
                 time.sleep(0.5)
 
-            node1.query(f"ALTER TABLE test_db.tbl DROP PARTITION 0")
+            node1.query("ALTER TABLE test_db.tbl DROP PARTITION 0")
         except Exception as e:
             exception_holder[0] = e
 
     t = threading.Thread(target=drop_op)
     t.start()
 
-    node1.query(f"INSERT INTO test_db.tbl VALUES (0, 'a'), (10, 'b'), (20, 'c')")
+    node1.query("INSERT INTO test_db.tbl VALUES (0, 'a'), (10, 'b'), (20, 'c')")
     t.join()
 
     if exception_holder[0]:
         raise exception_holder[0]
 
     wait_for_queue_to_process(node1, "test_db", "tbl")
-    node3.query(f"SYSTEM START FETCHES test_db.tbl")
+    node3.query("SYSTEM START FETCHES test_db.tbl")
     wait_for_queue_to_process(node3, "test_db", "tbl")
 
     errors = []
@@ -170,4 +170,4 @@ def test_partition_move_drop_race(started_cluster):
         pytest.fail(f"Race: {'; '.join(errors)}")
 
     for node in [node1, node2, node3]:
-        node.query(f"DROP DATABASE IF EXISTS test_db SYNC")
+        node.query("DROP DATABASE IF EXISTS test_db SYNC")

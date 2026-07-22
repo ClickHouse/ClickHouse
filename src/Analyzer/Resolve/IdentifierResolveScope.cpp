@@ -155,9 +155,9 @@ bool subtreeContainsQueryOrUnion(const QueryTreeNodePtr & root)
     return false;
 }
 
-/// Whether the subtree contains any node from `nodes`, using the set's
-/// hash-ignore-types comparison.
-bool subtreeContainsAnyNode(const QueryTreeNodePtr & root, const QueryTreeNodePtrWithHashIgnoreTypesSet & nodes)
+/// Whether the subtree contains any node that is a key in `nodes` (the registered nullable GROUP BY
+/// key shapes), compared by the map's hash (ignoring aliases, exact types).
+bool subtreeContainsAnyNode(const QueryTreeNodePtr & root, const QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> & nodes)
 {
     std::vector<QueryTreeNodePtr> nodes_to_process;
     nodes_to_process.push_back(root);

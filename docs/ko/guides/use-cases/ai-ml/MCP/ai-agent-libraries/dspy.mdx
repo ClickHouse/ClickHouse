@@ -1,0 +1,248 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/DSPy
+sidebarTitle: 'DSPy 통합'
+title: 'DSPy와 ClickHouse MCP 서버로 AI 에이전트를 구축하는 방법'
+description: 'DSPy와 ClickHouse MCP 서버로 AI 에이전트를 구축하는 방법을 알아봅니다'
+keywords: ['ClickHouse', 'MCP', 'DSPy']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+이 가이드에서는 [DSPy](https://github.com/langchain-ai/langgraph)를 사용해 [ClickHouse SQL Playground](https://sql.clickhouse.com/)와 [ClickHouse MCP 서버](https://github.com/ClickHouse/mcp-clickhouse)와 상호작용할 수 있는 AI 에이전트를 구축하는 방법을 알아봅니다.
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+* 시스템에 Python이 설치되어 있어야 합니다.
+* 시스템에 `pip`가 설치되어 있어야 합니다.
+* Anthropic API Key 또는 다른 LLM 제공업체의 API Key가 필요합니다.
+
+다음 단계는 Python REPL 또는 스크립트에서 실행할 수 있습니다.
+
+<Info>
+  **예시 노트북**
+
+  이 예시는 [examples 리포지토리](https://github.com/ClickHouse/examples/blob/main/ai/mcp/dspy/dspy.ipynb)의 노트북에서 확인할 수 있습니다.
+</Info>
+
+<Steps>
+  <Step>
+    ## 라이브러리 설치
+
+    필요한 라이브러리를 설치하려면 `pip`로 다음 명령을 실행하세요:
+
+    ```shell
+    pip install -q --upgrade pip
+    pip install -q dspy
+    pip install -q mcp
+    ```
+  </Step>
+
+  <Step>
+    ## 자격 증명 설정
+
+    다음으로 Anthropic API Key를 입력해야 합니다:
+
+    ```python
+    import os
+    os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter Anthropic API Key:")
+    ```
+
+    <Info>
+      **다른 LLM 제공업체 사용**
+
+      Anthropic API Key가 없고 다른 LLM 제공업체를 사용하려는 경우,
+      [DSPy docs](https://dspy.ai/#__tabbed_1_1)에서 자격 증명 설정 방법을 확인할 수 있습니다.
+    </Info>
+
+    다음으로, ClickHouse SQL Playground에 연결하는 데 필요한 자격 증명을 정의합니다:
+
+    ```python
+    env = {
+        "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+        "CLICKHOUSE_PORT": "8443",
+        "CLICKHOUSE_USER": "demo",
+        "CLICKHOUSE_PASSWORD": "",
+        "CLICKHOUSE_SECURE": "true"
+    }
+    ```
+  </Step>
+
+  <Step>
+    ## MCP 서버 초기화
+
+    이제 ClickHouse MCP 서버가 ClickHouse SQL Playground를 가리키도록 설정합니다.
+
+    ```python
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+    import dspy
+
+    server_params = StdioServerParameters(
+        command="uv",
+        args=[
+            'run',
+            '--with', 'mcp-clickhouse',
+            '--python', '3.13',
+            'mcp-clickhouse'
+        ],
+        env=env
+    )
+    ```
+  </Step>
+
+  <Step>
+    ## LLM 초기화
+
+    다음으로, 아래 줄을 사용하여 LLM을 초기화합니다:
+
+    ```python
+    dspy.configure(lm=dspy.LM("anthropic/claude-sonnet-4-20250514"))
+    ```
+  </Step>
+
+  <Step>
+    ## 에이전트 실행
+
+    마지막으로, 에이전트를 초기화하고 실행합니다:
+
+    ```python
+    class DataAnalyst(dspy.Signature):
+        """You are a data analyst. You'll be asked questions and you need to try to answer them using the tools you have access to. """
+
+        user_request: str = dspy.InputField()
+        process_result: str = dspy.OutputField(
+            desc=(
+                "Answer to the query"
+            )
+        )
+
+    from utils import print_dspy_result
+
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tools = await session.list_tools()
+
+            dspy_tools = []
+            for tool in tools.tools:
+                dspy_tools.append(dspy.Tool.from_mcp_tool(session, tool))
+
+            react = dspy.ReAct(DataAnalyst, tools=dspy_tools)
+            result = await react.acall(user_request="What's the most popular Amazon product category")
+            print_dspy_result(result)
+    ```
+
+    ```response title="Response"
+    ================================================================================
+    🤖 DSPy ReAct Result
+    ================================================================================
+
+    📍 STEP 1
+    ----------------------------------------
+    🧠 THINKING: Amazon 제품 카테고리에 관한 정보를 찾고 가장 인기 있는 카테고리를 파악해야 합니다. 먼저 사용 가능한 데이터베이스를 확인하여 Amazon 관련 데이터가 있는지 살펴보겠습니다.
+
+    🔧 TOOL: list_databases
+
+    📊 RESULT:
+       amazon
+    bluesky
+    country
+    covid
+    default
+    dns
+    environmental
+    food
+    forex
+    geo
+    git
+    github
+    hackernews
+    imdb
+    logs
+    metrica
+    mgbench
+    mta
+    noaa
+    nyc_taxi
+    nypd
+    ontime
+    opensky
+    otel
+    otel_v2
+    pypi
+    random
+    reddit
+    rubygems
+    sta...
+
+    📍 STEP 2
+    ----------------------------------------
+    🧠 THINKING: "amazon" 데이터베이스가 있음을 확인했습니다. Amazon 제품 카테고리 정보를 찾는 데 필요한 데이터베이스입니다. amazon 데이터베이스의 테이블을 살펴보고 어떤 데이터가 있는지 확인하겠습니다.
+
+    🔧 TOOL: list_tables
+       Args: {'database': 'amazon'}
+
+    📊 RESULT:
+       {
+      "database": "amazon",
+      "name": "amazon_reviews",
+      "comment": "",
+      "columns": [
+        {
+          "name": "review_date",
+          "type": "Date",
+          "default_type": "",
+          "default_expression": "",...
+
+    📍 STEP 3
+    ----------------------------------------
+    🧠 THINKING: product_category 컬럼을 포함하는 amazon_reviews 테이블을 찾았습니다. 이 테이블에는 1억 5천만 건 이상의 Amazon 리뷰 데이터가 있어 제품 인기도를 파악하기에 충분합니다. 가장 인기 있는 Amazon 제품 카테고리를 찾으려면 카테고리별 리뷰 수를 집계한 후 내림차순으로 정렬해야 합니다. 리뷰 수가 가장 많은 카테고리가 가장 인기 있는 카테고리로 간주됩니다.
+
+    🔧 TOOL: run_select_query
+       Args: {'query': 'SELECT product_category, COUNT(*) as review_count FROM amazon.amazon_reviews GROUP BY product_category ORDER BY review_count DESC LIMIT 10'}
+
+    📊 RESULT:
+       1. Books: 19,530,930건
+       2. Digital_Ebook_Purchase: 17,622,107건
+       3. Wireless: 9,001,567건
+       4. PC: 6,908,245건
+       5. Home: 6,221,321건
+       ... 외 5개
+
+    📍 STEP 4
+    ----------------------------------------
+    🧠 THINKING: 사용자의 질문에 대한 답을 찾았습니다. Amazon 리뷰 데이터를 기반으로 "Books"가 19,530,930건의 리뷰로 가장 인기 있는 Amazon 제품 카테고리임을 확인할 수 있으며, 그 다음으로 "Digital_Ebook_Purchase"가 17,622,107건으로 뒤를 잇습니다. 데이터를 통해 각 카테고리가 받은 리뷰 수를 기준으로 제품 카테고리의 명확한 순위를 파악할 수 있습니다. 이제 사용자의 질문에 답하는 데 필요한 모든 정보를 확보했습니다.
+
+    🔧 TOOL: finish
+
+    📊 RESULT:
+       완료되었습니다.
+
+    🎯 REASONING
+    ----------------------------------------
+    가장 인기 있는 Amazon 제품 카테고리에 관한 질문에 답하기 위해 Amazon 데이터베이스에 접근하여 1억 5천만 건 이상의 리뷰 레코드가 포함된 "amazon_reviews" 테이블을 찾았습니다. 이 테이블에는 리뷰 수를 기반으로 제품 인기도를 분석할 수 있는 "product_category" 컬럼이 있습니다. 제품 카테고리별 리뷰 수를 집계하고 내림차순으로 정렬하는 쿼리를 실행했습니다. 여기서의 전제는 리뷰 수가 많은 카테고리일수록 인기가 높다는 것으로, 리뷰 수가 많을수록 일반적으로 더 많은 구매와 고객 참여로 이어지기 때문입니다.
+
+    ✅ FINAL RESULT
+    ----------------------------------------
+    1억 5천만 건 이상의 레코드를 포함한 Amazon 리뷰 데이터를 기반으로, 가장 인기 있는 Amazon 제품 카테고리는 19,530,930건의 리뷰를 보유한 **Books**입니다.
+
+    리뷰 수 기준 상위 10개 Amazon 제품 카테고리는 다음과 같습니다:
+
+    1. **Books** - 19,530,930건
+    2. **Digital_Ebook_Purchase** - 17,622,107건  
+    3. **Wireless** - 9,001,567건
+    4. **PC** - 6,908,245건
+    5. **Home** - 6,221,321건
+    6. **Apparel** - 5,906,085건
+    7. **Health & Personal Care** - 5,331,239건
+    8. **Beauty** - 5,115,462건
+    9. **Video DVD** - 5,069,014건
+    10. **Mobile_Apps** - 5,033,164건
+
+    주목할 만한 점은 Books와 Digital Ebook Purchase(연관된 카테고리)를 합산하면 3,700만 건 이상의 리뷰를 기록한다는 것으로, Amazon 플랫폼에서 독서 관련 콘텐츠가 얼마나 높은 인기를 누리고 있는지를 잘 보여줍니다.
+    ================================================================================
+    ```
+  </Step>
+</Steps>

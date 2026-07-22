@@ -1,0 +1,544 @@
+---
+sidebarTitle: '使用 BACKUP 和 RESTORE'
+slug: /cloud/migration/oss-to-cloud-backup-restore
+title: '使用 BACKUP 命令从自管理 ClickHouse 迁移到 ClickHouse Cloud'
+description: '本页介绍如何通过 BACKUP 和 RESTORE 命令在自管理 ClickHouse 与 ClickHouse Cloud 之间进行迁移'
+doc_type: 'guide'
+keywords: ['迁移', 'ClickHouse Cloud', 'OSS', '从自管理迁移到 Cloud', 'BACKUP', 'RESTORE']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="overview-migration-approaches">
+  ## 概述
+</div>
+
+将数据从自管理 ClickHouse (OSS) 迁移到 ClickHouse Cloud，主要有两种方法：
+
+* 使用 [`remoteSecure()`](/zh/get-started/migrate/oss-to-cloud/clickhouse-to-cloud) 函数直接拉取/推送数据。
+* 通过云对象存储使用 `BACKUP`/`RESTORE` 命令。
+
+> 本迁移指南重点介绍 `BACKUP`/`RESTORE` 方案，并提供一个实用示例，
+> 演示如何通过 S3 存储桶 将开源 ClickHouse 中的数据库或整个服务迁移到 Cloud。
+
+**前置条件**
+
+* 已安装 Docker
+* 已有一个 [S3 存储桶 和 IAM 用户](/zh/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket)
+* 能够创建一个新的 ClickHouse Cloud 服务
+
+为了让本指南中的步骤更易于跟随和复现，我们将使用一个 docker compose 示例，
+搭建一个包含两个分片和两个副本的 ClickHouse 集群。
+
+<Info>
+  **需要集群**
+
+  此备份方法需要一个 ClickHouse 集群，因为必须将表从 `MergeTree` 引擎转换为 `ReplicatedMergeTree`。
+  如果你运行的是单实例，请改为按照[“使用 remoteSecure 在自管理 ClickHouse 与 ClickHouse Cloud 之间迁移”](/zh/get-started/migrate/oss-to-cloud/clickhouse-to-cloud)中的步骤操作。
+</Info>
+
+<div id="oss-setup">
+  ## OSS 准备
+</div>
+
+首先，我们将使用 examples 仓库中的 Docker Compose 配置启动一个 ClickHouse 集群。
+如果你已经有正在运行的 ClickHouse 集群，可以跳过这一步。
+
+1. 将 [examples 仓库](https://github.com/ClickHouse/examples) 克隆到本地
+2. 在终端中，`cd` 到 `examples/docker-compose-recipes/recipes/cluster_2S_2R`
+3. 确保 Docker 正在运行，然后启动 ClickHouse 集群：
+
+```bash
+docker compose up
+```
+
+你会看到：
+
+```bash
+[+] Running 7/7
+ ✔ Container clickhouse-keeper-01  Created  0.1s
+ ✔ Container clickhouse-keeper-02  Created  0.1s
+ ✔ Container clickhouse-keeper-03  Created  0.1s
+ ✔ Container clickhouse-01         Created  0.1s
+ ✔ Container clickhouse-02         Created  0.1s
+ ✔ Container clickhouse-04         Created  0.1s
+ ✔ Container clickhouse-03         Created  0.1s
+```
+
+在该文件夹的根目录下打开一个新的终端窗口，运行以下命令连接到集群的第一个节点：
+
+```bash
+docker exec -it clickhouse-01 clickhouse-client
+```
+
+<div id="mergetree-to-replicatedmergetree">
+  ### 从 MergeTree 表迁移到 ReplicatedMergeTree 表
+</div>
+
+ClickHouse Cloud 使用 [`SharedMergeTree`](/zh/products/cloud/features/infrastructure/shared-merge-tree)。
+恢复备份时，ClickHouse 会自动将 `ReplicatedMergeTree` 表转换为 `SharedMergeTree` 表。
+
+如果你运行的是集群，表很可能已经在使用 `ReplicatedMergeTree` 引擎。
+如果不是，则需要先将所有 `MergeTree` 表转换为 `ReplicatedMergeTree`，然后再进行备份。
+
+为演示如何将 `MergeTree` 表转换为 `ReplicatedMergeTree`，我们将先从一个 `MergeTree` 表开始，之后再将其转换为 `ReplicatedMergeTree`。
+我们将按照 [New York taxi data guide](/zh/get-started/sample-datasets/nyc-taxi) 的前两个步骤创建一个样本表，并向其中加载数据。
+为方便起见，下面也附上了这两个步骤。
+
+运行以下命令来创建一个新的 数据库，并将 S3 存储桶 中的数据插入到新表中：
+
+```sql
+CREATE DATABASE nyc_taxi;
+
+CREATE TABLE nyc_taxi.trips_small_adapted (
+    trip_id             UInt32,
+    pickup_datetime     DateTime,
+    dropoff_datetime    DateTime,
+    pickup_longitude    Nullable(Float64),
+    pickup_latitude     Nullable(Float64),
+    dropoff_longitude   Nullable(Float64),
+    dropoff_latitude    Nullable(Float64),
+    passenger_count     UInt8,
+    trip_distance       Float32,
+    fare_amount         Float32,
+    extra               Float32,
+    tip_amount          Float32,
+    tolls_amount        Float32,
+    total_amount        Float32,
+    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+    pickup_ntaname      LowCardinality(String),
+    dropoff_ntaname     LowCardinality(String)
+)
+ENGINE = MergeTree
+PRIMARY KEY (pickup_datetime, dropoff_datetime);
+```
+
+```sql
+INSERT INTO nyc_taxi.trips_small_adapted
+SELECT
+    trip_id,
+    pickup_datetime,
+    dropoff_datetime,
+    pickup_longitude,
+    pickup_latitude,
+    dropoff_longitude,
+    dropoff_latitude,
+    passenger_count,
+    trip_distance,
+    fare_amount,
+    extra,
+    tip_amount,
+    tolls_amount,
+    total_amount,
+    payment_type,
+    pickup_ntaname,
+    dropoff_ntaname
+FROM s3(
+    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..2}.gz',
+    'TabSeparatedWithNames'
+);
+```
+
+运行以下命令，对该表执行 `DETACH`。
+
+```sql
+DETACH TABLE nyc_taxi.trips_small_adapted;
+```
+
+然后将其附加为复制表：
+
+```sql
+ATTACH TABLE nyc_taxi.trips_small_adapted AS REPLICATED;
+```
+
+最后，恢复副本的元数据：
+
+```sql
+SYSTEM RESTORE REPLICA nyc_taxi.trips_small_adapted;
+```
+
+检查它是否已转换为 `ReplicatedMergeTree`：
+
+```sql
+SELECT engine
+FROM system.tables
+WHERE name = 'trips_small_adapted' AND database = 'nyc_taxi';
+```
+
+```response
+┌─engine──────────────┐
+│ ReplicatedMergeTree │
+└─────────────────────┘
+```
+
+您现在已准备好继续设置您的 Cloud 服务，以便稍后从 S3 存储桶中恢复备份。
+
+<div id="distributed-tables">
+  ### 使用 ReplicatedMergeTree 的分布式表
+</div>
+
+如果你的环境使用跨多个分片的分布式表，则需要在每个节点上创建一个本地 `ReplicatedMergeTree` 表，并将 `Distributed` 表作为查询入口。
+
+运行以下命令，在集群的所有节点上创建本地 `ReplicatedMergeTree` 表：
+
+```sql
+CREATE DATABASE IF NOT EXISTS nyc_taxi ON CLUSTER 'cluster_2S_2R';
+
+CREATE TABLE nyc_taxi.trips_small_dist_local ON CLUSTER 'cluster_2S_2R'
+(
+    trip_id             UInt32,
+    pickup_datetime     DateTime,
+    dropoff_datetime    DateTime,
+    pickup_longitude    Nullable(Float64),
+    pickup_latitude     Nullable(Float64),
+    dropoff_longitude   Nullable(Float64),
+    dropoff_latitude    Nullable(Float64),
+    passenger_count     UInt8,
+    trip_distance       Float32,
+    fare_amount         Float32,
+    extra               Float32,
+    tip_amount          Float32,
+    tolls_amount        Float32,
+    total_amount        Float32,
+    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+    pickup_ntaname      LowCardinality(String),
+    dropoff_ntaname     LowCardinality(String)
+)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/{table}/{shard}', '{replica}')
+PRIMARY KEY (pickup_datetime, dropoff_datetime);
+```
+
+然后在其基础上创建 `Distributed` 表：
+
+```sql
+
+CREATE TABLE nyc_taxi.trips_small_dist ON CLUSTER 'cluster_2S_2R'
+(
+    trip_id             UInt32,
+    pickup_datetime     DateTime,
+    dropoff_datetime    DateTime,
+    pickup_longitude    Nullable(Float64),
+    pickup_latitude     Nullable(Float64),
+    dropoff_longitude   Nullable(Float64),
+    dropoff_latitude    Nullable(Float64),
+    passenger_count     UInt8,
+    trip_distance       Float32,
+    fare_amount         Float32,
+    extra               Float32,
+    tip_amount          Float32,
+    tolls_amount        Float32,
+    total_amount        Float32,
+    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+    pickup_ntaname      LowCardinality(String),
+    dropoff_ntaname     LowCardinality(String)
+)
+ENGINE = Distributed('cluster_2S_2R', 'nyc_taxi', 'trips_small_dist_local', rand());
+```
+
+通过分布式表插入数据：
+
+```sql
+INSERT INTO nyc_taxi.trips_small_dist
+SELECT
+    trip_id,
+    pickup_datetime,
+    dropoff_datetime,
+    pickup_longitude,
+    pickup_latitude,
+    dropoff_longitude,
+    dropoff_latitude,
+    passenger_count,
+    trip_distance,
+    fare_amount,
+    extra,
+    tip_amount,
+    tolls_amount,
+    total_amount,
+    payment_type,
+    pickup_ntaname,
+    dropoff_ntaname
+FROM s3(
+    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..2}.gz',
+    'TabSeparatedWithNames'
+);
+```
+
+<div id="cloud-setup">
+  ## Cloud 准备
+</div>
+
+你将把数据恢复到一个新的 Cloud 服务中。
+按照以下步骤创建新的 Cloud 服务。
+
+<Steps>
+  <Step>
+    #### 打开 Cloud Console
+
+    前往 [https://console.clickhouse.cloud/](https://console.clickhouse.cloud/)
+  </Step>
+
+  <Step>
+    #### 创建新的服务
+
+    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp" size="md" alt="创建新的服务" />
+  </Step>
+
+  <Step>
+    #### 配置并创建服务
+
+    选择所需的区域和配置，然后点击 `Create service`
+
+    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp" size="md" alt="设置服务偏好" />
+  </Step>
+
+  <Step>
+    #### 创建访问角色
+
+    打开 SQL 控制台
+
+    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp" size="md" alt="设置服务偏好" />
+
+    ### 设置 S3 访问
+
+    要从 S3 恢复备份，你需要在 ClickHouse Cloud 与 S3 存储桶 之间配置安全访问。
+
+    1. 按照[&quot;安全访问 S3 数据&quot;](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)中的步骤创建访问角色，并获取该角色的 ARN。
+
+    2. 更新你在[&quot;如何创建 S3 存储桶 和 IAM 角色&quot;](/zh/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket)中创建的 S3 存储桶 policy，加入上一步中的角色 ARN。
+
+    更新后的 S3 存储桶 policy 将大致如下所示：
+
+    ```json highlight={10-11}
+    {
+        "Version": "2012-10-17",
+        "Id": "Policy123456",
+        "Statement": [
+            {
+                "Sid": "abc123",
+                "Effect": "Allow",
+                "Principal": {
+                    "AWS": [
+                        "arn:aws:iam::123456789123:role/ClickHouseAccess-001",
+                        "arn:aws:iam::123456789123:user/docs-s3-user"
+                    ]
+                },
+                "Action": "s3:*",
+                "Resource": [
+                    "arn:aws:s3:::ch-docs-s3-bucket",
+                    "arn:aws:s3:::ch-docs-s3-bucket/*"
+                ]
+            }
+        ]
+    }
+    ```
+
+    该 policy 同时包含两个 ARN：
+
+    * **IAM user** (`docs-s3-user`)：允许你的自管理 ClickHouse 集群将备份写入 S3
+    * **ClickHouse Cloud 角色** (`ClickHouseAccess-001`)：允许你的 Cloud 服务从 S3 恢复
+  </Step>
+</Steps>
+
+<div id="taking-a-backup-on-oss">
+  ## 进行备份 (在自管理部署中)
+</div>
+
+每个分片都必须单独备份。连接到每个分片中的一个节点，并为每个分片运行备份命令，且使用各自唯一的目标路径。
+
+将 `BUCKET_URL`、`KEY_ID` 和 `SECRET_KEY` 替换为你自己的 AWS 凭证。
+如果你还没有这些信息，可参考指南[&quot;如何创建 S3 存储桶 和 IAM role&quot;](/zh/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket)
+了解如何获取。
+
+**分片 1：**
+
+```sql
+BACKUP DATABASE nyc_taxi
+TO S3(
+  'BUCKET_URL/backup_s1.zip',
+  'KEY_ID',
+  'SECRET_KEY'
+)
+```
+
+**分片 2：**
+
+```sql
+BACKUP DATABASE nyc_taxi
+TO S3(
+  'BUCKET_URL/backup_s2.zip',
+  'KEY_ID',
+  'SECRET_KEY'
+)
+```
+
+如果一切都已正确配置，你将看到类似下面的响应，
+其中包含分配给该备份的唯一 ID 以及备份状态。
+
+```response
+Query id: efcaf053-75ed-4924-aeb1-525547ea8d45
+
+┌─id───────────────────────────────────┬─status─────────┐
+│ e73b99ab-f2a9-443a-80b4-533efe2d40b3 │ BACKUP_CREATED │
+└──────────────────────────────────────┴────────────────┘
+```
+
+<Info>
+  **单节点部署**
+
+  如果你未使用分布式表，可以用一条命令备份整个数据库：
+
+  ```sql
+  BACKUP DATABASE nyc_taxi
+  TO S3(
+    'BUCKET_URL',
+    'KEY_ID',
+    'SECRET_KEY'
+  )
+  ```
+</Info>
+
+如果查看之前为空的 S3 存储桶，现在你会看到里面已经出现了一些文件夹：
+
+<Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp" size="md" alt="备份、数据和元数据" />
+
+如果你要执行完整迁移，可以运行以下命令来备份整个服务器：
+
+```sql
+BACKUP
+TABLE system.users,
+TABLE system.roles,
+TABLE system.settings_profiles,
+TABLE system.row_policies,
+TABLE system.quotas,
+TABLE system.functions,
+ALL EXCEPT DATABASES INFORMATION_SCHEMA, information_schema, system
+TO S3(
+  'BUCKET_ID',
+  'KEY_ID',
+  'SECRET_ID'
+)
+SETTINGS
+  compression_method='lzma',
+  compression_level=3;
+```
+
+上述命令会备份以下内容：
+
+* 所有用户数据库和表
+* 用户账户和密码
+* 角色和权限
+* 设置 profile
+* 行策略
+* 配额
+* 用户自定义函数
+
+如果你使用的是其他 Cloud 服务提供商 (CSP) ，可以使用 `TO S3()` (适用于 AWS 和 GCP) 和 `TO AzureBlobStorage()` 语法。
+
+对于非常大的数据库，可考虑使用 `ASYNC` 在后台执行备份：
+
+```sql
+BACKUP DATABASE my_database 
+TO S3('https://your-bucket.s3.amazonaws.com/backup.zip', 'key', 'secret')
+ASYNC;
+       
+-- 立即返回备份 ID
+-- 示例结果：
+-- ┌─id──────────────────────────────────┬─status────────────┐
+-- │ abc123-def456-789                   │ CREATING_BACKUP   │
+-- └─────────────────────────────────────┴───────────────────┘
+```
+
+然后即可使用备份 ID 监控备份进度：
+
+```sql
+SELECT * 
+FROM system.backups 
+WHERE id = 'abc123-def456-789'
+```
+
+也可以进行增量备份。
+有关备份的更多信息，请参阅[备份与恢复](/zh/concepts/features/backup-restore/overview)文档。
+
+<div id="restore-to-clickhouse-cloud">
+  ## 恢复到 ClickHouse Cloud
+</div>
+
+将每个分片的备份依次恢复到你的 Cloud 服务中。将 `ROLE_ARN` 设置为
+从[“安全访问 S3 数据”](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)获取的
+值。在第二次恢复 (以及此后的每次恢复) 时使用 `SETTINGS allow_non_empty_tables=true`，
+这样分片数据会追加到已恢复的表中，而不会因冲突而失败：
+
+**分片 1：**
+
+```sql
+RESTORE DATABASE nyc_taxi
+FROM S3(
+    'BUCKET_URL/backup_s1.zip',
+    extra_credentials(role_arn = 'ROLE_ARN')
+)
+```
+
+**分片 2：**
+
+```sql
+RESTORE DATABASE nyc_taxi
+FROM S3(
+    'BUCKET_URL/backup_s2.zip',
+    extra_credentials(role_arn = 'ROLE_ARN')
+)
+SETTINGS allow_non_empty_tables=true;
+```
+
+<Info>
+  **非分布式部署**
+
+  如果你未使用分布式表，可使用一条命令恢复数据库：
+
+  ```sql
+  RESTORE DATABASE nyc_taxi
+  FROM S3(
+      'BUCKET_URL',
+      extra_credentials(role_arn = 'ROLE_ARN')
+  )
+  ```
+</Info>
+
+你也可以用类似的方式执行完整服务恢复：
+
+```sql
+RESTORE
+    TABLE system.users,
+    TABLE system.roles,
+    TABLE system.settings_profiles,
+    TABLE system.row_policies,
+    TABLE system.quotas,
+    ALL EXCEPT DATABASES INFORMATION_SCHEMA, information_schema, system
+FROM S3(
+    'BUCKET_URL',
+    extra_credentials(role_arn = 'ROLE_ARN')
+)
+```
+
+恢复完成后，您可以验证数据已在 Cloud 中可用：
+
+```sql
+-- ClickHouse Cloud 会将所有数据恢复到本地表中
+SELECT count() from nyc_taxi.trips_small_dist_local;
+3000317
+```
+
+由于 ClickHouse Cloud 内部使用 `SharedMergeTree`，因此旧的分布式表已不再需要。您可以将其删除，并替换为一个保留原始表名的视图，以便继续用于查询：
+
+```sql
+DROP TABLE drop table nyc_taxi.trips_small_dist;
+CREATE VIEW nyc_taxi.trips_small_dist AS SELECT * FROM nyc_taxi.trips_small_dist_local;
+SELECT count() from nyc_taxi.trips_small_dist;
+3000317
+```
+
+非分布式 `ReplicatedMergeTree` 表将还原为 `SharedMergeTree`：
+
+```sql
+SELECT count() FROM nyc_taxi.trips_small_adapted;
+3000317
+```

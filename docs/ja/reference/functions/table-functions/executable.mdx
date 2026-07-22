@@ -1,0 +1,112 @@
+---
+description: '`executable` テーブル関数は、**stdout** に行を出力するスクリプト内で定義したユーザー定義関数（UDF）の出力に基づいてテーブルを作成します。'
+keywords: ['udf', 'user defined function', 'clickhouse', 'executable', 'table', 'function']
+sidebarTitle: 'executable'
+slug: /engines/table-functions/executable
+title: 'executable'
+doc_type: 'reference'
+---
+
+`executable` テーブル関数は、**stdout** に行を出力するスクリプト内で定義したユーザー定義関数 (UDF) の出力に基づいてテーブルを作成します。実行可能スクリプトは `users_scripts` ディレクトリに保存され、任意のソースからデータを読み取ることができます。ClickHouseサーバーに、その実行可能スクリプトの実行に必要なパッケージがすべて揃っていることを確認してください。たとえば Python スクリプトであれば、サーバーに必要な Python パッケージがインストールされていることを確認してください。
+
+必要に応じて、スクリプトが読み取れるよう、結果を **stdin** にストリーミングする 1 つ以上の入力クエリを含めることもできます。
+
+<Note>
+  通常の UDF 関数と `executable` テーブル関数および `Executable` テーブルエンジンとの大きな違いは、通常の UDF 関数では行数を変更できないことです。たとえば、入力が 100 行なら、結果も 100 行を返さなければなりません。`executable` テーブル関数または `Executable` テーブルエンジンを使用すると、スクリプトで複雑な集計を含む任意のデータ変換を行えます。
+</Note>
+
+<div id="syntax">
+  ## 構文
+</div>
+
+`executable` テーブル関数には 3 つのパラメータが必要で、オプションで入力クエリのリストを指定できます。
+
+```sql
+executable(script_name, format, structure, [input_query...] [,SETTINGS ...])
+```
+
+* `script_name`: スクリプトのファイル名。`user_scripts` フォルダー (`user_scripts_path` 設定のデフォルトフォルダー) に保存されます
+* `format`: 生成されるテーブルのフォーマット
+* `structure`: 生成されるテーブルのスキーマ
+* `input_query`: 結果が **stdin** 経由でスクリプトに渡される、省略可能なクエリ (またはコレクション、もしくは複数のクエリ)
+
+<Note>
+  同じスクリプトを同じ入力クエリで繰り返し呼び出す場合は、[`Executable` テーブルエンジン](/ja/reference/engines/table-engines/special/executable)の使用を検討してください。
+</Note>
+
+次の Python スクリプトは `generate_random.py` という名前で、`user_scripts` フォルダーに保存されています。このスクリプトは数値 `i` を読み取り、ランダムな文字列を `i` 個出力します。各文字列の前には、タブ区切りの数値が付きます:
+
+```python
+#!/usr/local/bin/python3.9
+
+import sys
+import string
+import random
+
+def main():
+
+    # 入力値を読み込む
+    for number in sys.stdin:
+        i = int(number)
+
+        # ランダムな行をいくつか生成する
+        for id in range(0, i):
+            letters = string.ascii_letters
+            random_string =  ''.join(random.choices(letters ,k=10))
+            print(str(id) + '\t' + random_string + '\n', end='')
+
+        # 結果を標準出力にフラッシュする
+        sys.stdout.flush()
+
+if __name__ == "__main__":
+    main()
+```
+
+スクリプトを実行して、ランダムな文字列を10個生成してみましょう。
+
+```sql
+SELECT * FROM executable('generate_random.py', TabSeparated, 'id UInt32, random String', (SELECT 10))
+```
+
+レスポンスは次のようになります。
+
+```response
+┌─id─┬─random─────┐
+│  0 │ xheXXCiSkH │
+│  1 │ AqxvHAoTrl │
+│  2 │ JYvPCEbIkY │
+│  3 │ sWgnqJwGRm │
+│  4 │ fTZGrjcLon │
+│  5 │ ZQINGktPnd │
+│  6 │ YFSvGGoezb │
+│  7 │ QyMJJZOOia │
+│  8 │ NfiyDDhmcI │
+│  9 │ REJRdJpWrg │
+└────┴────────────┘
+```
+
+<div id="settings">
+  ## 設定
+</div>
+
+* `send_chunk_header` - 処理するデータの chunk を送信する前に、行数を送信するかどうかを制御します。デフォルト値は `false` です。
+* `pool_size` — プールのサイズです。`pool_size` に 0 を指定すると、プールサイズの制限はなくなります。デフォルト値は `16` です。
+* `max_command_execution_time` — データのブロックを処理する実行可能スクリプトコマンドの最大実行時間です。秒単位で指定します。デフォルト値は 10 です。
+* `command_termination_timeout` — 実行可能スクリプトには、メインの読み書きループを含める必要があります。テーブル関数が破棄されるとパイプは閉じられ、実行可能ファイルは終了するまでに `command_termination_timeout` 秒の猶予が与えられます。この時間を過ぎると、ClickHouse は子プロセスに SIGTERM シグナルを送信します。秒単位で指定します。デフォルト値は 10 です。
+* `command_read_timeout` - コマンドの stdout からデータを読み取る際のタイムアウト (ミリ秒単位) です。デフォルト値は 10000 です。
+* `command_write_timeout` - コマンドの stdin にデータを書き込む際のタイムアウト (ミリ秒単位) です。デフォルト値は 10000 です。
+
+<div id="passing-query-results-to-a-script">
+  ## クエリ結果をスクリプトに渡す
+</div>
+
+クエリ結果をスクリプトに渡す方法については、[クエリ結果をスクリプトに渡す方法](/ja/reference/engines/table-engines/special/executable#passing-query-results-to-a-script)にある `Executable` テーブルエンジンの例をぜひ確認してください。以下では、その例と同じスクリプトを `executable` テーブル関数を使って実行する方法を示します。
+
+```sql
+SELECT * FROM executable(
+    'sentiment.py',
+    TabSeparated,
+    'id UInt64, sentiment Float32',
+    (SELECT id, comment FROM hackernews WHERE id > 0 AND comment != '' LIMIT 20)
+);
+```

@@ -1,0 +1,22 @@
+---
+title: 'Prise en charge de la propagation des modifications de schéma'
+slug: /integrations/clickpipes/postgres/schema-changes
+description: 'Page décrivant les types de modifications de schéma que ClickPipes peut détecter dans les tables source'
+doc_type: 'reference'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ingestion de données', 'synchronisation en temps réel']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+ClickPipes for Postgres peut détecter les modifications de schéma dans les tables source et, dans certains cas, propager automatiquement ces modifications vers les tables de destination. La manière dont chaque opération DDL est gérée est décrite ci-dessous :
+
+[//]: # "TODO Étendre cette page avec le comportement lors d'un renommage, des modifications de type de données et de truncate, ainsi que des recommandations sur la façon de gérer les modifications de schéma incompatibles."
+
+| Type de modification de schéma                                                                         | Comportement                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Ajout d&#39;une nouvelle colonne (`ALTER TABLE ADD COLUMN ...`)                                        | Propagée automatiquement dès que la table reçoit un insert/update/delete. Les nouvelles colonnes seront remplies pour toutes les lignes répliquées après la modification de schéma                                                                                                               |
+| Ajout d&#39;une nouvelle colonne avec une valeur par défaut (`ALTER TABLE ADD COLUMN ... DEFAULT ...`) | Propagée automatiquement dès que la table reçoit un insert/update/delete. Les nouvelles colonnes seront remplies pour toutes les lignes répliquées après la modification de schéma, mais les lignes existantes n&#39;auront pas la valeur par défaut sans une actualisation complète de la table |
+| Suppression d&#39;une colonne existante (`ALTER TABLE DROP COLUMN ...`)                                | Détectée, mais **non** propagée. Les colonnes supprimées auront la valeur `NULL` pour toutes les lignes répliquées après la modification de schéma                                                                                                                                               |
+
+Notez que l&#39;ajout d&#39;une colonne est propagé à la fin de la synchronisation d&#39;un batch, ce qui peut se produire après que l&#39;intervalle de synchronisation ou la taille du pull batch a été atteint. Plus d&#39;informations sur le contrôle des synchronisations [ici](/fr/integrations/clickpipes/postgres/controlling-sync)

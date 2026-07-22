@@ -1,6 +1,7 @@
 #include <unistd.h>
 #include <cerrno>
 #include <sys/stat.h>
+#include <algorithm>
 
 #include <Common/Throttler.h>
 #include <Common/Exception.h>
@@ -102,7 +103,10 @@ WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor(
     std::string file_name_,
     bool use_adaptive_buffer_size_,
     size_t adaptive_buffer_initial_size)
-    : WriteBufferFromFileBase(use_adaptive_buffer_size_ ? adaptive_buffer_initial_size : buf_size, existing_memory, alignment)
+    /// The adaptive buffer grows from the initial size up to buf_size (the max), so the
+    /// initial allocation must not exceed it. An out-of-range initial size would otherwise
+    /// be passed straight to the allocator (e.g. a fuzzed adaptive_write_buffer_initial_size).
+    : WriteBufferFromFileBase(use_adaptive_buffer_size_ ? std::min(adaptive_buffer_initial_size, buf_size) : buf_size, existing_memory, alignment)
     , fd(fd_)
     , throttler(throttler_)
     , file_name(std::move(file_name_))

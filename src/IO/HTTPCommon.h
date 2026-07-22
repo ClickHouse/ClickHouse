@@ -68,6 +68,11 @@ HTTPSessionPtr makeHTTPSession(
 
 bool isRedirect(Poco::Net::HTTPResponse::HTTPStatus status);
 
+/// Whether an HTTP error response is worth retrying. Deterministic client errors (bad request,
+/// unauthorized, forbidden, not found, method not allowed, not implemented) are not retriable;
+/// everything else (transient/server-side errors, rate limiting, …) is.
+bool isRetriableHTTPError(Poco::Net::HTTPResponse::HTTPStatus http_status) noexcept;
+
 /** Used to receive response (response headers and possibly body)
   *  after sending data (request headers and possibly body).
   * Throws exception in case of non HTTP_OK (200) response code.

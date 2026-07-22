@@ -1,14 +1,14 @@
+import concurrent.futures
 import logging
 import os
 import random
+import threading
 import time
 import uuid
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.mock_servers import start_mock_servers, start_s3_mock
-from helpers.utility import SafeThread, generate_values, replace_config
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -26,6 +26,8 @@ def cluster():
             user_configs=[
                 "users.d/cache_on_write_operations.xml",
             ],
+            with_zookeeper=True,
+            with_minio=True,
             stay_alive=True,
         )
         cluster.add_instance(
@@ -57,6 +59,17 @@ def cluster():
             user_configs=[
                 "users.d/cache_on_write_operations.xml",
             ],
+            with_zookeeper=True,
+            stay_alive=True,
+        )
+        # Dedicated node: the background eviction push-fail test enables a process-global
+        # failpoint, so it must not share a node with other tests.
+        cluster.add_instance(
+            "keep_up_push_fail",
+            main_configs=[
+                "config.d/storage_conf.xml",
+                "config.d/filesystem_caches_path.xml",
+            ],
             stay_alive=True,
         )
 
@@ -85,6 +98,8 @@ def non_shared_cluster():
                 "config.d/remove_filesystem_caches_path.xml",
             ],
             stay_alive=True,
+            with_zookeeper=True,
+            with_minio=True,
         )
 
         logging.info("Starting test-exclusive cluster...")
@@ -120,6 +135,7 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
     node.query(
         """
         DROP TABLE IF EXISTS test SYNC;
+        SYSTEM DROP FILESYSTEM CACHE;
 
         CREATE TABLE test (key UInt32, value String)
         Engine=MergeTree()
@@ -146,19 +162,19 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
         SELECT * FROM test FORMAT Null;
         """
     )
-    assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
-    assert int(node.query("SELECT max(size) FROM system.filesystem_cache")) == 1024
+    assert int(node.query("SELECT count() FROM system.filesystem_cache WHERE cache_name = 'parallel_loading_test'")) > 0
+    assert int(node.query("SELECT max(size) FROM system.filesystem_cache WHERE cache_name = 'parallel_loading_test'")) == 1024
     count = int(node.query("SELECT count() FROM test"))
 
     cache_count = int(
-        node.query("SELECT count() FROM system.filesystem_cache WHERE size > 0")
+        node.query("SELECT count() FROM system.filesystem_cache WHERE size > 0 AND cache_name = 'parallel_loading_test'")
     )
     cache_state = node.query(
-        "SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE size > 0 ORDER BY key, file_segment_range_begin, size"
+        "SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE size > 0 AND cache_name = 'parallel_loading_test' ORDER BY key, file_segment_range_begin, size"
     )
     keys = (
         node.query(
-            "SELECT distinct(key) FROM system.filesystem_cache WHERE size > 0 ORDER BY key, file_segment_range_begin, size"
+            "SELECT distinct(key) FROM system.filesystem_cache WHERE size > 0 AND cache_name = 'parallel_loading_test' ORDER BY key, file_segment_range_begin, size"
         )
         .strip()
         .splitlines()
@@ -168,15 +184,15 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
     wait_for_cache_initialized(node, "parallel_loading_test")
 
     # < because of additional files loaded into cache on server startup.
-    assert cache_count <= int(node.query("SELECT count() FROM system.filesystem_cache"))
+    assert cache_count <= int(node.query("SELECT count() FROM system.filesystem_cache WHERE cache_name = 'parallel_loading_test'"))
     keys_set = ",".join(["'" + x + "'" for x in keys])
     assert cache_state == node.query(
-        f"SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE key in ({keys_set}) ORDER BY key, file_segment_range_begin, size"
+        f"SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE key in ({keys_set}) AND cache_name = 'parallel_loading_test' ORDER BY key, file_segment_range_begin, size"
     )
 
     assert node.contains_in_log("15 listing thread(s) and 15 loading thread(s)")
-    assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
-    assert int(node.query("SELECT max(size) FROM system.filesystem_cache")) == 1024
+    assert int(node.query("SELECT count() FROM system.filesystem_cache WHERE cache_name = 'parallel_loading_test'")) > 0
+    assert int(node.query("SELECT max(size) FROM system.filesystem_cache WHERE cache_name = 'parallel_loading_test'")) == 1024
     assert (
         int(
             node.query(
@@ -187,6 +203,333 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
     )
     node.query("SELECT * FROM test FORMAT Null")
     assert count == int(node.query("SELECT count() FROM test"))
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_cache_file_size_in_name(cluster, node_name):
+    """
+    A fully downloaded regular cache file is named `<offset>_<size>`, which lets startup
+    metadata loading read the size from the file name instead of `stat`-ing every file.
+    This test verifies the on-disk naming, and that legacy `<offset>` files (without the
+    size suffix) are still loaded correctly by falling back to a `stat`.
+    """
+    node = cluster.instances[node_name]
+    node.query(
+        """
+        DROP TABLE IF EXISTS test_size_in_name SYNC;
+
+        CREATE TABLE test_size_in_name (key UInt32, value String)
+        Engine=MergeTree()
+        ORDER BY value
+        SETTINGS disk = disk(
+            type = cache,
+            name = 'size_in_name_test',
+            path = 'size_in_name_test',
+            disk = 'hdd_blob',
+            max_file_segment_size = '1Ki',
+            boundary_alignment = '1Ki',
+            max_size = '1Gi',
+            max_elements = 10000000);
+        """
+    )
+
+    wait_for_cache_initialized(node, "size_in_name_test")
+
+    node.query(
+        """
+        SYSTEM CLEAR FILESYSTEM CACHE;
+        INSERT INTO test_size_in_name SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000;
+        SELECT * FROM test_size_in_name FORMAT Null;
+        """
+    )
+    assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
+
+    cache_path = node.query(
+        "SELECT cache_path FROM system.disks WHERE name = 'size_in_name_test'"
+    ).strip()
+
+    def list_segment_files():
+        out = node.exec_in_container(
+            ["bash", "-c", f"find {cache_path} -type f -printf '%f %s\\n'"]
+        )
+        files = []
+        for line in out.splitlines():
+            name, _, size = line.partition(" ")
+            if name == "status" or name.endswith("_temporary"):
+                continue
+            files.append((name, int(size)))
+        return files
+
+    files = list_segment_files()
+    assert len(files) > 0
+    # Every regular segment file encodes its size in the name as `<offset>_<size>`,
+    # and that size matches the file's actual size on disk.
+    for name, size in files:
+        assert "_" in name, f"segment file {name} has no size suffix"
+        name_size = int(name.split("_", 1)[1])
+        assert name_size == size, f"{name}: size in name {name_size} != actual {size}"
+
+    def cache_segments():
+        return set(
+            node.query(
+                "SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE size > 0"
+            )
+            .strip()
+            .splitlines()
+        )
+
+    # Every segment cached before the restart must survive it (startup may add more, hence subset).
+    cache_state = cache_segments()
+    assert len(cache_state) > 0
+
+    # Restart: metadata is loaded by reading sizes from the file names (no stat).
+    node.restart_clickhouse()
+    wait_for_cache_initialized(node, "size_in_name_test")
+    assert cache_state <= cache_segments()
+
+    # Backward compatibility: rename the files to the legacy `<offset>` form (no size suffix)
+    # and make sure they are still loaded on the next startup (the size is obtained with a stat).
+    # The server must be stopped while we rewrite the file names: a running server keeps the
+    # in-memory `<offset>_<size>` name (`hasSizeInFileName`) and would not find the renamed file.
+    node.stop_clickhouse()
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"find {cache_path} -type f -name '*_*' ! -name '*_temporary' "
+            "-exec bash -c 'mv \"$1\" \"$(dirname \"$1\")/$(basename \"$1\" | cut -d_ -f1)\"' _ {} ';'",
+        ]
+    )
+    # No file should carry a size suffix anymore.
+    assert all("_" not in name for name, _ in list_segment_files())
+
+    node.start_clickhouse()
+    wait_for_cache_initialized(node, "size_in_name_test")
+    assert cache_state <= cache_segments()
+    node.query("SELECT * FROM test_size_in_name FORMAT Null")
+    node.query("DROP TABLE test_size_in_name SYNC")
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_cache_file_truncated_size_in_name(cluster, node_name):
+    """
+    A fully downloaded regular cache file is named `<offset>_<size>`, and startup metadata loading
+    trusts that size without a `stat`. If such a file is truncated outside ClickHouse, the segment is
+    restored as fully downloaded but the on-disk file is shorter than recorded. Reading it must not raise
+    a `LOGICAL_ERROR`: the broken cache entry is discarded and the data is re-fetched from the source.
+
+    This covers both a shorter-than-recorded file and a zero-length file.
+    """
+    node = cluster.instances[node_name]
+    node.query(
+        """
+        DROP TABLE IF EXISTS test_truncated_size_in_name SYNC;
+
+        CREATE TABLE test_truncated_size_in_name (key UInt32, value String)
+        Engine=MergeTree()
+        ORDER BY value
+        SETTINGS disk = disk(
+            type = cache,
+            name = 'truncated_size_in_name_test',
+            path = 'truncated_size_in_name_test',
+            disk = 'hdd_blob',
+            max_file_segment_size = '1Ki',
+            boundary_alignment = '1Ki',
+            max_size = '1Gi',
+            max_elements = 10000000);
+        """
+    )
+
+    wait_for_cache_initialized(node, "truncated_size_in_name_test")
+
+    node.query(
+        """
+        SYSTEM CLEAR FILESYSTEM CACHE;
+        INSERT INTO test_truncated_size_in_name SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000;
+        SELECT * FROM test_truncated_size_in_name FORMAT Null;
+        """
+    )
+    assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
+
+    expected_count = int(node.query("SELECT count() FROM test_truncated_size_in_name"))
+    expected_sum = node.query("SELECT sum(cityHash64(key, value)) FROM test_truncated_size_in_name").strip()
+
+    cache_path = node.query(
+        "SELECT cache_path FROM system.disks WHERE name = 'truncated_size_in_name_test'"
+    ).strip()
+
+    def list_suffixed_segment_files():
+        out = node.exec_in_container(
+            ["bash", "-c", f"find {cache_path} -type f -printf '%p %f %s\\n'"]
+        )
+        files = []
+        for line in out.splitlines():
+            full_path, name, size = line.rsplit(" ", 2)
+            if name == "status" or name.endswith("_temporary") or "_" not in name:
+                continue
+            files.append((full_path, int(size)))
+        return files
+
+    files = list_suffixed_segment_files()
+    # Need at least two segment files to exercise both the short and the zero-length cases.
+    assert len(files) >= 2, files
+
+    # The server must be stopped while we corrupt the files: a running server holds the segments open.
+    node.stop_clickhouse()
+
+    # Truncate one suffixed file to half its size (non-empty but shorter than recorded) and another
+    # to zero bytes. Their names still encode the full `<size>`, so startup trusts the larger size.
+    short_path, short_size = files[0]
+    zero_path, _ = files[1]
+    node.exec_in_container(["bash", "-c", f"truncate -s {max(short_size // 2, 1)} '{short_path}'"])
+    node.exec_in_container(["bash", "-c", f"truncate -s 0 '{zero_path}'"])
+
+    node.start_clickhouse()
+    wait_for_cache_initialized(node, "truncated_size_in_name_test")
+
+    # Reading must not raise a LOGICAL_ERROR. A truncated segment is discarded and the read is
+    # transparently re-routed to the source, so the part loads and the query succeeds. Retry
+    # defensively in case a concurrent state transition surfaces a retryable error first.
+    last_error = None
+    succeeded = False
+    for _ in range(20):
+        try:
+            node.query("SELECT * FROM test_truncated_size_in_name FORMAT Null")
+            succeeded = True
+            break
+        except Exception as e:
+            last_error = str(e)
+            assert "LOGICAL_ERROR" not in last_error, last_error
+            assert "Logical error" not in last_error, last_error
+
+    assert succeeded, f"query did not recover, last error: {last_error}"
+
+    # The data is intact after re-fetching the discarded segments from the source.
+    assert int(node.query("SELECT count() FROM test_truncated_size_in_name")) == expected_count
+    assert (
+        node.query("SELECT sum(cityHash64(key, value)) FROM test_truncated_size_in_name").strip()
+        == expected_sum
+    )
+    node.query("DROP TABLE test_truncated_size_in_name SYNC")
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_cache_file_truncated_size_in_name_concurrent_readers(cluster, node_name):
+    """
+    Concurrent-reader variant of `test_cache_file_truncated_size_in_name`.
+
+    When several readers race on the same externally truncated `<offset>_<size>` cache file, one reader
+    can discard/detach the segment between another reader opening the short file and re-checking its
+    state. The losing reader must still bypass the cache and re-fetch from the source rather than keep its
+    truncated descriptor and surface a `LOGICAL_ERROR`. Fire many parallel scans of the truncated data so
+    that at least some of them read the corrupted segment simultaneously, and assert none of them raises a
+    `LOGICAL_ERROR` and the data stays intact.
+    """
+    node = cluster.instances[node_name]
+    node.query(
+        """
+        DROP TABLE IF EXISTS test_truncated_size_concurrent SYNC;
+
+        CREATE TABLE test_truncated_size_concurrent (key UInt32, value String)
+        Engine=MergeTree()
+        ORDER BY value
+        SETTINGS disk = disk(
+            type = cache,
+            name = 'truncated_size_concurrent_test',
+            path = 'truncated_size_concurrent_test',
+            disk = 'hdd_blob',
+            max_file_segment_size = '1Ki',
+            boundary_alignment = '1Ki',
+            max_size = '1Gi',
+            max_elements = 10000000);
+        """
+    )
+
+    wait_for_cache_initialized(node, "truncated_size_concurrent_test")
+
+    node.query(
+        """
+        SYSTEM CLEAR FILESYSTEM CACHE;
+        INSERT INTO test_truncated_size_concurrent SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000;
+        SELECT * FROM test_truncated_size_concurrent FORMAT Null;
+        """
+    )
+    assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
+
+    expected_count = int(node.query("SELECT count() FROM test_truncated_size_concurrent"))
+    expected_sum = node.query(
+        "SELECT sum(cityHash64(key, value)) FROM test_truncated_size_concurrent"
+    ).strip()
+
+    cache_path = node.query(
+        "SELECT cache_path FROM system.disks WHERE name = 'truncated_size_concurrent_test'"
+    ).strip()
+
+    def list_suffixed_segment_files():
+        out = node.exec_in_container(
+            ["bash", "-c", f"find {cache_path} -type f -printf '%p %f %s\\n'"]
+        )
+        files = []
+        for line in out.splitlines():
+            full_path, name, size = line.rsplit(" ", 2)
+            if name == "status" or name.endswith("_temporary") or "_" not in name:
+                continue
+            files.append((full_path, int(size)))
+        return files
+
+    files = list_suffixed_segment_files()
+    assert len(files) >= 1, files
+
+    # The server must be stopped while we corrupt the file: a running server holds the segment open.
+    node.stop_clickhouse()
+
+    # Truncate every suffixed file to half its size. Their names still encode the full `<size>`, so
+    # startup trusts the larger size and every scan that reads them must self-heal.
+    for short_path, short_size in files:
+        node.exec_in_container(
+            ["bash", "-c", f"truncate -s {max(short_size // 2, 1)} '{short_path}'"]
+        )
+
+    node.start_clickhouse()
+    wait_for_cache_initialized(node, "truncated_size_concurrent_test")
+
+    # Launch the scans as simultaneously as possible (a barrier releases them together) so several
+    # readers touch the same truncated segments before the first discard removes them.
+    num_readers = 16
+    barrier = threading.Barrier(num_readers)
+
+    def scan():
+        barrier.wait()
+        # A truncated segment is discarded and the read re-routed to the source. Retry defensively in
+        # case a concurrent state transition surfaces a retryable error first; a `LOGICAL_ERROR` must
+        # never appear.
+        last_error = None
+        for _ in range(20):
+            try:
+                node.query("SELECT * FROM test_truncated_size_concurrent FORMAT Null")
+                return None
+            except Exception as e:
+                last_error = str(e)
+                assert "LOGICAL_ERROR" not in last_error, last_error
+                assert "Logical error" not in last_error, last_error
+        return last_error
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num_readers) as executor:
+        errors = [f.result() for f in [executor.submit(scan) for _ in range(num_readers)]]
+
+    assert all(e is None for e in errors), errors
+
+    # The data is intact after re-fetching the discarded segments from the source.
+    assert (
+        int(node.query("SELECT count() FROM test_truncated_size_concurrent")) == expected_count
+    )
+    assert (
+        node.query(
+            "SELECT sum(cityHash64(key, value)) FROM test_truncated_size_concurrent"
+        ).strip()
+        == expected_sum
+    )
+    node.query("DROP TABLE test_truncated_size_concurrent SYNC")
 
 
 @pytest.mark.parametrize("node_name", ["node"])
@@ -382,7 +725,7 @@ def test_custom_cached_disk(non_shared_cluster):
     node = non_shared_cluster.instances["node_no_filesystem_caches_path"]
 
     assert "Cannot create cached custom disk without" in node.query_and_get_error(
-        f"""
+        """
         DROP TABLE IF EXISTS test SYNC;
         CREATE TABLE test (a Int32)
         ENGINE = MergeTree() ORDER BY tuple()
@@ -394,7 +737,7 @@ def test_custom_cached_disk(non_shared_cluster):
         [
             "bash",
             "-c",
-            f"""echo "
+            """echo "
         <clickhouse>
             <filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>
         </clickhouse>
@@ -405,7 +748,7 @@ def test_custom_cached_disk(non_shared_cluster):
     node.restart_clickhouse()
 
     node.query(
-        f"""
+        """
     CREATE TABLE test (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
     SETTINGS disk = disk(type = cache, name = 'custom_cached', path = 'kek', max_size = 10, disk = 'hdd_blob');
@@ -423,7 +766,7 @@ def test_custom_cached_disk(non_shared_cluster):
         [
             "bash",
             "-c",
-            f"""echo "
+            """echo "
         <clickhouse>
             <custom_cached_disks_base_directory>/var/lib/clickhouse/custom_caches/</custom_cached_disks_base_directory>
         </clickhouse>
@@ -441,7 +784,7 @@ def test_custom_cached_disk(non_shared_cluster):
     node.restart_clickhouse()
 
     node.query(
-        f"""
+        """
     CREATE TABLE test2 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
     SETTINGS disk = disk(type = cache, name = 'custom_cached2', path = 'kek2', max_size = 10, disk = 'hdd_blob');
@@ -461,7 +804,7 @@ def test_custom_cached_disk(non_shared_cluster):
     node.restart_clickhouse()
 
     node.query(
-        f"""
+        """
     CREATE TABLE test3 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
     SETTINGS disk = disk(type = cache, name = 'custom_cached3', path = 'kek3', max_size = 10, disk = 'hdd_blob');
@@ -476,7 +819,7 @@ def test_custom_cached_disk(non_shared_cluster):
     )
 
     assert "Filesystem cache absolute path must lie inside" in node.query_and_get_error(
-        f"""
+        """
     CREATE TABLE test4 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
     SETTINGS disk = disk(type = cache, name = 'custom_cached4', path = '/kek4', max_size = 10, disk = 'hdd_blob');
@@ -484,7 +827,7 @@ def test_custom_cached_disk(non_shared_cluster):
     )
 
     node.query(
-        f"""
+        """
     CREATE TABLE test4 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
     SETTINGS disk = disk(type = cache, name = 'custom_cached4', path = '/var/lib/clickhouse/custom_caches/kek4', max_size = 10, disk = 'hdd_blob');
@@ -499,6 +842,7 @@ def test_custom_cached_disk(non_shared_cluster):
     )
 
 
+@pytest.mark.skip(reason="In private we always use cache for merges")
 def test_force_filesystem_cache_on_merges(cluster):
     def test(node, forced_read_through_cache_on_merge):
         def to_int(value):
@@ -706,14 +1050,14 @@ INSERT INTO test SELECT randomString(200);
     """
     )
 
-    query_id = "test_keep_up_size_ratio_1"
+    query_id = f"test_keep_up_size_ratio_1_{uuid.uuid4()}"
     node.query(
         "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 1",
         query_id=query_id,
     )
     count = int(
         node.query(
-            f"""
+            """
     SYSTEM FLUSH LOGS;
     SELECT uniqExact(concat(key, toString(offset)))
     FROM system.filesystem_cache_log
@@ -734,6 +1078,156 @@ INSERT INTO test SELECT randomString(200);
             break
         time.sleep(1)
     assert elements <= expected
+
+
+def test_keep_up_size_ratio_parallel_eviction(cluster):
+    # Regression test for the parallel background eviction path:
+    # a small remove batch with several remover threads forces the single collector
+    # to hand many batches to multiple removers and finalize them as they come back.
+    node = cluster.instances["node"]
+    max_elements = 200
+    cache_name = "keep_up_size_ratio_parallel"
+    node.query(
+        f"""
+DROP TABLE IF EXISTS test_parallel_eviction;
+
+CREATE TABLE test_parallel_eviction (a String)
+ENGINE = MergeTree() ORDER BY tuple()
+SETTINGS disk = disk(type = cache,
+            name = {cache_name},
+            max_size = '100Ki',
+            max_elements = {max_elements},
+            max_file_segment_size = 10,
+            boundary_alignment = 10,
+            path = "test_keep_up_size_ratio_parallel",
+            keep_free_space_size_ratio = 0.5,
+            keep_free_space_elements_ratio = 0.5,
+            keep_free_space_remove_batch = 2,
+            keep_free_space_eviction_threads = 3,
+            disk = hdd_blob),
+        min_bytes_for_wide_part = 10485760;
+    """
+    )
+
+    wait_for_cache_initialized(node, "test_keep_up_size_ratio_parallel")
+
+    node.query(
+        "INSERT INTO test_parallel_eviction SELECT randomString(200) FROM numbers(50);"
+    )
+
+    # Fill the cache well above max_elements so background keeping has to evict
+    # many small file segments in many batches.
+    query_id = "test_keep_up_size_ratio_parallel_1"
+    node.query(
+        "SELECT * FROM test_parallel_eviction FORMAT Null SETTINGS enable_filesystem_cache_log = 1",
+        query_id=query_id,
+    )
+    count = int(
+        node.query(
+            f"""
+    SYSTEM FLUSH LOGS;
+    SELECT uniqExact(concat(key, toString(offset)))
+    FROM system.filesystem_cache_log
+    WHERE read_type = 'READ_FROM_FS_AND_DOWNLOADED_TO_CACHE' AND query_id = '{query_id}';
+    """
+        )
+    )
+    assert count > max_elements
+
+    # keep_free_space_*_ratio = 0.5 over max_elements = 200 -> converge to ~100.
+    expected = max_elements // 2
+    for _ in range(100):
+        elements = int(
+            node.query(
+                f"SELECT count() FROM system.filesystem_cache WHERE cache_name = '{cache_name}'"
+            )
+        )
+        if elements <= expected:
+            break
+        time.sleep(1)
+    assert elements <= expected
+
+    # The data must stay fully readable after parallel eviction + finalization:
+    # the cached read must return exactly what a cache-bypassing read returns.
+    assert int(node.query("SELECT count() FROM test_parallel_eviction")) == 50
+    assert node.query(
+        "SELECT sum(cityHash64(a)) FROM test_parallel_eviction"
+    ) == node.query(
+        "SELECT sum(cityHash64(a)) FROM test_parallel_eviction SETTINGS enable_filesystem_cache = 0"
+    )
+
+
+def test_keep_up_size_ratio_push_fail(cluster):
+    node = cluster.instances["keep_up_push_fail"]
+    max_elements = 100
+    cache_name = "keep_up_size_ratio_push_fail"
+    node.query(
+        f"""
+DROP TABLE IF EXISTS test_push_fail;
+
+CREATE TABLE test_push_fail (a String)
+ENGINE = MergeTree() ORDER BY tuple()
+SETTINGS disk = disk(type = cache,
+            name = {cache_name},
+            max_size = '10Mi',
+            max_elements = {max_elements},
+            max_file_segment_size = 10,
+            boundary_alignment = 10,
+            path = "test_keep_up_size_ratio_push_fail",
+            keep_free_space_size_ratio = 0.9,
+            keep_free_space_elements_ratio = 0.9,
+            keep_free_space_remove_batch = 2,
+            keep_free_space_eviction_threads = 3,
+            disk = hdd_blob),
+        min_bytes_for_wide_part = 10485760;
+    """
+    )
+
+    wait_for_cache_initialized(node, "test_keep_up_size_ratio_push_fail")
+
+    def elems():
+        return int(
+            node.query(
+                f"SELECT count() FROM system.filesystem_cache WHERE cache_name = '{cache_name}'"
+            )
+        )
+
+    # keep_free_space_elements_ratio = 0.9 over max_elements = 100 -> target 10.
+    expected = max_elements // 10
+
+    node.query("SYSTEM ENABLE FAILPOINT file_cache_background_eviction_push_fail")
+    try:
+        node.query(
+            "INSERT INTO test_push_fail SELECT randomString(1000) FROM numbers(500);"
+        )
+        node.query("SELECT * FROM test_push_fail FORMAT Null")
+
+        # With the failpoint on, every collected batch fails to reach the remover workers,
+        # so background keeping bails out (CANNOT_EVICT) and cannot drop below the fill level.
+        node.wait_for_log_line("Background eviction workers take too much time")
+        blocked = elems()
+        assert blocked > expected
+        time.sleep(3)
+        assert elems() == blocked
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT file_cache_background_eviction_push_fail")
+
+    # After the dropped batches are rolled back, background keeping must converge all the
+    # way to the configured target - not just make partial progress - which proves no
+    # entries were left stuck in the `Evicting` state.
+    for _ in range(60):
+        converged = elems()
+        if converged <= expected:
+            break
+        time.sleep(1)
+    assert converged <= expected
+
+    assert int(node.query("SELECT count() FROM test_push_fail")) == 500
+    assert node.query(
+        "SELECT sum(cityHash64(a)) FROM test_push_fail"
+    ) == node.query(
+        "SELECT sum(cityHash64(a)) FROM test_push_fail SETTINGS enable_filesystem_cache = 0"
+    )
 
 
 def test_proactive_invalidated_entries_cleanup(cluster):
@@ -839,7 +1333,6 @@ cache_dynamic_resize_config = """
 
 def test_dynamic_resize(cluster):
     node = cluster.instances["cache_dynamic_resize"]
-    max_elements = 20
     cache_name = "cache_dynamic_resize"
     node.query(
         f"""
@@ -905,7 +1398,7 @@ SELECT * FROM test;
     assert 10 == get_downloaded_elements()
     assert 10 == get_queue_elements()
 
-    node.query(f"SYSTEM ENABLE FAILPOINT file_cache_dynamic_resize_fail_to_evict")
+    node.query("SYSTEM ENABLE FAILPOINT file_cache_dynamic_resize_fail_to_evict")
 
     new_config = cache_dynamic_resize_config.format(100000, 5, 100000, 100)
     node.replace_config(
@@ -928,7 +1421,7 @@ SELECT * FROM test;
         )
     )
 
-    node.query(f"SYSTEM DISABLE FAILPOINT file_cache_dynamic_resize_fail_to_evict")
+    node.query("SYSTEM DISABLE FAILPOINT file_cache_dynamic_resize_fail_to_evict")
     node.query("SYSTEM RELOAD CONFIG")
 
     assert 5 == get_downloaded_elements()
@@ -1016,7 +1509,6 @@ INSERT INTO test SELECT 1, 'test';
 
 def test_dynamic_resize_disabled(cluster):
     node = cluster.instances["cache_dynamic_resize"]
-    max_elements = 20
     cache_name = "cache_dynamic_resize_disabled"
     node.query(
         f"""
@@ -1348,7 +1840,7 @@ SYSTEM CLEAR FILESYSTEM CACHE;
                 f"WHERE name = 'LOGICAL_ERROR' AND last_error_time >= '{test_start}'"
             ).strip()
         )
-        assert errors == 0, f"LOGICAL_ERROR occurred during SLRU resize test"
+        assert errors == 0, "LOGICAL_ERROR occurred during SLRU resize test"
 
     finally:
         node.replace_config(
@@ -1496,7 +1988,7 @@ SYSTEM CLEAR FILESYSTEM CACHE;
                 f"WHERE name = 'LOGICAL_ERROR' AND last_error_time >= '{test_start}'"
             ).strip()
         )
-        assert errors == 0, f"LOGICAL_ERROR occurred during SLRU failpoint resize test"
+        assert errors == 0, "LOGICAL_ERROR occurred during SLRU failpoint resize test"
 
     finally:
         node.query(
@@ -1508,3 +2000,75 @@ SYSTEM CLEAR FILESYSTEM CACHE;
         )
         node.query("SYSTEM RELOAD CONFIG")
         node.query("DROP TABLE IF EXISTS test_slru_fp SYNC")
+
+
+def test_reserve_granularity_reclaims_surplus_after_read(cluster):
+    # Regression test for reserve-ahead accounting: a sub-granule read must not keep a
+    # whole `reserve_granularity` charged against the cache after the read buffer is
+    # destroyed. With `reserve_granularity == boundary_alignment` the completion-time
+    # `shrinkFileSegmentToDownloadedSize` rounds the downloaded size back up to the whole
+    # range, so the reserve-ahead surplus has to be reclaimed explicitly; otherwise the
+    # cache stays charged for bytes that were never written.
+    node = cluster.instances["node"]
+
+    node.query("SYSTEM DROP FILESYSTEM CACHE")
+    node.query("DROP TABLE IF EXISTS test_reserve_granularity SYNC")
+    node.query(
+        """
+        CREATE TABLE test_reserve_granularity (key UInt64, value String)
+        Engine=MergeTree()
+        ORDER BY key
+        SETTINGS disk = disk(
+            type = cache,
+            name = 'reserve_granularity_cache',
+            path = 'reserve_granularity_cache',
+            disk = 'hdd_blob',
+            max_size = '1Gi',
+            max_file_segment_size = '4Mi',
+            boundary_alignment = '4Mi',
+            reserve_granularity = '4Mi',
+            background_download_threads = 0,
+            cache_on_write_operations = 0),
+        index_granularity = 256,
+        min_bytes_for_wide_part = 0
+        """
+    )
+    node.query("SYSTEM STOP MERGES test_reserve_granularity")
+
+    # cache_on_write_operations = 0, so the INSERT itself does not populate the cache.
+    # Incompressible values make the column span many 4Mi file segments.
+    node.query(
+        "INSERT INTO test_reserve_granularity SELECT number, randomString(2000) FROM numbers(50000)"
+    )
+
+    # A single point read: downloads only a small (sub-granule) part of one file segment.
+    node.query(
+        "SELECT value FROM test_reserve_granularity WHERE key = 0 SETTINGS max_read_buffer_size = 65536"
+    )
+
+    # The read buffer is destroyed and no background download is configured, so the touched
+    # segment is completed and shrunk. `size` is the (boundary-aligned) segment range, while
+    # `downloaded_size` is what was actually written; the segment must be partially downloaded
+    # for this test to exercise the reserve-ahead surplus at all.
+    range_size = int(
+        node.query(
+            "SELECT sum(size) FROM system.filesystem_cache WHERE cache_name = 'reserve_granularity_cache'"
+        )
+    )
+    downloaded = int(
+        node.query(
+            "SELECT sum(downloaded_size) FROM system.filesystem_cache WHERE cache_name = 'reserve_granularity_cache'"
+        )
+    )
+    assert downloaded > 0
+    assert range_size > downloaded, "expected at least one partially downloaded segment"
+
+    # FilesystemCacheSize tracks the space charged against the cache (sum of reserved sizes).
+    # After reclaiming the reserve-ahead surplus it must equal the actually downloaded bytes,
+    # not the rounded-up range. Without the fix it would equal `range_size`.
+    reserved = int(
+        node.query("SELECT value FROM system.metrics WHERE name = 'FilesystemCacheSize'")
+    )
+    assert reserved == downloaded, f"reserved {reserved} != downloaded {downloaded} (range {range_size})"
+
+    node.query("DROP TABLE test_reserve_granularity SYNC")

@@ -11,7 +11,7 @@ import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
 from .event import Event
@@ -89,6 +89,7 @@ class Result(MetaClasses.Serializable):
         SETTING_VALUE = "setting"
         FLAKY = "flaky"
         REPRODUCIBLE = "reproducible"
+        LOG_CHECK = "log_check"
 
     # Default hints rendered as a hover tooltip in json.html.
     # Looked up automatically when set_label is called without an explicit hint.
@@ -103,6 +104,7 @@ class Result(MetaClasses.Serializable):
         Label.SETTING_VALUE: "Failure caused by a specific randomized setting value",
         Label.FLAKY: "Failure is reproducible in less than 100% of reruns",
         Label.REPRODUCIBLE: "Failure is reproducible in 100% of reruns",
+        Label.LOG_CHECK: "Server-log / runner health check, not a test case (excluded from bugfix-validation inversion)",
     }
 
     name: str
@@ -958,14 +960,27 @@ class Result(MetaClasses.Serializable):
         # Apply truncation if info_lines exceeds MAX_LINES_IN_INFO
         truncated = False
         if len(info_lines) > MAX_LINES_IN_INFO:
-            # For clang-tidy and similar builds, find the first error/warning
-            # and show context around it instead of just the last lines
+            # For clang-tidy and similar builds, find the first error (or, if
+            # there is none, the first warning) and show context around it
+            # instead of just the last lines.
+            # Errors take priority over warnings: a build log often contains
+            # many unrelated warnings (e.g. deprecation warnings from contrib
+            # libraries) before the actual compile error that stopped the
+            # build. Centering the excerpt on the first warning would truncate
+            # away the real error, so scan for the first error first and only
+            # fall back to the first warning when no error is present.
             first_error_idx = None
+            first_warning_idx = None
             for idx, line in enumerate(info_lines):
                 # Match clang-tidy format: "file:line:col: error:" or "file:line:col: warning:"
-                if ": error:" in line or ": warning:" in line:
+                if ": error:" in line:
                     first_error_idx = idx
                     break
+                if first_warning_idx is None and ": warning:" in line:
+                    first_warning_idx = idx
+
+            if first_error_idx is None:
+                first_error_idx = first_warning_idx
 
             if first_error_idx is not None:
                 # Show context around the first error (lines before and after)

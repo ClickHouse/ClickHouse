@@ -1,0 +1,124 @@
+---
+description: '테이블 엔진 문서'
+slug: /engines/table-engines/
+toc_folder_title: '테이블 엔진'
+toc_priority: 26
+toc_title: '소개'
+title: '테이블 엔진'
+doc_type: '참고'
+---
+
+테이블 엔진(테이블의 유형)은 다음을 결정합니다:
+
+* 데이터가 저장되는 방식과 위치, 데이터를 기록할 위치, 그리고 데이터를 읽어올 위치
+* 어떤 쿼리를 지원하는지와 그 처리 방식
+* 동시 데이터 액세스
+* 인덱스가 있는 경우 그 사용 방식
+* 요청을 멀티스레드로 실행할 수 있는지 여부
+* 데이터 복제 매개변수
+
+<div id="engine-families">
+  ## 엔진 계열
+</div>
+
+<div id="mergetree">
+  ### MergeTree
+</div>
+
+고부하 작업에 가장 범용적이고 기능이 풍부한 테이블 엔진입니다. 이 엔진들의 공통적인 특징은 데이터를 빠르게 삽입한 뒤 백그라운드에서 후속 처리를 수행한다는 점입니다. `MergeTree` 계열 엔진은 데이터 복제([Replicated*](/ko/reference/engines/table-engines/mergetree-family/replication) 버전의 엔진 사용), 파티셔닝, 보조 데이터 스키핑 인덱스, 그리고 다른 엔진에서는 지원되지 않는 기타 기능을 지원합니다.
+
+이 계열의 엔진:
+
+| MergeTree 엔진                                                                                                   |
+| -------------------------------------------------------------------------------------------------------------- |
+| [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree)                                       |
+| [ReplacingMergeTree](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree)                     |
+| [SummingMergeTree](/ko/reference/engines/table-engines/mergetree-family/summingmergetree)                         |
+| [AggregatingMergeTree](/ko/reference/engines/table-engines/mergetree-family/aggregatingmergetree)                 |
+| [CollapsingMergeTree](/ko/reference/engines/table-engines/mergetree-family/collapsingmergetree)                   |
+| [VersionedCollapsingMergeTree](/ko/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree) |
+| [GraphiteMergeTree](/ko/reference/engines/table-engines/mergetree-family/graphitemergetree)                       |
+| [CoalescingMergeTree](/ko/reference/engines/table-engines/mergetree-family/coalescingmergetree)                   |
+
+<div id="log">
+  ### Log
+</div>
+
+최소한의 기능만 제공하는 경량 [엔진](/ko/reference/engines/table-engines/log-family/index)입니다. 많은 수의 작은 테이블(약 100만 행 이하)을 빠르게 생성하고, 나중에 이를 통째로 읽어야 할 때 가장 효과적입니다.
+
+이 계열에 포함된 엔진:
+
+| Log 엔진                                                           |
+| ------------------------------------------------------------------ |
+| [TinyLog](/ko/reference/engines/table-engines/log-family/tinylog)     |
+| [StripeLog](/ko/reference/engines/table-engines/log-family/stripelog) |
+| [Log](/ko/reference/engines/table-engines/log-family/log)             |
+
+<div id="integration-engines">
+  ### 통합 엔진
+</div>
+
+다른 데이터 저장 및 처리 시스템과 연동하기 위한 엔진입니다.
+
+이 계열에 속하는 엔진:
+
+| 통합 엔진                                                                             |
+| --------------------------------------------------------------------------------- |
+| [ODBC](/ko/reference/engines/table-engines/integrations/odbc)                         |
+| [JDBC](/ko/reference/engines/table-engines/integrations/jdbc)                        |
+| [MySQL](/ko/reference/engines/table-engines/integrations/mysql)                      |
+| [MongoDB](/ko/reference/engines/table-engines/integrations/mongodb)                  |
+| [Redis](/ko/reference/engines/table-engines/integrations/redis)                      |
+| [HDFS](/ko/reference/engines/table-engines/integrations/hdfs)                        |
+| [S3](/ko/reference/engines/table-engines/integrations/s3)                            |
+| [Kafka](/ko/reference/engines/table-engines/integrations/kafka)                      |
+| [EmbeddedRocksDB](/ko/reference/engines/table-engines/integrations/embedded-rocksdb) |
+| [RabbitMQ](/ko/reference/engines/table-engines/integrations/rabbitmq)                |
+| [PostgreSQL](/ko/reference/engines/table-engines/integrations/postgresql)            |
+| [S3Queue](/ko/reference/engines/table-engines/integrations/s3queue)                  |
+| [TimeSeries](/ko/reference/engines/table-engines/integrations/time-series)           |
+
+<div id="special-engines">
+  ### 특수 엔진
+</div>
+
+이 계열에 속한 엔진:
+
+| 특수 엔진                                                               |
+| ------------------------------------------------------------------- |
+| [분산](/ko/reference/engines/table-engines/special/distributed)          |
+| [딕셔너리](/ko/reference/engines/table-engines/special/dictionary)         |
+| [머지](/ko/reference/engines/table-engines/special/merge)                |
+| [실행형](/ko/reference/engines/table-engines/special/executable)          |
+| [File](/ko/reference/engines/table-engines/special/file)               |
+| [Null](/ko/reference/engines/table-engines/special/null)               |
+| [Set](/ko/reference/engines/table-engines/special/set)                 |
+| [Join](/ko/reference/engines/table-engines/special/join)               |
+| [URL](/ko/reference/engines/table-engines/special/url)                 |
+| [View](/ko/reference/engines/table-engines/special/view)               |
+| [메모리](/ko/reference/engines/table-engines/special/memory)              |
+| [Buffer](/ko/reference/engines/table-engines/special/buffer)           |
+| [외부 데이터](/ko/reference/engines/table-engines/special/external-data)    |
+| [GenerateRandom](/ko/reference/engines/table-engines/special/generate) |
+| [KeeperMap](/ko/reference/engines/table-engines/special/keepermap)     |
+| [FileLog](/ko/reference/engines/table-engines/special/filelog)         |
+
+<div id="table_engines-virtual_columns">
+  ## 가상 컬럼
+</div>
+
+가상 컬럼은 엔진 소스 코드에 정의되는 테이블 엔진의 고유 속성입니다.
+
+가상 컬럼은 `CREATE TABLE` 쿼리에서 지정할 수 없으며, `SHOW CREATE TABLE` 및 `DESCRIBE TABLE` 쿼리 결과에도 표시되지 않습니다. 또한 가상 컬럼은 읽기 전용이므로 데이터를 삽입할 수도 없습니다.
+
+가상 컬럼의 데이터를 선택하려면 `SELECT` 쿼리에서 해당 이름을 명시해야 합니다. `SELECT *`는 가상 컬럼의 값을 반환하지 않습니다.
+
+테이블의 가상 컬럼 중 하나와 같은 이름의 컬럼을 사용해 테이블을 생성하면 해당 가상 컬럼에 접근할 수 없게 됩니다. 이는 권장되지 않습니다. 충돌을 방지하기 위해 가상 컬럼 이름에는 일반적으로 밑줄 접두사가 붙습니다.
+
+* `_table` — 데이터를 읽어온 테이블의 이름을 포함합니다. 유형: [String](/ko/reference/data-types/string).
+
+  사용 중인 테이블 엔진과 관계없이 모든 테이블에는 `_table`이라는 공통 가상 컬럼이 포함됩니다.
+
+  머지 테이블 엔진으로 테이블을 쿼리할 때는 `WHERE/PREWHERE` 절에서 `_table`에 대한 상수 조건을 설정할 수 있습니다(예: `WHERE _table='xyz'`). 이 경우 `_table` 조건을 만족하는 테이블에 대해서만 읽기 작업이 수행되므로 `_table` 컬럼은 인덱스 역할을 합니다.
+
+  `SELECT ... FROM (... UNION ALL ...)` 형식의 쿼리를 사용할 때는 `_table` 컬럼을 지정하여 반환된 행이 실제로 어느 테이블에서 왔는지 확인할 수 있습니다.

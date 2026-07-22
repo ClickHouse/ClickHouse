@@ -1,0 +1,77 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/schemas
+description: 'ClickStack에서 사용하는 테이블과 스키마 - The ClickHouse Observability Stack'
+sidebarTitle: '테이블과 스키마'
+title: 'ClickStack에서 사용하는 테이블과 스키마'
+doc_type: 'reference'
+keywords: ['clickstack', '스키마', '데이터 모델', '테이블 설계', '로그']
+---
+
+import OtelLogsSchema from '/snippets/ko/clickstack/_schema_otel_logs.mdx';
+import OtelTracesSchema from '/snippets/ko/clickstack/_schema_otel_traces.mdx';
+import OtelMetricsGaugeSchema from '/snippets/ko/clickstack/_schema_otel_metrics_gauge.mdx';
+import OtelMetricsSumSchema from '/snippets/ko/clickstack/_schema_otel_metrics_sum.mdx';
+import OtelMetricsHistogramSchema from '/snippets/ko/clickstack/_schema_otel_metrics_histogram.mdx';
+import OtelMetricsExponentialHistogramSchema from '/snippets/ko/clickstack/_schema_otel_metrics_exponential_histogram.mdx';
+import OtelMetricsSummarySchema from '/snippets/ko/clickstack/_schema_otel_metrics_summary.mdx';
+import HyperdxSessionsSchema from '/snippets/ko/clickstack/_schema_hyperdx_sessions.mdx';
+
+ClickStack OpenTelemetry (OTel) collector는 [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md)를 사용해 ClickHouse에 테이블을 생성하고 데이터를 삽입합니다.
+
+다음 테이블은 `default` 데이터베이스에서 각 데이터 타입별로 생성됩니다. OTel collector를 호스팅하는 이미지의 환경 변수 `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE`를 수정하면 대상 데이터베이스를 변경할 수 있습니다.
+
+<div id="logs">
+  ## 로그
+</div>
+
+<OtelLogsSchema />
+
+<div id="traces">
+  ## 트레이스
+</div>
+
+<OtelTracesSchema />
+
+<div id="metrics">
+  ## 메트릭
+</div>
+
+<div id="gauge">
+  ### 게이지 메트릭
+</div>
+
+<OtelMetricsGaugeSchema />
+
+<div id="sum">
+  ### Sum 메트릭
+</div>
+
+<OtelMetricsSumSchema />
+
+<div id="histogram">
+  ### 히스토그램 메트릭
+</div>
+
+<OtelMetricsHistogramSchema />
+
+<div id="exponential-histograms">
+  ### 지수형 히스토그램
+</div>
+
+<Note>
+  HyperDX는 아직 지수형 히스토그램 메트릭을 가져오거나 표시하는 기능을 지원하지 않습니다. 메트릭 소스에서는 이를 구성할 수 있지만, 추후 지원될 예정입니다.
+</Note>
+
+<OtelMetricsExponentialHistogramSchema />
+
+<div id="summary-table">
+  ### 요약 테이블
+</div>
+
+<OtelMetricsSummarySchema />
+
+<div id="sessions">
+  ## 세션
+</div>
+
+<HyperdxSessionsSchema />

@@ -1,0 +1,481 @@
+---
+description: 'Documentação das funções para trabalhar com dicionários incorporados'
+sidebarTitle: 'Dicionário incorporado'
+slug: /sql-reference/functions/ym-dict-functions
+title: 'Funções para Trabalhar com Dicionários Incorporados'
+doc_type: 'reference'
+---
+
+<Note>
+  Para que as funções abaixo funcionem, a configuração do servidor deve especificar os caminhos e endereços usados para obter todos os dicionários incorporados. Os dicionários são carregados na primeira chamada de qualquer uma dessas funções. Se as listas de referência não puderem ser carregadas, será gerada uma exceção.
+
+  Por isso, os exemplos mostrados nesta seção gerarão uma exceção no [ClickHouse Fiddle](https://fiddle.clickhouse.com/) e, por padrão, em implantações quick release e de produção, a menos que sejam previamente configurados.
+</Note>
+
+Para obter informações sobre como criar listas de referência, consulte a seção [&quot;Dicionário&quot;](/pt-BR/reference/statements/create/dictionary/embedded).
+
+<div id="multiple-geobases">
+  ## Múltiplas geobases
+</div>
+
+O ClickHouse suporta o uso simultâneo de múltiplas geobases alternativas (hierarquias regionais), para contemplar diferentes perspectivas sobre a quais países determinadas regiões pertencem.
+
+A configuração do &#39;clickhouse-server&#39; especifica o arquivo com a hierarquia regional:
+
+`<path_to_regions_hierarchy_file>/opt/geo/regions_hierarchy.txt</path_to_regions_hierarchy_file>`
+
+Além desse arquivo, ele também procura arquivos próximos que tenham o símbolo `_` e qualquer sufixo anexado ao nome (antes da extensão do arquivo).
+Por exemplo, ele também encontrará o arquivo `/opt/geo/regions_hierarchy_ua.txt`, se estiver presente. Aqui, `ua` é chamado de chave do dicionário. Para um dicionário sem sufixo, a chave é uma string vazia.
+
+Todos os dicionários são recarregados em tempo de execução (uma vez a cada certo número de segundos, conforme definido no parâmetro de configuração [`builtin_dictionaries_reload_interval`](/pt-BR/reference/settings/server-settings/settings#builtin_dictionaries_reload_interval), ou uma vez por hora, por padrão). No entanto, a lista de dicionários disponíveis é definida apenas uma vez, quando o servidor é iniciado.
+
+Todas as funções para trabalhar com regiões têm um argumento opcional no final — a chave do dicionário. Ela é chamada de geobase.
+
+Exemplo:
+
+```sql
+regionToCountry(RegionID) – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
+regionToCountry(RegionID, '') – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
+regionToCountry(RegionID, 'ua') – Uses the dictionary for the 'ua' key: /opt/geo/regions_hierarchy_ua.txt
+```
+
+### regionToName
+
+Aceita um ID de região e a geobase e retorna uma string com o nome da região no idioma correspondente. Se a região com o ID especificado não existir, será retornada uma string vazia.
+
+**Sintaxe**
+
+```sql
+regionToName(id\[, lang\])
+```
+
+**Parâmetros**
+
+* `id` — ID da região na geobase. [UInt32](/pt-BR/reference/data-types/int-uint).
+* `geobase` — Chave do Dicionário. Consulte [Múltiplas geobases](#multiple-geobases). [String](/pt-BR/reference/data-types/string). Opcional.
+
+**Valor retornado**
+
+* Nome da região no idioma correspondente especificado por `geobase`. [String](/pt-BR/reference/data-types/string).
+* Caso contrário, uma string vazia.
+
+**Exemplo**
+
+```sql title="Query"
+SELECT regionToName(number::UInt32,'en') FROM numbers(0,5);
+```
+
+```text title="Response"
+┌─regionToName(CAST(number, 'UInt32'), 'en')─┐
+│                                            │
+│ World                                      │
+│ USA                                        │
+│ Colorado                                   │
+│ Boulder County                             │
+└────────────────────────────────────────────┘
+```
+
+### regionToCity
+
+Aceita um ID de região da geobase. Se essa região for uma cidade ou parte de uma cidade, retorna o ID da região correspondente à cidade. Caso contrário, retorna 0.
+
+**Sintaxe**
+
+```sql
+regionToCity(id [, geobase])
+```
+
+**Parâmetros**
+
+* `id` — ID da região da geobase. [UInt32](/pt-BR/reference/data-types/int-uint).
+* `geobase` — Chave do dicionário. Consulte [Múltiplas geobases](#multiple-geobases). [String](/pt-BR/reference/data-types/string). Opcional.
+
+**Valor retornado**
+
+* ID da região da cidade correspondente, se existir. [UInt32](/pt-BR/reference/data-types/int-uint).
+* 0, caso não exista.
+
+**Exemplo**
+
+```sql title="Query"
+SELECT regionToName(number::UInt32, 'en'), regionToCity(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);
+```
+
+```response title="Response"
+┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─id─┬─regionToName(regionToCity(CAST(number, 'UInt32')), 'en')─┐
+│                                            │  0 │                                                          │
+│ World                                      │  0 │                                                          │
+│ USA                                        │  0 │                                                          │
+│ Colorado                                   │  0 │                                                          │
+│ Boulder County                             │  0 │                                                          │
+│ Boulder                                    │  5 │ Boulder                                                  │
+│ China                                      │  0 │                                                          │
+│ Sichuan                                    │  0 │                                                          │
+│ Chengdu                                    │  8 │ Chengdu                                                  │
+│ America                                    │  0 │                                                          │
+│ North America                              │  0 │                                                          │
+│ Eurasia                                    │  0 │                                                          │
+│ Asia                                       │  0 │                                                          │
+└────────────────────────────────────────────┴────┴──────────────────────────────────────────────────────────┘
+```
+
+### regionToArea
+
+Converte uma região em uma área (tipo 5 na geobase). Em todos os demais aspectos, esta função é igual a [&#39;regionToCity&#39;](#regiontocity).
+
+**Sintaxe**
+
+```sql
+regionToArea(id [, geobase])
+```
+
+**Parâmetros**
+
+* `id` — ID da região na geobase. [UInt32](/pt-BR/reference/data-types/int-uint).
+* `geobase` — chave do dicionário. Consulte [Múltiplas geobases](#multiple-geobases). [String](/pt-BR/reference/data-types/string). Opcional.
+
+**Valor retornado**
+
+* ID da região da área correspondente, se existir. [UInt32](/pt-BR/reference/data-types/int-uint).
+* 0, se não houver.
+
+**Exemplo**
+
+```sql title="Query"
+SELECT DISTINCT regionToName(regionToArea(toUInt32(number), 'ua'))
+FROM system.numbers
+LIMIT 15
+```
+
+```text title="Response"
+┌─regionToName(regionToArea(toUInt32(number), \'ua\'))─┐
+│                                                      │
+│ Moscow and Moscow region                             │
+│ St. Petersburg and Leningrad region                  │
+│ Belgorod region                                      │
+│ Ivanovsk region                                      │
+│ Kaluga region                                        │
+│ Kostroma region                                      │
+│ Kursk region                                         │
+│ Lipetsk region                                       │
+│ Orlov region                                         │
+│ Ryazan region                                        │
+│ Smolensk region                                      │
+│ Tambov region                                        │
+│ Tver region                                          │
+│ Tula region                                          │
+└──────────────────────────────────────────────────────┘
+```
+
+### regionToDistrict
+
+Converte uma região em um distrito federal (tipo 4 na geobase). Nos demais aspectos, esta função é igual a &#39;regionToCity&#39;.
+
+**Sintaxe**
+
+```sql
+regionToDistrict(id [, geobase])
+```
+
+**Parâmetros**
+
+* `id` — ID da região na geobase. [UInt32](/pt-BR/reference/data-types/int-uint).
+* `geobase` — Chave do dicionário. Veja [Múltiplas geobases](#multiple-geobases). [String](/pt-BR/reference/data-types/string). Opcional.
+
+**Valor retornado**
+
+* ID da região da cidade correspondente, se existir. [UInt32](/pt-BR/reference/data-types/int-uint).
+* 0, se não existir.
+
+**Exemplo**
+
+```sql title="Query"
+SELECT DISTINCT regionToName(regionToDistrict(toUInt32(number), 'ua'))
+FROM system.numbers
+LIMIT 15
+```
+
+```text title="Response"
+┌─regionToName(regionToDistrict(toUInt32(number), \'ua\'))─┐
+│                                                          │
+│ Central federal district                                 │
+│ Northwest federal district                               │
+│ South federal district                                   │
+│ North Caucases federal district                          │
+│ Privolga federal district                                │
+│ Ural federal district                                    │
+│ Siberian federal district                                │
+│ Far East federal district                                │
+│ Scotland                                                 │
+│ Faroe Islands                                            │
+│ Flemish region                                           │
+│ Brussels capital region                                  │
+│ Wallonia                                                 │
+│ Federation of Bosnia and Herzegovina                     │
+└──────────────────────────────────────────────────────────┘
+```
+
+### regionToCountry
+
+Converte uma região em um país (tipo 3 na geobase). Em todos os demais aspectos, esta função é igual a &#39;regionToCity&#39;.
+
+**Sintaxe**
+
+```sql
+regionToCountry(id [, geobase])
+```
+
+**Parâmetros**
+
+* `id` — ID da região da geobase. [UInt32](/pt-BR/reference/data-types/int-uint).
+* `geobase` — Chave do Dicionário. Consulte [Múltiplas geobases](#multiple-geobases). [String](/pt-BR/reference/data-types/string). Opcional.
+
+**Valor retornado**
+
+* ID da região do país correspondente, se existir. [UInt32](/pt-BR/reference/data-types/int-uint).
+* 0, se não houver.
+
+**Exemplo**
+
+```sql title="Query"
+SELECT regionToName(number::UInt32, 'en'), regionToCountry(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);
+```
+
+```text title="Response"
+┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─id─┬─regionToName(regionToCountry(CAST(number, 'UInt32')), 'en')─┐
+│                                            │  0 │                                                             │
+│ World                                      │  0 │                                                             │
+│ USA                                        │  2 │ USA                                                         │
+│ Colorado                                   │  2 │ USA                                                         │
+│ Boulder County                             │  2 │ USA                                                         │
+│ Boulder                                    │  2 │ USA                                                         │
+│ China                                      │  6 │ China                                                       │
+│ Sichuan                                    │  6 │ China                                                       │
+│ Chengdu                                    │  6 │ China                                                       │
+│ America                                    │  0 │                                                             │
+│ North America                              │  0 │                                                             │
+│ Eurasia                                    │  0 │                                                             │
+│ Asia                                       │  0 │                                                             │
+└────────────────────────────────────────────┴────┴─────────────────────────────────────────────────────────────┘
+```
+
+### regionToContinent
+
+Converte uma região em um continente (tipo 1 na geobase). Em todos os demais aspectos, esta função é igual a &#39;regionToCity&#39;.
+
+**Sintaxe**
+
+```sql
+regionToContinent(id [, geobase])
+```
+
+**Parâmetros**
+
+* `id` — ID da região da geobase. [UInt32](/pt-BR/reference/data-types/int-uint).
+* `geobase` — chave do dicionário. Consulte [Múltiplas geobases](#multiple-geobases). [String](/pt-BR/reference/data-types/string). Opcional.
+
+**Valor retornado**
+
+* ID da região do continente correspondente, se existir. [UInt32](/pt-BR/reference/data-types/int-uint).
+* 0, se não houver.
+
+**Exemplo**
+
+```sql title="Query"
+SELECT regionToName(number::UInt32, 'en'), regionToContinent(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);
+```
+
+```text title="Response"
+┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─id─┬─regionToName(regionToContinent(CAST(number, 'UInt32')), 'en')─┐
+│                                            │  0 │                                                               │
+│ World                                      │  0 │                                                               │
+│ USA                                        │ 10 │ North America                                                 │
+│ Colorado                                   │ 10 │ North America                                                 │
+│ Boulder County                             │ 10 │ North America                                                 │
+│ Boulder                                    │ 10 │ North America                                                 │
+│ China                                      │ 12 │ Asia                                                          │
+│ Sichuan                                    │ 12 │ Asia                                                          │
+│ Chengdu                                    │ 12 │ Asia                                                          │
+│ America                                    │  9 │ America                                                       │
+│ North America                              │ 10 │ North America                                                 │
+│ Eurasia                                    │ 11 │ Eurasia                                                       │
+│ Asia                                       │ 12 │ Asia                                                          │
+└────────────────────────────────────────────┴────┴───────────────────────────────────────────────────────────────┘
+```
+
+### regionToTopContinent
+
+Encontra o continente de nível mais alto na hierarquia da região.
+
+**Sintaxe**
+
+```sql
+regionToTopContinent(id[, geobase])
+```
+
+**Parâmetros**
+
+* `id` — ID da região da geobase. [UInt32](/pt-BR/reference/data-types/int-uint).
+* `geobase` — chave do Dicionário. Consulte [Múltiplas geobases](#multiple-geobases). [String](/pt-BR/reference/data-types/string). Opcional.
+
+**Valor retornado**
+
+* Identificador do continente de nível mais alto (o último ao subir na hierarquia de regiões). [UInt32](/pt-BR/reference/data-types/int-uint).
+* 0, se não houver.
+
+**Exemplo**
+
+```sql title="Query"
+SELECT regionToName(number::UInt32, 'en'), regionToTopContinent(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);
+```
+
+```text title="Response"
+┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─id─┬─regionToName(regionToTopContinent(CAST(number, 'UInt32')), 'en')─┐
+│                                            │  0 │                                                                  │
+│ World                                      │  0 │                                                                  │
+│ USA                                        │  9 │ America                                                          │
+│ Colorado                                   │  9 │ America                                                          │
+│ Boulder County                             │  9 │ America                                                          │
+│ Boulder                                    │  9 │ America                                                          │
+│ China                                      │ 11 │ Eurasia                                                          │
+│ Sichuan                                    │ 11 │ Eurasia                                                          │
+│ Chengdu                                    │ 11 │ Eurasia                                                          │
+│ America                                    │  9 │ America                                                          │
+│ North America                              │  9 │ America                                                          │
+│ Eurasia                                    │ 11 │ Eurasia                                                          │
+│ Asia                                       │ 11 │ Eurasia                                                          │
+└────────────────────────────────────────────┴────┴──────────────────────────────────────────────────────────────────┘
+```
+
+### regionToPopulation
+
+Obtém a população de uma região. A população pode estar registrada em arquivos da geobase. Consulte a seção [&quot;Dicionários&quot;](/pt-BR/reference/statements/create/dictionary/embedded). Se a população não estiver registrada para a região, retorna 0. Na geobase, a população pode estar registrada para regiões filhas, mas não para a região pai.
+
+**Sintaxe**
+
+```sql
+regionToPopulation(id[, geobase])
+```
+
+**Parâmetros**
+
+* `id` — ID da região da geobase. [UInt32](/pt-BR/reference/data-types/int-uint).
+* `geobase` — Chave do dicionário. Consulte [Múltiplas geobases](#multiple-geobases). [String](/pt-BR/reference/data-types/string). Opcional.
+
+**Valor retornado**
+
+* População da região. [UInt32](/pt-BR/reference/data-types/int-uint).
+* 0, caso não exista.
+
+**Exemplo**
+
+```sql title="Query"
+SELECT regionToName(number::UInt32, 'en'), regionToPopulation(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);
+```
+
+```text title="Response"
+┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─population─┐
+│                                            │          0 │
+│ World                                      │ 4294967295 │
+│ USA                                        │  330000000 │
+│ Colorado                                   │    5700000 │
+│ Boulder County                             │     330000 │
+│ Boulder                                    │     100000 │
+│ China                                      │ 1500000000 │
+│ Sichuan                                    │   83000000 │
+│ Chengdu                                    │   20000000 │
+│ America                                    │ 1000000000 │
+│ North America                              │  600000000 │
+│ Eurasia                                    │ 4294967295 │
+│ Asia                                       │ 4294967295 │
+└────────────────────────────────────────────┴────────────┘
+```
+
+### regionIn
+
+Verifica se uma região `lhs` pertence à região `rhs`. Retorna um número UInt8 igual a 1 se pertencer, ou 0 se não pertencer.
+
+**Sintaxe**
+
+```sql
+regionIn(lhs, rhs\[, geobase\])
+```
+
+**Parâmetros**
+
+* `lhs` — ID da região `lhs` da geobase. [UInt32](/pt-BR/reference/data-types/int-uint).
+* `rhs` — ID da região `rhs` da geobase. [UInt32](/pt-BR/reference/data-types/int-uint).
+* `geobase` — Chave do Dicionário. Consulte [Múltiplas geobases](#multiple-geobases). [String](/pt-BR/reference/data-types/string). Opcional.
+
+**Valor retornado**
+
+* 1, se pertencer. [UInt8](/pt-BR/reference/data-types/int-uint).
+* 0, se não pertencer.
+
+**Detalhes de implementação**
+
+A relação é reflexiva — toda região também pertence a si mesma.
+
+**Exemplo**
+
+```sql title="Query"
+SELECT regionToName(n1.number::UInt32, 'en') || (regionIn(n1.number::UInt32, n2.number::UInt32) ? ' is in ' : ' is not in ') || regionToName(n2.number::UInt32, 'en') FROM numbers(1,2) AS n1 CROSS JOIN numbers(1,5) AS n2;
+```
+
+```text title="Response"
+World is in World
+World is not in USA
+World is not in Colorado
+World is not in Boulder County
+World is not in Boulder
+USA is in World
+USA is in USA
+USA is not in Colorado
+USA is not in Boulder County
+USA is not in Boulder    
+```
+
+### regionHierarchy
+
+Aceita um número UInt32 — o ID da região na geobase. Retorna um array de IDs de região composto pela região informada e por todas as regiões pai na hierarquia.
+
+**Sintaxe**
+
+```sql
+regionHierarchy(id\[, geobase\])
+```
+
+**Parâmetros**
+
+* `id` — ID da região na geobase. [UInt32](/pt-BR/reference/data-types/int-uint).
+* `geobase` — Chave do dicionário. Consulte [Múltiplas Geobases](#multiple-geobases). [String](/pt-BR/reference/data-types/string). Opcional.
+
+**Valor retornado**
+
+* Array de IDs de região composto pela região informada e por todas as regiões pai ao longo da cadeia. [Array](/pt-BR/reference/data-types/array)([UInt32](/pt-BR/reference/data-types/int-uint)).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT regionHierarchy(number::UInt32) AS arr, arrayMap(id -> regionToName(id, 'en'), arr) FROM numbers(5);
+```
+
+```text title="Response"
+┌─arr────────────┬─arrayMap(lambda(tuple(id), regionToName(id, 'en')), regionHierarchy(CAST(number, 'UInt32')))─┐
+│ []             │ []                                                                                           │
+│ [1]            │ ['World']                                                                                    │
+│ [2,10,9,1]     │ ['USA','North America','America','World']                                                    │
+│ [3,2,10,9,1]   │ ['Colorado','USA','North America','America','World']                                         │
+│ [4,3,2,10,9,1] │ ['Boulder County','Colorado','USA','North America','America','World']                        │
+└────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+{/* 
+  O conteúdo interno das tags abaixo é substituído, no momento da compilação do framework de documentação, por 
+  documentação gerada a partir de system.functions. Não modifique nem remova as tags.
+  Veja: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+  */}
+
+{/*AUTOGENERATED_START*/}
+
+{/*AUTOGENERATED_END*/}

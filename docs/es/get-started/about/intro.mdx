@@ -1,0 +1,207 @@
+---
+slug: /intro
+sidebarTitle: '¿Qué es ClickHouse?'
+description: 'ClickHouse® es un sistema de gestión de bases de datos SQL (DBMS) orientado a columna para el procesamiento analítico en línea (OLAP). Está disponible tanto como software de código abierto como servicio en la nube.'
+title: '¿Qué es ClickHouse?'
+keywords: ['ClickHouse', 'base de datos columnar', 'base de datos OLAP', 'base de datos analítica', 'base de datos de alto rendimiento']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+ClickHouse® es un sistema de gestión de bases de datos SQL (DBMS) de alto rendimiento, orientado a columna, para procesamiento analítico en línea (OLAP). Está disponible tanto como [software de código abierto](https://github.com/ClickHouse/ClickHouse) como [servicio en la nube](https://clickhouse.com/cloud).
+
+<div id="what-are-analytics">
+  ## ¿Qué es la analítica?
+</div>
+
+La analítica, también conocida como OLAP (Online Analytical Processing), se refiere a consultas SQL con cálculos complejos (p. ej., agregaciones, procesamiento de cadenas y operaciones aritméticas) sobre grandes volúmenes de datos.
+
+A diferencia de las consultas transaccionales (u OLTP, Online Transaction Processing), que leen y escriben solo unas pocas filas por consulta y, por tanto, se completan en milisegundos, las consultas analíticas procesan habitualmente miles de millones y billones de filas.
+
+En muchos casos de uso, [las consultas analíticas deben ser &quot;en tiempo real&quot;](https://clickhouse.com/engineering-resources/what-is-real-time-analytics), es decir, devolver un resultado en menos de un segundo.
+
+<div id="row-oriented-vs-column-oriented-storage">
+  ## Almacenamiento orientado a filas vs. orientado a columna
+</div>
+
+Ese nivel de rendimiento solo puede lograrse con la &quot;orientación&quot; de datos adecuada.
+
+Las bases de datos almacenan los datos [por filas o por columnas](https://clickhouse.com/engineering-resources/what-is-columnar-database).
+
+En una base de datos orientada a filas, las filas consecutivas de una tabla se almacenan secuencialmente una tras otra. Esta disposición permite recuperar filas rápidamente, ya que los valores de las columnas de cada fila se almacenan juntos.
+
+ClickHouse es una base de datos orientada a columna. En estos sistemas, las tablas se almacenan como una colección de columnas; es decir, los valores de cada columna se almacenan secuencialmente uno tras otro. Esta disposición hace que sea más difícil reconstruir filas individuales (ya que ahora hay huecos entre los valores de una fila), pero las operaciones sobre columnas, como los filtros o la agregación, se vuelven mucho más rápidas que en una base de datos orientada a filas.
+
+La diferencia se explica mejor con una consulta de ejemplo que se ejecuta sobre 100 millones de filas de [datos reales anonimizados de analítica web](/es/get-started/sample-datasets/anon-web-analytics-metrica):
+
+```sql
+SELECT MobilePhoneModel, COUNT() AS c
+FROM metrica.hits
+WHERE
+      RegionID = 229
+  AND EventDate >= '2013-07-01'
+  AND EventDate <= '2013-07-31'
+  AND MobilePhone != 0
+  AND MobilePhoneModel not in ['', 'iPad']
+GROUP BY MobilePhoneModel
+ORDER BY c DESC
+LIMIT 8;
+```
+
+Puedes [ejecutar esta consulta en el ClickHouse SQL Playground](https://sql.clickhouse.com?query=U0VMRUNUIE1vYmlsZVBob25lTW9kZWwsIENPVU5UKCkgQVMgYyAKRlJPTSBtZXRyaWNhLmhpdHMgCldIRVJFIAogICAgICBSZWdpb25JRCA9IDIyOSAKICBBTkQgRXZlbnREYXRlID49ICcyMDEzLTA3LTAxJyAKICBBTkQgRXZlbnREYXRlIDw9ICcyMDEzLTA3LTMxJyAKICBBTkQgTW9iaWxlUGhvbmUgIT0gMCAKICBBTkQgTW9iaWxlUGhvbmVNb2RlbCBub3QgaW4gWycnLCAnaVBhZCddIApHUk9VUCBCWSBNb2JpbGVQaG9uZU1vZGVsCk9SREVSIEJZIGMgREVTQyAKTElNSVQgODs\&chart=eyJ0eXBlIjoicGllIiwiY29uZmlnIjp7InhheGlzIjoiTW9iaWxlUGhvbmVNb2RlbCIsInlheGlzIjoiYyJ9fQ\&run_query=true), que selecciona y filtra [solo unas pocas de las más de 100](https://sql.clickhouse.com/?query=U0VMRUNUIG5hbWUKRlJPTSBzeXN0ZW0uY29sdW1ucwpXSEVSRSBkYXRhYmFzZSA9ICdtZXRyaWNhJyBBTkQgdGFibGUgPSAnaGl0cyc7\&tab=results\&run_query=true) columnas existentes, y devuelve el resultado en cuestión de milisegundos:
+
+<Image img="/images/column-oriented-example-query.webp" alt="Consulta de ejemplo en una base de datos orientada a columna" size="lg" />
+
+Como puedes ver en la sección de estadísticas del diagrama anterior, la consulta procesó 100 millones de filas en 92 milisegundos, con un rendimiento de algo más de 1.000 millones de filas por segundo, o algo menos de 7 GB de datos transferidos por segundo.
+
+**DBMS orientado a filas**
+
+En una base de datos orientada a filas, aunque la consulta anterior solo procesa unas pocas de las columnas existentes, el sistema sigue necesitando cargar en memoria desde disco los datos de otras columnas existentes. Esto se debe a que los datos se almacenan en disco en fragmentos llamados [bloques](https://en.wikipedia.org/wiki/Block_\(data_storage\)) (normalmente de tamaño fijo, p. ej., 4 KB u 8 KB). Los bloques son las unidades de datos más pequeñas que se leen del disco a la memoria. Cuando una aplicación o base de datos solicita datos, el subsistema de E/S de disco del sistema operativo lee del disco los bloques necesarios. Aunque solo se necesite una parte de un bloque, se lee el bloque completo en memoria (esto se debe al diseño del disco y del sistema de archivos):
+
+<Image img="/images/row-oriented.webp" alt="Estructura de una base de datos orientada a filas" size="lg" />
+
+**DBMS orientado a columna**
+
+Dado que los valores de cada columna se almacenan secuencialmente en disco, uno tras otro, no se cargan datos innecesarios cuando se ejecuta la consulta anterior.
+Como el almacenamiento y la transferencia por bloques del disco a la memoria se ajustan al patrón de acceso a los datos de las consultas analíticas, solo se leen del disco las columnas necesarias para una consulta, lo que evita operaciones de E/S innecesarias sobre datos que no se utilizan. Esto es [mucho más rápido](https://benchmark.clickhouse.com/) en comparación con el almacenamiento basado en filas, donde se leen filas completas (incluidas las columnas irrelevantes):
+
+<Image img="/images/column-oriented.webp" alt="Estructura de base de datos orientada a columna" size="lg" />
+
+<div id="data-replication-and-integrity">
+  ## Replicación e integridad de los datos
+</div>
+
+ClickHouse utiliza un esquema de replicación multimaestro asíncrono para garantizar que los datos se almacenen de forma redundante en varios nodos. Una vez que se escriben en cualquier réplica disponible, todas las demás réplicas obtienen su copia en segundo plano. El sistema mantiene datos idénticos en las distintas réplicas. La recuperación tras la mayoría de los fallos se realiza de forma automática o, en casos complejos, semiautomática.
+
+<div id="role-based-access-control">
+  ## Control de acceso basado en roles
+</div>
+
+ClickHouse implementa la gestión de cuentas de usuario mediante consultas SQL y permite configurar el control de acceso basado en roles, de forma similar a lo que se encuentra en el estándar ANSI SQL y en los sistemas de gestión de bases de datos relacionales más populares.
+
+<div id="sql-support">
+  ## Compatibilidad con SQL
+</div>
+
+ClickHouse admite un [lenguaje de consultas declarativo basado en SQL](/es/reference/home) que coincide con el estándar ANSI SQL en muchos casos. Entre las cláusulas de consulta admitidas se incluyen [GROUP BY](/es/reference/statements/select/group-by), [ORDER BY](/es/reference/statements/select/order-by), subconsultas en [FROM](/es/reference/statements/select/from), la cláusula [JOIN](/es/reference/statements/select/join), el operador [IN](/es/reference/statements/in), [funciones de ventana](/es/reference/functions/window-functions/index) y subconsultas escalares.
+
+<div id="approximate-calculation">
+  ## Cálculo aproximado
+</div>
+
+ClickHouse ofrece formas de sacrificar precisión a cambio de rendimiento. Por ejemplo, algunas de sus funciones de agregación calculan de forma aproximada el recuento de valores distintos, la mediana y los cuantiles. Además, las consultas pueden ejecutarse sobre una muestra de los datos para obtener rápidamente un resultado aproximado. Por último, las agregaciones pueden ejecutarse con un número limitado de claves en lugar de hacerlo para todas ellas. Dependiendo de lo sesgada que esté la distribución de las claves, esto puede proporcionar un resultado razonablemente preciso usando muchos menos recursos que un cálculo exacto.
+
+<div id="adaptive-join-algorithms">
+  ## Algoritmos de join adaptativos
+</div>
+
+ClickHouse elige el algoritmo de join de forma adaptativa: comienza con hash joins rápidos y recurre a merge joins si hay más de una tabla grande.
+
+<div id="superior-query-performance">
+  ## Rendimiento superior de las consultas
+</div>
+
+ClickHouse es ampliamente conocido por ofrecer un rendimiento de consulta extremadamente rápido.
+Para saber por qué ClickHouse es tan rápido, consulta la guía [Why is ClickHouse fast?](/es/get-started/about/why-clickhouse-is-so-fast).
+
+{/*
+  ## ¿Qué es OLAP? {#what-is-olap}
+  Los escenarios OLAP requieren respuestas en tiempo real sobre grandes conjuntos de datos para consultas analíticas complejas con las siguientes características:
+  - Los conjuntos de datos pueden ser masivos: miles de millones o billones de filas
+  - Los datos se organizan en tablas que contienen muchas columnas
+  - Solo unas pocas columnas se seleccionan para responder a cualquier consulta concreta
+  - Los resultados deben devolverse en milisegundos o segundos
+
+  ## Bases de datos orientadas a columnas frente a bases de datos orientadas a filas {#column-oriented-vs-row-oriented-databases}
+  En un DBMS orientado a filas, los datos se almacenan en filas, con todos los valores relacionados con una fila almacenados físicamente de forma contigua.
+
+  En un DBMS orientado a columnas, los datos se almacenan en columnas, y los valores de una misma columna se almacenan juntos.
+
+  ## Por qué las bases de datos orientadas a columnas funcionan mejor en el escenario OLAP {#why-column-oriented-databases-work-better-in-the-olap-scenario}
+
+  Las bases de datos orientadas a columnas están mejor adaptadas a los escenarios OLAP: son al menos 100 veces más rápidas procesando la mayoría de las consultas. Las razones se explican en detalle a continuación, aunque resulta más fácil demostrarlo visualmente:
+
+  ¿Nota la diferencia?
+
+  El resto de este artículo explica por qué las bases de datos orientadas a columnas funcionan bien en estos escenarios, y por qué ClickHouse en particular [supera](/get-started/about/why-clickhouse-is-so-fast#storage-layer-concurrent-inserts-and-selects-are-isolated) a las demás en esta categoría.
+
+  ## ¿Por qué ClickHouse es tan rápido? {#why-is-clickhouse-so-fast}
+
+  ClickHouse aprovecha al máximo todos los recursos del sistema disponibles para procesar cada consulta analítica lo más rápido posible. Esto es posible gracias a una combinación única de capacidades analíticas y atención a los detalles de bajo nivel necesarios para implementar la base de datos OLAP más rápida.
+
+  Entre los artículos útiles para profundizar en este tema se encuentran:
+  - [Rendimiento de ClickHouse](/get-started/about/why-clickhouse-is-so-fast)
+  - [Características distintivas de ClickHouse](/get-started/about/distinctive-features)
+  - [FAQ: ¿Por qué ClickHouse es tan rápido?](/get-started/about/why-clickhouse-is-so-fast)
+
+  ## Procesamiento de consultas analíticas en tiempo real {#processing-analytical-queries-in-real-time}
+
+  En un DBMS orientado a filas, los datos se almacenan en el siguiente orden:
+
+  | Fila | WatchID     | JavaEnable | Title              | GoodEvent | EventTime           |
+  |------|-------------|------------|--------------------|-----------|---------------------|
+  | #0 | 89354350662 | 1          | Investor Relations | 1         | 2016-05-18 05:19:20 |
+  | #1 | 90329509958 | 0          | Contact us         | 1         | 2016-05-18 08:10:20 |
+  | #2 | 89953706054 | 1          | Mission            | 1         | 2016-05-18 07:38:00 |
+  | #N | ...           | ...          | ...                  | ...         | ...                   |
+
+  En otras palabras, todos los valores relacionados con una fila se almacenan físicamente de forma contigua.
+
+  Ejemplos de DBMS orientados a filas son MySQL, Postgres y MS SQL Server.
+
+  En un DBMS orientado a columnas, los datos se almacenan de la siguiente forma:
+
+  | Fila:       | #0                 | #1                 | #2                 | #N |
+  |-------------|---------------------|---------------------|---------------------|-----|
+  | WatchID:    | 89354350662         | 90329509958         | 89953706054         | ...   |
+  | JavaEnable: | 1                   | 0                   | 1                   | ...   |
+  | Title:      | Investor Relations  | Contact us          | Mission             | ...   |
+  | GoodEvent:  | 1                   | 1                   | 1                   | ...   |
+  | EventTime:  | 2016-05-18 05:19:20 | 2016-05-18 08:10:20 | 2016-05-18 07:38:00 | ...   |
+
+  Estos ejemplos solo muestran el orden en que se organizan los datos. Los valores de columnas distintas se almacenan por separado, mientras que los datos de una misma columna se almacenan juntos.
+
+  Ejemplos de DBMS orientados a columnas: Vertica, Paraccel (Actian Matrix y Amazon Redshift), Sybase IQ, Exasol, Infobright, InfiniDB, MonetDB (VectorWise y Actian Vector), LucidDB, SAP HANA, Google Dremel, Google PowerDrill, Druid y kdb+.
+
+  Los distintos órdenes de almacenamiento de datos se adaptan mejor a escenarios diferentes. El escenario de acceso a datos hace referencia a qué consultas se realizan, con qué frecuencia y en qué proporción; cuántos datos se leen para cada tipo de consulta —filas, columnas y bytes—; la relación entre la lectura y la actualización de datos; el tamaño operativo de los datos y el grado de localidad con que se utilizan; si se emplean transacciones y cuál es su nivel de aislamiento; los requisitos de replicación de datos e integridad lógica; los requisitos de latencia y throughput para cada tipo de consulta, y así sucesivamente.
+
+  Cuanto mayor es la carga sobre el sistema, más importante resulta personalizar su configuración para ajustarla a los requisitos del escenario de uso, y más granular se vuelve esa personalización. No existe ningún sistema igualmente adecuado para escenarios significativamente distintos. Si un sistema es adaptable a un amplio conjunto de escenarios, bajo una carga elevada gestionará todos ellos de forma igualmente deficiente, o funcionará bien solo para uno o unos pocos escenarios posibles.
+
+  ### Propiedades clave del escenario OLAP {#key-properties-of-olap-scenario}
+
+  - Las tablas son "anchas", es decir, contienen un gran número de columnas.
+  - Los conjuntos de datos son grandes y las consultas requieren un alto throughput al procesar una sola consulta (hasta miles de millones de filas por segundo por servidor).
+  - Los valores de las columnas son bastante pequeños: números y cadenas cortas (por ejemplo, 60 bytes por URL).
+  - Las consultas extraen un gran número de filas, pero solo un pequeño subconjunto de columnas.
+  - Para consultas simples, se toleran latencias de alrededor de 50 ms.
+  - Hay una tabla grande por consulta; todas las demás son pequeñas.
+  - El resultado de una consulta es significativamente más pequeño que los datos de origen. Es decir, los datos se filtran o agregan, de modo que el resultado cabe en la RAM de un único servidor.
+  - Las consultas son relativamente poco frecuentes (normalmente cientos de consultas por servidor o menos por segundo).
+  - Las inserciones se realizan en lotes bastante grandes (\> 1000 filas), no fila a fila.
+  - Las transacciones no son necesarias.
+
+  Es fácil apreciar que el escenario OLAP difiere considerablemente de otros escenarios populares (como OLTP o el acceso key-value). Por tanto, no tiene sentido intentar usar OLTP o una DB key-value para procesar consultas analíticas si se quiere obtener un rendimiento aceptable. Por ejemplo, usar MongoDB o Redis para análisis producirá un rendimiento muy inferior al de las bases de datos OLAP.
+
+  ### Entrada/salida {#inputoutput}
+
+  1.  Para una consulta analítica, solo es necesario leer un pequeño número de columnas de la tabla. En una base de datos orientada a columnas, es posible leer únicamente los datos necesarios. Por ejemplo, si se necesitan 5 columnas de 100, cabe esperar una reducción de 20 veces en el volumen de E/S.
+  2.  Dado que los datos se leen en bloques, resulta más fácil comprimirlos. Los datos en columnas también son más fáciles de comprimir, lo que reduce aún más el volumen de E/S.
+  3.  Gracias a la reducción de E/S, caben más datos en la caché del sistema.
+
+  Por ejemplo, la consulta "contar el número de registros por plataforma publicitaria" requiere leer una columna "ID de plataforma publicitaria", que ocupa 1 byte sin comprimir. Si la mayor parte del tráfico no proviene de plataformas publicitarias, cabe esperar al menos una compresión de 10 veces en esta columna. Con un algoritmo de compresión rápido, la descompresión de datos puede alcanzar una velocidad de al menos varios gigabytes de datos sin comprimir por segundo. En otras palabras, esta consulta puede procesarse a una velocidad de aproximadamente varios miles de millones de filas por segundo en un único servidor. Esta velocidad se alcanza realmente en la práctica.
+
+  ### CPU {#cpu}
+
+  Dado que la ejecución de una consulta requiere procesar un gran número de filas, resulta conveniente enviar todas las operaciones sobre vectores completos en lugar de sobre filas individuales, o bien implementar el motor de consultas de forma que el coste de despacho sea prácticamente nulo. Si no se hace esto, con cualquier subsistema de disco medianamente decente, el intérprete de consultas inevitablemente satura la CPU. Por ello, tiene sentido tanto almacenar los datos en columnas como procesarlos por columnas siempre que sea posible.
+
+  Hay dos formas de conseguirlo:
+
+  1.  Un motor vectorial. Todas las operaciones se escriben para vectores en lugar de para valores individuales. Esto significa que las operaciones no necesitan invocarse con mucha frecuencia y los costes de despacho son despreciables. El código de operación contiene un bucle interno optimizado.
+
+  2.  Generación de código. El código generado para la consulta incorpora todas las llamadas indirectas.
+
+  Esto no se hace en las bases de datos orientadas a filas, porque no tiene sentido al ejecutar consultas simples. Sin embargo, existen excepciones. Por ejemplo, MemSQL utiliza la generación de código para reducir la latencia al procesar consultas SQL. (A modo de comparación, los DBMS analíticos requieren optimización del throughput, no de la latencia.)
+
+  Tenga en cuenta que, para la eficiencia de la CPU, el lenguaje de consulta debe ser declarativo (SQL o MDX), o al menos vectorial (J, K). La consulta solo debe contener bucles implícitos, lo que permite su optimización.
+  */}

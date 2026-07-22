@@ -1,0 +1,72 @@
+---
+sidebarTitle: 'Luzmo'
+slug: /integrations/luzmo
+keywords: ['ClickHouse', 'Luzmo', '接続', '連携', 'UI', '埋め込み']
+description: 'Luzmo は、ソフトウェアおよび SaaS アプリケーション向けに設計された、ClickHouse ネイティブの連携機能を備える埋め込み分析プラットフォームです。'
+title: 'Luzmo と ClickHouse の連携'
+sidebar: 'integrations'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<div id="1-setup-a-clickhouse-connection">
+  ## 1. ClickHouse 接続を設定する
+</div>
+
+ClickHouse に接続するには、**Connections page** に移動し、**New Connection** を選択してから、New Connection モーダルで ClickHouse を選択します。
+
+<Image img="/images/integrations/data-visualization/luzmo_01.webp" size="md" alt="ClickHouse が選択された Create a New Connection ダイアログを表示する Luzmo インターフェイス" border />
+
+**host**、**username**、**password** の入力が求められます。
+
+<Image img="/images/integrations/data-visualization/luzmo_02.webp" size="md" alt="ClickHouse の host、username、password のフィールドが表示された Luzmo の接続設定フォーム" border />
+
+* **Host**: これは、ClickHouse データベースが公開されているホストです。データを安全に転送するため、ここでは `https` のみ使用できます。host URL は次の形式を想定しています: `https://url-to-clickhouse-db:port/database`
+  デフォルトでは、プラグインは &#39;default&#39; データベースの 443 ポートに接続します。&#39;/&#39; の後にデータベースを指定すると、接続先のデータベースを設定できます。
+* **Username**: ClickHouse クラスターへの接続に使用する username です。
+* **Password**: ClickHouse クラスターに接続するための password です
+
+API 経由で [ClickHouse への接続を作成する](https://developer.luzmo.com/api/createAccount?exampleSection=AccountCreateClickhouseRequestBody) 方法については、開発者向けドキュメントの例を参照してください。
+
+<div id="2-add-datasets">
+  ## 2. データセットを追加する
+</div>
+
+ClickHouse への接続が完了したら、[こちら](https://academy.luzmo.com/article/ldx3iltg)で説明されているようにデータセットを追加できます。ClickHouse で利用可能な 1 つ以上のデータセットを選択し、Luzmo でそれらを[リンク](https://academy.luzmo.com/article/gkrx48x5)することで、ダッシュボード内でまとめて利用できるようになります。あわせて、[分析向けにデータを準備する](https://academy.luzmo.com/article/u492qov0) こちらの記事もご確認ください。
+
+API を使用してデータセットを追加する方法については、[開発者向けドキュメントのこちらの例](https://developer.luzmo.com/api/createDataprovider?exampleSection=DataproviderCreateClickhouseRequestBody)を参照してください。
+
+これで、データセットを使って美しい (埋め込み) ダッシュボードを構築したり、クライアントの質問に回答できる AI データアナリスト ([Luzmo IQ](https://luzmo.com/iq)) を活用したりできるようになります。
+
+<Image img="/images/integrations/data-visualization/luzmo_03.webp" size="md" alt="ClickHouse のデータの複数の可視化を表示する Luzmo ダッシュボードの例" border />
+
+<div id="usage-notes">
+  ## 使用上の注意
+</div>
+
+1. Luzmo ClickHouse コネクタは、接続に HTTP API インターフェイス (通常はポート 8123 で稼働) を使用します。
+2. `Distributed` テーブルエンジンを使用するテーブルを使っている場合、`distributed_product_mode` が `deny` に設定されていると、一部の Luzmo チャートが正常に動作しないことがあります。ただし、これはそのテーブルを別のテーブルにリンクし、そのリンクをチャート内で使用した場合にのみ発生します。その場合は、ClickHouse クラスター内で `distributed_product_mode` を環境に適した別のオプションに設定してください。ClickHouse Cloud を使用している場合は、この設定は無視して問題ありません。
+3. たとえば Luzmo アプリケーションのみが ClickHouse インスタンスにアクセスできるようにするには、[Luzmo の静的 IP アドレス範囲](https://academy.luzmo.com/article/u9on8gbm)を**許可リストに追加**することを強く推奨します。また、技術用の読み取り専用ユーザーを使用することも推奨します。
+4. ClickHouse コネクタは現在、次のデータ型をサポートしています。
+
+   | ClickHouse 型 | Luzmo 型   |
+   | ------------ | --------- |
+   | UInt         | numeric   |
+   | Int          | numeric   |
+   | Float        | numeric   |
+   | Decimal      | numeric   |
+   | Date         | datetime  |
+   | DateTime     | datetime  |
+   | String       | hierarchy |
+   | Enum         | hierarchy |
+   | FixedString  | hierarchy |
+   | UUID         | hierarchy |
+   | Bool         | hierarchy |

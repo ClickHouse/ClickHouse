@@ -1,0 +1,39 @@
+---
+description: 'توثيق جملة QUALIFY'
+sidebarTitle: 'QUALIFY'
+slug: /sql-reference/statements/select/qualify
+title: 'جملة QUALIFY'
+doc_type: 'reference'
+---
+
+تتيح هذه الجملة تصفية نتائج دوال النوافذ. وهي مشابهة لجملة [WHERE](/ar/reference/statements/select/where)، لكن الفرق هو أن `WHERE` يُنفَّذ قبل تقييم دوال النوافذ، بينما يُنفَّذ `QUALIFY` بعده.
+
+يمكن الإشارة إلى نتائج دوال النوافذ من جملة `SELECT` داخل جملة `QUALIFY` باستخدام الاسم المستعار لها. وبالإضافة إلى ذلك، يمكن لجملة `QUALIFY` التصفية استنادًا إلى نتائج دوال نوافذ إضافية لا تظهر في نتائج الاستعلام.
+
+<div id="limitations">
+  ## القيود
+</div>
+
+لا يمكن استخدام `QUALIFY` إذا لم تكن هناك دوال نوافذ لتقييمها. استخدم `WHERE` بدلًا منه.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+مثال:
+
+```sql
+SELECT number, COUNT() OVER (PARTITION BY number % 3) AS partition_count
+FROM numbers(10)
+QUALIFY partition_count = 4
+ORDER BY number;
+```
+
+```text
+┌─number─┬─partition_count─┐
+│      0 │               4 │
+│      3 │               4 │
+│      6 │               4 │
+│      9 │               4 │
+└────────┴─────────────────┘
+```
