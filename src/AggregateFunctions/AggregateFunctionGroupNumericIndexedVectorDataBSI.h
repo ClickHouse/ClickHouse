@@ -1260,7 +1260,7 @@ public:
     }
 
     /** Performs pointwise multiplication of vector and bitmap.
-     * bitmap can treat as a vector with all value of keys equal to 1.
+     * The bitmap is treated as a vector whose values are all 1.
      * The result is stored in the res.
      */
     static void
