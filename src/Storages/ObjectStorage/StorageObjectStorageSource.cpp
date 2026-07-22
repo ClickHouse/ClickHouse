@@ -1278,13 +1278,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         }
         if (!schema_transform)
         {
+            /// Do not prune this transform with `removeUnusedActions`: it is the Iceberg
+            /// schema-evolution case, where the query can reference subcolumns (e.g. a filter on
+            /// `time_struct.a`) that are not outputs of the evolution DAG (it outputs the whole
+            /// `time_struct`), so pruning by the needed names throws `UNKNOWN_IDENTIFIER`.
+            /// Keeping all outputs is safe - it is a superset of the needed columns.
             auto transform = configuration->getSchemaTransformer(context_, object_info);
             if (transform)
-            {
                 schema_transform = transform->clone();
-                if (stripped_row_level_filter || stripped_prewhere_info)
-                    schema_transform->removeUnusedActions(get_schema_transform_needed_names());
-            }
         }
 
         if (schema_transform.has_value())
