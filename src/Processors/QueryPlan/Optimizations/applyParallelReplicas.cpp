@@ -19,15 +19,22 @@
 #include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/TableJoin.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Core/Settings.h>
 
 #include <unordered_set>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+}
+
 namespace QueryPlanOptimizations
 {
 
@@ -232,8 +239,13 @@ static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node *
     if (!node)
         return {};
 
-    if (typeid_cast<ReadFromMergeTree *>(node->step.get()))
+    if (auto * read = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+    {
+        if (!read->getMergeTreeData().supportsReplication()
+            && !read->getContext()->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree])
+            return {};
         return {node};
+    }
 
     if (typeid_cast<UnionStep *>(node->step.get()))
     {
