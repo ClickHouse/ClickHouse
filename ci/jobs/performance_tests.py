@@ -2,6 +2,7 @@ import argparse
 import csv
 import os
 import re
+import shutil
 import subprocess
 import time
 import traceback
@@ -1512,6 +1513,21 @@ def main():
         print(f"Test Files ({len(test_files)}): [{test_files}]")
         assert test_files
 
+        def cleanup_user_files():
+            # Tests can write into user_files (INSERT INTO FUNCTION file(...)) and nothing else removes those files.
+            # drop_query only drops tables. Keep the symlinks made in Configure, remove everything else.
+            for server_path in (perf_left, perf_right):
+                user_files = Path(server_path) / "db" / "user_files"
+                if not user_files.is_dir():
+                    continue
+                for entry in user_files.iterdir():
+                    if entry.is_symlink():
+                        continue
+                    if entry.is_dir():
+                        shutil.rmtree(entry)
+                    else:
+                        entry.unlink()
+
         def run_tests():
             # Run 10 random queries per test by default, but all queries for benchmarks
             benchmarks = {"clickbench.xml", "tpch.xml", "tpcds.xml"}
@@ -1522,6 +1538,7 @@ def main():
                     max_queries=max_queries,
                     results_path=perf_wd,
                 )
+                cleanup_user_files()
             return True
 
         commands = [
