@@ -2,8 +2,6 @@ import json
 import os
 import tempfile
 
-import pytest
-
 from helpers.iceberg_utils import (
     get_uuid_str,
     default_upload_directory,
