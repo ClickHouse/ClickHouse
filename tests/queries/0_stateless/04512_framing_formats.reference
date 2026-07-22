@@ -259,6 +259,6 @@ XML (value type validated, metadata replaced) accepted: OK
 --- format-owned UTF-8 validation buffers are drained at packet boundaries (JSON with totals and extremes)
 {"packet":"data","data":"{\n\t\"meta\":\n\t[\n\t\t{\n\t\t\t\"name\": \"k\",\n\t\t\t\"type\": \"String\"\n\t\t},\n\t\t{\n\t\t\t\"name\": \"c\",\n\t\t\t\"type\": \"UInt64\"\n\t\t}\n\t],\n\n\t\"data\":\n\t[\n\t\t{\n\t\t\t\"k\": \"0\",\n\t\t\t\"c\": 2\n\t\t},\n\t\t{\n\t\t\t\"k\": \"1\",\n\t\t\t\"c\": 2\n\t\t}"}
 {"packet":"data","data":"\n\t]"}
-{"packet":"totals","data":",\n\n\t\"totals\":\n\t{\n\t\t\"k\": \"0\",\n\t\t\"c\": 4\n\t}"}
+{"packet":"totals","data":",\n\n\t\"totals\":\n\t{\n\t\t\"k\": \"\",\n\t\t\"c\": 4\n\t}"}
 {"packet":"extremes","data":",\n\n\t\"extremes\":\n\t{\n\t\t\"min\":\n\t\t{\n\t\t\t\"k\": \"0\",\n\t\t\t\"c\": 2\n\t\t},\n\t\t\"max\":\n\t\t{\n\t\t\t\"k\": \"1\",\n\t\t\t\"c\": 2\n\t\t}\n\t}"}
 {"packet":"data","data":",\n\n\t\"rows\": 2\n}\n"}

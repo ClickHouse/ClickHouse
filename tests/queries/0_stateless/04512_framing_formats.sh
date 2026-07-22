@@ -704,7 +704,11 @@ data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPack
 # rows would surface only at a later boundary and the totals / extremes bytes would be mislabeled as
 # `data` packets of the next boundary. `FORMAT JSON` installs the validating buffer here because of
 # the `String` key column, and the packet kinds and contents below pin the correct attribution.
+# `optimize_injective_functions_in_group_by` is pinned because it changes the key value in the
+# totals row: with the rewrite, the group key is `intDiv(number, 2)` and `toString` recomputes the
+# default key of the totals row into '0'; without it, the key is the `String` expression itself and
+# the totals row carries the empty default.
 echo '--- format-owned UTF-8 validation buffers are drained at packet boundaries (JSON with totals and extremes)'
-${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&extremes=1&output_format_write_statistics=0${SINGLE_BLOCK}" \
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&extremes=1&output_format_write_statistics=0&optimize_injective_functions_in_group_by=0${SINGLE_BLOCK}" \
     -d "SELECT toString(intDiv(number, 2)) AS k, count() AS c FROM numbers(4) GROUP BY k WITH TOTALS ORDER BY k FORMAT JSON" \
     | grep -v -e '"packet":"progress"' -e '"packet":"profile_events"'

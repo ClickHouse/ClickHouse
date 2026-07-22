@@ -630,7 +630,7 @@ Compress in memory values of index granularity if it is possible
 
 ## enable_max_bytes_limit_for_min_age_to_force_merge {#enable_max_bytes_limit_for_min_age_to_force_merge} 
 <SettingsInfoBlock type="Bool" default_value="1" />
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "Limit part sizes even with min_age_to_force_merge_seconds by default"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "New setting"}]}, {"id": "row-3","items": [{"label": "25.1"},{"label": "0"},{"label": "Added new setting to limit max bytes for min_age_to_force_merge."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "Limit part sizes even with min_age_to_force_merge_seconds by default"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "Added new setting to limit max bytes for min_age_to_force_merge."}]}, {"id": "row-3","items": [{"label": "25.1"},{"label": "0"},{"label": "New setting"}]}]}/>
 
 If settings `min_age_to_force_merge_seconds` and
 `min_age_to_force_merge_on_partition_only` should respect setting
@@ -2720,6 +2720,12 @@ Max size of all broken parts for SMT, if more - deny automatic detach.
 
 How long we store insert memoization ids to avoid wrong actions during
 insert retries. Only available in ClickHouse Cloud
+
+## shared_merge_tree_merge_coordinator_distribution_algorithm {#shared_merge_tree_merge_coordinator_distribution_algorithm} 
+<SettingsInfoBlock type="MergeCoordinatorDistributionAlgorithm" default_value="water_filling" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "water_filling"},{"label": "New setting which controls what algorithm is used by the merge coordinator to distribute merges between replicas"}]}]}/>
+
+What algorithm will be used by merge coordinator thread to distribute merges between replicas
 
 ## shared_merge_tree_merge_coordinator_election_check_period_ms {#shared_merge_tree_merge_coordinator_election_check_period_ms} 
 <SettingsInfoBlock type="Milliseconds" default_value="30000" />
