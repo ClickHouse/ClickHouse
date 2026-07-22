@@ -183,3 +183,21 @@ def test_streaming_recovers_after_lost_bucket_lock(started_cluster):
             "WHERE event = 'ObjectStorageQueueBucketLockLostOwnership'"
         )
     )
+
+    # uniqExact(_path) above proves at-least-once processing. Prove exactly-once
+    # commits via the s3queue log: every file was set as processed exactly once.
+    # A duplicates check on the destination table would be flaky by design:
+    # a file which was in flight when the batch failed can legitimately
+    # re-insert an already inserted row when it is retried.
+    node.query("SYSTEM FLUSH LOGS")
+    assert "" == node.query(
+        f"SELECT file_name, count() FROM system.s3queue_log "
+        f"WHERE table = '{table_name}' AND status = 'Processed' "
+        f"GROUP BY file_name HAVING count() > 1"
+    )
+    assert files_to_generate == int(
+        node.query(
+            f"SELECT uniqExact(file_name) FROM system.s3queue_log "
+            f"WHERE table = '{table_name}' AND status = 'Processed'"
+        )
+    )
