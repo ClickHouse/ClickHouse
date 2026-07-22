@@ -2326,7 +2326,6 @@ are also created during INSERTs with [materialize_projections_on_insert](/operat
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, cleanup_threads, 128) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, allow_experimental_reverse_key, false) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, use_async_block_ids_cache, true) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, activate_column_ids_for_existing_tables, false) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE

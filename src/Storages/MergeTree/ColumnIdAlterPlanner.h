@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/MergeTree/ColumnIdMapping.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Interpreters/Context_fwd.h>
 
 #include <optional>
@@ -12,6 +11,7 @@ namespace DB
 
 class AlterCommands;
 struct StorageInMemoryMetadata;
+struct MergeTreeSettings;
 
 /// How the column ID mapping should change for an ALTER, computed up-front and then
 /// applied in two phases for crash safety (see the contract in ColumnIdMapping.h):

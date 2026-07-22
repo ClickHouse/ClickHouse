@@ -247,24 +247,37 @@ private:
         }
         else if (isCompactPart(part))
         {
-            auto unescaped_name = unescapeForFileName(column_name);
-            if (auto column_position = part->getColumnPosition(unescaped_name))
+            if (part->index_granularity_info.mark_type.with_substreams)
             {
-                if (part->index_granularity_info.mark_type.with_substreams)
+                /// column_name is a substream name. On non-id parts the substream map is keyed by
+                /// that logical name, so look it up directly first. On id-active parts the map is
+                /// keyed by the stamped column ID, so the by-name lookup misses -- resolve the part
+                /// column and locate its ID-keyed substream instead. A streamless-root column
+                /// (e.g. a Tuple) has no matching substream: has_marks_in_part stays false (NULL marks).
+                if (auto substream_position = part->getColumnsSubstreams().tryGetSubstreamPosition(column_name))
                 {
-                    /// Substream maps are keyed by the stamped column ID for id-active
-                    /// parts; resolve through the part's column, as the compact reader does.
-                    /// A streamless-root column (e.g. a Tuple) has no matching substream,
-                    /// so leave has_marks_in_part false and report NULL marks.
-                    auto column_in_part = part->getColumns().tryGetByName(unescaped_name);
-                    if (auto substream_position = part->getColumnsSubstreams().tryGetSubstreamPosition(
-                            *column_position, *column_in_part, {}, part->storage.getSettings()))
-                    {
-                        col_idx = *substream_position;
-                        has_marks_in_part = true;
-                    }
+                    col_idx = *substream_position;
+                    has_marks_in_part = true;
                 }
                 else
+                {
+                    auto unescaped_name = unescapeForFileName(column_name);
+                    if (auto column_position = part->getColumnPosition(unescaped_name))
+                    {
+                        auto column_in_part = part->getColumns().tryGetByName(unescaped_name);
+                        if (auto id_substream_position = part->getColumnsSubstreams().tryGetSubstreamPosition(
+                                *column_position, *column_in_part, {}, part->storage.getSettings()))
+                        {
+                            col_idx = *id_substream_position;
+                            has_marks_in_part = true;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                auto unescaped_name = unescapeForFileName(column_name);
+                if (auto column_position = part->getColumnPosition(unescaped_name))
                 {
                     col_idx = *column_position;
                     has_marks_in_part = true;
