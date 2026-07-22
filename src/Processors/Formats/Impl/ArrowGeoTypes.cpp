@@ -105,84 +105,109 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
     return geo_columns;
 }
 
-inline CartesianPoint parseWKTPoint(ReadBuffer & in_buffer)
+/// The whitespace class the WKT grammar (boost::geometry::read_wkt, used by readWKT) treats as
+/// token separators: space, tab, newline, carriage return. Not isWhitespaceASCII, which also
+/// includes \f and \v that read_wkt rejects.
+inline bool isWKTSeparator(char ch)
+{
+    return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r';
+}
+
+inline void skipWKTSeparators(ReadBuffer & in_buffer)
+{
+    char ch = 0;
+    while (in_buffer.peek(ch) && isWKTSeparator(ch))
+        in_buffer.ignore();
+}
+
+inline CartesianPoint parseWKTPoint(ReadBuffer & in_buffer, bool precise_float_parsing)
 {
     Float64 x = 0;
     Float64 y = 0;
-    char ch = 0;
-    while (true)
+    skipWKTSeparators(in_buffer);
+    if (precise_float_parsing)
     {
-        if (!in_buffer.peek(ch))
-            break;
-        if (ch != ' ')
-            break;
-        in_buffer.ignore();
+        tryReadFloatTextPrecise(x, in_buffer);
+        skipWKTSeparators(in_buffer);
+        readFloatTextPrecise(y, in_buffer);
     }
-    tryReadFloatText(x, in_buffer);
-    in_buffer.ignore();
-    readFloatText(y, in_buffer);
+    else
+    {
+        tryReadFloatImpreciseForCompatibility(x, in_buffer);
+        skipWKTSeparators(in_buffer);
+        readFloatImpreciseForCompatibility(y, in_buffer);
+    }
     return {x, y};
 }
 
 inline void readOpenBracket(ReadBuffer & in_buffer)
 {
-    while (true)
-    {
-        char ch = 0;
-        readBinary(ch, in_buffer);
-        if (ch == '(')
-            break;
-    }
+    /// Only separators may precede '('. readWKT (boost::geometry::read_wkt) rejects any other
+    /// token here, e.g. "POINT x(1 2)".
+    skipWKTSeparators(in_buffer);
+    char ch = 0;
+    if (!in_buffer.read(ch) || ch != '(')
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: expected '('");
+}
+
+inline void readCloseBracket(ReadBuffer & in_buffer)
+{
+    /// Only separators may precede ')'.
+    skipWKTSeparators(in_buffer);
+    char ch = 0;
+    if (!in_buffer.read(ch) || ch != ')')
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: expected ')'");
 }
 
 inline bool readItemEnding(ReadBuffer & in_buffer)
 {
+    /// A parsed item is followed only by separators and then ')' (end) or ',' (next item).
+    /// readWKT rejects other tokens here, e.g. "LINESTRING(1 1 xx, 2 2)".
+    skipWKTSeparators(in_buffer);
     char ch = 0;
-    while (true)
-    {
-        readBinary(ch, in_buffer);
-        if (ch == ')')
-            return true;
-
-        if (ch == ',')
-            return false;
-    }
+    if (!in_buffer.read(ch))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: expected ')' or ','");
+    if (ch == ')')
+        return true;
+    if (ch == ',')
+        return false;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: expected ')' or ','");
 }
 
-inline LineString<CartesianPoint> parseWKTLine(ReadBuffer & in_buffer)
+inline LineString<CartesianPoint> parseWKTLine(ReadBuffer & in_buffer, bool precise_float_parsing)
 {
     LineString<CartesianPoint> ls;
     readOpenBracket(in_buffer);
     while (true)
     {
-        ls.push_back(parseWKTPoint(in_buffer));
+        ls.push_back(parseWKTPoint(in_buffer, precise_float_parsing));
         if (readItemEnding(in_buffer))
             break;
     }
     return ls;
 }
 
-inline Ring<CartesianPoint> parseWKTRing(ReadBuffer & in_buffer)
+inline Ring<CartesianPoint> parseWKTRing(ReadBuffer & in_buffer, bool precise_float_parsing)
 {
     Ring<CartesianPoint> ring;
     readOpenBracket(in_buffer);
     while (true)
     {
-        ring.push_back(parseWKTPoint(in_buffer));
+        ring.push_back(parseWKTPoint(in_buffer, precise_float_parsing));
         if (readItemEnding(in_buffer))
             break;
     }
     return ring;
 }
 
-inline Polygon<CartesianPoint> parseWKTPolygon(ReadBuffer & in_buffer)
+inline Polygon<CartesianPoint> parseWKTPolygon(ReadBuffer & in_buffer, bool precise_float_parsing)
 {
     Polygon<CartesianPoint> poly;
     readOpenBracket(in_buffer);
     bool should_complete_outer = true;
     while (true)
     {
-        auto parsed_line = parseWKTRing(in_buffer);
+        auto parsed_line = parseWKTRing(in_buffer, precise_float_parsing);
         if (should_complete_outer)
         {
             should_complete_outer = false;
@@ -198,64 +223,76 @@ inline Polygon<CartesianPoint> parseWKTPolygon(ReadBuffer & in_buffer)
     return poly;
 }
 
-inline MultiLineString<CartesianPoint> parseWKTMultiLineString(ReadBuffer & in_buffer)
+inline MultiLineString<CartesianPoint> parseWKTMultiLineString(ReadBuffer & in_buffer, bool precise_float_parsing)
 {
     MultiLineString<CartesianPoint> result;
     readOpenBracket(in_buffer);
     while (true)
     {
-        result.push_back(parseWKTLine(in_buffer));
+        result.push_back(parseWKTLine(in_buffer, precise_float_parsing));
         if (readItemEnding(in_buffer))
             break;
     }
     return result;
 }
 
-inline MultiPolygon<CartesianPoint> parseWKTMultiPolygon(ReadBuffer & in_buffer)
+inline MultiPolygon<CartesianPoint> parseWKTMultiPolygon(ReadBuffer & in_buffer, bool precise_float_parsing)
 {
     MultiPolygon<CartesianPoint> poly;
     readOpenBracket(in_buffer);
     while (true)
     {
-        poly.push_back(parseWKTPolygon(in_buffer));
+        poly.push_back(parseWKTPolygon(in_buffer, precise_float_parsing));
         if (readItemEnding(in_buffer))
             break;
     }
     return poly;
 }
 
-GeometricObject parseWKTFormat(ReadBuffer & in_buffer)
+GeometricObject parseWKTFormat(ReadBuffer & in_buffer, bool precise_float_parsing)
 {
+    /// The type keyword is a single WKT token: skip leading separators, then read the keyword up
+    /// to the first separator or '('. readOpenBracket consumes any separators before '('. This
+    /// matches readWKT (boost::geometry::read_wkt), which treats ' \t\n\r' as token separators.
     std::string type;
+    skipWKTSeparators(in_buffer);
     while (true)
     {
         char current_symbol = 0;
         if (!in_buffer.peek(current_symbol))
             break;
-        if (current_symbol == '(')
+        if (current_symbol == '(' || isWKTSeparator(current_symbol))
             break;
         type.push_back(current_symbol);
         in_buffer.ignore();
     }
 
-    while (!type.empty() && type.back() == ' ')
-        type.pop_back();
-
+    GeometricObject result;
     if (type == "POINT")
     {
         readOpenBracket(in_buffer);
-        return parseWKTPoint(in_buffer);
+        auto point = parseWKTPoint(in_buffer, precise_float_parsing);
+        readCloseBracket(in_buffer);
+        result = point;
     }
-    if (type == "LINESTRING")
-        return parseWKTLine(in_buffer);
-    if (type == "POLYGON")
-        return parseWKTPolygon(in_buffer);
-    if (type == "MULTILINESTRING")
-        return parseWKTMultiLineString(in_buffer);
-    if (type == "MULTIPOLYGON")
-        return parseWKTMultiPolygon(in_buffer);
+    else if (type == "LINESTRING")
+        result = parseWKTLine(in_buffer, precise_float_parsing);
+    else if (type == "POLYGON")
+        result = parseWKTPolygon(in_buffer, precise_float_parsing);
+    else if (type == "MULTILINESTRING")
+        result = parseWKTMultiLineString(in_buffer, precise_float_parsing);
+    else if (type == "MULTIPOLYGON")
+        result = parseWKTMultiPolygon(in_buffer, precise_float_parsing);
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: type {}", type);
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: type {}", type);
+    /// Only separators may follow the geometry (each caller passes a buffer holding a single WKT
+    /// value). readWKT rejects trailing tokens, e.g. "POINT(1 2) trailing" or "POINT(1 2))".
+    skipWKTSeparators(in_buffer);
+    if (!in_buffer.eof())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: unexpected trailing data");
+
+    return result;
 }
 
 DataTypePtr getGeoDataType(GeoType type)

@@ -120,6 +120,14 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
             }
             return false;
     };
+    shared_data.throw_if_query_canceled_predicate = [this] ()
+    {
+        if (auto context_locked = query_context.lock())
+        {
+            if (auto elem = context_locked->getProcessListElementSafe())
+                elem->throwIfKilled();
+        }
+    };
 }
 
 // c-tor for method createForMaterializedView
@@ -153,6 +161,14 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
             return context_locked->isCurrentQueryKilled();
         }
         return false;
+    };
+    shared_data.throw_if_query_canceled_predicate = [this] ()
+    {
+        if (auto context_locked = query_context.lock())
+        {
+            if (auto elem = context_locked->getProcessListElementSafe())
+                elem->throwIfKilled();
+        }
     };
 }
 
@@ -636,7 +652,7 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
 
 void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)
 {
-#if defined(SIGEV_THREAD_ID)
+#if defined(SIGEV_THREAD_ID) || defined(OS_DARWIN)
     /// profilers are useless without trace collector
     auto context = Context::getGlobalContextInstance();
     if (!context->hasTraceCollector())

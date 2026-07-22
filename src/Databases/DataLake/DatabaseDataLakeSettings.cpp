@@ -14,6 +14,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_SETTING;
+    extern const int LOGICAL_ERROR;
 }
 
 #define DATABASE_ICEBERG_RELATED_SETTINGS(DECLARE, ALIAS) \
@@ -25,8 +26,8 @@ namespace ErrorCodes
     DECLARE(Bool, oauth_server_use_request_body, true, "Put parameters into request body or query params", 0) \
     DECLARE(String, warehouse, "", "Warehouse name inside the catalog", 0) \
     DECLARE(String, auth_header, "", "Authorization header of format 'Authorization: <scheme> <auth_info>'", 0) \
-    DECLARE(String, aws_access_key_id, "", "Key for AWS connection for Glue catalog", 0) \
-    DECLARE(String, aws_secret_access_key, "", "Key for AWS connection for Glue Catalog'", 0) \
+    DECLARE(String, aws_access_key_id, "", "AWS access key id used to connect to the Glue catalog, and forwarded as a static S3 storage credential for non-Glue DataLakeCatalog table reads when vended_credentials = false", 0) \
+    DECLARE(String, aws_secret_access_key, "", "AWS secret access key used to connect to the Glue catalog, and forwarded as a static S3 storage credential for non-Glue DataLakeCatalog table reads when vended_credentials = false", 0) \
     DECLARE(String, region, "", "Region for Glue catalog", 0) \
     DECLARE(String, aws_role_arn, "", "Role arn for AWS connection for Glue catalog", 0) \
     DECLARE(String, aws_role_session_name, "", "Role session name for AWS connection for Glue catalog", 0) \
@@ -37,7 +38,7 @@ namespace ErrorCodes
     DECLARE(String, onelake_client_id, "", "Client id from azure", 0) \
     DECLARE(String, onelake_client_secret, "", "Client secret from azure", 0) \
     DECLARE(String, onelake_bearer_token, "", "Pre-obtained bearer token for OneLake, scoped to https://storage.azure.com. The token is static and not refreshed, so a long-lived database must be recreated once it expires", 0) \
-    DECLARE(Bool, onelake_use_blob_endpoint, true, "Use the Blob endpoint (.blob.fabric.microsoft.com) for OneLake. When disabled, the DFS endpoint (.dfs.fabric.microsoft.com) is used instead", 0) \
+    DECLARE(Bool, onelake_use_blob_endpoint, true, "Use the Blob endpoint (.blob.fabric.microsoft.com) for OneLake reads; writes use the DFS endpoint (.dfs.fabric.microsoft.com). When disabled, reads use the DFS endpoint too. With remote_url_allow_hosts set, allowlist both hosts or INSERT is rejected", 0) \
     DECLARE(String, google_project_id, "", "Google Cloud project ID for BigLake. Required for BigLake catalog. Used in x-goog-user-project header. If not set and google_adc_quota_project_id is provided, it latter will be used", 0) \
     DECLARE(String, google_service_account, "", "Google Cloud service account email for metadata service authentication. Default: 'default'. Only used when ADC credentials are not provided", 0) \
     DECLARE(String, google_metadata_service, "", "Google Cloud metadata service endpoint for token retrieval. Default: 'metadata.google.internal'. Only used when ADC credentials are not provided", 0) \
@@ -106,6 +107,15 @@ SettingsChanges DatabaseDataLakeSettings::allChanged() const
     for (const auto & setting : impl->allChanged())
         changes.emplace_back(setting.getName(), setting.getValue());
     return changes;
+}
+
+const String & DatabaseDataLakeSettings::getSettingName(DatabaseDataLakeSettingsString setting)
+{
+    const auto & accessor = DatabaseDataLakeSettingsTraits::Accessor::instance();
+    const size_t index = accessor.findByOffset(setting.offset);
+    if (index == static_cast<size_t>(-1))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown database DataLake setting");
+    return accessor.getName(index);
 }
 
 }

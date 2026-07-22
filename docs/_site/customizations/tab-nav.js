@@ -11,7 +11,7 @@
 
   // Locales with their own page tree; each has a localized homepage at
   // /<locale> and mirrors the English paths beneath it.
-  var LOCALES = ['es', 'ja', 'ko', 'pt-BR', 'ru', 'zh'];
+  var LOCALES = ['ar', 'es', 'fr', 'ja', 'ko', 'pt-BR', 'ru', 'zh'];
 
   // '' at root (.app, mint dev); '/docs' on the subpath deploy
   var BASE = /^\/docs(\/|$)/.test(window.location.pathname) ? '/docs' : '';
@@ -117,12 +117,19 @@
   var TOGGLE_ID = 'ch-homepage-toggle';
 
   function findSidebarThemeToggle() {
+    // Current Mintlify builds render a segmented control: a
+    //   <div role="group" aria-label="Theme preference">
+    // wrapping three buttons (system / light / dark). We relocate the whole
+    // group so all three options move together.
+    var group = document.querySelector('#sidebar [role="group"][aria-label="Theme preference"]');
+    if (group) return group;
+    // Older builds rendered a single <button aria-label="Toggle dark mode">.
     var btn = document.querySelector('#sidebar button[aria-label="Toggle dark mode"]');
     if (btn) return btn;
     // Localized UIs translate the aria-label (e.g. "다크 모드 전환"), so fall
-    // back to the toggle's shape: the only sidebar pill button holding the
-    // sun + moon icons.
-    var candidates = document.querySelectorAll('#sidebar button');
+    // back to the control's shape: the only sidebar pill (rounded-full) holding
+    // the theme icons — matches both the segmented group and the legacy button.
+    var candidates = document.querySelectorAll('#sidebar [role="group"], #sidebar button');
     for (var i = 0; i < candidates.length; i++) {
       if (/rounded-full/.test(candidates[i].className)
           && candidates[i].querySelectorAll('svg').length >= 2) {
@@ -141,9 +148,11 @@
       // Restore theme toggle to sidebar before removing wrapper
       var toggleWrapper = document.getElementById(TOGGLE_ID);
       if (toggleWrapper) {
-        var btn = toggleWrapper.querySelector('button');
+        // Move the whole control back — it may be a segmented group (a div with
+        // several buttons), not a single button, so restore firstElementChild.
+        var control = toggleWrapper.firstElementChild;
         var sidebar = document.getElementById('sidebar');
-        if (btn && sidebar) sidebar.appendChild(btn);
+        if (control && sidebar) sidebar.appendChild(control);
         toggleWrapper.parentNode.removeChild(toggleWrapper);
       }
       var logo = document.getElementById(LOGO_ID);

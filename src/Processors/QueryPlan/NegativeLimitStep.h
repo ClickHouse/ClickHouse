@@ -24,6 +24,8 @@ public:
 
     UInt64 getLimit() const { return limit; }
 
+    void markAsShardLimit() { is_shard_limit = true; }
+
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
@@ -41,6 +43,7 @@ private:
     UInt64 offset;
     bool with_ties;
     const SortDescription description;
+    bool is_shard_limit = false;
 };
 
 }

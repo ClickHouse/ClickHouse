@@ -157,6 +157,13 @@ namespace
             return *reinterpret_cast<StreamFromReadBuffer *>(ptr);
         }
 
+    public:
+        /// True if the underlying archive read buffer was canceled by a prior mid-stream
+        /// read failure. Such a stream must not be reused (see releaseRawHandle).
+        bool isReadBufferCanceled() const { return read_buffer && read_buffer->isCanceled(); }
+
+    private:
+
         static int testErrorFunc(void *, void * stream)
         {
             auto & strm = get(stream);
@@ -819,6 +826,25 @@ void ZipArchiveReader::releaseRawHandle(RawHandleWithStream handle_info)
 {
     if (!handle_info.handle)
         return;
+
+    /// If a prior read failed mid-stream, ReadBuffer::next() called cancel() on the underlying
+    /// archive buffer and rethrew. The `canceled` flag is terminal: a subsequent read on that
+    /// buffer trips chassert(!isCanceled()) in ReadBuffer::next() (LOGICAL_ERROR in debug builds).
+    /// Both the minizip stream and the buffer are in an undefined state, so this handle must not
+    /// be pooled for reuse. Close it; the next acquireRawHandle() opens a fresh one.
+    auto * stream = reinterpret_cast<StreamFromReadBuffer *>(handle_info.stream);
+    if (stream && stream->isReadBufferCanceled())
+    {
+        try
+        {
+            checkResult(unzClose(handle_info.handle));
+        }
+        catch (...)
+        {
+            tryLogCurrentException("ZipArchiveReader");
+        }
+        return;
+    }
 
     std::lock_guard lock{mutex};
     free_handles.push_back(handle_info);

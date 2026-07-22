@@ -41,6 +41,7 @@ public:
         size_t data_file_name_prefix_length = 3;
         std::shared_ptr<IBackupCoordination> backup_coordination;
         std::optional<UUID> backup_uuid;
+        String backup_id;
         bool deduplicate_files = true;
         bool allow_s3_native_copy = true;
         bool allow_azure_native_copy = true;
