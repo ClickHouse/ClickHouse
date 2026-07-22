@@ -177,9 +177,10 @@ def main():
     assert (
         build_type in BUILD_TYPE_TO_CMAKE
     ), f"--build_type option is invalid [{build_type}]"
-    assert not args.build_examples or build_type == BuildTypes.ARM_RELEASE, (
-        "--build-examples is only supported for the ARM release build"
-    )
+    assert not args.build_examples or build_type in (
+        BuildTypes.ARM_RELEASE,
+        BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP,
+    ), "--build-examples is only supported for ARM release builds"
 
     cmake_cmd = BUILD_TYPE_TO_CMAKE[build_type]
     if args.build_examples:
