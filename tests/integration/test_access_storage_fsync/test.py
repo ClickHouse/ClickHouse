@@ -237,3 +237,46 @@ def test_deferred_list_write_preserves_session_fsync():
     )
 
     instance.query(f"DROP USER IF EXISTS {user}")
+
+
+def test_marker_driven_rebuild_forces_list_fsync():
+    """
+    A marker-driven rebuild - `need_rebuild_lists.mark` present at rebuild entry, i.e. startup
+    recovery or after a latched write failure - must fsync the rebuilt `.list` files even when
+    the current context has `fsync_metadata=0`.
+
+    The in-process `pending_lists_fsync` requirement does not survive a restart, so the marker
+    is the only persistent proxy for "a durable `.list` is still owed". Without forcing the fsync,
+    `reloadAllAndRebuildLists()` would rewrite the `.list` unsynced and then drop the marker, so a
+    second power loss could leave stale `.list` files with no marker while the fsync'd `.sql`
+    survives - reopening the window across a restart.
+
+    `SYSTEM RELOAD USERS` runs `reloadAllAndRebuildLists()` on the query thread, the same code path
+    as the startup recovery, so its FileSync ProfileEvent covers it.
+    """
+    user = "u_marker_rebuild"
+    instance.query(f"DROP USER IF EXISTS {user}")
+    instance.query(f"CREATE USER {user} IDENTIFIED WITH no_password")
+    # Reach steady state: the background writer has run and removed the marker.
+    instance.query("SYSTEM RELOAD USERS")
+
+    # Baseline: with no marker present, a rebuild at fsync_metadata=0 is NOT forced to sync.
+    # This proves the fix is targeted to the marker-driven recovery path, not a blanket fsync.
+    # Remove the marker explicitly so the precondition is deterministic regardless of prior tests.
+    instance.exec_in_container(
+        ["bash", "-c", f"rm -f {ACCESS_DIR}/need_rebuild_lists.mark"], user="root"
+    )
+    file_sync, _ = _run("SYSTEM RELOAD USERS", 0)
+    assert file_sync == 0, f".list fsync forced without a rebuild marker: FileSync={file_sync}"
+
+    # The durable marker survived a power loss; the in-process requirement did not.
+    instance.exec_in_container(
+        ["bash", "-c", f"touch {ACCESS_DIR}/need_rebuild_lists.mark"], user="root"
+    )
+    file_sync, _ = _run("SYSTEM RELOAD USERS", 0)
+    assert file_sync >= 1, (
+        "marker-driven rebuild dropped the durability obligation and rewrote the .list unsynced: "
+        f"FileSync={file_sync}"
+    )
+
+    instance.query(f"DROP USER IF EXISTS {user}")

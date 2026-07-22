@@ -527,6 +527,11 @@ void DiskAccessStorage::reloadAllAndRebuildLists()
     for (auto type : collections::range(AccessEntityType::MAX))
         types_of_lists_to_write.insert(type);
 
+    /// The marker is a restart-surviving proxy for "a durable `.list` is still owed", so a
+    /// marker-driven rebuild must fsync even when the current (context-free) fsync check is false.
+    if (std::filesystem::exists(getNeedRebuildListsMarkFilePath(directory_path)))
+        pending_lists_fsync = true;
+
     /// Write the lists and keep the rebuild marker for now.
     failed_to_write_lists = false;
     has_stale_files_on_disk = true;
