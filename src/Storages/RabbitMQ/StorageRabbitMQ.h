@@ -9,7 +9,6 @@
 #include <Storages/RabbitMQ/RabbitMQConsumer.h>
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
 #include <Storages/RabbitMQ/RabbitMQ_fwd.h>
-#include <Storages/IStreamingStorage.h>
 #include <Common/thread_local_rng.h>
 #include <amqpcpp/libuv.h>
 #include <uv.h>
@@ -21,7 +20,7 @@ namespace DB
 struct RabbitMQSettings;
 using RabbitMQConsumerPtr = std::shared_ptr<RabbitMQConsumer>;
 
-class StorageRabbitMQ final: public IStreamingStorage, WithContext
+class StorageRabbitMQ final: public IStorage, WithContext
 {
 public:
     StorageRabbitMQ(
@@ -36,16 +35,10 @@ public:
 
     std::string getName() const override { return RabbitMQ::TABLE_ENGINE_NAME; }
 
-    bool isMessageQueue() const override { return true; }
-
     bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
-
-    void cancelBackgroundActivity() override;
-
-    void renameInMemory(const StorageID & new_table_id) override;
 
     /// This is a bad way to let storage know in shutdown() that table is going to be dropped. There are some actions which need
     /// to be done only when table is dropped (not when detached). Also connection must be closed only in shutdown, but those
@@ -88,7 +81,7 @@ public:
     void incrementReader();
     void decrementReader();
 
-    bool supportsColumnsWithDynamicStructure() const override { return true; }
+    bool supportsDynamicSubcolumns() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
 
 private:
@@ -150,6 +143,9 @@ private:
     /**
      * ╰( ͡° ͜ʖ ͡° )つ──☆* Evil atomics:
      */
+    /// Needed for tell MV or producer background tasks
+    /// that they must finish as soon as possible.
+    std::atomic<bool> shutdown_called{false};
     /// Counter for producers, needed for channel id.
     /// Needed to generate unique producer identifiers.
     std::atomic<size_t> producer_id = 1;
@@ -158,8 +154,7 @@ private:
     /// For select query we must be aware of the end of streaming
     /// to be able to turn off the loop.
     std::atomic<size_t> readers_count = 0;
-
-    void scheduleStreamingTasksImpl() override;
+    std::atomic<bool> mv_attached = false;
 
     /// In select query we start event loop, but do not stop it
     /// after that select is finished. Then in a thread, which
@@ -175,10 +170,8 @@ private:
     RabbitMQConsumerPtr createConsumer();
     std::atomic<bool> initialized = false;
 
-    UInt64 last_seen_refresh_epoch = 0;
-
     /// Functions working in the background
-    void threadFunc();
+    void streamingToViewsFunc();
     void loopingFunc();
     void connectionFunc();
 
@@ -200,8 +193,9 @@ private:
     void bindExchange(AMQP::TcpChannel & rabbit_channel);
     void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
 
+    void streamToViewsImpl();
     /// Return true on successful stream attempt.
-    bool streamToViews(UInt64 cycle_epoch);
+    bool tryStreamToViews();
     bool hasDependencies(const StorageID & table_id);
 
     static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
@@ -211,7 +205,7 @@ private:
         std::uniform_int_distribution<int> distribution('a', 'z');
         String random_str(32, ' ');
         for (auto & c : random_str)
-            c = static_cast<char>(distribution(thread_local_rng));
+            c = distribution(thread_local_rng);
         return random_str;
     }
 };

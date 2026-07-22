@@ -1,8 +1,8 @@
 #pragma once
 
-#include <atomic>
-#include <exception>
 #include <functional>
+#include <atomic>
+#include <condition_variable>
 
 namespace DB
 {
@@ -34,7 +34,6 @@ public:
 
         finished = true;
         finished.notify_all();
-        deserialize = {};
     }
 
     /// Wait until task is executed and return an exception if any.

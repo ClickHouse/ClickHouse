@@ -1,5 +1,7 @@
 #pragma once
 
+#if defined(OS_LINUX)
+
 #include <iostream>
 
 namespace DB
@@ -39,3 +41,5 @@ public:
 };
 
 }
+
+#endif

@@ -5,14 +5,12 @@
 #    pragma clang diagnostic ignored "-Wshadow"
 #    pragma clang diagnostic ignored "-Wextra-semi-stmt"
 #    pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#    pragma clang diagnostic ignored "-Wimplicit-int-float-conversion"
 
 #    include <pocketfft_hdronly.h>
 
 #    pragma clang diagnostic pop
 
 #    include <cmath>
-#    include <limits>
 #    include <Columns/ColumnArray.h>
 #    include <Columns/ColumnsNumber.h>
 #    include <DataTypes/DataTypeArray.h>
@@ -20,7 +18,7 @@
 #    include <Functions/FunctionFactory.h>
 #    include <Functions/FunctionHelpers.h>
 #    include <Functions/IFunction.h>
-#    include <Common/VectorWithMemoryTracking.h>
+
 
 namespace DB
 {
@@ -37,7 +35,7 @@ extern const int ILLEGAL_COLUMN;
  * 4. Inverse of the dominant frequency component is the period.
 */
 
-class FunctionSeriesPeriodDetectFFT final : public IFunction
+class FunctionSeriesPeriodDetectFFT : public IFunction
 {
 public:
     static constexpr auto name = "seriesPeriodDetectFFT";
@@ -78,7 +76,7 @@ public:
 
         ColumnArray::Offset prev_src_offset = 0;
 
-        Float64 period = 0;
+        Float64 period;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             ColumnArray::Offset curr_offset = offsets[i];
@@ -119,15 +117,12 @@ public:
         size_t len = end - start;
         if (len < 4)
         {
-            period = std::numeric_limits<Float64>::quiet_NaN(); // At least four data points are required to detect period
+            period = NAN; // At least four data points are required to detect period
             return true;
         }
 
-        VectorWithMemoryTracking<Float64> src;
-        src.reserve(len);
-        for (size_t i = start; i < end; ++i)
-            src.push_back(static_cast<Float64>(src_vec[i]));
-        VectorWithMemoryTracking<std::complex<double>> out((len / 2) + 1);
+        std::vector<Float64> src((src_vec.begin() + start), (src_vec.begin() + end));
+        std::vector<std::complex<double>> out((len / 2) + 1);
 
         pocketfft::shape_t shape{len};
 
@@ -163,8 +158,8 @@ public:
             return true;
         }
 
-        double step = 0.5 / static_cast<double>(spec_len - 1);
-        auto freq = static_cast<double>(idx) * step;
+        double step = 0.5 / (spec_len - 1);
+        auto freq = idx * step;
 
         period = std::round(1 / freq);
         return true;
@@ -173,40 +168,57 @@ public:
 
 REGISTER_FUNCTION(SeriesPeriodDetectFFT)
 {
-    FunctionDocumentation::Description description = R"(
-Finds the period of the given series data using FFT - [Fast Fourier transform](https://en.wikipedia.org/wiki/Fast_Fourier_transform)
-    )";
-    FunctionDocumentation::Syntax syntax = "seriesPeriodDetectFFT(series)";
-    FunctionDocumentation::Arguments arguments = {
-        {"series", "An array of numeric values.", {"Array((U)Int8/16/32/64)", "Array(Float*)"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a real value equal to the period of series data. NaN when number of data points are less than four.", {"Float64"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Period detection with simple pattern",
-        "SELECT seriesPeriodDetectFFT([1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6]) AS print_0",
-        R"(
+    factory.registerFunction<FunctionSeriesPeriodDetectFFT>(FunctionDocumentation{
+        .description = R"(
+Finds the period of the given time series data using FFT
+FFT - Fast Fourier transform (https://en.wikipedia.org/wiki/Fast_Fourier_transform)
+
+**Syntax**
+
+```sql
+seriesPeriodDetectFFT(series);
+```
+
+**Arguments**
+
+- `series` - An array of numeric values
+
+**Returned value**
+
+- A real value equal to the period of time series
+- Returns NAN when number of data points are less than four.
+
+Type: [Float64](../../sql-reference/data-types/float.md).
+
+**Examples**
+
+Query:
+
+```sql
+SELECT seriesPeriodDetectFFT([1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6]) AS print_0;
+```
+
+Result:
+
+```text
 ┌───────────print_0──────┐
 │                      3 │
 └────────────────────────┘
-        )"
-    },
-    {
-        "Period detection with complex pattern",
-        "SELECT seriesPeriodDetectFFT(arrayMap(x -> abs((x % 6) - 3), range(1000))) AS print_0",
-        R"(
+```
+
+```sql
+SELECT seriesPeriodDetectFFT(arrayMap(x -> abs((x % 6) - 3), range(1000))) AS print_0;
+```
+
+Result:
+
+```text
 ┌─print_0─┐
 │       6 │
 └─────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {23, 12};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionSeriesPeriodDetectFFT>(documentation);
+```
+)",
+        .category = FunctionDocumentation::Category::TimeSeries});
 }
 }
-
 #endif

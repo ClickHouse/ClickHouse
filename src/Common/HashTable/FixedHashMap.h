@@ -99,12 +99,11 @@ template <
     typename Mapped,
     typename Cell = FixedHashMapCell<Key, Mapped>,
     typename Size = FixedHashTableStoredSize<Cell>,
-    typename Allocator = HashTableAllocator,
-    size_t size_bits = sizeof(Key) * 8>
-class FixedHashMap : public FixedHashTable<Key, Cell, Size, Allocator, size_bits>
+    typename Allocator = HashTableAllocator>
+class FixedHashMap : public FixedHashTable<Key, Cell, Size, Allocator>
 {
 public:
-    using Base = FixedHashTable<Key, Cell, Size, Allocator, size_bits>;
+    using Base = FixedHashTable<Key, Cell, Size, Allocator>;
     using Self = FixedHashMap;
     using LookupResult = typename Base::LookupResult;
 
@@ -113,42 +112,13 @@ public:
     FixedHashMap() = default;
     FixedHashMap(size_t ) {} /// NOLINT
 
-    /// mergeToViaIndexFilter is a special mergeTo function to allow `total_worker` worker to merge without race condition.
-    template <typename Func>
-    void ALWAYS_INLINE mergeToViaIndexFilter(Self & that, Func && func,
-        UInt32 worker_id, UInt32 total_worker)
-    {
-        UInt32 min_index = 0;
-        UInt32 max_index = static_cast<UInt32>(this->getBufferSizeInCells());
-        if (this->canUseMinMaxOptimization())
-        {
-            auto [min, max] = this->getMinMaxIndex();
-            min_index = min;
-            max_index = max + 1;
-        }
-        UInt32 start_index = (min_index / total_worker) * total_worker + worker_id;
-
-        /// Increment by total_worker to make distribution of merge evenly. We use index directly instead of iterator
-        /// because we need to precisely control the cells for each worker. Iterator however would skip zero cells.
-        for (UInt32 i = start_index; i < max_index; i += total_worker)
-        {
-            if (!this->buf[i].isZero(*this))
-            {
-                typename Self::LookupResult res_it;
-                bool inserted = false;
-                that.emplace(static_cast<Key>(i), res_it, inserted, i);
-                func(res_it->getMapped(), this->buf[i].getMapped(), inserted);
-            }
-        }
-    }
-
     template <typename Func, bool>
     void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
     {
         for (auto it = this->begin(), end = this->end(); it != end; ++it)
         {
             typename Self::LookupResult res_it;
-            bool inserted = false;
+            bool inserted;
             that.emplace(it->getKey(), res_it, inserted, it.getHash());
             func(res_it->getMapped(), it->getMapped(), inserted);
         }
@@ -178,23 +148,13 @@ public:
     void forEachMapped(Func && func)
     {
         for (auto & v : *this)
-        {
-            if constexpr (std::is_same_v<decltype(func(v.getMapped())), bool>)
-            {
-                if (!func(v.getMapped()))
-                    break;
-            }
-            else
-            {
-                func(v.getMapped());
-            }
-        }
+            func(v.getMapped());
     }
 
     Mapped & ALWAYS_INLINE operator[](const Key & x)
     {
         LookupResult it;
-        bool inserted = false;
+        bool inserted;
         this->emplace(x, it, inserted);
         if (inserted)
             new (&it->getMapped()) Mapped();
@@ -219,12 +179,3 @@ using FixedImplicitZeroHashMapWithCalculatedSize = FixedHashMap<
     FixedHashMapImplicitZeroCell<Key, Mapped>,
     FixedHashTableCalculatedSize<FixedHashMapImplicitZeroCell<Key, Mapped>>,
     Allocator>;
-
-template <typename Key, typename Mapped, size_t size_bits>
-using FixedHashMapWithSizeBits = FixedHashMap<
-    Key,
-    Mapped,
-    FixedHashMapCell<Key, Mapped>,
-    FixedHashTableStoredSize<FixedHashMapCell<Key, Mapped>>,
-    HashTableAllocator,
-    size_bits>;

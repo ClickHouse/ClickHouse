@@ -1,7 +1,6 @@
 #pragma once
 
 #include <ctime>
-#include <map>
 #include <memory>
 #include <optional>
 
@@ -42,18 +41,11 @@ public:
     /// Returns whether the backup was opened for reading or writing.
     virtual OpenMode getOpenMode() const = 0;
 
-    /// Settings effectively used by the backup engine's reader/writer (e.g. S3 `allow_native_copy`). Empty if none.
-    virtual std::map<String, String> getEngineSettings() const = 0;
-
     /// Returns the time point when this backup was created.
     virtual time_t getTimestamp() const = 0;
 
     /// Returns UUID of the backup.
     virtual UUID getUUID() const = 0;
-
-    /// The backup's operation id (the `id` setting, else the UUID), as recorded in the manifest.
-    /// Empty for backups written before this field existed.
-    virtual const String & getBackupId() const = 0;
 
     /// Returns the base backup or null if there is no base backup.
     virtual std::shared_ptr<const IBackup> getBaseBackup() const = 0;
@@ -112,7 +104,7 @@ public:
     virtual UInt64 getFileSize(const String & file_name) const = 0;
 
     /// Returns the checksum of the entry's data.
-    /// This function does the same as `read(file_name)->getChecksum()` but faster.
+    /// This function does the same as `read(file_name)->getCheckum()` but faster.
     virtual UInt128 getFileChecksum(const String & file_name) const = 0;
 
     /// Returns both the size and checksum in one call.
@@ -143,6 +135,9 @@ public:
 
     /// Try to remove all files copied to the backup. Could be used after setIsCorrupted().
     virtual bool tryRemoveAllFiles() noexcept = 0;
+
+    /// Try to remove all files of a directory from original object storage.
+    virtual bool tryRemoveAllFilesUnderDirectory(const String & directory) const noexcept = 0;
 };
 
 using BackupPtr = std::shared_ptr<const IBackup>;

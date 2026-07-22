@@ -1,5 +1,4 @@
 #include <Processors/Formats/Impl/DWARFBlockInputFormat.h>
-#include <Common/CurrentThread.h>
 #if USE_DWARF_PARSER && defined(__ELF__) && !defined(OS_FREEBSD)
 
 #include <llvm/DebugInfo/DWARF/DWARFFormValue.h>
@@ -10,10 +9,8 @@
 #include <base/hex.h>
 #include <Formats/FormatFactory.h>
 #include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnIndex.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnUnique.h>
@@ -22,7 +19,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WithFileName.h>
@@ -77,7 +73,7 @@ enum DwarfColumn
 
 static NamesAndTypesList getHeaderForDWARF()
 {
-    NamesAndTypes cols(COL_COUNT);
+    std::vector<NameAndTypePair> cols(COL_COUNT);
     cols[COL_OFFSET] = {"offset", std::make_shared<DataTypeUInt64>()};
     cols[COL_SIZE] = {"size", std::make_shared<DataTypeUInt32>()};
     cols[COL_TAG] = {"tag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())};
@@ -231,7 +227,7 @@ void DWARFBlockInputFormat::initializeIfNeeded()
     auto abbrev_section = elf->findSectionByName(".debug_abbrev");
     if (!abbrev_section.has_value())
         throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "No .debug_abbrev section");
-    LOG_DEBUG(getLogger("DWARF"), ".debug_abbrev is {:.3f} MiB, .debug_info is {:.3f} MiB", static_cast<double>(abbrev_section->size()) * 1. / (1 << 20), static_cast<double>(info_section->size()) * 1. / (1 << 20));
+    LOG_DEBUG(getLogger("DWARF"), ".debug_abbrev is {:.3f} MiB, .debug_info is {:.3f} MiB", abbrev_section->size() * 1. / (1 << 20), info_section->size() * 1. / (1 << 20));
 
     /// (The StringRef points into Elf's mmap of the whole file, or into file_contents.)
     extractor.emplace(llvm::StringRef(info_section->begin(), info_section->size()), /*IsLittleEndian*/ true, /*AddressSize*/ 8);
@@ -261,9 +257,9 @@ void DWARFBlockInputFormat::initializeIfNeeded()
 
     LOG_DEBUG(getLogger("DWARF"), "{} units, reading in {} threads", units_queue.size(), num_threads);
 
-    runner.emplace(getFormatParsingThreadPool().get(), ThreadName::DWARF_DECODER);
+    runner.emplace(getFormatParsingThreadPool().get(), "DWARFDecoder");
     for (size_t i = 0; i < num_threads; ++i)
-        runner.value().enqueueAndKeepTrack(
+        runner.value()(
             [this, thread_group = CurrentThread::getGroup()]()
             {
                 try
@@ -392,7 +388,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
     auto col_ancestor_array_offsets = ColumnVector<UInt64>::create();
     auto col_name = ColumnString::create();
     auto col_linkage_name = ColumnString::create();
-    ColumnIndex col_decl_file;
+    ColumnLowCardinality::Index col_decl_file;
     auto col_decl_line = ColumnVector<UInt32>::create();
     auto col_ranges_start = ColumnVector<UInt64>::create();
     auto col_ranges_end = ColumnVector<UInt64>::create();
@@ -437,7 +433,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
 
             if (need[COL_NAME]) col_name->insertDefault();
             if (need[COL_LINKAGE_NAME]) col_linkage_name->insertDefault();
-            if (need[COL_DECL_FILE]) col_decl_file.insertIndex(0);
+            if (need[COL_DECL_FILE]) col_decl_file.insertPosition(0);
             if (need[COL_DECL_LINE]) col_decl_line->insertDefault();
             if (need[COL_RANGES]) col_ranges_offsets->insertValue(col_ranges_start->size());
             if (need[COL_ATTR_NAME]) col_attr_offsets->insertValue(col_attr_name->size());
@@ -560,12 +556,12 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                         {
                             UInt64 idx = val.getRawUValue() + 1;
                             if (attr.Attr == llvm::dwarf::DW_AT_decl_file && std::exchange(need_decl_file, false))
-                                col_decl_file.insertIndex(idx);
+                                col_decl_file.insertPosition(idx);
 
                             if (need[COL_ATTR_STR])
                             {
                                 auto data = unit.filename_table->getDataAt(idx);
-                                col_attr_str->insertData(data.data(), data.size());
+                                col_attr_str->insertData(data.data, data.size);
                             }
                         }
                         else if (need[COL_ATTR_STR])
@@ -671,7 +667,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                         // also confusing to see e.g. DW_FORM_ref4 (unit-relative reference) next to an absolute offset.
                         if (need[COL_ATTR_INT])
                         {
-                            uint64_t ref = 0;
+                            uint64_t ref;
                             if (std::optional<uint64_t> offset = val.getAsRelativeReference())
                                 ref = val.getUnit()->getOffset() + *offset;
                             else if (offset = val.getAsDebugInfoReference(); offset)
@@ -697,7 +693,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
 
             if (need_name) col_name->insertDefault();
             if (need_linkage_name) col_linkage_name->insertDefault();
-            if (need_decl_file) col_decl_file.insertIndex(0);
+            if (need_decl_file) col_decl_file.insertPosition(0);
             if (need_decl_line) col_decl_line->insertDefault();
 
             if (need_ranges)
@@ -706,7 +702,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                     parseRanges(*ranges, ranges_rnglistx, unit, col_ranges_start, col_ranges_end);
                 else if (low_pc.has_value())
                 {
-                    UInt64 high = 0;
+                    UInt64 high;
                     if (!high_pc.has_value())
                         high = *low_pc + 1;
                     else if (relative_high_pc)
@@ -795,7 +791,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                     dict->insertDefault();
                     filename_table = ColumnUnique<ColumnString>::create(std::move(dict), /*is_nullable*/ false);
                 }
-                cols.push_back(ColumnLowCardinality::create(filename_table, col_decl_file.detachIndexes(), /*is_shared*/ true));
+                cols.push_back(ColumnLowCardinality::create(filename_table, col_decl_file.detachPositions(), /*is_shared*/ true));
                 break;
             }
             case COL_DECL_LINE:
@@ -849,7 +845,7 @@ void DWARFBlockInputFormat::parseFilenameTable(UnitState & unit, uint64_t offset
     for (const auto & entry : prologue.FileNames)
     {
         auto val = entry.Name.getAsCString();
-        const char * c_str = nullptr;
+        const char * c_str;
         if (llvm::Error e = val.takeError())
         {
             c_str = "<error>";
@@ -1011,7 +1007,6 @@ NamesAndTypesList DWARFSchemaReader::readSchema()
     return getHeaderForDWARF();
 }
 
-void registerDWARFSchemaReader(FormatFactory & factory);
 void registerDWARFSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
@@ -1023,7 +1018,6 @@ void registerDWARFSchemaReader(FormatFactory & factory)
     );
 }
 
-void registerInputFormatDWARF(FormatFactory & factory);
 void registerInputFormatDWARF(FormatFactory & factory)
 {
     factory.registerRandomAccessInputFormat(
@@ -1040,83 +1034,6 @@ void registerInputFormatDWARF(FormatFactory & factory)
                 buf, std::make_shared<const Block>(sample), settings, parser_shared_resources->getParsingThreadsPerReader());
         });
     factory.markFormatSupportsSubsetOfColumns("DWARF");
-
-    factory.setDocumentation("DWARF", Documentation{
-        .description = R"DOCS_MD(
-| Input | Output  | Alias |
-|-------|---------|-------|
-| ✔     | ✗       |       |
-
-## Description {#description}
-
-The `DWARF` format parses DWARF debug symbols from an ELF file (executable, library, or object file).
-It is similar to `dwarfdump`, but much faster (hundreds of MB/s) and supporting SQL.
-It produces one row for each Debug Information Entry (DIE) in the `.debug_info` section
-and includes "null"-entries that the DWARF encoding uses to terminate lists of children in the tree.
-
-:::info
-`.debug_info` consists of *units*, which correspond to compilation units:
-- Each unit is a tree of *DIE*s, with a `compile_unit` DIE as its root.
-- Each DIE has a *tag* and a list of *attributes*.
-- Each attribute has a *name* and a *value* (and also a *form*, which specifies how the value is encoded).
-
-The DIEs represent things from the source code, and their *tag* tells you what kind of thing it is. For example, there are:
-
-- functions (tag = `subprogram`)
-- classes/structs/enums (`class_type`/`structure_type`/`enumeration_type`)
-- variables (`variable`)
-- function arguments (`formal_parameter`).
-
-The tree structure mirrors the corresponding source code. For example, a `class_type` DIE can contain `subprogram` DIEs representing methods of the class.
-:::
-
-The `DWARF` format outputs the following columns:
-
-- `offset` - position of the DIE in the `.debug_info` section
-- `size` - number of bytes in the encoded DIE (including attributes)
-- `tag` - type of the DIE; the conventional "DW_TAG_" prefix is omitted
-- `unit_name` - name of the compilation unit containing this DIE
-- `unit_offset` - position of the compilation unit containing this DIE in the `.debug_info` section
-- `ancestor_tags` - array of tags of the ancestors of the current DIE in the tree, in order from innermost to outermost
-- `ancestor_offsets` - offsets of ancestors, parallel to `ancestor_tags`
-- a few common attributes duplicated from the attributes array for convenience:
-  - `name`
-  - `linkage_name` - mangled fully qualified name; typically only functions have it (but not all functions)
-  - `decl_file` - name of the source code file where this entity was declared
-  - `decl_line` - line number in the source code where this entity was declared
-- parallel arrays describing attributes:
-  - `attr_name` - name of the attribute; the conventional "DW_AT_" prefix is omitted
-  - `attr_form` - how the attribute is encoded and interpreted; the conventional DW_FORM_ prefix is omitted
-  - `attr_int` - integer value of the attribute; 0 if the attribute doesn't have a numeric value
-  - `attr_str` - string value of the attribute; empty if the attribute doesn't have a string value
-
-## Example usage {#example-usage}
-
-The `DWARF` format can be used to find compilation units that have the most function definitions (including template instantiations and functions from included header files):
-
-```sql title="Query"
-SELECT
-    unit_name,
-    count() AS c
-FROM file('programs/clickhouse', DWARF)
-WHERE tag = 'subprogram' AND NOT has(attr_name, 'declaration')
-GROUP BY unit_name
-ORDER BY c DESC
-LIMIT 3
-```
-```text title="Response"
-┌─unit_name──────────────────────────────────────────────────┬─────c─┐
-│ ./src/Core/Settings.cpp                                    │ 28939 │
-│ ./src/AggregateFunctions/AggregateFunctionSumMap.cpp       │ 23327 │
-│ ./src/AggregateFunctions/AggregateFunctionUniqCombined.cpp │ 22649 │
-└────────────────────────────────────────────────────────────┴───────┘
-
-3 rows in set. Elapsed: 1.487 sec. Processed 139.76 million rows, 1.12 GB (93.97 million rows/s., 752.77 MB/s.)
-Peak memory usage: 271.92 MiB.
-```
-
-## Format settings {#format-settings}
-)DOCS_MD"});
 }
 
 }
@@ -1126,8 +1043,6 @@ Peak memory usage: 271.92 MiB.
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatDWARF(FormatFactory &);
-void registerDWARFSchemaReader(FormatFactory &);
 void registerInputFormatDWARF(FormatFactory &)
 {
 }

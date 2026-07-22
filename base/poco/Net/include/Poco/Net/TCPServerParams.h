@@ -94,13 +94,6 @@ namespace Net
         /// Returns the priority of TCP server threads
         /// created by TCPServer.
 
-        void setNoDelay(bool flag);
-        /// Sets the TCP_NODELAY socket option for connections.
-        /// Default is true (nodelay enabled).
-
-        bool getNoDelay() const;
-        /// Returns the TCP_NODELAY socket option setting.
-
     protected:
         virtual ~TCPServerParams();
         /// Destroys the TCPServerParams.
@@ -110,7 +103,6 @@ namespace Net
         int _maxThreads;
         int _maxQueued;
         Poco::Thread::Priority _threadPriority;
-        bool _noDelay;
     };
 
 
@@ -138,12 +130,6 @@ namespace Net
     inline Poco::Thread::Priority TCPServerParams::getThreadPriority() const
     {
         return _threadPriority;
-    }
-
-
-    inline bool TCPServerParams::getNoDelay() const
-    {
-        return _noDelay;
     }
 
 

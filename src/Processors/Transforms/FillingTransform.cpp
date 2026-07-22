@@ -1,11 +1,9 @@
 #include <Processors/Transforms/FillingTransform.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ProcessList.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/IDataType.h>
-#include <Core/Defines.h>
 #include <Core/Types.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -15,7 +13,6 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
 #include <IO/Operators.h>
-#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -66,9 +63,9 @@ static FillColumnDescription::StepFunction getStepFunction(
     {
 #define DECLARE_CASE(NAME) \
         case IntervalKind::Kind::NAME: \
-            return [step, scale, &date_lut](Field & field, Int64 jumps_count) { \
+            return [step, scale, &date_lut](Field & field, Int32 jumps_count) { \
                 field = Add##NAME##sImpl::execute(static_cast<T>(\
-                    field.safeGet<T>()), step * jumps_count, date_lut, utc_time_zone, scale); };
+                    field.safeGet<T>()), static_cast<Int32>(step) * jumps_count, date_lut, utc_time_zone, scale); };
 
         FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
 #undef DECLARE_CASE
@@ -83,14 +80,10 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
     {
         if (which.isDate() || which.isDate32())
         {
-            Int64 step_value = step.safeGet<Int64>();
-            Int64 avg_seconds = 0;
-            if (common::mulOverflow(step_value, static_cast<Int64>(step_kind->toAvgSeconds()), avg_seconds))
+            Int64 avg_seconds = step.safeGet<Int64>() * step_kind->toAvgSeconds();
+            if (std::abs(avg_seconds) < 86400)
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                                "Overflow in WITH FILL step value");
-            if (avg_seconds > -86400 && avg_seconds < 86400)
-                throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                                "Value of step is too low ({} seconds). Must be >= 1 day", avg_seconds);
+                                "Value of step is to low ({} seconds). Must be >= 1 day", std::abs(avg_seconds));
         }
 
         if (which.isDate())
@@ -109,10 +102,10 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
             {
 #define DECLARE_CASE(NAME) \
                 case IntervalKind::Kind::NAME: \
-                    return [converted_step, &time_zone = date_time64->getTimeZone()](Field & field, Int64 jumps_count) \
+                    return [converted_step, &time_zone = date_time64->getTimeZone()](Field & field, Int32 jumps_count) \
                     { \
                         auto field_decimal = field.safeGet<DecimalField<DateTime64>>(); \
-                        auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), converted_step * jumps_count, time_zone, utc_time_zone, static_cast<UInt16>(field_decimal.getScale())); \
+                        auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), converted_step * jumps_count, time_zone, utc_time_zone, field_decimal.getScale()); \
                         field = DecimalField<decltype(res)>(res, field_decimal.getScale()); \
                     }; \
                     break;
@@ -127,7 +120,7 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
     }
     else
     {
-        return [step](Field & field, Int64 jumps_count)
+        return [step](Field & field, Int32 jumps_count)
         {
             auto shifted_step = step;
             if (jumps_count != 1)
@@ -199,13 +192,13 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
         return false;
 
     if (!descr.fill_from.isNull())
-        descr.fill_from = convertFieldToTypeOrThrow(descr.fill_from, *to_type, nullptr, {}, /*convert_inexact_floats=*/true);
+        descr.fill_from = convertFieldToTypeOrThrow(descr.fill_from, *to_type);
     if (!descr.fill_to.isNull())
-        descr.fill_to = convertFieldToTypeOrThrow(descr.fill_to, *to_type, nullptr, {}, /*convert_inexact_floats=*/true);
+        descr.fill_to = convertFieldToTypeOrThrow(descr.fill_to, *to_type);
     if (!descr.fill_step.isNull())
-        descr.fill_step = convertFieldToTypeOrThrow(descr.fill_step, *to_type, nullptr, {}, /*convert_inexact_floats=*/true);
+        descr.fill_step = convertFieldToTypeOrThrow(descr.fill_step, *to_type);
     if (!descr.fill_staleness.isNull())
-        descr.fill_staleness = convertFieldToTypeOrThrow(descr.fill_staleness, *to_type, nullptr, {}, /*convert_inexact_floats=*/true);
+        descr.fill_staleness = convertFieldToTypeOrThrow(descr.fill_staleness, *to_type);
 
     descr.step_func = getStepFunction(descr.fill_step, descr.step_kind, type);
     descr.staleness_step_func = getStepFunction(descr.fill_staleness, descr.staleness_kind, type);
@@ -213,7 +206,7 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
     return true;
 }
 
-static SortDescription deduplicateSortDescription(const SortDescription & sort_description, const Block & header)
+SortDescription deduplicateSortDescription(const SortDescription & sort_description, const Block & header)
 {
     SortDescription result;
     std::unordered_set<std::string> unique_columns;
@@ -234,8 +227,7 @@ FillingTransform::FillingTransform(
     const SortDescription & sort_description_,
     const SortDescription & fill_description_,
     InterpolateDescriptionPtr interpolate_description_,
-    const bool use_with_fill_by_sorting_prefix_,
-    QueryStatusPtr process_list_element_)
+    const bool use_with_fill_by_sorting_prefix_)
     : ISimpleTransform(header_, std::make_shared<const Block>(transformHeader(*header_, fill_description_)), true)
     , sort_description(deduplicateSortDescription(sort_description_, *header_))
     , fill_description(fill_description_)
@@ -243,30 +235,18 @@ FillingTransform::FillingTransform(
     , filling_row(fill_description_)
     , next_row(fill_description_)
     , use_with_fill_by_sorting_prefix(use_with_fill_by_sorting_prefix_)
-    , process_list_element(std::move(process_list_element_))
 {
     if (interpolate_description)
-    {
         interpolate_actions = std::make_shared<ExpressionActions>(interpolate_description->actions.clone());
-
-        for (const auto & description : sort_description_)
-        {
-            /// A column participating in ORDER BY ... WITH FILL must not also be an INTERPOLATE output.
-            /// For a constant ORDER BY expression the sort description carries no alias, so the column name
-            /// (which holds the resolved name of the constant) has to be checked as well. Otherwise the
-            /// conflict slips through here and later trips the chunk row-count check in `transform` once
-            /// WITH FILL generates extra rows for the fill column while the interpolated column does not.
-            for (const auto & name : {description.alias, description.column_name})
-                if (!name.empty() && interpolate_description->result_columns_set.contains(name))
-                    throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                        "Column '{}' is participating in ORDER BY expression and can't be INTERPOLATE output",
-                        name);
-        }
-    }
 
     std::vector<bool> is_fill_column(header_->columns());
     for (size_t i = 0, size = fill_description.size(); i < size; ++i)
     {
+        if (interpolate_description && interpolate_description->result_columns_set.contains(fill_description[i].column_name))
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "Column '{}' is participating in ORDER BY ... WITH FILL expression and can't be INTERPOLATE output",
+                fill_description[i].column_name);
+
         size_t block_position = header_->getPositionByName(fill_description[i].column_name);
         is_fill_column[block_position] = true;
         fill_column_positions.push_back(block_position);
@@ -356,21 +336,6 @@ FillingTransform::FillingTransform(
                     (header_->begin() + sort_prefix_pos)->name);
         }
     }
-
-    /// A column that is both a fill column and an interpolate target gets two inserts per gap-fill
-    /// row (one from filling, one from interpolate), yielding a chunk with inconsistent row counts.
-    if (!interpolate_column_positions.empty())
-    {
-        std::unordered_set<size_t> fill_positions(fill_column_positions.begin(), fill_column_positions.end());
-        for (auto interpolate_pos : interpolate_column_positions)
-        {
-            if (fill_positions.contains(interpolate_pos))
-                throw Exception(
-                    ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                    "The same column in WITH FILL and INTERPOLATE is not allowed. Column: {}",
-                    (header_->begin() + interpolate_pos)->name);
-        }
-    }
 }
 
 /// prepare() is overrididen to call transform() after all chunks are processed
@@ -394,30 +359,6 @@ IProcessor::Status FillingTransform::prepare()
     }
 
     return ISimpleTransform::prepare();
-}
-
-bool FillingTransform::isCancelledOrTimeLimitExceeded()
-{
-    if (isCancelled())
-        return true;
-
-    /// In `timeout_overflow_mode = 'break'` the soft timeout is sticky: once it fires,
-    /// `checkTimeLimit` keeps returning false. Latch it so all loops (including the outer ones)
-    /// stop immediately without reading the clock again.
-    if (time_limit_exceeded)
-        return true;
-
-    /// A single WITH FILL range can expand into billions of rows inside one transform() call, so the
-    /// executor never gets a chance to enforce limits (max_execution_time) between work() calls.
-    /// Enforce it here too: in `throw` mode this throws TIMEOUT_EXCEEDED / QUERY_WAS_CANCELLED, and in
-    /// `break` mode it returns false, which we latch to stop generating rows and return a partial result.
-    if (process_list_element && !process_list_element->checkTimeLimit())
-    {
-        time_limit_exceeded = true;
-        return true;
-    }
-
-    return false;
 }
 
 void FillingTransform::interpolate(const MutableColumns & result_columns, Block & interpolate_block)
@@ -531,10 +472,10 @@ void FillingTransform::initColumns(
     non_const_columns.reserve(input_columns.size());
 
     for (const auto & column : input_columns)
-        non_const_columns.push_back(column->convertToFullColumnIfReplicated()->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
+        non_const_columns.push_back(column->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
 
     for (const auto & column : non_const_columns)
-        output_columns.push_back(column->cloneEmpty());
+        output_columns.push_back(column->cloneEmpty()->assumeMutable());
 
     initColumnsByPositions(non_const_columns, input_fill_columns, output_columns, output_fill_columns, fill_column_positions);
     initColumnsByPositions(
@@ -608,18 +549,10 @@ bool FillingTransform::generateSuffixIfNeeded(
     }
 
     bool filling_row_changed = false;
-    size_t rows_since_last_cancel_check = 0;
     while (true)
     {
         if (!filling_row.next(next_row, filling_row_changed))
             break;
-
-        if (++rows_since_last_cancel_check == DEFAULT_BLOCK_SIZE)
-        {
-            rows_since_last_cancel_check = 0;
-            if (isCancelledOrTimeLimitExceeded())
-                break;
-        }
 
         interpolate(result_columns, interpolate_block);
         insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
@@ -634,33 +567,6 @@ bool FillingTransform::generateSuffixIfNeeded(
     if (filling_row_changed)
         filling_row_inserted = false;
 
-    return true;
-}
-
-/// Whether the sorting-prefix columns are equal at two positions, using the ORDER BY
-/// collation (the stream is sorted by it). Mirrors LimitTransform::sortColumnsEqualAt.
-template <typename LhsColumns, typename RhsColumns>
-static bool sortPrefixEqualAt(
-    const LhsColumns & lhs_columns,
-    size_t lhs_row,
-    const RhsColumns & rhs_columns,
-    size_t rhs_row,
-    const SortDescription & sort_prefix)
-{
-    for (size_t i = 0, size = sort_prefix.size(); i < size; ++i)
-    {
-        const IColumn & lhs = *lhs_columns[i];
-        const IColumn & rhs = *rhs_columns[i];
-
-        int res = 0;
-        if (sort_prefix[i].collator && lhs.isCollationSupported())
-            res = lhs.compareAtWithCollation(lhs_row, rhs_row, rhs, sort_prefix[i].nulls_direction, *sort_prefix[i].collator);
-        else
-            res = lhs.compareAt(lhs_row, rhs_row, rhs, sort_prefix[i].nulls_direction);
-
-        if (res != 0)
-            return false;
-    }
     return true;
 }
 
@@ -711,17 +617,6 @@ void FillingTransform::transformRange(
     const size_t range_begin = range.first;
     const size_t range_end = range.second;
 
-    /// Hard stop before touching any state once the query is cancelled or the time limit is exceeded.
-    /// The per-row loop below already checks this, but only after the `new_sorting_prefix` preamble.
-    /// In `timeout_overflow_mode = 'break'` the outer loop in `transform` runs its own guard before
-    /// calling `generateSuffixIfNeeded` for the previous range, and the soft timeout can flip inside
-    /// that suffix generation. Without this early return, the preamble below could still emit the
-    /// initial `fill_from` row for this range, and the code at the end of the function would rewrite
-    /// `last_range_sort_prefix` to a range whose original rows were never consumed - leaking rows from
-    /// a group that should not appear in the partial result after the deadline.
-    if (isCancelledOrTimeLimitExceeded())
-        return;
-
     Block interpolate_block;
     if (new_sorting_prefix)
     {
@@ -747,23 +642,11 @@ void FillingTransform::transformRange(
         }
     }
 
-    /// Init staleness first interval only for new sorting prefix.
-    /// When continuing from a previous chunk, the constraint from the last original row must be preserved
-    /// to correctly limit filling between the last row of the previous chunk and the first row of the new one.
-    if (new_sorting_prefix)
-        filling_row.updateConstraintsWithStalenessRow(input_fill_columns, range_begin);
+    /// Init staleness first interval
+    filling_row.updateConstraintsWithStalenessRow(input_fill_columns, range_begin);
 
     for (size_t row_ind = range_begin; row_ind < range_end; ++row_ind)
     {
-        /// Stop promptly once the query is cancelled or the time limit is exceeded. The inner
-        /// generation loops below already check this, but a break there only ends the current gap;
-        /// without this check the outer loop would keep regenerating up to DEFAULT_BLOCK_SIZE rows for
-        /// every remaining input row (a slow drain, effectively a hang for expensive per-row work like
-        /// INTERPOLATE). It also matters in `timeout_overflow_mode = 'break'`, where the soft timeout
-        /// never sets `isCancelled`, so only the inner loops would stop otherwise.
-        if (isCancelledOrTimeLimitExceeded())
-            break;
-
         logDebug("row", row_ind);
         logDebug("filling_row", filling_row);
         logDebug("next_row", next_row);
@@ -787,18 +670,10 @@ void FillingTransform::transformRange(
         }
 
         bool filling_row_changed = false;
-        size_t rows_since_last_cancel_check = 0;
         while (true)
         {
             if (!filling_row.next(next_row, filling_row_changed))
                 break;
-
-            if (++rows_since_last_cancel_check == DEFAULT_BLOCK_SIZE)
-            {
-                rows_since_last_cancel_check = 0;
-                if (isCancelledOrTimeLimitExceeded())
-                    break;
-            }
 
             interpolate(result_columns, interpolate_block);
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
@@ -811,7 +686,6 @@ void FillingTransform::transformRange(
             /// Initialize staleness border for current row to generate it's prefix
             filling_row.updateConstraintsWithStalenessRow(input_fill_columns, row_ind);
 
-            rows_since_last_cancel_check = 0;
             while (filling_row.shift(next_row, filling_row_changed))
             {
                 logDebug("filling_row after shift", filling_row);
@@ -820,22 +694,12 @@ void FillingTransform::transformRange(
                 {
                     logDebug("inserting prefix filling_row", filling_row);
 
-                    if (++rows_since_last_cancel_check == DEFAULT_BLOCK_SIZE)
-                    {
-                        rows_since_last_cancel_check = 0;
-                        if (isCancelledOrTimeLimitExceeded())
-                            break;
-                    }
-
                     interpolate(result_columns, interpolate_block);
                     insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
                     copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
                     filling_row_changed = false;
 
                 } while (filling_row.next(next_row, filling_row_changed));
-
-                if (isCancelledOrTimeLimitExceeded())
-                    break;
             }
         }
 
@@ -954,23 +818,34 @@ void FillingTransform::transform(Chunk & chunk)
         for (size_t pos : sort_prefix_positions)
             last_sort_prefix_columns.push_back(last_row[pos].get());
 
-        new_sort_prefix = !sortPrefixEqualAt(input_sort_prefix_columns, 0, last_sort_prefix_columns, 0, sort_prefix);
+        new_sort_prefix = false;
+        for (size_t i = 0; i < input_sort_prefix_columns.size(); ++i)
+        {
+            const int res = input_sort_prefix_columns[i]->compareAt(0, 0, *last_sort_prefix_columns[i], sort_prefix[i].nulls_direction);
+            if (res != 0)
+            {
+                new_sort_prefix = true;
+                break;
+            }
+        }
     }
 
     for (size_t row_ind = 0; row_ind < num_rows;)
     {
-        /// Stop promptly on cancellation or timeout instead of processing every remaining range.
-        if (isCancelledOrTimeLimitExceeded())
-            break;
-
         /// find next range
         auto current_sort_prefix_end_pos = getRangeEnd(
             row_ind,
             num_rows,
             [&](size_t pos_with_current_sort_prefix, size_t row_pos)
             {
-                return sortPrefixEqualAt(
-                    input_sort_prefix_columns, pos_with_current_sort_prefix, input_sort_prefix_columns, row_pos, sort_prefix);
+                for (size_t i = 0; i < input_sort_prefix_columns.size(); ++i)
+                {
+                    const int res = input_sort_prefix_columns[i]->compareAt(
+                        pos_with_current_sort_prefix, row_pos, *input_sort_prefix_columns[i], sort_prefix[i].nulls_direction);
+                    if (res != 0)
+                        return false;
+                }
+                return true;
             });
 
         /// generate suffix for the previous range

@@ -1,15 +1,13 @@
-#include <filesystem>
 #include <Backups/BackupFactory.h>
 #include <Backups/BackupIO_Disk.h>
 #include <Backups/BackupIO_File.h>
 #include <Backups/BackupImpl.h>
-#include <Core/Settings.h>
-#include <Disks/IDisk.h>
-#include <IO/Archives/ArchiveUtils.h>
-#include <IO/Archives/hasRegisteredArchiveFileExtension.h>
-#include <Interpreters/Context.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Common/quoteString.h>
+#include <Disks/IDisk.h>
+#include <IO/Archives/hasRegisteredArchiveFileExtension.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <filesystem>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -21,11 +19,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SUPPORT_IS_DISABLED;
-}
-
-namespace Setting
-{
-extern const SettingsUInt64 archive_adaptive_buffer_max_size_bytes;
 }
 
 
@@ -106,8 +99,6 @@ namespace
 }
 
 
-void registerBackupEnginesFileAndDisk(BackupFactory &);
-
 void registerBackupEnginesFileAndDisk(BackupFactory & factory)
 {
     auto creator_fn = [](const BackupFactory::CreateParams & params) -> std::unique_ptr<IBackup>
@@ -158,20 +149,6 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
         BackupImpl::ArchiveParams archive_params;
         if (hasRegisteredArchiveFileExtension(path))
         {
-            /// A `Disk` destination can be backed by object storage (e.g. an `s3`-typed disk). In that case a zip
-            /// archive is just as problematic as a direct `S3(...)`/`AzureBlobStorage(...)` destination, because zip
-            /// requires seeking to read its central directory and every seek turns into a separate HTTP request.
-            /// Reject it here too, so the seek-heavy path is not reachable through `BackupReaderDisk`/`BackupWriterDisk`.
-            if (disk && hasSupportedZipExtension(path.string()))
-            {
-                const auto object_storage_type = disk->getDataSourceDescription().object_storage_type;
-                if ((object_storage_type == ObjectStorageType::S3) || (object_storage_type == ObjectStorageType::Azure))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Zip archive format is not supported for backups on disk '{}' because it is backed by object storage, "
-                        "which does not support seeking efficiently (zip requires seeking). "
-                        "Use tar.gz or other tar-based formats instead", disk->getName());
-            }
-
             if (params.is_internal_backup)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Using archives with backups on clusters is disabled");
 
@@ -180,7 +157,6 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
             archive_params.compression_method = params.compression_method;
             archive_params.compression_level = params.compression_level;
             archive_params.password = params.password;
-            archive_params.adaptive_buffer_max_size = params.context->getSettingsRef()[Setting::archive_adaptive_buffer_max_size_bytes];
         }
         else
         {

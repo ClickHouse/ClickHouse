@@ -1,5 +1,8 @@
 #!/bin/bash -eu
 
+# rename clickhouse
+mv $OUT/clickhouse $OUT/clickhouse_fuzzer
+
 # copy fuzzer options and dictionaries
 cp $SRC/tests/fuzz/*.dict $OUT/
 cp $SRC/tests/fuzz/*.options $OUT/

@@ -36,7 +36,7 @@ bool ParserParallelWithQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         old_pos = pos;
     } while (keyword_parallel_with.ignore(pos, expected));
 
-    auto res = make_intrusive<ASTParallelWithQuery>();
+    auto res = std::make_shared<ASTParallelWithQuery>();
     res->children = std::move(subqueries);
     node = res;
 

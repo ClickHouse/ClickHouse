@@ -1,6 +1,5 @@
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 
-#include <Columns/ColumnConst.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ExpressionActions.h>
 
@@ -45,7 +44,7 @@ bool isVirtualRow(const Chunk & chunk)
 
 void setVirtualRow(Chunk & chunk, const Block & header, bool apply_virtual_row_conversions)
 {
-    auto read_info = chunk.getChunkInfos().extract<MergeTreeReadInfo>();
+    auto read_info = chunk.getChunkInfos().get<MergeTreeReadInfo>();
     chassert(read_info);
 
     Block & pk_block = read_info->pk_block;
