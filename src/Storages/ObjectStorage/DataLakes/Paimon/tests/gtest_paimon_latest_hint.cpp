@@ -8,6 +8,11 @@
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/CurrentThread.h>
+#include <Common/ProfileEvents.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
+#include <Common/setThreadName.h>
 
 #include <base/scope_guard.h>
 
@@ -16,8 +21,15 @@
 #include <atomic>
 #include <filesystem>
 #include <fstream>
+#include <functional>
+#include <optional>
 #include <string>
 #include <thread>
+
+namespace ProfileEvents
+{
+    extern const Event RemoteFSBuffers;
+}
 
 namespace fs = std::filesystem;
 using namespace DB;
@@ -65,6 +77,30 @@ fs::path makePaimonTable(const fs::path & root, const std::vector<int> & snapsho
         writeFile(table / Paimon::PAIMON_SNAPSHOT_DIR / (std::string(Paimon::PAIMON_SNAPSHOT_PREFIX) + std::to_string(id)), "{}");
     writeFile(table / Paimon::PAIMON_SNAPSHOT_DIR / Paimon::PAIMON_SNAPSHOT_LATEST_HINT, latest_hint);
     return table;
+}
+
+/// RAII ThreadGroup with its own ProfileEvents counters so a read's event increments can be
+/// observed in isolation (mirrors the helper in src/IO/tests/gtest_reader_executor_metric.cpp).
+struct CountingThreadGroup
+{
+    std::optional<ThreadStatus> thread_status_holder{
+        current_thread ? std::nullopt : std::optional<ThreadStatus>(std::in_place)};
+    ThreadGroupPtr thread_group = ThreadGroup::createForQuery(getContext().context);
+    ThreadGroupSwitcher switcher{thread_group, ThreadName::UNKNOWN, /*allow_existing_group=*/true};
+
+    ProfileEvents::Count get(ProfileEvents::Event event) const { return thread_group->performance_counters[event]; }
+};
+
+/// A clean read of a mutable-metadata object must not go through AsynchronousBoundedReadBuffer (the
+/// cached-size chassert path). Over LocalObjectStorage that buffer is the only reader that bumps
+/// RemoteFSBuffers, so a zero delta is a deterministic, race-free signal (see the commit message).
+void expectReadDoesNotUseAsyncBoundedBuffer(const std::function<void()> & read)
+{
+    CountingThreadGroup tg;
+    auto before = tg.get(ProfileEvents::RemoteFSBuffers);
+    read();
+    EXPECT_EQ(tg.get(ProfileEvents::RemoteFSBuffers), before)
+        << "mutable-metadata read went through AsynchronousBoundedReadBuffer (cached-size chassert path)";
 }
 
 }
@@ -122,31 +158,37 @@ TEST(PaimonLatestHint, ConcurrentHintRewriteDoesNotCrash)
     auto storage = makeLocalObjectStorage(tmp.path.string());
     PaimonTableClient client(storage, table.string(), context);
 
-    std::atomic<bool> stop{false};
-    std::thread writer(
-        [&]
-        {
-            const char * vals[] = {"1", "10"};
-            size_t i = 0;
-            while (!stop.load(std::memory_order_relaxed))
-                writeFile(hint, vals[(i++) & 1u]);
-        });
-    /// Join on every exit path (failed ASSERT_* returns early, or the code under test throws):
-    /// a still-joinable std::thread destructor would call std::terminate and turn a plain test
-    /// failure into a process abort, which is the crash this test must distinguish from.
-    SCOPE_EXIT({
-        stop.store(true);
-        writer.join();
-    });
-
-    for (int i = 0; i < 4000; ++i)
     {
-        auto info = client.getLatestTableSnapshotInfo();
-        /// A torn read of the hint is tolerated (the parse fails and we fall back to snapshot
-        /// listing), so the result must still be a snapshot that exists on disk.
-        ASSERT_TRUE(info.has_value());
-        EXPECT_TRUE(fs::exists(info->second)) << info->second;
+        std::atomic<bool> stop{false};
+        std::thread writer(
+            [&]
+            {
+                const char * vals[] = {"1", "10"};
+                size_t i = 0;
+                while (!stop.load(std::memory_order_relaxed))
+                    writeFile(hint, vals[(i++) & 1u]);
+            });
+        /// Join on every exit path (failed ASSERT_* returns early, or the code under test throws):
+        /// a still-joinable std::thread destructor would call std::terminate and turn a plain test
+        /// failure into a process abort, which is the crash this test must distinguish from.
+        SCOPE_EXIT({
+            stop.store(true);
+            writer.join();
+        });
+
+        for (int i = 0; i < 4000; ++i)
+        {
+            auto info = client.getLatestTableSnapshotInfo();
+            /// A torn read of the hint is tolerated (the parse fails and we fall back to snapshot
+            /// listing), so the result must still be a snapshot that exists on disk.
+            ASSERT_TRUE(info.has_value());
+            EXPECT_TRUE(fs::exists(info->second)) << info->second;
+        }
     }
+
+    /// Race-free signal: the LATEST hint read must not use the cached-size async buffer.
+    writeFile(hint, "10");
+    expectReadDoesNotUseAsyncBoundedBuffer([&] { client.getLatestTableSnapshotInfo(); });
 }
 
 /// schema-0 is another mutable metadata object: validateTableIdentity reads it on every
@@ -216,7 +258,9 @@ TEST(PaimonLatestHint, ConcurrentSchemaZeroRewriteDoesNotCrash)
     /// return the expected schema. This rejects a degenerate implementation that "passes" the loop
     /// above only by always throwing.
     writeFile(schema0, small_schema);
-    auto schema_json = client.getTableSchemaJSON(schema0_info);
+    Poco::JSON::Object::Ptr schema_json;
+    /// Race-free signal: the schema-0 read must not use the cached-size async buffer.
+    expectReadDoesNotUseAsyncBoundedBuffer([&] { schema_json = client.getTableSchemaJSON(schema0_info); });
     ASSERT_FALSE(schema_json.isNull());
     EXPECT_EQ(schema_json->getValue<Int64>("timeMillis"), 1);
 }
@@ -282,8 +326,11 @@ TEST(PaimonLatestHint, ConcurrentSnapshotRewriteDoesNotCrash)
 
     /// Writer stopped: a clean read must succeed (rejects an always-throwing implementation).
     writeFile(snapshot1, small_snapshot);
-    auto snapshot = client.getSnapshot({1, snapshot1.string()});
-    EXPECT_EQ(snapshot.id, 1);
+    std::optional<PaimonSnapshot> snapshot;
+    /// Race-free signal: the snapshot read must not use the cached-size async buffer.
+    expectReadDoesNotUseAsyncBoundedBuffer([&] { snapshot.emplace(client.getSnapshot({1, snapshot1.string()})); });
+    ASSERT_TRUE(snapshot.has_value());
+    EXPECT_EQ(snapshot->id, 1);
 }
 
 #endif
