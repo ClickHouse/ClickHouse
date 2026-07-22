@@ -21,6 +21,14 @@ build_dir = "./ci/tmp/build"
 _PROFILED_BUILDS = (
     "amd_release",
     "arm_release",
+    # The sccache-warmup build compiles master with the PR release build's
+    # exact cmake flags (no official-build flag, debug symbols stripped, no
+    # PGO/BOLT) and skips linking. Its object sizes and compile traces are the
+    # only master data directly comparable to a PR build, so the "Build profile
+    # diff" check baselines its object-size and per-TU compile-time sections on
+    # it. The upload is reduced (see check) and small: only TUs recompiled by
+    # the merged commits appear in the trace.
+    "arm_release_pr_cache_warmup",
     # "amd_debug",
     # "arm_debug",
     # "amd_binary",
@@ -44,6 +52,22 @@ _PROFILED_BUILDS = (
 # per-build row count in check.
 _PROFILED_BUILDS_PR = ("arm_release",)
 
+# The linked release builds must produce every profile artifact: they always
+# link (so the time trace holds at least the link events), always have final
+# binaries to measure, and nm of the linked binary works under (Thin)LTO. A
+# missing or empty artifact there is a broken producer - prepare-time-trace.sh
+# regressed, the build layout changed, nm disappeared from the image - and it
+# must fail the build job loudly instead of letting the "Build profile diff"
+# check go green on "no data" (fail-close).
+_REQUIRED_ARTIFACTS = {
+    "amd_release": ("profile.json", "binary_sizes.txt", "binary_symbols.txt"),
+    "arm_release": ("profile.json", "binary_sizes.txt", "binary_symbols.txt"),
+    # The warmup build does not link: no binaries, no link trace, no symbols
+    # (the per-object nm pass is skipped under LTO). On a master push where
+    # every TU is an sccache hit even the time trace is legitimately empty.
+    "arm_release_pr_cache_warmup": ("binary_sizes.txt",),
+}
+
 
 def _should_profile(build_type, is_pr=False):
     """Whether build profile telemetry is collected for this build variant."""
@@ -55,12 +79,12 @@ def _should_profile(build_type, is_pr=False):
 def _has_data(file):
     """Whether prepare-time-trace.sh actually produced this artifact.
 
-    Not every build emits every artifact: binary_symbols.txt is skipped for
-    LTO builds (nm does not work with LTO) and cross-arch/non-Linux builds
-    produce no readable objects at all (#84159). prepare-time-trace.sh uses
-    `xargs -r`, so for those builds the artifact is left empty rather than
-    holding a junk row. An absent or empty file therefore means "this build
-    has no such profile data to upload", not that the job failed.
+    Not every build emits every artifact: the per-object nm pass is skipped
+    for LTO builds, cross-arch/non-Linux builds produce no readable objects at
+    all (#84159), and a build that links nothing has no link trace.
+    prepare-time-trace.sh uses `xargs -r`, so for those builds the artifact is
+    left empty rather than holding a junk row. Whether an absent or empty file
+    is acceptable for this build is decided by _REQUIRED_ARTIFACTS.
     """
     file = Path(file)
     return file.exists() and file.stat().st_size > 0
@@ -69,12 +93,21 @@ def _has_data(file):
 def _upload_profile_artifacts(build_type, start_time, artifacts):
     """Upload the profile artifacts this build produced.
 
-    Skips artifacts that are genuinely empty (no data for this build, see
-    _has_data). Upload failures are NOT swallowed: an INSERT rejection
+    An artifact this build type is required to produce (_REQUIRED_ARTIFACTS)
+    raises when missing or empty - fail-close, so a broken producer cannot
+    turn into a false-green "no data" downstream. Optional artifacts are
+    skipped. Upload failures are NOT swallowed either: an INSERT rejection
     propagates so the lost telemetry stays visible and the hook fails loudly.
     """
+    required = _REQUIRED_ARTIFACTS.get(build_type, ())
     for insert, file in artifacts:
         if not _has_data(file):
+            if Path(file).name in required:
+                raise RuntimeError(
+                    f"Build [{build_type}] produced no profile data in [{file}], "
+                    "but this artifact is required for it (see _REQUIRED_ARTIFACTS): "
+                    "the profile producer is broken"
+                )
             print(f"No build profile data in [{file}], skipping upload")
             continue
         insert(build_name=build_type, start_time=start_time, file=file)
@@ -114,15 +147,16 @@ def check():
         queries = LogClusterBuildProfileQueries()
 
         def insert_profile_data(build_name, start_time, file):
-            # On PRs the time trace is uploaded reduced: only the event kinds
-            # the "Build profile diff" check consumes. The bulk of a full trace
-            # is per-pass LLVM events from the ThinLTO link, useless for the
-            # diff and too voluminous for the shared cluster at PR rates.
+            # On PRs and for the warmup build the time trace is uploaded
+            # reduced: only the event kinds the "Build profile diff" check
+            # consumes. The bulk of a full trace is per-pass LLVM events from
+            # the ThinLTO link, useless for the diff and too voluminous for
+            # the shared cluster at PR rates.
             queries.insert_profile_data(
                 build_name=build_name,
                 start_time=start_time,
                 file=file,
-                reduced=is_pr,
+                reduced=is_pr or build_type == "arm_release_pr_cache_warmup",
             )
 
         _upload_profile_artifacts(

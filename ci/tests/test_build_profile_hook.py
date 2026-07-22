@@ -13,8 +13,10 @@ Layers covered:
   variants do not upload at once and cross the shared cluster's per-user memory
   limit.
 * The hook artifact selection (``_has_data`` / ``_upload_profile_artifacts``):
-  no-op for builds without profile data, upload for builds that have it, and
-  propagate (not swallow) an upload rejection so lost telemetry stays visible.
+  fail-close on a missing artifact the build type is required to produce
+  (``_REQUIRED_ARTIFACTS``), no-op for builds legitimately without profile
+  data, upload for builds that have it, and propagate (not swallow) an upload
+  rejection so lost telemetry stays visible.
 * The upload transport (``LogCluster.do_query``): the telemetry INSERT runs
   with parallel parsing disabled so its peak parse memory stays under the
   shared cluster's per-user limit.
@@ -121,6 +123,10 @@ def test_should_profile_only_release_builds():
     """Telemetry is collected only for the explicit release-build subset."""
     assert _should_profile("amd_release")
     assert _should_profile("arm_release")
+    # The master warmup build is profiled too: it compiles with the PR flags
+    # and is the object-size/compile-time baseline of "Build profile diff".
+    assert _should_profile("arm_release_pr_cache_warmup")
+    assert not _should_profile("amd_release_pr_cache_warmup")
     assert not _should_profile("amd_debug")
     assert not _should_profile("amd_asan_ubsan")
     assert not _should_profile("arm_tsan")
@@ -133,6 +139,7 @@ def test_should_profile_pr_only_arm_release():
     compares against master."""
     assert _should_profile("arm_release", is_pr=True)
     assert not _should_profile("amd_release", is_pr=True)
+    assert not _should_profile("arm_release_pr_cache_warmup", is_pr=True)
     assert not _should_profile("amd_debug", is_pr=True)
 
 
@@ -188,27 +195,79 @@ def test_has_data_true_for_nonempty(tmp_path):
     assert _has_data(f)
 
 
-def test_lto_build_missing_symbols_uploads_rest(tmp_path):
-    """LTO build: binary_symbols.txt absent must not abort the upload."""
+def test_release_build_missing_required_artifact_fails_close(tmp_path):
+    """A release build with a missing required artifact must fail loudly.
+
+    The linked release builds always produce all three artifacts (the link
+    trace always exists, nm of the linked binary works under LTO). A missing
+    or empty one means the producer regressed - prepare-time-trace.sh broke,
+    the build layout changed, nm disappeared from the image. Skipping it
+    silently would keep `Build (arm_release)` green and let "Build profile
+    diff" pass on its "no data" path: a broken producer turned false-green.
+    """
     profile = tmp_path / "profile.json"
     profile.write_text("[]")
     sizes = tmp_path / "binary_sizes.txt"
     sizes.write_text("1 a.o")
-    symbols = tmp_path / "binary_symbols.txt"  # never created for LTO builds
+    symbols = tmp_path / "binary_symbols.txt"  # missing
+
+    recorded = []
+    insert = _record_inserts(recorded)
+    with pytest.raises(RuntimeError, match="required"):
+        _upload_profile_artifacts(
+            "arm_release",
+            "2026-06-11 00:00:00",
+            [(insert, profile), (insert, sizes), (insert, symbols)],
+        )
+
+    # Present-but-empty is the same producer failure as absent.
+    symbols.write_text("")
+    with pytest.raises(RuntimeError, match="required"):
+        _upload_profile_artifacts(
+            "arm_release",
+            "2026-06-11 00:00:00",
+            [(insert, profile), (insert, sizes), (insert, symbols)],
+        )
+
+
+def test_warmup_build_uploads_sizes_and_skips_optional(tmp_path):
+    """The warmup build links nothing: sizes are required, the rest optional.
+
+    On a master push where every TU is an sccache hit even the time trace is
+    legitimately empty, and there is never a linked binary to take symbols
+    from - only binary_sizes.txt (the object files) must always be there.
+    """
+    sizes = tmp_path / "binary_sizes.txt"
+    sizes.write_text("1 a.o")
+    symbols = tmp_path / "binary_symbols.txt"
+    symbols.write_text("")
 
     recorded = []
     insert = _record_inserts(recorded)
     _upload_profile_artifacts(
-        "arm_release",
+        "arm_release_pr_cache_warmup",
         "2026-06-11 00:00:00",
-        [(insert, profile), (insert, sizes), (insert, symbols)],
+        [
+            (insert, tmp_path / "profile.json"),
+            (insert, sizes),
+            (insert, symbols),
+        ],
     )
+    assert recorded == [str(sizes)]
 
-    assert recorded == [str(profile), str(sizes)]
+    # ... but the object sizes themselves are required: they are the "Build
+    # profile diff" object-size baseline.
+    sizes.unlink()
+    with pytest.raises(RuntimeError, match="required"):
+        _upload_profile_artifacts(
+            "arm_release_pr_cache_warmup",
+            "2026-06-11 00:00:00",
+            [(insert, sizes)],
+        )
 
 
-def test_cross_arch_build_no_data_is_noop(tmp_path):
-    """Cross-arch build models the real producer output: empty files, no upload.
+def test_unlisted_build_no_data_is_noop(tmp_path):
+    """A build with no required artifacts (cross-arch/non-Linux) no-ops.
 
     profile.json is absent (the hook never opens what was not produced) and
     binary_sizes.txt / binary_symbols.txt are present-but-empty, exactly what
@@ -223,7 +282,7 @@ def test_cross_arch_build_no_data_is_noop(tmp_path):
     recorded = []
     insert = _record_inserts(recorded)
     _upload_profile_artifacts(
-        "arm_release",
+        "amd_darwin",
         "2026-06-11 00:00:00",
         [
             (insert, tmp_path / "profile.json"),

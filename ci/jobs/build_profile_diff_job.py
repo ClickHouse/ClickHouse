@@ -12,8 +12,24 @@ ci/jobs/scripts/job_hooks/build_profile_hook.py:
   * binary_symbols    - per-symbol sizes of the final binaries
 
 The PR side is uploaded by the post-hook of the `Build (arm_release)` job
-(reduced time trace, see LogClusterBuildProfileQueries.REDUCED_PROFILE_EVENTS);
-the baseline is the most recent master commit with uploaded data.
+(reduced time trace, see LogClusterBuildProfileQueries.REDUCED_PROFILE_EVENTS).
+
+Two master baselines are used, because a PR build and an official master build
+are built with different flags: PR ThinLTO builds strip debug symbols
+(-DDISABLE_ALL_DEBUG_SYMBOLS=1 in build_clickhouse.py) and skip the
+official-build flag, so their object files, unstripped binaries and link times
+are incomparable to master's (observed on a no-op PR as an apparent -73%
+binary size and -39% link time):
+
+  * `Build (arm_release_pr_cache_warmup)` - the master sccache-warmup build,
+    compiled with exactly the PR flags but never linked. Baseline for object
+    file sizes and per-TU compile times.
+  * `Build (arm_release)` - the official master build. Baseline for the
+    artifacts that do not depend on debug info: the stripped binary size and
+    the per-symbol sizes of the linked binaries, plus per-function ThinLTO
+    times (normalized by the median ratio to absorb the systematic flag and
+    machine-speed skew). Unstripped binary sizes and link wall time are not
+    compared at all.
 
 If there is a significant change the check posts a PR comment (kept updated in
 place on repeated runs) with the details; otherwise the comment states that
@@ -22,11 +38,12 @@ there are no significant changes.
 Notes on data coverage:
   * PR and master builds use sccache, so `build_time_trace` contains compile
     events only for translation units that were actually recompiled. Per-TU
-    compile times are therefore compared against the most recent master build
+    compile times are therefore compared against the most recent warmup build
     that recompiled the same TU.
-  * The ThinLTO link runs on every build, so link time and per-function
-    OptFunction events are always present on both sides.
-  * `binary_sizes` and `binary_symbols` are complete on both sides.
+  * The ThinLTO link runs on every linking build, so per-function OptFunction
+    events are always present on both sides.
+  * `binary_sizes` is complete on both sides; `binary_symbols` is complete on
+    the PR side and on master builds since this check was introduced.
 
 Local run (bypasses AWS SSM secrets and GitHub):
   CI_LOGS_HOST=... CI_LOGS_PASSWORD=... CI_LOGS_USER=default \\
@@ -48,17 +65,21 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 
 CHECK_NAME = "arm_release"
+# The master sccache-warmup build: compiled with the PR build's exact cmake
+# flags (see PR_CACHE_WARMUP_BUILD_TYPES in build_clickhouse.py), so it is the
+# comparable baseline for everything measured before linking.
+WARMUP_CHECK_NAME = "arm_release_pr_cache_warmup"
 COMMENT_TAG = "build-profile-diff"
 
 BUILD_DIR = "./ci/tmp/build"
 MAIN_BINARY = f"{BUILD_DIR}/programs/clickhouse"
+# Only the stripped binary is compared against the official master build: the
+# unstripped binaries differ by the debug info that master keeps and PR builds
+# strip, and the self-extracting binary is the compression of that difference.
 HEADLINE_BINARIES = [
     f"{BUILD_DIR}/programs/clickhouse-stripped",
-    f"{BUILD_DIR}/programs/clickhouse",
-    f"{BUILD_DIR}/programs/self-extracting/clickhouse",
-    f"{BUILD_DIR}/programs/clickhouse-keeper",
 ]
-LINK_BINARIES = [
+SYMBOL_BINARIES = [
     f"{BUILD_DIR}/programs/clickhouse",
     f"{BUILD_DIR}/programs/clickhouse-keeper",
 ]
@@ -70,17 +91,16 @@ PR_DAYS = 7
 BASE_DAYS = 7
 TU_BASE_DAYS = 14
 
-# Significance thresholds. Measured noise between adjacent master arm_release
-# builds: final binary sizes differ by O(100) bytes (objects are byte-identical
-# sccache hits, ThinLTO relink wiggles the rest), so size thresholds are tight.
-# Times run on different machines under different load and need generous
-# margins.
-BINARY_SIG_BYTES = 1 << 20  # final binary: 1 MiB or
-BINARY_SIG_RATIO = 0.002  # 0.2%
+# Significance thresholds. Object files are compared against the flag-identical
+# warmup build, so their thresholds are tight. The stripped binary is compared
+# against the official master build, which differs in build flags beyond debug
+# info (official-build flag, PGO/BOLT availability): a no-op PR measured a
+# -0.44% residual, so its threshold must absorb about that much. Times run on
+# different machines under different load and need generous margins.
+BINARY_SIG_BYTES = 8 << 20  # stripped binary: 8 MiB and
+BINARY_SIG_RATIO = 0.01  # 1%
 OBJECT_REPORT_BYTES = 16 << 10  # .o file: report at 16 KiB,
 OBJECT_SIG_BYTES = 256 << 10  # significant at 256 KiB
-LINK_SIG_RATIO = 0.15  # link wall time: 15% and
-LINK_SIG_SECONDS = 120  # 2 minutes
 OPTFN_REPORT_SECONDS = 2  # per-function LTO time: report at |delta| >= 2s
 OPTFN_REPORT_RATIO = 1.5  # and 1.5x, significant at 15s
 OPTFN_SIG_SECONDS = 15
@@ -156,9 +176,17 @@ class Side:
     sha: str
     check_start_time: str
     instance_id: str
+    check_name: str = CHECK_NAME
 
 
-def resolve_run(db: "Db", days: int, pr_number: int, sha: str, table: str = "binary_sizes") -> Optional[Side]:
+def resolve_run(
+    db: "Db",
+    days: int,
+    pr_number: int,
+    sha: str,
+    table: str = "binary_sizes",
+    check_name: str = CHECK_NAME,
+) -> Optional[Side]:
     """The newest uploaded build run for one side, or None if there is no data.
 
     Resolved from `binary_sizes` by default (the canonical, always-complete
@@ -171,13 +199,13 @@ def resolve_run(db: "Db", days: int, pr_number: int, sha: str, table: str = "bin
         WHERE date >= today() - {days}
             AND pull_request_number = {pr_number}
             AND commit_sha = {quote(sha)}
-            AND check_name = {quote(CHECK_NAME)}
+            AND check_name = {quote(check_name)}
         ORDER BY check_start_time DESC
         LIMIT 1"""
     )
     if not rows:
         return None
-    return Side(days, pr_number, sha, rows[0]["check_start_time"], rows[0]["instance_id"])
+    return Side(days, pr_number, sha, rows[0]["check_start_time"], rows[0]["instance_id"], check_name)
 
 
 def side_conditions(side: Side, extra_where: str = "") -> str:
@@ -186,7 +214,7 @@ def side_conditions(side: Side, extra_where: str = "") -> str:
     return f"""date >= today() - {side.days}
             AND pull_request_number = {side.pr_number}
             AND commit_sha = {quote(side.sha)}
-            AND check_name = {quote(CHECK_NAME)}
+            AND check_name = {quote(side.check_name)}
             AND check_start_time = {quote(side.check_start_time)}
             AND instance_id = {quote(side.instance_id)}{where}"""
 
@@ -339,6 +367,31 @@ def find_baseline(db: Db, master_shas: List[str], pr_sha: str) -> Optional[str]:
     return None
 
 
+def find_warmup_baseline(db: Db, master_shas: List[str], pr_sha: str) -> Optional[str]:
+    """The most recent master commit with uploaded warmup-build profile data.
+
+    The warmup build compiles with the PR flags but does not link, so its
+    canonical data is the object files, not MAIN_BINARY. May legitimately be
+    absent while master catches up with profiling the warmup build.
+    """
+    candidates = [sha for sha in master_shas if sha != pr_sha][:100]
+    if not candidates:
+        return None
+    rows = db.query(
+        f"""SELECT DISTINCT commit_sha
+        FROM binary_sizes
+        WHERE date >= today() - {BASE_DAYS}
+            AND pull_request_number = 0
+            AND check_name = {quote(WARMUP_CHECK_NAME)}
+            AND commit_sha IN ({in_list(candidates)})"""
+    )
+    with_data = {row["commit_sha"] for row in rows}
+    for sha in candidates:
+        if sha in with_data:
+            return sha
+    return None
+
+
 def has_pr_data(db: Db, pr_number: int, pr_sha: str) -> bool:
     rows = db.query(
         f"""SELECT count() AS c
@@ -353,6 +406,14 @@ def has_pr_data(db: Db, pr_number: int, pr_sha: str) -> bool:
 
 
 def compare_binaries(db: Db, pr_side, base_side) -> Section:
+    """Size of the stripped binary vs the official master build.
+
+    Only the stripped binary is comparable: master keeps debug symbols while
+    PR ThinLTO builds strip them (build_clickhouse.py), so the unstripped and
+    self-extracting binaries differ by gigabytes on any PR. Even stripped, the
+    two sides differ in the official-build flag and PGO/BOLT availability -
+    the significance threshold absorbs that residual.
+    """
     section = Section(title="Binary sizes")
     rows = db.query(
         f"""SELECT file,
@@ -373,11 +434,17 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
             continue
         delta = pr_size - base_size
         name = strip_build_dir(row["file"])
-        if abs(delta) >= BINARY_SIG_BYTES or abs(delta) >= base_size * BINARY_SIG_RATIO:
+        if abs(delta) >= BINARY_SIG_BYTES and abs(delta) >= base_size * BINARY_SIG_RATIO:
             section.significant = True
             summaries.append(f"{name}: {format_bytes_delta(delta, base_size)}")
         lines.append(f"| {md_code(name)} | {format_bytes(base_size)} | {format_bytes(pr_size)} | {format_bytes_delta(delta, base_size)} |")
     if len(lines) > 2:
+        lines.append("")
+        lines.append(
+            "Only the stripped binary is compared: the official master build keeps "
+            "debug symbols while PR builds strip them, so the other binaries differ "
+            "by construction."
+        )
         section.body = "\n".join(lines)
     section.summary = "; ".join(summaries)
     return section
@@ -390,8 +457,24 @@ def compare_binaries(db: Db, pr_side, base_side) -> Section:
 OBJECT_FILTER = "file LIKE '%.o' AND file NOT LIKE '%CMakeScratch%' AND file NOT LIKE '%/incremental/%'"
 
 
+WARMUP_CATCHUP_NOTE = (
+    "No master baseline from the warmup build yet (it is the only master build "
+    "compiled with the PR's flags, profiled since this check was introduced); "
+    "the comparison will activate once master catches up."
+)
+
+
 def compare_objects(db: Db, pr_side, base_side) -> Section:
+    """Per-object sizes vs the master warmup build (`base_side`).
+
+    The warmup build is the only master build compiled with the PR's exact
+    flags: the official master build keeps debug symbols inside every .o file
+    while PR builds strip them, which would dwarf any real change.
+    """
     section = Section(title="Object file sizes")
+    if base_side is None:
+        section.body = WARMUP_CATCHUP_NOTE
+        return section
     rows = db.query(
         f"""SELECT file,
             maxIf(size, side = 'pr') AS pr_size,
@@ -434,7 +517,12 @@ def compare_objects(db: Db, pr_side, base_side) -> Section:
     for row in rows:
         pr_size, base_size = int(row["pr_size"]), int(row["base_size"])
         delta = int(row["delta"])
-        if abs(delta) >= OBJECT_SIG_BYTES:
+        # Only a size change of a file present on both sides drives the
+        # verdict: the PR side links and the warmup baseline does not, so a
+        # one-sided file can be a link-stage artifact rather than a PR change
+        # (genuinely new expensive TUs are flagged by the compile-time
+        # section instead).
+        if pr_size and base_size and abs(delta) >= OBJECT_SIG_BYTES:
             section.significant = True
         base_text = format_bytes(base_size) if base_size else "new"
         pr_text = format_bytes(pr_size) if pr_size else "removed"
@@ -444,45 +532,38 @@ def compare_objects(db: Db, pr_side, base_side) -> Section:
     return section
 
 
-def compare_link_time(db: Db, pr_side, base_side) -> Section:
-    section = Section(title="Link time")
-    rows = db.query(
-        f"""SELECT file,
-            maxIf(dur, side = 'pr') AS pr_dur,
-            maxIf(dur, side = 'base') AS base_dur
-        FROM {both_sides("build_time_trace", "file, dur", pr_side, base_side, f"file IN ({in_list(LINK_BINARIES)}) AND name = 'ExecuteLinker'")}
-        GROUP BY file
-        ORDER BY file"""
-    )
-    lines = [
-        "| Binary | Master | PR | Δ |",
-        "|---|---:|---:|---:|",
-    ]
-    summaries = []
-    for row in rows:
-        pr_s, base_s = int(row["pr_dur"]) / 1e6, int(row["base_dur"]) / 1e6
-        if not pr_s or not base_s:
-            continue
-        delta = pr_s - base_s
-        name = strip_build_dir(row["file"])
-        if abs(delta) >= LINK_SIG_SECONDS and abs(delta) >= base_s * LINK_SIG_RATIO:
-            section.significant = True
-            summaries.append(f"link {name}: {format_seconds_delta(delta, base_s)}")
-        lines.append(f"| {md_code(name)} | {base_s:.0f} s | {pr_s:.0f} s | {format_seconds_delta(delta, base_s)} |")
-    if len(lines) > 2:
-        section.body = "\n".join(lines)
-    section.summary = "; ".join(summaries)
-    return section
-
-
 def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
     """Per-function ThinLTO optimization time of the main binary.
 
     This is the per-function 'how long does the backend chew on it' signal; it
-    is present on every build (the link is never cached) and it is where a new
-    heavyweight function or template instantiation shows up first.
+    is present on every linking build (the link is never cached) and it is
+    where a new heavyweight function or template instantiation shows up first.
+
+    The baseline is the official master build, which runs on a different
+    machine and with different flags (debug info, official-build flag,
+    PGO/BOLT availability) - that skews every function's time by a roughly
+    uniform ratio. The median ratio over matched functions estimates the skew
+    and per-function deltas are taken relative to it, the same way the per-TU
+    compile-time section normalizes its machine-speed skew.
     """
     section = Section(title="Slowest function optimization changes (ThinLTO)")
+    where = f"file = {quote(MAIN_BINARY)} AND name = 'OptFunction' AND dur >= 50000"
+    # The systematic skew between the sides, as the median PR/master time
+    # ratio over functions matched on both sides with a non-trivial baseline.
+    skew_rows = db.query(
+        f"""SELECT medianExact(pr_dur / base_dur) AS skew, count() AS matched
+        FROM (
+            SELECT detail,
+                sumIf(dur, side = 'pr') AS pr_dur,
+                sumIf(dur, side = 'base') AS base_dur
+            FROM {both_sides("build_time_trace", "detail, dur", pr_side, base_side, where)}
+            GROUP BY detail
+            HAVING pr_dur >= 500000 AND base_dur >= 500000
+        )"""
+    )
+    skew = 1.0
+    if skew_rows and int(skew_rows[0]["matched"]) >= 10:
+        skew = float(skew_rows[0]["skew"])
     report_us = int(OPTFN_REPORT_SECONDS * 1e6)
     # dur >= 50ms cuts the aggregation from ~1M rows per side to tens of
     # thousands; a function can only reach the report threshold if one side
@@ -491,40 +572,54 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
         f"""SELECT detail,
             sumIf(dur, side = 'pr') AS pr_dur,
             sumIf(dur, side = 'base') AS base_dur,
-            toInt64(pr_dur) - toInt64(base_dur) AS delta
-        FROM {both_sides("build_time_trace", "detail, dur", pr_side, base_side, f"file = {quote(MAIN_BINARY)} AND name = 'OptFunction' AND dur >= 50000")}
+            toInt64(pr_dur) - toInt64(base_dur * {skew}) AS delta
+        FROM {both_sides("build_time_trace", "detail, dur", pr_side, base_side, where)}
         GROUP BY detail
         HAVING abs(delta) >= {report_us}
             AND (pr_dur = 0 OR base_dur = 0
-                 OR greatest(pr_dur, base_dur) >= least(pr_dur, base_dur) * {OPTFN_REPORT_RATIO})
+                 OR greatest(pr_dur, base_dur * {skew}) >= least(pr_dur, base_dur * {skew}) * {OPTFN_REPORT_RATIO})
         ORDER BY abs(delta) DESC
         LIMIT {MAX_TABLE_ROWS}"""
     )
     if not rows:
         return section
-    lines = [
-        "| Function | Master | PR | Δ |",
+    lines = []
+    if abs(skew - 1.0) >= 0.05:
+        lines += [
+            f"Median per-function time ratio to the master baseline is ×{skew:.2f} "
+            "(different machine and build flags); deltas below are relative to that ratio.",
+            "",
+        ]
+    lines += [
+        "| Function | Master | PR | Δ vs median |",
         "|---|---:|---:|---:|",
     ]
     for row in rows:
         pr_s, base_s = int(row["pr_dur"]) / 1e6, int(row["base_dur"]) / 1e6
-        delta = pr_s - base_s
+        adjusted_base_s = base_s * skew
+        delta = pr_s - adjusted_base_s
         if abs(delta) >= OPTFN_SIG_SECONDS:
             section.significant = True
         base_text = f"{base_s:.1f} s" if base_s else "new"
         pr_text = f"{pr_s:.1f} s" if pr_s else "gone"
-        lines.append(f"| {md_code(demangle(row['detail']))} | {base_text} | {pr_text} | {format_seconds_delta(delta, base_s)} |")
+        lines.append(f"| {md_code(demangle(row['detail']))} | {base_text} | {pr_text} | {format_seconds_delta(delta, adjusted_base_s)} |")
     section.body = "\n".join(lines)
     return section
 
 
-def compare_compile_times(db: Db, pr_side, base_side, master_shas) -> Section:
+def compare_compile_times(db: Db, pr_side, master_shas, warmup_available) -> Section:
     """Per-TU compile time of TUs this PR recompiled.
 
     sccache makes the recompiled set exactly the TUs affected by the PR. Each
-    is compared against the most recent master build that also recompiled it.
+    is compared against the most recent master *warmup* build that also
+    recompiled it - the warmup build compiles with the PR's exact flags, so
+    unlike the official master build (which emits debug info) its compile
+    times are directly comparable.
     """
     section = Section(title="Compile time of recompiled translation units")
+    if not warmup_available:
+        section.body = WARMUP_CATCHUP_NOTE
+        return section
     pr_cond = side_conditions(pr_side, "name = 'ExecuteCompiler'")
     pr_rows = db.query(
         f"""SELECT file, max(dur) AS dur
@@ -548,7 +643,7 @@ def compare_compile_times(db: Db, pr_side, base_side, master_shas) -> Section:
         FROM build_time_trace
         WHERE date >= today() - {TU_BASE_DAYS}
             AND pull_request_number = 0
-            AND check_name = {quote(CHECK_NAME)}
+            AND check_name = {quote(WARMUP_CHECK_NAME)}
             AND name = 'ExecuteCompiler'
             AND file IN (
                 SELECT DISTINCT file
@@ -590,7 +685,7 @@ def compare_compile_times(db: Db, pr_side, base_side, master_shas) -> Section:
         if file not in base_durs:
             continue
         base_dur, base_tu_sha, base_cst, base_iid = base_durs[file]
-        base_tu_side = Side(TU_BASE_DAYS, 0, base_tu_sha, base_cst, base_iid)
+        base_tu_side = Side(TU_BASE_DAYS, 0, base_tu_sha, base_cst, base_iid, WARMUP_CHECK_NAME)
         adjusted_base = base_dur * skew
         delta_s = (pr_dur - adjusted_base) / 1e6
         ratio = max(pr_dur, adjusted_base) / max(min(pr_dur, adjusted_base), 1)
@@ -704,7 +799,7 @@ def compare_symbols(db: Db, pr_side, base_side) -> Section:
         f"""SELECT file,
             countIf(side = 'pr') AS pr_count,
             countIf(side = 'base') AS base_count
-        FROM {both_sides("binary_symbols", "file", pr_side, base_side, f"file IN ({in_list(LINK_BINARIES)})")}
+        FROM {both_sides("binary_symbols", "file", pr_side, base_side, f"file IN ({in_list(SYMBOL_BINARIES)})")}
         GROUP BY file"""
     )
     comparable = [row["file"] for row in sides if int(row["pr_count"]) and int(row["base_count"])]
@@ -754,15 +849,18 @@ def compare_symbols(db: Db, pr_side, base_side) -> Section:
     return section
 
 
-def build_comment(info, pr_sha: str, base_sha: str, sections: List[Section]) -> str:
+def build_comment(info, pr_sha: str, base_sha: str, sections: List[Section], warmup_sha: Optional[str] = None) -> str:
     significant = [s for s in sections if s.significant]
     repo_url = f"https://github.com/{info.repo_name}"
+    warmup_note = ""
+    if warmup_sha and warmup_sha != base_sha:
+        warmup_note = f"; object sizes and compile times against the warmup build of [`{warmup_sha[:9]}`]({repo_url}/commit/{warmup_sha})"
     lines = [
         f"### Build profile diff ({CHECK_NAME})",
         "",
         f"Comparing [`{pr_sha[:9]}`]({repo_url}/commit/{pr_sha}) with master "
         f"[`{base_sha[:9]}`]({repo_url}/commit/{base_sha}) "
-        "(binary sizes, per-object sizes, per-symbol sizes, compile and link time).",
+        f"(stripped binary size, per-object sizes, per-symbol sizes, compile and ThinLTO time{warmup_note}).",
         "",
     ]
     if significant:
@@ -813,6 +911,17 @@ def main():
         print(info_text)
         if args.local:
             return
+        # Replace any comparison posted for an older commit of this PR: leaving
+        # it in place would show a stale revision as if it were the current one.
+        try:
+            GH.post_updateable_comment(
+                comment_tags_and_bodies={
+                    COMMENT_TAG: f"### Build profile diff ({CHECK_NAME})\n\n{info_text}."
+                }
+            )
+        except Exception:
+            print("WARNING: failed to post/update the PR comment")
+            traceback.print_exc()
         Result.create_from(status=Result.Status.OK, info=info_text).complete_job()
         return
 
@@ -822,7 +931,8 @@ def main():
         # Fail-close: no baseline means no comparison, not a comparison against
         # an arbitrary commit.
         raise RuntimeError("No master baseline with build profile data found - cannot compare")
-    print(f"Comparing PR {pr_number} sha {pr_sha} against master {base_sha}")
+    warmup_sha = find_warmup_baseline(db, master_shas, pr_sha)
+    print(f"Comparing PR {pr_number} sha {pr_sha} against master {base_sha} (warmup baseline: {warmup_sha})")
 
     # Pin each side to one concrete build run once, and reuse it for every
     # table (see Side / resolve_run): the whole comparison then reflects a
@@ -831,17 +941,19 @@ def main():
     base_side = resolve_run(db, BASE_DAYS, 0, base_sha)
     if pr_side is None or base_side is None:
         raise RuntimeError("Could not resolve a concrete build run for one of the sides")
+    # The warmup baseline may lag while master catches up with profiling the
+    # warmup build; the sections that depend on it degrade to a catch-up note.
+    warmup_side = resolve_run(db, BASE_DAYS, 0, warmup_sha, check_name=WARMUP_CHECK_NAME) if warmup_sha else None
 
     sections = [
         compare_binaries(db, pr_side, base_side),
-        compare_objects(db, pr_side, base_side),
-        compare_link_time(db, pr_side, base_side),
+        compare_objects(db, pr_side, warmup_side),
         compare_opt_functions(db, pr_side, base_side),
-        compare_compile_times(db, pr_side, base_side, master_shas),
+        compare_compile_times(db, pr_side, master_shas, warmup_side is not None),
         compare_symbols(db, pr_side, base_side),
     ]
 
-    body = build_comment(info, pr_sha, base_sha, sections)
+    body = build_comment(info, pr_sha, base_sha, sections, warmup_sha)
     significant = [s for s in sections if s.significant]
 
     if args.local:
@@ -859,7 +971,17 @@ def main():
 
     summaries = [s.summary or s.title for s in significant]
     result_info = "Significant changes: " + "; ".join(summaries) if significant else f"No significant changes vs master {base_sha[:9]}"
-    Result.create_from(status=Result.Status.OK, info=result_info).complete_job()
+    # Each comparison aspect is reported as its own sub-result: they land as
+    # separate rows in cidb and read as separate lines in the CI report.
+    sub_results = [
+        Result(
+            name=section.title,
+            status=Result.Status.OK,
+            info=section.summary or ("significant changes" if section.significant else ""),
+        )
+        for section in sections
+    ]
+    Result.create_from(status=Result.Status.OK, info=result_info, results=sub_results).complete_job()
 
 
 if __name__ == "__main__":

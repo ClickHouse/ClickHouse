@@ -409,9 +409,17 @@ class JobConfigs:
     # with the PR release builds' cmake flags (see PR_CACHE_WARMUP_BUILD_TYPES
     # in build_clickhouse.py) while keeping the shared sccache read-write. This
     # populates the cache so that read-only PR release builds get cache hits.
-    # They provide no artifacts and run no profile/master-head post hooks - the
-    # only purpose is to warm sccache.
-    sccache_warmup_build_jobs = common_build_job_config.parametrize(
+    # They provide no artifacts. The build profile hook runs so that the
+    # "Build profile diff" check gets a master baseline built with the PR
+    # flags - the arm warmup's object sizes and compile traces are the only
+    # master data directly comparable to a PR build (official master builds
+    # keep debug symbols, PR builds strip them). The hook uploads only for the
+    # arm variant (see _PROFILED_BUILDS in build_profile_hook.py).
+    sccache_warmup_build_jobs = common_build_job_config.set_post_hooks(
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+        ],
+    ).parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_RELEASE_PR_CACHE_WARMUP,
             runs_on=RunnerLabels.ARM_LARGE,

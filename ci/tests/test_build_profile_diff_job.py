@@ -34,6 +34,8 @@ pytestmark = pytest.mark.skipif(
 )
 
 _MAIN = job.MAIN_BINARY  # ./ci/tmp/build/programs/clickhouse
+_STRIPPED = job.HEADLINE_BINARIES[0]  # ./ci/tmp/build/programs/clickhouse-stripped
+_OBJ = f"{job.BUILD_DIR}/src/CMakeFiles/dbms.dir/foo.cpp.o"
 
 # Two PR reruns: the newest (T2/I2) changed the main binary and, like a real LTO
 # build, uploaded no symbols; the older (T1/I1) has both a different size and
@@ -66,10 +68,18 @@ CREATE TABLE build_time_trace
     time DateTime64(6) DEFAULT now64()
 ) ENGINE = Memory;
 
+-- The object-size baseline (last row) comes from the master warmup build
+-- (compiled with the PR's flags); the official master build's objects carry
+-- debug info and must not be compared.
 INSERT INTO binary_sizes (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, size) VALUES
     ({_PR}, '{_PR_SHA}', '2026-07-01 00:00:00', 'arm_release', 'I1', '{_MAIN}', 999999),
+    ({_PR}, '{_PR_SHA}', '2026-07-01 00:00:00', 'arm_release', 'I1', '{_STRIPPED}', 999999),
     ({_PR}, '{_PR_SHA}', '2026-07-02 00:00:00', 'arm_release', 'I2', '{_MAIN}', 1500),
-    (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release', 'I0', '{_MAIN}', 1400);
+    ({_PR}, '{_PR_SHA}', '2026-07-02 00:00:00', 'arm_release', 'I2', '{_STRIPPED}', 1500),
+    ({_PR}, '{_PR_SHA}', '2026-07-02 00:00:00', 'arm_release', 'I2', '{_OBJ}', 819200),
+    (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release', 'I0', '{_MAIN}', 1400),
+    (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release', 'I0', '{_STRIPPED}', 1400),
+    (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release_pr_cache_warmup', 'W0', '{_OBJ}', 262144);
 
 -- Symbols exist only for the OLDER PR run and for master, never for the newest
 -- PR run. Correct pinning must therefore find no comparable PR symbols.
@@ -78,20 +88,22 @@ INSERT INTO binary_symbols (pull_request_number, commit_sha, check_start_time, c
     (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release', 'I0', '{_MAIN}', 0, 100000, 't', 'stale_symbol');
 
 -- Compile-time fixture. The PR (pinned run I2) recompiles two TUs:
---   * ``tu.cpp`` (50 s) has a master baseline (20 s) and a per-entity breakdown;
---   * ``new_tu.cpp`` (40 s) has no master baseline at all.
--- Master commit ``basesha`` has TWO runs: the OLDER one (I0/2026-06-30)
--- recompiled ``tu.cpp`` with entity rows; the NEWER one (I0b/2026-07-01)
--- recompiled only ``other_tu.cpp`` and never touched ``tu.cpp``. The drill-down
--- must read ``tu.cpp`` entities from the older run that actually compiled it,
--- not re-resolve to the newer run (which would report every entity as new).
+--   * ``tu.cpp`` (50 s) has a warmup baseline (20 s) and a per-entity breakdown;
+--   * ``new_tu.cpp`` (40 s) has no warmup baseline at all.
+-- The compile-time baseline comes from the master *warmup* build (compiled
+-- with the PR's flags). Master commit ``basesha`` has TWO warmup runs: the
+-- OLDER one (W0/2026-06-30) recompiled ``tu.cpp`` with entity rows; the NEWER
+-- one (W0b/2026-07-01) recompiled only ``other_tu.cpp`` and never touched
+-- ``tu.cpp``. The drill-down must read ``tu.cpp`` entities from the run that
+-- actually compiled it, not re-resolve to the newer run (which would report
+-- every entity as new).
 INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
     ({_PR}, '{_PR_SHA}', '2026-07-02 00:00:00', 'arm_release', 'I2', 'tu.cpp', 'ExecuteCompiler', '', 50000000),
     ({_PR}, '{_PR_SHA}', '2026-07-02 00:00:00', 'arm_release', 'I2', 'tu.cpp', 'InstantiateFunction', 'foo', 30000000),
     ({_PR}, '{_PR_SHA}', '2026-07-02 00:00:00', 'arm_release', 'I2', 'new_tu.cpp', 'ExecuteCompiler', '', 40000000),
-    (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release', 'I0', 'tu.cpp', 'ExecuteCompiler', '', 20000000),
-    (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release', 'I0', 'tu.cpp', 'InstantiateFunction', 'foo', 5000000),
-    (0, '{_BASE_SHA}', '2026-07-01 00:00:00', 'arm_release', 'I0b', 'other_tu.cpp', 'ExecuteCompiler', '', 10000000);
+    (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release_pr_cache_warmup', 'W0', 'tu.cpp', 'ExecuteCompiler', '', 20000000),
+    (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release_pr_cache_warmup', 'W0', 'tu.cpp', 'InstantiateFunction', 'foo', 5000000),
+    (0, '{_BASE_SHA}', '2026-07-01 00:00:00', 'arm_release_pr_cache_warmup', 'W0b', 'other_tu.cpp', 'ExecuteCompiler', '', 10000000);
 """
 
 
@@ -143,6 +155,42 @@ def test_binary_sizes_read_from_the_pinned_run_only():
     assert "1.46 KiB" in section.body  # 1500 B
     assert "999999" not in section.body
     assert "999.99" not in section.body
+    # Only the stripped binary is comparable against the official master build
+    # (master keeps debug symbols, PR builds strip them).
+    assert "clickhouse-stripped" in section.body
+    assert f"`{job.strip_build_dir(_MAIN)}`" not in section.body
+
+
+def test_objects_compared_against_the_warmup_build():
+    """Object sizes are baselined on the flag-identical master warmup build.
+
+    The official master build's object files carry debug info that PR builds
+    strip (-DDISABLE_ALL_DEBUG_SYMBOLS=1), so comparing against it would show
+    every object as massively changed on every PR. The warmup build compiles
+    master with the PR's exact flags.
+    """
+    db = FixtureDb()
+    pr_side = job.resolve_run(db, job.PR_DAYS, _PR, _PR_SHA)
+    assert job.find_warmup_baseline(db, [_BASE_SHA], _PR_SHA) == _BASE_SHA
+    warmup_side = job.resolve_run(db, job.BASE_DAYS, 0, _BASE_SHA, check_name=job.WARMUP_CHECK_NAME)
+    assert warmup_side is not None
+    section = job.compare_objects(db, pr_side, warmup_side)
+    # 800 KiB (PR) vs 256 KiB (warmup baseline): above the significance bar.
+    assert "foo.cpp.o" in section.body
+    assert section.significant
+
+
+def test_objects_degrade_to_catchup_note_without_warmup_baseline():
+    """No warmup data yet -> a catch-up note, not a bogus comparison."""
+    db = FixtureDb()
+    pr_side = job.resolve_run(db, job.PR_DAYS, _PR, _PR_SHA)
+    assert job.find_warmup_baseline(db, ["sha-without-warmup-data"], _PR_SHA) is None
+    section = job.compare_objects(db, pr_side, None)
+    assert section.body == job.WARMUP_CATCHUP_NOTE
+    assert not section.significant
+    section = job.compare_compile_times(db, pr_side, [_BASE_SHA], warmup_available=False)
+    assert section.body == job.WARMUP_CATCHUP_NOTE
+    assert not section.significant
 
 
 def test_symbols_do_not_fall_back_to_an_older_run():
@@ -171,8 +219,7 @@ def test_drill_down_reads_the_run_that_compiled_the_tu():
     """
     db = FixtureDb()
     pr_side = job.resolve_run(db, job.PR_DAYS, _PR, _PR_SHA)
-    base_side = job.resolve_run(db, job.BASE_DAYS, 0, _BASE_SHA)
-    section = job.compare_compile_times(db, pr_side, base_side, [_BASE_SHA])
+    section = job.compare_compile_times(db, pr_side, [_BASE_SHA], warmup_available=True)
     assert "foo" in section.body
     # The baseline entity time is present, so it is a change, not a "new" entity.
     assert "5.0 s" in section.body
@@ -186,8 +233,7 @@ def test_expensive_new_tu_without_baseline_is_significant():
     """
     db = FixtureDb()
     pr_side = job.resolve_run(db, job.PR_DAYS, _PR, _PR_SHA)
-    base_side = job.resolve_run(db, job.BASE_DAYS, 0, _BASE_SHA)
-    section = job.compare_compile_times(db, pr_side, base_side, [_BASE_SHA])
+    section = job.compare_compile_times(db, pr_side, [_BASE_SHA], warmup_available=True)
     assert "new_tu.cpp" in section.body
     assert section.significant
     assert "without a master baseline" in (section.summary or "")
