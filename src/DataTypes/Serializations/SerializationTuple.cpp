@@ -910,4 +910,20 @@ bool SerializationTuple::supportsPooling() const
     return true;
 }
 
+MutableColumnPtr SerializationTuple::wrapColumnForDeserialization(MutableColumnPtr column) const
+{
+    /// Rebuild the tuple with each element wrapped by its own serialization (element serializations are
+    /// SerializationNamed wrappers that forward to the real element serialization, so kinds compose).
+    const auto & tuple = assert_cast<const ColumnTuple &>(*column);
+    if (elems.empty())
+        return column;
+
+    MutableColumns wrapped;
+    wrapped.reserve(elems.size());
+    for (size_t i = 0; i != elems.size(); ++i)
+        wrapped.push_back(elems[i]->wrapColumnForDeserialization(tuple.getColumn(i).cloneEmpty()));
+
+    return ColumnTuple::create(std::move(wrapped));
+}
+
 }

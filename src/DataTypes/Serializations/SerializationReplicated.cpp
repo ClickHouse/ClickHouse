@@ -45,6 +45,11 @@ ISerialization::KindStack SerializationReplicated::getKindStack() const
     return kind_stack;
 }
 
+MutableColumnPtr SerializationReplicated::wrapColumnForDeserialization(MutableColumnPtr column) const
+{
+    return ColumnReplicated::create(nested->wrapColumnForDeserialization(std::move(column)), ColumnUInt8::create());
+}
+
 SerializationPtr SerializationReplicated::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
 {
     return SerializationReplicated::create(prev);

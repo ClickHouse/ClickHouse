@@ -86,6 +86,12 @@ public:
     virtual KindStack getKindStack() const { return {Kind::DEFAULT}; }
     SerializationPtr getPtr() const { return shared_from_this(); }
 
+    /// Wrap the base (`type->createColumn()`) column into the column layout this serialization deserializes
+    /// into. Each layer composes on top of the nested one, so this reproduces the serialization's kind stack
+    /// (Sparse/Replicated/Detached) and any custom wrapping (e.g. a per-part value broadcast as a ColumnConst).
+    /// Default: identity.
+    virtual MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const { return column; }
+
     static KindStack getKindStack(const IColumn & column);
     static String kindStackToString(const KindStack & kind);
     static KindStack stringToKindStack(const String & str);

@@ -20,6 +20,7 @@ public:
     const SerializationPtr & getNested() const { return nested; }
 
     KindStack getKindStack() const override;
+    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;
 
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
 

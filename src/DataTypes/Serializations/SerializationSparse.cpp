@@ -258,6 +258,11 @@ ISerialization::KindStack SerializationSparse::getKindStack() const
     return kind_stack;
 }
 
+MutableColumnPtr SerializationSparse::wrapColumnForDeserialization(MutableColumnPtr column) const
+{
+    return ColumnSparse::create(nested->wrapColumnForDeserialization(std::move(column)));
+}
+
 SerializationPtr SerializationSparse::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
 {
     return SerializationSparse::create(prev);

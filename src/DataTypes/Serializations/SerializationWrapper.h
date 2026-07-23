@@ -19,6 +19,7 @@ public:
 
     KindStack getKindStack() const override { return nested_serialization->getKindStack(); }
     bool supportsPooling() const override { return nested_serialization->supportsPooling(); }
+    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override { return nested_serialization->wrapColumnForDeserialization(std::move(column)); }
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

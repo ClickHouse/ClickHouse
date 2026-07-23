@@ -36,6 +36,11 @@ ISerialization::KindStack SerializationDetached::getKindStack() const
     return kind_stack;
 }
 
+MutableColumnPtr SerializationDetached::wrapColumnForDeserialization(MutableColumnPtr column) const
+{
+    return ColumnBLOB::create(nested->wrapColumnForDeserialization(std::move(column)));
+}
+
 
 void SerializationDetached::serializeBinaryBulk(
     const IColumn & column, WriteBuffer & ostr, [[maybe_unused]] size_t offset, [[maybe_unused]] size_t limit) const
