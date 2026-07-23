@@ -7,7 +7,7 @@ CREATE TABLE t_long_statistics_name (
 )
 ENGINE = MergeTree()
 ORDER BY tuple()
-SETTINGS replace_long_file_name_to_hash = 1, max_file_name_length = 127, auto_statistics_types = 'minmax,uniq';
+SETTINGS replace_long_file_name_to_hash = 1, max_file_name_length = 127, auto_statistics_types = 'basic,uniq';
 
 INSERT INTO t_long_statistics_name VALUES (10) (100);
 

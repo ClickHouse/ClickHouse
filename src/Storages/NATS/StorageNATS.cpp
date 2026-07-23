@@ -42,6 +42,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsMilliseconds rabbitmq_max_wait_ms;
     extern const SettingsMilliseconds stream_flush_interval_ms;
     extern const SettingsBool stream_like_engine_allow_direct_select;
     extern const SettingsString stream_like_engine_insert_queue;
@@ -52,6 +53,8 @@ namespace NATSSetting
 {
     extern const NATSSettingsString nats_credential_file;
     extern const NATSSettingsMilliseconds nats_flush_interval_ms;
+    extern const NATSSettingsBool nats_wait_for_flush_interval;
+    extern const NATSSettingsBool nats_commit_on_select;
     extern const NATSSettingsString nats_format;
     extern const NATSSettingsStreamingHandleErrorMode nats_handle_error_mode;
     extern const NATSSettingsUInt64 nats_max_block_size;
@@ -94,7 +97,7 @@ StorageNATS::StorageNATS(
     const String & comment,
     std::unique_ptr<NATSSettings> nats_settings_,
     LoadingStrictnessLevel mode)
-    : IStorage(table_id_)
+    : IStreamingStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , nats_settings(std::move(nats_settings_))
     , subjects(parseList(getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_subjects]), ','))
@@ -152,7 +155,7 @@ StorageNATS::StorageNATS(
         tryLogCurrentException(log);
     }
 
-    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "NATSStreamingTask", [this] { streamingToViewsFunc(); });
+    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "NATSStreamingTask", [this] { threadFunc(); });
     streaming_task->deactivate();
 
     initialize_consumers_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "NATSInitializeConsumersTask", [this] { initializeConsumersFunc(); });
@@ -266,10 +269,10 @@ void StorageNATS::initializeConsumersFunc()
     size_t num_views = DatabaseCatalog::instance().getDependentViews(getStorageID()).size();
     if (num_views == 0)
     {
+        stream_control.claimCycle(last_seen_refresh_epoch);
         initialize_consumers_task->scheduleAfter(RESCHEDULE_MS);
         return;
     }
-    mv_attached.store(true);
 
     if (!subscribeConsumers())
     {
@@ -316,6 +319,7 @@ bool StorageNATS::subscribeConsumers()
     {
         try
         {
+            consumer->dropBuffered();
             consumer->subscribe();
             ++num_initialized;
         }
@@ -328,7 +332,10 @@ bool StorageNATS::subscribeConsumers()
 
     const bool are_consumers_initialized = num_initialized == num_created_consumers;
     if (are_consumers_initialized)
+    {
         consumers_ready.store(true);
+        subscription_stale.store(false);
+    }
 
     return are_consumers_initialized;
 }
@@ -337,7 +344,10 @@ void StorageNATS::unsubscribeConsumers()
 {
     std::lock_guard lock(consumers_mutex);
     for (auto & consumer : consumers)
-        consumer->unsubscribe();
+    {
+        consumer->unsubscribe(/*finish_queue=*/true);
+        consumer->dropBuffered();
+    }
 
     consumers_ready.store(false);
 }
@@ -378,7 +388,7 @@ void StorageNATS::read(
         throw Exception(
             ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read data is removed from the queue.");
 
-    if (mv_attached)
+    if (!DatabaseCatalog::instance().getDependentViews(getStorageID()).empty())
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageNATS with attached materialized views");
 
     if (!getStreamName().empty() && getConsumerName().empty())
@@ -396,6 +406,9 @@ void StorageNATS::read(
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto nats_source = std::make_shared<NATSSource>(*this, storage_snapshot, modified_context, column_names, 1, (*nats_settings)[NATSSetting::nats_handle_error_mode]);
+        nats_source->setCommitOnSelect((*nats_settings)[NATSSetting::nats_commit_on_select]);
+        nats_source->setTimeLimit(modified_context->getSettingsRef()[Setting::rabbitmq_max_wait_ms]);
+        nats_source->setWaitForFlushInterval(true);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             nats_source->getPort().getHeader().getColumnsWithTypeAndName(),
@@ -464,6 +477,19 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
 void StorageNATS::startup()
 {
     initialize_consumers_task->activateAndSchedule();
+}
+
+void StorageNATS::scheduleStreamingTasksImpl()
+{
+    streaming_task->schedule();
+}
+
+ActionLock StorageNATS::getActionLock(StorageActionBlockType action_type)
+{
+    auto lock = IStreamingStorage::getActionLock(action_type);
+    if (action_type == ActionLocks::StreamConsume)
+        subscription_stale.store(true);
+    return lock;
 }
 
 
@@ -605,22 +631,40 @@ bool StorageNATS::checkDependencies(const StorageID & table_id)
     return !DatabaseCatalog::instance().getReadyDependentViews(table_id, getContext()).empty();
 }
 
-void StorageNATS::streamingToViewsFunc()
+void StorageNATS::threadFunc()
 {
     auto table_id = getStorageID();
 
     bool consumers_queues_are_empty = false;
 
+    if (consumers_ready && subscription_stale.exchange(false))
+        unsubscribeConsumers();
+
+    const size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
+    const bool is_connected = consumers_connection && consumers_connection->isConnected();
+    const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
+    const UInt64 refresh_epoch = last_seen_refresh_epoch.load();
+    const bool deps_ready = num_views == 0 || checkDependencies(table_id);
+    const bool run_cycle = is_connected && deps_ready && stream_control.claimCycle(last_seen_refresh_epoch);
+
     try
     {
-        if (consumers_connection && consumers_connection->isConnected())
+        if (num_views && run_cycle)
         {
+            if (!consumers_ready && !subscribeConsumers())
+            {
+                /// Give back a REFRESH permit consumed by `claimCycle`, so the refresh still
+                /// runs once subscribing succeeds, even if the table is stopped by then.
+                last_seen_refresh_epoch.store(refresh_epoch);
+                unsubscribeConsumers();
+                streaming_task->scheduleAfter(RESCHEDULE_MS);
+                return;
+            }
+
             auto start_time = std::chrono::steady_clock::now();
 
-            mv_attached.store(true);
-
             // Keep streaming as long as there are attached views and streaming is not cancelled
-            while (!shutdown_called && num_created_consumers > 0)
+            while (consumers_ready && !shutdown_called && num_created_consumers > 0)
             {
                 if (!checkDependencies(table_id))
                 {
@@ -628,14 +672,17 @@ void StorageNATS::streamingToViewsFunc()
                     break;
                 }
 
-                LOG_DEBUG(log, "Started streaming to attached views");
+                LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
-                if (streamToViews())
+                if (streamToViews(cycle_epoch))
                 {
                     /// Reschedule with backoff.
                     consumers_queues_are_empty = true;
                     break;
                 }
+
+                if (stream_control.isBlocked() || stream_control.isCancelRequested(cycle_epoch))
+                    break;
 
                 auto end_time = std::chrono::steady_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
@@ -656,11 +703,14 @@ void StorageNATS::streamingToViewsFunc()
     if (shutdown_called)
         return;
 
-    size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-
     if (num_views != 0)
     {
-        if (consumers_queues_are_empty)
+        if (stream_control.isBlocked() && consumers_ready)
+            unsubscribeConsumers();
+
+        /// While paused/stopped/views unready the loop above does no work, so reschedule with a delay to avoid
+        /// busy-looping; SYSTEM START reschedules it promptly via `scheduleStreamingTasks`.
+        if (consumers_queues_are_empty || stream_control.isBlocked() || !deps_ready)
             streaming_task->scheduleAfter(RESCHEDULE_MS);
         else
             streaming_task->schedule();
@@ -670,18 +720,11 @@ void StorageNATS::streamingToViewsFunc()
     else if (consumers_ready)
         unsubscribeConsumers();
 
-    if (!consumers_queues_are_empty)
-    {
-        streaming_task->schedule();
-        return;
-    }
-
     initialize_consumers_task->schedule();
-    mv_attached.store(false);
 }
 
 
-bool StorageNATS::streamToViews()
+bool StorageNATS::streamToViews(UInt64 cycle_epoch)
 {
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -723,15 +766,19 @@ bool StorageNATS::streamToViews()
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, new_context, column_names, block_size, (*nats_settings)[NATSSetting::nats_handle_error_mode]);
+        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, new_context, column_names, block_size, (*nats_settings)[NATSSetting::nats_handle_error_mode], cycle_epoch);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
-        Poco::Timespan max_execution_time = (*nats_settings)[NATSSetting::nats_flush_interval_ms].changed
+        const bool flush_interval_set = (*nats_settings)[NATSSetting::nats_flush_interval_ms].changed;
+        Poco::Timespan max_execution_time = flush_interval_set
             ? (*nats_settings)[NATSSetting::nats_flush_interval_ms]
             : getContext()->getSettingsRef()[Setting::stream_flush_interval_ms];
 
         source->setTimeLimit(max_execution_time);
+        /// Only hold blocks open for the whole flush interval when `nats_wait_for_flush_interval` is set.
+        source->setWaitForFlushInterval(
+            (*nats_settings)[NATSSetting::nats_wait_for_flush_interval] && max_execution_time.totalMicroseconds() > 0);
     }
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
@@ -739,6 +786,14 @@ bool StorageNATS::streamToViews()
     {
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();
+    }
+
+    for (auto & source : sources)
+    {
+        if (source->wasConsumptionAborted())
+            continue;
+        if (auto source_consumer = source->getConsumer())
+            source_consumer->ackConsumed();
     }
 
     if (!consumers_connection || !consumers_connection->isConnected())
