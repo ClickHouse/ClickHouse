@@ -502,8 +502,9 @@ def test_stop_during_insert_does_not_duplicate(nats_cluster):
     # (incorrectly) skipped would be redelivered after ack_wait and surface as a duplicate.
     time.sleep(1)
     instance.query(f"SYSTEM STOP test.{table}")
-    instance.query(f"SYSTEM START test.{table}")
-    instance.wait_for_log_line(f"test.{table}.*Started streaming to 1 attached views")
+    # Wait for the fresh post-START subscription (a new "Started streaming" line), not the stale one from
+    # table creation, so the stability window below actually covers the resubscribed consumer.
+    start_and_wait_for_streaming(table)
 
     # The block is acked exactly once: the rows appear and never grow past n, none are missing, and the
     # consumer reports nothing still pending acknowledgement. Watch for longer than ack_wait so a skipped
