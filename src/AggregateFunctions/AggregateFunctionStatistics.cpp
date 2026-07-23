@@ -505,17 +505,10 @@ AggregateFunctionPtr createAggregateFunctionStatisticsBinary(
     return res;
 }
 
-/// The numerically stable statistics functions build their aggregate directly from the argument type instead of going
-/// through createWithNumericType, so without this check they would accept a Variant or Dynamic argument and only fail
-/// later in getFloat64 during execution. Reject these types at resolution instead (matching argMin/argMax): reporting
-/// ILLEGAL_TYPE_OF_ARGUMENT here also lets the Variant adapter retry over the least common supertype of the variants.
-void assertNoDynamicOrVariantArguments(const std::string & name, const DataTypes & argument_types)
-{
-    for (const auto & argument_type : argument_types)
-        if (isDynamic(*argument_type) || isVariant(*argument_type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument for aggregate function {}", argument_type->getName(), name);
-}
+/// Note: the numerically stable statistics functions build their aggregate directly from the argument type instead
+/// of going through createWithNumericType, so without a check they would accept a Variant or Dynamic argument and
+/// only fail later in getFloat64 during execution. Their creators reject these types at resolution with
+/// assertNoDynamicOrVariantArguments (see FactoryHelpers.h).
 
 }
 

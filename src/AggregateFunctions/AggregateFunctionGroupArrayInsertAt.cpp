@@ -224,6 +224,12 @@ AggregateFunctionPtr createAggregateFunctionGroupArrayInsertAt(
     if (argument_types.size() != 2)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function groupArrayInsertAt requires two arguments.");
 
+    /// The state is Array<Field>: a Variant (or Dynamic) value round-trips through ColumnVariant::get and
+    /// IColumn::insert(Field), which loses the original alternative type and reinfers the first compatible one on
+    /// output (1::UInt8 and 1::UInt64 collapse). Reject these types at resolution so that
+    /// AggregateFunctionVariantAdapter retries over the least common supertype of the variants.
+    assertNoDynamicOrVariantArguments(name, argument_types);
+
     return std::make_shared<AggregateFunctionGroupArrayInsertAtGeneric>(argument_types, parameters);
 }
 
@@ -299,7 +305,7 @@ SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("groupArrayInsertAt", {createAggregateFunctionGroupArrayInsertAt, documentation, {.support_variant_argument = true}});
+    factory.registerFunction("groupArrayInsertAt", {createAggregateFunctionGroupArrayInsertAt, documentation});
 }
 
 }
