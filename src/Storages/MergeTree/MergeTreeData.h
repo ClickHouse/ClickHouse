@@ -351,7 +351,8 @@ public:
         const String & name,
         const VolumePtr & volume,
         const String & part_dir,
-        const ReadSettings & read_settings) const;
+        const ReadSettings & read_settings,
+        bool part_may_exist_on_disk = true) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
     /// * First, as PreActive parts (the parts are ready, but not yet in the active set).
