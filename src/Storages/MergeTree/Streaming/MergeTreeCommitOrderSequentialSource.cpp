@@ -158,7 +158,10 @@ std::optional<PipeWithResources> buildPartitionReadingPipeline(
     plan.optimize(opt_settings);
     LOG_TEST(log, "Snapshot subplan for partition '{}' (safe_block_number={}):\n{}", partition_id, safe_block_number, explainPlan(plan));
 
-    auto builder = plan.buildQueryPipeline(opt_settings, BuildQueryPipelineSettings(context));
+    /// The plan is already optimized above; do not optimize again. Some optimizations are not
+    /// idempotent (e.g. direct read from a text index appends virtual columns to the read step),
+    /// so a second pass would corrupt the plan and produce a header mismatch.
+    auto builder = plan.buildQueryPipeline(opt_settings, BuildQueryPipelineSettings(context), /*do_optimize=*/false);
 
     PipeWithResources result;
     result.pipe = QueryPipelineBuilder::getPipe(std::move(*builder), result.resources);
