@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel-replicas
+# no-parallel-replicas: `system.predicate_statistics_log` rows are keyed by the reading thread's
+# `query_id`. Under parallel replicas the reads happen on remote sub-queries, so the rows land under
+# sub-query ids and the assertions below (which filter by the client `query_id`) find nothing.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
