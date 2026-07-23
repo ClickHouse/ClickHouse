@@ -20,6 +20,9 @@ SELECT exponentialTimeDecayingFloat64(1, toFloat64(0), 10); -- { serverError UNK
 
 SET allow_experimental_time_decay_aggregate_functions = 1;
 
+-- The value type has one fixed Float64 representation and takes no type arguments.
+SELECT CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(Float64)'); -- { serverError DATA_TYPE_CANNOT_HAVE_ARGUMENTS }
+
 -- A value observed exactly one half-life before the greatest timestamp has
 -- weight 1/2. Aggregate and window execution must use the same definition.
 SELECT
@@ -89,46 +92,6 @@ FROM
         exponentialTimeDecayedAvgState(10)(value, time) AS avg_state,
         exponentialTimeDecayedCountState(10)(time) AS count_state
     FROM VALUES('value Float64, time Float64', (20, 10))
-);
-
--- A different two-batch distribution must produce the same result.
-SELECT
-    round(tupleElement(exponentialTimeDecayedSumMerge(10)(sum_state), 'value'), 6),
-    round(exponentialTimeDecayedAvgMerge(10)(avg_state), 6),
-    round(tupleElement(exponentialTimeDecayedCountMerge(10)(count_state), 'value'), 6)
-FROM
-(
-    SELECT
-        exponentialTimeDecayedSumState(10)(value, time) AS sum_state,
-        exponentialTimeDecayedAvgState(10)(value, time) AS avg_state,
-        exponentialTimeDecayedCountState(10)(time) AS count_state
-    FROM VALUES('value Float64, time Float64', (10, 0), (20, 10))
-    UNION ALL
-    SELECT
-        exponentialTimeDecayedSumState(10)(value, time) AS sum_state,
-        exponentialTimeDecayedAvgState(10)(value, time) AS avg_state,
-        exponentialTimeDecayedCountState(10)(time) AS count_state
-    FROM VALUES('value Float64, time Float64', (5, 5))
-);
-
--- Merging one state per input row must also produce the same result.
-SELECT
-    round(tupleElement(exponentialTimeDecayedSumMerge(10)(sum_state), 'value'), 6),
-    round(exponentialTimeDecayedAvgMerge(10)(avg_state), 6),
-    round(tupleElement(exponentialTimeDecayedCountMerge(10)(count_state), 'value'), 6)
-FROM
-(
-    SELECT
-        batch,
-        exponentialTimeDecayedSumState(10)(value, time) AS sum_state,
-        exponentialTimeDecayedAvgState(10)(value, time) AS avg_state,
-        exponentialTimeDecayedCountState(10)(time) AS count_state
-    FROM VALUES(
-        'batch UInt8, value Float64, time Float64',
-        (0, 10, 0),
-        (1, 20, 10),
-        (2, 5, 5))
-    GROUP BY batch
 );
 
 DROP TABLE IF EXISTS exponential_time_decayed_aggregate;
@@ -202,7 +165,7 @@ SELECT
     round(tupleElement(c, 'half_life'), 6),
     round(exponentialTimeDecayingValueAt(c, toFloat64(20)), 6);
 
--- DateTime anchors retain their type and use seconds as the half-life unit.
+-- DateTime anchors are stored as Float64 seconds.
 WITH exponentialTimeDecayingFloat64(
     8,
     toDateTime('2020-01-01 00:00:00', 'UTC'),
@@ -213,24 +176,11 @@ SELECT
         decaying_value,
         toDateTime('2020-01-01 00:00:10', 'UTC')), 6);
 
--- Rebasing recalculates the value while preserving the half-life and original DateTime64 type.
-WITH
-    exponentialTimeDecayingFloat64(8, toDateTime64('2020-01-01 00:00:00', 3), 10) AS a,
-    exponentialTimeDecayingFloat64(4, toDateTime64('2020-01-01 00:00:10', 3), 10) AS b,
-    exponentialTimeDecayingRebase(
-        a + b,
-        toDateTime64('2020-01-01 00:00:20', 3)) AS rebased
-SELECT
-    toTypeName(rebased),
-    tupleElement(rebased, 'time'),
-    round(tupleElement(rebased, 'value'), 6),
-    round(tupleElement(rebased, 'half_life'), 6);
-
--- The parameterized type can be stored while preserving its exact time type.
+-- The non-parameterized type can be stored.
 DROP TABLE IF EXISTS exponential_time_decaying_values;
 CREATE TABLE exponential_time_decaying_values
 (
-    decaying_value ExponentialTimeDecayingFloat64(DateTime64(3))
+    decaying_value ExponentialTimeDecayingFloat64
 )
 ENGINE = Memory;
 
@@ -316,61 +266,6 @@ SELECT exponentialTimeDecayingFloat64(1, toFloat64(0), 0); -- { serverError BAD_
 SELECT exponentialTimeDecayingValueAt(
     exponentialTimeDecayingFloat64(1, toFloat64(10), 10),
     toFloat64(0)); -- { serverError BAD_ARGUMENTS }
-
--- Property-style test: direct aggregation and merging an arbitrary number of
--- independently aggregated batches must be numerically equivalent.
-WITH
-    source AS
-    (
-        SELECT
-            number,
-            toFloat64(((number * 13) % 101) + 1) AS value,
-            toFloat64((number * 104729) % 100000) / 10 AS time
-        FROM numbers(4096)
-    ),
-    direct AS
-    (
-        SELECT
-            tupleElement(exponentialTimeDecayedSum(250)(value, time), 'value') AS expected_sum,
-            exponentialTimeDecayedAvg(250)(value, time) AS expected_avg,
-            tupleElement(exponentialTimeDecayedCount(250)(time), 'value') AS expected_count
-        FROM source
-    ),
-    batch_states AS
-    (
-        SELECT
-            batch_count,
-            number % batch_count AS batch_id,
-            exponentialTimeDecayedSumState(250)(value, time) AS sum_state,
-            exponentialTimeDecayedAvgState(250)(value, time) AS avg_state,
-            exponentialTimeDecayedCountState(250)(time) AS count_state
-        FROM source
-        CROSS JOIN
-        (
-            SELECT arrayJoin([1, 2, 17, 257, 4096]) AS batch_count
-        )
-        GROUP BY
-            batch_count,
-            batch_id
-    ),
-    merged AS
-    (
-        SELECT
-            batch_count,
-            tupleElement(exponentialTimeDecayedSumMerge(250)(sum_state), 'value') AS actual_sum,
-            exponentialTimeDecayedAvgMerge(250)(avg_state) AS actual_avg,
-            tupleElement(exponentialTimeDecayedCountMerge(250)(count_state), 'value') AS actual_count
-        FROM batch_states
-        GROUP BY batch_count
-    )
-SELECT
-    batch_count,
-    abs(actual_sum - expected_sum) <= 1e-12 * greatest(1., abs(expected_sum)),
-    abs(actual_avg - expected_avg) <= 1e-12 * greatest(1., abs(expected_avg)),
-    abs(actual_count - expected_count) <= 1e-12 * greatest(1., abs(expected_count))
-FROM merged
-CROSS JOIN direct
-ORDER BY batch_count;
 
 -- Generate reproducible pseudo-random values, timestamps, row orders, and batch
 -- assignments. Both randomized input orders and all batch distributions must

@@ -2187,18 +2187,7 @@ public:
         if constexpr (is_plus)
         {
             if (isExponentialTimeDecayingFloat64(arguments[0]) && isExponentialTimeDecayingFloat64(arguments[1]))
-            {
-                const auto & left_time_type = getExponentialTimeDecayingFloat64TimeType(arguments[0]);
-                const auto & right_time_type = getExponentialTimeDecayingFloat64TimeType(arguments[1]);
-                if (!left_time_type->equals(*right_time_type))
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Arguments of function {} must use the same time type, got {} and {}",
-                        name,
-                        left_time_type->getName(),
-                        right_time_type->getName());
                 return arguments[0];
-            }
         }
 
         /// Special case when multiply aggregate function state

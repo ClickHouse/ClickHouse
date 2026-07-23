@@ -11,7 +11,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -52,28 +51,25 @@ struct ExponentialTimeDecayedState
     Float64 weighted_sum = 0;
     Float64 weight = 0;
     Float64 max_time = 0;
-    Field max_time_field;
     bool initialized = false;
 
-    void add(Float64 value, Float64 time, Field time_field, Float64 half_life)
+    void add(Float64 value, Float64 time, Float64 half_life)
     {
         if (!initialized)
         {
             weighted_sum = value;
             weight = 1;
             max_time = time;
-            max_time_field = std::move(time_field);
             initialized = true;
             return;
         }
 
-        if (time_field > max_time_field)
+        if (time > max_time)
         {
             const Float64 decay = std::exp2((max_time - time) / half_life);
             weighted_sum = weighted_sum * decay + value;
             weight = weight * decay + 1;
             max_time = time;
-            max_time_field = std::move(time_field);
         }
         else
         {
@@ -95,7 +91,7 @@ struct ExponentialTimeDecayedState
         }
 
         /// Re-anchor both states at their shared greatest timestamp before adding them.
-        const bool rhs_is_latest = rhs.max_time_field > max_time_field;
+        const bool rhs_is_latest = rhs.max_time > max_time;
         const Float64 merged_max_time = rhs_is_latest ? rhs.max_time : max_time;
         const Float64 lhs_decay = std::exp2((max_time - merged_max_time) / half_life);
         const Float64 rhs_decay = std::exp2((rhs.max_time - merged_max_time) / half_life);
@@ -103,8 +99,6 @@ struct ExponentialTimeDecayedState
         weighted_sum = weighted_sum * lhs_decay + rhs.weighted_sum * rhs_decay;
         weight = weight * lhs_decay + rhs.weight * rhs_decay;
         max_time = merged_max_time;
-        if (rhs_is_latest)
-            max_time_field = rhs.max_time_field;
     }
 
     void write(WriteBuffer & buf) const
@@ -112,7 +106,6 @@ struct ExponentialTimeDecayedState
         writeBinaryLittleEndian(weighted_sum, buf);
         writeBinaryLittleEndian(weight, buf);
         writeBinaryLittleEndian(max_time, buf);
-        writeFieldBinary(max_time_field, buf);
         writeBinaryLittleEndian(initialized, buf);
     }
 
@@ -121,7 +114,6 @@ struct ExponentialTimeDecayedState
         readBinaryLittleEndian(weighted_sum, buf);
         readBinaryLittleEndian(weight, buf);
         readBinaryLittleEndian(max_time, buf);
-        max_time_field = readFieldBinary(buf);
         readBinaryLittleEndian(initialized, buf);
     }
 };
@@ -133,13 +125,12 @@ class AggregateFunctionExponentialTimeDecayed final
           AggregateFunctionExponentialTimeDecayed<result_kind>>
 {
 public:
-    static DataTypePtr getResultType(const DataTypes & argument_types)
+    static DataTypePtr getResultType()
     {
         if constexpr (result_kind == ExponentialTimeDecayedResult::Avg)
             return std::make_shared<DataTypeFloat64>();
 
-        const size_t time_argument = result_kind == ExponentialTimeDecayedResult::Count ? 0 : 1;
-        return createDataTypeExponentialTimeDecayingFloat64(argument_types[time_argument]);
+        return createDataTypeExponentialTimeDecayingFloat64();
     }
 
     AggregateFunctionExponentialTimeDecayed(
@@ -149,9 +140,8 @@ public:
         : IAggregateFunctionDataHelper<
               ExponentialTimeDecayedState,
               AggregateFunctionExponentialTimeDecayed<result_kind>>(
-              argument_types, parameters, getResultType(argument_types))
+              argument_types, parameters, getResultType())
         , half_life(half_life_)
-        , time_type(argument_types[result_kind == ExponentialTimeDecayedResult::Count ? 0 : 1])
     {
     }
 
@@ -170,8 +160,6 @@ public:
         const Float64 time = columns[time_argument]->getFloat64(row_num);
         if (!std::isfinite(time))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time of aggregate function {} must be finite", getName());
-        Field time_field;
-        columns[time_argument]->get(row_num, time_field);
 
         Float64 value = 1;
         if constexpr (result_kind != ExponentialTimeDecayedResult::Count)
@@ -186,7 +174,7 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of aggregate function {} must be non-negative", getName());
         }
 
-        this->data(place).add(value, time, std::move(time_field), half_life);
+        this->data(place).add(value, time, half_life);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -221,7 +209,7 @@ public:
                 : state.weight;
             Tuple decaying_value{
                 Field(result),
-                state.initialized ? state.max_time_field : time_type->getDefault(),
+                Field(state.initialized ? state.max_time : 0.0),
                 Field(half_life)};
             to.insert(Field(decaying_value));
         }
@@ -231,7 +219,6 @@ public:
 
 private:
     const Float64 half_life;
-    const DataTypePtr time_type;
 };
 
 Float64 getHalfLife(const String & name, const Array & parameters)

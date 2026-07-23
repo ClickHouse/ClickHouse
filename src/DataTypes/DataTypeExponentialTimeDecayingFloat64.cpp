@@ -1,102 +1,51 @@
 #include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 
-#include <Common/Exception.h>
-#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeCustom.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
+
+#include <utility>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int LOGICAL_ERROR;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
-String DataTypeExponentialTimeDecayingFloat64Name::getName() const
-{
-    WriteBufferFromOwnString out;
-    out << "ExponentialTimeDecayingFloat64(" << time_type->getName() << ')';
-    return out.str();
-}
-
 namespace
 {
 
-void assertTimeType(const DataTypePtr & time_type)
+std::pair<DataTypePtr, DataTypeCustomDescPtr> create()
 {
-    if (!isNumber(time_type) && !isDateTime(time_type) && !isDateTime64(time_type))
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Time type of ExponentialTimeDecayingFloat64 must be a number, DateTime, or DateTime64, got {}",
-            time_type->getName());
-}
-
-std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & arguments)
-{
-    if (!arguments || arguments->children.size() != 1)
-        throw Exception(
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Data type ExponentialTimeDecayingFloat64 takes exactly one argument: the time type");
-
-    auto time_type = DataTypeFactory::instance().get(arguments->children[0]);
-    assertTimeType(time_type);
-
     auto storage_type = std::make_shared<DataTypeTuple>(
         DataTypes{
             std::make_shared<DataTypeFloat64>(),
-            time_type,
+            std::make_shared<DataTypeFloat64>(),
             std::make_shared<DataTypeFloat64>()},
         Names{"value", "time", "half_life"});
 
     return {
         storage_type,
         std::make_unique<DataTypeCustomDesc>(
-            std::make_unique<DataTypeExponentialTimeDecayingFloat64Name>(std::move(time_type)))};
+            std::make_unique<DataTypeCustomFixedName>("ExponentialTimeDecayingFloat64"))};
 }
 
 }
 
-DataTypePtr createDataTypeExponentialTimeDecayingFloat64(const DataTypePtr & time_type)
+DataTypePtr createDataTypeExponentialTimeDecayingFloat64()
 {
-    assertTimeType(time_type);
-
-    auto custom_name = std::make_unique<DataTypeExponentialTimeDecayingFloat64Name>(time_type);
-    const String base_name = "Tuple(value Float64, time " + time_type->getName() + ", half_life Float64)";
     return DataTypeFactory::instance().getCustom(
-        base_name,
-        std::make_unique<DataTypeCustomDesc>(std::move(custom_name)));
+        "Tuple(value Float64, time Float64, half_life Float64)",
+        std::make_unique<DataTypeCustomDesc>(
+            std::make_unique<DataTypeCustomFixedName>("ExponentialTimeDecayingFloat64")));
 }
 
 bool isExponentialTimeDecayingFloat64(const DataTypePtr & type)
 {
-    return type && typeid_cast<const DataTypeExponentialTimeDecayingFloat64Name *>(type->getCustomName());
-}
-
-const DataTypePtr & getExponentialTimeDecayingFloat64TimeType(const DataTypePtr & type)
-{
-    const auto * custom_name = type
-        ? typeid_cast<const DataTypeExponentialTimeDecayingFloat64Name *>(type->getCustomName())
-        : nullptr;
-    if (!custom_name)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Data type {} is not ExponentialTimeDecayingFloat64",
-            type ? type->getName() : "nullptr");
-    return custom_name->getTimeType();
+    return type && type->getCustomName() && type->getCustomName()->getName() == "ExponentialTimeDecayingFloat64";
 }
 
 void registerDataTypeExponentialTimeDecayingFloat64(DataTypeFactory & factory)
 {
-    factory.registerDataTypeCustom(
+    factory.registerSimpleDataTypeCustom(
         "ExponentialTimeDecayingFloat64",
         create,
         DataTypeFactory::Case::Sensitive,
@@ -104,11 +53,11 @@ void registerDataTypeExponentialTimeDecayingFloat64(DataTypeFactory & factory)
             .description = R"(
 Represents one or more non-negative exponentially time-decaying values at a shared anchor time.
 
-The fields are `value`, `time`, and `half_life`. Values can only be added when their half-lives
-are identical. This keeps the result representable as one exponential decay curve.
+The fields are `value`, `time`, and `half_life`, all stored as `Float64`. DateTime and DateTime64
+inputs are represented as seconds. Values can only be added when their half-lives are identical.
 Use `tupleElement(decaying_value, 'time')` to read the greatest observed or current anchor time.
 )",
-            .syntax = "ExponentialTimeDecayingFloat64(time_type)",
+            .syntax = "ExponentialTimeDecayingFloat64",
             .examples = {},
             .related = {},
         });
