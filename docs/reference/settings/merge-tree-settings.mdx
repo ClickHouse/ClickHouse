@@ -284,8 +284,8 @@ If true, data from INSERT query is stored in queue and later flushed to
 table in background.
 
 ## auto_statistics_types {#auto_statistics_types} 
-<SettingsInfoBlock type="String" default_value="basic, uniq" />
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "basic, uniq"},{"label": "Deprecate the `minmax` statistics type and replace it with `basic` (a superset of `minmax`) in the default auto statistics"}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "minmax, uniq"},{"label": "Enable auto statistics by default"}]}, {"id": "row-3","items": [{"label": "25.10"},{"label": ""},{"label": "New setting"}]}]}/>
+<SettingsInfoBlock type="String" default_value="basic, uniq_v2" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "basic, uniq_v2"},{"label": "Deprecate the `minmax` statistics type and replace it with `basic` (a superset of `minmax`) in the default auto statistics; also replace `uniq` with `uniq_v2` for less overhead on inserts and memory"}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "minmax, uniq"},{"label": "Enable auto statistics by default"}]}, {"id": "row-3","items": [{"label": "25.10"},{"label": ""},{"label": "New setting"}]}]}/>
 
 Comma-separated list of statistics types to calculate automatically on all suitable columns.
 Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
@@ -1200,10 +1200,10 @@ Zero means no limit on the number of mutations per replica (the execution can
 still be constrained by other settings).
 
 ## max_part_loading_threads {#max_part_loading_threads} 
-<SettingsInfoBlock type="MaxThreads" default_value="auto(14)" />
+<SettingsInfoBlock type="MaxThreads" default_value="auto(16)" />
 Obsolete setting, does nothing.
 ## max_part_removal_threads {#max_part_removal_threads} 
-<SettingsInfoBlock type="MaxThreads" default_value="auto(14)" />
+<SettingsInfoBlock type="MaxThreads" default_value="auto(16)" />
 Obsolete setting, does nothing.
 ## max_partitions_to_read {#max_partitions_to_read} 
 <SettingsInfoBlock type="Int64" default_value="-1" />
@@ -1457,10 +1457,8 @@ Controls when the logic kicks in relatively to the number of parts in
 partition. The bigger the factor the more belated reaction will be.
 
 ## merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once {#merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once} 
-
-<ExperimentalBadge/>
-<SettingsInfoBlock type="Bool" default_value="0" />
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "0"},{"label": "New setting"}]}]}/>
+<SettingsInfoBlock type="Bool" default_value="1" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "Enable by default"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "0"},{"label": "New setting"}]}]}/>
 
 Enable heuristic for simple merge selector which will lower maximum limit for merge choice.
 By doing so number of concurrent merges will increase which can help with TOO_MANY_PARTS
@@ -1550,9 +1548,6 @@ return Ok during status check.
 Whether `min_age_to_force_merge_seconds` should be applied only on the entire
 partition and not on subset.
 
-By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool` (see
-`enable_max_bytes_limit_for_min_age_to_force_merge`).
-
 Possible values:
 - true, false
 
@@ -1561,9 +1556,6 @@ Possible values:
 
 Merge parts if every part in the range is older than the value of
 `min_age_to_force_merge_seconds`.
-
-By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool`
-(see `enable_max_bytes_limit_for_min_age_to_force_merge`).
 
 Possible values:
 - Positive integer.
@@ -2728,6 +2720,12 @@ Max size of all broken parts for SMT, if more - deny automatic detach.
 
 How long we store insert memoization ids to avoid wrong actions during
 insert retries. Only available in ClickHouse Cloud
+
+## shared_merge_tree_merge_coordinator_distribution_algorithm {#shared_merge_tree_merge_coordinator_distribution_algorithm} 
+<SettingsInfoBlock type="MergeCoordinatorDistributionAlgorithm" default_value="water_filling" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "water_filling"},{"label": "New setting which controls what algorithm is used by the merge coordinator to distribute merges between replicas"}]}]}/>
+
+What algorithm will be used by merge coordinator thread to distribute merges between replicas
 
 ## shared_merge_tree_merge_coordinator_election_check_period_ms {#shared_merge_tree_merge_coordinator_election_check_period_ms} 
 <SettingsInfoBlock type="Milliseconds" default_value="30000" />
