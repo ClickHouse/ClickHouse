@@ -138,7 +138,12 @@ StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, co
     auto part_identifier = make_intrusive<ASTIdentifier>("_part");
     const auto sorting_key_expr_list = sorting_key.getOriginalExpressionList();
 
-    Names names_for_hash = patch_part_desc.getNamesOfPhysical();
+    /// Include column types so that patches with the same column names but different
+    /// types go to different partitions: one patch partition must have one schema.
+    Names names_for_hash;
+    for (const auto & column : patch_part_desc.getAllPhysical())
+        names_for_hash.emplace_back(column.name + ' ' + column.type->getName());
+
     names_for_hash.emplace_back(sorting_key_expr_list ? sorting_key_expr_list->formatWithSecretsOneLine() : "");
     auto columns_hash = getColumnsHash(std::move(names_for_hash));
     auto hash_literal = make_intrusive<ASTLiteral>(std::move(columns_hash));
