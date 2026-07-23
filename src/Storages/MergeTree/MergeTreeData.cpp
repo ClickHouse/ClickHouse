@@ -6387,6 +6387,7 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
 
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
         renameTempPartAndAdd(new_data_part, transaction, lock, /*rename_in_transaction=*/ false);     /// All covered parts must be already removed
+        new_data_part->getDataPartStorage().commitTransaction();
 
         /// It will add the empty part to the set of Outdated parts without making it Active (exactly what we need)
         transaction.rollback(&lock);
