@@ -1,10 +1,13 @@
--- Tags: no-object-storage, no-parallel-replicas, no-random-settings, no-random-merge-tree-settings
+-- Tags: no-object-storage, no-parallel-replicas
 -- no-object-storage: freeze() fsyncs local directories only; getDirectorySyncGuard() is a no-op on
 --   object/remote disks, so DirectorySync is legitimately 0 there.
 -- no-parallel-replicas: the DirectorySync counts are read from system.part_log; with parallel replicas
 --   the runner points cluster_for_parallel_replicas at a cluster absent on the single-node test server.
--- no-random-*: the part layout (and hence how many directories a part occupies) must be fixed so the
---   directory-fsync counts below are deterministic.
+-- Settings randomization stays enabled. Only min_bytes_for_full_part_storage is pinned (to 0, its
+--   default) per table below: a non-zero value makes choosePartFormat store the small test part as a
+--   single-blob Packed part, which has no per-directory layout and therefore no directory fsyncs, so
+--   the DirectorySync counts the test measures would collapse. Pinning it keeps the parts in Full
+--   (directory) storage; every other setting is left randomized.
 
 -- ALTER TABLE ... DETACH PARTITION must fsync the detached/ clone's directories when
 -- fsync_part_directory is set, otherwise a power loss right after the acknowledgement can erase the
@@ -26,13 +29,13 @@ DROP TABLE IF EXISTS detach_fsync_drop;
 DROP TABLE IF EXISTS detach_fsync_off;
 
 CREATE TABLE detach_fsync_on   (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id
-    SETTINGS fsync_part_directory = 1, storage_policy = 'default';
+    SETTINGS fsync_part_directory = 1, storage_policy = 'default', min_bytes_for_full_part_storage = 0;
 CREATE TABLE detach_fsync_proj (id UInt64, v UInt64, PROJECTION p (SELECT v, count() GROUP BY v)) ENGINE = MergeTree ORDER BY id
-    SETTINGS fsync_part_directory = 1, storage_policy = 'default';
+    SETTINGS fsync_part_directory = 1, storage_policy = 'default', min_bytes_for_full_part_storage = 0;
 CREATE TABLE detach_fsync_drop (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id
-    SETTINGS fsync_part_directory = 1, storage_policy = 'default';
+    SETTINGS fsync_part_directory = 1, storage_policy = 'default', min_bytes_for_full_part_storage = 0;
 CREATE TABLE detach_fsync_off  (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id
-    SETTINGS fsync_part_directory = 0, storage_policy = 'default';
+    SETTINGS fsync_part_directory = 0, storage_policy = 'default', min_bytes_for_full_part_storage = 0;
 
 INSERT INTO detach_fsync_on   SELECT number, number % 10 FROM numbers(1000);
 INSERT INTO detach_fsync_proj SELECT number, number % 10 FROM numbers(1000);
