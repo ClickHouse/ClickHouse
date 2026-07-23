@@ -1,5 +1,0 @@
-<clickhouse>
-    <merge_tree>
-        <serialization_info_version>basic</serialization_info_version>
-    </merge_tree>
-</clickhouse>

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
@@ -14,13 +13,9 @@ namespace DB
 
 class IDisk;
 
-void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context, bool validate_new_create_query = true);
-
-/// Throws QUERY_IS_TOO_LARGE if the resulting CREATE query for `metadata` exceeds max_query_size.
-/// `table_id` is used to fetch the current CREATE query AST and for the error message.
-void checkMetadataDoesNotExceedMaxQuerySize(const StorageID & table_id, const StorageInMemoryMetadata & metadata, ContextPtr context);
+void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context);
 ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary,
-    uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error, ContextPtr context);
+    uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error);
 
 /// Cleans a CREATE QUERY from temporary flags like "IF NOT EXISTS", "OR REPLACE", "AS SELECT" (for non-views), etc.
 void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query);
@@ -28,21 +23,12 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query);
 String readMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path);
 void writeMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path, std::string_view content, bool fsync_metadata);
 
-/// TODO: move more common code to here
-class DatabaseWithAltersOnDiskBase : public IDatabase
-{
-    using IDatabase::IDatabase;
-
-public:
-    void alterDatabaseComment(const AlterCommand & command, ContextPtr query_context) override;
-};
+void updateDatabaseCommentWithMetadataFile(DatabasePtr db, const AlterCommand & command);
 
 /// A base class for databases that manage their own list of tables.
-class DatabaseWithOwnTablesBase : public DatabaseWithAltersOnDiskBase, protected WithContext
+class DatabaseWithOwnTablesBase : public IDatabase, protected WithContext
 {
 public:
-    bool isExternal() const override { return false; }
-
     bool isTableExist(const String & table_name, ContextPtr context) const override;
 
     StoragePtr tryGetTable(const String & table_name, ContextPtr context) const override;
@@ -73,7 +59,7 @@ protected:
     DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context);
 
     void attachTableUnlocked(const String & table_name, const StoragePtr & table) TSA_REQUIRES(mutex);
-    virtual StoragePtr detachTableUnlocked(const String & table_name) TSA_REQUIRES(mutex);
+    StoragePtr detachTableUnlocked(const String & table_name) TSA_REQUIRES(mutex);
     StoragePtr getTableUnlocked(const String & table_name) const TSA_REQUIRES(mutex);
     StoragePtr tryGetTableNoWait(const String & table_name) const;
 };

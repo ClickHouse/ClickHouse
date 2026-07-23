@@ -1,9 +1,6 @@
 #pragma once
-
-#include <future>
 #include <optional>
 #include <Common/re2.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
 #include <IO/Archives/IArchiveReader.h>
@@ -11,29 +8,28 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatFilterInfo.h>
-
 namespace DB
 {
 
 class SchemaCache;
 
-class StorageObjectStorageSource final : public ISource
+class StorageObjectStorageSource : public ISource
 {
     friend class ObjectStorageQueueSource;
-
 public:
+    using ObjectInfos = StorageObjectStorage::ObjectInfos;
+
     class ReadTaskIterator;
     class GlobIterator;
     class KeysIterator;
     class ArchiveIterator;
 
     StorageObjectStorageSource(
-        const StorageID & storage_id_,
         String name_,
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration,
-        StorageSnapshotPtr storage_snapshot_,
         const ReadFromFormatInfo & info,
         const std::optional<FormatSettings> & format_settings_,
         ContextPtr context_,
@@ -49,13 +45,12 @@ public:
 
     Chunk generate() override;
 
-    void onFinish() override;
+    void onFinish() override { parser_shared_resources->finishStream(); }
 
     static std::shared_ptr<IObjectIterator> createFileIterator(
         StorageObjectStorageConfigurationPtr configuration,
         const StorageObjectStorageQuerySettings & query_settings,
         ObjectStoragePtr object_storage,
-        StorageMetadataPtr storage_metadata,
         bool distributed_processing,
         const ContextPtr & local_context,
         const ActionsDAG::Node * predicate,
@@ -65,18 +60,17 @@ public:
         ObjectInfos * read_keys,
         std::function<void(FileProgress)> file_progress_callback = {},
         bool ignore_archive_globs = false,
-        bool skip_object_metadata = false,
-        bool with_tags = false);
+        bool skip_object_metadata = false);
 
     static std::string getUniqueStoragePathIdentifier(
-        const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info = true);
+        const StorageObjectStorageConfiguration & configuration,
+        const ObjectInfo & object_info,
+        bool include_connection_info = true);
 
 protected:
-    StorageID storage_id;
     const String name;
     ObjectStoragePtr object_storage;
     const StorageObjectStorageConfigurationPtr configuration;
-    StorageSnapshotPtr storage_snapshot;
     const ContextPtr read_context;
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
@@ -91,7 +85,6 @@ protected:
     SchemaCache & schema_cache;
     bool initialized = false;
     size_t total_rows_in_file = 0;
-    size_t total_files_read = 0;
     LoggerPtr log = getLogger("StorageObjectStorageSource");
 
     struct ReaderHolder : private boost::noncopyable
@@ -114,7 +107,6 @@ protected:
 
         ObjectInfoPtr getObjectInfo() const { return object_info; }
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
-        ReadBuffer * readBuffer() const { return read_buf.get(); }
 
     private:
         ObjectInfoPtr object_info;
@@ -131,7 +123,6 @@ protected:
     /// Recreate ReadBuffer and Pipeline for each file.
     static ReaderHolder createReader(
         size_t processor,
-        const StorageID & storage_id,
         const std::shared_ptr<IObjectIterator> & file_iterator,
         const StorageObjectStorageConfigurationPtr & configuration,
         const ObjectStoragePtr & object_storage,
@@ -168,10 +159,7 @@ public:
     size_t estimatedKeysCount() override { return buffer.size(); }
 
 private:
-    ObjectInfoPtr createObjectInfoInArchive(
-        const std::string & path_to_archive,
-        const std::string & path_in_archive,
-        std::optional<size_t> read_source_index);
+    ObjectInfoPtr createObjectInfoInArchive(const std::string & path_to_archive, const std::string & path_in_archive);
 
     ClusterFunctionReadTaskCallback callback;
     ObjectInfos buffer;
@@ -197,7 +185,6 @@ public:
         ObjectInfos * read_keys_,
         size_t list_object_keys_size,
         bool throw_on_zero_files_match_,
-        bool with_tags,
         std::function<void(FileProgress)> file_progress_callback_ = {});
 
     ~GlobIterator() override = default;
@@ -225,7 +212,6 @@ private:
     ExpressionActionsPtr filter_expr;
     ObjectStorageIteratorPtr object_storage_iterator;
     bool recursive{false};
-    bool match_web_paths_only{false};
     std::vector<String> expanded_keys;
     std::vector<String>::iterator expanded_keys_iter;
 
@@ -237,10 +223,6 @@ private:
     const ContextPtr local_context;
 
     std::function<void(FileProgress)> file_progress_callback;
-
-    size_t total_listed = 0;
-    size_t total_glob_filtered = 0;
-    size_t total_predicate_filtered = 0;
 };
 
 class StorageObjectStorageSource::KeysIterator : public IObjectIterator
@@ -253,7 +235,6 @@ public:
         ObjectInfos * read_keys_,
         bool ignore_non_existent_files_,
         bool skip_object_metadata_,
-        bool with_tags_,
         std::function<void(FileProgress)> file_progress_callback = {});
 
     ~KeysIterator() override = default;
@@ -268,9 +249,8 @@ private:
     const std::function<void(FileProgress)> file_progress_callback;
     const std::vector<String> keys;
     std::atomic<size_t> index = 0;
-    const bool ignore_non_existent_files;
-    const bool skip_object_metadata;
-    const bool with_tags;
+    bool ignore_non_existent_files;
+    bool skip_object_metadata;
 };
 
 /*
@@ -298,12 +278,6 @@ public:
     ObjectInfoPtr next(size_t processor) override;
 
     size_t estimatedKeysCount() override;
-
-    void setEmitProfileEvents(bool value) override
-    {
-        emit_profile_events = value;
-        archives_iterator->setEmitProfileEvents(value);
-    }
 
     struct ObjectInfoInArchive : public ObjectInfo
     {

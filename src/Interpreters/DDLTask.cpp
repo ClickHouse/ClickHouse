@@ -1,7 +1,3 @@
-#include <Access/AccessControl.h>
-#include <Access/Role.h>
-#include <Access/User.h>
-#include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
@@ -10,12 +6,10 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/NetException.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ParserQuery.h>
@@ -24,11 +18,9 @@
 #include <Poco/Net/NetException.h>
 #include <Common/DNSResolver.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Common/config_version.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
-
 
 namespace DB
 {
@@ -43,11 +35,6 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     }
 
-namespace ServerSetting
-{
-    extern const ServerSettingsBool distributed_ddl_use_initial_user_and_roles;
-}
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT_VERSION;
@@ -55,15 +42,8 @@ namespace ErrorCodes
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int LOGICAL_ERROR;
     extern const int DNS_ERROR;
-    extern const int UNKNOWN_USER;
-    extern const int UNKNOWN_ROLE;
 }
 
-
-String HostID::readableString() const
-{
-    return host_name + ":" + DB::toString(port);
-}
 
 HostID HostID::fromString(const String & host_port_str)
 {
@@ -177,12 +157,6 @@ String DDLLogEntry::toString() const
         wb << "\n";
     }
 
-    if (version >= INITIATOR_USER_VERSION)
-    {
-        wb << "initiator_user: " << initiator_user << "\n";
-        wb << "initiator_roles: " << initiator_user_roles << "\n";
-    }
-
     return wb.str();
 }
 
@@ -255,12 +229,6 @@ void DDLLogEntry::parse(const String & data)
         rb >> "\n";
     }
 
-    if (version >= INITIATOR_USER_VERSION)
-    {
-        rb >> "initiator_user: " >> initiator_user >> "\n";
-        rb >> "initiator_roles: " >> initiator_user_roles >> "\n";
-    }
-
     assertEOF(rb);
 
     if (!host_id_strings.empty())
@@ -295,68 +263,8 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(""); // generate random query_id
     query_context->setDDLOrOnClusterInternal(true);
-
-    /// This host (re-)initiates the DDL query, so any distributed sub-query spawned during its
-    /// execution (e.g. the `SELECT` of a `CREATE TABLE ... AS SELECT` reading a `Distributed` table)
-    /// treats this host as the initiator. Fill the client version with this server's version;
-    /// otherwise it stays 0.0.0 and remote shards apply legacy version compatibility downgrades -
-    /// in particular disabling the analyzer for supposedly pre-23.3 initiators (see `TCPHandler`).
-    /// That makes the initiator and the shards use different query interpreters, so column names
-    /// diverge (identifier `__table1.x` vs result name `x`) and distributed execution fails with
-    /// `NOT_FOUND_COLUMN_IN_BLOCK`.
-    query_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
-
-    const bool preserve_user = from_context->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles];
-    if (preserve_user && !entry.initiator_user.empty())
-    {
-        const auto & access_control = from_context->getAccessControl();
-
-        /// Find the user by name
-        auto user_id = access_control.find<User>(entry.initiator_user);
-        if (!user_id)
-            throw Exception(ErrorCodes::UNKNOWN_USER, "User '{}' required for executing distributed DDL query is not found on this instance", entry.initiator_user);
-
-        /// Find all roles by name
-        std::vector<UUID> role_ids;
-        role_ids.reserve(entry.initiator_user_roles.size());
-        for (const auto & role_name : entry.initiator_user_roles)
-        {
-            auto role_id = access_control.find<Role>(role_name);
-            if (!role_id)
-                throw Exception(ErrorCodes::UNKNOWN_ROLE, "Role '{}' required for executing distributed DDL query is not found on this instance", role_name);
-            role_ids.push_back(*role_id);
-        }
-
-        query_context->setUser(*user_id, role_ids);
-    }
-
     if (entry.settings)
-    {
-        /// Clamp settings to the constraints of the local node, similar to how
-        /// TCPHandler handles secondary queries. Without this, settings from the
-        /// initiator node could bypass stricter constraints on worker nodes.
-        /// Work on a copy to avoid mutating the entry, which may be read later
-        /// (e.g. by DatabaseReplicatedTask::createSyncedNodeIfNeed) or retried.
-        auto settings_changes = *entry.settings;
-        query_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
-        query_context->applySettingsChanges(settings_changes);
-
-        /// `BACKUP`/`RESTORE ON CLUSTER` runs a per-host continuation on every replica through this DDL
-        /// queue, and those hosts derive their S3 credentials from `s3_allow_server_credentials_in_user_queries`.
-        /// The initiator's value travels in the entry, but the clamp above silently drops it on a host whose
-        /// (default, no-user) profile pins the setting `readonly`, so an on-cluster backup started by a trusted
-        /// profile fails. The initiator has already opened the same backup destination under its own, properly
-        /// constrained, settings, so honor its decision here rather than re-clamping it. Restricted to backup
-        /// and restore because they are the only on-cluster operations whose worker side re-resolves S3
-        /// credentials from the session setting; every other DDL keeps the strict clamp. An untrusted initiator
-        /// cannot smuggle a `1` in: its own `readonly` constraint keeps the entry value at `0`.
-        if (query && query->as<ASTBackupQuery>())
-        {
-            if (const auto * value = entry.settings->tryGet("s3_allow_server_credentials_in_user_queries"))
-                query_context->setSetting("s3_allow_server_credentials_in_user_queries", *value);
-        }
-    }
-
+        query_context->applySettingsChanges(*entry.settings);
     return query_context;
 }
 
@@ -702,20 +610,6 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
         txn->addOp(zkutil::makeRemoveRequest(entry_path + "/try", -1));
         txn->addOp(zkutil::makeCreateRequest(entry_path + "/committed", host_id_str, zkutil::CreateMode::Persistent));
         txn->addOp(zkutil::makeSetRequest(database->zookeeper_path + "/max_log_ptr", toString(getLogEntryNumber(entry_name)), -1));
-
-        /// Make sure that we did not disable replicated DDL queries
-        const auto & macros = from_context->getMacros();
-        bool should_check_stop_flag = macros->getMacroMap().contains("replica");
-        if (should_check_stop_flag)
-        {
-            String stop_flag_path = "/clickhouse/stop_replicated_ddl_queries/{replica}";
-            stop_flag_path = macros->expand(stop_flag_path);
-
-            zookeeper->createAncestors(stop_flag_path);
-
-            txn->addOp(zkutil::makeCreateRequest(stop_flag_path, "", zkutil::CreateMode::Persistent));
-            txn->addOp(zkutil::makeRemoveRequest(stop_flag_path, -1));
-        }
     }
 
     txn->addOp(getOpToUpdateLogPointer());
@@ -734,7 +628,7 @@ Coordination::RequestPtr DatabaseReplicatedTask::getOpToUpdateLogPointer()
 
 void DatabaseReplicatedTask::createSyncedNodeIfNeed(const ZooKeeperPtr & zookeeper)
 {
-    chassert(!completely_processed);
+    assert(!completely_processed);
     if (!entry.settings)
         return;
 
@@ -743,7 +637,7 @@ void DatabaseReplicatedTask::createSyncedNodeIfNeed(const ZooKeeperPtr & zookeep
         return;
 
     /// Bool type is really weird, sometimes it's Bool and sometimes it's UInt64...
-    chassert(value.getType() == Field::Types::Bool || value.getType() == Field::Types::UInt64);
+    assert(value.getType() == Field::Types::Bool || value.getType() == Field::Types::UInt64);
     if (!value.safeGet<UInt64>())
         return;
 
@@ -758,9 +652,9 @@ String DDLTaskBase::getLogEntryName(UInt32 log_entry_number)
 UInt32 DDLTaskBase::getLogEntryNumber(const String & log_entry_name)
 {
     constexpr const char * name = "query-";
-    chassert(startsWith(log_entry_name, name));
+    assert(startsWith(log_entry_name, name));
     UInt32 num = parse<UInt32>(log_entry_name.substr(strlen(name)));
-    chassert(num < std::numeric_limits<Int32>::max());
+    assert(num < std::numeric_limits<Int32>::max());
     return num;
 }
 

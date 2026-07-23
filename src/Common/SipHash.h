@@ -131,9 +131,7 @@ public:
 
         cnt += end - data;
 
-        /// Use pointer subtraction, not `data + 8 <= end`: forming `data + 8` when fewer than
-        /// 8 bytes remain points past `end`, which is undefined behavior ([expr.add]/4).
-        while (end - data >= 8)
+        while (data + 8 <= end)
         {
             current_word = unalignedLoadLittleEndian<UInt64>(data);
 
@@ -147,7 +145,6 @@ public:
 
         /// Pad the remainder, which is missing up to an 8-byte word.
         current_word = 0;
-        /// NOLINTBEGIN(clang-analyzer-security.ArrayBound)
         switch (end - data) /// NOLINT(bugprone-switch-missing-default-case)
         {
             case 7: current_bytes[CURRENT_BYTES_IDX(6)] = data[6]; [[fallthrough]];
@@ -159,7 +156,6 @@ public:
             case 1: current_bytes[CURRENT_BYTES_IDX(0)] = data[0]; [[fallthrough]];
             case 0: break;
         }
-        /// NOLINTEND(clang-analyzer-security.ArrayBound)
     }
 
     template <typename Transform = void, typename T>
@@ -200,7 +196,6 @@ public:
         hi = v2 ^ v3;
     }
 
-    /// ATTENTION: This is not constant method, if you call it several times, it will return different results, because of the finalization step.
     ALWAYS_INLINE UInt128 get128()
     {
         UInt128 res;
@@ -216,7 +211,7 @@ public:
 
 inline std::array<char, 16> getSipHash128AsArray(SipHash & sip_hash)
 {
-    std::array<char, 16> arr{};
+    std::array<char, 16> arr;
     *reinterpret_cast<UInt128*>(arr.data()) = sip_hash.get128();
     return arr;
 }
@@ -228,12 +223,12 @@ inline CityHash_v1_0_2::uint128 getSipHash128AsPair(SipHash & sip_hash)
     return result;
 }
 
-inline String getSipHash128AsHexString(const UInt128 & hash)
+inline String getSipHash128AsHexString(SipHash & sip_hash)
 {
     String result;
 
-    const auto * hash_data = reinterpret_cast<const UInt8 *>(&hash);
-    const auto hash_size = sizeof(hash);
+    const auto hash_data = getSipHash128AsArray(sip_hash);
+    const auto hash_size = hash_data.size();
     result.resize(hash_size * 2);
     for (size_t i = 0; i < hash_size; ++i)
     {
@@ -243,11 +238,6 @@ inline String getSipHash128AsHexString(const UInt128 & hash)
             writeHexByteLowercase(hash_data[i], &result[2 * i]);
     }
     return result;
-}
-
-inline String getSipHash128AsHexString(SipHash & sip_hash)
-{
-    return getSipHash128AsHexString(sip_hash.get128());
 }
 
 inline UInt128 sipHash128Keyed(UInt64 key0, UInt64 key1, const char * data, const size_t size)

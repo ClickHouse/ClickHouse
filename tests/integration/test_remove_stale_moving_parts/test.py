@@ -72,8 +72,7 @@ def wait_part_is_stuck(node, table_moving_path, moving_part):
 
 
 def test_remove_stale_moving_parts_without_zookeeper(started_cluster):
-    ch1.query(f"DROP DATABASE IF EXISTS {DATABASE_NAME}")
-    ch1.query(f"CREATE DATABASE {DATABASE_NAME}")
+    ch1.query(f"CREATE DATABASE IF NOT EXISTS {DATABASE_NAME}")
 
     q(
         ch1,
@@ -104,4 +103,4 @@ def test_remove_stale_moving_parts_without_zookeeper(started_cluster):
     cluster.wait_zookeeper_nodes_to_start(["zoo1", "zoo2", "zoo3"])
     q(ch1, "SYSTEM START MOVES")
 
-    q(ch1, "DROP TABLE test_remove")
+    q(ch1, f"DROP TABLE test_remove")

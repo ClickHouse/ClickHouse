@@ -3,21 +3,21 @@
 #if USE_DELTA_KERNEL_RS
 #include "delta_kernel_ffi.hpp"
 
+#include <base/defines.h>
+#include <base/EnumReflection.h>
 
 #include <Common/logger_useful.h>
 #include <Core/UUID.h>
-#include <IO/WriteHelpers.h>
+#include <Core/Field.h>
 
 #include <Poco/String.h>
 #include <fmt/ranges.h>
 #include <filesystem>
 
-
 namespace DB::ErrorCodes
 {
     extern const int DELTA_KERNEL_ERROR;
     extern const int LOGICAL_ERROR;
-    extern const int INCORRECT_DATA;
 }
 
 namespace DeltaLake
@@ -148,36 +148,25 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
     }
 }
 
-std::optional<std::string> tryGetPhysicalName(const std::string & name, const DB::NameToNameMap & physical_names_map)
+std::string getPhysicalName(const std::string & name, const DB::NameToNameMap & physical_names_map)
 {
     if (physical_names_map.empty())
         return name;
 
     auto it = physical_names_map.find(name);
     if (it == physical_names_map.end())
-        return std::nullopt;
-    return it->second;
-}
-
-std::string getPhysicalName(const std::string & name, const DB::NameToNameMap & physical_names_map)
-{
-    auto physical_name = tryGetPhysicalName(name, physical_names_map);
-    if (!physical_name)
     {
         DB::Names keys;
         keys.reserve(physical_names_map.size());
         for (const auto & [key, _] : physical_names_map)
             keys.push_back(key);
 
-        /// The map comes from external Delta metadata; the name comes from the ClickHouse
-        /// schema. A miss is external-schema drift (catchable), not an internal invariant.
         throw DB::Exception(
-            DB::ErrorCodes::INCORRECT_DATA,
-            "Column {} is not present in the DeltaLake column mapping. There are only columns: {}. "
-            "The column may have been renamed or dropped in the Delta table",
+            DB::ErrorCodes::LOGICAL_ERROR,
+            "Not found column {} in physical names map. There are only columns: {}",
             name, fmt::join(keys, ", "));
     }
-    return *physical_name;
+    return it->second;
 }
 
 }

@@ -7,7 +7,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
-#include <Common/QueryScope.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/SettingsChanges.h>
 #include <Common/setThreadName.h>
@@ -76,15 +75,11 @@ namespace Setting
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
-    extern const SettingsUInt64 max_insert_block_size_bytes;
-    extern const SettingsUInt64 min_insert_block_size_rows;
-    extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool throw_if_no_data_to_insert;
     extern const SettingsBool use_concurrency_control;
-    extern const SettingsSnappyMode snappy_mode;
 }
 
 namespace ErrorCodes
@@ -211,7 +206,7 @@ namespace
         /// Extracts the settings of transport compression from a query info if possible.
         static std::optional<TransportCompression> fromQueryInfo(const GRPCQueryInfo & query_info)
         {
-            TransportCompression res{};
+            TransportCompression res;
             if (!query_info.transport_compression_type().empty())
             {
                 res.setAlgorithm(query_info.transport_compression_type(), ErrorCodes::INVALID_GRPC_QUERY_INFO);
@@ -247,7 +242,7 @@ namespace
         /// Extracts the settings of transport compression from the server configuration.
         static TransportCompression fromConfiguration(const Poco::Util::AbstractConfiguration & config)
         {
-            TransportCompression res{};
+            TransportCompression res;
             if (config.has("grpc.transport_compression_type"))
             {
                 res.setAlgorithm(config.getString("grpc.transport_compression_type"), ErrorCodes::INVALID_CONFIG_PARAMETER);
@@ -654,8 +649,8 @@ namespace
     private:
         bool nextImpl() override
         {
-            const void * new_pos = nullptr;
-            size_t new_size = 0;
+            const void * new_pos;
+            size_t new_size;
             std::tie(new_pos, new_size) = callback();
             if (!new_size)
                 return false;
@@ -751,7 +746,7 @@ namespace
 
         std::optional<Session> session;
         ContextMutablePtr query_context;
-        std::optional<QueryScope> query_scope;
+        std::optional<CurrentThread::QueryScope> query_scope;
         OpenTelemetry::TracingContextHolderPtr thread_trace_context;
         String query_text;
         ASTPtr ast;
@@ -840,7 +835,7 @@ namespace
     {
         try
         {
-            DB::setThreadName(ThreadName::GRPC_SERVER_CALL);
+            setThreadName("GRPCServerCall");
             receiveQuery();
             executeQuery();
             processInput();
@@ -929,7 +924,7 @@ namespace
         query_context->applySettingsChanges(settings_changes);
 
         query_context->setCurrentQueryId(query_info.query_id());
-        query_scope = QueryScope::create(query_context, /* fatal_error_callback */ [this]{ onFatalError(); });
+        query_scope.emplace(query_context, /* fatal_error_callback */ [this]{ onFatalError(); });
 
         /// Set up tracing context for this query on current thread
         thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("GRPCServer",
@@ -1018,8 +1013,7 @@ namespace
             if (context != query_context)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
             input_function_is_used = true;
-            auto metadata_snapshot = input_storage->getInMemoryMetadataPtr(context, false);
-            initializePipeline(metadata_snapshot->getSampleBlock());
+            initializePipeline(input_storage->getInMemoryMetadataPtr()->getSampleBlock());
         });
 
         query_context->setInputBlocksReaderCallback([this](ContextPtr context) -> Block
@@ -1141,23 +1135,11 @@ namespace
             return {nullptr, 0}; /// no more input data
         });
 
-        read_buffer = wrapReadBufferWithCompressionMethod(
-            std::move(read_buffer), input_compression_method,
-            /*zstd_window_log_max=*/ 0, query_context->getSettingsRef()[Setting::snappy_mode]);
+        read_buffer = wrapReadBufferWithCompressionMethod(std::move(read_buffer), input_compression_method);
 
-        chassert(!pipeline);
-
-        const Settings & settings = query_context->getSettingsRef();
-
-        auto source = query_context->getInputFormat(
-            input_format,
-            *read_buffer,
-            header,
-            settings[Setting::max_insert_block_size],
-            std::nullopt,
-            settings[Setting::max_insert_block_size_bytes],
-            settings[Setting::min_insert_block_size_rows],
-            settings[Setting::min_insert_block_size_bytes]);
+        assert(!pipeline);
+        auto source
+            = query_context->getInputFormat(input_format, *read_buffer, header, query_context->getSettingsRef()[Setting::max_insert_block_size]);
 
         pipeline = std::make_unique<QueryPipeline>(std::move(source));
         pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
@@ -1203,8 +1185,11 @@ namespace
                 if (!external_table.data().empty())
                 {
                     /// The data will be written directly to the table.
-                    auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
+                    auto metadata_snapshot = storage->getInMemoryMetadataPtr();
                     auto sink = storage->write(ASTPtr(), metadata_snapshot, query_context, /*async_insert=*/false);
+
+                    std::unique_ptr<ReadBuffer> buf = std::make_unique<ReadBufferFromMemory>(external_table.data().data(), external_table.data().size());
+                    buf = wrapReadBufferWithCompressionMethod(std::move(buf), chooseCompressionMethod("", external_table.compression_type()));
 
                     String format = external_table.format();
                     if (format.empty())
@@ -1221,25 +1206,8 @@ namespace
                         external_table_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
                         external_table_context->applySettingsChanges(settings_changes);
                     }
-                    const Settings & settings = external_table_context->getSettingsRef();
-
-                    /// Wrap the decompression buffer after the external table's own settings are applied, so a
-                    /// per-table `snappy_mode` in `external_table.settings()` is honored (otherwise it would be
-                    /// read from the outer `query_context` before the per-table settings take effect).
-                    std::unique_ptr<ReadBuffer> buf = std::make_unique<ReadBufferFromMemory>(external_table.data().data(), external_table.data().size());
-                    buf = wrapReadBufferWithCompressionMethod(
-                        std::move(buf), chooseCompressionMethod("", external_table.compression_type()),
-                        /*zstd_window_log_max=*/ 0, settings[Setting::snappy_mode]);
-
                     auto in = external_table_context->getInputFormat(
-                        format,
-                        *buf,
-                        metadata_snapshot->getSampleBlock(),
-                        settings[Setting::max_insert_block_size],
-                        std::nullopt,
-                        settings[Setting::max_insert_block_size_bytes],
-                        settings[Setting::min_insert_block_size_rows],
-                        settings[Setting::min_insert_block_size_bytes]);
+                        format, *buf, metadata_snapshot->getSampleBlock(), external_table_context->getSettingsRef()[Setting::max_insert_block_size]);
 
                     QueryPipelineBuilder cur_pipeline;
                     cur_pipeline.init(Pipe(std::move(in)));
@@ -1303,9 +1271,7 @@ namespace
         nested_write_buffer = static_cast<WriteBufferFromVector<PODArray<char>> *>(write_buffer.get());
         if (output_compression_method != CompressionMethod::None)
         {
-            write_buffer = wrapWriteBufferWithCompressionMethod(
-                std::move(write_buffer), output_compression_method, output_compression_level,
-                /*zstd_window_log=*/ 0, query_context->getSettingsRef()[Setting::snappy_mode]);
+            write_buffer = wrapWriteBufferWithCompressionMethod(std::move(write_buffer), output_compression_method, output_compression_level);
             compressing_write_buffer = write_buffer.get();
         }
 
@@ -1407,7 +1373,7 @@ namespace
 
         LOG_INFO(
             log,
-            "Finished call {} in {:.3f} secs. (including reading by client: {:.3f}, writing by client: {:.3f})",
+            "Finished call {} in {} secs. (including reading by client: {}, writing by client: {})",
             getCallName(call_type),
             query_time.elapsedSeconds(),
             static_cast<double>(waited_for_client_reading) / 1000000000ULL,
@@ -1457,7 +1423,7 @@ namespace
                 addLogsToResult();
                 sendResult();
             }
-            catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+            catch (...) // NOLINT(bugprone-empty-catch)
             {
             }
         }
@@ -1469,7 +1435,7 @@ namespace
         /// because the client may decide to send another query with the same query ID or session ID
         /// immediately after it receives our final result, and it's prohibited to have
         /// two queries executed at the same time with the same query ID or session ID.
-        io.process_list_entries.clear();
+        io.process_list_entry.reset();
         if (query_context)
             query_context->setProcessListElement(nullptr);
         if (session)
@@ -1480,7 +1446,7 @@ namespace
     {
         responder.reset();
         pipeline_executor.reset();
-        pipeline = nullptr;
+        pipeline.reset();
         output_format_processor.reset();
         read_buffer.reset();
         write_buffer.reset();
@@ -1631,9 +1597,7 @@ namespace
         if (output_compression_method != CompressionMethod::None)
             memory.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
         std::unique_ptr<WriteBuffer> buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(memory);
-        buf = wrapWriteBufferWithCompressionMethod(
-            std::move(buf), output_compression_method, output_compression_level,
-            /*zstd_window_log=*/ 0, query_context->getSettingsRef()[Setting::snappy_mode]);
+        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), output_compression_method, output_compression_level);
         auto format = query_context->getOutputFormat(output_format, *buf, totals);
         format->write(materializeBlock(totals));
         format->finalize();
@@ -1651,9 +1615,7 @@ namespace
         if (output_compression_method != CompressionMethod::None)
             memory.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
         std::unique_ptr<WriteBuffer> buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(memory);
-        buf = wrapWriteBufferWithCompressionMethod(
-            std::move(buf), output_compression_method, output_compression_level,
-            /*zstd_window_log=*/ 0, query_context->getSettingsRef()[Setting::snappy_mode]);
+        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), output_compression_method, output_compression_level);
         auto format = query_context->getOutputFormat(output_format, *buf, extremes);
         format->write(materializeBlock(extremes));
         format->finalize();
@@ -1709,13 +1671,13 @@ namespace
                 auto & log_entry = *result.add_logs();
                 log_entry.set_time(column_time.getElement(row));
                 log_entry.set_time_microseconds(column_time_microseconds.getElement(row));
-                std::string_view query_id = column_query_id.getDataAt(row);
+                std::string_view query_id = column_query_id.getDataAt(row).toView();
                 log_entry.set_query_id(query_id.data(), query_id.size());
                 log_entry.set_thread_id(column_thread_id.getElement(row));
                 log_entry.set_level(static_cast<::clickhouse::grpc::LogsLevel>(column_level.getElement(row)));
-                std::string_view source = column_source.getDataAt(row);
+                std::string_view source = column_source.getDataAt(row).toView();
                 log_entry.set_source(source.data(), source.size());
-                std::string_view text = column_text.getDataAt(row);
+                std::string_view text = column_text.getDataAt(row).toView();
                 log_entry.set_text(text.data(), text.size());
             }
         }
@@ -1735,7 +1697,7 @@ namespace
         /// Copy output to `result.output`, with optional compressing.
         if (write_buffer)
         {
-            size_t output_size = 0;
+            size_t output_size;
             if (send_final_message)
             {
                 if (compressing_write_buffer)
@@ -1938,7 +1900,7 @@ private:
 
     void run()
     {
-        DB::setThreadName(ThreadName::GRPC_SERVER_QUEUE);
+        setThreadName("GRPCServerQueue");
 
         bool ok = false;
         void * tag = nullptr;

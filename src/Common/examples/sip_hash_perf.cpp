@@ -7,7 +7,6 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <Common/Stopwatch.h>
-#include <Examples/clickhouse_examples.h>
 
 
 /** Test this way:
@@ -22,7 +21,7 @@
   */
 
 
-int mainEntryExampleSipHashPerf(int, char **)
+int main(int, char **)
 {
     std::vector<std::string> data;
     DB::ReadBufferFromFileDescriptor in(STDIN_FILENO);
@@ -42,10 +41,10 @@ int mainEntryExampleSipHashPerf(int, char **)
         double seconds = watch.elapsedSeconds();
         std::cerr << "Read "
             << data.size() << " rows, "
-            << (static_cast<double>(in.count()) / 1048576.0) << " MiB "
+            << (in.count() / 1048576.0) << " MiB "
             << " in " << seconds << " sec., "
-            << (static_cast<double>(data.size()) / seconds) << " rows/sec., "
-            << (static_cast<double>(in.count()) / 1048576.0 / seconds) << " MiB/sec.\n";
+            << (data.size() / seconds) << " rows/sec., "
+            << (in.count() / 1048576.0 / seconds) << " MiB/sec.\n";
     }
 
     {
@@ -62,10 +61,10 @@ int mainEntryExampleSipHashPerf(int, char **)
         double seconds = watch.elapsedSeconds();
         std::cerr << "Processed "
             << data.size() << " rows, "
-            << (static_cast<double>(in.count()) / 1048576.0) << " MiB "
+            << (in.count() / 1048576.0) << " MiB "
             << " in " << seconds << " sec., "
-            << (static_cast<double>(data.size()) / seconds) << " rows/sec., "
-            << (static_cast<double>(in.count()) / 1048576.0 / seconds) << " MiB/sec. "
+            << (data.size() / seconds) << " rows/sec., "
+            << (in.count() / 1048576.0 / seconds) << " MiB/sec. "
             << "(res = " << res << ")\n";
     }
 

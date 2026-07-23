@@ -40,8 +40,6 @@ public:
 
     String getName() const override { return "Hive"; }
 
-    bool isExternalDatabase() const override { return true; }
-
     bool supportsSubcolumns() const override { return true; }
 
     void read(
@@ -89,7 +87,7 @@ private:
 
     void initMinMaxIndexExpression();
 
-    HiveFilesWithSkipSplits collectHiveFiles(
+    HiveFiles collectHiveFiles(
         size_t max_threads,
         const ActionsDAG * filter_actions_dag,
         const HiveTableMetadataPtr & hive_table_metadata,
@@ -97,7 +95,7 @@ private:
         const ContextPtr & context_,
         PruneLevel prune_level = PruneLevel::Max) const;
 
-    HiveFilesWithSkipSplits collectHiveFilesFromPartition(
+    HiveFiles collectHiveFilesFromPartition(
         const Apache::Hadoop::Hive::Partition & partition,
         const ActionsDAG * filter_actions_dag,
         const HiveTableMetadataPtr & hive_table_metadata,
@@ -105,7 +103,7 @@ private:
         const ContextPtr & context_,
         PruneLevel prune_level = PruneLevel::Max) const;
 
-    HiveFileWithSkipSplits getHiveFileIfNeeded(
+    HiveFilePtr getHiveFileIfNeeded(
         const FileInfo & file_info,
         const FieldVector & fields,
         const ActionsDAG * filter_actions_dag,

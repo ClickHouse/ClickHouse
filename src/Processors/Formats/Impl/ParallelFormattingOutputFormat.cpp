@@ -76,7 +76,7 @@ namespace DB
         if (emergency_stop)
             return;
 
-        chassert(unit.status == READY_TO_INSERT);
+        assert(unit.status == READY_TO_INSERT);
         unit.chunk = std::move(chunk);
         /// Resize memory without deallocation.
         unit.segment.resize(0);
@@ -95,18 +95,7 @@ namespace DB
             unit.rows_num = unit.chunk.getNumRows();
         }
 
-        try
-        {
-            scheduleFormatterThreadForUnitWithNumber(current_unit_number, first_row_num);
-        }
-        catch (...)
-        {
-            /// Properly terminate in case of exception during scheduling, i.e. CANNOT_SCHEDULE_TASK
-            onBackgroundException();
-            if (can_throw_exception)
-                throw;
-            return;
-        }
+        scheduleFormatterThreadForUnitWithNumber(current_unit_number, first_row_num);
         ++writer_unit_number;
     }
 
@@ -140,7 +129,7 @@ namespace DB
 
     void ParallelFormattingOutputFormat::collectorThreadFunction(const ThreadGroupPtr & thread_group)
     {
-        ThreadGroupSwitcher switcher(thread_group, ThreadName::PARALLEL_FORMATER_COLLECTOR);
+        ThreadGroupSwitcher switcher(thread_group, "Collector");
 
         try
         {
@@ -158,7 +147,7 @@ namespace DB
                 if (emergency_stop)
                     break;
 
-                chassert(unit.status == READY_TO_READ);
+                assert(unit.status == READY_TO_READ);
 
                 /// Use this copy to after notification to stop the execution.
                 auto copy_of_unit_type = unit.type;
@@ -205,12 +194,12 @@ namespace DB
 
     void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupPtr & thread_group)
     {
-        ThreadGroupSwitcher switcher(thread_group, ThreadName::PARALLEL_FORMATER);
+        ThreadGroupSwitcher switcher(thread_group, "Formatter");
 
         try
         {
             auto & unit = processing_units[current_unit_number];
-            chassert(unit.status == READY_TO_FORMAT);
+            assert(unit.status == READY_TO_FORMAT);
 
             /// We want to preallocate memory buffer (increase capacity)
             /// and put the pointer at the beginning of the buffer

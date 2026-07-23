@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<clickhouse>
+    <profiles>
+        <default>
+            <s3_check_objects_after_upload>1</s3_check_objects_after_upload>
+            <enable_s3_requests_logging>1</enable_s3_requests_logging>
+        </default>
+    </profiles>
+
+</clickhouse>

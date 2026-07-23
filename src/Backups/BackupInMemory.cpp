@@ -2,7 +2,6 @@
 
 #include <Backups/BackupsInMemoryHolder.h>
 #include <Common/Exception.h>
-#include <Common/logger_useful.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -17,7 +16,7 @@ namespace ErrorCodes
 }
 
 
-BackupInMemory::BackupInMemory(const String & backup_name_, std::weak_ptr<BackupsInMemoryHolder> holder_)
+BackupInMemory::BackupInMemory(const String & backup_name_, BackupsInMemoryHolder & holder_)
     : backup_name(backup_name_), holder(holder_)
 {
 }
@@ -49,11 +48,11 @@ UInt64 BackupInMemory::getFileSize(const String & file_name) const
 
 void BackupInMemory::removeFile(const String & file_name)
 {
-    /// Best-effort removal (like the S3, Disk and File writers): a partially written backup may lack
-    /// some files, e.g. `.backup` is written only at finalization.
     std::lock_guard lock{mutex};
-    if (!files.erase(file_name))
-        LOG_DEBUG(getLogger("BackupInMemory"), "Backup entry {} not found in backup {}, skipping removal", file_name, backup_name);
+    auto it = files.find(file_name);
+    if (it == files.end())
+        throw Exception(ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup entry {} not found in backup {}", file_name, backup_name);
+    files.erase(it);
 }
 
 
@@ -125,8 +124,7 @@ void BackupInMemory::copyFile(const String & from, const String & to)
 
 void BackupInMemory::drop()
 {
-    if (auto holder_ptr = holder.lock())
-        holder_ptr->dropBackup(backup_name);
+    holder.dropBackup(backup_name);
 }
 
 }

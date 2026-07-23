@@ -36,7 +36,6 @@ public:
     String getName() const override { return "ProtobufListInputFormat"; }
 
     void setReadBuffer(ReadBuffer & in_) override;
-    void resetParser() override;
 
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & row_read_extension) override;
@@ -50,7 +49,7 @@ private:
     std::unique_ptr<ProtobufSerializer> serializer;
 };
 
-class ProtobufListSchemaReader final : public IExternalSchemaReader
+class ProtobufListSchemaReader : public IExternalSchemaReader
 {
 public:
     explicit ProtobufListSchemaReader(const FormatSettings & format_settings);
@@ -60,7 +59,6 @@ public:
 private:
     const FormatSchemaInfo schema_info;
     bool skip_unsupported_fields;
-    bool oneof_presence;
     const String google_protos_path;
 };
 

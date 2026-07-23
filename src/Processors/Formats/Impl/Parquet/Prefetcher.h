@@ -3,7 +3,6 @@
 #include <Common/PODArray.h>
 #include <Processors/Formats/Impl/Parquet/ReadCommon.h>
 
-#include <optional>
 #include <span>
 
 namespace DB
@@ -123,26 +122,14 @@ private:
             Deallocated,
         };
 
-        size_t offset{};
-        size_t length{};
+        size_t offset;
+        size_t length;
         double memory_amplification = 1;
 
         /// TODO [parquet]: If the range is long, it may make sense to have multiple subtasks reading parts of
         ///       the range in parallel (into subranges of one buffer). E.g. if there's a big column
         ///       chunk with no offset index, and we're reading over network.
         PaddedPODArray<char> buf;
-
-        /// When the underlying read buffer supports zero-copy cached reads, and the Task's range
-        /// happens to fit in one retained cache cell, we reference that cell here and don't use `buf`.
-        /// Lightweight mirror of SeekableReadBuffer::CachedRegion to avoid the heavy include.
-        struct CachedReadRegion
-        {
-            std::shared_ptr<void> handle;
-            const char * data = nullptr;
-            size_t size = 0;
-            size_t file_offset = 0;
-        };
-        std::optional<CachedReadRegion> cached_region;
 
         std::atomic<State> state {State::Scheduled};
         /// How many RequestState-s in HasTask state point to this Task.
@@ -171,13 +158,13 @@ private:
     FormatParserSharedResourcesPtr parser_shared_resources;
 
     std::mutex read_mutex;
-    ReadMode read_mode{};
+    ReadMode read_mode;
     SeekableReadBuffer * reader = nullptr;
     PaddedPODArray<char> entire_file;
 
-    size_t file_size{};
-    size_t min_bytes_for_seek{};
-    size_t bytes_per_read_task{};
+    size_t file_size;
+    size_t min_bytes_for_seek;
+    size_t bytes_per_read_task;
 
     std::shared_ptr<ShutdownHelper> shutdown = std::make_shared<ShutdownHelper>();
 

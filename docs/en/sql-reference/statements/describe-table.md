@@ -4,7 +4,6 @@ sidebar_label: 'DESCRIBE TABLE'
 sidebar_position: 42
 slug: /sql-reference/statements/describe-table
 title: 'DESCRIBE TABLE'
-doc_type: 'reference'
 ---
 
 Returns information about table columns.
@@ -32,7 +31,9 @@ To show internal subcolumns of other data types, use the [describe_include_subco
 
 **Example**
 
-```sql title="Query"
+Query:
+
+```sql
 CREATE TABLE describe_example (
     id UInt64, text String DEFAULT 'unknown' CODEC(ZSTD),
     user Tuple (name String, age UInt8)
@@ -42,7 +43,9 @@ DESCRIBE TABLE describe_example;
 DESCRIBE TABLE describe_example SETTINGS describe_include_subcolumns=1;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ id   │ UInt64                        │              │                    │         │                  │                │
 │ text │ String                        │ DEFAULT      │ 'unknown'          │         │ ZSTD(1)          │                │
@@ -52,7 +55,7 @@ DESCRIBE TABLE describe_example SETTINGS describe_include_subcolumns=1;
 
 The second query additionally shows subcolumns:
 
-```text title="Response"
+```text
 ┌─name──────┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┬─is_subcolumn─┐
 │ id        │ UInt64                        │              │                    │         │                  │                │            0 │
 │ text      │ String                        │ DEFAULT      │ 'unknown'          │         │ ZSTD(1)          │                │            0 │
@@ -61,24 +64,6 @@ The second query additionally shows subcolumns:
 │ user.age  │ UInt8                         │              │                    │         │                  │                │            1 │
 └───────────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┴──────────────┘
 ```
-
-The DESCRIBE statement can also be used with subqueries or scalar expressions:
-
-``` SQL
-DESCRIBE SELECT 1 FORMAT TSV;
-```
-
-or
-
-``` SQL
-DESCRIBE (SELECT 1) FORMAT TSV;
-```
-
-``` text title="Response"
-1       UInt8
-```
-
-This usage returns metadata about the result columns of the specified query or subquery. It is useful for understanding the structure of complex queries before execution.
 
 **See Also**
 

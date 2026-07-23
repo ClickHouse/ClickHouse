@@ -92,7 +92,7 @@ void TableFunctionYTsaurus::parseArguments(const ASTPtr & ast_function, ContextP
 
     YTsaurusSettings yt_settings;
 
-    for (auto it = args.begin(); it != args.end(); ++it)
+    for (auto * it = args.begin(); it != args.end(); ++it)
     {
         const ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
         if (settings_ast)
@@ -102,14 +102,9 @@ void TableFunctionYTsaurus::parseArguments(const ASTPtr & ast_function, ContextP
             break;
         }
     }
-    if (args.size() == 2)
-    {
-        // With Named Collection
-        ASTs main_arguments(args.begin(), args.begin() + 1);
-        configuration = std::make_shared<YTsaurusStorageConfiguration>(StorageYTsaurus::getConfiguration(main_arguments, yt_settings, context));
-        structure = checkAndGetLiteralArgument<String>(args[1], "structure");
-    }
-    else if (args.size() == 4)
+
+
+    if (args.size() == 4)
     {
         ASTs main_arguments(args.begin(), args.begin() + 3);
         configuration = std::make_shared<YTsaurusStorageConfiguration>(StorageYTsaurus::getConfiguration(main_arguments, yt_settings, context));
@@ -120,9 +115,7 @@ void TableFunctionYTsaurus::parseArguments(const ASTPtr & ast_function, ContextP
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Table function 'ytsaurus' 4 parameters: "
-            "ytsaurus('http_proxy_url', cypress_path, oauth_token, structure) "
-            "or with 2 parameters: ytsaurus(named_collections, structure)."
-        );
+            "ytsaurus('http_proxy_url', cypress_path, oauth_token, structure).");
     }
 }
 
@@ -131,41 +124,16 @@ void TableFunctionYTsaurus::parseArguments(const ASTPtr & ast_function, ContextP
 void registerTableFunctionYTsaurus(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionYTsaurus>(
-    {.description = R"DOCS_MD(
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-
-<ExperimentalBadge/>
-
-The table function allows to read data from the YTsaurus cluster.
-
-## Syntax {#syntax}
-
-```sql
-ytsaurus(http_proxy_url, cypress_path, oauth_token, format)
-```
-
-<Info>
-This is an experimental feature that may change in backwards-incompatible ways in the future releases.
-Enable usage of the YTsaurus table function
-with [allow_experimental_ytsaurus_table_function](/reference/settings/session-settings#allow_experimental_ytsaurus_table_engine) setting.
-Input the command `set allow_experimental_ytsaurus_table_function = 1`.
-</Info>
-
-## Arguments {#arguments}
-
-- `http_proxy_url` — URL to the YTsaurus http proxy.
-- `cypress_path` — Cypress path to the data source.
-- `oauth_token` — OAuth token.
-- `format` — The [format](/reference/formats/index) of the data source.
-
-**Returned value**
-
-A table with the specified structure for reading data in the specified ytsaurus cypress path in YTsaurus cluster.
-
-**See Also**
-
-- [ytsaurus engine](/reference/engines/table-engines/integrations/ytsaurus)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+    {
+            .documentation =
+            {
+                    .description = "Allows get data from YTsaurus.",
+                    .examples = {
+                        {"Fetch collection by URI", "SELECT * FROM ytsaurus('localhost:80', '//tmp/test', 'auth_token', 'key UInt64, data String')", ""},
+                    },
+                    .category = FunctionDocumentation::Category::TableFunction
+            },
+    });
 }
 
 }
