@@ -211,9 +211,11 @@ void ObjectStorageParallelListingIterator::trimToBudgetLocked(
         resume.split_pos = range.split_pos;
         resume.split_budget = range.split_budget;
         resume.use_delimiter = true;
-        /// `start_after` is exactly the last kept child's common prefix: the resumed listing re-emits that
-        /// group (its keys are all greater than `start_after`), and it is already covered by the kept child
-        /// range, so it must be skipped there.
+        /// `start_after` is exactly the last kept child's common prefix. Real S3 returns only
+        /// `CommonPrefixes` lexicographically greater than `StartAfter`, so it skips that group whole —
+        /// which is exactly right, since the kept child range already covers it. Lenient S3-compatible
+        /// implementations instead treat `StartAfter` as a plain key filter and re-emit the group (its keys
+        /// are all greater than `start_after`); the flag skips it there, so the subtree is not listed twice.
         resume.skip_prefixes_not_after = true;
 
         /// Objects of this page sorting after the resume point will be re-listed by the resume range; emit
@@ -491,9 +493,11 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
                     reached_end = true;
                     break;
                 }
-                /// On a budget-trim resume, `start_after` is itself a common prefix whose subtree was kept as
-                /// its own range; `StartAfter` has no group meaning, so the storage re-emits the equal common
-                /// prefix (its keys are all greater than it) and it must be skipped to not list it twice.
+                /// On a budget-trim resume, `start_after` is itself a common prefix whose subtree was kept
+                /// as its own range. Real S3 already omits `CommonPrefixes` not greater than `StartAfter`
+                /// (this filter is then a no-op), but an S3-compatible storage treating `StartAfter` as a
+                /// plain key filter re-emits the equal group (its keys are all greater than it), and it must
+                /// be skipped to not list that subtree twice.
                 if (range.skip_prefixes_not_after && common_prefix <= range.start_after)
                     continue;
                 if (should_descend(common_prefix))

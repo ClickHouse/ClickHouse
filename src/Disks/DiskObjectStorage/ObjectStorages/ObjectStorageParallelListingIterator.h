@@ -186,12 +186,15 @@ private:
                                    /// per sub-directory before descending). Empty for a fresh range; when
                                    /// set, it resumes pagination and `start_after` is not re-applied.
         bool skip_prefixes_not_after = false; /// Set on a budget-trim "resume" range, whose `start_after` is
-                                   /// exactly a common prefix whose subtree was kept as its own range: keys
-                                   /// under that subtree are all greater than `start_after`, so the storage
-                                   /// re-emits the equal common prefix on resume (`StartAfter` has no group
-                                   /// meaning), and it must be skipped here to not list that subtree twice.
-                                   /// Never set on keyspace-split slices, whose `start_after` is a plain key
-                                   /// boundary that may fall inside a subtree (skipping would lose keys).
+                                   /// exactly a common prefix whose subtree was kept as its own range. Real
+                                   /// S3 returns only `CommonPrefixes` greater than `StartAfter` and skips
+                                   /// that group by itself; an S3-compatible storage treating `StartAfter`
+                                   /// as a plain key filter re-emits the equal common prefix (keys under the
+                                   /// subtree are all greater than `start_after`), and this flag skips it to
+                                   /// not list that subtree twice. The listing is correct under both
+                                   /// semantics. Never set on keyspace-split slices, whose `start_after` is
+                                   /// a plain key boundary (its byte past the shared base comes from keys of
+                                   /// a delimited page, so it never falls inside a sub-directory group).
     };
 
     void worker();

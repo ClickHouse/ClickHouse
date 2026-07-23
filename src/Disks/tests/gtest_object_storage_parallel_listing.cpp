@@ -44,6 +44,13 @@ struct FakeS3
     /// the split stays '/'-delimited (so sub-directories are discovered and pruned), so this must stay zero.
     mutable std::atomic<size_t> requests_with_start_after{0};
     mutable std::atomic<size_t> requests_with_empty_delimiter{0};
+    /// Real S3 applies `StartAfter` to the grouped listing: a `CommonPrefixes` entry is returned only if it
+    /// is lexicographically greater than `StartAfter`, so a `StartAfter` equal to a group (`root/dir/`) or
+    /// inside one (`root/dir/x`) skips that whole group. Some S3-compatible services instead treat
+    /// `StartAfter` as a plain key filter on the underlying keys and re-emit such a group afresh. The
+    /// iterator must be correct against both, so tests of the `StartAfter`-based resume paths run under
+    /// both modes; the default models real S3.
+    bool start_after_excludes_common_prefixes = true;
 
     void add(std::string key) { keys.push_back(std::move(key)); }
 
@@ -70,6 +77,7 @@ struct FakeS3
         /// keys below a same-named directory marker).
         std::string marker;
         bool marker_is_group = false;
+        bool marker_excludes_groups = false;
         if (!token.empty())
         {
             if (token.starts_with("P:"))
@@ -80,9 +88,11 @@ struct FakeS3
         }
         else
         {
-            /// `StartAfter` is a plain key with no group meaning (as in real S3): if remaining keys fall
-            /// under a common prefix equal to it, that group is emitted afresh, not skipped.
+            /// Real S3 additionally drops `CommonPrefixes` entries that are not lexicographically greater
+            /// than `StartAfter` (skipping such a group whole); the lenient mode treats `StartAfter` as a
+            /// plain key filter and emits that group afresh. See `start_after_excludes_common_prefixes`.
             marker = start_after;
+            marker_excludes_groups = start_after_excludes_common_prefixes;
         }
 
         ObjectStorageListResult res;
@@ -108,6 +118,8 @@ struct FakeS3
                 if (dpos != std::string::npos)
                 {
                     std::string cp = key.substr(0, dpos + delimiter.size());
+                    if (marker_excludes_groups && !marker.empty() && cp <= marker)
+                        continue; /// real S3: `CommonPrefixes` must be greater than `StartAfter`
                     if (cp == last_group)
                         continue;
                     if (count >= page_size)
@@ -522,24 +534,30 @@ TEST(ObjectStorageParallelListing, PendingRangeByteBudgetIsHard)
     const auto expected = expectedUnder(s3, "t/");
 
     constexpr size_t budget = 4096; /// far below what this tree's unbudgeted frontier would occupy
-    for (size_t threads : {1, 4, 16})
+    /// The trim's resume ranges rely on `StartAfter`, whose interaction with `CommonPrefixes` differs
+    /// between real S3 and lenient S3-compatible implementations — test under both semantics.
+    for (bool real_s3_start_after : {true, false})
     {
-        ObjectStorageParallelListingIterator iterator(
-            "t/", threads, /* max_buffered_keys */ 256, makeListLevel(s3), makeProbeLevel(s3), descendAll,
-            /* allow_keyspace_split */ true, /* check_cancellation */ {}, budget);
-        auto got = drain(iterator);
-        std::sort(got.begin(), got.end());
-        EXPECT_EQ(got, expected) << "threads=" << threads;
+        s3.start_after_excludes_common_prefixes = real_s3_start_after;
+        for (size_t threads : {1, 4, 16})
+        {
+            ObjectStorageParallelListingIterator iterator(
+                "t/", threads, /* max_buffered_keys */ 256, makeListLevel(s3), makeProbeLevel(s3), descendAll,
+                /* allow_keyspace_split */ true, /* check_cancellation */ {}, budget);
+            auto got = drain(iterator);
+            std::sort(got.begin(), got.end());
+            EXPECT_EQ(got, expected) << "threads=" << threads << " real_s3_start_after=" << real_s3_start_after;
 
-        /// The budget is enforced without blocking, by keeping at least one range per trim for progress, so
-        /// the only overshoot is that minimum: up to two ranges (one child + one resume) per level of each
-        /// worker's active depth-first path. Depth is 3 here and a range of this fixture is well under 300
-        /// bytes, so the slack below is generous — while an unbudgeted 16-thread run retains pages of ~100
-        /// children per level (hundreds of KB), an order of magnitude above this bound.
-        const size_t peak = iterator.getPeakPendingRangeBytes();
-        EXPECT_LE(peak, budget + threads * 2 * 3 * 300)
-            << "pending-range bytes grew to " << peak << " despite a budget of " << budget
-            << " (threads=" << threads << ")";
+            /// The budget is enforced without blocking, by keeping at least one range per trim for progress, so
+            /// the only overshoot is that minimum: up to two ranges (one child + one resume) per level of each
+            /// worker's active depth-first path. Depth is 3 here and a range of this fixture is well under 300
+            /// bytes, so the slack below is generous — while an unbudgeted 16-thread run retains pages of ~100
+            /// children per level (hundreds of KB), an order of magnitude above this bound.
+            const size_t peak = iterator.getPeakPendingRangeBytes();
+            EXPECT_LE(peak, budget + threads * 2 * 3 * 300)
+                << "pending-range bytes grew to " << peak << " despite a budget of " << budget
+                << " (threads=" << threads << " real_s3_start_after=" << real_s3_start_after << ")";
+        }
     }
 }
 
@@ -587,8 +605,9 @@ TEST(ObjectStorageParallelListing, BudgetTrimKeepsListingExactlyOnce)
     /// Correctness of the budget trim's "resume" ranges under everything that makes them delicate: pages
     /// where leaf objects interleave with sub-directories (objects sorting past the resume point must be
     /// emitted exactly once — from the resume, not the trimmed page), directory-marker objects (`x/dNNN/`,
-    /// simultaneously a key and a group: the kept child lists it, the resume must skip the re-emitted equal
-    /// common prefix), pruned sub-directories after the resume point (re-encountered and re-pruned), a flat
+    /// simultaneously a key and a group: the kept child lists it, and the resume must not list it again —
+    /// real S3 omits the group itself, lenient implementations re-emit it and rely on the iterator's skip),
+    /// pruned sub-directories after the resume point (re-encountered and re-pruned), a flat
     /// leaf directory wide enough to be keyspace-split (whose contiguous slices are merged when trimmed),
     /// and heavy truncation. A tiny budget forces trimming constantly; every key must still be produced
     /// exactly once at every parallelism.
@@ -615,14 +634,21 @@ TEST(ObjectStorageParallelListing, BudgetTrimKeepsListingExactlyOnce)
             expected.push_back(key);
     std::sort(expected.begin(), expected.end());
 
-    for (size_t threads : {1, 2, 4, 16})
+    /// A resume's `StartAfter` is exactly the last kept child's common prefix, which is where real S3
+    /// (dropping `CommonPrefixes` not greater than `StartAfter`) and lenient S3-compatible implementations
+    /// (re-emitting that group afresh) diverge — so exact-once must hold under both semantics.
+    for (bool real_s3_start_after : {true, false})
     {
-        ObjectStorageParallelListingIterator iterator(
-            "x/", threads, /* max_buffered_keys */ 256, makeListLevel(s3), makeProbeLevel(s3), should_descend,
-            /* allow_keyspace_split */ true, /* check_cancellation */ {}, /* max_pending_range_bytes */ 1024);
-        auto got = drain(iterator);
-        std::sort(got.begin(), got.end());
-        EXPECT_EQ(got, expected) << "threads=" << threads;
+        s3.start_after_excludes_common_prefixes = real_s3_start_after;
+        for (size_t threads : {1, 2, 4, 16})
+        {
+            ObjectStorageParallelListingIterator iterator(
+                "x/", threads, /* max_buffered_keys */ 256, makeListLevel(s3), makeProbeLevel(s3), should_descend,
+                /* allow_keyspace_split */ true, /* check_cancellation */ {}, /* max_pending_range_bytes */ 1024);
+            auto got = drain(iterator);
+            std::sort(got.begin(), got.end());
+            EXPECT_EQ(got, expected) << "threads=" << threads << " real_s3_start_after=" << real_s3_start_after;
+        }
     }
 }
 
