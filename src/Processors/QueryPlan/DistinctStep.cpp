@@ -70,7 +70,7 @@ void DistinctStep::updateLimitHint(UInt64 hint)
         limit_hint = std::max(hint, limit_hint);
 }
 
-void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
     if (!pre_distinct)
         pipeline.resize(1);
@@ -139,7 +139,16 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
 
-            return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns);
+            return std::make_shared<DistinctTransform>(
+                header,
+                set_size_limits,
+                limit_hint,
+                columns,
+                pre_distinct,
+                build_settings.max_threads,
+                build_settings.distinct_two_level_threshold,
+                build_settings.distinct_two_level_threshold_bytes,
+                build_settings.distinct_two_level_parallel_build_min_rows);
         });
 }
 

@@ -1,7 +1,30 @@
 #include <Processors/Transforms/DistinctTransform.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <Common/Arena.h>
+#include <Common/ProfileEvents.h>
+#include <Common/ThreadPool.h>
 #include <Common/assert_cast.h>
+#include <Common/setThreadName.h>
+#include <Common/threadPoolCallbackRunner.h>
+
+#include <algorithm>
+#include <atomic>
+#include <vector>
+
+namespace CurrentMetrics
+{
+    extern const Metric DistinctThreads;
+    extern const Metric DistinctThreadsActive;
+    extern const Metric DistinctThreadsScheduled;
+}
+
+namespace ProfileEvents
+{
+    extern const Event DistinctHashTablesInitializedAsTwoLevel;
+    extern const Event DistinctTwoLevelParallelFilterBuilds;
+    extern const Event DistinctTwoLevelSerialFilterBuilds;
+}
 
 namespace DB
 {
@@ -10,6 +33,54 @@ namespace ErrorCodes
 {
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+/// Run `body(worker_idx)` once per worker with deterministic worker_idx, no block stealing.
+/// Use when each worker owns a fixed slice of the input that must match across phases.
+template <typename Body>
+void parallelPerWorker(
+    ThreadPool & pool,
+    ThreadName name,
+    size_t num_workers,
+    Body && body)
+{
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, name);
+    for (size_t w = 0; w < num_workers; ++w)
+        runner.enqueueAndKeepTrack([&, w] { body(w); }, Priority{});
+    runner.waitForAllToFinishAndRethrowFirstError();
+}
+
+/// Run `body(item_idx)` for every item in [0, total) with `num_workers` tasks pulling work
+/// via an atomic counter. Used to dispatch one task per bucket.
+template <typename Body>
+void parallelDispatch(
+    ThreadPool & pool,
+    ThreadName name,
+    size_t num_workers,
+    size_t total,
+    Body && body)
+{
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, name);
+    std::atomic<size_t> next{0};
+    for (size_t w = 0; w < num_workers; ++w)
+    {
+        runner.enqueueAndKeepTrack([&]
+        {
+            while (true)
+            {
+                const size_t i = next.fetch_add(1, std::memory_order_relaxed);
+                if (i >= total)
+                    return;
+                body(i);
+            }
+        }, Priority{});
+    }
+    runner.waitForAllToFinishAndRethrowFirstError();
+}
+
 }
 
 void LCOptimizationController::update(size_t num_rows, size_t new_indices_in_chunk)
@@ -38,9 +109,18 @@ DistinctTransform::DistinctTransform(
     SharedHeader header_,
     const SizeLimits & set_size_limits_,
     const UInt64 limit_hint_,
-    const Names & columns_)
+    const Names & columns_,
+    bool is_pre_distinct_,
+    size_t max_threads_,
+    UInt64 two_level_threshold_,
+    UInt64 two_level_threshold_bytes_,
+    UInt64 parallel_build_min_rows_)
     : ISimpleTransform(header_, header_, true)
     , limit_hint(limit_hint_)
+    , is_pre_distinct(is_pre_distinct_)
+    , two_level_threshold(two_level_threshold_)
+    , two_level_threshold_bytes(two_level_threshold_bytes_)
+    , parallel_build_min_rows(parallel_build_min_rows_)
     , set_size_limits(set_size_limits_)
 {
     const size_t num_columns = columns_.empty() ? header_->columns() : columns_.size();
@@ -52,6 +132,24 @@ DistinctTransform::DistinctTransform(
         if (col && !isColumnConst(*col))
             key_columns_pos.emplace_back(pos);
     }
+
+    if (!is_pre_distinct && max_threads_ > 1)
+        pool = std::make_unique<ThreadPool>(
+            CurrentMetrics::DistinctThreads,
+            CurrentMetrics::DistinctThreadsActive,
+            CurrentMetrics::DistinctThreadsScheduled,
+            max_threads_);
+}
+
+DistinctTransform::~DistinctTransform() = default;
+
+bool DistinctTransform::shouldBuildParallel(size_t num_rows) const
+{
+    /// Parallelize the two-level build only when a pool exists and the chunk is large enough to
+    /// amortize the three-phase scatter. `parallel_build_min_rows == 0` removes the minimum, so
+    /// any non-empty chunk uses the parallel path. Structured as a policy hook so the decision can
+    /// later be driven by online per-block signals instead of this fixed heuristic.
+    return pool != nullptr && num_rows > parallel_build_min_rows;
 }
 
 template <typename Method>
@@ -91,6 +189,129 @@ void DistinctTransform::buildFilter(
             filter[i] = emplace_result.isInserted();
         }
     }
+}
+
+/// Build the distinctness filter for a chunk against a two-level hash set, parallelized by bucket.
+///
+/// Two phases, two barriers:
+/// A. Each worker makes ONE pass over its row slice, hashing each key and appending `(row, hash)`
+///    into its OWN per-bucket buffers (`local_rows`/`local_hashes[w * NUM_BUCKETS + b]`). Only worker
+///    `w` touches its buffers, so there is no contention, no global prefix-sum and no second pass
+///    over the rows.
+/// B. One task per bucket reads every worker's slice for that bucket and emplaces into the
+///    bucket-local hash table (disjoint buckets -> lock-free). The key is re-derived from the row id
+///    (keeps the buffers key-type independent) and the hash cached in phase A is reused, prefetching
+///    ~16 entries ahead by hash.
+///
+/// For string key families (`KeyType == std::string_view`) the re-derived key still points into the
+/// transient chunk column, so before inserting we copy the bytes into THIS bucket's arena and emplace
+/// the arena-backed view (the stored cell key then outlives the chunk and never dangles). Each bucket
+/// owns its arena and is processed by exactly one worker, so the arena is never written concurrently.
+///
+/// All scratch buffers live in `two_level_scratch` and are reused across chunks; this runs only from
+/// `transform`, one chunk at a time, so there is no concurrent access to the scratch.
+template <typename Method>
+void DistinctTransform::buildTwoLevelParallelFilter(
+    Method & method,
+    const ColumnRawPtrs & columns,
+    IColumnFilter & filter,
+    const size_t rows,
+    ThreadPool & thread_pool) const
+{
+    using BucketData = std::decay_t<decltype(method.data)>;
+    constexpr size_t NUM_BUCKETS = BucketData::NUM_BUCKETS;
+    static_assert(NUM_BUCKETS == two_level_num_fine_buckets);
+    static_assert(NUM_BUCKETS <= 256);
+
+    using KeyType = typename BucketData::key_type;
+
+    const size_t num_workers = std::min(thread_pool.getMaxThreads(), NUM_BUCKETS);
+    if (num_workers == 0 || rows == 0)
+        return;
+
+    auto & scratch = two_level_scratch;
+    const size_t num_slots = num_workers * NUM_BUCKETS;
+    if (scratch.local_rows.size() < num_slots)
+    {
+        scratch.local_rows.resize(num_slots);
+        scratch.local_hashes.resize(num_slots);
+    }
+    for (size_t s = 0; s < num_slots; ++s)
+    {
+        scratch.local_rows[s].clear();
+        scratch.local_hashes[s].clear();
+    }
+
+    const auto worker_range = [rows, num_workers](size_t w)
+    {
+        const size_t per_worker = (rows + num_workers - 1) / num_workers;
+        const size_t lo = std::min(w * per_worker, rows);
+        const size_t hi = std::min(lo + per_worker, rows);
+        return std::pair{lo, hi};
+    };
+
+    /// Phase A: hash + partition each worker's row-slice into its own per-bucket buffers.
+    parallelPerWorker(thread_pool, ThreadName::DISTINCT_FINAL, num_workers,
+        [&](size_t w)
+        {
+            typename Method::State state(columns, key_sizes, nullptr);
+            Arena unused_pool;
+            PaddedPODArray<UInt32> * rows_buf = &scratch.local_rows[w * NUM_BUCKETS];
+            PaddedPODArray<UInt64> * hash_buf = &scratch.local_hashes[w * NUM_BUCKETS];
+            const auto [lo, hi] = worker_range(w);
+            for (size_t i = lo; i < hi; ++i)
+            {
+                auto kh = state.getKeyHolder(i, unused_pool);
+                const auto h = method.data.hash(keyHolderGetKey(kh));
+                const auto b = method.data.getBucketFromHash(h);
+                rows_buf[b].push_back(static_cast<UInt32>(i));
+                hash_buf[b].push_back(h);
+            }
+        });
+
+    /// Phase B: one task per bucket, emplacing every worker's slice for that bucket.
+    parallelDispatch(thread_pool, ThreadName::DISTINCT_FINAL, num_workers, NUM_BUCKETS,
+        [&](size_t bucket)
+        {
+            auto & impl = method.data.impls[bucket];
+            typename BucketData::Impl::LookupResult it;
+            constexpr size_t prefetch_dist = 16;
+
+            [[maybe_unused]] Arena * bucket_arena = nullptr;
+            if constexpr (std::is_same_v<KeyType, std::string_view>)
+            {
+                auto & arena_ptr = scratch.bucket_arenas[bucket];
+                if (!arena_ptr)
+                    arena_ptr = std::make_unique<Arena>();
+                bucket_arena = arena_ptr.get();
+            }
+
+            typename Method::State state(columns, key_sizes, nullptr);
+            Arena unused_pool;
+            for (size_t w = 0; w < num_workers; ++w)
+            {
+                const auto & rows_buf = scratch.local_rows[w * NUM_BUCKETS + bucket];
+                const auto & hash_buf = scratch.local_hashes[w * NUM_BUCKETS + bucket];
+                const size_t n = rows_buf.size();
+                for (size_t j = 0; j < n; ++j)
+                {
+                    if (j + prefetch_dist < n)
+                        impl.prefetchByHash(hash_buf[j + prefetch_dist]);
+
+                    const UInt32 row = rows_buf[j];
+                    auto kh = state.getKeyHolder(row, unused_pool);
+                    KeyType key = keyHolderGetKey(kh);
+                    if constexpr (std::is_same_v<KeyType, std::string_view>)
+                    {
+                        const char * persisted = bucket_arena->insert(key.data(), key.size());
+                        key = std::string_view(persisted, key.size());
+                    }
+                    bool inserted;
+                    impl.emplace(key, it, inserted, hash_buf[j]);
+                    filter[row] = inserted;
+                }
+            }
+        });
 }
 
 std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(const ColumnLowCardinality & column, size_t num_rows)
@@ -226,19 +447,81 @@ void DistinctTransform::transform(Chunk & chunk)
     if (data.empty())
         data.init(SetVariants::chooseMethod(column_ptrs, key_sizes));
 
+    /// Promote single-level → two-level once the set exceeds the row-count OR byte threshold,
+    /// for all convertible fixed-width-key families. Two-level lets the per-chunk filter build
+    /// run per-bucket in parallel below. Each threshold of 0 disables that trigger; setting both
+    /// to 0 disables the conversion entirely (mirrors `group_by_two_level_threshold[_bytes]`).
+    if (!is_pre_distinct
+        && pool
+        && SetVariants::isConvertibleToTwoLevel(data.type)
+        && ((two_level_threshold != 0 && data.getTotalRowCount() > two_level_threshold)
+            || (two_level_threshold_bytes != 0 && data.getTotalByteCount() > two_level_threshold_bytes)))
+    {
+        data.convertToTwoLevel();
+        ProfileEvents::increment(ProfileEvents::DistinctHashTablesInitializedAsTwoLevel);
+    }
+
     const auto old_set_size = data.getTotalRowCount();
     IColumn::Filter filter(num_rows);
+    auto * lc_mask_ptr = lc_mask ? &*lc_mask : nullptr;
 
     switch (data.type)
     {
         case SetVariants::Type::EMPTY:
             break;
+
+#define APPLY_FOR_SET_VARIANTS_DISTINCT(M) \
+        M(key8) \
+        M(key16) \
+        M(key32) \
+        M(key64) \
+        M(key_string) \
+        M(key_fixed_string) \
+        M(keys128) \
+        M(keys256) \
+        M(nullable_keys128) \
+        M(nullable_keys256) \
+        M(hashed)
+
 #define M(NAME) \
         case SetVariants::Type::NAME: \
-            buildFilter(*data.NAME, column_ptrs, filter, num_rows, data, lc_mask ? &*lc_mask : nullptr); \
+            buildFilter(*data.NAME, column_ptrs, filter, num_rows, data, lc_mask_ptr); \
         break;
-        APPLY_FOR_SET_VARIANTS(M)
+        APPLY_FOR_SET_VARIANTS_DISTINCT(M)
 #undef M
+#undef APPLY_FOR_SET_VARIANTS_DISTINCT
+
+        /// Two-level fixed-width-key families: parallel build when thread pool is available
+        /// and the chunk is large enough to amortize the scatter overhead; serial fallback otherwise.
+#define DISPATCH_TWO_LEVEL(NAME) \
+        case SetVariants::Type::NAME: \
+        { \
+            auto & set = *data.NAME; \
+            if (shouldBuildParallel(num_rows)) \
+            { \
+                ProfileEvents::increment(ProfileEvents::DistinctTwoLevelParallelFilterBuilds); \
+                buildTwoLevelParallelFilter(set, column_ptrs, filter, num_rows, *pool); \
+            } \
+            else \
+            { \
+                ProfileEvents::increment(ProfileEvents::DistinctTwoLevelSerialFilterBuilds); \
+                buildFilter(set, column_ptrs, filter, num_rows, data, lc_mask_ptr); \
+            } \
+            break; \
+        }
+        DISPATCH_TWO_LEVEL(hashed_two_level)
+        DISPATCH_TWO_LEVEL(key32_two_level)
+        DISPATCH_TWO_LEVEL(key64_two_level)
+        DISPATCH_TWO_LEVEL(keys128_two_level)
+        DISPATCH_TWO_LEVEL(keys256_two_level)
+        DISPATCH_TWO_LEVEL(nullable_keys128_two_level)
+        DISPATCH_TWO_LEVEL(nullable_keys256_two_level)
+
+        /// String two-level variants: parallel build persists keys into per-bucket arenas
+        /// (see phase 3 of `buildTwoLevelParallelFilter`).
+        DISPATCH_TWO_LEVEL(key_string_two_level)
+        DISPATCH_TWO_LEVEL(key_fixed_string_two_level)
+#undef DISPATCH_TWO_LEVEL
     }
 
     const auto new_set_size = data.getTotalRowCount();
@@ -272,5 +555,34 @@ void DistinctTransform::transform(Chunk & chunk)
     if (limit_hint && new_set_size >= limit_hint)
         stopReading();
 }
+
+/// Explicit instantiations of `buildTwoLevelParallelFilter` for all convertible two-level
+/// methods, including the string families (`key_string_two_level`, `key_fixed_string_two_level`),
+/// whose phase-3 emplace persists keys into per-bucket arenas.
+#define INSTANTIATE_TWO_LEVEL_BUILD(METHOD_TYPE) \
+    template void DistinctTransform::buildTwoLevelParallelFilter<METHOD_TYPE>( \
+        METHOD_TYPE &, const ColumnRawPtrs &, IColumnFilter &, size_t, ThreadPool &) const;
+
+using NonClearableHashedTwoLevel          = SetMethodHashedTwoLevel<TwoLevelHashSet<UInt128, UInt128TrivialHash>>;
+using NonClearableKey32TwoLevel           = SetMethodOneNumber<UInt32, TwoLevelHashSet<UInt32, HashCRC32<UInt32>>>;
+using NonClearableKey64TwoLevel           = SetMethodOneNumber<UInt64, TwoLevelHashSet<UInt64, HashCRC32<UInt64>>>;
+using NonClearableKeyStringTwoLevel       = SetMethodString<TwoLevelHashSetWithSavedHash<std::string_view>>;
+using NonClearableKeyFixedStringTwoLevel  = SetMethodFixedString<TwoLevelHashSetWithSavedHash<std::string_view>>;
+using NonClearableKeys128TwoLevel         = SetMethodKeysFixed<TwoLevelHashSet<UInt128, UInt128HashCRC32>>;
+using NonClearableKeys256TwoLevel         = SetMethodKeysFixed<TwoLevelHashSet<UInt256, UInt256HashCRC32>>;
+using NonClearableNullableKeys128TwoLevel = SetMethodKeysFixed<TwoLevelHashSet<UInt128, UInt128HashCRC32>, true>;
+using NonClearableNullableKeys256TwoLevel = SetMethodKeysFixed<TwoLevelHashSet<UInt256, UInt256HashCRC32>, true>;
+
+INSTANTIATE_TWO_LEVEL_BUILD(NonClearableHashedTwoLevel)
+INSTANTIATE_TWO_LEVEL_BUILD(NonClearableKey32TwoLevel)
+INSTANTIATE_TWO_LEVEL_BUILD(NonClearableKey64TwoLevel)
+INSTANTIATE_TWO_LEVEL_BUILD(NonClearableKeyStringTwoLevel)
+INSTANTIATE_TWO_LEVEL_BUILD(NonClearableKeyFixedStringTwoLevel)
+INSTANTIATE_TWO_LEVEL_BUILD(NonClearableKeys128TwoLevel)
+INSTANTIATE_TWO_LEVEL_BUILD(NonClearableKeys256TwoLevel)
+INSTANTIATE_TWO_LEVEL_BUILD(NonClearableNullableKeys128TwoLevel)
+INSTANTIATE_TWO_LEVEL_BUILD(NonClearableNullableKeys256TwoLevel)
+
+#undef INSTANTIATE_TWO_LEVEL_BUILD
 
 }

@@ -12,6 +12,9 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
+    extern const SettingsUInt64 distinct_two_level_threshold;
+    extern const SettingsUInt64 distinct_two_level_threshold_bytes;
+    extern const SettingsUInt64 distinct_two_level_parallel_build_min_rows;
     extern const SettingsUInt64 min_outstreams_per_resize_after_split;
     extern const SettingsUInt64 max_streams_for_union_step;
     extern const SettingsFloat max_streams_for_union_step_to_max_threads_ratio;
@@ -29,6 +32,9 @@ BuildQueryPipelineSettings::BuildQueryPipelineSettings(ContextPtr from)
         from->getSettingsRef()[Setting::max_threads],
         settings[Setting::max_threads_min_free_memory_per_thread]);
     aggregation_memory_efficient_merge_threads = from->getSettingsRef()[Setting::aggregation_memory_efficient_merge_threads];
+    distinct_two_level_threshold = from->getSettingsRef()[Setting::distinct_two_level_threshold];
+    distinct_two_level_threshold_bytes = from->getSettingsRef()[Setting::distinct_two_level_threshold_bytes];
+    distinct_two_level_parallel_build_min_rows = from->getSettingsRef()[Setting::distinct_two_level_parallel_build_min_rows];
     min_outstreams_per_resize_after_split = from->getSettingsRef()[Setting::min_outstreams_per_resize_after_split];
     max_streams_for_union_step = from->getSettingsRef()[Setting::max_streams_for_union_step];
     max_streams_for_union_step_to_max_threads_ratio = static_cast<double>(from->getSettingsRef()[Setting::max_streams_for_union_step_to_max_threads_ratio]);

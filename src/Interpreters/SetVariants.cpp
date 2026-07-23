@@ -173,6 +173,57 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
     return Type::hashed;
 }
 
+template <typename Variant>
+bool SetVariantsTemplate<Variant>::isConvertibleToTwoLevel(Type type_)
+{
+    switch (type_)
+    {
+    #define M(NAME) case Type::NAME: return true;
+        APPLY_FOR_SET_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+    #undef M
+        default:
+            return false;
+    }
+}
+
+template <typename Variant>
+bool SetVariantsTemplate<Variant>::isTwoLevel() const
+{
+    switch (type)
+    {
+        case Type::hashed_two_level:
+        case Type::key32_two_level:
+        case Type::key64_two_level:
+        case Type::key_string_two_level:
+        case Type::key_fixed_string_two_level:
+        case Type::keys128_two_level:
+        case Type::keys256_two_level:
+        case Type::nullable_keys128_two_level:
+        case Type::nullable_keys256_two_level:
+            return true;
+        default:
+            return false;
+    }
+}
+
+template <typename Variant>
+void SetVariantsTemplate<Variant>::convertToTwoLevel()
+{
+    switch (type)
+    {
+    #define M(NAME) \
+        case Type::NAME: \
+            NAME##_two_level = std::make_unique<typename decltype(NAME##_two_level)::element_type>(*(NAME)); \
+            (NAME).reset(); \
+            type = Type::NAME##_two_level; \
+            break;
+        APPLY_FOR_SET_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+    #undef M
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Set method cannot be converted to two-level");
+    }
+}
+
 template struct SetVariantsTemplate<NonClearableSet>;
 template struct SetVariantsTemplate<ClearableSet>;
 template struct SetVariantsTemplate<CountingSet>;

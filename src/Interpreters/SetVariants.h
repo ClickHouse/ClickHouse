@@ -5,6 +5,7 @@
 #include <Common/Arena.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/TwoLevelHashMap.h>
 #include <Common/HashTable/ClearableHashSet.h>
 #include <Common/HashTable/FixedClearableHashSet.h>
 #include <Common/HashTable/FixedHashSet.h>
@@ -44,6 +45,11 @@ struct SetMethodOneNumber
 
     Data data;
 
+    SetMethodOneNumber() = default;
+
+    template <typename Other>
+    explicit SetMethodOneNumber(const Other & other) : data(other.data) {}
+
     using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type,
         SetMethodMapped<Data>, FieldType, set_method_use_cache<Data, use_cache>>;
 };
@@ -57,6 +63,11 @@ struct SetMethodString
 
     Data data;
 
+    SetMethodString() = default;
+
+    template <typename Other>
+    explicit SetMethodString(const Other & other) : data(other.data) {}
+
     using State = ColumnsHashing::HashMethodString<typename Data::value_type, SetMethodMapped<Data>, true, false>;
 };
 
@@ -68,6 +79,11 @@ struct SetMethodFixedString
     using Key = typename Data::key_type;
 
     Data data;
+
+    SetMethodFixedString() = default;
+
+    template <typename Other>
+    explicit SetMethodFixedString(const Other & other) : data(other.data) {}
 
     using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, SetMethodMapped<Data>, true, false>;
 };
@@ -175,6 +191,11 @@ struct SetMethodKeysFixed
 
     Data data;
 
+    SetMethodKeysFixed() = default;
+
+    template <typename Other>
+    explicit SetMethodKeysFixed(const Other & other) : data(other.data) {}
+
     using State = ColumnsHashing::HashMethodKeysFixed<typename Data::value_type, Key, SetMethodMapped<Data>,
         has_nullable_keys, false, set_method_use_cache<Data, true>>;
 };
@@ -189,6 +210,25 @@ struct SetMethodHashed
     Data data;
 
     using State = ColumnsHashing::HashMethodHashed<typename Data::value_type, SetMethodMapped<Data>, set_method_use_cache<Data, true>>;
+};
+
+/// Two-level variant of SetMethodHashed. Built either from scratch or by converting
+/// an existing single-level `SetMethodHashed` via the `(const Other &)` ctor, mirroring
+/// the aggregator's single-→two-level conversion path.
+template <typename TData>
+struct SetMethodHashedTwoLevel
+{
+    using Data = TData;
+    using Key = typename Data::key_type;
+
+    Data data;
+
+    SetMethodHashedTwoLevel() = default;
+
+    template <typename Other>
+    explicit SetMethodHashedTwoLevel(const Other & other) : data(other.data) {}
+
+    using State = ColumnsHashing::HashMethodHashed<typename Data::value_type, SetMethodMapped<Data>>;
 };
 
 
@@ -217,6 +257,17 @@ struct NonClearableSet
     std::unique_ptr<SetMethodKeysFixed<HashSet<UInt256, UInt256HashCRC32>>>                  keys256;
     std::unique_ptr<SetMethodHashed<HashSet<UInt128, UInt128TrivialHash>>>                   hashed;
 
+    std::unique_ptr<SetMethodHashedTwoLevel<TwoLevelHashSet<UInt128, UInt128TrivialHash>>>   hashed_two_level;
+
+    std::unique_ptr<SetMethodOneNumber<UInt32, TwoLevelHashSet<UInt32, HashCRC32<UInt32>>>>       key32_two_level;
+    std::unique_ptr<SetMethodOneNumber<UInt64, TwoLevelHashSet<UInt64, HashCRC32<UInt64>>>>       key64_two_level;
+    std::unique_ptr<SetMethodString<TwoLevelHashSetWithSavedHash<std::string_view>>>              key_string_two_level;
+    std::unique_ptr<SetMethodFixedString<TwoLevelHashSetWithSavedHash<std::string_view>>>         key_fixed_string_two_level;
+    std::unique_ptr<SetMethodKeysFixed<TwoLevelHashSet<UInt128, UInt128HashCRC32>>>               keys128_two_level;
+    std::unique_ptr<SetMethodKeysFixed<TwoLevelHashSet<UInt256, UInt256HashCRC32>>>               keys256_two_level;
+    std::unique_ptr<SetMethodKeysFixed<TwoLevelHashSet<UInt128, UInt128HashCRC32>, true>>         nullable_keys128_two_level;
+    std::unique_ptr<SetMethodKeysFixed<TwoLevelHashSet<UInt256, UInt256HashCRC32>, true>>         nullable_keys256_two_level;
+
     /// Support for nullable keys (for DISTINCT implementation).
     std::unique_ptr<SetMethodKeysFixed<HashSet<UInt128, UInt128HashCRC32>, true>>            nullable_keys128;
     std::unique_ptr<SetMethodKeysFixed<HashSet<UInt256, UInt256HashCRC32>, true>>            nullable_keys256;
@@ -240,6 +291,17 @@ struct ClearableSet
     std::unique_ptr<SetMethodKeysFixed<ClearableHashSet<UInt128, UInt128HashCRC32>>>                 keys128;
     std::unique_ptr<SetMethodKeysFixed<ClearableHashSet<UInt256, UInt256HashCRC32>>>                 keys256;
     std::unique_ptr<SetMethodHashed<ClearableHashSet<UInt128, UInt128TrivialHash>>>                  hashed;
+
+    std::unique_ptr<SetMethodHashedTwoLevel<TwoLevelClearableHashSet<UInt128, UInt128TrivialHash>>>  hashed_two_level;
+
+    std::unique_ptr<SetMethodOneNumber<UInt32, TwoLevelClearableHashSet<UInt32, HashCRC32<UInt32>>>>       key32_two_level;
+    std::unique_ptr<SetMethodOneNumber<UInt64, TwoLevelClearableHashSet<UInt64, HashCRC32<UInt64>>>>       key64_two_level;
+    std::unique_ptr<SetMethodString<TwoLevelClearableHashSetWithSavedHash<std::string_view>>>              key_string_two_level;
+    std::unique_ptr<SetMethodFixedString<TwoLevelClearableHashSetWithSavedHash<std::string_view>>>         key_fixed_string_two_level;
+    std::unique_ptr<SetMethodKeysFixed<TwoLevelClearableHashSet<UInt128, UInt128HashCRC32>>>               keys128_two_level;
+    std::unique_ptr<SetMethodKeysFixed<TwoLevelClearableHashSet<UInt256, UInt256HashCRC32>>>               keys256_two_level;
+    std::unique_ptr<SetMethodKeysFixed<TwoLevelClearableHashSet<UInt128, UInt128HashCRC32>, true>>         nullable_keys128_two_level;
+    std::unique_ptr<SetMethodKeysFixed<TwoLevelClearableHashSet<UInt256, UInt256HashCRC32>, true>>         nullable_keys256_two_level;
 
     /// Support for nullable keys (for DISTINCT implementation).
     std::unique_ptr<SetMethodKeysFixed<ClearableHashSet<UInt128, UInt128HashCRC32>, true>>           nullable_keys128;
@@ -271,6 +333,20 @@ struct CountingSet
     std::unique_ptr<SetMethodKeysFixed<HashMap<UInt256, Count, UInt256HashCRC32>>>                   keys256;
     std::unique_ptr<SetMethodHashed<HashMap<UInt128, Count, UInt128TrivialHash>>>                    hashed;
 
+    /// Two-level counterparts. Unused by INTERSECT ALL / EXCEPT ALL (which never convert to
+    /// two-level), but declared so `CountingSet` exposes the same member set as the other
+    /// variants that `SetVariantsTemplate` enumerates through `APPLY_FOR_SET_VARIANTS`.
+    std::unique_ptr<SetMethodHashedTwoLevel<TwoLevelHashMap<UInt128, Count, UInt128TrivialHash>>>    hashed_two_level;
+
+    std::unique_ptr<SetMethodOneNumber<UInt32, TwoLevelHashMap<UInt32, Count, HashCRC32<UInt32>>>>        key32_two_level;
+    std::unique_ptr<SetMethodOneNumber<UInt64, TwoLevelHashMap<UInt64, Count, HashCRC32<UInt64>>>>        key64_two_level;
+    std::unique_ptr<SetMethodString<TwoLevelHashMapWithSavedHash<std::string_view, Count>>>              key_string_two_level;
+    std::unique_ptr<SetMethodFixedString<TwoLevelHashMapWithSavedHash<std::string_view, Count>>>         key_fixed_string_two_level;
+    std::unique_ptr<SetMethodKeysFixed<TwoLevelHashMap<UInt128, Count, UInt128HashCRC32>>>               keys128_two_level;
+    std::unique_ptr<SetMethodKeysFixed<TwoLevelHashMap<UInt256, Count, UInt256HashCRC32>>>               keys256_two_level;
+    std::unique_ptr<SetMethodKeysFixed<TwoLevelHashMap<UInt128, Count, UInt128HashCRC32>, true>>         nullable_keys128_two_level;
+    std::unique_ptr<SetMethodKeysFixed<TwoLevelHashMap<UInt256, Count, UInt256HashCRC32>, true>>         nullable_keys256_two_level;
+
     std::unique_ptr<SetMethodKeysFixed<HashMap<UInt128, Count, UInt128HashCRC32>, true>>             nullable_keys128;
     std::unique_ptr<SetMethodKeysFixed<HashMap<UInt256, Count, UInt256HashCRC32>, true>>             nullable_keys256;
 };
@@ -293,7 +369,22 @@ struct SetVariantsTemplate: public Variant
         M(keys256)              \
         M(nullable_keys128)     \
         M(nullable_keys256)     \
-        M(hashed)
+        M(hashed)               \
+        M(hashed_two_level)     \
+        M(key32_two_level)      \
+        M(key64_two_level)      \
+        M(key_string_two_level) \
+        M(key_fixed_string_two_level) \
+        M(keys128_two_level)    \
+        M(keys256_two_level)    \
+        M(nullable_keys128_two_level) \
+        M(nullable_keys256_two_level)
+
+    /// key_string and key_fixed_string are convertible: their parallel build path persists
+    /// keys into per-bucket arenas (see DistinctTransform::buildTwoLevelParallelFilter phase 3).
+    #define APPLY_FOR_SET_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M) \
+        M(key32) M(key64) M(key_string) M(key_fixed_string) \
+        M(keys128) M(keys256) M(nullable_keys128) M(nullable_keys256) M(hashed)
 
     #define M(NAME) using Variant::NAME;
         APPLY_FOR_SET_VARIANTS(M)
@@ -319,6 +410,10 @@ struct SetVariantsTemplate: public Variant
     size_t getTotalRowCount() const;
     /// Counts the size in bytes of the Set buffer and the size of the `string_pool`
     size_t getTotalByteCount() const;
+
+    void convertToTwoLevel();
+    bool isTwoLevel() const;
+    static bool isConvertibleToTwoLevel(Type type);
 };
 
 using SetVariants = SetVariantsTemplate<NonClearableSet>;
