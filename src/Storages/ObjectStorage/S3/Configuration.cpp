@@ -205,8 +205,14 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     const auto & settings = context->getSettingsRef();
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
 
-    /// Resolve relative URLs against the `s3_base` setting.
-    const String collection_url = StorageURL::resolveURLBase(collection.get<String>("url"), settings[Setting::s3_base].value, "s3_base");
+    /// Resolve relative URLs against the `s3_base` setting. When the setting rewrote the URL,
+    /// record the resolved value so that `StorageObjectStorageConfiguration::initialize`
+    /// materializes it back into the persisted engine args (`url='...'` override), keeping the
+    /// persisted DDL independent of `s3_base` at attach time.
+    const String raw_collection_url = collection.get<String>("url");
+    const String collection_url = StorageURL::resolveURLBase(raw_collection_url, settings[Setting::s3_base].value, "s3_base");
+    if (collection_url != raw_collection_url)
+        url_overridden_by_base_setting = collection_url;
 
     auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())

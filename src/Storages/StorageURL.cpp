@@ -2137,11 +2137,12 @@ void StorageURL::overrideURLInEngineArgs(ASTs & args, const String & resolved_ur
     }
 
     /// Named-collection or key-value form: `URL(nc)`, `URL(nc, url='...')`, or `URL(url='...', ...)`.
+    /// Read the `url` key directly instead of going through `processNamedCollectionResult`:
+    /// this function is also called for collections of other engines (e.g. `S3`), whose keys
+    /// would not pass the `URL` engine validation.
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context, /*throw_unknown_collection=*/false))
     {
-        Configuration unresolved;
-        StorageURL::processNamedCollectionResult(unresolved, *named_collection);
-        if (unresolved.url == resolved_url)
+        if (named_collection->getOrDefault<String>("url", "") == resolved_url)
             return;
     }
 
