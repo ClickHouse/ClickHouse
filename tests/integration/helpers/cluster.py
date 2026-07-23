@@ -5414,7 +5414,13 @@ class ClickHouseInstance:
             logging.warning(f"Stop ClickHouse raised an error {e}")
 
     def start_clickhouse(
-        self, start_wait_sec=60, retry_start=True, expected_to_fail=False, daemon=False
+        self,
+        start_wait_sec=60,
+        retry_start=True,
+        expected_to_fail=False,
+        environment=None,
+        wait_start=True,
+        daemon=False
     ):
         if not self.stay_alive:
             raise Exception(
@@ -5444,7 +5450,10 @@ class ClickHouseInstance:
                     detach=True,
                     use_cli=False,
                     get_exec_id=True,
+                    environment=environment,
                 )
+                if not wait_start:
+                    return exec_id
                 if expected_to_fail:
                     self.wait_start_failed(start_wait_sec + start_time - time.time())
                     return

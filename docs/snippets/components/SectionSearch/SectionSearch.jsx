@@ -150,6 +150,14 @@ export const SectionSearch = ({ section = '/reference/statements', label = 'Stat
       // disturbed.
       if (trap && !window.__inkeepTrapped) {
         const modalInkeep = window.Inkeep;
+        // A slow modal load can arrive after embed.js has already populated
+        // window.Inkeep. Preserve that usable inline-search API before the
+        // trap hides it, otherwise a later remount polls the modal forever.
+        if (!window.__inkeepEmbedJs &&
+            modalInkeep &&
+            typeof modalInkeep.EmbeddedSearch === 'function') {
+          window.__inkeepEmbedJs = modalInkeep;
+        }
         try {
           Object.defineProperty(window, 'Inkeep', {
             configurable: true,
@@ -164,6 +172,15 @@ export const SectionSearch = ({ section = '/reference/statements', label = 'Stat
         s.id = 'inkeep-embed-js-script';
         s.type = 'module';
         s.src = EMBED;
+        s.onload = () => {
+          // Retain the embed API even if the modal bundle later replaces the
+          // shared window.Inkeep global before this component remounts.
+          const embedApi = window.__inkeepEmbedJs || window.Inkeep;
+          if (embedApi && typeof embedApi.EmbeddedSearch === 'function') {
+            window.__inkeepEmbedJs = embedApi;
+          }
+          mount();
+        };
         document.head.appendChild(s);
       }
       mount();

@@ -32,7 +32,7 @@ public:
         if (!initialized)
         {
             ServerUUID::setRandomForUnitTests();
-            getIOThreadPool().initialize(1, 1, 0);
+            getIOThreadPool().initializeWithDefaultSettingsIfNotInitialized();
             initialized = true;
         }
     }
@@ -690,8 +690,7 @@ TEST_F(MetadataPlainRewritableDiskTest, DirectoryFileNameCollision)
 
     {
         auto tx = metadata->createTransaction();
-        tx->createDirectory("A/B");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+        EXPECT_ANY_THROW(tx->createDirectory("A/B"));
     }
 
     EXPECT_FALSE(metadata->existsDirectory("A/B"));
@@ -1941,4 +1940,263 @@ TEST_F(MetadataPlainRewritableDiskTest, TestComplexUnlink)
     }
 
     EXPECT_TRUE(metadata->existsFile("file"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, CreateExistingDirectory)
+{
+    auto metadata = getMetadataStorage("CreateExistingDirectory");
+    auto object_storage = getObjectStorage("CreateExistingDirectory");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("A/B/C");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A/B/C");
+        size_t file_size = writeObject(object_storage, tx->generateObjectKeyForPath("A/B/C/file").serialize(), "1");
+        tx->createMetadataFile("A/B/C/file", {StoredObject("A/B/C/file", "file", file_size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_TRUE(metadata->existsFile("A/B/C/file"));
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("A/B/C/file").front().remote_path), "1");
+
+    metadata = restartMetadataStorage("CreateExistingDirectory");
+    EXPECT_TRUE(metadata->existsFile("A/B/C/file"));
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("A/B/C/file").front().remote_path), "1");
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, RecreateDirectoryInSameTransaction)
+{
+    auto metadata = getMetadataStorage("RecreateDirectoryInSameTransaction");
+    auto object_storage = getObjectStorage("RecreateDirectoryInSameTransaction");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("A/B/C");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    auto old_prefix = generateObjectKeyPrefixForDirectoryPath(metadata, "A/B/C/");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->moveDirectory("A/B/C", "A/B/D");
+        tx->createDirectory("A/B/C");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("A/B/C"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B/D"));
+    EXPECT_EQ(generateObjectKeyPrefixForDirectoryPath(metadata, "A/B/D/"), old_prefix);
+    EXPECT_NE(generateObjectKeyPrefixForDirectoryPath(metadata, "A/B/C/"), old_prefix);
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, TransactionViewAfterMove)
+{
+    auto metadata = getMetadataStorage("TransactionViewAfterMove");
+    auto object_storage = getObjectStorage("TransactionViewAfterMove");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    auto a_prefix = generateObjectKeyPrefixForDirectoryPath(metadata, "A/");
+
+    /// Creating the destination of an earlier move must be an idempotent no-op.
+    {
+        auto tx = metadata->createTransaction();
+        tx->moveDirectory("A", "B");
+        tx->createDirectory("B");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_FALSE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("B"));
+    EXPECT_EQ(generateObjectKeyPrefixForDirectoryPath(metadata, "B/"), a_prefix);
+
+    /// A path restored within the same transaction must be usable again.
+    {
+        auto tx = metadata->createTransaction();
+        tx->moveDirectory("B", "A");
+        tx->moveDirectory("A", "B");
+        tx->createDirectory("B");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_FALSE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("B"));
+    EXPECT_EQ(generateObjectKeyPrefixForDirectoryPath(metadata, "B/"), a_prefix);
+
+    metadata = restartMetadataStorage("TransactionViewAfterMove");
+    EXPECT_FALSE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("B"));
+    EXPECT_EQ(generateObjectKeyPrefixForDirectoryPath(metadata, "B/"), a_prefix);
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, ConcurrentCreateUnderMovedDirectory)
+{
+    auto metadata = getMetadataStorage("ConcurrentCreateUnderMovedDirectory");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// The move relocates the subtree as of the commit time: a directory committed
+    /// concurrently under the source serializes before the move and travels with it.
+    auto tx1 = metadata->createTransaction();
+    tx1->moveDirectory("A", "B");
+
+    {
+        auto tx2 = metadata->createTransaction();
+        tx2->createDirectory("A/C");
+        tx2->commit(DB::NoCommitOptions{});
+    }
+
+    tx1->commit(DB::NoCommitOptions{});
+
+    EXPECT_FALSE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("B"));
+    EXPECT_TRUE(metadata->existsDirectory("B/C"));
+
+    metadata = restartMetadataStorage("ConcurrentCreateUnderMovedDirectory");
+    EXPECT_FALSE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("B/C"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, ConcurrentRecreateUnderUnlinkFile)
+{
+    auto metadata = getMetadataStorage("ConcurrentRecreateUnderUnlinkFile");
+    auto object_storage = getObjectStorage("ConcurrentRecreateUnderUnlinkFile");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        size_t size = writeObject(object_storage, tx->generateObjectKeyForPath("A/file").serialize(), "Old content");
+        tx->createMetadataFile("A/file", {StoredObject("A/file", "file", size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// The unlink must not remove a file this transaction never observed.
+    auto tx1 = metadata->createTransaction();
+    tx1->unlinkFile("A/file", /*if_exists=*/true, /*should_remove_objects=*/true);
+
+    {
+        auto tx2 = metadata->createTransaction();
+        tx2->removeRecursive("A", /*should_remove_blob=*/nullptr);
+        tx2->createDirectory("A");
+        size_t size = writeObject(object_storage, tx2->generateObjectKeyForPath("A/file").serialize(), "New content");
+        tx2->createMetadataFile("A/file", {StoredObject("A/file", "file", size)});
+        tx2->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_ANY_THROW(tx1->commit(DB::NoCommitOptions{}));
+
+    EXPECT_TRUE(metadata->existsFile("A/file"));
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("A/file").front().remote_path), "New content");
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, SnapshotDecisionPreservedOnConcurrentChange)
+{
+    auto metadata = getMetadataStorage("SnapshotDecisionPreservedOnConcurrentChange");
+
+    auto tx1 = metadata->createTransaction();
+    tx1->removeRecursive("X", /*should_remove_blob=*/nullptr);
+
+    {
+        auto tx2 = metadata->createTransaction();
+        tx2->createDirectory("X");
+        tx2->commit(DB::NoCommitOptions{});
+    }
+
+    tx1->commit(DB::NoCommitOptions{});
+    EXPECT_FALSE(metadata->existsDirectory("X"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, ConcurrentCreateUnderUnlinkFile)
+{
+    auto metadata = getMetadataStorage("ConcurrentCreateUnderUnlinkFile");
+    auto object_storage = getObjectStorage("ConcurrentCreateUnderUnlinkFile");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// The unlink removes the file as of the commit time: a file committed
+    /// concurrently serializes before the unlink and gets removed by it.
+    auto tx1 = metadata->createTransaction();
+    tx1->unlinkFile("A/file", /*if_exists=*/false, /*should_remove_objects=*/true);
+
+    {
+        auto tx2 = metadata->createTransaction();
+        size_t size = writeObject(object_storage, tx2->generateObjectKeyForPath("A/file").serialize(), "New content");
+        tx2->createMetadataFile("A/file", {StoredObject("A/file", "file", size)});
+        tx2->commit(DB::NoCommitOptions{});
+    }
+
+    tx1->commit(DB::NoCommitOptions{});
+
+    EXPECT_FALSE(metadata->existsFile("A/file"));
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, ConcurrentRemoveOfMoveTarget)
+{
+    auto metadata = getMetadataStorage("ConcurrentRemoveOfMoveTarget");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("B");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    auto tx1 = metadata->createTransaction();
+    tx1->moveDirectory("A", "B");
+
+    {
+        auto tx2 = metadata->createTransaction();
+        tx2->removeDirectory("B");
+        tx2->commit(DB::NoCommitOptions{});
+    }
+
+    tx1->commit(DB::NoCommitOptions{});
+
+    EXPECT_FALSE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("B"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, ConcurrentCreateDirectory)
+{
+    auto metadata = getMetadataStorage("ConcurrentCreateDirectory");
+
+    /// Regression test for https://github.com/ClickHouse/ClickHouse/issues/111289
+    auto tx1 = metadata->createTransaction();
+    tx1->createDirectoryRecursive("A");
+
+    {
+        auto tx2 = metadata->createTransaction();
+        tx2->createDirectoryRecursive("A");
+        tx2->commit(DB::NoCommitOptions{});
+    }
+
+    auto remote_prefix = generateObjectKeyPrefixForDirectoryPath(metadata, "A/");
+    tx1->commit(DB::NoCommitOptions{});
+
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_EQ(generateObjectKeyPrefixForDirectoryPath(metadata, "A/"), remote_prefix);
+    EXPECT_EQ(listAllBlobs("ConcurrentCreateDirectory").size(), 1);
+
+    metadata = restartMetadataStorage("ConcurrentCreateDirectory");
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_EQ(generateObjectKeyPrefixForDirectoryPath(metadata, "A/"), remote_prefix);
 }

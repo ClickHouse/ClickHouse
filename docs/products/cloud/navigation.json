@@ -28,7 +28,7 @@
                 "products/cloud/features/sql-console-features/query-insights",
                 "products/cloud/features/sql-console-features/query-endpoints",
                 "products/cloud/features/sql-console-features/dashboards",
-                "products/cloud/features/sql-console-features/hyperdx",
+                "products/cloud/features/sql-console-features/clickstack",
                 "products/cloud/features/sql-console-features/user-defined-functions"
               ]
             },
