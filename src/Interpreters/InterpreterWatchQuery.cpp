@@ -64,6 +64,15 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
     const ASTWatchQuery & query = typeid_cast<const ASTWatchQuery &>(*query_ptr);
     auto table_id = getContext()->resolveStorageID(query, Context::ResolveOrdinary);
 
+    /// Fail-closed source-side visibility precheck for a table reached through a read-only
+    /// `Overlay` facade: it must run before the lookup below resolves and loads the underlying
+    /// source table, because loading can surface the hidden source's own error to a user with no
+    /// grant on the source (see the identical precheck in `JoinedTables::getLeftTableStorage`).
+    /// The column-level `SELECT` on both the facade and the source is still checked below
+    /// against the loaded storage, which also closes the resolution race.
+    if (const auto * facade = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(table_id.database_name).get()))
+        facade->checkSourceTableAccess(table_id.table_name, getContext(), AccessType::SHOW_TABLES);
+
     /// Get storage
     storage = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
 

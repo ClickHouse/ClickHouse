@@ -196,6 +196,18 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         query.table_id = current_context->resolveStorageID(local_table_id);
     }
 
+    /// Fail-closed source-side visibility precheck for a table reached through a read-only
+    /// `Overlay` facade: it must run before the lookup below resolves and loads the underlying
+    /// source table. Without it, `INSERT INTO` a facade name could surface a hidden broken
+    /// source's own startup / metadata / remote error — and `getSampleBlock` would derive the
+    /// column list from the source metadata — before any source-side grant is proven.
+    /// `SHOW_TABLES` is checked (not `INSERT`) because any grant on the source table implies it,
+    /// so users holding only column-level `INSERT` grants are not over-denied here; the
+    /// column-level `INSERT` on both the facade and the source is still verified against the
+    /// loaded storage afterwards, which also closes the resolution race.
+    if (const auto * facade = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(query.table_id.database_name).get()))
+        facade->checkSourceTableAccess(query.table_id.table_name, current_context, AccessType::SHOW_TABLES);
+
     return DatabaseCatalog::instance().getTable(query.table_id, current_context);
 }
 

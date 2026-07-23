@@ -1,7 +1,9 @@
 #include <Interpreters/JoinedTables.h>
 
+#include <Access/Common/AccessType.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
+#include <Databases/DatabaseOverlay.h>
 
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -258,6 +260,18 @@ StoragePtr JoinedTables::getLeftTableStorage()
             return context->getViewSource();
         }
     }
+
+    /// Fail-closed source-side visibility precheck for a table reached through a read-only
+    /// `Overlay` facade: it must run before the catalog lookup below resolves and loads the
+    /// underlying source table, because loading can surface the hidden source's own startup /
+    /// metadata / remote error to a user with no grant on the source, turning the facade into an
+    /// oracle for hidden broken sources. `SHOW_TABLES` is checked (not `SELECT`) because any
+    /// grant on the source table implies it, so users holding only column-level `SELECT` grants
+    /// are not over-denied here; the precise column-level `SELECT` on both the facade and the
+    /// source is still verified against the loaded storage in `checkAccessRightsForSelect`,
+    /// which also closes the resolution race.
+    if (const auto * facade = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(table_id.database_name).get()))
+        facade->checkSourceTableAccess(table_id.table_name, context, AccessType::SHOW_TABLES);
 
     /// Read from table. Even without table expression (implicit SELECT ... FROM system.one).
     return DatabaseCatalog::instance().getTable(table_id, context);

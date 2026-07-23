@@ -45,6 +45,15 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
     }
 
     auto table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
+
+    /// Fail-closed source-side visibility precheck for a name reached through a read-only
+    /// `Overlay` facade: it must run before the lookup below resolves and loads the underlying
+    /// source table, because loading can surface a hidden source's own error to a user with no
+    /// grant on the source (see the identical precheck in `JoinedTables::getLeftTableStorage`).
+    /// The column-level `SELECT` on both the facade and the source is still checked below.
+    if (const auto * facade = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(table_id.database_name).get()))
+        facade->checkSourceTableAccess(table_id.table_name, context, AccessType::SHOW_TABLES);
+
     auto table = DatabaseCatalog::instance().getTable(table_id, context);
 
     const auto * merge_tree = dynamic_cast<const MergeTreeData *>(table.get());

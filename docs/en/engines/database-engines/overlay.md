@@ -166,6 +166,15 @@ count each physical table exactly once. Because a read-only `Overlay` facade own
 tables of its own and merely re-exposes its sources, it is skipped by these whole-server
 scans so that an overlay-backed table is never listed or counted twice.
 
+The dual-grant checks are fail-closed even when a source database is broken or unreachable
+(for example a `PostgreSQL` or `MySQL` source whose server is down). The data entrypoints that
+resolve a facade name to a source table (`SELECT`, `INSERT`, `WATCH`, `CHECK TABLE`) prove
+source-side visibility **before** the source table is resolved and loaded, so a user without a
+grant on the source receives the same access-denied error for a hidden broken source as for a
+hidden healthy one: the facade never surfaces the hidden source's own error and cannot be used
+as an oracle for the state of sources the user is not allowed to see. Once the source-side
+grant is present, the source's own error propagates as usual.
+
 Creating an `Overlay` database requires a `SELECT` privilege on each underlying database
 it unions. A user who cannot read a source database therefore cannot expose it through a
 new `Overlay`. Creating an `Overlay` confers no privileges on the overlay database itself;
