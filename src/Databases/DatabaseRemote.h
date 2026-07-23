@@ -35,6 +35,8 @@ public:
         const ASTStorage * database_engine_define_,
         const String & database_name_,
         const String & remote_database_,
+        const String & username_,
+        const String & password_,
         ClusterPtr cluster_,
         ClusterPtr remote_only_cluster_,
         bool secure_,
@@ -98,6 +100,12 @@ private:
     const String metadata_path;
     const ASTPtr database_engine_define;
     const String remote_database;
+    /// The stored credentials of the engine, kept for `SHOW CREATE TABLE`: when the addresses are
+    /// given as a named collection but the live proxy is bound to the fallback cluster, the emitted
+    /// definition switches to the positional form (see `getCreateTableQueryImpl`), which has to
+    /// carry them explicitly.
+    const String username;
+    const String password;
     const ClusterPtr cluster;
     /// `cluster` with the replicas that point to this server stripped from their shards, while every
     /// other shard stays intact; used as the metadata-lookup fallback when the local replica does not

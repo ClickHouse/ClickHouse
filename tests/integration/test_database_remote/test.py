@@ -166,3 +166,36 @@ def test_local_replica_preferred(started_cluster):
 
     node1.query("DROP DATABASE local_proxy")
     node1.query("DROP DATABASE local_src")
+
+
+def test_show_create_table_serializes_fallback_addresses(started_cluster):
+    # When the local replica does not have the database, the live proxy is bound to the remote-only
+    # fallback cluster. `SHOW CREATE TABLE` must serialize those effective addresses: a definition
+    # replayed with the configured 'node1|node2' addresses would recreate a `Remote` table that
+    # fails on the missing local database instead of reaching the fallback.
+    node2.query("CREATE DATABASE sc_src")
+    node2.query("CREATE TABLE sc_src.t (x UInt64) ENGINE = MergeTree ORDER BY x")
+    node2.query("INSERT INTO sc_src.t VALUES (1), (2)")
+
+    node1.query("CREATE DATABASE sc_proxy ENGINE = Remote('node1|node2', 'sc_src')")
+
+    create_query = node1.query("SHOW CREATE TABLE sc_proxy.t FORMAT TSVRaw").strip()
+    assert "Remote('node2:9000', 'sc_src', 't')" in create_query
+    assert "node1" not in create_query
+
+    # The printed definition must reconstruct an equivalent, working table.
+    node1.query(
+        create_query.replace(
+            "CREATE TABLE sc_proxy.t", "CREATE TABLE default.sc_replayed"
+        )
+    )
+    assert node1.query("SELECT count(), sum(x) FROM default.sc_replayed") == "2\t3\n"
+    node1.query(
+        "INSERT INTO default.sc_replayed VALUES (3)",
+        settings={"distributed_foreground_insert": 1},
+    )
+    assert node1.query("SELECT count(), sum(x) FROM sc_proxy.t") == "3\t6\n"
+
+    node1.query("DROP TABLE default.sc_replayed")
+    node1.query("DROP DATABASE sc_proxy")
+    node2.query("DROP DATABASE sc_src")

@@ -54,6 +54,8 @@ DatabaseRemote::DatabaseRemote(
     const ASTStorage * database_engine_define_,
     const String & database_name_,
     const String & remote_database_,
+    const String & username_,
+    const String & password_,
     ClusterPtr cluster_,
     ClusterPtr remote_only_cluster_,
     bool secure_,
@@ -63,6 +65,8 @@ DatabaseRemote::DatabaseRemote(
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
     , remote_database(remote_database_)
+    , username(username_)
+    , password(password_)
     , cluster(std::move(cluster_))
     , remote_only_cluster(std::move(remote_only_cluster_))
     , secure(secure_)
@@ -543,6 +547,32 @@ ASTPtr DatabaseRemote::getCreateTableQueryImpl(const String & table_name, Contex
         return nullptr;
     }
 
+    /// The live proxy is bound to `remote_only_cluster` when the local replica does not have the
+    /// database or the table (see `fetchTableStructure`). The configured addresses would then
+    /// describe a different object: the `Remote` table engine has no such fallback, so a table
+    /// recreated from them fails on the missing local objects (`SELECT`) or writes to the missing
+    /// local replica (`INSERT`). Serialize the effective fallback addresses instead, so the emitted
+    /// definition reconstructs the object that actually serves the queries.
+    String effective_addresses;
+    if (remote_only_cluster)
+    {
+        const auto * distributed = typeid_cast<const StorageDistributed *>(storage.get());
+        if (distributed && distributed->getCluster() == remote_only_cluster)
+        {
+            for (const auto & shard_addresses : remote_only_cluster->getShardsAddresses())
+            {
+                if (!effective_addresses.empty())
+                    effective_addresses += ',';
+                for (size_t i = 0; i < shard_addresses.size(); ++i)
+                {
+                    if (i)
+                        effective_addresses += '|';
+                    effective_addresses += shard_addresses[i].readableString();
+                }
+            }
+        }
+    }
+
     /// The table is exposed as the `Remote`/`RemoteSecure` table engine, which is the persistent
     /// counterpart of the `remote`/`remoteSecure` table functions. Turn the database engine
     /// definition (`Remote('addresses', 'remote_db'[, 'user'[, 'password']])`) into a table engine by
@@ -556,13 +586,33 @@ ASTPtr DatabaseRemote::getCreateTableQueryImpl(const String & table_name, Contex
         auto & engine_arguments = ast_storage->engine->arguments->children;
         if (typeid_cast<ASTIdentifier *>(engine_arguments[0].get()))
         {
-            /// The addresses are given as a named collection: append `table = '<name>'`.
-            engine_arguments.push_back(
-                makeASTOperator("equals", make_intrusive<ASTIdentifier>("table"), make_intrusive<ASTLiteral>(table_name)));
+            if (!effective_addresses.empty())
+            {
+                /// The addresses come from a named collection, whose address set cannot be replaced
+                /// in the emitted definition: an `addresses_expr = ...` override next to a collection
+                /// keyed by `host` fails the key validation of the engine when the definition is
+                /// replayed. Emit the positional form instead, carrying the stored credentials
+                /// explicitly; the password is masked by the usual secret hiding of
+                /// `SHOW CREATE TABLE`, exactly as in a positional definition.
+                engine_arguments = {
+                    make_intrusive<ASTLiteral>(effective_addresses),
+                    make_intrusive<ASTLiteral>(remote_database),
+                    make_intrusive<ASTLiteral>(table_name),
+                    make_intrusive<ASTLiteral>(username),
+                    make_intrusive<ASTLiteral>(password)};
+            }
+            else
+            {
+                /// The addresses are given as a named collection: append `table = '<name>'`.
+                engine_arguments.push_back(
+                    makeASTOperator("equals", make_intrusive<ASTIdentifier>("table"), make_intrusive<ASTLiteral>(table_name)));
+            }
         }
         else
         {
             /// Positional arguments: `addresses, remote_db[, user[, password]]` -> insert the table name at index 2.
+            if (!effective_addresses.empty())
+                engine_arguments[0] = make_intrusive<ASTLiteral>(effective_addresses);
             engine_arguments.insert(engine_arguments.begin() + 2, make_intrusive<ASTLiteral>(table_name));
         }
     }
@@ -797,6 +847,8 @@ void registerDatabaseRemote(DatabaseFactory & factory)
             engine_define,
             args.database_name,
             remote_database,
+            username,
+            password,
             std::move(clusters.cluster),
             std::move(clusters.remote_only_cluster),
             secure,
