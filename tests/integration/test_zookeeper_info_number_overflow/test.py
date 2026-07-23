@@ -12,24 +12,13 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
 
-# Keeper and server from the current build.
+# Keeper and server from the current build. The `zookeeper` config contains a
+# second host `keeper:9998` - a mock which responds to the four letter commands
+# with values above 2^31 - 1, as on a Keeper which has committed more than
+# 2^31 - 1 transactions.
 keeper = cluster.add_instance(
     "keeper",
     main_configs=["configs/enable_keeper.xml", "configs/use_keeper.xml"],
-    stay_alive=True,
-)
-
-# Server of the version from the original report. Its `zookeeper` config
-# contains a second host `keeper:9998` - a mock which responds to the `srvr`
-# four letter command with `Zxid` above 2^31 - 1, as on a Keeper which has
-# committed more than 2^31 - 1 transactions.
-node = cluster.add_instance(
-    "node",
-    main_configs=["configs/use_keeper.xml"],
-    image="clickhouse/clickhouse-server",
-    tag="26.2",
-    with_installed_binary=True,
-    with_remote_database_disk=False,
     stay_alive=True,
 )
 
@@ -69,10 +58,3 @@ def test_zookeeper_info_number_overflow(started_cluster):
         )
         == "2147483648\t5\t3000000000\t100\t\\N\n"
     )
-
-    # 26.2 parsed `Zxid` from the `srvr` four letter command response into
-    # 32-bit `int`, so any zxid above 2^31 - 1 made the query fail with
-    # `CANNOT_PARSE_NUMBER`.
-    error = node.query_and_get_error("SELECT version FROM system.zookeeper_info")
-    assert "CANNOT_PARSE_NUMBER" in error
-    assert "Overflow while parsing a number" in error
