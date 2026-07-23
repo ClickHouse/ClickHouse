@@ -30,5 +30,15 @@ SELECT * FROM t_filter_order_merge ORDER BY a FORMAT TSVWithNames;
 SELECT * FROM t_filter_order_merge ORDER BY a FORMAT TSVWithNames SETTINGS enable_analyzer = 0;
 
 DROP ROW POLICY 04619_filter_order_policy ON t_filter_order;
+
+-- The same when the policy skips over a column (`USING c > a` over header [a, b, c]):
+-- the filter DAG lists only the referenced columns, but the converting step restores
+-- the unreferenced column in its source position, so the result stays [a, b, c].
+CREATE ROW POLICY 04619_filter_order_policy_skip ON t_filter_order FOR SELECT USING c > a TO ALL;
+
+SELECT * FROM t_filter_order_merge ORDER BY a FORMAT TSVWithNames;
+SELECT * FROM t_filter_order_merge ORDER BY a FORMAT TSVWithNames SETTINGS enable_analyzer = 0;
+
+DROP ROW POLICY 04619_filter_order_policy_skip ON t_filter_order;
 DROP TABLE t_filter_order_merge;
 DROP TABLE t_filter_order;

@@ -265,6 +265,30 @@ static CoreAnalysisResult buildExpressionCoreDAG(
     return {std::move(actions), std::move(ast_column_names_no_aliases), std::move(ast_column_names_with_aliases)};
 }
 
+/// Sort DAG nodes by their position in `available_columns` (table/header order).
+/// `PlannerActionsVisitor` registers inputs in expression first-use order, while the
+/// legacy `ExpressionAnalyzer` kept source columns in header order; the relative order
+/// is observable through `ActionsDAG::updateHeader` (and thus `FilterStep` headers).
+static void sortNodesByAvailableColumnsOrder(
+    std::vector<const ActionsDAG::Node *> & nodes, const NamesAndTypesList & available_columns)
+{
+    std::unordered_map<std::string_view, size_t> available_positions;
+    available_positions.reserve(available_columns.size());
+    size_t position = 0;
+    for (const auto & column : available_columns)
+        available_positions.emplace(column.name, position++);
+
+    std::stable_sort(nodes.begin(), nodes.end(),
+        [&](const ActionsDAG::Node * lhs, const ActionsDAG::Node * rhs)
+        {
+            const auto lhs_it = available_positions.find(lhs->result_name);
+            const auto rhs_it = available_positions.find(rhs->result_name);
+            const size_t lhs_pos = lhs_it == available_positions.end() ? available_positions.size() : lhs_it->second;
+            const size_t rhs_pos = rhs_it == available_positions.end() ? available_positions.size() : rhs_it->second;
+            return lhs_pos < rhs_pos;
+        });
+}
+
 /// Apply the `add_aliases=false` post-processing branch in place: rebuild constant
 /// and function `result_name`s in AST style (so KeyCondition can match subexpression
 /// names against WHERE clause names), override top-level output names from
@@ -343,21 +367,7 @@ static void applyAstNamingAndAppendSourceColumns(
             inputs_to_add.push_back(input);
     }
 
-    std::unordered_map<std::string_view, size_t> available_positions;
-    available_positions.reserve(available_columns.size());
-    size_t position = 0;
-    for (const auto & column : available_columns)
-        available_positions.emplace(column.name, position++);
-
-    std::stable_sort(inputs_to_add.begin(), inputs_to_add.end(),
-        [&](const ActionsDAG::Node * lhs, const ActionsDAG::Node * rhs)
-        {
-            const auto lhs_it = available_positions.find(lhs->result_name);
-            const auto rhs_it = available_positions.find(rhs->result_name);
-            const size_t lhs_pos = lhs_it == available_positions.end() ? available_positions.size() : lhs_it->second;
-            const size_t rhs_pos = rhs_it == available_positions.end() ? available_positions.size() : rhs_it->second;
-            return lhs_pos < rhs_pos;
-        });
+    sortNodesByAvailableColumnsOrder(inputs_to_add, available_columns);
 
     for (const auto * input : inputs_to_add)
         outputs.push_back(input);
@@ -438,7 +448,8 @@ ActionsDAG analyzeExpressionToActionsDAG(
         /// (`ReadFinalForExternalReplicaStorage`, which keeps the filter column) relies
         /// on the source-columns-first shape — appending the inputs after the aliases
         /// would reorder the storage read header.
-        const auto & inputs = actions.getInputs();
+        std::vector<const ActionsDAG::Node *> inputs = actions.getInputs();
+        sortNodesByAvailableColumnsOrder(inputs, available_columns);
         std::vector<const ActionsDAG::Node *> ordered_outputs;
         ordered_outputs.reserve(inputs.size() + outputs.size());
         for (const auto * input : inputs)
