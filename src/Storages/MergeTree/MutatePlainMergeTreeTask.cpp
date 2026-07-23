@@ -122,6 +122,8 @@ bool MutatePlainMergeTreeTask::executeStep()
                 if (data_part_storage.hasActiveTransaction())
                     data_part_storage.precommitTransaction();
 
+                data_part_storage.commitTransaction();
+
                 MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
                 /// Hold data_parts_lock across both renameTempPartAndReplace and commit to prevent
                 /// a race with REPLACE PARTITION. Without this, there is a window where the mutation

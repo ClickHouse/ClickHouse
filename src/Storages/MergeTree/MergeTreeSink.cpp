@@ -274,6 +274,7 @@ void MergeTreeSink::finishDelayedChunk()
         while (true)
         {
             partition.temp_part->finalize();
+            partition.temp_part->part->getDataPartStorage().commitTransaction();
 
             auto & part = partition.temp_part->part;
             auto deduplication_hashes = partition.deduplication_info->getDeduplicationHashes(part->info.getPartitionId(), deduplicate);
