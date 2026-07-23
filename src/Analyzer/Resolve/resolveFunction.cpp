@@ -541,13 +541,16 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
         /// folding or branch pruning: `intDiv(1, UNIQUE(...))` would fold to `intDiv(1, 0)` and
         /// throw during `CREATE VIEW` validation even though the executed query is valid, and a
         /// conditional such as `if(UNIQUE(...), a, b)` could prune the branch that actually
-        /// executes. Wrap the constant in `__scalarSubqueryResult` — an identity function with
-        /// `isSuitableForConstantFolding` = false, the same mechanism the old analyzer uses for
-        /// analyzer-only scalar-subquery results — so outer expressions keep the correct `UInt8`
-        /// type and structure but never see the fake boolean as a foldable constant.
-        auto placeholder_wrapper_node = std::make_shared<FunctionNode>("__scalarSubqueryResult");
+        /// executes. Wrap the constant in `materialize`: it is not suitable for constant folding
+        /// AND it breaks constness, so outer value-sensitive functions run over the zero rows of
+        /// the `only_analyze` sample block instead of evaluating the fake boolean. An identity
+        /// wrapper such as `__scalarSubqueryResult` would not be enough: it forwards the constant
+        /// column, and executing the projection actions over the sample block would still compute
+        /// e.g. `intDiv` on the fabricated constant and throw. The wrapper keeps the correct
+        /// `UInt8` result type, so analyze-time and execute-time headers still agree.
+        auto placeholder_wrapper_node = std::make_shared<FunctionNode>("materialize");
         placeholder_wrapper_node->getArguments().getNodes().push_back(std::move(placeholder_const_node));
-        auto placeholder_wrapper_function = FunctionFactory::instance().get("__scalarSubqueryResult", scope.context);
+        auto placeholder_wrapper_function = FunctionFactory::instance().get("materialize", scope.context);
         placeholder_wrapper_node->resolveAsFunction(placeholder_wrapper_function->build(placeholder_wrapper_node->getArgumentColumns()));
         node = std::move(placeholder_wrapper_node);
         return {unique_projection_name};

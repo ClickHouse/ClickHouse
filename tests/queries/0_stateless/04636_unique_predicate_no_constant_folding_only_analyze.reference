@@ -1,0 +1,8 @@
+UNIQUE inside a value-sensitive expression under CREATE VIEW
+1
+UNIQUE as a conditional under CREATE VIEW
+unique
+the false branch still executes correctly
+duplicate
+EXPLAIN does not fold the placeholder
+1
