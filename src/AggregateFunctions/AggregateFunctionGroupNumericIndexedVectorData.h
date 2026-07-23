@@ -55,6 +55,12 @@ public:
     {
         impl.initialize(std::forward<TArgs>(args)...);
     }
+
+    void initializeFromVectorAndBitmap(const NumericIndexedVector & schema, const AggregateFunctionGroupBitmapData<IndexType> & bitmap)
+    {
+        impl.initializeFromVectorAndBitmap(schema.impl, bitmap.roaring_bitmap_with_small_set);
+    }
+
     void deepCopyFrom(const NumericIndexedVector & rhs) { impl.deepCopyFrom(rhs.impl); }
 
     void merge(const NumericIndexedVector & rhs) { impl.merge(rhs.impl); }
@@ -88,13 +94,6 @@ public:
     }
 
     static void pointwiseMultiply(const NumericIndexedVector & lhs, const ValueType & rhs, NumericIndexedVector & res)
-    {
-        VectorImpl::pointwiseMultiply(lhs.impl, rhs, res.impl);
-    }
-
-    /// Multiply numeric indexed vector with a bitmap
-    static void
-    pointwiseMultiply(const NumericIndexedVector & lhs, const AggregateFunctionGroupBitmapData<IndexType> & rhs, NumericIndexedVector & res)
     {
         VectorImpl::pointwiseMultiply(lhs.impl, rhs, res.impl);
     }

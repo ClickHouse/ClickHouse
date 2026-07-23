@@ -55,7 +55,7 @@ select arrayJoin([
 
 select 'TEST numericIndexedVectorPointwise operations with Bitmap second argument';
 
--- Positive: pointwiseMultiply with a Bitmap keeps only indices present in the bitmap (bitmap treated as a vector of ones).
+-- `Bitmap` is converted to a same-schema vector whose bitmap indexes have value 1.
 with
 (
     select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-26')
@@ -64,7 +64,20 @@ with
 (
     select groupBitmapState(uin) from uin_value_details where ds = '2023-12-26' and uin in (10000001, 10000002, 30000005)
 ) as bm
-select numericIndexedVectorToMap(numericIndexedVectorPointwiseMultiply(vec_1, bm));
+select arrayJoin([
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseAdd(vec_1, bm))
+    , numericIndexedVectorToMap(numericIndexedVectorPointwiseSubtract(vec_1, bm))
+    , numericIndexedVectorToMap(numericIndexedVectorPointwiseMultiply(vec_1, bm))
+    , numericIndexedVectorToMap(numericIndexedVectorPointwiseDivide(vec_1, bm))
+    , numericIndexedVectorToMap(numericIndexedVectorPointwiseEqual(vec_1, bm))
+    , numericIndexedVectorToMap(numericIndexedVectorPointwiseNotEqual(vec_1, bm))
+    , numericIndexedVectorToMap(numericIndexedVectorPointwiseLess(vec_1, bm))
+    , numericIndexedVectorToMap(numericIndexedVectorPointwiseLessEqual(vec_1, bm))
+    , numericIndexedVectorToMap(numericIndexedVectorPointwiseGreater(vec_1, bm))
+    , numericIndexedVectorToMap(numericIndexedVectorPointwiseGreaterEqual(vec_1, bm))
+    , numericIndexedVectorToMap(numericIndexedVectorPointwiseMax(vec_1, bm))
+    , numericIndexedVectorToMap(numericIndexedVectorPointwiseMin(vec_1, bm))
+]);
 
 -- Negative: Bitmap element type must match the vector index type.
 with
@@ -76,97 +89,6 @@ with
     select groupBitmapState(toUInt64(uin)) from uin_value_details where ds = '2023-12-26'
 ) as bm
 select numericIndexedVectorToMap(numericIndexedVectorPointwiseMultiply(vec_1, bm)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
--- Negative: pointwise operations other than Multiply reject a Bitmap second argument.
-with
-(
-    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-26')
-    from uin_value_details
-) as vec_1,
-(
-    select groupBitmapState(uin) from uin_value_details where ds = '2023-12-26'
-) as bm
-select numericIndexedVectorToMap(numericIndexedVectorPointwiseAdd(vec_1, bm)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
-with
-(
-    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-26')
-    from uin_value_details
-) as vec_1,
-(
-    select groupBitmapState(uin) from uin_value_details where ds = '2023-12-26'
-) as bm
-select numericIndexedVectorToMap(numericIndexedVectorPointwiseSubtract(vec_1, bm)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
-with
-(
-    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-26')
-    from uin_value_details
-) as vec_1,
-(
-    select groupBitmapState(uin) from uin_value_details where ds = '2023-12-26'
-) as bm
-select numericIndexedVectorToMap(numericIndexedVectorPointwiseDivide(vec_1, bm)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
-with
-(
-    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-26')
-    from uin_value_details
-) as vec_1,
-(
-    select groupBitmapState(uin) from uin_value_details where ds = '2023-12-26'
-) as bm
-select numericIndexedVectorToMap(numericIndexedVectorPointwiseEqual(vec_1, bm)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
-with
-(
-    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-26')
-    from uin_value_details
-) as vec_1,
-(
-    select groupBitmapState(uin) from uin_value_details where ds = '2023-12-26'
-) as bm
-select numericIndexedVectorToMap(numericIndexedVectorPointwiseNotEqual(vec_1, bm)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
-with
-(
-    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-26')
-    from uin_value_details
-) as vec_1,
-(
-    select groupBitmapState(uin) from uin_value_details where ds = '2023-12-26'
-) as bm
-select numericIndexedVectorToMap(numericIndexedVectorPointwiseLess(vec_1, bm)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
-with
-(
-    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-26')
-    from uin_value_details
-) as vec_1,
-(
-    select groupBitmapState(uin) from uin_value_details where ds = '2023-12-26'
-) as bm
-select numericIndexedVectorToMap(numericIndexedVectorPointwiseLessEqual(vec_1, bm)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
-with
-(
-    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-26')
-    from uin_value_details
-) as vec_1,
-(
-    select groupBitmapState(uin) from uin_value_details where ds = '2023-12-26'
-) as bm
-select numericIndexedVectorToMap(numericIndexedVectorPointwiseGreater(vec_1, bm)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
-with
-(
-    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-26')
-    from uin_value_details
-) as vec_1,
-(
-    select groupBitmapState(uin) from uin_value_details where ds = '2023-12-26'
-) as bm
-select numericIndexedVectorToMap(numericIndexedVectorPointwiseGreaterEqual(vec_1, bm)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 DROP TABLE IF EXISTS uin_value_details;
 

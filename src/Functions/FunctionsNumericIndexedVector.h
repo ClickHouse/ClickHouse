@@ -289,7 +289,10 @@ private:
             else
             {
                 auto rhs = reinterpret_cast<const AggregateFunctionGroupBitmapData<typename VectorImpl::IndexType> *>(second_data_ptr);
-                FuncImpl<VectorImpl>::apply(*lhs, *rhs, *res);
+                AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> rhs_vector;
+                rhs_vector.init = true;
+                rhs_vector.vector.initializeFromVectorAndBitmap(lhs->vector, *rhs);
+                FuncImpl<VectorImpl>::apply(*lhs, rhs_vector, *res);
             }
         }
         return col_to;
@@ -326,7 +329,7 @@ private:
 
 
 // clang-format off
-#define DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(OpName, op_method, supports_bitmap, supports_scalar) \
+#define DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(OpName, op_method, supports_scalar) \
     template <typename VectorImpl> \
     struct NumericIndexedVector##OpName##Impl \
     { \
@@ -353,34 +356,20 @@ private:
         { \
             NumericIndexedVector<VectorImpl>::op_method(lhs.vector, rhs.vector, res.vector); \
         } \
-\
-        static void apply( \
-            [[maybe_unused]] const AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & lhs, \
-            [[maybe_unused]] const AggregateFunctionGroupBitmapData<typename VectorImpl::IndexType> & rhs, \
-            [[maybe_unused]] AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> & res) \
-        { \
-            if constexpr (supports_bitmap) \
-                NumericIndexedVector<VectorImpl>::op_method(lhs.vector, rhs, res.vector); \
-            else \
-                throw Exception( \
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, \
-                    "The second parameter of {} does not currently support the Bitmap type.", \
-                    name); \
-        } \
     };
 
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseAdd,          pointwiseAdd,          false, true)
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseSubtract,     pointwiseSubtract,     false, true)
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseMultiply,     pointwiseMultiply,     true,  true)
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseDivide,       pointwiseDivide,       false, true)
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseEqual,        pointwiseEqual,        false, true)
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseNotEqual,     pointwiseNotEqual,     false, true)
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseLess,         pointwiseLess,         false, true)
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseLessEqual,    pointwiseLessEqual,    false, true)
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseGreater,      pointwiseGreater,      false, true)
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseGreaterEqual, pointwiseGreaterEqual, false, true)
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseMax,          pointwiseMax,          false, false)
-DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseMin,          pointwiseMin,          false, false)
+DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseAdd,          pointwiseAdd,          true)
+DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseSubtract,     pointwiseSubtract,     true)
+DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseMultiply,     pointwiseMultiply,     true)
+DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseDivide,       pointwiseDivide,       true)
+DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseEqual,        pointwiseEqual,        true)
+DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseNotEqual,     pointwiseNotEqual,     true)
+DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseLess,         pointwiseLess,         true)
+DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseLessEqual,    pointwiseLessEqual,    true)
+DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseGreater,      pointwiseGreater,      true)
+DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseGreaterEqual, pointwiseGreaterEqual, true)
+DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseMax,          pointwiseMax,          false)
+DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP(PointwiseMin,          pointwiseMin,          false)
 
 #undef DEFINE_NUMERIC_INDEXED_VECTOR_POINTWISE_OP
 // clang-format on

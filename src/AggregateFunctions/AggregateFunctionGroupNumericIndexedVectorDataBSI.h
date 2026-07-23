@@ -335,6 +335,15 @@ public:
         }
     }
 
+    void initializeFromVectorAndBitmap(const BSINumericIndexedVector & schema, const Roaring & bitmap)
+    {
+        initialize(schema.integer_bit_num, schema.fraction_bit_num);
+        if (getTotalBitNum() == 0)
+            return;
+
+        getDataArrayAt(fraction_bit_num)->rb_or(bitmap);
+    }
+
     std::shared_ptr<Roaring> getAllNonZeroIndex() const
     {
         auto bm = std::make_shared<Roaring>();
@@ -1287,16 +1296,6 @@ public:
         }
         res.initialize(lhs.integer_bit_num, lhs.fraction_bit_num);
         pointwiseRawBinaryOperate(lhs, rhs, multiply_op_code, res);
-    }
-
-    /** Performs pointwise multiplication of vector and bitmap.
-     * The bitmap is treated as a vector whose values are all 1.
-     * The result is stored in the res.
-     */
-    static void
-    pointwiseMultiply(const BSINumericIndexedVector & lhs, const AggregateFunctionGroupBitmapData<IT> & rhs, BSINumericIndexedVector & res)
-    {
-        lhs.andBitmap(rhs.roaring_bitmap_with_small_set, res);
     }
 
     /** Performs pointwise division of two original vectors.
