@@ -25,13 +25,21 @@ namespace ErrorCodes
 namespace
 {
 
-bool areDynamicSubcolumnTypesCompatibleImpl(const IDataType & lhs, const IDataType & rhs);
+bool areDynamicSubcolumnTypesCompatibleImpl(const IDataType & lhs, const IDataType & rhs, bool for_read);
 bool dynamicStorageTypesHaveCompatibleIdentity(const IDataType & existing_type, const IDataType & inserted_type);
 
-bool areJSONSubcolumnTypesCompatible(const DataTypeObject & lhs, const DataTypeObject & rhs)
+bool areJSONSubcolumnTypesCompatible(const DataTypeObject & lhs, const DataTypeObject & rhs, bool for_read)
 {
     if (lhs.getSchemaFormat() != rhs.getSchemaFormat())
         return false;
+
+    /// For nested subcolumn reads the compatibility is path-local: the stored value is converted
+    /// to the requested type before the requested subcolumn is extracted from it, so the declared
+    /// (typed/skipped) path sets don't have to match. E.g. a request `d.JSON.a` must also see rows
+    /// stored as `JSON(a UInt64)` or `JSON(a UInt64, b String)`; a path missing in the stored
+    /// value is simply read as absent.
+    if (for_read)
+        return true;
 
     if (lhs.getTypedPaths().size() != rhs.getTypedPaths().size())
         return false;
@@ -39,14 +47,14 @@ bool areJSONSubcolumnTypesCompatible(const DataTypeObject & lhs, const DataTypeO
     for (const auto & [path, lhs_type] : lhs.getTypedPaths())
     {
         auto it = rhs.getTypedPaths().find(path);
-        if (it == rhs.getTypedPaths().end() || !areDynamicSubcolumnTypesCompatible(lhs_type, it->second))
+        if (it == rhs.getTypedPaths().end() || !areDynamicSubcolumnTypesCompatibleImpl(*lhs_type, *it->second, for_read))
             return false;
     }
 
     return lhs.getPathsToSkip() == rhs.getPathsToSkip() && lhs.getPathRegexpsToSkip() == rhs.getPathRegexpsToSkip();
 }
 
-bool areDynamicSubcolumnTypesCompatibleImpl(const IDataType & lhs, const IDataType & rhs)
+bool areDynamicSubcolumnTypesCompatibleImpl(const IDataType & lhs, const IDataType & rhs, bool for_read)
 {
     if (lhs.equals(rhs))
         return true;
@@ -54,25 +62,25 @@ bool areDynamicSubcolumnTypesCompatibleImpl(const IDataType & lhs, const IDataTy
     if (const auto * lhs_json = typeid_cast<const DataTypeObject *>(&lhs))
     {
         if (const auto * rhs_json = typeid_cast<const DataTypeObject *>(&rhs))
-            return areJSONSubcolumnTypesCompatible(*lhs_json, *rhs_json);
+            return areJSONSubcolumnTypesCompatible(*lhs_json, *rhs_json, for_read);
     }
 
     if (const auto * lhs_array = typeid_cast<const DataTypeArray *>(&lhs))
     {
         if (const auto * rhs_array = typeid_cast<const DataTypeArray *>(&rhs))
-            return areDynamicSubcolumnTypesCompatible(lhs_array->getNestedType(), rhs_array->getNestedType());
+            return areDynamicSubcolumnTypesCompatibleImpl(*lhs_array->getNestedType(), *rhs_array->getNestedType(), for_read);
     }
 
     if (const auto * lhs_nullable = typeid_cast<const DataTypeNullable *>(&lhs))
     {
         if (const auto * rhs_nullable = typeid_cast<const DataTypeNullable *>(&rhs))
-            return areDynamicSubcolumnTypesCompatible(lhs_nullable->getNestedType(), rhs_nullable->getNestedType());
+            return areDynamicSubcolumnTypesCompatibleImpl(*lhs_nullable->getNestedType(), *rhs_nullable->getNestedType(), for_read);
     }
 
     if (const auto * lhs_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&lhs))
     {
         if (const auto * rhs_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&rhs))
-            return areDynamicSubcolumnTypesCompatible(lhs_low_cardinality->getDictionaryType(), rhs_low_cardinality->getDictionaryType());
+            return areDynamicSubcolumnTypesCompatibleImpl(*lhs_low_cardinality->getDictionaryType(), *rhs_low_cardinality->getDictionaryType(), for_read);
     }
 
     if (const auto * lhs_tuple = typeid_cast<const DataTypeTuple *>(&lhs))
@@ -91,7 +99,7 @@ bool areDynamicSubcolumnTypesCompatibleImpl(const IDataType & lhs, const IDataTy
 
         for (size_t i = 0; i != lhs_elements.size(); ++i)
         {
-            if (!areDynamicSubcolumnTypesCompatible(lhs_elements[i], rhs_elements[i]))
+            if (!areDynamicSubcolumnTypesCompatibleImpl(*lhs_elements[i], *rhs_elements[i], for_read))
                 return false;
         }
 
@@ -417,7 +425,12 @@ std::vector<size_t> getLimitsForFlattenedDynamicColumn(const IColumn & indexes_c
 
 bool areDynamicSubcolumnTypesCompatible(const DataTypePtr & lhs, const DataTypePtr & rhs)
 {
-    return areDynamicSubcolumnTypesCompatibleImpl(*lhs, *rhs);
+    return areDynamicSubcolumnTypesCompatibleImpl(*lhs, *rhs, /*for_read=*/ false);
+}
+
+bool areDynamicSubcolumnTypesCompatibleForRead(const DataTypePtr & stored_type, const DataTypePtr & requested_type)
+{
+    return areDynamicSubcolumnTypesCompatibleImpl(*stored_type, *requested_type, /*for_read=*/ true);
 }
 
 bool areDynamicStorageTypesCompatible(const DataTypePtr & existing_type, const DataTypePtr & inserted_type)

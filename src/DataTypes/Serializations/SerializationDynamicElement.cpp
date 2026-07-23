@@ -14,6 +14,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadHelpers.h>
+#include <Interpreters/castColumn.h>
 
 namespace DB
 {
@@ -336,7 +337,7 @@ void SerializationDynamicElement::deserializeBinaryBulkStatePrefix(
 
             const bool can_read_variant = nested_subcolumn.empty()
                 ? areDynamicStorageTypesCompatible(variants[discr], requested_type)
-                : areDynamicSubcolumnTypesCompatible(variants[discr], requested_type);
+                : areDynamicSubcolumnTypesCompatibleForRead(variants[discr], requested_type);
             if (can_read_variant)
                 add_variant_reader(discr);
         }
@@ -446,7 +447,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
                 auto type = decodeDataType(buf);
                 const bool can_read_shared_variant = nested_subcolumn.empty()
                     ? areDynamicStorageTypesCompatible(type, requested_type)
-                    : areDynamicSubcolumnTypesCompatible(type, requested_type);
+                    : areDynamicSubcolumnTypesCompatibleForRead(type, requested_type);
                 if (can_read_shared_variant)
                 {
                     shared_variant_result_null_map.push_back(static_cast<UInt8>(0));
@@ -460,7 +461,14 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
                         }
                         else
                         {
-                            auto subcolumn = type->getSubcolumn(nested_subcolumn, tmp_column->getPtr());
+                            /// Compatibility for nested subcolumn reads is path-local, so the stored
+                            /// type may declare a different path set than the requested type (e.g.
+                            /// `JSON(a UInt64)` vs plain `JSON`). Convert the value to the requested
+                            /// type first, then extract the requested subcolumn from it.
+                            ColumnPtr value_column = std::move(tmp_column);
+                            if (!type->equals(*requested_type))
+                                value_column = castColumn({value_column, type, ""}, requested_type);
+                            auto subcolumn = requested_type->getSubcolumn(nested_subcolumn, value_column);
                             insertSourceValueIntoColumn(variant_column, *subcolumn, 0);
                         }
                     }
@@ -536,7 +544,18 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
         else
         {
             auto reader_result_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(reader.type);
-            variant_reader_columns.push_back(reader_result_type->getSubcolumn(nested_subcolumn, reader.column));
+            ColumnPtr reader_column = reader.column;
+            /// Compatibility for nested subcolumn reads is path-local, so the variant may declare
+            /// a different path set than the requested type (e.g. `JSON(a UInt64)` vs plain
+            /// `JSON`), making their subcolumns' types differ. Convert the variant column to the
+            /// requested type first, then extract the requested subcolumn from it.
+            auto requested_result_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(requested_type);
+            if (!reader_result_type->equals(*requested_result_type))
+            {
+                reader_column = castColumn({reader_column, reader_result_type, ""}, requested_result_type);
+                reader_result_type = requested_result_type;
+            }
+            variant_reader_columns.push_back(reader_result_type->getSubcolumn(nested_subcolumn, reader_column));
         }
     }
 

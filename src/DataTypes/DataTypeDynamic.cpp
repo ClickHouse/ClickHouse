@@ -21,6 +21,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <base/find_symbols.h>
+#include <Interpreters/castColumn.h>
 #include <IO/ReadBufferFromMemory.h>
 
 namespace DB
@@ -933,6 +934,9 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
         auto shared_variant_global_discr = dynamic_column.getSharedVariantDiscriminator();
         auto shared_variant_local_discr = variant_column.localDiscriminatorByGlobal(shared_variant_global_discr);
         std::vector<UInt8> compatible_local_discriminators(variants.size());
+        /// Values of compatible variants, converted to the requested type if their declared
+        /// (typed/skipped) path sets differ (subcolumn read compatibility is path-local).
+        std::vector<ColumnPtr> compatible_variant_columns(variants.size());
         bool has_compatible_variant = false;
         if (!discriminator)
         {
@@ -941,9 +945,14 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
                 if (discr == shared_variant_global_discr)
                     continue;
 
-                if (areDynamicSubcolumnTypesCompatible(variants[discr], subcolumn_type))
+                if (areDynamicSubcolumnTypesCompatibleForRead(variants[discr], subcolumn_type))
                 {
-                    compatible_local_discriminators[variant_column.localDiscriminatorByGlobal(discr)] = 1;
+                    auto local_discr = variant_column.localDiscriminatorByGlobal(discr);
+                    compatible_local_discriminators[local_discr] = 1;
+                    auto variant_values = variant_column.getVariantPtrByGlobalDiscriminator(discr);
+                    if (!variants[discr]->equals(*subcolumn_type))
+                        variant_values = castColumn({variant_values, variants[discr], ""}, subcolumn_type);
+                    compatible_variant_columns[local_discr] = std::move(variant_values);
                     has_compatible_variant = true;
                 }
             }
@@ -964,7 +973,7 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
                 auto local_discr = local_discriminators[i];
                 if (local_discr != ColumnVariant::NULL_DISCRIMINATOR && compatible_local_discriminators[local_discr])
                 {
-                    subcolumn->insertFrom(variant_column.getVariantByLocalDiscriminator(local_discr), offsets[i]);
+                    subcolumn->insertFrom(*compatible_variant_columns[local_discr], offsets[i]);
                     null_map.push_back(static_cast<UInt8>(0));
                 }
                 else if (local_discr == shared_variant_local_discr)
@@ -972,9 +981,23 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
                     auto value = shared_variant.getDataAt(offsets[i]);
                     ReadBufferFromMemory buf(value);
                     auto type = decodeDataType(buf);
-                    if (areDynamicSubcolumnTypesCompatible(type, subcolumn_type))
+                    if (areDynamicSubcolumnTypesCompatibleForRead(type, subcolumn_type))
                     {
-                        subcolumn_serialization->deserializeBinary(*subcolumn, buf, format_settings);
+                        if (type->equals(*subcolumn_type))
+                        {
+                            subcolumn_serialization->deserializeBinary(*subcolumn, buf, format_settings);
+                        }
+                        else
+                        {
+                            /// The stored type may declare a different path set than the requested
+                            /// type (subcolumn read compatibility is path-local), so its binary
+                            /// layout can differ from the requested type's one. Deserialize the
+                            /// value with its own type and convert it to the requested type.
+                            auto tmp_column = type->createColumn();
+                            type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, format_settings);
+                            auto converted = castColumn({tmp_column->getPtr(), type, ""}, subcolumn_type);
+                            subcolumn->insertFrom(*converted, 0);
+                        }
                         null_map.push_back(static_cast<UInt8>(0));
                     }
                     else
