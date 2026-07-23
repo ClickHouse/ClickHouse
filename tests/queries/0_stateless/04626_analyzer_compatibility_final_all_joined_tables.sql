@@ -25,7 +25,7 @@ SETTINGS analyzer_compatibility_apply_final_to_all_joined_tables = 1;
 
 SELECT 'FINAL on the left table only, compatibility with an older version';
 SELECT count() FROM t_left AS l FINAL INNER JOIN t_right AS r ON r.id = l.right_id
-SETTINGS compatibility = '26.6';
+SETTINGS compatibility = '26.5';
 
 SELECT 'FINAL on both tables is unaffected by the setting';
 SELECT count() FROM t_left AS l FINAL INNER JOIN t_right AS r FINAL ON r.id = l.right_id;
