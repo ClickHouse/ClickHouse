@@ -14,7 +14,7 @@ ORDER BY id
 SETTINGS
     enable_block_number_column = 0,
     enable_block_offset_column = 0,
-    auto_statistics_types = 'uniq,minmax',
+    auto_statistics_types = 'uniq,basic',
     merge_max_block_size = 8192; -- prevent extreme per-block values injected by the test harness from making the merge time out
 
 SYSTEM STOP MERGES test_table;
@@ -63,13 +63,13 @@ SET allow_suspicious_low_cardinality_types = 1;
 
 DROP TABLE IF EXISTS test_basic_auto;
 CREATE TABLE test_basic_auto (
-    a Nullable(Int64) STATISTICS(tdigest),     -- explicit tdigest, auto adds basic + uniq + minmax
-    b Nullable(Float64),                       -- only auto types, gets basic + uniq + minmax
-    c Int64,                                   -- non-Nullable numeric, gets basic + uniq + minmax
-    d LowCardinality(Nullable(Int64)),         -- LC(Nullable), gets basic + uniq + minmax
-    s String                                   -- String, gets basic + uniq (no minmax)
+    a Nullable(Int64) STATISTICS(tdigest),     -- explicit tdigest, auto adds basic + uniq
+    b Nullable(Float64),                       -- only auto types, gets basic + uniq
+    c Int64,                                   -- non-Nullable numeric, gets basic + uniq
+    d LowCardinality(Nullable(Int64)),         -- LC(Nullable), gets basic + uniq
+    s String                                   -- String, gets basic + uniq
 ) ENGINE = MergeTree() ORDER BY tuple()
-SETTINGS auto_statistics_types = 'minmax, uniq, basic';
+SETTINGS auto_statistics_types = 'uniq, basic';
 
 INSERT INTO test_basic_auto SELECT
     if(number % 2 = 0, NULL, number),
@@ -92,7 +92,7 @@ DROP TABLE IF EXISTS test_basic_auto_off;
 CREATE TABLE test_basic_auto_off (
     a Nullable(Int64) STATISTICS(tdigest)
 ) ENGINE = MergeTree() ORDER BY tuple()
-SETTINGS auto_statistics_types = 'minmax, uniq';
+SETTINGS auto_statistics_types = 'uniq';
 INSERT INTO test_basic_auto_off SELECT if(number % 2 = 0, NULL, number) FROM numbers(1000);
 
 SELECT 'basic disabled -> not added';
