@@ -926,6 +926,26 @@ def test_collation_consistency(started_cluster):
     cursor.execute("SHOW COLLATION WHERE Charset = 'binary'")
     assert [row["Collation"] for row in cursor.fetchall()] == ["binary"]
 
+    # MySQL string comparisons in the WHERE form are case-insensitive too, for both
+    # the literal values and the column names.
+    cursor.execute("SHOW COLLATION WHERE Charset = 'UTF8MB4'")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["utf8mb4_0900_ai_ci"]
+
+    cursor.execute("SHOW COLLATION WHERE Collation = 'UTF8MB4_0900_AI_CI'")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["utf8mb4_0900_ai_ci"]
+
+    cursor.execute("SHOW COLLATION WHERE collation IN ('UTF8MB4_0900_AI_CI', 'BINARY')")
+    assert sorted(row["Collation"] for row in cursor.fetchall()) == [
+        "binary",
+        "utf8mb4_0900_ai_ci",
+    ]
+
+    cursor.execute("SHOW COLLATION WHERE Charset LIKE 'UTF8%' AND Id = 255")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["utf8mb4_0900_ai_ci"]
+
+    cursor.execute("SHOW COLLATION WHERE Charset = 'no_such_charset'")
+    assert list(cursor.fetchall()) == []
+
     # INFORMATION_SCHEMA.COLLATIONS contains it with the same charset and id.
     cursor.execute(
         "SELECT CHARACTER_SET_NAME, ID FROM INFORMATION_SCHEMA.COLLATIONS "

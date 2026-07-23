@@ -1,5 +1,6 @@
 #include <Server/MySQLHandler.h>
 
+#include <array>
 #include <optional>
 #include <Access/Common/AccessFlags.h>
 #include <Core/MySQL/Authentication.h>
@@ -21,6 +22,8 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -39,6 +42,7 @@
 #include <Common/config_version.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Poco/String.h>
 #include <Common/re2.h>
 #include <Common/setThreadName.h>
 
@@ -260,6 +264,106 @@ static String killConnectionIdReplacementQuery(const String & query)
     return query;
 }
 
+/// Lowercase every string literal reachable through this node (a plain literal, a literal
+/// tuple/array, or a tuple/array function of literals, as on the right side of IN).
+/// Returns whether at least one string was lowercased.
+static bool lowercaseStringLiterals(ASTPtr & node)
+{
+    if (auto * literal = node->as<ASTLiteral>())
+    {
+        if (literal->value.getType() == Field::Types::String)
+        {
+            literal->value = Poco::toLower(literal->value.safeGet<String>());
+            return true;
+        }
+        if (literal->value.getType() == Field::Types::Tuple || literal->value.getType() == Field::Types::Array)
+        {
+            bool lowered = false;
+            auto lower_elements = [&](auto & elements)
+            {
+                for (auto & element : elements)
+                {
+                    if (element.getType() == Field::Types::String)
+                    {
+                        element = Poco::toLower(element.template safeGet<String>());
+                        lowered = true;
+                    }
+                }
+            };
+            if (literal->value.getType() == Field::Types::Tuple)
+            {
+                auto elements = literal->value.safeGet<Tuple>();
+                lower_elements(elements);
+                literal->value = std::move(elements);
+            }
+            else
+            {
+                auto elements = literal->value.safeGet<Array>();
+                lower_elements(elements);
+                literal->value = std::move(elements);
+            }
+            return lowered;
+        }
+        return false;
+    }
+
+    if (const auto * function = node->as<ASTFunction>();
+        function && (function->name == "tuple" || function->name == "array") && function->arguments)
+    {
+        bool lowered = false;
+        for (auto & argument : function->arguments->children)
+            lowered |= lowercaseStringLiterals(argument);
+        return lowered;
+    }
+
+    return false;
+}
+
+/// MySQL matches collation and charset names case-insensitively and resolves column names in the
+/// WHERE clause of SHOW statements case-insensitively, while ClickHouse compares strings bytewise
+/// and resolves identifiers case-sensitively. Rewrite the parsed "SHOW COLLATION WHERE ..." filter
+/// so that the comparison forms MySQL clients use keep their MySQL semantics: canonicalize
+/// identifiers to the column names of the synthetic result set, and for "=", "!=", "LIKE" and "IN"
+/// comparisons of a column against string literals, lowercase both sides (every string value in
+/// the synthetic set has a single known spelling, so this is lossless).
+static void makeShowCollationsFilterCaseInsensitive(ASTPtr & node)
+{
+    if (auto * identifier = node->as<ASTIdentifier>())
+    {
+        static constexpr std::array canonical_columns{"Collation", "Charset", "Id", "Default", "Compiled", "Sortlen", "Pad_attribute"};
+        for (const auto * column : canonical_columns)
+        {
+            if (Poco::icompare(identifier->name(), column) == 0)
+            {
+                node = make_intrusive<ASTIdentifier>(String(column));
+                break;
+            }
+        }
+        return;
+    }
+
+    if (auto * function = node->as<ASTFunction>();
+        function && function->arguments && function->arguments->children.size() == 2
+        && (function->name == "equals" || function->name == "notEquals" || function->name == "like"
+            || function->name == "notLike" || function->name == "ilike" || function->name == "notILike"
+            || function->name == "in" || function->name == "notIn"))
+    {
+        bool lowered_literal = false;
+        for (auto & argument : function->arguments->children)
+            lowered_literal |= lowercaseStringLiterals(argument);
+        for (auto & argument : function->arguments->children)
+        {
+            makeShowCollationsFilterCaseInsensitive(argument);
+            if (lowered_literal && argument->as<ASTIdentifier>())
+                argument = makeASTFunction("lower", argument);
+        }
+        return;
+    }
+
+    for (auto & child : node->children)
+        makeShowCollationsFilterCaseInsensitive(child);
+}
+
 /// Replace "SHOW COLLATION [LIKE 'pattern' | WHERE <expr>]" with a response enumerating every
 /// collation the server actually puts on the wire, in the shape MySQL uses for this statement:
 /// `utf8mb4_0900_ai_ci` (advertised in the handshake and stamped on string columns in result-set
@@ -318,6 +422,7 @@ static String showCollationsReplacementQuery(const String & query)
         ASTPtr ast;
         if (!ParserExpression().parse(pos, ast, expected))
             return query;
+        makeShowCollationsFilterCaseInsensitive(ast);
         filter = " WHERE " + ast->formatWithSecretsOneLine();
     }
 
