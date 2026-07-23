@@ -1,0 +1,8 @@
+if(token IN (...), token, ...): only the listed tokens survive
+fox the
+2
+0
+if(token NOT IN (...), token, ...): keep-on-match combined with NOT IN inversion
+a brown end here is quick
+0
+1
