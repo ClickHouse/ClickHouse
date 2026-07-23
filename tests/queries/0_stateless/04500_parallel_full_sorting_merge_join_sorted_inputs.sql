@@ -9,6 +9,11 @@
 -- The join key is an integer (hash-compatible with the merge-join comparison), so sharding is not skipped
 -- for a key-type reason: the pre-sorted side is the only thing preventing it. `max_threads = 4` keeps the
 -- shard count > 1 on any runner.
+--
+-- `optimize_sorting_by_input_stream_properties` (randomized in CI) is what turns the pre-join sort atop a
+-- generic sorted subquery / sorted `UNION ALL` into a `FinishSorting`; with it off those sides stay plain
+-- full sorts and ARE scattered (the safe, fully-draining path), flipping the plan-shape checks - so pin it.
+SET optimize_sorting_by_input_stream_properties = 1;
 
 DROP TABLE IF EXISTS pfsmj_rio_left;
 DROP TABLE IF EXISTS pfsmj_rio_right;

@@ -23,6 +23,12 @@
 
 SET enable_parallel_replicas = 0;
 
+-- `optimize_sorting_by_input_stream_properties` (randomized in CI) is what turns the outer pre-join sort
+-- atop the sorted subquery into a `FinishSorting`; with it off the outer sides stay plain full sorts and
+-- ARE scattered (the safe, fully-draining path), flipping `outer_not_scattered` and `inner_join_sharded` -
+-- so pin it.
+SET optimize_sorting_by_input_stream_properties = 1;
+
 DROP TABLE IF EXISTS pfsmj_pkr_ord;
 DROP TABLE IF EXISTS pfsmj_pkr_dim;
 DROP TABLE IF EXISTS pfsmj_pkr_probe;
