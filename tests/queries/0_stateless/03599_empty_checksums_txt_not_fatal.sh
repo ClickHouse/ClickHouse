@@ -19,15 +19,14 @@ ${CLICKHOUSE_CLIENT} --query "
     SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1;
 "
 
-# The test manipulates the single part's checksums.txt on disk by an absolute path captured once,
-# so it must have exactly one active part that does not move during the test. max_insert_threads and
-# block-size randomization can split the INSERT into several parts, and a background merge can replace
-# the captured part with a new directory. Collapse to one part (single insert thread + OPTIMIZE FINAL),
-# then stop merges so the captured path stays valid. Order matters: SYSTEM STOP MERGES cancels a
-# concurrent OPTIMIZE, so it must come after the OPTIMIZE, not before.
-${CLICKHOUSE_CLIENT} --max_insert_threads 1 --query "INSERT INTO t_empty_checksums SELECT number, toString(number) FROM numbers(1000)"
-${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE t_empty_checksums FINAL"
+# The test manipulates one part's checksums.txt by an absolute path captured once, so the table must
+# hold exactly one part directory with no covered sibling. Stop merges before inserting so no merge
+# ever produces a covering part, and pin the block-size settings so the single insert yields one part
+# regardless of CI randomization (min_insert_block_size_rows/max_block_size can otherwise split it, and
+# the last value wins under --allow_repeated_settings). No OPTIMIZE: it would leave the original part
+# behind as a covered directory and make the captured path ambiguous.
 ${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES t_empty_checksums"
+${CLICKHOUSE_CLIENT} --max_insert_threads 1 --min_insert_block_size_rows 100000 --min_insert_block_size_bytes 0 --max_block_size 100000 --query "INSERT INTO t_empty_checksums SELECT number, toString(number) FROM numbers(1000)"
 
 echo "rows before:"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t_empty_checksums"
