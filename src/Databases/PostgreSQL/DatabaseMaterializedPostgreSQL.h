@@ -115,10 +115,10 @@ private:
     /// run the coordinated teardown even before the background startup task has built the live handler.
     std::shared_ptr<PostgreSQLReplicationHandler> makeReplicationHandler();
 
-    /// Recovery shared by `beforeDropDatabase`'s catch and `onDropDatabaseFailed`: if the coordinated teardown
-    /// had already stopped the handler, discard it and clear `synchronization_started`; then re-arm the startup
-    /// task so replication is rebuilt once Keeper is reachable again. Must be called under `handler_mutex`.
-    void recoverAfterRefusedCoordinatedDrop();
+    /// Recovery shared by `beforeDropDatabase`'s catch and `onDropDatabaseFailed`: if the refused drop had
+    /// already stopped the handler, discard it and clear `synchronization_started`; then re-arm the startup
+    /// task so replication is rebuilt. Must be called under `handler_mutex`.
+    void recoverAfterRefusedDrop();
 
     ASTPtr createAlterSettingsQuery(const SettingChange & new_setting);
 

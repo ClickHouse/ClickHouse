@@ -66,6 +66,7 @@ namespace FailPoints
 {
     extern const char materialized_postgresql_fail_nested_table_drop[];
     extern const char materialized_postgresql_fail_database_startup[];
+    extern const char materialized_postgresql_pause_after_stop_replication[];
 }
 
 DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
@@ -626,13 +627,27 @@ void DatabaseMaterializedPostgreSQL::shutdown()
 
 void DatabaseMaterializedPostgreSQL::stopReplication()
 {
-    std::lock_guard lock(handler_mutex);
-    if (replication_handler)
-        replication_handler->shutdown();
+    {
+        std::lock_guard lock(handler_mutex);
+        if (replication_handler)
+            replication_handler->shutdown();
 
-    /// Clear wrappers over nested, all access is not done to nested tables directly.
-    materialized_tables.clear();
-    synchronization_started = false;
+        /// Clear wrappers over nested, all access is not done to nested tables directly.
+        materialized_tables.clear();
+        synchronization_started = false;
+    }
+
+    /// Holds the drop path inside the window of DROP DATABASE between stopping replication and shutting the
+    /// database down (see `InterpreterDropQuery::executeToDatabaseImpl`), in which a still-armed background
+    /// startup retry could restart replication and recreate the PostgreSQL publication and slot while the drop
+    /// is in flight - `beforeDropDatabase` deactivates the startup task to make that impossible. Paused outside
+    /// `handler_mutex` so such a retry could actually run if it were still armed.
+    fiu_do_on(FailPoints::materialized_postgresql_pause_after_stop_replication,
+    {
+        LOG_INFO(log, "Pausing after stopping replication until failpoint "
+                 "materialized_postgresql_pause_after_stop_replication is disabled");
+        FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_after_stop_replication);
+    });
 }
 
 
@@ -650,10 +665,11 @@ void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const S
             "(materialized_postgresql_keeper_path is set). "
             "Recreate the database with an updated materialized_postgresql_tables_list instead");
 
-    /// Simulates the nested-table drop of a coordinated DROP DATABASE failing (e.g. Keeper disappearing while
-    /// the nested ReplicatedReplacingMergeTree deletes its own Keeper metadata) after `beforeDropDatabase` has
-    /// already stopped the handler, to test recovery via `onDropDatabaseFailed`.
-    if (isCoordinated() && local_context->isInternalQuery())
+    /// Simulates the nested-table drop of a DROP DATABASE failing (e.g. Keeper disappearing while a nested
+    /// ReplicatedReplacingMergeTree deletes its own Keeper metadata, or a filesystem error for a plain nested
+    /// table) after `beforeDropDatabase` has already deactivated the startup task, to test recovery via
+    /// `onDropDatabaseFailed` in both modes.
+    if (local_context->isInternalQuery())
         fiu_do_on(FailPoints::materialized_postgresql_fail_nested_table_drop,
         {
             throw Exception(ErrorCodes::FAULT_INJECTED,
@@ -719,18 +735,20 @@ void DatabaseMaterializedPostgreSQL::beforeDropDatabase(ContextPtr)
     /// replicated data, so the last-replica teardown of the shared slot/publication/marker has to be decided
     /// here - while the nested tables still exist - not after they are gone.
     ///
-    /// Only coordinated databases have anything to do here. Return before touching the startup task: in
-    /// non-coordinated mode this hook has no teardown to run, and `onDropDatabaseFailed` does not reactivate the
-    /// task for non-coordinated databases - so deactivating it here would leave a plain MaterializedPostgreSQL
-    /// database whose background startup had not run yet (attach/restart window) mounted but permanently not
-    /// synchronizing if the drop is then refused for an unrelated reason.
+    /// Stop the background startup task first, in every mode (outside `handler_mutex`, which
+    /// `startSynchronization` also takes). The generic drop path calls `stopReplication` right after this hook,
+    /// which clears `synchronization_started` without quiescing the task - so a still-armed startup retry waking
+    /// mid-drop could re-enter `startSynchronization` and recreate the PostgreSQL publication and replication
+    /// slot (and even nested tables) while the drop is already tearing the database down. In coordinated mode it
+    /// additionally must not build the handler / create the nested tables concurrently with the teardown below.
+    /// A refused drop re-arms the task in `onDropDatabaseFailed` (or in the catch below), so deactivating it
+    /// never leaves a database whose background startup had not run yet (attach/restart window) mounted but
+    /// permanently not synchronizing.
+    startup_task->deactivate();
+
+    /// Only coordinated databases have teardown work to do here.
     if (!isCoordinated())
         return;
-
-    /// Stop the background startup task first (outside `handler_mutex`, which `startSynchronization` also takes)
-    /// so it can neither build the handler / create the nested tables concurrently with this teardown nor
-    /// recreate them after it.
-    startup_task->deactivate();
 
     std::lock_guard lock(handler_mutex);
 
@@ -759,24 +777,26 @@ void DatabaseMaterializedPostgreSQL::beforeDropDatabase(ContextPtr)
     {
         /// The drop is refused and the database stays alive, so recover: undo the `deactivate` above and, if the
         /// teardown had already stopped the live handler, discard it so the startup task rebuilds replication.
-        recoverAfterRefusedCoordinatedDrop();
+        recoverAfterRefusedDrop();
         throw;
     }
 }
 
 
-void DatabaseMaterializedPostgreSQL::recoverAfterRefusedCoordinatedDrop()
+void DatabaseMaterializedPostgreSQL::recoverAfterRefusedDrop()
 {
     /// Undo the `deactivate` from `beforeDropDatabase`: a database whose background startup had not run yet
-    /// (attach/restart window) must still be able to build its handler and rejoin the coordinated setup; without
-    /// this it would stay mounted but dead until a server restart. For a database whose synchronization already
-    /// started the rescheduled task is a no-op (see the `synchronization_started` guard in `startSynchronization`).
+    /// (attach/restart window) must still be able to build its handler and start (or, in coordinated mode,
+    /// rejoin) replication; without this it would stay mounted but dead until a server restart. For a database
+    /// whose synchronization already started the rescheduled task is a no-op (see the `synchronization_started`
+    /// guard in `startSynchronization`).
     ///
-    /// If the teardown failed only after it had already stopped the live handler (its one post-shutdown step: the
-    /// last replica's removal of the shared coordination nodes), or the refusal came from the nested-table drop
-    /// that runs after `beforeDropDatabase` returned, re-arming the startup task alone would not recover -
-    /// `synchronization_started` would make it a no-op while the handler stays dead. Discard the stopped handler
-    /// and clear the flag, so the startup task rebuilds replication from scratch once Keeper is reachable again.
+    /// If the handler had already been stopped when the drop was refused - by `stopReplication` in the generic
+    /// drop path, or by the coordinated teardown's one post-shutdown step (the last replica's removal of the
+    /// shared coordination nodes) - re-arming the startup task alone would not recover while
+    /// `synchronization_started` is still set: the flag would make the restarted task a no-op with the handler
+    /// staying dead. Discard the stopped handler and clear the flag, so the startup task rebuilds replication
+    /// from scratch.
     if (replication_handler && replication_handler->isStopped())
     {
         replication_handler.reset();
@@ -790,17 +810,16 @@ void DatabaseMaterializedPostgreSQL::recoverAfterRefusedCoordinatedDrop()
 void DatabaseMaterializedPostgreSQL::onDropDatabaseFailed(ContextPtr)
 {
     /// Reached when a DROP DATABASE was refused (threw) after `beforeDropDatabase` returned successfully - most
-    /// importantly when the generic drop path then failed to remove this replica's local nested tables (e.g.
-    /// Keeper disappeared while a nested ReplicatedReplacingMergeTree was deleting its own Keeper metadata). By
-    /// that point `beforeDropDatabase` has already run the coordinated teardown and stopped the handler, so
-    /// without this the database would stay mounted but permanently not consuming until a server restart, which
-    /// violates the contract that a refused coordinated drop never leaves the replica silently dead. Recovery is
-    /// idempotent, so a double call (a failure inside `beforeDropDatabase`, which recovers in its own catch, is
-    /// also routed here) is harmless.
+    /// importantly when the generic drop path then failed to remove one of the nested tables (e.g. Keeper
+    /// disappeared while a nested ReplicatedReplacingMergeTree was deleting its own Keeper metadata). By that
+    /// point `beforeDropDatabase` has already deactivated the startup task and the generic drop path has already
+    /// run `stopReplication`, so without this the database would stay mounted but permanently not consuming until
+    /// a server restart, which violates the contract that a refused drop never leaves the database silently dead.
+    /// This applies to both modes: the coordinated teardown ran in `beforeDropDatabase`, but the startup-task
+    /// re-arm is needed for a plain database just as much. Recovery is idempotent, so a double call (a failure
+    /// inside `beforeDropDatabase`, which recovers in its own catch, is also routed here) is harmless.
     std::lock_guard lock(handler_mutex);
-    if (!isCoordinated())
-        return;
-    recoverAfterRefusedCoordinatedDrop();
+    recoverAfterRefusedDrop();
 }
 
 

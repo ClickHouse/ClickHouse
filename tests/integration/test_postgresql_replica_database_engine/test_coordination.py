@@ -1756,3 +1756,124 @@ def test_plain_database_ddl_and_drop_in_startup_window(started_cluster):
         instance.query(
             "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_database_startup"
         )
+
+
+def test_plain_drop_database_quiesces_retrying_startup_task(started_cluster):
+    # A plain (non-coordinated) DROP DATABASE must not race the background startup task.
+    # `InterpreterDropQuery::executeToDatabaseImpl` calls `stopReplication` (which clears
+    # `synchronization_started`) well before the database object is shut down; if `beforeDropDatabase`
+    # left the startup task armed, a retry waking inside that window would re-enter
+    # `startSynchronization` and recreate the PostgreSQL publication and replication slot (and even
+    # nested tables) while the drop is already tearing the database down. Hold the drop inside the
+    # window with a pauseable failpoint and let a pending startup retry become able to succeed:
+    # nothing may be (re)created.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(50)"
+    )
+
+    # Keep the background startup failing before it builds the replication handler, so the task
+    # keeps retrying every few seconds and neither the slot nor the publication exists yet.
+    instance.query(
+        "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_database_startup"
+    )
+    drop_error = []
+    drop_thread = None
+
+    def run_drop():
+        try:
+            instance.query("DROP DATABASE test_database SYNC")
+        except Exception as e:
+            drop_error.append(e)
+
+    try:
+        pg_manager.create_materialized_db(
+            ip=cluster.postgres_ip,
+            port=cluster.postgres_port,
+            settings=["materialized_postgresql_tables_list = 'test_table'"],
+        )
+        # At least one startup attempt must have failed (and rescheduled itself) before the drop
+        # starts, so a retry is genuinely pending during the window below.
+        instance.wait_for_log_line(
+            "Injected failure of the MaterializedPostgreSQL database startup",
+            timeout=30,
+            look_behind_lines=1,
+        )
+        assert not replication_slot_exists()
+
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT materialized_postgresql_pause_after_stop_replication"
+        )
+        drop_thread = threading.Thread(target=run_drop)
+        drop_thread.start()
+        instance.wait_for_log_line(
+            "Pausing after stopping replication",
+            timeout=30,
+            look_behind_lines=1,
+        )
+
+        # With the drop held between `stopReplication` and the database shutdown, let the next
+        # startup retry succeed - if the drop had left the task armed, it would rebuild the handler
+        # and recreate the slot and the publication within its 5 second retry cadence.
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_database_startup"
+        )
+        for _ in range(12):
+            assert not replication_slot_exists()
+            assert not publication_exists()
+            time.sleep(1)
+    finally:
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_database_startup"
+        )
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_pause_after_stop_replication"
+        )
+        if drop_thread is not None:
+            drop_thread.join()
+
+    assert not drop_error, drop_error
+    assert "test_database" not in instance.query("SHOW DATABASES").split()
+    assert not replication_slot_exists()
+    assert not publication_exists()
+
+
+def test_plain_refused_drop_rearms_startup_task(started_cluster):
+    # `beforeDropDatabase` deactivates the background startup task in every mode. When a plain
+    # (non-coordinated) DROP DATABASE is then refused (here: an injected failure of the nested-table
+    # drop), the database stays alive, so `onDropDatabaseFailed` must re-arm the task and discard the
+    # handler that the generic drop path had already stopped via `stopReplication` - otherwise the
+    # database would stay mounted but permanently not synchronizing until a server restart.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(50)"
+    )
+    pg_manager.create_materialized_db(
+        ip=cluster.postgres_ip,
+        port=cluster.postgres_port,
+        settings=["materialized_postgresql_tables_list = 'test_table'"],
+    )
+    check_tables_are_synchronized(instance, "test_table")
+
+    instance.query(
+        "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
+    )
+    try:
+        error = instance.query_and_get_error("DROP DATABASE test_database SYNC")
+        assert "Injected failure while dropping a nested table" in error, error
+
+        # The re-armed startup task must rebuild the stopped replication without a server restart.
+        instance.wait_for_log_line(
+            "Successfully loaded tables from PostgreSQL and started replication",
+            timeout=60,
+            look_behind_lines=1,
+        )
+    finally:
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
+        )
+
+    # The recovered database must be droppable for real, removing the shared PostgreSQL objects.
+    instance.query("DROP DATABASE test_database SYNC")
+    assert not replication_slot_exists()
+    assert not publication_exists()
