@@ -1157,6 +1157,100 @@ def test_relation_oids_are_stable_within_a_session(started_cluster):
         node.query("DROP TABLE IF EXISTS zzz_oid_target SYNC")
 
 
+def test_oids_survive_rename(started_cluster):
+    # An OID observed once must keep referring to the same object. `RENAME` preserves the UUID (in `Atomic`
+    # databases, the default), so the catalog must keep the OID and expose the relation - and the namespace -
+    # under the new name, and a client that cached `pg_class.oid` must still be able to follow it through
+    # `pg_attribute.attrelid` after the rename.
+    node.query("DROP TABLE IF EXISTS rename_oid_before SYNC")
+    node.query("DROP TABLE IF EXISTS rename_oid_after SYNC")
+    node.query("DROP DATABASE IF EXISTS rename_oid_db SYNC")
+    node.query("DROP DATABASE IF EXISTS rename_oid_db2 SYNC")
+    node.query("CREATE TABLE rename_oid_before (x UInt32) ENGINE = MergeTree ORDER BY x")
+    node.query("CREATE DATABASE rename_oid_db")
+
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+
+        def relation_oid(name):
+            cur.execute(f"SELECT oid FROM pg_class WHERE relname = '{name}' ORDER BY oid LIMIT 1")
+            rows = cur.fetchall()
+            return rows[0][0] if rows else None
+
+        def namespace_oid(name):
+            cur.execute(f"SELECT oid FROM pg_namespace WHERE nspname = '{name}'")
+            rows = cur.fetchall()
+            return rows[0][0] if rows else None
+
+        table_oid = relation_oid("rename_oid_before")
+        assert table_oid is not None
+        db_oid = namespace_oid("rename_oid_db")
+        assert db_oid is not None
+
+        node.query("RENAME TABLE rename_oid_before TO rename_oid_after")
+        assert relation_oid("rename_oid_before") is None
+        assert relation_oid("rename_oid_after") == table_oid
+
+        # The cached OID still resolves the relation's columns after the rename.
+        cur.execute(f"SELECT attname FROM pg_attribute WHERE attrelid = {table_oid}")
+        assert [row[0] for row in cur.fetchall()] == ["x"]
+
+        node.query("RENAME DATABASE rename_oid_db TO rename_oid_db2")
+        assert namespace_oid("rename_oid_db") is None
+        assert namespace_oid("rename_oid_db2") == db_oid
+    finally:
+        conn.close()
+        node.query("DROP TABLE IF EXISTS rename_oid_before SYNC")
+        node.query("DROP TABLE IF EXISTS rename_oid_after SYNC")
+        node.query("DROP DATABASE IF EXISTS rename_oid_db SYNC")
+        node.query("DROP DATABASE IF EXISTS rename_oid_db2 SYNC")
+
+
+def test_catalog_refresh_trigger_is_case_insensitive(started_cluster):
+    # Unquoted PostgreSQL identifiers are case-insensitive, so the catalog refresh gate must not depend on
+    # the spelling of `pg_`. OIDs are assigned append-only in observation order, which makes the gate
+    # observable without an erroring statement (a query error would tear down the session and its OID
+    # state): a table created before an uppercase-`PG_`-only statement must get a smaller OID than a table
+    # created after it. If that statement failed to trigger the refresh, both tables would be numbered
+    # together by the next lowercase catalog read, ordered by name, and the later-created `aaa_*` table
+    # would get the smaller OID.
+    node.query("DROP TABLE IF EXISTS zzz_upper_first SYNC")
+    node.query("DROP TABLE IF EXISTS aaa_upper_second SYNC")
+
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+
+        def relation_oid(name):
+            cur.execute(f"SELECT oid FROM pg_class WHERE relname = '{name}' ORDER BY oid LIMIT 1")
+            rows = cur.fetchall()
+            return rows[0][0] if rows else None
+
+        # Number every pre-existing relation first, so the two probe tables are the only new ones.
+        cur.execute("SELECT count() FROM pg_class")
+        cur.fetchall()
+
+        node.query("CREATE TABLE zzz_upper_first (x UInt32) ENGINE = MergeTree ORDER BY x")
+        # The only `pg_` occurrence in this statement is uppercase; it must still refresh the catalog OIDs.
+        cur.execute("SELECT 1 AS PG_NAMESPACE_PROBE")
+        assert cur.fetchall() == [(1,)]
+        node.query("CREATE TABLE aaa_upper_second (x UInt32) ENGINE = MergeTree ORDER BY x")
+
+        first_oid = relation_oid("zzz_upper_first")
+        second_oid = relation_oid("aaa_upper_second")
+        assert first_oid is not None and second_oid is not None
+        assert first_oid < second_oid
+    finally:
+        conn.close()
+        node.query("DROP TABLE IF EXISTS zzz_upper_first SYNC")
+        node.query("DROP TABLE IF EXISTS aaa_upper_second SYNC")
+
+
 def test_real_public_database_wins_over_alias(started_cluster):
     # The synthetic `public` schema (the current-database alias, OID 2200) must not shadow a real ClickHouse
     # database named `public`: when one exists, `schema='public'` has to reach its tables, and once it is

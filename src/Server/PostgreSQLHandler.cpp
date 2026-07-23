@@ -1611,26 +1611,31 @@ SELECT * FROM VALUES(
     /// OIDs are identifiers, not ranks, so they must stay stable at least for the lifetime of the session.
     ///
     /// Therefore the OIDs live in per-session state tables (`pg_namespace_oids_data` per database,
-    /// `pg_class_oids_data` per `(database, table)` pair) that are append-only: `refreshCatalogOids` assigns
-    /// a fresh OID above the current maximum to every object not seen before and never renumbers or removes
-    /// existing entries, so an OID observed once keeps referring to the same object for the whole
-    /// connection. The `pg_namespace_oids` / `pg_class_oids` views join that state with the live
-    /// `system.databases` / `system.tables`, so a dropped object disappears from the catalog while its OID
-    /// stays reserved (and a recreated one keeps its old OID, which is harmless - stability is what
-    /// matters). OID ranges are offset (namespaces above 1e9, relations above 2e9) to avoid colliding with
-    /// the small built-in OIDs. In addition, when no real database named `public` exists, tables of the
+    /// `pg_class_oids_data` per table) that are append-only: `refreshCatalogOids` assigns a fresh OID above
+    /// the current maximum to every object not seen before and never renumbers or removes existing entries,
+    /// so an OID observed once keeps referring to the same object for the whole connection. The state is
+    /// keyed by a rename-stable identity: the object's `uuid` when it has one (`RENAME` preserves the UUID
+    /// in `Atomic` databases, which is the default), with the name as a fallback for objects without a UUID
+    /// (there a rename is indistinguishable from drop+create, so the renamed object gets a fresh OID). The
+    /// `pg_namespace_oids` / `pg_class_oids` views join that state with the live `system.databases` /
+    /// `system.tables` on that identity, so a renamed object keeps its OID and appears under its new name,
+    /// while a dropped object disappears from the catalog with its OID staying reserved (and a recreated
+    /// one keeps its old OID, which is harmless - stability is what matters). OID ranges are offset
+    /// (namespaces above 1e9, relations above 2e9) to avoid colliding with the small built-in OIDs. In addition, when no real database named `public` exists, tables of the
     /// connected database are also exposed under the default `public` schema (OID 2200), so that clients
     /// that do not qualify a table with a schema - which is what `fetchPostgreSQLTableStructure` does by
     /// default - still resolve it in the current database.
+    /// The name-fallback identities hex-encode the names: hex output cannot contain the `:` separator, so
+    /// `(database, name)` pairs like `('a', 'b.c')` and `('a.b', 'c')` cannot collide, and neither fallback
+    /// can collide with a `uuid:` identity.
     execute_query(R"(CREATE TEMPORARY TABLE IF NOT EXISTS pg_class_oids_data
 (
-    database String,
-    name String,
+    identity String,
     oid UInt32
 ) ENGINE = Memory)");
     execute_query(R"(CREATE TEMPORARY TABLE IF NOT EXISTS pg_namespace_oids_data
 (
-    name String,
+    identity String,
     oid UInt32
 ) ENGINE = Memory)");
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class_oids AS
@@ -1638,14 +1643,31 @@ SELECT
     tables.database AS database,
     tables.name AS name,
     oids.oid AS oid
-FROM system.tables AS tables
-INNER JOIN pg_class_oids_data AS oids ON tables.database = oids.database AND tables.name = oids.name)");
+FROM
+(
+    SELECT
+        database,
+        name,
+        if(uuid != toUUID('00000000-0000-0000-0000-000000000000'),
+            concat('uuid:', toString(uuid)),
+            concat('name:', hex(database), ':', hex(name))) AS identity
+    FROM system.tables
+) AS tables
+INNER JOIN pg_class_oids_data AS oids ON tables.identity = oids.identity)");
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_namespace_oids AS
 SELECT
     databases.name AS name,
     oids.oid AS oid
-FROM system.databases AS databases
-INNER JOIN pg_namespace_oids_data AS oids ON databases.name = oids.name)");
+FROM
+(
+    SELECT
+        name,
+        if(uuid != toUUID('00000000-0000-0000-0000-000000000000'),
+            concat('uuid:', toString(uuid)),
+            concat('name:', hex(name))) AS identity
+    FROM system.databases
+) AS databases
+INNER JOIN pg_namespace_oids_data AS oids ON databases.identity = oids.identity)");
     /// The synthetic `public` schema (OID 2200), which aliases the connected database, is emitted only when
     /// no real ClickHouse database named `public` exists; otherwise the real database wins and is listed
     /// like any other, so that `postgresql(..., schema='public')` reaches it instead of silently resolving
@@ -1903,9 +1925,10 @@ void PostgreSQLHandler::prepareSystemTables(ContextMutablePtr query_context, con
 
     /// Assign stable OIDs to databases and tables that appeared since the last refresh, but only before a
     /// statement that may actually read the emulated catalog (every catalog object's name starts with
-    /// `pg_`); plain data statements skip the `system.tables` scan. The check may fire spuriously (e.g. a
-    /// user table named `pg_something`), which merely costs a refresh.
-    if (query.find("pg_") != String::npos)
+    /// `pg_`). Unquoted PostgreSQL identifiers are case-insensitive, so the check is too - `PG_CLASS` reads
+    /// the same catalog. Plain data statements skip the `system.tables` scan. The check may fire spuriously
+    /// (e.g. a user table named `pg_something`), which merely costs a refresh.
+    if (Poco::toLower(query).find("pg_") != String::npos)
         refreshCatalogOids(query_context);
 }
 
@@ -1928,23 +1951,41 @@ void PostgreSQLHandler::refreshCatalogOids(ContextMutablePtr query_context)
 
     /// Append-only: an object not seen before gets a fresh OID above the current maximum (or above the range
     /// offset when the state is empty, where `max(oid)` is 0), ordered by name only to make the very first
-    /// assignment deterministic. Existing entries are never renumbered or removed, so the OID a client
-    /// observed keeps referring to the same object for the lifetime of the session (see
-    /// `initializeSystemTables`). Temporary tables (including the emulated catalog itself) live in the
-    /// nameless database, which never joins a namespace, so they are not given OIDs.
-    execute_query(R"(INSERT INTO pg_namespace_oids_data (name, oid)
+    /// assignment deterministic. Existing entries are never renumbered or removed, and the state is keyed by
+    /// the rename-stable identity (UUID when available), so the OID a client observed keeps referring to the
+    /// same object for the lifetime of the session, across renames (see `initializeSystemTables`). Temporary
+    /// tables (including the emulated catalog itself) live in the nameless database, which never joins a
+    /// namespace, so they are not given OIDs.
+    execute_query(R"(INSERT INTO pg_namespace_oids_data (identity, oid)
 SELECT
-    name,
+    identity,
     toUInt32(greatest((SELECT max(oid) FROM pg_namespace_oids_data), 1000000000) + row_number() OVER (ORDER BY name)) AS oid
-FROM system.databases
-WHERE name NOT IN (SELECT name FROM pg_namespace_oids_data))");
-    execute_query(R"(INSERT INTO pg_class_oids_data (database, name, oid)
+FROM
+(
+    SELECT
+        name,
+        if(uuid != toUUID('00000000-0000-0000-0000-000000000000'),
+            concat('uuid:', toString(uuid)),
+            concat('name:', hex(name))) AS identity
+    FROM system.databases
+)
+WHERE identity NOT IN (SELECT identity FROM pg_namespace_oids_data))");
+    execute_query(R"(INSERT INTO pg_class_oids_data (identity, oid)
 SELECT
-    database,
-    name,
+    identity,
     toUInt32(greatest((SELECT max(oid) FROM pg_class_oids_data), 2000000000) + row_number() OVER (ORDER BY database, name)) AS oid
-FROM system.tables
-WHERE NOT is_temporary AND (database, name) NOT IN (SELECT database, name FROM pg_class_oids_data))");
+FROM
+(
+    SELECT
+        database,
+        name,
+        if(uuid != toUUID('00000000-0000-0000-0000-000000000000'),
+            concat('uuid:', toString(uuid)),
+            concat('name:', hex(database), ':', hex(name))) AS identity
+    FROM system.tables
+    WHERE NOT is_temporary
+)
+WHERE identity NOT IN (SELECT identity FROM pg_class_oids_data))");
 }
 
 }
