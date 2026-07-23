@@ -1890,6 +1890,21 @@ String StorageURL::resolveURLBase(const String & url, const String & base, const
     /// Dot segments in the path are normalized per RFC 3986.
     if (url.starts_with("//"))
     {
+        /// A `file://` base has no meaningful authority, and a reference like `//tmp/data.csv` is
+        /// a POSIX absolute path with redundant leading slashes rather than a scheme-relative
+        /// reference. Taking the scheme-relative branch would produce `file://tmp/data.csv` -- a
+        /// path relative to the user files directory -- silently reading the wrong file. Collapse
+        /// the leading slashes and resolve to an absolute local path, preserving the semantics
+        /// that the `Filesystem` database had for absolute paths.
+        String scheme = base.substr(0, scheme_end);
+        boost::to_lower(scheme);
+        if (scheme == "file")
+        {
+            auto non_slash = url.find_first_not_of('/');
+            String path = "/" + (non_slash == String::npos ? String{} : url.substr(non_slash));
+            return normalizeDotSegmentsInURL(base.substr(0, scheme_end + 3) + path, scheme_end + 3);
+        }
+
         String merged = base.substr(0, scheme_end + 1) + url;
         return normalizeDotSegmentsInURL(merged, scheme_end + 3);
     }
