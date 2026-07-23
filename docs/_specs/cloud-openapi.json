@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-909740",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1047418",
       "email": "support@clickhouse.com"
     }
   },
@@ -7740,7 +7740,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/clickpipes/schemaDiscovery": {
       "post": {
         "summary": "Discover ClickPipe source schema",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Infers the schema (field names and ClickHouse data types) of a streaming ClickPipe source without creating a pipe. Supported for Kafka and Kinesis sources.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Infers the schema (field names and ClickHouse data types) of a streaming ClickPipe source without creating a pipe. Supported for Kafka, Kinesis sources.",
         "operationId": "clickPipeSchemaDiscovery",
         "parameters": [
           {
@@ -8991,7 +8991,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts": {
       "get": {
         "summary": "ClickStack: List Alerts",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves a list of all alerts for the authenticated team",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves alerts for the authenticated team (paginated). Results are capped at `limit` (default and maximum 1000). When more records exist than are returned, `meta.total` exceeds `data.length`; clients with large collections must page with `limit`/`offset` to retrieve them all.",
         "operationId": "clickStackListAlerts",
         "parameters": [
           {
@@ -9282,6 +9282,510 @@
                       "items": {
                         "$ref": "#/components/schemas/ClickStackSource"
                       }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "post": {
+        "summary": "ClickStack: Create Source",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Creates a new source.  The request body is a source object without the `id` field. If an `id` is sent anyway it is silently ignored (stripped before validation — the request is never rejected because of it). Granularity fields (`materializedViews[].minGranularity` and `metadataMaterializedViews.granularity`) accept the same short format the API returns (e.g. `5m`, `15s`, `1h`, `1d`).",
+        "operationId": "clickStackCreateSource",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClickStackSource"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ClickStackSource"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources/{clickStackSourceId}": {
+      "get": {
+        "summary": "ClickStack: Get Source",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves a specific source by ID",
+        "operationId": "clickStackGetSource",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "clickStackSourceId",
+            "description": "Source ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ClickStackSource"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "put": {
+        "summary": "ClickStack: Update Source",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Updates an existing source. The full source object must be provided; this is a replace, not a patch.  The request body is a source object without the `id` field. If an `id` is sent anyway it is silently ignored (stripped before validation — never a 400); the path parameter alone identifies the source. Granularity fields (`materializedViews[].minGranularity` and `metadataMaterializedViews.granularity`) accept the same short format the API returns (e.g. `5m`, `15s`, `1h`, `1d`).",
+        "operationId": "clickStackUpdateSource",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "clickStackSourceId",
+            "description": "Source ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClickStackSource"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ClickStackSource"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "delete": {
+        "summary": "ClickStack: Delete Source",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Deletes a source",
+        "operationId": "clickStackDeleteSource",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "clickStackSourceId",
+            "description": "Source ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
                     }
                   }
                 }
@@ -9732,10 +10236,634 @@
         ]
       }
     },
+    "/v1/organizations/{organizationId}/services/{serviceId}/clickstack/connections": {
+      "get": {
+        "summary": "ClickStack: List Connections",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves a list of all ClickHouse connections for the authenticated team. Passwords are never returned.",
+        "operationId": "clickStackListConnections",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ClickStackConnection"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "post": {
+        "summary": "ClickStack: Create Connection",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Creates a new ClickHouse connection",
+        "operationId": "clickStackCreateConnection",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClickStackCreateConnectionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ClickStackConnection"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/services/{serviceId}/clickstack/connections/{clickStackConnectionId}": {
+      "get": {
+        "summary": "ClickStack: Get Connection",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves a specific ClickHouse connection by ID. Passwords are never returned.",
+        "operationId": "clickStackGetConnection",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "clickStackConnectionId",
+            "description": "Connection ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ClickStackConnection"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "put": {
+        "summary": "ClickStack: Update Connection",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Updates an existing ClickHouse connection.  Field semantics: if `password` is omitted or empty the existing password is kept. `hyperdxSettingPrefix` is cleared when set to null or an empty string, and kept unchanged when omitted.",
+        "operationId": "clickStackUpdateConnection",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "clickStackConnectionId",
+            "description": "Connection ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClickStackUpdateConnectionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ClickStackConnection"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "delete": {
+        "summary": "ClickStack: Delete Connection",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Deletes a ClickHouse connection",
+        "operationId": "clickStackDeleteConnection",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "clickStackConnectionId",
+            "description": "Connection ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
     "/v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks": {
       "get": {
         "summary": "ClickStack: List Webhooks",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves a list of all webhooks for the authenticated team",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves webhooks for the authenticated team (paginated). Results are capped at `limit` (default and maximum 1000). When more records exist than are returned, `meta.total` exceeds `data.length`; clients with large collections must page with `limit`/`offset` to retrieve them all.",
         "operationId": "clickStackListWebhooks",
         "parameters": [
           {
@@ -9782,6 +10910,1634 @@
                       "items": {
                         "$ref": "#/components/schemas/ClickStackWebhook"
                       }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "post": {
+        "summary": "ClickStack: Create Webhook",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Creates a new webhook for the authenticated team.",
+        "operationId": "clickStackCreateWebhook",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClickStackWebhookInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ClickStackWebhook"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks/{clickStackWebhookId}": {
+      "put": {
+        "summary": "ClickStack: Update Webhook",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Replaces an existing webhook. Readable optional fields (`description`, `body`) are a full replace: omitting them clears them. The write-only fields `headers` and `queryParams` are never returned on read, so omitting them preserves the stored values; send an explicit empty object (`{}`) to clear them. Exception: if the destination (`url` or `service`) changes, omitted `headers`/ `queryParams` are cleared rather than preserved so stored secrets are never forwarded to a new destination.",
+        "operationId": "clickStackUpdateWebhook",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "clickStackWebhookId",
+            "description": "Webhook ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClickStackWebhookInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ClickStackWebhook"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "delete": {
+        "summary": "ClickStack: Delete Webhook",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Deletes a webhook. Blocked with a 409 while any alert still references it — reassign or remove those alerts first — so deletion never leaves an alert pointing at a missing webhook (which would silently drop notifications). Mirrors the internal webhook delete guard.",
+        "operationId": "clickStackDeleteWebhook",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "clickStackWebhookId",
+            "description": "Webhook ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/services/{serviceId}/clickstack/roles": {
+      "get": {
+        "summary": "ClickStack: List Roles",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves all roles for the authenticated team, including predefined roles.",
+        "operationId": "clickStackListRoles",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ClickStackRole"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "post": {
+        "summary": "ClickStack: Create Role",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Creates a new custom role for the team.",
+        "operationId": "clickStackCreateRole",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClickStackCreateRoleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ClickStackRole"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/services/{serviceId}/clickstack/roles/{clickStackRoleId}": {
+      "get": {
+        "summary": "ClickStack: Get Role",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves a specific role by ID.",
+        "operationId": "clickStackGetRole",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "clickStackRoleId",
+            "description": "id parameter",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ClickStackRole"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "put": {
+        "summary": "ClickStack: Update Role",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Updates a custom role's permissions, name, and description. Predefined roles cannot be modified.",
+        "operationId": "clickStackUpdateRole",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "clickStackRoleId",
+            "description": "id parameter",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClickStackUpdateRoleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ClickStackRole"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "delete": {
+        "summary": "ClickStack: Delete Role",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Deletes a custom role. Predefined roles, the team default user role, and roles assigned to users cannot be deleted.",
+        "operationId": "clickStackDeleteRole",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "clickStackRoleId",
+            "description": "id parameter",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/services/{serviceId}/clickstack/saved-searches": {
+      "get": {
+        "summary": "ClickStack: List Saved Searches",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves saved searches for the authenticated team (paginated). Results are capped at `limit` (default and maximum 1000). When more records exist than are returned, `meta.total` exceeds `data.length`; clients with large collections must page with `limit`/`offset` to retrieve them all.",
+        "operationId": "clickStackListSavedSearches",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ClickStackSavedSearch"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "post": {
+        "summary": "ClickStack: Create Saved Search",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Creates a new saved search.",
+        "operationId": "clickStackCreateSavedSearch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClickStackSavedSearchInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ClickStackSavedSearch"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/services/{serviceId}/clickstack/saved-searches/{clickStackSavedSearchId}": {
+      "get": {
+        "summary": "ClickStack: Get Saved Search",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves a specific saved search by ID.",
+        "operationId": "clickStackGetSavedSearch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "clickStackSavedSearchId",
+            "description": "Saved search ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ClickStackSavedSearch"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "put": {
+        "summary": "ClickStack: Update Saved Search",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Updates an existing saved search. This is a full replace: send the full object. Every optional field (`select`, `where`, `whereLanguage`, `orderBy`, `tags`, `filters`) is always written and falls back to its default when omitted, so omitting a field resets it rather than preserving the stored value.",
+        "operationId": "clickStackUpdateSavedSearch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "clickStackSavedSearchId",
+            "description": "Saved search ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClickStackSavedSearchInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ClickStackSavedSearch"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "delete": {
+        "summary": "ClickStack: Delete Saved Search",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Deletes a saved search and any alerts attached to it.",
+        "operationId": "clickStackDeleteSavedSearch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "clickStackSavedSearchId",
+            "description": "Saved search ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
                     }
                   }
                 }
@@ -14343,6 +17099,11 @@
             "description": "Custom partitioning column used for parallel snapshotting. Only beneficial for PostgreSQL 13 (no benefit for PG14+, which supports indexed ctid scans). Must be an indexed column of type: `smallint`, `integer`, `bigint`, `timestamp without time zone`, or `timestamp with time zone`. Unrelated to ClickHouse partitioning.",
             "type": "string",
             "example": "id"
+          },
+          "partitionByExpr": {
+            "description": "ClickHouse PARTITION BY expression applied to the destination table when ClickPipes creates it.",
+            "type": "string",
+            "example": "toYYYYMM(created_at)"
           }
         }
       },
@@ -14392,6 +17153,14 @@
               "null"
             ],
             "example": "id"
+          },
+          "partitionByExpr": {
+            "description": "ClickHouse PARTITION BY expression applied to the destination table when ClickPipes creates it.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "toYYYYMM(created_at)"
           }
         }
       },
@@ -16958,6 +19727,7 @@
               "ap-south-1",
               "ap-southeast-1",
               "ap-southeast-2",
+              "ca-central-1",
               "eu-central-1",
               "eu-west-1",
               "eu-west-2",
@@ -17368,6 +20138,7 @@
               "ap-south-1",
               "ap-southeast-1",
               "ap-southeast-2",
+              "ca-central-1",
               "eu-central-1",
               "eu-west-1",
               "eu-west-2",
@@ -17528,6 +20299,7 @@
               "ap-south-1",
               "ap-southeast-1",
               "ap-southeast-2",
+              "ca-central-1",
               "eu-central-1",
               "eu-west-1",
               "eu-west-2",
@@ -17578,6 +20350,7 @@
               "ap-south-1",
               "ap-southeast-1",
               "ap-southeast-2",
+              "ca-central-1",
               "eu-central-1",
               "eu-west-1",
               "eu-west-2",
@@ -17685,6 +20458,7 @@
               "ap-south-1",
               "ap-southeast-1",
               "ap-southeast-2",
+              "ca-central-1",
               "eu-central-1",
               "eu-west-1",
               "eu-west-2",
@@ -19018,6 +21792,14 @@
             ],
             "example": "Threshold raised from 50 to 100 on 2026-01-15. See [runbook](https://wiki.example.com/runbook)."
           },
+          "numConsecutiveWindows": {
+            "description": "Fire the alert only after its condition has been met for this many consecutive evaluation windows. While the condition is met but fewer than this many consecutive windows have violated, the alert is in the PENDING state.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 3
+          },
           "id": {
             "description": "Unique alert identifier.",
             "type": "string",
@@ -19030,7 +21812,8 @@
               "ALERT",
               "OK",
               "INSUFFICIENT_DATA",
-              "DISABLED"
+              "DISABLED",
+              "PENDING"
             ],
             "example": "ALERT"
           },
@@ -19205,6 +21988,14 @@
               "null"
             ],
             "example": "Threshold raised from 50 to 100 on 2026-01-15. See [runbook](https://wiki.example.com/runbook)."
+          },
+          "numConsecutiveWindows": {
+            "description": "Fire the alert only after its condition has been met for this many consecutive evaluation windows. While the condition is met but fewer than this many consecutive windows have violated, the alert is in the PENDING state.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 3
           }
         }
       },
@@ -19337,8 +22128,155 @@
               "null"
             ],
             "example": "Threshold raised from 50 to 100 on 2026-01-15. See [runbook](https://wiki.example.com/runbook)."
+          },
+          "numConsecutiveWindows": {
+            "description": "Fire the alert only after its condition has been met for this many consecutive evaluation windows. While the condition is met but fewer than this many consecutive windows have violated, the alert is in the PENDING state.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 3
           }
         }
+      },
+      "ClickStackConnection": {
+        "properties": {
+          "id": {
+            "description": "Unique connection ID.",
+            "type": "string",
+            "example": "507f1f77bcf86cd799439012"
+          },
+          "name": {
+            "description": "Display name for the connection.",
+            "type": "string",
+            "example": "Production ClickHouse"
+          },
+          "host": {
+            "description": "ClickHouse HTTP endpoint URL.",
+            "type": "string",
+            "example": "https://clickhouse.example.com:8443"
+          },
+          "username": {
+            "description": "ClickHouse username.",
+            "type": "string",
+            "example": "default"
+          },
+          "hyperdxSettingPrefix": {
+            "description": "Optional prefix for HyperDX-specific ClickHouse settings. Must only contain alphanumeric characters and underscores.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "hyperdx_"
+          },
+          "isPrometheusEndpoint": {
+            "description": "Optional. When true, `host` is treated as a Prometheus-compatible API endpoint (e.g. Prometheus or Thanos) and PromQL queries are proxied to it. When false or omitted, `host` is a ClickHouse HTTP endpoint.",
+            "type": "boolean",
+            "example": false
+          },
+          "createdAt": {
+            "description": "Creation timestamp",
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "description": "Last update timestamp",
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-06-15T10:30:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "host",
+          "username"
+        ]
+      },
+      "ClickStackCreateConnectionRequest": {
+        "properties": {
+          "name": {
+            "description": "Display name for the connection.",
+            "type": "string",
+            "example": "Production ClickHouse"
+          },
+          "host": {
+            "description": "ClickHouse HTTP endpoint URL.",
+            "type": "string",
+            "example": "https://clickhouse.example.com:8443"
+          },
+          "username": {
+            "description": "ClickHouse username.",
+            "type": "string",
+            "example": "default"
+          },
+          "password": {
+            "description": "ClickHouse password. Never returned by the API.",
+            "type": "string",
+            "example": "my-secret-password"
+          },
+          "hyperdxSettingPrefix": {
+            "description": "Optional prefix for HyperDX-specific ClickHouse settings. Must only contain alphanumeric characters and underscores.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "hyperdx_"
+          },
+          "isPrometheusEndpoint": {
+            "description": "Optional. When true, `host` is treated as a Prometheus-compatible API endpoint (e.g. Prometheus or Thanos) and PromQL queries are proxied to it. When false or omitted, `host` is a ClickHouse HTTP endpoint.",
+            "type": "boolean",
+            "example": false
+          }
+        },
+        "required": [
+          "name",
+          "host",
+          "username"
+        ]
+      },
+      "ClickStackUpdateConnectionRequest": {
+        "properties": {
+          "name": {
+            "description": "Display name for the connection.",
+            "type": "string",
+            "example": "Production ClickHouse"
+          },
+          "host": {
+            "description": "ClickHouse HTTP endpoint URL.",
+            "type": "string",
+            "example": "https://clickhouse.example.com:8443"
+          },
+          "username": {
+            "description": "ClickHouse username.",
+            "type": "string",
+            "example": "default"
+          },
+          "password": {
+            "description": "ClickHouse password. If omitted or empty, the existing password is kept.",
+            "type": "string",
+            "example": "my-new-secret-password"
+          },
+          "hyperdxSettingPrefix": {
+            "description": "Optional prefix for HyperDX-specific ClickHouse settings. Set to null or an empty string to clear the existing value. If omitted, the existing value is kept.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "hyperdx_"
+          },
+          "isPrometheusEndpoint": {
+            "description": "Optional. When true, `host` is treated as a Prometheus-compatible API endpoint. When false or omitted, `host` is a ClickHouse HTTP endpoint. Omit to keep the existing value unchanged.",
+            "type": "boolean",
+            "example": false
+          }
+        },
+        "required": [
+          "name",
+          "host",
+          "username"
+        ]
       },
       "ClickStackSavedFilterValue": {
         "properties": {
@@ -19469,6 +22407,208 @@
             "example": "ms"
           }
         }
+      },
+      "ClickStackBackgroundChart": {
+        "properties": {
+          "type": {
+            "description": "Sparkline shape.",
+            "type": "string",
+            "enum": [
+              "line",
+              "area"
+            ],
+            "example": "line"
+          },
+          "color": {
+            "description": "Optional palette-token override for the sparkline. When unset the sparkline inherits the tile's static color.",
+            "type": "string",
+            "enum": [
+              "chart-blue",
+              "chart-orange",
+              "chart-red",
+              "chart-cyan",
+              "chart-green",
+              "chart-pink",
+              "chart-purple",
+              "chart-light-blue",
+              "chart-brown",
+              "chart-gray",
+              "chart-success",
+              "chart-warning",
+              "chart-error"
+            ]
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "ClickStackNumericColorCondition": {
+        "properties": {
+          "operator": {
+            "description": "Numeric comparison operator.",
+            "type": "string",
+            "enum": [
+              "gt",
+              "gte",
+              "lt",
+              "lte"
+            ],
+            "example": "gt"
+          },
+          "value": {
+            "description": "Numeric bound the displayed value is compared against. Only finite numbers are accepted (Infinity and NaN are rejected).",
+            "type": "number",
+            "example": 100
+          },
+          "color": {
+            "description": "Color applied when the rule matches.",
+            "type": "string",
+            "enum": [
+              "chart-blue",
+              "chart-orange",
+              "chart-red",
+              "chart-cyan",
+              "chart-green",
+              "chart-pink",
+              "chart-purple",
+              "chart-light-blue",
+              "chart-brown",
+              "chart-gray",
+              "chart-success",
+              "chart-warning",
+              "chart-error"
+            ]
+          },
+          "label": {
+            "description": "Optional label describing the rule.",
+            "type": "string",
+            "example": "High"
+          }
+        },
+        "required": [
+          "operator",
+          "value",
+          "color"
+        ]
+      },
+      "ClickStackBetweenColorCondition": {
+        "properties": {
+          "operator": {
+            "description": "Range comparison operator.",
+            "type": "string",
+            "enum": [
+              "between"
+            ],
+            "example": "between"
+          },
+          "value": {
+            "type": "array",
+            "description": "Inclusive [min, max] range. Both bounds must be finite numbers.",
+            "items": {
+              "type": "number"
+            },
+            "example": [
+              100,
+              500
+            ]
+          },
+          "color": {
+            "description": "Color applied when the rule matches.",
+            "type": "string",
+            "enum": [
+              "chart-blue",
+              "chart-orange",
+              "chart-red",
+              "chart-cyan",
+              "chart-green",
+              "chart-pink",
+              "chart-purple",
+              "chart-light-blue",
+              "chart-brown",
+              "chart-gray",
+              "chart-success",
+              "chart-warning",
+              "chart-error"
+            ]
+          },
+          "label": {
+            "description": "Optional label describing the rule.",
+            "type": "string",
+            "example": "Warning"
+          }
+        },
+        "required": [
+          "operator",
+          "value",
+          "color"
+        ]
+      },
+      "ClickStackEqualityColorCondition": {
+        "properties": {
+          "operator": {
+            "description": "Equality comparison operator.",
+            "type": "string",
+            "enum": [
+              "eq",
+              "neq"
+            ],
+            "example": "eq"
+          },
+          "value": {
+            "description": "A finite number, or a string up to 200 characters, to compare for equality.",
+            "oneOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "color": {
+            "description": "Color applied when the rule matches.",
+            "type": "string",
+            "enum": [
+              "chart-blue",
+              "chart-orange",
+              "chart-red",
+              "chart-cyan",
+              "chart-green",
+              "chart-pink",
+              "chart-purple",
+              "chart-light-blue",
+              "chart-brown",
+              "chart-gray",
+              "chart-success",
+              "chart-warning",
+              "chart-error"
+            ]
+          },
+          "label": {
+            "description": "Optional label describing the rule.",
+            "type": "string",
+            "example": "Healthy"
+          }
+        },
+        "required": [
+          "operator",
+          "value",
+          "color"
+        ]
+      },
+      "ClickStackNumberTileColorCondition": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackNumericColorCondition"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackBetweenColorCondition"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackEqualityColorCondition"
+          }
+        ]
       },
       "ClickStackTimeChartSeries": {
         "properties": {
@@ -19993,6 +23133,10 @@
             "description": "Fill missing time buckets with zero instead of leaving gaps.",
             "type": "boolean"
           },
+          "fitYAxisToData": {
+            "description": "Set the y-axis lower bound to the minimum of the displayed data instead of zero, making small fluctuations between series easier to see.",
+            "type": "boolean"
+          },
           "numberFormat": {
             "$ref": "#/components/schemas/ClickStackNumberFormat"
           },
@@ -20213,6 +23357,27 @@
           "target"
         ]
       },
+      "ClickStackOnClickExternal": {
+        "properties": {
+          "type": {
+            "description": "OnClick variant discriminator. Must be \"external\" for external link-outs.",
+            "type": "string",
+            "enum": [
+              "external"
+            ],
+            "example": "external"
+          },
+          "urlTemplate": {
+            "description": "Handlebars template rendered against the clicked row; supports `{{column}}` variables. The rendered value must be an absolute http(s) URL.",
+            "type": "string",
+            "example": "https://example.com/d/abc?var-service={{ServiceName}}"
+          }
+        },
+        "required": [
+          "type",
+          "urlTemplate"
+        ]
+      },
       "ClickStackOnClick": {
         "oneOf": [
           {
@@ -20220,6 +23385,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackOnClickDashboard"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackOnClickExternal"
           }
         ]
       },
@@ -20307,6 +23475,35 @@
           },
           "numberFormat": {
             "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "color": {
+            "description": "Optional static color applied to the displayed number.",
+            "type": "string",
+            "enum": [
+              "chart-blue",
+              "chart-orange",
+              "chart-red",
+              "chart-cyan",
+              "chart-green",
+              "chart-pink",
+              "chart-purple",
+              "chart-light-blue",
+              "chart-brown",
+              "chart-gray",
+              "chart-success",
+              "chart-warning",
+              "chart-error"
+            ]
+          },
+          "colorRules": {
+            "type": "array",
+            "description": "Ordered conditional color rules evaluated against the displayed value (last match wins). Falls back to color, then the default text color when no rule matches.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackNumberTileColorCondition"
+            }
+          },
+          "backgroundChart": {
+            "$ref": "#/components/schemas/ClickStackBackgroundChart"
           }
         },
         "required": [
@@ -20342,8 +23539,65 @@
             "type": "string",
             "example": "service"
           },
+          "orderBy": {
+            "description": "Optional custom SQL ORDER BY expression (raw SQL). Overrides the default value-descending ordering and, when combined with \"limit\", controls which slices are kept.",
+            "type": "string",
+            "example": "\"Count\" DESC"
+          },
           "numberFormat": {
             "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "limit": {
+            "description": "Maximum number of slices (SQL LIMIT). Without a custom \"orderBy\" the query keeps the groups with the largest aggregated values; with an \"orderBy\" it keeps the first slices in that order. Omit to fetch all groups.",
+            "type": "integer",
+            "example": 10
+          }
+        },
+        "required": [
+          "displayType",
+          "sourceId",
+          "select"
+        ]
+      },
+      "ClickStackCategoricalBarBuilderChartConfig": {
+        "properties": {
+          "displayType": {
+            "description": "Display type discriminator. Must be \"bar\" for categorical bar charts.",
+            "type": "string",
+            "enum": [
+              "bar"
+            ],
+            "example": "bar"
+          },
+          "sourceId": {
+            "description": "ID of the data source to query.",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a111111"
+          },
+          "select": {
+            "type": "array",
+            "description": "Exactly one aggregated value used to size each bar.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackSelectItem"
+            }
+          },
+          "groupBy": {
+            "description": "Field expression to group results by (one bar per group value).",
+            "type": "string",
+            "example": "service"
+          },
+          "orderBy": {
+            "description": "Optional custom SQL ORDER BY expression (raw SQL). Overrides the default value-descending ordering and, when combined with \"limit\", controls which bars are kept.",
+            "type": "string",
+            "example": "\"Count\" DESC"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "limit": {
+            "description": "Maximum number of bars (SQL LIMIT). Without a custom \"orderBy\" the query keeps the groups with the largest aggregated values; with an \"orderBy\" it keeps the first bars in that order. Omit to fetch all groups.",
+            "type": "integer",
+            "example": 10
           }
         },
         "required": [
@@ -20464,6 +23718,45 @@
           "whereLanguage"
         ]
       },
+      "ClickStackEventPatternsChartConfig": {
+        "properties": {
+          "displayType": {
+            "description": "Display type discriminator. Must be \"event_patterns\" for pattern mining tiles.",
+            "type": "string",
+            "enum": [
+              "event_patterns"
+            ],
+            "example": "event_patterns"
+          },
+          "sourceId": {
+            "description": "ID of the data source to mine patterns from.",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a111111"
+          },
+          "select": {
+            "description": "Column or expression to mine patterns from. Leave empty to use the source default (Body for logs, SpanName for traces).",
+            "type": "string",
+            "example": "Body"
+          },
+          "where": {
+            "description": "Filter condition for the pattern mining query (syntax depends on whereLanguage).",
+            "type": "string",
+            "example": "level:error"
+          },
+          "whereLanguage": {
+            "description": "Query language for the where clause.",
+            "type": "string",
+            "enum": [
+              "sql",
+              "lucene"
+            ]
+          }
+        },
+        "required": [
+          "displayType",
+          "sourceId"
+        ]
+      },
       "ClickStackMarkdownChartConfig": {
         "properties": {
           "displayType": {
@@ -20530,6 +23823,10 @@
           },
           "alignDateRangeToGranularity": {
             "description": "Expand date range boundaries to the query granularity interval.",
+            "type": "boolean"
+          },
+          "fitYAxisToData": {
+            "description": "Set the y-axis lower bound to the minimum of the displayed data instead of zero, making small fluctuations between series easier to see.",
             "type": "boolean"
           }
         },
@@ -20674,6 +23971,25 @@
               "number"
             ],
             "example": "number"
+          },
+          "color": {
+            "description": "Optional static color applied to the displayed number. Raw SQL number tiles do not support conditional colorRules.",
+            "type": "string",
+            "enum": [
+              "chart-blue",
+              "chart-orange",
+              "chart-red",
+              "chart-cyan",
+              "chart-green",
+              "chart-pink",
+              "chart-purple",
+              "chart-light-blue",
+              "chart-brown",
+              "chart-gray",
+              "chart-success",
+              "chart-warning",
+              "chart-error"
+            ]
           }
         },
         "required": [
@@ -20718,6 +24034,50 @@
               "pie"
             ],
             "example": "pie"
+          }
+        },
+        "required": [
+          "configType",
+          "connectionId",
+          "sqlTemplate",
+          "displayType"
+        ]
+      },
+      "ClickStackCategoricalBarRawSqlChartConfig": {
+        "properties": {
+          "configType": {
+            "description": "Must be \"sql\" to use the Raw SQL chart config variant.",
+            "type": "string",
+            "enum": [
+              "sql"
+            ],
+            "example": "sql"
+          },
+          "connectionId": {
+            "description": "ID of the ClickHouse connection to execute the query against.",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a567890"
+          },
+          "sqlTemplate": {
+            "description": "SQL query template to execute. Supports HyperDX template variables.",
+            "type": "string",
+            "example": "SELECT count() FROM otel_logs WHERE timestamp > now() - INTERVAL 1 HOUR"
+          },
+          "sourceId": {
+            "description": "Optional ID of the data source associated with this Raw SQL chart. Used for applying dashboard filters.",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a567890"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "displayType": {
+            "description": "Display as a categorical bar chart.",
+            "type": "string",
+            "enum": [
+              "bar"
+            ],
+            "example": "bar"
           }
         },
         "required": [
@@ -20777,6 +24137,16 @@
           }
         ]
       },
+      "ClickStackCategoricalBarChartConfig": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackCategoricalBarBuilderChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackCategoricalBarRawSqlChartConfig"
+          }
+        ]
+      },
       "ClickStackTileConfig": {
         "oneOf": [
           {
@@ -20795,10 +24165,16 @@
             "$ref": "#/components/schemas/ClickStackPieChartConfig"
           },
           {
+            "$ref": "#/components/schemas/ClickStackCategoricalBarChartConfig"
+          },
+          {
             "$ref": "#/components/schemas/ClickStackHeatmapChartConfig"
           },
           {
             "$ref": "#/components/schemas/ClickStackSearchChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackEventPatternsChartConfig"
           },
           {
             "$ref": "#/components/schemas/ClickStackMarkdownChartConfig"
@@ -21037,6 +24413,16 @@
               "lucene"
             ],
             "example": "lucene"
+          },
+          "appliesToSourceIds": {
+            "type": "array",
+            "description": "Optional list of source IDs this filter applies to. Omit or provide an empty array to apply the filter to ALL tiles regardless of source. A non-empty array restricts the filter to only tiles whose source ID is in the list; tiles using other sources are not affected by the selected filter value(s).",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "65f5e4a3b9e77c001a111111"
+            ]
           }
         },
         "required": [
@@ -21096,6 +24482,16 @@
               "lucene"
             ],
             "example": "lucene"
+          },
+          "appliesToSourceIds": {
+            "type": "array",
+            "description": "Optional list of source IDs this filter applies to. Omit or provide an empty array to apply the filter to ALL tiles regardless of source. A non-empty array restricts the filter to only tiles whose source ID is in the list; tiles using other sources are not affected by the selected filter value(s).",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "65f5e4a3b9e77c001a111111"
+            ]
           },
           "id": {
             "description": "Unique dashboard filter key ID",
@@ -21326,6 +24722,308 @@
           }
         }
       },
+      "ClickStackCASLPermissionConditions": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "ClickStackCASLPermission": {
+        "properties": {
+          "action": {
+            "description": "The action this permission grants or denies.",
+            "type": "string",
+            "example": "read"
+          },
+          "subject": {
+            "description": "The resource the action applies to.",
+            "type": "string",
+            "example": "dashboard"
+          },
+          "inverted": {
+            "description": "When true, the rule denies rather than grants the action.",
+            "type": "boolean",
+            "example": false
+          },
+          "integration": {
+            "description": "The integration the permission is scoped to.",
+            "type": "string",
+            "example": "mongodb"
+          },
+          "conditions": {
+            "$ref": "#/components/schemas/ClickStackCASLPermissionConditions"
+          }
+        },
+        "required": [
+          "action",
+          "subject"
+        ]
+      },
+      "ClickStackRole": {
+        "properties": {
+          "id": {
+            "description": "Role ID.",
+            "type": "string",
+            "example": "507f1f77bcf86cd799439011"
+          },
+          "name": {
+            "description": "Role name.",
+            "type": "string",
+            "example": "Read Only"
+          },
+          "description": {
+            "description": "Human-readable role description.",
+            "type": "string",
+            "example": "Read-only access to all resources"
+          },
+          "permissions": {
+            "type": "array",
+            "description": "The CASL permissions granted by this role.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackCASLPermission"
+            }
+          },
+          "isPredefined": {
+            "description": "Whether this is an immutable predefined/system role.",
+            "type": "boolean",
+            "example": false
+          },
+          "createdAt": {
+            "description": "Creation timestamp.",
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "description": "Last update timestamp.",
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-06-15T10:30:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "permissions",
+          "isPredefined"
+        ]
+      },
+      "ClickStackCreateRoleRequest": {
+        "properties": {
+          "name": {
+            "description": "Role name. Must be unique within the team and not collide with a predefined role.",
+            "type": "string",
+            "example": "Deploy Bot"
+          },
+          "description": {
+            "description": "Human-readable role description.",
+            "type": "string",
+            "example": "Manages dashboards via Terraform"
+          },
+          "permissions": {
+            "type": "array",
+            "description": "The CASL permissions to grant to the role.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackCASLPermission"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "permissions"
+        ]
+      },
+      "ClickStackUpdateRoleRequest": {
+        "properties": {
+          "name": {
+            "description": "New role name. Omit to leave the name unchanged.",
+            "type": "string",
+            "example": "Deploy Bot"
+          },
+          "description": {
+            "description": "New role description.",
+            "type": "string",
+            "example": "Manages dashboards via Terraform"
+          },
+          "permissions": {
+            "type": "array",
+            "description": "The replacement set of CASL permissions for the role.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackCASLPermission"
+            }
+          }
+        },
+        "required": [
+          "permissions"
+        ]
+      },
+      "ClickStackSavedSearchFilter": {
+        "properties": {
+          "type": {
+            "description": "Always `sql`. Only SQL predicate filters render in the sidebar.",
+            "type": "string",
+            "enum": [
+              "sql"
+            ],
+            "example": "sql"
+          },
+          "condition": {
+            "description": "SQL predicate applied to the search, in `<column> IN (...)` form.",
+            "type": "string",
+            "example": "ServiceName IN ('checkout', 'payments')"
+          }
+        },
+        "required": [
+          "condition"
+        ]
+      },
+      "ClickStackSavedSearch": {
+        "properties": {
+          "id": {
+            "description": "Unique saved search ID. Server-generated.",
+            "type": "string",
+            "example": "507f1f77bcf86cd799439011"
+          },
+          "name": {
+            "description": "Display name for the saved search.",
+            "type": "string",
+            "example": "Production Errors"
+          },
+          "sourceId": {
+            "description": "ID of the source this saved search queries.",
+            "type": "string",
+            "example": "507f1f77bcf86cd799439012"
+          },
+          "select": {
+            "description": "Comma-separated list of column expressions to display. Empty uses the source default.",
+            "type": "string",
+            "example": "Timestamp, ServiceName, Body"
+          },
+          "where": {
+            "description": "Row filter expression. The language is controlled by whereLanguage.",
+            "type": "string",
+            "example": "SeverityText:ERROR"
+          },
+          "whereLanguage": {
+            "description": "Language used for the where filter.",
+            "type": "string",
+            "enum": [
+              "lucene",
+              "sql"
+            ],
+            "example": "lucene"
+          },
+          "orderBy": {
+            "description": "ORDER BY expression. Empty uses the source default.",
+            "type": "string",
+            "example": "Timestamp DESC"
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags used to organize saved searches.",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "production",
+              "errors"
+            ]
+          },
+          "filters": {
+            "type": "array",
+            "description": "Structured pinned filters applied to the search.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackSavedSearchFilter"
+            },
+            "example": [
+              "{\"type\":\"sql\",\"condition\":\"ServiceName IN ('checkout', 'payments')\"}"
+            ]
+          },
+          "teamId": {
+            "description": "ID of the team that owns the saved search.",
+            "type": "string",
+            "example": "507f1f77bcf86cd799439013"
+          },
+          "createdAt": {
+            "description": "Creation timestamp.",
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "description": "Last update timestamp.",
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-06-15T10:30:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "sourceId"
+        ]
+      },
+      "ClickStackSavedSearchInput": {
+        "properties": {
+          "name": {
+            "description": "Display name for the saved search.",
+            "type": "string",
+            "example": "Production Errors"
+          },
+          "sourceId": {
+            "description": "ID of the source to query. Must belong to the team.",
+            "type": "string",
+            "example": "507f1f77bcf86cd799439012"
+          },
+          "select": {
+            "description": "Comma-separated list of column expressions to display. Empty uses the source default.",
+            "type": "string",
+            "example": "Timestamp, ServiceName, Body"
+          },
+          "where": {
+            "description": "Row filter expression. The language is controlled by whereLanguage.",
+            "type": "string",
+            "example": "SeverityText:ERROR"
+          },
+          "whereLanguage": {
+            "description": "Language used for the where filter.",
+            "type": "string",
+            "enum": [
+              "lucene",
+              "sql"
+            ],
+            "example": "lucene"
+          },
+          "orderBy": {
+            "description": "ORDER BY expression. Empty uses the source default.",
+            "type": "string",
+            "example": "Timestamp DESC"
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags used to organize saved searches.",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "production",
+              "errors"
+            ]
+          },
+          "filters": {
+            "type": "array",
+            "description": "Structured pinned filters applied to the search.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackSavedSearchFilter"
+            },
+            "example": [
+              "{\"type\":\"sql\",\"condition\":\"ServiceName IN ('checkout', 'payments')\"}"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "sourceId"
+        ]
+      },
       "ClickStackQuerySetting": {
         "properties": {
           "setting": {
@@ -21527,25 +25225,8 @@
             "example": "ServiceName, SeverityText"
           },
           "minGranularity": {
-            "description": "The granularity of the timestamp column",
+            "description": "The granularity of the timestamp column: a positive integer followed by a unit (s, m, h, d). Common values: 1s, 15s, 30s, 1m, 5m, 15m, 30m, 1h, 2h, 6h, 12h, 1d, 2d, 7d, 30d.",
             "type": "string",
-            "enum": [
-              "1s",
-              "15s",
-              "30s",
-              "1m",
-              "5m",
-              "15m",
-              "30m",
-              "1h",
-              "2h",
-              "6h",
-              "12h",
-              "1d",
-              "2d",
-              "7d",
-              "30d"
-            ],
             "example": "5m"
           },
           "minDate": {
@@ -21601,7 +25282,7 @@
       "ClickStackLogSource": {
         "properties": {
           "id": {
-            "description": "Unique source ID.",
+            "description": "Unique source ID. Server-generated; ignored if sent in create/update requests.",
             "type": "string",
             "example": "507f1f77bcf86cd799439011"
           },
@@ -21609,6 +25290,19 @@
             "description": "Display name for the source.",
             "type": "string",
             "example": "Logs"
+          },
+          "section": {
+            "description": "Optional grouping label used to organize sources in the source selector. Sources that share a section value are displayed together.",
+            "type": "string",
+            "example": "Billing"
+          },
+          "disabled": {
+            "description": "When true, the source is hidden from source selectors in the UI. Defaults to false.",
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "example": false
           },
           "kind": {
             "description": "Source kind discriminator. Must be \"log\" for log sources.",
@@ -21741,6 +25435,27 @@
             ],
             "example": "Body"
           },
+          "knownColumnsListExpression": {
+            "description": "For Distributed table sources whose target tables have non-matching column sets. A list of columns supported across all target tables, used instead of SELECT * when fetching full row data. Leave blank to select all columns.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "Timestamp, Body, ServiceName"
+          },
+          "useTextIndexForImplicitColumn": {
+            "description": "Controls whether lucene rendering uses ClickHouse text indices via hasAllTokens() against the implicit column. \"auto\" detects a covering index at query time, \"enabled\" forces text index usage, \"disabled\" forces a LIKE/hasToken fallback.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "auto",
+              "enabled",
+              "disabled"
+            ],
+            "example": "auto"
+          },
           "highlightedTraceAttributeExpressions": {
             "type": "array",
             "description": "Expressions defining trace-level attributes which are displayed in the trace view for the selected trace.",
@@ -21774,7 +25489,6 @@
           }
         },
         "required": [
-          "id",
           "name",
           "kind",
           "connection",
@@ -21805,7 +25519,7 @@
       "ClickStackTraceSource": {
         "properties": {
           "id": {
-            "description": "Unique source ID.",
+            "description": "Unique source ID. Server-generated; ignored if sent in create/update requests.",
             "type": "string",
             "example": "507f1f77bcf86cd799439021"
           },
@@ -21813,6 +25527,19 @@
             "description": "Display name for the source.",
             "type": "string",
             "example": "Traces"
+          },
+          "section": {
+            "description": "Optional grouping label used to organize sources in the source selector. Sources that share a section value are displayed together.",
+            "type": "string",
+            "example": "Billing"
+          },
+          "disabled": {
+            "description": "When true, the source is hidden from source selectors in the UI. Defaults to false.",
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "example": false
           },
           "kind": {
             "description": "Source kind discriminator. Must be \"trace\" for trace sources.",
@@ -21849,10 +25576,7 @@
           },
           "defaultTableSelectExpression": {
             "description": "Default columns selected in search results (this can be customized per search later)",
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "example": "Timestamp, SpanName, ServiceName, Duration"
           },
           "timestampValueExpression": {
@@ -21974,6 +25698,27 @@
             ],
             "example": "SpanName"
           },
+          "knownColumnsListExpression": {
+            "description": "For Distributed table sources whose target tables have non-matching column sets. A list of columns supported across all target tables, used instead of SELECT * when fetching full row data. Leave blank to select all columns.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "Timestamp, Body, ServiceName"
+          },
+          "useTextIndexForImplicitColumn": {
+            "description": "Controls whether lucene rendering uses ClickHouse text indices via hasAllTokens() against the implicit column. \"auto\" detects a covering index at query time, \"enabled\" forces text index usage, \"disabled\" forces a LIKE/hasToken fallback.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "auto",
+              "enabled",
+              "disabled"
+            ],
+            "example": "auto"
+          },
           "highlightedTraceAttributeExpressions": {
             "type": "array",
             "description": "Expressions defining trace-level attributes which are displayed in the trace view for the selected trace.",
@@ -22007,11 +25752,11 @@
           }
         },
         "required": [
-          "id",
           "name",
           "kind",
           "connection",
           "from",
+          "defaultTableSelectExpression",
           "timestampValueExpression",
           "durationExpression",
           "durationPrecision",
@@ -22025,7 +25770,7 @@
       "ClickStackMetricSource": {
         "properties": {
           "id": {
-            "description": "Unique source ID.",
+            "description": "Unique source ID. Server-generated; ignored if sent in create/update requests.",
             "type": "string",
             "example": "507f1f77bcf86cd799439041"
           },
@@ -22033,6 +25778,19 @@
             "description": "Display name for the source.",
             "type": "string",
             "example": "Metrics"
+          },
+          "section": {
+            "description": "Optional grouping label used to organize sources in the source selector. Sources that share a section value are displayed together.",
+            "type": "string",
+            "example": "Billing"
+          },
+          "disabled": {
+            "description": "When true, the source is hidden from source selectors in the UI. Defaults to false.",
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "example": false
           },
           "kind": {
             "description": "Source kind discriminator. Must be \"metric\" for metric sources.",
@@ -22080,7 +25838,6 @@
           }
         },
         "required": [
-          "id",
           "name",
           "kind",
           "connection",
@@ -22093,7 +25850,7 @@
       "ClickStackSessionSource": {
         "properties": {
           "id": {
-            "description": "Unique source ID.",
+            "description": "Unique source ID. Server-generated; ignored if sent in create/update requests.",
             "type": "string",
             "example": "507f1f77bcf86cd799439031"
           },
@@ -22101,6 +25858,19 @@
             "description": "Display name for the source.",
             "type": "string",
             "example": "Sessions"
+          },
+          "section": {
+            "description": "Optional grouping label used to organize sources in the source selector. Sources that share a section value are displayed together.",
+            "type": "string",
+            "example": "Billing"
+          },
+          "disabled": {
+            "description": "When true, the source is hidden from source selectors in the UI. Defaults to false.",
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "example": false
           },
           "kind": {
             "description": "Source kind discriminator. Must be \"session\" for session sources.",
@@ -22140,12 +25910,73 @@
           }
         },
         "required": [
-          "id",
           "name",
           "kind",
           "connection",
           "from",
           "traceSourceId"
+        ]
+      },
+      "ClickStackPromqlSource": {
+        "properties": {
+          "id": {
+            "description": "Unique source ID. Server-generated; ignored if sent in create/update requests.",
+            "type": "string",
+            "example": "507f1f77bcf86cd799439051"
+          },
+          "name": {
+            "description": "Display name for the source.",
+            "type": "string",
+            "example": "Prometheus Metrics"
+          },
+          "section": {
+            "description": "Optional grouping label used to organize sources in the source selector. Sources that share a section value are displayed together.",
+            "type": "string",
+            "example": "Billing"
+          },
+          "disabled": {
+            "description": "When true, the source is hidden from source selectors in the UI. Defaults to false.",
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "example": false
+          },
+          "kind": {
+            "description": "Source kind discriminator. Must be \"promql\" for PromQL sources.",
+            "type": "string",
+            "enum": [
+              "promql"
+            ],
+            "example": "promql"
+          },
+          "connection": {
+            "description": "ID of the connection used by this source. Should reference a Prometheus-compatible connection.",
+            "type": "string",
+            "example": "507f1f77bcf86cd799439012"
+          },
+          "from": {
+            "$ref": "#/components/schemas/ClickStackSourceFrom"
+          },
+          "querySettings": {
+            "type": "array",
+            "description": "Optional ClickHouse query settings applied when querying this source.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackQuerySetting"
+            }
+          },
+          "timestampValueExpression": {
+            "description": "Required by the API for all source kinds; not used when querying a Prometheus endpoint.",
+            "type": "string",
+            "example": "timestamp"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "connection",
+          "from",
+          "timestampValueExpression"
         ]
       },
       "ClickStackSource": {
@@ -22161,6 +25992,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackSessionSource"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackPromqlSource"
           }
         ]
       },
@@ -22192,7 +26026,7 @@
           "description": {
             "description": "Webhook description, shown in the UI",
             "type": "string",
-            "example": "Sends critical alerts to the"
+            "example": "Sends critical alerts to the #incidents channel"
           },
           "updatedAt": {
             "description": "Last update timestamp",
@@ -22441,6 +26275,112 @@
           {
             "$ref": "#/components/schemas/ClickStackPagerDutyAPIWebhook"
           }
+        ]
+      },
+      "ClickStackWebhookInputHeaders": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "ClickStackWebhookInputQueryParams": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "ClickStackWebhookInput": {
+        "properties": {
+          "name": {
+            "description": "Webhook name. Must be unique per service within the team.",
+            "type": "string",
+            "example": "Production Alerts"
+          },
+          "service": {
+            "description": "Webhook service type.",
+            "type": "string",
+            "enum": [
+              "slack",
+              "incidentio",
+              "generic"
+            ],
+            "example": "slack"
+          },
+          "url": {
+            "description": "Webhook destination URL.",
+            "type": "string",
+            "example": "https://hooks.slack.com/services/EXAMPLE/WEBHOOK/URL"
+          },
+          "description": {
+            "description": "Webhook description, shown in the UI.",
+            "type": "string",
+            "example": "Sends critical alerts to the #incidents channel"
+          },
+          "body": {
+            "description": "Optional request body template. Only for generic/incidentio; rejected for slack.",
+            "type": "string",
+            "example": "{\"alert\": \"{{title}}\", \"severity\": \"{{level}}\"}"
+          },
+          "headers": {
+            "$ref": "#/components/schemas/ClickStackWebhookInputHeaders"
+          },
+          "queryParams": {
+            "$ref": "#/components/schemas/ClickStackWebhookInputQueryParams"
+          }
+        },
+        "required": [
+          "name",
+          "service",
+          "url"
+        ]
+      },
+      "ClickStackValidateDashboardResponseErrorsItem": {
+        "properties": {
+          "path": {
+            "description": "Dot-separated field path, or empty string for top-level errors.",
+            "type": "string"
+          },
+          "message": {
+            "description": "Human-readable error description.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message"
+        ]
+      },
+      "ClickStackValidateDashboardResponseNormalized": {
+        "properties": {}
+      },
+      "ClickStackValidateDashboardResponse": {
+        "properties": {
+          "valid": {
+            "description": "True when the body passes all validation rules.",
+            "type": "boolean"
+          },
+          "errors": {
+            "type": "array",
+            "description": "Validation errors. Empty when valid is true.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackValidateDashboardResponseErrorsItem"
+            }
+          },
+          "normalized": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ClickStackValidateDashboardResponseNormalized"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "valid",
+          "errors",
+          "normalized"
         ]
       },
       "AssignedRole": {
@@ -24038,7 +27978,7 @@
             "format": "date-time"
           },
           "usedAt": {
-            "description": "Timestamp the key was used last time. If not present the key was never used. ISO-8601.",
+            "description": "Timestamp the key was used last time, with one-minute precision. If not present the key was never used. ISO-8601.",
             "type": "string",
             "format": "date-time"
           },
@@ -24819,7 +28759,7 @@
             "$ref": "#/components/schemas/pgIsPrimaryProperty"
           },
           "connectionString": {
-            "description": "Connection string to the Postgres service",
+            "description": "Connection string to the Postgres service. Embeds the service password, so it is only returned when the service is created or its password is reset. Omitted from every other response when Postgres credential redaction is enabled for the organization. Not guaranteed to be present — treat as optional.",
             "type": "string"
           },
           "username": {
@@ -24827,7 +28767,7 @@
             "type": "string"
           },
           "password": {
-            "description": "Password for the Postgres service",
+            "description": "Password for the Postgres service. Only returned when the service is created or its password is reset. Omitted from every other response when Postgres credential redaction is enabled for the organization. Not guaranteed to be present — treat as optional.",
             "type": "string"
           },
           "hostname": {
@@ -25610,6 +29550,7 @@
               "ap-south-1",
               "ap-southeast-1",
               "ap-southeast-2",
+              "ca-central-1",
               "eu-central-1",
               "eu-west-1",
               "eu-west-2",
@@ -25942,6 +29883,7 @@
               "ap-south-1",
               "ap-southeast-1",
               "ap-southeast-2",
+              "ca-central-1",
               "eu-central-1",
               "eu-west-1",
               "eu-west-2",
@@ -26662,6 +30604,7 @@
               "ap-south-1",
               "ap-southeast-1",
               "ap-southeast-2",
+              "ca-central-1",
               "eu-central-1",
               "eu-west-1",
               "eu-west-2",
