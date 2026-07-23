@@ -3,16 +3,15 @@
 # These are env/harness/portability issues that likely pass on the CI runner or are fixable,
 # not permanent platform gaps - each is a candidate to re-verify or fix, not to keep forever.
 
-# The sampling query profiler is temporarily disabled on macOS because its async-signal stack
-# unwinding crashes the server (https://github.com/ClickHouse/ClickHouse/issues/111579), so
-# system.trace_log gets no Real/CPU samples. Remove this block when the profiler is re-enabled.
+# The query and memory profilers are temporarily disabled on macOS because their backtrace()
+# stack capture crashes the server on fiber stacks (https://github.com/ClickHouse/ClickHouse/issues/111579),
+# so system.trace_log gets no Real/CPU/Memory/MemorySample rows. Only tests that depend on those
+# trace types are skipped here (ProfileEvent traces and part_log ProfileEvents still work). Remove
+# this block when the profilers are re-enabled.
 01473_event_time_microseconds
 01569_query_profiler_big_query_id
-02494_trace_log_profile_events
 02818_memory_profiler_sample_min_max_allocation_size
 03150_trace_log_add_build_id
-03221_merge_profile_events
-03761_trace_profile_events_list
 04509_query_profiler_cpu_trace
 
 # Times out on the macOS CI runner: the Python script hangs silently before sending any query

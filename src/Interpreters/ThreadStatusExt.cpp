@@ -349,8 +349,14 @@ void ThreadStatus::applyQuerySettings()
     initQueryProfiler();
 
     untracked_memory_limit = settings[Setting::max_untracked_memory];
+#if !defined(OS_DARWIN)
+    /// The memory profiler is disabled on macOS (see MemoryTracker::setProfilerStep,
+    /// https://github.com/ClickHouse/ClickHouse/issues/111579), so memory_profiler_step must not
+    /// tighten untracked_memory_limit there: it would force per-allocation flushes / earlier memory
+    /// limit checks without ever producing a sample.
     if (settings[Setting::memory_profiler_step] && settings[Setting::memory_profiler_step] < static_cast<UInt64>(untracked_memory_limit))
         untracked_memory_limit = settings[Setting::memory_profiler_step];
+#endif
 
     /// Populate the cache from authoritative query settings; on the initiator this runs before ProcessList::insert, on workers after (idempotent)
     /// (we cannot do this for all threads, even though it is no-op, since it is a data-race)
