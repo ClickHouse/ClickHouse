@@ -36,7 +36,10 @@ CREATE TABLE t_remat_subcolumn
     m2 UInt64 MATERIALIZED m1.x + 1
 ) ENGINE = MergeTree ORDER BY a;
 
-INSERT INTO t_remat_subcolumn (a) SELECT number FROM numbers(3);
+-- Computing a `MATERIALIZED` column that reads a subcolumn of another `MATERIALIZED` column
+-- during INSERT requires the analyzer (the old analyzer fails to resolve `m1.x` here, with or
+-- without matchers). The rematerialization itself does not depend on this setting.
+INSERT INTO t_remat_subcolumn (a) SELECT number FROM numbers(3) SETTINGS enable_analyzer = 1;
 
 -- `m1` is rematerialized (new expansion includes `b`), and `m2` reads it as the subcolumn
 -- `m1.x`, so it must be rematerialized as well, in a later stage than `m1`.
