@@ -5,10 +5,15 @@
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Processors/Merges/MergingSortedTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Core/SortDescription.h>
+#include <Core/Defines.h>
+
+#include <optional>
 
 namespace DB
 {
@@ -27,8 +32,34 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
 
     const String bucket = settings.parameter_lookup->getParameter("bucket_id").safeGet<String>();
 
-    /// Cannot have multiple sinks writing to the same file concurrently.
-    pipeline.resize(1);
+    /// A single sink must feed the exchange file (multiple sinks cannot write to the same file
+    /// concurrently), so the pipeline has to be collapsed to one stream here. A partitioned sort feeding
+    /// this exchange can emit one sorted stream per partition (see `SortingStep::fullSort`); collapsing
+    /// those with `resize` would interleave rows arbitrarily, since `ResizeProcessor` does not preserve
+    /// order. When a sort order must be maintained across the exchange, merge the streams instead so the
+    /// stream we send stays globally sorted - otherwise the order-preserving merge on `GatherReceiveStep`
+    /// would merge already-unsorted input and produce wrong results.
+    if (maintain_sort_description && pipeline.getNumStreams() > 1)
+    {
+        pipeline.addTransform(
+            std::make_shared<MergingSortedTransform>(
+                pipeline.getSharedHeader(),
+                pipeline.getNumStreams(),
+                *maintain_sort_description,
+                /* merge_block_size_rows */ DEFAULT_BLOCK_SIZE,
+                /* merge_block_size_bytes */ 0,
+                /* max_dynamic_subcolumns */ std::nullopt,
+                SortingQueueStrategy::Batch,
+                /* limit */ 0,
+                /* always_read_till_end */ false,
+                /* rows_sources_write_buf */ nullptr,
+                /* filter_column_name */ std::nullopt,
+                /* blocks_are_granules_size */ false));
+    }
+    else
+    {
+        pipeline.resize(1);
+    }
 
     pipeline.setSinks([&](const SharedHeader & header, Pipe::StreamType stream_type) -> ProcessorPtr
     {
@@ -42,13 +73,26 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
 void GatherSendStep::serialize(Serialization & ctx) const
 {
     writeStringBinary(exchange_id, ctx.out);
+    writeVarUInt(maintain_sort_description.has_value(), ctx.out);
+    if (maintain_sort_description.has_value())
+        serializeSortDescription(*maintain_sort_description, ctx.out);
 }
 
 std::unique_ptr<IQueryPlanStep> GatherSendStep::deserialize(Deserialization & ctx)
 {
     String exchange_id;
     readStringBinary(exchange_id, ctx.in);
-    return std::make_unique<GatherSendStep>(ctx.input_headers.front(), exchange_id);
+
+    std::optional<SortDescription> maintain_sort_description;
+    bool has_maintain_sort_description = false;
+    readVarUInt(has_maintain_sort_description, ctx.in);
+    if (has_maintain_sort_description)
+    {
+        maintain_sort_description.emplace();
+        deserializeSortDescription(*maintain_sort_description, ctx.in);
+    }
+
+    return std::make_unique<GatherSendStep>(ctx.input_headers.front(), exchange_id, std::move(maintain_sort_description));
 }
 
 void registerGatherSendStep(QueryPlanStepRegistry & registry);
