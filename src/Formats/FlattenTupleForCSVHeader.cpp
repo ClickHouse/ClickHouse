@@ -1,7 +1,6 @@
 #include <Formats/FlattenTupleForCSVHeader.h>
 
 #include <Core/Block.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Common/typeid_cast.h>
 
@@ -12,15 +11,10 @@ namespace
 {
 void flattenField(const String & name, const DataTypePtr & type, Names & names, Names & type_names)
 {
-    /// A non-null Nullable(Tuple(...)) value serializes through the nested tuple
-    /// (SerializationNullable::serializeTextCSV delegates to it), so it is flattened into separate
-    /// columns; the header must flatten the inner tuple to match. Scalar Nullable types serialize as
-    /// one field and stay one cell.
-    const IDataType * unwrapped = type.get();
-    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(unwrapped))
-        unwrapped = nullable_type->getNestedType().get();
-
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(unwrapped))
+    /// Only a bare Tuple is flattened. A Nullable(Tuple(...)) is serialized as a single CSV field
+    /// (SerializationNullable::serializeTextCSV writes it as one quoted value, matching the single
+    /// \\N cell of a NULL row), so its header must stay one cell too. Do not unwrap Nullable here.
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
     {
         const auto & elems = tuple_type->getElements();
         /// An empty tuple still occupies exactly one field: the value serializer writes nothing
