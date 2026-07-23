@@ -22,6 +22,15 @@ namespace DB
   * `IColumn`/CAST; the rest still delegate to `convertFieldToType` (same behavior, just not yet
   * `Field`-free). The behavior is pinned by `gtest_convert_column_to_type` against `convertFieldToType`,
   * so more column-native fast paths can be added without changing results.
+  *
+  * Scope of the equivalence: it holds for the value/numeric coercions this is used for today
+  * (all current callers convert to numeric types). It does NOT yet hold when the *source* type's
+  * `Field` tag is not recoverable from `IColumn::get` AND `to` depends on that tag: the notable case
+  * is `Bool`, whose column is a plain `ColumnUInt8`, so the delegation path reconstructs a `UInt64`
+  * `Field` and `Bool -> String` yields `'1'`/`'0'` instead of `convertFieldToType`'s `'true'`/`'false'`
+  * (same for nested `Array(Bool)` / `Tuple(Bool)`). Converting such sources to a numeric `to` is
+  * unaffected (value-preserving). This gap disappears as the `convertFieldToType` delegation is
+  * replaced by column-native paths; until then, do not rely on it for `Bool`-to-textual conversions.
   */
 ColumnPtr convertColumnToTypeOrNull(
     const IColumn & value,

@@ -149,6 +149,16 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         {"Array(UInt8)", Field(Array{UInt64(1), UInt64(2)}), "Array(Int64)"},
         {"Array(UInt64)", Field(Array{UInt64(256)}), "Array(UInt8)"},     // element overflow -> whole null
         {"Tuple(UInt8, String)", Field(Tuple{UInt64(1), String("a")}), "Tuple(Int64, String)"},
+
+        /// `Bool`-source into a numeric `to` is value-preserving (the tag collapse `Bool -> UInt64`
+        /// done by `IColumn::get` does not change a numeric result), so it matches `convertFieldToType`.
+        /// NOTE: `Bool -> String` is intentionally NOT tested here: `IColumn::get` on a `DataTypeBool`
+        /// column (backed by `ColumnUInt8`) reconstructs a `UInt64` `Field`, so the delegation path
+        /// produces `'1'`/`'0'` while `convertFieldToType(Field(true), String)` produces `'true'`/`'false'`.
+        /// That gap is documented in `convertColumnToType.h`; no current caller converts `Bool` to a
+        /// textual type, and it disappears once the delegation is replaced by column-native paths.
+        {"Bool", Field(true), "Int32"},
+        {"Bool", Field(false), "UInt8"},
     };
 
     for (const auto & c : cases)
