@@ -357,6 +357,23 @@ void generateManifestFile(
     if (per_file_fresh_statistics && per_file_fresh_statistics->size() != data_file_names.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "per_file_fresh_statistics size does not match data files");
 
+    /// The type tuple is indexed as partition_types[i] for i < partition_columns.size() below, so it must
+    /// have exactly one entry per partition column on every path.
+    if (partition_types.size() != partition_columns.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Iceberg manifest partition arity mismatch: {} partition columns but {} types",
+            partition_columns.size(),
+            partition_types.size());
+    /// The shared value tuple is indexed the same way, except when per_file_partition_values is supplied
+    /// (OPTIMIZE): then partition_values is unused and each file's own tuple is read instead.
+    if (!per_file_partition_values && partition_values.size() != partition_columns.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Iceberg manifest partition arity mismatch: {} partition columns but {} values",
+            partition_columns.size(),
+            partition_values.size());
+
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
     if (version == 1)
