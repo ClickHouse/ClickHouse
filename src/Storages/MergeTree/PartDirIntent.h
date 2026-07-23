@@ -7,8 +7,11 @@ namespace DB
 
 /// Declares whether a data part object is constructed over an existing directory whose contents are
 /// authoritative, or over a fresh directory that is about to be written. Every construction site must
-/// state its intent explicitly (there is no default): probing a directory that is not authoritative,
-/// e.g. a stale leftover of an interrupted operation, would seed in-memory state from garbage.
+/// state its intent explicitly (there is no default): a write path that wrongly used `OpenExisting`
+/// could seed in-memory state (mark type, packed archive index, transaction metadata) from a stale
+/// leftover of an interrupted operation. Write paths also remove such leftovers before construction
+/// (see `MergeTreeData::claimTemporaryPartDirectory`), so this explicit intent is a second, independent
+/// layer of protection.
 enum class PartDirIntent : uint8_t
 {
     /// Loading or attaching a part whose directory contents are authoritative: probe the filesystem

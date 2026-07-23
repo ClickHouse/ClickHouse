@@ -823,11 +823,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     part_storage_for_loading->beginTransaction();
 
-    /// This reclaim stays bespoke instead of using `MergeTreeData::reclaimStaleTemporaryPartDirectory`:
-    /// it also covers the `to_detached` flavor, whose directory is rooted at `detached/` while the
-    /// temporary-directory claim (taken by the caller) holds only the basename, and the primitive is
-    /// rooted at the table's data path. The `keep_shared` rule below matches the primitive's, with
-    /// `supportsReplication` trivially true since only replicated tables exchange parts.
+    /// We don't use `MergeTreeData::reclaimStaleTemporaryPartDirectory` here on purpose: it only
+    /// works with directories directly under the table data path, but a fetch with `to_detached`
+    /// creates the directory under `detached/` instead. The `keep_shared` logic below is the same as
+    /// in `MergeTreeData::removeSharedTemporaryDirectory`, except that it does not need the
+    /// `supportsReplication` check: only replicated tables exchange parts, so it is always true here.
     if (part_storage_for_loading->exists())
     {
         LOG_WARNING(log, "Directory {} already exists, probably result of a failed fetch. Will remove it before fetching part.",
