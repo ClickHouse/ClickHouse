@@ -331,6 +331,16 @@ FillingTransform::FillingTransform(
         last_range_sort_prefix.reserve(sort_prefix.size());
     }
 
+    if (interpolate_description)
+        for (const auto & name : interpolate_description->result_columns_order)
+            interpolate_column_positions.push_back(header_->getPositionByName(name));
+
+    /// Exclude interpolate targets from `other_column_positions` by position, not by name:
+    /// a header may repeat an interpolate column's name (e.g. a distributed merge header), and
+    /// only the first such position is an interpolate destination. Excluding by name would drop
+    /// the duplicate from every bucket, leaving it unwritten and shorter than the rest.
+    const std::unordered_set<size_t> interpolate_positions(interpolate_column_positions.begin(), interpolate_column_positions.end());
+
     size_t idx = 0;
     for (const ColumnWithTypeAndName & column : header_->getColumnsWithTypeAndName())
     {
@@ -339,21 +349,16 @@ FillingTransform::FillingTransform(
                 p != interpolate_description->required_columns_map.end())
                 input_positions.emplace_back(idx, p->second);
 
-        if (!is_fill_column[idx] && !(interpolate_description && interpolate_description->result_columns_set.contains(column.name))
+        if (!is_fill_column[idx] && !interpolate_positions.contains(idx)
             && sort_prefix_positions.end() == std::find(sort_prefix_positions.begin(), sort_prefix_positions.end(), idx))
             other_column_positions.push_back(idx);
 
         ++idx;
     }
 
-    if (interpolate_description)
-        for (const auto & name : interpolate_description->result_columns_order)
-            interpolate_column_positions.push_back(header_->getPositionByName(name));
-
     /// check conflict in positions between interpolate and sorting prefix columns
     if (!sort_prefix_positions.empty() && !interpolate_column_positions.empty())
     {
-        std::unordered_set<size_t> interpolate_positions(interpolate_column_positions.begin(), interpolate_column_positions.end());
         for (auto sort_prefix_pos : sort_prefix_positions)
         {
             if (interpolate_positions.contains(sort_prefix_pos))
