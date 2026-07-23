@@ -1300,7 +1300,7 @@ def auto_statistics_generator():
         if random.random() < 0.3:
             return ""
 
-        all_statistic_types = ["minmax", "uniq", "uniq_v2", "tdigest", 'countmin', 'basic']
+        all_statistic_types = ["uniq", "uniq_v2", "tdigest", 'countmin', 'basic']
         return ",".join(random.sample(all_statistic_types, random.randint(0, len(all_statistic_types))))
 
     return gen
@@ -1394,9 +1394,6 @@ class SettingsRandomizer:
         "throw_on_error_from_cache_on_write_operations": lambda: random.randint(0, 1),
         "remote_filesystem_read_prefetch": lambda: random.randint(0, 1),
         "distributed_cache_discard_connection_if_unread_data": lambda: random.randint(
-            0, 1
-        ),
-        "distributed_cache_use_clients_cache_for_write": lambda: random.randint(
             0, 1
         ),
         "distributed_cache_use_clients_cache_for_read": lambda: random.randint(
@@ -1524,6 +1521,7 @@ class SettingsRandomizer:
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
+        "enable_join_runtime_filters_index_analysis": lambda: random.randint(0, 1),
         "optimize_trivial_count_with_sparsity_filter": lambda: random.randint(0, 1),
         "optimize_rewrite_like_perfect_affix": lambda: random.randint(0, 1),
         "enable_lazy_columns_replication": lambda: random.randint(0, 1),
@@ -1551,6 +1549,7 @@ class SettingsRandomizer:
         "execute_exists_as_scalar_subquery": lambda: random.random() > 0.05,
         "normalize_function_names": lambda: random.random() > 0.05,
         "enable_join_runtime_filters": lambda: random.random() > 0.05,
+        "join_runtime_filter_min_probe_rows": lambda: 0 if random.random() < 0.1 else random.randint(1, 10000),
         "enable_parallel_blocks_marshalling": lambda: random.random() > 0.05,
         # Default-false query_plan_* toggles: enable with 0.3 probability
         "query_plan_reuse_storage_ordering_for_window_functions": lambda: random.random() < 0.3,
