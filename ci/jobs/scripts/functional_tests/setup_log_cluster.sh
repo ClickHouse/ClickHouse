@@ -49,29 +49,31 @@ function check_logs_credentials()
     __set_connection_args
     __shadow_credentials
     local code
-    # The remote CI logs cluster occasionally resets the connection, which is
-    # transient and unrelated to the credentials. Retry only that specific
-    # case. We match it on the stderr message "Connection reset by peer" rather
-    # than the exit status: the shell keeps only the low 8 bits of the client's
-    # exit code, so unrelated errors (e.g. 466/722) alias to 210, and the
-    # client also raises NETWORK_ERROR for permanent cases (protocol mismatch,
-    # generic NetException). A short --connect_timeout (instead of the 10s
-    # default) is applied to the probe only, so a real outage or a
-    # non-recoverable error (auth, config, DNS) fails fast: this probe is
-    # best-effort and must not slow every CI job. Export queries keep the
-    # default timeouts.
+    # The remote CI logs cluster occasionally fails a probe for reasons that are
+    # transient and unrelated to our credentials: it resets the connection, or
+    # it is momentarily over its memory limit and rejects the query with
+    # MEMORY_LIMIT_EXCEEDED (its RSS crosses the cap for a few seconds under
+    # load from other CI jobs). Retry only those transient cases. We match on
+    # the stderr message rather than the exit status: the shell keeps only the
+    # low 8 bits of the client's exit code, so unrelated errors (e.g. 466/722)
+    # alias to 210, and the client also raises NETWORK_ERROR for permanent
+    # cases (protocol mismatch, generic NetException). A short --connect_timeout
+    # (instead of the 10s default) is applied to the probe only, so a real
+    # outage or a non-recoverable error (auth, config, DNS) fails fast: this
+    # probe is best-effort and must not slow every CI job. Export queries keep
+    # the default timeouts.
     local attempt err
     # BEGIN: logs-cluster connectivity probe loop
     for attempt in 1 2 3; do
         # Catch both success and error to not fail on `set -e`. Capture stderr
-        # so we can distinguish the transient reset from other failures.
+        # so we can distinguish transient failures from permanent ones.
         err=$(clickhouse-client "${CONNECTION_ARGS[@]:?}" --connect_timeout 3 -q 'SELECT 1 FORMAT Null' 2>&1) && return 0 || code=$?
-        # Only a "Connection reset by peer" is worth retrying; anything else
-        # will not recover on retry, so stop immediately.
-        if [[ "$err" != *"Connection reset by peer"* ]]; then
+        # Only transient failures are worth retrying; anything else will not
+        # recover on retry, so stop immediately.
+        if [[ "$err" != *"Connection reset by peer"* && "$err" != *"MEMORY_LIMIT_EXCEEDED"* ]]; then
             break
         fi
-        echo "Attempt ${attempt}/3 to connect to CI Logs cluster failed (connection reset by peer)"
+        echo "Attempt ${attempt}/3 to connect to CI Logs cluster failed (transient error), retrying"
         [ "$attempt" -lt 3 ] && sleep "$((attempt + 1))"
     done
     # END: logs-cluster connectivity probe loop
@@ -175,6 +177,22 @@ function setup_logs_replication()
 
 function stop_logs_replication()
 {
+    # The `_sender` tables are `Distributed` engine with `flush_on_detach=0`
+    # (set so a slow/unreachable remote cluster can't hang server shutdown),
+    # and inserts into them via the `_watcher` materialized views are batched
+    # and sent to the remote cluster in the background. Without an explicit
+    # `SYSTEM FLUSH DISTRIBUTED` here, whatever is still queued locally - e.g.
+    # the just-flushed rows from the caller's preceding `SYSTEM FLUSH LOGS` -
+    # is silently discarded when the table below is dropped. Bound it with the
+    # same `timeout` pattern as the drop step so an unreachable cluster cannot
+    # block teardown indefinitely.
+    echo "Flush pending log records to the remote cluster"
+    ( clickhouse-client --query "select database||'.'||table from system.tables where database = 'system' and table like '%_sender'" | {
+        tee /dev/stderr
+    } | {
+        timeout --verbose --preserve-status --signal TERM --kill-after 1m 5m xargs -n1 -P10 -r -i clickhouse-client --query "SYSTEM FLUSH DISTRIBUTED {}"
+    } ) || echo "WARNING: failed to flush pending log records, some rows may be lost"
+
     echo "Detach all logs replication"
     clickhouse-client --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {
         tee /dev/stderr

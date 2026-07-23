@@ -26,7 +26,9 @@ LambdaNode::LambdaNode(Names argument_names_, QueryTreeNodePtr expression_, bool
     nodes.reserve(argument_names_size);
 
     for (size_t i = 0; i < argument_names_size; ++i)
-        nodes.push_back(std::make_shared<IdentifierNode>(Identifier{argument_names[i]}));
+        /// Lambda argument names are atomic identifiers: build from a single part so a
+        /// backquoted name containing a dot (e.g. `__table1.`) is not split into an empty part.
+        nodes.push_back(std::make_shared<IdentifierNode>(Identifier{std::vector<std::string>{argument_names[i]}}));
 
     children[arguments_child_index] = std::move(arguments_list_node);
     children[expression_child_index] = std::move(expression_);
