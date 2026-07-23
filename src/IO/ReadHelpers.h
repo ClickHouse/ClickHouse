@@ -2013,6 +2013,14 @@ inline void readTextWithSizeSuffix(T & x, ReadBuffer & buf)
     {
         if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW && !is_big_int_v<T>)
         {
+            /// The multiplier itself may not be representable in T (e.g. the 'T' suffix with a 32-bit type),
+            /// so it must be range-checked before narrowing: any nonzero value overflows in that case.
+            if (multiplier > static_cast<UInt64>(std::numeric_limits<T>::max()))
+            {
+                if (x != 0)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Overflow while parsing a number with a size suffix");
+                return;
+            }
             if (common::mulOverflow(x, static_cast<T>(multiplier), x))
                 throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Overflow while parsing a number with a size suffix");
         }
