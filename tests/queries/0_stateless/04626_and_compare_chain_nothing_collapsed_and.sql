@@ -41,3 +41,50 @@ SELECT groupArray(x) FROM (SELECT x FROM t_and_chain_nullable WHERE (x > 3) AND 
 SELECT groupArray(x) FROM (SELECT x FROM t_and_chain_nullable WHERE (x != 1) AND (x != 5) ORDER BY x SETTINGS optimize_redundant_comparisons = 1);
 SELECT groupArray(x) FROM (SELECT x FROM t_and_chain_nullable WHERE (x != 1) AND (x != 5) ORDER BY x SETTINGS optimize_redundant_comparisons = 0);
 DROP TABLE t_and_chain_nullable;
+
+-- 4) In a `Nothing`-collapsed AND, an operand may be a comparison whose constant side is itself
+--    NULL-valued (e.g. `expr = NULL`), found by the AST fuzzer mutating case 2's `= 2` to `= NULL`.
+--    A NULL-valued constant carries no comparable value, so `tryOptimizeAndCompareNotEqualsChain`
+--    must not treat it as the constant side (it used to hit `chassert(!literal->getValue().isNull())`).
+--    The whole AND is still `Nothing`-typed, so these queries fail with a normal handled exception.
+--    RHS-NULL constant:
+SELECT tuple((materialize(toNullable(NULL)) = 1) AND (materialize(toInt32(5)) > 3) AND (materialize(toInt32(5)) > 5) AND (assumeNotNull(materialize(toNullable(NULL))) = NULL)) SETTINGS optimize_redundant_comparisons = 1; -- { serverError ILLEGAL_COLUMN }
+SELECT tuple((materialize(toNullable(NULL)) = 1) AND (materialize(toInt32(5)) > 3) AND (assumeNotNull(materialize(toNullable(NULL))) != NULL)) SETTINGS optimize_redundant_comparisons = 1; -- { serverError ILLEGAL_COLUMN }
+--    LHS-NULL constant (the other assertion branch):
+SELECT tuple((materialize(toNullable(NULL)) = 1) AND (materialize(toInt32(5)) > 3) AND (NULL = assumeNotNull(materialize(toNullable(NULL))))) SETTINGS optimize_redundant_comparisons = 1; -- { serverError ILLEGAL_COLUMN }
+--    Independent of the pruning setting (the classification loop runs unconditionally):
+SELECT tuple((materialize(toNullable(NULL)) = 1) AND (materialize(toInt32(5)) > 3) AND (assumeNotNull(materialize(toNullable(NULL))) = NULL)) SETTINGS optimize_and_compare_chain = 0, optimize_redundant_comparisons = 0; -- { serverError ILLEGAL_COLUMN }
+
+-- 5) Liveness of the keep-as-is mechanism for the NULL-valued-constant operand: the optimizer must
+--    still run on this `Nothing`-collapsed AND (so a redundant sibling is pruned) while keeping the
+--    NULL-valued `equals` operands rather than skipping classification entirely. In the tree with
+--    pruning on, `x > 3` is redundant given `x > 5`, so exactly one `greater` node survives; with
+--    pruning off both survive; both NULL-valued `equals` operands are kept in either case.
+SELECT count() = 1 FROM (EXPLAIN QUERY TREE SELECT tuple((materialize(toNullable(NULL)) = 1) AND (materialize(toInt32(5)) > 3) AND (materialize(toInt32(5)) > 5) AND (assumeNotNull(materialize(toNullable(NULL))) = NULL)) SETTINGS optimize_redundant_comparisons = 1) WHERE explain ILIKE '%function_name: greater,%';
+SELECT count() = 2 FROM (EXPLAIN QUERY TREE SELECT tuple((materialize(toNullable(NULL)) = 1) AND (materialize(toInt32(5)) > 3) AND (materialize(toInt32(5)) > 5) AND (assumeNotNull(materialize(toNullable(NULL))) = NULL)) SETTINGS optimize_redundant_comparisons = 0) WHERE explain ILIKE '%function_name: greater,%';
+SELECT count() = 2 FROM (EXPLAIN QUERY TREE SELECT tuple((materialize(toNullable(NULL)) = 1) AND (materialize(toInt32(5)) > 3) AND (materialize(toInt32(5)) > 5) AND (assumeNotNull(materialize(toNullable(NULL))) = NULL)) SETTINGS optimize_redundant_comparisons = 1) WHERE explain ILIKE '%function_name: equals,%';
+
+-- 6) A comparison whose RESULT is nullable must be kept as-is too, even when the raw operand type does
+--    not report `isNullable`: `LowCardinality(Nullable(T))` (nested nullability) and the NULL-capable
+--    carriers `Dynamic` / `Variant` all yield a nullable comparison result. They used to slip past the
+--    guard, fold the contradictory `x = 1 AND x = 2`, and change the handled exception depending on the
+--    setting. The error must now be the same regardless of the pruning / chain settings.
+SET allow_suspicious_low_cardinality_types = 1;
+SET allow_experimental_dynamic_type = 1;
+SET allow_experimental_variant_type = 1;
+SELECT tuple((x = 1) AND (x = 2) AND (assumeNotNull(materialize(toNullable(NULL))))) FROM values('x LowCardinality(Nullable(Int32))', NULL) SETTINGS optimize_and_compare_chain = 0, optimize_redundant_comparisons = 0; -- { serverError ILLEGAL_COLUMN }
+SELECT tuple((x = 1) AND (x = 2) AND (assumeNotNull(materialize(toNullable(NULL))))) FROM values('x LowCardinality(Nullable(Int32))', NULL) SETTINGS optimize_and_compare_chain = 1, optimize_redundant_comparisons = 1; -- { serverError ILLEGAL_COLUMN }
+SELECT tuple((x = 1) AND (x = 2) AND (assumeNotNull(materialize(toNullable(NULL))))) FROM values('x Dynamic', NULL) SETTINGS optimize_and_compare_chain = 0, optimize_redundant_comparisons = 0; -- { serverError ILLEGAL_COLUMN }
+SELECT tuple((x = 1) AND (x = 2) AND (assumeNotNull(materialize(toNullable(NULL))))) FROM values('x Dynamic', NULL) SETTINGS optimize_and_compare_chain = 1, optimize_redundant_comparisons = 1; -- { serverError ILLEGAL_COLUMN }
+SELECT tuple((x = 1) AND (x = 2) AND (assumeNotNull(materialize(toNullable(NULL))))) FROM values('x Variant(Int32, String)', NULL) SETTINGS optimize_and_compare_chain = 0, optimize_redundant_comparisons = 0; -- { serverError ILLEGAL_COLUMN }
+SELECT tuple((x = 1) AND (x = 2) AND (assumeNotNull(materialize(toNullable(NULL))))) FROM values('x Variant(Int32, String)', NULL) SETTINGS optimize_and_compare_chain = 1, optimize_redundant_comparisons = 1; -- { serverError ILLEGAL_COLUMN }
+-- Liveness for the LC(Nullable) operand: a redundant NON-nullable sibling (`> 3` given `> 5`) is still
+-- pruned to one `greater` node while the LC-nullable `equals` operand is kept, proving the optimizer
+-- runs and keeps only that operand opaque rather than declining the whole collapsed AND.
+SELECT count() = 1 FROM (EXPLAIN QUERY TREE SELECT tuple((x = 1) AND (materialize(toInt32(5)) > 3) AND (materialize(toInt32(5)) > 5) AND (assumeNotNull(materialize(toNullable(NULL))))) FROM values('x LowCardinality(Nullable(Int32))', NULL) SETTINGS optimize_redundant_comparisons = 1) WHERE explain ILIKE '%function_name: greater,%';
+SELECT count() = 2 FROM (EXPLAIN QUERY TREE SELECT tuple((x = 1) AND (materialize(toInt32(5)) > 3) AND (materialize(toInt32(5)) > 5) AND (assumeNotNull(materialize(toNullable(NULL))))) FROM values('x LowCardinality(Nullable(Int32))', NULL) SETTINGS optimize_redundant_comparisons = 0) WHERE explain ILIKE '%function_name: greater,%';
+SELECT count() = 1 FROM (EXPLAIN QUERY TREE SELECT tuple((x = 1) AND (materialize(toInt32(5)) > 3) AND (materialize(toInt32(5)) > 5) AND (assumeNotNull(materialize(toNullable(NULL))))) FROM values('x LowCardinality(Nullable(Int32))', NULL) SETTINGS optimize_redundant_comparisons = 1) WHERE explain ILIKE '%function_name: equals,%';
+-- A non-collapsed `LowCardinality(Nullable(T))` chain must still return correct results, unchanged by
+-- the optimization (NULL excluded, `1`/`5` filtered out; only `10` remains).
+SELECT groupArray(x) FROM (SELECT x FROM values('x LowCardinality(Nullable(Int32))', 1, 5, NULL, 10) WHERE (x != 1) AND (x != 5) ORDER BY x SETTINGS optimize_redundant_comparisons = 1);
+SELECT groupArray(x) FROM (SELECT x FROM values('x LowCardinality(Nullable(Int32))', 1, 5, NULL, 10) WHERE (x != 1) AND (x != 5) ORDER BY x SETTINGS optimize_redundant_comparisons = 0);
