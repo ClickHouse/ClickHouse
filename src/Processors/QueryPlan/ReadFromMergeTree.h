@@ -382,6 +382,15 @@ public:
     void clearParallelReadingExtension();
     std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
 
+    /// Announce an empty read set to the parallel-replicas coordinator (what initializePipeline() sends
+    /// when there are no ranges). Callable from the projection optimizer when it replaces this step and
+    /// initializePipeline() will not run. No-op unless this is the initiator local plan; returns whether
+    /// an announcement was sent.
+    bool announceEmptyReadRangesToCoordinatorIfInitiator();
+
+    bool isParallelReplicasLocalPlanForInitiator() const;
+    bool isParallelReplicasLocalPlanForFollower() const;
+
     bool supportsDataflowStatisticsCollection() const override { return !isQueryWithFinal(); }
 
     /// Adds virtual columns for reading from text index.
@@ -601,8 +610,6 @@ private:
     int getSortDirection() const;
     void updateSortDescription();
 
-    bool isParallelReplicasLocalPlanForInitiator() const;
-    bool isParallelReplicasLocalPlanForFollower() const;
     bool supportsSkipIndexesOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
