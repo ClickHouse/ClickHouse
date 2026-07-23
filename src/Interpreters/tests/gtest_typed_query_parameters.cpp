@@ -1,4 +1,5 @@
 #include <Columns/ColumnArray.h>
+#include <Common/SettingsChanges.h>
 #include <Common/assert_cast.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Core/ProtocolDefines.h>
@@ -13,6 +14,7 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTQueryParameter.h>
+#include <Parsers/FieldFromAST.h>
 
 #include <gtest/gtest.h>
 
@@ -106,6 +108,7 @@ TEST(TypedQueryParameters, RejectsTypeMismatchAndTextCollision)
     auto reverse_collision_context = makeQueryContext();
     reverse_collision_context->addTypedQueryParameters({{"vector", makeParameter("Array(Float32)", "[1,2,3]")}});
     EXPECT_THROW(reverse_collision_context->addQueryParameters({{"vector", "[1,2,3]"}}), Exception);
+    EXPECT_THROW(reverse_collision_context->setQueryParameter("vector", "[1,2,3]"), Exception);
 }
 
 TEST(TypedQueryParameters, ValueHashDependsOnTypeAndValue)
@@ -147,4 +150,19 @@ TEST(TypedQueryParameters, SupportsNullableAndProtectsReservedScalar)
     EXPECT_THROW(
         context->addScalar(parameter.scalar_name, Block({{parameter.column, parameter.type, "replacement"}})),
         Exception);
+}
+
+TEST(TypedQueryParameters, ResolvesTypedSettingValueWithoutTextParsing)
+{
+    auto context = makeQueryContext();
+    context->addTypedQueryParameters({{"threads", makeParameter("UInt64", "7")}});
+
+    ASTPtr ast = make_intrusive<ASTQueryParameter>("threads", "UInt64");
+    SettingsChanges changes{{"max_threads", Field(CustomType(std::make_unique<FieldFromASTImpl>(ast)))}};
+    ReplaceQueryParameterVisitor visitor(context);
+    visitor.visitSettingsChanges(changes);
+
+    ASSERT_EQ(visitor.getNumberOfReplacedTypedParameters(), 1);
+    ASSERT_EQ(changes.size(), 1);
+    EXPECT_EQ(changes.front().value.safeGet<UInt64>(), 7);
 }

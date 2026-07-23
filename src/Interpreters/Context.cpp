@@ -7519,6 +7519,12 @@ const TypedQueryParameters & Context::getTypedQueryParameters() const
 
 void Context::setQueryParameter(const String & name, const String & value)
 {
+    if (typed_query_parameters.contains(name))
+        throw Exception(
+            ErrorCodes::BAD_QUERY_PARAMETER,
+            "Query parameter {} is specified in both text and binary form",
+            backQuote(name));
+
     if (!query_parameters.emplace(name, value).second)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate name {} of query parameter", backQuote(name));
 }

@@ -152,6 +152,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | CLIENT_AGENT_IN_CLIENT_INFO     | 54485   | ClientInfo             | Adds a trailing `client_agent` `String` to ClientInfo. The canonical client auto-detects an agent identifier from its environment (for example `claude-code`, `cursor`, `gemini-cli`, or the value of the `AGENT` variable); an external client with nothing detected sends an empty string. Required once negotiated version ≥ 54485 — omitting it desynchronizes the rest of the Query packet. |
 | INTERNAL_QUERY_FLAG             | 54486   | ClientInfo             | Adds a trailing `is_internal` `UInt8` to ClientInfo. `1` for a server-internal query (not user-issued), propagated to remote queries so their `system.query_log` rows are labeled internal; external clients send `0`. Required once negotiated version ≥ 54486 — omitting it desynchronizes the rest of the Query packet. |
 | INTERSERVER_CURRENT_ROLES       | 54488   | ClientInfo             | Adds a trailing `current_roles` optional String list to ClientInfo (`[UInt8 present]` then, if `1`, `[VarUInt count][String]*count`), and, for inter-server queries, extends the `auth_hash` to cover the serialized list. Carries the initiator's active (enabled) role names so a secondary node scopes row policies the same way instead of falling back to the user's default roles. Only populated for inter-server queries and only when `push_external_roles_in_interserver_queries = 1`; external clients send `0` (absent). Required once negotiated version ≥ 54488 — omitting the presence byte desynchronizes the rest of the Query packet. |
+| TYPED_QUERY_PARAMETERS          | 54489   | Query                  | Appends one Native `Block` after the text parameter list. Each column is one typed parameter and the block has exactly one row; an empty typed-parameter set is encoded as an empty block. See [Typed query parameter block](#typed-query-parameter-block). |
 
 ## Packet envelope {#packet-envelope}
 
@@ -519,6 +520,7 @@ Client → Server.
 | 6 | compression    | VarUInt     | universal    | always                                   | 0 = disabled, 1 = enabled |
 | 7 | query_body     | String      | universal    | always                                   | SQL text |
 | 8 | parameters     | Parameter[] | client       | PARAMETERS (v54459)                      | See [Parameter](#parameter). Terminated by empty key. |
+| 9 | typed_parameters | Native Block | client     | TYPED_QUERY_PARAMETERS (v54489)          | See [Typed query parameter block](#typed-query-parameter-block). |
 
 ### ClientInfo (embedded in Query) {#clientinfo}
 
@@ -622,6 +624,24 @@ Query parameters, for parameterized queries like `SELECT {x:UInt64}`. Encoded id
 :::note
 The parameter value is the SQL representation of the value, not a raw literal. String-typed parameters must be passed already single-quoted (for example, the value for `{name:String}` is `'Alice'`, not `Alice`); otherwise the server's value parser rejects them.
 :::
+
+### Typed query parameter block {#typed-query-parameter-block}
+
+At negotiated protocol revision `54489` and above, the Query body appends one Native `Block` immediately after the text [Parameter](#parameter) terminator. This block is part of the Query packet itself: it has no packet-type or `table_name` prefix and is not wrapped by the Query packet's `compression` setting. Chunked-protocol framing, when negotiated, still wraps the enclosing packet normally.
+
+Each block column represents one parameter:
+
+| Native column field | Meaning |
+|---------------------|---------|
+| `name`              | Query parameter name, without braces |
+| `type`              | Declared ClickHouse data type |
+| `data`              | Exactly one value, encoded using that type's Native column serialization |
+
+A non-empty block must contain exactly one row. An empty typed-parameter set is encoded as an empty block with zero columns and zero rows. Parameter names must be non-empty and unique. A name cannot appear in both the text parameter list and the typed block.
+
+The sender and receiver construct `NativeWriter` and `NativeReader` with the negotiated revision, so the block includes the revision-dependent `BlockInfo` and column metadata described by the [Native Format](/interfaces/specs/NativeFormat). The receiver limits the encoded block to 64 MiB, the decoded column data to 64 MiB, the parameter count to 1024, and the type nesting depth to 32. Types with custom serialization and types such as `AggregateFunction`, `Dynamic`, `JSON`/`Object`, `Variant`, `Function`, `Set`, and `QBit` are rejected.
+
+For a negotiated revision below `54489`, this field is absent. A compatible client must serialize typed values into the existing text parameter list instead; sending a Native block to an older peer desynchronizes the connection.
 
 ### Data (packet type 1 server→client, packet type 2 client→server) {#data}
 
