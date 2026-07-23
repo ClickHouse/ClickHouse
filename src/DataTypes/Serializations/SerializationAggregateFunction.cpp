@@ -223,6 +223,10 @@ void SerializationAggregateFunction::serializeBinary(const Field & field, WriteB
 
 void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    /// This method must honor `aggregate_function_input_format`: `BinaryRowInputFormat::skipField` uses it
+    /// to consume unknown columns of `RowBinary(WithNamesAndTypes)` input, so it has to read exactly the same
+    /// bytes as the column-based `deserializeBinary` does for the format the input is declared to be in,
+    /// otherwise all following columns are misaligned.
     field = AggregateFunctionStateData();
     AggregateFunctionStateData & s = field.safeGet<AggregateFunctionStateData>();
     s.name = type_name;
