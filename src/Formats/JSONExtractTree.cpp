@@ -724,6 +724,12 @@ public:
             {
                 /// A negative integer is a pre-epoch Unix timestamp; the final clamp below brings it into the
                 /// `DateTime` range (the epoch), matching the row input serializer, rather than rejecting it.
+                /// With `read_datetime_number_as_raw_value` (pre-26.7) a negative integer is rejected as before.
+                if (format_settings.read_datetime_number_as_raw_value && element.getInt64() < 0)
+                {
+                    error = fmt::format("cannot convert negative integer value {} to DateTime", element.getInt64());
+                    return false;
+                }
                 value = element.getInt64();
             }
             else

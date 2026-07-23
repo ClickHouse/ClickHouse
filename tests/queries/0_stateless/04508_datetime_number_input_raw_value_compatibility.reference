@@ -26,6 +26,10 @@
 -- JSONExtract compatibility: a fractional DateTime number is rejected (returns the default)
 1970-01-01 00:00:00
 2023-12-23 20:37:33
+-- Typed JSON / JSONExtract: a negative integer for DateTime clamps to the epoch by default, but is rejected in compatibility mode
+1970-01-01 00:00:00
+{"t":"1970-01-01 00:00:00"}
+\N
 -- DateTime compatibility: an out-of-range integer clamps to the DateTime range (plain == Nullable)
 2106-02-07 06:28:15
 2106-02-07 06:28:15

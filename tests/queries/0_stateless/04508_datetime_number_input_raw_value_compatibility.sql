@@ -62,6 +62,14 @@ SELECT JSONExtract('{"t":1703363853.7}', 't', 'DateTime');
 SELECT JSONExtract('{"t":1703363853}', 't', 'DateTime');
 SET input_format_read_datetime_number_as_raw_value = 0;
 
+SELECT '-- Typed JSON / JSONExtract: a negative integer for DateTime clamps to the epoch by default, but is rejected in compatibility mode';
+SELECT JSONExtract('{"t":-1}', 't', 'Nullable(DateTime)');
+SELECT CAST('{"t":-1}', 'JSON(t DateTime)');
+SET input_format_read_datetime_number_as_raw_value = 1;
+SELECT JSONExtract('{"t":-1}', 't', 'Nullable(DateTime)');
+SELECT CAST('{"t":-1}', 'JSON(t DateTime)'); -- { serverError INCORRECT_DATA }
+SET input_format_read_datetime_number_as_raw_value = 0;
+
 -- Boundary cases under the compatibility setting: the legacy integer path must not wrap around on
 -- overflow, and the throwing (plain column) and non-throwing (Nullable) paths must agree.
 
