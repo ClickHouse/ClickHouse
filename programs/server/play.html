@@ -7757,6 +7757,52 @@ function parseInbandException(text, format)
     return null;
 }
 
+/// Keep a bounded tail of the raw stream, separately from the capped snapshot
+/// (`appendCappedSnapshot`): the snapshot cap stops `reply` growing at ~100 KB, so an in-band
+/// exception trailer arriving after that would never be seen by `parseInbandException` — a failed
+/// query would finish in the success state and `Run all` would continue past it. The trailer is
+/// terminal, so a tail suffices; the bound must only exceed the largest trailer (an exception
+/// message with a stack trace, which can embed the query text). Re-align the trimmed tail to a
+/// line boundary so the line-anchored probes (`^\t<exception>` for `XML`, the last-line check for
+/// `*WithProgress`) cannot match a line cut open mid-value — unless dropping the partial first
+/// line would leave nothing (`GeoJSON` writes the whole document on one line, so its only newline
+/// is the terminal one; its probe is end-anchored, so a mid-line start is harmless there).
+const INBAND_TAIL_LIMIT = 262144;
+function appendBoundedTail(tail, chunk)
+{
+    tail += chunk;
+    if (tail.length <= INBAND_TAIL_LIMIT)
+        return tail;
+    tail = tail.slice(tail.length - INBAND_TAIL_LIMIT);
+    const nl = tail.indexOf('\n');
+    return (nl >= 0 && nl + 1 < tail.length) ? tail.slice(nl + 1) : tail;
+}
+
+/// `parseInbandException` over a bounded tail (`appendBoundedTail`) instead of the whole body.
+/// The `XML` and `*WithProgress` probes anchor to lines and work on a suffix as-is; the
+/// single-document JSON probe parses the whole document, which fails on a trimmed tail, so fall
+/// back to matching the terminal trailer these formats write on failure (`JSONUtils::writeException`):
+///   - `JSON` family / `JSONObjectEachRow`: the body ends with `\t"exception": "<msg>"` on its own
+///     line followed by the closing `}` — a successful document cannot end that way (its last
+///     top-level member is the statistics/rows trailer, a row object, or a column array, none of
+///     which put a top-level string named `exception` last);
+///   - `GeoJSON`: the (single-line) body ends with `{"exception": "<msg>"}]}` — the failure element
+///     appended to the `features` array; a nested `exception` property of a real feature closes
+///     with an extra `}`, so the end-anchored match cannot mistake it for the trailer.
+/// When the body never outgrew the bound the tail IS the whole body, and the first probe behaves
+/// exactly like `parseInbandException` on the full reply.
+function parseInbandExceptionFromTail(tail, format)
+{
+    const parsed = parseInbandException(tail, format);
+    if (parsed !== null) return parsed;
+    if (typeof format !== 'string' || !SINGLE_DOCUMENT_JSON_FORMATS.has(format)) return null;
+    const m = format === 'GeoJSON'
+        ? tail.match(/[\[,]\{("exception": "(?:[^"\\]|\\.)*")\}\]\}\s*$/)
+        : tail.match(/\n\t("exception": "(?:[^"\\]|\\.)*")\n\}\s*$/);
+    if (m === null) return null;
+    try { return JSON.parse('{' + m[1] + '}').exception; } catch (e) { return null; }
+}
+
 /// Execute a single query, rendering results into the given targetResultEl.
 /// Returns { format, reply, response_ok, is_table, is_raw, is_chart, is_image, is_error };
 /// failed runs also carry `exception_tag` and `display_error` — the rendered error text, persisted
@@ -8335,6 +8381,11 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             let marker_framing_broken = false;   /// the server broke HTTP framing after the marker (see below)
             let held_back = '';           /// output withheld from the candidate marker line onward (see below)
             let stream_exception = null;
+            /// Bounded tail of the raw stream for the in-band probe, kept separately from the
+            /// capped `reply`: the snapshot cap stops `reply` at ~100 KB, so a terminal in-band
+            /// exception of a larger response would never be seen if probed on `reply` — the
+            /// failed query would finish green and `Run all` would continue past it.
+            let inband_tail = '';
             while (true) {
                 let done, value;
                 try {
@@ -8361,6 +8412,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
 
                 let new_content = decoder.decode(value, { stream: true });
                 reply = appendCappedSnapshot(reply, new_content);
+                inband_tail = appendBoundedTail(inband_tail, new_content);
 
                 if (posted_request_num != tab.reqNum) { return { cancelled: true }; }
 
@@ -8422,13 +8474,13 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                     /// further down the withheld tail. Without this probe such a failed `FORMAT XML`
                     /// query would finish in the success state.
                     if (held_back.length) targetResultEl.updateRaw(held_back);
-                    stream_exception = parseInbandException(reply, format);
+                    stream_exception = parseInbandExceptionFromTail(inband_tail, format);
                 }
             } else {
                 /// Flush the final line (a stream need not end with a newline).
                 if (buffer.length) targetResultEl.updateRaw(buffer);
                 /// No transport marker: a JSON output format may still have reported the failure in-band.
-                stream_exception = parseInbandException(reply, format);
+                stream_exception = parseInbandExceptionFromTail(inband_tail, format);
             }
 
             if (stream_exception !== null) {

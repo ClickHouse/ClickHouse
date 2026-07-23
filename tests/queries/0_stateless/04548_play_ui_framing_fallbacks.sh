@@ -120,6 +120,13 @@ echo "$page" | grep -qF "$non_ok_ndjson_dispatch" && echo 'non-200 ndjson dispat
 echo "$page" | grep -q -F 'function appendCappedSnapshot(' && echo 'snapshot cap helper present: OK'
 [ "$(echo "$page" | grep -c -F 'reply = appendCappedSnapshot(reply,')" -ge 3 ] && echo 'all collection sites capped: OK'
 [ "$(echo "$page" | grep -c -F 'reply += ')" -eq 0 ] && echo 'no uncapped reply growth: OK'
+# The raw explicit-format branch probes the terminal in-band exception on a bounded tail of the raw
+# stream, kept separately from the capped snapshot: the cap stops `reply` at ~100 KB, so a trailer
+# arriving after that would never be seen if probed on `reply` - the failed query would finish in
+# the success state and "Run all" would continue past it.
+echo "$page" | grep -q -F 'function appendBoundedTail(' && echo 'bounded in-band tail helper present: OK'
+echo "$page" | grep -q -F 'inband_tail = appendBoundedTail(inband_tail, new_content);' && echo 'raw stream keeps in-band tail: OK'
+[ "$(echo "$page" | grep -c -F 'parseInbandExceptionFromTail(inband_tail, format)')" -eq 2 ] && echo 'in-band probe reads the tail: OK'
 # A retried plain `JSON*EachRowWithProgress` stream is scanned for its own in-band `{"exception":...}`
 # object, keyed off the output format (`formatMayWriteInBandException`), not only the user's framing.
 echo "$page" | grep -q -F 'function formatMayWriteInBandException(' && echo 'in-band exception detector present: OK'

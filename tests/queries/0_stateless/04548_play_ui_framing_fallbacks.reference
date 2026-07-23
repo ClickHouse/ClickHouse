@@ -10,6 +10,9 @@ non-200 ndjson dispatched as packets: OK
 snapshot cap helper present: OK
 all collection sites capped: OK
 no uncapped reply growth: OK
+bounded in-band tail helper present: OK
+raw stream keeps in-band tail: OK
+in-band probe reads the tail: OK
 in-band exception detector present: OK
 truncated stream fails closed: OK
 residual parse failure maps to truncation: OK
