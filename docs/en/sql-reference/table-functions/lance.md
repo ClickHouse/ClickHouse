@@ -1,5 +1,5 @@
 ---
-description: 'Provides a read-only table-like interface to Lance datasets in Amazon S3.'
+description: 'Provides a table-like interface for reading and appending to Lance datasets in Amazon S3.'
 sidebar_label: 'lance'
 sidebar_position: 91
 slug: /sql-reference/table-functions/lance
@@ -13,9 +13,9 @@ import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 
 <ExperimentalBadge />
 
-The `lanceS3` table function provides a read-only table-like interface to existing [Lance](https://lancedb.github.io/lance/) datasets stored in Amazon S3 or S3-compatible object storage.
+The `lanceS3` table function provides a table-like interface for reading and appending to existing [Lance](https://lancedb.github.io/lance/) datasets stored in Amazon S3 or S3-compatible object storage.
 
-`lanceS3` reads existing Lance datasets. It does not create datasets, write data, build indexes, or perform vector search.
+`lanceS3` operates on existing Lance datasets. It does not create datasets, overwrite data, build indexes, or perform vector search.
 
 ## Syntax {#syntax}
 
@@ -96,6 +96,19 @@ SELECT *
 FROM lanceS3('dataset.lance', SETTINGS disk = 'lance_s3_disk');
 ```
 
+Append rows to an existing Lance dataset:
+
+```sql
+INSERT INTO FUNCTION lanceS3(
+    'https://bucket.s3.amazonaws.com/path/to/dataset.lance',
+    'access_key_id',
+    'secret_access_key')
+SELECT id, name, score
+FROM source_table;
+```
+
+Each successful `INSERT` commits one new Lance snapshot.
+
 ## Virtual columns {#virtual-columns}
 
 `lanceS3` supports the file-like virtual columns provided by the object-storage read path, including `_path`, `_file`, `_size`, `_time`, and `_etag`.
@@ -104,9 +117,8 @@ For data lake reads, `_data_lake_snapshot_version` contains the Lance snapshot i
 
 ## Limitations {#limitations}
 
-- `lanceS3` is read-only.
 - Creating new Lance datasets from ClickHouse is not supported.
-- Writing to Lance datasets is not supported.
+- Only append writes are supported. Overwrite and mutation operations are not supported.
 - Lance indexes and vector search are not supported.
 - Unsupported Lance or Arrow types fail with an `Unsupported Lance column` exception.
 

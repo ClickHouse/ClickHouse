@@ -1,5 +1,5 @@
 ---
-description: 'This engine provides a read-only integration with existing Lance datasets in Amazon S3.'
+description: 'This engine reads and appends to existing Lance datasets in Amazon S3.'
 sidebar_label: 'Lance'
 sidebar_position: 96
 slug: /engines/table-engines/integrations/lance
@@ -13,9 +13,9 @@ import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 
 <ExperimentalBadge />
 
-The `LanceS3` table engine provides a read-only integration with existing [Lance](https://lancedb.github.io/lance/) datasets stored in Amazon S3 or S3-compatible object storage.
+The `LanceS3` table engine reads and appends to existing [Lance](https://lancedb.github.io/lance/) datasets stored in Amazon S3 or S3-compatible object storage.
 
-`LanceS3` mounts existing Lance datasets. It does not create datasets, write data, build indexes, or perform vector search.
+`LanceS3` mounts existing Lance datasets. It does not create datasets, overwrite data, build indexes, or perform vector search.
 
 ## Create table {#create-table}
 
@@ -71,6 +71,18 @@ ENGINE = LanceS3(lance_conf, filename = 'dataset.lance');
 
 If an explicit column is missing from the dataset or has an incompatible type, ClickHouse returns `BAD_ARGUMENTS`.
 
+## Insert data {#insert-data}
+
+`INSERT INTO` appends rows to an existing Lance dataset:
+
+```sql
+INSERT INTO lance_table
+SELECT id, name, score
+FROM source_table;
+```
+
+Each successful `INSERT` commits one new Lance snapshot. If conversion or writing fails before the commit completes, the new snapshot is not published.
+
 ## Snapshot state {#snapshot-state}
 
 `LanceS3` captures the current Lance snapshot through `DataLakeTableStateSnapshot` during query analysis. Reads use the saved `Lance::TableStateSnapshot`, so query execution uses a consistent Lance snapshot even if the dataset is updated concurrently.
@@ -79,9 +91,9 @@ The virtual column `_data_lake_snapshot_version` exposes the Lance snapshot id u
 
 ## Limitations {#limitations}
 
-- `LanceS3` is read-only.
 - Creating new Lance datasets from ClickHouse is not supported.
-- Writing to Lance datasets is not supported.
+- Only append writes are supported. Overwrite, `ALTER`, `DELETE`, `UPDATE`, and `TRUNCATE` are not supported.
+- Parallel insert into the same dataset is not enabled by the engine.
 - Lance indexes and vector search are not supported.
 - Unsupported Lance or Arrow types fail with an `Unsupported Lance column` exception.
 - Non-S3 disks are rejected with `BAD_ARGUMENTS`.

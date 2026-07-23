@@ -17,6 +17,7 @@ node = cluster.add_instance(
     user_configs=[
         "configs/users.d/users.xml",
     ],
+    stay_alive=True,
     with_minio=True,
 )
 node_with_environment_credentials = cluster.add_instance(
@@ -217,6 +218,59 @@ def test_lance_s3_table_engine(started_cluster):
     )
 
     node.query("DROP TABLE lance_s3_basic")
+
+
+def test_lance_s3_append_and_restart(started_cluster):
+    skip_if_lance_s3_unavailable()
+
+    remote_prefix = "data/lance/write.lance"
+    upload_lance_dataset_to_minio(started_cluster, remote_prefix)
+
+    node.query("DROP TABLE IF EXISTS lance_s3_write")
+    node.query(
+        """
+        CREATE TABLE lance_s3_write
+        ENGINE = LanceS3(nc_s3, filename = 'lance/write.lance')
+        """
+    )
+
+    node.query("INSERT INTO lance_s3_write VALUES (4, 'd', 40), (5, 'e', NULL)")
+    assert (
+        node.query(
+            """
+            SELECT count(), sum(id), min(_data_lake_snapshot_version), max(_data_lake_snapshot_version)
+            FROM lance_s3_write
+            """
+        )
+        == "5\t15\t2\t2\n"
+    )
+
+    node.query(
+        """
+        INSERT INTO FUNCTION lanceS3(nc_s3, filename = 'lance/write.lance')
+        SELECT
+            CAST(6 AS UInt64),
+            CAST('f' AS String),
+            CAST(60 AS Nullable(Int64))
+        """
+    )
+
+    node.restart_clickhouse()
+    assert (
+        node.query("SELECT id, name, score FROM lance_s3_write ORDER BY id")
+        == "1\ta\t10\n2\tb\t\\N\n3\tc\t30\n4\td\t40\n5\te\t\\N\n6\tf\t60\n"
+    )
+    assert (
+        node.query(
+            """
+            SELECT count(), sum(id), min(_data_lake_snapshot_version), max(_data_lake_snapshot_version)
+            FROM lance_s3_write
+            """
+        )
+        == "6\t21\t3\t3\n"
+    )
+
+    node.query("DROP TABLE lance_s3_write")
 
 
 def test_lance_s3_pushdown_queries(started_cluster):

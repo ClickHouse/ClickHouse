@@ -1,11 +1,11 @@
-use arrow_array::ffi::FFI_ArrowArray;
-use arrow_array::{Array, StructArray};
+use arrow_array::ffi::{from_ffi, FFI_ArrowArray};
+use arrow_array::{Array, RecordBatch, RecordBatchReader, StructArray};
 use arrow_schema::ffi::FFI_ArrowSchema;
-use arrow_schema::{DataType, Field, Schema, TimeUnit};
+use arrow_schema::{ArrowError, DataType, Field, Schema, SchemaRef, TimeUnit};
 use futures::Stream;
 use futures::StreamExt;
 use lance::dataset::builder::DatasetBuilder;
-use lance::dataset::ReadParams;
+use lance::dataset::{ReadParams, WriteMode, WriteParams};
 use lance::io::ObjectStoreParams;
 use lance::Dataset;
 use object_store::aws::{AmazonS3Builder, AmazonS3ConfigKey};
@@ -15,7 +15,8 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::pin::Pin;
 use std::ptr;
-use std::sync::Arc;
+use std::sync::{mpsc, Arc};
+use std::thread::{self, JoinHandle};
 use tokio::runtime::Runtime;
 use url::Url;
 
@@ -72,6 +73,33 @@ pub struct ch_lance_dataset {
 pub struct ch_lance_scan {
     runtime: Runtime,
     stream: Pin<Box<dyn Stream<Item = lance::Result<arrow_array::RecordBatch>> + Send>>,
+}
+
+#[repr(C)]
+pub struct ch_lance_writer {
+    open_options: DatasetOpenOptions,
+    sender: Option<mpsc::SyncSender<Result<RecordBatch, ArrowError>>>,
+    worker: Option<JoinHandle<Result<(), String>>>,
+    finished: bool,
+}
+
+struct ChannelRecordBatchReader {
+    schema: SchemaRef,
+    receiver: mpsc::Receiver<Result<RecordBatch, ArrowError>>,
+}
+
+impl Iterator for ChannelRecordBatchReader {
+    type Item = Result<RecordBatch, ArrowError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.receiver.recv().ok()
+    }
+}
+
+impl RecordBatchReader for ChannelRecordBatchReader {
+    fn schema(&self) -> SchemaRef {
+        self.schema.clone()
+    }
 }
 
 fn set_error(error: *mut ch_lance_error, message: &str) {
@@ -265,7 +293,7 @@ fn validate_schema(schema: &Schema) -> Result<(), String> {
 fn validate_field(field: &Field) -> Result<(), String> {
     if field.metadata().contains_key("ARROW:extension:name") {
         return Err(format!(
-            "Unsupported Lance column `{}`: Arrow extension types are not supported by the read-only MVP",
+            "Unsupported Lance column `{}`: Arrow extension types are not supported by the Lance integration",
             field.name()
         ));
     }
@@ -306,7 +334,7 @@ fn validate_data_type(column_name: &str, data_type: &DataType) -> Result<(), Str
             )),
         },
         other => Err(format!(
-            "Unsupported Lance column `{}`: Arrow type {} is not supported by the read-only MVP",
+            "Unsupported Lance column `{}`: Arrow type {} is not supported by the Lance integration",
             column_name, other
         )),
     }
@@ -335,6 +363,35 @@ fn write_record_batch(
         std::ptr::write_unaligned(schema, ffi_schema);
     }
     Ok(())
+}
+
+fn run_writer(
+    open_options: DatasetOpenOptions,
+    reader: ChannelRecordBatchReader,
+) -> Result<(), String> {
+    let runtime =
+        Runtime::new().map_err(|err| format!("Cannot create Lance write runtime: {}", err))?;
+    runtime.block_on(async move {
+        let opened = open_dataset(open_options).await?;
+        let params = WriteParams {
+            mode: WriteMode::Append,
+            ..Default::default()
+        };
+        Dataset::write(reader, Arc::new(opened.dataset), Some(params))
+            .await
+            .map(|_| ())
+            .map_err(|err| err.to_string())
+    })
+}
+
+fn join_writer(worker: Option<JoinHandle<Result<(), String>>>) -> Result<(), String> {
+    match worker {
+        None => Ok(()),
+        Some(worker) => match worker.join() {
+            Ok(result) => result,
+            Err(_) => Err("Lance writer thread panicked".to_string()),
+        },
+    }
 }
 
 #[no_mangle]
@@ -659,6 +716,140 @@ pub unsafe extern "C" fn ch_lance_free_scan(scan: *mut ch_lance_scan) {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn ch_lance_open_writer(
+    options: *const ch_lance_dataset_options,
+    error: *mut ch_lance_error,
+) -> *mut ch_lance_writer {
+    clear_error(error);
+    if options.is_null() {
+        set_error(error, "Lance dataset options pointer is null");
+        return ptr::null_mut();
+    }
+
+    let open_options = match apply_dataset_options(&*options) {
+        Ok(options) => options,
+        Err(message) => {
+            set_error(error, &message);
+            return ptr::null_mut();
+        }
+    };
+
+    Box::into_raw(Box::new(ch_lance_writer {
+        open_options,
+        sender: None,
+        worker: None,
+        finished: false,
+    }))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_write_batch(
+    writer: *mut ch_lance_writer,
+    array: *mut FFI_ArrowArray,
+    schema: *mut FFI_ArrowSchema,
+    error: *mut ch_lance_error,
+) -> bool {
+    clear_error(error);
+    if writer.is_null() || array.is_null() || schema.is_null() {
+        set_error(
+            error,
+            "Lance writer, ArrowArray, or ArrowSchema pointer is null",
+        );
+        return false;
+    }
+
+    let writer = &mut *writer;
+    // Ownership of both `ArrowArray` and `ArrowSchema` moves to Rust on this path.
+    let ffi_array = ptr::read(array);
+    let ffi_schema = ptr::read(schema);
+    if writer.finished {
+        set_error(error, "Lance writer is already finished");
+        return false;
+    }
+
+    let data = match from_ffi(ffi_array, &ffi_schema) {
+        Ok(data) => data,
+        Err(err) => {
+            set_error(error, &format!("Cannot import Lance write batch: {}", err));
+            return false;
+        }
+    };
+    let batch = RecordBatch::from(StructArray::from(data));
+    if let Err(message) = validate_schema(batch.schema().as_ref()) {
+        set_error(error, &message);
+        return false;
+    }
+
+    if writer.sender.is_none() {
+        let (sender, receiver) = mpsc::sync_channel(2);
+        let reader = ChannelRecordBatchReader {
+            schema: batch.schema(),
+            receiver,
+        };
+        let open_options = writer.open_options.clone();
+        writer.worker = Some(thread::spawn(move || run_writer(open_options, reader)));
+        writer.sender = Some(sender);
+    }
+
+    if writer.sender.as_ref().unwrap().send(Ok(batch)).is_err() {
+        writer.sender.take();
+        let result = join_writer(writer.worker.take());
+        set_error(
+            error,
+            &result
+                .err()
+                .unwrap_or_else(|| "Lance writer stopped before accepting a batch".to_string()),
+        );
+        return false;
+    }
+    true
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_finish_writer(
+    writer: *mut ch_lance_writer,
+    error: *mut ch_lance_error,
+) -> bool {
+    clear_error(error);
+    if writer.is_null() {
+        set_error(error, "Lance writer pointer is null");
+        return false;
+    }
+
+    let writer = &mut *writer;
+    if writer.finished {
+        return true;
+    }
+    writer.finished = true;
+    writer.sender.take();
+
+    match join_writer(writer.worker.take()) {
+        Ok(()) => true,
+        Err(message) => {
+            set_error(error, &message);
+            false
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_free_writer(writer: *mut ch_lance_writer) {
+    if writer.is_null() {
+        return;
+    }
+
+    let mut writer = Box::from_raw(writer);
+    if !writer.finished {
+        if let Some(sender) = writer.sender.take() {
+            let _ = sender.send(Err(ArrowError::ComputeError(
+                "Lance writer was aborted".to_string(),
+            )));
+        }
+        let _ = join_writer(writer.worker.take());
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn ch_lance_free_error(error: *mut ch_lance_error) {
     if error.is_null() {
         return;
@@ -709,6 +900,19 @@ mod tests {
         )])
         .unwrap();
         batch
+    }
+
+    fn write_batch_through_ffi(
+        writer: *mut ch_lance_writer,
+        batch: RecordBatch,
+        error: *mut ch_lance_error,
+    ) {
+        let ffi_schema = FFI_ArrowSchema::try_from(batch.schema().as_ref()).unwrap();
+        let struct_array = StructArray::from(batch);
+        let ffi_array = FFI_ArrowArray::new(&struct_array.to_data());
+        let mut ffi_array = std::mem::ManuallyDrop::new(ffi_array);
+        let mut ffi_schema = std::mem::ManuallyDrop::new(ffi_schema);
+        assert!(unsafe { ch_lance_write_batch(writer, &mut *ffi_array, &mut *ffi_schema, error) });
     }
 
     fn write_test_dataset() -> tempfile::TempDir {
@@ -975,6 +1179,125 @@ mod tests {
     }
 
     #[test]
+    fn ffi_writer_appends_and_commits_one_snapshot() {
+        let dir = write_test_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = ch_lance_error {
+            message: ptr::null_mut(),
+        };
+
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+        let mut before = ch_lance_snapshot_info {
+            snapshot_id: 0,
+            schema_id: 0,
+        };
+        assert!(unsafe {
+            ch_lance_current_snapshot(dataset, addr_of_mut!(before), addr_of_mut!(error))
+        });
+        unsafe {
+            ch_lance_free_dataset(dataset);
+        }
+
+        let writer = unsafe { ch_lance_open_writer(&options, addr_of_mut!(error)) };
+        assert!(!writer.is_null());
+
+        write_batch_through_ffi(writer, make_batch(vec![4, 5]), addr_of_mut!(error));
+        write_batch_through_ffi(writer, make_batch(vec![6]), addr_of_mut!(error));
+        assert!(unsafe { ch_lance_finish_writer(writer, addr_of_mut!(error)) });
+        unsafe {
+            ch_lance_free_writer(writer);
+        }
+
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+        let mut after = ch_lance_snapshot_info {
+            snapshot_id: 0,
+            schema_id: 0,
+        };
+        assert!(unsafe {
+            ch_lance_current_snapshot(dataset, addr_of_mut!(after), addr_of_mut!(error))
+        });
+        assert_eq!(after.snapshot_id, before.snapshot_id + 1);
+
+        let mut rows = 0;
+        let mut has_value = false;
+        assert!(unsafe {
+            ch_lance_total_rows(
+                dataset,
+                after.snapshot_id,
+                addr_of_mut!(rows),
+                addr_of_mut!(has_value),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(has_value);
+        assert_eq!(rows, 6);
+        unsafe {
+            ch_lance_free_dataset(dataset);
+        }
+    }
+
+    #[test]
+    fn ffi_writer_abort_does_not_publish_snapshot() {
+        let dir = write_test_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = ch_lance_error {
+            message: ptr::null_mut(),
+        };
+
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+        let mut before = ch_lance_snapshot_info {
+            snapshot_id: 0,
+            schema_id: 0,
+        };
+        assert!(unsafe {
+            ch_lance_current_snapshot(dataset, addr_of_mut!(before), addr_of_mut!(error))
+        });
+        unsafe {
+            ch_lance_free_dataset(dataset);
+        }
+
+        let writer = unsafe { ch_lance_open_writer(&options, addr_of_mut!(error)) };
+        assert!(!writer.is_null());
+        write_batch_through_ffi(writer, make_batch(vec![4, 5]), addr_of_mut!(error));
+        unsafe {
+            ch_lance_free_writer(writer);
+        }
+
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+        let mut after = ch_lance_snapshot_info {
+            snapshot_id: 0,
+            schema_id: 0,
+        };
+        assert!(unsafe {
+            ch_lance_current_snapshot(dataset, addr_of_mut!(after), addr_of_mut!(error))
+        });
+        assert_eq!(after.snapshot_id, before.snapshot_id);
+
+        let mut rows = 0;
+        let mut has_value = false;
+        assert!(unsafe {
+            ch_lance_total_rows(
+                dataset,
+                after.snapshot_id,
+                addr_of_mut!(rows),
+                addr_of_mut!(has_value),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(has_value);
+        assert_eq!(rows, 3);
+        unsafe {
+            ch_lance_free_dataset(dataset);
+        }
+    }
+
+    #[test]
     fn ffi_scan_accepts_pushdown_predicates() {
         let dir = write_pushdown_dataset();
         let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
@@ -1156,7 +1479,7 @@ mod tests {
 
         let error = validate_schema(&schema).unwrap_err();
         assert!(error.contains("Unsupported Lance column `m`"));
-        assert!(error.contains("not supported by the read-only MVP"));
+        assert!(error.contains("not supported by the Lance integration"));
     }
 
     #[test]
