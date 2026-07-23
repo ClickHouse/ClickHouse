@@ -14,20 +14,32 @@ cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/config.d/storage_conf.xml"],
+    main_configs=[
+        "configs/config.d/storage_conf.xml",
+        "configs/config.d/transactions.xml",
+    ],
     with_minio=True,
+    with_zookeeper=True,
     stay_alive=True,
 )
 node2 = cluster.add_instance(
     "node2",
-    main_configs=["configs/config.d/storage_conf.xml"],
+    main_configs=[
+        "configs/config.d/storage_conf.xml",
+        "configs/config.d/transactions.xml",
+    ],
     with_minio=True,
+    with_zookeeper=True,
     stay_alive=True,
 )
 node3 = cluster.add_instance(
     "node3",
-    main_configs=["configs/config.d/storage_conf.xml"],
+    main_configs=[
+        "configs/config.d/storage_conf.xml",
+        "configs/config.d/transactions.xml",
+    ],
     with_minio=True,
+    with_zookeeper=True,
     stay_alive=True,
 )
 
@@ -1184,3 +1196,82 @@ def test_broken_part_detached_on_takeover(started_cluster):
             node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         except Exception:
             pass
+
+
+SHARED_UUID_TXN_DDL = "12345678-abcd-abcd-abcd-12345678ab10"
+
+
+def test_transactional_partition_ddl_rejected_under_leader_election(started_cluster):
+    """
+    Regression for the transactional admission check on partition DDL: on a table with
+    `leader_election` the final `COMMIT TRANSACTION` is not fenced by the leadership lease, so
+    partition commands must be rejected up front (`NOT_IMPLEMENTED`) when they run inside an
+    explicit transaction, instead of failing deep inside version-metadata writes or, worse,
+    letting a leader that lost its lease finalize the operation after failover.
+
+    Commands whose target table is the `leader_election` table are already rejected by the
+    interpreter (`supportsTransactions` is false on `plain_rewritable`), even with
+    `throw_on_unsupported_query_inside_transaction = 0`. The interesting path is
+    `MOVE PARTITION TO TABLE` from a plain source into a `leader_election` destination: the
+    interpreter checks only the source table, so the destination-side storage check added in
+    `movePartitionToTable` is what rejects it.
+    """
+    ensure_node_up(node1)
+    table = "test_txn_ddl"
+    plain = "test_txn_ddl_plain"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_TXN_DDL}' (x UInt64)
+            ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x
+            SETTINGS {TABLE_SETTINGS}
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3), (4)")
+
+        node1.query(
+            f"CREATE TABLE {plain} (x UInt64) ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x"
+        )
+        node1.query(f"INSERT INTO {plain} VALUES (5), (6)")
+
+        # Detach a partition non-transactionally so the transactional ATTACH below would have
+        # something to publish if it were (incorrectly) admitted.
+        node1.query(f"ALTER TABLE {table} DETACH PARTITION 1")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 2
+
+        rejected = [
+            # Interpreter-level rejection: the target table does not support transactions.
+            (f"ALTER TABLE {table} ATTACH PARTITION 1", "does not support transactions"),
+            (f"ALTER TABLE {table} ATTACH PARTITION 1 FROM {plain}", "does not support transactions"),
+            (f"ALTER TABLE {table} REPLACE PARTITION 1 FROM {plain}", "does not support transactions"),
+            (f"ALTER TABLE {table} MOVE PARTITION 0 TO TABLE {plain}", "does not support transactions"),
+            # Destination-side storage rejection: the plain source passes the interpreter check,
+            # so only the check inside `movePartitionToTable` fences the destination.
+            (
+                f"ALTER TABLE {plain} MOVE PARTITION 1 TO TABLE {table}",
+                "not supported for tables with the leader_election setting",
+            ),
+        ]
+        for ddl, expected in rejected:
+            error = node1.query_and_get_error(
+                f"BEGIN TRANSACTION; {ddl}; COMMIT;",
+                settings={"throw_on_unsupported_query_inside_transaction": 0},
+            )
+            assert "NOT_IMPLEMENTED" in error and expected in error, (
+                f"{ddl} inside a transaction must be rejected at admission, got: {error!r}"
+            )
+
+        # Nothing was published or moved by the rejected commands.
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 2
+        assert int(node1.query(f"SELECT count() FROM {plain}").strip()) == 2
+
+        # Outside a transaction the same commands are admitted.
+        node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 4
+    finally:
+        for t in (table, plain):
+            try:
+                node1.query(f"DROP TABLE IF EXISTS {t} SYNC")
+            except Exception:
+                pass

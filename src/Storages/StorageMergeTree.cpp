@@ -3487,6 +3487,8 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     /// `tryLoadPartsToAttach` can take arbitrary time, so the epoch is re-checked immediately
     /// before each rename that publishes an attached part.
     const UInt64 admission_epoch = currentLeadershipEpoch();
+    throwIfTransactionalPartitionOpUnderLeaderElection(
+        local_context->getCurrentTransaction(), command.part ? "ATTACH PART" : "ATTACH PARTITION");
     assertNotReadonly();
     PartitionCommandsResultInfo results;
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
@@ -3535,6 +3537,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     /// reacquired while parts were being cloned fails closed instead of publishing parts named
     /// with block numbers from the previous epoch.
     const UInt64 admission_epoch = currentLeadershipEpoch();
+    throwIfTransactionalPartitionOpUnderLeaderElection(
+        local_context->getCurrentTransaction(), replace ? "REPLACE PARTITION FROM" : "ATTACH PARTITION FROM");
     assertNotReadonly();
     LOG_DEBUG(log, "StorageMergeTree::replacePartitionFrom\tsource_table: {}, replace: {}", source_table->getStorageID().getShortName(), replace);
 
@@ -3774,6 +3778,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     /// `write`); both the source and the destination epoch are re-checked immediately before
     /// the renames publish parts on shared storage below.
     const UInt64 src_admission_epoch = currentLeadershipEpoch();
+    throwIfTransactionalPartitionOpUnderLeaderElection(local_context->getCurrentTransaction(), "MOVE PARTITION TO TABLE");
     assertNotReadonly();
     auto dest_table_storage = std::dynamic_pointer_cast<StorageMergeTree>(dest_table);
     if (!dest_table_storage)
@@ -3789,6 +3794,8 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     /// parts with a stale destination block counter. As with the source, capture the destination
     /// epoch before its admission gate.
     const UInt64 dest_admission_epoch = dest_table_storage->currentLeadershipEpoch();
+    dest_table_storage->throwIfTransactionalPartitionOpUnderLeaderElection(
+        local_context->getCurrentTransaction(), "MOVE PARTITION TO TABLE");
     dest_table_storage->assertNotReadonly();
 
     /// Destination-side UK reject (source-side rejection is centralized in
@@ -4344,7 +4351,7 @@ void StorageMergeTree::throwIfTransactionalPartitionOpUnderLeaderElection(const 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
         "{} inside a transaction is not supported for tables with the leader_election setting: "
         "the final COMMIT TRANSACTION is not fenced by the leadership lease, so a leader that "
-        "lost its lease could finalize the removal after failover",
+        "lost its lease could finalize the operation after failover",
         command);
 }
 
