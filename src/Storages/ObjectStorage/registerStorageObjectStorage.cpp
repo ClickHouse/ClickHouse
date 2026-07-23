@@ -74,14 +74,19 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     /// receives the table's own column-id mapping, and `ParquetBlockOutputFormat` rejects the user
     /// `field_id` settings at write time in that case. The format settings are frozen here at table
     /// definition time, so accepting these settings would produce a table whose every `INSERT`
-    /// fails — reject the definition up front instead. Only fresh `CREATE` queries are checked, so
-    /// that replaying existing metadata (server startup, replica recovery, `ATTACH`) never breaks.
-    if (args.mode == LoadingStrictnessLevel::CREATE && configuration->isIcebergConfiguration() && format_settings
+    /// fails — reject the definition up front instead. The check runs whenever the definition is
+    /// freshly supplied by the user: a `CREATE` query, but also a full-definition
+    /// `ATTACH TABLE t (...) ENGINE = ...` query, which introduces a new definition just like
+    /// `CREATE` does. Loading a definition that already lives in this server's metadata — server
+    /// startup, replica recovery, a short `ATTACH TABLE t`, the tables attached by
+    /// `ATTACH DATABASE` (`attach_short_syntax`) — is exempt, so existing tables always load.
+    const bool loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
+    if (!loading_from_existing_metadata && configuration->isIcebergConfiguration() && format_settings
         && (!format_settings->parquet.column_field_ids.empty() || format_settings->parquet.auto_assign_field_ids))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Settings output_format_parquet_column_field_ids and output_format_parquet_auto_assign_field_ids "
-            "cannot be used when creating an Iceberg table: the table metadata provides its own "
+            "cannot be used in the definition of an Iceberg table: the table metadata provides its own "
             "column-id mapping, so every write to such a table would fail");
 
     ASTPtr partition_by;
