@@ -4,3 +4,12 @@ AggregateFunction(anyLastTuple, Tuple(UInt64))
 AggregateFunction(sumDistinctTuple, Tuple(Nullable(Nothing), UInt64))
 (NULL,3)
 ((0),(0))
+1
+AggregateFunction(anyArgMinTuple, Tuple(Nullable(UInt64)), Tuple(Float64))
+AggregateFunction(any_respect_nullsArgMinTuple, Tuple(Nullable(UInt64)), Tuple(Float64))
+(0)
+
+(0)
+(1)
+
+(1)

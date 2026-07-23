@@ -38,3 +38,37 @@ GROUP BY ALL WITH CUBE;
 
 DROP TABLE 03471_dist;
 DROP TABLE 03471_src;
+
+-- The nested function may itself be combinator-wrapped, so the -Tuple name must encode the
+-- action-adjusted variant of the RESOLVED nested function, not of the pre-resolution name string.
+-- IGNORE NULLS flips the anyRespectNulls base back to any, so the nested anyRespectNullsArgMin
+-- resolves to anyArgMin (a smaller state, different ArgMin key offset). The two variants must not
+-- share a -Tuple type name.
+SELECT toTypeName(anyRespectNullsArgMinTupleState(tuple(toNullable(number)), tuple(1.)) IGNORE NULLS) != toTypeName(anyRespectNullsArgMinTupleState(tuple(toNullable(number)), tuple(1.))) FROM numbers(1);
+SELECT toTypeName(anyRespectNullsArgMinTupleState(tuple(toNullable(number)), tuple(1.)) IGNORE NULLS) FROM numbers(1);
+SELECT toTypeName(anyRespectNullsArgMinTupleState(tuple(toNullable(number)), tuple(1.))) FROM numbers(1);
+
+-- Distributed + WITH TOTALS reconstructs the aggregate from the action-less declared type name and
+-- merges the totals row on the initiator. With a non-injective name the ArgMin key offset differed
+-- between the resolved state and the reconstructed one, dereferencing a wild pointer while merging
+-- SingleValueDataNumeric. It must now merge without crashing.
+DROP TABLE IF EXISTS 03471_totals_src;
+DROP TABLE IF EXISTS 03471_totals_dist;
+
+CREATE TABLE 03471_totals_src (number UInt64) ENGINE = MergeTree ORDER BY number;
+INSERT INTO 03471_totals_src SELECT number FROM numbers(10);
+
+CREATE TABLE 03471_totals_dist (number UInt64)
+    ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), 03471_totals_src);
+
+SELECT anyRespectNullsArgMinTupleOrNull(tuple(toNullable(number)), tuple(1.)) IGNORE NULLS
+FROM 03471_totals_dist
+WITH TOTALS;
+
+SELECT anyRespectNullsOrNullDistinctOrDefaultDistinctOrNullArgMinTupleOrNull(
+        tuple((SELECT DISTINCT isNotNull(*) GROUP BY ALL)), tuple(1.)) IGNORE NULLS
+FROM 03471_totals_dist
+WITH TOTALS;
+
+DROP TABLE 03471_totals_dist;
+DROP TABLE 03471_totals_src;
