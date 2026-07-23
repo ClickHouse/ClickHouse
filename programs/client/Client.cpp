@@ -482,7 +482,12 @@ catch (...)
 #if USE_JWT_CPP && USE_SSL
 void Client::login()
 {
-    std::string host = hosts_and_ports.front().host;
+    /// `hosts_and_ports` is filled from explicit --host arguments only; the default host is added
+    /// later, in `connect`. A host given via config, --connection or the environment is still
+    /// sitting in the configuration at this point.
+    std::string host = hosts_and_ports.empty()
+        ? getClientConfiguration().getString("host", "localhost")
+        : hosts_and_ports.front().host;
     std::string auth_url = getClientConfiguration().getString("oauth-url", "");
     std::string client_id = getClientConfiguration().getString("oauth-client-id", "");
     std::string audience = getClientConfiguration().getString("oauth-audience", "");

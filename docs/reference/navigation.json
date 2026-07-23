@@ -48,6 +48,7 @@
             },
             "reference/statements/attach",
             "reference/statements/check-grant",
+            "reference/statements/check-database",
             "reference/statements/check-table",
             {
               "expanded": false,
@@ -73,6 +74,7 @@
                         "reference/statements/create/dictionary/layouts/direct",
                         "reference/statements/create/dictionary/layouts/range-hashed",
                         "reference/statements/create/dictionary/layouts/hierarchical",
+                        "reference/statements/create/dictionary/layouts/naive-bayes",
                         "reference/statements/create/dictionary/layouts/polygon",
                         "reference/statements/create/dictionary/layouts/ip-trie",
                         "reference/statements/create/dictionary/layouts/regexp-tree"
@@ -471,7 +473,7 @@
             "reference/functions/regular-functions/numeric-indexed-vector-functions",
             "reference/functions/regular-functions/other-functions",
             "reference/functions/regular-functions/random-functions",
-            "reference/functions/regular-functions/regular-functions-index",
+            "reference/functions/regular-functions/overview",
             "reference/functions/regular-functions/rounding-functions",
             "reference/functions/regular-functions/splitting-merging-functions",
             "reference/functions/regular-functions/string-functions",
@@ -487,7 +489,7 @@
             "reference/functions/regular-functions/url-functions",
             "reference/functions/regular-functions/uuid-functions"
           ],
-          "root": "reference/functions/regular-functions/overview"
+          "root": "reference/functions/regular-functions/regular-functions-index"
         },
         {
           "expanded": false,
@@ -676,6 +678,7 @@
             "reference/functions/table-functions/deltalakeCluster",
             "reference/functions/table-functions/dictionary",
             "reference/functions/table-functions/executable",
+            "reference/functions/table-functions/eval",
             "reference/functions/table-functions/file",
             "reference/functions/table-functions/fileCluster",
             "reference/functions/table-functions/filesystem",
@@ -942,10 +945,10 @@
       "expanded": false,
       "group": "Settings",
       "pages": [
-        "reference/settings/server-settings/settings",
-        "reference/settings/session-settings",
-        "reference/settings/merge-tree-settings",
-        "reference/settings/formats",
+        { "$ref": "./settings/server-settings/settings/navigation.json" },
+        { "$ref": "./settings/session-settings/navigation.json" },
+        { "$ref": "./settings/merge-tree-settings/navigation.json" },
+        { "$ref": "./settings/formats/navigation.json" },
         "reference/settings/beta-and-experimental-features"
       ],
       "root": "reference/settings/index"
