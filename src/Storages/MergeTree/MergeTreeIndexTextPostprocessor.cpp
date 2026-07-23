@@ -130,7 +130,6 @@ std::optional<MergeTreeIndexTextInlineFilter> tryExtractInlineFilter(const ASTPt
         return {};
 
     MergeTreeIndexTextInlineFilter filter;
-    /// `NOT IN`: invert so `shouldDrop` fires for tokens outside the set.
     filter.drop_on_match = is_not_in ? !drop_on_condition : drop_on_condition;
     filter.tokens.reserve(literals.size());
     for (auto & literal : literals)

@@ -1538,15 +1538,44 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
         });
 }
 
-void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position)
+void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
 {
-    if (postprocessor_drop_filter && postprocessor_drop_filter->shouldDrop(token))
+    if (!postprocessor_drop_filter)
         return;
 
     bool inserted = false;
     TokenToPostingsBuilderMap::LookupResult it;
+    for (const auto & filter_token : postprocessor_drop_filter->tokens)
+    {
+        ArenaKeyHolder key_holder(std::string_view(filter_token), *arena);
+        tokens_map.emplace(key_holder, it, inserted);
+        chassert(inserted);
+        it->getMapped().markFiltered();
+    }
+}
+
+void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position)
+{
+    bool inserted = false;
+    TokenToPostingsBuilderMap::LookupResult it;
     ArenaKeyHolder key_holder(token, *arena);
-    tokens_map.emplace(key_holder, it, inserted);
+
+    if (postprocessor_drop_filter && !postprocessor_drop_filter->drop_on_match)
+    {
+        it = tokens_map.find(token);
+        if (!it)
+            return;
+
+        if (it->getMapped().isFiltered())
+            it->getMapped().clearFiltered();
+    }
+    else
+    {
+        tokens_map.emplace(key_holder, it, inserted);
+
+        if (it->getMapped().isFiltered())
+            return;
+    }
 
     PostingListBuilder & posting_list_builder = it->getMapped();
     posting_list_builder.add(static_cast<UInt32>(current_row), posting_lists);
@@ -1576,6 +1605,9 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
     tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
         std::string_view token = key;
+        if (mapped.isFiltered())
+            return;
+        chassert(!mapped.isEmpty());
         sorted_tokens.push_back(SortedToken{token, &mapped, nullptr});
     });
 
@@ -1629,6 +1661,8 @@ void MergeTreeIndexTextGranuleBuilder::reset()
         position_map = std::make_unique<TokenToPositionListMap>();
     else
         position_map.reset();
+
+    seedDropFilter();
 }
 
 MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
@@ -1653,6 +1687,7 @@ MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
         if (const auto * inline_filter = postprocessor->getInlineFilter())
         {
             granule_builder.postprocessor_drop_filter = inline_filter;
+            granule_builder.seedDropFilter();
             use_postprocessor_drop_fast_path = true;
         }
     }

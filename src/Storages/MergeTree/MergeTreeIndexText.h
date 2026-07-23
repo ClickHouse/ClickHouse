@@ -116,6 +116,10 @@ public:
     bool isSmall() const { return small_size < max_small_size; }
     bool isLarge() const { return !isSmall(); }
 
+    void markFiltered() { small_size = filtered_flag; }
+    bool isFiltered() const { return small_size == filtered_flag; }
+    void clearFiltered() { small_size = 0; }
+
     UInt32 minimum() const
     {
         chassert(!isEmpty());
@@ -145,6 +149,7 @@ private:
         PostingListWithContext large;
     };
 
+    static constexpr UInt8 filtered_flag = 0xFF;
     UInt8 small_size;
 };
 
@@ -466,6 +471,8 @@ struct MergeTreeIndexTextGranuleBuilder
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
     bool empty() const { return is_empty; }
     void reset();
+
+    void seedDropFilter();
 
     MergeTreeIndexTextParams params;
     TokenizerPtr tokenizer;
