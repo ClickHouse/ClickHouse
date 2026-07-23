@@ -6,8 +6,6 @@
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
 
-#include <optional>
-
 
 namespace DB
 {
@@ -77,20 +75,7 @@ private:
     void insertRow(const SortCursorImpl & current);
     void insertRows(const SortCursorImpl & current, size_t num_rows);
     void insertChunk(size_t source_num);
-
-    size_t coveredSortPrefixSize(const Block & pk_block) const;
-    void setPendingVirtualRow(size_t source_num, const Chunk & chunk, size_t num_covered);
-    std::optional<size_t> sourceBlockedByPendingVirtualRow(const SortCursorImpl & cursor, size_t row) const;
-    Status fetchPendingVirtualRowSource(size_t source_num);
-    Status fetchAnyPendingVirtualRowSource();
-
-    /// Boundaries announced by virtual rows that cover only a prefix of the sort description
-    /// (the covered leading sort columns of the row, one entry per input, empty when none).
-    /// Such a virtual row is not comparable on the full sort description, so it does not enter
-    /// the queue; instead the merge does not emit rows that are not strictly below the boundary
-    /// until the source's real data arrives.
-    std::vector<std::optional<Columns>> pending_virtual_row_boundaries;
-    size_t num_pending_virtual_rows = 0;
+    void limitVirtualRowToCoveredSortPrefix(SortCursorImpl & cursor, const Block & pk_block) const;
 
     /// Per-input pending virtual-row boundary (empty when none), used for debug checks to ensure virtual rows are placed correctly.
     std::vector<Columns> virtual_row_boundary;
