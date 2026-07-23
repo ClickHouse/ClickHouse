@@ -67,6 +67,13 @@ Examples:
 
 :::
 
+The data does not have to be local: a URL can be used in place of a file name, and the URL scheme picks the matching table engine (`http://` and `https://` are read like the [url](../../sql-reference/table-functions/url.md) function, `s3://` like the [s3](../../sql-reference/table-functions/s3.md) function, `file://` like the [file](../../sql-reference/table-functions/file.md) function):
+
+```bash
+./clickhouse local -q "SELECT * FROM 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv' LIMIT 3"
+./clickhouse local -q "SELECT count() FROM 's3://clickhouse-public-datasets/hits_compatible/athena_partitioned/hits_1.parquet'"
+```
+
 ```response
 marketplace    Nullable(String)
 customer_id    Nullable(Int64)
