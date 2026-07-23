@@ -1,0 +1,8 @@
+<clickhouse>
+    <tokenizer>
+        <japanese>
+            <dictionaryLocation>/var/lib/clickhouse/user_files/minimal_dic.tar.gz</dictionaryLocation>
+            <dictionarySha>0000000000000000000000000000000000000000000000000000000000000000</dictionarySha>
+        </japanese>
+    </tokenizer>
+</clickhouse>
