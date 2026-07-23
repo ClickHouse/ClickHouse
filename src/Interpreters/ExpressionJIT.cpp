@@ -388,6 +388,15 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unord
         {
             return false;
         }
+
+        /// The declared argument type may be native while the child node's actual result
+        /// type is not: an overload resolver can normalize a degenerate operand (e.g. an
+        /// `onlyNull` argument) to a native type. The child result type is what gets
+        /// materialized as a compiled input and passed to `toNativeType`, so gate on it too.
+        if (i < node.children.size() && !canBeNativeType(*node.children[i]->result_type))
+        {
+            return false;
+        }
     }
 
     return function.isCompilable();
