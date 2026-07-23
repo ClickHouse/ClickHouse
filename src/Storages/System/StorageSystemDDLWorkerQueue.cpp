@@ -285,11 +285,18 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
 
         String masked_query;
         if (query_ast)
-            masked_query = format({.ctx = context, .query = *query_ast});
+        {
+            if (query_ast->hasSecretParts())
+                /// AST re-formatting masks secrets while preserving semantic content.
+                masked_query = format({.ctx = context, .query = *query_ast});
+            else
+                /// No secrets: preserve the original text including comments and whitespace.
+                masked_query = task.entry.query;
+        }
         else
         {
-            /// Parse failed: fail closed so credentials in malformed DDL entries are not
-            /// exposed to users who lack the displaySecretsInShowAndSelect privilege.
+            /// Parse failed: fail closed so credentials embedded in a malformed DDL entry
+            /// are not exposed to users without the displaySecretsInShowAndSelect privilege.
             const bool show_secrets = context->displaySecretsInShowAndSelect()
                 && context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select]
                 && context->getAccess()->isGranted(AccessType::displaySecretsInShowAndSelect);
