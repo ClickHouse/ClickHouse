@@ -33,6 +33,7 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
+#include <Storages/TimeSeries/timeSeriesLocalityHash.h>
 #include <unordered_set>
 
 
@@ -387,6 +388,12 @@ namespace
         {
             case ViewTarget::Samples:
             {
+                /// Column "locality_hash" - a hash of the metric name (`xxHash64(metric_name)`) used as
+                /// the first column of the primary key to store samples of the same metric close to each other.
+                /// No DEFAULT here: like "id" it is computed on insertion because it depends on
+                /// the "metric_name" column which doesn't exist in samples.
+                add_column_if_missing(TimeSeriesColumnNames::LocalityHash, makeASTDataType("UInt64"));
+
                 /// Column "id" - no DEFAULT in the samples table: the identifier is computed in the "tags"
                 /// inner table because it depends on columns like "metric_name" or "all_tags" which don't
                 /// exist in samples.
@@ -418,6 +425,24 @@ namespace
 
                 add_column_if_missing(TimeSeriesColumnNames::MetricName,
                     makeASTDataType("LowCardinality", makeASTDataType("String")));
+
+                /// Column "locality_hash" - MATERIALIZED so that the queries generated for evaluating
+                /// PromQL selectors can read it instead of calculating any hashes.
+                /// It must match the "locality_hash" column of the "samples" table which is calculated
+                /// by the write paths (see timeSeriesLocalityHash.h).
+                add_column_if_missing(TimeSeriesColumnNames::LocalityHash, makeASTDataType("UInt64"));
+                {
+                    auto & column = new_list->children.back();
+                    if (!column->as<ASTColumnDeclaration &>().getDefaultExpression())
+                    {
+                        column = column->clone();
+                        auto & new_decl = column->as<ASTColumnDeclaration &>();
+                        new_decl.default_specifier = ColumnDefaultSpecifier::Materialized;
+                        new_decl.ephemeral_default = false;
+                        new_decl.setDefaultExpression(makeTimeSeriesLocalityHashAST());
+                        changed = true;
+                    }
+                }
 
                 /// Columns corresponding to specific tags specified in the "tags_to_columns" setting.
                 const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
@@ -728,6 +753,39 @@ namespace
         storage.settings->changes.push_back(SettingChange{"allow_dimensions_outside_sorting_key", Field(static_cast<UInt64>(1))});
     }
 
+    /// `SummingMergeTree` sums every numeric column outside the sorting key when it collapses rows,
+    /// which would corrupt the `locality_hash` column during merges and silently hide the affected
+    /// samples from PromQL queries. Reject such engines unless `locality_hash` is part of the
+    /// sorting key or the columns to sum are given explicitly.
+    void checkSamplesEngineWontSumLocalityHash(const ASTStorage & storage, const StorageID & table_id)
+    {
+        if (!storage.engine || storage.engine->name.find("SummingMergeTree") == String::npos)
+            return;
+
+        /// An explicit list of columns to sum is the user's choice, e.g. SummingMergeTree((value)).
+        if (storage.engine->arguments && !storage.engine->arguments->children.empty())
+            return;
+
+        auto contains_locality_hash = [](const auto & self, const IAST & node) -> bool
+        {
+            if (const auto * identifier = node.as<ASTIdentifier>(); identifier && (identifier->name() == TimeSeriesColumnNames::LocalityHash))
+                return true;
+            for (const auto & child : node.children)
+                if (self(self, *child))
+                    return true;
+            return false;
+        };
+
+        if ((storage.order_by && contains_locality_hash(contains_locality_hash, *storage.order_by))
+            || (storage.primary_key && contains_locality_hash(contains_locality_hash, *storage.primary_key)))
+            return;
+
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "{}: Column {} must be included in the sorting key of the samples table when engine {} is used, "
+            "otherwise merges would sum that column and break it",
+            table_id.getNameForLogs(), TimeSeriesColumnNames::LocalityHash, storage.engine->name);
+    }
+
     /// Makes the definition of the default engine for an inner table.
     boost::intrusive_ptr<ASTStorage> generateInnerEngine(ViewTarget::Kind target_kind, const TimeSeriesSettings & settings)
     {
@@ -740,8 +798,16 @@ namespace
             storage->set(storage->engine, engine);
             storage->set(storage->order_by,
                 makeASTOperator("tuple",
+                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::LocalityHash),
                     make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID),
                     make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)));
+
+            /// The samples table is scanned in large ranges rather than by point lookups,
+            /// so a coarser index granularity than the MergeTree default works better for it.
+            auto settings_ast = make_intrusive<ASTSetQuery>();
+            settings_ast->is_standalone = false;
+            storage->set(storage->settings, settings_ast);
+            storage->settings->changes.push_back(SettingChange{"index_granularity", Field(static_cast<UInt64>(32768))});
         }
         else if (target_kind == ViewTarget::Tags)
         {
@@ -882,6 +948,7 @@ namespace
         {
             case ViewTarget::Samples:
             {
+                check_column_type(TimeSeriesColumnNames::LocalityHash, std::make_shared<DataTypeUInt64>());
                 check_column_type(TimeSeriesColumnNames::ID, resolved_types.id_type);
                 check_column_type(TimeSeriesColumnNames::Timestamp, resolved_types.timestamp_type);
                 check_column_type(TimeSeriesColumnNames::Value, resolved_types.scalar_type);
@@ -892,6 +959,27 @@ namespace
             {
                 check_column_type(TimeSeriesColumnNames::ID, resolved_types.id_type);
                 check_column_is_string(TimeSeriesColumnNames::MetricName);
+                check_column_type(TimeSeriesColumnNames::LocalityHash, std::make_shared<DataTypeUInt64>());
+
+                /// The queries generated for evaluating PromQL selectors rely on the invariant
+                /// `tags.locality_hash = xxHash64(metric_name)` (see timeSeriesLocalityHash.h), while the write
+                /// paths don't provide this column when inserting into the tags table. So the column must be
+                /// populated by exactly this default expression - any other value wouldn't match the
+                /// `locality_hash` column of the samples table and queries would silently return no data.
+                {
+                    const auto * locality_hash_column = target_table_columns.tryGet(String(TimeSeriesColumnNames::LocalityHash));
+                    chassert(locality_hash_column); /// check_column_type() above has already checked that the column exists.
+                    String expected_expression = makeTimeSeriesLocalityHashAST()->formatWithSecretsOneLine();
+                    const auto & default_desc = locality_hash_column->default_desc;
+                    if (!default_desc.expression
+                        || (default_desc.kind == ColumnDefaultKind::Ephemeral)
+                        || (default_desc.expression->formatWithSecretsOneLine() != expected_expression))
+                        throw Exception(ErrorCodes::INCORRECT_QUERY,
+                            "{}: Column {} in the {} table must be declared as `{} UInt64 MATERIALIZED {}`, "
+                            "because the TimeSeries table engine relies on that expression when it evaluates PromQL selectors",
+                            table_id.getNameForLogs(), TimeSeriesColumnNames::LocalityHash, target_kind,
+                            TimeSeriesColumnNames::LocalityHash, expected_expression);
+                }
 
                 const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
                 for (const auto & tag_name_and_column_name : tags_to_columns)
@@ -1066,6 +1154,12 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
 
                 if (!create_query.getTargetInnerEngine(kind))
                     create_query.setTargetInnerEngine(kind, generateInnerEngine(kind, settings));
+
+                if (kind == ViewTarget::Samples)
+                {
+                    if (auto * samples_engine = create_query.getTargetInnerEngine(kind))
+                        checkSamplesEngineWontSumLocalityHash(*samples_engine, table_id);
+                }
 
                 if (kind == ViewTarget::Tags)
                 {

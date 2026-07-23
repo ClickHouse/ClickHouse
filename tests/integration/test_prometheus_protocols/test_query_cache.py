@@ -21,11 +21,12 @@ def start_cluster():
     try:
         cluster.start()
         node.query(
-            "CREATE TABLE prometheus_data (id UUID, timestamp DateTime64(3, 'UTC'), value Float64)"
-            " ENGINE = MergeTree ORDER BY (id, timestamp)"
+            "CREATE TABLE prometheus_data (locality_hash UInt64, id UUID, timestamp DateTime64(3, 'UTC'), value Float64)"
+            " ENGINE = MergeTree ORDER BY (locality_hash, id, timestamp)"
         )
         node.query(
             "CREATE TABLE prometheus_tags (id UUID, metric_name LowCardinality(String),"
+            " locality_hash UInt64 MATERIALIZED xxHash64(metric_name),"
             " tags Map(LowCardinality(String), String),"
             " min_time SimpleAggregateFunction(min, Nullable(DateTime64(3, 'UTC'))),"
             " max_time SimpleAggregateFunction(max, Nullable(DateTime64(3, 'UTC'))))"
@@ -46,7 +47,7 @@ def start_cluster():
         )
         node.query(
             "INSERT INTO prometheus_data VALUES"
-            " ('00000000-0000-0000-0000-000000000001', toDateTime64(1700000000, 3, 'UTC'), 1)"
+            " (xxHash64('up'), '00000000-0000-0000-0000-000000000001', toDateTime64(1700000000, 3, 'UTC'), 1)"
         )
         yield cluster
     finally:

@@ -125,6 +125,7 @@ void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
         static const std::unordered_set<std::string_view> reserved_column_names = {
             TimeSeriesColumnNames::ID,
             TimeSeriesColumnNames::MetricName,
+            TimeSeriesColumnNames::LocalityHash,
             TimeSeriesColumnNames::Tags,
             TimeSeriesColumnNames::AllTags,
             TimeSeriesColumnNames::MinTime,

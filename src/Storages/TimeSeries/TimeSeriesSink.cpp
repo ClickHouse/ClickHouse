@@ -4,6 +4,8 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
@@ -27,6 +29,7 @@
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
+#include <Storages/TimeSeries/timeSeriesLocalityHash.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <base/EnumReflection.h>
@@ -146,14 +149,17 @@ namespace
         }
     }
 
-    /// Fills columns id, timestamp, value for the "samples" table.
+    /// Fills columns locality_hash, id, timestamp, value for the "samples" table.
+    /// `locality_hash_column` is aligned with `id_column` (one row per filtered time series).
     void fillSamplesColumns(
         const PaddedPODArray<UInt8> & filter,
         const IColumn & id_column,
+        const IColumn & locality_hash_column,
         const IColumn & ts_timestamps,
         const IColumn & ts_values,
         const ColumnArray::Offsets & ts_offsets,
         IColumn & out_id_column,
+        IColumn & out_locality_hash_column,
         IColumn & out_timestamp_column,
         IColumn & out_value_column)
     {
@@ -177,6 +183,7 @@ namespace
             if (num_samples > 0)
             {
                 out_id_column.insertManyFrom(id_column, id_index, num_samples);
+                out_locality_hash_column.insertManyFrom(locality_hash_column, id_index, num_samples);
                 out_timestamp_column.insertRangeFrom(ts_timestamps, ts_start, num_samples);
                 out_value_column.insertRangeFrom(ts_values, ts_start, num_samples);
             }
@@ -603,6 +610,7 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
 
     /// Build source header for samples block.
     Block samples_header;
+    samples_header.insert(ColumnWithTypeAndName{std::make_shared<DataTypeUInt64>(), TimeSeriesColumnNames::LocalityHash});
     samples_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
     samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::Timestamp});
     samples_header.insert(ColumnWithTypeAndName{scalar_type, TimeSeriesColumnNames::Value});
@@ -758,6 +766,11 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     auto id_column = calculateId(tags_block);
     tags_block.insert(0, ColumnWithTypeAndName{id_column, id_type, TimeSeriesColumnNames::ID});
 
+    /// Calculate locality hashes (one per time series, aligned with `id_column`) from the effective
+    /// metric names, i.e. after the `__name__` tag has been merged into the `metric_name` column.
+    /// It must be done now because `tags_block` is moved away below.
+    ColumnPtr locality_hash_column = buildTimeSeriesLocalityHashColumn(*tags_block.getByName(TimeSeriesColumnNames::MetricName).column);
+
     if (tags_block.has(TimeSeriesColumnNames::AllTags))
         tags_block.erase(TimeSeriesColumnNames::AllTags);
 
@@ -774,6 +787,9 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         auto samples_id_column = id_type->createColumn();
         samples_id_column->reserve(total_samples);
 
+        auto samples_locality_hash_column = ColumnUInt64::create();
+        samples_locality_hash_column->reserve(total_samples);
+
         auto timestamp_column = timestamp_type->createColumn();
         timestamp_column->reserve(total_samples);
 
@@ -782,11 +798,12 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
 
         fillSamplesColumns(
             filter,
-            *id_column, ts_timestamps, ts_values, ts_offsets,
-            *samples_id_column, *timestamp_column, *value_column);
+            *id_column, *locality_hash_column, ts_timestamps, ts_values, ts_offsets,
+            *samples_id_column, *samples_locality_hash_column, *timestamp_column, *value_column);
 
         /// Assemble the block and push it to the "samples" table.
         Block samples_block;
+        samples_block.insert(ColumnWithTypeAndName{std::move(samples_locality_hash_column), std::make_shared<DataTypeUInt64>(), TimeSeriesColumnNames::LocalityHash});
         samples_block.insert(ColumnWithTypeAndName{std::move(samples_id_column), id_type, TimeSeriesColumnNames::ID});
         samples_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
         samples_block.insert(ColumnWithTypeAndName{std::move(value_column), scalar_type, TimeSeriesColumnNames::Value});

@@ -318,14 +318,15 @@ def test_inner_engines():
 # instead of its own inner tables.
 def test_external_tables():
     node.query(
-        "CREATE TABLE mysamples (id UUID, timestamp DateTime64(3), value Float64) "
-        "ENGINE=MergeTree ORDER BY (id, timestamp)"
+        "CREATE TABLE mysamples (locality_hash UInt64, id UUID, timestamp DateTime64(3), value Float64) "
+        "ENGINE=MergeTree ORDER BY (locality_hash, id, timestamp)"
     )
 
     node.query(
         "CREATE TABLE mytags ("
         "id UUID, "
         "metric_name LowCardinality(String), "
+        "locality_hash UInt64 MATERIALIZED xxHash64(metric_name), "
         "tags Map(LowCardinality(String), String), "
         "min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
         "max_time SimpleAggregateFunction(max, Nullable(DateTime64(3)))) "
@@ -358,13 +359,14 @@ def test_data_keyword():
     drop_prometheus_table()
 
     node.query(
-        "CREATE TABLE mydata (id UUID, timestamp DateTime64(3), value Float64) "
-        "ENGINE=MergeTree ORDER BY (id, timestamp)"
+        "CREATE TABLE mydata (locality_hash UInt64, id UUID, timestamp DateTime64(3), value Float64) "
+        "ENGINE=MergeTree ORDER BY (locality_hash, id, timestamp)"
     )
     node.query(
         "CREATE TABLE mytags ("
         "id UUID, "
         "metric_name LowCardinality(String), "
+        "locality_hash UInt64 MATERIALIZED xxHash64(metric_name), "
         "tags Map(LowCardinality(String), String), "
         "min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
         "max_time SimpleAggregateFunction(max, Nullable(DateTime64(3)))) "

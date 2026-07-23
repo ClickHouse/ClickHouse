@@ -11,6 +11,10 @@ struct TimeSeriesColumnNames
     static constexpr const char * Timestamp = "timestamp";
     static constexpr const char * Value = "value";
 
+    /// A hash of the metric name (`xxHash64(metric_name)`). It's used as the first column of the primary key
+    /// of the "samples" table to store samples of the same metric close to each other.
+    static constexpr const char * LocalityHash = "locality_hash";
+
     /// The "tags" table contains identifiers for each combination of a metric name with corresponding tags (labels):
 
     /// The default expression specified for the "id" column contains an expression for calculating an identifier of a time series by a metric name and tags.

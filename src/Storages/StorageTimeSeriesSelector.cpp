@@ -262,10 +262,15 @@ namespace
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
-        /// SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name, tag_name1, tag_column1, ...)
+        /// SELECT locality_hash, timeSeriesStoreTags(id, tags, '__name__', metric_name, tag_name1, tag_column1, ...)
         {
             auto select_list_exp = make_intrusive<ASTExpressionList>();
             auto & select_list = select_list_exp->children;
+
+            /// The locality hash is MATERIALIZED in the tags table (see timeSeriesLocalityHash.h),
+            /// so no hashes are calculated here. It must be the first column to match the left side
+            /// of the condition `(locality_hash, id) IN (...)` built by makeWhereFilterForDataTable().
+            select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::LocalityHash));
 
             ASTs args;
             args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
@@ -325,10 +330,14 @@ namespace
     {
         ASTs conditions;
 
-        /// id IN (SELECT id FROM (select_id_query))
+        /// (locality_hash, id) IN (select_query_from_tags_table) - the leading locality_hash lets the
+        /// primary key index of the samples table (locality_hash, id, timestamp) prune granules.
         /// Wrap the SELECT in ASTSubquery so it formats with surrounding parentheses.
         auto select_as_subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_tags_table));
-        conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), std::move(select_as_subquery)));
+        auto in_lhs = makeASTFunction("tuple",
+            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::LocalityHash),
+            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+        conditions.push_back(makeASTFunction("in", std::move(in_lhs), std::move(select_as_subquery)));
 
         /// timestamp >= min_time
         conditions.push_back(makeASTFunction(
@@ -389,10 +398,10 @@ namespace
             select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
         }
 
-        /// WHERE (id IN <select_query_from_tags_table>) AND (timestamp >= min_time) AND (timestamp <= max_time)
+        /// WHERE ((locality_hash, id) IN <select_query_from_tags_table>) AND (timestamp >= min_time) AND (timestamp <= max_time)
         ///
         /// where <select_query_from_tags_table> is roughly:
-        ///   SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name, ...) FROM tags_table WHERE <matchers>
+        ///   SELECT locality_hash, timeSeriesStoreTags(id, tags, '__name__', metric_name, ...) FROM tags_table WHERE <matchers>
         {
             auto where_filter = makeWhereFilterForDataTable(select_query_from_tags_table, min_time, max_time, timestamp_data_type);
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));

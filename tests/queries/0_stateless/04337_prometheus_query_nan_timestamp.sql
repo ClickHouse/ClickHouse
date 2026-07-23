@@ -16,12 +16,13 @@ DROP TABLE IF EXISTS ts_tags;
 DROP TABLE IF EXISTS ts_metrics;
 DROP TABLE IF EXISTS ts_ns;
 
-CREATE TABLE ts_data (id UUID, timestamp DateTime64(9, 'UTC'), value Float64)
-ENGINE = MergeTree ORDER BY (id, timestamp);
+CREATE TABLE ts_data (locality_hash UInt64, id UUID, timestamp DateTime64(9, 'UTC'), value Float64)
+ENGINE = MergeTree ORDER BY (locality_hash, id, timestamp);
 
 CREATE TABLE ts_tags (
     id UUID,
     metric_name LowCardinality(String),
+    locality_hash UInt64 MATERIALIZED xxHash64(metric_name),
     tags Map(LowCardinality(String), String),
     min_time SimpleAggregateFunction(min, Nullable(DateTime64(9, 'UTC'))),
     max_time SimpleAggregateFunction(max, Nullable(DateTime64(9, 'UTC'))))

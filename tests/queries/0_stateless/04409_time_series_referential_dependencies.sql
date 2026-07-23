@@ -12,15 +12,17 @@ DROP TABLE IF EXISTS metrics_table;
 
 CREATE TABLE samples_table
 (
+    locality_hash UInt64,
     id UInt64,
     timestamp DateTime64(3),
     value Float64
-) ENGINE = MergeTree() ORDER BY (id, timestamp);
+) ENGINE = MergeTree() ORDER BY (locality_hash, id, timestamp);
 
 CREATE TABLE tags_table
 (
     id UInt64,
     metric_name LowCardinality(String),
+    locality_hash UInt64 MATERIALIZED xxHash64(metric_name),
     tags Map(LowCardinality(String), String),
     min_time DateTime64(3),
     max_time DateTime64(3)
