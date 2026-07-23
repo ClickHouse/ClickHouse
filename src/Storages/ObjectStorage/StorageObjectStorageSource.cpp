@@ -1235,6 +1235,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// The query planner puts row policies into `row_level_filter` when
         /// `storage->supportsPrewhere()` (`PlannerJoinTree.cpp:1012`), but individual
         /// files in mixed-format tables may not support it at format level.
+        /// `update_row_numbers_info = true`: safe here because every transform between the format
+        /// reader (which attaches `ChunkInfoRowNumbers`) and these filters preserves or maintains it.
         if (stripped_row_level_filter)
         {
             auto row_level_actions = std::make_shared<ExpressionActions>(stripped_row_level_filter->actions.clone());
@@ -1243,7 +1245,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 return std::make_shared<FilterTransform>(
                     header, row_level_actions,
                     stripped_row_level_filter->column_name,
-                    stripped_row_level_filter->do_remove_column);
+                    stripped_row_level_filter->do_remove_column,
+                    /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
+                    /*update_row_numbers_info=*/true);
             });
         }
 
@@ -1255,7 +1259,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 return std::make_shared<FilterTransform>(
                     header, prewhere_actions,
                     stripped_prewhere_info->prewhere_column_name,
-                    stripped_prewhere_info->remove_prewhere_column);
+                    stripped_prewhere_info->remove_prewhere_column,
+                    /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
+                    /*update_row_numbers_info=*/true);
             });
         }
 
