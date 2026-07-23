@@ -71,6 +71,9 @@ protected:
 
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
+    /// An instance created without a column type (type_idx is empty) can only decompress
+    /// (doCompressData throws "T64 codec doesn't support compression without information about column type").
+    bool requiresColumnTypeToCompress() const override { return !type_idx.has_value(); }
     String getDescription() const override
     {
         return "Preprocessor. Crops unused high bits; puts them into a 64x64 bit matrix; optimized for 64-bit data types.";

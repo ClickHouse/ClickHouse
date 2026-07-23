@@ -50,6 +50,16 @@ cat > "${WORKING_FOLDER}/metadata/local/t_def_sz3.sql" <<EOF
 ATTACH TABLE local.t_def_sz3 (id UInt64, v Int64 STATISTICS(tdigest)) ENGINE=MergeTree ORDER BY id SETTINGS default_compression_codec='SZ3';
 EOF
 
+# And for `T64`, a non-experimental codec that nevertheless cannot compress without a column type
+# (its compression stores the column type id in the stream): it must be classified as unsafe for
+# untyped data and reset on load just like PCO.
+cat > "${WORKING_FOLDER}/metadata/local/t_marks_t64.sql" <<EOF
+ATTACH TABLE local.t_marks_t64 (x UInt32) ENGINE=MergeTree ORDER BY tuple() SETTINGS marks_compression_codec='T64';
+EOF
+cat > "${WORKING_FOLDER}/metadata/local/t_def_t64.sql" <<EOF
+ATTACH TABLE local.t_def_t64 (id UInt64, v Int64 STATISTICS(tdigest)) ENGINE=MergeTree ORDER BY id SETTINGS default_compression_codec='T64';
+EOF
+
 # Each table loads through the ATTACH path (sanity checks skipped); the first write must succeed, not
 # throw `Codec 'PCO' was created without a numeric column type and cannot compress` (nor the lossy
 # `SZ3` error) after the unsafe setting is reset to the default codec. The reset must also be durable:
@@ -78,6 +88,12 @@ INSERT INTO local.t_def_sz3 SELECT number, number FROM numbers(1000);
 SELECT 'default_sz3', count() FROM local.t_def_sz3;
 ALTER TABLE local.t_def_sz3 ADD COLUMN w UInt32;
 SELECT 'default_sz3_after_alter', count() FROM local.t_def_sz3;
+INSERT INTO local.t_marks_t64 SELECT number FROM numbers(1000);
+SELECT 'marks_t64', count() FROM local.t_marks_t64;
+INSERT INTO local.t_def_t64 SELECT number, number FROM numbers(1000);
+SELECT 'default_t64', count() FROM local.t_def_t64;
+ALTER TABLE local.t_def_t64 ADD COLUMN w UInt32;
+SELECT 'default_t64_after_alter', count() FROM local.t_def_t64;
 "
 
 rm -rf "${WORKING_FOLDER}"
