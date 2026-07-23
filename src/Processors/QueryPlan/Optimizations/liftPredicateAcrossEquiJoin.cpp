@@ -215,9 +215,28 @@ size_t tryLiftPredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryPlan::
     for (const auto & [lhs, rhs] : equi_pairs)
     {
         if (!changes_right && right_header.has(rhs.getColumn().name))
+        {
             l_to_r[lhs.getColumnName()] = rhs.getColumn();
+            /// `buildEquialentSetsForJoinStepLogical` proves transitive key equivalences through
+            /// nested INNER joins, so a filter written on an inner-child key equivalent to `lhs`
+            /// can be lifted to the right side as well
+            for (const auto & eq_expr : equi_set.getClass(lhs))
+            {
+                if (eq_expr.isFromSameActions(lhs) && eq_expr.fromLeft()
+                    && eq_expr.getColumn().type->equals(*rhs.getColumn().type))
+                    l_to_r.emplace(eq_expr.getColumnName(), rhs.getColumn());
+            }
+        }
         if (!changes_left && left_header.has(lhs.getColumn().name))
+        {
             r_to_l[rhs.getColumnName()] = lhs.getColumn();
+            for (const auto & eq_expr : equi_set.getClass(rhs))
+            {
+                if (eq_expr.isFromSameActions(rhs) && eq_expr.fromRight()
+                    && eq_expr.getColumn().type->equals(*lhs.getColumn().type))
+                    r_to_l.emplace(eq_expr.getColumnName(), lhs.getColumn());
+            }
+        }
     }
 
     /// LEFT keeps unmatched left rows, so only L->R is safe/ mirror for RIGHT/ INNER allows both
