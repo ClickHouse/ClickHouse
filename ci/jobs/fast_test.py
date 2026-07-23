@@ -61,7 +61,6 @@ def clone_submodules():
         "contrib/rust_vendor",
         "contrib/clickstack",
         "contrib/heks",
-        "contrib/libpng",
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)
