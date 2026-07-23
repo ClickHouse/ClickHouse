@@ -487,24 +487,11 @@ Int64 IColumnHelper<Derived, Parent>::compareTrackAt(size_t n, size_t m, const I
     const auto & lhs = static_cast<const Derived &>(*this);
     const auto & rhs = assert_cast<const Derived &>(rhs_);
 
-    int res = lhs.compareAt(n, m, rhs, nan_direction_hint);
-
-    if (res < 0)
-    {
-        auto is_less = [&](size_t row) { return lhs.compareAt(row, m, rhs, nan_direction_hint) < 0; };
-        /// Resolve a run of length one with a single comparison before paying the run-search setup cost.
-        if (n + 1 >= lhs.size() || !is_less(n + 1))
-            return -1;
-        return -static_cast<Int64>(findEqualRangeEndAssumeSorted(n + 1, lhs.size(), linear_probe, is_less) - n);
-    }
-    if (res > 0)
-    {
-        auto is_greater = [&](size_t row) { return lhs.compareAt(n, row, rhs, nan_direction_hint) > 0; };
-        if (m + 1 >= rhs.size() || !is_greater(m + 1))
-            return 1;
-        return static_cast<Int64>(findEqualRangeEndAssumeSorted(m + 1, rhs.size(), linear_probe, is_greater) - m);
-    }
-    return 0;
+    return compareTrackAtImpl(
+        lhs.compareAt(n, m, rhs, nan_direction_hint),
+        n, m, lhs.size(), rhs.size(), linear_probe,
+        [&](size_t row) { return lhs.compareAt(row, m, rhs, nan_direction_hint) < 0; },
+        [&](size_t row) { return lhs.compareAt(n, row, rhs, nan_direction_hint) > 0; });
 }
 
 template <typename Derived, typename Parent>

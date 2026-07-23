@@ -481,7 +481,9 @@ public:
       *
       * The main reason for the function is to fuse the comparison and the run search into one
       * virtual call. IColumnHelper implements it for all concrete columns with devirtualized
-      * compareAt probes.
+      * compareAt probes; ColumnVector, ColumnDecimal and ColumnFixedString specialize it to probe
+      * raw data with the per-call setup (data pointers, the Decimal scale dispatch) hoisted out
+      * of the run search.
       */
     [[nodiscard]] virtual Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
 
