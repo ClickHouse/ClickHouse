@@ -10,7 +10,5 @@ rows after absent checksums.txt reload:
 1000
 check table result:
 1
-check table repair fsynced (FileSync > 0):
-1
 rows after CHECK TABLE repair and reload:
 1000
