@@ -78,3 +78,20 @@ def test_sorted_stream_kill_query(started_cluster):
         "SETTINGS max_block_size=10000, max_threads=1, max_rows_to_read=0"
     )
     run_kill_query_failpoint_test(query, "distinct_sorted_stream_transform_pause")
+
+
+def test_sorted_stream_kill_query_long_runs(started_cluster):
+    node1.query("DROP TABLE IF EXISTS test_runs")
+    node1.query("CREATE TABLE test_runs (k UInt32) ENGINE = MergeTree() ORDER BY k")
+    node1.query("INSERT INTO test_runs SELECT intDiv(number, 5000) FROM numbers(10000)")
+    try:
+        query = (
+            "SELECT DISTINCT k "
+            "FROM test_runs "
+            "ORDER BY k "
+            "FORMAT Null "
+            "SETTINGS max_block_size=10000, max_threads=1, max_rows_to_read=0"
+        )
+        run_kill_query_failpoint_test(query, "distinct_sorted_stream_transform_pause")
+    finally:
+        node1.query("DROP TABLE IF EXISTS test_runs")
