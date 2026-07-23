@@ -70,22 +70,27 @@ For details, and for the one restriction that applies to materialized views unde
 Asynchronous inserts can be enabled for a particular user, or for a specific query:
 
 - Enabling asynchronous inserts at the user level.  This example uses the user `default`, if you create a different user then substitute that username:
+
   ```sql
   ALTER USER default SETTINGS async_insert = 1
   ```
+
 - You can specify the asynchronous insert settings by using the SETTINGS clause of insert queries:
+
   ```sql
   INSERT INTO YourTable SETTINGS async_insert=1, wait_for_async_insert=1 VALUES (...)
   ```
+
 - You can also specify asynchronous insert settings as connection parameters when using a ClickHouse programming language client.
 
   As an example, this is how you can do that within a JDBC connection string when you use the ClickHouse Java JDBC driver for connecting to ClickHouse Cloud:
+
   ```bash
   "jdbc:ch://HOST.clickhouse.cloud:8443/?user=default&password=PASSWORD&ssl=true&custom_http_params=async_insert=1,wait_for_async_insert=1"
   ```
 
 <Note>
-Asynchronous inserts don't apply to `INSERT INTO ... SELECT` queries. When the insert contains a `SELECT` clause, the query is always executed synchronously regardless of the `async_insert` setting.
+`INSERT ... SELECT` is supported on the async path when `async_insert = 1` and the entire result is a single block within `async_insert_max_data_size`. On that path the query always waits for the flush, regardless of `wait_for_async_insert` (fire-and-forget is not available for `INSERT ... SELECT`). The insert runs synchronously instead when the result spans more than one block, exceeds `async_insert_max_data_size`, is empty, runs inside a transaction (explicit or with `implicit_transaction = 1`), or uses non-parallel quorum (`insert_quorum` is set and `insert_quorum_parallel = 0`). Eligibility depends on the insert destination: inserts into a `Distributed` table or executed with parallel replicas bypass the async gate entirely and are unaffected by this behavior. The source side of the `SELECT` (e.g. reading from `s3Cluster` or a remote table) does not affect eligibility.
 </Note>
 
 ### Flushing buffers on shutdown {#flushing-buffers-on-shutdown}
