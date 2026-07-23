@@ -588,8 +588,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     std::optional<MergeTreeDataPartBuilder> builder;
     if (global_ctx->parent_part)
     {
-        auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjection(local_tmp_part_basename,  /* use parent transaction */ false);
-        builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage, getReadSettings());
+        /// The parent temporary directory is freshly created by this same merge, so there is nothing to
+        /// seed the storage from; take the non-initializing variant, consistent with `CreateFresh`.
+        auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjectionNoInitialize(local_tmp_part_basename,  /* use parent transaction */ false);
+        builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage, getReadSettings(), PartDirIntent::CreateFresh);
         builder->withParentPart(global_ctx->parent_part);
     }
     else
@@ -600,7 +602,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->temporary_directory_lock = global_ctx->data->claimTemporaryPartDirectory(global_ctx->disk, local_tmp_part_basename);
 
         auto local_single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + global_ctx->future_part->name, global_ctx->disk, 0);
-        builder.emplace(global_ctx->data->getDataPartBuilder(global_ctx->future_part->name, local_single_disk_volume, local_tmp_part_basename, getReadSettings()));
+        builder.emplace(global_ctx->data->getDataPartBuilder(global_ctx->future_part->name, local_single_disk_volume, local_tmp_part_basename, getReadSettings(), PartDirIntent::CreateFresh));
         builder->withPartStorageType(global_ctx->future_part->part_format.storage_type);
     }
 

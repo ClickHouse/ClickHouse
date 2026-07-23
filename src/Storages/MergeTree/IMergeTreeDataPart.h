@@ -22,6 +22,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
+#include <Storages/MergeTree/PartDirIntent.h>
 #include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
@@ -108,7 +109,7 @@ public:
         const MutableDataPartStoragePtr & data_part_storage_,
         Type part_type_,
         const IMergeTreeDataPart * parent_part_,
-        bool part_may_exist_on_disk = true);
+        PartDirIntent intent);
 
     virtual bool isStoredOnReadonlyDisk() const = 0;
     virtual bool isStoredOnRemoteDisk() const = 0;
@@ -522,8 +523,8 @@ public:
 
     const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getProjectionParts() const { return projection_parts; }
 
-    MergeTreeDataPartBuilder
-    getProjectionPartBuilder(const String & projection_name, ProjectionDescriptionRawPtr projection, bool is_temp_projection = false);
+    MergeTreeDataPartBuilder getProjectionPartBuilder(
+        const String & projection_name, ProjectionDescriptionRawPtr projection, PartDirIntent intent, bool is_temp_projection = false);
 
     void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part);
 

@@ -891,7 +891,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     /// name and reclaim the leftover, see `MergeTreeData::claimTemporaryPartDirectory` for the rationale.
     temp_part->temporary_directory_lock = data.claimTemporaryPartDirectory(data_part_volume->getDisk(), part_dir, may_exist);
 
-    auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings(), /*part_may_exist_on_disk=*/ may_exist)
+    auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings(), PartDirIntent::CreateFresh)
         .withPartFormat(data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr))
         .withPartInfo(new_part_info)
         .build();
@@ -1074,27 +1074,20 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     MergeTreeData::reserveSpace(expected_size, parent_part->getDataPartStorage());
     part_type = data.choosePartFormat(expected_size, block.rows(), parent_part->info.level, &projection).part_type;
 
-    /// The projection temp directory name is deterministic (<projection>.tmp_proj), so a retried
-    /// materialization can hit a leftover directory from a failed earlier attempt. Remove it BEFORE
-    /// constructing the projection storage: getProjectionPartBuilder builds through the initializing
-    /// getProjection, which would seed a packed archive reader and snapshot the mark layout
-    /// (index_granularity_info) from the stale contents, and the subsequent write would proceed with
-    /// that stale layout. getProjectionNoInitialize gives a storage handle that does not seed the reader,
-    /// so removing through it is safe. Mirrors the base-part reclaim in writeTempPartImpl.
-    {
-        const char * projection_extension = is_temp ? ".tmp_proj" : ".proj";
-        auto stale_projection_storage = parent_part->getDataPartStorage().getProjectionNoInitialize(
-            part_name + projection_extension, /*use_parent_transaction=*/ false);
-        if (stale_projection_storage->exists())
-        {
-            LOG_WARNING(log, "Removing old temporary projection directory {}", stale_projection_storage->getFullPath());
-            stale_projection_storage->removeRecursive();
-        }
-    }
-
-    auto new_data_part = parent_part->getProjectionPartBuilder(part_name, &projection, is_temp).withPartType(part_type).build();
+    auto new_data_part = parent_part->getProjectionPartBuilder(part_name, &projection, PartDirIntent::CreateFresh, is_temp).withPartType(part_type).build();
     auto projection_part_storage = new_data_part->getDataPartStoragePtr();
     auto data_settings = data.getSettings(&projection.settings_changes);
+
+    /// The projection directory name is deterministic (`<projection>.tmp_proj`), so a retried
+    /// materialization can hit a leftover of a previously interrupted attempt. Nested projection
+    /// directories have no temporary directory claim (the background cleaner cannot see inside part
+    /// directories), so the write path itself reclaims the leftover; `CreateFresh` guarantees the
+    /// construction above read nothing from it.
+    if (projection_part_storage->exists())
+    {
+        LOG_WARNING(log, "Removing stale temporary projection directory {}", projection_part_storage->getFullPath());
+        projection_part_storage->removeRecursive();
+    }
 
     if (is_temp)
         projection_part_storage->beginTransaction();

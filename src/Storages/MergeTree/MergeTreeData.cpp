@@ -2393,7 +2393,7 @@ void MergeTreeData::loadUnexpectedDataPart(UnexpectedPartLoadState & state)
 
     try
     {
-        state.part = getDataPartBuilder(part_name, single_disk_volume, part_name, getReadSettings())
+        state.part = getDataPartBuilder(part_name, single_disk_volume, part_name, getReadSettings(), PartDirIntent::OpenExisting)
             .withPartInfo(part_info)
             .withPartFormatFromDisk()
             .build();
@@ -2408,7 +2408,7 @@ void MergeTreeData::loadUnexpectedDataPart(UnexpectedPartLoadState & state)
             /// Build a fake part and mark it as broken in case of filesystem error.
             /// If the error impacts part directory instead of single files,
             /// an exception will be thrown during detach and silently ignored.
-            state.part = getDataPartBuilder(part_name, single_disk_volume, part_name, getReadSettings())
+            state.part = getDataPartBuilder(part_name, single_disk_volume, part_name, getReadSettings(), PartDirIntent::OpenExisting)
                 .withPartStorageType(MergeTreeDataPartStorageType::Full)
                 .withPartType(MergeTreeDataPartType::Wide)
                 .build();
@@ -2449,7 +2449,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
             /// Build a fake part and mark it as broken in case of filesystem error.
             /// If the error impacts part directory instead of single files,
             /// an exception will be thrown during detach and silently ignored.
-            res.part = getDataPartBuilder(part_name, single_disk_volume, part_name, getReadSettings())
+            res.part = getDataPartBuilder(part_name, single_disk_volume, part_name, getReadSettings(), PartDirIntent::OpenExisting)
                 .withPartStorageType(MergeTreeDataPartStorageType::Full)
                 .withPartType(MergeTreeDataPartType::Wide)
                 .build();
@@ -2470,7 +2470,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
     try
     {
-        res.part = getDataPartBuilder(part_name, single_disk_volume, part_name, getReadSettings())
+        res.part = getDataPartBuilder(part_name, single_disk_volume, part_name, getReadSettings(), PartDirIntent::OpenExisting)
             .withPartInfo(part_info)
             .withPartFormatFromDisk()
             .build();
@@ -5728,9 +5728,9 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
 }
 
 MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
-    const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_, bool part_may_exist_on_disk) const
+    const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_, PartDirIntent intent) const
 {
-    return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_, part_may_exist_on_disk);
+    return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_, intent);
 }
 
 void MergeTreeData::changeSettings(
@@ -8061,7 +8061,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
                 {
                     auto projection_part
                         = const_cast<IMergeTreeDataPart &>(*part)
-                              .getProjectionPartBuilder(projection_name, /* projection */ nullptr, /* is_temp_projection */ false)
+                              .getProjectionPartBuilder(projection_name, /* projection */ nullptr, PartDirIntent::OpenExisting, /* is_temp_projection */ false)
                               .withPartFormatFromDisk()
                               .build();
                     backup_projection(projection_part->getDataPartStorage(), *projection_part);
@@ -8312,7 +8312,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
     /// Load this part from the directory `temp_part_dir`.
     auto load_part = [&]
     {
-        MergeTreeDataPartBuilder builder(*this, part_name, single_disk_volume, parent_part_dir, part_dir_name, getReadSettings());
+        MergeTreeDataPartBuilder builder(*this, part_name, single_disk_volume, parent_part_dir, part_dir_name, getReadSettings(), PartDirIntent::OpenExisting);
         builder.withPartFormatFromDisk();
         part = std::move(builder).build();
         part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
@@ -8327,7 +8327,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         if (!part)
         {
             /// Make a fake data part only to copy its files to /detached/.
-            part = MergeTreeDataPartBuilder{*this, part_name, single_disk_volume, parent_part_dir, part_dir_name, getReadSettings()}
+            part = MergeTreeDataPartBuilder{*this, part_name, single_disk_volume, parent_part_dir, part_dir_name, getReadSettings(), PartDirIntent::OpenExisting}
                        .withPartStorageType(MergeTreeDataPartStorageType::Full)
                        .withPartType(MergeTreeDataPartType::Wide)
                        .build();
@@ -9242,7 +9242,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         disk->removeFileIfExists(fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
 
         auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
-        auto part = getDataPartBuilder(part_name, single_disk_volume, source_dir / new_dir, getReadSettings())
+        auto part = getDataPartBuilder(part_name, single_disk_volume, source_dir / new_dir, getReadSettings(), PartDirIntent::OpenExisting)
             .withPartFormatFromDisk()
             .build();
 
@@ -10461,7 +10461,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
               std::string(fs::path(dst_part_storage->getFullRootPath()) / tmp_dst_part_name),
               with_copy);
 
-    auto dst_data_part = MergeTreeDataPartBuilder(*this, dst_part_name, dst_part_storage, getReadSettings())
+    /// The destination directory was just populated by the `freeze` above, so its contents are the
+    /// payload of the clone and must be probed like an existing part.
+    auto dst_data_part = MergeTreeDataPartBuilder(*this, dst_part_name, dst_part_storage, getReadSettings(), PartDirIntent::OpenExisting)
         .withPartFormatFromDisk()
         .build();
 
@@ -12025,7 +12027,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     /// reclaim the leftover, see `claimTemporaryPartDirectory` for the rationale.
     auto tmp_dir_holder = claimTemporaryPartDirectory(data_part_volume->getDisk(), EMPTY_PART_TMP_PREFIX + new_part_name);
 
-    auto new_data_part = getDataPartBuilder(new_part_name, data_part_volume, EMPTY_PART_TMP_PREFIX + new_part_name, getReadSettings())
+    auto new_data_part = getDataPartBuilder(new_part_name, data_part_volume, EMPTY_PART_TMP_PREFIX + new_part_name, getReadSettings(), PartDirIntent::CreateFresh)
         .withBytesAndRows(0, 0, 0)
         .withPartInfo(new_part_info)
         .build();

@@ -505,7 +505,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     const MutableDataPartStoragePtr & data_part_storage_,
     Type part_type_,
     const IMergeTreeDataPart * parent_part_,
-    bool part_may_exist_on_disk)
+    PartDirIntent intent)
     : DataPartStorageHolder(data_part_storage_)
     , storage(storage_)
     , name(mutable_name)
@@ -534,8 +534,16 @@ IMergeTreeDataPart::IMergeTreeDataPart(
         DimensionalMetrics::MergeTreeParts,
         {stateToString(), part_type.toString(), std::to_string(isProjectionPart())});
 
-    if (part_may_exist_on_disk)
+    if (intent == PartDirIntent::OpenExisting)
+    {
         initializeIndexGranularityInfo(storage_settings);
+    }
+    else
+    {
+        /// Fresh parts are fully initialized from settings without touching the filesystem:
+        /// `index_granularity_info` was already built from settings in the member initializer list.
+        index_granularity = std::make_unique<MergeTreeIndexGranularityAdaptive>();
+    }
 
     /// By default set the order of common metadata files. Later on it can be changed by the part itself.
     getDataPartStorage().setPreferredFileOrder(COMMON_METADATA_FILES);
@@ -1412,11 +1420,15 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 }
 
 MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(
-    const String & projection_name, ProjectionDescriptionRawPtr projection, bool is_temp_projection)
+    const String & projection_name, ProjectionDescriptionRawPtr projection, PartDirIntent intent, bool is_temp_projection)
 {
     const char * projection_extension = is_temp_projection ? ".tmp_proj" : ".proj";
-    auto projection_storage = getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection);
-    MergeTreeDataPartBuilder builder(storage, projection_name, projection_storage, getReadSettings());
+    /// With `CreateFresh` the storage must not seed the packed archive reader from a possible nested
+    /// leftover of a previously interrupted attempt, so take the non-initializing variant.
+    auto projection_storage = intent == PartDirIntent::CreateFresh
+        ? getDataPartStorage().getProjectionNoInitialize(projection_name + projection_extension, !is_temp_projection)
+        : getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection);
+    MergeTreeDataPartBuilder builder(storage, projection_name, projection_storage, getReadSettings(), intent);
     return builder.withPartInfo(MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION).withParentPart(this).withProjection(projection);
 }
 
@@ -1458,7 +1470,7 @@ void IMergeTreeDataPart::loadProjections(
             }
             else
             {
-                auto part = getProjectionPartBuilder(projection.name, &projection).withPartFormatFromDisk().build();
+                auto part = getProjectionPartBuilder(projection.name, &projection, PartDirIntent::OpenExisting).withPartFormatFromDisk().build();
 
                 try
                 {
@@ -1485,7 +1497,7 @@ void IMergeTreeDataPart::loadProjections(
         }
         else if (check_consistency && checksums.has(path))
         {
-            auto part = getProjectionPartBuilder(projection.name, &projection).withPartFormatFromDisk().build();
+            auto part = getProjectionPartBuilder(projection.name, &projection, PartDirIntent::OpenExisting).withPartFormatFromDisk().build();
             part->setBrokenReason(
                 "Projection directory " + path + " does not exist while loading projections. Stacktrace: " + StackTrace().toString(),
                 ErrorCodes::NO_FILE_IN_DATA_PART);
