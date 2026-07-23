@@ -198,15 +198,6 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
     IColumn::Filter filter(chunk_rows);
     auto [range_begin, output_rows] = continueWithPrevRange(chunk_rows, filter); /// try to process chuck as continuation of previous one
 
-    FailPointInjection::pauseFailPoint(FailPoints::distinct_sorted_stream_transform_pause);
-    if (isCancelled())
-    {
-        LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled during row processing");
-        stopReading();
-        chunk.clear();
-        return;
-    }
-
     size_t range_end = range_begin;
     while (range_end != chunk_rows)
     {
@@ -229,6 +220,17 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
 
         // set where next range start
         range_begin = range_end;
+
+        if ((range_begin & 0xFFF) == 0)
+        {
+            FailPointInjection::pauseFailPoint(FailPoints::distinct_sorted_stream_transform_pause);
+            if (isCancelled())
+            {
+                LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled during row processing");
+                std::fill(filter.begin() + range_begin, filter.end(), 0);
+                break;
+            }
+        }
     }
     if (isCancelled())
     {
