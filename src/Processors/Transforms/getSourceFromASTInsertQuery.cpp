@@ -20,6 +20,10 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Common/typeid_cast.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Processors/Formats/ISchemaReader.h>
@@ -30,6 +34,7 @@
 #include <base/unit.h>
 
 #include <algorithm>
+#include <functional>
 #include <unordered_set>
 
 namespace DB
@@ -213,13 +218,10 @@ String getInsertDataSchemaMismatchDescription(
     /// explanation to an unrelated parse error, we treat a column as mismatched only when the inferred
     /// and expected types have no common supertype at all (e.g. a `String` inferred for a numeric column):
     /// a strong, low-false-positive signal that the data really has a different shape than the query expects.
-    auto types_are_compatible = [format_has_exact_types_from_data,
-                                 format_reads_typed_json_value_tokens,
-                                 format_reads_string_values_as_whole_text,
-                                 format_reads_any_value_into_string_column,
-                                 format_reads_numeric_into_ipv4,
-                                 &format_settings](
-                                    const DataTypePtr & inferred_type, const DataTypePtr & expected_type, bool inferred_is_text)
+    /// A `std::function` (rather than `auto`) so the structured-token rule below can recurse into the
+    /// nested value types with the same loose notion of compatibility.
+    std::function<bool(const DataTypePtr &, const DataTypePtr &, bool)> types_are_compatible
+        = [&](const DataTypePtr & inferred_type, const DataTypePtr & expected_type, bool inferred_is_text) -> bool
     {
         if (inferred_type->equals(*expected_type))
             return true;
@@ -235,6 +237,14 @@ String getInsertDataSchemaMismatchDescription(
         const auto expected_unwrapped = removeNullable(recursiveRemoveLowCardinality(expected_type));
         const WhichDataType which_inferred(inferred_unwrapped);
         const WhichDataType which_expected(expected_unwrapped);
+
+        /// A `Dynamic` / `Variant` on either side makes the comparison inconclusive: an expected
+        /// `Dynamic` / `Variant` column accepts values of many shapes, and an inferred `Dynamic` /
+        /// `Variant` (e.g. schema inference turns a JSON array with elements of different types into
+        /// `Array(Dynamic)`) means the actual value types are unknown at the type level. Treat both as
+        /// compatible rather than risk a misleading explanation.
+        if (which_inferred.isDynamic() || which_inferred.isVariant() || which_expected.isDynamic() || which_expected.isVariant())
+            return true;
 
         const bool inferred_is_numeric = which_inferred.isInt() || which_inferred.isUInt() || which_inferred.isFloat();
         const bool expected_is_nested = which_expected.isArray() || which_expected.isTuple() || which_expected.isMap();
@@ -292,6 +302,126 @@ String getInsertDataSchemaMismatchDescription(
 
         if (tryGetLeastSupertype(DataTypes{inferred_type, expected_type}) != nullptr)
             return true;
+
+        /// The typed-token JSON parsers accept a structured token into more destinations than the
+        /// canonical type schema inference reports for it. Inference turns a homogeneous JSON array
+        /// into `Array(...)` (`transformTuplesWithEqualNestedTypesToArrays`) and, with
+        /// `input_format_json_try_infer_named_tuples_from_objects` enabled (the default), a JSON
+        /// object into a named `Tuple` — while the parser still reads the same `[...]` token into an
+        /// unnamed `Tuple` positionally (`SerializationTuple::deserializeTextJSONImpl`) and the same
+        /// `{...}` token into a `Map` (`SerializationMap::deserializeTextJSON`) or a named `Tuple`
+        /// (matching keys to element names). So a structured inferred type is not a reliable mismatch
+        /// for such a destination as long as the nested value types are themselves compatible under
+        /// the same loose rules, checked recursively. A nested value is a plain token again, so the
+        /// top-level text-confirmation flag does not apply below the top level (`false` is passed).
+        if (format_reads_typed_json_value_tokens)
+        {
+            const auto * inferred_tuple = typeid_cast<const DataTypeTuple *>(inferred_unwrapped.get());
+            const auto * expected_tuple = typeid_cast<const DataTypeTuple *>(expected_unwrapped.get());
+            const auto * inferred_array = typeid_cast<const DataTypeArray *>(inferred_unwrapped.get());
+            const auto * expected_array = typeid_cast<const DataTypeArray *>(expected_unwrapped.get());
+            const auto * inferred_map = typeid_cast<const DataTypeMap *>(inferred_unwrapped.get());
+            const auto * expected_map = typeid_cast<const DataTypeMap *>(expected_unwrapped.get());
+
+            /// The value came from a `[...]` token: inferred as `Array` when the elements were
+            /// homogeneous, as an unnamed `Tuple` otherwise.
+            const bool inferred_from_array_token = inferred_array || (inferred_tuple && !inferred_tuple->hasExplicitNames());
+            /// The value came from a `{...}` token: inferred as a named `Tuple`, as a `Map`, or as
+            /// `Object` (its content is then unknown at the type level).
+            const bool inferred_from_object_token
+                = inferred_map || (inferred_tuple && inferred_tuple->hasExplicitNames()) || which_inferred.isObject();
+
+            if (inferred_from_array_token)
+            {
+                if (expected_array)
+                {
+                    const auto & expected_element = expected_array->getNestedType();
+                    if (inferred_array)
+                        return types_are_compatible(inferred_array->getNestedType(), expected_element, false);
+                    return std::ranges::all_of(
+                        inferred_tuple->getElements(),
+                        [&](const auto & element) { return types_are_compatible(element, expected_element, false); });
+                }
+
+                /// An unnamed `Tuple` destination reads the `[...]` token positionally. A named `Tuple`
+                /// destination does so only when `input_format_json_read_named_tuples_as_objects` is
+                /// disabled — with the default (enabled) it requires a `{...}` token, so the array
+                /// token stays a mismatch for it.
+                if (expected_tuple && (!expected_tuple->hasExplicitNames() || !format_settings.json.read_named_tuples_as_objects))
+                {
+                    const auto & expected_elements = expected_tuple->getElements();
+                    if (inferred_array)
+                        return std::ranges::all_of(
+                            expected_elements,
+                            [&](const auto & element) { return types_are_compatible(inferred_array->getNestedType(), element, false); });
+
+                    /// The parser requires exactly as many elements in the token as the destination
+                    /// `Tuple` has, and an inferred unnamed `Tuple` preserves the element count.
+                    const auto & inferred_elements = inferred_tuple->getElements();
+                    if (inferred_elements.size() != expected_elements.size())
+                        return false;
+                    for (size_t i = 0; i < inferred_elements.size(); ++i)
+                        if (!types_are_compatible(inferred_elements[i], expected_elements[i], false))
+                            return false;
+                    return true;
+                }
+            }
+
+            if (inferred_from_object_token)
+            {
+                /// The object keys are string tokens that the `Map` key type parses with its text
+                /// deserializer — mirroring the inferred-`String`-into-scalar rule above, the key type
+                /// is not checked. Only the value types are compared.
+                if (expected_map)
+                {
+                    const auto & expected_value = expected_map->getValueType();
+                    if (inferred_tuple)
+                        return std::ranges::all_of(
+                            inferred_tuple->getElements(),
+                            [&](const auto & element) { return types_are_compatible(element, expected_value, false); });
+                    if (inferred_map)
+                        return types_are_compatible(inferred_map->getValueType(), expected_value, false);
+                    /// Inferred `Object`: the value types are unknown at the type level.
+                    return true;
+                }
+
+                if (expected_tuple && expected_tuple->hasExplicitNames() && format_settings.json.read_named_tuples_as_objects)
+                {
+                    /// Keys are matched to the element names; a key absent from the destination is
+                    /// skipped when `input_format_json_ignore_unknown_keys_in_named_tuple` is enabled
+                    /// (the default) and is a genuine error otherwise, so only then it stays a
+                    /// mismatch. Elements of the destination missing from the data are filled with
+                    /// defaults by default, so they are not required.
+                    if (inferred_tuple)
+                    {
+                        const auto & expected_names = expected_tuple->getElementNames();
+                        for (size_t i = 0; i < inferred_tuple->getElements().size(); ++i)
+                        {
+                            const auto it = std::ranges::find(expected_names, inferred_tuple->getElementNames()[i]);
+                            if (it == expected_names.end())
+                            {
+                                if (format_settings.json.ignore_unknown_keys_in_named_tuple)
+                                    continue;
+                                return false;
+                            }
+                            if (!types_are_compatible(
+                                    inferred_tuple->getElements()[i],
+                                    expected_tuple->getElements()[it - expected_names.begin()],
+                                    false))
+                                return false;
+                        }
+                        return true;
+                    }
+                    /// Inferred `Map` / `Object`: the keys are unknown at the type level, so whether
+                    /// they match the element names cannot be decided — treat as compatible.
+                    return true;
+                }
+
+                /// A `JSON` destination accepts an arbitrary object token.
+                if (which_expected.isObject())
+                    return true;
+            }
+        }
 
         /// Formats that read values from text (e.g. every quoted string in `JSONEachRow`) keep fields as
         /// `String` during schema inference even when the real parser accepts them into richer scalar
