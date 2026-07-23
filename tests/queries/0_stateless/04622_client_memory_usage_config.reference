@@ -6,3 +6,6 @@
 1
 -- invalid print-memory-to-stderr in config is rejected (BAD_ARGUMENTS)
 1
+-- invalid config is rejected before the query runs (no side effect)
+1
+0

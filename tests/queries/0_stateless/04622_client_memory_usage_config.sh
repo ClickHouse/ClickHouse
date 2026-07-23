@@ -43,3 +43,11 @@ EOF
 
 echo "-- invalid print-memory-to-stderr in config is rejected (BAD_ARGUMENTS)"
 $CLICKHOUSE_CLIENT --config "$config" -q "SELECT sum(number) FROM numbers(10_000) FORMAT Null" 2>&1 >/dev/null | grep -c -E 'Unknown memory-usage mode: defualt'
+
+# The rejection must happen before the query is sent (fail fast, not fail open):
+# an INSERT run with the broken config must leave no rows behind.
+echo "-- invalid config is rejected before the query runs (no side effect)"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_04622 (x UInt8) ENGINE = MergeTree ORDER BY x"
+$CLICKHOUSE_CLIENT --config "$config" -q "INSERT INTO t_04622 VALUES (1)" 2>&1 >/dev/null | grep -c -E 'Unknown memory-usage mode: defualt'
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM t_04622"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_04622"

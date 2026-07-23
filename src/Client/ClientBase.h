@@ -217,6 +217,12 @@ protected:
     /// regular client and clickhouse-local. For any other specific option
     /// please use processOptions method.
     void addOptionsToTheClientConfiguration(const CommandLineOptions & options);
+    /// Fail-fast validation of option values that may come from the client config file rather
+    /// than the command line. The config file is loaded after the command line is processed,
+    /// so the CLI-side validation in `addOptionsToTheClientConfiguration` never sees these
+    /// values. Call it right after the config file is merged into the client configuration,
+    /// so that an invalid value cannot let a query start before the error is reported.
+    void validateClientConfiguration();
     virtual void processOptions(const OptionsDescription & options_description,
                                 const CommandLineOptions & options,
                                 const std::vector<Arguments> & external_tables_arguments,

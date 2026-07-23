@@ -360,6 +360,12 @@ void Client::initialize(Poco::Util::Application & self)
     /// Use <enable_progress_table_toggle/> unless --enable-progress-table-toggle is specified
     if (!config().has("enable-progress-table-toggle") && config().has("enable_progress_table_toggle"))
         config().setBool("enable-progress-table-toggle", config().getBool("enable_progress_table_toggle"));
+
+    /// The config file is loaded after the command line is processed, so the option parser
+    /// never sees values that come only from the file. Validate them now, before any query
+    /// can start: a config typo must not fail open (e.g. run a mutating query and only then
+    /// throw from a lazy read at the use site).
+    validateClientConfiguration();
 }
 
 

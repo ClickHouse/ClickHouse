@@ -1,0 +1,12 @@
+-- non-numeric chime-threshold-seconds in config is rejected before the query runs
+1
+-- non-numeric profile-events-delay-ms in config is rejected before the query runs
+1
+-- non-numeric history_max_entries in config is rejected before the query runs
+1
+-- non-numeric suggestion_limit in config is rejected before the query runs
+1
+-- no rows were inserted
+0
+-- a valid numeric value is accepted
+1

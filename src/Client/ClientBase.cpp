@@ -4140,6 +4140,33 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     }
 }
 
+void ClientBase::validateClientConfiguration()
+{
+    auto & config = getClientConfiguration();
+
+    /// The same modes are accepted for the `--memory-usage` CLI option; a typo in the config
+    /// file must be rejected before any query is sent, not silently ignored.
+    assertMemoryUsageMode(config.getString("print-memory-to-stderr", ""));
+
+    /// Numeric keys whose values are read lazily at their use sites (the reads there keep
+    /// their fallbacks; this check only guarantees they cannot throw mid-query).
+    for (const auto * key : {"chime-threshold-seconds", "profile-events-delay-ms", "history_max_entries", "suggestion_limit"})
+    {
+        if (!config.has(key))
+            continue;
+        try
+        {
+            config.getUInt64(key);
+        }
+        catch (const Poco::Exception &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Invalid value '{}' for the '{}' configuration key: expected a number",
+                config.getString(key), key);
+        }
+    }
+}
+
 void ClientBase::runInteractive()
 {
     if (getClientConfiguration().has("query_id"))
