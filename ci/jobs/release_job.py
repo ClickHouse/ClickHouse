@@ -205,12 +205,25 @@ def main():
     )
 
     # --- TEMPORARY DIAGNOSTIC (do not merge) ---
-    # Question: does the robot PAT bypass the "Merge only for releases" ruleset
-    # on release-pattern branches (refs/heads/[0-9][0-9].[0-9]*)? Attempt a
-    # direct push of the current HEAD to refs/heads/30.12 using the robot token
-    # ($GH_TOKEN via gh's credential helper, configured just above), report the
-    # outcome, then stop the job before any real release mutation.
-    print("=== ROBOT-TOKEN PUSH TEST: git push origin HEAD:refs/heads/30.12 ===")
+    # Question: does the write-scoped release PAT (ROBOT_CLICKHOUSE_COMMIT_TOKEN)
+    # bypass the "Merge only for releases" ruleset on release-pattern branches
+    # (refs/heads/[0-9][0-9].[0-9]*)? Log gh in with that PAT (fed via stdin, so
+    # the token is never interpolated into a logged command), re-point gh's git
+    # credential helper at it, attempt a direct push of the current HEAD to
+    # refs/heads/30.12, report the outcome, then stop the job before any real
+    # release mutation.
+    os.environ.pop("GH_TOKEN", None)  # gh auth login refuses while GH_TOKEN is set
+    Shell.check(
+        "gh auth login --with-token",
+        stdin_str=os.environ["ROBOT_CLICKHOUSE_COMMIT_TOKEN"],
+        strict=True,
+        encoding="utf-8",
+    )
+    Shell.check("gh auth setup-git", strict=True, verbose=True)
+    print(
+        "=== ROBOT-TOKEN PUSH TEST (using ROBOT_CLICKHOUSE_COMMIT_TOKEN): "
+        "git push origin HEAD:refs/heads/30.12 ==="
+    )
     push_ok = Shell.check(
         "git push origin HEAD:refs/heads/30.12",
         verbose=True,
@@ -218,12 +231,13 @@ def main():
     )
     if push_ok:
         print(
-            "ROBOT-PUSH RESULT: SUCCEEDED — the ruleset does NOT block the robot "
-            "token; branch 30.12 was created."
+            "ROBOT-PUSH RESULT: SUCCEEDED — the ruleset does NOT block "
+            "ROBOT_CLICKHOUSE_COMMIT_TOKEN; the push to 30.12 went through."
         )
     else:
         print(
-            "ROBOT-PUSH RESULT: REJECTED — the ruleset blocks the robot token too "
+            "ROBOT-PUSH RESULT: REJECTED — the ruleset blocks "
+            "ROBOT_CLICKHOUSE_COMMIT_TOKEN too "
             "(expected GH013: changes must be made through a pull request)."
         )
     print("=== stopping after robot-token push test (diagnostic run) ===")
