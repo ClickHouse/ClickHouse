@@ -553,7 +553,7 @@ public:
         if (file_info.compression_method != MZ_COMPRESS_METHOD_STORE)
             throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Seek in compressed archive is not supported.");
 
-        int err = unzSeek64(raw_handle, off, whence);
+        int err = unzSeek64(raw_handle, new_pos, SEEK_SET);
         handle.rethrowStreamException();
         checkResult(err);
 
@@ -561,7 +561,7 @@ public:
         /// return stale data while getPosition() (= unzTell64() - available()) would also be wrong.
         resetWorkingBuffer();
 
-        return unzTell64(raw_handle);
+        return new_pos;
     }
 
     bool checkIfActuallySeekable() override

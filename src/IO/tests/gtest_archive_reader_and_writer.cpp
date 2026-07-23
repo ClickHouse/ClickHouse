@@ -1030,6 +1030,33 @@ TEST(ZipArchiveReaderTest, RethrowsCallbackExceptionOnOpen)
 }
 
 
+TEST(ZipArchiveReaderTest, SeekCurOutsideWorkingBufferUsesLogicalPosition)
+{
+    String archive_in_memory;
+    {
+        auto writer = createArchiveWriter("archive.zip", std::make_unique<WriteBufferFromString>(archive_in_memory));
+        writer->setCompression("store", 0);
+
+        auto out = writer->writeFile("file.bin");
+        writeString(String(3 * DBMS_DEFAULT_BUFFER_SIZE, 'x'), *out);
+        out->finalize();
+        writer->finalize();
+    }
+
+    auto read_archive_func
+        = [&]() -> std::unique_ptr<SeekableReadBuffer> { return std::make_unique<ReadBufferFromString>(archive_in_memory); };
+    auto reader = createArchiveReader("archive.zip", read_archive_func, archive_in_memory.size());
+    auto in = reader->readFile("file.bin", /*throw_on_not_found=*/true);
+
+    /// Fill the working buffer, but consume only part of it.
+    in->ignore(100);
+
+    const off_t relative_offset = DBMS_DEFAULT_BUFFER_SIZE + 100;
+    const off_t expected_position = 100 + relative_offset;
+    EXPECT_EQ(in->seek(relative_offset, SEEK_CUR), expected_position);
+}
+
+
 /// A `SeekableReadBuffer` whose callbacks can be switched into a failing mode AFTER the
 /// archive has been opened. The flag is held by an externally-owned `shared_ptr` so the
 /// test can flip it between the successful open and the first post-open callback.
