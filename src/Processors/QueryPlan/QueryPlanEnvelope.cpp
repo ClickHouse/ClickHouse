@@ -31,7 +31,7 @@ namespace
 /// data, so these are far above anything a real plan produces.
 constexpr UInt64 MAX_SKELETON_BYTES = 64ULL << 20;
 constexpr UInt64 MAX_SKELETON_NODES = 1ULL << 20;
-constexpr UInt64 MAX_SKELETON_STRING_BYTES = 16ULL << 20;
+constexpr UInt64 MAX_SKELETON_FIELD_BYTES = 16ULL << 20;
 constexpr UInt64 MAX_SKELETON_SETTINGS_PER_NODE = 64 * 1024;
 
 void writeSkeletonBody(const PlanSkeleton & skeleton, WriteBuffer & out)
@@ -62,8 +62,8 @@ void writeSkeletonBody(const PlanSkeleton & skeleton, WriteBuffer & out)
 
         writeVarUInt(node.payload_size, out);
 
-        writeVarUInt(node.node_extra.size(), out);
-        out.write(node.node_extra.data(), node.node_extra.size());
+        writeVarUInt(node.extension_bytes.size(), out);
+        out.write(node.extension_bytes.data(), node.extension_bytes.size());
     }
 
     writeVarUInt(skeleton.sets.size(), out);
@@ -106,14 +106,14 @@ PlanSkeleton readSkeletonBody(ReadBuffer & in, size_t max_type_complexity)
         PlanSkeleton::Node node;
 
         node.child_count = readCappedVarUInt(in, MAX_SKELETON_NODES, "node children");
-        readStringBinary(node.step_name, in, MAX_SKELETON_STRING_BYTES);
+        readStringBinary(node.step_name, in, MAX_SKELETON_FIELD_BYTES);
         readVarUInt(node.step_format_version, in);
 
         UInt8 node_flags = 0;
         readIntBinary(node_flags, in);
         node.has_output_header = node_flags & 1;
 
-        readStringBinary(node.step_description, in, MAX_SKELETON_STRING_BYTES);
+        readStringBinary(node.step_description, in, MAX_SKELETON_FIELD_BYTES);
 
         if (node.has_output_header)
             node.header = std::make_shared<const Block>(deserializeQueryPlanHeader(in, max_type_complexity));
@@ -123,9 +123,9 @@ PlanSkeleton readSkeletonBody(ReadBuffer & in, size_t max_type_complexity)
         for (UInt64 s = 0; s < settings_count; ++s)
         {
             PlanSkeleton::SettingEntry entry;
-            readStringBinary(entry.name, in, MAX_SKELETON_STRING_BYTES);
+            readStringBinary(entry.name, in, MAX_SKELETON_FIELD_BYTES);
             readIntBinary(entry.flags, in);
-            entry.value = readCappedSizedBytes(in, MAX_SKELETON_STRING_BYTES, "setting value bytes");
+            entry.value = readCappedSizedBytes(in, MAX_SKELETON_FIELD_BYTES, "setting value bytes");
             node.settings.push_back(std::move(entry));
         }
 
@@ -133,7 +133,7 @@ PlanSkeleton readSkeletonBody(ReadBuffer & in, size_t max_type_complexity)
 
         /// Future skeleton layouts append data here; a v4 reader skips it, which is what keeps
         /// shape rendering working for plans of newer versions.
-        node.node_extra = readCappedSizedBytes(in, MAX_SKELETON_STRING_BYTES, "node extra bytes");
+        node.extension_bytes = readCappedSizedBytes(in, MAX_SKELETON_FIELD_BYTES, "node extra bytes");
 
         skeleton.nodes.push_back(std::move(node));
     }
@@ -215,18 +215,18 @@ QueryPlanSkeletonValidationResult validateQueryPlanSkeleton(const PlanSkeleton &
     /// Pre-order structural walk: each node consumes one pending slot and opens child_count new
     /// ones. The counts are consistent iff no node arrives with nothing pending and nothing stays
     /// pending at the end.
-    UInt64 pending = 1;
+    UInt64 pending_child_slots = 1;
     for (size_t i = 0; i < skeleton.nodes.size(); ++i)
     {
         const auto & node = skeleton.nodes[i];
 
-        if (pending == 0)
+        if (pending_child_slots == 0)
         {
             result.issues.push_back(fmt::format("node #{} ('{}') is not reachable from the root", i, node.step_name));
             break;
         }
-        pending -= 1;
-        pending += node.child_count;
+        pending_child_slots -= 1;
+        pending_child_slots += node.child_count;
 
         if (!registry.hasStep(node.step_name))
         {
@@ -257,8 +257,8 @@ QueryPlanSkeletonValidationResult validateQueryPlanSkeleton(const PlanSkeleton &
                 result.issues.push_back(fmt::format("unknown plan setting '{}' (not marked ignorable)", setting.name));
     }
 
-    if (pending != 0)
-        result.issues.push_back(fmt::format("plan tree is incomplete: {} declared children have no nodes", pending));
+    if (pending_child_slots != 0)
+        result.issues.push_back(fmt::format("plan tree is incomplete: {} declared children have no nodes", pending_child_slots));
 
     for (size_t i = 0; i < skeleton.sets.size(); ++i)
     {
@@ -272,7 +272,7 @@ QueryPlanSkeletonValidationResult validateQueryPlanSkeleton(const PlanSkeleton &
             const auto & prev = skeleton.sets[i - 1].hash;
             const auto & curr = set.hash;
             if (!(std::tie(prev.high64, prev.low64) < std::tie(curr.high64, curr.low64)))
-                result.issues.push_back(fmt::format("set entries are not in canonical hash order at index {}", i));
+                result.issues.push_back(fmt::format("set entries are not sorted by hash at index {}", i));
         }
     }
 

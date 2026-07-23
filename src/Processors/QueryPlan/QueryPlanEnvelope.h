@@ -27,12 +27,12 @@ class ReadBuffer;
 ///    payload_size in skeleton order).
 ///
 /// The skeleton wire layout is frozen append-only: future additions go into each node's
-/// node_extra bytes, which older readers skip, so shape rendering keeps working across plan
+/// extension_bytes bytes, which older readers skip, so shape rendering keeps working across plan
 /// versions.
 struct PlanSkeleton
 {
-    /// name + flags (bit 0: ignorable) + framed setting-field value bytes.
-    using SettingEntry = QueryPlanSerializationSettings::FramedEntry;
+    /// name + flags (bit 0: ignorable) + length-prefixed setting-field value bytes.
+    using SettingEntry = QueryPlanSerializationSettings::SerializedEntry;
 
     struct Node
     {
@@ -44,7 +44,7 @@ struct PlanSkeleton
         SharedHeader header;                    /// nullptr iff !has_output_header
         std::vector<SettingEntry> settings;
         UInt64 payload_size = 0;                /// size of this node's slice of the payload section
-        String node_extra;                      /// empty in v4; skipped by readers that do not know it
+        String extension_bytes;                      /// empty in v4; skipped by readers that do not know it
     };
 
     /// Nodes in pre-order over the serialized tree (Delayed* steps elided, as in the plan walk).
@@ -57,7 +57,7 @@ struct PlanSkeleton
         UInt64 payload_size = 0;
     };
 
-    /// In canonical order: sorted by the 128-bit hash.
+    /// Sorted by the 128-bit hash.
     std::vector<SetEntry> sets;
 };
 
@@ -80,26 +80,27 @@ struct QueryPlanSkeletonValidationResult
     String describe() const;
 };
 
-/// Capability check against this binary's registry and settings: proves the reader can decode
-/// the plan (names, step format versions vs the manifest, non-ignorable settings, set kinds,
-/// structural consistency). It does not prove payload bytes are well-formed, nor that referenced
-/// tables exist. Collects all issues over a syntactically parseable skeleton.
+/// Capability check against this binary's registry and settings: verifies the reader has the
+/// handlers and metadata needed to decode the plan (step names, step format versions vs the
+/// registry info, non-ignorable settings, set kinds, structural consistency). It does not check
+/// that payload bytes are well-formed, nor that referenced tables exist. Collects all issues
+/// over a syntactically parseable skeleton.
 QueryPlanSkeletonValidationResult validateQueryPlanSkeleton(const PlanSkeleton & skeleton, UInt64 plan_version);
 
 /// EXPLAIN-style rendering from the skeleton alone. Unknown steps render as placeholders with
 /// their payload size; no payload is decoded and no catalog/storage work is done.
 String formatQueryPlanSkeleton(const PlanSkeleton & skeleton);
 
-/// v4 sets channel (Section C): fills skeleton.sets (canonical hash order) and one payload per
+/// Envelope sets channel (Section C): fills skeleton.sets (sorted by hash) and one payload per
 /// entry. A subquery set's payload is a complete serialized plan (with its own leading version).
-void serializeQueryPlanSetsV4(
+void serializeEnvelopeSets(
     SerializedSetsRegistry & registry,
     const QueryPlan::SerializationFlags & flags,
     PlanSkeleton & skeleton,
     std::vector<String> & payloads);
 
 /// Reads Section C per the skeleton's set entries; every payload must consume its frame exactly.
-QueryPlanAndSets deserializeQueryPlanSetsV4(
+QueryPlanAndSets deserializeEnvelopeSets(
     QueryPlan plan,
     DeserializedSetsRegistry & registry,
     const PlanSkeleton & skeleton,

@@ -12,7 +12,7 @@ class QueryPlanStepRegistry
 public:
     using StepCreateFunction = std::function<QueryPlanStepPtr(IQueryPlanStep::Deserialization &)>;
 
-    /// How a step's payload may evolve on the wire (the "manifest").
+    /// How a step's payload serialization may evolve on the wire.
     /// A step starts at payload format version 1. Appending fields an old reader may safely
     /// ignore bumps only the step format version. A change an old reader must understand to
     /// execute correctly maps that step format version to a minimum plan version here, and the

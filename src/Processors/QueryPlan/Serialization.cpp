@@ -71,7 +71,7 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
     flags.version = version;
 
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SKELETON)
-        serializeV4(out, flags);
+        serializeEnvelope(out, flags);
     else
         serialize(out, flags);
 }
@@ -140,7 +140,7 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
 /// Sanity cap for a hostile envelope size; far above any real plan.
 static constexpr UInt64 MAX_QUERY_PLAN_ENVELOPE_BYTES = 2ULL << 30;
 
-void QueryPlan::serializeV4(WriteBuffer & out, const SerializationFlags & flags) const
+void QueryPlan::serializeEnvelope(WriteBuffer & out, const SerializationFlags & flags) const
 {
     checkInitialized();
 
@@ -176,7 +176,7 @@ void QueryPlan::serializeV4(WriteBuffer & out, const SerializationFlags & flags)
 
         QueryPlanSerializationSettings settings;
         node->step->serializeSettings(settings);
-        skeleton_node.settings = settings.writeChangedFramed();
+        skeleton_node.settings = settings.getChangedEntries();
 
         WriteBufferFromOwnString payload;
         IQueryPlanStep::Serialization ctx{payload, registry};
@@ -193,7 +193,7 @@ void QueryPlan::serializeV4(WriteBuffer & out, const SerializationFlags & flags)
     }
 
     std::vector<String> set_payloads;
-    serializeQueryPlanSetsV4(registry, flags, skeleton, set_payloads);
+    serializeEnvelopeSets(registry, flags, skeleton, set_payloads);
 
     WriteBufferFromOwnString envelope;
     writeQueryPlanSkeleton(skeleton, envelope);
@@ -207,7 +207,7 @@ void QueryPlan::serializeV4(WriteBuffer & out, const SerializationFlags & flags)
     out.write(envelope.str().data(), envelope.str().size());
 }
 
-QueryPlanAndSets QueryPlan::deserializeV4(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity)
+QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity)
 {
     UInt64 envelope_size = 0;
     readVarUInt(envelope_size, in);
@@ -264,7 +264,7 @@ QueryPlanAndSets QueryPlan::deserializeV4(ReadBuffer & in, const ContextPtr & co
     DeserializedSetsRegistry sets_registry;
 
     QueryPlan plan;
-    std::vector<Node *> constructed(node_count);
+    std::vector<Node *> nodes_by_index(node_count);
 
     /// In pre-order all descendants of a node follow it, so iterating backwards constructs every
     /// child before its parent. Parents receive the constructed children's output headers (the
@@ -280,8 +280,8 @@ QueryPlanAndSets QueryPlan::deserializeV4(ReadBuffer & in, const ContextPtr & co
         input_headers.reserve(children_indices[idx].size());
         for (size_t child_index : children_indices[idx])
         {
-            children.push_back(constructed[child_index]);
-            input_headers.push_back(constructed[child_index]->step->getOutputHeader());
+            children.push_back(nodes_by_index[child_index]);
+            input_headers.push_back(nodes_by_index[child_index]->step->getOutputHeader());
         }
 
         SharedHeader output_header = skeleton_node.has_output_header
@@ -289,7 +289,7 @@ QueryPlanAndSets QueryPlan::deserializeV4(ReadBuffer & in, const ContextPtr & co
             : std::make_shared<const Block>();
 
         QueryPlanSerializationSettings settings;
-        settings.readFramed(skeleton_node.settings);
+        settings.applyEntries(skeleton_node.settings);
 
         ReadBufferFromMemory payload(envelope.data() + payload_offsets[idx], skeleton_node.payload_size);
         IQueryPlanStep::Deserialization ctx{
@@ -312,16 +312,16 @@ QueryPlanAndSets QueryPlan::deserializeV4(ReadBuffer & in, const ContextPtr & co
         /// the frame makes it skippable by construction.
 
         auto & node = plan.nodes.emplace_back(std::move(step), std::move(children));
-        constructed[idx] = &node;
+        nodes_by_index[idx] = &node;
 
         for (const auto & storage : ctx.storage_holders)
             plan.addStorageHolder(storage);
     }
 
-    plan.root = constructed[0];
+    plan.root = nodes_by_index[0];
 
     ReadBufferFromMemory sets_buffer(envelope.data() + offset, envelope.size() - offset);
-    auto res = deserializeQueryPlanSetsV4(
+    auto res = deserializeEnvelopeSets(
         std::move(plan), sets_registry, skeleton, sets_buffer, flags, context, max_type_complexity);
 
     if (!sets_buffer.eof())
@@ -380,7 +380,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
     SerializationFlags flags{.version = version, .skip_data = skip_data};
 
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SKELETON)
-        return deserializeV4(in, context, flags, max_type_complexity);
+        return deserializeEnvelope(in, context, flags, max_type_complexity);
 
     return deserialize(in, context, flags, max_type_complexity);
 }

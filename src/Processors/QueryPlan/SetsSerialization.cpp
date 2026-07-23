@@ -69,7 +69,7 @@ struct QueryPlanAndSets::SetFromSubquery : public QueryPlanAndSets::Set
     QueryPlanAndSets plan_and_sets;
 };
 
-std::vector<std::pair<FutureSet::Hash, FutureSet *>> SerializedSetsRegistry::orderedEntries() const
+std::vector<std::pair<FutureSet::Hash, FutureSet *>> SerializedSetsRegistry::entriesSortedByHash() const
 {
     std::vector<std::pair<FutureSet::Hash, FutureSet *>> ordered;
     ordered.reserve(sets.size());
@@ -84,9 +84,9 @@ std::vector<std::pair<FutureSet::Hash, FutureSet *>> SerializedSetsRegistry::ord
 
 void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out, const SerializationFlags & flags)
 {
-    /// Write sets in the canonical (hash-sorted) order, not in the unordered map's iteration order,
+    /// Write sets sorted by hash, not in the unordered map iteration order,
     /// so the same plan serializes to the same bytes in every process.
-    auto ordered_sets = registry.orderedEntries();
+    auto ordered_sets = registry.entriesSortedByHash();
 
     writeVarUInt(ordered_sets.size(), out);
     for (const auto & [hash, set_ptr] : ordered_sets)
@@ -150,13 +150,13 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
     }
 }
 
-void serializeQueryPlanSetsV4(
+void serializeEnvelopeSets(
     SerializedSetsRegistry & registry,
     const QueryPlan::SerializationFlags & flags,
     PlanSkeleton & skeleton,
     std::vector<String> & payloads)
 {
-    auto ordered_sets = registry.orderedEntries();
+    auto ordered_sets = registry.entriesSortedByHash();
     skeleton.sets.reserve(ordered_sets.size());
     payloads.reserve(ordered_sets.size());
 
@@ -212,7 +212,7 @@ void serializeQueryPlanSetsV4(
             if (!plan)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize FutureSetFromSubquery with no query plan");
 
-            /// A complete plan with its own leading version, so the nested envelope is framed and
+            /// A complete plan with its own leading version, so the nested envelope is length-prefixed and
             /// self-describing (unlike the legacy stream, which embeds the nested body inline).
             plan->serialize(body, flags.version);
         }
@@ -229,7 +229,7 @@ void serializeQueryPlanSetsV4(
     }
 }
 
-QueryPlanAndSets deserializeQueryPlanSetsV4(
+QueryPlanAndSets deserializeEnvelopeSets(
     QueryPlan plan,
     DeserializedSetsRegistry & registry,
     const PlanSkeleton & skeleton,

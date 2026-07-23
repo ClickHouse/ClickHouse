@@ -23,7 +23,7 @@ using namespace DB;
 /// change unnoticed. The plan format carries these blocks as opaque byte blobs inside step
 /// payloads (`ActionsDAG`, the binary data type encoding, sort/aggregate descriptions, the
 /// header encoding). The payload framing lets a reader skip *around* such a blob, but an old
-/// reader cannot survive a change *inside* one -- so any byte change here must be a deliberate
+/// reader cannot decode a change *inside* one -- so any byte change here must be a deliberate
 /// decision: bump or gate the plan version, and only then update the expected constants below.
 /// These tests failing is the gate that forces that decision.
 /// (Set payload encodings are pinned indirectly by the round-trip tests in
@@ -32,7 +32,7 @@ using namespace DB;
 namespace
 {
 
-std::string hexify(const std::string & bytes)
+std::string toHex(const std::string & bytes)
 {
     std::string hex;
     hex.reserve(bytes.size() * 2);
@@ -47,7 +47,7 @@ std::string capture(F && write)
     WriteBufferFromOwnString out;
     write(out);
     out.finalize();
-    return hexify(out.str());
+    return toHex(out.str());
 }
 
 }
@@ -85,7 +85,7 @@ TEST(QueryPlanSerializationStability, HeaderEncoding)
     EXPECT_EQ(actual, "02017804017315");
 }
 
-TEST(QueryPlanSerializationStability, SortDescription)
+TEST(QueryPlanSerializationStability, SortDescriptionEncoding)
 {
     SortDescription description;
     description.emplace_back("a", 1, 1);
@@ -95,7 +95,7 @@ TEST(QueryPlanSerializationStability, SortDescription)
     EXPECT_EQ(actual, "02016103016200");
 }
 
-TEST(QueryPlanSerializationStability, AggregateDescriptions)
+TEST(QueryPlanSerializationStability, AggregateDescriptionsEncoding)
 {
     tryRegisterAggregateFunctions();
 
@@ -111,7 +111,7 @@ TEST(QueryPlanSerializationStability, AggregateDescriptions)
     EXPECT_EQ(actual, "010673756d287829010178040373756d00");
 }
 
-TEST(QueryPlanSerializationStability, ActionsDag)
+TEST(QueryPlanSerializationStability, ActionsDAGEncoding)
 {
     tryRegisterFunctions();
 
@@ -121,8 +121,8 @@ TEST(QueryPlanSerializationStability, ActionsDag)
 
     ActionsDAG dag(inputs);
     auto resolver = FunctionFactory::instance().get("plus", getContext().context);
-    const auto & sum_node = dag.addFunction(resolver, {dag.getInputs()[0], dag.getInputs()[1]}, "");
-    dag.getOutputs() = {&sum_node};
+    const auto & plus_node = dag.addFunction(resolver, {dag.getInputs()[0], dag.getInputs()[1]}, "");
+    dag.getOutputs() = {&plus_node};
 
     auto actual = capture([&](WriteBuffer & out)
     {

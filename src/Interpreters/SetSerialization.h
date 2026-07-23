@@ -26,8 +26,8 @@ struct SerializedSetsRegistry
 
     /// Entries sorted by hash. The map's iteration order is not stable across builds, and plan
     /// bytes are hashed for identity (e.g. `sipHash64` of a task's serialized plan), so anything
-    /// written to the wire must use this canonical order.
-    std::vector<std::pair<FutureSet::Hash, FutureSet *>> orderedEntries() const;
+    /// written to the wire must use this fixed order.
+    std::vector<std::pair<FutureSet::Hash, FutureSet *>> entriesSortedByHash() const;
 };
 
 class ColumnSet;

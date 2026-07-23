@@ -160,17 +160,17 @@ bool QueryPlanSerializationSettings::hasSetting(std::string_view name)
     return accessor.find(QueryPlanSerializationSettingsTraits::resolveName(name)) != static_cast<size_t>(-1);
 }
 
-std::vector<QueryPlanSerializationSettings::FramedEntry> QueryPlanSerializationSettings::writeChangedFramed() const
+std::vector<QueryPlanSerializationSettings::SerializedEntry> QueryPlanSerializationSettings::getChangedEntries() const
 {
     const auto & accessor = QueryPlanSerializationSettingsTraits::Accessor::instance();
 
-    std::vector<FramedEntry> entries;
+    std::vector<SerializedEntry> entries;
     for (const auto & field : *impl)
     {
-        FramedEntry entry;
+        SerializedEntry entry;
         entry.name = field.getName();
         /// All current settings are must-understand (flags = 0). A future setting that an old
-        /// reader may safely default is registered as ignorable in the manifest and gets the flag.
+        /// reader may safely default should set FLAG_IGNORABLE when its entries are produced.
 
         WriteBufferFromOwnString value;
         accessor.writeBinary(*impl, accessor.find(field.getName()), value);
@@ -182,7 +182,7 @@ std::vector<QueryPlanSerializationSettings::FramedEntry> QueryPlanSerializationS
     return entries;
 }
 
-void QueryPlanSerializationSettings::readFramed(const std::vector<FramedEntry> & entries)
+void QueryPlanSerializationSettings::applyEntries(const std::vector<SerializedEntry> & entries)
 {
     const auto & accessor = QueryPlanSerializationSettingsTraits::Accessor::instance();
 
@@ -191,7 +191,7 @@ void QueryPlanSerializationSettings::readFramed(const std::vector<FramedEntry> &
         size_t index = accessor.find(QueryPlanSerializationSettingsTraits::resolveName(entry.name));
         if (index == static_cast<size_t>(-1))
         {
-            if (entry.flags & FramedEntry::FLAG_IGNORABLE)
+            if (entry.flags & SerializedEntry::FLAG_IGNORABLE)
             {
                 LOG_WARNING(getLogger("QueryPlanSerializationSettings"),
                     "Skipping unknown ignorable query plan setting '{}'", entry.name);

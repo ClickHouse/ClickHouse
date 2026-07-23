@@ -112,16 +112,16 @@ public:
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data = false);
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
 
-    /// Serializes the query plan for the given version and caches the result.
-    /// The cache is per effective version: bytes produced for one negotiated version must not be
-    /// sent to a peer that advertised an older one, and different replicas may advertise different
-    /// versions within one query.
+    /// Serializes the query plan and caches the result, keyed by the effective version
+    /// (min of `max_supported_version` and the current one). The cache is per version: bytes
+    /// produced for one negotiated version must not be sent to a peer that advertised an older
+    /// one, and different replicas may advertise different versions within one query.
     void ensureSerialized(size_t max_supported_version) const;
 
-    /// Get cached serialized data for the given version
+    /// Get cached serialized data for the effective version derived from `max_supported_version`
     std::string_view getSerializedData(size_t max_supported_version) const;
 
-    /// Check if already serialized for the given version
+    /// Check if already serialized for the effective version derived from max_supported_version
     bool isSerialized(size_t max_supported_version) const;
 
     void resolveStorages(const ContextPtr & context);
@@ -216,19 +216,19 @@ public:
 
 private:
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
-    void serializeV4(WriteBuffer & out, const SerializationFlags & flags) const;
+    void serializeEnvelope(WriteBuffer & out, const SerializationFlags & flags) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity);
-    static QueryPlanAndSets deserializeV4(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity);
+    static QueryPlanAndSets deserializeEnvelope(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity);
 
     static void serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out, const QueryPlan::SerializationFlags & flags);
     static QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in, const SerializationFlags & flags, const ContextPtr & context, size_t max_type_complexity);
 
-    friend void serializeQueryPlanSetsV4(
+    friend void serializeEnvelopeSets(
         SerializedSetsRegistry & registry,
         const SerializationFlags & flags,
         PlanSkeleton & skeleton,
         std::vector<String> & payloads);
-    friend QueryPlanAndSets deserializeQueryPlanSetsV4(
+    friend QueryPlanAndSets deserializeEnvelopeSets(
         QueryPlan plan,
         DeserializedSetsRegistry & registry,
         const PlanSkeleton & skeleton,

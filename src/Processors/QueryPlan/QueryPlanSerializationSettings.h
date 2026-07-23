@@ -60,11 +60,11 @@ struct QueryPlanSerializationSettings
     /// unknown settings from known ones without attempting to decode the value.
     static bool hasSetting(std::string_view name);
 
-    /// A changed setting as carried in the v4 plan skeleton: the value bytes are length-framed on
+    /// A changed setting as carried in the plan skeleton: the value bytes are length-prefixed on
     /// the wire, so a reader can skip a setting it does not know when the writer marked it
     /// ignorable, and must reject it otherwise (defaulting an unknown execution-affecting setting
     /// would silently change behavior).
-    struct FramedEntry
+    struct SerializedEntry
     {
         String name;
         UInt8 flags = 0;
@@ -73,11 +73,11 @@ struct QueryPlanSerializationSettings
         static constexpr UInt8 FLAG_IGNORABLE = 1;
     };
 
-    /// Changed settings as framed entries (v4 skeleton section).
-    std::vector<FramedEntry> writeChangedFramed() const;
-    /// Apply framed entries: unknown entries are skipped when marked ignorable, rejected otherwise;
+    /// Changed settings as skeleton entries.
+    std::vector<SerializedEntry> getChangedEntries() const;
+    /// Apply entries: unknown entries are skipped when marked ignorable, rejected otherwise;
     /// a value that does not consume exactly its frame is rejected.
-    void readFramed(const std::vector<FramedEntry> & entries);
+    void applyEntries(const std::vector<SerializedEntry> & entries);
 
     /// Generated operator[] overloads for each supported type category.
     QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)

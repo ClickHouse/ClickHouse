@@ -93,7 +93,7 @@ QueryPlan deserializePlan(const std::string & bytes)
     return QueryPlan::makeSets(std::move(plan_and_sets), getContext().context);
 }
 
-/// For every supported version: serialize -> deserialize -> serialize must reproduce identical
+/// For the legacy v3 stream and the current stream: serialize -> deserialize -> serialize must reproduce identical
 /// bytes, and the reconstructed plans must explain identically across versions. This pins both
 /// the legacy and the v4 skeleton formats and per-step determinism.
 void checkRoundTrip(QueryPlan plan)
@@ -307,7 +307,7 @@ TEST(QueryPlanSkeleton, ValidationAcceptsIgnorableUnknownSetting)
     EXPECT_TRUE(validateQueryPlanSkeleton(skeleton, 4).ok());
 }
 
-TEST(QueryPlanSkeleton, ValidationChecksStepVersionAgainstManifest)
+TEST(QueryPlanSkeleton, ValidationChecksStepVersionAgainstRegistryInfo)
 {
     registerStepsOnce();
 
@@ -351,14 +351,14 @@ TEST(QueryPlanSkeleton, ValidationChecksTreeStructureAndSetOrder)
     set2.hash.low64 = 5;
     set2.hash.high64 = 0;
     set2.kind = 200;  /// Unknown kind.
-    skeleton.sets = {set1, set2};  /// Also out of canonical order.
+    skeleton.sets = {set1, set2};  /// Also not sorted by hash.
 
     auto result = validateQueryPlanSkeleton(skeleton, 4);
     ASSERT_FALSE(result.ok());
     EXPECT_EQ(result.issues.size(), 2u) << result.describe();
 }
 
-TEST(QueryPlanSkeleton, TruncationAndTrailingBytesFailClosed)
+TEST(QueryPlanSkeleton, TruncatedSkeletonIsRejected)
 {
     registerStepsOnce();
     auto bytes = writeSkeletonToString(makeTestSkeleton());
@@ -372,18 +372,40 @@ TEST(QueryPlanSkeleton, TruncationAndTrailingBytesFailClosed)
     }
 }
 
-TEST(QueryPlanSkeleton, NodeExtraIsSkippedForFutureLayouts)
+TEST(QueryPlanSkeleton, TrailingBytesInsideFrameAreRejected)
+{
+    registerStepsOnce();
+    auto bytes = writeSkeletonToString(makeTestSkeleton());
+
+    /// Grow the declared frame size by one and append a byte: the skeleton content then ends
+    /// before its frame does, which must be rejected, not silently accepted.
+    ReadBufferFromString size_in(bytes);
+    UInt64 skeleton_size = 0;
+    readVarUInt(skeleton_size, size_in);
+    size_t size_prefix_bytes = bytes.size() - size_in.available();
+
+    WriteBufferFromOwnString patched;
+    writeVarUInt(skeleton_size + 1, patched);
+    patched.write(bytes.data() + size_prefix_bytes, bytes.size() - size_prefix_bytes);
+    writeChar('\0', patched);
+    patched.finalize();
+
+    ReadBufferFromString in(patched.str());
+    EXPECT_ANY_THROW(readQueryPlanSkeleton(in, 0));
+}
+
+TEST(QueryPlanSkeleton, ExtensionBytesAreSkippedForFutureLayouts)
 {
     registerStepsOnce();
     auto skeleton = makeTestSkeleton();
-    skeleton.nodes[0].node_extra = "future skeleton fields";
+    skeleton.nodes[0].extension_bytes = "future skeleton fields";
 
     auto bytes = writeSkeletonToString(skeleton);
     ReadBufferFromString in(bytes);
     auto restored = readQueryPlanSkeleton(in, 0);
 
     /// A reader that does not understand the extra bytes still reconstructs the shape.
-    EXPECT_EQ(restored.nodes[0].node_extra, "future skeleton fields");
+    EXPECT_EQ(restored.nodes[0].extension_bytes, "future skeleton fields");
     EXPECT_TRUE(validateQueryPlanSkeleton(restored, 4).ok());
     EXPECT_FALSE(formatQueryPlanSkeleton(restored).empty());
 }
@@ -403,7 +425,7 @@ TEST(QueryPlanSkeleton, FormatShowsShapeWithUnknownSteps)
     EXPECT_NE(text.find("\n  StepFromTheFuture"), std::string::npos);
 }
 
-TEST(QueryPlanSerialization, SetsRegistryCanonicalOrder)
+TEST(QueryPlanSerialization, SetsRegistryEntriesAreSortedByHash)
 {
     SerializedSetsRegistry registry;
 
@@ -416,7 +438,7 @@ TEST(QueryPlanSerialization, SetsRegistryCanonicalOrder)
         registry.sets.emplace(hash, nullptr);
     }
 
-    auto ordered = registry.orderedEntries();
+    auto ordered = registry.entriesSortedByHash();
     ASSERT_EQ(ordered.size(), 7u);
     for (size_t i = 1; i < ordered.size(); ++i)
     {
