@@ -21,6 +21,24 @@ SELECT count() FROM
     )
 );
 
+-- Constant aggregate-state columns. The constant-value comparison in the block structure check
+-- must be skipped for them: comparing aggregate states as `Field` throws when the aggregate
+-- function type names differ, even though the states are compatible by state representation.
+SELECT count() FROM
+(
+    SELECT arrayReduce('quantileState(0.5)', [1]) AS s
+    UNION ALL
+    SELECT arrayReduce('quantilesState(0.9)', [1]) AS s
+);
+
+-- The same, but the constant aggregate state is nested inside a `Tuple`.
+SELECT count() FROM
+(
+    SELECT tuple(arrayReduce('quantileState(0.5)', [1])) AS s
+    UNION ALL
+    SELECT tuple(arrayReduce('quantilesState(0.9)', [1])) AS s
+);
+
 -- The queries below build a `Variant` from a set operation over unrelated types, which only the
 -- analyzer does (the old one fails to find a common type for the branches).
 SET enable_analyzer = 1;

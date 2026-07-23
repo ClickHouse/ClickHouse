@@ -144,6 +144,16 @@ static bool haveCompatibleColumnStructure(const IColumn & actual, const IColumn 
     return true;
 }
 
+static bool containsAggregateStateColumn(const IColumn & column)
+{
+    if (typeid_cast<const ColumnAggregateFunction *>(&column))
+        return true;
+
+    bool found = false;
+    column.forEachSubcolumn([&](const auto & subcolumn) { found = found || containsAggregateStateColumn(*subcolumn); });
+    return found;
+}
+
 template <typename ReturnType>
 static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, const ColumnWithTypeAndName & expected,
     std::string_view context_description, bool allow_materialize, int code)
@@ -190,7 +200,12 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
     }
 
     if (isColumnConst(*actual.column) && isColumnConst(*expected.column)
-        && !actual.column->empty() && !expected.column->empty()) /// don't check values in empty columns
+        && !actual.column->empty() && !expected.column->empty() /// don't check values in empty columns
+        /// Constant aggregate-state values cannot be compared here: the `Field` comparison of
+        /// aggregate states throws when the aggregate function type names differ, even when the
+        /// states are compatible by `haveSameStateRepresentation` (already checked above). The
+        /// types are equal at this point, so checking one side is enough.
+        && !containsAggregateStateColumn(assert_cast<const ColumnConst &>(*actual.column).getDataColumn()))
     {
         Field actual_value = assert_cast<const ColumnConst &>(*actual.column).getField();
         Field expected_value = assert_cast<const ColumnConst &>(*expected.column).getField();
