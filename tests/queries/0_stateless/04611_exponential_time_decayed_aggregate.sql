@@ -82,6 +82,33 @@ FROM
     ORDER BY time DESC
 );
 
+-- Rows at the anchor time have unit weight without evaluating a decay.
+SELECT
+    round(tupleElement(exponentialTimeDecayedSum(10)(value, time), 'value'), 6),
+    round(exponentialTimeDecayedAvg(10)(value, time), 6),
+    round(tupleElement(exponentialTimeDecayedCount(10)(time), 'value'), 6)
+FROM VALUES('value Float64, time Float64', (2, 10), (4, 10), (6, 10));
+
+-- States with the same anchor time merge without evaluating a decay.
+SELECT
+    round(tupleElement(exponentialTimeDecayedSumMerge(10)(sum_state), 'value'), 6),
+    round(exponentialTimeDecayedAvgMerge(10)(avg_state), 6),
+    round(tupleElement(exponentialTimeDecayedCountMerge(10)(count_state), 'value'), 6)
+FROM
+(
+    SELECT
+        exponentialTimeDecayedSumState(10)(value, time) AS sum_state,
+        exponentialTimeDecayedAvgState(10)(value, time) AS avg_state,
+        exponentialTimeDecayedCountState(10)(time) AS count_state
+    FROM VALUES('value Float64, time Float64', (2, 10))
+    UNION ALL
+    SELECT
+        exponentialTimeDecayedSumState(10)(value, time) AS sum_state,
+        exponentialTimeDecayedAvgState(10)(value, time) AS avg_state,
+        exponentialTimeDecayedCountState(10)(time) AS count_state
+    FROM VALUES('value Float64, time Float64', (4, 10))
+);
+
 -- Independently aggregated states must merge to the same result.
 SELECT
     round(tupleElement(exponentialTimeDecayedSumMerge(10)(sum_state), 'value'), 6),
@@ -175,6 +202,16 @@ SELECT
     tupleElement(c, 'time'),
     round(tupleElement(c, 'decay_length'), 6),
     round(exponentialTimeDecayingValueAt(c, toFloat64(20)), 6);
+
+-- Equal-anchor values add directly, and evaluation at the anchor returns the stored value.
+WITH
+    exponentialTimeDecayingFloat64(2, toFloat64(10), 10) AS a,
+    exponentialTimeDecayingFloat64(4, toFloat64(10), 10) AS b,
+    exponentialTimeDecayingAdd(a, b) AS c
+SELECT
+    round(tupleElement(c, 'value'), 6),
+    tupleElement(c, 'time'),
+    round(exponentialTimeDecayingValueAt(c, toFloat64(10)), 6);
 
 -- DateTime anchors are stored as Float64 seconds.
 WITH exponentialTimeDecayingFloat64(

@@ -71,11 +71,16 @@ struct ExponentialTimeDecayedState
             weight = weight * decay + 1;
             max_time = time;
         }
-        else
+        else if (time < max_time)
         {
             const Float64 decay = std::exp((time - max_time) / decay_length);
             weighted_sum += value * decay;
             weight += decay;
+        }
+        else
+        {
+            weighted_sum += value;
+            weight += 1;
         }
     }
 
@@ -90,15 +95,25 @@ struct ExponentialTimeDecayedState
             return;
         }
 
-        /// Re-anchor both states at their shared greatest timestamp before adding them.
-        const bool rhs_is_latest = rhs.max_time > max_time;
-        const Float64 merged_max_time = rhs_is_latest ? rhs.max_time : max_time;
-        const Float64 lhs_decay = std::exp((max_time - merged_max_time) / decay_length);
-        const Float64 rhs_decay = std::exp((rhs.max_time - merged_max_time) / decay_length);
-
-        weighted_sum = weighted_sum * lhs_decay + rhs.weighted_sum * rhs_decay;
-        weight = weight * lhs_decay + rhs.weight * rhs_decay;
-        max_time = merged_max_time;
+        /// Re-anchor the older state at the shared greatest timestamp before adding them.
+        if (rhs.max_time > max_time)
+        {
+            const Float64 decay = std::exp((max_time - rhs.max_time) / decay_length);
+            weighted_sum = weighted_sum * decay + rhs.weighted_sum;
+            weight = weight * decay + rhs.weight;
+            max_time = rhs.max_time;
+        }
+        else if (rhs.max_time < max_time)
+        {
+            const Float64 decay = std::exp((rhs.max_time - max_time) / decay_length);
+            weighted_sum += rhs.weighted_sum * decay;
+            weight += rhs.weight * decay;
+        }
+        else
+        {
+            weighted_sum += rhs.weighted_sum;
+            weight += rhs.weight;
+        }
     }
 
     void write(WriteBuffer & buf) const

@@ -96,8 +96,13 @@ void assertValidRow(const DecayingColumnView & input, size_t row, const String &
 
 Float64 valueAt(const DecayingColumnView & input, size_t row, Float64 target_time)
 {
-    return input.value.getData()[row]
-        * std::exp((input.time.getData()[row] - target_time) / input.decay_length.getData()[row]);
+    const Float64 value = input.value.getData()[row];
+    const Float64 time = input.time.getData()[row];
+
+    if (target_time == time)
+        return value;
+
+    return value * std::exp((time - target_time) / input.decay_length.getData()[row]);
 }
 
 struct DecayingColumnBuilder
