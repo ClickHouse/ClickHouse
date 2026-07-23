@@ -15,6 +15,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -78,49 +79,31 @@ namespace QueryPlanFormat
         return result;
     }
 
-    void formatJoinOutputColumns(WriteBuffer & out, const IQueryPlanStep & step, const String & prefix)
+    std::vector<MetricGroup> collectJoinInputColumns(const JoinStep & step)
     {
         const auto & input_headers = step.getInputHeaders();
         if (input_headers.size() != 2 || !input_headers[0] || !input_headers[1])
-            return;
+            return {};
 
-        out << prefix << "Output:\n";
-
-        if (!step.hasOutputHeader() || step.getOutputHeader()->empty())
+        auto side_group = [](std::string_view label, const Block & input_header) -> MetricGroup
         {
-            out << prefix << "  Left:  Empty\n";
-            out << prefix << "  Right: Empty\n";
-            return;
-        }
+            std::vector<String> columns;
+            columns.reserve(input_header.columns());
+            for (const auto & column : input_header)
+                columns.push_back(trimColumnIdentifier(column.name));
 
-        const auto & output = *step.getOutputHeader();
-        const auto & left_input = *input_headers[0];
-        const auto & right_input = *input_headers[1];
+            String joined = columns.empty() ? String("Empty") : fmt::format("{}", fmt::join(columns, ", "));
 
-        std::vector<String> left_columns;
-        std::vector<String> right_columns;
+            MetricGroup group;
+            group.label = label;
+            group.metrics.emplace_back("", std::move(joined), StepMetric::Format::Raw);
+            return group;
+        };
 
-        for (const auto & col : output)
-        {
-            if (left_input.has(col.name))
-                left_columns.push_back(trimColumnIdentifier(col.name));
-            else if (right_input.has(col.name))
-                right_columns.push_back(trimColumnIdentifier(col.name));
-        }
-
-        out << prefix << "  Left:  ";
-        if (left_columns.empty())
-            out << "Empty";
-        else
-            out << fmt::format("{}", fmt::join(left_columns, ", "));
-        out << "\n";
-
-        out << prefix << "  Right: ";
-        if (right_columns.empty())
-            out << "Empty";
-        else
-            out << fmt::format("{}", fmt::join(right_columns, ", "));
-        out << "\n";
+        std::vector<MetricGroup> groups;
+        groups.emplace_back(side_group("input (left)", *input_headers[0]));
+        groups.emplace_back(side_group("input (right)", *input_headers[1]));
+        return groups;
     }
 
     void formatOutputColumns(const std::unordered_map<String, PrettyColumnName> & pretty_names, WriteBuffer & out, const IQueryPlanStep & step, const String & prefix)

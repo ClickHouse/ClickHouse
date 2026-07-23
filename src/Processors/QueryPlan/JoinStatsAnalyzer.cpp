@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/JoinStatsAnalyzer.h>
 #include <Processors/QueryPlan/StepStatsAnalyzer.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Common/typeid_cast.h>
@@ -46,22 +47,45 @@ UInt64 findQuantity(const MetricGroup & group, const std::string & name)
     return 0;
 }
 
-void enrichJoinSides(StepAnalysisReport & report, UInt64 output_rows)
+StepMetric quantityMetric(std::string_view name, UInt64 value)
 {
-    for (auto & group : report)
-    {
-        if (group.label != "left" && group.label != "right")
-            continue;
+    return {std::string(name), value, StepMetric::Format::Quantity};
+}
 
-        const UInt64 rows = findQuantity(group, "rows");
-        const UInt64 matched = findQuantity(group, "matched");
+StepMetric optionalQuantityMetric(std::string_view name, const std::optional<UInt64> & value)
+{
+    if (value)
+        return {std::string(name), *value, StepMetric::Format::Quantity};
+    return {std::string(name), String("missing stats"), StepMetric::Format::Raw};
+}
 
-        const double match_rate = rows ? 100.0 * static_cast<double>(matched) / static_cast<double>(rows) : 0.0;
-        group.metrics.emplace_back("match rate", match_rate, StepMetric::Format::Percent);
+StepMetric optionalCostMetric(std::string_view name, const std::optional<double> & value)
+{
+    if (value)
+        return {std::string(name), *value, StepMetric::Format::Quantity};
+    return {std::string(name), String("missing stats"), StepMetric::Format::Raw};
+}
 
-        const double fanout = rows ? static_cast<double>(output_rows) / static_cast<double>(matched) : 0.0;
-        group.metrics.emplace_back("fanout", fanout, StepMetric::Format::Ratio);
-    }
+StepMetric optionalSelectivityMetric(std::string_view name, const std::optional<double> & value)
+{
+    if (value)
+        return {std::string(name), fmt::format("{:.4g}", *value), StepMetric::Format::Raw};
+    return {std::string(name), String("missing stats"), StepMetric::Format::Raw};
+}
+
+MetricList sideMetrics(const std::optional<UInt64> & estimated_rows, UInt64 actual_rows, UInt64 matched, UInt64 output_rows)
+{
+    MetricList metrics;
+    metrics.emplace_back(optionalQuantityMetric("rows estimated", estimated_rows));
+    metrics.emplace_back(quantityMetric("rows actual", actual_rows));
+    metrics.emplace_back(quantityMetric("matched", matched));
+
+    const double match_rate = actual_rows ? 100.0 * static_cast<double>(matched) / static_cast<double>(actual_rows) : 0.0;
+    metrics.emplace_back("match rate", match_rate, StepMetric::Format::Percent);
+
+    const double fanout = matched ? static_cast<double>(output_rows) / static_cast<double>(matched) : 0.0;
+    metrics.emplace_back("fanout", fanout, StepMetric::Format::Ratio);
+    return metrics;
 }
 
 void reshapeSpillGroup(MetricGroup & spill_group)
@@ -86,41 +110,77 @@ void reshapeSpillGroup(MetricGroup & spill_group)
     spill_group.metrics = std::move(reshaped);
 }
 
-void appendActualGroup(StepAnalysisReport & report, const StepStatsContext & context, const JoinStep & join_step, std::optional<double> actual_cost)
+std::optional<double> cartesianSelectivity(const JoinAnalysisCounters & counters, UInt64 matched_pairs)
 {
+    if (!counters.left_rows || !counters.right_rows)
+        return std::nullopt;
+    return static_cast<double>(matched_pairs) / (static_cast<double>(counters.left_rows) * static_cast<double>(counters.right_rows));
+}
+
+std::optional<double> resultRowsQError(const std::optional<UInt64> & estimated_rows, UInt64 actual_rows)
+{
+    if (!estimated_rows || !*estimated_rows || !actual_rows)
+        return std::nullopt;
+    return std::max(
+        static_cast<double>(*estimated_rows) / static_cast<double>(actual_rows),
+        static_cast<double>(actual_rows) / static_cast<double>(*estimated_rows));
+}
+
+UInt64 countMatchedPairs(const JoinStep & join_step, const JoinAnalysisCounters & counters, UInt64 output_rows)
+{
+    if (!join_step.getJoin())
+        return 0;
+
+    JoinKind kind = join_step.getJoin()->getTableJoin().kind();
+    if (join_step.swap_streams)
+        kind = reverseJoinKind(kind);
+    return joinMatchedPairs(kind, counters, output_rows);
+}
+
+StepAnalysisReport buildComparisonReport(
+    const StepStatsContext & context, const JoinStep & join_step, StepAnalysisReport runtime_groups, std::optional<double> actual_cost)
+{
+    const JoinEstimation & estimation = join_step.getEstimation();
     const UInt64 output_rows = context.io.output_rows;
-    const auto counters = extractJoinCounters(report);
+    const auto counters = extractJoinCounters(runtime_groups);
+    const UInt64 matched_pairs = countMatchedPairs(join_step, counters, output_rows);
 
-    MetricGroup group;
-    group.label = "actual";
-
-    if (counters.left_rows && counters.right_rows && join_step.getJoin())
+    /// Turn the raw per-side groups from `getAnalysisReport` into the estimated/actual paired form in place.
+    for (auto & group : runtime_groups)
     {
-        JoinKind kind = join_step.getJoin()->getTableJoin().kind();
-        if (join_step.swap_streams)
-            kind = reverseJoinKind(kind);
-
-        const UInt64 matched_pairs = joinMatchedPairs(kind, counters, output_rows);
-        group.metrics.emplace_back("matched pairs", matched_pairs, StepMetric::Format::Quantity);
-
-        const double selectivity = static_cast<double>(matched_pairs)
-            / (static_cast<double>(counters.left_rows) * static_cast<double>(counters.right_rows));
-        group.metrics.emplace_back("selectivity (cartesian)", fmt::format("{:.4g}", selectivity), StepMetric::Format::Raw);
+        if (group.label == "left")
+            group.metrics = sideMetrics(estimation.left_rows, counters.left_rows, counters.matched_left, output_rows);
+        else if (group.label == "right")
+            group.metrics = sideMetrics(estimation.right_rows, counters.right_rows, counters.matched_right, output_rows);
     }
 
-    if (const auto estimated_rows = join_step.getEstimation().output_rows; estimated_rows && *estimated_rows && output_rows)
-    {
-        const double q_error = std::max(
-            static_cast<double>(*estimated_rows) / static_cast<double>(output_rows),
-            static_cast<double>(output_rows) / static_cast<double>(*estimated_rows));
-        group.metrics.emplace_back("result rows q-error", q_error, StepMetric::Format::Ratio);
-    }
+    MetricGroup cost;
+    cost.label = "cost";
+    cost.metrics.emplace_back(optionalCostMetric("estimated", estimation.cost));
+    cost.metrics.emplace_back(optionalCostMetric("actual", actual_cost));
 
-    if (actual_cost)
-        group.metrics.emplace_back("cost", *actual_cost, StepMetric::Format::Quantity);
+    MetricGroup selectivity;
+    selectivity.label = "selectivity";
+    selectivity.metrics.emplace_back(optionalSelectivityMetric("estimated (NDV)", estimation.selectivity));
+    selectivity.metrics.emplace_back(optionalSelectivityMetric("actual (cartesian)", cartesianSelectivity(counters, matched_pairs)));
 
-    if (!group.metrics.empty())
-        report.push_back(std::move(group));
+    MetricGroup output;
+    output.label = "output rows";
+    output.metrics.emplace_back(optionalQuantityMetric("estimated", estimation.output_rows));
+    output.metrics.emplace_back(quantityMetric("actual", output_rows));
+    if (const auto q_error = resultRowsQError(estimation.output_rows, output_rows))
+        output.metrics.emplace_back("q-error", *q_error, StepMetric::Format::Ratio);
+
+    StepAnalysisReport report;
+    report.emplace_back(std::move(cost));
+    report.emplace_back(std::move(selectivity));
+    report.emplace_back(std::move(output));
+    for (auto & group : runtime_groups)
+        report.emplace_back(std::move(group));
+    for (auto & group : QueryPlanFormat::collectJoinInputColumns(join_step))
+        report.emplace_back(std::move(group));
+
+    return report;
 }
 
 }
@@ -151,10 +211,8 @@ AnalyzedStepData JoinStepStatsAnalyzer::analyze(const StepStatsContext & context
     if (join_step && join_step->swap_streams)
         swapReportSides(report);
 
-    enrichJoinSides(report, context.io.output_rows);
-
     if (join_step)
-        appendActualGroup(report, context, *join_step, branch_costs.getBranchCost(join_step));
+        report = buildComparisonReport(context, *join_step, std::move(report), branch_costs.getBranchCost(join_step));
 
     for (auto & group : report)
         if (group.label == "spill")

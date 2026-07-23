@@ -3,6 +3,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
+#include <Common/formatReadable.h>
 
 #include <fmt/format.h>
 
@@ -27,14 +28,24 @@ String selectivityToString(const std::optional<double> & value)
     return value ? fmt::format("{:.4g}", *value) : String("missing stats");
 }
 
+String rowsToReadable(const std::optional<UInt64> & value)
+{
+    return value ? formatReadableQuantity(static_cast<double>(*value)) : String("missing stats");
+}
+
+String costToReadable(const std::optional<double> & value)
+{
+    return value ? formatReadableQuantity(*value) : String("missing stats");
+}
+
 }
 
 void describeJoinEstimation(const JoinEstimation & estimation, WriteBuffer & out, const String & prefix)
 {
-    out << prefix << "Estimated rows: output " << rowsToString(estimation.output_rows)
-        << " · left " << rowsToString(estimation.left_rows)
-        << " · right " << rowsToString(estimation.right_rows) << '\n';
-    out << prefix << "Estimated cost: " << costToString(estimation.cost) << '\n';
+    out << prefix << "Estimated rows: output " << rowsToReadable(estimation.output_rows)
+        << " · left " << rowsToReadable(estimation.left_rows)
+        << " · right " << rowsToReadable(estimation.right_rows) << '\n';
+    out << prefix << "Estimated cost: " << costToReadable(estimation.cost) << '\n';
     out << prefix << "Estimated selectivity (NDV): " << selectivityToString(estimation.selectivity) << '\n';
 }
 

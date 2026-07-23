@@ -315,7 +315,8 @@ void JoinStep::describeActions(FormatSettings & settings) const
         }
         settings.out << '\n';
 
-        describeJoinEstimation(estimation, settings.out, prefix);
+        if (!settings.inside_explain_analyze)
+            describeJoinEstimation(estimation, settings.out, prefix);
 
         if (locality != JoinLocality::Unspecified)
             settings.out << prefix << "Locality: " << toString(locality) << '\n';
@@ -344,8 +345,21 @@ void JoinStep::describeActions(FormatSettings & settings) const
         settings.out << "]\n";
     }
 
-    if (settings.pretty)
-        QueryPlanFormat::formatJoinOutputColumns(settings.out, *this, prefix);
+    if (settings.pretty && !settings.inside_explain_analyze)
+    {
+        for (const auto & group : QueryPlanFormat::collectJoinInputColumns(*this))
+        {
+            String label = group.label;
+            if (!label.empty())
+                label[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(label[0])));
+
+            settings.out << prefix << label << ':';
+            for (const auto & metric : group.metrics)
+                if (const auto * text = std::get_if<std::string>(&metric.value))
+                    settings.out << ' ' << *text;
+            settings.out << '\n';
+        }
+    }
 }
 
 void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
