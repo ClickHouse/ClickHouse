@@ -285,6 +285,17 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool 
 
     if (with_trailing_fields && server_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERNAL_QUERY_FLAG)
         writeBinary(is_internal, out);
+
+    if (with_trailing_fields && server_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES)
+    {
+        if (current_roles.has_value())
+        {
+            writeBinary(static_cast<UInt8>(1), out);
+            writeVectorBinary(*current_roles, out);
+        }
+        else
+            writeBinary(static_cast<UInt8>(0), out);
+    }
 }
 
 
@@ -406,6 +417,20 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
 
     if (with_trailing_fields && client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERNAL_QUERY_FLAG)
         readBinary(is_internal, in);
+
+    if (with_trailing_fields && client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES)
+    {
+        UInt8 have_current_roles = 0;
+        readBinary(have_current_roles, in);
+        if (have_current_roles)
+        {
+            std::vector<String> roles;
+            readVectorBinary(roles, in);
+            current_roles = std::move(roles);
+        }
+        else
+            current_roles.reset();
+    }
 }
 
 
