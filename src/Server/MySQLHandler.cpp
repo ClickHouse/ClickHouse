@@ -1,5 +1,6 @@
 #include <Server/MySQLHandler.h>
 
+#include <algorithm>
 #include <array>
 #include <optional>
 #include <Access/Common/AccessFlags.h>
@@ -147,7 +148,9 @@ static std::optional<String> tryParseSingleStringLiteral(const String & text)
     return ast->as<ASTLiteral &>().value.safeGet<String>();
 }
 
-/// Replace "SHOW TABLE STATUS LIKE 'xx'" into "SELECT ... FROM system.tables WHERE name LIKE 'xx'".
+/// Replace "SHOW TABLE STATUS LIKE 'xx'" into a SELECT from INFORMATION_SCHEMA.TABLES.
+/// Both statements describe the same MySQL metadata family, so they must share one mapping:
+/// a client mixing the two introspection paths has to see identical values for one object.
 static String showTableStatusReplacementQuery(const String & query)
 {
     const String prefix = "SHOW TABLE STATUS LIKE ";
@@ -166,26 +169,26 @@ static String showTableStatusReplacementQuery(const String & query)
     }
     return (
         "SELECT"
-        " name AS Name,"
+        " table_name AS Name,"
         " engine AS Engine,"
-        " '10' AS Version,"
-        " 'Dynamic' AS Row_format,"
-        " 0 AS Rows,"
-        " 0 AS Avg_row_length,"
-        " 0 AS Data_length,"
-        " 0 AS Max_data_length,"
-        " 0 AS Index_length,"
-        " 0 AS Data_free,"
-        " 'NULL' AS Auto_increment,"
-        " metadata_modification_time AS Create_time,"
-        " metadata_modification_time AS Update_time,"
-        " metadata_modification_time AS Check_time,"
-        " 'utf8mb4_0900_ai_ci' AS Collation," /// Consistent with INFORMATION_SCHEMA.TABLES.table_collation and the MySQL handshake
-        " 'NULL' AS Checksum,"
-        " '' AS Create_options,"
-        " '' AS Comment"
-        " FROM system.tables"
-        " WHERE name LIKE "
+        " version AS Version,"
+        " row_format AS Row_format,"
+        " table_rows AS Rows,"
+        " avg_row_length AS Avg_row_length,"
+        " data_length AS Data_length,"
+        " max_data_length AS Max_data_length,"
+        " index_length AS Index_length,"
+        " data_free AS Data_free,"
+        " auto_increment AS Auto_increment,"
+        " create_time AS Create_time,"
+        " update_time AS Update_time,"
+        " check_time AS Check_time,"
+        " table_collation AS Collation,"
+        " checksum AS Checksum,"
+        " create_options AS Create_options,"
+        " table_comment AS Comment"
+        " FROM INFORMATION_SCHEMA.TABLES"
+        " WHERE table_name LIKE "
         + quoteString(pattern));
 }
 
@@ -319,13 +322,23 @@ static bool lowercaseStringLiterals(ASTPtr & node)
     return false;
 }
 
+/// Whether this column of the synthetic SHOW COLLATION result set is string-valued.
+/// Only these participate in case-insensitive matching: wrapping a numeric column
+/// (`Id`, `Sortlen`) in `lower` would throw instead of comparing.
+static bool isStringValuedCollationColumn(const String & name)
+{
+    static constexpr std::array string_columns{"Collation", "Charset", "Default", "Compiled", "Pad_attribute"};
+    return std::any_of(string_columns.begin(), string_columns.end(), [&](const auto * column) { return name == column; });
+}
+
 /// MySQL matches collation and charset names case-insensitively and resolves column names in the
 /// WHERE clause of SHOW statements case-insensitively, while ClickHouse compares strings bytewise
 /// and resolves identifiers case-sensitively. Rewrite the parsed "SHOW COLLATION WHERE ..." filter
 /// so that the comparison forms MySQL clients use keep their MySQL semantics: canonicalize
 /// identifiers to the column names of the synthetic result set, and for "=", "!=", "LIKE" and "IN"
-/// comparisons of a column against string literals, lowercase both sides (every string value in
-/// the synthetic set has a single known spelling, so this is lossless).
+/// comparisons of a string-valued column against string literals, lowercase both sides (every
+/// string value in the synthetic set has a single known spelling, so this is lossless). Numeric
+/// columns are left untouched: ClickHouse already coerces string literals to numbers there.
 static void makeShowCollationsFilterCaseInsensitive(ASTPtr & node)
 {
     if (auto * identifier = node->as<ASTIdentifier>())
@@ -348,14 +361,26 @@ static void makeShowCollationsFilterCaseInsensitive(ASTPtr & node)
             || function->name == "notLike" || function->name == "ilike" || function->name == "notILike"
             || function->name == "in" || function->name == "notIn"))
     {
-        bool lowered_literal = false;
+        /// Canonicalize identifiers first, then decide by the canonical name whether this
+        /// comparison targets a string-valued column.
         for (auto & argument : function->arguments->children)
-            lowered_literal |= lowercaseStringLiterals(argument);
-        for (auto & argument : function->arguments->children)
-        {
             makeShowCollationsFilterCaseInsensitive(argument);
-            if (lowered_literal && argument->as<ASTIdentifier>())
-                argument = makeASTFunction("lower", argument);
+
+        bool string_column = false;
+        for (const auto & argument : function->arguments->children)
+            if (const auto * argument_identifier = argument->as<ASTIdentifier>();
+                argument_identifier && isStringValuedCollationColumn(argument_identifier->name()))
+                string_column = true;
+
+        if (string_column)
+        {
+            bool lowered_literal = false;
+            for (auto & argument : function->arguments->children)
+                lowered_literal |= lowercaseStringLiterals(argument);
+            if (lowered_literal)
+                for (auto & argument : function->arguments->children)
+                    if (argument->as<ASTIdentifier>())
+                        argument = makeASTFunction("lower", argument);
         }
         return;
     }

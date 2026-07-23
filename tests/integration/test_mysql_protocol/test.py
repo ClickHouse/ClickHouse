@@ -946,6 +946,21 @@ def test_collation_consistency(started_cluster):
     cursor.execute("SHOW COLLATION WHERE Charset = 'no_such_charset'")
     assert list(cursor.fetchall()) == []
 
+    # Quoted numeric filters keep MySQL's numeric/string coercion: the case-folding
+    # rewrite applies only to string-valued columns, so `Id` and `Sortlen` must never
+    # be wrapped in a string-only function (which would throw instead of matching).
+    cursor.execute("SHOW COLLATION WHERE Id = '255'")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["utf8mb4_0900_ai_ci"]
+
+    cursor.execute("SHOW COLLATION WHERE Id IN ('255', '63')")
+    assert sorted(row["Collation"] for row in cursor.fetchall()) == [
+        "binary",
+        "utf8mb4_0900_ai_ci",
+    ]
+
+    cursor.execute("SHOW COLLATION WHERE Sortlen != '1'")
+    assert [row["Collation"] for row in cursor.fetchall()] == ["utf8mb4_0900_ai_ci"]
+
     # INFORMATION_SCHEMA.COLLATIONS contains it with the same charset and id.
     cursor.execute(
         "SELECT CHARACTER_SET_NAME, ID FROM INFORMATION_SCHEMA.COLLATIONS "
@@ -971,6 +986,70 @@ def test_collation_consistency(started_cluster):
     assert fields["n"] == binary_charset
 
     client.close()
+
+
+def test_show_table_status_matches_information_schema(started_cluster):
+    # SHOW TABLE STATUS and INFORMATION_SCHEMA.TABLES describe the same MySQL metadata
+    # family, so both surfaces must share one mapping: a client mixing the two
+    # introspection paths must see identical values for one object.
+    client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="default",
+        password="123",
+        database="default",
+        port=server_port,
+    )
+    cursor = client.cursor(pymysql.cursors.DictCursor)
+    cursor.execute(
+        "CREATE TABLE default.table_status_consistency (n UInt64) "
+        "ENGINE = MergeTree ORDER BY n"
+    )
+    try:
+        cursor.execute("INSERT INTO default.table_status_consistency VALUES (1), (2)")
+
+        cursor.execute("SHOW TABLE STATUS LIKE 'table_status_consistency'")
+        status_rows = cursor.fetchall()
+        assert len(status_rows) == 1, status_rows
+        status = status_rows[0]
+
+        cursor.execute(
+            "SELECT * FROM INFORMATION_SCHEMA.TABLES "
+            "WHERE table_schema = 'default' AND table_name = 'table_status_consistency'"
+        )
+        info = cursor.fetchall()[0]
+
+        for status_column, info_column in [
+            ("Name", "table_name"),
+            ("Engine", "engine"),
+            ("Version", "version"),
+            ("Row_format", "row_format"),
+            ("Rows", "table_rows"),
+            ("Avg_row_length", "avg_row_length"),
+            ("Data_length", "data_length"),
+            ("Max_data_length", "max_data_length"),
+            ("Index_length", "index_length"),
+            ("Data_free", "data_free"),
+            ("Auto_increment", "auto_increment"),
+            ("Create_time", "create_time"),
+            ("Update_time", "update_time"),
+            ("Check_time", "check_time"),
+            ("Collation", "table_collation"),
+            ("Checksum", "checksum"),
+            ("Create_options", "create_options"),
+            ("Comment", "table_comment"),
+        ]:
+            assert status[status_column] == info[info_column], (
+                status_column,
+                status[status_column],
+                info[info_column],
+            )
+
+        assert status["Engine"] == "MergeTree"
+        assert status["Rows"] == 2
+        assert status["Collation"] == "utf8mb4_0900_ai_ci"
+    finally:
+        cursor.execute("DROP TABLE default.table_status_consistency")
+        client.close()
 
 
 def test_golang_client(started_cluster, golang_container):
