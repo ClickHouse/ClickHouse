@@ -49,6 +49,7 @@
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/PostgreSQL/PostgreSQLSettings.h>
 
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
@@ -63,11 +64,15 @@ namespace Setting
 {
     extern const SettingsBool external_table_functions_use_nulls;
     extern const SettingsUInt64 glob_expansion_max_elements;
-    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
-    extern const SettingsBool postgresql_connection_pool_auto_close_connection;
-    extern const SettingsUInt64 postgresql_connection_pool_retries;
-    extern const SettingsUInt64 postgresql_connection_pool_size;
-    extern const SettingsUInt64 postgresql_connection_pool_wait_timeout;
+}
+
+namespace PostgreSQLSetting
+{
+    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_size;
+    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_wait_timeout;
+    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_retries;
+    extern const PostgreSQLSettingsBool postgresql_connection_pool_auto_close_connection;
+    extern const PostgreSQLSettingsUInt64 postgresql_connection_attempt_timeout;
 }
 
 namespace ErrorCodes
@@ -594,7 +599,7 @@ SinkToStoragePtr StoragePostgreSQL::write(
     return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_or_query.getTableName(), remote_table_schema, on_conflict);
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table)
+StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table)
 {
     StoragePostgreSQL::Configuration configuration;
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
@@ -607,8 +612,12 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
             required_arguments.insert("table");
     }
 
-    validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
-        named_collection, required_arguments, {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache"});
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache"};
+    if (storage_settings)
+        for (const auto & name : storage_settings->getAllRegisteredNames())
+            optional_arguments.insert(name);
+
+    validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(named_collection, required_arguments, optional_arguments);
 
     configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
     if (configuration.addresses_expr.empty())
@@ -637,15 +646,18 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     configuration.schema = named_collection.getOrDefault<String>("schema", "");
     configuration.on_conflict = named_collection.getOrDefault<String>("on_conflict", "");
 
+    if (storage_settings)
+        storage_settings->loadFromNamedCollection(named_collection);
+
     return configuration;
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, const StorageID * table_id)
+StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id)
 {
     StoragePostgreSQL::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id))
     {
-        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, context);
+        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings, context);
     }
     else
     {
@@ -703,15 +715,27 @@ void registerStoragePostgreSQL(StorageFactory & factory)
 {
     factory.registerStorage("PostgreSQL", [](const StorageFactory::Arguments & args)
     {
-        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext(), &args.table_id);
-        const auto & settings = args.getLocalContext()->getSettingsRef();
+        /// Seed the connection-pool parameters from the query-level `postgresql_*` settings (preserving
+        /// the historical behaviour); a named collection may override them, and an explicit SETTINGS
+        /// clause on the table takes the final precedence.
+        PostgreSQLSettings postgresql_settings;
+        postgresql_settings.loadFromQueryContext(*args.getLocalContext());
+
+        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id);
+
+        if (args.storage_def)
+            postgresql_settings.loadFromQuery(*args.storage_def);
+
+        if (!postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size])
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");
+
         auto pool = std::make_shared<postgres::PoolWithFailover>(
             configuration,
-            settings[Setting::postgresql_connection_pool_size],
-            settings[Setting::postgresql_connection_pool_wait_timeout],
-            settings[Setting::postgresql_connection_pool_retries],
-            settings[Setting::postgresql_connection_pool_auto_close_connection],
-            settings[Setting::postgresql_connection_attempt_timeout]);
+            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size],
+            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_wait_timeout],
+            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_retries],
+            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_auto_close_connection],
+            postgresql_settings[PostgreSQLSetting::postgresql_connection_attempt_timeout]);
 
         return std::make_shared<StoragePostgreSQL>(
             args.table_id,
@@ -725,8 +749,10 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             configuration.on_conflict);
     },
     {
+        .supports_settings = true,
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::POSTGRES,
+        .has_builtin_setting_fn = PostgreSQLSettings::hasBuiltin,
     },
     Documentation{
         .description = R"DOCS_MD(
@@ -749,6 +775,13 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name2 type2 [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
 ) ENGINE = PostgreSQL({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]})
+SETTINGS
+    [ postgresql_connection_pool_size=16, ]
+    [ postgresql_connection_pool_wait_timeout=5000, ]
+    [ postgresql_connection_pool_retries=2, ]
+    [ postgresql_connection_pool_auto_close_connection=false, ]
+    [ postgresql_connection_attempt_timeout=2 ]
+;
 ```
 
 See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
@@ -786,6 +819,53 @@ The table structure can differ from the original PostgreSQL table structure:
 Some parameters can be overridden by key value arguments:
 ```sql
 SELECT * FROM postgresql(postgres_creds, table='table1');
+```
+
+## Settings {#settings}
+
+The connection pool used by the `PostgreSQL` table engine (and the [`postgresql`](/sql-reference/table-functions/postgresql) table function) can be configured per table with a `SETTINGS` clause. When a setting is not specified, it defaults to the value of the corresponding query-level `postgresql_*` setting.
+
+### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
+
+Connection pool size (if all connections are in use, the query waits until some connection is freed). Must be non-zero.
+
+Default value: `16`.
+
+### `postgresql_connection_pool_wait_timeout` {#postgresql-connection-pool-wait-timeout}
+
+Connection pool push/pop timeout in milliseconds on an empty pool. `0` means it blocks on an empty pool.
+
+Default value: `5000`.
+
+### `postgresql_connection_pool_retries` {#postgresql-connection-pool-retries}
+
+Connection pool push/pop retries number.
+
+Default value: `2`.
+
+### `postgresql_connection_pool_auto_close_connection` {#postgresql-connection-pool-auto-close-connection}
+
+Close the connection before returning it to the pool.
+
+Default value: `false`.
+
+### `postgresql_connection_attempt_timeout` {#postgresql-connection-attempt-timeout}
+
+Connection timeout in seconds of a single attempt to connect to the PostgreSQL end-point. The value is passed as a `connect_timeout` parameter of the connection URL.
+
+Default value: `2`.
+
+Example:
+
+```sql
+CREATE TABLE pg_table
+(
+    `float_nullable` Nullable(Float32),
+    `str` String,
+    `int_id` Int32
+)
+ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password')
+SETTINGS postgresql_connection_pool_size = 32, postgresql_connection_pool_auto_close_connection = 1;
 ```
 
 ## Implementation details {#implementation-details}
