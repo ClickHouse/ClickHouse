@@ -18,3 +18,18 @@ M	1
 -- error handling: the band letter must be a single letter in C..X excluding I and O
 -- the integer flag still works and still rejects values other than 0 or 1
 1
+-- NULL rows propagate to NULL instead of failing the band validation
+1	\N
+0	1
+1	\N
+0	1
+Nullable(Tuple(longitude Float64, latitude Float64))
+-- NULL propagation works for the other arguments and for the integer flag too
+1
+0
+1
+0
+1
+0
+\N
+-- non-NULL rows of a Nullable band column are still validated

@@ -45,3 +45,19 @@ SELECT UTMToGeo(500000., 0., 31, 'NX'); -- { serverError BAD_ARGUMENTS } -- more
 SELECT '-- the integer flag still works and still rejects values other than 0 or 1';
 SELECT UTMToGeo(448251.6, 5411935.13, 31, 1).1 > 0;
 SELECT UTMToGeo(448251.6, 5411935.13, 31, 2); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- NULL rows propagate to NULL instead of failing the band validation';
+SELECT isNull(g), g = UTMToGeo(448251.6, 5411935.13, 31, 1)
+FROM (SELECT UTMToGeo(448251.6, 5411935.13, 31, band) AS g FROM values('band Nullable(String)', (NULL), ('U')));
+SELECT isNull(g), g = UTMToGeo(334368.634, 6250948.345, 56, 0)
+FROM (SELECT UTMToGeo(334368.634, 6250948.345, 56, band) AS g FROM values('band Nullable(FixedString(1))', (NULL), ('H')));
+SELECT toTypeName(UTMToGeo(448251.6, 5411935.13, 31, band)) FROM values('band Nullable(String)', (NULL)) LIMIT 1;
+
+SELECT '-- NULL propagation works for the other arguments and for the integer flag too';
+SELECT isNull(UTMToGeo(easting, 5411935.13, 31, 'U')) FROM values('easting Nullable(Float64)', (NULL), (448251.6));
+SELECT isNull(UTMToGeo(448251.6, 5411935.13, zone, 'U')) FROM values('zone Nullable(UInt8)', (NULL), (31));
+SELECT isNull(UTMToGeo(448251.6, 5411935.13, 31, flag)) FROM values('flag Nullable(UInt8)', (NULL), (1));
+SELECT UTMToGeo(448251.6, 5411935.13, 31, NULL);
+
+SELECT '-- non-NULL rows of a Nullable band column are still validated';
+SELECT UTMToGeo(500000., 0., 31, band) FROM values('band Nullable(String)', ('N'), ('?')); -- { serverError BAD_ARGUMENTS }

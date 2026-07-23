@@ -2,8 +2,11 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/UTMCoordinates.h>
 
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -61,32 +64,77 @@ public:
 
     size_t getNumberOfArguments() const override { return 4; }
     bool useDefaultImplementationForConstants() const override { return true; }
+
+    /// The default Nullable wrapper would execute the function on the values that Nullable columns hold at NULL
+    /// rows (typically defaults such as the empty string), and the band validation would reject them before the
+    /// null map is re-applied. Handle Nullable arguments explicitly instead: NULL rows are skipped, not validated.
+    bool useDefaultImplementationForNulls() const override { return false; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        bool has_nullable = false;
+        ColumnsWithTypeAndName nested_arguments = arguments;
+        for (auto & argument : nested_arguments)
+        {
+            if (argument.type && argument.type->onlyNull())
+                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+            if (argument.type && argument.type->isNullable())
+            {
+                has_nullable = true;
+                argument.type = removeNullable(argument.type);
+                argument.column = nullptr;
+            }
+        }
+
         FunctionArgumentDescriptors mandatory_args{
             {"easting", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
             {"northing", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
             {"zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "(U)Int*"},
             {"is_north", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isHemisphereArgument), nullptr,
                 "(U)Int* (0 or 1) or String/FixedString (MGRS band letter)"}};
-        validateFunctionArguments(*this, arguments, mandatory_args);
+        validateFunctionArguments(*this, nested_arguments, mandatory_args);
 
-        return std::make_shared<DataTypeTuple>(
+        DataTypePtr result = std::make_shared<DataTypeTuple>(
             DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()},
             Strings{"longitude", "latitude"});
+        return has_nullable ? makeNullable(result) : result;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const IColumn * easting_column = arguments[0].column.get();
-        const IColumn * northing_column = arguments[1].column.get();
-        const IColumn * zone_column = arguments[2].column.get();
-        const IColumn * hemisphere_column = arguments[3].column.get();
+        /// A NULL literal among the arguments makes the whole result NULL.
+        if (result_type->onlyNull())
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+        /// Unwrap Nullable arguments and combine their null maps; NULL rows produce NULL and are not validated.
+        const IColumn * columns[4];
+        ColumnUInt8::MutablePtr result_null_map;
+        ColumnPtr materialized[4];
+        for (size_t arg = 0; arg < 4; ++arg)
+        {
+            materialized[arg] = arguments[arg].column->convertToFullColumnIfConst();
+            columns[arg] = materialized[arg].get();
+            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(columns[arg]))
+            {
+                columns[arg] = &nullable->getNestedColumn();
+                if (!result_null_map)
+                    result_null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
+                auto & result_null_map_data = result_null_map->getData();
+                const auto & null_map = nullable->getNullMapData();
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    result_null_map_data[i] |= null_map[i];
+            }
+        }
+
+        const IColumn * easting_column = columns[0];
+        const IColumn * northing_column = columns[1];
+        const IColumn * zone_column = columns[2];
+        const IColumn * hemisphere_column = columns[3];
 
         /// The hemisphere is given either as an integer flag or as the MGRS latitude band letter returned by `geoToUTM`.
-        const bool hemisphere_is_band = isStringOrFixedString(*arguments[3].type);
+        const bool hemisphere_is_band = isStringOrFixedString(*removeNullable(arguments[3].type));
 
         auto col_longitude = ColumnFloat64::create(input_rows_count);
         auto col_latitude = ColumnFloat64::create(input_rows_count);
@@ -96,6 +144,13 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
+            if (result_null_map && result_null_map->getData()[i])
+            {
+                longitude_data[i] = 0.0;
+                latitude_data[i] = 0.0;
+                continue;
+            }
+
             const Float64 easting = easting_column->getFloat64(i);
             const Float64 northing = northing_column->getFloat64(i);
 
@@ -126,7 +181,14 @@ public:
             utmToWGS84(easting, northing, static_cast<UInt8>(zone), is_north, longitude_data[i], latitude_data[i]);
         }
 
-        return ColumnTuple::create(Columns{std::move(col_longitude), std::move(col_latitude)});
+        ColumnPtr result = ColumnTuple::create(Columns{std::move(col_longitude), std::move(col_latitude)});
+        if (result_type->isNullable())
+        {
+            if (!result_null_map)
+                result_null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
+            return ColumnNullable::create(result, std::move(result_null_map));
+        }
+        return result;
     }
 };
 
