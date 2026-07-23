@@ -79,6 +79,17 @@ select arrayJoin([
     , numericIndexedVectorToMap(numericIndexedVectorPointwiseMin(vec_1, bm))
 ]);
 
+-- Subset `Bitmap` must not trigger a divide-by-all-ones shortcut that keeps lhs-only keys.
+with
+(
+    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-26')
+    from uin_value_details
+) as vec_1,
+(
+    select groupBitmapState(uin) from uin_value_details where ds = '2023-12-26' and uin in (10000001, 10000002)
+) as bm
+select numericIndexedVectorToMap(numericIndexedVectorPointwiseDivide(vec_1, bm));
+
 -- Negative: Bitmap element type must match the vector index type.
 with
 (

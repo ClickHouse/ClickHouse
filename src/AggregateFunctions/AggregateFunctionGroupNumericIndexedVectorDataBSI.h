@@ -1303,11 +1303,6 @@ public:
      */
     static void pointwiseDivide(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, BSINumericIndexedVector & res)
     {
-        if (rhs.allValuesEqualOne())
-        {
-            res.deepCopyFrom(lhs);
-            return;
-        }
         UInt32 max_integer_bit_num = std::max(lhs.integer_bit_num, rhs.integer_bit_num);
         UInt32 max_fraction_bit_num = std::max(lhs.fraction_bit_num, rhs.fraction_bit_num);
 
