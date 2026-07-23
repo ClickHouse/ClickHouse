@@ -1130,7 +1130,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         }
 
         if (MergeJoin::isSupported(analyzed_join))
-            return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
+            return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block, /*any_take_last_row_=*/false);
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
     return nullptr;

@@ -54,20 +54,20 @@ It's worth noting that while setting this to 0 can improve certain performance c
 
 Column size statistics are not calculated for compact parts, which can affect monitoring and optimization efforts. When querying `system.parts_columns`, compact parts show `0` for `column_data_compressed_bytes` and `column_data_uncompressed_bytes`. For more information see ["Find counts and sizes of wide or compact parts"](/resources/support-center/knowledge-base/troubleshooting/count-parts-by-type).
 
-## Storage formats: Full vs Packed (ClickHouse Cloud) {#storage-formats-full-vs-packed}
+## Storage formats: Full vs Packed {#storage-formats-full-vs-packed}
 
 Storage formats determine how a part's files are physically stored on disk.
 
 | Format | Description | Availability |
 |--------|-------------|--------------|
 | **Full** | Each file is stored individually in the part directory | Open source and Cloud |
-| **Packed** | All files are bundled into a single archive file | ClickHouse Cloud only |
+| **Packed** | All files are bundled into a single archive file | Open source and Cloud |
 
 ### Full storage {#full-storage}
 
-In Full storage, each part consists of multiple separate files stored individually on disk. This is the default and only option in open source ClickHouse.
+In Full storage, each part consists of multiple separate files stored individually on disk. This is the default storage format.
 
-### Packed storage (ClickHouse Cloud only) {#packed-storage}
+### Packed storage {#packed-storage}
 
 In Packed storage, all part files are bundled into a single archive. This significantly reduces the number of file operations, which is critical for remote storage like S3 where each request has associated latency and cost.
 
@@ -79,19 +79,21 @@ In Packed storage, all part files are bundled into a single archive. This signif
 
 ### When Packed storage is used {#when-packed-storage-is-used}
 
-In ClickHouse Cloud, a part uses Packed storage if **any** of these conditions are true:
+A part uses Packed storage if **any** of these conditions are true:
 
 - Uncompressed bytes < [`min_bytes_for_full_part_storage`](/reference/settings/merge-tree-settings#min_bytes_for_full_part_storage)
 - Row count < [`min_rows_for_full_part_storage`](/reference/settings/merge-tree-settings#min_rows_for_full_part_storage)
 - Merge level < [`min_level_for_full_part_storage`](/reference/settings/merge-tree-settings#min_level_for_full_part_storage)
 
-<Info>
-**Open source**
+Packed storage is opt-in: all three settings default to `0`, so parts use Full storage unless you raise one of them.
 
-While the settings `min_bytes_for_full_part_storage`, `min_rows_for_full_part_storage`, and `min_level_for_full_part_storage` are defined in open source ClickHouse, they have no effect because the Packed storage implementation is only available in ClickHouse Cloud.
+<Info>
+**Downgrade compatibility**
+
+Once a part is written in Packed storage, ClickHouse versions that do not support Packed storage can no longer read it. Enabling Packed storage therefore prevents downgrading to such a version, so enable it only once you are confident you will not need to roll back.
 </Info>
 
-The `min_level_for_full_part_storage` setting can be used to optimize both performance and costs in ClickHouse Cloud environments, particularly for tables that receive continuous inserts.
+The `min_level_for_full_part_storage` setting can be used to optimize both performance and costs on object storage, particularly for tables that receive continuous inserts.
 The setting is available starting in ClickHouse version 25.10 and works in conjunction with `min_level_for_wide_part` to provide comprehensive control over part storage strategies.
 
 Changing it from the default value (0) could be considered in the following use cases:
@@ -101,7 +103,7 @@ Changing it from the default value (0) could be considered in the following use 
 
 Recommended configuration:
 
-Set `min_level_for_full_part_storage = 2` for cloud deployments.
+Set `min_level_for_full_part_storage = 2` for object-storage deployments.
 This ensures that:
 - Level 0 parts (initial inserts) use packed storage
 - Level 1 parts continue using packed storage
@@ -113,14 +115,14 @@ Avoid this setting for tables that receive very large but infrequent writes wher
 
 ## Combining part types and storage formats {#combining-part-types-and-storage-formats}
 
-These two concepts are orthogonal and you can have any combination, depending on if you are using ClickHouse Cloud or Open Source ClickHouse:
+These two concepts are orthogonal and you can have any combination:
 
 | Combination | Use case |
 |-------------|----------|
-| Wide + Full | Large parts on local storage (default in open source) |
-| Wide + Packed | Large parts on cloud storage |
+| Wide + Full | Large parts on local storage (default) |
+| Wide + Packed | Large parts on object storage |
 | Compact + Full | Small parts on local storage |
-| Compact + Packed | Small parts on cloud storage |
+| Compact + Packed | Small parts on object storage |
 
 ## Querying part information {#querying-part-information}
 

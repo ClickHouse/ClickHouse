@@ -440,13 +440,19 @@ bool PaimonRestCatalog::empty() const
     return tables.empty();
 }
 
-DB::Names PaimonRestCatalog::getTables() const
+CatalogTables PaimonRestCatalog::getTables() const
 {
     DB::Strings databases;
     DB::Names tables;
     auto list_tables = [this, &tables](const String & database_name) { forEachTables(database_name, tables, {}); };
     forEachDatabase(databases, {}, list_tables);
-    return tables;
+
+    /// A Paimon REST catalog lists only Paimon tables, so every listed table is readable.
+    CatalogTables result;
+    result.reserve(tables.size());
+    for (auto & name : tables)
+        result.push_back(CatalogTable{.name = std::move(name)});
+    return result;
 }
 
 DataLake::ICatalog::Namespaces PaimonRestCatalog::getNamespaces() const
@@ -457,11 +463,17 @@ DataLake::ICatalog::Namespaces PaimonRestCatalog::getNamespaces() const
     return databases;
 }
 
-DB::Names PaimonRestCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
+CatalogTables PaimonRestCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
 {
     DB::Names tables;
     forEachTables(namespace_name, tables, {});
-    return tables;
+
+    /// A Paimon REST catalog lists only Paimon tables, so every listed table is readable.
+    CatalogTables result;
+    result.reserve(tables.size());
+    for (auto & name : tables)
+        result.push_back(CatalogTable{.name = std::move(name)});
+    return result;
 }
 
 bool PaimonRestCatalog::existsTable(const String & database_name, const String & table_name) const
