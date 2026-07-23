@@ -897,7 +897,16 @@ static AddComparisonFilterResult addComparisonFilter(
 
     /// Step 1: convert the constant to the column's type for uniform comparison.
     const auto & raw_type = expression->getResultType();
-    chassert(!raw_type->isNullable());
+
+    /// A Nullable expression operand cannot be pruned or folded (its comparison is ambiguous under
+    /// NULL); keep it as-is, like the non-convertible-constant path below. The callers' Nullable-AND
+    /// guard does not exclude it when the AND's type collapsed to bare `Nothing`.
+    if (raw_type->isNullable())
+    {
+        filter_map[expression].opaque_filters.push_back(std::move(new_filter));
+        return AddComparisonFilterResult::ADDED;
+    }
+
     auto expr_type = removeLowCardinality(raw_type);
 
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
