@@ -129,7 +129,7 @@ namespace
         backup_info.function_arg = nullptr;
     }
 
-    bool copyS3Credentials(const BackupInfo & source, BackupInfo & destination)
+    bool copyS3Credentials(const BackupInfo & source, BackupInfo & destination, ContextPtr)
     {
         if (!source.id_arg.empty() || !destination.id_arg.empty() || source.args.size() != 3)
             return false;

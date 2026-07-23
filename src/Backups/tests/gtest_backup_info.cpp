@@ -33,7 +33,7 @@ namespace
     {
         auto source = BackupInfo::fromString(source_str);
         auto destination = BackupInfo::fromString(destination_str);
-        EXPECT_EQ(BackupFactory::instance().copyCredentials(source, destination), expected != nullptr);
+        EXPECT_EQ(BackupFactory::instance().copyCredentials(source, destination, getContext().context), expected != nullptr);
         if (expected)
             EXPECT_EQ(destination.toString(), expected);
     }
@@ -393,6 +393,12 @@ TEST(BackupInfo, CopyCredentialsSupportsAzure)
         "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'incremental', 'account', 'SECRET')",
         "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'base')",
         "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'base', 'account', 'SECRET')");
+    checkCopyCredentials(
+        "AzureBlobStorage(collection, storage_account_url = 'https://account.blob.core.windows.net', account_name = 'account', "
+        "account_key = 'SECRET', blob_path = 'incremental')",
+        "AzureBlobStorage(base_collection, storage_account_url = 'https://account.blob.core.windows.net', blob_path = 'base')",
+        "AzureBlobStorage(base_collection, equals(storage_account_url, 'https://account.blob.core.windows.net'), "
+        "equals(account_name, 'account'), equals(account_key, 'SECRET'), equals(blob_path, 'base'))");
 }
 
 

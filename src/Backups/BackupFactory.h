@@ -66,12 +66,12 @@ public:
 
     /// Returns a copy without credentials embedded in the backup locator.
     BackupInfo withoutCredentials(const BackupInfo & backup_info, ContextPtr context) const;
-    bool copyCredentials(const BackupInfo & source, BackupInfo & destination) const;
+    bool copyCredentials(const BackupInfo & source, BackupInfo & destination, ContextPtr context) const;
 
     using CreatorFn = std::function<BackupMutablePtr(const CreateParams & params)>;
     using DestinationIdentityFn = std::function<Strings(const BackupInfo & backup_info, ContextPtr context)>;
     using RemoveCredentialsFn = std::function<void(BackupInfo & backup_info, ContextPtr context)>;
-    using CopyCredentialsFn = std::function<bool(const BackupInfo & source, BackupInfo & destination)>;
+    using CopyCredentialsFn = std::function<bool(const BackupInfo & source, BackupInfo & destination, ContextPtr context)>;
     void registerBackupEngine(
         const String & engine_name,
         const CreatorFn & creator_fn,

@@ -94,7 +94,7 @@ BackupInfo BackupFactory::withoutCredentials(const BackupInfo & backup_info, Con
     return res;
 }
 
-bool BackupFactory::copyCredentials(const BackupInfo & source, BackupInfo & destination) const
+bool BackupFactory::copyCredentials(const BackupInfo & source, BackupInfo & destination, ContextPtr context) const
 {
     if (source.backup_engine_name != destination.backup_engine_name)
         return false;
@@ -102,7 +102,7 @@ bool BackupFactory::copyCredentials(const BackupInfo & source, BackupInfo & dest
     auto it = engines.find(destination.backup_engine_name);
     if (it == engines.end())
         throw Exception(ErrorCodes::BACKUP_ENGINE_NOT_FOUND, "Not found backup engine '{}'", destination.backup_engine_name);
-    return it->second.copy_credentials(source, destination);
+    return it->second.copy_credentials(source, destination, context);
 }
 
 void BackupFactory::registerBackupEngine(

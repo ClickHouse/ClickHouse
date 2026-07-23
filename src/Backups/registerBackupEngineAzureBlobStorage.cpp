@@ -39,20 +39,73 @@ extern const SettingsUInt64 archive_adaptive_buffer_max_size_bytes;
 
 namespace
 {
-    bool copyAzureCredentials(const BackupInfo & source, BackupInfo & destination)
+    bool isAzureConnectionKey(const String & key)
     {
-        if (!source.id_arg.empty() || !destination.id_arg.empty() || destination.args.size() != 3)
+        return key == "connection_string" || key == "storage_account_url";
+    }
+
+    bool isAzureCredentialKey(const String & key)
+    {
+        return key == "account_name" || key == "account_key" || key == "client_id" || key == "tenant_id";
+    }
+
+    bool copyAzureCredentials(const BackupInfo & source, BackupInfo & destination, ContextPtr context)
+    {
+        if (source.id_arg.empty() != destination.id_arg.empty())
             return false;
 
-        if (source.args.size() == 3)
-            destination.args[0] = source.args[0];
-        else if (source.args.size() == 5)
+        if (source.id_arg.empty())
         {
-            destination.args.insert(destination.args.end(), source.args.begin() + 3, source.args.end());
+            if (destination.args.size() != 3)
+                return false;
+            if (source.args.size() == 3)
+                destination.args[0] = source.args[0];
+            else if (source.args.size() == 5)
+                destination.args.insert(destination.args.end(), source.args.begin() + 3, source.args.end());
+            else
+                return false;
+            return true;
         }
-        else
-            return false;
-        return true;
+
+        ASTs kv_args;
+        bool copied = false;
+        for (const auto & source_arg : source.kv_args)
+        {
+            String source_key = BackupInfo::evaluateKeyValueArgument(source_arg, 0, context);
+            if (isAzureCredentialKey(source_key) || isAzureConnectionKey(source_key))
+            {
+                kv_args.emplace_back(source_arg);
+                copied = true;
+                continue;
+            }
+
+            for (const auto & destination_arg : destination.kv_args)
+            {
+                if (BackupInfo::evaluateKeyValueArgument(destination_arg, 0, context) == source_key)
+                {
+                    kv_args.emplace_back(destination_arg);
+                    break;
+                }
+            }
+        }
+
+        for (const auto & destination_arg : destination.kv_args)
+        {
+            String destination_key = BackupInfo::evaluateKeyValueArgument(destination_arg, 0, context);
+            bool found = false;
+            for (const auto & source_arg : source.kv_args)
+            {
+                if (BackupInfo::evaluateKeyValueArgument(source_arg, 0, context) == destination_key)
+                {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                kv_args.emplace_back(destination_arg);
+        }
+        destination.kv_args = std::move(kv_args);
+        return copied;
     }
 }
 
@@ -251,10 +304,10 @@ namespace
             for (const auto & kv_arg : backup_info.kv_args)
             {
                 String key = BackupInfo::evaluateKeyValueArgument(kv_arg, 0, context);
-                if (key == "account_name" || key == "account_key" || key == "client_id" || key == "tenant_id")
+                if (isAzureCredentialKey(key))
                     continue;
 
-                if (key == "connection_string" || key == "storage_account_url")
+                if (isAzureConnectionKey(key))
                 {
                     ASTPtr cloned = kv_arg->clone();
                     cloned->as<ASTFunction>()->arguments->children[1]
