@@ -658,7 +658,9 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
             }
             auto default_type_column = type->createColumnConstWithDefaultValue(0);
             const auto & constant = dag->addColumn(std::move(default_type_column), type, name);
-            outputs.push_back(&constant);
+            /// Materialize so the column leaves the transform as a full column, not a ColumnConst,
+            /// like every other missing-column path (inplaceBlockConversions, IMergeTreeReader, ...).
+            outputs.push_back(&dag->materializeNode(constant));
         }
     }
     return dag;
