@@ -129,3 +129,29 @@ def test_sorted_stream_kill_query_continuation(started_cluster):
         run_kill_query_failpoint_test(query, "distinct_sorted_stream_transform_pause")
     finally:
         node1.query("DROP TABLE IF EXISTS test_cont")
+
+
+def test_sorted_stream_kill_query_other_columns_multiple_runs(started_cluster):
+    node1.query("DROP TABLE IF EXISTS test_other_runs")
+    node1.query("""
+        CREATE TABLE test_other_runs (k UInt32, v UInt32)
+        ENGINE = MergeTree() ORDER BY k
+    """)
+    # Runs of 3000: chunk boundary at row 9999 falls within k=3 (rows 9000-11999).
+    # Chunk 2 continuation sets range_begin=2000. The first post-continuation
+    # run (k=4, rows 12000-14999) crosses i=4096 inside buildFilterForRange.
+    # Without the fix, the outer throttled check does not fire
+    # (range_begin - last_checked_row = 3000 < 4096) and subsequent runs
+    # (k=5, k=6) process hash table work after cancellation.
+    node1.query("INSERT INTO test_other_runs SELECT intDiv(number, 3000), number FROM numbers(20000)")
+    try:
+        query = (
+            "SELECT DISTINCT k, v "
+            "FROM test_other_runs "
+            "ORDER BY k "
+            "FORMAT Null "
+            "SETTINGS max_block_size=10000, max_threads=1, max_rows_to_read=0"
+        )
+        run_kill_query_failpoint_test(query, "distinct_sorted_stream_transform_pause")
+    finally:
+        node1.query("DROP TABLE IF EXISTS test_other_runs")

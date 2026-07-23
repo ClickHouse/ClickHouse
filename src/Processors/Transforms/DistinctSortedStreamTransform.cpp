@@ -233,6 +233,12 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
             // ordinary distinct in range if there are "non-sorted" columns
             constexpr bool clear_data = true;
             output_rows += ordinaryDistinctOnRange<clear_data>(filter, range_begin, range_end);
+            if (isCancelled())
+            {
+                LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled during row processing");
+                std::fill(filter.begin() + range_end, filter.end(), 0);
+                break;
+            }
         }
 
         // set where next range start
