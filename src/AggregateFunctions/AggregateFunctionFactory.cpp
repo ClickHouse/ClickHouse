@@ -126,10 +126,12 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         auto properties = tryGetProperties(name, action);
         /// Window functions must handle their argument types themselves, so don't adapt them.
         bool is_window_function = properties.has_value() && properties->is_window_function;
-        /// A function whose result depends on the distinctness of its input values (singleValueOrNull) is not
-        /// adapted either: the cast to Nullable(supertype) collapses Variant values that are distinct because
-        /// their alternative types differ (1::UInt8 vs 1::UInt64), which would silently change the result. It
-        /// keeps its original error for a Variant argument. See AggregateFunctionProperties::is_distinctness_sensitive.
+        /// A function whose result depends on the distinctness of its input values (singleValueOrNull, or any
+        /// function combined with -Distinct: tryGetProperties propagates the combinator's distinctness
+        /// sensitivity) is not adapted either: the cast to Nullable(supertype) collapses Variant values that are
+        /// distinct because their alternative types differ (1::UInt8 vs 1::UInt64), which would silently change
+        /// the result. It keeps its original error for a Variant argument.
+        /// See AggregateFunctionProperties::is_distinctness_sensitive.
         bool is_distinctness_sensitive = properties.has_value() && properties->is_distinctness_sensitive;
         if (!is_window_function && !is_distinctness_sensitive)
         {
@@ -692,6 +694,11 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
     if (name.size() > MAX_AGGREGATE_FUNCTION_NAME_LENGTH)
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too long name of aggregate function, maximum: {}", MAX_AGGREGATE_FUNCTION_NAME_LENGTH);
 
+    /// A combinator can make the combined function distinctness-sensitive even when the base function is not
+    /// (sumDistinct: sum itself does not key on distinctness, -Distinct does). Collect that from the stripped
+    /// suffixes and propagate it into the returned properties.
+    bool is_distinctness_sensitive_combinator = false;
+
     while (true)
     {
         name = getAliasToOrName(name);
@@ -718,9 +725,9 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
         if (found.creator)
         {
             auto opt = getAssociatedFunctionByNullsAction(is_case_insensitive ? lower_case_name : name, action);
-            if (opt)
-                return opt->properties;
-            return found.properties;
+            AggregateFunctionProperties properties = opt ? opt->properties : found.properties;
+            properties.is_distinctness_sensitive |= is_distinctness_sensitive_combinator;
+            return properties;
         }
 
         /// Combinators of aggregate functions.
@@ -732,7 +739,8 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
             if (combinator->isForInternalUsageOnly())
                 return {};
 
-            /// NOTE: It's reasonable to also allow to transform properties by combinator.
+            /// NOTE: It's reasonable to also allow to transform other properties by combinator.
+            is_distinctness_sensitive_combinator |= combinator->isDistinctnessSensitive();
             name = name.substr(0, name.size() - combinator->getName().size());
         }
         else

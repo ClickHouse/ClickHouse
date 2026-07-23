@@ -20,6 +20,8 @@ class AggregateFunctionCombinatorDistinct final : public IAggregateFunctionCombi
 public:
     String getName() const override { return "Distinct"; }
 
+    bool isDistinctnessSensitive() const override { return true; }
+
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())

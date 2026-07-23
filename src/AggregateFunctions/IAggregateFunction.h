@@ -1011,7 +1011,11 @@ struct AggregateFunctionProperties
       * `uniq` counts 2), and casting through `Nullable(supertype)` in `AggregateFunctionVariantAdapter` would
       * silently collapse them and change the result (`singleValueOrNull` would return `1` where its contract
       * requires `NULL`). Such a function is never routed through the adapter: a `Variant` argument reports the
-      * function's original error, unchanged from before the adapter existed. The Variant-native aggregates that
+      * function's original error, unchanged from before the adapter existed. The `-Distinct` combinator makes any
+      * combined function distinctness-sensitive in the same way (`sumDistinct` must deduplicate the genuine
+      * `Variant` values, not their casts to the supertype), so `AggregateFunctionFactory::tryGetProperties` also
+      * propagates this flag from the stripped combinator suffixes
+      * (`IAggregateFunctionCombinator::isDistinctnessSensitive`). The Variant-native aggregates that
       * key on distinctness (`uniq`, `uniqExact`, `topK`, `groupUniqArray`, ...) are unaffected: they declare
       * `support_variant_argument` and hash the genuine `Variant` values, discriminator included.
       */
