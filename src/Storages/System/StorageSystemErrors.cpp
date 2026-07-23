@@ -81,7 +81,7 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
                 if (!error.trace.empty())
                 {
-                    auto [symbols, lines] = symbolizeTrace(error.trace.data(), error.trace.size());
+                    auto [symbols, lines] = symbolizeTrace(error.trace.data(), error.trace.size(), need_symbols, need_lines);
                     if (need_symbols)
                         res_columns[res_index++]->insert(Array(symbols.begin(), symbols.end()));
                     if (need_lines)

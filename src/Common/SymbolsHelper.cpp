@@ -11,12 +11,14 @@ namespace DB
 {
 
 std::pair<std::vector<String>, std::vector<String>>
-symbolizeTrace(const void * const * frame_pointers, size_t size)
+symbolizeTrace(const void * const * frame_pointers, size_t size, bool need_symbols, bool need_lines)
 {
     std::vector<String> symbols;
     std::vector<String> lines;
-    symbols.reserve(size);
-    lines.reserve(size);
+    if (need_symbols)
+        symbols.reserve(size);
+    if (need_lines)
+        lines.reserve(size);
 
     const SymbolIndex & symbol_index = SymbolIndex::instance();
     for (size_t i = 0; i < size; ++i)
@@ -27,20 +29,24 @@ symbolizeTrace(const void * const * frame_pointers, size_t size)
         /// are looked up independently: DWARF line resolution does not depend on the symbol table.
         /// So an address with no matching symbol can still have a valid `file:line:column`, and vice
         /// versa. Each column defaults to an empty string only when its own lookup fails.
-        if (const auto * symbol = symbol_index.findSymbol(addr))
+        if (need_symbols)
         {
-            auto demangled = tryDemangle(symbol->name);
-            if (demangled)
-                symbols.emplace_back(demangled.get(), strlen(demangled.get()));
+            if (const auto * symbol = symbol_index.findSymbol(addr))
+            {
+                auto demangled = tryDemangle(symbol->name);
+                if (demangled)
+                    symbols.emplace_back(demangled.get(), strlen(demangled.get()));
+                else
+                    symbols.emplace_back(symbol->name, strlen(symbol->name));
+            }
             else
-                symbols.emplace_back(symbol->name, strlen(symbol->name));
-        }
-        else
-        {
-            symbols.emplace_back();
+            {
+                symbols.emplace_back();
+            }
         }
 
-        lines.emplace_back(AddressToLineCache::get(reinterpret_cast<uintptr_t>(addr)));
+        if (need_lines)
+            lines.emplace_back(AddressToLineCache::get(reinterpret_cast<uintptr_t>(addr)));
     }
 
     return {std::move(symbols), std::move(lines)};
