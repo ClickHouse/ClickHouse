@@ -224,15 +224,6 @@ constexpr UInt8 ALP_BUFFER_ALIGNMENT = 64;
 template <typename T>
 concept FLOAT = std::is_same_v<T, Float32> || std::is_same_v<T, Float64>;
 
-template <UInt32 exponent_count, bool inverse>
-constexpr std::array<Float64, exponent_count> generatePowersOf10()
-{
-    std::array<Float64, exponent_count> arr{};
-    for (UInt64 i = 0, v = 1; i < exponent_count; ++i, v *= 10)
-        arr[i] = inverse ? 1.0 / static_cast<Float64>(v) : static_cast<Float64>(v);
-    return arr;
-}
-
 /**
  * ALP per-type parameters.
  */
@@ -268,8 +259,11 @@ struct ALPFloatUtils
     /// The per-type search space is bounded separately by `ALPFloatTraits<T>::EXPONENT_COUNT` (10 for `Float32`).
     static constexpr UInt8 EXPONENT_COUNT = ALPFloatTraits<Float64>::EXPONENT_COUNT;
 
-    static constexpr std::array<Float64, EXPONENT_COUNT> EXPONENTS = generatePowersOf10<EXPONENT_COUNT, false>();
-    static constexpr std::array<Float64, EXPONENT_COUNT> FRACTIONS = generatePowersOf10<EXPONENT_COUNT, true>();
+    static constexpr std::array<Float64, EXPONENT_COUNT> EXPONENTS
+        = {1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18};
+    static constexpr std::array<Float64, EXPONENT_COUNT> FRACTIONS
+        = {1e0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10, 1e-11, 1e-12, 1e-13, 1e-14, 1e-15, 1e-16, 1e-17, 1e-18};
+    static_assert(EXPONENTS[EXPONENT_COUNT - 1] == 1e18 && FRACTIONS[EXPONENT_COUNT - 1] == 1e-18);
 
     /// Scaled values are clamped to ±(2^63 − 2048): the largest magnitude whose rounding (num + magic - magic) cannot overflow the cast to Int64.
     /// The reference implementation uses 2^63 − 1024, which does overflow.
