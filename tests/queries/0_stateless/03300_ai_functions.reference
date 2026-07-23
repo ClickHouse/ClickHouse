@@ -15,7 +15,7 @@ aiGenerate
 0
 -- Nonexistent named collection
 -- aiGenerate return type
-result	String
+String
 -- NULL input returns NULL
 1
 -- Empty string input accepted
@@ -64,7 +64,7 @@ aiClassify
 -- aiClassify: wrong type for categories (Array of non-String)
 -- aiClassify: empty categories array
 -- aiClassify: return type
-result	String
+String
 -- aiClassify: empty input executes
 0
 -- aiClassify: with temperature
@@ -75,7 +75,7 @@ aiExtract
 -- aiExtract: too many arguments
 -- aiExtract: non-constant instruction
 -- aiExtract: return type
-result	String
+String
 -- aiExtract: JSON schema mode accepted
 0
 -- aiExtract: malformed JSON schema
@@ -91,7 +91,7 @@ aiTranslate
 -- aiTranslate: non-constant target language
 -- aiTranslate: empty target language
 -- aiTranslate: return type
-result	String
+String
 -- aiTranslate: with instructions and temperature
 0
 -- aiRedact: registered
@@ -105,7 +105,7 @@ aiRedact
 0
 0
 -- aiRedact: return type
-result	String
+String
 -- aiRedact: with replacement and temperature
 0
 -- aiEmbed: registered
@@ -122,9 +122,9 @@ aiEmbed
 -- aiEmbed: model supplied as a positional argument resolves
 0
 -- aiEmbed: return type
-result	Array(Float32)
+Array(Float32)
 -- aiEmbed: return type with dimensions
-result	Array(Float32)
+Array(Float32)
 -- aiEmbed: empty input executes
 0
 -- aiEmbed: empty input with dimensions
@@ -134,7 +134,7 @@ result	Array(Float32)
 -- aiEmbed: batch size setting default
 100
 -- aiEmbed: Nullable(String) input return type
-result	Array(Float32)
+Array(Float32)
 -- aiEmbed: NULL input → []
 0
 -- aiEmbed: DEFAULT survives INSERT (no exception)

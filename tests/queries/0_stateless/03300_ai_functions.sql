@@ -152,12 +152,7 @@ SET ai_function_embedding_default_credentials = 'ai_embed_credentials';
 -- =============================================================================
 
 SELECT '-- aiGenerate return type';
-DROP TABLE IF EXISTS _03300_ret_content;
-CREATE TABLE _03300_ret_content ENGINE = Memory AS
-    SELECT aiGenerate(x) AS result FROM tab;
-SELECT name, type FROM system.columns
-    WHERE database = currentDatabase() AND table = '_03300_ret_content';
-DROP TABLE IF EXISTS _03300_ret_content;
+SELECT toTypeName(aiGenerate(''));
 
 -- =============================================================================
 -- 8. NULL input propagation
@@ -337,12 +332,7 @@ SELECT '-- aiClassify: empty categories array';
 SELECT aiClassify('test', CAST([], 'Array(String)')); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- aiClassify: return type';
-DROP TABLE IF EXISTS _03300_ret_classify;
-CREATE TABLE _03300_ret_classify ENGINE = Memory AS
-    SELECT aiClassify(x, ['a', 'b', 'c']) AS result FROM tab;
-SELECT name, type FROM system.columns
-    WHERE database = currentDatabase() AND table = '_03300_ret_classify';
-DROP TABLE IF EXISTS _03300_ret_classify;
+SELECT toTypeName(aiClassify('', ['a', 'b', 'c']));
 
 SELECT '-- aiClassify: empty input executes';
 SELECT count() FROM (SELECT aiClassify(x, ['a', 'b']) AS result FROM tab);
@@ -368,12 +358,7 @@ SELECT '-- aiExtract: non-constant instruction';
 SELECT aiExtract(x, x) FROM tab; -- { serverError ILLEGAL_COLUMN }
 
 SELECT '-- aiExtract: return type';
-DROP TABLE IF EXISTS _03300_ret_extract;
-CREATE TABLE _03300_ret_extract ENGINE = Memory AS
-    SELECT aiExtract(x, 'main topic') AS result FROM tab;
-SELECT name, type FROM system.columns
-    WHERE database = currentDatabase() AND table = '_03300_ret_extract';
-DROP TABLE IF EXISTS _03300_ret_extract;
+SELECT toTypeName(aiExtract('', 'main topic'));
 
 SELECT '-- aiExtract: JSON schema mode accepted';
 SELECT count() FROM (SELECT aiExtract(x, '{"topic":"main topic","sentiment":"pos/neg"}') AS result FROM tab);
@@ -420,12 +405,7 @@ SELECT aiTranslate('test', ''); -- { serverError BAD_ARGUMENTS }
 SELECT aiTranslate('test', '   '); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- aiTranslate: return type';
-DROP TABLE IF EXISTS _03300_ret_translate;
-CREATE TABLE _03300_ret_translate ENGINE = Memory AS
-    SELECT aiTranslate(x, 'French') AS result FROM tab;
-SELECT name, type FROM system.columns
-    WHERE database = currentDatabase() AND table = '_03300_ret_translate';
-DROP TABLE IF EXISTS _03300_ret_translate;
+SELECT toTypeName(aiTranslate('', 'French'));
 
 SELECT '-- aiTranslate: with instructions and temperature';
 SELECT count() FROM (SELECT aiTranslate(x, 'French', map('instructions', 'keep proper nouns', 'temperature', '0.3')) AS result FROM tab);
@@ -459,12 +439,7 @@ SELECT count() FROM (SELECT aiRedact(x, []) AS result FROM tab);
 SELECT count() FROM (SELECT aiRedact(x, CAST([], 'Array(String)')) AS result FROM tab);
 
 SELECT '-- aiRedact: return type';
-DROP TABLE IF EXISTS _03300_ret_redact;
-CREATE TABLE _03300_ret_redact ENGINE = Memory AS
-    SELECT aiRedact(x, ['email']) AS result FROM tab;
-SELECT name, type FROM system.columns
-    WHERE database = currentDatabase() AND table = '_03300_ret_redact';
-DROP TABLE IF EXISTS _03300_ret_redact;
+SELECT toTypeName(aiRedact('', ['email']));
 
 SELECT '-- aiRedact: with replacement and temperature';
 SELECT count() FROM (SELECT aiRedact(x, ['email'], map('replacement', '***', 'temperature', '0.0')) AS result FROM tab);
@@ -512,20 +487,10 @@ SELECT '-- aiEmbed: model supplied as a positional argument resolves';
 SELECT count() FROM (SELECT aiEmbed(x, 'test-model', map('credentials', 'ai_embed_credentials')) AS result FROM tab);
 
 SELECT '-- aiEmbed: return type';
-DROP TABLE IF EXISTS _03300_ret_embed;
-CREATE TABLE _03300_ret_embed ENGINE = Memory AS
-    SELECT aiEmbed(x, 'test-model') AS result FROM tab;
-SELECT name, type FROM system.columns
-    WHERE database = currentDatabase() AND table = '_03300_ret_embed';
-DROP TABLE IF EXISTS _03300_ret_embed;
+SELECT toTypeName(aiEmbed('', 'test-model'));
 
 SELECT '-- aiEmbed: return type with dimensions';
-DROP TABLE IF EXISTS _03300_ret_embed_dim;
-CREATE TABLE _03300_ret_embed_dim ENGINE = Memory AS
-    SELECT aiEmbed(x, 'test-model', map('dimensions', '256')) AS result FROM tab;
-SELECT name, type FROM system.columns
-    WHERE database = currentDatabase() AND table = '_03300_ret_embed_dim';
-DROP TABLE IF EXISTS _03300_ret_embed_dim;
+SELECT toTypeName(aiEmbed('', 'test-model', map('dimensions', '256')));
 
 SELECT '-- aiEmbed: empty input executes';
 SELECT count() FROM (SELECT aiEmbed(x, 'test-model') AS result FROM tab);
@@ -548,20 +513,14 @@ SELECT default FROM system.settings WHERE name = 'ai_function_embedding_max_batc
 -- return type as non-Nullable `Array(Float32)` even when given `Nullable(String)`,
 -- and NULL inputs must map to `[]` at execute time.
 SELECT '-- aiEmbed: Nullable(String) input return type';
-DROP TABLE IF EXISTS _03300_embed_null_in;
-DROP TABLE IF EXISTS _03300_embed_null_out;
-CREATE TABLE _03300_embed_null_in (x Nullable(String)) ENGINE = Memory;
-INSERT INTO _03300_embed_null_in VALUES (NULL);
-CREATE TABLE _03300_embed_null_out ENGINE = Memory AS
-    SELECT aiEmbed(x, 'test-model') AS result FROM _03300_embed_null_in;
-SELECT name, type FROM system.columns
-    WHERE database = currentDatabase() AND table = '_03300_embed_null_out';
+SELECT toTypeName(aiEmbed(CAST(NULL, 'Nullable(String)'), 'test-model'));
 
 SELECT '-- aiEmbed: NULL input → []';
-SELECT length(result) FROM _03300_embed_null_out;
-
-DROP TABLE IF EXISTS _03300_embed_null_out;
 DROP TABLE IF EXISTS _03300_embed_null_in;
+CREATE TABLE _03300_embed_null_in (x Nullable(String)) ENGINE = Memory;
+INSERT INTO _03300_embed_null_in VALUES (NULL);
+SELECT length(aiEmbed(x, 'test-model')) FROM _03300_embed_null_in;
+DROP TABLE _03300_embed_null_in;
 
 -- =============================================================================
 -- 18b. AI functions in column DEFAULTs: CREATE + INSERT + SELECT must complete.
