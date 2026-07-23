@@ -717,3 +717,120 @@ echo '--- format-owned UTF-8 validation buffers are drained at packet boundaries
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&extremes=1&output_format_write_statistics=0${SINGLE_BLOCK}" \
     -d "SELECT substring(toString(intDiv(number, 2)), 1, 1) AS k, count() AS c FROM numbers(4) GROUP BY k WITH TOTALS ORDER BY k FORMAT JSON" \
     | grep -v -e '"packet":"progress"' -e '"packet":"profile_events"'
+
+# A runtime failure after the real framed formatter has already been created must not emit the
+# format's empty skeleton (or its suffix) as a `data` packet before the terminal `exception` packet:
+# once the exception recovery records the exception on the framing (`IFramingFormat::setException`),
+# the output format contributes no more payload bytes (see `IOutputFormat::finalizeUnlocked`).
+echo '--- a runtime failure with a framed formatter carries no data packet (FORMAT JSON, streaming)'
+response=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d "SELECT throwIf(number = 0) FROM numbers(1) FORMAT JSON")
+echo "data packets: $(echo "$response" | grep -c '"packet":"data"')"
+echo "exception packets: $(echo "$response" | grep -c '"packet":"exception"')"
+
+echo '--- a runtime failure with a framed formatter carries no data packet (FORMAT JSON, wait_end_of_query)'
+response=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=1&framing_output_format=JSONEachPacketString" \
+    -d "SELECT throwIf(number = 0) FROM numbers(1) FORMAT JSON")
+echo "data packets: $(echo "$response" | grep -c '"packet":"data"')"
+echo "exception packets: $(echo "$response" | grep -c '"packet":"exception"')"
+
+# When some data was already streamed before the failure, the payload stays truncated at the failure
+# point: the format's suffix (for `FORMAT JSON`, the trailing `"rows": N }`) is not emitted, and the
+# `exception` packet is terminal.
+echo '--- a mid-stream runtime failure truncates the payload: data streamed, no suffix, exception last'
+response=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&max_block_size=10&max_threads=1&output_format_write_statistics=0" \
+    -d "SELECT throwIf(number = 25) FROM numbers(100) FORMAT JSON")
+echo "data packets seen: $(( $(echo "$response" | grep -c '"packet":"data"') >= 1 ))"
+echo "suffix leaked: $(echo "$response" | grep -c '\\"rows\\"')"
+echo "exception is last: $(echo "$response" | tail -n 1 | grep -c '"packet":"exception"')"
+
+# The JSON row values can synthesize further object keys from named `Tuple` element names: when
+# `output_format_json_named_tuples_as_objects = 1` (the default), `SerializationTuple` writes the
+# element names as JSON keys - verbatim, with no UTF-8 validation of its own. A backquoted element
+# name can contain arbitrary bytes, and `DataTypeTuple` does not account for the element names when
+# the formats decide whether to install the whole-output UTF-8 validating buffer, so such keys are
+# not sanitized even with `output_format_json_validate_utf8 = 1` unless some column's value type may
+# itself emit invalid UTF-8. The element names are knowable from the header (recursively, through
+# `Array`, `Map`, nested `Tuple`, etc.), so the text framings reject or base64-encode accordingly.
+echo '--- JSONEachPacketString is rejected for JSONEachRow with a non-UTF-8 named Tuple element'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT JSONEachRow' \
+    | grep -o -m1 'is not compatible with the output format JSONEachRow'
+
+echo '--- JSONEachPacketString is rejected for a non-UTF-8 named Tuple element nested in an Array'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT CAST([(1, 2)] AS Array(Tuple(`a\xFFb` UInt8, c UInt8))) AS t FORMAT JSONEachRow' \
+    | grep -o -m1 'is not compatible with the output format JSONEachRow'
+
+echo '--- EventStream base64-encodes JSONEachRow with a non-UTF-8 named Tuple element'
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT JSONEachRow'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream${SINGLE_BLOCK}" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT JSONEachRow' \
+    | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' | base64 -d \
+    | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}" -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT JSONEachRow') \
+    && echo 'JSONEachRow payload with a non-UTF-8 named Tuple element round-trips' || echo 'MISMATCH'
+
+# When named tuples are not written as objects, the element names are not emitted at all.
+echo '--- JSONEachPacketString accepts a non-UTF-8 named Tuple element when named tuples are not written as objects'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&output_format_json_named_tuples_as_objects=0" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT JSONEachRow' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'JSONEachRow (named tuples as arrays) accepted: OK'
+
+# UTF-8 validation sanitizes these keys only via the whole-output validating buffer, which is
+# installed only when some column's value type may itself emit invalid UTF-8. With only clean value
+# types the buffer is skipped and the keys would leak verbatim, so the query is still rejected;
+# adding a `String` element installs the buffer and the query is accepted.
+echo '--- JSONEachPacketString still rejects a non-UTF-8 named Tuple element with UTF-8 validation on (clean value types)'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&output_format_json_validate_utf8=1" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT JSONEachRow' \
+    | grep -o -m1 'is not compatible with the output format JSONEachRow'
+
+echo '--- JSONEachPacketString accepts a non-UTF-8 named Tuple element with UTF-8 validation on and a String element'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&output_format_json_validate_utf8=1" \
+    -d $'SELECT CAST((1, \'s\') AS Tuple(`a\\xFFb` UInt8, c String)) AS t FORMAT JSONEachRow' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'JSONEachRow (UTF-8 validation on, String element) accepted: OK'
+
+# A valid multi-byte UTF-8 element name (here `e` followed by U+2713 CHECK MARK) must not be
+# misdetected as raw bytes.
+echo '--- JSONEachPacketString accepts a valid UTF-8 (multi-byte) named Tuple element'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`e\xE2\x9C\x93` UInt8, c UInt8)) AS t FORMAT JSONEachRow' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'JSONEachRow (valid UTF-8 element name) accepted: OK'
+
+# Plain `JSONCompactEachRow` and `JSONCompactColumns` write no column names, but their values still
+# synthesize object keys from named `Tuple` elements. The `Strings` variants write a `Tuple` value in
+# its plain text form, which carries no element names, so they stay accepted.
+echo '--- JSONEachPacketString is rejected for plain JSONCompactEachRow with a non-UTF-8 named Tuple element'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT JSONCompactEachRow' \
+    | grep -o -m1 'is not compatible with the output format JSONCompactEachRow'
+
+echo '--- JSONEachPacketString accepts JSONStringsEachRow with a non-UTF-8 named Tuple element'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT JSONStringsEachRow' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'JSONStringsEachRow accepted: OK'
+
+echo '--- JSONEachPacketString is rejected for JSONCompactColumns with a non-UTF-8 named Tuple element'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT JSONCompactColumns' \
+    | grep -o -m1 'is not compatible with the output format JSONCompactColumns'
+
+echo '--- JSONEachPacketString is rejected for JSONObjectEachRow with a non-UTF-8 named Tuple element'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT JSONObjectEachRow' \
+    | grep -o -m1 'is not compatible with the output format JSONObjectEachRow'
+
+# `GeoJSON` forces named tuples in the `properties` object to be written as objects, regardless of
+# `output_format_json_named_tuples_as_objects`.
+echo '--- JSONEachPacketString is rejected for GeoJSON with a non-UTF-8 named Tuple element'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&output_format_json_named_tuples_as_objects=0" \
+    -d 'SELECT (0, 0)::Point AS g, CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT GeoJSON' \
+    | grep -o -m1 'is not compatible with the output format GeoJSON'
+
+# The `JSON` escaping rule of `CustomSeparated` serializes the values via the same JSON path, and the
+# format installs no UTF-8 validating buffer at all.
+echo '--- JSONEachPacketString is rejected for CustomSeparated with the JSON escaping rule and a non-UTF-8 named Tuple element'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&format_custom_escaping_rule=JSON" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT CustomSeparated' \
+    | grep -o -m1 'is not compatible with the output format CustomSeparated'

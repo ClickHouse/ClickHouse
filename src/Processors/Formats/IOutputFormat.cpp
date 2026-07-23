@@ -208,15 +208,20 @@ void IOutputFormat::finalizeUnlocked()
     if (finalized)
         return;
 
-    if (framing && framing_exception_only)
+    if (framing && (framing_exception_only || framing->hasException()))
     {
-        /// Exception-only framing (see `setFraming`'s `for_exception`): the query failed before any
-        /// output was produced, so the real output format must not contribute any bytes. Skipping its
-        /// prefix, suffix and finalize keeps the payload buffer empty, so no `data` packet carrying an
-        /// empty format skeleton (for example `{"meta":[],"data":[]}` for `FORMAT JSON`) is emitted
-        /// before the `exception` packet. Only the framing's own auxiliary packets (logs, profile
-        /// events) and the exception packet are written. `finalizeBuffers` is still called so any
-        /// wrapping buffers of the unused output format are released cleanly.
+        /// The stream is terminal: either the framing was attached only to serialize an exception
+        /// (see `setFraming`'s `for_exception`), or the exception recovery recorded an exception on
+        /// an already-framed format (`framing->setException`, see `HTTPHandler`'s streaming path)
+        /// before finalizing it. In both cases the output format must not contribute any more bytes:
+        /// skipping its prefix, suffix and finalize prevents an empty format skeleton (for example
+        /// `{"meta":[],"data":[]}` for `FORMAT JSON`) or a well-formed-looking suffix of a failed
+        /// query from being emitted as a `data` packet before the `exception` packet. If some output
+        /// was already streamed, the payload stays truncated at the failure point (fail-close) and
+        /// the `exception` packet is terminal. `finalizeBuffers` is still called so format-owned
+        /// wrapping buffers are released cleanly; bytes the format produced before the failure that
+        /// are still sitting in them drain into the payload buffer and are emitted by the framing's
+        /// `finalize` below, preserving the payload-concatenation contract.
         finalizeBuffers();
         framing->finalize();
         finalized = true;

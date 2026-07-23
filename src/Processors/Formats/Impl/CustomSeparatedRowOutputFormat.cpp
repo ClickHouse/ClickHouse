@@ -4,6 +4,7 @@
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FlattenTupleForCSVHeader.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/JSONUtils.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Port.h>
@@ -153,7 +154,14 @@ void registerOutputFormatCustomSeparated(FormatFactory & factory)
                 || is_not_valid_utf8(custom.row_after_delimiter)
                 || is_not_valid_utf8(custom.row_between_delimiter)
                 || is_not_valid_utf8(custom.field_delimiter)
-                || csvHeaderNamesMayProduceRawBytes(header, flatten, with_names, with_types);
+                || csvHeaderNamesMayProduceRawBytes(header, flatten, with_names, with_types)
+                /// The `JSON` escaping rule serializes the field values via `serializeTextJSON`, which
+                /// can synthesize JSON object keys from named `Tuple` element names (see
+                /// `tupleElementNamesMayProduceRawBytesInJSON`). The format installs no UTF-8
+                /// validating buffer, so those keys are never sanitized regardless of
+                /// `output_format_json_validate_utf8`.
+                || (custom.escaping_rule == FormatSettings::EscapingRule::JSON
+                    && JSONUtils::tupleElementNamesMayProduceRawBytesInJSON(header, settings, /*validate_utf8=*/false));
         });
 
         /// The `CSV` and `XML` escaping rules pass a carriage return in a `String` value through

@@ -454,13 +454,18 @@ void registerOutputFormatGeoJSON(FormatFactory & factory)
     /// `output_format_json_validate_utf8`. When validation is off, a name that is not valid UTF-8
     /// (a quoted alias with arbitrary bytes) makes the keys, and hence the output, non-textual. The
     /// geometry and `id` columns are not emitted as keys, but checking all header names here is a safe
-    /// (fail-close) over-approximation. It is knowable from the header, so the text framings reject or
-    /// base64-encode the output accordingly.
+    /// (fail-close) over-approximation. The property values can synthesize further object keys from
+    /// named `Tuple` element names - the format forces `write_named_tuples_as_objects` for the
+    /// `properties` object regardless of the user setting, so the check forces it too. All of this is
+    /// knowable from the header, so the text framings reject or base64-encode the output accordingly.
     factory.registerOutputFormatMayProduceRawBytesChecker(
         "GeoJSON",
         [](const FormatSettings & settings, const Block & header)
         {
-            return JSONUtils::namesMayProduceRawBytesInJSON(header.getNames(), settings, settings.json.validate_utf8);
+            FormatSettings tuple_settings = settings;
+            tuple_settings.json.write_named_tuples_as_objects = true;
+            return JSONUtils::namesMayProduceRawBytesInJSON(header.getNames(), settings, settings.json.validate_utf8)
+                || JSONUtils::tupleElementNamesMayProduceRawBytesInJSON(header, tuple_settings, settings.json.validate_utf8);
         });
 }
 

@@ -121,12 +121,18 @@ void registerOutputFormatJSONEachRow(FormatFactory & factory)
         /// The field names are emitted as JSON object keys every row via `makeNamesValidJSONStrings`
         /// with `output_format_json_validate_utf8`. When validation is off, a name that is not valid
         /// UTF-8 (a quoted alias with arbitrary bytes) makes the keys, and hence the output, non-textual.
-        /// This is knowable from the header, so the text framings reject or base64-encode accordingly.
+        /// The row values can synthesize further object keys from named `Tuple` element names (see
+        /// `tupleElementNamesMayProduceRawBytesInJSON`) - except when the values are serialized as
+        /// strings (`JSONStringsEachRow`), where a `Tuple` value is written in its plain text form,
+        /// which carries no element names. All of this is knowable from the header, so the text
+        /// framings reject or base64-encode accordingly.
         factory.registerOutputFormatMayProduceRawBytesChecker(
             format,
-            [](const FormatSettings & settings, const Block & header)
+            [serialize_as_strings](const FormatSettings & settings, const Block & header)
             {
-                return JSONUtils::namesMayProduceRawBytesInJSON(header.getNames(), settings, settings.json.validate_utf8);
+                return JSONUtils::namesMayProduceRawBytesInJSON(header.getNames(), settings, settings.json.validate_utf8)
+                    || (!serialize_as_strings
+                        && JSONUtils::tupleElementNamesMayProduceRawBytesInJSON(header, settings, settings.json.validate_utf8));
             });
     };
 
