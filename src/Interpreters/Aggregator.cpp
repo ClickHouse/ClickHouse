@@ -25,7 +25,6 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -4074,27 +4073,5 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result) cons
 #undef M
     else if (result.type != AggregatedDataVariants::Type::without_key)
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
-}
-
-UInt64 calculateCacheKey(const DB::ASTPtr & select_query)
-{
-    if (!select_query)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Query ptr cannot be null");
-
-    const auto & select = select_query->as<DB::ASTSelectQuery &>();
-
-    // It may happen in some corner cases like `select 1 as num group by num`.
-    if (!select.tables())
-        return 0;
-
-    SipHash hash;
-    hash.update(select.tables()->getTreeHash(/*ignore_aliases=*/true));
-    if (const auto prewhere = select.prewhere())
-        hash.update(prewhere->getTreeHash(/*ignore_aliases=*/true));
-    if (const auto where = select.where())
-        hash.update(where->getTreeHash(/*ignore_aliases=*/true));
-    if (const auto group_by = select.groupBy())
-        hash.update(group_by->getTreeHash(/*ignore_aliases=*/true));
-    return hash.get64();
 }
 }
