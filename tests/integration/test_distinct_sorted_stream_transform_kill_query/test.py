@@ -112,3 +112,20 @@ def test_sorted_stream_kill_query_other_columns(started_cluster):
         run_kill_query_failpoint_test(query, "distinct_sorted_stream_transform_pause")
     finally:
         node1.query("DROP TABLE IF EXISTS test_other_columns")
+
+
+def test_sorted_stream_kill_query_continuation(started_cluster):
+    node1.query("DROP TABLE IF EXISTS test_cont")
+    node1.query("CREATE TABLE test_cont (k UInt32) ENGINE = MergeTree() ORDER BY k")
+    node1.query("INSERT INTO test_cont SELECT intDiv(number, 3000) FROM numbers(10000)")
+    try:
+        query = (
+            "SELECT DISTINCT k "
+            "FROM test_cont "
+            "ORDER BY k "
+            "FORMAT Null "
+            "SETTINGS max_block_size=4000, max_threads=1, max_rows_to_read=0"
+        )
+        run_kill_query_failpoint_test(query, "distinct_sorted_stream_transform_pause")
+    finally:
+        node1.query("DROP TABLE IF EXISTS test_cont")

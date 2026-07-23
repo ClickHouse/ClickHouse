@@ -166,7 +166,15 @@ std::pair<size_t, size_t> DistinctSortedStreamTransform::continueWithPrevRange(c
     size_t output_rows = 0;
     const size_t range_end = getEqualRangeEndAssumeSorted(sorted_columns, sorted_columns_descr, 0, chunk_rows);
     if (other_columns.empty())
+    {
         std::fill(filter.begin(), filter.begin() + range_end, 0); /// skip rows already included in distinct on previous transform()
+        FailPointInjection::pauseFailPoint(FailPoints::distinct_sorted_stream_transform_pause);
+        if (isCancelled())
+        {
+            LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled during continuation from previous chunk");
+            return {range_end, output_rows};
+        }
+    }
     else
     {
         constexpr bool clear_data = false;
