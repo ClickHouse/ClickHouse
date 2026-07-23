@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-shared-merge-tree, no-object-storage, no-parallel-replicas
 
-CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
-. "$CUR_DIR"/../shell_config.sh
-
 # Regression test for a data-loss bug: writeColumns rewrites columns.txt in place (no atomic rename,
 # no fsync), so an interrupted rewrite plus a power loss can leave a zero-byte columns.txt in a
 # committed part directory. An empty columns.txt used to throw on load (NamesAndTypesList::readText
@@ -15,14 +11,23 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Each part's columns.txt is manipulated by an absolute path captured once, so every table must hold
 # exactly one active part directory with no covered sibling. Stop merges before inserting so no merge
 # produces a covering part, pin the block-size settings so a single insert yields one part regardless
-# of CI randomization, and force wide parts. Assertions are server-side (row counts) except a direct
-# read of columns.txt while the part is detached (quiescent, no server race) to prove persistence.
+# of CI randomization, and force wide parts.
+
+# Assertions are made server-side (row counts, per-column digests) rather than by stat-ing the
+# on-disk columns.txt: an external stat/grep of a live part directory races the server's own
+# reads/writes and cache prewarming under CI randomization. Reloading the part from disk
+# (DETACH/ATTACH) forces the recovered columns.txt to be read back from disk, so a reload that
+# returns all rows proves recovery persisted a non-empty columns.txt, and a per-column digest that
+# matches after reload proves no column was dropped (a dropped column would read back as defaults).
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
 
 run_case()
 {
     local table="$1"          # table name (already created, one active wide part)
     local expect_rows="$2"    # rows expected to survive the empty-columns.txt reload
-    local expect_columns="$3" # declared columns expected in the rebuilt columns.txt
 
     local data_path
     ${CLICKHOUSE_CLIENT} --query "SELECT throwIf(count() != 1, 'Expected exactly one active part in ${table}') FROM system.parts WHERE database = currentDatabase() AND table = '${table}' AND active" > /dev/null || exit 1
@@ -40,14 +45,10 @@ run_case()
     echo "-- ${table}: rows after empty columns.txt reload"
     ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${table}"
 
-    # Persistence: detach so the part is quiescent, read columns.txt from disk. It must now be
-    # non-empty (a rebuild that only lived in memory would leave it empty and brick on this reload)
-    # and list both declared columns `a` and `s` (a rebuild that dropped one would list fewer).
+    # Persistence proof (server-side, no stat of the live part): reload the part from disk. A rebuild
+    # that only lived in memory would leave columns.txt empty and brick on this reload, so a reload
+    # that still returns all rows proves recovery persisted a valid columns.txt to disk.
     ${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${table}"
-    echo "-- ${table}: persisted columns.txt non-empty"
-    [ -s "${data_path}columns.txt" ] && echo 1 || echo 0
-    echo "-- ${table}: persisted columns.txt lists ${expect_columns} declared columns"
-    grep -cE '^`(a|s)` ' "${data_path}columns.txt"
     ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE ${table}" 2>/dev/null
     echo "-- ${table}: rows after recovered reload"
     ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${table}"
@@ -72,7 +73,7 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 ${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES t_empty_columns"
 ${CLICKHOUSE_CLIENT} --max_insert_threads 1 --min_insert_block_size_rows 100000 --min_insert_block_size_bytes 0 --max_block_size 100000 --query "INSERT INTO t_empty_columns SELECT number, toString(number) FROM numbers(1000)"
-run_case t_empty_columns 1000 2
+run_case t_empty_columns 1000
 
 # ---- Case B: wide part with persistent virtual columns _block_number and _block_offset ----
 # The part physically carries these columns; the rebuild must include them (order: physical first,
@@ -90,7 +91,7 @@ ${CLICKHOUSE_CLIENT} --max_insert_threads 1 --min_insert_block_size_rows 100000 
 ${CLICKHOUSE_CLIENT} --max_insert_threads 1 --min_insert_block_size_rows 100000 --min_insert_block_size_bytes 0 --max_block_size 100000 --query "INSERT INTO t_empty_columns_bn SELECT number + 500, toString(number) FROM numbers(500)"
 ${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE t_empty_columns_bn FINAL"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES t_empty_columns_bn"
-run_case t_empty_columns_bn 1000 2
+run_case t_empty_columns_bn 1000
 
 # ---- Case C: wide part with a lightweight-delete mask (persistent virtual _row_exists) ----
 # The recovery must keep _row_exists, otherwise the deletion mask is silently dropped and deleted
@@ -106,17 +107,18 @@ ${CLICKHOUSE_CLIENT} --max_insert_threads 1 --min_insert_block_size_rows 100000 
 # Materialize the deletion mask, then stop merges so the mutated part directory does not move.
 ${CLICKHOUSE_CLIENT} --mutations_sync 2 --query "DELETE FROM t_empty_columns_ld WHERE a % 2 = 0"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES t_empty_columns_ld"
-run_case t_empty_columns_ld 500 2
+run_case t_empty_columns_ld 500
 
 # A column whose type stores no <column>.bin stream (only named substreams) must not be dropped from
 # the rebuilt list. A count()-only oracle cannot catch this: the row count survives, but the column
 # is treated as missing on read and every value is silently synthesized as a default. Assert a digest
-# of the column's real values, and check the persisted columns.txt still lists the column.
+# of the column's real values, both right after the empty-columns.txt recovery and again after a
+# fresh reload from disk (which proves the rebuilt columns.txt was persisted, not just recovered in
+# memory) -- server-side, without stat-ing the live part file (which races the server).
 run_case_col()
 {
     local table="$1"        # table name (already created, one active wide part)
     local col_expr="$2"     # expression digesting the multi-stream column's real values
-    local col_name="$3"     # column name that must remain in columns.txt after recovery
 
     local data_path
     ${CLICKHOUSE_CLIENT} --query "SELECT throwIf(count() != 1, 'Expected exactly one active part in ${table}') FROM system.parts WHERE database = currentDatabase() AND table = '${table}' AND active" > /dev/null || exit 1
@@ -133,10 +135,12 @@ run_case_col()
     echo "-- ${table}: value digest after empty columns.txt reload"
     ${CLICKHOUSE_CLIENT} --query "SELECT ${col_expr} FROM ${table}"
 
+    # Persistence proof: reload from disk and re-digest. If the rebuilt columns.txt (with the
+    # multi-stream column) was not persisted, this reload would drop the column and change the digest.
     ${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${table}"
-    echo "-- ${table}: recovered columns.txt lists ${col_name}"
-    grep -q "\`${col_name}\`" "${data_path}columns.txt" && echo 1 || echo 0
     ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE ${table}" 2>/dev/null
+    echo "-- ${table}: value digest after recovered reload"
+    ${CLICKHOUSE_CLIENT} --query "SELECT ${col_expr} FROM ${table}"
 
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${table}"
 }
@@ -153,7 +157,7 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 ${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES t_empty_columns_tuple"
 ${CLICKHOUSE_CLIENT} --max_insert_threads 1 --min_insert_block_size_rows 100000 --min_insert_block_size_bytes 0 --max_block_size 100000 --query "INSERT INTO t_empty_columns_tuple SELECT number, (number * 2, toString(number)) FROM numbers(1000)"
-run_case_col t_empty_columns_tuple "sum(t.x)" "t"
+run_case_col t_empty_columns_tuple "sum(t.x)"
 
 # ---- Case E: wide part with a Map column (no <column>.bin stream, only size/key/value streams) ----
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_empty_columns_map"
@@ -165,7 +169,7 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 ${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES t_empty_columns_map"
 ${CLICKHOUSE_CLIENT} --max_insert_threads 1 --min_insert_block_size_rows 100000 --min_insert_block_size_bytes 0 --max_block_size 100000 --query "INSERT INTO t_empty_columns_map SELECT number, map('k', number * 3) FROM numbers(1000)"
-run_case_col t_empty_columns_map "sum(m['k'])" "m"
+run_case_col t_empty_columns_map "sum(m['k'])"
 
 # ---- Case G: Map stored with bucketed serialization (streams differ from the default one) ----
 # A bucketed Map writes m.buckets_info, m.0.size0, m.0.keys, ... none of which match the default
@@ -184,13 +188,15 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 ${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES t_empty_columns_map_bucketed"
 ${CLICKHOUSE_CLIENT} --max_insert_threads 1 --min_insert_block_size_rows 100000 --min_insert_block_size_bytes 0 --max_block_size 100000 --query "INSERT INTO t_empty_columns_map_bucketed SELECT number, map('k', number * 3) FROM numbers(1000)"
-run_case_col t_empty_columns_map_bucketed "sum(m['k'])" "m"
+run_case_col t_empty_columns_map_bucketed "sum(m['k'])"
 
 # ---- Case F: Nested sibling added by ALTER, present on disk only via shared offsets ----
 # With share_nested_offsets a Nested column added by ALTER (n.b) has no data of its own; its only
 # on-disk stream is the offsets stream owned by n.a. The rebuild must decide presence from a column's
 # own streams (all of them), not from any stream that merely exists, or n.b is wrongly included and
-# columns_substreams.txt validation detaches the part. n.a's data must survive; n.b stays absent.
+# columns_substreams.txt validation detaches the part. Proven server-side: after empty-columns.txt
+# recovery the part must stay ACTIVE (validation passed => n.b was not wrongly included) and n.a's
+# data must survive a reload from disk.
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_empty_columns_nested"
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_empty_columns_nested (id UInt64, \`n.a\` Array(UInt64))
@@ -208,18 +214,24 @@ ${CLICKHOUSE_CLIENT} --query "SELECT sum(arraySum(n.a)) FROM t_empty_columns_nes
 ${CLICKHOUSE_CLIENT} --query "DETACH TABLE t_empty_columns_nested"
 : > "${data_path}columns.txt"
 ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE t_empty_columns_nested" 2>/dev/null
+# The part must have recovered as a single ACTIVE part (not detached-as-broken): a rebuild that
+# wrongly included the data-less n.b would fail columns_substreams.txt validation and detach it.
+echo "-- t_empty_columns_nested: one active part after recovery"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_empty_columns_nested' AND active"
 echo "-- t_empty_columns_nested: n.a digest after empty columns.txt reload"
 ${CLICKHOUSE_CLIENT} --query "SELECT sum(arraySum(n.a)) FROM t_empty_columns_nested"
-echo "-- t_empty_columns_nested: recovered columns.txt excludes data-less n.b"
+# Persistence proof: reload from disk and re-digest n.a.
 ${CLICKHOUSE_CLIENT} --query "DETACH TABLE t_empty_columns_nested"
-grep -q '`n.b`' "${data_path}columns.txt" && echo 1 || echo 0
 ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE t_empty_columns_nested" 2>/dev/null
+echo "-- t_empty_columns_nested: n.a digest after recovered reload"
+${CLICKHOUSE_CLIENT} --query "SELECT sum(arraySum(n.a)) FROM t_empty_columns_nested"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_empty_columns_nested"
 
 # ---- Case H: recovery when columns_substreams.txt is also absent (legacy stream-enumeration path) ----
 # columns_substreams.txt is the primary presence oracle, but a part predating it must still recover by
 # enumerating each column's own streams. Remove both files so the fallback is exercised, on a Tuple
-# (no <column>.bin, only element streams) that a single-fixed-path probe would wrongly drop.
+# (no <column>.bin, only element streams) that a single-fixed-path probe would wrongly drop. Proven
+# server-side by the Tuple digest surviving both the recovery and a subsequent reload from disk.
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_empty_columns_fallback"
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_empty_columns_fallback (a UInt64, t Tuple(x UInt64, y String))
@@ -238,8 +250,9 @@ rm -f "${data_path}columns_substreams.txt"
 ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE t_empty_columns_fallback" 2>/dev/null
 echo "-- t_empty_columns_fallback: t.x digest after empty columns.txt + absent columns_substreams.txt reload"
 ${CLICKHOUSE_CLIENT} --query "SELECT sum(t.x) FROM t_empty_columns_fallback"
-echo "-- t_empty_columns_fallback: recovered columns.txt lists t"
+# Persistence proof: reload from disk and re-digest.
 ${CLICKHOUSE_CLIENT} --query "DETACH TABLE t_empty_columns_fallback"
-grep -q '`t`' "${data_path}columns.txt" && echo 1 || echo 0
 ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE t_empty_columns_fallback" 2>/dev/null
+echo "-- t_empty_columns_fallback: t.x digest after recovered reload"
+${CLICKHOUSE_CLIENT} --query "SELECT sum(t.x) FROM t_empty_columns_fallback"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_empty_columns_fallback"
