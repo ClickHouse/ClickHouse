@@ -41,10 +41,6 @@ public:
     void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
 
     std::optional<Float64> estimateLess(const Field & val) const override;
-    /// Exact number of rows equal to the column's default value when `val` is that default (and a
-    /// count is available); `std::nullopt` otherwise, so callers fall through to approximate stats.
-    /// Only non-`Nullable` columns answer here: for a `Nullable` column the default is `NULL`,
-    /// whose selectivity is served by `IS NULL`, not by equality to a (non-NULL) literal.
     std::optional<Float64> estimateEqual(const Field & val) const override;
     String getNameForLogs() const override;
 
@@ -52,23 +48,14 @@ public:
 
     bool hasNumericMinMax() const { return tracks_numeric; }
     bool hasStringLengthAvg() const { return tracks_string; }
-    /// A NULL count is available when the type's column default is `NULL` (i.e. `Nullable`,
-    /// `LowCardinality(Nullable)`, `Variant`, `Dynamic`, ...) and a count has been populated.
     bool hasNullCount() const { return is_nullable && has_default_count; }
-    /// True iff a default-value count was populated (by `build` or `deserialize`).
     bool hasDefaultCount() const { return has_default_count; }
 
     const Field & getMin() const { return min; }
     const Field & getMax() const { return max; }
     UInt64 getStringTotalBytes() const { return string_total_bytes; }
-    /// Average byte length over non-NULL string rows, truncated to an integer. Returns `0` when
-    /// no non-NULL string rows were processed; gate on `hasStringLengthAvg()` plus a non-zero
-    /// `getStringTotalBytes()` to distinguish "no data" from "all empty strings".
     Int64 getStringLengthAvg() const;
-    /// For a column whose type default is `NULL` (`Nullable`, `Variant`, `Dynamic`, ...) this equals
-    /// the NULL count; returns 0 for columns whose default is a non-`NULL` value.
     UInt64 getNullCount() const { return (is_nullable && has_default_count) ? default_count : 0; }
-    /// Number of rows equal to the type's default value (`NULL` for `Nullable`, else `0`/`''`/...).
     UInt64 getDefaultCount() const { return default_count; }
     UInt64 getRowCount() const { return row_count; }
 
