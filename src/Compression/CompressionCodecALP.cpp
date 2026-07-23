@@ -224,9 +224,6 @@ constexpr UInt8 ALP_BUFFER_ALIGNMENT = 64;
 template <typename T>
 concept FLOAT = std::is_same_v<T, Float32> || std::is_same_v<T, Float64>;
 
-template <FLOAT T>
-struct ALPFloatTraits;
-
 template <FLOAT T, UInt32 exponent_count, bool inverse>
 constexpr std::array<T, exponent_count> generatePowersOf10()
 {
@@ -237,33 +234,24 @@ constexpr std::array<T, exponent_count> generatePowersOf10()
 }
 
 /**
- * ALP Float64 parameters.
+ * ALP per-type parameters.
  */
-template<>
-struct ALPFloatTraits<Float64>
+template <FLOAT T>
+struct ALPFloatTraits
 {
-    /// Float64 scaling is limited to 10^18.
-    static constexpr UInt8 EXPONENT_COUNT = 19;
+    static constexpr bool IS_FLOAT32 = std::is_same_v<T, Float32>;
+
+    /// Scaling is limited to 10^9 (Float32) / 10^18 (Float64).
+    static constexpr UInt8 EXPONENT_COUNT = IS_FLOAT32 ? 10 : 19;
 
     /// `AUTO` falls back to `RD` when the best estimated `STD` size per sampled value exceeds this threshold.
-    /// The 48-bit (`Float64`) / 22-bit (`Float32`) limit follows the ALP paper (https://ir.cwi.nl/pub/33334 §3.4).
-    static constexpr size_t RD_SIZE_THRESHOLD_LIMIT = 48 * ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS;
+    /// The 22-bit (`Float32`) / 48-bit (`Float64`) limit follows the ALP paper (https://ir.cwi.nl/pub/33334 §3.4).
+    static constexpr size_t RD_SIZE_THRESHOLD_LIMIT = (IS_FLOAT32 ? 22 : 48) * ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS;
 
     /**
-     * Unsigned integer type with the same size as the float type, used for bit-level operations and reinterpretation.
-     */
-    using Unsigned = UInt64;
-};
-
-/**
- * ALP Float32 parameters. 
- */
-template<>
-struct ALPFloatTraits<Float32>
-{
-    static constexpr UInt8 EXPONENT_COUNT = 10;
-    static constexpr size_t RD_SIZE_THRESHOLD_LIMIT = 22 * ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS;
-    using Unsigned = UInt32;
+    * Unsigned integer type with the same size as the float type, used for bit-level operations and reinterpretation.
+    */
+    using Unsigned = std::conditional_t<IS_FLOAT32, UInt32, UInt64>;
 };
 
 /**
