@@ -857,11 +857,23 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     const bool forwards_to_separate_context =
         InsertDependenciesBuilder::storageForwardsInsertToSeparateContext(table);
 
+    // `parallel_view_processing = 0` keeps the pushing to dependent materialized views sequential.
+    // For a dependent-view graph visible to `InsertDependenciesBuilder` this is enforced there (the
+    // sink stream size stays 1 when views are involved and the setting is disabled) and by the
+    // single-thread pipeline cap below. A forwarding storage hides its target's dependent-view
+    // graph behind the nested `INSERT` its sink runs per branch (`AliasSink`), so a fan-out to
+    // several sinks would push those hidden views concurrently even though
+    // `parallel_view_processing` is disabled. Keep such inserts single-stream, independently of any
+    // deduplication hazard. (`Distributed` and `Buffer` also hide their dependent views, but they
+    // are already kept single-stream by `forwards_to_separate_context`.)
+    const bool serial_hidden_views = !settings[Setting::parallel_view_processing]
+        && InsertDependenciesBuilder::forwardedInsertHidesDependentView(table);
+
     const bool dedup_single_stream = !async_insert
         && ((per_branch_dedup_ids && source_deduplicates)
             || forwarded_dependent_mv_dedup_hazard
             || forwards_to_separate_context);
-    const size_t insert_threads = (async_insert || dedup_single_stream) ? 1 : max_insert_threads;
+    const size_t insert_threads = (async_insert || dedup_single_stream || serial_hidden_views) ? 1 : max_insert_threads;
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table,
         query_ptr,

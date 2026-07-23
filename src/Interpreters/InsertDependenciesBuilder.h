@@ -163,7 +163,10 @@ public:
     /// `forwardedInsertReachesDependentView`, a concrete local target reports false here: its dependent
     /// views are visible to `collectAllDependencies` and are checked directly by the hazard scan. It
     /// fails closed (returns true) when the ultimate target is not cheaply known here (`Distributed`,
-    /// `Buffer`, unresolvable, or too deep).
+    /// `Buffer`, unresolvable, or too deep). Besides the strict-mode deduplication hazard, hidden
+    /// views also make the write fan-out bypass `parallel_view_processing = 0` (each branch's nested
+    /// `INSERT` pushes the hidden views concurrently), so `InterpreterInsertQuery` also keeps the
+    /// insert single-stream when this probe reports true and that setting is disabled.
     static bool forwardedInsertHidesDependentView(const StoragePtr & storage, size_t depth = 0);
 
     /// Whether inserting into `storage` reaches a `Buffer` or a `Distributed`, whose final write runs in a
