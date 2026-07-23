@@ -17,3 +17,10 @@ unknown
 >> empty_only_omitted_marker_not_supported
 >> empty_only_omitted_marker_with_other_columns
 id2	unknown
+>> non_empty_unmaterialized_branch_presence_is_preserved
+10.10.2025	buy
+10.10.2025	sell
+2024-06-01	sell
+>> non_empty_branch_with_nested_payload_uses_normal_path
+10.10.2025		buy
+10.10.2025	dell	buy

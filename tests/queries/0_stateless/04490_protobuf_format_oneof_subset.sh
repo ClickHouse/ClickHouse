@@ -131,3 +131,32 @@ CREATE TABLE oneof_empty_only_zero_with_id_04490 ( id String, type Enum8('unknow
 INSERT INTO oneof_empty_only_zero_with_id_04490 from INFILE '$CURDIR/data_protobuf/RecordEmpty' SETTINGS format_schema='$SCHEMADIR/04046_record.proto:Record' FORMAT ProtobufSingle;
 SELECT id, type FROM oneof_empty_only_zero_with_id_04490 FORMAT TSV;
 EOF
+
+# (k) Non-empty oneof branches that have no materializable payload columns behave similarly.
+#     Here `payment_details` can represent both tags, and the table keeps only `date` and the
+#     oneof presence column, with no `buy.*` or `sell.*` columns. The branch tag should still be
+#     reflected in the presence Enum even though the payload itself is not materialized.
+$CLICKHOUSE_CLIENT <<EOF
+SET input_format_protobuf_oneof_presence=1;
+DROP TABLE IF EXISTS oneof_transaction_presence_only_04490;
+SELECT '>> non_empty_unmaterialized_branch_presence_is_preserved';
+CREATE TABLE oneof_transaction_presence_only_04490 ( date String, payment_details Enum8('omitted'=0, 'buy'=2, 'sell'=3) ) Engine=MergeTree ORDER BY tuple();
+INSERT INTO oneof_transaction_presence_only_04490 from INFILE '$CURDIR/data_protobuf/tbuy' SETTINGS format_schema='$SCHEMADIR/03447_oneof_transaction.proto:Transaction' FORMAT ProtobufSingle;
+INSERT INTO oneof_transaction_presence_only_04490 from INFILE '$CURDIR/data_protobuf/tsell' SETTINGS format_schema='$SCHEMADIR/03447_oneof_transaction.proto:Transaction' FORMAT ProtobufSingle;
+INSERT INTO oneof_transaction_presence_only_04490 from INFILE '$CURDIR/data_protobuf/temptysell' SETTINGS format_schema='$SCHEMADIR/03447_oneof_transaction.proto:Transaction' FORMAT ProtobufSingle;
+SELECT date, payment_details FROM oneof_transaction_presence_only_04490 ORDER BY date, payment_details FORMAT TSV;
+EOF
+
+# (l) If a branch has a materializable nested payload column, the synthetic oneof-only fallback
+#     must not steal it. Here `buy.vendor_name` is present, so `tbuy` must fill both
+#     `payment_details='buy'` and `buy_vendor_name`, while `tsell` still has no payload columns
+#     and therefore falls back to `omitted`.
+$CLICKHOUSE_CLIENT <<EOF
+SET input_format_protobuf_oneof_presence=1;
+DROP TABLE IF EXISTS oneof_transaction_partial_materialization_04490;
+SELECT '>> non_empty_branch_with_nested_payload_uses_normal_path';
+CREATE TABLE oneof_transaction_partial_materialization_04490 ( date String, buy_vendor_name String, payment_details Enum8('omitted'=0, 'buy'=2, 'sell'=3) ) Engine=MergeTree ORDER BY tuple();
+INSERT INTO oneof_transaction_partial_materialization_04490 from INFILE '$CURDIR/data_protobuf/tbuy' SETTINGS format_schema='$SCHEMADIR/03447_oneof_transaction.proto:Transaction' FORMAT ProtobufSingle;
+INSERT INTO oneof_transaction_partial_materialization_04490 from INFILE '$CURDIR/data_protobuf/tsell' SETTINGS format_schema='$SCHEMADIR/03447_oneof_transaction.proto:Transaction' FORMAT ProtobufSingle;
+SELECT date, buy_vendor_name, payment_details FROM oneof_transaction_partial_materialization_04490 ORDER BY date, buy_vendor_name, payment_details FORMAT TSV;
+EOF
