@@ -135,6 +135,50 @@ def _verify_trace_extraction(build_directory, profile_data_file):
         )
 
 
+# The final linked binaries the "Build profile diff" check compares per binary
+# (FINAL_BINARIES in ci/jobs/build_profile_diff_job.py), relative to the build
+# directory.
+_FINAL_BINARIES = ("programs/clickhouse", "programs/clickhouse-keeper")
+
+
+def _any_line(artifact_file, matches):
+    with open(artifact_file) as fd:
+        for line in fd:
+            if matches(line):
+                return True
+    return False
+
+
+def _verify_final_binary_coverage(build_directory, build_size_file, binary_symbol_file):
+    """Fail when a linked final binary is missing from the produced artifacts.
+
+    _REQUIRED_ARTIFACTS guards whole files only: binary_symbols.txt can be
+    non-empty while nm silently failed on one of the final binaries, and the
+    "Build profile diff" sections would then silently omit that binary - a
+    `clickhouse-keeper`-only regression turned false-green. The filesystem is
+    the ground truth: every final binary present as a real file (not the
+    symlink of a non-standalone keeper, which the producer legitimately
+    skips) must have its row in binary_sizes.txt (`wc -c` lines ending with
+    the path) and its rows in binary_symbols.txt (nm lines starting with the
+    path). Whole-file absence is left to _REQUIRED_ARTIFACTS to report.
+    """
+    for rel in _FINAL_BINARIES:
+        binary = Path(build_directory) / rel
+        if binary.is_symlink() or not binary.is_file():
+            continue
+        path = f"{build_directory}/{rel}"
+        for artifact, matches, what in (
+            (build_size_file, lambda line: line.split() and line.split()[-1] == path, "size"),
+            (binary_symbol_file, lambda line: line.startswith(path + " "), "symbol"),
+        ):
+            if _has_data(artifact) and not _any_line(artifact, matches):
+                raise RuntimeError(
+                    f"The build linked [{path}] but [{artifact}] holds no {what} "
+                    "rows for it: the profile producer lost this binary, and the "
+                    '"Build profile diff" check would silently omit it'
+                )
+
+
 def _upload_profile_artifacts(build_type, start_time, artifacts):
     """Upload the profile artifacts this build produced.
 
@@ -187,6 +231,7 @@ def check():
                     with open(profile_source, "rb") as ps_fd:
                         profile_fd.write(ps_fd.read())
         _verify_trace_extraction(build_dir, profile_data_file)
+        _verify_final_binary_coverage(build_dir, build_size_file, binary_symbol_file)
         check_start_time = Utils.timestamp_to_str(
             Result.from_fs(Info().job_name).start_time
         )

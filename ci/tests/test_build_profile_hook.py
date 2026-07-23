@@ -36,6 +36,7 @@ from ci.jobs.scripts.job_hooks.build_profile_hook import (
     _has_data,
     _should_profile,
     _upload_profile_artifacts,
+    _verify_final_binary_coverage,
     _verify_trace_extraction,
 )
 from ci.jobs.scripts.log_cluster import LogCluster, LogClusterBuildProfileQueries
@@ -389,6 +390,81 @@ def test_trace_extraction_accepts_extracted_profile(tmp_path):
     profile.write_text('["row"]')
 
     _verify_trace_extraction(build_dir, profile)
+
+
+# --- final binary coverage verification ------------------------------------
+
+
+def _coverage_fixture(tmp_path, keeper_symlink=False):
+    """A build dir with both final binaries and fully covering artifacts."""
+    build_dir = tmp_path / "build"
+    (build_dir / "programs").mkdir(parents=True)
+    (build_dir / "programs" / "clickhouse").write_bytes(b"\x7fELF")
+    if keeper_symlink:
+        (build_dir / "programs" / "clickhouse-keeper").symlink_to("clickhouse")
+    else:
+        (build_dir / "programs" / "clickhouse-keeper").write_bytes(b"\x7fELF")
+    main = f"{build_dir}/programs/clickhouse"
+    keeper = f"{build_dir}/programs/clickhouse-keeper"
+    sizes = tmp_path / "binary_sizes.txt"
+    sizes.write_text(f"4 {main}\n4 {keeper}\n")
+    symbols = tmp_path / "binary_symbols.txt"
+    symbols.write_text(f"{main} 0 16 t main\n{keeper} 0 16 t keeper_main\n")
+    return build_dir, sizes, symbols
+
+
+def test_final_binary_coverage_fails_when_one_binary_lost(tmp_path):
+    """A linked binary with no rows in a non-empty artifact fails the hook.
+
+    _REQUIRED_ARTIFACTS only guards whole files: nm silently failing on the
+    standalone keeper leaves binary_symbols.txt non-empty (the main binary's
+    rows are there) while "Build profile diff" would silently omit the keeper
+    from the symbol and ThinLTO sections - a keeper-only regression turned
+    false-green. The binary on disk is the ground truth for what must appear.
+    """
+    build_dir, sizes, symbols = _coverage_fixture(tmp_path)
+    symbols.write_text(f"{build_dir}/programs/clickhouse 0 16 t main\n")
+    with pytest.raises(RuntimeError, match="clickhouse-keeper"):
+        _verify_final_binary_coverage(str(build_dir), sizes, symbols)
+
+    # The size rows are verified the same way.
+    build_dir, sizes, symbols = _coverage_fixture(tmp_path / "second")
+    sizes.write_text(f"4 {build_dir}/programs/clickhouse-keeper\n")
+    with pytest.raises(RuntimeError, match="programs/clickhouse]"):
+        _verify_final_binary_coverage(str(build_dir), sizes, symbols)
+
+
+def test_final_binary_coverage_accepts_complete_artifacts(tmp_path):
+    """Both binaries covered by both artifacts: nothing to flag."""
+    build_dir, sizes, symbols = _coverage_fixture(tmp_path)
+    _verify_final_binary_coverage(str(build_dir), sizes, symbols)
+
+
+def test_final_binary_coverage_skips_symlinked_keeper(tmp_path):
+    """A symlinked keeper is legitimately absent from the artifacts.
+
+    When the keeper is not built standalone the producer skips it (its
+    symbols would duplicate the main binary's), so only the real files on
+    disk set the expectation.
+    """
+    build_dir, sizes, symbols = _coverage_fixture(tmp_path, keeper_symlink=True)
+    main = f"{build_dir}/programs/clickhouse"
+    sizes.write_text(f"4 {main}\n")
+    symbols.write_text(f"{main} 0 16 t main\n")
+    _verify_final_binary_coverage(str(build_dir), sizes, symbols)
+
+
+def test_final_binary_coverage_leaves_empty_artifacts_to_required_check(tmp_path):
+    """Whole-file absence stays _REQUIRED_ARTIFACTS' report, not this one.
+
+    The warmup build has no binaries at all, and a cross-arch build has empty
+    artifacts; both are judged by _REQUIRED_ARTIFACTS with its canonical
+    message. This check only catches a *partial* loss inside a produced file.
+    """
+    build_dir, sizes, symbols = _coverage_fixture(tmp_path)
+    sizes.write_text("")
+    symbols.unlink()
+    _verify_final_binary_coverage(str(build_dir), sizes, symbols)
 
 
 # --- upload transport: parallel parsing disabled --------------------------

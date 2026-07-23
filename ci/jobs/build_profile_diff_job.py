@@ -54,6 +54,7 @@ Local run (bypasses AWS SSM secrets and GitHub):
 
 import argparse
 import dataclasses
+import datetime
 import json
 import os
 import subprocess
@@ -330,7 +331,9 @@ def get_master_shas(info) -> List[str]:
     baseline lookup must intersect with this history.
 
     `find_baseline` only ever considers the first 100 of these, and the hook
-    already stores ~100 commits, so there is no need to page more from the API.
+    already stores ~100 commits, so it needs no more. The per-TU compile
+    baseline is different: it looks back TU_BASE_DAYS, far past ~100 commits
+    of master history - `extend_master_shas` pages the older ancestors for it.
     """
     seen = set()
     shas = []
@@ -343,6 +346,71 @@ def get_master_shas(info) -> List[str]:
                 shas.append(sha)
         if shas:
             break
+    return shas
+
+
+# How many 100-commit pages extend_master_shas fetches at most. ClickHouse
+# master merges up to ~100 commits a day, so 20 pages (~2000 commits) cover
+# the TU_BASE_DAYS window with margin.
+EXTEND_MAX_PAGES = 20
+
+
+def _list_commits_page(anchor_sha: str, page: int) -> List[dict]:
+    """One page of the commits reachable from `anchor_sha`, newest first."""
+    out = subprocess.run(
+        [
+            "gh",
+            "api",
+            # Hardcoded upstream namespace, like the store_data hook: the
+            # profile rows in the CI logs cluster carry public-repo shas.
+            f"repos/ClickHouse/ClickHouse/commits?sha={anchor_sha}&per_page=100&page={page}",
+            "--jq",
+            "[.[] | {sha: .sha, date: .commit.committer.date}]",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=True,
+    ).stdout
+    return json.loads(out)
+
+
+def extend_master_shas(master_shas: List[str], days: int = TU_BASE_DAYS, list_page=_list_commits_page) -> List[str]:
+    """Extend the anchored chain far enough back to cover the per-TU window.
+
+    `master_track_commits_sha` holds only ~100 first-parent commits - a day or
+    two of master - while the per-TU compile baseline advertises TU_BASE_DAYS:
+    a warmup trace inside that window but older than the chain's tail would be
+    invisible to `compare_compile_times`. Page older history from the GitHub
+    API, anchored at the chain's oldest commit, so every added sha is an
+    ancestor of the PR's merge base (a baseline must never contain changes the
+    PR does not have). The listing follows all parents, not just the first
+    one, but the extra shas are harmless: only commits master actually built
+    carry pull_request_number = 0 warmup profile rows.
+    """
+    if not master_shas:
+        return master_shas
+    cutoff = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    shas = list(master_shas)
+    seen = set(shas)
+    anchor = master_shas[-1]
+    try:
+        for page in range(1, EXTEND_MAX_PAGES + 1):
+            commits = list_page(anchor, page)
+            for commit in commits:
+                if commit["sha"] not in seen:
+                    seen.add(commit["sha"])
+                    shas.append(commit["sha"])
+            # ISO 8601 UTC dates compare lexicographically.
+            if len(commits) < 100 or commits[-1]["date"] < cutoff:
+                return shas
+        print(f"WARNING: the master chain still does not span {days} days after {EXTEND_MAX_PAGES} pages ({len(shas)} commits)")
+    except Exception:
+        # The un-extended chain is a valid, just shallower, baseline set; a
+        # GitHub API hiccup must not fail the whole comparison. The warning
+        # stays in the job log.
+        print("WARNING: failed to extend the master commit chain for the per-TU baseline window:")
+        traceback.print_exc()
     return shas
 
 
@@ -547,7 +615,11 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
     without showing up here. Like the symbol section, a binary is compared
     only when both sides have its link trace (`clickhouse-keeper` produces
     none when built as a symlink to `clickhouse`), and a PR-side binary
-    without a master baseline is called out instead of silently dropped.
+    without a master baseline is called out instead of silently dropped. The
+    reverse - a baseline exists but the PR build uploaded no link trace for
+    that binary - means the profile producer lost rows (the build type, and
+    with it the symlinked-keeper layout, is the same on both sides), so it is
+    flagged as an incomplete comparison instead of an all-green omission.
 
     The baseline is the official master build, which runs on a different
     machine and with different flags (debug info, official-build flag,
@@ -567,7 +639,21 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
     )
     comparable = [row["file"] for row in sides if int(row["pr_count"]) and int(row["base_count"])]
     missing_base = [row["file"] for row in sides if int(row["pr_count"]) and not int(row["base_count"])]
+    missing_pr = [row["file"] for row in sides if int(row["base_count"]) and not int(row["pr_count"])]
     lines = []
+    if missing_pr:
+        # The master baseline has a link trace for this binary but the PR
+        # build uploaded none. Both sides run the same build type, so the
+        # symlinked-keeper case cannot differ between them: the PR-side
+        # profile producer lost the rows. Never render this as all-green.
+        names = ", ".join(md_code(strip_build_dir(f)) for f in missing_pr)
+        lines.append(
+            f"⚠️ The master baseline has a link trace for {names} but this build "
+            "uploaded none: the profile producer lost it and the comparison is incomplete."
+        )
+        lines.append("")
+        section.significant = True
+        section.summary = f"missing PR-side link trace for {', '.join(strip_build_dir(f) for f in missing_pr)}"
     if missing_base:
         names = ", ".join(md_code(strip_build_dir(f)) for f in missing_base)
         lines.append(f"No master baseline link trace for {names}; its functions are not compared.")
@@ -840,7 +926,9 @@ def compare_symbols(db: Db, pr_side, base_side) -> Section:
     Covers both `clickhouse` and `clickhouse-keeper` (the producer uploads the
     symbols of both), so a keeper-only size regression gets the same per-symbol
     attribution as the main binary. Each binary is compared only when both
-    sides have its symbol data.
+    sides have its symbol data; a binary whose symbols the master baseline has
+    but the PR build did not upload means the profile producer lost rows, and
+    is flagged as an incomplete comparison instead of an all-green omission.
     """
     section = Section(title="Symbol sizes")
     sides = db.query(
@@ -851,12 +939,25 @@ def compare_symbols(db: Db, pr_side, base_side) -> Section:
         GROUP BY file"""
     )
     comparable = [row["file"] for row in sides if int(row["pr_count"]) and int(row["base_count"])]
-    if not any(int(row["pr_count"]) for row in sides):
-        return section
-    if not comparable:
-        section.body = "No symbol data for the master baseline yet (it is collected for release builds only since this check was introduced); the comparison will activate once master catches up."
-        return section
     missing_base = [row["file"] for row in sides if int(row["pr_count"]) and not int(row["base_count"])]
+    missing_pr = [row["file"] for row in sides if int(row["base_count"]) and not int(row["pr_count"])]
+    lines = []
+    if missing_pr:
+        names = ", ".join(md_code(strip_build_dir(f)) for f in missing_pr)
+        lines.append(
+            f"⚠️ The master baseline has symbol data for {names} but this build "
+            "uploaded none: the profile producer lost it and the comparison is incomplete."
+        )
+        lines.append("")
+        section.significant = True
+        section.summary = f"missing PR-side symbol data for {', '.join(strip_build_dir(f) for f in missing_pr)}"
+    if not comparable:
+        if not missing_pr and any(int(row["pr_count"]) for row in sides):
+            # The PR uploaded symbols but master has none at all: the baseline
+            # simply predates symbol collection.
+            lines.append("No symbol data for the master baseline yet (it is collected for release builds only since this check was introduced); the comparison will activate once master catches up.")
+        section.body = "\n".join(lines).rstrip()
+        return section
     # size >= 1 KiB cuts the aggregation to a fraction of the ~1.5M symbols of
     # the binary; a symbol can only reach the report threshold if one side
     # exceeds it anyway.
@@ -871,7 +972,6 @@ def compare_symbols(db: Db, pr_side, base_side) -> Section:
         ORDER BY abs(delta) DESC
         LIMIT {MAX_TABLE_ROWS}"""
     )
-    lines = []
     if missing_base:
         names = ", ".join(md_code(strip_build_dir(f)) for f in missing_base)
         lines.append(f"No master baseline symbol data yet for {names}.")
@@ -900,15 +1000,21 @@ def compare_symbols(db: Db, pr_side, base_side) -> Section:
 def build_comment(info, pr_sha: str, base_sha: str, sections: List[Section], warmup_sha: Optional[str] = None) -> str:
     significant = [s for s in sections if s.significant]
     repo_url = f"https://github.com/{info.repo_name}"
+    # `warmup_sha` names only the object-size baseline. Compile times are
+    # resolved per translation unit - each against the most recent warmup
+    # build that recompiled it - so they must not be attributed to any single
+    # commit here (the two can legitimately differ, e.g. when the newest
+    # warmup data is older than the object-size window).
     warmup_note = ""
     if warmup_sha and warmup_sha != base_sha:
-        warmup_note = f"; object sizes and compile times against the warmup build of [`{warmup_sha[:9]}`]({repo_url}/commit/{warmup_sha})"
+        warmup_note = f"; object sizes against the warmup build of [`{warmup_sha[:9]}`]({repo_url}/commit/{warmup_sha})"
     lines = [
         f"### Build profile diff ({CHECK_NAME})",
         "",
         f"Comparing [`{pr_sha[:9]}`]({repo_url}/commit/{pr_sha}) with master "
         f"[`{base_sha[:9]}`]({repo_url}/commit/{base_sha}) "
-        f"(stripped binary size, per-object sizes, per-symbol sizes, compile and ThinLTO time{warmup_note}).",
+        f"(stripped binary size, per-symbol sizes and ThinLTO time{warmup_note}; "
+        "compile times per translation unit against the most recent warmup build that recompiled it).",
         "",
     ]
     if significant:
@@ -992,12 +1098,16 @@ def main():
     # The warmup baseline may lag while master catches up with profiling the
     # warmup build; the sections that depend on it degrade to a catch-up note.
     warmup_side = resolve_run(db, BASE_DAYS, 0, warmup_sha, check_name=WARMUP_CHECK_NAME) if warmup_sha else None
+    # The per-TU compile baseline looks back TU_BASE_DAYS - far past the ~100
+    # commits of the anchored chain - so its candidate set is extended with
+    # older ancestors (see extend_master_shas).
+    tu_master_shas = extend_master_shas(master_shas)
 
     sections = [
         compare_binaries(db, pr_side, base_side),
         compare_objects(db, pr_side, warmup_side),
         compare_opt_functions(db, pr_side, base_side),
-        compare_compile_times(db, pr_side, master_shas),
+        compare_compile_times(db, pr_side, tu_master_shas),
         compare_symbols(db, pr_side, base_side),
     ]
 

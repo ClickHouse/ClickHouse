@@ -124,6 +124,11 @@ INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time,
     ({_PR}, '{_PR_SHA}', '2026-07-02 00:00:00', 'arm_release', 'I2', '{_KEEPER}', 'OptFunction', 'keeper_fn', 30000000),
     (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release', 'I0', '{_MAIN}', 'OptFunction', 'main_fn', 10000000),
     (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release', 'I0', '{_KEEPER}', 'OptFunction', 'keeper_fn', 5000000);
+
+-- A PR run whose producer lost the keeper link trace: OptFunction rows exist
+-- for ``clickhouse`` only, while the master baseline has both binaries.
+INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
+    ({_PR}, 'prsha-lost-keeper', '2026-07-02 00:00:00', 'arm_release', 'I5', '{_MAIN}', 'OptFunction', 'main_fn', 10000000);
 """
 
 
@@ -214,18 +219,23 @@ def test_objects_degrade_to_catchup_note_without_warmup_baseline():
 
 
 def test_symbols_do_not_fall_back_to_an_older_run():
-    """The newest run has no symbols, so no symbol comparison is produced.
+    """The newest run has no symbols: no fallback, and the loss is flagged.
 
     Reading the older run's symbols here would be exactly the cross-run mixing
     the check must avoid: it would compare a symbol from run I1 against master
-    while every other section reflects run I2.
+    while every other section reflects run I2. And since the master baseline
+    does have symbol data, a PR run without any means the profile producer
+    lost it - the section must say the comparison is incomplete instead of
+    rendering an all-green empty body.
     """
     db = FixtureDb()
     pr_side = job.resolve_run(db, job.PR_DAYS, _PR, _PR_SHA)
     base_side = job.resolve_run(db, job.BASE_DAYS, 0, _BASE_SHA)
     section = job.compare_symbols(db, pr_side, base_side)
     assert "stale_symbol" not in section.body
-    assert not section.significant
+    assert "uploaded none" in section.body
+    assert section.significant
+    assert "missing PR-side symbol data" in section.summary
 
 
 def test_drill_down_reads_the_run_that_compiled_the_tu():
@@ -316,6 +326,86 @@ def test_compile_times_use_warmup_traces_older_than_the_object_baseline():
     assert "tu.cpp" in section.body
     assert "10.0 s" in section.body
     assert section.significant
+
+
+def test_opt_functions_missing_pr_side_binary_is_flagged():
+    """A binary whose PR-side link trace was lost is an incomplete comparison.
+
+    On ``arm_release`` the keeper is built standalone, so both sides link it:
+    a master baseline with keeper OptFunction rows while the PR run has none
+    means the PR-side producer lost them. Silently omitting the binary would
+    make a keeper-only ThinLTO regression false-green; the section must call
+    the loss out and refuse to render as all-green.
+    """
+    db = FixtureDb()
+    pr_side = job.Side(job.PR_DAYS, _PR, "prsha-lost-keeper", "2026-07-02 00:00:00", "I5")
+    base_side = job.resolve_run(db, job.BASE_DAYS, 0, _BASE_SHA)
+    section = job.compare_opt_functions(db, pr_side, base_side)
+    assert f"`{job.strip_build_dir(_KEEPER)}`" in section.body
+    assert "uploaded none" in section.body
+    assert section.significant
+    assert "missing PR-side link trace" in section.summary
+
+
+def test_extend_master_shas_pages_past_the_anchored_chain():
+    """The per-TU candidate set is extended beyond the ~100-commit chain.
+
+    ``master_track_commits_sha`` spans only a day or two of master, while the
+    per-TU compile baseline advertises TU_BASE_DAYS: without extension a
+    warmup trace inside that window but older than the chain's tail is
+    invisible. Paging is anchored at the chain's oldest commit and stops once
+    the fetched history is older than the window.
+    """
+    import datetime
+
+    recent = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    pages = {
+        1: [{"sha": f"c{i}", "date": recent} for i in range(100)],
+        # The second page crosses the TU_BASE_DAYS cutoff: paging must stop.
+        2: [{"sha": f"d{i}", "date": recent} for i in range(99)]
+        + [{"sha": "ancient", "date": "2000-01-01T00:00:00Z"}],
+        3: [{"sha": "never-fetched", "date": "2000-01-01T00:00:00Z"}],
+    }
+    calls = []
+
+    def fake_list_page(anchor, page):
+        calls.append((anchor, page))
+        return pages[page]
+
+    shas = job.extend_master_shas(["a", "b", "c0"], list_page=fake_list_page)
+    # Anchored at the chain's oldest commit; the chain itself stays in front.
+    assert calls[0] == ("c0", 1)
+    assert shas[:3] == ["a", "b", "c0"]
+    # Deduplicated (the anchor reappears on page 1) and stopped at the cutoff.
+    assert shas.count("c0") == 1
+    assert "d42" in shas and "ancient" in shas
+    assert [page for _, page in calls] == [1, 2]
+
+    # A GitHub hiccup degrades to the un-extended (still valid) chain.
+    def failing_list_page(anchor, page):
+        raise RuntimeError("api down")
+
+    assert job.extend_master_shas(["a"], list_page=failing_list_page) == ["a"]
+    assert job.extend_master_shas([], list_page=failing_list_page) == []
+
+
+def test_comment_attributes_only_object_sizes_to_the_warmup_sha():
+    """The header must not pin compile times to the object-size warmup commit.
+
+    ``warmup_sha`` names the object-size baseline only; compile times are
+    resolved per translation unit against the most recent warmup build that
+    recompiled it, which can be a different (even older) commit.
+    """
+    body = job.build_comment(
+        job.LocalInfo(),
+        "prsha",
+        "basesha",
+        [job.Section(title="t", body="b")],
+        warmup_sha="warmupsha",
+    )
+    assert "object sizes against the warmup build of" in body
+    assert "compile times per translation unit against the most recent warmup build" in body
+    assert "object sizes and compile times against" not in body
 
 
 def test_get_master_shas_prefers_the_anchored_track():
