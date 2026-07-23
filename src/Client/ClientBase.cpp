@@ -2224,7 +2224,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 }
 
 
-void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query, bool have_more_data)
+void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query, bool have_more_data, bool buf_is_stdin)
 {
     String current_format = "Values";
 
@@ -2244,9 +2244,12 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
             const auto & compression_method_node = insert->compression->as<ASTLiteral &>();
             String compression_method_string = compression_method_node.value.safeGet<std::string>();
             /// "auto" has no filename to sniff an extension from here; reuse the detection already
-            /// done once against the real stdin descriptor for the default (no explicit COMPRESSION) case.
+            /// done once against the real stdin descriptor for the default (no explicit COMPRESSION)
+            /// case -- but only when `buf` actually is that stdin descriptor. For query-embedded
+            /// inline data, "auto" has nothing to detect from and must stay uncompressed, or it would
+            /// try to decompress plain query bytes based on an unrelated redirected stdin's name.
             CompressionMethod compression_method = compression_method_string == "auto"
-                ? default_input_compression_method
+                ? (buf_is_stdin ? default_input_compression_method : CompressionMethod::None)
                 : chooseCompressionMethod("", compression_method_string);
             compressed_buf = wrapReadBufferWithCompressionMethod(
                 wrapReadBufferReference(buf), compression_method,
@@ -2360,7 +2363,7 @@ void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & co
             std_in = wrapReadBufferWithCompressionMethod(
                 std::move(std_in), default_input_compression_method,
                 /*zstd_window_log_max=*/ 0, client_context->getSettingsRef()[Setting::snappy_mode]);
-        sendDataFrom(*std_in, sample, columns_description, parsed_query);
+        sendDataFrom(*std_in, sample, columns_description, parsed_query, /*have_more_data=*/ false, /*buf_is_stdin=*/ true);
     }
     catch (Exception & e)
     {

@@ -194,3 +194,24 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression FORMAT 
 "
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_insert_format_compression ORDER BY id"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
+
+# Regression: COMPRESSION 'auto' must resolve against the actual source of the data being
+# decompressed, not blindly reuse whatever was auto-detected from a redirected stdin descriptor.
+# Here the INSERT data is embedded inline in the query text (plain, uncompressed), while stdin is
+# separately redirected from an unrelated real .gz file. 'auto' on the inline chunk must resolve to
+# no compression (there is nothing to sniff from query-embedded bytes), or it would try to gunzip
+# plain CSV text and fail. The trailing stdin content is then appended to the same INSERT (existing
+# inline+stdin continuation behavior) and, since it really is gzip-compressed, must still be
+# transparently decompressed via the correct (stdin-derived) detection.
+printf '24,X\n' > "${CLICKHOUSE_TMP}"/04506_data9.csv
+gzip -k -f "${CLICKHOUSE_TMP}"/04506_data9.csv
+
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --async_insert 0 --query "INSERT INTO test_insert_format_compression FORMAT CSV COMPRESSION 'auto'
+22,V
+23,W
+" < "${CLICKHOUSE_TMP}"/04506_data9.csv.gz
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_insert_format_compression ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
+
+rm -f "${CLICKHOUSE_TMP}"/04506_data9.csv "${CLICKHOUSE_TMP}"/04506_data9.csv.gz
