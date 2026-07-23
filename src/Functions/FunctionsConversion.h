@@ -2182,12 +2182,8 @@ struct ConvertImpl
                 auto utc_seconds = vec_to[i] / scale_mult;
                 auto fraction = vec_to[i] % scale_mult;
 
-                /// Truncated division rounds toward zero, so for a negative fractional value
-                /// `utc_seconds` is the ceil second and `fraction` is negative. timezoneOffset()
-                /// must inspect the floor second, otherwise it can read the offset of the next
-                /// second and pick the wrong side of a DST/offset boundary. Adjust to floor
-                /// division: keep `fraction` non-negative and step `utc_seconds` down. The identity
-                /// utc_seconds * scale_mult + fraction == value is preserved.
+                /// Floor the split so `fraction` stays non-negative and timezoneOffset() sees the
+                /// floor second, not the next one (wrong offset at a DST/offset boundary otherwise).
                 if (fraction < 0)
                 {
                     utc_seconds -= 1;
