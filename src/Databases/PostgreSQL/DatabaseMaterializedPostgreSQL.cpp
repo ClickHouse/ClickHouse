@@ -59,11 +59,13 @@ namespace ErrorCodes
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int CANNOT_BACKUP_TABLE;
     extern const int FAULT_INJECTED;
+    extern const int POSTGRESQL_REPLICATION_INTERNAL_ERROR;
 }
 
 namespace FailPoints
 {
     extern const char materialized_postgresql_fail_nested_table_drop[];
+    extern const char materialized_postgresql_fail_database_startup[];
 }
 
 DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
@@ -132,6 +134,15 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     /// retrying them as before.
     if (synchronization_started)
         return;
+
+    /// Simulates the background startup failing before the replication handler has been built, to make the
+    /// attach/restart window - in which `replication_handler` is still null while the database is already
+    /// mounted and accepts DDL - deterministically testable.
+    fiu_do_on(FailPoints::materialized_postgresql_fail_database_startup,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED,
+            "Injected failure of the MaterializedPostgreSQL database startup");
+    });
 
     replication_handler = makeReplicationHandler();
 
@@ -272,7 +283,13 @@ void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges 
         }
         else if ((change.name == "materialized_postgresql_allow_automatic_update") || (change.name == "materialized_postgresql_max_block_size"))
         {
-            replication_handler->setSetting(change);
+            /// The replication handler is built by the background startup task, so right after CREATE / ATTACH
+            /// or a server restart it may not exist yet (and it keeps not existing while the startup task is
+            /// retrying an unreachable PostgreSQL). The change is still applied to the in-memory `settings` and
+            /// persisted to the on-disk metadata below, and `makeReplicationHandler` reads `*settings`, so a
+            /// handler built later picks the new value up.
+            if (replication_handler)
+                replication_handler->setSetting(change);
             need_update_on_disk = true;
         }
 
@@ -353,6 +370,17 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
         table_uuid = existing_table->getStorageID().uuid;
 
     std::lock_guard lock(handler_mutex);
+
+    /// The replication handler is built by the background startup task and may not exist yet in the
+    /// attach/restart window (a null dereference below would not be caught by the try/catch).
+    if (!replication_handler)
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                "Cannot get the definition of table `{}`: the database has not finished starting replication yet. "
+                "Retry once synchronization has started", table_name);
+        return nullptr;
+    }
 
     ASTPtr ast_storage;
     try
@@ -452,6 +480,18 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
                 "(materialized_postgresql_keeper_path is set). "
                 "Recreate the database with an updated materialized_postgresql_tables_list instead");
 
+        /// The replication handler is built by the background startup task, so right after CREATE / ATTACH or a
+        /// server restart it may not exist yet (and it keeps not existing while the startup task is retrying an
+        /// unreachable PostgreSQL). Adding a table requires the live handler, so refuse cleanly - and do it
+        /// before mutating anything: the tables-list setting altered below would not be rolled back.
+        {
+            std::lock_guard lock(handler_mutex);
+            if (!replication_handler)
+                throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                    "Cannot add table `{}` to replication: the database has not finished starting replication yet. "
+                    "Retry once synchronization has started", table_name);
+        }
+
         auto current_context = Context::createCopy(getContext()->getGlobalContext());
         current_context->setInternalQuery(true);
 
@@ -475,6 +515,9 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
             materialized_tables[table_name] = storage;
 
             std::lock_guard lock(handler_mutex);
+            if (!replication_handler)
+                throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                    "Cannot add table `{}` to replication: the replication handler is gone. Retry later", table_name);
             replication_handler->addTableToReplication(dynamic_cast<StorageMaterializedPostgreSQL *>(storage.get()), table_name);
         }
         catch (...)
@@ -510,6 +553,17 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
                 "(materialized_postgresql_keeper_path is set). "
                 "Recreate the database with an updated materialized_postgresql_tables_list instead");
 
+        /// Same startup-window handling as in `attachTable`: removing a table requires the live replication
+        /// handler, which the background startup task may not have built yet. Refuse cleanly before mutating
+        /// anything (the tables-list setting altered below would not be rolled back).
+        {
+            std::lock_guard lock(handler_mutex);
+            if (!replication_handler)
+                throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                    "Cannot remove table `{}` from replication: the database has not finished starting replication yet. "
+                    "Retry once synchronization has started", table_name);
+        }
+
         auto & table_to_delete = materialized_tables[table_name];
         if (!table_to_delete)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Materialized table `{}` does not exist", table_name);
@@ -531,6 +585,9 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Inner table `{}` does not exist", table_name);
 
         std::lock_guard lock(handler_mutex);
+        if (!replication_handler)
+            throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                "Cannot remove table `{}` from replication: the replication handler is gone. Retry later", table_name);
         replication_handler->removeTableFromReplication(table_name);
 
         try
@@ -756,8 +813,16 @@ void DatabaseMaterializedPostgreSQL::drop(ContextPtr local_context)
     /// that its nested tables are gone) and cleans up the shared PostgreSQL slot/publication for the last case;
     /// running it after `beforeDropDatabase` is idempotent. In non-coordinated mode this is the only teardown.
     std::lock_guard lock(handler_mutex);
-    if (replication_handler)
-        replication_handler->shutdownFinal();
+
+    /// `replication_handler` may still be null here if the drop happened before the background startup task ever
+    /// ran (attach/restart window; in coordinated mode `beforeDropDatabase` has already built it). The PostgreSQL
+    /// publication and the logical replication slot exist independently of the handler object, so skipping the
+    /// teardown would leak them in PostgreSQL after the database is gone (a leaked slot retains WAL and can
+    /// exhaust `max_replication_slots`). Build the handler from the persisted settings, purely to run the final
+    /// cleanup (constructing it does not connect to PostgreSQL or start replication).
+    if (!replication_handler)
+        replication_handler = makeReplicationHandler();
+    replication_handler->shutdownFinal();
 
     DatabaseAtomic::drop(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context));
 }

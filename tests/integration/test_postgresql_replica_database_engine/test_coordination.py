@@ -1687,3 +1687,72 @@ def test_coordination_settings_cannot_be_altered(started_cluster):
         "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(50, 50)"
     )
     check_tables_are_synchronized(instance, "test_table")
+
+
+def test_plain_database_ddl_and_drop_in_startup_window(started_cluster):
+    # In the attach/restart window the background startup task has not built the replication handler
+    # yet, but a plain (non-coordinated) database is already mounted and accepts DDL. Public DDL must
+    # not dereference the missing handler (ALTER of a mutable setting is applied to the persisted
+    # metadata; ATTACH / DETACH TABLE are refused cleanly), and a DROP DATABASE in that window must
+    # still remove the PostgreSQL publication and logical replication slot instead of leaking them.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(50)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=cluster.postgres_ip,
+        port=cluster.postgres_port,
+        settings=["materialized_postgresql_tables_list = 'test_table'"],
+    )
+    check_tables_are_synchronized(instance, "test_table")
+    assert replication_slot_exists()
+    assert publication_exists()
+
+    # A table that is not replicated yet, for the ATTACH TABLE check below.
+    pg_manager.create_postgres_table("late_table")
+
+    failpoint_config_path = (
+        "/etc/clickhouse-server/config.d/matpg_startup_failpoint.xml"
+    )
+    try:
+        # Re-enter the startup window: restart the server with the failpoint enabled from the
+        # configuration (a runtime `SYSTEM ENABLE FAILPOINT` would not survive the restart), so the
+        # re-attached database keeps retrying its background startup before the replication handler
+        # is built.
+        instance.replace_config(
+            failpoint_config_path,
+            "<clickhouse><fail_points_active>"
+            "<materialized_postgresql_fail_database_startup>1"
+            "</materialized_postgresql_fail_database_startup>"
+            "</fail_points_active></clickhouse>",
+        )
+        instance.restart_clickhouse()
+
+        # Applied to the in-memory settings and the on-disk metadata; the handler built later picks
+        # the new value up.
+        instance.query(
+            "ALTER DATABASE test_database MODIFY SETTING materialized_postgresql_max_block_size = 8192"
+        )
+        assert "materialized_postgresql_max_block_size = 8192" in instance.query(
+            "SHOW CREATE DATABASE test_database"
+        )
+
+        error = instance.query_and_get_error("ATTACH TABLE test_database.late_table")
+        assert "has not finished starting replication yet" in error, error
+
+        error = instance.query_and_get_error(
+            "DETACH TABLE test_database.test_table PERMANENTLY"
+        )
+        assert "has not finished starting replication yet" in error, error
+
+        # The drop runs with the handler still null; the publication and the replication slot must
+        # not be leaked in PostgreSQL.
+        instance.query("DROP DATABASE test_database SYNC")
+        assert not replication_slot_exists()
+        assert not publication_exists()
+    finally:
+        instance.exec_in_container(["rm", "-f", failpoint_config_path])
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_database_startup"
+        )
