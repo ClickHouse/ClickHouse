@@ -1,8 +1,11 @@
 -- Correctness of the fast `MODIFY TTL` optimization. The fast path only shifts each part's stored TTL
 -- timestamps by a constant, so it must:
 --   * handle every TTL result type (Date, DateTime, Date32, DateTime64) without a logical error;
---   * fall back to a full rewrite when the delta is not a constant number of seconds (calendar
---     month/year intervals, DST-sensitive intervals, column-dependent expressions);
+--   * fall back to a full rewrite when the delta is not a provably constant number of seconds
+--     (calendar month/year intervals, day/week intervals in a DST time zone, column-dependent
+--     expressions);
+--   * fall back when the rows TTL is not the only TTL in the table (e.g. a column TTL), because the
+--     parts' aggregate TTL bounds cover all TTLs and must not be shifted;
 --   * fall back for parts whose stored TTL info is stale (left by materialize_ttl_after_modify = 0),
 --     never deleting rows that are not actually expired.
 -- In every case the resulting row set must be correct.
@@ -54,6 +57,22 @@ INSERT INTO t_ttl_if SELECT number, now('UTC') FROM numbers(1000);
 ALTER TABLE t_ttl_if MODIFY TTL d + toIntervalDay(if(id % 2 = 0, -1000, 2000));
 SELECT count() FROM t_ttl_if;
 DROP TABLE t_ttl_if;
+
+SELECT 'Day interval in a DST time zone falls back and still expires the right rows';
+DROP TABLE IF EXISTS t_ttl_dst;
+CREATE TABLE t_ttl_dst (id UInt32, d DateTime('Europe/Madrid')) ENGINE = MergeTree ORDER BY id TTL d + INTERVAL 300 DAY;
+INSERT INTO t_ttl_dst SELECT number, now('Europe/Madrid') - INTERVAL 100 DAY FROM numbers(1000);
+ALTER TABLE t_ttl_dst MODIFY TTL d + INTERVAL 10 DAY;
+SELECT count() FROM t_ttl_dst;
+DROP TABLE t_ttl_dst;
+
+SELECT 'Column TTL in the table forces fallback and still expires the right rows';
+DROP TABLE IF EXISTS t_ttl_col;
+CREATE TABLE t_ttl_col (id UInt32, d DateTime('UTC'), x String TTL d + INTERVAL 1000 DAY) ENGINE = MergeTree ORDER BY id TTL d + INTERVAL 300 DAY;
+INSERT INTO t_ttl_col SELECT number, now('UTC') - INTERVAL 100 DAY, 'x' FROM numbers(1000);
+ALTER TABLE t_ttl_col MODIFY TTL d + INTERVAL 10 DAY;
+SELECT count() FROM t_ttl_col;
+DROP TABLE t_ttl_col;
 
 SELECT 'Stale part TTL info (materialize_ttl_after_modify = 0) must not delete live rows';
 DROP TABLE IF EXISTS t_ttl_stale;

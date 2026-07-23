@@ -21,13 +21,11 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnsDateTime.h>
 #include <Common/assert_cast.h>
-#include <Common/intExp.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
-#include <base/DayNum.h>
+#include <Parsers/ASTLiteral.h>
+#include <base/arithmeticOverflow.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -223,144 +221,187 @@ ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & contex
 namespace
 {
 
-/// Representative "seed" values (Unix seconds) used to probe a TTL expression. They span many decades,
-/// daylight-saving-time transitions, and leap-year boundaries, plus a few small and negative values.
-/// Any dependence of the TTL delta on the row (calendar month/year intervals, DST-sensitive day/week
-/// intervals, or column-dependent expressions) shows up as unequal deltas across these probes.
-constexpr Int64 ttl_delta_probe_seeds[] = {
-    0, 1, -1, 3600, 86400, 90061,
-    951782400,   /// 2000-02-29 (leap day)
-    1000000000,  /// 2001-09-09
-    1234567890,  /// 2009-02-13
-    1300000000, 1400000000, 1500000000, 1600000000, 1700000000, 1800000000, 1900000000, 2000000000,
-    1583020800,  /// 2020-03-01 (before spring DST in the northern hemisphere)
-    1585699200,  /// 2020-04-01 (after spring DST)
-    1601510400,  /// 2020-10-01 (before autumn DST)
-    1604188800,  /// 2020-11-01 (after autumn DST)
-    1614556800,  /// 2021-03-01
-    -2208988800, /// 1900-01-01 (negative, exercises the Date32 range)
-    4102444800,  /// 2100-01-01
-    2145916800,  /// 2038-01-01 (near the 32-bit DateTime limit)
+/// The result of the structural analysis of a rows-TTL expression: the single date/time column the
+/// expression shifts and the total constant shift in seconds. The analysis only accepts the shape
+/// `column`, or `column` plus/minus constant intervals of fixed length (week/day/hour/minute/second),
+/// so the expression is provably `column + offset_seconds` and nothing else.
+struct TTLShiftedColumn
+{
+    String column_name;
+    Int64 offset_seconds = 0;
+    /// Day/week intervals are only a fixed number of seconds in a time zone with a fixed offset
+    /// (`addDays` preserves the local wall-clock time across DST transitions otherwise).
+    bool has_day_or_week_interval = false;
+    /// Hour/minute/second intervals change the result type of a `Date`/`Date32` expression, so they
+    /// are only accepted for `DateTime`/`DateTime64` columns.
+    bool has_sub_day_interval = false;
 };
 
-constexpr size_t ttl_delta_probe_rows = std::size(ttl_delta_probe_seeds);
-
-/// Fill `column` (which must be of `type`) with one probe value per row, converting each seed into the
-/// column's native representation. Only date/time types are supported; the caller guarantees that.
-void fillTTLProbeColumn(const DataTypePtr & type, IColumn & column)
+/// Recognize a constant fixed-length interval: `toIntervalDay(N)` etc. with a literal integer argument.
+/// Calendar-dependent units (month, quarter, year) and sub-second units are rejected: the former are
+/// not a constant number of seconds, the latter cannot be represented in the parts' TTL timestamps.
+std::optional<TTLShiftedColumn> tryAnalyzeIntervalConstant(const ASTPtr & node)
 {
-    WhichDataType which(type);
-    for (Int64 seed : ttl_delta_probe_seeds)
+    const auto * func = node->as<ASTFunction>();
+    if (!func || !func->arguments || func->arguments->children.size() != 1)
+        return {};
+
+    Int64 multiplier = 0;
+    bool day_or_week = false;
+    if (func->name == "toIntervalSecond")
+        multiplier = 1;
+    else if (func->name == "toIntervalMinute")
+        multiplier = 60;
+    else if (func->name == "toIntervalHour")
+        multiplier = 3600;
+    else if (func->name == "toIntervalDay")
     {
-        if (which.isDate())
-            assert_cast<ColumnUInt16 &>(column).getData().push_back(
-                static_cast<UInt16>(std::clamp<Int64>(seed / 86400, 0, DATE_LUT_MAX_DAY_NUM)));
-        else if (which.isDate32())
-            assert_cast<ColumnInt32 &>(column).getData().push_back(static_cast<Int32>(seed / 86400));
-        else if (which.isDateTime())
-            assert_cast<ColumnUInt32 &>(column).getData().push_back(
-                static_cast<UInt32>(std::clamp<Int64>(seed, 0, static_cast<Int64>(0xFFFFFFFF))));
-        else if (which.isDateTime64())
-        {
-            const UInt32 scale = assert_cast<const DataTypeDateTime64 &>(*type).getScale();
-            const Int64 multiplier = intExp10OfSize<Int64>(scale);
-            /// Guard against overflow when scaling seconds into the column's sub-second units.
-            const Int64 max_seconds = std::numeric_limits<Int64>::max() / multiplier;
-            const Int64 seconds = std::clamp<Int64>(seed, -max_seconds, max_seconds);
-            assert_cast<ColumnDateTime64 &>(column).getData().push_back(DateTime64(seconds * multiplier));
-        }
+        multiplier = 86400;
+        day_or_week = true;
     }
+    else if (func->name == "toIntervalWeek")
+    {
+        multiplier = 7 * 86400;
+        day_or_week = true;
+    }
+    else
+        return {};
+
+    const auto * literal = func->arguments->children.front()->as<ASTLiteral>();
+    if (!literal)
+        return {};
+
+    Int64 value = 0;
+    if (literal->value.getType() == Field::Types::UInt64)
+    {
+        UInt64 unsigned_value = literal->value.safeGet<UInt64>();
+        if (unsigned_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+            return {};
+        value = static_cast<Int64>(unsigned_value);
+    }
+    else if (literal->value.getType() == Field::Types::Int64)
+        value = literal->value.safeGet<Int64>();
+    else
+        return {};
+
+    TTLShiftedColumn result;
+    if (common::mulOverflow(value, multiplier, result.offset_seconds))
+        return {};
+    result.has_day_or_week_interval = day_or_week;
+    result.has_sub_day_interval = !day_or_week;
+    return result;
 }
 
-/// Extract the expiry timestamp (Unix seconds) for a single row from a TTL result column. Returns
-/// std::nullopt for an unexpected result type, so the caller can fall back instead of failing.
-std::optional<Int64> extractTTLTimestamp(const IColumn & column, size_t row)
+/// Structurally decompose a rows-TTL expression into `column + constant seconds`. Returns std::nullopt
+/// for any other shape (several columns, non-literal intervals, calendar-dependent units, arbitrary
+/// functions), in which case the caller must fall back to a regular `MATERIALIZE TTL` rewrite.
+std::optional<TTLShiftedColumn> tryAnalyzeTTLShift(const ASTPtr & node)
 {
-    const auto & date_lut = DateLUT::serverTimezoneInstance();
+    if (const auto * identifier = node->as<ASTIdentifier>())
+    {
+        TTLShiftedColumn result;
+        result.column_name = identifier->name();
+        return result;
+    }
 
-    if (const auto * col = typeid_cast<const ColumnUInt16 *>(&column))
-        return static_cast<Int64>(date_lut.fromDayNum(DayNum(col->getData()[row])));
-    if (const auto * col = typeid_cast<const ColumnUInt32 *>(&column))
-        return static_cast<Int64>(col->getData()[row]);
-    if (const auto * col = typeid_cast<const ColumnInt32 *>(&column))
-        return static_cast<Int64>(date_lut.fromDayNum(ExtendedDayNum(static_cast<Int32>(col->getData()[row]))));
-    if (const auto * col = typeid_cast<const ColumnDateTime64 *>(&column))
-        return col->getData()[row] / intExp10OfSize<Int64>(col->getScale());
+    const auto * func = node->as<ASTFunction>();
+    if (!func || (func->name != "plus" && func->name != "minus") || !func->arguments || func->arguments->children.size() != 2)
+        return {};
 
-    return {};
+    const bool is_minus = func->name == "minus";
+    const auto & lhs = func->arguments->children[0];
+    const auto & rhs = func->arguments->children[1];
+
+    /// `<subtree> + interval`, `<subtree> - interval`, or `interval + <subtree>`.
+    std::optional<TTLShiftedColumn> interval = tryAnalyzeIntervalConstant(rhs);
+    ASTPtr subtree = lhs;
+    if (!interval && !is_minus)
+    {
+        interval = tryAnalyzeIntervalConstant(lhs);
+        subtree = rhs;
+    }
+    if (!interval)
+        return {};
+
+    auto result = tryAnalyzeTTLShift(subtree);
+    if (!result)
+        return {};
+
+    const Int64 shift = is_minus ? -interval->offset_seconds : interval->offset_seconds;
+    if (common::addOverflow(result->offset_seconds, shift, result->offset_seconds))
+        return {};
+
+    result->has_day_or_week_interval |= interval->has_day_or_week_interval;
+    result->has_sub_day_interval |= interval->has_sub_day_interval;
+    return result;
 }
 
 }
 
-std::optional<time_t> tryComputeConstantTTLDelta(
-    const TTLDescription & old_ttl, const TTLDescription & new_ttl, const ContextPtr & context)
+std::optional<time_t> tryComputeConstantTTLDelta(const TTLDescription & old_ttl, const TTLDescription & new_ttl)
 {
     if (!old_ttl.expression_ast || !new_ttl.expression_ast)
         return {};
 
-    /// Build a probe block holding the union of both expressions' input columns. The optimization is
-    /// only sound when the delta is independent of the row, so we require every referenced column to be
-    /// a date/time type: an expression that reads any other column (for example `if(id = 0, ...)`) is
-    /// treated as potentially row-dependent and rejected here, falling back to a regular rewrite.
-    Block probe_block;
-    NameSet seen;
-    for (const auto * columns : {&old_ttl.expression_columns, &new_ttl.expression_columns})
-    {
-        for (const auto & column : *columns)
-        {
-            if (!seen.insert(column.name).second)
-                continue;
-
-            WhichDataType which(column.type);
-            if (!(which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64()))
-                return {};
-
-            auto probe_column = column.type->createColumn();
-            fillTTLProbeColumn(column.type, *probe_column);
-            probe_block.insert({std::move(probe_column), column.type, column.name});
-        }
-    }
-
-    try
-    {
-        auto evaluate = [&](const TTLDescription & ttl) -> ColumnPtr
-        {
-            auto expression = ttl.buildExpression(context).expression;
-            Block block_copy;
-            for (const auto & name : expression->getRequiredColumns())
-                block_copy.insert(probe_block.getByName(name));
-
-            size_t num_rows = ttl_delta_probe_rows;
-            expression->execute(block_copy, num_rows);
-            return block_copy.getByName(ttl.result_column).column->convertToFullColumnIfConst();
-        };
-
-        ColumnPtr old_column = evaluate(old_ttl);
-        ColumnPtr new_column = evaluate(new_ttl);
-
-        std::optional<Int64> delta;
-        for (size_t row = 0; row < ttl_delta_probe_rows; ++row)
-        {
-            auto old_timestamp = extractTTLTimestamp(*old_column, row);
-            auto new_timestamp = extractTTLTimestamp(*new_column, row);
-            if (!old_timestamp || !new_timestamp)
-                return {};
-
-            const Int64 row_delta = *new_timestamp - *old_timestamp;
-            if (!delta)
-                delta = row_delta;
-            else if (*delta != row_delta)
-                return {};
-        }
-
-        return delta;
-    }
-    catch (...)
-    {
-        /// Any failure to analyze the expressions means we cannot prove the delta is constant,
-        /// so it is Ok to swallow the exception here: the caller falls back to a full rewrite.
+    /// The optimization is only sound when `new_ttl(row) - old_ttl(row)` is the same constant for every
+    /// possible row, so we require both expressions to have a provable shape: the same single date/time
+    /// column shifted by constant fixed-length intervals. Everything else - other columns (which make
+    /// the delta row-dependent, e.g. `if(id = 0, ...)`), calendar month/year intervals, non-literal
+    /// intervals, arbitrary functions - is rejected here, falling back to a regular rewrite.
+    auto old_shift = tryAnalyzeTTLShift(old_ttl.expression_ast);
+    auto new_shift = tryAnalyzeTTLShift(new_ttl.expression_ast);
+    if (!old_shift || !new_shift || old_shift->column_name != new_shift->column_name)
         return {};
+
+    /// The shifted identifier must be the one and only source column of both expressions. This also
+    /// rejects an ALIAS column, whose analyzed source columns would carry the underlying names.
+    auto get_single_column_type = [&](const TTLDescription & ttl) -> DataTypePtr
+    {
+        if (ttl.expression_columns.size() != 1 || ttl.expression_columns.front().name != old_shift->column_name)
+            return nullptr;
+        return ttl.expression_columns.front().type;
+    };
+
+    DataTypePtr old_type = get_single_column_type(old_ttl);
+    DataTypePtr new_type = get_single_column_type(new_ttl);
+    if (!old_type || !new_type || !old_type->equals(*new_type))
+        return {};
+
+    WhichDataType which(old_type);
+    if (which.isDate() || which.isDate32())
+    {
+        /// Hour/minute/second intervals turn a `Date` expression into a `DateTime` one, whose time zone
+        /// depends on the evaluation context; do not try to reason about that.
+        if (old_shift->has_sub_day_interval || new_shift->has_sub_day_interval)
+            return {};
+
+        /// A `Date` TTL stores `fromDayNum(date + N)` in the server time zone, so consecutive days are
+        /// a fixed 86400 seconds apart only when that time zone has a fixed offset from UTC.
+        if (!DateLUT::serverTimezoneInstance().hasFixedOffset())
+            return {};
     }
+    else if (which.isDateTime() || which.isDateTime64())
+    {
+        /// `addDays`/`addWeeks` preserve the local wall-clock time, so they add a fixed number of
+        /// seconds only in a time zone with a fixed offset from UTC. Hour/minute/second intervals
+        /// always add a fixed number of seconds regardless of the time zone.
+        if (old_shift->has_day_or_week_interval || new_shift->has_day_or_week_interval)
+        {
+            const auto & time_zone = which.isDateTime()
+                ? assert_cast<const DataTypeDateTime &>(*old_type).getTimeZone()
+                : assert_cast<const DataTypeDateTime64 &>(*old_type).getTimeZone();
+            if (!time_zone.hasFixedOffset())
+                return {};
+        }
+    }
+    else
+        return {};
+
+    Int64 delta = 0;
+    if (common::subOverflow(new_shift->offset_seconds, old_shift->offset_seconds, delta))
+        return {};
+
+    return delta;
 }
 
 std::optional<time_t> tryComputeConstantTTLDelta(
@@ -385,7 +426,7 @@ std::optional<time_t> tryComputeConstantTTLDelta(
         if (!old_ttl.rows_ttl.expression_ast)
             return {};
 
-        return tryComputeConstantTTLDelta(old_ttl.rows_ttl, new_ttl, context);
+        return tryComputeConstantTTLDelta(old_ttl.rows_ttl, new_ttl);
     }
     catch (...)
     {

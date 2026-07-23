@@ -147,17 +147,20 @@ struct TTLTableDescription
 /// only when the change adds the same constant number of seconds to every row's expiry time, i.e.
 /// when `new_ttl(row) - old_ttl(row)` does not depend on the row.
 ///
-/// This checks that condition by evaluating both TTL expressions over a dense grid of representative
-/// input values (a range of timestamps spanning DST and leap-year boundaries across many decades, plus
-/// varied values for any other referenced columns) and requiring every per-row delta to be identical.
-/// It returns that constant delta in seconds, or `std::nullopt` when the delta is not provably constant
-/// (calendar month/year intervals, DST-sensitive day/week intervals, column-dependent expressions such
-/// as `if(...)`, or an unsupported/unexpected result type). A `std::nullopt` result means the fast path
-/// must not be used and the caller must fall back to a regular `MATERIALIZE TTL` rewrite.
+/// This proves that condition structurally: both expressions must be the same single date/time column
+/// shifted by constant fixed-length intervals (`col`, `col + INTERVAL N DAY`, `col - toIntervalHour(N)`,
+/// ...), so each expression is exactly `column + constant seconds` and the delta is the difference of
+/// the two constants. Day/week intervals are additionally accepted only when the relevant time zone
+/// (the column's one for `DateTime`/`DateTime64`, the server's one for `Date`/`Date32`) has a fixed
+/// offset from UTC, because `addDays` preserves the local wall-clock time across DST transitions and
+/// is not a constant number of seconds otherwise.
 ///
-/// The function never throws for an unoptimizable input; it returns `std::nullopt` instead.
-std::optional<time_t> tryComputeConstantTTLDelta(
-    const TTLDescription & old_ttl, const TTLDescription & new_ttl, const ContextPtr & context);
+/// Returns the constant delta in seconds, or `std::nullopt` when the delta is not provably constant
+/// (several referenced columns, calendar month/year intervals, non-literal intervals, arbitrary
+/// functions, DST-sensitive day/week intervals, or an unsupported result type). A `std::nullopt` result
+/// means the fast path must not be used and the caller must fall back to a regular `MATERIALIZE TTL`
+/// rewrite. The function never throws for an unoptimizable input; it returns `std::nullopt` instead.
+std::optional<time_t> tryComputeConstantTTLDelta(const TTLDescription & old_ttl, const TTLDescription & new_ttl);
 
 /// Overload where the old rows-TTL is given as its serialized expression string (as stored in a part's
 /// TTL info fingerprint). It is parsed and built against `columns`/`primary_key`; any parse/build failure

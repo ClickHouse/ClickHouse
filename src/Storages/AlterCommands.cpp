@@ -1,5 +1,3 @@
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnsNumber.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -41,12 +39,10 @@
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Processors/TTL/ITTLAlgorithm.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
@@ -2176,7 +2172,7 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
                     /// Use `original_metadata`: `metadata` already has the new TTL applied above,
                     /// so the old TTL needed to compute the delta is only available in the original copy.
                     /// A zero delta (the TTL is unchanged) falls through to the regular rewrite.
-                    if (auto delta = tryOptimizeModifyTLL(original_metadata, context, alter_cmd); delta.value_or(0) != 0)
+                    if (auto delta = tryOptimizeModifyTTL(original_metadata, context, alter_cmd); delta.value_or(0) != 0)
                     {
                        result.push_back(createFastMaterializeTTLCommand(*delta));
                        break;
@@ -2191,7 +2187,7 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     return result;
 }
 
-std::optional<time_t> AlterCommands::tryOptimizeModifyTLL(const StorageInMemoryMetadata & metadata, ContextPtr context, const AlterCommand & alter_cmd) const
+std::optional<time_t> AlterCommands::tryOptimizeModifyTTL(const StorageInMemoryMetadata & metadata, ContextPtr context, const AlterCommand & alter_cmd) const
 {
     if (alter_cmd.type != AlterCommand::MODIFY_TTL || !alter_cmd.ttl || !metadata.hasAnyTableTTL())
         return {};
@@ -2199,22 +2195,30 @@ std::optional<time_t> AlterCommands::tryOptimizeModifyTLL(const StorageInMemoryM
     TTLTableDescription new_table_ttl = TTLTableDescription::getTTLForTableFromAST(
         alter_cmd.ttl, metadata.columns, context, metadata.primary_key, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
 
-    /// Only optimize a change of the single unconditional rows TTL (`TTL <expr>`). Any WHERE / MOVE /
-    /// RECOMPRESS / GROUP BY TTL falls back to the regular rewrite.
+    /// Only optimize when the single unconditional rows TTL (`TTL <expr>`) is the one and only TTL in
+    /// the table, both before and after the change. The fast path shifts each part's aggregate
+    /// `part_min_ttl`/`part_max_ttl`, and those aggregates also include every column TTL and WHERE /
+    /// MOVE / RECOMPRESS / GROUP BY TTL, which must not be shifted; so any of them forces the regular
+    /// rewrite.
     if (!new_table_ttl.rows_ttl.expression_ast || !new_table_ttl.rows_where_ttl.empty() || !new_table_ttl.move_ttl.empty()
         || !new_table_ttl.recompression_ttl.empty() || !new_table_ttl.group_by_ttl.empty())
         return {};
 
+    if (metadata.hasAnyColumnTTL())
+        return {};
+
     const TTLTableDescription & old_table_ttl = metadata.table_ttl;
-    if (!old_table_ttl.rows_ttl.expression_ast)
+    if (!old_table_ttl.rows_ttl.expression_ast || !old_table_ttl.rows_where_ttl.empty() || !old_table_ttl.move_ttl.empty()
+        || !old_table_ttl.recompression_ttl.empty() || !old_table_ttl.group_by_ttl.empty())
         return {};
 
     /// The fast path merely shifts each part's stored TTL timestamps by a constant. That is correct
     /// only when `new_ttl(row) - old_ttl(row)` is the same constant for every row. `tryComputeConstantTTLDelta`
-    /// verifies this over a dense grid of probe values and returns std::nullopt for the unsafe cases
-    /// (calendar month/year intervals, DST-sensitive day/week intervals, column-dependent expressions,
-    /// or unsupported result types), so we transparently fall back to the regular `MATERIALIZE TTL`.
-    return tryComputeConstantTTLDelta(old_table_ttl.rows_ttl, new_table_ttl.rows_ttl, context);
+    /// proves this structurally (the same single date/time column plus constant fixed-length intervals)
+    /// and returns std::nullopt for the unprovable cases (calendar month/year intervals, DST-sensitive
+    /// day/week intervals, column-dependent expressions, or unsupported result types), so we
+    /// transparently fall back to the regular `MATERIALIZE TTL`.
+    return tryComputeConstantTTLDelta(old_table_ttl.rows_ttl, new_table_ttl.rows_ttl);
 }
 
 }

@@ -3380,7 +3380,7 @@ bool MutateTask::prepare()
     };
 
     /// Fast `MODIFY TTL`: instead of rewriting every part, shift each part's TTL metadata by the
-    /// delta between the old and new TTL (computed in `AlterCommands::tryOptimizeModifyTLL`). Per part:
+    /// delta between the old and new TTL (computed in `AlterCommands::tryOptimizeModifyTTL`). Per part:
     ///   * fully expired under the new TTL  -> replace with an empty part;
     ///   * not yet expired                  -> clone the part and shift its `ttl.txt` in place;
     ///   * partially expired                -> fall back to a regular `MATERIALIZE TTL` rewrite.
@@ -3400,19 +3400,30 @@ bool MutateTask::prepare()
         /// recalculating parts). When the stored expiry times do not map to the new TTL by a single
         /// constant shift, or the part's fingerprint is unknown, `delta` stays empty and we fall back to a
         /// regular `MATERIALIZE TTL` rewrite for this part below.
+        ///
+        /// The part must also carry TTL info for the rows TTL and nothing else: its aggregate
+        /// `part_min_ttl`/`part_max_ttl` are the bounds over ALL its TTLs, so any other TTL info (e.g.
+        /// left over from a column TTL that has been dropped since the part was written) would make
+        /// both the expiry decisions and the shift below incorrect.
+        const auto & source_ttl_infos = ctx->source_part->ttl_infos;
+        const bool part_has_only_rows_ttl = source_ttl_infos.table_ttl.min != 0
+            && source_ttl_infos.columns_ttl.empty() && source_ttl_infos.rows_where_ttl.empty()
+            && source_ttl_infos.moves_ttl.empty() && source_ttl_infos.recompression_ttl.empty()
+            && source_ttl_infos.group_by_ttl.empty();
+
         std::optional<time_t> delta;
         String new_ttl_expression;
-        if (ctx->metadata_snapshot->hasRowsTTL())
+        if (part_has_only_rows_ttl && ctx->metadata_snapshot->hasRowsTTL())
         {
             auto rows_ttl = ctx->metadata_snapshot->getRowsTTL();
             new_ttl_expression = rows_ttl.result_column;
             delta = tryComputeConstantTTLDelta(
-                ctx->source_part->ttl_infos.table_ttl_expression, rows_ttl,
+                source_ttl_infos.table_ttl_expression, rows_ttl,
                 ctx->metadata_snapshot->getColumns(), ctx->metadata_snapshot->getPrimaryKey(), ctx->context);
         }
 
         /// The whole part is expired under the new TTL: replace it with an empty part.
-        if (delta && ctx->source_part->ttl_infos.part_max_ttl + *delta <= ctx->time_of_mutation)
+        if (delta && source_ttl_infos.table_ttl.max + *delta <= ctx->time_of_mutation)
         {
             LOG_TRACE(ctx->log, "Part {} is fully expired after MODIFY TTL, creating empty part with mutation version {}",
                 ctx->source_part->name, ctx->future_part->part_info.mutation);
@@ -3428,7 +3439,11 @@ bool MutateTask::prepare()
         }
 
         /// No row in the part is expired under the new TTL: clone the part and shift its TTL infos.
-        if (delta && ctx->source_part->ttl_infos.part_min_ttl + *delta >= ctx->time_of_mutation)
+        /// Rewriting `ttl.txt` and `checksums.txt` in place is only possible when every file of the part
+        /// is stored separately; a packed part cannot be modified after it is written, so it takes the
+        /// regular rewrite below.
+        if (delta && source_ttl_infos.table_ttl.min + *delta >= ctx->time_of_mutation
+            && isFullPartStorage(ctx->source_part->getDataPartStorage()))
         {
             LOG_TRACE(ctx->log, "Part {} is not expired after MODIFY TTL, cloning and shifting TTL by {} seconds to mutation version {}",
                 ctx->source_part->name, *delta, ctx->future_part->part_info.mutation);
@@ -3437,8 +3452,10 @@ bool MutateTask::prepare()
 
             part->ttl_infos.table_ttl.min += *delta;
             part->ttl_infos.table_ttl.max += *delta;
-            part->ttl_infos.part_min_ttl += *delta;
-            part->ttl_infos.part_max_ttl += *delta;
+            /// The rows TTL is the only TTL info of this part (checked above), so the aggregate bounds
+            /// are exactly the shifted rows-TTL bounds; recompute them instead of shifting blindly.
+            part->ttl_infos.part_min_ttl = part->ttl_infos.table_ttl.min;
+            part->ttl_infos.part_max_ttl = part->ttl_infos.table_ttl.max;
             /// The part now reflects the new rows-TTL expression, so update its fingerprint accordingly.
             part->ttl_infos.table_ttl_expression = new_ttl_expression;
 
