@@ -1146,7 +1146,7 @@ void SerializationMap::serializeBinaryBulkWithMultipleStreams(
     /// Accumulate statistics from each serialized range.
     /// They will be written to the stream in `serializeBinaryBulkStateSuffix`.
     if (map_state->recalculate_statistics)
-        map_state->statistics.merge(*assert_cast<const ColumnMap &>(column).calculateStatisticsForRange(offset, end));
+        map_state->statistics.merge(assert_cast<const ColumnMap &>(column).calculateStatisticsForRange(offset, end));
 }
 
 void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
