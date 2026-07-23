@@ -32,6 +32,8 @@ namespace ErrorCodes
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
+    extern const MergeTreeSettingsNonZeroUInt64 text_index_max_memory_usage_before_flush;
+    extern const MergeTreeSettingsNonZeroUInt64 text_index_max_processed_tokens_before_flush;
 }
 
 namespace
@@ -103,7 +105,8 @@ BuildTextIndexTransform::BuildTextIndexTransform(
     MutableDataPartStoragePtr temporary_storage_,
     MergeTreeWriterSettings writer_settings_,
     CompressionCodecPtr default_codec_,
-    String marks_file_extension_)
+    String marks_file_extension_,
+    const MergeTreeSettings & storage_settings)
     : ISimpleTransform(header, header, false)
     , index_file_prefix(std::move(index_file_prefix_))
     , indexes(std::move(indexes_))
@@ -112,6 +115,8 @@ BuildTextIndexTransform::BuildTextIndexTransform(
     , default_codec(std::move(default_codec_))
     , marks_file_extension(std::move(marks_file_extension_))
     , segment_numbers(indexes.size(), 0)
+    , max_processed_tokens(storage_settings[MergeTreeSetting::text_index_max_processed_tokens_before_flush])
+    , max_allocated_bytes(storage_settings[MergeTreeSetting::text_index_max_memory_usage_before_flush])
 {
 
     for (size_t i = 0; i < indexes.size(); ++i)
@@ -141,10 +146,6 @@ void BuildTextIndexTransform::aggregate(const Block & block)
     if (block.rows() == 0)
         return;
 
-    /// Threshold for the number of processed tokens to flush the segment.
-    /// Calculating used RAM or number of processed unique tokens adds significant overhead,
-    /// so we use a simple trade-off threshold, which is reasonable in normal scenarios.
-    static constexpr size_t max_processed_tokens = 100'000'000;
     num_processed_rows += block.rows();
 
     for (size_t i = 0; i < indexes.size(); ++i)
@@ -153,7 +154,8 @@ void BuildTextIndexTransform::aggregate(const Block & block)
         auto & aggregator_text = typeid_cast<MergeTreeIndexAggregatorText &>(*aggregators[i]);
         aggregator_text.update(block, &pos, block.rows());
 
-        if (aggregator_text.getNumProcessedTokens() > max_processed_tokens)
+        if (aggregator_text.getNumProcessedTokens() > max_processed_tokens
+            || aggregator_text.getAllocatedBytes() > max_allocated_bytes)
             writeTemporarySegment(i);
     }
 }

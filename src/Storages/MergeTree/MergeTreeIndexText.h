@@ -465,6 +465,7 @@ struct MergeTreeIndexTextGranuleBuilder
 
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
     bool empty() const { return is_empty; }
+    size_t allocatedBytes() const { return tokens_map.getBufferSizeInBytes() + arena->allocatedBytes(); }
     void reset();
 
     MergeTreeIndexTextParams params;
@@ -511,6 +512,7 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
     void update(const Block & block, size_t * pos, size_t limit) override;
     void setCurrentRow(size_t row) { granule_builder.setCurrentRow(row); }
     UInt64 getNumProcessedTokens() const { return granule_builder.num_processed_tokens; }
+    size_t getAllocatedBytes() const { return granule_builder.allocatedBytes(); }
 
 private:
     /// Iterates over a ColumnArray(String) slice and calls addDocument<tokenize> on each element.
