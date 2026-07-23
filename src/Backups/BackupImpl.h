@@ -175,6 +175,8 @@ private:
     mutable std::optional<UUID> base_backup_uuid;
     /// Whether metadata has a marker to copy credentials from this backup locator to the base backup locator.
     bool base_backup_copy_credentials_from_backup = false;
+    /// Generic markers require reconstruction; the legacy `S3` marker remains advisory for compatibility.
+    bool base_backup_copy_credentials_required = false;
     std::shared_ptr<IArchiveReader> archive_reader;
     std::shared_ptr<IArchiveWriter> archive_writer;
     String lock_file_name;

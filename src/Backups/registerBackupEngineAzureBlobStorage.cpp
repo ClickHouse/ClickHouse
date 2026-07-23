@@ -5,9 +5,8 @@
 #include <Core/Settings.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
+
+#include <optional>
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -16,6 +15,8 @@
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 
 #include <Poco/URI.h>
@@ -50,112 +51,109 @@ namespace
         return key == "account_name" || key == "account_key" || key == "client_id" || key == "tenant_id";
     }
 
-    bool copyAzureCredentials(const BackupInfo & source, BackupInfo & destination, ContextPtr context)
+    enum class AzureCredentialsType : uint8_t
     {
-        if (source.id_arg.empty() != destination.id_arg.empty())
-            return false;
+        Default,
+        ConnectionString,
+        SAS,
+        SharedKey,
+        WorkloadIdentity,
+    };
 
-        if (source.id_arg.empty())
+    struct AzureCredentials
+    {
+        AzureCredentialsType type;
+        String first;
+        String second;
+
+        bool operator==(const AzureCredentials &) const = default;
+    };
+
+    std::optional<AzureCredentials> getAzureCredentials(const BackupInfo & backup_info, ContextPtr context)
+    {
+        String connection;
+        std::optional<String> account_name;
+        std::optional<String> account_key;
+        std::optional<String> client_id;
+        std::optional<String> tenant_id;
+
+        if (auto collection = backup_info.getNamedCollection(context))
         {
-            if (destination.args.size() != 3)
-                return false;
-            if (source.args.size() == 3)
-                destination.args[0] = source.args[0];
-            else if (source.args.size() == 5)
-                destination.args.insert(destination.args.end(), source.args.begin() + 3, source.args.end());
-            else
-                return false;
-            return true;
+            connection = collection->getAnyOrDefault<String>({"connection_string", "storage_account_url"}, "");
+            auto get_optional = [&](const char * key) -> std::optional<String>
+            {
+                return collection->has(key) ? std::optional<String>(collection->get<String>(key)) : std::nullopt;
+            };
+            account_name = get_optional("account_name");
+            account_key = get_optional("account_key");
+            client_id = get_optional("client_id");
+            tenant_id = get_optional("tenant_id");
+        }
+        else if (backup_info.args.size() == 5)
+        {
+            connection = backup_info.args[0].safeGet<String>();
+            account_name = backup_info.args[3].safeGet<String>();
+            account_key = backup_info.args[4].safeGet<String>();
+        }
+        else if (backup_info.args.size() == 3)
+        {
+            connection = backup_info.args[0].safeGet<String>();
+        }
+        else
+            return std::nullopt;
+
+        if (connection.empty())
+            return std::nullopt;
+
+        const bool has_shared_key = account_name || account_key;
+        const bool has_workload_identity = client_id || tenant_id;
+        if (has_shared_key || has_workload_identity)
+        {
+            if (account_name && account_key && !has_workload_identity)
+                return AzureCredentials{AzureCredentialsType::SharedKey, *account_name, *account_key};
+            if (client_id && tenant_id && !has_shared_key)
+                return AzureCredentials{AzureCredentialsType::WorkloadIdentity, *client_id, *tenant_id};
+            return std::nullopt;
         }
 
-        ASTs source_args = source.kv_args;
-        auto has_key = [&](const ASTs & args, std::string_view expected_key)
+        if (!connection.starts_with("http"))
+            return AzureCredentials{AzureCredentialsType::ConnectionString, std::move(connection), {}};
+        if (connection.find('?') != String::npos)
+            return AzureCredentials{AzureCredentialsType::SAS, std::move(connection), {}};
+        return AzureCredentials{AzureCredentialsType::Default, {}, {}};
+    }
+
+    bool copyAzureCredentials(
+        const BackupInfo & source,
+        BackupInfo & destination,
+        ContextPtr context,
+        const BackupInfo * expected_credentials)
+    {
+        auto make_snapshot = [&](const BackupInfo & backup_info)
         {
-            for (const auto & arg : args)
-                if (BackupInfo::evaluateKeyValueArgument(arg, 0, context) == expected_key)
-                    return true;
-            return false;
+            const auto & credentials = backup_info.credentials_source ? *backup_info.credentials_source : backup_info;
+            BackupInfo snapshot = credentials.freezeNamedCollection(context);
+            snapshot.credentials_source.reset();
+            return snapshot;
         };
 
-        auto source_collection = source.getNamedCollection(context);
-        auto destination_collection = destination.getNamedCollection(context)->duplicate();
-        auto append_collection_value = [&](const char * key)
-        {
-            if (!has_key(source_args, key) && source_collection->has(key))
-            {
-                source_args.emplace_back(makeASTFunction(
-                    "equals", make_intrusive<ASTIdentifier>(key), make_intrusive<ASTLiteral>(source_collection->get<String>(key))));
-            }
-        };
-
-        const char * connection_key = source_collection->has("connection_string") ? "connection_string" : "storage_account_url";
-        const String connection_value = source_collection->getOrDefault<String>(connection_key, "");
-        const String container = source_collection->getOrDefault<String>("container", "");
-        if (connection_value.empty() || container.empty())
+        BackupInfo source_snapshot = make_snapshot(source);
+        const auto source_credentials = getAzureCredentials(source_snapshot, context);
+        if (!source_credentials)
             return false;
-        /// Bind inherited credentials to their source endpoint, but do not materialize an inherited SAS token in a printable AST.
-        if (!connection_value.starts_with("http") || connection_value.find('?') == String::npos)
-            append_collection_value(connection_key);
-        const auto credential_keys = {"account_name", "account_key", "client_id", "tenant_id"};
-        for (const auto * key : credential_keys)
-            append_collection_value(key);
 
-        ASTs kv_args;
-        bool copied = false;
-        for (const auto & source_arg : source_args)
+        if (expected_credentials)
         {
-            String source_key = BackupInfo::evaluateKeyValueArgument(source_arg, 0, context);
-            if (isAzureCredentialKey(source_key) || isAzureConnectionKey(source_key))
-            {
-                kv_args.emplace_back(source_arg);
-                copied = true;
-                continue;
-            }
-
-            for (const auto & destination_arg : destination.kv_args)
-            {
-                if (BackupInfo::evaluateKeyValueArgument(destination_arg, 0, context) == source_key)
-                {
-                    kv_args.emplace_back(destination_arg);
-                    break;
-                }
-            }
+            BackupInfo expected_snapshot = make_snapshot(*expected_credentials);
+            const auto expected = getAzureCredentials(expected_snapshot, context);
+            if (!expected || *source_credentials != *expected)
+                return false;
         }
 
-        for (const auto & destination_arg : destination.kv_args)
-        {
-            String destination_key = BackupInfo::evaluateKeyValueArgument(destination_arg, 0, context);
-            bool found = false;
-            for (const auto & source_arg : source_args)
-            {
-                if (BackupInfo::evaluateKeyValueArgument(source_arg, 0, context) == destination_key)
-                {
-                    found = true;
-                    break;
-                }
-            }
-            if (!found && !isAzureConnectionKey(destination_key))
-                kv_args.emplace_back(destination_arg);
-        }
-        destination.kv_args = std::move(kv_args);
-
-        if (copied)
-        {
-            for (const auto * key : {"connection_string", "storage_account_url"})
-                if (destination_collection->has(key))
-                    destination_collection->remove(key);
-            destination_collection->setOrUpdate<String>(connection_key, connection_value, {});
-            destination_collection->setOrUpdate<String>("container", container, {});
-            for (const auto * key : credential_keys)
-            {
-                if (destination_collection->has(key))
-                    destination_collection->remove(key);
-                if (source_collection->has(key))
-                    destination_collection->setOrUpdate<String>(key, source_collection->get<String>(key), {});
-            }
-            destination.frozen_named_collection = std::move(destination_collection);
-        }
-        return copied;
+        if (!destination.id_arg.empty() && !destination.frozen_named_collection)
+            destination.frozen_named_collection = destination.getNamedCollection(context)->duplicate();
+        destination.credentials_source = std::make_shared<BackupInfo>(std::move(source_snapshot));
+        return true;
     }
 }
 
@@ -187,6 +185,41 @@ namespace
         if (str.size() > 1 && str.back() == '/' && str.find_first_not_of('/') != String::npos)
             str.pop_back();
         return str;
+    }
+
+    struct ResolvedAzureBackupPath
+    {
+        String blob_path;
+        String archive_name;
+    };
+
+    ResolvedAzureBackupPath resolveAzureBackupPath(const BackupInfo & backup_info, ContextPtr context)
+    {
+        ResolvedAzureBackupPath path;
+        const auto & args = backup_info.args;
+        if (auto collection = backup_info.getNamedCollection(context))
+        {
+            path.blob_path = collection->getOrDefault<String>("blob_path", "");
+            if (args.size() > 1)
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Backup AzureBlobStorage requires 1 or 2 arguments: named_collection, [filename]");
+            if (args.size() == 1)
+                path.blob_path = args[0].safeGet<String>();
+        }
+        else if (args.size() == 3 || args.size() == 5)
+            path.blob_path = args[2].safeGet<String>();
+        else
+        {
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Backup AzureBlobStorage requires 3 arguments (connection string/url, container, path) or 5 arguments "
+                "(storage account URL, container, path, account name, account key)");
+        }
+
+        if (hasRegisteredArchiveFileExtension(path.blob_path))
+            path.archive_name = removeFileNameFromURL(path.blob_path);
+        return path;
     }
 
     void validatePlainStorageAccountURL(const String & connection_url)
@@ -234,14 +267,30 @@ namespace
 
     ResolvedAzureBackupLocation resolveAzureBackupLocation(const BackupInfo & backup_info, ContextPtr context)
     {
+        if (backup_info.credentials_source)
+        {
+            BackupInfo destination_info = backup_info;
+            destination_info.credentials_source.reset();
+            BackupInfo source_info = *backup_info.credentials_source;
+            source_info.credentials_source.reset();
+
+            auto destination = resolveAzureBackupPath(destination_info, context);
+            auto source = resolveAzureBackupLocation(source_info, context);
+            source.blob_path = std::move(destination.blob_path);
+            source.archive_name = std::move(destination.archive_name);
+            return source;
+        }
+
         ResolvedAzureBackupLocation location;
+        auto path = resolveAzureBackupPath(backup_info, context);
+        location.blob_path = std::move(path.blob_path);
+        location.archive_name = std::move(path.archive_name);
         const auto & args = backup_info.args;
 
         if (auto collection = backup_info.getNamedCollection(context))
         {
             const String connection_url = collection->getAnyOrDefault<String>({"connection_string", "storage_account_url"}, "");
             const String container_name = collection->get<String>("container");
-            location.blob_path = collection->getOrDefault<String>("blob_path", "");
 
             auto get_optional = [&](const char * key) -> std::optional<String>
             {
@@ -257,13 +306,6 @@ namespace
                 validatePlainStorageAccountURL(connection_url);
             location.connection_params = getAzureConnectionParams(
                 connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
-
-            if (args.size() > 1)
-                throw Exception(
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Backup AzureBlobStorage requires 1 or 2 arguments: named_collection, [filename]");
-            if (args.size() == 1)
-                location.blob_path = args[0].safeGet<String>();
         }
         else if (args.size() == 3)
         {
@@ -275,7 +317,6 @@ namespace
                 std::nullopt,
                 std::nullopt,
                 context);
-            location.blob_path = args[2].safeGet<String>();
         }
         else if (args.size() == 5)
         {
@@ -289,7 +330,6 @@ namespace
                 std::nullopt,
                 std::nullopt,
                 context);
-            location.blob_path = args[2].safeGet<String>();
         }
         else
         {
@@ -299,8 +339,6 @@ namespace
                 "(storage account URL, container, path, account name, account key)");
         }
 
-        if (hasRegisteredArchiveFileExtension(location.blob_path))
-            location.archive_name = removeFileNameFromURL(location.blob_path);
         return location;
     }
 

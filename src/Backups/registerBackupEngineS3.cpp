@@ -129,7 +129,8 @@ namespace
         backup_info.function_arg = nullptr;
     }
 
-    bool copyS3Credentials(const BackupInfo & source, BackupInfo & destination, ContextPtr)
+    bool copyS3Credentials(
+        const BackupInfo & source, BackupInfo & destination, ContextPtr context, const BackupInfo * expected_credentials)
     {
         if (!source.id_arg.empty() || !destination.id_arg.empty() || source.args.size() != 3)
             return false;
@@ -137,7 +138,7 @@ namespace
         destination.args.resize(3);
         destination.args[1] = source.args[1];
         destination.args[2] = source.args[2];
-        return true;
+        return !expected_credentials || destination.isEquivalentTo(*expected_credentials, context);
     }
 }
 

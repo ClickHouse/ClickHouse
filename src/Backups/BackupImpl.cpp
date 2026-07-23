@@ -334,7 +334,14 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
                 "Setting `use_same_s3_credentials_for_base_backup` is not compatible with these '{}' backup locators",
                 backup_info.backup_engine_name);
         if (base_backup_copy_credentials_from_backup)
-            BackupFactory::instance().copyCredentials(backup_info, effective_base_backup_info, params.context);
+        {
+            const bool copied = BackupFactory::instance().copyCredentials(backup_info, effective_base_backup_info, params.context);
+            if (!copied && base_backup_copy_credentials_required)
+                throw Exception(
+                    ErrorCodes::BACKUP_DAMAGED,
+                    "Backup {}: Cannot reconstruct credentials for the base backup",
+                    backup_name_for_logging);
+        }
 
         BackupFactory::CreateParams base_params = params.getCreateParamsForBaseBackup(std::move(effective_base_backup_info), archive_params.password);
         base_backup = BackupFactory::instance().createBackup(base_params);
@@ -484,8 +491,7 @@ void BackupImpl::writeBackupMetadata()
                 BackupInfo base_backup_info_with_this_backup_credentials = base_backup_info_for_metadata;
                 base_backup_can_use_this_backup_credentials
                     = BackupFactory::instance().copyCredentials(
-                        backup_info, base_backup_info_with_this_backup_credentials, params.context)
-                    && base_backup_info_with_this_backup_credentials.isEquivalentTo(effective_base_backup_info, params.context)
+                        backup_info, base_backup_info_with_this_backup_credentials, params.context, &effective_base_backup_info)
                     && BackupFactory::instance().getDestinationIdentity(base_backup_info_with_this_backup_credentials, params.context)
                         == BackupFactory::instance().getDestinationIdentity(
                             effective_base_backup_info.freezeNamedCollection(params.context), params.context);
@@ -658,6 +664,7 @@ void BackupImpl::readBackupMetadata()
             /// The marker is honored only when the base backup locator itself comes from the metadata:
             /// if the locator was overridden with the `base_backup` setting, the override is used as is.
             auto it = h.find(BASE_BACKUP_COPY_CREDENTIALS_FROM_BACKUP);
+            base_backup_copy_credentials_required = it != h.end();
             if (it == h.end())
                 it = h.find(BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP);
             base_backup_copy_credentials_from_backup

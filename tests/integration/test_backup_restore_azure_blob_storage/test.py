@@ -3,9 +3,14 @@
 import io
 import os
 import time
+from datetime import datetime, timedelta, timezone
 
 import pytest
-from azure.storage.blob import BlobServiceClient
+from azure.storage.blob import (
+    BlobServiceClient,
+    ContainerSasPermissions,
+    generate_container_sas,
+)
 
 from helpers.cluster import ClickHouseCluster
 
@@ -346,47 +351,95 @@ def test_incremental_backup_credentials_metadata(cluster):
 def test_incremental_backup_inherited_named_collection_credentials(cluster):
     node = cluster.instances["node"]
     port = cluster.env_variables["AZURITE_PORT"]
-    base_collection = "incremental_base_without_credentials"
     storage_account_url = f"http://azurite1:{port}/devstoreaccount1"
     account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
     base_name = new_backup_name()
     incremental_name = new_backup_name()
+    base = (
+        f"AzureBlobStorage('{storage_account_url}', 'cont', '{base_name}', "
+        f"'devstoreaccount1', '{account_key}')"
+    )
+    incremental = f"AzureBlobStorage(azure_conf2, '{incremental_name}')"
 
-    node.query(f"CREATE NAMED COLLECTION {base_collection} AS container = 'cont'")
+    node.query("DROP TABLE IF EXISTS incremental_inherited_credentials")
+    node.query(
+        "CREATE TABLE incremental_inherited_credentials (x UInt64) ENGINE=MergeTree ORDER BY x"
+    )
+    node.query("INSERT INTO incremental_inherited_credentials VALUES (1)")
+    azure_query(node, f"BACKUP TABLE incremental_inherited_credentials TO {base}")
+    node.query("INSERT INTO incremental_inherited_credentials VALUES (2)")
+    azure_query(
+        node,
+        f"BACKUP TABLE incremental_inherited_credentials TO {incremental} SETTINGS base_backup={base}",
+    )
+
+    metadata = get_azure_file_content(f"{incremental_name}/.backup", port)
+    assert account_key not in metadata
+    assert "<base_backup_copy_credentials_from_backup>true" in metadata
+
+    node.query("DROP TABLE incremental_inherited_credentials")
+    azure_query(
+        node,
+        f"RESTORE TABLE incremental_inherited_credentials FROM {incremental}",
+    )
+    assert (
+        node.query("SELECT x FROM incremental_inherited_credentials ORDER BY x")
+        == "1\n2\n"
+    )
+
+
+def test_incremental_backup_inherited_named_collection_sas(cluster):
+    node = cluster.instances["node"]
+    port = cluster.env_variables["AZURITE_PORT"]
+    collection_name = "incremental_inherited_sas"
+    sas_token = generate_container_sas(
+        account_name="devstoreaccount1",
+        account_key="Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
+        container_name="cont",
+        permission=ContainerSasPermissions(
+            read=True, write=True, delete=True, list=True, create=True, add=True
+        ),
+        expiry=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    sas_url = f"http://azurite1:{port}/devstoreaccount1/cont/?{sas_token}"
+    base_name = new_backup_name()
+    incremental_name = new_backup_name()
+    base = f"AzureBlobStorage('{sas_url}', '', '{base_name}')"
+    incremental = f"AzureBlobStorage({collection_name}, '{incremental_name}')"
+
+    node.query(f"DROP NAMED COLLECTION IF EXISTS {collection_name}")
+    node.query(
+        f"CREATE NAMED COLLECTION {collection_name} AS "
+        f"storage_account_url = '{sas_url}', container = ''"
+    )
     try:
-        base = (
-            f"AzureBlobStorage({base_collection}, storage_account_url = '{storage_account_url}', "
-            f"account_name = 'devstoreaccount1', account_key = '{account_key}', blob_path = '{base_name}')"
-        )
-        incremental = f"AzureBlobStorage(azure_conf2, '{incremental_name}')"
-
-        node.query("DROP TABLE IF EXISTS incremental_inherited_credentials")
+        node.query("DROP TABLE IF EXISTS incremental_inherited_sas")
         node.query(
-            "CREATE TABLE incremental_inherited_credentials (x UInt64) ENGINE=MergeTree ORDER BY x"
+            "CREATE TABLE incremental_inherited_sas (x UInt64) ENGINE=MergeTree ORDER BY x"
         )
-        node.query("INSERT INTO incremental_inherited_credentials VALUES (1)")
-        azure_query(node, f"BACKUP TABLE incremental_inherited_credentials TO {base}")
-        node.query("INSERT INTO incremental_inherited_credentials VALUES (2)")
+        node.query("INSERT INTO incremental_inherited_sas VALUES (1)")
+        azure_query(node, f"BACKUP TABLE incremental_inherited_sas TO {base}")
+        node.query("INSERT INTO incremental_inherited_sas VALUES (2)")
         azure_query(
             node,
-            f"BACKUP TABLE incremental_inherited_credentials TO {incremental} SETTINGS base_backup={base}",
+            f"BACKUP TABLE incremental_inherited_sas TO {incremental} SETTINGS base_backup={base}",
         )
 
         metadata = get_azure_file_content(f"{incremental_name}/.backup", port)
-        assert account_key not in metadata
+        assert sas_token not in metadata
         assert "<base_backup_copy_credentials_from_backup>true" in metadata
 
-        node.query("DROP TABLE incremental_inherited_credentials")
+        node.query("DROP TABLE incremental_inherited_sas")
         azure_query(
             node,
-            f"RESTORE TABLE incremental_inherited_credentials FROM {incremental}",
+            f"RESTORE TABLE incremental_inherited_sas FROM {incremental}",
         )
         assert (
-            node.query("SELECT x FROM incremental_inherited_credentials ORDER BY x")
+            node.query("SELECT x FROM incremental_inherited_sas ORDER BY x")
             == "1\n2\n"
         )
     finally:
-        node.query(f"DROP NAMED COLLECTION IF EXISTS {base_collection}")
+        node.query(f"DROP NAMED COLLECTION IF EXISTS {collection_name}")
 
 
 def test_backup_restore_diff_container(cluster):

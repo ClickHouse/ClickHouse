@@ -5,6 +5,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 
+#include <memory>
+
 namespace DB
 {
 
@@ -17,6 +19,7 @@ struct BackupInfo
     ASTPtr function_arg;
     ASTs kv_args;
     NamedCollectionPtr frozen_named_collection;
+    std::shared_ptr<const BackupInfo> credentials_source;
 
     String toString() const;
     static BackupInfo fromString(const String & str);
