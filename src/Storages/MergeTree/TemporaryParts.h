@@ -1,6 +1,7 @@
 #pragma once
 
 #include <boost/noncopyable.hpp>
+#include <condition_variable>
 #include <mutex>
 #include <string>
 #include <unordered_set>
@@ -8,18 +9,35 @@
 namespace DB
 {
 
-/// Manages set of active temporary paths that should not be cleaned by background thread.
+/// Arbitrates ownership of temporary part directory names between active operations
+/// (merge/mutation/INSERT claiming a name via `add`) and the background cleaner deleting unclaimed
+/// leftovers (via `tryClaimForCleanup`/`releaseCleanupClaim`). A name is owned by at most one side at
+/// a time: the cleaner skips names claimed by operations, and an operation claiming a name that the
+/// cleaner is currently deleting waits for the deletion to finish (a cleanup hold is transient,
+/// bounded by one directory removal).
 class TemporaryParts : private boost::noncopyable
 {
 private:
     /// To add const qualifier for contains()
     mutable std::mutex mutex;
 
+    /// Signalled when a cleanup hold is released, so a pending `add` for the same name can proceed.
+    std::condition_variable cleanup_finished;
+
     /// NOTE: It is pretty short, so use STL is fine.
     std::unordered_set<std::string> parts;
 
+    /// Names the background cleaner is currently deleting; disjoint from `parts`.
+    std::unordered_set<std::string> being_cleaned;
+
     void add(const std::string & basename);
     void remove(const std::string & basename);
+
+    /// Takes a transient cleanup hold on the name so the background cleaner can delete the directory
+    /// without racing a concurrent claim. Returns false if an operation owns the name or another
+    /// cleanup hold is already in place.
+    bool tryClaimForCleanup(const std::string & basename);
+    void releaseCleanupClaim(const std::string & basename);
 
     friend class MergeTreeData;
 public:

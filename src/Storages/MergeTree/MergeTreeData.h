@@ -1485,7 +1485,8 @@ public:
     /// Reclaimed names must be temporary, see `reclaimStaleTemporaryPartDirectory`. Callers that know
     /// the name is collision-free (e.g. derived from a block number allocated by Keeper) may pass
     /// `may_have_leftover = false` to avoid paying a disk probe (an object storage roundtrip) per
-    /// operation.
+    /// operation. A claim taken while the background cleaner is deleting the same name waits for the
+    /// deletion to finish, so the operation cannot recreate the directory under the cleaner's feet.
     scope_guard claimTemporaryPartDirectory(const DiskPtr & disk, const String & part_dir_name, bool may_have_leftover = true) const;
 
     void waitForOutdatedPartsToBeLoaded() const;
