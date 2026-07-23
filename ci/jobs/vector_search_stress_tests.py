@@ -58,6 +58,12 @@ QUANTIZATION = "quantization"
 # When set to a method name (e.g. 'rabitq'), the vector column is created with a
 # CODEC(Quantized(...)) companion stream instead of an HNSW vector_similarity index.
 QUANTIZED_CODEC = "quantized_codec"
+# When set to a QBit element type (e.g. 'Int8'), the vector column is created as
+# QBit(<element>, <dimension>) holding quantizeBFloat16ToInt8 codes instead of an
+# HNSW index or a CODEC(Quantized(...)) stream. Searches rank candidates with the
+# '<metric>TransposedQuantized' distance function at QBIT_SEARCH_BITS bit precision.
+QBIT_ELEMENT_TYPE = "qbit_element_type"
+QBIT_SEARCH_BITS = "qbit_search_bits"
 HNSW_M = "hnsw_M"
 HNSW_EF_CONSTRUCTION = "hnsw_ef_construction"
 HNSW_EF_SEARCH = "hnsw_ef_search"
@@ -307,6 +313,35 @@ test_params_cohere_wiki_20m_rabitq = {
     USE_RAW_BYTES_FOR_QUERY_VECTOR: True,  # only set if query vector is numpy.Array(Float32)
 }
 
+# QBit(Int8) 1-bit search variant: no HNSW index and no CODEC. The vector column is
+# stored as QBit(Int8, <dimension>) holding quantizeBFloat16ToInt8 codes, and every
+# search ranks candidates with cosineDistanceTransposedQuantized(vec, query, 1) - i.e.
+# reading only the top (sign) bit-plane of each code (1-bit search). There is no
+# rescoring; the 1-bit distances are the final ranking.
+test_params_cohere_wiki_20m_qbit_int8_1bit = {
+    LIMIT_N: None,
+    TRUTH_SET_FILES: [
+        "https://clickhouse-datasets.s3.amazonaws.com/cohere-20M/cohere_wiki_20m_25k.tar"
+    ],
+    QUANTIZATION: None,  # not an HNSW index
+    QUANTIZED_CODEC: None,  # not a CODEC(Quantized(...)) column
+    QBIT_ELEMENT_TYPE: "Int8",
+    QBIT_SEARCH_BITS: 1,  # 1-bit search: read only the top bit-plane of each code
+    HNSW_M: None,
+    HNSW_EF_CONSTRUCTION: None,
+    HNSW_EF_SEARCH: None,
+    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_VECTOR,
+    GENERATE_TRUTH_SET: False,
+    NEW_TRUTH_SET_FILE: None,
+    TRUTH_SET_COUNT: 25000,
+    RECALL_K: 10,
+    # Let's have more than 1 part for this dataset (7 - 9 parts)
+    MERGE_TREE_SETTINGS: "max_bytes_to_merge_at_max_space_in_pool=11811160064",
+    OTHER_SETTINGS: "min_insert_block_size_rows = 3000000, min_insert_block_size_bytes=11737418240",
+    CONCURRENCY_TEST: False,  # concurrency test not needed for QBit runs
+    USE_RAW_BYTES_FOR_QUERY_VECTOR: True,  # only set if query vector is numpy.Array(Float32)
+}
+
 
 def get_new_connection():
     chclient = clickhouse_connect.get_client(send_receive_timeout=1800)
@@ -338,6 +373,8 @@ class RunTest:
         self._distance_metric = dataset[DISTANCE_METRIC]
         self._dimension = dataset[DIMENSION]
         self._quantized_codec = test_params.get(QUANTIZED_CODEC)
+        self._qbit_element = test_params.get(QBIT_ELEMENT_TYPE)
+        self._qbit_bits = test_params.get(QBIT_SEARCH_BITS)
 
         self._query_count = int(test_params[TRUTH_SET_COUNT])
         self._k = int(test_params[RECALL_K])
@@ -347,35 +384,77 @@ class RunTest:
         self._query_source_warning_logged = False
         self._vector_serialization_warning_logged = False
 
-    # Attach a CODEC(Quantized('<method>', <dimension>)) clause to the vector column.
-    # The codec is experimental and, unlike an HNSW index, must be declared at table
-    # creation time - it cannot be added or changed with ALTER TABLE.
-    #
-    # The full-precision values (used for rescoring the shortlist) are stored as
-    # BFloat16 rather than the dataset's Float32, halving the full-precision stream.
-    def _schema_with_quantized_codec(self):
+    # Rewrite the vector column definition for the current storage mode:
+    #  - quantized codec: Array(BFloat16) with a CODEC(Quantized('<method>', <dim>))
+    #    companion stream. The codec is experimental and, unlike an HNSW index, must
+    #    be declared at table creation time - it cannot be added with ALTER TABLE. The
+    #    full-precision values (used for rescoring) are stored as BFloat16 rather than
+    #    the dataset's Float32, halving the full-precision stream.
+    #  - QBit: QBit('<element>', <dim>) holding quantizeBFloat16ToInt8 codes (see
+    #    _qbit_insert_projection); no index is built and searches read only the bit
+    #    planes needed for the requested precision.
+    # When neither mode is active the schema is returned unchanged.
+    def _schema_for_create(self):
         schema = self._dataset[SCHEMA]
-        if self._quantized_codec is None:
+        if self._qbit_element is not None:
+            column_def = f"{self._vector_column} QBit({self._qbit_element}, {self._dimension})"
+        elif self._quantized_codec is not None:
+            codec_clause = f" CODEC(Quantized('{self._quantized_codec}', {self._dimension}))"
+            column_def = f"{self._vector_column} Array(BFloat16){codec_clause}"
+        else:
             return schema
 
-        codec_clause = f" CODEC(Quantized('{self._quantized_codec}', {self._dimension}))"
-        column_def = f"{self._vector_column} Array(BFloat16){codec_clause}"
         pattern = rf"\b{re.escape(self._vector_column)}\s+Array\(Float32\)"
         schema, count = re.subn(pattern, lambda m: column_def, schema)
         if count != 1:
             raise ValueError(
                 f"Expected exactly one '{self._vector_column} Array(Float32)' column "
-                f"to attach the quantized codec, found {count}"
+                f"to rewrite the vector column definition, found {count}"
             )
         return schema
+
+    # Table column names, in schema order (one column per line in the SCHEMA text).
+    def _table_column_names(self):
+        names = []
+        for line in self._dataset[SCHEMA].splitlines():
+            stripped = line.strip().rstrip(",")
+            if not stripped:
+                continue
+            names.append(stripped.split()[0])
+        return names
+
+    # Projection for INSERT into a QBit column: pass every column through unchanged
+    # except the vector column, which is Lloyd-Max quantized to Int8 codes (an
+    # Array(Int8) that implicitly converts to QBit(Int8, <dim>) on insert).
+    def _qbit_insert_projection(self):
+        projection = []
+        for name in self._table_column_names():
+            if name == self._vector_column:
+                projection.append(
+                    f"quantizeBFloat16ToInt8(CAST({name}, 'Array(BFloat16)')) AS {name}"
+                )
+            else:
+                projection.append(name)
+        return ", ".join(projection)
+
+    # Build the distance expression used to rank candidates. QBit runs use the
+    # '<metric>TransposedQuantized' function with an explicit bit-precision argument;
+    # all other runs use the plain distance metric.
+    def _distance_expression(self, reference_sql):
+        if self._qbit_element is not None:
+            distance_fn = f"{self._distance_metric}TransposedQuantized"
+            return f"{distance_fn}({self._vector_column}, {reference_sql}, {self._qbit_bits})"
+        return f"{self._distance_metric}({self._vector_column}, {reference_sql})"
 
     def load_data(self):
         logger(f"Begin loading data into {self._table}")
 
         if self._quantized_codec is not None:
             self._chclient.query("SET allow_experimental_codecs = 1")
+        if self._qbit_element is not None:
+            self._chclient.query("SET allow_experimental_qbit_type = 1")
 
-        create_table = f"CREATE TABLE {self._table} ( {self._schema_with_quantized_codec()} ) ENGINE = MergeTree ORDER BY {self._id_column}"
+        create_table = f"CREATE TABLE {self._table} ( {self._schema_for_create()} ) ENGINE = MergeTree ORDER BY {self._id_column}"
         if self._test_params[MERGE_TREE_SETTINGS] is not None:
             create_table += f" SETTINGS {self._test_params[MERGE_TREE_SETTINGS]}"
         self._chclient.query(create_table)
@@ -401,13 +480,19 @@ class RunTest:
                     source = source + f", '{source_structure}'"
                 source = source + ")"
 
-            insert = f"INSERT INTO {self._table} SELECT {select_list} FROM {source}"
+            source_select = f"SELECT {select_list} FROM {source}"
 
             if self._test_params[LIMIT_N] is not None:
-                insert = (
-                    insert
-                    + f" ORDER BY {self._id_column} LIMIT {self._test_params[LIMIT_N]}"
+                source_select += (
+                    f" ORDER BY {self._id_column} LIMIT {self._test_params[LIMIT_N]}"
                 )
+
+            # QBit runs quantize the vector column during load, so the source rows are
+            # wrapped in a subquery and re-projected through _qbit_insert_projection.
+            if self._qbit_element is not None:
+                insert = f"INSERT INTO {self._table} SELECT {self._qbit_insert_projection()} FROM ({source_select})"
+            else:
+                insert = f"INSERT INTO {self._table} {source_select}"
 
             if self._test_params[OTHER_SETTINGS] is not None:
                 insert += f" SETTINGS {self._test_params[OTHER_SETTINGS]}"
@@ -746,7 +831,12 @@ class RunTest:
         else:
             chclient = self._chclient
 
-        if self._quantized_codec is not None:
+        if self._qbit_element is not None:
+            chclient.query(
+                "SET allow_experimental_qbit_type = 1, "
+                "optimize_qbit_distance_function_reads = 1, max_parallel_replicas = 1"
+            )
+        elif self._quantized_codec is not None:
             fetch_multiplier = self._test_params.get(
                 VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER
             )
@@ -761,11 +851,16 @@ class RunTest:
 
         # First execute a query to load the vector index, could take few minutes
         # We loop because API could timeout and raise exception.(even with higher receive_timeout)
-        warmup_query_source = f"(SELECT {self._vector_column} FROM {self._table} ORDER BY {self._id_column} LIMIT 1)"
+        # The QBit transposed distance function needs an Array reference vector, so the
+        # warmup reads the codes back as an Array rather than as a QBit.
+        if self._qbit_element is not None:
+            warmup_query_source = f"(SELECT CAST({self._vector_column} AS Array({self._qbit_element})) FROM {self._table} ORDER BY {self._id_column} LIMIT 1)"
+        else:
+            warmup_query_source = f"(SELECT {self._vector_column} FROM {self._table} ORDER BY {self._id_column} LIMIT 1)"
 
         while True:
             try:
-                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {warmup_query_source} ) AS distance LIMIT {self._k}"
+                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_expression(warmup_query_source)} AS distance LIMIT {self._k}"
                 result = chclient.query(ann_search_query)
                 logger("Vector indexes have loaded!")
                 break
@@ -782,12 +877,13 @@ class RunTest:
                         "USE_RAW_BYTES_FOR_QUERY_VECTOR requires truth records with a materialised query_vector"
                     )
                 params = {"$search_vector_binary$": query_vector.tobytes()}
-                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, reinterpret($search_vector_binary$, 'Array(Float32)') ) AS distance LIMIT {self._k}"
+                reference_sql = "reinterpret($search_vector_binary$, 'Array(Float32)')"
+                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_expression(reference_sql)} AS distance LIMIT {self._k}"
                 q_start = current_time_ms()
                 result = chclient.query(ann_search_query, parameters=params)
             else:
                 query_source = self._render_query_source_sql(truth_record)
-                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {query_source} ) AS distance LIMIT {self._k}"
+                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_expression(query_source)} AS distance LIMIT {self._k}"
                 q_start = current_time_ms()
                 result = chclient.query(ann_search_query)
 
@@ -881,8 +977,8 @@ def run_single_test(test_name, dataset, test_params):
             test_runner.generate_truth_set()
             test_runner.save_truth_set(test_runner._test_params[NEW_TRUTH_SET_FILE])
 
-        # Quantized codec runs scan the codes companion stream, no HNSW index needed.
-        if test_runner._quantized_codec is None:
+        # Quantized codec and QBit runs scan the codes directly, no HNSW index needed.
+        if test_runner._quantized_codec is None and test_runner._qbit_element is None:
             test_runner.build_index()
 
         if test_runner._test_params[GENERATE_TRUTH_SET]:
@@ -953,15 +1049,20 @@ TESTS_TO_RUN = [
     #     dataset_cohere_wiki_20m,
     #     test_params_cohere_wiki_20m,
     # ),
+    # (
+    #     "Test using the hackernews dataset with rabitq quantized codec",
+    #     dataset_hackernews_openai,
+    #     test_params_hackernews_10m_rabitq,
+    # ),
+    # (
+    #     "Test using the cohere wiki dataset with rabitq quantized codec",
+    #     dataset_cohere_wiki_20m,
+    #     test_params_cohere_wiki_20m_rabitq,
+    # ),
     (
-        "Test using the hackernews dataset with rabitq quantized codec",
-        dataset_hackernews_openai,
-        test_params_hackernews_10m_rabitq,
-    ),
-    (
-        "Test using the cohere wiki dataset with rabitq quantized codec",
+        "Test using the cohere wiki dataset with QBit(Int8) 1-bit search",
         dataset_cohere_wiki_20m,
-        test_params_cohere_wiki_20m_rabitq,
+        test_params_cohere_wiki_20m_qbit_int8_1bit,
     ),
 ]
 
