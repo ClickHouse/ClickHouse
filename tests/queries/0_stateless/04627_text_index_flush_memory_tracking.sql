@@ -1,0 +1,45 @@
+-- Tags: no-random-merge-tree-settings
+-- `no-random-merge-tree-settings`: this test exercises the temporary text-index segment builder.
+
+DROP TABLE IF EXISTS text_index_flush_memory;
+SET enable_parallel_replicas = 0;
+
+CREATE TABLE text_index_flush_memory
+(
+    s String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS
+    allow_experimental_text_index_phrase_search = 1,
+    index_granularity = 1,
+    packed_skip_index_max_bytes = 0,
+    text_index_max_memory_usage_before_flush = 1048576,
+    text_index_max_processed_tokens_before_flush = 1000000000;
+
+INSERT INTO text_index_flush_memory SELECT 'token' FROM numbers(1000000);
+
+ALTER TABLE text_index_flush_memory
+    ADD INDEX idx s TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1);
+ALTER TABLE text_index_flush_memory
+    MATERIALIZE INDEX idx SETTINGS mutations_sync = 2, max_block_size = 1000;
+
+SYSTEM FLUSH LOGS part_log;
+
+SELECT 'memory_limit_flushed', ProfileEvents['TextIndexTemporarySegmentsWritten'] > 1
+FROM system.part_log
+WHERE event_date >= yesterday()
+    AND event_time >= now() - 600
+    AND database = currentDatabase()
+    AND table = 'text_index_flush_memory'
+    AND event_type = 'MutatePart'
+    AND error = 0
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+
+SELECT count()
+FROM text_index_flush_memory
+WHERE hasToken(s, 'token')
+SETTINGS force_data_skipping_indices = 'idx';
+
+DROP TABLE text_index_flush_memory;

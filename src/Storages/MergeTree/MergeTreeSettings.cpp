@@ -696,7 +696,7 @@ Can be overridden by explicit `posting_list_block_size` index argument.
 Maximum number of processed tokens accumulated by a text index builder before flushing a temporary segment.
 )", 0) \
     DECLARE(NonZeroUInt64, text_index_max_memory_usage_before_flush, "1Gi", R"(
-Maximum estimated memory used by the text index token hash table and arena before flushing a temporary segment.
+Maximum estimated memory retained by a text index builder before flushing a temporary segment.
 )", 0) \
     DECLARE(TextIndexPostingListCodec, text_index_posting_list_codec, TextIndexPostingListCodec::None, R"(
 Default posting list codec for text indexes.

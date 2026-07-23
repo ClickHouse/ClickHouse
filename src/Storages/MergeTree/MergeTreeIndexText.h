@@ -465,7 +465,11 @@ struct MergeTreeIndexTextGranuleBuilder
 
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
     bool empty() const { return is_empty; }
-    size_t allocatedBytes() const { return tokens_map.getBufferSizeInBytes() + arena->allocatedBytes(); }
+    size_t allocatedBytes() const
+    {
+        return tokens_map.getBufferSizeInBytes() + arena->allocatedBytes()
+            + (position_map ? position_map->getBufferSizeInBytes() : 0);
+    }
     void reset();
 
     MergeTreeIndexTextParams params;

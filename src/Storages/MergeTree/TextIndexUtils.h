@@ -60,6 +60,8 @@ private:
     size_t num_processed_rows = 0;
     /// Number of flushed segments for each index.
     std::vector<size_t> segment_numbers;
+    /// Estimated memory retained by each index builder.
+    std::vector<size_t> estimated_allocated_bytes;
     size_t max_processed_tokens;
     size_t max_allocated_bytes;
 };
