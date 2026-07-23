@@ -41,11 +41,8 @@ protected:
     std::unordered_map<Location, StoredObjects> written_blobs;
 
 public:
-    /// fsync the local metadata file for `path` if it has already been committed to disk. Called
-    /// from the write buffer's sync when the caller requested durability (e.g. fsync_after_insert).
-    /// Only autocommit (fake-transaction) writes have committed the metadata by sync time; for a
-    /// queued transaction (Keeper metadata) the file does not exist yet and durability of the part
-    /// is Keeper's responsibility, not a local fsync, so this is a no-op there.
+    /// fsync the local metadata file for `path` if it already exists on disk. No-op for a queued
+    /// transaction, whose metadata file is created later, at commit.
     void requestMetadataSync(const std::string & path);
 
     DiskObjectStorageTransaction(

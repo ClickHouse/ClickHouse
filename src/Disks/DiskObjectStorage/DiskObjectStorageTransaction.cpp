@@ -383,11 +383,10 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 
 void DiskObjectStorageTransaction::requestMetadataSync(const std::string & path)
 {
-    /// The metadata file exists once its metadata operation has committed. Autocommit (fake
-    /// transaction) writes commit inside the finalize callback, before the buffer is synced, so the
-    /// file is present and we fsync it. syncMetadataFile touches only its own fd, so it is safe to
-    /// call from the parallel file-sync pool. A queued transaction has not created the file yet;
-    /// there the local metadata is not authoritative (Keeper is), so a local fsync is not needed.
+    /// The metadata file exists here only for a fake (immediate) transaction, whose commit runs in
+    /// the finalize callback before the buffer is synced. syncMetadataFile touches only its own fd,
+    /// so it is safe from the parallel file-sync pool. A queued transaction creates the file later,
+    /// at commit, so it is skipped here.
     if (metadata_storage->existsFile(path))
         metadata_storage->syncMetadataFile(path);
 }
