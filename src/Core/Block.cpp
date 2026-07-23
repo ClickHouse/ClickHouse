@@ -106,14 +106,25 @@ static bool haveCompatibleColumnStructure(const IColumn & actual, const IColumn 
         return true;
     }
 
+    /// `Replicated` is compositional too, but only its nested column is structural: the internal
+    /// indexes column is a variable-width encoding detail (`UInt8` .. `UInt64`, widened lazily)
+    /// that `getName` does not include, yet `forEachSubcolumn` exposes — so descending into all
+    /// subcolumns would make the check stricter than the name comparison and reject a valid
+    /// runtime block against its header. Compare only the nested column, like
+    /// `ColumnReplicated::structureEquals` does.
+    if (const auto * actual_replicated = typeid_cast<const ColumnReplicated *>(&actual))
+    {
+        const auto & expected_replicated = assert_cast<const ColumnReplicated &>(expected);
+        return haveCompatibleColumnStructure(*actual_replicated->getNestedColumn(), *expected_replicated.getNestedColumn());
+    }
+
     /// Descend only into the plain container columns whose name is a pure composition of the
     /// nested column names, so that for everything else the comparison stays exactly as strict
     /// as comparing full column names. `Dynamic`/`Object` are deliberately left strict because
     /// their nested structure is not fixed by the type.
     const bool is_compositional = typeid_cast<const ColumnTuple *>(&actual) || typeid_cast<const ColumnArray *>(&actual)
         || typeid_cast<const ColumnMap *>(&actual) || typeid_cast<const ColumnNullable *>(&actual)
-        || typeid_cast<const ColumnConst *>(&actual) || typeid_cast<const ColumnSparse *>(&actual)
-        || typeid_cast<const ColumnReplicated *>(&actual);
+        || typeid_cast<const ColumnConst *>(&actual) || typeid_cast<const ColumnSparse *>(&actual);
 
     if (!is_compositional)
         return actual.getName() == expected.getName();
