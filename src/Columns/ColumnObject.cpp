@@ -1224,6 +1224,15 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
         ReadBufferFromMemory buf(value);
         auto value_type = decodeDataType(buf);
         hash.update(path);
+        /// In this encoding NULL is stored as the Nothing type with no value bytes (see
+        /// SerializationDynamic::serializeBinary). Current writers don't store NULL values in
+        /// shared data, but it is a valid encoding of the value format, and Nothing has no
+        /// binary deserialization, so hash it directly the way ColumnDynamic hashes a NULL row.
+        if (isNothing(value_type))
+        {
+            hash.update(ColumnVariant::NULL_DISCRIMINATOR);
+            continue;
+        }
         hash.update(value_type->getName());
         auto tmp_column = value_type->createColumn();
         value_type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, getFormatSettings());
