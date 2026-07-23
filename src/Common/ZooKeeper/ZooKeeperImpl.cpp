@@ -13,6 +13,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <Coordination/KeeperCommon.h>
+#include <IO/NullWriteBuffer.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -908,9 +909,7 @@ void ZooKeeper::sendThread()
                     /// error in that window instead. The completion itself allocates, so block
                     /// MEMORY_LIMIT_EXCEEDED inside the guard rather than prebuilding the response.
                     bool callback_registered = false;
-                    /// Set when the request is rejected before send (size check / serialization
-                    /// failure): the guard completes the callback with this code instead of a
-                    /// session-level error.
+                    /// If set, reject the request with this error instead of sending it.
                     std::optional<Error> reject_error;
                     SCOPE_EXIT({
                         if (callback_registered || !info.callback)
@@ -948,11 +947,21 @@ void ZooKeeper::sendThread()
                     if (info.request->add_root_path)
                         info.request->addRootPath(args.chroot);
 
-                    /// Final size check: rejection fails only this request, session intact. Tracing context is not accounted, but considered as a small overhead
+                    /// Final size check: rejection fails only this request, session intact.
                     try
                     {
-                        assertRequestSizeIsValid(
-                            sizeof(int32_t) + info.request->requestSize(use_xid_64), getMaxRequestSize(), *info.request);
+                        size_t wire_size = sizeof(int32_t) + info.request->requestSize(use_xid_64);
+                        if (pass_opentelemetry_tracing_context)
+                        {
+                            ++wire_size;
+                            if (info.request->tracing_context)
+                            {
+                                DB::NullWriteBuffer counter;
+                                info.request->tracing_context->serialize(counter);
+                                wire_size += counter.count();
+                            }
+                        }
+                        assertRequestSizeIsValid(wire_size, getMaxRequestSize(), *info.request);
                     }
                     catch (const Exception & e)
                     {

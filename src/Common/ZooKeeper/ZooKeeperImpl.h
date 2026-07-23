@@ -238,7 +238,7 @@ public:
 
     const KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
 
-    /// Effective max request size in bytes: client config wins, else server-advertised; 0 == unlimited.
+    /// Effective max request size in bytes: the smaller of client config and server-advertised applies; 0 == unlimited.
     UInt64 getMaxRequestSize() const
     {
         if (args.max_request_size != 0 && keeper_max_request_size != 0)
