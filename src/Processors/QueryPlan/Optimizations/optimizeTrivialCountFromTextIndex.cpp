@@ -97,7 +97,7 @@ bool collectTextIndexPredicateColumns(const ActionsDAG::Node * node, NameSet & o
             }
 
             /// Transparent wrappers that do not change which rows pass.
-            if ((name == "_CAST" || name == "CAST") && node->children.size() >= 1)
+            if ((name == "_CAST" || name == "CAST") && !node->children.empty())
                 return collectTextIndexPredicateColumns(node->children.front(), out_columns);
 
             /// TODO: OR of text-index predicates (needs posting-list union cardinality).
