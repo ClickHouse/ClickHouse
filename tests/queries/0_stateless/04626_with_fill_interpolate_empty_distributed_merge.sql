@@ -7,12 +7,16 @@
 -- DISTINCT would collapse it before Filling and stop exercising the fix), while the outer DISTINCT
 -- keeps the reference independent of the separate per-shard WITH FILL duplication (#111212 /
 -- #111439). Runs on both analyzers.
+-- serialize_query_plan = 0 because WITH FILL is not supported in serialized sort descriptions
+-- (serializeSortDescription throws NOT_IMPLEMENTED) and the CI `distributed plan` shard turns
+-- serialize_query_plan on globally; the FillingTransform bug is exercised on the shard, not by
+-- plan serialization, so the setting is orthogonal here.
 SELECT DISTINCT n, inter FROM (
     SELECT n, inter
     FROM remote('127.0.0.1,127.0.0.2', view(
         SELECT number AS inter, toFloat32(number / 10) AS n FROM numbers(10) WHERE 0))
     ORDER BY n ASC NULLS LAST WITH FILL FROM 0 TO 11.51 STEP 2. INTERPOLATE (`inter` AS 1023)
-    SETTINGS prefer_localhost_replica = 0)
+    SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 0)
 ORDER BY n;
 
 -- Duplicate INTERPOLATE targets are rejected on both analyzers (the old analyzer already
