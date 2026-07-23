@@ -204,6 +204,32 @@ def main():
         workdir=REPO_PATH,
     )
 
+    # --- TEMPORARY DIAGNOSTIC (do not merge) ---
+    # Question: does the robot PAT bypass the "Merge only for releases" ruleset
+    # on release-pattern branches (refs/heads/[0-9][0-9].[0-9]*)? Attempt a
+    # direct push of the current HEAD to refs/heads/30.12 using the robot token
+    # ($GH_TOKEN via gh's credential helper, configured just above), report the
+    # outcome, then stop the job before any real release mutation.
+    print("=== ROBOT-TOKEN PUSH TEST: git push origin HEAD:refs/heads/30.12 ===")
+    push_ok = Shell.check(
+        "git push origin HEAD:refs/heads/30.12",
+        verbose=True,
+        strict=False,
+    )
+    if push_ok:
+        print(
+            "ROBOT-PUSH RESULT: SUCCEEDED — the ruleset does NOT block the robot "
+            "token; branch 30.12 was created."
+        )
+    else:
+        print(
+            "ROBOT-PUSH RESULT: REJECTED — the ruleset blocks the robot token too "
+            "(expected GH013: changes must be made through a pull request)."
+        )
+    print("=== stopping after robot-token push test (diagnostic run) ===")
+    return
+    # --- END TEMPORARY DIAGNOSTIC ---
+
     # Authenticate to Docker Hub in the setup phase, before any release
     # mutation (tag push, GitHub release, repo export). Pushing docker images
     # is part of the release contract, so a missing/expired registry token must
