@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"max_generic_compression_threads", 1, 1, "New setting to control the number of threads used for parallel gzip compression of output streams."},
             {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
@@ -79,7 +80,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_partition_minmax_for_primary_key_pruning", false, true, "New setting to use the part's partition minmax to prune more granules during primary key analysis for `MergeTree` tables, when a primary key column is also an input column of the partition key."},
             {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},
             {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
-            {"max_generic_compression_threads", 1, 1, "New setting to control the number of threads used for parallel gzip compression of output streams."},
             {"input_format_parquet_dictionary_filter_push_down", 0, 1024 * 1024, "New setting enabling Parquet row-group pruning based on dictionary page contents (reader v3). The value is the maximum dictionary page size in bytes for which the optimization applies; 0 (the previous behavior) disables it."},
             {"optimize_redundant_comparisons", false, true, "New setting to detect conflicting and redundant comparison conditions on the same expression within AND chains."},
             {"mysql_datatypes_support_level", "decimal,datetime64,date2Date32", "decimal,datetime64,date2Date32,geometry", "Map MySQL's concrete spatial types (LINESTRING, POLYGON, MULTILINESTRING, MULTIPOLYGON) and the generic GEOMETRY type to the corresponding ClickHouse geometric types by default. The generic GEOMETRY column maps to the umbrella Geometry type; reading a value whose subtype has no ClickHouse counterpart (MULTIPOINT, GEOMETRYCOLLECTION) throws at read time."},
