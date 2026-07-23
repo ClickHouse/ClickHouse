@@ -51,7 +51,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     2. 通知チャネル (**Email**、**UI**、**Slack** のいずれか、または複数) を選択します。
     3. **Save** をクリックします。
 
-    <Image img="/images/cloud/reference/billing/spend-alerts-config.webp" alt="支出上限、自動しきい値アラート、通知チャネルが表示された Organization の支出アラート ダイアログ" size="md" />
+    <Image img="/images/cloud/reference/billing/spend-alerts-config.png" alt="支出上限、自動しきい値アラート、通知チャネルが表示された Organization の支出アラート ダイアログ" size="md" />
   </Step>
 </Steps>
 
@@ -59,12 +59,13 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   ## 自動しきい値アラート
 </div>
 
-設定した支出アラート金額に基づいて、3 つのアラートが自動的に作成され、発動されます。
+設定した支出アラート金額に基づいて、4 つのアラートが自動的に作成され、発動されます。
 
 | しきい値     | 発動条件               | 例 ($10 のアラート) |
 | -------- | ------------------ | ------------- |
 | **50%**  | 支出額の半分に達した時点       | $5            |
-| **75%**  | 支出額の 4 分の 3 に達した時点 | $7.50         |
+| **75%**  | 支出額の 4 分の 3 に達した時点 | $8            |
+| **90%**  | 支出額の 90% に達した時点      | $9            |
 | **100%** | 支出額の全額に達した時点       | $10           |
 
 <div id="notification-channels">
