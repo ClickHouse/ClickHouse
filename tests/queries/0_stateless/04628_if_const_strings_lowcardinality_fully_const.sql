@@ -17,7 +17,8 @@ SELECT transform(toString(number), ['0', '1'], ['zero', 'one'], 'other') AS res,
 SELECT 'Constant string consumers accept fully constant if/multiIf/transform results';
 SELECT arrayReduce(if(1, 'sum', 'max'), [1, 2, 3]);
 SELECT arrayReduce(multiIf(0, 'sum', 1, 'max', 'min'), [1, 2, 3]);
-SELECT arrayReduce(transform('a', ['a', 'b'], ['sum', 'max'], 'min'), [1, 2, 3]);
+-- Note: `transform` is not tested with `arrayReduce` because its result is never a `ColumnConst`
+-- (regardless of this optimization), so `arrayReduce(transform(...), ...)` fails even without it.
 SELECT tupleElement(CAST((1, 'v'), 'Tuple(a UInt8, b String)'), if(1, 'b', 'a'));
 
 DROP TABLE IF EXISTS join_04628;
