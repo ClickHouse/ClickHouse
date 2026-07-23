@@ -6,9 +6,10 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 # The server-level <compression> selector chooses the default codec of every part. That codec is
-# fed raw (without a column type) into the statistics and text-index streams, so it must not be an
-# experimental codec (which would bypass the per-column allow_experimental_codecs gate) nor a codec
-# that requires a column type (e.g. PCO). Both must be rejected when the configuration is loaded.
+# fed raw (without a column type) into the statistics and text-index streams, so a codec that
+# requires a column type (e.g. PCO) must be rejected when the configuration is loaded. (An
+# experimental codec that is safe for untyped data is allowed there: writing it into the server
+# configuration is the operator's opt-in.)
 node_pco = cluster.add_instance(
     "node_pco",
     main_configs=["configs/pco_compression_selector.xml"],
@@ -39,7 +40,8 @@ def test_pco_in_compression_selector_is_rejected(start_cluster):
         node_pco.query("INSERT INTO t_pco_selector SELECT number FROM numbers(1000)")
 
     message = str(exc.value)
-    assert "experimental codec PCO" in message, message
+    assert "requires a column type" in message, message
+    assert "PCO" in message, message
 
     node_pco.query("DROP TABLE t_pco_selector")
 
