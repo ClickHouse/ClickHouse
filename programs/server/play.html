@@ -11620,6 +11620,19 @@ async function updateQueryParams()
     }
 
     const oldValues = getParamValues();
+    /// The live inputs are the primary seed, but they are not always complete: a placeholder can
+    /// have no surviving input while the ACTIVE tab's own snapshot still holds its value. That
+    /// happens when this rebuild superseded a pending tab restore — the restore lost the
+    /// tokenization race to this edit, fell back to the tab's saved `params` and CLEARED the
+    /// stale inputs (see `restoreEditor`), so `oldValues` is empty here — and when a saved tab's
+    /// inputs could never be rebuilt at all (no WASM lexer / text too large). Seeding such a
+    /// placeholder from `tab.params` keeps the saved binding authoritative until a rebuild has
+    /// actually consumed it; without this, `syncParamsAfterRebuild` below would fold the blank
+    /// input into `tab.params` and persist the loss of a value the user never touched. This can
+    /// never resurrect a REMOVED placeholder's stale binding: only names present in the new text
+    /// get an input, and `syncParamsAfterRebuild` prunes `tab.params` to the rebuilt set.
+    const active_tab_for_seed = getActiveTab();
+    const savedValues = (active_tab_for_seed && active_tab_for_seed.params) || {};
     currentQueryParams = params;
     queryParamsContainer.innerHTML = '';
 
@@ -11646,6 +11659,10 @@ async function updateQueryParams()
         if (oldValues[param.name] !== undefined)
         {
             input.value = oldValues[param.name];
+        }
+        else if (savedValues[param.name] !== undefined)
+        {
+            input.value = savedValues[param.name];
         }
         input.addEventListener('input', function(e)
         {

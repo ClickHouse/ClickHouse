@@ -38,4 +38,9 @@ completion before rebuild (kept placeholder): the binding stays in the URL
 completion before rebuild (kept placeholder): the diverged draft still has no run=1
 completion before rebuild (kept placeholder): the landing rebuild keeps the binding
 completion before rebuild (kept placeholder): the draft is intact
+edit during pending restore: the fallback keeps the saved snapshot
+edit during pending restore: the saved binding survives the rebuild
+edit during pending restore: the rebuilt input carries the saved value
+edit during pending restore: the draft is intact
+edit during pending restore: the entry never persists a blanked binding
 OK

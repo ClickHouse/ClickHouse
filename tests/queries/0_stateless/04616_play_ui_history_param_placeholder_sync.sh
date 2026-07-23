@@ -441,6 +441,47 @@ function reset()
     assert_params('completion before rebuild (kept placeholder): the landing rebuild keeps the binding', active().params, { x: '1' });
     assert_eq('completion before rebuild (kept placeholder): the draft is intact', active().query, 'SELECT {x:Int32} + 1');
 
+    /// A query edit racing a PENDING tab restore: switching to a saved tab kicks off
+    /// `restoreEditor`, whose tokenization the quick edit supersedes — the restore falls back to
+    /// the tab's saved `params` and clears the stale inputs, and it is the EDIT's rebuild that
+    /// recreates them. That rebuild must seed a placeholder with no surviving input from the
+    /// tab's own saved snapshot: seeding from the (now empty) live inputs alone would rebuild
+    /// `param-y` blank, and `syncParamsAfterRebuild` would fold the blank into `tab.params` and
+    /// persist the loss of a binding the user never touched. The interleaving is pinned by
+    /// gating the EDIT's tokenization (captured per call) until the superseded restore has
+    /// committed its fallback, so the rebuild deterministically lands after the restore's tail.
+    reset();
+    await type('SELECT {x:Int32}');
+    setTrustedParam('x', '1');
+    await run('SELECT {x:Int32}');
+    const saved_tab = sandbox.makeTab();
+    saved_tab.query = 'SELECT {y:Int32}';
+    saved_tab.params = { y: '2' };
+    sandbox.tabs.push(saved_tab);
+    const real_tokenize = sandbox.tokenize;
+    let tokenize_hold = null;
+    sandbox.tokenize = async q =>
+    {
+        const hold = tokenize_hold;                    /// captured at CALL time, per tokenization
+        const tokens = await real_tokenize(q);
+        if (hold) await hold;
+        return tokens;
+    };
+    const pending_restore = sandbox.activateTab(saved_tab.id);      /// restore's tokenize: not gated
+    let release_edit_rebuild;
+    tokenize_hold = new Promise(resolve => { release_edit_rebuild = resolve; });
+    const racing_rebuild = type('SELECT {y:Int32} -- edited');      /// supersedes the restore, rebuild gated
+    await pending_restore;                                          /// fallback committed: tab.params = saved, inputs cleared
+    assert_params('edit during pending restore: the fallback keeps the saved snapshot', active().params, { y: '2' });
+    release_edit_rebuild();                                         /// now the edit's rebuild lands
+    await racing_rebuild;
+    await drain();
+    sandbox.tokenize = real_tokenize;
+    assert_params('edit during pending restore: the saved binding survives the rebuild', active().params, { y: '2' });
+    assert_eq('edit during pending restore: the rebuilt input carries the saved value', param_dom['param-y'] && param_dom['param-y'].value, '2');
+    assert_eq('edit during pending restore: the draft is intact', active().query, 'SELECT {y:Int32} -- edited');
+    assert_eq('edit during pending restore: the entry never persists a blanked binding', curUrl().includes('param_y=&') || curUrl().endsWith('param_y='), false);
+
     console.log('OK');
 })().catch(e => { console.error('FAIL: ' + (e && e.stack || e)); process.exit(1); });
 EOF
