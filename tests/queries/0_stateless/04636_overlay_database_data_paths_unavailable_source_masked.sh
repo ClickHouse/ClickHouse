@@ -8,6 +8,9 @@
 #     without a database filter would try to connect to the unreachable endpoint and fail.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# The connection errors that the probes produce are logged server-side at error level; keep them
+# out of the test's stderr.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
@@ -26,10 +29,6 @@ DB_PG="db_pg_${SUF}"
 DB_OVL="db_ovl_${SUF}"
 USER_OVL="u_ovl_${SUF}"   # data grants on the facade only
 USER_DUAL="u_dual_${SUF}" # data grants on the facade and on the source
-
-# The connection errors that the probes produce are logged server-side at error level; keep them
-# out of the test's stderr.
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --send_logs_level=fatal"
 
 # The PostgreSQL database engine does not connect at CREATE time, so an unreachable endpoint is
 # fine here. Port 1 on localhost is never listening, so every probe fails instantly with
