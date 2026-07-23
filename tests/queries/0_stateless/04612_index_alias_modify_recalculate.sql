@@ -91,6 +91,9 @@ CREATE TABLE t_index_alias_throw
 )
 ENGINE = MergeTree ORDER BY a SETTINGS alter_column_secondary_index_mode = 'throw';
 
+-- The check only applies to existing parts, so the table must not be empty.
+INSERT INTO t_index_alias_throw SELECT number FROM numbers(1000);
+
 ALTER TABLE t_index_alias_throw MODIFY COLUMN x UInt64 ALIAS a + 2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 -- Modifying an alias no index depends on is still allowed.
