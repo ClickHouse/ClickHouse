@@ -50,6 +50,7 @@ public:
 
     /// Get the table data - a pair (a stream with the contents of the table, the name of the table)
     ExternalTableDataPtr getData(ContextPtr context);
+    Block getScalar(ContextPtr context);
 
 protected:
     /// Clear all accumulated information

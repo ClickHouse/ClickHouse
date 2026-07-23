@@ -219,7 +219,7 @@ xargs < "$STYLE_TMPDIR/nobase_headers_excluded" awk 'FNR==1 && !/^#pragma once$/
 xargs < "$STYLE_TMPDIR/all_excluded" grep -F '!!!' | grep . && echo "Too many exclamation marks (looks dirty, unconfident)."
 
 # Exclamation mark in a message
-xargs < "$STYLE_TMPDIR/all_excluded" grep -F '!",' | grep . && echo "No need for an exclamation mark (looks dirty, unconfident)."
+xargs < "$STYLE_TMPDIR/all_excluded" grep -Hn -F '!",' | $FILTER_DOCS && echo "^ No need for an exclamation mark (looks dirty, unconfident)."
 } > "$O.06a" 2>&1 &
 
 # 06b: Trailing whitespaces
@@ -388,7 +388,7 @@ xargs < "$STYLE_TMPDIR/nobase_all" rg --line-number '(dynamic|typeid)_cast<[^>]+
 # 12b: Punctuation, std::regex, and Cyrillic checks on nobase_all
 {
 # Check for bad punctuation: whitespace before comma.
-xargs < "$STYLE_TMPDIR/nobase_all" rg --line-number '\w ,' | grep -v 'bad punctuation is ok here' && echo "^ There is bad punctuation: whitespace before comma. You should write it like this: 'Hello, world!'"
+xargs < "$STYLE_TMPDIR/nobase_all" rg -H --line-number '\w ,' | grep -v 'bad punctuation is ok here' | $FILTER_DOCS && echo "^ There is bad punctuation: whitespace before comma. You should write it like this: 'Hello, world!'"
 
 # Check usage of std::regex which is too bloated and slow.
 xargs < "$STYLE_TMPDIR/nobase_all" grep -F --line-number 'std::regex' | grep . && echo "^ Please use re2 instead of std::regex"
@@ -407,8 +407,8 @@ join -v1 <(grep '\.h$' "$STYLE_TMPDIR/nobase_all" | sed 's:.*/::'  | sort -u) <(
 # 14: Abbreviation checks and error message style
 {
 # Wrong spelling of abbreviations, e.g. SQL is right, Sql is wrong. XMLHttpRequest is very wrong.
-xargs < "$STYLE_TMPDIR/all_excluded" rg 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -E 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3|ai::JsonValue|IcebergWrites|arrow::flight|SqlInfo|CommandGetSqlInfo|CommandGetDbSchemas|commandGetDbSchemas|ArrowFlightSql|FlightSql.html|TcpExtListenOverflows' &&
-    echo "Abbreviations such as SQL, XML, HTTP, should be in all caps. For example, SQL is right, Sql is wrong. XMLHttpRequest is very wrong."
+xargs < "$STYLE_TMPDIR/all_excluded" rg -H -n 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -E 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3|ai::JsonValue|IcebergWrites|arrow::flight|SqlInfo|CommandGetSqlInfo|CommandGetDbSchemas|commandGetDbSchemas|ArrowFlightSql|FlightSql.html|TcpExtListenOverflows|WhenToUseJson' | $FILTER_DOCS &&
+    echo "^ Abbreviations such as SQL, XML, HTTP, should be in all caps. For example, SQL is right, Sql is wrong. XMLHttpRequest is very wrong."
 
 xargs < "$STYLE_TMPDIR/all_excluded" grep -F -i 'ErrorCodes::LOGICAL_ERROR, "Logical error:' &&
     echo "If an exception has LOGICAL_ERROR code, there is no need to include the text 'Logical error' in the exception message, because then the phrase 'Logical error' will be printed twice."
