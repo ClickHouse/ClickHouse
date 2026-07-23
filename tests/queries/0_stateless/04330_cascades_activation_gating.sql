@@ -114,4 +114,11 @@ SELECT k, sum(x) FROM t_gating GROUP BY k ORDER BY k
 SETTINGS force_aggregation_in_order = 1, make_distributed_plan = 1, enable_cascades_optimizer = 0,
     distributed_plan_execute_locally = 1, max_rows_to_group_by = 0; -- { serverError SUPPORT_IS_DISABLED }
 
+-- A plan that receives no exchanges (the read stays below the broadcast threshold) but carries
+-- a step without serialization support must run via the local fallback, not fail on the
+-- fragment serializability check.
+SELECT '-- 14. Exchange-free plan with a window falls back to local execution';
+SELECT DISTINCT sum(x) OVER () FROM t_gating
+SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 0, distributed_plan_execute_locally = 1;
+
 DROP TABLE t_gating;

@@ -59,6 +59,9 @@ bool canExecuteRemotely(const QueryPlan::Node & node)
             return true;
         return node.step->isSerializable();
     }
+    /// Logical exchanges become stage boundaries at the split and are never serialized themselves.
+    if (!dynamic_cast<const LogicalExchangeStep *>(node.step.get()) && !node.step->isSerializable())
+        return false;
     for (const auto * child : node.children)
         if (!canExecuteRemotely(*child))
             return false;
