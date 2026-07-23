@@ -135,6 +135,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int TOO_DEEP_RECURSION;
 }
 
@@ -1737,6 +1738,18 @@ Chain InsertDependenciesBuilder::createRetry(const std::vector<StorageIDMaybeEmp
     chassert(!path.empty());
 
     LOG_DEBUG(logger, "Creating retry chain for path {}, partition <{}> starting from {}", fmt::join(path, "/"), partition, start_from);
+
+    /// Behind a table with the `Alias` engine the deduplication info travels into a nested insert
+    /// chain, and its visited views belong to the outer chain's builder, so this builder cannot
+    /// rebuild them. Refuse loudly instead of failing with a bare `std::out_of_range` below.
+    if (!isView(path.back()))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot rebuild the deduplication retry chain for '{}': it does not belong to this insert chain. "
+            "This happens when deduplicated rows have to be recalculated after a table with the `Alias` engine. "
+            "Retry path: {}",
+            path.back(),
+            fmt::join(path, "/"));
 
     Chain result;
 

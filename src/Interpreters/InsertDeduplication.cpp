@@ -773,7 +773,15 @@ void DeduplicationInfo::truncateTokensForRetry()
 
 Block DeduplicationInfo::goRetry(SharedHeader && header, Chunk && filtered_data, Ptr filtered_info, const std::string & partition_id, ContextPtr context) const
 {
-    bool is_empty = !filtered_data || filtered_data.getNumRows() == 0;
+    // in case all rows are filtered out
+    // we should not run the pipeline
+    // because no data no results
+    // otherwise we can end up in a cycle when all data is filtered by inner query return not empty aggregate result
+    /// Do not even build the retry chain: the callers only check that the result is empty, and
+    /// behind a table with the `Alias` engine the visited views belong to the outer insert chain,
+    /// so `insert_dependencies` of the nested chain cannot rebuild them (see createRetry).
+    if (!filtered_data || filtered_data.getNumRows() == 0)
+        return header->cloneEmpty();
 
     auto builder = QueryPipelineBuilder();
     builder.init(Pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(filtered_data))));
@@ -783,13 +791,6 @@ Block DeduplicationInfo::goRetry(SharedHeader && header, Chunk && filtered_data,
     chassert(pipeline.pulling());
 
     auto result_header = pipeline.getSharedHeader();
-
-    // in case all rows are filtered out
-    // we should not run the pipeline
-    // because no data no results
-    // otherwise we can end up in a cycle when all data is filtered by inner query return not empty aggregate result
-    if (is_empty)
-        return result_header->cloneEmpty();
 
     auto filter =[this, filtered_info] (const Chunk & chunk) -> bool
     {
