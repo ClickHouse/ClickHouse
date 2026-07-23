@@ -212,6 +212,19 @@ def wait_for_marker(node, timeout=90):
     raise AssertionError("snapshot_completed marker did not appear")
 
 
+def wait_for_new_log_occurrence(node, message, baseline, timeout=60):
+    # `wait_for_log_line` tails the log from the moment the tail process attaches, so a line that is
+    # logged only once, milliseconds after the triggering query returns, can be missed entirely (the
+    # background recovery can be faster than `docker exec` starting the tail). Poll the occurrence
+    # count against a baseline taken before the trigger instead.
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if int(node.count_in_log(message)) > baseline:
+            return
+        time.sleep(0.5)
+    raise AssertionError(f"'{message}' did not appear in the log within {timeout} seconds")
+
+
 def test_replicated_nested_tables_converge_with_single_leader(started_cluster):
     pg_manager.create_postgres_table("test_table")
     instance.query(
@@ -1804,13 +1817,13 @@ def test_plain_drop_database_quiesces_retrying_startup_task(started_cluster):
         instance.query(
             "SYSTEM ENABLE FAILPOINT materialized_postgresql_pause_after_stop_replication"
         )
+        pause_line = "Pausing after stopping replication"
+        pause_baseline = int(instance.count_in_log(pause_line))
         drop_thread = threading.Thread(target=run_drop)
         drop_thread.start()
-        instance.wait_for_log_line(
-            "Pausing after stopping replication",
-            timeout=30,
-            look_behind_lines=1,
-        )
+        # The line is logged only once and possibly before a log tail could attach, so count
+        # occurrences against the pre-drop baseline instead.
+        wait_for_new_log_occurrence(instance, pause_line, pause_baseline, timeout=30)
 
         # With the drop held between `stopReplication` and the database shutdown, let the next
         # startup retry succeed - if the drop had left the task armed, it would rebuild the handler
@@ -1858,16 +1871,16 @@ def test_plain_refused_drop_rearms_startup_task(started_cluster):
     instance.query(
         "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
     )
+    success_line = "Successfully loaded tables from PostgreSQL and started replication"
+    success_baseline = int(instance.count_in_log(success_line))
     try:
         error = instance.query_and_get_error("DROP DATABASE test_database SYNC")
         assert "Injected failure while dropping a nested table" in error, error
 
         # The re-armed startup task must rebuild the stopped replication without a server restart.
-        instance.wait_for_log_line(
-            "Successfully loaded tables from PostgreSQL and started replication",
-            timeout=60,
-            look_behind_lines=1,
-        )
+        # The recovery can complete within milliseconds of the refused drop, so count fresh
+        # occurrences against a baseline taken before the drop instead of tailing the log.
+        wait_for_new_log_occurrence(instance, success_line, success_baseline)
     finally:
         instance.query(
             "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
