@@ -228,6 +228,39 @@ static NameSet getRemovedStatistics(const StorageMetadataPtr & metadata_snapshot
     return removed_stats;
 }
 
+/// Rewrites part_columns (the source part's load-time schema) in place to current logical names,
+/// keyed by each column's stamped id. A metadata-only RENAME under column ids neither reloads the
+/// part nor records the rename in alter_conversions (the stamped id carries it), so without this
+/// the split branches reason over stale names and emit stale-named READ_COLUMN commands. This is
+/// the same id->logical translation getColumnsForNewDataPart already applies.
+///
+/// part_id_columns carries the stamped ids (ColumnsDescription itself does not). A column whose
+/// stamped id is gone from the mapping was dropped by an earlier metadata-only ALTER; it has no
+/// current name, so it is evicted rather than carried into the current-schema view. That eviction
+/// also frees a name that a later RENAME reassigned to another column: DROP q; RENAME p TO q leaves
+/// the packed part carrying both, and ColumnsDescription::rename would otherwise collide on the
+/// ordered-unique name index and silently drop the renamed column.
+void remapPartColumnsToCurrentNames(
+    ColumnsDescription & part_columns,
+    const NamesAndTypesList & part_id_columns,
+    const ColumnIdMapping & mapping)
+{
+    for (const auto & col : part_id_columns)
+        if (!mapping.hasColumnId(col.getColumnIdInStorage()) && part_columns.has(col.name))
+            part_columns.remove(col.name);
+
+    for (const auto & col : part_id_columns)
+    {
+        const auto id = col.getColumnIdInStorage();
+        if (!mapping.hasColumnId(id))
+            continue;
+
+        const auto current_name = mapping.getLogicalName(id);
+        if (current_name != col.name && part_columns.has(col.name))
+            part_columns.rename(col.name, current_name);
+    }
+}
+
 /** Split mutation commands into two parts:
 *   First part should be executed by mutations interpreter.
 *   Other is just simple drop/renames, so they can be executed without interpreter.
@@ -244,6 +277,11 @@ static void splitAndModifyMutationCommands(
 {
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
+
+    /// Under column ids the part keeps its load-time names after a metadata-only ALTER; bring
+    /// part_columns into the current-schema domain so both split branches reason over live names.
+    if (auto column_id_mapping = metadata_snapshot->getActiveColumnIdMapping())
+        remapPartColumnsToCurrentNames(part_columns, part->getColumns(), *column_id_mapping);
 
     if (haveMutationsOfDynamicColumns(part, commands) || hasDynamicColumnsWithoutRecordedSubstreams(part)
         || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))

@@ -29,3 +29,11 @@ values_after_merge	9	8
 all_1_1_0	v	['Basic']
 all_1_1_0	w	['Basic']
 all_2_2_0	w	1	['Basic']
+compact_after_update	1	hello	1.5
+compact_after_update	2	world	102.5
+compact_after_update	3	foo	3.5
+compact_after_delete	1	hello	1.5
+compact_after_delete	2	world	102.5
+compact_rename_into_dropped	1	p1	5
+compact_rename_into_dropped	2	p2	0
+packed_stats	49505	100
