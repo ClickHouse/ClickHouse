@@ -71,3 +71,21 @@ TEST(OffsetMap, RangeAtObjectBoundary)
     EXPECT_EQ(r[0].object_offset, 0);
     EXPECT_EQ(r[0].size, 50);
 }
+
+TEST(OffsetMap, UnknownSize)
+{
+    StoredObjects objects;
+    objects.emplace_back("obj", "", StoredObject::UnknownSize);
+
+    OffsetMap map;
+    map.build(objects);
+    EXPECT_TRUE(map.hasUnknownSize());
+    EXPECT_EQ(map.totalSize(), StoredObject::UnknownSize);
+
+    /// Any offset below the sentinel maps into the single object.
+    auto ranges = map.map(ByteRange{1'000'000, 100});
+    ASSERT_EQ(ranges.size(), 1u);
+    EXPECT_EQ(ranges[0].object.remote_path, "obj");
+    EXPECT_EQ(ranges[0].object_offset, 1'000'000u);
+    EXPECT_EQ(ranges[0].size, 100u);
+}
