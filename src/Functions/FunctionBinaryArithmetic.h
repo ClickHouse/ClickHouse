@@ -997,7 +997,7 @@ inline UnwrappedNullableArrayColumn unwrapNullableArrayColumnForArithmetic(
         unwrapped_column = col_no_lowcardinality;
     }
 
-    const ColumnConst * col_const = checkAndGetColumnConst<ColumnConst>(unwrapped_column.get());
+    const ColumnConst * col_const = checkAndGetColumn<ColumnConst>(unwrapped_column.get());
     const IColumn * data_column = col_const ? &col_const->getDataColumn() : unwrapped_column.get();
 
     if (const auto * nullable_array_column = checkAndGetColumn<ColumnNullable>(data_column))

@@ -220,7 +220,7 @@ public:
             const auto & array_with_type_and_name = arguments[i];
             ColumnPtr array_col = array_with_type_and_name.column;
 
-            const ColumnConst * array_col_const = checkAndGetColumnConst<ColumnConst>(array_col.get());
+            const ColumnConst * array_col_const = checkAndGetColumn<ColumnConst>(array_col.get());
             const IColumn * array_data_column = array_col_const ? &array_col_const->getDataColumn() : array_col.get();
 
             if (const auto * nullable_array_column = checkAndGetColumn<ColumnNullable>(array_data_column))
