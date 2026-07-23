@@ -223,8 +223,18 @@ def ensure_primary_submodules():
     ), "Failed to init submodules in the primary checkout"
     if os.path.isdir(".git/modules/contrib") and os.listdir(".git/modules/contrib"):
         print("Submodule cache detected — populating working trees from cache")
+        # `--force` is essential here (unlike build_clickhouse.py's checkout): the S3 cache
+        # restores each submodule's `.git/modules` data with `HEAD` already at the recorded
+        # gitlink, but the *working tree* is empty. Without `--force`, `git submodule update`
+        # sees `HEAD` == the recorded commit, considers the submodule up-to-date, and leaves
+        # the working tree empty. The hardlink step then finds nothing to copy and the
+        # before-binary fails to configure with a misleading "cannot find source file"
+        # error. `--force` runs `git checkout --force` unconditionally, repopulating the
+        # empty working tree from objects already present in the cache.
         ok = Shell.check(
-            "git submodule update --depth 1 --single-branch", retries=3, verbose=True
+            "git submodule update --force --depth 1 --single-branch",
+            retries=3,
+            verbose=True,
         )
     else:
         ok = Shell.check(
@@ -239,9 +249,14 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
     Submodule working trees are populated by hardlinking from the primary checkout
     (fast, no network) so the build sees contrib sources.  This is content-correct
     whenever the PR did not bump submodule pointers, which is the normal case for a
-    unit-test bugfix.  Returns True iff the worktree ended up with its submodules
-    populated (checked via SUBMODULE_MARKER) — the caller must fail close otherwise.
+    unit-test bugfix.  Returns True iff every submodule the primary checkout has was
+    hardlinked into the worktree non-empty — the caller must fail close otherwise.
     """
+    # Populate the primary checkout's submodule working trees FIRST, before touching the
+    # worktree: the hardlink step below has nothing to copy otherwise, and doing it up
+    # front keeps the worktree machinery from racing with submodule checkout.
+    ensure_primary_submodules()
+
     Shell.check(f"git worktree remove --force {BEFORE_SRC} ||:", verbose=True)
     Shell.check(f"rm -rf {BEFORE_SRC}", verbose=True)
     assert Shell.check(
@@ -261,19 +276,24 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
         verbose=True,
     ), "Failed to overlay unit-test files onto the merge-base worktree"
 
-    # The primary checkout must have populated submodule working trees before we can
-    # hardlink them across (see ensure_primary_submodules).
-    ensure_primary_submodules()
-
     # Populate submodules by hardlinking from the primary checkout.
     sub_paths = Shell.get_output(
         "git config --file .gitmodules --get-regexp '^submodule\\..*\\.path$' "
         "| awk '{print $2}'"
     ).splitlines()
     before_src_real = os.path.realpath(BEFORE_SRC)
+    failures = []
     for path in sub_paths:
         path = path.strip()
-        if not path or not os.path.isdir(path) or not os.listdir(path):
+        if not path or not os.path.isdir(path):
+            continue
+        if not os.listdir(path):
+            # The primary checkout left this submodule empty. There is nothing to
+            # hardlink, and the build needs its sources, so record it as a hard failure
+            # instead of silently skipping it: a silent skip previously surfaced as a
+            # misleading cmake "cannot find source file" error rather than the
+            # infrastructure error it really is (see ensure_primary_submodules).
+            failures.append(f"{path}: empty in the primary checkout, cannot hardlink it")
             continue
         dst = os.path.join(BEFORE_SRC, path)
         # SECURITY: defense in depth against a traversal path that somehow slipped past
@@ -297,10 +317,25 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
             shlex.quote(dst),
             shlex.quote(os.path.dirname(dst)),
         )
-        Shell.check(f"rm -rf -- {q_dst} && mkdir -p -- {q_dst_parent}", verbose=False)
-        # cp -al = recursive hardlink copy (instant, no data duplication).
-        Shell.check(f"cp -al -- {q_path} {q_dst}", verbose=False)
+        # cp -al = recursive hardlink copy (instant, no data duplication). Check the exit
+        # status AND that the destination ended up non-empty: an unchecked failed copy
+        # (e.g. cross-device link, ENOSPC) would otherwise leave the submodule empty and
+        # only fail much later inside cmake.
+        ok = Shell.check(
+            f"rm -rf -- {q_dst} && mkdir -p -- {q_dst_parent} && cp -al -- {q_path} {q_dst}",
+            verbose=False,
+        )
+        if not ok or not (os.path.isdir(dst) and os.listdir(dst)):
+            failures.append(f"{path}: hardlink copy into the before-worktree failed")
 
+    if failures:
+        print(
+            "Failed to populate before-worktree submodules:\n  " + "\n  ".join(failures)
+        )
+        return False
+
+    # Belt-and-suspenders on top of the per-submodule checks above: the marker file must
+    # exist in the worktree, confirming at least the reference submodule is really there.
     return os.path.isfile(os.path.join(BEFORE_SRC, SUBMODULE_MARKER))
 
 
@@ -506,9 +541,10 @@ def main():
                     name="Bugfix validation (unit tests)",
                     status=Result.Status.ERROR,
                     info=(
-                        f"Submodules were not populated in the before-worktree (missing "
-                        f"'{SUBMODULE_MARKER}'); cannot build the before-binary. This is "
-                        "an infrastructure error — NOT a reproduction."
+                        "Submodules were not fully populated in the before-worktree "
+                        "(see the job log for the specific submodule that could not be "
+                        "hardlinked); cannot build the before-binary. This is an "
+                        "infrastructure error — NOT a reproduction."
                     ),
                 )
             ],
