@@ -22,6 +22,19 @@ BLOCKED_HOST = "blocked-postgres-host"
 PG_HOST = "postgres1"
 
 
+def _rewrite_database_metadata(sed_expression, database_name):
+    # Rewrite the persisted definition of a database while the server is down. The `.sql` file
+    # is located with `find` because its directory depends on the server configuration: with a
+    # database disk (the "db disk" CI configuration) it is not under `/var/lib/clickhouse/metadata`.
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"metadata_file=$(find /var/lib/clickhouse -name '{database_name}.sql' | head -n 1) && [ -n \"$metadata_file\" ] && sed -i '{sed_expression}' \"$metadata_file\"",
+        ]
+    )
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -221,9 +234,12 @@ def test_user_attach_respects_remote_host_filter(started_cluster):
     error = node.query_and_get_error(f"ATTACH DATABASE pg_db_user_attach ENGINE = PostgreSQL('{BLOCKED_HOST}:5432', 'postgres', 'postgres', '{pg_pass}')")
     assert "UNACCEPTABLE_URL" in error
 
+    # MaterializedPostgreSQL is Atomic-based, so an explicit ATTACH with an engine definition
+    # requires a UUID clause -- without it the query is rejected as INCORRECT_QUERY before the
+    # engine registration (and thus the host filter) is ever reached.
     node.query("DROP DATABASE IF EXISTS mpg_user_attach")
     error = node.query_and_get_error(
-        f"ATTACH DATABASE mpg_user_attach ENGINE = MaterializedPostgreSQL('{BLOCKED_HOST}:5432', 'postgres', 'postgres', '{pg_pass}')",
+        f"ATTACH DATABASE mpg_user_attach UUID '00001111-2222-3333-4444-555566667777' ENGINE = MaterializedPostgreSQL('{BLOCKED_HOST}:5432', 'postgres', 'postgres', '{pg_pass}')",
         settings={"allow_experimental_database_materialized_postgresql": 1},
     )
     assert "UNACCEPTABLE_URL" in error
@@ -240,8 +256,37 @@ def test_startup_metadata_replay_skips_remote_host_filter(started_cluster):
     node.query(f"CREATE DATABASE pg_db_persisted ENGINE = PostgreSQL('{PG_HOST}:5432', 'postgres', 'postgres', '{pg_pass}')")
 
     node.stop_clickhouse()
-    node.exec_in_container(["bash", "-c", f"sed -i 's/{PG_HOST}:5432/{BLOCKED_HOST}:5432/' /var/lib/clickhouse/metadata/pg_db_persisted.sql"])
+    _rewrite_database_metadata(f"s/{PG_HOST}:5432/{BLOCKED_HOST}:5432/", "pg_db_persisted")
     node.start_clickhouse()
 
     assert node.query("SELECT count() FROM system.databases WHERE name = 'pg_db_persisted'").strip() == "1"
     node.query("DROP DATABASE pg_db_persisted")
+
+
+def test_startup_metadata_replay_skips_multi_address_validation(started_cluster):
+    # The multi-address `addresses_expr` rejection needs the same startup exemption as the host
+    # filter: before it existed, `CREATE DATABASE ... ENGINE = MaterializedPostgreSQL(<nc>)` with
+    # a multi-address `addresses_expr` could persist in metadata (replication starts
+    # asynchronously, so the broken connection string never aborted the CREATE), and replaying
+    # that stored definition must not abort server startup. Simulate such legacy metadata by
+    # creating the database over the single-address collection and rewriting the persisted
+    # definition to the multi-address one while the server is down.
+    node.query("DROP DATABASE IF EXISTS mpg_db_persisted SYNC")
+    node.query(
+        """
+        CREATE DATABASE mpg_db_persisted
+        ENGINE = MaterializedPostgreSQL(mpg_nc_allowed)
+        SETTINGS materialized_postgresql_tables_list = 'test_table'
+        """,
+        settings={"allow_experimental_database_materialized_postgresql": 1},
+    )
+    assert_eq_with_retry(node, "SELECT count() FROM mpg_db_persisted.test_table", "10", retry_count=120)
+
+    node.stop_clickhouse()
+    _rewrite_database_metadata("s/mpg_nc_allowed/mpg_nc_multiple/", "mpg_db_persisted")
+    node.start_clickhouse()
+
+    # The database loads; background replication keeps failing and retrying against the broken
+    # connection string, exactly as it did before the validation existed.
+    assert node.query("SELECT count() FROM system.databases WHERE name = 'mpg_db_persisted'").strip() == "1"
+    node.query("DROP DATABASE mpg_db_persisted SYNC")
