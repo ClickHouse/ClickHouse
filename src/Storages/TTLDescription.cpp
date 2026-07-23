@@ -342,143 +342,187 @@ std::vector<ColumnPtr> collectSuspectMaterializations(const DataTypePtr & type, 
 /// default-value probe, yet still fails on the stored payloads during TTL execution. The suspect
 /// materializations therefore recurse through the container types and wrap each nested payload back into a
 /// single-row container column.
+///
+/// Enumerating payloads from a static type is only correct for *stored* columns, which can hold any value
+/// of their type. A carrier *computed* inside the expression can have a much narrower runtime domain:
+/// `CAST(state, 'Dynamic')` or `CAST(state, 'Variant(AggregateFunction(max, UInt32), UInt32)')` only ever
+/// produces the aggregate-state payload, so probing its consumer with fabricated sibling payloads
+/// (`UInt64`/`String`, or the `UInt32` alternative) would reject a valid TTL such as
+/// `DELETE WHERE isNotNull(finalizeAggregation(CAST(state, 'Dynamic')))`. So each probe records the
+/// function's *actual* output columns, and a parent consuming a computed carrier is validated against
+/// those instead of the static enumeration. This propagation applies only to nodes whose arguments carry
+/// suspect payloads themselves: a carrier computed purely from non-suspect inputs (e.g.
+/// `JSONExtract(s, 'Dynamic')`) can produce payloads that depend on the data rather than on the input
+/// types, which a single synthetic execution cannot reveal, so it keeps the fail-closed static enumeration.
 void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::string_view expression_kind)
 {
-    for (const auto & node : actions_dag.getNodes())
+    /// Per-node "candidate" materializations: the single-row columns whose payloads the node can produce
+    /// at TTL execution time and that are in scope of this check. An empty list means the node's default
+    /// (or constant) value is representative and its consumers need no extra probes.
+    std::unordered_map<const ActionsDAG::Node *, std::vector<ColumnPtr>> candidates_map;
+
+    std::function<const std::vector<ColumnPtr> & (const ActionsDAG::Node *)> candidates_of
+        = [&](const ActionsDAG::Node * node) -> const std::vector<ColumnPtr> &
     {
-        if (node.type != ActionsDAG::ActionType::FUNCTION)
-            continue;
+        if (auto it = candidates_map.find(node); it != candidates_map.end())
+            return it->second;
 
-        /// Descend into lambda bodies of higher-order functions to validate consumers hidden inside them.
-        if (const auto * function_capture = dynamic_cast<const FunctionCapture *>(node.function_base.get()))
+        std::vector<ColumnPtr> candidates;
+
+        if (node->column)
         {
-            checkActionsDAGForAggregateFunctions(function_capture->getAcionsDAG(), expression_kind);
-            continue;
+            /// The node's value is a known constant, so it is exact: probe consumers with the actual
+            /// value instead of over-approximating it from the static type. Keep it a single-row clone
+            /// (possibly const) so functions requiring constant arguments still see one.
+            if (hasAggregateFunctionType(node->result_type) || hasDynamicType(node->result_type))
+                candidates.push_back(node->column->cloneResized(1));
         }
-
-        bool consumes_aggregate_state = false;
-        bool has_dynamic_argument = false;
-        bool has_lambda_argument = false;
-        ColumnsWithTypeAndName arguments;
-        arguments.reserve(node.children.size());
-        for (const auto * child : node.children)
+        else if (node->type == ActionsDAG::ActionType::ALIAS)
         {
-            if (hasAggregateFunctionType(child->result_type))
-                consumes_aggregate_state = true;
-
-            if (hasDynamicType(child->result_type))
-                has_dynamic_argument = true;
-
-            /// A lambda argument cannot be materialized into a column; the higher-order function that
-            /// receives it is validated through the captured lambda DAG above, so skip executing it here.
-            if (WhichDataType(child->result_type).isFunction())
+            candidates = candidates_of(node->children.front());
+        }
+        else if (node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            /// Descend into lambda bodies of higher-order functions to validate consumers hidden inside
+            /// them. The capture node itself produces a function value, nothing to materialize.
+            if (const auto * function_capture = dynamic_cast<const FunctionCapture *>(node->function_base.get()))
             {
-                has_lambda_argument = true;
-                break;
+                checkActionsDAGForAggregateFunctions(function_capture->getAcionsDAG(), expression_kind);
+                return candidates_map.emplace(node, std::move(candidates)).first->second;
             }
 
-            /// Preserve constant arguments as constants - some functions (e.g. `CAST`) require a
-            /// constant argument and otherwise throw an unrelated error during this synthetic execution.
-            ColumnPtr column = child->column
-                ? child->column->cloneResized(1)
-                : child->result_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
-            arguments.emplace_back(std::move(column), child->result_type, child->result_name);
-        }
-
-        if ((!consumes_aggregate_state && !has_dynamic_argument) || has_lambda_argument)
-            continue;
-
-        /// Translate the "cannot consume an AggregateFunction state" type error into a clear TTL message;
-        /// rethrow anything else (e.g. a data-dependent error raised by a perfectly valid consumer).
-        auto probe = [&](const ColumnsWithTypeAndName & probe_arguments, std::string_view hint)
-        {
-            try
+            bool has_lambda_argument = false;
+            ColumnsWithTypeAndName arguments;
+            std::vector<size_t> suspect_indexes;
+            std::vector<const std::vector<ColumnPtr> *> suspect_columns;
+            bool has_dynamic_suspect = false;
+            arguments.reserve(node->children.size());
+            for (size_t i = 0; i < node->children.size(); ++i)
             {
-                node.function_base->execute(probe_arguments, node.result_type, /*input_rows_count=*/ 1, /*dry_run=*/ true);
+                const auto * child = node->children[i];
+
+                /// A lambda argument cannot be materialized into a column; the higher-order function
+                /// that receives it is validated through the captured lambda DAG above, so skip
+                /// executing it here.
+                if (WhichDataType(child->result_type).isFunction())
+                {
+                    has_lambda_argument = true;
+                    break;
+                }
+
+                /// Preserve constant arguments as constants - some functions (e.g. `CAST`) require a
+                /// constant argument and otherwise throw an unrelated error during this synthetic execution.
+                ColumnPtr column = child->column
+                    ? child->column->cloneResized(1)
+                    : child->result_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+                arguments.emplace_back(std::move(column), child->result_type, child->result_name);
+
+                const auto & child_candidates = candidates_of(child);
+                if (child_candidates.empty())
+                    continue;
+                suspect_indexes.push_back(i);
+                suspect_columns.push_back(&child_candidates);
+                if (hasDynamicType(child->result_type))
+                    has_dynamic_suspect = true;
             }
-            catch (Exception & e)
+
+            const bool result_in_scope = hasAggregateFunctionType(node->result_type) || hasDynamicType(node->result_type);
+
+            if (has_lambda_argument)
             {
-                if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
-                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
-                        "TTL {}expression uses {}: {}", expression_kind, hint, e.message());
-                throw;
+                /// The node was not executed (its output cannot be derived synthetically here), so if its
+                /// result can carry a suspect payload, fail closed with the static enumeration.
+                if (result_in_scope)
+                    candidates = collectSuspectMaterializations(node->result_type, expression_kind);
             }
-        };
-
-        constexpr std::string_view aggregate_state_hint =
-            "AggregateFunction column in a function that cannot handle it. "
-            "Use `finalizeAggregation` to extract the value first";
-
-        constexpr std::string_view dynamic_hint =
-            "a Dynamic column in a function that cannot handle all types a Dynamic column can store "
-            "(e.g. an AggregateFunction state), so TTL execution could fail depending on the inserted values. "
-            "Use a typed subcolumn instead, or set `allow_suspicious_ttl_expressions` to allow it";
-
-        if (consumes_aggregate_state)
-        {
-            /// Default values cover a top-level AggregateFunction argument.
-            probe(arguments, aggregate_state_hint);
-        }
-
-        /// A state hidden inside a container or carrier argument is not covered by the default values:
-        /// the default row of an `Array`/`Map` is empty and of a `Variant`/`Dynamic` is NULL, so the
-        /// element consumer (or the carrier's function adaptor) short-circuits and never sees the state.
-        /// Collect a per-argument list of "suspect" materializations - for a `Variant` a single-row column
-        /// per alternative, for a `Dynamic` a single-row column per representative payload, for a direct
-        /// `AggregateFunction` a single-row default state, recursing through `Array`/`Tuple`/`Map`/`Nullable`
-        /// wrappers (the stored types of a `Dynamic` cannot be enumerated at DDL time; see
-        /// `collectSuspectMaterializations`).
-        ///
-        /// All suspect arguments must then be materialized in the same probe: substituting them one at a
-        /// time would leave the other carriers at their all-NULL defaults, letting the adaptor short-circuit
-        /// to NULL and hide a consumer that only fails when several carriers hold states simultaneously
-        /// (e.g. `d1 + d2` or `v1 = v2`). So the probes below run the cartesian product of the
-        /// materializations across all suspect arguments.
-        std::vector<size_t> suspect_indexes;
-        std::vector<std::vector<ColumnPtr>> suspect_columns;
-        bool has_dynamic_suspect = false;
-        for (size_t i = 0; i < arguments.size(); ++i)
-        {
-            auto materializations = collectSuspectMaterializations(arguments[i].type, expression_kind);
-            if (materializations.empty())
-                continue;
-
-            suspect_indexes.push_back(i);
-            suspect_columns.push_back(std::move(materializations));
-            if (hasDynamicType(arguments[i].type))
-                has_dynamic_suspect = true;
-        }
-
-        if (suspect_indexes.empty())
-            continue;
-
-        size_t total_combinations = 1;
-        for (const auto & columns : suspect_columns)
-        {
-            total_combinations *= columns.size();
-            if (total_combinations > max_probe_combinations)
-                throwTooManyProbeCombinations(expression_kind);
-        }
-
-        std::vector<size_t> selection(suspect_indexes.size(), 0);
-        while (true)
-        {
-            ColumnsWithTypeAndName probe_arguments = arguments;
-            for (size_t s = 0; s < suspect_indexes.size(); ++s)
-                probe_arguments[suspect_indexes[s]].column = suspect_columns[s][selection[s]];
-            probe(probe_arguments, has_dynamic_suspect ? dynamic_hint : aggregate_state_hint);
-
-            /// Advance the mixed-radix counter over the alternatives of each suspect argument.
-            size_t s = 0;
-            while (s < selection.size() && ++selection[s] == suspect_columns[s].size())
+            else if (suspect_indexes.empty())
             {
-                selection[s] = 0;
-                ++s;
+                /// No argument carries a suspect payload, so there is nothing to probe this node with.
+                /// If its *result* is a carrier computed from non-suspect inputs, its runtime payloads
+                /// may be data-dependent (see above), so consumers get the fail-closed static enumeration.
+                if (result_in_scope)
+                    candidates = collectSuspectMaterializations(node->result_type, expression_kind);
             }
-            if (s == selection.size())
-                break;
+            else
+            {
+                /// Translate the "cannot consume an AggregateFunction state" type error into a clear TTL
+                /// message; rethrow anything else (e.g. a data-dependent error raised by a perfectly
+                /// valid consumer).
+                auto probe = [&](const ColumnsWithTypeAndName & probe_arguments, std::string_view hint) -> ColumnPtr
+                {
+                    try
+                    {
+                        return node->function_base->execute(probe_arguments, node->result_type, /*input_rows_count=*/ 1, /*dry_run=*/ true);
+                    }
+                    catch (Exception & e)
+                    {
+                        if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
+                            throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
+                                "TTL {}expression uses {}: {}", expression_kind, hint, e.message());
+                        throw;
+                    }
+                };
+
+                constexpr std::string_view aggregate_state_hint =
+                    "AggregateFunction column in a function that cannot handle it. "
+                    "Use `finalizeAggregation` to extract the value first";
+
+                constexpr std::string_view dynamic_hint =
+                    "a Dynamic column in a function that cannot handle all types a Dynamic column can store "
+                    "(e.g. an AggregateFunction state), so TTL execution could fail depending on the inserted values. "
+                    "Use a typed subcolumn instead, or set `allow_suspicious_ttl_expressions` to allow it";
+
+                /// All suspect arguments must be materialized in the same probe: substituting them one at
+                /// a time would leave the other carriers at their all-NULL defaults, letting the adaptor
+                /// short-circuit to NULL and hide a consumer that only fails when several carriers hold
+                /// states simultaneously (e.g. `d1 + d2` or `v1 = v2`). So the probes below run the
+                /// cartesian product of the candidate materializations across all suspect arguments.
+                size_t total_combinations = 1;
+                for (const auto * columns : suspect_columns)
+                {
+                    total_combinations *= columns->size();
+                    if (total_combinations > max_probe_combinations)
+                        throwTooManyProbeCombinations(expression_kind);
+                }
+
+                std::vector<size_t> selection(suspect_indexes.size(), 0);
+                while (true)
+                {
+                    ColumnsWithTypeAndName probe_arguments = arguments;
+                    for (size_t s = 0; s < suspect_indexes.size(); ++s)
+                        probe_arguments[suspect_indexes[s]].column = (*suspect_columns[s])[selection[s]];
+                    ColumnPtr probe_result = probe(probe_arguments, has_dynamic_suspect ? dynamic_hint : aggregate_state_hint);
+
+                    /// The probe outputs are exactly the payloads this node can produce from its suspect
+                    /// inputs - propagate them so a parent consuming this computed carrier is validated
+                    /// against the real domain, not the static enumeration of its result type.
+                    if (result_in_scope)
+                        candidates.push_back(probe_result->convertToFullColumnIfConst());
+
+                    /// Advance the mixed-radix counter over the candidates of each suspect argument.
+                    size_t s = 0;
+                    while (s < selection.size() && ++selection[s] == suspect_columns[s]->size())
+                    {
+                        selection[s] = 0;
+                        ++s;
+                    }
+                    if (s == selection.size())
+                        break;
+                }
+            }
         }
-    }
+        else
+        {
+            /// An INPUT column (or any other node kind) can hold any value of its type - enumerate the
+            /// suspect payloads from the static type.
+            candidates = collectSuspectMaterializations(node->result_type, expression_kind);
+        }
+
+        return candidates_map.emplace(node, std::move(candidates)).first->second;
+    };
+
+    for (const auto & node : actions_dag.getNodes())
+        candidates_of(&node);
 }
 
 /// RAII guard setting `variant_throw_on_type_mismatch` / `dynamic_throw_on_type_mismatch` on the query
