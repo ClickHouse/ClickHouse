@@ -7916,7 +7916,25 @@ function captureActiveTab() {
     /// keeps the guard armed only until that restore's tail commits (its tail runs even when a
     /// same-tab run superseded the activation, so the guard is not latched indefinitely); a switch
     /// to another tab hands the guard to that tab's own restore.
-    if (params_restore_pending_token === null) tab.params = getParamValues();
+    ///
+    /// The live `param_*` inputs can also lag the editor TEXT: an edit that removes a placeholder
+    /// updates `tab.query` synchronously (`onQueryInput`), but the input is only removed by the
+    /// asynchronous `updateQueryParams` rebuild. A structural capture in that window — switch,
+    /// add, duplicate or close the tab before the rebuild lands — would snapshot the removed
+    /// placeholder's binding and write it into the entry/URL (`refreshCurrentHistoryEntry`), and
+    /// the activation that follows supersedes the pending rebuild (`updateQueryParamsGeneration`),
+    /// so nothing repairs the stale entry afterwards. Prune the snapshot against the text just
+    /// captured, with the same conservative scan `saveHistory` uses for its rebuild race
+    /// (`queryMentionsParam`): a binding is dropped only when its placeholder is certainly gone
+    /// from the text, which is exactly what the superseded rebuild would have concluded.
+    if (params_restore_pending_token === null) {
+        const values = getParamValues();
+        const pruned = {};
+        for (const name of Object.keys(values)) {
+            if (queryMentionsParam(tab.query, name)) pruned[name] = values[name];
+        }
+        tab.params = pruned;
+    }
 }
 
 /// Abort a tab's in-flight query (if any) and supersede its run generation so its late responses

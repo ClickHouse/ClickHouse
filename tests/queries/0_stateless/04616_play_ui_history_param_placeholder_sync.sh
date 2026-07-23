@@ -69,7 +69,7 @@ const FUNCS = ['toBase64', 'fromBase64', 'nextDefaultTitle', 'uniqueTitle', 'tab
     'markBootstrapDirty', 'scheduleSave', 'persist', 'restoreEditor',
     'extractQueryParams', 'getParamValues', 'setParamValues', 'pickRunParams', 'resolveRunParams',
     'extractRunParamNames', 'syncParamsAfterRebuild', 'updateQueryParams', 'onQueryInput',
-    'loadLexer', 'tokenize'];
+    'switchToTab', 'loadLexer', 'tokenize'];
 const code = FUNCS.map(f => extractTopLevel(new RegExp('^(async )?function ' + f + '\\('), f)).join('\n');
 
 /// The parameter-input DOM `updateQueryParams` rebuilds: real enough for element creation,
@@ -481,6 +481,50 @@ function reset()
     assert_eq('edit during pending restore: the rebuilt input carries the saved value', param_dom['param-y'] && param_dom['param-y'].value, '2');
     assert_eq('edit during pending restore: the draft is intact', active().query, 'SELECT {y:Int32} -- edited');
     assert_eq('edit during pending restore: the entry never persists a blanked binding', curUrl().includes('param_y=&') || curUrl().endsWith('param_y='), false);
+
+    /// A placeholder-removing edit followed by a STRUCTURAL leave (tab switch/add/duplicate/close)
+    /// before the edit's input rebuild lands: `captureActiveTab` must not snapshot the removed
+    /// placeholder's still-live input into `tab.params` — the entry `refreshCurrentHistoryEntry`
+    /// writes for the tab being left would pair the new draft with the stale binding
+    /// (`/play?param_x=1#SELECT 1`), and the activation that follows supersedes the pending
+    /// rebuild (`updateQueryParamsGeneration`), so nothing would ever repair that entry. The
+    /// capture prunes the DOM snapshot against the captured text (`queryMentionsParam`); a
+    /// placeholder that SURVIVES the edit must keep its binding (conservative scan).
+    reset();
+    await type('SELECT {x:Int32}, {y:Int32}');
+    setTrustedParam('x', '1');
+    setTrustedParam('y', '2');
+    await run('SELECT {x:Int32}, {y:Int32}');
+    const other_tab = sandbox.makeTab();
+    other_tab.query = 'SELECT 42';
+    sandbox.tabs.push(other_tab);
+    const left_tab = active();
+    sandbox.tokenize = async q =>
+    {
+        const hold = tokenize_hold;                    /// captured at CALL time, per tokenization
+        const tokens = await real_tokenize(q);
+        if (hold) await hold;
+        return tokens;
+    };
+    let release_structural_rebuild;
+    tokenize_hold = new Promise(resolve => { release_structural_rebuild = resolve; });
+    const structural_rebuild = type('SELECT {y:Int32}');   /// removes x; rebuild gated, not landed
+    tokenize_hold = null;
+    await sandbox.switchToTab(other_tab.id);               /// structural leave: capture + entry write
+    const left_entry = sandbox.history.stack.find(e => e.state && e.state.tabId === left_tab.id);
+    assert_params('structural leave before rebuild: the capture prunes the removed binding', left_tab.params, { y: '2' });
+    assert_eq('structural leave before rebuild: no stale param_x in the left tab\'s entry', left_entry.url.includes('param_x'), false);
+    assert_eq('structural leave before rebuild: the surviving binding stays in the entry', left_entry.url.includes('param_y=2'), true);
+    assert_eq('structural leave before rebuild: the entry carries the new draft', left_entry.state.query, 'SELECT {y:Int32}');
+    assert_eq('structural leave before rebuild: the diverged draft has no run=1', left_entry.url.includes('run=1'), false);
+    release_structural_rebuild();                          /// the superseded rebuild lands and bails
+    await structural_rebuild;
+    await drain();
+    sandbox.tokenize = real_tokenize;
+    const left_entry_after = sandbox.history.stack.find(e => e.state && e.state.tabId === left_tab.id);
+    assert_params('structural leave before rebuild: the superseded rebuild leaves the pruned map', left_tab.params, { y: '2' });
+    assert_eq('structural leave before rebuild: the entry stays clean after the rebuild bails', left_entry_after.url.includes('param_x'), false);
+    assert_eq('structural leave before rebuild: the target tab is unaffected', active().query, 'SELECT 42');
 
     console.log('OK');
 })().catch(e => { console.error('FAIL: ' + (e && e.stack || e)); process.exit(1); });
