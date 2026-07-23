@@ -24,10 +24,14 @@ SELECT to_utc_timestamp(toDateTime64('2023-03-16 11:22:33.123', 3), 'Asia/Shangh
 -- one. America/New_York changes -04:00 -> -05:00 at 1969-10-26 06:00:00 UTC, so 05:59:59.999 UTC
 -- is still -04:00 and from_utc_timestamp must return 01:59:59.999, not 00:59:59.999 (negative offset).
 SELECT from_utc_timestamp(toDateTime64('1969-10-26 05:59:59.999', 3), 'America/New_York');
-SELECT to_utc_timestamp(toDateTime64('1969-10-26 01:59:59.999', 3), 'America/New_York');
+-- to_utc_timestamp must floor too: the underlying floor second 05:59:59 is -04:00, so the result
+-- is 09:59:59.999, not 10:59:59.999 (the -05:00 ceil second). This input straddles the boundary;
+-- the earlier 01:59:59.999 case did not and would pass even without flooring this direction.
+SELECT to_utc_timestamp(toDateTime64('1969-10-26 05:59:59.999', 3), 'America/New_York');
 -- Positive offset direction: Europe/Paris changes +02:00 -> +01:00 at 1945-09-16 01:00:00 UTC,
 -- so the floor second 00:59:59 UTC is still +02:00 and from_utc_timestamp must return 02:59:59.999.
 SELECT from_utc_timestamp(toDateTime64('1945-09-16 00:59:59.999', 3), 'Europe/Paris');
+SELECT to_utc_timestamp(toDateTime64('1945-09-16 00:59:59.999', 3), 'Europe/Paris');
 
 -- Same floor-second split invariant in the DateTime64 -> Time64 conversion path: for a negative
 -- fractional underlying value truncated division picks the ceil second, so timezoneOffset() can
