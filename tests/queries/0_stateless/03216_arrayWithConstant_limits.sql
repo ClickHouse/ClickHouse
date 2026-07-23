@@ -3,4 +3,6 @@ SELECT arrayWithConstant(100000000, materialize([[[[[[[[[['Hello, world!']]]]]]]
 SELECT length(arrayWithConstant(10000000, materialize([[[[[[[[[['Hello world']]]]]]]]]])));
 
 CREATE TABLE args (value Array(Int)) ENGINE=Memory AS SELECT [1, 1, 1, 1] as value FROM numbers(1, 100);
-SELECT length(arrayWithConstant(1000000, value)) FROM args FORMAT NULL;
+-- With the default max_block_size all 100 rows form a single ~1.6 GiB block, which does not fit
+-- into the memory limit on a loaded test runner. Smaller blocks exercise the same code path.
+SELECT length(arrayWithConstant(1000000, value)) FROM args FORMAT NULL SETTINGS max_block_size = 8;
