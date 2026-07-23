@@ -89,6 +89,12 @@ CREATE TABLE filtered_orders (customer String, amount UInt64) ENGINE = MergeTree
 WITH 100 AS lo, 300 AS hi INSERT INTO filtered_orders FROM orders |> WHERE amount >= lo |> WHERE amount < hi |> SELECT customer, amount;
 FROM filtered_orders ORDER BY customer, amount;
 
+SELECT '-- The ORDER BY operator supports the full clause syntax: ORDER BY ALL, WITH FILL, INTERPOLATE';
+FROM orders |> SELECT customer, amount |> ORDER BY ALL;
+FROM orders |> SELECT customer |> DISTINCT |> ORDER BY ALL DESC;
+SELECT 1 AS x, 10 AS y |> ORDER BY x WITH FILL FROM 1 TO 4;
+SELECT 1 AS x, 10 AS y |> ORDER BY x WITH FILL FROM 1 TO 4 INTERPOLATE (y AS y + 1);
+
 SELECT '-- SAMPLE with OFFSET requires an explicit SELECT in the FROM-first form';
 DROP TABLE IF EXISTS sampled;
 CREATE TABLE sampled (id UInt64) ENGINE = MergeTree ORDER BY intHash32(id) SAMPLE BY intHash32(id);

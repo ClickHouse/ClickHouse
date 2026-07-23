@@ -33,6 +33,117 @@ namespace ErrorCodes
 }
 
 
+bool parseOrderByClauseBody(
+    IParser::Pos & pos,
+    Expected & expected,
+    ASTPtr & order_expression_list,
+    ASTPtr & interpolate_expression_list,
+    bool & order_by_all)
+{
+    ParserKeyword s_all(Keyword::ALL);
+    ParserKeyword s_first(Keyword::FIRST);
+    ParserKeyword s_interpolate(Keyword::INTERPOLATE);
+    ParserOrderByExpressionList order_list;
+    ParserInterpolateExpressionList interpolate_list;
+    ParserToken open_bracket(TokenType::OpeningRoundBracket);
+    ParserToken close_bracket(TokenType::ClosingRoundBracket);
+
+    order_by_all = false;
+
+    /// ParserKeyword only matches BareWord tokens, so quoted identifiers like `all` won't match.
+    /// This allows ORDER BY `all` to refer to a column named "all" rather than ORDER BY ALL.
+    ///
+    /// After matching the ALL keyword with optional ASC/DESC/NULLS modifiers,
+    /// we check if a comma follows. If so, this is a multi-column ORDER BY (e.g. ORDER BY all, a)
+    /// and `all` should be treated as a regular column reference, not the ALL keyword.
+    auto saved_pos = pos;
+
+    if (s_all.ignore(pos, expected))
+    {
+        order_by_all = true;
+
+        /// Parse the optional ASC/DESC and NULLS direction after ORDER BY ALL.
+        ParserKeyword s_desc(Keyword::DESC);
+        ParserKeyword s_descending(Keyword::DESCENDING);
+        ParserKeyword s_asc(Keyword::ASC);
+        ParserKeyword s_ascending(Keyword::ASCENDING);
+        ParserKeyword s_nulls(Keyword::NULLS);
+        ParserKeyword s_last(Keyword::LAST);
+
+        int direction = 1;
+        int nulls_direction = 1;
+        bool nulls_direction_was_explicitly_specified = false;
+
+        if (s_desc.ignore(pos, expected) || s_descending.ignore(pos, expected))
+        {
+            direction = -1;
+            nulls_direction = -1;
+        }
+        else
+        {
+            s_asc.ignore(pos, expected) || s_ascending.ignore(pos, expected);
+        }
+
+        if (s_nulls.ignore(pos, expected))
+        {
+            nulls_direction_was_explicitly_specified = true;
+            if (s_first.ignore(pos, expected))
+                nulls_direction = -direction;
+            else if (s_last.ignore(pos, expected))
+                ;
+            else
+                return false;
+        }
+
+        /// If a comma follows, this is a multi-column ORDER BY (e.g., ORDER BY all, a).
+        /// In this case, `all` should be treated as a regular column, not the ALL keyword.
+        if (pos->type == TokenType::Comma)
+        {
+            /// Backtrack to before we consumed `ALL`.
+            pos = saved_pos;
+            order_by_all = false;
+        }
+        else
+        {
+            auto elem = make_intrusive<ASTOrderByElement>();
+            elem->direction = direction;
+            elem->nulls_direction = nulls_direction;
+            elem->nulls_direction_was_explicitly_specified = nulls_direction_was_explicitly_specified;
+            elem->children.push_back(make_intrusive<ASTIdentifier>("all"));
+
+            order_expression_list = make_intrusive<ASTExpressionList>();
+            order_expression_list->children.push_back(std::move(elem));
+        }
+    }
+
+    if (!order_by_all)
+    {
+        if (!order_list.parse(pos, order_expression_list, expected))
+            return false;
+
+        /// if any WITH FILL parse possible INTERPOLATE list
+        if (std::any_of(order_expression_list->children.begin(), order_expression_list->children.end(),
+                [](auto & child) { return child->template as<ASTOrderByElement>()->with_fill; }))
+        {
+            if (s_interpolate.ignore(pos, expected))
+            {
+                if (open_bracket.ignore(pos, expected))
+                {
+                    if (!interpolate_list.parse(pos, interpolate_expression_list, expected))
+                        return false;
+                    if (!close_bracket.ignore(pos, expected))
+                        return false;
+                }
+                else
+                    interpolate_expression_list = make_intrusive<ASTExpressionList>();
+            }
+        }
+    }
+
+    return true;
+}
+
+
 bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto select_query = make_intrusive<ASTSelectQuery>();
@@ -68,16 +179,13 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_rows(Keyword::ROWS);
     ParserKeyword s_first(Keyword::FIRST);
     ParserKeyword s_next(Keyword::NEXT);
-    ParserKeyword s_interpolate(Keyword::INTERPOLATE);
 
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
     ParserNotEmptyExpressionList exp_list_for_select_clause(/*allow_alias_without_as_keyword*/ true, /*allow_trailing_commas*/ true);
     ParserAliasesExpressionList exp_list_for_aliases;
     ParserExpressionWithOptionalAlias exp_elem(false);
-    ParserOrderByExpressionList order_list;
     ParserGroupingSetsExpressionList grouping_sets_list;
-    ParserInterpolateExpressionList interpolate_list;
 
     ParserToken open_bracket(TokenType::OpeningRoundBracket);
     ParserToken close_bracket(TokenType::ClosingRoundBracket);
@@ -366,98 +474,10 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// ORDER BY expr ASC|DESC COLLATE 'locale' list
     if (s_order_by.ignore(pos, expected))
     {
-        /// ParserKeyword only matches BareWord tokens, so quoted identifiers like `all` won't match.
-        /// This allows ORDER BY `all` to refer to a column named "all" rather than ORDER BY ALL.
-        ///
-        /// After matching the ALL keyword with optional ASC/DESC/NULLS modifiers,
-        /// we check if a comma follows. If so, this is a multi-column ORDER BY (e.g. ORDER BY all, a)
-        /// and `all` should be treated as a regular column reference, not the ALL keyword.
-        auto saved_pos = pos;
-        bool is_order_by_all = false;
-
-        if (s_all.ignore(pos, expected))
-        {
-            is_order_by_all = true;
-
-            /// Parse the optional ASC/DESC and NULLS direction after ORDER BY ALL.
-            ParserKeyword s_desc(Keyword::DESC);
-            ParserKeyword s_descending(Keyword::DESCENDING);
-            ParserKeyword s_asc(Keyword::ASC);
-            ParserKeyword s_ascending(Keyword::ASCENDING);
-            ParserKeyword s_nulls(Keyword::NULLS);
-            ParserKeyword s_last(Keyword::LAST);
-
-            int direction = 1;
-            int nulls_direction = 1;
-            bool nulls_direction_was_explicitly_specified = false;
-
-            if (s_desc.ignore(pos, expected) || s_descending.ignore(pos, expected))
-            {
-                direction = -1;
-                nulls_direction = -1;
-            }
-            else
-            {
-                s_asc.ignore(pos, expected) || s_ascending.ignore(pos, expected);
-            }
-
-            if (s_nulls.ignore(pos, expected))
-            {
-                nulls_direction_was_explicitly_specified = true;
-                if (s_first.ignore(pos, expected))
-                    nulls_direction = -direction;
-                else if (s_last.ignore(pos, expected))
-                    ;
-                else
-                    return false;
-            }
-
-            /// If a comma follows, this is a multi-column ORDER BY (e.g., ORDER BY all, a).
-            /// In this case, `all` should be treated as a regular column, not the ALL keyword.
-            if (pos->type == TokenType::Comma)
-            {
-                /// Backtrack to before we consumed `ALL`.
-                pos = saved_pos;
-                is_order_by_all = false;
-            }
-            else
-            {
-                select_query->order_by_all = true;
-
-                auto elem = make_intrusive<ASTOrderByElement>();
-                elem->direction = direction;
-                elem->nulls_direction = nulls_direction;
-                elem->nulls_direction_was_explicitly_specified = nulls_direction_was_explicitly_specified;
-                elem->children.push_back(make_intrusive<ASTIdentifier>("all"));
-
-                order_expression_list = make_intrusive<ASTExpressionList>();
-                order_expression_list->children.push_back(std::move(elem));
-            }
-        }
-
-        if (!is_order_by_all)
-        {
-            if (!order_list.parse(pos, order_expression_list, expected))
-                return false;
-
-            /// if any WITH FILL parse possible INTERPOLATE list
-            if (std::any_of(order_expression_list->children.begin(), order_expression_list->children.end(),
-                    [](auto & child) { return child->template as<ASTOrderByElement>()->with_fill; }))
-            {
-                if (s_interpolate.ignore(pos, expected))
-                {
-                    if (open_bracket.ignore(pos, expected))
-                    {
-                        if (!interpolate_list.parse(pos, interpolate_expression_list, expected))
-                            return false;
-                        if (!close_bracket.ignore(pos, expected))
-                            return false;
-                    }
-                    else
-                        interpolate_expression_list = make_intrusive<ASTExpressionList>();
-                }
-            }
-        }
+        bool order_by_all = false;
+        if (!parseOrderByClauseBody(pos, expected, order_expression_list, interpolate_expression_list, order_by_all))
+            return false;
+        select_query->order_by_all = order_by_all;
     }
 
     /// This is needed for TOP expression, because it can also use WITH TIES.

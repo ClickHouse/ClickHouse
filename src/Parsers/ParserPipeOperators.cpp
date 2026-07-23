@@ -12,6 +12,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserUnionQueryElement.h>
 
@@ -179,7 +180,6 @@ bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
     ParserExpressionWithOptionalAlias exp_elem(false);
     ParserExpression exp;
     ParserNotEmptyExpressionList exp_list_with_aliases(true);
-    ParserOrderByExpressionList order_list;
     ParserIdentifier identifier;
 
     /// The alias set by the AS operator; it is applied to the subquery when the next operator wraps the query.
@@ -376,13 +376,18 @@ bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
         }
         else if (s_order_by.ignore(pos, expected))
         {
-            /// |> ORDER BY expr1 [ASC/DESC], ...
+            /// |> ORDER BY expr1 [ASC/DESC] [WITH FILL], ... [INTERPOLATE (...)], or ORDER BY ALL.
+            /// The clause body is parsed by the same function as in the ordinary SELECT query.
             ASTPtr order_expression_list;
-            if (!order_list.parse(pos, order_expression_list, expected))
+            ASTPtr interpolate_expression_list;
+            bool order_by_all = false;
+            if (!parseOrderByClauseBody(pos, expected, order_expression_list, interpolate_expression_list, order_by_all))
                 return false;
 
             auto select = wrapQueryIntoSelect(std::move(query), pending_alias);
+            select->order_by_all = order_by_all;
             select->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_expression_list));
+            select->setExpression(ASTSelectQuery::Expression::INTERPOLATE, std::move(interpolate_expression_list));
             query = wrapIntoUnion(std::move(select));
         }
         else if (s_limit.ignore(pos, expected))

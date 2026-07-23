@@ -122,10 +122,12 @@ FROM orders |> AGGREGATE count() AS c;
 
 ### ORDER BY {#order-by}
 
-`|> ORDER BY expr1 [ASC/DESC], ...` sorts the input rows:
+`|> ORDER BY expr1 [ASC/DESC], ...` sorts the input rows. The full `ORDER BY` clause syntax is supported, including `ORDER BY ALL`, `WITH FILL`, and `INTERPOLATE`:
 
 ```sql
-FROM orders |> ORDER BY amount DESC
+FROM orders |> ORDER BY amount DESC;
+FROM orders |> SELECT customer, amount |> ORDER BY ALL;
+FROM points |> ORDER BY x WITH FILL FROM 1 TO 10 INTERPOLATE (y AS y + 1)
 ```
 
 ### LIMIT and OFFSET {#limit-and-offset}
