@@ -74,3 +74,34 @@ FROM
 )
 WHERE k IS NULL
 SETTINGS group_by_use_nulls = 1;
+
+-- The GROUP BY ALL expand-before-resolve step also runs for WITH ROLLUP/CUBE
+-- (scope.group_by_use_nulls is true for those too), so the key must be analyzed
+-- as Nullable there as well: toTypeName reports Nullable and `k IS NULL` is 1 in
+-- the summary row.
+SELECT number AS k, toTypeName(k), k IS NULL
+FROM numbers(3)
+GROUP BY ALL
+    WITH ROLLUP
+ORDER BY k
+SETTINGS group_by_use_nulls = 1;
+
+SELECT number AS k, toTypeName(k), k IS NULL
+FROM numbers(3)
+GROUP BY ALL
+    WITH CUBE
+ORDER BY k
+SETTINGS group_by_use_nulls = 1;
+
+-- A wrapping subquery sees the GROUP BY ALL WITH ROLLUP key as Nullable, so
+-- `WHERE k IS NULL` selects the summary row.
+SELECT k, toTypeName(k)
+FROM
+(
+    SELECT number AS k
+    FROM numbers(3)
+    GROUP BY ALL
+        WITH ROLLUP
+)
+WHERE k IS NULL
+SETTINGS group_by_use_nulls = 1;
