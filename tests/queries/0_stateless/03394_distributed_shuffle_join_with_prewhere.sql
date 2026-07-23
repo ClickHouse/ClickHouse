@@ -7,7 +7,7 @@ SET distributed_plan_optimize_exchanges = 1;
 
 CREATE TABLE test(path String, lang String, hits UInt64) ENGINE MergeTree()
 ORDER BY tuple()
-SETTINGS auto_statistics_types = 'tdigest,uniq,minmax';
+SETTINGS auto_statistics_types = 'tdigest,uniq,basic';
 
 SET materialize_statistics_on_insert = 1;
 
@@ -17,6 +17,7 @@ INSERT INTO test SELECT 'path' || number::String, 'ua', number FROM numbers(15);
 INSERT INTO test SELECT 'path' || number::String, 'jp', number FROM numbers(20);
 
 SET query_plan_join_swap_table = 0;
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 
 SET
     make_distributed_plan = 1,

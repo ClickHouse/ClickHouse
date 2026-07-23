@@ -323,6 +323,17 @@ class LakeDataGenerator:
         LongType: [-9_223_372_036_854_775_808, 9_223_372_036_854_775_807],
     }
 
+    def _take_nested_budget(self, n: int) -> int:
+        # Nested containers multiply per-level counts (map of arrays of maps...), so an
+        # unlucky min/max_nested draw explodes combinatorially. Cap the TOTAL container
+        # entries per row; once exhausted, deeper containers come out empty.
+        budget = getattr(self._thread_local, "_nested_budget", None)
+        if budget is None:
+            return n
+        n = min(n, budget)
+        self._thread_local._nested_budget = budget - n
+        return n
+
     def _random_value_for_type(self, dtype: DataType, null_rate: float):
         """Return a random Python value that conforms to the given Spark DataType."""
         if random.random() < null_rate:
@@ -408,18 +419,27 @@ class LakeDataGenerator:
         if isinstance(dtype, ArrayType):
             # Arrays of variable length
             elem_null_rate = null_rate if dtype.containsNull else 0.0
-            n = random.randint(
-                self._thread_local._min_nested, self._thread_local._max_nested
+            n = self._take_nested_budget(
+                random.randint(
+                    self._thread_local._min_nested, self._thread_local._max_nested
+                )
             )
             return [
                 self._random_value_for_type(dtype.elementType, elem_null_rate)
                 for _ in range(n)
             ]
         if isinstance(dtype, MapType):
+            # pyspark's MapType.toInternal rebuilds the dict converting each key; an ArrayType
+            # key that needs conversion (e.g. ARRAY<DATE>) comes back as an unhashable list,
+            # so such maps can only be produced empty.
+            if isinstance(dtype.keyType, ArrayType) and dtype.keyType.needConversion():
+                return {}
             # Keys: must be non-null and hashable; values may be null only if allowed
             value_null_rate = null_rate if dtype.valueContainsNull else 0.0
-            n = random.randint(
-                self._thread_local._min_nested, self._thread_local._max_nested
+            n = self._take_nested_budget(
+                random.randint(
+                    self._thread_local._min_nested, self._thread_local._max_nested
+                )
             )
             out = {}
             attempts = 0
@@ -581,6 +601,7 @@ class LakeDataGenerator:
         )
         rows = []
         for _ in range(n_rows):
+            self._thread_local._nested_budget = 10_000
             rec = {}
             for f in struct1.fields:
                 nr = null_rate if f.nullable else 0.0
