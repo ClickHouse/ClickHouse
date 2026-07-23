@@ -23,8 +23,8 @@ SET allow_experimental_time_decay_aggregate_functions = 1;
 -- The value type has one fixed Float64 representation and takes no type arguments.
 SELECT CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(Float64)'); -- { serverError DATA_TYPE_CANNOT_HAVE_ARGUMENTS }
 
--- A value observed exactly one half-life before the greatest timestamp has
--- weight 1/2. Aggregate and window execution must use the same definition.
+-- Preserve the existing decay-length semantics: a value observed one decay
+-- length before the greatest timestamp has weight 1/e.
 SELECT
     round(tupleElement(exponentialTimeDecayedSum(10)(value, time), 'value'), 6),
     round(exponentialTimeDecayedAvg(10)(value, time), 6),
@@ -139,7 +139,10 @@ SELECT
     round(tupleElement(decaying_count, 'value'), 6),
     toTypeName(decaying_sum),
     tupleElement(decaying_sum, 'time'),
-    tupleElement(decaying_sum, 'half_life')
+    round(tupleElement(decaying_sum, 'half_life'), 6),
+    round(exponentialTimeDecayingValueAt(
+        decaying_sum,
+        tupleElement(decaying_sum, 'time') + 10), 6)
 FROM
 (
     SELECT

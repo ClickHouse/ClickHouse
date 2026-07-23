@@ -34,6 +34,8 @@ namespace ErrorCodes
 namespace
 {
 
+constexpr Float64 LN_2 = 0.693147180559945309417232121458176568;
+
 enum class ExponentialTimeDecayedResult
 {
     Sum,
@@ -44,8 +46,8 @@ enum class ExponentialTimeDecayedResult
 struct ExponentialTimeDecayedState
 {
     /// Every state is evaluated at max_time:
-    /// weighted_sum = sum(value_i * exp2((time_i - max_time) / half_life))
-    /// weight = sum(exp2((time_i - max_time) / half_life))
+    /// weighted_sum = sum(value_i * exp((time_i - max_time) / decay_length))
+    /// weight = sum(exp((time_i - max_time) / decay_length))
     /// This representation makes merging states the same operation as adding rows,
     /// independent of row order, batch distribution, and batch count.
     Float64 weighted_sum = 0;
@@ -53,7 +55,7 @@ struct ExponentialTimeDecayedState
     Float64 max_time = 0;
     bool initialized = false;
 
-    void add(Float64 value, Float64 time, Float64 half_life)
+    void add(Float64 value, Float64 time, Float64 decay_length)
     {
         if (!initialized)
         {
@@ -66,20 +68,20 @@ struct ExponentialTimeDecayedState
 
         if (time > max_time)
         {
-            const Float64 decay = std::exp2((max_time - time) / half_life);
+            const Float64 decay = std::exp((max_time - time) / decay_length);
             weighted_sum = weighted_sum * decay + value;
             weight = weight * decay + 1;
             max_time = time;
         }
         else
         {
-            const Float64 decay = std::exp2((time - max_time) / half_life);
+            const Float64 decay = std::exp((time - max_time) / decay_length);
             weighted_sum += value * decay;
             weight += decay;
         }
     }
 
-    void merge(const ExponentialTimeDecayedState & rhs, Float64 half_life)
+    void merge(const ExponentialTimeDecayedState & rhs, Float64 decay_length)
     {
         if (!rhs.initialized)
             return;
@@ -93,8 +95,8 @@ struct ExponentialTimeDecayedState
         /// Re-anchor both states at their shared greatest timestamp before adding them.
         const bool rhs_is_latest = rhs.max_time > max_time;
         const Float64 merged_max_time = rhs_is_latest ? rhs.max_time : max_time;
-        const Float64 lhs_decay = std::exp2((max_time - merged_max_time) / half_life);
-        const Float64 rhs_decay = std::exp2((rhs.max_time - merged_max_time) / half_life);
+        const Float64 lhs_decay = std::exp((max_time - merged_max_time) / decay_length);
+        const Float64 rhs_decay = std::exp((rhs.max_time - merged_max_time) / decay_length);
 
         weighted_sum = weighted_sum * lhs_decay + rhs.weighted_sum * rhs_decay;
         weight = weight * lhs_decay + rhs.weight * rhs_decay;
@@ -136,12 +138,12 @@ public:
     AggregateFunctionExponentialTimeDecayed(
         const DataTypes & argument_types,
         const Array & parameters,
-        Float64 half_life_)
+        Float64 decay_length_)
         : IAggregateFunctionDataHelper<
               ExponentialTimeDecayedState,
               AggregateFunctionExponentialTimeDecayed<result_kind>>(
               argument_types, parameters, getResultType())
-        , half_life(half_life_)
+        , decay_length(decay_length_)
     {
     }
 
@@ -174,12 +176,12 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of aggregate function {} must be non-negative", getName());
         }
 
-        this->data(place).add(value, time, half_life);
+        this->data(place).add(value, time, decay_length);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).merge(this->data(rhs), half_life);
+        this->data(place).merge(this->data(rhs), decay_length);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
@@ -210,7 +212,7 @@ public:
             Tuple decaying_value{
                 Field(result),
                 Field(state.initialized ? state.max_time : 0.0),
-                Field(half_life)};
+                Field(decay_length * LN_2)};
             to.insert(Field(decaying_value));
         }
     }
@@ -218,22 +220,22 @@ public:
     bool allocatesMemoryInArena() const override { return false; }
 
 private:
-    const Float64 half_life;
+    const Float64 decay_length;
 };
 
-Float64 getHalfLife(const String & name, const Array & parameters)
+Float64 getDecayLength(const String & name, const Array & parameters)
 {
     if (parameters.size() != 1)
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Aggregate function {} takes exactly one parameter, the half-life",
+            "Aggregate function {} takes exactly one parameter, the decay length",
             name);
 
-    const Float64 half_life = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters[0]);
-    if (!std::isfinite(half_life) || half_life <= 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Half-life of aggregate function {} must be finite and positive", name);
+    const Float64 decay_length = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters[0]);
+    if (!std::isfinite(decay_length) || decay_length <= 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Decay length of aggregate function {} must be finite and positive", name);
 
-    return half_life;
+    return decay_length;
 }
 
 void assertExperimentalFeatureEnabled(const String & name, const Settings * settings)
@@ -290,7 +292,7 @@ AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedSum(
     assertExperimentalFeatureEnabled(name, settings);
     assertValueAndTimeArguments(name, argument_types);
     return std::make_shared<AggregateFunctionExponentialTimeDecayed<ExponentialTimeDecayedResult::Sum>>(
-        argument_types, parameters, getHalfLife(name, parameters));
+        argument_types, parameters, getDecayLength(name, parameters));
 }
 
 AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedAvg(
@@ -302,7 +304,7 @@ AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedAvg(
     assertExperimentalFeatureEnabled(name, settings);
     assertValueAndTimeArguments(name, argument_types);
     return std::make_shared<AggregateFunctionExponentialTimeDecayed<ExponentialTimeDecayedResult::Avg>>(
-        argument_types, parameters, getHalfLife(name, parameters));
+        argument_types, parameters, getDecayLength(name, parameters));
 }
 
 AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedCount(
@@ -314,7 +316,7 @@ AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedCount(
     assertExperimentalFeatureEnabled(name, settings);
     assertTimeArgument(name, argument_types);
     return std::make_shared<AggregateFunctionExponentialTimeDecayed<ExponentialTimeDecayedResult::Count>>(
-        argument_types, parameters, getHalfLife(name, parameters));
+        argument_types, parameters, getDecayLength(name, parameters));
 }
 
 }

@@ -1746,7 +1746,7 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
     static constexpr size_t ARGUMENT_VALUE = 0;
     static constexpr size_t ARGUMENT_TIME = 1;
 
-    static Float64 getHalfLife(const Array & parameters_, const std::string & name_)
+    static Float64 getDecayLength(const Array & parameters_, const std::string & name_)
     {
         if (parameters_.size() != 1)
         {
@@ -1759,7 +1759,7 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
     WindowFunctionExponentialTimeDecayedSum(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
         : StatefulWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
-        , half_life(getHalfLife(parameters_, name_))
+        , decay_length(getDecayLength(parameters_, name_))
     {
         if (argument_types.size() != 2)
         {
@@ -1807,14 +1807,14 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
                 {
                     Float64 prev_val = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_VALUE, i);
                     Float64 prev_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
-                    result -= std::exp2((prev_t - back_t) / half_life) * prev_val;
+                    result -= std::exp((prev_t - back_t) / decay_length) * prev_val;
                 }
-                result += std::exp2((state.previous_time - back_t) / half_life) * state.previous_sum;
+                result += std::exp((state.previous_time - back_t) / decay_length) * state.previous_sum;
                 for (RowNumber i = transform->prev_frame_end; i < transform->frame_end; transform->advanceRowNumber(i))
                 {
                     Float64 prev_val = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_VALUE, i);
                     Float64 prev_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
-                    result += std::exp2((prev_t - back_t) / half_life) * prev_val;
+                    result += std::exp((prev_t - back_t) / decay_length) * prev_val;
                 }
             }
             else
@@ -1823,7 +1823,7 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
                 {
                     Float64 prev_val = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_VALUE, i);
                     Float64 prev_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
-                    result += std::exp2((prev_t - back_t) / half_life) * prev_val;
+                    result += std::exp((prev_t - back_t) / decay_length) * prev_val;
                 }
             }
 
@@ -1835,7 +1835,7 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
     }
 
     private:
-        const Float64 half_life;
+        const Float64 decay_length;
 };
 
 struct WindowFunctionExponentialTimeDecayedMax final : public StatelessWindowFunction
@@ -1843,7 +1843,7 @@ struct WindowFunctionExponentialTimeDecayedMax final : public StatelessWindowFun
     static constexpr size_t ARGUMENT_VALUE = 0;
     static constexpr size_t ARGUMENT_TIME = 1;
 
-    static Float64 getHalfLife(const Array & parameters_, const std::string & name_)
+    static Float64 getDecayLength(const Array & parameters_, const std::string & name_)
     {
         if (parameters_.size() != 1)
         {
@@ -1855,7 +1855,7 @@ struct WindowFunctionExponentialTimeDecayedMax final : public StatelessWindowFun
 
     WindowFunctionExponentialTimeDecayedMax(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
         : StatelessWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
-        , half_life(getHalfLife(parameters_, name_))
+        , decay_length(getDecayLength(parameters_, name_))
     {
         if (argument_types.size() != 2)
         {
@@ -1898,10 +1898,10 @@ struct WindowFunctionExponentialTimeDecayedMax final : public StatelessWindowFun
                 Float64 value = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_VALUE, i);
                 Float64 t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
 
-                /// Avoiding extra calls to `exp2` and multiplications.
+                /// Avoiding extra calls to `exp` and multiplications.
                 if (value > result || t > back_t || result < 0)
                 {
-                    result = std::max(std::exp2((t - back_t) / half_life) * value, result);
+                    result = std::max(std::exp((t - back_t) / decay_length) * value, result);
                 }
             }
         }
@@ -1910,14 +1910,14 @@ struct WindowFunctionExponentialTimeDecayedMax final : public StatelessWindowFun
     }
 
     private:
-        const Float64 half_life;
+        const Float64 decay_length;
 };
 
 struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFunction<ExponentialTimeDecayedSumState>
 {
     static constexpr size_t ARGUMENT_TIME = 0;
 
-    static Float64 getHalfLife(const Array & parameters_, const std::string & name_)
+    static Float64 getDecayLength(const Array & parameters_, const std::string & name_)
     {
         if (parameters_.size() != 1)
         {
@@ -1930,7 +1930,7 @@ struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFu
     WindowFunctionExponentialTimeDecayedCount(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
         : StatefulWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
-        , half_life(getHalfLife(parameters_, name_))
+        , decay_length(getDecayLength(parameters_, name_))
     {
         if (argument_types.size() != 1)
         {
@@ -1969,13 +1969,13 @@ struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFu
                 for (RowNumber i = transform->prev_frame_start; i < transform->frame_start; transform->advanceRowNumber(i))
                 {
                     Float64 prev_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
-                    result -= std::exp2((prev_t - back_t) / half_life);
+                    result -= std::exp((prev_t - back_t) / decay_length);
                 }
-                result += std::exp2((state.previous_time - back_t) / half_life) * state.previous_sum;
+                result += std::exp((state.previous_time - back_t) / decay_length) * state.previous_sum;
                 for (RowNumber i = transform->prev_frame_end; i < transform->frame_end; transform->advanceRowNumber(i))
                 {
                     Float64 prev_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
-                    result += std::exp2((prev_t - back_t) / half_life);
+                    result += std::exp((prev_t - back_t) / decay_length);
                 }
             }
             else
@@ -1983,7 +1983,7 @@ struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFu
                 for (RowNumber i = transform->frame_start; i < transform->frame_end; transform->advanceRowNumber(i))
                 {
                     Float64 prev_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
-                    result += std::exp2((prev_t - back_t) / half_life);
+                    result += std::exp((prev_t - back_t) / decay_length);
                 }
             }
 
@@ -1995,7 +1995,7 @@ struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFu
     }
 
     private:
-        const Float64 half_life;
+        const Float64 decay_length;
 };
 
 struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunction<ExponentialTimeDecayedAvgState>
@@ -2003,7 +2003,7 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
     static constexpr size_t ARGUMENT_VALUE = 0;
     static constexpr size_t ARGUMENT_TIME = 1;
 
-    static Float64 getHalfLife(const Array & parameters_, const std::string & name_)
+    static Float64 getDecayLength(const Array & parameters_, const std::string & name_)
     {
         if (parameters_.size() != 1)
         {
@@ -2016,7 +2016,7 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
     WindowFunctionExponentialTimeDecayedAvg(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
         : StatefulWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
-        , half_life(getHalfLife(parameters_, name_))
+        , decay_length(getDecayLength(parameters_, name_))
     {
         if (argument_types.size() != 2)
         {
@@ -2066,13 +2066,13 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
                 {
                     Float64 prev_val = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_VALUE, i);
                     Float64 prev_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
-                    Float64 decay = std::exp2((prev_t - back_t) / half_life);
+                    Float64 decay = std::exp((prev_t - back_t) / decay_length);
                     sum -= decay * prev_val;
                     count -= decay;
                 }
 
                 {
-                    Float64 decay = std::exp2((state.previous_time - back_t) / half_life);
+                    Float64 decay = std::exp((state.previous_time - back_t) / decay_length);
                     sum += decay * state.previous_sum;
                     count += decay * state.previous_count;
                 }
@@ -2081,7 +2081,7 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
                 {
                     Float64 prev_val = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_VALUE, i);
                     Float64 prev_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
-                    Float64 decay = std::exp2((prev_t - back_t) / half_life);
+                    Float64 decay = std::exp((prev_t - back_t) / decay_length);
                     sum += decay * prev_val;
                     count += decay;
                 }
@@ -2092,7 +2092,7 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
                 {
                     Float64 prev_val = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_VALUE, i);
                     Float64 prev_t = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIME, i);
-                    Float64 decay = std::exp2((prev_t - back_t) / half_life);
+                    Float64 decay = std::exp((prev_t - back_t) / decay_length);
                     sum += decay * prev_val;
                     count += decay;
                 }
@@ -2109,7 +2109,7 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
     }
 
     private:
-        const Float64 half_life;
+        const Float64 decay_length;
 };
 
 struct WindowFunctionRowNumber final : public StatelessWindowFunction
@@ -3749,11 +3749,7 @@ LIMIT 9
 
     FunctionDocumentation::Description exponentialTimeDecayedSum_description = R"(
 Returns the sum of values weighted by exponential decay relative to the greatest time value.
-The weight is halved for each `x` time units between a value's time and the greatest time.
-For `DateTime` and `DateTime64`, `x` is measured in seconds.
 Aggregate states can be combined independently of the input order, including in an `AggregatingMergeTree`.
-The aggregate form returns `ExponentialTimeDecayingFloat64`, which exposes the greatest time and can be evaluated at another time.
-The window form returns `Float64`.
 The aggregate-function form is experimental and requires `allow_experimental_time_decay_aggregate_functions = 1`.
 The window-function form is not affected by this setting.
     )";
@@ -3763,11 +3759,11 @@ The window-function form is not affected by this setting.
         {"t", "Time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::Parameters exponentialTimeDecayedSum_parameters = {
-        {"x", "Half-life period in the time argument's units; seconds for DateTime and DateTime64.",
-            {"(U)Int*", "Float*", "Decimal"}}
+        {"x", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue exponentialTimeDecayedSum_returned_value = {
-        "The aggregate form returns an ExponentialTimeDecayingFloat64 value; the window form returns Float64.",
+        "The aggregate form returns ExponentialTimeDecayingFloat64; its half_life field is `x * ln(2)`. "
+        "The window form returns Float64.",
         {"ExponentialTimeDecayingFloat64", "Float64"}};
     FunctionDocumentation::Examples exponentialTimeDecayedSum_examples = {
     {
@@ -3783,7 +3779,7 @@ FROM
     SELECT
     (number = 0) OR (number >= 25) AS value,
     number AS time,
-    exponentialTimeDecayedSum(6.931471805599453)(value, time) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS exp_smooth
+    exponentialTimeDecayedSum(10)(value, time) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS exp_smooth
     FROM numbers(50)
     );
         )",
@@ -3859,7 +3855,6 @@ FROM
 
     FunctionDocumentation::Description exponentialTimeDecayedMax_description = R"(
 Returns the maximum of the computed exponentially smoothed moving average at index `t` in time with that at `t-1`.
-The weight is halved for each `x` time units between a value's time and the greatest time.
     )";
     FunctionDocumentation::Syntax exponentialTimeDecayedMax_syntax = "exponentialTimeDecayedMax(x)(value, timeunit)";
     FunctionDocumentation::Arguments exponentialTimeDecayedMax_arguments = {
@@ -3867,8 +3862,7 @@ The weight is halved for each `x` time units between a value's time and the grea
         {"timeunit", "Timeunit.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::Parameters exponentialTimeDecayedMax_parameters = {
-        {"x", "Half-life period in the time argument's units; seconds for DateTime and DateTime64.",
-            {"(U)Int*", "Float*", "Decimal"}}
+        {"x", "Half-life period.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue exponentialTimeDecayedMax_returned_value = {"Returns the maximum of the exponentially smoothed weighted moving average at `t` and `t-1`.", {"Float64"}};
     FunctionDocumentation::Examples exponentialTimeDecayedMax_examples = {
@@ -3885,7 +3879,7 @@ FROM
     SELECT
     (number = 0) OR (number >= 25) AS value,
     number AS time,
-    exponentialTimeDecayedMax(6.931471805599453)(value, time) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS exp_smooth
+    exponentialTimeDecayedMax(10)(value, time) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS exp_smooth
     FROM numbers(50)
     );
         )",
@@ -3957,11 +3951,7 @@ FROM
 
     FunctionDocumentation::Description exponentialTimeDecayedCount_description = R"(
 Returns the sum of exponential weights relative to the greatest time value.
-The weight is halved for each `x` time units between a value's time and the greatest time.
-For `DateTime` and `DateTime64`, `x` is measured in seconds.
 Aggregate states can be combined independently of the input order, including in an `AggregatingMergeTree`.
-The aggregate form returns `ExponentialTimeDecayingFloat64`, which exposes the greatest time and can be evaluated at another time.
-The window form returns `Float64`.
 The aggregate-function form is experimental and requires `allow_experimental_time_decay_aggregate_functions = 1`.
 The window-function form is not affected by this setting.
     )";
@@ -3970,11 +3960,11 @@ The window-function form is not affected by this setting.
         {"t", "Time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::Parameters exponentialTimeDecayedCount_parameters = {
-        {"x", "Half-life period in the time argument's units; seconds for DateTime and DateTime64.",
-            {"(U)Int*", "Float*", "Decimal"}}
+        {"x", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue exponentialTimeDecayedCount_returned_value = {
-        "The aggregate form returns an ExponentialTimeDecayingFloat64 value; the window form returns Float64.",
+        "The aggregate form returns ExponentialTimeDecayingFloat64; its half_life field is `x * ln(2)`. "
+        "The window form returns Float64.",
         {"ExponentialTimeDecayingFloat64", "Float64"}};
     FunctionDocumentation::Examples exponentialTimeDecayedCount_examples = {
     {
@@ -3990,7 +3980,7 @@ FROM
     SELECT
         (number % 5) = 0 AS value,
         number AS time,
-        exponentialTimeDecayedCount(6.931471805599453)(time) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS exp_smooth
+        exponentialTimeDecayedCount(10)(time) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS exp_smooth
     FROM numbers(50)
 )
         )",
@@ -4066,7 +4056,6 @@ FROM
 
     FunctionDocumentation::Description exponentialTimeDecayedAvg_description = R"(
 Returns the average of values weighted by exponential decay relative to the greatest time value.
-The weight is halved for each `x` time units between a value's time and the greatest time.
 Aggregate states can be combined independently of the input order, including in an `AggregatingMergeTree`.
 The aggregate-function form is experimental and requires `allow_experimental_time_decay_aggregate_functions = 1`.
 The window-function form is not affected by this setting.
@@ -4077,8 +4066,7 @@ The window-function form is not affected by this setting.
         {"t", "Time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::Parameters exponentialTimeDecayedAvg_parameters = {
-        {"x", "Half-life period in the time argument's units; seconds for DateTime and DateTime64.",
-            {"(U)Int*", "Float*", "Decimal"}}
+        {"x", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue exponentialTimeDecayedAvg_returned_value = {"Returns the exponentially weighted average relative to the greatest time value.", {"Float64"}};
     FunctionDocumentation::Examples exponentialTimeDecayedAvg_examples = {
@@ -4095,7 +4083,7 @@ FROM
     SELECT
     (number = 0) OR (number >= 25) AS value,
     number AS time,
-    exponentialTimeDecayedAvg(6.931471805599453)(value, time) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS exp_smooth
+    exponentialTimeDecayedAvg(10)(value, time) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS exp_smooth
     FROM numbers(50)
     )
         )",
