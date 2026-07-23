@@ -246,6 +246,8 @@ git grep -P 'CLICKHOUSE_URL(|_HTTPS)(}|}/|/|)\?' $ROOT_PATH/tests/queries/0_stat
 # Binary blobs (JARs, archives, .so, datasets) should be downloaded at test time or built from source.
 MAX_FILE_SIZE=$((5 * 1024 * 1024))  # 5 MB
 LARGE_FILE_WHITELIST=(
+    # Generated localization state maintained by General Translation
+    -e '^docs/gt-lock\.json$'
     # Legitimate test data that is hard to generate at runtime
     -e multi_column_bf.gz.parquet
     -e ghdata_sample.json
