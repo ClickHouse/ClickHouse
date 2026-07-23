@@ -87,7 +87,20 @@ void IOutputFormat::writeProgressIfNeededUnlocked()
         return;
 
     if (framing)
+    {
+        /// Honor the same `interactive_delay` throttle as the concurrent `onProgress` path: this
+        /// flush gives a pending update (whose `onProgress` lost the `try_to_lock`) a deterministic
+        /// place at a packet boundary, it must not bypass the throttle - otherwise a stream of
+        /// small blocks would emit a `progress` packet at every `data` boundary. A pending update
+        /// still throttled here is not lost: the final counters are delivered by the framing's
+        /// final `progress` packet (see `writeFinalProgress`).
+        UInt64 elapsed_ns = statistics.watch.elapsedNanoseconds();
+        if (elapsed_ns < prev_progress_write_ns + 1000 * progress_write_frequency_us)
+            return;
+
         framing->onProgress(statistics.progress);
+        prev_progress_write_ns = elapsed_ns;
+    }
     else
         writeProgress(statistics.progress);
 
