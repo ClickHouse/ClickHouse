@@ -24,8 +24,8 @@ using namespace DB;
 /// payloads (`ActionsDAG`, the binary data type encoding, sort/aggregate descriptions, the
 /// header encoding). The payload framing lets a reader skip *around* such a blob, but an old
 /// reader cannot survive a change *inside* one -- so any byte change here must be a deliberate
-/// decision: bump or gate the plan version, update `NativeProtocol.md`, and only then update the
-/// expected constants below. These tests failing is the gate that forces that decision.
+/// decision: bump or gate the plan version, and only then update the expected constants below.
+/// These tests failing is the gate that forces that decision.
 /// (Set payload encodings are pinned indirectly by the round-trip tests in
 /// gtest_query_plan_serialization.cpp.)
 
