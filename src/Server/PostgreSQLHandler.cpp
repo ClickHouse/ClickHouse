@@ -19,8 +19,6 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Server/TCPServer.h>
 #include <boost/algorithm/string/trim.hpp>
-#include <array>
-#include <cstring>
 #include <base/scope_guard.h>
 #include <pcg_random.hpp>
 #include <Common/Exception.h>
@@ -1448,18 +1446,120 @@ bool PostgreSQLHandler::isTransactionControlQuery(const String & query)
     if (normalized.find(';') != String::npos)
         return false;
 
-    static constexpr std::array prefixes = {"BEGIN", "START TRANSACTION", "COMMIT", "END", "ROLLBACK", "ABORT"};
-    for (const auto * prefix : prefixes)
+    /// Validate the statement against the exact wrapper spellings PostgreSQL defines for plain
+    /// transaction control, which are the only ones that are safe to acknowledge as no-op success.
+    /// Anything else - `ROLLBACK TO [SAVEPOINT] s`, `COMMIT PREPARED 'gid'`, `ROLLBACK PREPARED 'gid'`,
+    /// `SAVEPOINT`/`RELEASE` and other unsupported commands - must fall through to normal processing,
+    /// where it fails with a proper error instead of a false `CommandComplete`.
+    /// The mode list of BEGIN/START TRANSACTION may be separated by commas as well as whitespace,
+    /// so treat commas as token separators too.
+    std::vector<std::string_view> tokens;
+    for (size_t pos = 0; pos < normalized.size();)
     {
-        /// Match either the bare keyword or the keyword followed by a separator, so that we do not
-        /// swallow unrelated identifiers such as `ENDPOINT` while still accepting `BEGIN READ ONLY`.
-        if (normalized == prefix)
-            return true;
-        const size_t prefix_len = std::strlen(prefix);
-        if (normalized.size() > prefix_len && normalized.starts_with(prefix)
-            && (normalized[prefix_len] == ' ' || normalized[prefix_len] == '\t'))
-            return true;
+        const size_t start = normalized.find_first_not_of(" \t\r\n,", pos);
+        if (start == String::npos)
+            break;
+        size_t end = normalized.find_first_of(" \t\r\n,", start);
+        if (end == String::npos)
+            end = normalized.size();
+        tokens.emplace_back(std::string_view(normalized).substr(start, end - start));
+        pos = end;
     }
+
+    if (tokens.empty())
+        return false;
+
+    size_t i = 0;
+    const auto next_is = [&](std::string_view expected) { return i < tokens.size() && tokens[i] == expected; };
+
+    if (next_is("BEGIN") || next_is("START"))
+    {
+        const bool is_start = tokens[i] == "START";
+        ++i;
+        if (is_start)
+        {
+            /// `START` is only transaction control as `START TRANSACTION`.
+            if (!next_is("TRANSACTION"))
+                return false;
+            ++i;
+        }
+        else if (next_is("WORK") || next_is("TRANSACTION"))
+        {
+            ++i;
+        }
+
+        /// Optional transaction modes: ISOLATION LEVEL ..., READ ONLY / READ WRITE, [NOT] DEFERRABLE.
+        while (i < tokens.size())
+        {
+            if (next_is("ISOLATION"))
+            {
+                ++i;
+                if (!next_is("LEVEL"))
+                    return false;
+                ++i;
+                if (next_is("SERIALIZABLE"))
+                {
+                    ++i;
+                }
+                else if (next_is("REPEATABLE"))
+                {
+                    ++i;
+                    if (!next_is("READ"))
+                        return false;
+                    ++i;
+                }
+                else if (next_is("READ"))
+                {
+                    ++i;
+                    if (!next_is("COMMITTED") && !next_is("UNCOMMITTED"))
+                        return false;
+                    ++i;
+                }
+                else
+                    return false;
+            }
+            else if (next_is("READ"))
+            {
+                ++i;
+                if (!next_is("ONLY") && !next_is("WRITE"))
+                    return false;
+                ++i;
+            }
+            else if (next_is("NOT"))
+            {
+                ++i;
+                if (!next_is("DEFERRABLE"))
+                    return false;
+                ++i;
+            }
+            else if (next_is("DEFERRABLE"))
+            {
+                ++i;
+            }
+            else
+                return false;
+        }
+        return true;
+    }
+
+    if (next_is("COMMIT") || next_is("END") || next_is("ROLLBACK") || next_is("ABORT"))
+    {
+        ++i;
+        if (next_is("WORK") || next_is("TRANSACTION"))
+            ++i;
+        /// Optional `AND [NO] CHAIN`. Chaining just starts a new no-op transaction, so it is safe to accept.
+        if (next_is("AND"))
+        {
+            ++i;
+            if (next_is("NO"))
+                ++i;
+            if (!next_is("CHAIN"))
+                return false;
+            ++i;
+        }
+        return i == tokens.size();
+    }
+
     return false;
 }
 

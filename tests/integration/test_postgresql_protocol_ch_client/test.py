@@ -1054,3 +1054,63 @@ def test_copy_from_stdin_large_payload_spills_to_disk(started_cluster):
         == "payload-0000001\npayload-0199999\n"
     )
     node.query("DROP TABLE test_copy_large SYNC")
+
+
+def test_transaction_control_noops_only_exact_wrappers(started_cluster):
+    # Client libraries wrap statements in plain transaction control (`BEGIN`, `COMMIT`, `ROLLBACK`, ...),
+    # which the server acknowledges as no-op success. Only the exact wrapper spellings PostgreSQL defines
+    # for plain transaction control are safe to acknowledge: savepoint and two-phase-commit variants
+    # (`ROLLBACK TO SAVEPOINT s`, `COMMIT PREPARED 'gid'`, ...) are not implemented, and acknowledging
+    # them as success would make ORMs that rely on savepoints silently lose their rollback semantics.
+    accepted = [
+        "BEGIN",
+        "BEGIN WORK",
+        "BEGIN TRANSACTION",
+        "BEGIN READ ONLY",
+        "BEGIN ISOLATION LEVEL SERIALIZABLE, READ ONLY",
+        "BEGIN ISOLATION LEVEL REPEATABLE READ",
+        "BEGIN READ WRITE, NOT DEFERRABLE",
+        "START TRANSACTION ISOLATION LEVEL READ COMMITTED",
+        "COMMIT",
+        "COMMIT WORK",
+        "COMMIT AND NO CHAIN",
+        "END TRANSACTION",
+        "ROLLBACK",
+        "ROLLBACK WORK AND CHAIN",
+        "ABORT",
+    ]
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+        for statement in accepted:
+            cur.execute(statement)
+        # The wrappers were all no-ops and the connection is still fully usable.
+        cur.execute("SELECT 42")
+        assert cur.fetchone()[0] == 42
+    finally:
+        conn.close()
+
+    rejected = [
+        "SAVEPOINT s",
+        "ROLLBACK TO SAVEPOINT s",
+        "ROLLBACK TO s",
+        "ROLLBACK PREPARED 'gid'",
+        "COMMIT PREPARED 'gid'",
+        "BEGIN UNRECOGNIZED MODE",
+        "COMMIT TRANSACTION EXTRA",
+    ]
+    for statement in rejected:
+        # An unsupported command must produce an error, not a false `CommandComplete`. Each statement
+        # gets a fresh connection because a regular query error tears the connection down.
+        conn = py_psql.connect(
+            host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+        )
+        try:
+            cur = conn.cursor()
+            with pytest.raises(Exception):
+                cur.execute(statement)
+                cur.fetchall()
+        finally:
+            conn.close()
