@@ -86,6 +86,11 @@ public:
     /// Remember an exception to be written as the last packet on `finalize`.
     void setException(const String & message) { exception_message = message; }
 
+    /// Whether an exception was recorded (see `setException`), which makes the stream terminal:
+    /// the output format must not contribute any more payload bytes (see
+    /// `IOutputFormat::finalizeUnlocked`).
+    bool hasException() const { return !exception_message.empty(); }
+
     /// Remember the final progress (with the final counters: `result_rows`, `result_bytes`,
     /// `memory_usage`, known only after the query finished) to be written as the last `progress`
     /// packet on `finalize` - after the trailing logs and profile events emitted by the

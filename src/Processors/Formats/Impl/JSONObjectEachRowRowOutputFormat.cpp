@@ -109,7 +109,12 @@ void registerOutputFormatJSONObjectEachRow(FormatFactory & factory)
             for (const auto & name : header.getNames())
                 if (column_for_object_name.empty() || name != column_for_object_name)
                     names.push_back(name);
-            return JSONUtils::namesMayProduceRawBytesInJSON(names, settings, settings.json.validate_utf8);
+            /// The field values can synthesize further object keys from named `Tuple` element names
+            /// (see `tupleElementNamesMayProduceRawBytesInJSON`). The object-name column must hold
+            /// `String` values (enforced at runtime), so including it in the whole-header walk is a
+            /// safe (fail-close) over-approximation.
+            return JSONUtils::namesMayProduceRawBytesInJSON(names, settings, settings.json.validate_utf8)
+                || JSONUtils::tupleElementNamesMayProduceRawBytesInJSON(header, settings, settings.json.validate_utf8);
         });
 }
 

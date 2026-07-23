@@ -262,3 +262,40 @@ XML (value type validated, metadata replaced) accepted: OK
 {"packet":"totals","data":",\n\n\t\"totals\":\n\t{\n\t\t\"k\": \"\",\n\t\t\"c\": 4\n\t}"}
 {"packet":"extremes","data":",\n\n\t\"extremes\":\n\t{\n\t\t\"min\":\n\t\t{\n\t\t\t\"k\": \"0\",\n\t\t\t\"c\": 2\n\t\t},\n\t\t\"max\":\n\t\t{\n\t\t\t\"k\": \"1\",\n\t\t\t\"c\": 2\n\t\t}\n\t}"}
 {"packet":"data","data":",\n\n\t\"rows\": 2\n}\n"}
+--- a runtime failure with a framed formatter carries no data packet (FORMAT JSON, streaming)
+data packets: 0
+exception packets: 1
+--- a runtime failure with a framed formatter carries no data packet (FORMAT JSON, wait_end_of_query)
+data packets: 0
+exception packets: 1
+--- a mid-stream runtime failure truncates the payload: data streamed, no suffix, exception last
+data packets seen: 1
+suffix leaked: 0
+exception is last: 1
+--- JSONEachPacketString is rejected for JSONEachRow with a non-UTF-8 named Tuple element
+is not compatible with the output format JSONEachRow
+--- JSONEachPacketString is rejected for a non-UTF-8 named Tuple element nested in an Array
+is not compatible with the output format JSONEachRow
+--- EventStream base64-encodes JSONEachRow with a non-UTF-8 named Tuple element
+text/event-stream; charset=UTF-8; payload=base64
+JSONEachRow payload with a non-UTF-8 named Tuple element round-trips
+--- JSONEachPacketString accepts a non-UTF-8 named Tuple element when named tuples are not written as objects
+JSONEachRow (named tuples as arrays) accepted: OK
+--- JSONEachPacketString still rejects a non-UTF-8 named Tuple element with UTF-8 validation on (clean value types)
+is not compatible with the output format JSONEachRow
+--- JSONEachPacketString accepts a non-UTF-8 named Tuple element with UTF-8 validation on and a String element
+JSONEachRow (UTF-8 validation on, String element) accepted: OK
+--- JSONEachPacketString accepts a valid UTF-8 (multi-byte) named Tuple element
+JSONEachRow (valid UTF-8 element name) accepted: OK
+--- JSONEachPacketString is rejected for plain JSONCompactEachRow with a non-UTF-8 named Tuple element
+is not compatible with the output format JSONCompactEachRow
+--- JSONEachPacketString accepts JSONStringsEachRow with a non-UTF-8 named Tuple element
+JSONStringsEachRow accepted: OK
+--- JSONEachPacketString is rejected for JSONCompactColumns with a non-UTF-8 named Tuple element
+is not compatible with the output format JSONCompactColumns
+--- JSONEachPacketString is rejected for JSONObjectEachRow with a non-UTF-8 named Tuple element
+is not compatible with the output format JSONObjectEachRow
+--- JSONEachPacketString is rejected for GeoJSON with a non-UTF-8 named Tuple element
+is not compatible with the output format GeoJSON
+--- JSONEachPacketString is rejected for CustomSeparated with the JSON escaping rule and a non-UTF-8 named Tuple element
+is not compatible with the output format CustomSeparated

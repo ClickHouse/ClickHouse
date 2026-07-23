@@ -141,17 +141,22 @@ void registerOutputFormatJSONCompactEachRow(FormatFactory & factory)
             /// row of type names too) via `makeNamesValidJSONStrings` with `output_format_json_validate_utf8`.
             /// When validation is off, a name or type name that is not valid UTF-8 (a quoted alias with
             /// arbitrary bytes, or a named `Tuple`/`Enum` element with such bytes) makes the header, and
-            /// hence the output, non-textual. It is knowable from the header, so the text framings reject
-            /// or base64-encode the output accordingly.
-            if (with_names || with_types)
+            /// hence the output, non-textual. The row values of the non-`Strings` variants can also
+            /// synthesize object keys from named `Tuple` element names (see
+            /// `tupleElementNamesMayProduceRawBytesInJSON`); the `Strings` variants write a `Tuple`
+            /// value in its plain text form, which carries no element names. All of this is knowable
+            /// from the header, so the text framings reject or base64-encode the output accordingly.
+            if (with_names || with_types || !yield_strings)
                 factory.registerOutputFormatMayProduceRawBytesChecker(
                     format_name,
-                    [with_names, with_types](const FormatSettings & settings, const Block & header)
+                    [with_names, with_types, yield_strings](const FormatSettings & settings, const Block & header)
                     {
                         return (with_names
                                 && JSONUtils::namesMayProduceRawBytesInJSON(header.getNames(), settings, settings.json.validate_utf8))
                             || (with_types
-                                && JSONUtils::namesMayProduceRawBytesInJSON(header.getDataTypeNames(), settings, settings.json.validate_utf8));
+                                && JSONUtils::namesMayProduceRawBytesInJSON(header.getDataTypeNames(), settings, settings.json.validate_utf8))
+                            || (!yield_strings
+                                && JSONUtils::tupleElementNamesMayProduceRawBytesInJSON(header, settings, settings.json.validate_utf8));
                     });
         };
 

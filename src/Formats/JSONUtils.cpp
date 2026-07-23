@@ -8,9 +8,11 @@
 #include <IO/WriteBufferValidUTF8.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/assert_cast.h>
 #include <Common/isValidUTF8.h>
+#include <Common/typeid_cast.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 
@@ -601,6 +603,43 @@ namespace JSONUtils
         /// Otherwise the validating buffer is skipped and the type names are written verbatim,
         /// mirroring `namesMayProduceRawBytesInJSON` with validation off.
         return namesMayProduceRawBytesInJSON(header.getDataTypeNames(), settings, /*validate_utf8=*/false);
+    }
+
+    bool tupleElementNamesMayProduceRawBytesInJSON(const Block & header, const FormatSettings & settings, bool validate_utf8)
+    {
+        if (!settings.json.write_named_tuples_as_objects)
+            return false;
+
+        /// When validation is on and some value type may itself emit invalid UTF-8, the format
+        /// installs `WriteBufferValidUTF8` over the whole output, which also sanitizes the keys
+        /// synthesized from the element names. Note that this cannot be short-circuited on
+        /// `validate_utf8` alone: `DataTypeTuple::textCanContainOnlyValidUTF8` ignores the element
+        /// names, so a `Tuple` of clean value types with a non-UTF-8 element name does not install
+        /// the buffer even with validation on.
+        if (validate_utf8)
+        {
+            for (const auto & type : header.getDataTypes())
+                if (!type->textCanContainOnlyValidUTF8())
+                    return false;
+        }
+
+        Strings names;
+        auto collect = [&](const IDataType & type)
+        {
+            if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type); tuple && tuple->hasExplicitNames())
+                for (const auto & name : tuple->getElementNames())
+                    names.push_back(name);
+        };
+        for (const auto & type : header.getDataTypes())
+        {
+            collect(*type);
+            type->forEachChild(collect);
+        }
+
+        if (names.empty())
+            return false;
+
+        return namesMayProduceRawBytesInJSON(names, settings, /*validate_utf8=*/false);
     }
 
     void skipColon(ReadBuffer & in)
