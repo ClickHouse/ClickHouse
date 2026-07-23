@@ -1037,13 +1037,23 @@ void RefreshTask::executeRefresh()
     znode.last_attempt_time = end_time_seconds;
     znode.last_attempt_error = error_message;
     znode.refresh_running = false;
+    /// If an `ALTER ... MODIFY REFRESH` or `MODIFY QUERY` raced with this refresh, the run was built
+    /// from the old definition, so its result must not be treated as a refresh of the new definition:
+    /// don't mark the timeslot as completed (leaving `last_completed_timeslot` behind makes the
+    /// scheduler start another refresh right away, under the new params), don't overwrite the
+    /// dependency snapshot with the old definition's dependency set, and don't remember the source
+    /// hash (the ALTER cleared it). The physical results of the run are still recorded below: the
+    /// target table really was exchanged, and coordinated replicas sync to `last_success_table_uuid`
+    /// when `last_success_end_time` advances, so those must reflect reality.
+    bool params_changed_during_refresh = refresh_params_version != params_version_at_start;
     /// `unchanged` is the `REFRESH ... IF CHANGED` skip: the source data did not change, so we treat
     /// the timeslot as completed (advancing the schedule and resetting retries) but do NOT touch the
     /// last-success state - the view's data is unchanged, so dependent views must not be triggered.
     if (new_table_uuid.has_value() || unchanged)
     {
         znode.last_attempt_succeeded = true;
-        znode.last_completed_timeslot = refresh_schedule.timeslotForCompletedRefresh(znode.last_completed_timeslot, start_time_seconds, end_time_seconds, execution.out_of_schedule);
+        if (!params_changed_during_refresh)
+            znode.last_completed_timeslot = refresh_schedule.timeslotForCompletedRefresh(znode.last_completed_timeslot, start_time_seconds, end_time_seconds, execution.out_of_schedule);
         znode.previous_attempt_error = "";
         znode.attempt_number = 0;
         znode.randomize();
@@ -1058,13 +1068,11 @@ void RefreshTask::executeRefresh()
         else
             /// Must monotonically increase, dependencies rely on it.
             znode.last_success_end_time += std::chrono::nanoseconds(1);
-        znode.last_success_dependencies = std::move(execution.dependencies);
-
-        /// Remember the source state this refresh was built from, for the next IF CHANGED check - but only
-        /// if no ALTER MODIFY REFRESH raced with this refresh. If the params changed while we were running,
-        /// this target may have been built from the old query/flag, so leave the hash cleared by the ALTER.
-        if (refresh_params_version == params_version_at_start)
+        if (!params_changed_during_refresh)
+        {
+            znode.last_success_dependencies = std::move(execution.dependencies);
             last_refresh_source_hash = source_hash;
+        }
     }
     execution.znode = znode;
 
