@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel-replicas
-# no-parallel-replicas: `system.predicate_statistics_log` rows are keyed by the reading thread's
-# `query_id`. Under parallel replicas the reads happen on remote sub-queries, so the rows land under
-# sub-query ids and the assertions below (which filter by the client `query_id`) find nothing.
+# Tags: no-fasttest
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,6 +18,10 @@ Q3="${TABLE}_q3"
 Q4="${TABLE}_q4"
 Q5="${TABLE}_q5"
 Q6="${TABLE}_q6"
+
+# Under parallel replicas the reads run on remote sub-queries, so predicate_statistics_log rows land
+# under the sub-query ids rather than the client query_id. Match all of them through initial_query_id.
+qids() { echo "query_id IN (SELECT query_id FROM system.query_log WHERE initial_query_id = '$1' AND event_date >= yesterday() AND type = 'QueryFinish')"; }
 
 $CLICKHOUSE_CLIENT -m --query "
 $ENABLE_STATS;
@@ -73,7 +74,7 @@ $CLICKHOUSE_CLIENT --query_id="$Q5" --query "SET predicate_statistics_sample_rat
 # Q6: conjunction split across multiple prewhere steps — total_selectivity is consistent and low
 $CLICKHOUSE_CLIENT --query_id="$Q6" --query "$ENABLE_STATS_MULTI_STEP; SELECT * FROM $TABLE WHERE status = 'active' AND category = 'cat_a' FORMAT Null"
 
-$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS predicate_statistics_log"
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS predicate_statistics_log, query_log"
 
 # Q1: equality ~10% selectivity, predicate_expression is not empty
 echo '--- q1 equality selectivity ~10% ---'
@@ -84,7 +85,7 @@ SELECT
     sum(passed_rows) > 0 AS has_passed,
     round(sum(passed_rows) / sum(input_rows), 1) AS sel
 FROM system.predicate_statistics_log
-WHERE table = '$TABLE' AND query_id = '$Q1' AND predicate_expression != '';
+WHERE table = '$TABLE' AND $(qids "$Q1") AND predicate_expression != '';
 "
 
 # Q2: 100% selectivity
@@ -92,7 +93,7 @@ echo '--- q2 100% selectivity ---'
 $CLICKHOUSE_CLIENT --query "
 SELECT round(max(filter_selectivity), 1) AS sel
 FROM system.predicate_statistics_log
-WHERE table = '$TABLE' AND query_id = '$Q2' AND predicate_expression != '';
+WHERE table = '$TABLE' AND $(qids "$Q2") AND predicate_expression != '';
 "
 
 # Q3: 0% selectivity
@@ -102,7 +103,7 @@ SELECT
     sum(input_rows) > 0 AS has_input,
     sum(passed_rows) = 0 AS zero_passed
 FROM system.predicate_statistics_log
-WHERE table = '$TABLE' AND query_id = '$Q3' AND predicate_expression != '';
+WHERE table = '$TABLE' AND $(qids "$Q3") AND predicate_expression != '';
 "
 
 # Q4: multi-column predicate logged with non-empty predicate_expression
@@ -110,7 +111,7 @@ echo '--- q4 multi-column logged ---'
 $CLICKHOUSE_CLIENT --query "
 SELECT count() > 0 AS logged
 FROM system.predicate_statistics_log
-WHERE table = '$TABLE_MC' AND query_id = '$Q4' AND predicate_expression != '';
+WHERE table = '$TABLE_MC' AND $(qids "$Q4") AND predicate_expression != '';
 "
 
 # Q5: disabled — nothing logged
@@ -118,7 +119,7 @@ echo '--- q5 disabled ---'
 $CLICKHOUSE_CLIENT --query "
 SELECT count() = 0 AS nothing_logged
 FROM system.predicate_statistics_log
-WHERE table = '$TABLE_OFF' AND query_id = '$Q5';
+WHERE table = '$TABLE_OFF' AND $(qids "$Q5");
 "
 
 # Q6: conjunction — total_selectivity consistent across step rows and low
@@ -128,7 +129,7 @@ SELECT
     round(min(total_selectivity), 2) = round(max(total_selectivity), 2) AS same_whole_sel,
     min(total_selectivity) < 0.1 AS selective
 FROM system.predicate_statistics_log
-WHERE table = '$TABLE' AND query_id = '$Q6' AND predicate_expression != '';
+WHERE table = '$TABLE' AND $(qids "$Q6") AND predicate_expression != '';
 "
 
 # Selectivity bounds
