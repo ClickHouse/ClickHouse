@@ -1210,7 +1210,7 @@ struct CollectTablesData
     const ContextPtr context;
     std::vector<CollectedTable> tables;
 
-    void addTableIfNotEmpty(const String & database, const String & table, const std::unordered_set<String> & active_ctes, const AccessFlags & required_access, bool existence_required = true, ExpectedObjectKind expected_kind = ExpectedObjectKind::Any)
+    void addTableIfNotEmpty(const String & database, const String & table, const std::unordered_set<String> & active_ctes, Context::StorageNamespace resolve_namespace, const AccessFlags & required_access, bool existence_required = true, ExpectedObjectKind expected_kind = ExpectedObjectKind::Any)
     {
         if (table.empty())
             return;
@@ -1226,7 +1226,14 @@ struct CollectTablesData
         /// Note: this resolves only the names (e.g. substitutes the current database) — it does not check
         /// that the table exists in the catalog. Existence is checked by the existence preflight in
         /// `reattachTablesUsedInQuery`, which is why `existence_required` is carried in `CollectedTable`.
-        auto resolved = context->tryResolveStorageID(storage_id);
+        /// `resolve_namespace` mirrors the namespace the outer query's interpreter resolves this reference
+        /// in: `ResolveAll` where a same-named session temporary table shadows the persistent one (so the
+        /// reference resolves to the temporary table and is skipped below, exactly as the query never
+        /// touches the persistent table), `ResolveOrdinary` for carriers whose interpreter looks the name
+        /// up only in the persistent catalog (so a same-named temporary table must NOT hide the persistent
+        /// table the query actually uses) — see `mainTableResolveNamespace` and the per-call-site notes in
+        /// `collectTablesInQuery`.
+        auto resolved = context->tryResolveStorageID(storage_id, resolve_namespace);
         if (!resolved)
             return;
 
@@ -1311,6 +1318,34 @@ ExpectedObjectKind mainTableExpectedObjectKind(const IAST & ast)
     if (ast.as<ASTExistsDictionaryQuery>() || ast.as<ASTShowCreateDictionaryQuery>())
         return ExpectedObjectKind::Dictionary;
     return ExpectedObjectKind::Any;
+}
+
+/// The namespace the query's interpreter resolves its main-table reference in (for the non-`TEMPORARY`
+/// forms — `... TEMPORARY TABLE t` references are skipped by the collector before resolution). This must
+/// mirror the interpreter exactly: resolving here more broadly than the interpreter does would let a
+/// same-named session temporary table hide a persistent table the query actually uses (the collector
+/// resolves the temporary hit, drops it, and never records the persistent table), silently disabling the
+/// hook for it; resolving more narrowly would detach a persistent table the query never touches.
+///
+/// `ResolveOrdinary` carriers (the interpreter looks the unqualified name up only in the persistent
+/// catalog, via `Context::resolveDatabase` + catalog or an explicit `ResolveOrdinary`):
+/// `EXISTS TABLE`/`EXISTS VIEW`/`EXISTS DICTIONARY` (`InterpreterExistsQuery`), `SHOW CREATE VIEW`/
+/// `SHOW CREATE DICTIONARY` (`InterpreterShowCreateQuery`), `CREATE`/`ATTACH` targets
+/// (`InterpreterCreateQuery`), `UNDROP` (`InterpreterUndropQuery`), `UPDATE` (`InterpreterUpdateQuery`),
+/// `DELETE` (`InterpreterDeleteQuery`), and `WATCH` (`InterpreterWatchQuery`).
+///
+/// `ResolveAll` carriers (a session temporary table legitimately shadows the persistent one):
+/// `SHOW CREATE TABLE` (`InterpreterShowCreateQuery`), `ALTER` (`InterpreterAlterQuery`), `OPTIMIZE`
+/// (`InterpreterOptimizeQuery`), `CHECK TABLE` (`InterpreterCheckQuery`), and `DROP`/`DETACH`/`TRUNCATE`
+/// (`InterpreterDropQuery` tries `ResolveExternal` first for an unqualified name).
+Context::StorageNamespace mainTableResolveNamespace(const IAST & ast)
+{
+    if (ast.as<ASTExistsTableQuery>() || ast.as<ASTExistsViewQuery>() || ast.as<ASTExistsDictionaryQuery>()
+        || ast.as<ASTShowCreateViewQuery>() || ast.as<ASTShowCreateDictionaryQuery>()
+        || ast.as<ASTCreateQuery>() || ast.as<ASTUndropQuery>()
+        || ast.as<ASTUpdateQuery>() || ast.as<ASTDeleteQuery>() || ast.as<ASTWatchQuery>())
+        return Context::ResolveOrdinary;
+    return Context::ResolveAll;
 }
 
 /// Walk the AST and collect tables, tracking CTE scope so that an in-scope CTE name does not cause us to
@@ -1430,7 +1465,7 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
             if (!table_expression || !table_expression->database_and_table_name)
                 continue;
             if (const auto * id = table_expression->database_and_table_name->as<ASTTableIdentifier>())
-                data.addTableIfNotEmpty(id->getDatabaseName(), id->shortName(), active_ctes, AccessType::SELECT);
+                data.addTableIfNotEmpty(id->getDatabaseName(), id->shortName(), active_ctes, Context::ResolveAll, AccessType::SELECT);
         }
 
         /// Recurse into the remaining children with the CTE names active. The WITH subtree was already
@@ -1445,7 +1480,9 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
     }
     else if (const auto * insert = ast->as<ASTInsertQuery>())
     {
-        data.addTableIfNotEmpty(insert->getDatabase(), insert->getTable(), active_ctes, AccessType::INSERT);
+        /// `InterpreterInsertQuery::getTable` resolves the target with the default `ResolveAll`, so a
+        /// session temporary table legitimately shadows a persistent one as the `INSERT` destination.
+        data.addTableIfNotEmpty(insert->getDatabase(), insert->getTable(), active_ctes, Context::ResolveAll, AccessType::INSERT);
     }
     else if (const auto * backup = ast->as<ASTBackupQuery>())
     {
@@ -1477,10 +1514,13 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
             /// randomization. `BACKUP TABLE` checks `BACKUP` on the source table.
             /// The restore destination is intentionally optional: `RESTORE TABLE old AS new` usually creates
             /// `new`, so a miss is the normal case, not a sign the query is going to fail.
+            /// A `TABLE` element's unqualified name is completed with the current database by
+            /// `ASTBackupQuery::setCurrentDatabase` — never resolved against session temporary tables
+            /// (those use the `TEMPORARY TABLE` element type skipped above) — hence `ResolveOrdinary`.
             if (backup->kind == ASTBackupQuery::RESTORE)
-                data.addTableIfNotEmpty(element.new_database_name, element.new_table_name, active_ctes, AccessFlags::allFlagsGrantableOnTableLevel(), /* existence_required */ false);
+                data.addTableIfNotEmpty(element.new_database_name, element.new_table_name, active_ctes, Context::ResolveOrdinary, AccessFlags::allFlagsGrantableOnTableLevel(), /* existence_required */ false);
             else
-                data.addTableIfNotEmpty(element.database_name, element.table_name, active_ctes, AccessType::BACKUP);
+                data.addTableIfNotEmpty(element.database_name, element.table_name, active_ctes, Context::ResolveOrdinary, AccessType::BACKUP);
         }
     }
     else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
@@ -1490,7 +1530,7 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         /// unqualified. Resolving it through the persistent catalog would detach an unrelated persistent
         /// table of the same name that the query never touches, so skip temporary-table references.
         if (!query_with_output->isTemporary())
-            data.addTableIfNotEmpty(query_with_output->getDatabase(), query_with_output->getTable(), active_ctes, requiredAccessForTableQuery(*ast), mainTableExistenceRequired(*ast), mainTableExpectedObjectKind(*ast));
+            data.addTableIfNotEmpty(query_with_output->getDatabase(), query_with_output->getTable(), active_ctes, mainTableResolveNamespace(*ast), requiredAccessForTableQuery(*ast), mainTableExistenceRequired(*ast), mainTableExpectedObjectKind(*ast));
 
         /// Some `ASTQueryWithTableAndOutput` classes reference additional real tables that live neither in the
         /// main `database`/`table` nor in child AST nodes, yet the outer query's own access check validates them
@@ -1508,8 +1548,11 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
                 for (const auto & command_child : alter->command_list->children)
                     if (const auto * command = command_child->as<ASTAlterCommand>())
                     {
-                        data.addTableIfNotEmpty(command->from_database, command->from_table, active_ctes, AccessFlags::allFlagsGrantableOnTableLevel());
-                        data.addTableIfNotEmpty(command->to_database, command->to_table, active_ctes, AccessFlags::allFlagsGrantableOnTableLevel());
+                        /// `MergeTreeData::alterPartition` completes an unqualified `from_*`/`to_*` name
+                        /// with the current database directly — no temporary-table shadowing — hence
+                        /// `ResolveOrdinary`.
+                        data.addTableIfNotEmpty(command->from_database, command->from_table, active_ctes, Context::ResolveOrdinary, AccessFlags::allFlagsGrantableOnTableLevel());
+                        data.addTableIfNotEmpty(command->to_database, command->to_table, active_ctes, Context::ResolveOrdinary, AccessFlags::allFlagsGrantableOnTableLevel());
                     }
         }
         else if (const auto * create = ast->as<ASTCreateQuery>())
@@ -1517,8 +1560,10 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
             /// `CREATE ... AS src` / `CREATE ... CLONE AS src` reads `src`'s structure; `InterpreterCreateQuery`
             /// checks `SHOW_COLUMNS` on `create.as_database`/`create.as_table` before reading it. Without this,
             /// `CREATE OR REPLACE TABLE dst AS src` would detach an existing `dst` before that check fails. The
-            /// source is a plain string in `ASTCreateQuery`, not a child AST node.
-            data.addTableIfNotEmpty(create->as_database, create->as_table, active_ctes, AccessFlags::allFlagsGrantableOnTableLevel());
+            /// source is a plain string in `ASTCreateQuery`, not a child AST node. The interpreter completes
+            /// an unqualified source with `Context::resolveDatabase` and reads it from the persistent
+            /// catalog — no temporary-table shadowing — hence `ResolveOrdinary`.
+            data.addTableIfNotEmpty(create->as_database, create->as_table, active_ctes, Context::ResolveOrdinary, AccessFlags::allFlagsGrantableOnTableLevel());
         }
     }
     else if (const auto * function = ast->as<ASTFunction>())
@@ -1534,7 +1579,7 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         {
             if (const auto * id = function->arguments->children[1]->as<ASTIdentifier>())
                 if (auto table_id = id->createTable())
-                    data.addTableIfNotEmpty(table_id->getDatabaseName(), table_id->shortName(), active_ctes, AccessType::SELECT);
+                    data.addTableIfNotEmpty(table_id->getDatabaseName(), table_id->shortName(), active_ctes, Context::ResolveAll, AccessType::SELECT);
         }
     }
 

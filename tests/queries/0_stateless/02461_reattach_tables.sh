@@ -415,3 +415,20 @@ check_fails_kind_without_detach "SHOW CREATE VIEW t_reattach_kind" "t_reattach_k
 check_fails_kind_without_detach "SHOW CREATE DICTIONARY t_reattach_kind" "t_reattach_kind"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_kind"
+
+# A session temporary table with the same name as a persistent one must affect the hook exactly as it
+# affects the query itself. Carriers whose interpreter resolves temporary tables first (SELECT,
+# SHOW CREATE TABLE) target the temporary table, so the persistent one must NOT be detached. Carriers
+# whose interpreter looks the name up only in the persistent catalog (EXISTS TABLE, CREATE ... AS src)
+# use the persistent table, so it must still be detached — the temporary hit must not hide it from the
+# collector.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_shadow"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_shadow (a UInt64) ENGINE = MergeTree ORDER BY a"
+
+check_if_not_detached "CREATE TEMPORARY TABLE t_reattach_shadow (a UInt64); SELECT * FROM t_reattach_shadow" "t_reattach_shadow"
+check_if_not_detached "CREATE TEMPORARY TABLE t_reattach_shadow (a UInt64); SHOW CREATE TABLE t_reattach_shadow FORMAT Null" "t_reattach_shadow"
+check_if_detached "CREATE TEMPORARY TABLE t_reattach_shadow (a UInt64); EXISTS TABLE t_reattach_shadow" "t_reattach_shadow"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_shadow_new"
+check_if_detached "CREATE TEMPORARY TABLE t_reattach_shadow (a UInt64); CREATE TABLE t_reattach_shadow_new AS t_reattach_shadow" "t_reattach_shadow"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_shadow_new"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_shadow"
