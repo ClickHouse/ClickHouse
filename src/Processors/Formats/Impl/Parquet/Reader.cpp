@@ -994,7 +994,21 @@ bool Reader::decodeDictionaryPage(
     bool committed = false;
     SCOPE_EXIT({ if (bounded && !committed) reservation.release(reserved_bytes); });
 
-    decodeDictionaryPageImpl(header, page_data, column, column_info);
+    try
+    {
+        decodeDictionaryPageImpl(header, page_data, column, column_info);
+    }
+    catch (...)
+    {
+        /// `decodeDictionaryPageImpl` can throw after it has already allocated into
+        /// `column.dictionary` (the decompression buffer, offsets, a partially decoded `col`).
+        /// Free those buffers while the reservation is still held, so the shared pruning budget
+        /// never undercounts live memory: the SCOPE_EXIT above releases `reserved_bytes` during
+        /// unwinding, and other pruning tasks may keep running and reserving until the exception
+        /// is published after the batch unwinds (see `ReadManager::runBatchOfTasks`).
+        column.dictionary.reset();
+        throw;
+    }
 
     if (bounded)
     {
