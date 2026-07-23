@@ -94,7 +94,7 @@ SELECT count() FROM pk WHERE (x = toUInt256(3)) AND (y = 55) AND (5786 >= z) SET
 "
 
 # A native exact-point atom and a widened-cast atom on the same key column (x = 3 AND x = toUInt256(3)).
-# enable_analyzer = 0 keeps both atoms in the key condition (the new analyzer folds them into one); the
+# enable_analyzer = 0 keeps both atoms in the key condition (the analyzer folds them into one); the
 # column is then pinned POINT by the native equality while the redundant cast atom stays in the rpn. This
 # must still yield an exact, consistent range: expect the native count (3), the exact-count path live, no abort.
 ${CLICKHOUSE_LOCAL} --path="${DB_DIR2}" --multiquery --query "
