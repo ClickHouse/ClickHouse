@@ -88,7 +88,12 @@ namespace DB
             /// clauses of one statement resolve against a single `now`; otherwise sample it here.
             const time_t now_seconds = now.has_value() ? *now : getCurrentTime();
 
-            auto now_literal = make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(now_seconds)));
+            /// The literal must stay signed: a pre-epoch clock (`now_seconds < 0`) cast to `UInt64`
+            /// would become a huge value that `toDateTime64` clamps to its upper bound, turning an
+            /// already-expired deadline into one saturated at year 9999 (fail-open). A signed literal
+            /// maps to a pre-epoch `DateTime64` instead, and a resulting pre-epoch deadline is clamped
+            /// to the smallest expired instant below (fail-closed).
+            auto now_literal = make_intrusive<ASTLiteral>(Field(static_cast<Int64>(now_seconds)));
             auto scale_literal = make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(0)));
             ast = makeASTFunction("toUnixTimestamp64Second",
                 makeASTFunction("plus", makeASTFunction("toDateTime64", now_literal, scale_literal), ast));

@@ -5,7 +5,10 @@
 #include <Access/User.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+#include <Common/tests/gtest_global_context.h>
+#include <Common/tests/gtest_global_register.h>
 #include <Interpreters/Access/getValidUntilFromAST.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 
@@ -253,4 +256,27 @@ TEST(ValidUntilAttachEncoding, NoAuthenticationTypeKeepsDeadline)
     ASSERT_EQ(user->authentication_methods.size(), 1u);
     EXPECT_EQ(user->authentication_methods.front().getType(), AuthenticationType::NO_AUTHENTICATION);
     EXPECT_EQ(user->authentication_methods.front().getValidUntil(), 123);
+}
+
+TEST(ValidForInterval, PreEpochClockResolvesFailClosed)
+{
+    /// The `VALID FOR` path injects the sampled current time into the deadline expression as a literal.
+    /// The literal must stay signed: a pre-epoch clock (`now < 0`) cast to `UInt64` becomes a huge value
+    /// that `toDateTime64` clamps to its upper bound, so an already-expired deadline would come out
+    /// saturated at `MAX_VALID_UNTIL_TIME` (year 9999) - fail-open - instead of the smallest expired
+    /// instant.
+    tryRegisterFunctions();
+    const auto context = getContext().context;
+
+    const auto one_second = makeASTFunction("toIntervalSecond", make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(1))));
+    /// -1 + 1 = 0 would collide with the "no expiration" sentinel; it must normalize to 1 (expired).
+    EXPECT_EQ(getValidUntilFromAST(one_second, context, /* is_interval= */ true, /* now= */ -1), 1);
+    /// A deadline that stays pre-epoch is clamped to the smallest expired instant.
+    EXPECT_EQ(getValidUntilFromAST(one_second, context, /* is_interval= */ true, /* now= */ -100), 1);
+
+    /// A pre-epoch clock with an interval that crosses the epoch resolves exactly, not clamped.
+    const auto one_day = makeASTFunction("toIntervalDay", make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(1))));
+    EXPECT_EQ(getValidUntilFromAST(one_day, context, /* is_interval= */ true, /* now= */ -1), 86399);
+    /// Sanity check for the ordinary post-epoch clock.
+    EXPECT_EQ(getValidUntilFromAST(one_day, context, /* is_interval= */ true, /* now= */ 1), 86401);
 }
