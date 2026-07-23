@@ -85,11 +85,11 @@ def test_streaming_recovers_after_lost_bucket_lock(started_cluster):
             "buckets": 3,
             "processing_threads_num": 3,
             "persistent_processing_node_ttl_seconds": 2,
-            # Disable the real TTL cleanup (it is active only with persistent
-            # processing nodes): with TTL = 2 sec it could remove the locks
-            # which stop being refreshed after the provoked ownership loss,
-            # making the loss detected more than once.
-            "use_persistent_processing_nodes": 0,
+            # Keep the TTL cleanup away from the test: with TTL = 2 sec it could
+            # remove processing nodes of files which take longer than the TTL and
+            # bucket locks which stop being refreshed after the provoked ownership loss.
+            "cleanup_interval_min_ms": 600000,
+            "cleanup_interval_max_ms": 600000,
             "max_processed_files_before_commit": 1,
             "polling_min_timeout_ms": 100,
             # Files in flight at the moment the lock loss is detected fail
@@ -253,7 +253,9 @@ def test_lost_bucket_lock_detected_during_release(started_cluster):
             "buckets": 3,
             "processing_threads_num": 3,
             "persistent_processing_node_ttl_seconds": 2,
-            "use_persistent_processing_nodes": 0,
+            # Keep the TTL cleanup away from the test, same as above.
+            "cleanup_interval_min_ms": 600000,
+            "cleanup_interval_max_ms": 600000,
             "max_processed_files_before_commit": 1,
             "polling_min_timeout_ms": 100,
             "s3queue_loading_retries": 10,
