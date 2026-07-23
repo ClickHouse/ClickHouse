@@ -2229,7 +2229,9 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
         ColumnPtr res;
         if (rows_count == 0 && isNothing(removeNullable(result_array_type)))
             res = result_array_type->createColumn();
-        if (!res && !right_element_null_map)
+        const bool can_use_element_level_special_case = !right_element_null_map
+            || std::ranges::all_of(*right_element_null_map, [](UInt8 value) { return value == 0; });
+        if (!res && can_use_element_level_special_case)
         {
             if (array_element_function)
                 res = array_element_function->executeImpl(new_arguments, result_array_type, rows_count);
