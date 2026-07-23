@@ -11353,6 +11353,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     {
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
         auto replaced_parts = renameTempPartAndReplace(new_data_part, transaction, /*rename_in_transaction=*/ true);
+        new_data_part->getDataPartStorage().commitTransaction();
         transaction.renameParts();
 
         if (!replaced_parts.empty())
