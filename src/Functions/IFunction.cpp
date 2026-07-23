@@ -56,7 +56,7 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-#if 1 /// TEMPORARY release testing
+#ifdef DEBUG_OR_SANITIZER_BUILD
 extern const int MEMORY_LIMIT_EXCEEDED;
 extern const int CANNOT_ALLOCATE_MEMORY;
 extern const int CANNOT_SCHEDULE_TASK;
@@ -575,7 +575,7 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
     return result;
 }
 
-#if 1 /// TEMPORARY release testing
+#ifdef DEBUG_OR_SANITIZER_BUILD
 void IExecutableFunction::validateCanThrowOnException(
     int code,
     const std::string & message,
@@ -632,7 +632,7 @@ void IExecutableFunction::validateCanThrowOnException(
 ColumnPtr IExecutableFunction::execute(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
-#if 1 /// TEMPORARY release testing
+#ifdef DEBUG_OR_SANITIZER_BUILD
     try
     {
         return executeInternal(arguments, result_type, input_rows_count, dry_run);
