@@ -2,8 +2,12 @@
 #include <Storages/VirtualColumnUtils.h>
 
 #include <Functions/IFunction.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
+#include <Common/checkStackSize.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Planner/AnalyzeExpression.h>
 #include <Storages/ColumnsDescription.h>
@@ -152,6 +156,26 @@ static std::tuple<ASTPtr, Names, std::vector<bool>> buildKeyColumns(
     return {expression_list_ast, std::move(column_names), std::move(reverse_flags)};
 }
 
+/// Reject wildcards and column matchers (`*`, `t.*`, `COLUMNS(...)`) anywhere in a key
+/// expression. The Analyzer expands them into the matched columns, which desyncs
+/// `column_names` (one per AST child) from `sample_block` (one per resolved output).
+/// The count-based guard in `getKeyFromAST` cannot catch a matcher that resolves to
+/// exactly one column (e.g. `COLUMNS('^a$')` with a single match): the counts agree,
+/// but `column_names` keeps the literal matcher text instead of the matched column,
+/// producing inconsistent key metadata. So reject them syntactically up front.
+static void checkExpressionDoesntContainMatchers(const IAST & ast)
+{
+    checkStackSize();
+
+    if (ast.as<ASTAsterisk>() || ast.as<ASTQualifiedAsterisk>()
+        || ast.as<ASTColumnsRegexpMatcher>() || ast.as<ASTColumnsListMatcher>()
+        || ast.as<ASTQualifiedColumnsRegexpMatcher>() || ast.as<ASTQualifiedColumnsListMatcher>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key expressions cannot contain wildcards or column matchers");
+
+    for (const auto & child : ast.children)
+        checkExpressionDoesntContainMatchers(*child);
+}
+
 KeyDescription KeyDescription::getKeyFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
@@ -164,6 +188,7 @@ KeyDescription KeyDescription::getKeyFromAST(
     result.additional_columns = additional_columns;
     auto key_expression_list = extractKeyExpressionList(definition_ast);
     checkExpressionDoesntContainSubqueries(*key_expression_list);
+    checkExpressionDoesntContainMatchers(*key_expression_list);
 
     std::tie(result.expression_list_ast, result.column_names, result.reverse_flags) = buildKeyColumns(key_expression_list, additional_columns);
     if (!result.reverse_flags.empty() && result.reverse_flags.size() != result.expression_list_ast->children.size())
