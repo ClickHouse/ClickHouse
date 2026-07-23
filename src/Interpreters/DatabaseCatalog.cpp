@@ -2497,9 +2497,10 @@ bool TableNameHints::isHintNameVisible(const String & name) const
         }
         catch (...)
         {
-            /// The probe rethrows a broken remote source's error only for a caller granted on that
-            /// source name. Even then it must not surface here: this runs while formatting a hint,
-            /// and must never replace the original `UNKNOWN_TABLE` with an unrelated error.
+            /// Ok to swallow: the probe rethrows a broken remote source's error only for a caller
+            /// granted on that source name. Even then it must not surface here: this runs while
+            /// formatting a hint, and must never replace the original `UNKNOWN_TABLE` with an
+            /// unrelated error.
             source_visible = false;
         }
         if (!source_visible)
