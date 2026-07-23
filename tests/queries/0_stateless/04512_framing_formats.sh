@@ -707,9 +707,10 @@ data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPack
 # The key is a non-injective function of `number` on purpose: an injective one (for example
 # `toString(intDiv(number, 2))`) is eliminated from `GROUP BY` in favor of its argument, which
 # changes the key value in the totals row (the key expression recomputes the default argument into
-# '0' instead of the `String` empty default). The old analyzer does that rewrite unconditionally,
-# so pinning `optimize_injective_functions_in_group_by` (which gates only the new analyzer's pass)
-# is not enough to make the result deterministic. A conditional with string literals (for example
+# '0' instead of the `String` empty default). With `enable_analyzer = 0` that rewrite happens
+# unconditionally, so pinning `optimize_injective_functions_in_group_by` (which gates only the
+# corresponding pass of the analyzer) is not enough to make the result deterministic.
+# A conditional with string literals (for example
 # `if(number < 2, '0', '1')`) does not work either: `optimize_if_transform_strings_to_enum`
 # rewrites it to an `Enum`, whose default (the first value, '0') again changes the totals row.
 echo '--- format-owned UTF-8 validation buffers are drained at packet boundaries (JSON with totals and extremes)'
