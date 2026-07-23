@@ -311,11 +311,14 @@ void AddedColumns<false>::appendFromBlock(UInt64 ref_word, const bool has_defaul
     const size_t row_num = refWordRowNo(ref_word);
 
     /// When the join compressed its stored blocks, decompress this block before reading.
-    DecompressedColumnsPtr decompressed_holder;
+    /// `appendFromBlock` runs once per output row, so the decompressed view is deduplicated
+    /// per distinct block in `decompressed_blocks` and held for the lifetime of this batch.
     if (lazy_output.have_compressed)
     {
-        decompressed_holder = lazy_output.join->getDecompressedColumns(block);
-        block = decompressed_holder.get();
+        auto & holder = decompressed_blocks[block];
+        if (!holder)
+            holder = lazy_output.join->getDecompressedColumns(block);
+        block = holder.get();
     }
 #ifndef NDEBUG
     checkColumns(block->columns);

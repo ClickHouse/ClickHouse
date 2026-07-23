@@ -321,6 +321,12 @@ public:
     LazyOutput lazy_output;
     bool has_columns_to_add;
 
+    /// Per-batch deduplication of decompressed stored blocks for the non-lazy path (`ANY` strictness,
+    /// `joinGet`), which materializes rows one by one via `appendFromBlock`: each distinct compressed
+    /// block is decompressed at most once and held here while this output batch is being built
+    /// (the lazy path gets the same guarantee from `DecompressResolver`).
+    std::unordered_map<const StoredBlock *, DecompressedColumnsPtr> decompressed_blocks;
+
     void reserve(bool need_replicate)
     {
         /// If lazy, we will reserve right after actual insertion into columns, because at that moment we will know the exact number of rows to add.
