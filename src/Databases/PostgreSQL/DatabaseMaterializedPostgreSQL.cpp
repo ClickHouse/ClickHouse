@@ -288,7 +288,9 @@ void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges 
             /// or a server restart it may not exist yet (and it keeps not existing while the startup task is
             /// retrying an unreachable PostgreSQL). The change is still applied to the in-memory `settings` and
             /// persisted to the on-disk metadata below, and `makeReplicationHandler` reads `*settings`, so a
-            /// handler built later picks the new value up.
+            /// handler built later picks the new value up. A handler that exists but has no consumer yet (a
+            /// coordinated standby, or a failed startup being retried) stores the value and passes it to the
+            /// consumer it creates later.
             if (replication_handler)
                 replication_handler->setSetting(change);
             need_update_on_disk = true;

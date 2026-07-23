@@ -2227,7 +2227,15 @@ void PostgreSQLReplicationHandler::removeTableFromPublication(pqxx::nontransacti
 
 void PostgreSQLReplicationHandler::setSetting(const SettingChange & setting)
 {
-    assertInitialized();
+    /// The consumer may not exist yet: a coordinated standby builds the handler at startup but creates
+    /// the consumer only after winning the leader election, and a plain database keeps an uninitialized
+    /// handler while the background startup task is retrying. Store the new value in the handler, so the
+    /// consumer created later starts with it instead of the value captured at construction time.
+    if (setting.name == "materialized_postgresql_max_block_size")
+        max_block_size = setting.value.safeGet<UInt64>();
+
+    if (!replication_handler_initialized)
+        return;
 
     consumer_task->deactivate();
     getConsumer()->setSetting(setting);

@@ -1702,6 +1702,48 @@ def test_coordination_settings_cannot_be_altered(started_cluster):
     check_tables_are_synchronized(instance, "test_table")
 
 
+def test_alter_mutable_setting_on_standby_survives_failover(started_cluster):
+    # A coordinated standby builds its replication handler at startup, but the handler creates its
+    # consumer only after winning the leader election. `ALTER DATABASE ... MODIFY SETTING` of a mutable
+    # setting must be accepted in that state (the handler stores the value for the consumer it creates
+    # later) instead of failing with "initialization did not finish", and the standby that becomes the
+    # leader after the ALTER must keep replicating.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    create_coordinated_db("test_table")
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+
+    leader_name = wait_for_leader(instance)
+    leader_node = instance if leader_name == "coord_instance1" else instance2
+    standby_node = instance2 if leader_name == "coord_instance1" else instance
+
+    standby_node.query(
+        "ALTER DATABASE test_database MODIFY SETTING materialized_postgresql_max_block_size = 12345"
+    )
+    assert "materialized_postgresql_max_block_size = 12345" in standby_node.query(
+        "SHOW CREATE DATABASE test_database"
+    )
+
+    # The standby takes over and consumes with the altered setting.
+    leader_node.stop_clickhouse()
+    new_leader = wait_for_leader(standby_node, not_equal=leader_name)
+    assert new_leader != leader_name
+    standby_node.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+    )
+    check_tables_are_synchronized(standby_node, "test_table")
+    assert (
+        int(standby_node.query("SELECT count() FROM test_database.test_table")) == 200
+    )
+
+    leader_node.start_clickhouse()
+    check_tables_are_synchronized(leader_node, "test_table")
+
+
 def test_plain_database_ddl_and_drop_in_startup_window(started_cluster):
     # In the attach/restart window the background startup task has not built the replication handler
     # yet, but a plain (non-coordinated) database is already mounted and accepts DDL. Public DDL must

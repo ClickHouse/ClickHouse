@@ -215,6 +215,8 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
     ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
     ```
 
+    In coordinated mode the query is also accepted on a standby replica (which has no active consumer yet): the new value is applied when that replica later becomes the active worker.
+
 ### `materialized_postgresql_use_unique_replication_consumer_identifier` {#materialized_postgresql_use_unique_replication_consumer_identifier}
 
 Use a unique replication consumer identifier for replication. Default: `0`.

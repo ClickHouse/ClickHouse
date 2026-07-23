@@ -277,8 +277,10 @@ private:
     /// Connection string and address for logs.
     postgres::ConnectionInfo connection_info;
 
-    /// max_block_size for replication stream.
-    const size_t max_block_size;
+    /// max_block_size for replication stream. Mutable via `setSetting`, which may run while the consumer
+    /// does not exist yet (a coordinated standby, or a plain database whose background startup is still
+    /// retrying) - the value is read when the consumer is finally created, hence the atomic.
+    std::atomic<size_t> max_block_size;
 
     /// To distinguish whether current replication handler belongs to a MaterializedPostgreSQL database engine or single storage.
     bool is_materialized_postgresql_database;
