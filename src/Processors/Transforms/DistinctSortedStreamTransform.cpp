@@ -206,6 +206,14 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
     IColumn::Filter filter(chunk_rows);
     auto [range_begin, output_rows] = continueWithPrevRange(chunk_rows, filter); /// try to process chuck as continuation of previous one
 
+    if (isCancelled())
+    {
+        LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled during continuation from previous chunk");
+        stopReading();
+        chunk.clear();
+        return;
+    }
+
     size_t last_checked_row = range_begin;
     size_t range_end = range_begin;
     while (range_end != chunk_rows)
