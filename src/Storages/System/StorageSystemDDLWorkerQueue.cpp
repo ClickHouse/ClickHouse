@@ -15,6 +15,7 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 
 
 namespace fs = std::filesystem;
@@ -83,7 +84,9 @@ ColumnsDescription StorageSystemDDLWorkerQueue::getColumnsDescription()
     };
 }
 
-static String clusterNameFromDDLQuery(ContextPtr context, const DDLTask & task)
+/// Parses the DDL entry query. Returns nullptr on SYNTAX_ERROR so callers can still
+/// present whatever information is available; rethrows other exceptions.
+static ASTPtr tryParseDDLQuery(ContextPtr context, const DDLTask & task)
 {
     const char * begin = task.entry.query.data();
     const char * end = begin + task.entry.query.size();
@@ -91,32 +94,22 @@ static String clusterNameFromDDLQuery(ContextPtr context, const DDLTask & task)
 
     String description = fmt::format("from {}", task.entry_path);
     ParserQuery parser_query(end, settings[Setting::allow_settings_after_format_in_insert]);
-    ASTPtr query;
 
     try
     {
-        query = parseQuery(
+        return parseQuery(
             parser_query, begin, end, description, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     }
     catch (const Exception & e)
     {
-        LOG_INFO(getLogger("StorageSystemDDLWorkerQueue"), "Failed to determine cluster");
+        LOG_INFO(getLogger("StorageSystemDDLWorkerQueue"), "Failed to parse DDL entry {}", task.entry_path);
         if (e.code() == ErrorCodes::SYNTAX_ERROR)
-        {
-            /// ignore parse error and present available information
-            return "";
-        }
+            return nullptr;
         throw;
     }
-
-    String cluster_name;
-    if (const auto * query_on_cluster = dynamic_cast<const ASTQueryWithOnCluster *>(query.get()))
-        cluster_name = query_on_cluster->cluster;
-
-    return cluster_name;
 }
 
-static void fillCommonColumns(MutableColumns & res_columns, size_t & col, const DDLTask & task, const String & cluster_name, UInt64 query_create_time_ms)
+static void fillCommonColumns(MutableColumns & res_columns, size_t & col, const DDLTask & task, const String & cluster_name, const String & masked_query, UInt64 query_create_time_ms)
 {
     /// entry
     res_columns[col++]->insert(task.entry_name);
@@ -143,8 +136,8 @@ static void fillCommonColumns(MutableColumns & res_columns, size_t & col, const 
     /// cluster
     res_columns[col++]->insert(cluster_name);
 
-    /// query
-    res_columns[col++]->insert(task.entry.query);
+    /// query — secrets are masked according to the current user's displaySecretsInShowAndSelect permission
+    res_columns[col++]->insert(masked_query);
 
     Map settings_map;
     if (task.entry.settings)
@@ -281,11 +274,18 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
             throw;
         }
 
-        String cluster_name = clusterNameFromDDLQuery(context, task);
+        ASTPtr query_ast = tryParseDDLQuery(context, task);
+
+        String cluster_name;
+        if (query_ast)
+            if (const auto * query_on_cluster = dynamic_cast<const ASTQueryWithOnCluster *>(query_ast.get()))
+                cluster_name = query_on_cluster->cluster;
+
+        String masked_query = query_ast ? format({.ctx = context, .query = *query_ast}) : task.entry.query;
         UInt64 query_create_time_ms = task_info.stat.ctime;
 
         size_t col = 0;
-        fillCommonColumns(res_columns, col, task, cluster_name, query_create_time_ms);
+        fillCommonColumns(res_columns, col, task, cluster_name, masked_query, query_create_time_ms);
 
         /// At first we process finished nodes, to avoid duplication if some host was active
         /// and suddenly become finished during status dirs listing.
@@ -395,3 +395,4 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDDLWorkerQueue) }
+
