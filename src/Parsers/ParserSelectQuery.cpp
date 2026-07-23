@@ -127,19 +127,39 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// FROM database.table or FROM table or FROM (subquery) or FROM tableFunction(...)
     if (s_from.ignore(pos, expected))
     {
-        if (!ParserTablesInSelectQuery(false).parse(pos, tables, expected))
-            return false;
-
-        /// In the FROM-first form, an optional column alias list can follow the tables, before the
-        /// (possibly omitted) SELECT clause, e.g. FROM t (a, b) SELECT a. It must be parsed here,
-        /// before deciding whether the SELECT clause was omitted, otherwise the alias list would be
-        /// mistaken for the start of an implicit-SELECT query and the following SELECT would fail.
-        if (open_bracket.ignore(pos, expected))
+        auto parse_tables_and_alias_list = [&](bool allow_alias_without_as_keyword)
         {
-            if (!exp_list_for_aliases.parse(pos, expression_list_for_aliases, expected))
+            if (!ParserTablesInSelectQuery(allow_alias_without_as_keyword).parse(pos, tables, expected))
                 return false;
 
-            if (!close_bracket.ignore(pos, expected))
+            /// In the FROM-first form, an optional column alias list can follow the tables, before the
+            /// (possibly omitted) SELECT clause, e.g. FROM t (a, b) SELECT a. It must be parsed here,
+            /// before deciding whether the SELECT clause was omitted, otherwise the alias list would be
+            /// mistaken for the start of an implicit-SELECT query and the following SELECT would fail.
+            if (open_bracket.ignore(pos, expected))
+            {
+                if (!exp_list_for_aliases.parse(pos, expression_list_for_aliases, expected))
+                    return false;
+
+                if (!close_bracket.ignore(pos, expected))
+                    return false;
+            }
+
+            return true;
+        };
+
+        /// When the SELECT clause is written explicitly, table aliases without the AS keyword are allowed,
+        /// same as in the FROM clause of an ordinary SELECT query: FROM orders o SELECT o.customer.
+        /// When SELECT is omitted, they are not: otherwise a following clause keyword that is a valid
+        /// alias (e.g. SELECT itself) would be mistaken for an alias.
+        auto begin = pos;
+        if (!parse_tables_and_alias_list(/*allow_alias_without_as_keyword*/ true) || !s_select.checkWithoutMoving(pos, expected))
+        {
+            pos = begin;
+            tables = nullptr;
+            expression_list_for_aliases = nullptr;
+
+            if (!parse_tables_and_alias_list(/*allow_alias_without_as_keyword*/ false))
                 return false;
         }
     }
