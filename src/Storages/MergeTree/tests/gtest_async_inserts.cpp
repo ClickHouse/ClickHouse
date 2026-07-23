@@ -147,7 +147,7 @@ std::vector<String> testPrewarmDataHashes(std::vector<String> data, std::vector<
         column->insert(datum);
     Block block({ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "a")});
 
-    auto deduplication_info = DeduplicationInfo::create(true);
+    auto deduplication_info = DeduplicationInfo::create(true, InsertDeduplicationVersions::NEW_UNIFIED_HASHES);
     deduplication_info->setRootViewID({});
     deduplication_info->disabled = false;
     deduplication_info->updateOriginalBlock(Chunk(block.getColumns(), block.rows()), std::make_shared<const Block>(block.cloneEmpty()));
