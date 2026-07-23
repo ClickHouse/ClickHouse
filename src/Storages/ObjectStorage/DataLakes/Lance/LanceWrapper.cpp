@@ -17,6 +17,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+extern const int BAD_ARGUMENTS;
 extern const int UNKNOWN_EXCEPTION;
 }
 }
@@ -36,7 +37,11 @@ String takeError(ch_lance_error & error)
 
 [[noreturn]] void throwLanceError(ch_lance_error & error)
 {
-    throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "{}", takeError(error));
+    const auto message = takeError(error);
+    if (message.starts_with("Unsupported Lance column"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
+
+    throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "{}", message);
 }
 
 }
@@ -159,6 +164,18 @@ std::optional<size_t> Dataset::totalRows(const TableStateSnapshot & snapshot) co
     bool has_value = false;
     ch_lance_error error{};
     if (!ch_lance_total_rows(dataset, snapshot.snapshot_id, &rows, &has_value, &error))
+        throwLanceError(error);
+    if (!has_value)
+        return std::nullopt;
+    return rows;
+}
+
+std::optional<size_t> Dataset::countRows(const TableStateSnapshot & snapshot, const std::optional<String> & predicate) const
+{
+    uint64_t rows = 0;
+    bool has_value = false;
+    ch_lance_error error{};
+    if (!ch_lance_count_rows(dataset, snapshot.snapshot_id, predicate ? predicate->c_str() : nullptr, &rows, &has_value, &error))
         throwLanceError(error);
     if (!has_value)
         return std::nullopt;
