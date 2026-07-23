@@ -108,30 +108,27 @@ DB::AggregatedDataVariants::Type convertToTwoLevelTypeIfPossible(DB::AggregatedD
 void initDataVariantsWithSizeHint(
     DB::AggregatedDataVariants & result, DB::AggregatedDataVariants::Type method_chosen, const DB::Aggregator::Params & params)
 {
-    /// Adaptive aggregation bounds every local table by the freeze threshold, so the size hint is
-    /// applied capped by it: queries below the threshold (which never freeze) keep the full
-    /// benefit of preallocation, and high-cardinality ones pre-size to at most what the table
-    /// reaches before freezing.
-    if (params.enable_adaptive_aggregator)
-    {
-        std::optional<size_t> capped_hint;
-        if (auto hint = getSizeHint(params.stats_collecting_params, /*tables_cnt=*/std::max<size_t>(params.max_threads, 1)))
-            capped_hint = std::min<size_t>(hint->median_size, 2 * params.adaptive_aggregator_freeze_threshold);
-        result.init(method_chosen, capped_hint);
-        return;
-    }
-
     const auto & stats_collecting_params = params.stats_collecting_params;
     const auto max_threads = params.group_by_two_level_threshold != 0 ? std::max(params.max_threads, 1ul) : 1;
     if (auto hint = getSizeHint(stats_collecting_params, /*tables_cnt=*/max_threads))
     {
-        if (worthConvertToTwoLevel(
-                params.group_by_two_level_threshold,
-                hint->sum_of_sizes,
-                /*group_by_two_level_threshold_bytes*/ 0,
-                /*result_size_bytes*/ 0))
-            method_chosen = convertToTwoLevelTypeIfPossible(method_chosen);
-        result.init(method_chosen, hint->median_size);
+        /// A table predicted to reach the freeze threshold stays single-level (a two-level table
+        /// cannot freeze), pre-sized to at most what it can hold before freezing. A table
+        /// predicted to stay below the threshold will give up on freezing instead.
+        if (params.enable_adaptive_aggregator && hint->median_size >= params.adaptive_aggregator_freeze_threshold)
+        {
+            result.init(method_chosen, std::min<size_t>(hint->median_size, 2 * params.adaptive_aggregator_freeze_threshold));
+        }
+        else
+        {
+            if (worthConvertToTwoLevel(
+                    params.group_by_two_level_threshold,
+                    hint->sum_of_sizes,
+                    /*group_by_two_level_threshold_bytes*/ 0,
+                    /*result_size_bytes*/ 0))
+                method_chosen = convertToTwoLevelTypeIfPossible(method_chosen);
+            result.init(method_chosen, hint->median_size);
+        }
     }
     else
     {
