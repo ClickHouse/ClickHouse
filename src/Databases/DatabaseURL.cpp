@@ -136,7 +136,15 @@ StoragePtr DatabaseURL::getTableImpl(const String & name, ContextPtr context_, b
 
     auto ast_function_ptr = makeASTFunction("url", make_intrusive<ASTLiteral>(url));
 
-    auto table_function = TableFunctionFactory::instance().get(ast_function_ptr, context_);
+    /// The table is referenced in the query by an identifier (`db.table`), which cannot be
+    /// rewritten into a `urlCluster(...)` table function call for sending to other replicas.
+    /// Disable the parallel-replicas auto-conversion to cluster storages: otherwise the `url`
+    /// table function would create `StorageURLCluster`, whose `updateQueryToSendIfNeeded`
+    /// requires a table function in the query and throws a logical error for identifiers.
+    ContextMutablePtr context_copy = Context::createCopy(context_);
+    context_copy->setSetting("parallel_replicas_for_cluster_engines", Field(false));
+
+    auto table_function = TableFunctionFactory::instance().get(ast_function_ptr, context_copy);
     if (!table_function)
         return nullptr;
 
@@ -144,7 +152,7 @@ StoragePtr DatabaseURL::getTableImpl(const String & name, ContextPtr context_, b
     /// resource is unreachable). Such errors are not swallowed as "table does not exist" even from
     /// `tryGetTable`, because they are more informative. The tables are intentionally not cached:
     /// the remote data (and the inferred schema) can change between queries.
-    return table_function->execute(ast_function_ptr, context_, name);
+    return table_function->execute(ast_function_ptr, context_copy, name);
 }
 
 bool DatabaseURL::isTableExist(const String & name, ContextPtr context_) const
