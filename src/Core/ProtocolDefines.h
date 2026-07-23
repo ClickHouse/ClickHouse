@@ -66,7 +66,11 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 3 adds the parallel-replicas flag (bit 32) on a serialized `ReadFromMergeTree`, telling the
 /// replica to rebuild the read in parallel-reading mode. An older replica would ignore the bit and do a
 /// full non-parallel read, so the serializer fails closed when this flag is set below version 3.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 3;
+/// Version 4 adds the distributed-plan payloads: the bounded-sort limit on `SortingStep`, the
+/// narrowing flag on `UnionStep`, the bucketed-read task parameter name on `ReadFromMergeTree`,
+/// and the in-order aggregation payload on `AggregatingStep`. They carry no per-field version
+/// gates; an older binary rejects the whole stream by its leading version.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 4;
 /// First query-plan serialization version that carries the parallel-replicas flag (bit 32) on a
 /// serialized `ReadFromMergeTree`. Used to gate the flag and to skip replicas that are too old.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = 3;
