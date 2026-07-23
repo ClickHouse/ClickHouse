@@ -519,7 +519,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , mutable_name(name_)
 {
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::IMergeTreeDataPart");
-    version = std::make_unique<VersionMetadataOnDisk>(this);
+    version = std::make_unique<VersionMetadataOnDisk>(this, intent);
 
     if (parent_part)
     {
