@@ -647,12 +647,21 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         /// `registerDatabaseMaterializedPostgreSQL`.
         if (configuration.host.empty())
         {
-            if (configuration.addresses.size() != 1)
+            if (configuration.addresses.size() == 1)
+            {
+                configuration.host = configuration.addresses.front().first;
+                configuration.port = configuration.addresses.front().second;
+            }
+            else if (args.mode <= LoadingStrictnessLevel::CREATE)
+            {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Engine `MaterializedPostgreSQL` requires a single `host:port` address, but `addresses_expr` defines {} addresses",
                                 configuration.addresses.size());
-            configuration.host = configuration.addresses.front().first;
-            configuration.port = configuration.addresses.front().second;
+            }
+            /// On ATTACH a legacy multi-address definition keeps its historical behavior: it could
+            /// be created before this validation existed (replication starts asynchronously, so the
+            /// broken connection string never aborted the CREATE), and the table must keep loading
+            /// with replication failing and retrying in the background rather than abort startup.
         }
 
         auto connection_info = postgres::formatConnectionString(

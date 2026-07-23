@@ -633,30 +633,43 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
         }
 
+        /// An internal metadata replay (server startup / restore, the same distinction
+        /// `DatabaseDataLake` uses) must keep loading whatever definition was already persisted:
+        /// startup rebuilds every database from persisted metadata with an ATTACH query and
+        /// `loadMetadata` aborts on the first exception, so a validation added after the database
+        /// was created must not turn its stored definition into a server that cannot boot.
+        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+
         /// A named collection may specify the endpoint as `addresses_expr`, which fills only
         /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string
         /// below is built from `host` / `port`. This engine keeps a single replication connection,
         /// so exactly one address is accepted; canonicalize it back into `host` / `port`.
         if (configuration.host.empty())
         {
-            if (configuration.addresses.size() != 1)
+            if (configuration.addresses.size() == 1)
+            {
+                configuration.host = configuration.addresses.front().first;
+                configuration.port = configuration.addresses.front().second;
+            }
+            else if (!is_internal_metadata_replay)
+            {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Engine `{}` requires a single `host:port` address, but `addresses_expr` defines {} addresses",
                                 engine_name, configuration.addresses.size());
-            configuration.host = configuration.addresses.front().first;
-            configuration.port = configuration.addresses.front().second;
+            }
+            /// On a replay a legacy multi-address definition keeps its historical behavior: it could
+            /// be created before this validation existed (replication starts asynchronously, so the
+            /// broken connection string never aborted the CREATE), and the database must keep loading
+            /// with replication failing and retrying in the background rather than abort startup.
         }
 
         /// Enforce the server's outbound-host policy, exactly like the table engine and the table
         /// function do in `StoragePostgreSQL::getConfiguration`: a user must not be able to open a
         /// long-lived replication connection to a host that `remote_url_allow_hosts` forbids elsewhere.
-        /// Skip it only for an internal metadata replay (server startup / restore, the same
-        /// distinction `DatabaseDataLake` uses): startup rebuilds every database from persisted
-        /// metadata with an ATTACH query and `loadMetadata` aborts on the first exception, so
-        /// enforcing the policy there would turn one database created before the whitelist was
-        /// tightened into a server that cannot boot. A user-issued `ATTACH DATABASE` is not a
-        /// replay and stays fail-closed, otherwise it would be a direct bypass of the policy.
-        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+        /// Skip it only for an internal metadata replay: enforcing the policy there would turn one
+        /// database created before the whitelist was tightened into a server that cannot boot.
+        /// A user-issued `ATTACH DATABASE` is not a replay and stays fail-closed, otherwise it
+        /// would be a direct bypass of the policy.
         if (!is_internal_metadata_replay)
         {
             for (const auto & address : configuration.addresses)
