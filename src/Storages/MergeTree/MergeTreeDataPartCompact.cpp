@@ -34,9 +34,33 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
     const String & name_,
     const MergeTreePartInfo & info_,
     const MutableDataPartStoragePtr & data_part_storage_,
-    const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, storage_settings, name_, info_, data_part_storage_, Type::Compact, parent_part_)
+    const IMergeTreeDataPart * parent_part_,
+    bool part_may_exist_on_disk)
+    : IMergeTreeDataPart(storage_, storage_settings, name_, info_, data_part_storage_, Type::Compact, parent_part_, part_may_exist_on_disk)
 {
+}
+
+Strings MergeTreeDataPartCompact::getPreferredFileOrder() const
+{
+    Strings preferred_order = COMMON_METADATA_FILES;
+
+    /// Files for partition key columns MinMax indices
+    preferred_order.append_range(getMinMaxIndex()->getProbablyWrittenFiles(*this));
+
+    /// Data marks file is used for loadIndexGranularity
+    preferred_order.push_back(DATA_FILE_NAME + getMarksFileExtension());
+    preferred_order.push_back("primary" + getIndexExtension(true));
+    preferred_order.push_back("primary" + getIndexExtension(false));
+
+    /// Files with statistics. Statistics are written as separate files
+    /// in packed parts to avoid double bufferization in packed archive.
+    for (const auto & [filename, _] : checksums.files)
+    {
+        if (filename.ends_with(STATS_FILE_SUFFIX))
+            preferred_order.push_back(filename);
+    }
+
+    return preferred_order;
 }
 
 MergeTreeReaderPtr createMergeTreeReaderCompact(
