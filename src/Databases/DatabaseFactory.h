@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/NamePrompter.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/Context_fwd.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/ASTLiteral.h>
@@ -41,6 +42,7 @@ public:
         const String & metadata_path;
         const UUID & uuid;
         ContextPtr & context;
+        LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE;
     };
 
     struct EngineFeatures
@@ -58,7 +60,7 @@ public:
         EngineFeatures features;
     };
 
-    DatabasePtr get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context);
+    DatabasePtr get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE);
 
     using DatabaseEngines = std::unordered_map<std::string, Creator>;
 
@@ -81,7 +83,7 @@ public:
 private:
     DatabaseEngines database_engines;
 
-    DatabasePtr getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context);
+    DatabasePtr getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode);
 
     /// validate validates the database engine that's specified in the create query for
     /// engine arguments, settings and table overrides.
