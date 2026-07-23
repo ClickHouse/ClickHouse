@@ -19,7 +19,7 @@ Fixed output columns:
 
 Deletion vectors whose declared `cardinality` exceeds an absolute materialization ceiling are rejected when `deleted_rows` is requested. Selecting only `referenced_data_file` skips payload materialization and does not apply that ceiling.
 
-On-disk `deletion-vector-v1` blob length is bounded by an absolute ceiling (aligned with Iceberg's 2 GiB content-size check) and rejected before the payload is allocated.
+On-disk `deletion-vector-v1` blob length is bounded by an absolute ceiling (aligned with Iceberg's 2 GiB content-size check). The reader peeks the envelope header (combined length and magic) before allocating the full payload; CRC is verified after the bounded read.
 
 LZ4-compressed and uncompressed puffin footers are supported. Footer payload size (and declared LZ4 content size) is bounded by a compression ratio where applicable and an absolute ceiling; oversized footers are rejected before allocation.
 
