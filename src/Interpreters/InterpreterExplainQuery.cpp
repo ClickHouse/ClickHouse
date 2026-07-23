@@ -265,7 +265,16 @@ namespace
 
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
         {
-            if (select.limit_shuffle && data.getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+            /// A select with `LIMIT SHUFFLE` is supported only by the analyzer, and the legacy
+            /// `InterpreterSelectQuery` constructed below would reject it. This visitor can reach
+            /// such a select even when the user has the analyzer enabled: for a non-SELECT
+            /// top-level query (e.g. `EXPLAIN SYNTAX INSERT ... SELECT ... LIMIT 1 SHUFFLE`)
+            /// `executeImpl` falls back to this legacy path with the analyzer force-disabled in
+            /// the context. `checkLimitShuffleWithAnalyzer` has already rejected the query if
+            /// the user's analyzer is disabled (except for the purely syntactic `EXPLAIN AST`,
+            /// where skipping is desirable anyway), so at this point just skip the analysis
+            /// (it is only needed to expand views) and leave the select as is.
+            if (select.limit_shuffle)
                 return;
 
             InterpreterSelectQuery interpreter(
