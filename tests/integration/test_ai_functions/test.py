@@ -109,15 +109,6 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
-        # Endpoint returning HTTP 200 with plain, non-JSON content, used to check that aiRedact rejects a
-        # response that is not a `{"redacted_text": ...}` object.
-        instance.query(
-            f"CREATE NAMED COLLECTION ai_rawtext AS "
-            f"provider = 'openai', "
-            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/rawtext', "
-            f"model = 'test-model', "
-            f"api_key = 'test-key'"
-        )
         # `api_key` is optional (some providers, e.g. a local Ollama, need no auth).
         # This collection omits it so we can assert no `Authorization` header is sent.
         instance.query(
@@ -561,7 +552,7 @@ def test_translate_null_input(started_cluster):
 
 
 def test_redact_basic(started_cluster):
-    """aiRedact sends a response_format with a single `redacted_text` field."""
+    """aiRedact returns the model's text directly. The mock echoes the user message back."""
     instance.query("TRUNCATE TABLE test_input")
     instance.query(
         "INSERT INTO test_input VALUES ('customer John Doe, john@doe.org')"
@@ -570,11 +561,9 @@ def test_redact_basic(started_cluster):
         "SELECT aiRedact(x, ['email', 'name'], map('credentials', 'ai_mock')) FROM test_input",
         settings=AI_SETTINGS,
     )
-    # Mock returns {"redacted_text": "<user_message>"}; postProcess extracts the value.
     assert result.strip() == "customer John Doe, john@doe.org"
-    # The redaction schema and category list are forwarded to the provider.
+    # The category list is forwarded to the provider in the system prompt.
     sent = last_request()["body"]
-    assert "redacted_text" in sent
     assert "email" in sent and "name" in sent
 
 
@@ -645,16 +634,6 @@ def test_redact_error_throw(started_cluster):
         settings=AI_SETTINGS,
     )
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
-
-
-def test_redact_rejects_unverified_response(started_cluster):
-    """A provider that returns HTTP 200 with content that is not a `{"redacted_text": ...}`
-    object is rejected (MALFORMED_AI_PROVIDER_RESPONSE)."""
-    error = instance.query_and_get_error(
-        "SELECT aiRedact('secret John Doe', ['name'], map('credentials', 'ai_rawtext'))",
-        settings=AI_SETTINGS,
-    )
-    assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
 
 
 # ---------------------------------------------------------------------------
