@@ -24,14 +24,14 @@ UI 사용 시:
 
 <Image img="/images/cloud/features/data-catalogs-ui.png" size="md" alt="데이터 카탈로그 통합이 표시된 ClickHouse Cloud UI" />
 
-| 이름                   | 지원되는 오픈 테이블 포맷                    | 인증 방식                        | 지원                                                                              | 버전     |
-| -------------------- | --------------------------------- | ---------------------------- | ------------------------------------------------------------------------------- | ------ |
-| AWS Glue Catalog     | Iceberg                           | IAM/액세스 키                    | Cloud &amp; [Core](/ko/guides/use-cases/data-warehousing/glue-catalog)             | 25.10+ |
-| Lakekeeper           | Iceberg                           | OAuth 클라이언트 자격 증명            | [Core](/ko/guides/use-cases/data-warehousing/lakekeeper-catalog)                   | 25.10+ |
-| Microsoft OneLake    | Iceberg                           | Azure Active Directory (AAD) | Cloud &amp; [Core](/ko/guides/use-cases/data-warehousing/onelake-catalog)          | 25.12+ |
-| Nessie               | Iceberg                           | OAuth 클라이언트 자격 증명            | [Core](/ko/guides/use-cases/data-warehousing/nessie-catalog)                       | 25.10+ |
-| Polaris/Open Catalog | Iceberg                           | OAuth 클라이언트 자격 증명            | [Core](/ko/guides/use-cases/data-warehousing/polaris-catalog)                      | 26.1+  |
-| REST catalog         | Iceberg                           | OAuth 클라이언트 자격 증명, Bearer 토큰 | Cloud &amp; [Core](/ko/guides/use-cases/data-warehousing/rest-catalog)             | 25.10+ |
-| Unity Catalog        | Iceberg (UniForm 지원 및 관리형), Delta | OAuth 클라이언트 자격 증명            | Cloud (Iceberg만) &amp; [Core](/ko/guides/use-cases/data-warehousing/unity-catalog) | 25.10+ |
+| 이름                   | 지원되는 오픈 테이블 포맷                | 인증 방식                        | 지원                                                                              | 버전     |
+| -------------------- | ----------------------------- | ---------------------------- | ------------------------------------------------------------------------------- | ------ |
+| AWS Glue Catalog     | Iceberg                       | IAM/액세스 키                    | Cloud &amp; [Core](/ko/guides/use-cases/data-warehousing/glue-catalog)             | 25.10+ |
+| Lakekeeper           | Iceberg                       | OAuth 클라이언트 자격 증명            | [Core](/ko/guides/use-cases/data-warehousing/lakekeeper-catalog)                   | 25.10+ |
+| Microsoft OneLake    | Iceberg                       | Azure Active Directory (AAD) | Cloud &amp; [Core](/ko/guides/use-cases/data-warehousing/onelake-catalog)          | 25.12+ |
+| Nessie               | Iceberg                       | OAuth 클라이언트 자격 증명            | [Core](/ko/guides/use-cases/data-warehousing/nessie-catalog)                       | 25.10+ |
+| Polaris/Open Catalog | Iceberg                       | OAuth 클라이언트 자격 증명            | [Core](/ko/guides/use-cases/data-warehousing/polaris-catalog)                      | 26.1+  |
+| REST catalog         | Iceberg                       | OAuth 클라이언트 자격 증명, Bearer 토큰 | Cloud &amp; [Core](/ko/guides/use-cases/data-warehousing/rest-catalog)             | 25.10+ |
+| Unity Catalog        | Iceberg 및 Delta (외부 스토리지 위치만) | OAuth 클라이언트 자격 증명            | Cloud (Iceberg만) &amp; [Core](/ko/guides/use-cases/data-warehousing/unity-catalog) | 25.10+ |
 
 Horizon과 S3 tables REST endpoint를 포함해 더 많은 카탈로그를 지원할 예정입니다.

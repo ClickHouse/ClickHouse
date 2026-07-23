@@ -249,7 +249,7 @@ Time: 224.670 ms
   ### إعداد تكامل ClickHouse
 </div>
 
-الآن بعد أن أصبحت لدينا جداول وبيانات في Postgres، لننسخ الجداول إلى ClickHouse لأغراض analytics. نبدأ بالنقر على **تكامل ClickHouse** في الشريط الجانبي. ثم يمكنك النقر على **Replicate data in ClickHouse**.
+الآن بعد أن أصبحت لدينا جداول وبيانات في Postgres، لننسخ الجداول إلى ClickHouse لأغراض التحليلات. نبدأ بالنقر على **تكامل ClickHouse** في الشريط الجانبي. ثم يمكنك النقر على **Replicate data in ClickHouse**.
 
 <Image img="/images/managed-postgres/integration-landing.webp" alt="تكامل Managed Postgres فارغ" size="md" border />
 
@@ -263,10 +263,10 @@ Time: 224.670 ms
 
 <Image img="/images/managed-postgres/postgres-analytics-form.webp" alt="نموذج تكامل Managed Postgres" size="md" border />
 
-انقر على **Next** للانتقال إلى picker الجداول. وكل ما عليك فعله هنا هو:
+انقر على **Next** للانتقال إلى منتقي الجداول. وكل ما عليك فعله هنا هو:
 
 * تحديد قاعدة بيانات ClickHouse لنسخ البيانات إليها.
-* توسيع schema **public** وتحديد جدولَي users وevents اللذين أنشأناهما سابقًا.
+* توسيع مخطط **public** وتحديد جدولَي users وevents اللذين أنشأناهما سابقًا.
 * النقر على **Replicate data to ClickHouse**.
 
 <Image img="/images/managed-postgres/table-picker.webp" alt="منتقي جداول Managed Postgres" size="md" border />

@@ -39,7 +39,7 @@ Managed Postgres 目前已在 AWS 的多个区域提供，并在私有预览期�
 
 <Image img="/images/managed-postgres/create-service.webp" alt="创建 Managed Postgres 服务" size="md" border />
 
-为数据库实例输入名称，然后点击 **Create service**。随后会进入概览页面。
+为数据库实例输入名称，然后点击 **Create service**。随后您将进入概览页面。
 
 <Image img="/images/managed-postgres/overview.webp" alt="Managed Postgres 概览" size="md" border />
 
@@ -271,7 +271,7 @@ Time: 224.670 ms
 
 <Image img="/images/managed-postgres/table-picker.webp" alt="Managed Postgres 表选择器" size="md" border />
 
-复制过程将会开始，随后你会进入集成概览页面。由于这是第一个集成，设置初始基础设施可能需要 2 到 3 分钟。在此期间，我们来看看新的 **pg&#95;clickhouse** extension。
+复制过程将会开始，随后你会进入集成概览页面。由于这是第一个集成，完成初始基础设施设置可能需要 2 到 3 分钟。在此期间，我们来看看新的 **pg&#95;clickhouse** 扩展。
 
 <div id="pg-clickhouse-extension">
   ### 在 Postgres 中查询 ClickHouse
@@ -322,11 +322,11 @@ IMPORT FOREIGN SCHEMA "<database_name>" FROM SERVER ch INTO organization;
   ### 查看分析效果
 </div>
 
-让我们回到集成页面。你应该会看到初始复制已经完成。点击集成名称即可查看详细信息。
+让我们回到集成页面。你应该会看到初始复制已完成。点击集成名称即可查看详细信息。
 
 <Image img="/images/managed-postgres/analytics-list.webp" alt="Managed Postgres 分析列表" size="md" border />
 
-点击服务名称，打开 ClickHouse Console 并查看你的复制表。
+点击服务名称，打开 ClickHouse 控制台并查看你的复制表。
 
 <Image img="/images/managed-postgres/replicated-tables.webp" alt="ClickHouse 中的 Managed Postgres 复制表" size="md" border />
 

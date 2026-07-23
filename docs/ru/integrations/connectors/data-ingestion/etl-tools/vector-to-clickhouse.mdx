@@ -22,7 +22,7 @@ import PartnerBadge from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx"
 ClickHouse отлично подходит для хранения и анализа данных журналов благодаря превосходному сжатию (до [170x](https://clickhouse.com/blog/log-compression-170x) для журналов)
 и способности быстро агрегировать большие объёмы данных.
 
-В этом руководстве показано, как использовать популярный конвейер данных [Vector](https://vector.dev/docs/about/what-is-vector/) для отслеживания файла журнала Nginx и отправки данных в ClickHouse.
+В этом руководстве показано, как использовать популярный конвейер данных [Vector](https://vector.dev/docs/introduction/) для отслеживания файла журнала Nginx и отправки данных в ClickHouse.
 Приведённые ниже шаги аналогичны для отслеживания любого файла журнала.
 
 **Предварительные требования:**
@@ -31,9 +31,7 @@ ClickHouse отлично подходит для хранения и анали
 * У вас установлен Vector
 
 <Steps>
-  <Step>
-    ## Создайте базу данных и таблицу
-
+  <Step title="Создайте базу данных и таблицу" id="1-create-a-database-and-table">
     Создайте таблицу для хранения событий журнала:
 
     1. Начните с создания новой базы данных `nginxdb`:
@@ -57,9 +55,7 @@ ClickHouse отлично подходит для хранения и анали
     </Note>
   </Step>
 
-  <Step>
-    ## Настройка Nginx
-
+  <Step title="Настройка Nginx" id="2--configure-nginx">
     На этом шаге показано, как настроить ведение журналов в Nginx.
 
     1. Следующее свойство `access_log` направляет журнал в `/var/log/nginx/my_access.log` в формате **combined**.
@@ -88,9 +84,7 @@ ClickHouse отлично подходит для хранения и анали
     ```
   </Step>
 
-  <Step>
-    ## Настройка Vector
-
+  <Step title="Настройка Vector" id="3-configure-vector">
     Vector собирает, преобразует и маршрутизирует журналы, метрики и трассировки (так называемые **источники**) в различные системы назначения (так называемые **приемники**), включая встроенную совместимость с ClickHouse.
     Источники и приемники задаются в файле конфигурации **vector.toml**.
 
@@ -122,9 +116,7 @@ ClickHouse отлично подходит для хранения и анали
     <Image img="/images/integrations/data-ingestion/etl-tools/vector_01.webp" size="lg" border alt="Просмотр журналов ClickHouse в табличном формате" />
   </Step>
 
-  <Step>
-    ## Разбор журналов
-
+  <Step title="Разбор журналов" id="4-parse-the-logs">
     Хранить журналы в ClickHouse удобно, однако запись каждого события в виде одной строки существенно ограничивает возможности анализа данных.
     Далее рассмотрим, как разобрать события журнала с помощью [materialized view](/ru/concepts/features/materialized-views/incremental-materialized-view).
 
