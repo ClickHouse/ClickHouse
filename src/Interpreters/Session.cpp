@@ -411,7 +411,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     prepared_client_info->connection_address = std::make_shared<Poco::Net::SocketAddress>(connection_address ? *connection_address : address);
 }
 
-void Session::checkIfUserIsStillValid()
+void Session::checkIfUserIsStillValid() const
 {
     if (const auto valid_until = user_authenticated_with.getValidUntil())
     {
@@ -710,6 +710,13 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 {
     if (!user_id && getClientInfo().interface != ClientInfo::Interface::TCP_INTERSERVER)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context must be created after authentication");
+
+    /// The authentication method's `VALID UNTIL` must be enforced per query, not only at login:
+    /// stateful protocols (MySQL, PostgreSQL, native TCP, gRPC, Arrow Flight) authenticate once and
+    /// then create a query context per command, so an expired credential must stop working here.
+    /// Interserver connections replay an already-checked initiator identity, so they are exempt.
+    if (getClientInfo().interface != ClientInfo::Interface::TCP_INTERSERVER)
+        checkIfUserIsStillValid();
 
     /// We can create a query context either from a session context or from a global context.
     const bool from_session_context = static_cast<bool>(session_context);

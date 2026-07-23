@@ -373,7 +373,8 @@ protected:
     /// Expiry (VALID UNTIL) of the authentication method the user logged in with, 0 if none.
     /// Carried alongside `authentication_grants` so deferred-execution paths (asynchronous insert
     /// flush, `QueryRunner` invoker jobs) can fail closed if the credential has expired between
-    /// enqueue and execution; the synchronous path re-checks it in `Session::checkIfUserIsStillValid`.
+    /// enqueue and execution; the synchronous path re-checks it per query in
+    /// `Session::makeQueryContextImpl` (via `Session::checkIfUserIsStillValid`) for every protocol.
     time_t authentication_valid_until = 0;
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     mutable std::shared_ptr<const ContextAccess> access;
