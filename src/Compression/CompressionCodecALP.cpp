@@ -56,7 +56,7 @@ namespace DB
  *   - e controls the decimal scaling up
  *   - f controls how many trailing decimal zeros we effectively “cut off” again
  * A value is considered exactly encodable if:
- *   decodeValue(encodeValue(v, e, f), e, f) == v
+ *   decodeValue<T>(encodeValue(v, e, f), e, f) == v
  * Encodable values become part of the integer stream; non-encodable values become exceptions stored verbatim.
  * Encodable eligibility is based on bit-exact equality, not epsilon-based closeness, because the codec is lossless.
  *
@@ -64,7 +64,7 @@ namespace DB
  * ALP’s adaptivity over a block is driven by a two-level sampling scheme:
  *   1) Global pre-sampling over the entire column:
  *     - Take ALP_PARAMS_ESTIMATION_SAMPLES disjoint sub-samples from the column (each up to ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS values).
- *     - For each sub-sample, brute-force over all valid (e,f) pairs with 0 <= e < |EXPONENTS| and 0 <= f <= e.
+ *     - For each sub-sample, brute-force over all valid (e,f) pairs with 0 <= e < ALPFloatTraits<T>::EXPONENT_COUNT and 0 <= f <= e.
  *     - For each (e,f), estimate the encoded size and keep track of the best (e,f) for that sub-sample.
  *     - The result is a small, global candidate set of (e,f) pairs (up to 5) that are likely good for this column.
  *   2) Per-block refinement
@@ -260,7 +260,7 @@ struct ALPFloatTraits
  * The reference implementation scales `Float32` natively, but the constant fl32(10^-e) is too inexact.
  * E.g. 0.05f encodes to the integer 5, yet 5 * fl32(0.01) decodes to the neighboring float 0.049999997f.
  * Such values fail the bit-exact round-trip and are stored as exceptions (similar to the 8.0605 example in section 2.5 of the ALP paper).
- * `Float64` constants are a billion times more precise, so the decode error can never reach a neighboring `Float32`.
+ * `Float64` constants are about half a billion times more precise, so the decode error can never reach a neighboring `Float32`.
  */
 struct ALPFloatUtils
 {
@@ -294,7 +294,7 @@ struct ALPFloatUtils
         if (unlikely(invalid))
             return static_cast<Int64>(UPPER);
 
-        // Fast rounding to integer by adding and subtracting a large constant (IEEE-754 mantissa limit)
+        /// Fast rounding to integer by adding and subtracting a large constant
         value_enc = value_enc + ROUND_MAGIC - ROUND_MAGIC;
         return static_cast<Int64>(value_enc);
     }
