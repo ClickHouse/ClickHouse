@@ -792,7 +792,22 @@ private:
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
             /// Select Arena to avoid race conditions
-            Arena * arena = first->aggregates_pools.at(thread).get();
+            Arena * arena = nullptr;
+            if (adaptive_shared_state)
+            {
+                /// The adaptive drain creates the destination's states in this arena, so give
+                /// each source a fresh one: `pools[thread]` is typically a source local's arena
+                /// (the destination's pool list is the concatenation of every variant's pools),
+                /// and with a zero-size aggregate state (`Nothing`) an arena returns one address
+                /// for every allocation, so a drained state would alias that local's states and
+                /// the bucket merge would see a state merged into itself.
+                first->aggregates_pools.emplace_back(std::make_shared<Arena>());
+                arena = first->aggregates_pools.back().get();
+            }
+            else
+            {
+                arena = first->aggregates_pools.at(thread).get();
+            }
             auto source = std::make_shared<ConvertingAggregatedToChunksWithMergingSource>(
                 params, data, shared_data, arena, updater, adaptive_shared_state);
 
