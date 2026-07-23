@@ -77,7 +77,8 @@ public:
         /// Refresh bucket locks which were not refreshed
         /// for more than a quarter of the TTL, after which they are cleaned up
         /// as abandoned (the TTL is meant to remove locks of dead servers).
-        /// Called on next and after each commit.
+        /// Called on every next and, in streaming (where the iterator outlives
+        /// the batch and sits idle between batches), also after each commit.
         void refreshExpiringBucketLocks();
 
         bool useBucketsForProcessing() const { return use_buckets_for_processing; }

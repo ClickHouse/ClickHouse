@@ -325,7 +325,8 @@ std::optional<std::string> ObjectStorageQueueMetadata::getStartAfterForListing()
 ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr
 ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket)
 {
-    return ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(zookeeper_path, bucket, use_persistent_processing_nodes, zookeeper_name, log);
+    return ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(
+        zookeeper_path, bucket, use_persistent_processing_nodes, persistent_processing_node_ttl_seconds, zookeeper_name, log);
 }
 
 void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, const ContextPtr & context)

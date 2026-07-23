@@ -212,6 +212,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
     const Bucket & bucket_,
     const std::string & bucket_lock_path_,
     const std::string & processor_info_,
+    size_t persistent_processing_node_ttl_seconds_,
     LoggerPtr log_,
     const std::string & zookeeper_name_)
     : bucket_info(std::make_shared<BucketInfo>(BucketInfo{
@@ -219,6 +220,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
         .bucket_lock_path = bucket_lock_path_,
         .processor_info = processor_info_,
         .zookeeper_name = zookeeper_name_ }))
+    , persistent_processing_node_ttl_seconds(persistent_processing_node_ttl_seconds_)
     , log(log_)
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD
@@ -319,6 +321,7 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
     LOG_TEST(log, "Releasing bucket {}", bucket_info->bucket);
 
     Coordination::Error code = {};
+    bool ownership_lost = false;
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     zk_retry.retryLoop([&]
     {
@@ -330,6 +333,16 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
             /// confirmation and could be re-created by another server since then.
             LOG_TEST(log, "Will not remove bucket lock node, ownership changed");
             code = Coordination::Error::ZOK;
+            return;
+        }
+        /// A lock not refreshed for longer than the TTL could have been removed by the
+        /// cleanup and re-created by another server colliding on the version (e.g. both
+        /// at the creation version 0), so the version check alone cannot prove ownership.
+        if (persistent_processing_node_ttl_seconds
+            && age_watch.elapsedSeconds() >= static_cast<double>(persistent_processing_node_ttl_seconds)
+            && !checkBucketOwnership(zk_client))
+        {
+            ownership_lost = true;
             return;
         }
         /// Version check protects from removing a lock re-created by another server.
@@ -349,17 +362,17 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
         }
     });
 
-    if (code == Coordination::Error::ZOK)
+    if (!ownership_lost && code == Coordination::Error::ZOK)
     {
         LOG_TEST(log, "Released bucket {}", bucket_info->bucket);
         return;
     }
-    else if (zk_retry.isRetry() && code == Coordination::Error::ZNONODE)
+    else if (!ownership_lost && zk_retry.isRetry() && code == Coordination::Error::ZNONODE)
     {
         LOG_TEST(log, "Released bucket {} (has zk session loss)", bucket_info->bucket);
         return;
     }
-    else if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZBADVERSION)
+    else if (ownership_lost || code == Coordination::Error::ZNONODE || code == Coordination::Error::ZBADVERSION)
     {
         /// The same invariant violation as in refresh, detected at release time.
         /// released is already set, so the destructor does not retry.
@@ -367,7 +380,8 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Lost ownership of bucket lock {} detected during release (processor: {}, error: {})",
-            bucket_info->bucket_lock_path, bucket_info->processor_info, code);
+            bucket_info->bucket_lock_path, bucket_info->processor_info,
+            ownership_lost ? "ownership check failed" : Coordination::errorMessage(code));
     }
 
     throw zkutil::KeeperException::fromPath(code, bucket_info->bucket_lock_path);
@@ -648,6 +662,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     const std::filesystem::path & zk_path,
     const Bucket & bucket,
     bool /*use_persistent_processing_nodes_*/,
+    size_t persistent_processing_node_ttl_seconds_,
     const std::string & zookeeper_name_,
     LoggerPtr log_)
 {
@@ -695,6 +710,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
             bucket,
             bucket_lock_path,
             processor_info,
+            persistent_processing_node_ttl_seconds_,
             log_,
             zookeeper_name_);
     }

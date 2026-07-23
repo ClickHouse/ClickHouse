@@ -12,6 +12,24 @@ from helpers.s3_queue_common import (
 )
 
 
+def wait_for_processed_files_in_log(node, table_name, expected_count):
+    """A file row reaches the destination table before the file is committed
+    as processed in Keeper, so the s3queue log can lag behind the data."""
+    count = 0
+    for _ in range(60):
+        node.query("SYSTEM FLUSH LOGS")
+        count = int(
+            node.query(
+                f"SELECT uniqExact(file_name) FROM system.s3queue_log "
+                f"WHERE table = '{table_name}' AND status = 'Processed'"
+            )
+        )
+        if count == expected_count:
+            break
+        time.sleep(1)
+    return count
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -189,15 +207,160 @@ def test_streaming_recovers_after_lost_bucket_lock(started_cluster):
     # A duplicates check on the destination table would be flaky by design:
     # a file which was in flight when the batch failed can legitimately
     # re-insert an already inserted row when it is retried.
-    node.query("SYSTEM FLUSH LOGS")
+    assert files_to_generate == wait_for_processed_files_in_log(
+        node, table_name, files_to_generate
+    )
     assert "" == node.query(
         f"SELECT file_name, count() FROM system.s3queue_log "
         f"WHERE table = '{table_name}' AND status = 'Processed' "
         f"GROUP BY file_name HAVING count() > 1"
     )
-    assert files_to_generate == int(
-        node.query(
-            f"SELECT uniqExact(file_name) FROM system.s3queue_log "
-            f"WHERE table = '{table_name}' AND status = 'Processed'"
+
+
+def test_lost_bucket_lock_detected_during_release(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    if node.is_debug_build() or node.is_built_with_sanitizer():
+        pytest.skip(
+            "Debug and sanitizer builds abort on the deliberately provoked "
+            "logical error about lost bucket lock ownership"
         )
+
+    table_name = f"test_lost_lock_release_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 30
+
+    def get_lost_ownership_events():
+        return int(
+            node.query(
+                "SELECT sum(value) FROM system.events "
+                "WHERE event = 'ObjectStorageQueueBucketLockLostOwnership'"
+            )
+        )
+
+    events_before = get_lost_ownership_events()
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "buckets": 3,
+            "processing_threads_num": 3,
+            "persistent_processing_node_ttl_seconds": 2,
+            "use_persistent_processing_nodes": 0,
+            "max_processed_files_before_commit": 1,
+            "polling_min_timeout_ms": 100,
+            "s3queue_loading_retries": 10,
+        },
+    )
+
+    generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    node.query(
+        f"""
+        CREATE TABLE {dst_table_name}
+        (column1 UInt32, column2 UInt32, column3 UInt32, _path String)
+        ENGINE = MergeTree ORDER BY column1
+        """
+    )
+    # With TTL = 2 sec, 2.5 sec of sleep per one-row file keeps all the
+    # processing threads inside the pipeline for longer than the TTL,
+    # where nothing can refresh the bucket locks.
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW {table_name}_mv TO {dst_table_name} AS
+        SELECT column1, column2, column3, _path
+        FROM {table_name}
+        WHERE ignore(sleepEachRow(2.5)) = 0
+        """
+    )
+
+    # Steal two bucket locks while all the threads are sleeping inside the
+    # pipeline and the locks age past the TTL without a refresh. The first
+    # stolen lock is detected by the refresh scan, which throws immediately
+    # and invalidates the iterator, so the second one is only discovered by
+    # release when the invalidated iterator holders are destroyed - the
+    # release-time detection this test is about.
+    zk = started_cluster.get_kazoo_client("zoo1")
+    stolen_lock_paths = []
+    for _ in range(100):
+        for bucket in zk.get_children(f"{keeper_path}/buckets"):
+            lock_path = f"{keeper_path}/buckets/{bucket}/lock"
+            if lock_path in stolen_lock_paths:
+                continue
+            try:
+                stat = zk.exists(lock_path)
+                # Steal locks acquired at least a second ago, so that the
+                # processing threads are certainly sleeping already.
+                if stat is None or time.time() - stat.created < 1:
+                    continue
+                zk.set(lock_path, b"another_server")
+                stolen_lock_paths.append(lock_path)
+                if len(stolen_lock_paths) == 2:
+                    break
+            except NoNodeError:
+                continue
+        if len(stolen_lock_paths) == 2:
+            break
+        time.sleep(0.2)
+    assert 2 == len(stolen_lock_paths)
+
+    # One loss must be detected by the refresh, the other by the release.
+    def get_detections():
+        lines = [
+            line
+            for line in node.grep_in_log(
+                f"Lost ownership of bucket lock {keeper_path}"
+            ).splitlines()
+            if "ForcedCriticalErrorsLogger" not in line
+        ]
+        return (
+            [line for line in lines if "current owner:" in line],
+            [line for line in lines if "detected during release" in line],
+        )
+
+    for _ in range(150):
+        refresh_detections, release_detections = get_detections()
+        if refresh_detections and release_detections:
+            break
+        time.sleep(1)
+    refresh_detections, release_detections = get_detections()
+    assert 1 == len(refresh_detections)
+    assert 1 == len(release_detections)
+    assert events_before + 2 == get_lost_ownership_events()
+
+    # Return the stolen locks, so that the buckets can be acquired again.
+    for lock_path in stolen_lock_paths:
+        try:
+            data, stat = zk.get(lock_path)
+            if data == b"another_server":
+                zk.delete(lock_path, version=stat.version)
+        except (NoNodeError, BadVersionError):
+            pass
+
+    # Streaming must recover and process all the files exactly once.
+    def get_processed_count():
+        return int(node.query(f"SELECT uniqExact(_path) FROM {dst_table_name}"))
+
+    for _ in range(300):
+        if get_processed_count() == files_to_generate:
+            break
+        time.sleep(1)
+    assert get_processed_count() == files_to_generate
+
+    assert files_to_generate == wait_for_processed_files_in_log(
+        node, table_name, files_to_generate
+    )
+    assert "" == node.query(
+        f"SELECT file_name, count() FROM system.s3queue_log "
+        f"WHERE table = '{table_name}' AND status = 'Processed' "
+        f"GROUP BY file_name HAVING count() > 1"
     )

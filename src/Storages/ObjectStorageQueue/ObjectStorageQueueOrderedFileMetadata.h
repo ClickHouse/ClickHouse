@@ -55,6 +55,7 @@ public:
         const std::filesystem::path & zk_path,
         const Bucket & bucket,
         bool use_persistent_processing_nodes_,
+        size_t persistent_processing_node_ttl_seconds_,
         const std::string & zookeeper_name_,
         LoggerPtr log_);
 
@@ -168,6 +169,7 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
         const Bucket & bucket_,
         const std::string & bucket_lock_path_,
         const std::string & processor_info_,
+        size_t persistent_processing_node_ttl_seconds_,
         LoggerPtr log_,
         const std::string & zookeeper_name_);
 
@@ -197,6 +199,7 @@ private:
     /// Lock node version: 0 at creation, tracked from the set response of every refresh.
     /// Used by release to atomically avoid removing a node re-created by another server.
     int32_t bucket_lock_version = 0;
+    const size_t persistent_processing_node_ttl_seconds;
     bool released = false;
     bool finished = false;
     LoggerPtr log;
