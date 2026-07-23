@@ -210,14 +210,23 @@ def main():
         "=== ROBOT-TOKEN PUSH TEST (ROBOT_CLICKHOUSE_COMMIT_TOKEN via "
         "x-access-token): fast-forward push -> refs/heads/30.12 ==="
     )
-    # Which GitHub identity does the PAT authenticate as? Ask the API before the
-    # push, so a GH013 cannot be misread as an empty/wrong token. The token is a
-    # shell-expanded ${...} literal, so its value is not printed by verbose logging.
+    # Which GitHub identity does each token authenticate as? Ask the API before
+    # the push, so a GH013 cannot be misread as an empty/wrong token. Each token
+    # is a shell-expanded ${...} literal, so its value is not printed by verbose
+    # logging.
     Shell.check(
         'curl -sS -H "Authorization: Bearer ${ROBOT_CLICKHOUSE_COMMIT_TOKEN}"'
         " https://api.github.com/user"
         " | python3 -c \"import sys, json;"
-        " print('TOKEN USER:', json.load(sys.stdin).get('login'))\"",
+        " print('ROBOT_CLICKHOUSE_COMMIT_TOKEN USER:', json.load(sys.stdin).get('login'))\"",
+        verbose=True,
+        strict=False,
+    )
+    Shell.check(
+        'curl -sS -H "Authorization: Bearer ${GH_TOKEN}"'
+        " https://api.github.com/user"
+        " | python3 -c \"import sys, json;"
+        " print('GH_TOKEN USER:', json.load(sys.stdin).get('login'))\"",
         verbose=True,
         strict=False,
     )
