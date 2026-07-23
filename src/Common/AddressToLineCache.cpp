@@ -55,7 +55,7 @@ std::string_view AddressToLineCache::impl(uintptr_t addr)
 #if defined(OS_DARWIN)
         /// File/line info comes from a dSYM bundle located next to the binary, if present.
         if (!object->dsym)
-            return object->name;
+            return {};
         auto dwarf_it = dwarfs.try_emplace(object->name, object->dsym).first;
 #else
         auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
@@ -71,7 +71,9 @@ std::string_view AddressToLineCache::impl(uintptr_t addr)
             setResult(result, location);
             return result;
         }
-        return object->name;
+        /// The result holds source locations only; an unresolved frame stays empty rather than
+        /// borrowing the object path (that would violate the file:line:col column contract).
+        return {};
     }
     return {};
 }
