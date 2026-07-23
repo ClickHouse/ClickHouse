@@ -8,6 +8,7 @@
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 #include <IO/TimeoutSetter.h>
 #include <Formats/NativeReader.h>
@@ -28,6 +29,7 @@
 #include <Common/randomSeed.h>
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
+#include <Core/TypedQueryParameters.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
@@ -908,6 +910,33 @@ void Connection::sendQuery(
     const ClientInfo * client_info,
     bool with_pending_data,
     const std::vector<String> & external_roles,
+    std::function<void(const Progress &)> process_progress_callback)
+{
+    QueryParameterBindings bindings;
+    bindings.text = query_parameters;
+    sendQueryWithTypedParameters(
+        timeouts,
+        query,
+        bindings,
+        query_id_,
+        stage,
+        settings,
+        client_info,
+        with_pending_data,
+        external_roles,
+        std::move(process_progress_callback));
+}
+
+void Connection::sendQueryWithTypedParameters(
+    const ConnectionTimeouts & timeouts,
+    const String & query,
+    const QueryParameterBindings & query_parameters,
+    const String & query_id_,
+    UInt64 stage,
+    const Settings * settings,
+    const ClientInfo * client_info,
+    bool with_pending_data,
+    const std::vector<String> & external_roles,
     std::function<void(const Progress &)>)
 {
     OpenTelemetry::SpanHolder span("Connection::sendQuery()", OpenTelemetry::SpanKind::CLIENT);
@@ -945,6 +974,23 @@ void Connection::sendQuery(
 
     if (!connected)
         connect(timeouts);
+
+    validateTypedQueryParameters(query_parameters.typed, &query_parameters.text);
+
+    NameToNameMap text_parameters = query_parameters.text;
+    if (server_revision < DBMS_MIN_PROTOCOL_VERSION_WITH_TYPED_QUERY_PARAMETERS)
+    {
+        for (const auto & [name, parameter] : query_parameters.typed)
+        {
+            WriteBufferFromOwnString value;
+            parameter.type->getDefaultSerialization()->serializeTextEscaped(
+                *parameter.column,
+                0,
+                value,
+                format_settings.value_or(FormatSettings{}));
+            text_parameters.emplace(name, value.str());
+        }
+    }
 
     /// Query is not executed within sendQuery() function.
     ///
@@ -1094,7 +1140,21 @@ void Connection::sendQuery(
     writeStringBinary(query, *out);
 
     if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
-        writeQueryParameters(query_parameters, *out);
+        writeQueryParameters(text_parameters, *out);
+
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_TYPED_QUERY_PARAMETERS)
+    {
+        Block typed_parameter_block;
+        for (const auto & [name, parameter] : query_parameters.typed)
+            typed_parameter_block.insert({parameter.column, parameter.type, name});
+
+        NativeWriter typed_parameter_writer(
+            *out,
+            server_revision,
+            std::make_shared<const Block>(typed_parameter_block.cloneEmpty()),
+            format_settings);
+        typed_parameter_writer.write(typed_parameter_block);
+    }
 
     maybe_compressed_in.reset();
     if (maybe_compressed_out && maybe_compressed_out != out)
