@@ -92,9 +92,32 @@ size_t ObjectStorageParallelListingIterator::rangeBytes(const ListRange & range)
 
 size_t ObjectStorageParallelListingIterator::batchBytes(const RelativePathsWithMetadata & batch)
 {
+    /// std::map allocates one node per entry; approximate the node overhead by the element type.
+    auto attributes_bytes = [](const ObjectAttributes & attributes)
+    {
+        size_t bytes = 0;
+        for (const auto & [key, value] : attributes)
+            bytes += sizeof(ObjectAttributes::value_type) + key.size() + value.size();
+        return bytes;
+    };
+
     size_t bytes = sizeof(RelativePathsWithMetadata) + batch.capacity() * sizeof(RelativePathWithMetadataPtr);
     for (const auto & object : batch)
+    {
         bytes += sizeof(RelativePathWithMetadata) + object->relative_path.size();
+        if (object->path_for_glob_matching)
+            bytes += object->path_for_glob_matching->size();
+        if (object->path_for_deduplication)
+            bytes += object->path_for_deduplication->size();
+        /// The metadata payload matters: S3 listings buffer an `etag` for every object, and `tags`
+        /// (the `_tags` virtual column) or `attributes` can dwarf the path itself.
+        if (object->metadata)
+        {
+            bytes += object->metadata->etag.size();
+            bytes += attributes_bytes(object->metadata->tags);
+            bytes += attributes_bytes(object->metadata->attributes);
+        }
+    }
     return bytes;
 }
 

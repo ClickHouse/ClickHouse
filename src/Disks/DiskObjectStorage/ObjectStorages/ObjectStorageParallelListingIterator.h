@@ -168,6 +168,12 @@ public:
     /// (the budget is checked before a worker lists its next page, never blocking an already-listed one).
     size_t getPeakBufferedObjectBytes() const;
 
+    /// Approximate heap + struct footprint of one buffered batch of listed objects, the unit of the
+    /// buffered-object byte budget. Charges the `ObjectMetadata` payload too (`etag`, `tags`,
+    /// `attributes`): S3 listings buffer an `etag` for every object, and a `_tags` scan fills
+    /// `metadata.tags`, either of which can dwarf the path itself. Public for tests.
+    static size_t batchBytes(const RelativePathsWithMetadata & batch);
+
 private:
     /// A half-open keyspace range `(start_after, end)` of keys under `prefix` left to list.
     struct ListRange
@@ -242,9 +248,6 @@ private:
         std::unique_lock<std::mutex> & lock) const;
     /// Approximate heap + struct footprint of one pending range, the unit of the byte budget.
     static size_t rangeBytes(const ListRange & range);
-    /// Approximate heap + struct footprint of one buffered batch of listed objects, the unit of the
-    /// buffered-object byte budget.
-    static size_t batchBytes(const RelativePathsWithMetadata & batch);
 
     const size_t num_threads;
     const size_t max_buffered_objects;

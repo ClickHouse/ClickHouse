@@ -52,6 +52,12 @@ struct FakeS3
     /// both modes; the default models real S3.
     bool start_after_excludes_common_prefixes = true;
 
+    /// Optional `ObjectMetadata` payload attached to every listed object. Real S3 listings buffer an
+    /// `etag` per object and a `_tags` scan fills `metadata.tags`, so tests of the buffered-object byte
+    /// accounting need objects whose metadata dwarfs the path.
+    std::string object_etag;
+    ObjectAttributes object_tags;
+
     void add(std::string key) { keys.push_back(std::move(key)); }
 
     void finalize()
@@ -142,7 +148,14 @@ struct FakeS3
                 res.next_continuation_token = last_token;
                 return res;
             }
-            res.objects.push_back(std::make_shared<RelativePathWithMetadata>(key));
+            std::optional<ObjectMetadata> metadata;
+            if (!object_etag.empty() || !object_tags.empty())
+            {
+                metadata.emplace();
+                metadata->etag = object_etag;
+                metadata->tags = object_tags;
+            }
+            res.objects.push_back(std::make_shared<RelativePathWithMetadata>(key, std::move(metadata)));
             last_token = "O:" + key;
             ++count;
         }
@@ -597,6 +610,83 @@ TEST(ObjectStorageParallelListing, BufferedObjectByteBudgetBoundsSlowConsumer)
         EXPECT_LE(peak, budget + threads * page_slack)
             << "buffered-object bytes grew to " << peak << " despite a budget of " << budget
             << " (threads=" << threads << ")";
+    }
+}
+
+TEST(ObjectStorageParallelListing, BufferedObjectBytesChargeMetadataPayload)
+{
+    /// Regression test for the byte accounting itself: `batchBytes` must charge the `ObjectMetadata`
+    /// payload, not only the path wrapper. S3 listings buffer an `etag` for every object, and a `_tags`
+    /// scan fills `metadata.tags`, so if only the ~few-hundred-byte wrapper were charged, the
+    /// buffered-object byte budget would admit an order of magnitude more real memory than advertised on
+    /// metadata-heavy listings.
+    RelativePathsWithMetadata plain;
+    plain.push_back(std::make_shared<RelativePathWithMetadata>("m/key.parquet"));
+
+    ObjectMetadata metadata;
+    metadata.etag = std::string(512, 'e');
+    for (size_t i = 0; i < 16; ++i)
+        metadata.tags["tag" + std::to_string(i)] = std::string(96, 't');
+    metadata.attributes["owner"] = std::string(64, 'o');
+    size_t payload = metadata.etag.size();
+    for (const auto & [key, value] : metadata.tags)
+        payload += key.size() + value.size();
+    for (const auto & [key, value] : metadata.attributes)
+        payload += key.size() + value.size();
+
+    RelativePathsWithMetadata heavy;
+    heavy.push_back(std::make_shared<RelativePathWithMetadata>("m/key.parquet", metadata));
+
+    EXPECT_GE(
+        ObjectStorageParallelListingIterator::batchBytes(heavy),
+        ObjectStorageParallelListingIterator::batchBytes(plain) + payload);
+}
+
+TEST(ObjectStorageParallelListing, BufferedObjectByteBudgetBoundsMetadataHeavyListing)
+{
+    /// End-to-end counterpart of the accounting test above, modeling a `_tags` scan: every listed object
+    /// carries an `etag` and a tag set an order of magnitude bigger than its path. The reported buffered
+    /// high-water mark must stay within the budget plus one in-flight page per worker *measured including
+    /// the metadata payload*, and a single page bigger than the whole budget must still flow through
+    /// (workers never block an already-listed page, and the consumer drains it) rather than deadlock.
+    FakeS3 s3;
+    s3.page_size = 10;
+    s3.object_etag = std::string(512, 'e');
+    for (size_t i = 0; i < 16; ++i)
+        s3.object_tags["tag" + std::to_string(i)] = std::string(96, 't');
+    constexpr size_t num_keys = 3000;
+    for (size_t i = 0; i < num_keys; ++i)
+        s3.add("m/" + hexName(i) + ".parquet");
+    s3.finalize();
+    const auto expected = expectedUnder(s3, "m/");
+
+    size_t metadata_payload = s3.object_etag.size();
+    for (const auto & [key, value] : s3.object_tags)
+        metadata_payload += key.size() + value.size();
+    /// One ~2.6 KiB-of-metadata object with map-node and wrapper overhead stays under this.
+    const size_t per_object_bound = metadata_payload + 2048;
+
+    /// Smaller than a single page's metadata payload (10 * ~2.6 KiB), so pages overshoot the budget by
+    /// design and the run only completes if such pages are enqueued and drained regardless.
+    constexpr size_t budget = 16 * 1024;
+    for (size_t threads : {1, 4, 16})
+    {
+        ObjectStorageParallelListingIterator iterator(
+            "m/", threads, /* max_buffered_keys */ std::numeric_limits<size_t>::max(),
+            makeListLevel(s3), makeProbeLevel(s3), descendAll,
+            /* allow_keyspace_split */ true, /* check_cancellation */ {},
+            ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES, budget);
+        auto got = drain(iterator);
+        std::sort(got.begin(), got.end());
+        EXPECT_EQ(got, expected) << "threads=" << threads;
+
+        const size_t peak = iterator.getPeakBufferedObjectBytes();
+        EXPECT_LE(peak, budget + threads * s3.page_size * per_object_bound)
+            << "buffered-object bytes grew to " << peak << " despite a budget of " << budget
+            << " (threads=" << threads << ")";
+        /// The bound above must not be trivially satisfiable by ignoring the metadata: even a lone page
+        /// of 10 objects carries ~26 KiB of metadata payload, above the whole budget.
+        EXPECT_GE(peak, s3.page_size * metadata_payload) << "threads=" << threads;
     }
 }
 
