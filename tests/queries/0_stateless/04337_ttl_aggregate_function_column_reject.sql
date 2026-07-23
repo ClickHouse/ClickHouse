@@ -977,3 +977,47 @@ TTL toDateTime(CAST(state, 'Dynamic'));
 DROP TABLE test_ttl_agg_computed_carrier_suspicious;
 
 SET allow_suspicious_ttl_expressions = 0;
+
+-- A non-constant non-suspect argument can select which payload a computed carrier holds, so the probe
+-- outputs (taken with synthetic defaults, here `cond = 0`) do not cover its runtime domain: with
+-- `cond = 1` the `if` returns the aggregate-state branch and `toDateTime` would throw during TTL
+-- execution. Such nodes fall back to the fail-closed static enumeration and the consumer is rejected.
+CREATE TABLE test_ttl_agg_selected_carrier_reject
+(
+    cond UInt8,
+    state AggregateFunction(max, UInt64),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL toDateTime(if(cond, CAST(state, 'Dynamic'), CAST(0, 'Dynamic'))); -- { serverError BAD_TTL_EXPRESSION }
+
+-- A type-agnostic consumer survives the static enumeration, so the same selected carrier is accepted.
+CREATE TABLE test_ttl_agg_selected_carrier_accept
+(
+    cond UInt8,
+    state AggregateFunction(max, UInt64),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL d + INTERVAL 1 DAY DELETE WHERE isNotNull(if(cond, CAST(state, 'Dynamic'), CAST(0, 'Dynamic')));
+
+DROP TABLE test_ttl_agg_selected_carrier_accept;
+
+-- The escape hatch also covers payload-selecting expressions.
+SET allow_suspicious_ttl_expressions = 1;
+
+CREATE TABLE test_ttl_agg_selected_carrier_suspicious
+(
+    cond UInt8,
+    state AggregateFunction(max, UInt64),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL toDateTime(if(cond, CAST(state, 'Dynamic'), CAST(0, 'Dynamic')));
+
+DROP TABLE test_ttl_agg_selected_carrier_suspicious;
+
+SET allow_suspicious_ttl_expressions = 0;
