@@ -299,12 +299,9 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
 
             if (it->isSubcolumn())
             {
-                /// The parent column in `additional_columns` may still carry a type that predates
-                /// a metadata-only `ALTER MODIFY COLUMN` (e.g. an on-fly `UPDATE` under
-                /// `apply_mutations_on_fly` produces the parent in its pre-`MODIFY` non-Nullable
-                /// type). Extract the subcolumn via `tryGetSubcolumnFromBlock`, which casts the
-                /// parent to the storage type first when needed, so `.null`/`.size0`/etc. are
-                /// derived from the converted value instead of asserting on the raw block type.
+                /// The parent may still be in its pre-`ALTER MODIFY` type here (an earlier on-fly step
+                /// is not converted by performRequiredConversions); tryGetSubcolumnFromBlock casts it
+                /// to the storage type before extracting.
                 res_columns[pos] = tryGetSubcolumnFromBlock(additional_columns, it->getTypeInStorage(), *it);
             }
             else

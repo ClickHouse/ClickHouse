@@ -455,21 +455,9 @@ void fillMissingColumns(
         if (res_columns[i] || hasDefault(storage_snapshot, *requested_column))
             continue;
 
-        /// Subcolumn whose parent column is present in the part but whose subcolumn is absent
-        /// (metadata-only `ALTER MODIFY COLUMN T -> Nullable(T)`). Leave it null for
-        /// evaluateMissingDefaults to extract from the converted parent, instead of filling it
-        /// from the storage-type default (which gives a wrong all-NULL `.null` map here).
-        /// Only defer when a `storage_snapshot` is present: that is the signal the caller runs a
-        /// follow-up `evaluateMissingDefaults` pass (the MergeTree reader). Callers without it
-        /// (e.g. the Memory engine) treat this as the terminal fill, so leaving the column null
-        /// would trip their non-null assertion; for those the correct value is already produced
-        /// upstream (see `tryGetSubcolumnFromBlock`) or must be default-filled below.
-        ///
-        /// The parent may be read by THIS step (`available_columns`) or produced by an EARLIER
-        /// step (`additional_available_columns`, e.g. the full `x` materialized by an on-fly
-        /// `UPDATE` under `apply_mutations_on_fly`). In both cases the follow-up
-        /// `evaluateMissingDefaults` sees the parent and can derive the subcolumn from it, so we
-        /// must defer in both cases rather than default-fill an all-NULL `.null` map here.
+        /// Subcolumn missing from the part's (older) type but whose parent is available (read here
+        /// or produced by an earlier step): defer to evaluateMissingDefaults instead of default-
+        /// filling. Needs a storage_snapshot, i.e. a caller that runs that pass (not Memory engine).
         if (storage_snapshot
             && requested_column->isSubcolumn()
             && (available_columns.contains(requested_column->getNameInStorage())

@@ -60,9 +60,8 @@ public:
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
     /// num_rows is needed in case if all res_columns are nullptr.
-    /// `previous_step_columns` names the columns produced by earlier reader-chain steps
-    /// (e.g. a full column materialized by an on-fly mutation): a requested subcolumn whose
-    /// parent is among them is deferred to evaluateMissingDefaults instead of default-filled.
+    /// `previous_step_columns` names columns produced by earlier reader-chain steps; a subcolumn
+    /// whose parent is among them is deferred to evaluateMissingDefaults instead of default-filled.
     void fillMissingColumns(
         Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows,
         const NameSet & previous_step_columns = {}) const;
