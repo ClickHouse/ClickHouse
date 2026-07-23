@@ -854,3 +854,57 @@ DROP TABLE test_ttl_agg_nullable_tuple_suspicious;
 
 SET allow_suspicious_ttl_expressions = 0;
 SET enable_nullable_tuple_type = 0;
+
+-- A direct AggregateFunction state nested in a container (not through a Variant/Dynamic carrier) must be
+-- probed with a non-empty row too: the default Array/Map value is empty, so an element-level consumer
+-- (e.g. the `equals` built inside `arrayRemove`) would otherwise never see the state at DDL time, yet
+-- still throw during TTL execution once a row stores a state.
+CREATE TABLE test_ttl_agg_array_state
+(
+    key UInt64,
+    arr Array(AggregateFunction(max, UInt64)),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE notEmpty(arrayRemove(arr, 0)); -- { serverError BAD_TTL_EXPRESSION }
+
+CREATE TABLE test_ttl_agg_map_state
+(
+    key UInt64,
+    m Map(String, AggregateFunction(max, UInt64)),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE notEmpty(arrayRemove(mapValues(m), mapValues(m)[1])); -- { serverError BAD_TTL_EXPRESSION }
+
+-- Valid: consumers that do not look into the state elements are accepted.
+CREATE TABLE test_ttl_agg_array_state_agnostic
+(
+    key UInt64,
+    arr Array(AggregateFunction(max, UInt64)),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE length(arr) > 3;
+
+DROP TABLE test_ttl_agg_array_state_agnostic;
+
+-- The escape hatch also covers the container-nested state.
+SET allow_suspicious_ttl_expressions = 1;
+
+CREATE TABLE test_ttl_agg_array_state_suspicious
+(
+    key UInt64,
+    arr Array(AggregateFunction(max, UInt64)),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE notEmpty(arrayRemove(arr, 0));
+
+DROP TABLE test_ttl_agg_array_state_suspicious;
+
+SET allow_suspicious_ttl_expressions = 0;
