@@ -263,6 +263,9 @@ public:
             Bucket,
             MapBucketsInfo,
 
+            QuantizedCodes,
+            ProductQuantizationCodebook,
+
             Regular,
         };
 
