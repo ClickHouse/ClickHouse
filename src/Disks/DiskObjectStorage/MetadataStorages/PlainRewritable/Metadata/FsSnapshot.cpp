@@ -302,15 +302,15 @@ std::vector<std::string> FsSnapshot::listDirectory(const std::string & path) con
     return result;
 }
 
-std::pair<bool, std::optional<DirectoryRemoteInfo>> FsSnapshot::existsDirectory(const std::string & path) const
+bool FsSnapshot::existsDirectory(const std::string & path) const
 {
     UniqueLock lock(mutex);
     const auto node = walk(root, normalizePath(path));
 
     if (!node)
-        return {false, std::nullopt};
+        return false;
 
-    return {true, node->info};
+    return true;
 }
 
 std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> FsSnapshot::getSubtreeRemoteInfo(const std::string & path) const

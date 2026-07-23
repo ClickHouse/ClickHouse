@@ -6,6 +6,8 @@ TEMP_DIR = f"{Utils.cwd()}/ci/tmp"  # == _Settings.TEMP_DIR != env_helper.TEMP_P
 
 SYNC = "CH Inc sync"
 
+GH_AUTH_TRUSTED_LAMBDA_NAME = "mint-token-trusted-lambda-terraform"
+
 S3_BUCKET_NAME = "clickhouse-builds"
 S3_REPORT_BUCKET_NAME = "clickhouse-test-reports"
 S3_BUCKET_HTTP_ENDPOINT = "clickhouse-builds.s3.amazonaws.com"
