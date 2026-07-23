@@ -476,6 +476,11 @@ IMPLEMENT_SETTING_ENUM(
      {"with_block_number_offset", MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET}})
 
 IMPLEMENT_SETTING_ENUM(
+    MergeCoordinatorDistributionAlgorithm,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"water_filling", MergeCoordinatorDistributionAlgorithm::WATER_FILLING}})
+
+IMPLEMENT_SETTING_ENUM(
     DecorrelationJoinKind,
     ErrorCodes::BAD_ARGUMENTS,
     {{"left", DecorrelationJoinKind::LEFT},
