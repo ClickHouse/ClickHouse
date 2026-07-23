@@ -278,8 +278,18 @@ struct JoinAlgorithmParams
 /** Can at least one of the enabled join algorithms execute a join of this kind/strictness?
   * Mirrors the per-algorithm dispatch in PlannerJoins.cpp::tryCreateJoin, so a caller can tell
   * up front whether a planned (kind, strictness) has a runnable algorithm before building it.
+  *
+  * `direct_join_possible` tells the check whether the DIRECT algorithm may actually apply to the
+  * right side: DIRECT only runs against key-value storages (dictionary / EmbeddedRocksDB / ...),
+  * which this storage-blind predicate cannot see. Pass true when the right side may be such a
+  * storage (e.g. the generic query-plan pass over arbitrary joins), false when it never is (e.g.
+  * a join whose right side is a materialized subplan).
   */
-bool anyEnabledAlgorithmSupports(const std::vector<JoinAlgorithm> & join_algorithms, JoinKind kind, JoinStrictness strictness);
+bool anyEnabledAlgorithmSupports(
+    const std::vector<JoinAlgorithm> & join_algorithms,
+    JoinKind kind,
+    JoinStrictness strictness,
+    bool direct_join_possible);
 
 /** Choose JOIN algorithm for table join, right table expression, right table expression header and planner context.
   * Table join structure can be modified during JOIN algorithm choosing for special JOIN algorithms.

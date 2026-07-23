@@ -69,3 +69,32 @@ SELECT count() FROM (
 ) WHERE explain ILIKE '%FillRightFirst%';
 
 DROP TABLE t_04546;
+
+-- The capability guard must reflect the algorithm that can actually run THIS join. direct only
+-- applies to a key-value right side; for an ordinary right side (here numbers()) it cannot run, so
+-- with join_algorithm = 'full_sorting_merge,direct' the ANY join is runnable only as full_sorting_merge
+-- (no SEMI/ANTI). Counting direct as SEMI-capable regardless of the right side would convert the join
+-- and leave neither algorithm able to execute it (NOT_IMPLEMENTED). It must stay runnable.
+SELECT count() FROM numbers(3) AS l LEFT ANY JOIN numbers(2) AS r ON l.number = r.number
+WHERE r.number != 0
+SETTINGS join_algorithm = 'full_sorting_merge,direct', query_plan_convert_any_join_to_semi_or_anti_join = 1;
+SELECT count() FROM numbers(3) AS l LEFT ANY JOIN numbers(2) AS r ON l.number = r.number
+WHERE r.number != 0
+SETTINGS join_algorithm = 'full_sorting_merge,direct', query_plan_convert_any_join_to_semi_or_anti_join = 0;
+
+-- A Join-engine table reuses its stored join and requires its declared ANY strictness unchanged, so
+-- the convert pass must skip it: rewriting to SEMI would make physical planning reject the stored join
+-- (INCOMPATIBLE_TYPE_OF_JOIN). The query must stay runnable with the rewrite enabled.
+DROP TABLE IF EXISTS t_04546_left;
+DROP TABLE IF EXISTS join_04546;
+CREATE TABLE t_04546_left (id UInt64) ENGINE = Memory;
+INSERT INTO t_04546_left SELECT number FROM numbers(3);
+CREATE TABLE join_04546 (id UInt64, val String) ENGINE = Join(ANY, LEFT, id);
+INSERT INTO join_04546 VALUES (0, 'zero'), (1, 'one');
+SELECT count() FROM t_04546_left AS l LEFT ANY JOIN join_04546 AS r USING (id) WHERE r.val != ''
+SETTINGS query_plan_convert_any_join_to_semi_or_anti_join = 1;
+SELECT count() FROM t_04546_left AS l LEFT ANY JOIN join_04546 AS r USING (id) WHERE r.val != ''
+SETTINGS query_plan_convert_any_join_to_semi_or_anti_join = 0;
+
+DROP TABLE t_04546_left;
+DROP TABLE join_04546;

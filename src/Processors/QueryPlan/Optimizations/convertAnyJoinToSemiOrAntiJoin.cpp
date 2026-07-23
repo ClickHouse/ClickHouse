@@ -135,14 +135,12 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
     if (!join || child_node->children.size() != 2)
         return 0;
 
-    /// The Join engine requires its declared join kind and strictness to remain unchanged.
-    auto isStorageJoin = [](auto & step)
-    {
-        auto * lookup_step = typeid_cast<JoinStepLogicalLookup *>(step.get());
-        return lookup_step && lookup_step->getPreparedJoinStorage().storage_join;
-    };
-    if (isStorageJoin(child_node->children.back()->step))
+    /// A Join-engine right side reuses the stored join and requires its declared strictness
+    /// unchanged, so skip the rewrite for it. A key-value right side makes a direct join possible.
+    auto * right_lookup_step = typeid_cast<JoinStepLogicalLookup *>(child_node->children.back()->step.get());
+    if (right_lookup_step && right_lookup_step->getPreparedJoinStorage().storage_join)
         return 0;
+    const bool direct_join_possible = right_lookup_step && right_lookup_step->getPreparedJoinStorage().storage_key_value;
 
     auto & join_operator = join->getJoinOperator();
     if (join_operator.strictness != JoinStrictness::Any)
@@ -151,13 +149,11 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
     if (!isLeftOrRight(join_operator.kind))
         return 0;
 
-    /// The rewrite below turns ANY into SEMI/ANTI. Only do it when some enabled join algorithm
-    /// can execute the converted join: full_sorting_merge and partial_merge don't implement
-    /// SEMI/ANTI for this kind and there is no fallback, so converting would turn a runnable
-    /// query into a NOT_IMPLEMENTED error. Leaving the ANY join intact keeps it runnable.
+    /// Only rewrite to SEMI/ANTI when some enabled algorithm can execute the result; otherwise leave
+    /// the ANY join, which stays runnable. direct_join_possible gates whether DIRECT counts here.
     const auto & join_algorithms = join->getJoinSettings().join_algorithms;
-    const bool semi_supported = anyEnabledAlgorithmSupports(join_algorithms, join_operator.kind, JoinStrictness::Semi);
-    const bool anti_supported = anyEnabledAlgorithmSupports(join_algorithms, join_operator.kind, JoinStrictness::Anti);
+    const bool semi_supported = anyEnabledAlgorithmSupports(join_algorithms, join_operator.kind, JoinStrictness::Semi, direct_join_possible);
+    const bool anti_supported = anyEnabledAlgorithmSupports(join_algorithms, join_operator.kind, JoinStrictness::Anti, direct_join_possible);
     if (!semi_supported && !anti_supported)
         return 0;
 

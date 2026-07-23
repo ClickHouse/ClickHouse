@@ -598,11 +598,10 @@ QueryPlan buildLogicalJoin(
         result_join->setOptimized();
     }
 
-    /// Ensure this internal ANY join is runnable. Only add the hash fallback when no enabled
-    /// algorithm can already run the ANY shape: an unconditional hash makes an FSM-only join
-    /// runtime-filter-eligible and the runtime-filter pass then drops FSM (demoting the plan).
+    /// Add the hash fallback only when no enabled algorithm can already run the ANY shape.
+    /// The right side is a materialized subplan, never a key-value storage: direct_join_possible=false.
     auto & result_join_algorithms = result_join->getJoinSettings().join_algorithms;
-    if (!anyEnabledAlgorithmSupports(result_join_algorithms, join_kind_to_use, JoinStrictness::Any))
+    if (!anyEnabledAlgorithmSupports(result_join_algorithms, join_kind_to_use, JoinStrictness::Any, /*direct_join_possible=*/false))
         result_join_algorithms.push_back(JoinAlgorithm::HASH);
 
     QueryPlan result_plan;

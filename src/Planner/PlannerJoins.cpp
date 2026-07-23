@@ -1044,6 +1044,20 @@ void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::sh
         table_join->setStorageJoin(storage_key_value);
 }
 
+/// The kind/strictness matrix DirectKeyValueJoin can execute. Used both by tryDirectJoin and by
+/// anyEnabledAlgorithmSupports so the capability check stays in sync with the actual dispatch.
+static bool directKeyValueJoinSupportsKindAndStrictness(JoinKind kind, JoinStrictness strictness)
+{
+    if (isInner(kind))
+        return strictness == JoinStrictness::All;
+    if (isLeft(kind))
+        return strictness == JoinStrictness::Any
+            || strictness == JoinStrictness::All
+            || strictness == JoinStrictness::Semi
+            || strictness == JoinStrictness::Anti;
+    return false;
+}
+
 static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoin> & table_join,
     const PreparedJoinStorage & right_table_expression,
     SharedHeader & right_table_expression_header)
@@ -1055,12 +1069,7 @@ static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<T
     if (!storage)
         return {};
 
-    bool allowed_inner = isInner(table_join->kind()) && table_join->strictness() == JoinStrictness::All;
-    bool allowed_left = isLeft(table_join->kind()) && (table_join->strictness() == JoinStrictness::Any ||
-                                                          table_join->strictness() == JoinStrictness::All ||
-                                                          table_join->strictness() == JoinStrictness::Semi ||
-                                                          table_join->strictness() == JoinStrictness::Anti);
-    if (!allowed_inner && !allowed_left)
+    if (!directKeyValueJoinSupportsKindAndStrictness(table_join->kind(), table_join->strictness()))
         return {};
 
     const auto & clauses = table_join->getClauses();
@@ -1162,7 +1171,8 @@ QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node)
     return join_expression;
 }
 
-bool anyEnabledAlgorithmSupports(const std::vector<JoinAlgorithm> & join_algorithms, JoinKind kind, JoinStrictness strictness)
+bool anyEnabledAlgorithmSupports(
+    const std::vector<JoinAlgorithm> & join_algorithms, JoinKind kind, JoinStrictness strictness, bool direct_join_possible)
 {
     for (auto algorithm : join_algorithms)
     {
@@ -1185,8 +1195,12 @@ bool anyEnabledAlgorithmSupports(const std::vector<JoinAlgorithm> & join_algorit
                 if (FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported(kind, strictness))
                     return true;
                 break;
-            /// DIRECT joins only special key-value storages and has no hash fallback.
+            /// DIRECT only runs against key-value storages and has no hash fallback. It can execute
+            /// the (kind, strictness) only when a direct key-value join is actually possible for the
+            /// right side (direct_join_possible), which the storage-blind caller passes in.
             case JoinAlgorithm::DIRECT:
+                if (direct_join_possible && directKeyValueJoinSupportsKindAndStrictness(kind, strictness))
+                    return true;
                 break;
         }
     }
