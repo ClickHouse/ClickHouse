@@ -723,9 +723,11 @@ private:
     /// The runner that drives the in-flight machine's revoke/release verbs at collect: the async
     /// (pool or fiber) runner when read-ahead launched it, else the inline runner (no async
     /// runner). Each runner no-ops on a machine it didn't schedule, but by its own mechanism:
-    /// the pool runner and the inline runner branch on the machine's `current_step` (null when
-    /// settled/never scheduled by them), while the fiber runner branches on its own `inflight`
-    /// pointer instead (it never sets `current_step`).
+    /// the pool runner branches on the machine's `current_step` (null when settled/never
+    /// scheduled by it); the inline runner's verbs no-op unconditionally (the step already ran
+    /// and settled inside `schedule`, so there is never a handle to join or cancel - it does not
+    /// look at `current_step` at all); the fiber runner branches on its own `inflight` pointer
+    /// instead (it never sets `current_step`).
     IFetchMachineRunner & collectRunner() { return runner ? *runner : *local_runner; }
 
     /// The cancel verb: drop the in-flight machine. `cancelled` is true for a

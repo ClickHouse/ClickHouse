@@ -17,6 +17,9 @@ namespace DB
 /// server) do not link ch_contrib::silk_fibers. The scheduler options live
 /// in SilkSchedulerOptions.h for the TUs that do.
 void initializeSilkScheduler();
+
+/// Set once during single-threaded server startup; safe to call concurrently
+/// from any thread afterwards (atomic load).
 bool isSilkSchedulerInitialized();
 
 }

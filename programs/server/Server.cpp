@@ -2913,6 +2913,12 @@ try
             /// `isSilkSchedulerInitialized` guards the reload case: the scheduler only starts at
             /// boot, so enabling the setting via `SYSTEM RELOAD CONFIG` on a server that booted
             /// without it must not produce fiber sockets.
+            if (new_server_settings[ServerSetting::disk_connections_use_silk] && !isSilkSchedulerInitialized())
+                LOG_WARNING(
+                    &logger(),
+                    "disk_connections_use_silk is enabled but the Silk scheduler was not started at boot; "
+                    "fiber sockets stay disabled until restart");
+
             HTTPConnectionPools::instance().setUseSilkSockets(
                 new_server_settings[ServerSetting::disk_connections_use_silk] && isSilkSchedulerInitialized(),
                 /*storage*/ false,

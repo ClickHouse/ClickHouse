@@ -6,6 +6,13 @@
 
 #include <Common/ThreadGroupSwitcher.h>
 
+#include <silk/fibers/fiber.h>
+#include <silk/fibers/future.h>
+
+#include <cstddef>
+#include <type_traits>
+#include <utility>
+
 namespace DB
 {
 
@@ -23,6 +30,17 @@ namespace SilkFiberCategory
 {
     /// Reader executor fetch steps.
     inline constexpr uint8_t FETCH = 1;
+}
+
+/// The one sanctioned spawn point for fibers on the server-wide scheduler:
+/// enforces at compile time that the parameters begin with SilkFiberJobHeader,
+/// which the global fiber-switch hooks blind-cast to.
+template <typename T>
+[[nodiscard]] int runSilkFiber(int (*fiber_main)(T *) noexcept, T && parameters, uint8_t category, silk::FiberFuture * future)
+{
+    static_assert(offsetof(T, header) == 0, "fiber params must begin with SilkFiberJobHeader");
+    static_assert(std::is_same_v<decltype(T::header), SilkFiberJobHeader>);
+    return silk::FiberScheduler::run(fiber_main, std::move(parameters), category, future);
 }
 
 }

@@ -28,7 +28,6 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Timespan.h>
 
-#include <cstddef>
 #include <cstdint>
 #include <latch>
 #include <string>
@@ -88,10 +87,8 @@ TYPED_TEST(SilkFiberSocketTest, RequestResponse)
         Poco::Net::StreamSocketImpl * impl;
     };
 
-    static_assert(offsetof(Params, header) == 0, "fiber-switch hooks blind-cast getFiberParameters to SilkFiberJobHeader");
-
     silk::FiberFuture client_future;
-    const int run_result = silk::FiberScheduler::run(
+    const int run_result = DB::runSilkFiber(
         +[](Params * p) noexcept -> int
         {
             Poco::Net::StreamSocket socket(p->impl);
@@ -122,6 +119,7 @@ TYPED_TEST(SilkFiberSocketTest, RequestResponse)
             return 0;
         },
         Params{{}, port, this->policy.makeClient()},
+        0,
         &client_future);
     ASSERT_EQ(run_result, 0);
 
@@ -157,10 +155,8 @@ TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
         std::latch * negative_poll_done;
     };
 
-    static_assert(offsetof(Params, header) == 0, "fiber-switch hooks blind-cast getFiberParameters to SilkFiberJobHeader");
-
     silk::FiberFuture client_future;
-    const int run_result = silk::FiberScheduler::run(
+    const int run_result = DB::runSilkFiber(
         +[](Params * p) noexcept -> int
         {
             Poco::Net::StreamSocket socket(p->impl);
@@ -191,6 +187,7 @@ TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
             return 0;
         },
         Params{{}, port, this->policy.makeClient(), &negative_poll_done},
+        0,
         &client_future);
     ASSERT_EQ(run_result, 0);
 
@@ -228,10 +225,8 @@ TYPED_TEST(SilkFiberSocketTest, ConnectRefused)
         Poco::Net::StreamSocketImpl * impl;
     };
 
-    static_assert(offsetof(Params, header) == 0, "fiber-switch hooks blind-cast getFiberParameters to SilkFiberJobHeader");
-
     silk::FiberFuture client_future;
-    const int run_result = silk::FiberScheduler::run(
+    const int run_result = DB::runSilkFiber(
         +[](Params * p) noexcept -> int
         {
             Poco::Net::StreamSocket socket(p->impl);
@@ -241,6 +236,7 @@ TYPED_TEST(SilkFiberSocketTest, ConnectRefused)
             return 0;
         },
         Params{{}, closed_port, this->policy.makeClient()},
+        0,
         &client_future);
     ASSERT_EQ(run_result, 0);
 
@@ -260,10 +256,8 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
         Poco::Net::StreamSocketImpl * impl;
     };
 
-    static_assert(offsetof(Params, header) == 0, "fiber-switch hooks blind-cast getFiberParameters to SilkFiberJobHeader");
-
     silk::FiberFuture client_future;
-    const int run_result = silk::FiberScheduler::run(
+    const int run_result = DB::runSilkFiber(
         +[](Params * p) noexcept -> int
         {
             Poco::Net::StreamSocket socket(p->impl);
@@ -286,6 +280,7 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
             return 0;
         },
         Params{{}, port, this->policy.makeClient()},
+        0,
         &client_future);
     ASSERT_EQ(run_result, 0);
 

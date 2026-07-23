@@ -8,8 +8,6 @@
 
 #include <silk/fibers/fiber.h>
 
-#include <cstddef>
-
 namespace DB
 {
 
@@ -26,8 +24,8 @@ struct FiberStepParams
 /// without knowing about `FiberStepParams` - the header must be the first member, at
 /// offset 0. `FiberStepParams` remains standard-layout (verified: `shared_ptr`'s own
 /// layout does not depend on whether the pointee is polymorphic), so `offsetof` is
-/// well-defined here, not merely conditionally-supported.
-static_assert(offsetof(FiberStepParams, header) == 0, "fiber-switch hooks blind-cast getFiberParameters to SilkFiberJobHeader");
+/// well-defined here, not merely conditionally-supported. Enforced by `runSilkFiber`'s
+/// static_assert at the spawn site below.
 
 /// Mirrors the pool wrapper's state writes and exception capture, on a fiber
 /// stack. The fiber entry point is noexcept: every C++ exception must be
@@ -56,6 +54,14 @@ int stepFiberMain(FiberStepParams * params) noexcept
         m.failure = std::current_exception();
         m.state.store(MachineState::Failed);
     }
+
+    /// Drop our co-ownership INSIDE the fiber: if this copy is the last
+    /// reference (the collector can finish the instant the future resolves,
+    /// before the scheduler frees the parameter block), the machine's
+    /// destructor - which may tear down an HTTPS connection and do socket
+    /// I/O - runs in a suspendable fiber context, never on the bare carrier
+    /// thread where a proxy-fiber wait on this CPU's own ring would deadlock.
+    params->machine.reset();
     return 0;
 }
 
@@ -71,7 +77,7 @@ bool FiberFetchMachineRunner::schedule(std::shared_ptr<MachineBase> machine)
     machine->state.store(MachineState::Scheduled);
     inflight = machine.get();
 
-    const int rc = silk::FiberScheduler::run(
+    const int rc = runSilkFiber(
         stepFiberMain,
         FiberStepParams{{getCurrentThreadGroup()}, machine},
         SilkFiberCategory::FETCH,
