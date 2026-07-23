@@ -462,7 +462,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             const Int64 whole = from_type.getValue().value / from_type.getScaleMultiplier().value;
             const Int64 clamped = std::min<Int64>(std::max<Int64>(whole, -max_time_seconds), max_time_seconds);
             /// Reuse the Int64 -> Time path so the produced Field matches the isTime() integer branch above.
-            return convertNumericType<Int32>(Field(clamped), type);
+            return convertNumericType<Int32>(Field(clamped), type, strict, convert_inexact_floats);
         }
 
         /// For toDate('xxx') in 1::Int64. Date is UInt16 under the hood;
