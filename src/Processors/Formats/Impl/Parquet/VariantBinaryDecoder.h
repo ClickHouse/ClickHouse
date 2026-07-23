@@ -23,7 +23,8 @@ namespace DB::Parquet::VariantReader
 
 inline void checkVariantReadDepth(const FormatSettings & format_settings, size_t depth)
 {
-    if (depth > format_settings.max_parser_depth)
+    /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
+    if (format_settings.max_parser_depth != 0 && depth > format_settings.max_parser_depth)
     {
         throw Exception(
             ErrorCodes::TOO_DEEP_RECURSION,
