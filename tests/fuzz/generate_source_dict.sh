@@ -34,7 +34,35 @@ SOURCE_ROOT="$1"
 OUTPUT_FILE="$2"
 
 TMP_FILE=$(mktemp)
-trap 'rm -f "$TMP_FILE"' EXIT
+LABEL_FRAGMENTS_FILE=$(mktemp)
+trap 'rm -f "$TMP_FILE" "$LABEL_FRAGMENTS_FILE"' EXIT
+
+# Registered function, aggregate function, table function and data type names
+# are identifiers. Multi-word tokens come only from the keyword pass (ADD
+# COLUMN, ...) and the register-call pass (SQL-compatibility aliases like
+# CHAR VARYING), so every name-constant / helper-body scan restricts its
+# output to identifier-shaped tokens. This drops unrelated helper constants
+# the scans would otherwise match, e.g. the local label
+#     constexpr const char * field_name = "<SKIPPED COLUMN>";
+# in src/Formats/EscapingRuleUtils.cpp, or "Not implemented" returned by a
+# *Name helper body.
+identifiers_only()
+{
+    grep -axE '[A-Za-z_][A-Za-z0-9_]*' || true
+}
+
+# Compile-time name *fragments* are identifier-shaped but are not registered
+# names themselves:
+#     struct LinfLabel { static constexpr auto name = "inf"; };
+# in src/Functions/vectorFunctions.cpp is pasted into composed names
+# (LinfNorm, LinfDistance, ...) which live in the curated old.dict, together
+# with the other compile-time-composed names. Collect the fragments carried
+# by *Label structs so the name-constant scans can exclude them.
+grep -rhozE 'struct [A-Za-z_0-9]*Label[[:space:]]*\{[^{}]*"[^"]+"[^{}]*\}' \
+    "$SOURCE_ROOT/src/Functions" \
+    "$SOURCE_ROOT/src/AggregateFunctions" \
+    "$SOURCE_ROOT/src/TableFunctions" \
+    | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"' > "$LABEL_FRAGMENTS_FILE" || true
 
 {
     # Parser keywords, e.g. MR_MACROS(ADD_COLUMN, "ADD COLUMN").
@@ -60,14 +88,16 @@ trap 'rm -f "$TMP_FILE"' EXIT
     # deltaLake*, paimon*, ... and their *Cluster variants), so they are scanned
     # as well. Arrays of names are covered too:
     #     constexpr std::array<const char *, 2> names = {"generate_series", "generateSeries"};
-    # Every string literal in the initializer is taken.
+    # Every identifier-shaped string literal in the initializer is taken,
+    # except the *Label compile-time name fragments collected above.
     grep -rhozE '\bconst(expr)?[[:space:]]+[a-zA-Z_0-9,:<> *]+[Nn]ames?(\[\])?[[:space:]]*[={][^;]*;' \
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
         "$SOURCE_ROOT/src/Formats" \
         "$SOURCE_ROOT/src/Storages/ObjectStorage/StorageObjectStorageDefinitions.h" \
-        | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"'
+        | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"' \
+        | identifiers_only | grep -Fxvf "$LABEL_FRAGMENTS_FILE"
 
     # Names carried by a local String variable instead of a literal argument,
     # e.g. the in/notIn/globalIn/nullIn family (src/Functions/in.cpp):
@@ -77,7 +107,7 @@ trap 'rm -f "$TMP_FILE"' EXIT
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
-        | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"'
+        | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"' | identifiers_only
 
     # Names carried by an alias list registered in a loop, e.g.
     #     static const VectorWithMemoryTracking<std::string> aliases = {"groupConcat", "group_concat", "string_agg"};
@@ -87,7 +117,7 @@ trap 'rm -f "$TMP_FILE"' EXIT
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
-        | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"'
+        | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"' | identifiers_only
 
     # Names returned by a *Name/getName helper whose body yields string
     # literals, e.g. an accessor
@@ -107,7 +137,7 @@ trap 'rm -f "$TMP_FILE"' EXIT
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
-        | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"'
+        | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"' | identifiers_only
 
     # Functions, aliases and data type families registered with a string
     # literal, e.g. factory.registerAlias("SUBSTRING", ...), including calls
@@ -140,7 +170,7 @@ trap 'rm -f "$TMP_FILE"' EXIT
                 "$SOURCE_ROOT/src/AggregateFunctions/Combinators"
             grep -rhoE 'getName\(\)[[:space:]]*\+[[:space:]]*"[^"]+"' \
                 "$SOURCE_ROOT/src/AggregateFunctions/Combinators"
-        } | grep -aoE '"[^"]+"' | tr -d '"' | LC_ALL=C sort -u
+        } | grep -aoE '"[^"]+"' | tr -d '"' | identifiers_only | LC_ALL=C sort -u
     )
     # Base aggregate function names and their aliases (the combinators apply to
     # both), taken from src/AggregateFunctions with the same passes used above
@@ -168,7 +198,7 @@ trap 'rm -f "$TMP_FILE"' EXIT
                 '[Aa]lias(es)?[[:space:]]*=[[:space:]]*\{[^;]*"[^;]*;' \
                 "$SOURCE_ROOT/src/AggregateFunctions"
         } | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"' \
-            | grep -vE '[*?\["\\]' | LC_ALL=C sort -u
+            | identifiers_only | grep -Fxvf "$LABEL_FRAGMENTS_FILE" | LC_ALL=C sort -u
     )
     if [ -n "$combinator_suffixes" ] && [ -n "$aggregate_names" ]; then
         while IFS= read -r agg_name; do
