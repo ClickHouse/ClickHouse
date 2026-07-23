@@ -115,7 +115,7 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
 NamesAndAliases TraceLogElement::getNamesAndAliases()
 {
     String build_id_hex;
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     build_id_hex = SymbolIndex::instance().getBuildIDHex();
 #endif
     return
@@ -171,7 +171,7 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
 
     typeid_cast<ColumnInt64 &>(*columns[i++]).getData().push_back(increment);
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     if (symbolize)
     {
         /// `system.trace_log` is a high-frequency table, so symbolize directly into the

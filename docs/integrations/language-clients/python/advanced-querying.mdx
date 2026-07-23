@@ -415,7 +415,7 @@ ClickHouse queries can accept external data in any ClickHouse format. This binar
 | file_path | str               | Path to a file on the local system path to read the external data from. Either `file_path` or `data` is required                              |
 | file_name | str               | The name of the external data "file". If not provided, will be determined from the `file_path` (without extensions)                           |
 | data      | bytes             | The external data in binary form (instead of being read from a file). Either `data` or `file_path` is required                                |
-| fmt       | str               | The ClickHouse [Input Format](/reference/formats/index) of the data. Defaults to `TSV`                                                      |
+| fmt       | str               | The ClickHouse [Input Format](/reference/formats) of the data. Defaults to `TSV`                                                      |
 | types     | str or seq of str | A list of column data types in the external data. If a string, types should be separated by commas. Either `types` or `structure` is required |
 | structure | str or seq of str | A list of column name + data type in the data (see examples). Either `structure` or `types` is required                                       |
 | mime_type | str               | Optional MIME type of the file data. Currently ClickHouse ignores this HTTP subheader                                                         |
