@@ -594,6 +594,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
     else
     {
+        /// The temporary directory name is deterministic (`tmp_merge_<part>`), so an interrupted merge
+        /// can leave a stale leftover behind; claim the name and reclaim the leftover BEFORE the part
+        /// storage is constructed, see `MergeTreeData::claimTemporaryPartDirectory` for the rationale.
+        global_ctx->temporary_directory_lock = global_ctx->data->claimTemporaryPartDirectory(global_ctx->disk, local_tmp_part_basename);
+
         auto local_single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + global_ctx->future_part->name, global_ctx->disk, 0);
         builder.emplace(global_ctx->data->getDataPartBuilder(global_ctx->future_part->name, local_single_disk_volume, local_tmp_part_basename, getReadSettings()));
         builder->withPartStorageType(global_ctx->future_part->part_format.storage_type);
@@ -605,15 +610,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     global_ctx->new_data_part = std::move(*builder).build();
     auto data_part_storage = global_ctx->new_data_part->getDataPartStoragePtr();
 
-    if (data_part_storage->exists())
+    /// For top-level merges the claim above already reclaimed any stale leftover, and true concurrency
+    /// on the same name throws a `LOGICAL_ERROR` exception from `TemporaryParts::add`. Projection merges
+    /// write nested inside the parent's freshly created temporary directory, which has no claim of its
+    /// own (the background temporary directory cleaner cannot see it either), so the defensive check
+    /// stays for them.
+    if (global_ctx->parent_part && data_part_storage->exists())
         throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists", data_part_storage->getFullPath());
 
     data_part_storage->beginTransaction();
-
-    /// Background temp dirs cleaner will not touch tmp projection directory because
-    /// it's located inside part's directory
-    if (!global_ctx->parent_part)
-        global_ctx->temporary_directory_lock = global_ctx->data->getTemporaryPartDirectoryHolder(local_tmp_part_basename);
 
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot);
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
