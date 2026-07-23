@@ -282,8 +282,8 @@ struct ALPFloatUtils
     {
         Float64 value_enc = value * EXPONENTS[exponent] * FRACTIONS[fraction];
 
-        const bool invalid = std::isinf(value_enc) || std::isnan(value_enc) || value_enc < LOWER || value_enc > UPPER
-            || (value_enc == 0.0 && std::signbit(value_enc));
+        const bool invalid
+            = std::isnan(value_enc) || value_enc < LOWER || value_enc > UPPER || (value_enc == 0.0 && std::signbit(value_enc));
 
         if (unlikely(invalid))
             return static_cast<Int64>(UPPER);
