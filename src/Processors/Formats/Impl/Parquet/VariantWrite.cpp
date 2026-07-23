@@ -21,6 +21,7 @@
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -150,7 +151,8 @@ DataTypePtr getVariantAnalyzeScalarType(const Field & field, const DataTypePtr &
 
 void checkVariantWriteDepth(const FormatSettings & format_settings, size_t depth)
 {
-    if (depth > format_settings.max_parser_depth)
+    /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
+    if (format_settings.max_parser_depth != 0 && depth > format_settings.max_parser_depth)
     {
         throw Exception(
             ErrorCodes::TOO_DEEP_RECURSION,
@@ -902,6 +904,41 @@ std::optional<Field> tryConvertVariantScalarToShreddedField(const Field & field,
             if (!tryConvertIntegralFieldValue(field, converted))
                 return std::nullopt;
             return Field(converted);
+        }
+        /// Enums are written as their underlying signed integral values;
+        /// `preparePrimitiveColumn` and `SchemaConverter` handle the enum type itself.
+        /// `ColumnDynamic`'s `operator[]` materializes enum values as their name `String`s
+        /// (via `convertFieldToType`), while a raw enum column yields the numeric `Field`,
+        /// so accept both.
+        case TypeIndex::Enum8:
+        {
+            const auto & enum_type = assert_cast<const DataTypeEnum8 &>(*normalized_type);
+            if (field.getType() == Field::Types::String)
+            {
+                Int8 value = 0;
+                if (!enum_type.tryGetValue(value, field.safeGet<String>()))
+                    return std::nullopt;
+                return Field(Int64(value));
+            }
+            Int8 converted = 0;
+            if (!tryConvertIntegralFieldValue(field, converted) || !enum_type.hasValue(converted))
+                return std::nullopt;
+            return Field(Int64(converted));
+        }
+        case TypeIndex::Enum16:
+        {
+            const auto & enum_type = assert_cast<const DataTypeEnum16 &>(*normalized_type);
+            if (field.getType() == Field::Types::String)
+            {
+                Int16 value = 0;
+                if (!enum_type.tryGetValue(value, field.safeGet<String>()))
+                    return std::nullopt;
+                return Field(Int64(value));
+            }
+            Int16 converted = 0;
+            if (!tryConvertIntegralFieldValue(field, converted) || !enum_type.hasValue(converted))
+                return std::nullopt;
+            return Field(Int64(converted));
         }
         case TypeIndex::UInt8:
         case TypeIndex::UInt16:
