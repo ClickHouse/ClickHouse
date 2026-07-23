@@ -15,6 +15,7 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Access/ContextAccess.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 
 
@@ -26,6 +27,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -281,7 +283,18 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
             if (const auto * query_on_cluster = dynamic_cast<const ASTQueryWithOnCluster *>(query_ast.get()))
                 cluster_name = query_on_cluster->cluster;
 
-        String masked_query = query_ast ? format({.ctx = context, .query = *query_ast}) : task.entry.query;
+        String masked_query;
+        if (query_ast)
+            masked_query = format({.ctx = context, .query = *query_ast});
+        else
+        {
+            /// Parse failed: fail closed so credentials in malformed DDL entries are not
+            /// exposed to users who lack the displaySecretsInShowAndSelect privilege.
+            const bool show_secrets = context->displaySecretsInShowAndSelect()
+                && context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select]
+                && context->getAccess()->isGranted(AccessType::displaySecretsInShowAndSelect);
+            masked_query = show_secrets ? task.entry.query : "<DDL entry could not be parsed>";
+        }
         UInt64 query_create_time_ms = task_info.stat.ctime;
 
         size_t col = 0;
@@ -395,4 +408,5 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
 
 /// Register the source file of this system table for `system.documentation`.
 namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDDLWorkerQueue) }
+
 
