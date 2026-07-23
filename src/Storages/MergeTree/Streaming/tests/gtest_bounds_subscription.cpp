@@ -278,3 +278,20 @@ TEST(SubscriptionEnrichment, PartialRoundIsPending)
     sub.onEnrichmentRound(result.pending);
     ASSERT_FALSE(sub.safeSegmentDetermined());
 }
+
+TEST(SubscriptionEnrichment, PromoterOnlyPartitionIsPending)
+{
+    MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/true);
+
+    /// Partition "p" has an in-flight (committing) block known to the promoter but no visible local part yet.
+    LocalPartsByPartition local_parts;
+
+    std::map<String, std::set<Int64>> committing{{"p", {0}}};
+    std::map<String, PartBlockNumberRanges> ranges;
+    auto promoters = constructPromoters(committing, ranges);
+
+    auto result = enrichSubscription(sub, local_parts, promoters);
+    ASSERT_FALSE(result.enriched);
+    ASSERT_TRUE(result.pending);
+    ASSERT_TRUE(sub.snapshot().empty());
+}

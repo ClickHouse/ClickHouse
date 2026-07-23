@@ -64,6 +64,23 @@ EnrichmentResult enrichSubscription(
         }
     }
 
+    /// A partition the promoter knows is in flight but that has no visible local part yet: mark pending so a bounded stream waits.
+    for (const auto & [partition_id, promoter] : promoters)
+    {
+        if (local_parts.contains(partition_id))
+            continue;
+
+        if (!partitionBelongsToSubscription(partition_id, subscription.query_subscriptions_count, subscription.current_subscription_index))
+            continue;
+
+        Int64 cursor = -1;
+        if (auto it = snapshot.find(partition_id); it != snapshot.end())
+            cursor = it->second;
+
+        if (promoter.hasInFlightAfter(cursor))
+            result.pending = true;
+    }
+
     return result;
 }
 
