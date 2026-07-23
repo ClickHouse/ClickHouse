@@ -19,7 +19,8 @@ MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT \
     --local_filesystem_read_method pread \
     --min_bytes_to_use_direct_io 0 \
     --compile_expressions 0 \
-    --fsync_metadata 0"
+    --fsync_metadata 0 \
+    --optimize_trivial_count_from_text_index 0"
 
 $MY_CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS tab;
