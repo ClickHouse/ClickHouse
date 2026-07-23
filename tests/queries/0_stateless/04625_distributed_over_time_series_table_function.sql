@@ -58,20 +58,16 @@ DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 DROP TABLE `dot.target`;
 
 -- An unqualified identifier in a stored query outside `Distributed` is likewise resolved by the querying
--- session at execution time, so it registers no referential dependency; a database-qualified identifier
--- names a stable object and does. The qualified case uses a fixed-name database: a `{...:Identifier}`
--- parameter inside a view body is persisted unsubstituted and would not name a stable object either.
+-- session at execution time, so it registers no referential dependency (the DROP of the named table is not
+-- blocked). The opposite case — a database-qualified identifier names a stable object and does register
+-- one — lives in 04626_time_series_qualified_name_dependency.sh: the qualifying database needs a
+-- per-run-unique literal name in the view body, which a .sql test cannot produce (a `{...:Identifier}`
+-- parameter inside a view body is persisted unsubstituted, and a fixed name collides between concurrent
+-- runs in the flaky check).
 CREATE TABLE ts_plain ENGINE = TimeSeries;
 CREATE VIEW v_ts_plain AS SELECT * FROM timeSeriesMetrics(ts_plain);
 DROP TABLE ts_plain;
 DROP VIEW v_ts_plain;
-DROP DATABASE IF EXISTS db_04625_dep;
-CREATE DATABASE db_04625_dep;
-CREATE TABLE db_04625_dep.ts_plain ENGINE = TimeSeries;
-CREATE VIEW v_ts_plain AS SELECT * FROM timeSeriesMetrics(db_04625_dep.ts_plain);
-DROP TABLE db_04625_dep.ts_plain; -- { serverError HAVE_DEPENDENT_OBJECTS }
-DROP VIEW v_ts_plain;
-DROP DATABASE db_04625_dep;
 
 -- The only unqualified spelling that survives the binding of a persisted `Distributed` target refers to a
 -- session temporary table, which takes no part in dependency tracking: no dependency is registered on a

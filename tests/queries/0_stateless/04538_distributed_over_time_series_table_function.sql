@@ -80,18 +80,8 @@ DROP TABLE ts_dep;
 SET check_referential_table_dependencies = 0;
 DROP VIEW v_ts_remote;
 
--- Control: over `cluster('test_shard_localhost', ...)` the function reads its target on the local replica,
--- and a database-qualified target names a stable object, so the dependency IS recorded and the DROP is
--- rejected. An unqualified name would register no dependency even here: outside a persisted `Distributed`
--- target nothing binds it, and it is resolved by the querying session at execution time. The database has a
--- fixed name because a `{...:Identifier}` parameter inside a view body is persisted unsubstituted and would
--- not name a stable object either.
-DROP DATABASE IF EXISTS db_04538_dep;
-CREATE DATABASE db_04538_dep;
-CREATE TABLE db_04538_dep.ts_dep2 ENGINE = TimeSeries;
-CREATE VIEW v_ts_local AS SELECT * FROM cluster('test_shard_localhost', timeSeriesData(db_04538_dep.ts_dep2));
-SET check_referential_table_dependencies = 1;
-DROP TABLE db_04538_dep.ts_dep2; -- { serverError HAVE_DEPENDENT_OBJECTS }
-SET check_referential_table_dependencies = 0;
-DROP VIEW v_ts_local;
-DROP DATABASE db_04538_dep;
+-- The control for the opposite case — over `cluster('test_shard_localhost', ...)` a database-qualified
+-- target names a stable object, the dependency IS recorded and the DROP is rejected — lives in
+-- 04626_time_series_qualified_name_dependency.sh: the qualifying database needs a per-run-unique literal
+-- name in the view body, which a .sql test cannot produce (a `{...:Identifier}` parameter inside a view
+-- body is persisted unsubstituted, and a fixed name collides between concurrent runs in the flaky check).
