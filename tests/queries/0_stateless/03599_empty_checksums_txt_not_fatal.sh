@@ -38,11 +38,10 @@ DATA_PATH=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.parts WHERE da
 ${CLICKHOUSE_CLIENT} --query "SELECT throwIf(substring('${DATA_PATH}', 1, 1) != '/', 'Path is relative: ${DATA_PATH}')" > /dev/null || exit 1
 
 # Assertions below are made server-side (row counts, CHECK TABLE) rather than by stat-ing the on-disk
-# checksums.txt or reading per-query ProfileEvents: an external stat of a live part directory races the
-# server's own reads/writes, and a fsync counter from the repair (which runs on a pipeline worker
-# thread) is not reliably attributed to the query in system.query_log under CI parallelism. Reloading
-# the part from disk (DETACH/ATTACH) forces the recovered checksums to be read back from disk, so a
-# reload that returns all rows proves recovery persisted a valid checksums.txt on disk.
+# checksums.txt: an external stat of a live part directory races the server's own reads/writes and
+# cache prewarming under CI randomization. Reloading the part from disk (DETACH/ATTACH) forces the
+# recovered checksums to be read back from disk, so a reload that returns all rows proves recovery
+# persisted a valid checksums.txt on disk.
 
 # ---- Case 1: empty (zero-byte) checksums.txt must NOT brick the part (the bug) ----
 ${CLICKHOUSE_CLIENT} --query "DETACH TABLE t_empty_checksums"
