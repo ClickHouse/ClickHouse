@@ -3862,7 +3862,7 @@ Returns the maximum of the computed exponentially smoothed moving average at ind
         {"timeunit", "Timeunit.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::Parameters exponentialTimeDecayedMax_parameters = {
-        {"x", "Half-life period.", {"(U)Int*", "Float*", "Decimal"}}
+        {"x", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue exponentialTimeDecayedMax_returned_value = {"Returns the maximum of the exponentially smoothed weighted moving average at `t` and `t-1`.", {"Float64"}};
     FunctionDocumentation::Examples exponentialTimeDecayedMax_examples = {
