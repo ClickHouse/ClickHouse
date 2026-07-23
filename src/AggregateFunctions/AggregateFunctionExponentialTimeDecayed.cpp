@@ -34,8 +34,6 @@ namespace ErrorCodes
 namespace
 {
 
-constexpr Float64 LN_2 = 0.693147180559945309417232121458176568;
-
 enum class ExponentialTimeDecayedResult
 {
     Sum,
@@ -212,7 +210,7 @@ public:
             Tuple decaying_value{
                 Field(result),
                 Field(state.initialized ? state.max_time : 0.0),
-                Field(decay_length * LN_2)};
+                Field(decay_length)};
             to.insert(Field(decaying_value));
         }
     }

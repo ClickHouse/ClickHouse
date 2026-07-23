@@ -3762,7 +3762,7 @@ The window-function form is not affected by this setting.
         {"x", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue exponentialTimeDecayedSum_returned_value = {
-        "The aggregate form returns ExponentialTimeDecayingFloat64; its half_life field is `x * ln(2)`. "
+        "The aggregate form returns ExponentialTimeDecayingFloat64; its decay_length field is `x`. "
         "The window form returns Float64.",
         {"ExponentialTimeDecayingFloat64", "Float64"}};
     FunctionDocumentation::Examples exponentialTimeDecayedSum_examples = {
@@ -3963,7 +3963,7 @@ The window-function form is not affected by this setting.
         {"x", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue exponentialTimeDecayedCount_returned_value = {
-        "The aggregate form returns ExponentialTimeDecayingFloat64; its half_life field is `x * ln(2)`. "
+        "The aggregate form returns ExponentialTimeDecayingFloat64; its decay_length field is `x`. "
         "The window form returns Float64.",
         {"ExponentialTimeDecayingFloat64", "Float64"}};
     FunctionDocumentation::Examples exponentialTimeDecayedCount_examples = {

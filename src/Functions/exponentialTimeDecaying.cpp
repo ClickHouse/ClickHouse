@@ -47,7 +47,7 @@ struct DecayingColumnView
 {
     const ColumnFloat64 & value;
     const ColumnFloat64 & time;
-    const ColumnFloat64 & half_life;
+    const ColumnFloat64 & decay_length;
 };
 
 DecayingColumnView getDecayingColumnView(const ColumnPtr & column)
@@ -85,38 +85,38 @@ void assertValidRow(const DecayingColumnView & input, size_t row, const String &
 {
     const Float64 value = input.value.getData()[row];
     const Float64 time = input.time.getData()[row];
-    const Float64 half_life = input.half_life.getData()[row];
+    const Float64 decay_length = input.decay_length.getData()[row];
     if (!std::isfinite(value) || value < 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of function {} must be finite and non-negative", function_name);
     if (!std::isfinite(time))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time of function {} must be finite", function_name);
-    if (!std::isfinite(half_life) || half_life <= 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Half-life of function {} must be finite and positive", function_name);
+    if (!std::isfinite(decay_length) || decay_length <= 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Decay length of function {} must be finite and positive", function_name);
 }
 
 Float64 valueAt(const DecayingColumnView & input, size_t row, Float64 target_time)
 {
     return input.value.getData()[row]
-        * std::exp2((input.time.getData()[row] - target_time) / input.half_life.getData()[row]);
+        * std::exp((input.time.getData()[row] - target_time) / input.decay_length.getData()[row]);
 }
 
 struct DecayingColumnBuilder
 {
-    void append(Float64 value_value, Float64 time_value, Float64 half_life_value)
+    void append(Float64 value_value, Float64 time_value, Float64 decay_length_value)
     {
         value->insertValue(value_value);
         time->insertValue(time_value);
-        half_life->insertValue(half_life_value);
+        decay_length->insertValue(decay_length_value);
     }
 
     ColumnPtr build()
     {
-        return ColumnTuple::create(Columns{std::move(value), std::move(time), std::move(half_life)});
+        return ColumnTuple::create(Columns{std::move(value), std::move(time), std::move(decay_length)});
     }
 
     ColumnFloat64::MutablePtr value = ColumnFloat64::create();
     ColumnFloat64::MutablePtr time = ColumnFloat64::create();
-    ColumnFloat64::MutablePtr half_life = ColumnFloat64::create();
+    ColumnFloat64::MutablePtr decay_length = ColumnFloat64::create();
 };
 
 class FunctionExponentialTimeDecayingFloat64 final : public IFunction
@@ -139,7 +139,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Value argument of function {} must be a number", getName());
         assertTimeType(arguments[1].type, getName());
         if (!isNumber(arguments[2].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Half-life argument of function {} must be a number", getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Decay length argument of function {} must be a number", getName());
 
         return createDataTypeExponentialTimeDecayingFloat64();
     }
@@ -148,24 +148,24 @@ public:
     {
         const auto float64_type = std::make_shared<DataTypeFloat64>();
         auto value = castColumn(arguments[0], float64_type)->convertToFullColumnIfConst();
-        auto half_life = castColumn(arguments[2], float64_type)->convertToFullColumnIfConst();
+        auto decay_length = castColumn(arguments[2], float64_type)->convertToFullColumnIfConst();
         auto time = ColumnFloat64::create(input_rows_count, 0.0);
 
         const auto & value_data = assert_cast<const ColumnFloat64 &>(*value).getData();
-        const auto & half_life_data = assert_cast<const ColumnFloat64 &>(*half_life).getData();
+        const auto & decay_length_data = assert_cast<const ColumnFloat64 &>(*decay_length).getData();
         auto & time_data = time->getData();
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             if (!std::isfinite(value_data[row]) || value_data[row] < 0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of function {} must be finite and non-negative", getName());
-            if (!std::isfinite(half_life_data[row]) || half_life_data[row] <= 0)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Half-life of function {} must be finite and positive", getName());
+            if (!std::isfinite(decay_length_data[row]) || decay_length_data[row] <= 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Decay length of function {} must be finite and positive", getName());
             time_data[row] = arguments[1].column->getFloat64(row);
             if (!std::isfinite(time_data[row]))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time of function {} must be finite", getName());
         }
 
-        return ColumnTuple::create(Columns{std::move(value), std::move(time), std::move(half_life)});
+        return ColumnTuple::create(Columns{std::move(value), std::move(time), std::move(decay_length)});
     }
 };
 
@@ -202,21 +202,21 @@ public:
         {
             assertValidRow(left, row, getName());
             assertValidRow(right, row, getName());
-            const Float64 left_half_life = left.half_life.getData()[row];
-            const Float64 right_half_life = right.half_life.getData()[row];
-            if (left_half_life != right_half_life)
+            const Float64 left_decay_length = left.decay_length.getData()[row];
+            const Float64 right_decay_length = right.decay_length.getData()[row];
+            if (left_decay_length != right_decay_length)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Function {} cannot add values with different half-lives: {} and {}",
+                    "Function {} cannot add values with different decay lengths: {} and {}",
                     getName(),
-                    left_half_life,
-                    right_half_life);
+                    left_decay_length,
+                    right_decay_length);
 
             const Float64 latest_time = std::max(left.time.getData()[row], right.time.getData()[row]);
             result.append(
                 valueAt(left, row, latest_time) + valueAt(right, row, latest_time),
                 latest_time,
-                left_half_life);
+                left_decay_length);
         }
 
         return result.build();
@@ -272,14 +272,14 @@ REGISTER_FUNCTION(ExponentialTimeDecaying)
     factory.registerFunction<FunctionExponentialTimeDecayingFloat64>(FunctionDocumentation{
         .description = R"(
 Constructs an `ExponentialTimeDecayingFloat64` value anchored at `time`.
-The value must be finite and non-negative, and the half-life must be finite and positive.
+The value must be finite and non-negative, and the decay length must be finite and positive.
 The anchor is stored as `Float64`; DateTime and DateTime64 inputs are converted to seconds.
 )",
-        .syntax = "exponentialTimeDecayingFloat64(value, time, half_life)",
+        .syntax = "exponentialTimeDecayingFloat64(value, time, decay_length)",
         .arguments = {
             {"value", "Value at the anchor time.", {"(U)Int*", "Float*", "Decimal"}},
             {"time", "Anchor time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}},
-            {"half_life", "Half-life in the time argument's units; seconds for DateTime and DateTime64.",
+            {"decay_length", "Time difference required for the value to decay to `1/e`; seconds for DateTime and DateTime64.",
                 {"(U)Int*", "Float*", "Decimal"}}},
         .returned_value = {"Returns an exponentially time-decaying value.", {"ExponentialTimeDecayingFloat64"}},
         .examples = {{
@@ -292,20 +292,20 @@ The anchor is stored as `Float64`; DateTime and DateTime64 inputs are converted 
     factory.registerFunction<FunctionExponentialTimeDecayingAdd>(FunctionDocumentation{
         .description = R"(
 Adds two exponentially time-decaying values at their greatest anchor time.
-Both inputs must have identical half-lives. The function rebases them to
-`ct = greatest(A.time, B.time)` and returns `(A.value_at(ct) + B.value_at(ct), ct, A.half_life)`.
+Both inputs must have identical decay lengths. The function rebases them to
+`ct = greatest(A.time, B.time)` and returns `(A.value_at(ct) + B.value_at(ct), ct, A.decay_length)`.
 )",
         .syntax = "exponentialTimeDecayingAdd(a, b)",
         .arguments = {
             {"a", "First decaying value.", {"ExponentialTimeDecayingFloat64"}},
-            {"b", "Second decaying value with the same half-life.", {"ExponentialTimeDecayingFloat64"}}},
+            {"b", "Second decaying value with the same decay length.", {"ExponentialTimeDecayingFloat64"}}},
         .returned_value = {"Returns the combined decaying value.", {"ExponentialTimeDecayingFloat64"}},
         .examples = {{
-            "Add values with the same half-life",
+            "Add values with the same decay length",
             "SELECT exponentialTimeDecayingAdd("
-            "exponentialTimeDecayingFloat64(8, toFloat64(0), 10), "
+            "exponentialTimeDecayingFloat64(2.718281828459045, toFloat64(0), 10), "
             "exponentialTimeDecayingFloat64(4, toFloat64(10), 10))",
-            "(8,10,10)"}},
+            "(5,10,10)"}},
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::Other});
 
@@ -321,9 +321,9 @@ Numeric, DateTime, and DateTime64 targets are converted to seconds, so `now()` a
                 {"Number", "DateTime", "DateTime64"}}},
         .returned_value = {"Returns the decayed value at the target time.", {"Float64"}},
         .examples = {{
-            "Evaluate one half-life later",
-            "SELECT exponentialTimeDecayingValueAt(exponentialTimeDecayingFloat64(8, toFloat64(0), 10), toFloat64(10))",
-            "4"}},
+            "Evaluate one decay length later",
+            "SELECT round(exponentialTimeDecayingValueAt(exponentialTimeDecayingFloat64(8, toFloat64(0), 10), toFloat64(10)), 6)",
+            "2.943036"}},
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::Other});
 }

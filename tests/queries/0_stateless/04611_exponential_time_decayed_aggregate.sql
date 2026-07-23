@@ -23,6 +23,14 @@ SET allow_experimental_time_decay_aggregate_functions = 1;
 -- The value type has one fixed Float64 representation and takes no type arguments.
 SELECT CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(Float64)'); -- { serverError DATA_TYPE_CANNOT_HAVE_ARGUMENTS }
 
+-- Addition preserves the input category: scalars remain scalar and decaying
+-- values remain ExponentialTimeDecayingFloat64.
+SELECT
+    toTypeName(toFloat64(1) + toFloat64(2)),
+    toTypeName(
+        exponentialTimeDecayingFloat64(1, toFloat64(0), 10)
+        + exponentialTimeDecayingFloat64(2, toFloat64(0), 10));
+
 -- Preserve the existing decay-length semantics: a value observed one decay
 -- length before the greatest timestamp has weight 1/e.
 SELECT
@@ -139,7 +147,7 @@ SELECT
     round(tupleElement(decaying_count, 'value'), 6),
     toTypeName(decaying_sum),
     tupleElement(decaying_sum, 'time'),
-    round(tupleElement(decaying_sum, 'half_life'), 6),
+    round(tupleElement(decaying_sum, 'decay_length'), 6),
     round(exponentialTimeDecayingValueAt(
         decaying_sum,
         tupleElement(decaying_sum, 'time') + 10), 6)
@@ -156,7 +164,7 @@ FROM
         (5, '2020-01-01 00:00:05'))
 );
 
--- Decaying values with the same half-life can be combined at their latest anchor.
+-- Decaying values with the same decay length can be combined at their latest anchor.
 WITH
     exponentialTimeDecayingFloat64(8, toFloat64(0), 10) AS a,
     exponentialTimeDecayingFloat64(4, toFloat64(10), 10) AS b,
@@ -165,7 +173,7 @@ SELECT
     toTypeName(c),
     round(tupleElement(c, 'value'), 6),
     tupleElement(c, 'time'),
-    round(tupleElement(c, 'half_life'), 6),
+    round(tupleElement(c, 'decay_length'), 6),
     round(exponentialTimeDecayingValueAt(c, toFloat64(20)), 6);
 
 -- DateTime anchors are stored as Float64 seconds.
@@ -196,7 +204,7 @@ SELECT a + b;
 SELECT
     round(tupleElement(decaying_value, 'value'), 6),
     tupleElement(decaying_value, 'time'),
-    round(tupleElement(decaying_value, 'half_life'), 6),
+    round(tupleElement(decaying_value, 'decay_length'), 6),
     round(exponentialTimeDecayingValueAt(
         decaying_value,
         toDateTime64('2020-01-01 00:00:20', 3)), 6)
@@ -204,7 +212,7 @@ FROM exponential_time_decaying_values;
 
 DROP TABLE exponential_time_decaying_values;
 
--- Different half-lives cannot be represented by one decay curve and are rejected.
+-- Different decay lengths cannot be represented by one decay curve and are rejected.
 SELECT exponentialTimeDecayingAdd(
     exponentialTimeDecayingFloat64(8, toFloat64(0), 10),
     exponentialTimeDecayingFloat64(4, toFloat64(10), 20)); -- { serverError BAD_ARGUMENTS }
@@ -212,7 +220,7 @@ SELECT
     exponentialTimeDecayingFloat64(8, toFloat64(0), 10)
     + exponentialTimeDecayingFloat64(4, toFloat64(10), 20); -- { serverError BAD_ARGUMENTS }
 
--- Repeated addition with the same half-life remains independent of grouping.
+-- Repeated addition with the same decay length remains independent of grouping.
 WITH
     exponentialTimeDecayingFloat64(1, toFloat64(0), 10) AS a,
     exponentialTimeDecayingFloat64(1, toFloat64(1), 10) AS b,
@@ -221,10 +229,10 @@ WITH
     a + (b + c) AS rhs
 SELECT
     abs(tupleElement(lhs, 'value') - tupleElement(rhs, 'value')) < 1e-12,
-    abs(tupleElement(lhs, 'half_life') - tupleElement(rhs, 'half_life')) < 1e-12,
+    abs(tupleElement(lhs, 'decay_length') - tupleElement(rhs, 'decay_length')) < 1e-12,
     abs(exponentialTimeDecayingValueAt(lhs, toFloat64(10)) - exponentialTimeDecayingValueAt(rhs, toFloat64(10))) < 1e-12;
 
--- Reproducibly generated values with different timestamps and the same half-life
+-- Reproducibly generated values with different timestamps and the same decay length
 -- must be independent of input order and intermediate batch grouping.
 WITH
     arrayMap(
@@ -255,7 +263,8 @@ WITH
     first_batch + second_batch AS batched
 SELECT
     abs(tupleElement(direct, 'value') - tupleElement(reversed, 'value')) <= 1e-12 * greatest(1., tupleElement(direct, 'value')),
-    abs(tupleElement(direct, 'half_life') - tupleElement(batched, 'half_life')) <= 1e-12 * greatest(1., tupleElement(direct, 'half_life')),
+    abs(tupleElement(direct, 'decay_length') - tupleElement(batched, 'decay_length'))
+        <= 1e-12 * greatest(1., tupleElement(direct, 'decay_length')),
     abs(exponentialTimeDecayingValueAt(direct, toFloat64(2000)) - exponentialTimeDecayingValueAt(batched, toFloat64(2000)))
         <= 1e-12 * greatest(1., exponentialTimeDecayingValueAt(direct, toFloat64(2000)));
 
