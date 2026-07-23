@@ -1419,9 +1419,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
       */
     if (table_join->isJoinWithConstant())
     {
-        if (!table_join->isEnabledAlgorithm(JoinAlgorithm::HASH))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JOIN ON constant supported only with join algorithm 'hash'");
-
+        /// A constant join has no join keys and always executes via HashJoin, like a
+        /// CROSS join below, so it must not fail because of the join_algorithm setting.
         return std::make_shared<HashJoin>(table_join, right_table_expression_header, params.join_any_take_last_row);
     }
 

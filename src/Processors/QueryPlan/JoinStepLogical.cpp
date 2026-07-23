@@ -865,7 +865,10 @@ static JoinActionRef concatConditions(
     else if (matching.size() > 1)
         result = toBoolIfNeeded(JoinActionRef::transform({matching}, JoinActionRef::AddFunction(JoinConditionOperator::And)));
 
-    conditions.erase(conditions.begin(), matching_point.begin());
+    /// Erase only the conditions actually extracted into `result`. When one condition was left
+    /// behind above, it must stay in `conditions` so it is still applied later (otherwise a
+    /// single-table ON filter would be silently dropped for non-hash algorithms).
+    conditions.erase(conditions.begin(), conditions.begin() + matching.size());
     return result;
 }
 
@@ -1166,8 +1169,9 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
         if (!has_keys && join_operator.strictness != JoinStrictness::Asof)
         {
+            /// A keyless INNER/CROSS+ALL join has no join keys, so it degrades to a CROSS
+            /// join, which always executes via HashJoin regardless of join_algorithm.
             bool can_convert_to_cross = (isInner(join_operator.kind) || isCrossOrComma(join_operator.kind))
-                && TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH)
                 && join_operator.strictness == JoinStrictness::All;
 
             table_join_clauses.pop_back();
@@ -1538,11 +1542,8 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterAc
     if (!canPushDownFromOn(join_operator, side))
         return {};
 
-    /// Check if condition can be extracted completely
-    const bool allow_join_on_const = TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH);
-
     auto & join_expression = join_operator.expression;
-    if (auto filter_condition = concatConditions(join_expression, side, /*can_extract_everything=*/allow_join_on_const))
+    if (auto filter_condition = concatConditions(join_expression, side, /*can_extract_everything=*/true))
         return ActionsDAG::createActionsForConjunction({filter_condition.getNode()}, stream_header->getColumnsWithTypeAndName());
 
     return {};

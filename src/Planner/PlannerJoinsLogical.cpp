@@ -68,7 +68,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
@@ -542,9 +541,8 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
     }
     else if (join_expression_constant.has_value())
     {
-        if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JOIN ON constant supported only with join algorithm 'hash'");
-
+        /// A constant join has no join keys and always executes via HashJoin (like a
+        /// CROSS join), so it must not fail because of the join_algorithm setting.
         bool join_expression_value = join_expression_constant.value();
         if (!join_expression_value)
         {
