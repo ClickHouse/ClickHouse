@@ -190,6 +190,12 @@ done
 
 find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' | xargs grep --with-filename -i -E -e 'system\s*flush\s*logs\s*(;|$|")' && echo "Please use SYSTEM FLUSH LOGS log_name over global SYSTEM FLUSH LOGS"
 
+# Global SYSTEM FLUSH ASYNC INSERT QUEUE drains buffered async inserts of every
+# table on the server, so it corrupts parallel tests that keep entries buffered
+# (e.g. to flush after an ALTER). Always scope it to a table.
+# Skip comment lines and EXPLAIN SYNTAX (the parser grammar test uses the bare form).
+find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' | xargs grep --with-filename -i -E -e "system\s*flush\s*async\s*insert\s*queue\s*(;|\$|\"|')" | grep -vE ':[[:space:]]*(--|#)' | grep -vi 'EXPLAIN' && echo "Please use SYSTEM FLUSH ASYNC INSERT QUEUE table over global SYSTEM FLUSH ASYNC INSERT QUEUE"
+
 # Tests with SYSTEM DROP should have no-parallel tag, because SYSTEM DROP commands
 # (like SYSTEM DROP ... CACHE, SYSTEM DROP REPLICA, etc.) affect server-wide shared state
 # and interfere with other tests running concurrently.
