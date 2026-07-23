@@ -98,6 +98,7 @@ ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName
 namespace
 {
 
+/// `i` is a zero-based index; the returned ordinal is one-based ("1st" for i == 0).
 String withOrdinalEnding(size_t i)
 {
     switch (i)
@@ -109,7 +110,7 @@ String withOrdinalEnding(size_t i)
         case 2:
             return "3rd";
         default:
-            return std::to_string(i) + "th";
+            return std::to_string(i + 1) + "th";
     }
 }
 
