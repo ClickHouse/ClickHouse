@@ -23,6 +23,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/AsyncInsertSelectSource.h>
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -67,6 +68,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool async_insert;
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsBool optimize_trivial_insert_select;
@@ -101,6 +103,7 @@ namespace Setting
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool implicit_transaction;
 }
 
 namespace MergeTreeSetting
@@ -382,27 +385,21 @@ static std::pair<QueryPipelineBuilder, ClusterProxy::LocalPlanParallelReplicasIn
 }
 
 
-QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline)
+Block InterpreterInsertQuery::convertSelectToInsertSchema(
+    QueryPipelineBuilder & pipeline,
+    const ASTInsertQuery & query,
+    const StoragePtr & table,
+    const ContextPtr & context_,
+    bool no_destination,
+    bool allow_materialized)
 {
-    auto context = getContext();
-
-    // disable parallel replicas for inserts if enabled
-    // the insert can trigger update for dependent materialized views
-    // using parallel replicas in this context is unnecessary
-    if (context->canUseParallelReplicasOnInitiator())
-    {
-        auto mutable_context = Context::createCopy(context);
-        mutable_context->setSetting("enable_parallel_replicas", Field{0});
-        context = mutable_context;
-    }
-
-    auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
-    auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);
+    auto metadata_snapshot = table->getInMemoryMetadataPtr(context_, false);
+    auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context_, no_destination, allow_materialized);
 
     pipeline.dropTotalsAndExtremes();
 
     /// Allow to insert Nullable into non-Nullable columns, NULL values will be added as defaults values.
-    if (context->getSettingsRef()[Setting::insert_null_as_default])
+    if (context_->getSettingsRef()[Setting::insert_null_as_default])
     {
         const auto & input_columns = pipeline.getHeader().getColumnsWithTypeAndName();
         const auto & query_columns = query_sample_block.getColumnsWithTypeAndName();
@@ -435,13 +432,32 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
             pipeline.getHeader().getColumnsWithTypeAndName(),
             query_sample_block.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Position,
-            context);
-    auto actions = std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings(context, CompileExpressions::yes));
+            context_);
+    auto actions = std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings(context_, CompileExpressions::yes));
 
     pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
     {
         return std::make_shared<ExpressionTransform>(in_header, actions);
     });
+
+    return query_sample_block;
+}
+
+QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline)
+{
+    auto context = getContext();
+
+    // disable parallel replicas for inserts if enabled
+    // the insert can trigger update for dependent materialized views
+    // using parallel replicas in this context is unnecessary
+    if (context->canUseParallelReplicasOnInitiator())
+    {
+        auto mutable_context = Context::createCopy(context);
+        mutable_context->setSetting("enable_parallel_replicas", Field{0});
+        context = mutable_context;
+    }
+
+    auto query_sample_block = convertSelectToInsertSchema(pipeline, query, table, context, no_destination, allow_materialized);
 
     pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
     {
@@ -606,7 +622,7 @@ static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool pr
     }
 }
 
-static bool queryHasOrderByAll(const ASTPtr & select)
+bool InterpreterInsertQuery::queryHasOrderByAll(const ASTPtr & select)
 {
     if (auto * select_query = select->as<ASTSelectQuery>())
     {
@@ -1275,7 +1291,7 @@ BlockIO InterpreterInsertQuery::execute()
     }
 
     BlockIO res;
-    if (query.select)
+    if (query.select && !query.async_insert_flush)
     {
         if (settings[Setting::parallel_distributed_insert_select])
         {
@@ -1302,7 +1318,34 @@ BlockIO InterpreterInsertQuery::execute()
             query.select = std::move(saved_select);
         }
         if (!res.pipeline.initialized())
-            res.pipeline = buildInsertSelectPipeline(query, table);
+        {
+            /// All distributed and parallel-replica routes were rejected above, so this is a plain
+            /// local INSERT ... SELECT. Route it through the async insert queue when async inserts
+            /// are enabled, otherwise build the normal synchronous pipeline.
+            auto * async_insert_queue = context->tryGetAsynchronousInsertQueue();
+            // Transactions and non-parallel quorum cannot be served by the async queue -
+            // queue flushes are not transactional, and non-parallel quorum requires
+            // synchronous coordination. The async queue also cannot honor
+            // skip_target_insert_access_check (the CREATE TABLE ... AS SELECT populate into a
+            // temporary _tmp_replace_* table), so it would re-check INSERT on the temporary name
+            // and fail with ACCESS_DENIED. Fall back to the synchronous pipeline silently.
+            const bool in_transaction =
+                context->getCurrentTransaction() != nullptr
+                || settings[Setting::implicit_transaction];
+            const bool quorum_is_enabled =
+                settings[Setting::insert_quorum].valueOr(0) > 1
+                || settings[Setting::insert_quorum].is_auto;
+            const bool non_parallel_quorum = quorum_is_enabled && !settings[Setting::insert_quorum_parallel];
+            const bool async_insert_select = async_insert_queue
+                && (settings[Setting::async_insert] || table->areAsynchronousInsertsEnabled())
+                && !in_transaction
+                && !non_parallel_quorum
+                && !skip_target_insert_access_check;
+            if (async_insert_select)
+                buildAsyncInsertSelectPipeline(res, query, query_ptr, table, async_insert_queue, context, settings, logger);
+            else
+                res.pipeline = buildInsertSelectPipeline(query, table);
+        }
     }
     else
     {

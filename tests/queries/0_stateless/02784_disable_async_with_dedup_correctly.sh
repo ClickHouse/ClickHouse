@@ -15,6 +15,9 @@ function insert_with_log_check() {
 }
 
 insert_with_log_check "INSERT INTO 02784_async_table_with_dedup VALUES (1), (2)"
+# `INSERT ... SELECT` whose result is a single block within `async_insert_max_data_size` now
+# goes through the async queue instead of falling back to synchronous, so the
+# "executed synchronously" message does not appear (count = 0, same as VALUES and INFILE).
 insert_with_log_check "INSERT INTO 02784_async_table_with_dedup SELECT number as a FROM system.numbers LIMIT 10 OFFSET 3"
 
 DATA_FILE=test_02784_async_$CLICKHOUSE_TEST_UNIQUE_NAME.csv
