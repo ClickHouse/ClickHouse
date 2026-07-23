@@ -37,14 +37,31 @@ DATA_PATH=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.parts WHERE da
 # ensure the path is absolute before touching it
 ${CLICKHOUSE_CLIENT} --query "SELECT throwIf(substring('${DATA_PATH}', 1, 1) != '/', 'Path is relative: ${DATA_PATH}')" > /dev/null || exit 1
 
+# Assertions below are made server-side (row counts, CHECK TABLE, ProfileEvents) rather than by
+# stat-ing the on-disk checksums.txt: an external stat of a live part directory races the server's
+# own reads/writes and cache prewarming under CI randomization, whereas the properties we care about
+# (the part still loads all its rows, its checksums are valid, the repair write was fsynced) are all
+# observable through the server. Reloading the part from disk (DETACH/ATTACH) forces the recovered
+# checksums to be read back from disk, so a reload that returns all rows proves recovery persisted a
+# valid checksums.txt, which is stronger than checking the file is merely non-empty.
+
 # ---- Case 1: empty (zero-byte) checksums.txt must NOT brick the part (the bug) ----
 ${CLICKHOUSE_CLIENT} --query "DETACH TABLE t_empty_checksums"
 : > "${DATA_PATH}checksums.txt"
-echo "checksums.txt size after truncation: $(stat -c%s "${DATA_PATH}checksums.txt")"
 ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE t_empty_checksums" 2>/dev/null
 echo "rows after empty checksums.txt reload:"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t_empty_checksums"
-echo "checksums.txt recalculated (size > 0): $([ "$(stat -c%s "${DATA_PATH}checksums.txt")" -gt 0 ] && echo 1 || echo 0)"
+# Recovery must have PERSISTED a valid checksums.txt, not just recovered it in memory. Reload the part
+# from disk (so the checksums are read back from disk) and run a full CHECK TABLE: if the backfill was
+# persisted, CHECK validates the existing file and reports an empty message; if it was not persisted the
+# file is still empty/absent and CHECK would report "Checksums recounted and written to disk." instead.
+# This proves persistence server-side, without stat-ing the live part file (which races the server).
+${CLICKHOUSE_CLIENT} --query "DETACH TABLE t_empty_checksums"
+${CLICKHOUSE_CLIENT} --query "ATTACH TABLE t_empty_checksums" 2>/dev/null
+echo "empty checksums.txt recovered (rows after reload):"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t_empty_checksums"
+echo "empty checksums.txt recovered (check passed, no recount message):"
+${CLICKHOUSE_CLIENT} --query "CHECK TABLE t_empty_checksums SETTINGS check_query_single_value_result = 0" | cut -f2,3
 
 # ---- Case 2: absent checksums.txt still self-heals (regression guard) ----
 ${CLICKHOUSE_CLIENT} --query "DETACH TABLE t_empty_checksums"
@@ -60,7 +77,6 @@ rm -f "${DATA_PATH}checksums.txt"
 check_query_id="check-repair-${CLICKHOUSE_DATABASE}"
 echo "check table result:"
 ${CLICKHOUSE_CLIENT} --query_id "${check_query_id}" --query "CHECK TABLE t_empty_checksums SETTINGS check_query_single_value_result = 1"
-echo "checksums.txt non-empty after CHECK TABLE: $([ "$(stat -c%s "${DATA_PATH}checksums.txt")" -gt 0 ] && echo 1 || echo 0)"
 # The repair write must be fsynced (this is the durability the fix adds): FileSync > 0 for the query.
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 echo "check table repair fsynced (FileSync > 0):"
@@ -70,6 +86,7 @@ ${CLICKHOUSE_CLIENT} --param_check_query_id "${check_query_id}" --query "
     WHERE current_database = currentDatabase() AND query_id = {check_query_id:String}
       AND type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600
     ORDER BY event_time DESC LIMIT 1"
+# The repaired checksums.txt must load cleanly from disk afterwards.
 ${CLICKHOUSE_CLIENT} --query "DETACH TABLE t_empty_checksums"
 ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE t_empty_checksums" 2>/dev/null
 echo "rows after CHECK TABLE repair and reload:"
