@@ -1195,11 +1195,11 @@ void StorageRabbitMQ::threadFunc()
 
                     LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
-                    /// A cycle that runs while blocked is a claimed REFRESH permit (one out-of-order cycle);
-                    /// have the source wait once for the first delivery so the single permit is not wasted on
-                    /// an empty poll while the AMQP loop spins up. A normal cycle keeps the fast empty return.
-                    const bool wait_for_first_message = stream_control.isBlocked();
-                    bool continue_reading = streamToViews(cycle_epoch, wait_for_first_message);
+                    /// A cycle that runs while blocked is a claimed REFRESH permit: have the source drive
+                    /// the AMQP loop itself so the permit is not wasted (see RabbitMQSource). A normal cycle
+                    /// keeps the fast empty return and lets the looping task deliver.
+                    const bool drive_loop_on_worker = stream_control.isBlocked();
+                    bool continue_reading = streamToViews(cycle_epoch, drive_loop_on_worker);
                     if (!continue_reading)
                         break;
 
@@ -1257,7 +1257,7 @@ void StorageRabbitMQ::threadFunc()
     }
 }
 
-bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool wait_for_first_message)
+bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worker)
 {
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -1290,7 +1290,7 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool wait_for_first_mess
             *this, storage_snapshot, new_context, Names{}, block_size,
             max_execution_time_ms, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode],
             reject_unhandled_messages, /* ack_in_suffix */false, log, cycle_epoch,
-            /* wait_for_first_message */wait_for_first_message);
+            /* drive_loop_on_worker */drive_loop_on_worker);
 
         sources.emplace_back(source);
         pipes.emplace_back(source);

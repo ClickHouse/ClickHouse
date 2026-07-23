@@ -27,7 +27,7 @@ public:
             bool ack_in_suffix,
             LoggerPtr log_,
             std::optional<UInt64> cancel_epoch_ = {},
-            bool wait_for_first_message_ = false);
+            bool drive_loop_on_worker_ = false);
 
     ~RabbitMQSource() override;
 
@@ -57,9 +57,8 @@ private:
 
     bool is_finished = false;
     bool consumption_aborted = false;
-    /// Wait once for the first delivery instead of returning an empty cycle (set only for a
-    /// REFRESH-while-stopped background cycle; see StorageRabbitMQ::streamToViews).
-    bool wait_for_first_message = false;
+    /// Set only for a REFRESH-while-stopped background cycle; see driveLoopUntilMessage.
+    bool drive_loop_on_worker = false;
     const Block non_virtual_header;
     const Block virtual_header;
     const UInt64 cancel_epoch;
@@ -69,6 +68,9 @@ private:
 
     uint64_t max_execution_time_ms = 0;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
+    /// Absolute drive budget for the self-driving REFRESH path, started on this source's first empty
+    /// poll (see driveLoopUntilMessage).
+    std::optional<Stopwatch> drive_stopwatch;
 
     RabbitMQConsumer::CommitInfo commit_info;
 
@@ -85,9 +87,13 @@ private:
         bool ack_in_suffix,
         LoggerPtr log_,
         std::optional<UInt64> cancel_epoch_ = {},
-        bool wait_for_first_message_ = false);
+        bool drive_loop_on_worker_ = false);
 
     Chunk generateImpl();
+
+    /// Drive the AMQP loop on this worker until a message is pending (bounded, cancel-aware).
+    /// Returns true if a message is now pending, false if it timed out / was cancelled / stopped.
+    bool driveLoopUntilMessage();
 };
 
 }

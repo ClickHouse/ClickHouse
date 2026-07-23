@@ -19,6 +19,12 @@ namespace Setting
 extern const SettingsMilliseconds rabbitmq_max_wait_ms;
 }
 
+/// Cap for the self-driven wait when the flush interval is 0 (i.e. no per-cycle time budget), so a
+/// REFRESH-while-stopped cycle never parks a pool worker indefinitely.
+static constexpr uint64_t DEFAULT_LOOP_DRIVE_WAIT_MS = 5000;
+/// Slice between event-loop iterations while self-driving the loop waiting for a message.
+static constexpr uint64_t LOOP_DRIVE_POLL_MS = 50;
+
 static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot, const Names & column_names)
 {
     auto all_columns_header = storage_snapshot->metadata->getSampleBlock();
@@ -58,7 +64,7 @@ RabbitMQSource::RabbitMQSource(
     bool ack_in_suffix_,
     LoggerPtr log_,
     std::optional<UInt64> cancel_epoch_,
-    bool wait_for_first_message_)
+    bool drive_loop_on_worker_)
     : RabbitMQSource(
         storage_,
         storage_snapshot_,
@@ -72,7 +78,7 @@ RabbitMQSource::RabbitMQSource(
         ack_in_suffix_,
         log_,
         cancel_epoch_,
-        wait_for_first_message_)
+        drive_loop_on_worker_)
 {
 }
 
@@ -89,7 +95,7 @@ RabbitMQSource::RabbitMQSource(
     bool ack_in_suffix_,
     LoggerPtr log_,
     std::optional<UInt64> cancel_epoch_,
-    bool wait_for_first_message_)
+    bool drive_loop_on_worker_)
     : ISource(std::make_shared<const Block>(getSampleBlock(headers.first, headers.second)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -99,7 +105,7 @@ RabbitMQSource::RabbitMQSource(
     , handle_error_mode(handle_error_mode_)
     , ack_in_suffix(ack_in_suffix_)
     , nack_broken_messages(nack_broken_messages_)
-    , wait_for_first_message(wait_for_first_message_)
+    , drive_loop_on_worker(drive_loop_on_worker_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
     , cancel_epoch(cancel_epoch_.value_or(storage_.currentCancelEpoch()))
@@ -136,6 +142,37 @@ void RabbitMQSource::updateChannel()
         return;
 
     consumer->updateChannel(storage.getConnection());
+}
+
+bool RabbitMQSource::driveLoopUntilMessage()
+{
+    /// Absolute drive budget for THIS source, started on its first empty poll. It is not the shared
+    /// construction-time `total_stopwatch` (all sources are constructed together, so the first would
+    /// spend a shared budget and starve the serially-run rest) and it is not reset per poll (that would
+    /// let a steadily-fed queue keep the single worker past the cycle interval and stall other tables).
+    if (!drive_stopwatch)
+        drive_stopwatch.emplace(CLOCK_MONOTONIC_COARSE);
+    const uint64_t drive_budget_ms = max_execution_time_ms ? max_execution_time_ms : DEFAULT_LOOP_DRIVE_WAIT_MS;
+
+    auto is_cancelled = [this]{ return storage.isConsumeCancelRequested(cancel_epoch); };
+    auto & handler = storage.getConnection().getHandler();
+    while (!consumer->hasPendingMessages())
+    {
+        if (consumer->isConsumerStopped() || is_cancelled())
+            return false;
+        if (drive_stopwatch->elapsedMilliseconds() >= drive_budget_ms)
+            return false;
+
+        /// Drive the AMQP event loop on this worker instead of parking on the consumer's condition
+        /// variable: delivery would otherwise depend on the RabbitMQLoopingTask getting a
+        /// MessageBrokerSchedulePool worker, which a SYSTEM REFRESH ALL BACKGROUND fan-out can starve.
+        /// iterateLoop() is a no-op when the looping task already owns the loop (try_lock).
+        handler.iterateLoop();
+        if (!consumer->hasPendingMessages())
+            consumer->waitForMessages(LOOP_DRIVE_POLL_MS, is_cancelled);
+    }
+
+    return true;
 }
 
 Chunk RabbitMQSource::generate()
@@ -356,33 +393,18 @@ Chunk RabbitMQSource::generateImpl()
         }
         else if (total_rows == 0)
         {
-            /// Wait once for the first delivery before giving up on an empty buffer (single-shot: the flag is
-            /// cleared, so the cycle stays bounded and a genuinely empty queue does not spin).
-            if (wait_for_first_message && !consumer->isConsumerStopped())
-            {
-                wait_for_first_message = false;
-                auto is_cancelled = [this]{ return storage.isConsumeCancelRequested(cancel_epoch); };
-                if (max_execution_time_ms)
-                {
-                    uint64_t elapsed_time_ms = total_stopwatch.elapsedMilliseconds();
-                    if (max_execution_time_ms > elapsed_time_ms)
-                    {
-                        consumer->waitForMessages(max_execution_time_ms - elapsed_time_ms, is_cancelled);
-                        continue;
-                    }
-                }
-                else
-                {
-                    consumer->waitForMessages(std::nullopt, is_cancelled);
-                    continue;
-                }
-            }
+            /// Empty first poll: self-drive the loop instead of returning empty. See driveLoopUntilMessage.
+            if (drive_loop_on_worker && !consumer->isConsumerStopped() && driveLoopUntilMessage())
+                continue;
             break;
         }
 
         bool is_time_limit_exceeded = false;
         UInt64 remaining_execution_time = 0;
-        if (max_execution_time_ms)
+        /// The self-driving REFRESH path bounds itself per empty poll (see driveLoopUntilMessage), so it
+        /// ignores the shared construction-time budget, which the first of several sibling sources would
+        /// otherwise exhaust for the rest.
+        if (max_execution_time_ms && !drive_loop_on_worker)
         {
             uint64_t elapsed_time_ms = total_stopwatch.elapsedMilliseconds();
             is_time_limit_exceeded = max_execution_time_ms <= elapsed_time_ms;
@@ -396,6 +418,13 @@ Chunk RabbitMQSource::generateImpl()
         }
         if (new_rows == 0)
         {
+            /// A false return (idle budget reached / stopped / cancelled) ends the cycle.
+            if (drive_loop_on_worker)
+            {
+                if (driveLoopUntilMessage())
+                    continue;
+                break;
+            }
             auto is_cancelled = [this]{ return storage.isConsumeCancelRequested(cancel_epoch); };
             if (remaining_execution_time)
                 consumer->waitForMessages(remaining_execution_time, is_cancelled);
