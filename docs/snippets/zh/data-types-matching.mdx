@@ -1,0 +1,44 @@
+---
+title: 数据类型匹配
+---
+
+下表列出了 Apache Avro format 支持的所有 数据类型，以及它们在 `INSERT` 和 `SELECT` queries 中对应的 ClickHouse [数据类型](/zh/reference/data-types/index)。
+
+| Avro data type `INSERT`                     | ClickHouse data type                                                                            | Avro data type `SELECT`       |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------- |
+| `boolean`, `int`, `long`, `float`, `double` | [Int(8\16\32)](/zh/reference/data-types/int-uint), [UInt(8\16\32)](/zh/reference/data-types/int-uint) | `int`                         |
+| `boolean`, `int`, `long`, `float`, `double` | [Int64](/zh/reference/data-types/int-uint), [UInt64](/zh/reference/data-types/int-uint)               | `long`                        |
+| `boolean`, `int`, `long`, `float`, `double` | [Float32](/zh/reference/data-types/float)                                                          | `float`                       |
+| `boolean`, `int`, `long`, `float`, `double` | [Float64](/zh/reference/data-types/float)                                                          | `double`                      |
+| `bytes`, `string`, `fixed`, `enum`          | [String](/zh/reference/data-types/string)                                                          | `bytes` 或 `string` *          |
+| `bytes`, `string`, `fixed`                  | [FixedString(N)](/zh/reference/data-types/fixedstring)                                             | `fixed(N)`                    |
+| `enum`                                      | [Enum(8\16)](/zh/reference/data-types/enum)                                                        | `enum`                        |
+| `array(T)`                                  | [Array(T)](/zh/reference/data-types/array)                                                         | `array(T)`                    |
+| `map(V, K)`                                 | [Map(V, K)](/zh/reference/data-types/map)                                                          | `map(string, K)`              |
+| `union(null, T)`, `union(T, null)`          | [Nullable(T)](/zh/reference/data-types/date)                                                       | `union(null, T)`              |
+| `union(T1, T2, …)` **                       | [Variant(T1, T2, …)](/zh/reference/data-types/variant)                                             | `union(T1, T2, …)` **         |
+| `null`                                      | [Nullable(Nothing)](/zh/reference/data-types/special-data-types/nothing)                           | `null`                        |
+| `int (date)` ***                            | [Date](/zh/reference/data-types/date), [Date32](/zh/reference/data-types/date32)                      | `int (date)` ***              |
+| `long (timestamp-millis)` ***               | [DateTime64(3)](/zh/reference/data-types/datetime)                                                 | `long (timestamp-millis)` *** |
+| `long (timestamp-micros)` ***               | [DateTime64(6)](/zh/reference/data-types/datetime)                                                 | `long (timestamp-micros)` *** |
+| `bytes (decimal)`  ***                      | [DateTime64(N)](/zh/reference/data-types/datetime)                                                 | `bytes (decimal)`  ***        |
+| `int`                                       | [IPv4](/zh/reference/data-types/ipv4)                                                              | `int`                         |
+| `fixed(16)`                                 | [IPv6](/zh/reference/data-types/ipv6)                                                              | `fixed(16)`                   |
+| `bytes (decimal)` ***                       | [Decimal(P, S)](/zh/reference/data-types/decimal)                                                  | `bytes (decimal)` ***         |
+| `string (uuid)` ***                         | [UUID](/zh/reference/data-types/uuid)                                                              | `string (uuid)` ***           |
+| `fixed(16)`                                 | [Int128/UInt128](/zh/reference/data-types/int-uint)                                                | `fixed(16)`                   |
+| `fixed(32)`                                 | [Int256/UInt256](/zh/reference/data-types/int-uint)                                                | `fixed(32)`                   |
+| `record`                                    | [Tuple](/zh/reference/data-types/tuple)                                                            | `record`                      |
+
+* `bytes` is default, controlled by setting [`output_format_avro_string_column_pattern`](/zh/reference/settings/formats#output_format_avro_string_column_pattern)
+
+**  [Variant 类型](/zh/reference/data-types/variant) 会隐式地接受 `null` 作为字段值，因此，例如 Avro 的 `union(T1, T2, null)` 会被转换为 `Variant(T1, T2)`。
+因此，当从 ClickHouse 生成 Avro 时，我们必须始终在 Avro 的 `union` 类型集合中包含 `null` 类型，因为在进行 schema inference 时，我们无法判断是否有某个值实际为 `null`。
+
+*** [Avro 逻辑类型](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+
+不受支持的 Avro 逻辑类型：
+
+* `time-millis`
+* `time-micros`
+* `duration`

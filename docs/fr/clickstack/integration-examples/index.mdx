@@ -1,0 +1,37 @@
+---
+slug: /use-cases/observability/clickstack/integration-guides
+description: 'Ingestion de données pour ClickStack - La stack d’observabilité ClickHouse'
+title: 'Guides d’intégration'
+doc_type: 'landing-page'
+keywords: ['ingestion de données ClickStack', 'ingestion de données d’observabilité', 'guides d’intégration ClickStack']
+---
+
+ClickStack propose plusieurs façons d’ingérer des données d’observabilité dans votre instance ClickHouse. Cette section contient des guides de démarrage rapide pour différentes sources de logs, de traces et de métriques.
+
+<Note>
+  Plusieurs de ces guides d’intégration utilisent l’OpenTelemetry Collector intégré de ClickStack Open Source pour des tests rapides et l’évaluation.
+
+  Pour les déploiements de production, nous vous recommandons d’exécuter les intégrations en tant qu’agents OpenTelemetry Collector, au plus près de vos workloads. Ces agents doivent transmettre les données de télémétrie via OTLP à un ClickStack OpenTelemetry Collector, qui achemine ensuite les données soit vers une instance ClickHouse autogérée pour la distribution ClickStack Open Source, soit vers Managed ClickStack. Consultez [&quot;Envoi de données OpenTelemetry&quot;](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration en production.
+</Note>
+
+| Section                                                                   | Description                                              |
+| ------------------------------------------------------------------------- | -------------------------------------------------------- |
+| [Logs d’hôte génériques](/fr/clickstack/integration-examples/host-logs)      | Collecter les logs système de l’hôte                     |
+| [Logs d’hôte EC2](/fr/clickstack/integration-examples/host-logs/ec2)         | Surveiller les logs d’instance EC2                       |
+| [Logs AWS Lambda avec Rotel](/fr/clickstack/integration-examples/aws-lambda) | Transférer les logs Lambda avec Rotel                    |
+| [AWS CloudWatch](/fr/clickstack/integration-examples/cloudwatch)             | Transférer les groupes de logs CloudWatch                |
+| [Métriques JVM](/fr/clickstack/integration-examples/jvm-metrics)             | Surveiller les performances de la JVM                    |
+| [Logs Kafka](/fr/clickstack/integration-examples/kafka-logs)                 | Collecter les logs des brokers Kafka                     |
+| [Métriques Kafka](/fr/clickstack/integration-examples/kafka-metrics)         | Surveiller les performances de Kafka                     |
+| [Kubernetes](/fr/clickstack/integration-examples/kubernetes)                 | Surveiller les clusters K8s                              |
+| [Logs MongoDB](/fr/clickstack/integration-examples/mongodb-logs)             | Collecter les logs du serveur MongoDB                    |
+| [Logs MySQL](/fr/clickstack/integration-examples/mysql)                      | Collecter les logs de requêtes lentes et d’erreurs MySQL |
+| [Logs Nginx](/fr/clickstack/integration-examples/nginx-logs)                 | Collecter les logs d’accès et d’erreurs Nginx            |
+| [Traces Nginx](/fr/clickstack/integration-examples/nginx-traces)             | Suivre les requêtes HTTP Nginx à la trace                |
+| [Traces Node.js](/fr/clickstack/integration-examples/nodejs-traces)          | Suivre les requêtes HTTP Node.js à la trace              |
+| [Logs PostgreSQL](/fr/clickstack/integration-examples/postgres-logs)         | Collecter les logs Postgres                              |
+| [Métriques PostgreSQL](/fr/clickstack/integration-examples/postgres-metrics) | Surveiller les performances de Postgres                  |
+| [Logs Redis](/fr/clickstack/integration-examples/redis-logs)                 | Collecter les logs du serveur Redis                      |
+| [Métriques Redis](/fr/clickstack/integration-examples/redis-metrics)         | Surveiller les performances de Redis                     |
+| [Logs Systemd](/fr/clickstack/integration-examples/systemd)                  | Collecter les logs Systemd/Journald                      |
+| [Métriques Temporal](/fr/clickstack/integration-examples/temporal)           | Surveiller les métriques Temporal Cloud                  |

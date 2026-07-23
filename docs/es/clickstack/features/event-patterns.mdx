@@ -1,0 +1,40 @@
+---
+slug: /use-cases/observability/clickstack/event_patterns
+title: 'Patrones de eventos con ClickStack'
+sidebarTitle: 'Patrones de eventos'
+description: 'Patrones de eventos con ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'patrones de eventos', 'análisis de logs', 'búsqueda de patrones', 'observabilidad']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Patrones de eventos en ClickStack te permiten comprender rápidamente grandes volúmenes de logs o trazas al agrupar automáticamente mensajes similares, de modo que, en lugar de revisar millones de eventos individuales, solo tienes que revisar un pequeño número de grupos significativos.
+
+<Image img="/images/use-cases/observability/event_patterns.webp" alt="Patrones de eventos" size="lg" />
+
+Esto facilita mucho identificar qué errores o advertencias son nuevos, cuáles son recurrentes y cuáles están provocando aumentos repentinos en el volumen de logs. Como los patrones se generan dinámicamente, no necesitas definir expresiones regulares ni mantener reglas de parsing: ClickStack se adapta automáticamente a tus eventos, independientemente del formato.
+
+Además de la respuesta a incidentes, esta vista de alto nivel también te ayuda a identificar fuentes de logs con mucho ruido que pueden reducirse para bajar costos, descubrir los distintos tipos de logs que produce un servicio y determinar más rápidamente si el sistema ya está emitiendo las señales que te interesan.
+
+<div id="accessing-event-patterns">
+  ## Cómo acceder a los patrones de eventos
+</div>
+
+Los patrones de eventos están disponibles directamente en el panel de **Búsqueda** de ClickStack.
+
+En el selector **Modo de análisis** de la esquina superior izquierda, selecciona **Patrones de eventos** para pasar de la tabla de resultados estándar a una vista agrupada de eventos similares.
+
+<Image img="/images/use-cases/observability/event_patterns_highlight.webp" alt="Patrones de eventos" size="lg" />
+
+Esto ofrece una alternativa a la **Tabla de resultados** predeterminada, que te permite desplazarte por cada log o traza individual.
+
+<div id="recommendations">
+  ## Recomendaciones
+</div>
+
+Los patrones de eventos son más eficaces cuando se aplican a **subconjuntos más acotados** de sus datos. Por ejemplo, filtrar hasta quedarse con un único servicio antes de habilitar los patrones de eventos suele mostrar mensajes más relevantes e interesantes que aplicar patrones a miles de servicios a la vez.
+
+También son especialmente útiles para resumir mensajes de error, ya que los errores repetidos con distintos ID o payloads se agrupan en clústeres concisos.
+
+Para ver un ejemplo en vivo, consulte cómo se usan los patrones de eventos en el [Remote Demo Dataset](/es/clickstack/example-datasets/remote-demo-data#identify-error-patterns).

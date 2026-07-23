@@ -1,0 +1,218 @@
+---
+title: Como adicionar uma coluna a uma tabela
+description: Neste guia, aprenderemos a adicionar uma coluna a uma tabela existente.
+date: 2024-12-18
+tags: ['Modelagem de Dados']
+keywords: ['Adicionar coluna']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="adding-a-column-to-a-table">
+  ## Adicionando uma coluna a uma tabela
+</div>
+
+Vamos usar o clickhouse-local:
+
+```bash
+clickhouse -m --output_format_pretty_row_numbers=
+```
+
+Vamos imaginar a seguinte tabela:
+
+```sql
+CREATE TABLE events (
+    date Date DEFAULT today(), 
+    name String
+) 
+ENGINE = MergeTree
+ORDER BY date;
+```
+
+Vamos adicionar um registro:
+
+```sql
+INSERT INTO events (name) VALUES ('Alexey');
+```
+
+E agora consulte a tabela `events`:
+
+```sql
+SELECT *
+FROM events;
+```
+
+```text
+┌───────date─┬─name───┐
+│ 2024-12-18 │ Alexey │
+└────────────┴────────┘
+```
+
+<div id="adding-a-new-column">
+  ## Adicionando uma nova coluna
+</div>
+
+Agora, vamos supor que vamos adicionar uma nova coluna chamada `favoriteNumber`, que será do tipo `Float64`.
+Podemos fazer isso usando a cláusula [`ALTER TABLE...ADD COLUMN`](/pt-BR/reference/statements/alter/column#add-column):
+
+```sql
+ALTER TABLE events 
+ADD COLUMN favoriteNumber Float64 DEFAULT 7;
+```
+
+Se consultarmos a tabela `events`, veremos a seguinte saída:
+
+```text
+┌───────date─┬─name───┬─favoriteNumber─┐
+│ 2024-12-18 │ Alexey │              7 │
+└────────────┴────────┴────────────────┘
+```
+
+A linha `Alexey` fica com o valor padrão 7, pois essa coluna não existia quando adicionamos essa linha.
+Em seguida, vamos adicionar outra coluna:
+
+```sql
+INSERT INTO events (name) VALUES ('Tyler');
+```
+
+Se consultarmos a tabela `events`, veremos a seguinte saída:
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Tyler  │              7 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Alexey │              7 │
+└────────────┴────────┴────────────────┘
+```
+
+<div id="modifying-a-columns-default-value">
+  ## Modificando o valor padrão de uma coluna
+</div>
+
+Se modificarmos a coluna `favoriteNumber` para usar um tipo diferente com a cláusula [`ALTER TABLE...MODIFY COLUMN`](/pt-BR/reference/statements/alter/column#modify-column), a coisa fica interessante:
+
+```sql
+ALTER TABLE events 
+MODIFY COLUMN favoriteNumber Float64 DEFAULT 99;
+```
+
+Se fizermos outra consulta em `events`, veremos esta saída:
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Tyler  │              7 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Alexey │             99 │
+└────────────┴────────┴────────────────┘
+```
+
+`Tyler` mantém o valor `7`, que era o padrão quando essa linha foi criada.
+`Alexey` passa a usar o novo padrão de `99` porque a coluna `favoriteNumber` não existia quando essa linha foi criada.
+
+Se quisermos que a linha de `Alexey` use o padrão atual imediatamente, precisamos chamar [`OPTIMIZE TABLE` ](/pt-BR/reference/statements/optimize) para forçar a gravação dos padrões atuais em disco:
+
+```sql
+OPTIMIZE TABLE events;
+```
+
+Depois de fazer isso, suponha que alteremos o valor padrão novamente:
+
+```sql
+ALTER TABLE events 
+MODIFY COLUMN favoriteNumber Float64 DEFAULT 21;
+```
+
+Em seguida, insira outra linha:
+
+```sql
+INSERT INTO events (name) VALUES ('Tanya');
+```
+
+Por fim, vamos consultar `events` mais uma vez:
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Alexey │             99 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Tyler  │              7 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Tanya  │             21 │
+└────────────┴────────┴────────────────┘
+```
+
+`Tanya` assume o novo valor padrão de `21`, mas `Alexey` fica com o valor padrão antigo de `99`.
+
+<div id="controlling-column-position-in-table">
+  ## Controlando a posição da coluna na tabela
+</div>
+
+Quando adicionamos uma nova coluna, por padrão ela é adicionada ao final da tabela.
+Mas podemos usar as cláusulas `FIRST` e `AFTER` para controlar onde a coluna será posicionada.
+
+Por exemplo, se quisermos adicionar uma coluna chamada `favoriteColor` após a coluna `name`, podemos fazer isso:
+
+```sql
+ALTER TABLE events
+ADD COLUMN favoriteColor String DEFAULT 'Yellow' AFTER name;
+```
+
+Vamos consultar `events`:
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteColor ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Alexey │ Yellow        │             99 │
+├────────────┼────────┼───────────────┼────────────────┤
+│ 2024-12-18 │ Tyler  │ Yellow        │              7 │
+├────────────┼────────┼───────────────┼────────────────┤
+│ 2024-12-18 │ Tanya  │ Yellow        │             21 │
+└────────────┴────────┴───────────────┴────────────────┘
+```
+
+E, se quiséssemos adicionar uma coluna `favoriteDatabase` e fazer com que ela ficasse em primeiro lugar na lista, poderíamos fazer isso:
+
+```sql
+ALTER TABLE events
+ADD COLUMN favoriteDatabase String DEFAULT 'ClickHouse' FIRST;
+```
+
+```text
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃ favoriteDatabase ┃       date ┃ name   ┃ favoriteColor ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ ClickHouse       │ 2024-12-18 │ Tanya  │ Yellow        │             21 │
+├──────────────────┼────────────┼────────┼───────────────┼────────────────┤
+│ ClickHouse       │ 2024-12-18 │ Alexey │ Yellow        │             99 │
+├──────────────────┼────────────┼────────┼───────────────┼────────────────┤
+│ ClickHouse       │ 2024-12-18 │ Tyler  │ Yellow        │              7 │
+└──────────────────┴────────────┴────────┴───────────────┴────────────────┘
+```
+
+E vamos ver a definição da tabela:
+
+```sql
+SHOW CREATE TABLE events
+FORMAT LineAsString
+```
+
+```sql
+CREATE TABLE default.`clickhouse-local-ab404c86-56cc-495b-ad1d-fb343cac3bc0events`
+(
+    `favoriteDatabase` String DEFAULT 'ClickHouse',
+    `date` Date DEFAULT today(),
+    `name` String,
+    `favoriteColor` String DEFAULT 'Yellow',
+    `favoriteNumber` Float64 DEFAULT 21
+)
+ENGINE = MergeTree
+ORDER BY date
+```

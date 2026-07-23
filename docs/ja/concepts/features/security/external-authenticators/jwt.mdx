@@ -1,0 +1,266 @@
+---
+description: 'ClickHouse Cloud における JWT ベース認証と一時ユーザーに関するガイド'
+sidebarTitle: 'JWT'
+slug: /operations/external-authenticators/jwt
+title: 'JWT 認証'
+doc_type: 'reference'
+---
+
+import CloudOnlyBadge from "/snippets/ja/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+
+<CloudOnlyBadge />
+
+ClickHouse は、JSON Web Token (JWT) を使用してユーザーを認証できます。[LDAP](/ja/concepts/features/security/external-authenticators/ldap) や [Kerberos](/ja/concepts/features/security/external-authenticators/kerberos) などの他の外部認証方式とは異なり、JWT 認証では、あらかじめ存在するユーザーの本人確認は行いません。代わりに、各トークンに埋め込まれたクレームから **一時ユーザー** を動的に生成します。これらのユーザーはメモリ上にのみ存在し、トークンのクレームに基づくアクセス権が付与され、トークンの有効期限が切れると自動的に削除されます。
+
+この点で、JWT 認証はパスワードベースや証明書ベースの方式とは本質的に異なります。`CREATE USER ... IDENTIFIED WITH jwt` ステートメントは存在せず、これを実行しようとすると例外が発生します。JWT ユーザーは、トークンのライフサイクルによって管理されます。
+
+<div id="overview">
+  ## 概要
+</div>
+
+認証フローは次のとおりです。
+
+1. クライアントは、サポートされているいずれかの転送メカニズム (HTTP `Authorization: Bearer` ヘッダー、TCP ネイティブプロトコル、または gRPC の `jwt` フィールド) を介して署名付き JWT を提示します。
+2. ClickHouse はトークンの署名を検証します。
+3. 必須のクレーム (`exp`、`iat`、`iss`、`sub`、`aud`) が検証されます。
+4. `clickhouse:grants` および `clickhouse:roles` のトークンクレームから導出されたアクセス権と権限上限の積集合に基づいて、メモリ内に一時ユーザーが作成されます。
+5. トークンの有効期限が切れると、バックグラウンドのガベージコレクションタスクによってそのユーザーは削除されます。
+
+<div id="token-claims">
+  ## トークンクレーム
+</div>
+
+<div id="required-claims">
+  ### 必須クレーム
+</div>
+
+ClickHouse に提示されるすべての JWT には、次のクレームが含まれている必要があります。
+
+| クレーム  | 説明                                                      |
+| ----- | ------------------------------------------------------- |
+| `alg` | 署名アルゴリズム (ヘッダークレーム) 。サポートされる値: `HS256`、`RS256`、`ES256`。 |
+| `exp` | 有効期限。一時ユーザーの `valid_until` を設定します。                      |
+| `iat` | 発行時刻。同じ アイデンティティ に対する古いトークンのリプレイを防ぐために使用されます。           |
+| `iss` | issuer。プロバイダーで想定される issuer と照合されます。                     |
+| `sub` | Subject。生成されるユーザー名の一部になります。                             |
+| `aud` | audience。プロバイダーで想定される audience と照合されます。                 |
+
+JWKS ベースの鍵解決を使用する場合は、`kid` (key ID) ヘッダークレームも必須です。
+
+<Info>
+  **JWKS モードでサポートされるのは RSA 鍵のみです**
+
+  静的鍵プロバイダーは `HS256`、`RS256`、`ES256` のいずれも受け入れますが、JWKS ベースのプロバイダーが受け入れるのは、`kty` が `RSA` の JWK のみです (つまり、`RS256` で署名されたトークンのみ) 。HMAC (`HS256`) または EC (`ES256`) 鍵で署名されたトークンは JWKS endpoint では検証できないため、拒否されます。
+</Info>
+
+<div id="other-recognized-claims">
+  ### その他の認識済みクレーム
+</div>
+
+| クレーム  | 説明                                                      |
+| ----- | ------------------------------------------------------- |
+| `nbf` | 有効開始時刻。このクレームは必須ではありませんが、指定されている場合、この時刻より前のトークンは拒否されます。 |
+| `jti` | 予約済み。トークンに含まれていても受け付けられますが、現時点では検証や利用は行われません。           |
+
+<div id="optional-claims">
+  ### オプションのクレーム
+</div>
+
+| クレーム                                                                    | デフォルト名              | 説明                                                                                                             |
+| ----------------------------------------------------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Grants                                                                  | `clickhouse:grants` | SQL `GRANT` の断片からなる JSON 配列です。例: `["SELECT ON db.*", "INSERT ON db.table1"]`。各要素は `GRANT` ステートメントの本体として解析されます。 |
+| Roles                                                                   | `clickhouse:roles`  | 割り当てるロール名の JSON 配列です。例: `["analyst", "reader"]`。                                                               |
+| identity provider で異なる命名規則を使用している場合は、デフォルトのクレーム名をカスタムのクレーム名に再マッピングできます。 |                     |                                                                                                                |
+
+<div id="example-token-header-and-payload">
+  ### トークン、ヘッダー、ペイロードの例
+</div>
+
+```json
+{
+  "alg": "RS256",
+  "kid": "my-key-id"
+}
+```
+
+```json
+{
+  "iss": "https://idp.example.com",
+  "sub": "jane.doe",
+  "aud": "my-clickhouse-cluster",
+  "exp": 1719504000,
+  "iat": 1719500400,
+  "clickhouse:grants": ["SELECT ON analytics.*", "INSERT ON analytics.events"],
+  "clickhouse:roles": ["analyst"]
+}
+```
+
+<div id="ephemeral-user-behavior">
+  ## 一時ユーザーの動作
+</div>
+
+JWTユーザーは、通常のClickHouseユーザーとはいくつかの重要な点で異なります。
+
+<div id="identity-and-naming">
+  ### ID と命名
+</div>
+
+各 JWT ユーザーには、`iss`、`sub`、`aud` のクレーム から計算される決定論的な UUID が割り当てられます。この UUID はログインをまたいでも **変わりません**。異なるトークンで何度ログインしても、issuer、subject、audience が同じであれば、常に同じ UUID が割り当てられます。
+
+一方、ユーザー名は **変動** します。次のように構成されます。
+
+```text
+JWT::<issuer>::<audience>::<subject>::<claims_hash>
+```
+
+`<claims_hash>` の部分は、`clickhouse:roles` または `clickhouse:grants` のクレームが変更されるたびに変化します。つまり、同じアイデンティティであっても、ロールまたは権限セットが異なるトークンでは、生成されるユーザー名も異なります。
+
+<div id="access-rights">
+  ### アクセス権
+</div>
+
+有効なアクセス権は次のように算出されます。
+
+```text
+effective_rights = permission_limit ∩ (token_grants ∪ token_roles)
+```
+
+ここで、`permission_limit` は、上限として設定された参照ロールまたはユーザーが保持するアクセス権の集合です。トークンが要求した権限のうち、この上限を超えるものは、通知されることなく破棄されます。
+
+<div id="token-freshness">
+  ### トークンの新しさ
+</div>
+
+ClickHouse は、安定した各アイデンティティについて、直近に認証されたトークンの `iat` (発行時刻) クレームを追跡します。保存済みの値と同じか、それより古い `iat` を持つトークンが提示された場合、サーバーはクレームを再評価せず、既存の一時ユーザーを再利用します。これにより、古いトークンによってユーザーの権限が引き下げられるのを防ぎます。
+
+<div id="lifetime-and-garbage-collection">
+  ### 有効期間とガベージコレクション
+</div>
+
+一時ユーザーは、トークンが最初に認証されたときに作成され、`valid_until` (`exp` から導出) が過ぎると、バックグラウンドのガベージコレクション タスクによって削除されます。GC の間隔は、`gc_interval` パラメータ (デフォルト: 5 分) で制御されます。
+
+GC の実行間では、期限切れのユーザーが `system.users` に表示されたままになることがありますが、認証はできなくなります。
+
+<div id="persistent-access-assignments">
+  ### 永続的なアクセス割り当て
+</div>
+
+UUID は変わらないため、SQLステートメントを使用して、設定プロファイル、クォータ、行ポリシー、カラムのマスキングポリシーを JWT ユーザーに割り当てることができます。これらの割り当てはアクセス制御ストレージ (ディスク上または ZooKeeper 内) に永続的に保存され、トークンの有効期限切れや再認証後も維持されます。
+
+ユーザーは現在のユーザー名で参照してください:
+
+```sql
+ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::ClickHouse::my-service-id::jane.doe::<claims-hash>';
+```
+
+<Note>
+  指定した アイデンティティ のユーザー名と UUID は、ユーザーが有効な間、`system.users` の `name` カラムと `id` カラムで確認できます。
+</Note>
+
+`ALTER USER` は読み取り専用のため、JWTユーザーには直接使用できないことに注意してください。設定プロファイル、クォータ、またはポリシーを割り当てるには、上記のとおり `ALTER SETTINGS PROFILE`、`ALTER QUOTA`、または `ALTER ROW POLICY` ステートメントを使用してください。
+
+<div id="differences-from-regular-users">
+  ## 一般ユーザーとの違い
+</div>
+
+| 機能                                    | JWT ユーザー                    | 一般ユーザー                   |
+| ------------------------------------- | --------------------------- | ------------------------ |
+| 作成                                    | トークンのクレームから自動作成             | `CREATE USER` ステートメント    |
+| 保存先                                   | メモリ内のみ (一時的)                | ディスク、ZooKeeper、または設定ファイル |
+| `CREATE USER ... IDENTIFIED WITH jwt` | サポートされていない (例外が発生する)        | その他のすべての認証方式をサポート        |
+| `ALTER USER` / `DROP USER`            | サポートされていない                  | サポート                     |
+| バックアップと復元                             | 含まれない                       | 含まれる                     |
+| ユーザー名                                 | 自動生成され、固定されない               | 管理者が選択し、固定される            |
+| UUID                                  | `iss`+`sub`+`aud` から決定論的に生成 | 作成時にランダムに生成              |
+| 有効期間                                  | トークンの `exp` によって制限される       | 明示的に削除されるまで              |
+| アクセス権                                 | トークンのクレームから導出され、権限上限で制限される  | `GRANT` によって明示的に付与される    |
+| ホスト制限                                 | プロバイダーごとのネットワーク設定           | ユーザーごとの `HOST` 句         |
+| 設定プロファイル                              | UUID による割り当てが可能 (永続的)       | 直接設定可能                   |
+| クォータと行ポリシー                            | UUID による割り当てが可能 (永続的)       | 直接設定可能                   |
+| デフォルトロール                              | 設定不可                        | 設定可能                     |
+
+<div id="sql-security-definer-views">
+  ## SQL SECURITY DEFINER を使用するビュー
+</div>
+
+一時ユーザーである JWT ユーザーが `SQL SECURITY DEFINER` を指定してビューを作成すると、サーバーはそのビューの定義者として機能する永続的なシャドウコピーを自動的に作成します。このシャドウユーザーには、次の特性があります。
+
+* 名前は `<original_jwt_username>:definer`
+* `NO_AUTHENTICATION` が設定される (ログインには使用できません)
+* ビュー作成時点で、元の JWT ユーザーと同じアクセス権を保持する
+
+これにより、一時ユーザーのトークンが期限切れになって元のユーザーがガベージコレクションで削除された後も、ビューは引き続き機能します。
+
+<div id="client-usage">
+  ## クライアントの利用
+</div>
+
+<div id="passing-token-directly">
+  ### トークンを直接渡す
+</div>
+
+事前に取得したトークンで認証するには、`clickhouse-client` で `--jwt` フラグを指定します。
+
+```bash
+clickhouse-client --host your-instance.clickhouse.cloud --secure --jwt '<your_jwt_token>'
+```
+
+<Note>
+  `--jwt` フラグは `--user` と同時に使用できません。`--jwt` を指定した場合、ユーザー名はトークンから取得されます。
+</Note>
+
+<div id="http-interface">
+  ### HTTP インターフェイス
+</div>
+
+トークンを Bearer トークンとして `Authorization` ヘッダーに指定して送信します：
+
+```bash
+curl -H 'Authorization: Bearer <your_jwt_token>' \
+    'https://your-instance.clickhouse.cloud:8443/?query=SELECT+currentUser()'
+```
+
+<Warning>
+  JWT は必ず HTTPS 経由で送信してください。Bearer トークンを平文の HTTP で送信すると、ネットワーク経路上の第三者に傍受される可能性があり、認証情報を漏えいするのと同じです。
+</Warning>
+
+<div id="oauth2-device-code-login">
+  ### OAuth2 デバイスコードログイン
+</div>
+
+`clickhouse-client` は、`--login` フラグによる対話型の OAuth2 デバイスコードフローをサポートしています。ClickHouse Cloud エンドポイントでは、ClickHouse 固有の JWT を取得するためのトークン交換がクライアントによって自動的に行われます。トークンはセッション中に透過的に更新されます。新しいトークンを取得すると、クライアントは自動的に再接続します。
+
+```bash
+clickhouse-client --host your-instance.clickhouse.cloud --login
+```
+
+<div id="clickhouse-cloud-built-in">
+  ## ClickHouse Cloud 組み込み JWT 認証器
+</div>
+
+すべての ClickHouse Cloud サービスには、SQL Console と `clickhouse-client` の `--login` フローで使用される、あらかじめ定義された JWT 認証器が用意されています。この認証器は次のように設定されています。
+
+| Parameter        | Value                                    |
+| ---------------- | ---------------------------------------- |
+| `iss` (issuer)   | `ClickHouse`                             |
+| `aud` (audience) | サービス UUID (Cloud Console の URL に表示されます)  |
+| `sub` (subject)  | ClickHouse Cloud アカウントのメールアドレス           |
+
+この組み込み認証器の権限上限は、`default_role` ロールおよび `default` ユーザーに設定されています。つまり、JWT ユーザーの実効権限はこの 2 つが持つ権限との積集合になるため、トークンによって `default_role` と `default` に許可されている範囲を超えて権限を昇格させることはできません。
+
+この認証器を使用するために、追加の設定は必要ありません。サービスの作成時に自動的にプロビジョニングされます。
+
+<div id="interserver-communication">
+  ## サーバー間通信
+</div>
+
+クエリが別の分片またはレプリカに転送される際、JWTトークンはサーバー間プロトコルにも含まれます。リモートノードはそのトークンを独自に再認証し、独自の一時ユーザーを作成します。
+
+<div id="troubleshooting">
+  ## トラブルシューティング
+</div>
+
+* **アクセス権が付与されていない:** 参照先のロールまたはユーザーに、必要な権限が付与されていない可能性があります。`clickhouse:roles` で参照しているロールが存在し、適切な権限が含まれていることを確認してください。
+* **トークンが拒否される:** トークン内の `iss`、`aud`、および署名アルゴリズムが、JWT プロバイダーの想定と一致していることを確認してください。JWKS を使用している場合は、トークンの `kid` がプロバイダーのキーセット内のキーと一致していることを確認してください。
+* **クエリの間にユーザーが消える:** 一時ユーザーは、トークンの有効期限が切れると削除されます。長時間のセッションでは、トークンの更新をサポートするクライアント (例: `--login` モード) を使用してください。
+* **`CREATE USER ... IDENTIFIED WITH jwt` が失敗する:** これは想定どおりです。JWT ユーザーは DDL では作成できません。管理は完全にトークンのライフサイクルに委ねられます。

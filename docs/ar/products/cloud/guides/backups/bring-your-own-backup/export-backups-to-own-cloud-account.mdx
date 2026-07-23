@@ -1,0 +1,190 @@
+---
+sidebarTitle: 'تصدير النسخ الاحتياطية'
+slug: /cloud/manage/backups/export-backups-to-own-cloud-account
+title: 'تصدير النسخ الاحتياطية إلى حسابك السحابي الخاص'
+description: 'يوضح كيفية تصدير النسخ الاحتياطية إلى حسابك السحابي الخاص'
+doc_type: 'guide'
+---
+
+يدعم ClickHouse Cloud حفظ النسخ الاحتياطية في حسابك الخاص لدى موفر الخدمة السحابية (CSP) ‏(AWS S3 أو Google Cloud Storage أو Azure Blob Storage).
+للاطلاع على تفاصيل آلية عمل النسخ الاحتياطية في ClickHouse Cloud، بما في ذلك النسخ الاحتياطية &quot;الكاملة&quot; مقابل &quot;التزايدية&quot;، راجع وثائق [النسخ الاحتياطية](/ar/products/cloud/guides/backups/review-and-restore-backups).
+
+في هذا الدليل، نعرض أمثلة على كيفية إنشاء نسخ احتياطية كاملة وتزايدية في تخزين الكائنات على AWS وGCP وAzure، بالإضافة إلى كيفية الاستعادة منها.
+
+<Note>
+  أي استخدام تُصدَّر فيه النسخ الاحتياطية إلى منطقة مختلفة ضمن موفر الخدمة السحابية نفسه سيترتب عليه رسوم [نقل البيانات](/ar/products/cloud/reference/billing/network-data-transfer).
+
+  لا تُدعَم النسخ الاحتياطية عبر سُحب مختلفة إلا من خلال أوامر النسخ الاحتياطي/الاستعادة الموضحة في هذه الصفحة، وليس عبر UI.
+</Note>
+
+<div id="requirements">
+  ## المتطلبات
+</div>
+
+ستحتاج إلى التفاصيل التالية لتصدير النسخ الاحتياطية أو استعادتها إلى حاوية التخزين الخاصة بك لدى موفّر الخدمة السحابية (CSP).
+
+<div id="aws">
+  ### AWS
+</div>
+
+1. عنوان نقطة نهاية AWS S3، بالتنسيق التالي:
+
+```text
+  s3://<bucket_name>.s3.amazonaws.com/<directory>
+```
+
+على سبيل المثال:
+
+```text
+  s3://testchbackups.s3.amazonaws.com/backups/
+```
+
+حيث:
+
+* `testchbackups` هو اسم حاوية S3 التي ستُصدَّر إليها النسخ الاحتياطية.
+  * `backups` دليل فرعي اختياري.
+
+2. مفتاح الوصول والمفتاح السري لـ AWS. كما أن المصادقة المستندة إلى دور AWS مدعومة أيضًا، ويمكن استخدامها بدلًا من مفتاح الوصول والمفتاح السري لـ AWS.
+
+<Note>
+  لاستخدام المصادقة المستندة إلى الدور، يُرجى اتباع [إعداد S3 الآمن](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely). بالإضافة إلى ذلك، ستحتاج إلى إضافة أذونات `s3:PutObject` و` s3:DeleteObject` إلى سياسة IAM الموضحة [هنا.](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role)
+</Note>
+
+<div id="azure">
+  ### Azure
+</div>
+
+1. سلسلة اتصال Azure Storage.
+2. اسم حاوية Azure في حساب التخزين.
+3. كائن Azure Blob داخل الحاوية.
+
+<div id="google-cloud-storage-gcs">
+  ### Google Cloud Storage (GCS)
+</div>
+
+1. نقطة نهاية GCS، بالصيغة التالية:
+
+   ```text
+   https://storage.googleapis.com/<bucket_name>/
+   ```
+2. مفتاح وصول HMAC وسر HMAC.
+
+<hr />
+
+<div id="backup-restore">
+  ## النسخ الاحتياطي / الاستعادة
+</div>
+
+<div id="backup--restore-to-aws-s3-bucket">
+  ## النسخ الاحتياطي / الاستعادة إلى حاوية AWS S3
+</div>
+
+<div id="take-a-db-backup">
+  ### إنشاء نسخة احتياطية لقاعدة بيانات
+</div>
+
+**نسخة احتياطية كاملة**
+
+```sql
+BACKUP DATABASE test_backups 
+TO S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<key secret>')
+```
+
+حيث إن `uuid` معرّف فريد يُستخدم للتمييز بين مجموعة من النسخ الاحتياطية.
+
+<Note>
+  ستحتاج إلى استخدام UUID مختلف لكل نسخة احتياطية جديدة في هذا الدليل الفرعي، وإلا فسيظهر لك الخطأ `BACKUP_ALREADY_EXISTS`.
+  على سبيل المثال، إذا كنت تنشئ نسخًا احتياطية يومية، فستحتاج إلى استخدام UUID جديد كل يوم.
+</Note>
+
+**النسخ الاحتياطي التزايدي**
+
+```sql
+BACKUP DATABASE test_backups 
+TO S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<key secret>') 
+SETTINGS base_backup = S3('https://testchbackups.s3.amazonaws.com/backups/<base-backup-uuid>', '<key id>', '<key secret>')
+```
+
+<div id="restore-from-a-backup">
+  ### الاستعادة من نسخة احتياطية
+</div>
+
+```sql
+RESTORE DATABASE test_backups 
+AS test_backups_restored 
+FROM S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<key secret>')
+```
+
+راجع: [إعداد BACKUP/RESTORE لاستخدام نقطة نهاية S3](/ar/concepts/features/backup-restore/s3-endpoint) لمزيد من التفاصيل.
+
+<div id="backup--restore-to-azure-blob-storage">
+  ## النسخ الاحتياطي / الاستعادة إلى Azure Blob Storage
+</div>
+
+<div id="take-a-db-backup">
+  ### إنشاء نسخة احتياطية لقاعدة بيانات
+</div>
+
+**نسخة احتياطية كاملة**
+
+```sql
+BACKUP DATABASE test_backups 
+TO AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>');
+```
+
+حيث إن `uuid` معرّف فريد يُستخدم لتمييز مجموعة من النسخ الاحتياطية عن غيرها.
+
+**النسخ الاحتياطي التزايدي**
+
+```sql
+BACKUP DATABASE test_backups 
+TO AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>/my_incremental') 
+SETTINGS base_backup = AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>')
+```
+
+<div id="restore-from-a-backup">
+  ### الاستعادة من نسخة احتياطية
+</div>
+
+```sql
+RESTORE DATABASE test_backups 
+AS test_backups_restored_azure 
+FROM AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>')
+```
+
+راجع: [تهيئة BACKUP/RESTORE لاستخدام نقطة نهاية AzureBlobStorage](/ar/concepts/features/backup-restore/azure-blob-storage#configuring-backuprestore-to-use-an-azureblobstorage-endpoint) لمزيد من التفاصيل.
+
+<div id="backup--restore-to-google-cloud-storage-gcs">
+  ## النسخ الاحتياطي / الاستعادة إلى Google Cloud Storage (GCS)
+</div>
+
+<div id="take-a-db-backup">
+  ### إنشاء نسخة احتياطية لقاعدة بيانات
+</div>
+
+**نسخة احتياطية كاملة**
+
+```sql
+BACKUP DATABASE test_backups 
+TO S3('https://storage.googleapis.com/<bucket>/<uuid>', <hmac-key>', <hmac-secret>)
+```
+
+حيث إن `uuid` معرّف فريد يُستخدم لتمييز مجموعة من النسخ الاحتياطية عن غيرها.
+
+**النسخ الاحتياطي التزايدي**
+
+```sql
+BACKUP DATABASE test_backups 
+TO S3('https://storage.googleapis.com/test_gcs_backups/<uuid>/my_incremental', 'key', 'secret')
+SETTINGS base_backup = S3('https://storage.googleapis.com/test_gcs_backups/<uuid>', 'key', 'secret')
+```
+
+<div id="restore-from-a-backup">
+  ### الاستعادة من نسخة احتياطية
+</div>
+
+```sql
+RESTORE DATABASE test_backups 
+AS test_backups_restored_gcs 
+FROM S3('https://storage.googleapis.com/test_gcs_backups/<uuid>', 'key', 'secret')
+```

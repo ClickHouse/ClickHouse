@@ -1,0 +1,119 @@
+---
+sidebarTitle: '마이그레이션 가이드'
+slug: /migrations/snowflake
+description: 'Snowflake에서 ClickHouse로 마이그레이션'
+keywords: ['Snowflake']
+title: 'Snowflake에서 ClickHouse로 마이그레이션'
+show_related_blogs: false
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+> 이 가이드에서는 Snowflake에서 ClickHouse로 데이터를 마이그레이션하는 방법을 설명합니다.
+
+Snowflake와 ClickHouse 간 데이터 마이그레이션에는
+전송을 위한 중간 저장소로 S3와 같은 객체 저장소가 필요합니다. 또한 마이그레이션 프로세스에서는
+Snowflake의 `COPY INTO` 명령과 ClickHouse의 `INSERT INTO SELECT`
+명령을 사용합니다.
+
+<Steps>
+  <Step>
+    ## Snowflake에서 데이터 내보내기
+
+    <Image img="/images/migrations/migrate_snowflake_clickhouse.webp" size="md" alt="Snowflake에서 ClickHouse로 마이그레이션" />
+
+    Snowflake에서 데이터를 내보내려면 위 다이어그램에 표시된 것처럼 외부 스테이지를 사용해야 합니다.
+
+    다음과 같은 스키마를 가진 Snowflake 테이블을 내보낸다고 가정하겠습니다.
+
+    ```sql
+    CREATE TABLE MYDATASET (
+       timestamp TIMESTAMP,
+       some_text varchar,
+       some_file OBJECT,
+       complex_data VARIANT,
+    ) DATA_RETENTION_TIME_IN_DAYS = 0;
+    ```
+
+    이 테이블의 데이터를 ClickHouse 데이터베이스로 옮기려면 먼저 해당 데이터를 외부 스테이지로 복사해야 합니다. 데이터를 복사할 때는 타입 정보를 함께 유지할 수 있고, 정밀도를 보존하며, 압축 효율이 좋고, 분석 워크로드에서 흔한 중첩 구조를 네이티브로 지원하므로 중간 포맷으로 Parquet를 권장합니다.
+
+    아래 예시에서는 Snowflake에서 Parquet와 원하는 파일 옵션을 나타내는 이름 있는 파일 포맷을 생성합니다. 그런 다음 복사한 데이터셋을 저장할 버킷을 지정합니다. 마지막으로 데이터셋을 해당 버킷으로 복사합니다.
+
+    ```sql
+    CREATE FILE FORMAT my_parquet_format TYPE = parquet;
+
+    -- 복사 대상인 S3 버킷을 지정하는 외부 스테이지를 생성합니다
+    CREATE OR REPLACE STAGE external_stage
+    URL='s3://mybucket/mydataset'
+    CREDENTIALS=(AWS_KEY_ID='<key>' AWS_SECRET_KEY='<secret>')
+    FILE_FORMAT = my_parquet_format;
+
+    -- 모든 파일에 "mydataset" 접두사를 적용하고 최대 파일 크기를 150MB로 지정합니다
+    -- 컬럼 이름을 가져오려면 `header=true` 매개변수가 필요합니다
+    COPY INTO @external_stage/mydataset from mydataset max_file_size=157286400 header=true;
+    ```
+
+    약 5TB 규모의 데이터셋에서 최대 파일 크기를 150MB로 설정하고, 동일한 AWS `us-east-1` Region에 위치한 2X-Large Snowflake warehouse를 사용하는 경우 데이터를 S3 버킷으로 복사하는 데 약 30분이 걸립니다.
+  </Step>
+
+  <Step>
+    ## ClickHouse로 가져오기
+
+    데이터가 중간 객체 스토리지에 스테이징되면 아래와 같이 [s3 테이블 함수](/ko/reference/functions/table-functions/s3)와 같은 ClickHouse 함수를 사용해 데이터를 테이블에 삽입할 수 있습니다.
+
+    이 예시에서는 AWS S3용 [s3 테이블 함수](/ko/reference/functions/table-functions/s3)를 사용하지만, Google Cloud Storage에는 [gcs 테이블 함수](/ko/reference/functions/table-functions/gcs)를 사용할 수 있고 Azure Blob Storage에는 [azureBlobStorage 테이블 함수](/ko/reference/functions/table-functions/azureBlobStorage)를 사용할 수 있습니다.
+
+    대상 테이블 스키마가 다음과 같다고 가정하겠습니다.
+
+    ```sql
+    CREATE TABLE default.mydataset
+    (
+      `timestamp` DateTime64(6),
+      `some_text` String,
+      `some_file` Tuple(filename String, version String),
+      `complex_data` Tuple(name String, description String),
+    )
+    ENGINE = MergeTree
+    ORDER BY (timestamp)
+    ```
+
+    그런 다음 `INSERT INTO SELECT` 명령을 사용해 S3의 데이터를 ClickHouse 테이블에 삽입할 수 있습니다.
+
+    ```sql
+    INSERT INTO mydataset
+    SELECT
+      timestamp,
+      some_text,
+      JSONExtract(
+        ifNull(some_file, '{}'),
+        'Tuple(filename String, version String)'
+      ) AS some_file,
+      JSONExtract(
+        ifNull(complex_data, '{}'),
+        'Tuple(filename String, description String)'
+      ) AS complex_data,
+    FROM s3('https://mybucket.s3.amazonaws.com/mydataset/mydataset*.parquet')
+    SETTINGS input_format_null_as_default = 1, -- 값이 null인 경우 컬럼이 기본값으로 삽입되도록 합니다
+    input_format_parquet_case_insensitive_column_matching = 1 -- 소스 데이터와 대상 테이블 간 컬럼 매칭은 대소문자를 구분하지 않아야 합니다
+    ```
+
+    <Info>
+      **중첩 컬럼 구조에 대한 참고**
+
+      원래 Snowflake 테이블 스키마의 `VARIANT` 및 `OBJECT` 컬럼은 기본적으로 JSON 문자열로 출력되므로, 이를 ClickHouse에 삽입할 때 형 변환해야 합니다.
+
+      `some_file`과 같은 중첩 구조는 Snowflake에서 복사 시 JSON 문자열로 변환됩니다. 이 데이터를 가져오려면 위에 표시된 것처럼 [JSONExtract function](/ko/reference/functions/regular-functions/json-functions#JSONExtract)을 사용해 ClickHouse의 삽입 시점에 이러한 구조를 튜플로 변환해야 합니다.
+    </Info>
+  </Step>
+
+  <Step>
+    ## 데이터 내보내기 성공 여부 테스트
+
+    데이터가 올바르게 삽입되었는지 확인하려면 새 테이블에서 `SELECT` 쿼리를 실행하면 됩니다.
+
+    ```sql
+    SELECT * FROM mydataset LIMIT 10;
+    ```
+  </Step>
+</Steps>

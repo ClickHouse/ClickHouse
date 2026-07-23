@@ -1,0 +1,70 @@
+---
+sidebarTitle: 'Управление ключами API'
+slug: /cloud/manage/openapi
+title: 'Управление ключами API'
+description: 'ClickHouse Cloud предоставляет API на базе OpenAPI, который позволяет программно управлять вашей учетной записью и некоторыми аспектами ваших сервисов.'
+doc_type: 'guide'
+keywords: ['api', 'openapi', 'rest api', 'документация', 'управление облаком']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+ClickHouse Cloud предоставляет API на базе OpenAPI, который позволяет программно управлять вашей учетной записью и некоторыми аспектами ваших сервисов.
+
+<Note>
+  Этот документ посвящен ClickHouse Cloud API. Сведения о конечных точках API базы данных см. в разделе [Cloud Endpoints API](/ru/products/cloud/guides/sql-console/query-endpoints)
+</Note>
+
+1. Для создания ключей API и управления ими можно использовать вкладку **ключей API** в левом меню.
+
+<Image img="/images/cloud/manage/openapi1.webp" size="sm" alt="Вкладка ключей API" border />
+
+2. На странице **ключей API** сначала отображается предложение создать первый ключ API, как показано ниже. После создания первого ключа вы сможете создавать новые ключи с помощью кнопки `New API Key`, которая появляется в правом верхнем углу.
+
+<Image img="/images/cloud/manage/openapi2.webp" size="md" alt="Страница ключей API" border />
+
+3. Чтобы создать ключ API, укажите имя ключа, разрешения для него и срок действия, затем нажмите `Generate API Key`.
+
+<br />
+
+<Note>
+  Разрешения соответствуют [предопределенным ролям](/ru/products/cloud/reference/security/console-roles) ClickHouse Cloud. Роль developer имеет разрешения только для чтения для назначенных сервисов, а роль admin — полные разрешения на чтение и запись.
+</Note>
+
+<Tip>
+  **конечные точки Query API**
+
+  Чтобы использовать ключи API с [конечными точками Query API](/ru/products/cloud/guides/sql-console/query-endpoints), задайте для Organization Role значение `Member` (как минимум) и предоставьте Service Role доступ к `Query Endpoints`.
+</Tip>
+
+<Image img="/images/cloud/manage/openapi3.png" size="md" alt="Форма создания ключа API" border />
+
+4. На следующем экране будут показаны идентификатор ключа и секрет ключа. Скопируйте эти значения и сохраните их в безопасном месте, например в хранилище секретов. После ухода с этого экрана они больше не будут отображаться.
+
+<Image img="/images/cloud/manage/openapi4.webp" size="md" alt="Сведения о ключе API" border />
+
+5. ClickHouse Cloud API использует [HTTP Basic Authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication) для проверки ваших ключей API. Ниже приведен пример использования ключей API для отправки запросов в ClickHouse Cloud API с помощью `curl`:
+
+```bash
+$ KEY_ID=mykeyid
+$ KEY_SECRET=mykeysecret
+
+$ curl --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organizations
+```
+
+6. Вернувшись на страницу **ключей API**, вы увидите имя ключа, последние четыре символа идентификатора ключа, разрешения, статус, дату истечения срока действия и создателя. На этом экране можно изменить имя ключа, разрешения и дату истечения срока действия. Здесь же ключи можно отключить или удалить.
+
+<br />
+
+<Note>
+  Удаление ключа API — необратимое действие. Все сервисы, использующие этот ключ, немедленно потеряют доступ к ClickHouse Cloud.
+</Note>
+
+<Image img="/images/cloud/manage/openapi5.webp" size="md" alt="Страница управления ключами API" border />
+
+<div id="endpoints">
+  ## Конечные точки
+</div>
+
+Сведения о конечных точках см. в [справочнике API](/ru/api-reference/organization/get-list-of-available-organizations).
+Используйте свой ключ API и секрет API с базовым URL `https://api.clickhouse.cloud/v1`.

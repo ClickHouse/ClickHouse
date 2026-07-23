@@ -1,0 +1,70 @@
+---
+sidebarTitle: '概要'
+title: 'Agentic Data Stack'
+description: 'ClickHouse上のエージェント型アナリティクス。ClickHouse Cloudでは完全マネージド型で利用でき、ClickHouse、MCPサーバー、LibreChat、Langfuseで構成されるオープンソーススタックとしてセルフホストすることもできます。'
+doc_type: 'landing-page'
+keywords: ['agentic data stack', 'エージェント型アナリティクス', 'ClickHouse', 'MCP', 'LibreChat', 'Langfuse', 'AI']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickHouse でエージェント型アナリティクスを実行する最も簡単な方法は、ClickHouse Cloud の [ClickHouse Agents](/ja/products/cloud/features/ai-ml/agents) です。完全マネージド型のため、実行するインフラストラクチャは不要です。ユーザーは自然な言葉で質問し、AIエージェントがデータベースに直接クエリして回答します。
+
+セルフホストする場合、**Agentic Data Stack** は柔軟に組み合わせられるオープンソースのスタックです。自分で運用し、独自のモデルを接続し、チャットやデータを自分の環境内に保持できます。これは [ClickHouse](/ja/get-started/setup/install)、[ClickHouse MCP server](/ja/products/agentic-data-stack/components/mcp-server)、[LibreChat](/ja/products/agentic-data-stack/components/librechat)、および [Langfuse](/ja/products/agentic-data-stack/components/langfuse) で構成されています。
+
+<div id="what-is-agentic-analytics">
+  ## エージェント型アナリティクスとは？
+</div>
+
+エージェント型アナリティクスでは、モデルはデータに対してクエリを実行し、その結果に基づいて回答します。質問が与えられると、エージェントは利用可能なデータベースとテーブルを調べ、実行すべきクエリを判断し、ClickHouse に対して実行したうえで、その結果から回答を組み立てます。必要に応じてクエリを修正したり、追加のクエリを実行したり、複数のステップを連続して実行したりできます。クエリが失敗したり、想定外の結果が返ってきたりしても、そこで停止するのではなく、調整して再試行します。
+
+<div id="what-you-can-do">
+  ## できること
+</div>
+
+* **自然言語で質問して**、自分のデータに基づく回答を得られます。
+* **コードを書かずにエージェントを構築**できます。エージェントに指示とツールを与え、繰り返し利用できます。
+* **エージェントと会話を共有**できます。閲覧専用リンクとして共有することで、他のユーザーが回答の背景にあるクエリをたどれます。
+* **インタラクティブなチャートや可視化を生成**できます。会話内でクエリ結果から生成できます。
+* **回答を評価して改善**できます。Langfuse で人によるレビューまたは LLM を判定者として応答を採点し、プロンプトやエージェントを改善できます。
+
+<div id="architecture">
+  ## スタック全体の構成
+</div>
+
+<Image img="/images/agentic-data-stack/01-architecture.webp" alt="Agentic Data Stack のアーキテクチャ: ユーザーは LibreChat を通じて操作し、LibreChat は LLM、MCPサーバー経由の ClickHouse、そしてトレーシング用の Langfuse に接続する" size="md" />
+
+ユーザーは LibreChat で質問します。モデルは応答を組み立てるための計画を立て、MCPサーバーを介してツールを呼び出し、ClickHouse を調べたりクエリを実行したりします。結果が返ると、エージェントが回答を作成します。OpenTelemetry を基盤とする Langfuse は、プロンプトからツール呼び出し、応答に至るまで各実行を記録し、自動または人によるレビューで出力を評価できるようにするとともに、品質、コスト、レイテンシを追跡します。
+
+ClickHouse MCP server はオープン標準である [Model Context Protocol](https://modelcontextprotocol.io/) をベースにしているため、LibreChat だけでなく、MCP 互換の任意のクライアントやエージェントフレームワークで利用できます。クライアントやエージェントライブラリについては、[MCP ガイド](/ja/guides/use-cases/ai-ml/MCP) を参照してください。
+
+<div id="components">
+  ## コンポーネント
+</div>
+
+| コンポーネント               | 役割                                     | 詳細                                                             |
+| --------------------- | -------------------------------------- | -------------------------------------------------------------- |
+| ClickHouse            | エージェントがクエリを送る分析エンジン                    | [ClickHouseを使い始める](/ja/get-started/setup/install)            |
+| ClickHouse MCP server | ClickHouseをツールとしてエージェントに公開するオープンスタンダード | [MCPサーバー](/ja/products/agentic-data-stack/components/mcp-server)  |
+| LibreChat             | ユーザーが操作するチャットおよびエージェントのフロントエンド         | [LibreChat](/ja/products/agentic-data-stack/components/librechat) |
+| Langfuse              | すべてのプロンプト、ツール呼び出し、応答に対するオブザーバビリティ      | [Langfuse](/ja/products/agentic-data-stack/components/langfuse)   |
+
+<div id="get-started">
+  ## はじめる
+</div>
+
+ClickHouse でエージェント型アナリティクスを実行する方法は 2 つあります。
+
+* **マネージド (ClickHouse Cloud) :** セットアップ不要で、最もすばやく始められる方法です。[ClickHouse Agents](/ja/products/cloud/features/ai-ml/agents) では、データを対象としたホスト型のチャットとエージェントを利用できます。各コンポーネントをマネージドで個別に利用することも可能です。[リモートMCPサーバー](/ja/products/cloud/features/ai-ml/remote-mcp) と [Langfuse Cloud](https://cloud.langfuse.com) を利用できます。
+* **セルフホスト (オープンソース) :** [Docker Compose](/ja/products/agentic-data-stack/docker-setup) を使ってスタック全体を自分で実行し、独自のモデルを接続して、データを自分の環境内に保持できます。
+
+何もインストールせずに公開データセットでこのスタックを試すには、ホスト型デモの [AgentHouse](https://llm.clickhouse.com) を利用してください。
+
+<div id="related">
+  ## 関連
+</div>
+
+ClickHouse のその他のオープンソース AI 機能:
+
+* [AI による SQL 生成](/ja/guides/use-cases/ai-ml/ai-powered-sql-generation): ClickHouse Client と clickhouse-local で自然言語を SQL に変換
+* [QBit を使用したベクトル検索](/ja/guides/use-cases/ai-ml/vector-search): 実行時に調整できるベクトル検索

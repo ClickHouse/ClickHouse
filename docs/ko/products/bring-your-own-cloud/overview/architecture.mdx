@@ -1,0 +1,136 @@
+---
+title: '아키텍처'
+slug: /cloud/reference/byoc/architecture
+sidebarTitle: '아키텍처'
+keywords: ['BYOC', '클라우드', 'Bring Your Own Cloud']
+description: '자체 클라우드 인프라에 ClickHouse를 배포'
+doc_type: '참고'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="key-concepts">
+  ## 핵심 개념
+</div>
+
+아래 다이어그램은 ClickHouse Cloud 조직, 클라우드 계정, BYOC 인프라가 서로 어떤 관계에 있는지 보여줍니다.
+
+<Image img="/images/cloud/reference/byoc-organization-hierarchy.svg" size="lg" alt="BYOC 조직 계층 구조" />
+
+* **ClickHouse Cloud 조직:** 사용자, 청구, 비-BYOC ClickHouse 서비스를 관리하는 ClickHouse Cloud의 최상위 엔터티입니다. 조직 내 사용자는 일반 Cloud 서비스와 BYOC 서비스에 모두 액세스할 수 있습니다.
+* **ClickHouse BYOC 조직:** BYOC 배포를 전담 관리하는 별도의 조직입니다. Cloud 조직과 사용자를 공유하지만, BYOC 인프라가 배포되는 하나 이상의 클라우드 계정에 연결됩니다.
+* **클라우드 계정 / 프로젝트:** BYOC 인프라가 프로비저닝되는 고객 소유의 AWS 계정 또는 GCP 프로젝트입니다. 각 계정 또는 프로젝트는 하나 이상의 리전에서 BYOC 배포를 호스팅할 수 있습니다. 격리를 위해 각 BYOC 배포마다 전용 계정 또는 프로젝트를 사용하는 것이 좋습니다.
+* **BYOC 인프라:** VPC, Kubernetes 클러스터(EKS/GKE), 스토리지 버킷, IAM 역할, 관련 지원 서비스를 포함해 클라우드 계정의 특정 리전에 배포되는 클라우드 리소스 집합입니다. 하나의 클라우드 계정에는 여러 리전에 걸쳐 여러 BYOC 인프라가 포함될 수 있습니다.
+* **ClickHouse 서비스:** BYOC 인프라 내에서 실행되는 개별 ClickHouse 클러스터입니다. 동일한 BYOC 인프라에서 여러 서비스가 실행될 수 있습니다.
+
+<Note>
+  동일한 조직에서 AWS 계정과 GCP 프로젝트를 함께 사용하는 것은 [클라우드 서비스 제공자 마켓플레이스](/ko/products/cloud/reference/billing/marketplace/overview)를 통해 설정되지 않은 고객에게만 가능합니다.
+</Note>
+
+<div id="glossary">
+  ## 용어집
+</div>
+
+* **ClickHouse VPC:** ClickHouse Cloud가 소유한 VPC입니다.
+* **Customer BYOC VPC:** 고객의 클라우드 계정이 소유한 VPC로, ClickHouse Cloud가 프로비저닝 및 관리하며 ClickHouse Cloud BYOC 배포 전용으로 사용됩니다.
+* **Customer VPC:** Customer BYOC VPC에 연결해야 하는 애플리케이션에 사용되는, 고객의 클라우드 계정이 소유한 기타 VPC입니다.
+
+<div id="architecture">
+  ## 기술 아키텍처
+</div>
+
+BYOC는 ClickHouse VPC에서 실행되는 **ClickHouse 컨트롤 플레인**과 고객의 클라우드 계정에서 전적으로 실행되는 **데이터 플레인**을 분리합니다. ClickHouse VPC에는 ClickHouse Cloud 콘솔, 인증, 사용자 관리, API, 청구, BYOC 컨트롤러와 같은 인프라 관리 구성 요소, 그리고 알림/인시던트 대응 도구가 호스팅됩니다. 이러한 서비스는 배포를 오케스트레이션하고 모니터링하지만, 데이터를 저장하지는 않습니다.
+
+**Customer BYOC VPC**에서는 ClickHouse가 ClickHouse 데이터 플레인을 실행하는 Kubernetes 클러스터(예: Amazon EKS)를 프로비저닝합니다. 다이어그램에 표시된 것처럼 여기에는 ClickHouse 클러스터 자체, ClickHouse Operator, 그리고 인그레스, DNS, 인증서 관리, State Exporter, scraper와 같은 지원 서비스가 포함됩니다. 전용 모니터링 스택(Prometheus, Grafana, AlertManager, Thanos)도 VPC 내에서 실행되므로 메트릭과 알림이 사용자 환경에서 생성되고 해당 환경에 그대로 유지됩니다.
+
+<br />
+
+<Image img="/images/cloud/reference/byoc-1.webp" size="lg" alt="BYOC 아키텍처" background="black" />
+
+<br />
+
+ClickHouse Cloud가 계정에 배포하는 주요 클라우드 리소스는 다음과 같습니다:
+
+* **VPC:** ClickHouse 배포 전용 Virtual Private Cloud입니다. ClickHouse 또는 고객이 관리할 수 있으며, 일반적으로 애플리케이션 VPC와 피어링됩니다.
+* **IAM 역할 and policies:** Kubernetes, ClickHouse 서비스, 모니터링 스택에 필요한 역할과 권한입니다. ClickHouse가 프로비저닝할 수도 있고 고객이 제공할 수도 있습니다.
+* **Storage buckets:** 데이터 파트, 백업, 그리고 (선택적으로) 장기 메트릭 및 로그 아카이브를 저장하는 데 사용됩니다.
+* **Kubernetes cluster:** 클라우드 제공업체에 따라 Amazon EKS, Google GKE 또는 Azure AKS가 될 수 있으며, 아키텍처 다이어그램에 표시된 ClickHouse 서버와 지원 서비스를 호스팅합니다.
+
+기본적으로 ClickHouse Cloud는 새 전용 VPC를 프로비저닝하고 Kubernetes 서비스가 안전하게 운영되도록 필요한 IAM 역할을 설정합니다. 고급 네트워킹 또는 보안 요구 사항이 있는 조직을 위해 VPC와 IAM 역할을 별도로 관리할 수 있는 옵션도 제공합니다. 이 접근 방식은 네트워크 구성을 더 유연하게 사용자 지정하고 권한을 더욱 세밀하게 제어할 수 있게 해줍니다. 다만 이러한 리소스를 자체 관리하면 운영 책임이 더 커집니다.
+
+<div id="data-storage">
+  ### 데이터 저장소
+</div>
+
+모든 ClickHouse 데이터, 백업, 관측성 데이터는 클라우드 계정에 유지됩니다. 데이터 파트와 백업은 객체 스토리지(예: Amazon S3)에 저장되며, 로그는 ClickHouse 노드에 연결된 스토리지 볼륨에 저장됩니다. 향후 업데이트에서는 로그가 BYOC VPC 내부에서도 실행되는 ClickHouse 기반 로깅 서비스인 LogHouse에 기록됩니다. 메트릭은 장기 보관을 위해 로컬에 저장하거나 BYOC VPC의 별도 버킷에 저장할 수 있습니다. ClickHouse VPC와 BYOC VPC 간의 컨트롤 플레인 연결은 안전하고 범위가 엄격하게 제한된 채널(예: 다이어그램에 표시된 Tailscale)을 통해 제공되며, 이는 쿼리 트래픽이 아니라 관리 작업에만 사용됩니다.
+
+<div id="control-plane-communication">
+  ### 컨트롤 플레인 통신
+</div>
+
+ClickHouse VPC는 구성 변경, 상태 점검, 배포 명령 등 서비스 관리 작업을 위해 HTTPS(포트 443)를 통해 BYOC VPC와 통신합니다. 이 트래픽은 오케스트레이션에 필요한 컨트롤 플레인 데이터만 전달합니다. 리소스 사용률 및 상태 모니터링을 위해 중요한 텔레메트리와 알림은 BYOC VPC에서 ClickHouse VPC로 전송됩니다.
+
+<div id="key-requirements">
+  ## BYOC의 핵심 요구 사항
+</div>
+
+BYOC 배포 모델은 안정적인 운영, 손쉬운 유지 관리, 보안을 위해 두 가지 필수 구성 요소를 갖춰야 합니다:
+
+<div id="cross-account-iam-permissions">
+  ### 교차 계정 IAM 권한
+</div>
+
+ClickHouse Cloud가 클라우드 계정 내에서 리소스를 프로비저닝하고 관리하려면 교차 계정 IAM 권한이 필요합니다. 이를 통해 ClickHouse는 다음을 수행할 수 있습니다.
+
+* **인프라 프로비저닝**: VPC, 서브넷, 보안 그룹 및 기타 네트워킹 구성 요소를 생성하고 구성합니다
+* **Kubernetes 클러스터 관리**: EKS/GKE 클러스터, 노드 그룹 및 클러스터 구성 요소를 배포하고 유지 관리합니다
+* **스토리지 리소스 생성**: 데이터와 백업을 위한 S3 버킷 또는 이에 상응하는 객체 스토리지를 프로비저닝합니다
+* **IAM 역할 관리**: Kubernetes 서비스 계정과 지원 서비스를 위한 IAM 역할을 생성하고 구성합니다
+* **지원 서비스 운영**: 모니터링 스택, 인그레스 컨트롤러 및 기타 인프라 구성 요소를 배포하고 관리합니다
+
+이러한 권한은 초기 온보딩 과정에서 생성하는 교차 계정 IAM 역할(AWS) 또는 서비스 계정(GCP)을 통해 부여됩니다. 이 역할은 최소 권한 원칙을 따르며, 권한 범위는 BYOC 운영에 필요한 수준으로만 제한됩니다.
+
+필요한 구체적인 권한에 대한 자세한 내용은 [BYOC Privilege Reference](/ko/products/bring-your-own-cloud/reference/privilege)를 참조하십시오.
+
+<div id="tailscale-private-network">
+  ### Tailscale 프라이빗 네트워크 연결
+</div>
+
+Tailscale은 ClickHouse Cloud의 관리 서비스와 BYOC 배포 간에 안전한 제로 트러스트 프라이빗 네트워크 연결을 제공합니다. 이 연결을 통해 다음이 가능합니다:
+
+* **지속적인 모니터링**: ClickHouse 엔지니어가 BYOC VPC에 배포된 Prometheus 모니터링 스택에 액세스하여 서비스 상태와 성능을 모니터링할 수 있습니다
+* **선제적 유지 관리**: 엔지니어가 정기적인 유지 관리, 업그레이드, 문제 해결 작업을 수행할 수 있습니다
+* **긴급 지원**: 서비스 문제가 발생할 경우 엔지니어가 환경에 신속하게 액세스하여 문제를 진단하고 해결할 수 있습니다
+* **인프라 관리**: 관리 서비스가 자동화된 작업을 위해 BYOC 인프라와 연계될 수 있습니다
+
+Tailscale 연결은 BYOC VPC에서 **아웃바운드 전용**으로만 이루어지며, 인바운드 연결은 필요하지 않으므로 보안 노출을 줄일 수 있습니다. 모든 액세스는 다음과 같습니다:
+
+* **승인 및 감사**: 엔지니어는 내부 승인 시스템을 통해 액세스를 요청해야 합니다
+* **기간 제한**: 액세스 권한은 설정된 기간이 지나면 자동으로 만료됩니다
+* **제한됨**: 엔지니어는 시스템 테이블과 인프라 구성 요소에만 액세스할 수 있으며, 고객 데이터에는 절대 액세스할 수 없습니다
+* **암호화됨**: 모든 통신은 종단 간 암호화됩니다
+
+BYOC에서 Tailscale이 작동하는 방식과 보안 제어에 관한 자세한 내용은 [네트워크 보안 문서](/ko/products/bring-your-own-cloud/reference/network-security#tailscale-private-network)를 참조하십시오.
+
+<div id="why-requirements-matter">
+  ### 이러한 요구 사항이 중요한 이유
+</div>
+
+이 두 구성 요소는 함께 ClickHouse Cloud가 다음을 수행할 수 있게 합니다.
+
+* **신뢰성 유지**: 문제를 예방할 수 있도록 배포를 선제적으로 모니터링하고 유지 관리합니다
+* **보안 보장**: 전체 감사 추적이 가능한 최소 권한 액세스를 사용합니다
+* **운영 간소화**: 제어는 유지하면서 인프라 관리를 자동화합니다
+* **지원 제공**: 문제가 발생하면 신속하게 대응하고 해결합니다
+
+모든 고객 데이터는 고객의 클라우드 계정 내에 유지되며, 이러한 관리 채널을 통해 액세스되거나 전송되지 않습니다.
+
+**추가 권장 사항 및 고려 사항:**
+
+* BYOC VPC의 네트워크 CIDR 범위가 피어링할 예정인 기존 VPC와 겹치지 않도록 하십시오.
+* 관리와 지원을 간소화할 수 있도록 리소스에 태그를 명확하게 지정하십시오.
+* 고가용성을 위해 충분한 서브넷 크기를 계획하고, 가용 영역 전반에 적절히 분산되도록 하십시오.
+* ClickHouse Cloud가 사용자 환경 내에서 운영될 때의 공동 책임과 모범 사례를 이해하려면 [security playbook](/ko/products/cloud/guides/security/audit-logging/byoc-security-playbook)을 참조하십시오.
+* 초기 계정 설정, VPC 구성, 네트워크 연결(예: VPC peering), IAM role 위임에 대한 단계별 지침은 전체 onboarding 가이드를 검토하십시오.
+
+고유한 요구 사항이나 제약이 있는 경우, 고급 네트워크 구성 또는 사용자 지정 IAM 정책에 대한 지침은 ClickHouse 지원팀에 문의하십시오.

@@ -1,0 +1,72 @@
+---
+description: '此表函数可将 ClickHouse 与 Redis 集成。'
+sidebarTitle: 'redis'
+slug: /sql-reference/table-functions/redis
+title: 'redis'
+doc_type: 'reference'
+---
+
+此表函数可将 ClickHouse 与 [Redis](https://redis.io/) 集成。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+redis(host:port, key, structure[, db_index[, password[, pool_size]]])
+```
+
+<div id="arguments">
+  ## 参数
+</div>
+
+| 参数          | 说明                                           |
+| ----------- | -------------------------------------------- |
+| `host:port` | Redis server 地址，可省略端口；省略时使用默认 Redis 端口 6379。 |
+| `key`       | 列列表中的任意列名。                                   |
+| `structure` | 此函数返回的 ClickHouse 表的 schema。                 |
+| `db_index`  | Redis db 索引范围为 0 到 15，默认为 0。                 |
+| `password`  | 用户密码，默认为空字符串。                                |
+| `pool_size` | Redis 最大连接池大小，默认为 16。                        |
+| `primary`   | 必须指定，仅支持主键中的一个列。主键会以二进制形式序列化为 Redis key。     |
+
+* 除主键外，其他列会按对应顺序以二进制形式序列化为 Redis 值。
+* 对 key 使用 equals 或 in 过滤条件的 queries 会被优化为从 Redis 执行多 key lookup。若 queries 中未按 key 过滤，则会发生全表扫描，这是一项开销很大的操作。
+
+目前，`redis` 表函数 暂不支持[命名集合](/zh/concepts/features/configuration/server-config/named-collections)。
+
+<div id="returned_value">
+  ## 返回值
+</div>
+
+一个表对象，其中键为 Redis 键，其余列会一并封装为 Redis 值。
+
+<div id="usage-example">
+  ## 使用示例
+</div>
+
+从 Redis 中读取：
+
+```sql
+SELECT * FROM redis(
+    'redis1:6379',
+    'key',
+    'key String, v1 String, v2 UInt32'
+)
+```
+
+插入 Redis：
+
+```sql
+INSERT INTO TABLE FUNCTION redis(
+    'redis1:6379',
+    'key',
+    'key String, v1 String, v2 UInt32') values ('1', '1', 1);
+```
+
+<div id="related">
+  ## 相关
+</div>
+
+* [`Redis` 表引擎](/zh/reference/engines/table-engines/integrations/redis)
+* [将 Redis 用作字典源](/zh/reference/statements/create/dictionary/sources/redis)

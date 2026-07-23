@@ -1,0 +1,135 @@
+---
+description: '원격 MongoDB 서버에 저장된 데이터에 대해 `SELECT` 쿼리를 수행할 수 있습니다.'
+sidebarTitle: 'mongodb'
+slug: /sql-reference/table-functions/mongodb
+title: 'mongodb'
+doc_type: 'reference'
+---
+
+원격 MongoDB 서버에 저장된 데이터에 대해 `SELECT` 쿼리를 수행할 수 있습니다.
+
+<div id="syntax">
+  ## 구문
+</div>
+
+```sql
+mongodb(host:port, database, collection, user, password, structure[, options[, oid_columns]]);
+mongodb(uri, collection, structure[, oid_columns]);
+mongodb(named_collection_name[, <arg>=<value>...]);
+```
+
+<div id="arguments">
+  ## 인수
+</div>
+
+| 인수            | 설명                                                      |
+| ------------- | ------------------------------------------------------- |
+| `host:port`   | MongoDB 서버 주소입니다.                                       |
+| `database`    | 원격 DB 이름입니다.                                            |
+| `collection`  | 원격 컬렉션 이름입니다.                                           |
+| `user`        | MongoDB 사용자입니다.                                         |
+| `password`    | 사용자 비밀번호입니다.                                            |
+| `structure`   | 이 함수가 반환하는 ClickHouse 테이블의 스키마입니다.                      |
+| `options`     | MongoDB connection string 옵션입니다(선택 사항인 매개변수).           |
+| `oid_columns` | WHERE 절에서 `oid`로 처리할 컬럼 목록입니다. 쉼표로 구분하며, 기본값은 `_id`입니다. |
+
+<Tip>
+  MongoDB Atlas Cloud 서비스를 사용하는 경우 다음 옵션을 추가하십시오.
+
+  ```ini
+  'connectTimeoutMS=10000&ssl=true&authSource=admin'
+  ```
+</Tip>
+
+URI로도 연결할 수 있습니다.
+
+```sql
+mongodb(uri, collection, structure[, oid_columns])
+```
+
+| 인수            | 설명                                                     |
+| ------------- | ------------------------------------------------------ |
+| `uri`         | 연결 문자열입니다.                                             |
+| `collection`  | 원격 컬렉션 이름입니다.                                          |
+| `structure`   | 이 함수가 반환하는 ClickHouse 테이블의 스키마입니다.                     |
+| `oid_columns` | WHERE 절에서 `oid`로 처리할 컬럼의 쉼표로 구분된 목록입니다. 기본값은 `_id`입니다. |
+| :::           |                                                        |
+
+명명된 컬렉션을 사용해 인수를 전달할 수 있습니다:
+
+```sql
+mongodb(_named_collection_[, host][, port][, database][, collection][, user][, password][, structure][, options][, oid_columns])
+-- 또는
+mongodb(_named_collection_[, uri][, structure][, oid_columns])
+```
+
+<div id="returned_value">
+  ## 반환 값
+</div>
+
+원본 MongoDB 테이블과 동일한 컬럼으로 구성된 테이블 객체입니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+`test`라는 MongoDB 데이터베이스에 `my_collection`이라는 컬렉션이 정의되어 있고, 여기에 문서 몇 개를 삽입한다고 가정해 보겠습니다.
+
+```sql
+db.createUser({user:"test_user",pwd:"password",roles:[{role:"readWrite",db:"test"}]})
+
+db.createCollection("my_collection")
+
+db.my_collection.insertOne(
+    { log_type: "event", host: "120.5.33.9", command: "check-cpu-usage -w 75 -c 90" }
+)
+
+db.my_collection.insertOne(
+    { log_type: "event", host: "120.5.33.4", command: "system-check"}
+)
+```
+
+`mongodb` 테이블 함수를 사용해 컬렉션을 쿼리해 보겠습니다:
+
+```sql
+SELECT * FROM mongodb(
+    '127.0.0.1:27017',
+    'test',
+    'my_collection',
+    'test_user',
+    'password',
+    'log_type String, host String, command String',
+    'connectTimeoutMS=10000'
+)
+```
+
+또는:
+
+```sql
+SELECT * FROM mongodb(
+    'mongodb://test_user:password@127.0.0.1:27017/test?connectionTimeoutMS=10000',
+    'my_collection',
+    'log_type String, host String, command String'
+)
+```
+
+또는:
+
+```sql
+CREATE NAMED COLLECTION mongo_creds AS
+       uri='mongodb://test_user:password@127.0.0.1:27017/test?connectionTimeoutMS=10000',
+       collection='default_collection';
+
+SELECT * FROM mongodb(
+        mongo_creds,
+        collection = 'my_collection',
+        structure = 'log_type String, host String, command String'
+)
+```
+
+<div id="related">
+  ## 관련 항목
+</div>
+
+* [`MongoDB` 테이블 엔진](/ko/reference/engines/table-engines/integrations/mongodb)
+* [딕셔너리 소스로 MongoDB 사용하기](/ko/reference/statements/create/dictionary/sources/mongodb)

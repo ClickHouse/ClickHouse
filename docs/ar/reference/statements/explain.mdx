@@ -1,0 +1,707 @@
+---
+description: 'توثيق EXPLAIN'
+sidebarTitle: 'EXPLAIN'
+slug: /sql-reference/statements/explain
+title: 'عبارة EXPLAIN'
+doc_type: 'مرجع'
+---
+
+يعرض خطة تنفيذ عبارة.
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="//www.youtube.com/embed/hP6G2Nlz_cA"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+الصيغة:
+
+```sql
+EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE] [setting = value, ...]
+    [
+      SELECT ... |
+      tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
+    ]
+    [FORMAT ...]
+```
+
+مثال:
+
+```sql
+EXPLAIN SELECT sum(number) FROM numbers(10) UNION ALL SELECT sum(number) FROM numbers(10) ORDER BY sum(number) ASC FORMAT TSV;
+```
+
+```sql
+Union
+  Expression (Projection)
+    Expression (Before ORDER BY and SELECT)
+      Aggregating
+        Expression (Before GROUP BY)
+          SettingQuotaAndLimits (Set limits and quota after reading from storage)
+            ReadFromStorage (SystemNumbers)
+  Expression (Projection)
+    MergingSorted (Merge sorted streams for ORDER BY)
+      MergeSorting (Merge sorted blocks for ORDER BY)
+        PartialSorting (Sort each block for ORDER BY)
+          Expression (Before ORDER BY and SELECT)
+            Aggregating
+              Expression (Before GROUP BY)
+                SettingQuotaAndLimits (Set limits and quota after reading from storage)
+                  ReadFromStorage (SystemNumbers)
+```
+
+<div id="explain-types">
+  ## أنواع EXPLAIN
+</div>
+
+* `AST` — شجرة البنية النحوية المجردة.
+* `SYNTAX` — نص الاستعلام بعد التحسينات على مستوى AST.
+* `QUERY TREE` — شجرة الاستعلام بعد التحسينات على مستوى Query Tree.
+* `PLAN` — خطة تنفيذ الاستعلام.
+* `PIPELINE` — مسار تنفيذ الاستعلام.
+
+<div id="explain-ast">
+  ### EXPLAIN AST
+</div>
+
+يعرض AST للاستعلام. يدعم جميع أنواع الاستعلامات، وليس `SELECT` فقط.
+
+الإعدادات:
+
+* `graph` – يطبع AST على شكل رسم بياني موصوف بلغة وصف الرسوم البيانية [DOT](https://en.wikipedia.org/wiki/DOT_\(graph_description_language\)). القيمة الافتراضية: 0.
+
+أمثلة:
+
+```sql
+EXPLAIN AST SELECT 1;
+```
+
+```sql
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 1)
+   ExpressionList (children 1)
+    Literal UInt64_1
+```
+
+```sql
+EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
+```
+
+```sql
+  explain
+  AlterQuery  t1 (children 1)
+   ExpressionList (children 1)
+    AlterCommand 27 (children 1)
+     Function equals (children 1)
+      ExpressionList (children 2)
+       Identifier date
+       Function today (children 1)
+        ExpressionList
+```
+
+<div id="explain-syntax">
+  ### EXPLAIN SYNTAX
+</div>
+
+يعرض شجرة البنية النحوية المجرّدة (AST) للاستعلام بعد تحليل البنية النحوية.
+
+يتم ذلك عبر تحليل الاستعلام، وبناء AST وشجرة الاستعلام، وتشغيل محلل الاستعلامات وتمريرات التحسين اختياريًا، ثم تحويل شجرة الاستعلام مرة أخرى إلى AST الخاصة بالاستعلام.
+
+الإعدادات:
+
+* `oneline` – يطبع الاستعلام في سطر واحد. القيمة الافتراضية: `0`.
+* `run_query_tree_passes` – يشغّل تمريرات شجرة الاستعلام قبل إخراج شجرة الاستعلام. القيمة الافتراضية: `0`.
+* `query_tree_passes` – إذا كان `run_query_tree_passes` مضبوطًا، فإنه يحدّد عدد التمريرات التي سيتم تشغيلها. ومن دون تحديد `query_tree_passes`، يتم تشغيل جميع التمريرات.
+
+أمثلة:
+
+```sql title="Query"
+EXPLAIN SYNTAX SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
+```
+
+```sql title="Response"
+SELECT *
+FROM system.numbers AS a, system.numbers AS b, system.numbers AS c
+WHERE (a.number = b.number) AND (b.number = c.number)
+```
+
+باستخدام `run_query_tree_passes`:
+
+```sql title="Query"
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
+```
+
+```sql title="Response"
+SELECT
+    __table1.number AS `a.number`,
+    __table2.number AS `b.number`,
+    __table3.number AS `c.number`
+FROM system.numbers AS __table1
+ALL INNER JOIN system.numbers AS __table2 ON __table1.number = __table2.number
+ALL INNER JOIN system.numbers AS __table3 ON __table2.number = __table3.number
+```
+
+<div id="explain-query-tree">
+  ### EXPLAIN شجرة الاستعلام
+</div>
+
+الإعدادات:
+
+* `run_passes` — شغّل جميع تمريرات شجرة الاستعلام قبل إخراج شجرة الاستعلام. القيمة الافتراضية: `1`.
+* `dump_passes` — أخرج معلومات عن التمريرات المستخدمة قبل إخراج شجرة الاستعلام. القيمة الافتراضية: `0`.
+* `passes` — يحدّد عدد التمريرات المطلوب تشغيلها. إذا ضُبطت على `-1`، فسيُشغّل جميع التمريرات. القيمة الافتراضية: `-1`.
+* `dump_tree` — اعرض شجرة الاستعلام. القيمة الافتراضية: `1`.
+* `dump_ast` — اعرض AST للاستعلام الناتجة من شجرة الاستعلام. القيمة الافتراضية: `0`.
+
+مثال:
+
+```sql
+EXPLAIN QUERY TREE SELECT id, value FROM test_table;
+```
+
+```sql
+QUERY id: 0
+  PROJECTION COLUMNS
+    id UInt64
+    value String
+  PROJECTION
+    LIST id: 1, nodes: 2
+      COLUMN id: 2, column_name: id, result_type: UInt64, source_id: 3
+      COLUMN id: 4, column_name: value, result_type: String, source_id: 3
+  JOIN TREE
+    TABLE id: 3, table_name: default.test_table
+```
+
+<div id="explain-plan">
+  ### EXPLAIN PLAN
+</div>
+
+يعرض خطوات خطة تنفيذ الاستعلام.
+
+الإعدادات:
+
+* `optimize` — يتحكم في ما إذا كانت تحسينات خطة تنفيذ الاستعلام تُطبَّق قبل عرض الخطة. القيمة الافتراضية: 1.
+* `header` — يطبع ترويسة المخرجات للخطوة. القيمة الافتراضية: 0.
+* `description` — يطبع وصف الخطوة. القيمة الافتراضية: 1.
+* `indexes` — يعرض الفهارس المستخدمة، وعدد الأجزاء التي تمت تصفيتها، وعدد الحبيبات التي تمت تصفيتها لكل فهرس مُطبَّق. القيمة الافتراضية: 0. مدعوم في جداول [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree). بدءًا من ClickHouse &gt;= v25.9، لا تعرض هذه العبارة ناتجًا مناسبًا إلا عند استخدامها مع `SETTINGS use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0`.
+* `projections` — يعرض جميع الإسقاطات التي جرى تحليلها وتأثيرها في التصفية على مستوى الأجزاء استنادًا إلى شروط المفتاح الأساسي للإسقاط. ولكل إسقاط، يتضمن هذا القسم إحصاءات مثل عدد الأجزاء والصفوف وعلامات ونطاقات التي جرى تقييمها باستخدام المفتاح الأساسي للإسقاط. كما يوضح عدد data parts التي تم تخطيها بسبب هذه التصفية، من دون القراءة من الإسقاط نفسه. ويمكن تحديد ما إذا كان الإسقاط قد استُخدم فعليًا للقراءة أو جرى تحليله فقط لأغراض التصفية من خلال الحقل `description`. القيمة الافتراضية: 0. مدعوم في جداول [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree).
+* `actions` — يطبع معلومات تفصيلية عن إجراءات الخطوة. القيمة الافتراضية: 0.
+* `sorting` — يطبع وصف الفرز لكل خطوة في الخطة تنتج مخرجات مرتبة. القيمة الافتراضية: 0.
+* `keep_logical_steps` — يحتفظ بالخطوات المنطقية في الخطة لعمليات joins بدلًا من تحويلها إلى تطبيقات join فعلية. القيمة الافتراضية: 0.
+* `json` — يطبع خطوات خطة تنفيذ الاستعلام كسطر بتنسيق [JSON](/ar/reference/formats/JSON/JSON). القيمة الافتراضية: 0. يُنصح باستخدام تنسيق [TabSeparatedRaw (TSVRaw)](/ar/reference/formats/TabSeparated/TabSeparatedRaw) لتجنب عمليات الهروب غير الضرورية.
+* `input_headers` — يطبع ترويسات الإدخال للخطوة. القيمة الافتراضية: 0. يفيد غالبًا المطورين فقط في استكشاف المشكلات المتعلقة بعدم تطابق ترويسات الإدخال والإخراج.
+* `column_structure` — يطبع أيضًا بنية الأعمدة في الترويسات بالإضافة إلى اسمها ونوعها. القيمة الافتراضية: 0. يفيد غالبًا المطورين فقط في استكشاف المشكلات المتعلقة بعدم تطابق ترويسات الإدخال والإخراج.
+* `distributed` — يعرض خطط الاستعلام المنفَّذة على العقد البعيدة للجداول الموزعة أو parallel replicas. القيمة الافتراضية: 0.
+* `compact` — عند التمكين، يُخفي خطوات expression ومعلومات الإجراءات التفصيلية (المدخلات، والدوال، والأسماء المستعارة، ومواضع المخرجات) من الخطة. ولا يكون له تأثير إلا عندما تكون `actions = 1`. القيمة الافتراضية: 0.
+* `pretty` — يطبع شجرة الخطة باستخدام محارف رسم الخطوط (├──, └──, │) بدلًا من المسافات البادئة لتوضيح التدرج الهرمي. كما ينسّق خصائص خطوة join ضمن السطر نفسه. القيمة الافتراضية: 0.
+
+عند استخدام `json=1` ستتضمن أسماء الخطوات لاحقة إضافية تحتوي على معرّف فريد للخطوة.
+
+مثال:
+
+```sql
+EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
+```
+
+```sql
+Union
+  Expression (Projection)
+  Expression (Before ORDER BY and SELECT)
+    Aggregating
+      Expression (Before GROUP BY)
+        SettingQuotaAndLimits (Set limits and quota after reading from storage)
+          ReadFromStorage (SystemNumbers)
+```
+
+<Note>
+  لا تتوفر إمكانية تقدير تكلفة الخطوة والاستعلام.
+</Note>
+
+عندما تكون قيمة `json = 1`، يُمثَّل مخطط الاستعلام بتنسيق JSON. وكل عقدة هي قاموس يحتوي دائمًا على المفتاحين `Node Type` و`Plans`. ويمثل `Node Type` سلسلة نصية تتضمن اسم الخطوة، بينما تمثل `Plans` مصفوفة تتضمن أوصاف الخطوات الفرعية. وقد تُضاف مفاتيح اختيارية أخرى بحسب نوع العقدة والإعدادات.
+
+مثال:
+
+```sql
+EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw;
+```
+
+```json
+[
+  {
+    "Plan": {
+      "Node Type": "Union",
+      "Node Id": "Union_10",
+      "Plans": [
+        {
+          "Node Type": "Expression",
+          "Node Id": "Expression_13",
+          "Plans": [
+            {
+              "Node Type": "ReadFromStorage",
+              "Node Id": "ReadFromStorage_0"
+            }
+          ]
+        },
+        {
+          "Node Type": "Expression",
+          "Node Id": "Expression_16",
+          "Plans": [
+            {
+              "Node Type": "ReadFromStorage",
+              "Node Id": "ReadFromStorage_4"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]
+```
+
+عند ضبط `description` على 1، يُضاف المفتاح `Description` إلى الخطوة:
+
+```json
+{
+  "Node Type": "ReadFromStorage",
+  "Description": "SystemOne"
+}
+```
+
+عند ضبط `header` = 1، يُضاف المفتاح `Header` إلى الخطوة على هيئة مصفوفة من الأعمدة.
+
+مثال:
+
+```sql
+EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
+```
+
+```json
+[
+  {
+    "Plan": {
+      "Node Type": "Expression",
+      "Node Id": "Expression_5",
+      "Header": [
+        {
+          "Name": "1",
+          "Type": "UInt8"
+        },
+        {
+          "Name": "plus(2, dummy)",
+          "Type": "UInt16"
+        }
+      ],
+      "Plans": [
+        {
+          "Node Type": "ReadFromStorage",
+          "Node Id": "ReadFromStorage_0",
+          "Header": [
+            {
+              "Name": "dummy",
+              "Type": "UInt8"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]
+```
+
+مع `indexes` = 1، يُضاف المفتاح `Indexes`. ويحتوي على مصفوفة من الفهارس المستخدمة. يُوصَف كل فهرس بتنسيق JSON مع المفتاح `Type` (سلسلة نصية بقيمة `Partition Min-Max` أو `Partition` أو `Statistics` أو `PrimaryKey` أو `Skip`) والمفاتيح الاختيارية التالية:
+
+* `Name` — اسم الفهرس (يُستخدم حاليًا فقط مع فهارس `Skip`).
+* `Keys` — مصفوفة الأعمدة التي يستخدمها الفهرس.
+* `Condition` — الشرط المستخدم.
+* `Description` — وصف الفهرس (يُستخدم حاليًا فقط مع فهارس `Skip`).
+* `Parts` — عدد الأجزاء بعد/قبل تطبيق الفهرس.
+* `Granules` — عدد الحبيبات بعد/قبل تطبيق الفهرس.
+* `Ranges` — عدد نطاقات الحبيبات بعد تطبيق الفهرس.
+
+مثال:
+
+```json
+"Node Type": "ReadFromMergeTree",
+"Indexes": [
+  {
+    "Type": "Partition Min-Max",
+    "Keys": ["y"],
+    "Condition": "(y in [1, +inf))",
+    "Parts": 4/5,
+    "Granules": 11/12
+  },
+  {
+    "Type": "Partition",
+    "Keys": ["y", "bitAnd(z, 3)"],
+    "Condition": "and((bitAnd(z, 3) not in [1, 1]), and((y in [1, +inf)), (bitAnd(z, 3) not in [1, 1])))",
+    "Parts": 3/4,
+    "Granules": 10/11
+  },
+  {
+    "Type": "PrimaryKey",
+    "Keys": ["x", "y"],
+    "Condition": "and((x in [11, +inf)), (y in [1, +inf)))",
+    "Parts": 2/3,
+    "Granules": 6/10,
+    "Search Algorithm": "generic exclusion search"
+  },
+  {
+    "Type": "Skip",
+    "Name": "t_minmax",
+    "Description": "minmax GRANULARITY 2",
+    "Parts": 1/2,
+    "Granules": 2/6
+  },
+  {
+    "Type": "Skip",
+    "Name": "t_set",
+    "Description": "set GRANULARITY 2",
+    "": 1/1,
+    "Granules": 1/2
+  }
+]
+```
+
+مع `projections` = 1، يُضاف المفتاح `Projections`. ويحتوي على مصفوفة من الإسقاطات التي جرى تحليلها. ويُوصَف كل إسقاط بصيغة JSON بالمفاتيح التالية:
+
+* `Name` — اسم الإسقاط.
+* `Condition` — شرط المفتاح الأساسي المستخدم للإسقاط.
+* `Description` — وصف لكيفية استخدام الإسقاط (على سبيل المثال، التصفية على مستوى الجزء).
+* `Selected Parts` — عدد الأجزاء التي اختارها الإسقاط.
+* `Selected Marks` — عدد العلامات المختارة.
+* `Selected Ranges` — عدد النطاقات المختارة.
+* `Selected Rows` — عدد الصفوف المختارة.
+* `Filtered Parts` — عدد الأجزاء التي تم تخطيها بسبب التصفية على مستوى الجزء.
+
+مثال:
+
+```json
+"Node Type": "ReadFromMergeTree",
+"Projections": [
+  {
+    "Name": "region_proj",
+    "Description": "Projection has been analyzed and is used for part-level filtering",
+    "Condition": "(region in ['us_west', 'us_west'])",
+    "Search Algorithm": "binary search",
+    "Selected Parts": 3,
+    "Selected Marks": 3,
+    "Selected Ranges": 3,
+    "Selected Rows": 3,
+    "Filtered Parts": 2
+  },
+  {
+    "Name": "user_id_proj",
+    "Description": "Projection has been analyzed and is used for part-level filtering",
+    "Condition": "(user_id in [107, 107])",
+    "Search Algorithm": "binary search",
+    "Selected Parts": 1,
+    "Selected Marks": 1,
+    "Selected Ranges": 1,
+    "Selected Rows": 1,
+    "Filtered Parts": 2
+  }
+]
+```
+
+مع `actions` = 1، تعتمد المفاتيح المُضافة على نوع الخطوة.
+
+مثال:
+
+```sql
+EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
+```
+
+```json
+[
+  {
+    "Plan": {
+      "Node Type": "Expression",
+      "Node Id": "Expression_5",
+      "Expression": {
+        "Inputs": [
+          {
+            "Name": "dummy",
+            "Type": "UInt8"
+          }
+        ],
+        "Actions": [
+          {
+            "Node Type": "INPUT",
+            "Result Type": "UInt8",
+            "Result Name": "dummy",
+            "Arguments": [0],
+            "Removed Arguments": [0],
+            "Result": 0
+          },
+          {
+            "Node Type": "COLUMN",
+            "Result Type": "UInt8",
+            "Result Name": "1",
+            "Column": "Const(UInt8)",
+            "Arguments": [],
+            "Removed Arguments": [],
+            "Result": 1
+          }
+        ],
+        "Outputs": [
+          {
+            "Name": "1",
+            "Type": "UInt8"
+          }
+        ],
+        "Positions": [1]
+      },
+      "Plans": [
+        {
+          "Node Type": "ReadFromStorage",
+          "Node Id": "ReadFromStorage_0"
+        }
+      ]
+    }
+  }
+]
+```
+
+مع `compact = 1`، تُحذف كل خطوة `Expression`. وبالإضافة إلى ذلك، إذا كان `actions = 1` مضبوطًا، فستُخفى أسطر `Actions` و`Positions`، ولن يتبقى سوى أوصاف الخطوات:
+
+```sql
+EXPLAIN actions = 1, compact = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
+```
+
+```text
+Aggregating
+Keys: modulo(__table1.number, 4_UInt8)
+Aggregates:
+    sum(__table1.number)
+      Function: sum(UInt64) → UInt64
+      Arguments: __table1.number
+Skip merging: 0
+  ReadFromSystemNumbers
+```
+
+عند تعيين `distributed` = 1، يتضمن الناتج ليس فقط خطة الاستعلام المحلية، بل أيضاً خطط الاستعلام التي ستُنفَّذ على العقد البعيدة. يُفيد هذا في تحليل الاستعلامات الموزعة وتصحيح أخطائها.
+
+مثال مع جدول موزّع:
+
+```sql
+EXPLAIN distributed=1 SELECT * FROM remote('127.0.0.{1,2}', numbers(2)) WHERE number = 1;
+```
+
+```sql
+Union
+  Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))
+    Filter ((WHERE + Change column names to column identifiers))
+      ReadFromSystemNumbers
+  Expression ((Project names + (Projection + Change column names to column identifiers)))
+    ReadFromRemote (Read from remote replica)
+      Expression ((Project names + Projection))
+        Filter ((WHERE + Change column names to column identifiers))
+          ReadFromSystemNumbers
+```
+
+مثال مع النسخ المتماثلة المتوازية:
+
+```sql
+SET enable_parallel_replicas = 2, max_parallel_replicas = 2, cluster_for_parallel_replicas = 'default';
+
+EXPLAIN distributed=1 SELECT sum(number) FROM test_table GROUP BY number % 4;
+```
+
+```sql
+Expression ((Project names + Projection))
+  MergingAggregated
+    Union
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (default.test_table)
+      ReadFromRemoteParallelReplicas
+        BlocksMarshalling
+          Aggregating
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+              ReadFromMergeTree (default.test_table)
+```
+
+في كلا المثالَين، تُظهر خطةُ الاستعلام تدفق التنفيذ الكامل بما في ذلك الخطوات المحلية والبعيدة.
+
+عند تعيين `pretty` = 1، تُعرض شجرة الخطة باستخدام أحرف رسم الخطوط بدلاً من المسافات البادئة، وتظهر معلومات إضافية للخطوات الرئيسية:
+
+* تُطبع **أعمدة مخرجات الاستعلام** في أعلى الخطة.
+* تُعرض **التعبيرات** في المرشحات، ومفاتيح التجميع، وأوصاف الفرز، ووظائف النافذة بصياغة شبيهة بـ SQL وسهلة القراءة (مثل `a + 1 > 5` بدلًا من `greater(plus(a, 1), 5)`). كما تُزال بادئات معرّفات الأعمدة الداخلية (مثل `__table1.`) لتوضيح العرض.
+* تعرض **خطوات المصدر** (مثل `ReadFromMergeTree`) أعمدة مخرجاتها.
+* تعرض **خطوات التصفية** شرط التصفية بصياغة SQL. وعند وجود مرشحات JOIN وقت التشغيل، تُعرض بشكل منفصل.
+* تعرض **خطوات التجميع** المفاتيح والدوال التجميعية مع وسيطاتها (مثل `sum(c)`, `count()`).
+* تعرض **مجموعات IN** المشتقة من قيم Tuple الحرفية قيمها (مع اقتطاعها في المجموعات الكبيرة)، وتُسمّى المجموعات المستندة إلى استعلامات فرعية `subquery1` و`subquery2` وما إلى ذلك، بينما تعرض المجموعات من جداول المحرك `Set` اسم الجدول.
+* تعرض **خطوات JOIN** علاقة الـ join باستخدام ترميز رياضي، والعدد التقديري لصفوف النتيجة،
+  وتوضح أي أعمدة المخرجات تأتي من الجانب الأيسر مقابل الأيمن. وتُستخدم الرموز التالية
+  لتمثيل أنواع join المختلفة:
+
+| Symbol                 | Join Type       |
+| ---------------------- | --------------- |
+| `⋈`                    | Inner Join      |
+| `⟕`                    | Left Join       |
+| `⟖`                    | Right Join      |
+| `⟗`                    | Full Join       |
+| `⋉`                    | Left Semi Join  |
+| `⋊`                    | Right Semi Join |
+| `⋉` with strikethrough | Left Anti Join  |
+| `⋊` with strikethrough | Right Anti Join |
+| `×`                    | Cross Join      |
+
+على سبيل المثال، `t1 ⟕ t2` تعني LEFT JOIN بين الجدولين `t1` و`t2`.
+ويشير الرقم بين القوسين بعد اسم الجدول (مثل `t1[100]`) إلى العدد التقديري للصفوف
+عندما تكون إحصاءات الجدول متاحة.
+
+يعمل الخيار `pretty` جيدًا مع `compact = 1`، إذ يُخفي خطوات `Expression` ومعلومات الإجراءات التفصيلية، مما يجعل الخطة أسهل في القراءة.
+
+```sql
+EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
+```
+
+```text
+Expression ((Project names + Projection))
+└──Aggregating
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      └──ReadFromSystemNumbers
+```
+
+مثال أكثر تفصيلاً يتضمن عمليات JOIN:
+
+```sql
+CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
+INSERT INTO t2 SELECT number, toString(number) FROM numbers(100);
+
+EXPLAIN actions = 1, compact = 1, pretty = 1
+SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id FORMAT Raw;
+```
+
+```text
+Output: id, value, t2.id, t2.value
+
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100]
+│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Result rows: 100
+│  Output:
+│    Left:  id, value
+│    Right: id, value
+│  Join conditions: id = id
+├──ReadFromMergeTree (default.t1)
+│     Read type: Default
+│     Parts: 1 | Granules: 1
+│     Output: id, value
+└──ReadFromMergeTree (default.t2)
+      Read type: Default
+      Parts: 1 | Granules: 1
+      Output: id, value
+```
+
+<div id="explain-pipeline">
+  ### EXPLAIN PIPELINE
+</div>
+
+الإعدادات:
+
+* `header` — يطبع الترويسة لكل منفذ إخراج. القيمة الافتراضية: 0.
+* `graph` — يطبع رسمًا بيانيًا موصوفًا بلغة وصف الرسوم البيانية [DOT](https://en.wikipedia.org/wiki/DOT_\(graph_description_language\)). القيمة الافتراضية: 0.
+* `compact` — يطبع الرسم البياني في الوضع المضغوط إذا كان إعداد `graph` مفعّلًا. القيمة الافتراضية: 1.
+* `compact_repeated_processor_chains` — يضغط سلاسل المعالجات المتكررة والمتجاورة في المخرجات النصية، وذلك بعرض نسخة واحدة من السلسلة مع عدد مرات تكرارها. يمكن أن يجعل ذلك خطوط المعالجة المتوازية أسهل قراءةً عندما تتكرر السلسلة نفسها مرات عديدة، على سبيل المثال في عمليات JOIN. ولا يؤثر ذلك في مخرجات الرسم البياني. القيمة الافتراضية: 0.
+
+```text
+Resize 16 → 1
+  FillingRightJoinSide          │
+    SimpleSquashingTransform    │ × 16
+      Resize 1 → 16
+```
+
+عندما تكون `compact=0` و`graph=1`، ستتضمن أسماء المعالجات لاحقة إضافية تحتوي على معرّف فريد للمعالج.
+
+مثال:
+
+```sql
+EXPLAIN PIPELINE SELECT sum(number) FROM numbers_mt(100000) GROUP BY number % 4;
+```
+
+```sql
+(Union)
+(Expression)
+ExpressionTransform
+  (Expression)
+  ExpressionTransform
+    (Aggregating)
+    Resize 2 → 1
+      AggregatingTransform × 2
+        (Expression)
+        ExpressionTransform × 2
+          (SettingQuotaAndLimits)
+            (ReadFromStorage)
+            NumbersRange × 2 0 → 1
+```
+
+<div id="explain-estimate">
+  ### EXPLAIN ESTIMATE
+</div>
+
+يعرض العدد التقديري للصفوف والعلامات والأجزاء التي ستُقرأ من الجداول عند معالجة الاستعلام. يعمل مع الجداول من عائلة [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree).
+
+**مثال**
+
+إنشاء جدول:
+
+```sql title="Query"
+CREATE TABLE ttt (i Int64) ENGINE = MergeTree() ORDER BY i SETTINGS index_granularity = 16, write_final_mark = 0;
+INSERT INTO ttt SELECT number FROM numbers(128);
+OPTIMIZE TABLE ttt;
+```
+
+```sql title="Query"
+EXPLAIN ESTIMATE SELECT * FROM ttt;
+```
+
+```text title="Response"
+┌─database─┬─table─┬─parts─┬─rows─┬─marks─┐
+│ default  │ ttt   │     1 │  128 │     8 │
+└──────────┴───────┴───────┴──────┴───────┘
+```
+
+<div id="explain-table-override">
+  ### EXPLAIN TABLE OVERRIDE
+</div>
+
+يعرض ناتج تطبيق تجاوز على مخطط جدول تم الوصول إليه عبر دالة جدول.
+كما يُجري بعض عمليات التحقق، ويُطلق استثناءً إذا كان هذا التجاوز سيتسبب في أي نوع من الإخفاق.
+
+**مثال**
+
+افترض أن لديك جدول MySQL بعيدًا على النحو التالي:
+
+```sql title="Query"
+CREATE TABLE db.tbl (
+    id INT PRIMARY KEY,
+    created DATETIME DEFAULT now()
+)
+```
+
+```sql title="Query"
+EXPLAIN TABLE OVERRIDE mysql('127.0.0.1:3306', 'db', 'tbl', 'root', 'clickhouse')
+PARTITION BY toYYYYMM(assumeNotNull(created))
+```
+
+```text title="Response"
+┌─explain─────────────────────────────────────────────────┐
+│ PARTITION BY uses columns: `created` Nullable(DateTime) │
+└─────────────────────────────────────────────────────────┘
+```
+
+<Note>
+  لم تكتمل عملية التحقق، لذا فإن نجاح الاستعلام لا يضمن أن الاستبدال لن يسبب مشكلات.
+</Note>

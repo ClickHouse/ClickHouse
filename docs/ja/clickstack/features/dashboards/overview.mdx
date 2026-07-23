@@ -1,0 +1,348 @@
+---
+slug: /use-cases/observability/clickstack/dashboards
+title: 'ClickStack の可視化とダッシュボード'
+sidebarTitle: 'ダッシュボード'
+description: 'ClickStack の可視化とダッシュボード'
+doc_type: 'guide'
+keywords: ['clickstack', 'ダッシュボード', '可視化', '監視', 'オブザーバビリティ']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import Tagging from '/snippets/ja/_clickstack_tagging.mdx';
+
+ClickStack ではイベントを可視化でき、ClickStack UI (HyperDX) にはグラフ化機能が標準で備わっています。これらのチャートはダッシュボードに追加して、他のユーザーと共有できます。
+
+可視化は、トレース、メトリクス、ログ、またはユーザー定義の任意のワイドイベントスキーマから作成できます。
+
+<div id="creating-visualizations">
+  ## 可視化の作成
+</div>
+
+HyperDX の **Chart Explorer** インターフェイスでは、メトリクス、トレース、ログを時系列で可視化できるため、データ分析用の可視化をすばやく作成できます。このインターフェイスは、ダッシュボードの作成時にも使用されます。以下では、Chart Explorer を使って可視化を作成する手順を説明します。
+
+各可視化は、まず **データソース** を選択し、続いて **メトリクス** を選択することから始まります。必要に応じて **フィルタ式** と **group by** フィールドも指定できます。概念的には、HyperDX の可視化は内部的に SQL の `GROUP BY` クエリに対応しており、選択した次元に対して集計するメトリクスを定義します。
+
+<Tip>
+  **AI を活用したチャート生成**
+
+  ClickStack では、[text-to-chart](/ja/clickstack/text-to-chart) 機能を使用して、自然言語のプロンプトからチャートを作成することもできます。表示したい内容を記述すると、ClickStack が可視化を自動的に生成します。
+</Tip>
+
+たとえば、サービス名ごとにグループ化したエラーの件数 (`count()`) をチャートとして表示できます。
+
+以下の例では、[sql.clickhouse.com](https://sql.clickhouse.com) で利用できるリモートデータセットを使用します。これはガイド「[Remote Demo Dataset](/ja/clickstack/example-datasets/remote-demo-data)」で説明されています。**また、[play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) にアクセスして、これらの例を再現することもできます。**
+
+<Steps>
+  <Step>
+    ### Chart Explorer に移動する
+
+    左側のメニューから `Chart Explorer` を選択します。
+
+    <Image img="/images/use-cases/observability/clickstack-visualization-1.webp" alt="Chart Explorer" size="lg" />
+  </Step>
+
+  <Step>
+    ### 可視化を作成する
+
+    以下の例では、サービス名ごとの平均リクエスト時間を時系列でチャートとして表示します。これには、メトリクス、カラム (SQL 式を指定することも可能)、および集計フィールドを指定する必要があります。
+
+    上部メニューから `Line/Bar` の可視化タイプを選択し、続いて `Traces` データセット ([play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) を使用している場合は `Demo Traces`) を選択します。次の値を入力してください。
+
+    * Metric: `Average`
+    * Column: `Duration/1000`
+    * Where: `<empty>`
+    * Group By: `ServiceName`
+    * Alias: `Average Time`
+
+    <Image img="/images/use-cases/observability/clickstack-visualization-2.webp" alt="シンプルな可視化" size="lg" />
+
+    イベントは SQL の `WHERE` 句または Lucene 構文のいずれかを使ってフィルタでき、イベントを可視化する時間範囲も設定できます。複数の系列にも対応しています。
+
+    たとえば、フィルタ `ServiceName:\"frontend\"` を追加して、サービス `frontend` でフィルタします。さらに、`Add Series` をクリックして、エイリアス `Count` を持つ時系列のイベント件数の 2 つ目の系列を追加します。
+
+    <Image img="/images/use-cases/observability/clickstack-visualization-3.webp" alt="シンプルな可視化 2" size="lg" />
+
+    既存の系列に似た系列を作成するには、最初から作成する代わりに複製できます。系列行のコピーアイコン (`Duplicate series`) をクリックすると、そのすぐ下にコピーが挿入されます。コピーには、メトリクス、カラム、フィルタなど、元の系列の設定が保持されます。その後、異なるフィールド (たとえば集計) だけを変更し、コピーに固有のエイリアスを付けます。複製は、複数の系列がサポートされている場所であればどこでも利用できます。`Number`、`Pie`、`Heatmap` など、1 つの系列しか許可しない可視化タイプでは表示されません。
+
+    <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="チャート系列の行にある Duplicate series コピーアイコンとそのツールチップ" size="lg" />
+
+    既存の系列に似た系列を作成するには、最初から作成する代わりに複製できます。系列行のコピーアイコン (`Duplicate series`) をクリックすると、そのすぐ下にコピーが挿入されます。コピーには、メトリクス、カラム、フィルタなど、元の系列の設定が保持されます。その後、異なるフィールド (たとえば集計) だけを変更し、コピーに固有のエイリアスを付けます。複製は、複数の系列がサポートされている場所であればどこでも利用できます。`Number`、`Pie`、`Heatmap` など、1 つの系列しか許可しない可視化タイプでは表示されません。
+
+    <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="チャート系列の行にある Duplicate series コピーアイコンとそのツールチップ" size="lg" />
+
+    <Note>
+      可視化は、メトリクス、トレース、ログなど、任意のデータソースから作成できます。ClickStack はこれらすべてをワイドイベントとして扱います。任意の **numeric column** を時系列でチャート化でき、**string**、**date**、または **numeric** のカラムをグループ化に使用できます。
+
+      この統一されたアプローチにより、一貫性があり柔軟なモデルを使って、テレメトリーの種類をまたいだダッシュボードを構築できます。
+    </Note>
+  </Step>
+</Steps>
+
+<div id="creating-dashboards">
+  ## ダッシュボードの作成
+</div>
+
+ダッシュボードを使うと、関連する可視化をグループ化できるため、メトリクスを比較したり、パターンを並べて確認したりしながら、システム内の潜在的な根本原因を特定できます。これらのダッシュボードは、アドホックな調査に使用することも、継続的な監視用に保存して利用することもできます。
+
+グローバルフィルターはダッシュボードレベルで適用でき、対象のダッシュボード内にあるすべての可視化に自動的に反映されます。これにより、チャート間で一貫したドリルダウンが可能になり、サービスやテレメトリーの種類をまたいだイベントの相関を取りやすくなります。
+
+以下では、ログおよびトレースのデータソースを使用して、2 つの可視化を含むダッシュボードを作成します。これらの手順は、[play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) 上でも、ガイド[「Remote Demo Dataset」](/ja/clickstack/example-datasets/remote-demo-data)で説明されているように [sql.clickhouse.com](https://sql.clickhouse.com) でホストされているデータセットに接続してローカル環境でも再現できます。
+
+<Steps>
+  <Step>
+    ### Dashboards を開く
+
+    左側のメニューから `Dashboards` を選択します。次に `New Dashboard` をクリックして、一時的なダッシュボードまたは保存済みのダッシュボードを作成します。
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-1.webp" alt="ダッシュボードを作成" size="lg" />
+  </Step>
+
+  <Step>
+    ### 可視化を作成する – サービスごとの平均リクエスト時間
+
+    `Add New Tile`を選択して、可視化作成パネルを開きます。
+
+    上部メニューから`Line/Bar`の可視化タイプを選択し、続いて`Traces` ([play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)を使用している場合は`Demo Traces`) データセットを選択します。次の値を入力して、サービス名ごとの平均リクエスト所要時間を時系列で表示するチャートを作成します。
+
+    * Chart Name: `Average duration by service`
+    * Metric: `Average`
+    * Column: `Duration/1000`
+    * Where: `<empty>`
+    * Group By: `ServiceName`
+    * Alias: `Average Time`
+
+    `Save`をクリックする前に、**play**ボタンをクリックします。
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-2.webp" alt="ダッシュボードの可視化を作成" size="lg" />
+
+    可視化のサイズを変更し、ダッシュボードの全幅に広がるようにします。
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-3.webp" alt="可視化を含むダッシュボード" size="lg" />
+  </Step>
+
+  <Step>
+    ### 可視化を作成する – サービス別のイベント数の推移
+
+    `Add New Tile`を選択して、可視化作成パネルを開きます。
+
+    上部メニューから`Line/Bar`の可視化タイプを選択し、続いて`Logs` ([play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) を使用している場合は`Demo Logs`) データセットを選択します。次の値を設定して、サービス名ごとのイベント数の推移を示すチャートを作成します。
+
+    * Chart Name: `Event count by service`
+    * Metric: `Count of Events`
+    * Where: `<empty>`
+    * Group By: `ServiceName`
+    * Alias: `Count of events`
+
+    `Save`をクリックする前に、**play**ボタンをクリックします。
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-4.webp" alt="ダッシュボードの可視化 2" size="lg" />
+
+    可視化のサイズを調整して、ダッシュボードの全幅に広げます。
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-5.webp" alt="可視化を含むダッシュボード 2" size="lg" />
+  </Step>
+
+  <Step>
+    ### スパン継続時間のヒートマップタイルを追加する
+
+    ヒートマップタイルは、各 (time, value) バケットに入るイベント数を色付きのグリッドで表示します。平均値や単一のパーセンタイルだけでなく、時間に伴う分布の**形**を見たい場合に、ヒートマップは有効です。レイテンシのヒートマップを使うと、二峰性の継続時間パターン、低速側の裾に現れるクラスター、あるいは折れ線グラフでは平均化されて見えなくなる急激な広がりを把握できます。
+
+    ヒートマップタイルを追加するには:
+
+    1. `Add New Tile` を選択します。
+    2. 上部メニューから可視化タイプ `Heatmap` を選択します。data source のドロップダウンには、[source type が `Traces` の](/ja/clickstack/managing/config#traces)ソースだけが表示されます。ヒートマップには traces ソースでのみ提供される span duration カラムが必要なため、logs、metrics、session ソースは除外されます。
+    3. traces ソースを名前で 1 つ選択します。名前自体は任意で、重要なのは type だけです。
+
+    ソースを選択すると、ヒートマップには次の値が事前入力されます:
+
+    * **Value**: ソースの `Duration Expression`。現在の表示単位に合わせてスケーリングされます (たとえば、各イベントのスパン継続時間をナノ秒からミリ秒に変換するには `(Duration)/1e6`)
+    * **Count**: `count()`
+
+    4. chart 名を設定し、`Where` を使って、パフォーマンスを観測したい特定のサービスまたは一連のオペレーションにヒートマップの対象を絞ります。
+    5. 関心のある期間に合わせて時間範囲を調整します。より広い範囲を指定すると、短いウィンドウでは見えにくい分布の変化や二峰性のレイテンシパターンを把握できます。
+
+    以下の例では、24 時間のウィンドウにおける単一サービスを示しており、そのスパン継続時間の高速パスと低速パスが 2 本の水平帯として明確に分かれています。
+
+    さらにヒートマップをカスタマイズするには、**Display Settings** をクリックして、**Scale** (Log または Linear) 、**Value**、**Count** expression を設定するドロワーを開きます。オプションの一覧は、イベントデルタのページにある [ヒートマップをカスタマイズする](/ja/clickstack/features/event-deltas#customize) に記載されています。同じドロワーが再利用されます。
+
+    `Run` をクリックして chart をプレビューし、次に `Save` をクリックします。
+
+    <Image img="/images/clickstack/dashboards/heatmap-tile-editor.webp" alt="スパン継続時間の既定値が事前入力され、ServiceName payment フィルターと Display Settings ボタンがあるヒートマップタイルエディター" size="lg" />
+
+    保存したタイルは、ダッシュボード上でヒートマップとして表示されます。任意のセルにホバーすると、バケットの範囲とイベント数を確認できます。
+
+    <Image img="/images/clickstack/dashboards/heatmap-tile-rendered.webp" alt="24 時間にわたる payment サービスのスパン継続時間分布を示すヒートマップダッシュボードタイル" size="lg" />
+
+    <Tip>
+      **ヒートマップごとに 2 つの ClickHouse クエリ**
+
+      ヒートマップは、2 つの連続したクエリとして実行されます。まず値の範囲を求める小さな **bounds query**、次に各バケットのイベント数を集計する **heatmap query** です。これら両方のクエリは、確認やコピーができるよう、エディターの **生成された SQL** に表示されます。
+    </Tip>
+
+    #### イベントデルタにドリルダウンする
+
+    表示されたヒートマップタイル内の任意のセルをクリックすると、**View in Event Deltas** アクションが開きます。
+
+    <Image img="/images/clickstack/dashboards/heatmap-tile-drilldown.webp" alt="ヒートマップのセルをクリックすると View in Event Deltas アクションが表示される様子" size="lg" />
+
+    これを選択すると、タイルの data source、`Where` clause、時間範囲が引き継がれた状態で [イベントデルタ](/ja/clickstack/features/event-deltas) ビューが開きます。そこから、同じ分布を対話的に調べたり、attribute ごとに切り分けて低速の spans が高速のものと何が違うのかを確認したり、手作業でクエリを組み直すことなく、任意のセルの背後にある個々の spans を調査したりできます。
+  </Step>
+
+  <Step>
+    ### ダッシュボードのフィルター
+
+    Lucene または SQL のフィルターは、時間範囲とあわせてダッシュボード レベルで適用でき、すべての可視化に自動的に反映されます。
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-filter.webp" alt="フィルタリングを適用したダッシュボード" size="lg" />
+
+    例として、Lucene フィルター `ServiceName:"frontend"` をダッシュボードに適用し、時間範囲を過去 3 時間に変更します。可視化に `frontend` サービスのデータだけが反映されるようになることを確認してください。
+
+    ダッシュボードは自動保存されます。ダッシュボード名を設定するには、タイトルを選択して編集し、`Save Name` をクリックします。
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-save.webp" alt="ダッシュボードの保存" size="lg" />
+  </Step>
+</Steps>
+
+<div id="dashboards-editing-visualizations">
+  ## ダッシュボード - 可視化の編集
+</div>
+
+可視化を削除、編集、または複製するには、その上にカーソルを合わせて、対応するアクションボタンを使用します。
+
+<Image img="/images/use-cases/observability/hyperdx-dashboard-edit.webp" alt="ダッシュボードの編集" size="lg" />
+
+<div id="dashboard-listing-search">
+  ## ダッシュボード - 一覧と検索
+</div>
+
+ダッシュボードは dashboards ページから利用できます。タグごとに整理されており、組み込みの検索機能と絞り込み機能を使って特定のダッシュボードをすばやく見つけられます。
+
+ダッシュボードはお気に入りに追加でき、サイドバーや一覧ページ上部から簡単にアクセスできます。お気に入りはユーザーごとに個別に管理されます。
+
+<Image img="/images/use-cases/observability/hyperdx-dashboard-search.webp" alt="ダッシュボード検索" size="lg" />
+
+<div id="tagging">
+  ## ダッシュボード - タグ付け
+</div>
+
+<Tagging />
+
+<div id="custom-filters">
+  ## カスタムフィルタ
+</div>
+
+すべてのダッシュボードで利用できる[フリーテキストフィルタ](#filter-dashboards)に加えて、保存済みダッシュボードでは、ClickHouse にクエリしたデータをもとに値が設定されるカスタムのドロップダウンフィルタも利用できます。これにより、再利用可能なポイント＆クリック式のフィルタ操作が可能になり、ダッシュボードの閲覧者は式を手動で入力しなくても絞り込みを行えます。
+
+<Image img="/images/clickstack/dashboards/filter-dropdown.webp" alt="利用可能なサービス名を表示するサービスのドロップダウンフィルタ" size="lg" />
+
+以下の手順では、[&quot;ダッシュボードの作成&quot;](#creating-dashboards)セクションで作成したダッシュボードにカスタムフィルタを追加する方法を示します。
+
+<Steps>
+  <Step>
+    ### Edit Filters ダイアログを開く
+
+    保存済みダッシュボードを開き、ツールバーから **Edit Filters** を選択します。
+
+    <Image img="/images/clickstack/dashboards/edit-filters.webp" alt="ダッシュボードのツールバーにある Edit Filters ボタン" size="lg" />
+  </Step>
+
+  <Step>
+    ### 新しいフィルタを追加する
+
+    **Add new filter** をクリックします。**Name** を入力し、**Data source** を選択し、**Filter expression** (ドロップダウンに表示する値を生成する SQL のカラムまたは式) を入力してフィルタを設定します。**Save filter** をクリックします。
+
+    たとえば、トレースデータ用のサービスフィルタを追加するには、`Traces` データソースで `ServiceName` をフィルタ式として使用します。&quot;Dropdown values filter&quot; は任意で、ドロップダウンに表示する値を絞り込めます。
+
+    <Image img="/images/clickstack/dashboards/add-filter.webp" alt="Name、Data source、Filter expression の各フィールドがある Add filter ダイアログ" size="md" />
+
+    Filters モーダルには、そのダッシュボードに設定されているすべてのフィルタが表示されます。ここから既存のフィルタを編集または削除したり、追加したりできます。
+
+    <Image img="/images/clickstack/dashboards/saved-filters.webp" alt="設定済みの Services フィルタを表示する Filters モーダル" size="md" />
+  </Step>
+
+  <Step>
+    ### フィルタを使用する
+
+    Filters モーダルを閉じます。新しいドロップダウンフィルタが検索バーの下に表示されます。クリックして利用可能な値を確認し、1 つ選択すると、ダッシュボード上のすべての可視化にフィルタが適用されます。
+
+    <Image img="/images/clickstack/dashboards/filtered-dashboard.webp" alt="frontend サービスで絞り込まれたダッシュボード" size="lg" />
+  </Step>
+
+  <Step>
+    ### &#x20;(任意) フィルタ値をデフォルトとして保存する
+
+    フィルタの選択をダッシュボードのデフォルトとして保持するには、ダッシュボードメニューから **Save Query &amp; Filters as Default** を選択します。以後、ダッシュボードは選択したフィルタが適用された状態で常に開きます。リセットするには、同じメニューから **Remove Default Query &amp; Filters** を選択します。
+
+    <Image img="/images/clickstack/dashboards/save-filter-values.webp" alt="Save Query and Filters as Default オプションを表示するダッシュボードメニュー" size="lg" />
+  </Step>
+</Steps>
+
+<Note>
+  カスタムのドロップダウンフィルタは保存済みダッシュボードで利用できます。この機能の実例については、[Kubernetes ダッシュボード](#kubernetes-dashboard)を参照してください。ここでは、ポッド、デプロイメント、ノード名、ネームスペース、クラスター向けの組み込みドロップダウンフィルタが提供されています。
+</Note>
+
+<div id="drilldown-to-search">
+  ## 検索へのドリルダウン
+</div>
+
+ダッシュボードのタイルは、Searchページへのドリルダウンに対応しています。可視化内のデータポイントをクリックすると、次のオプションを含むコンテキストメニューが表示されます。
+
+* **すべてのイベントを表示** — 選択した時間範囲内のすべてのイベントを表示するSearchページに移動します。
+* **グループで絞り込む** — 特定の系列で絞り込んだSearchページに移動します。
+
+<Image img="/images/clickstack/dashboards/drilldown.webp" alt="「すべてのイベントを表示」と「グループで絞り込む」のオプションを示すドリルダウンのコンテキストメニュー" size="lg" />
+
+これは、ダッシュボードで見つけた特定のスパイクや異常を調査する際に便利です。集計ビューから、元になっている個々のイベントへすばやく移れます。
+
+<div id="presets">
+  ## プリセット
+</div>
+
+HyperDX には、すぐに使えるダッシュボードがあらかじめ用意されています。
+
+<div id="clickhouse-dashboard">
+  ### ClickHouse ダッシュボード
+</div>
+
+このダッシュボードでは、ClickHouse の監視に役立つ可視化を提供します。このダッシュボードを開くには、左側のメニューから選択します。
+
+<Image img="/images/use-cases/observability/hyperdx-dashboard-clickhouse.webp" alt="ClickHouse ダッシュボード" size="lg" />
+
+このダッシュボードでは、タブを使って **Selects**、**Inserts**、**ClickHouse Infrastructure** の監視を分けています。
+
+<Info>
+  **必要なシステムテーブルへのアクセス権**
+
+  このダッシュボードでは、主要なメトリクスを表示するために ClickHouse の [システムテーブル](/ja/reference/system-tables/index) をクエリします。次の権限が必要です。
+
+  `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
+
+  `GRANT SHOW COLUMNS, SELECT(active, database, partition, rows, table) ON system.parts`
+
+  `GRANT SHOW COLUMNS, SELECT(event_date, event_time, memory_usage, normalized_query_hash, query, query_duration_ms, query_kind, read_rows, tables, type, written_bytes, written_rows) ON system.query_log`
+
+  `GRANT SHOW COLUMNS, SELECT(event_date, event_time, hostname, metric, value) ON system.transposed_metric_log`
+</Info>
+
+<div id="services-dashboard">
+  ### サービス ダッシュボード
+</div>
+
+サービス ダッシュボードには、トレースデータに基づいて現在アクティブなサービスが表示されます。これを利用するには、トレースを収集し、有効な Traces データソースを設定しておく必要があります。
+
+サービス名はトレースデータから自動検出され、あらかじめ用意された一連の可視化が、HTTP Services、Database、Errors の 3 つのタブに分けて表示されます。
+
+可視化は Lucene または SQL 構文を使ってフィルタリングでき、分析対象を絞り込めるよう時間範囲も調整できます。
+
+<Image img="/images/use-cases/observability/hyperdx-dashboard-services.webp" alt="ClickHouse サービス" size="lg" />
+
+<div id="kubernetes-dashboard">
+  ### Kubernetes ダッシュボード
+</div>
+
+このダッシュボードでは、OpenTelemetry 経由で収集された Kubernetes イベントを確認できます。高度な絞り込みオプションが用意されており、Kubernetes のポッド、デプロイメント、ノード名、ネームスペース、クラスターで絞り込めるほか、自由入力のテキスト検索も行えます。
+
+Kubernetes データは、ナビゲーションしやすいように Pods、Nodes、Namespaces の 3 つのタブに整理されています。
+
+<Image img="/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp" alt="ClickHouse kubernetes" size="lg" />

@@ -1,0 +1,21 @@
+---
+date: 2023-08-13
+title: "ClickHouse는 행 수준 및 컬럼 수준 보안을 지원하나요?"
+description: "ClickHouse 및 ClickHouse Cloud의 행 수준 및 컬럼 수준 접근 제한과, 정책을 사용해 역할 기반 접근 제어(RBAC)를 구현하는 방법을 알아보십시오."
+tags: ['보안 및 인증']
+keywords: ['행 수준', '컬럼 수준', '보안']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="clickhouse-and-clickhouse-cloud-both-support-row-and-column-level-access-restrictions">
+  ## ClickHouse와 ClickHouse Cloud는 모두 행 및 컬럼 수준의 접근 제한을 지원합니다
+</div>
+
+ClickHouse와 ClickHouse Cloud는 모두 역할 기반 접근 제어(RBAC) 모델을 구현하는 데 필요한 읽기 전용 사용자용 행 및 컬럼 수준의 접근 제한을 지원합니다.
+
+[행 정책(Row Policies)](/ko/concepts/features/security/access-rights#row-policy-management)을 사용하면 읽기 전용 사용자가 테이블을 쿼리할 때 어떤 행이 반환될지 지정할 수 있습니다. ClickHouse Cloud는 기본적으로 SQL 기반 워크플로가 활성화되도록 구성되어 있습니다. 이 워크플로를 활용하려면 [CREATE](/ko/reference/statements/create/user)로 사용자를 생성하고, [GRANT](/ko/reference/statements/grant)로 사용자에게 테이블 권한을 부여한 다음, 적절한 [ROW POLICY](/ko/concepts/features/security/access-rights#row-policy-management)를 설정하십시오. 사용자가 `SELECT * FROM table`을 실행하면 정책에서 허용한 행만 표시됩니다.
+
+컬럼 수준 제한은 [GRANT statement](/ko/reference/statements/grant)를 사용해 직접 지정할 수 있으며, 이를 통해 사용자와 역할에 테이블 수준 접근 권한을 부여할 수 있습니다. 사용자는 쿼리에 자신에게 접근 권한이 있는 컬럼만 포함할 수 있습니다. 사용자가 지정된 모든 컬럼에 대한 접근 권한이 없는 테이블에서 제한된 컬럼을 선택하면(예: `SELECT * FROM table` 쿼리), 권한이 부족하다는 오류가 반환됩니다.

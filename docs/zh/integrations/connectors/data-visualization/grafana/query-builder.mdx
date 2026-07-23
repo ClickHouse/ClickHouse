@@ -1,0 +1,289 @@
+---
+sidebarTitle: '查询构建器'
+slug: /integrations/grafana/query-builder
+description: '在 ClickHouse Grafana 插件中使用查询构建器'
+title: '查询构建器'
+doc_type: 'guide'
+keywords: ['Grafana', '查询构建器', '可视化', '仪表盘', '插件']
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+任何查询都可以通过 ClickHouse 插件运行。
+对于较简单的查询，查询构建器是个很方便的选择；但对于复杂查询，则需要使用 [SQL Editor](#sql-editor)。
+
+查询构建器中的所有查询都有一种[查询类型](#query-types)，并且至少需要选择一列。
+
+可用的查询类型包括：
+
+* [表](#table)：这是最简单的查询类型，用于以表格形式显示数据。无论是简单查询还是包含聚合函数的复杂查询，都适合作为通用选择。
+* [日志](#logs)：针对构建日志查询进行了优化。在 Explore 视图中，并配合[已配置默认值](/zh/integrations/connectors/data-visualization/grafana/config#logs) 使用时效果最佳。
+* [时间序列](#time-series)：最适合用于构建时间序列查询。支持选择专用时间列并添加聚合函数。
+* [链路追踪](#traces)：针对搜索和查看链路追踪进行了优化。在 Explore 视图中，并配合[已配置默认值](/zh/integrations/connectors/data-visualization/grafana/config#traces) 使用时效果最佳。
+* [SQL Editor](#sql-editor)：当你需要完全控制查询时，可以使用 SQL Editor。在此模式下，可以执行任何 SQL 查询。
+
+<div id="query-types">
+  ## 查询类型
+</div>
+
+*查询类型*设置会调整查询构建器的布局，以匹配当前正在构建的查询类型。
+查询类型还决定了在数据可视化时使用哪个面板。
+
+<div id="table">
+  ### 表
+</div>
+
+最灵活的查询类型是表查询。它是一种通用查询类型，涵盖了其他用于处理简单查询和聚合查询的查询构建器。
+
+| 字段       | 描述                                                                                                  |
+| -------- | --------------------------------------------------------------------------------------------------- |
+| 构建器模式    | 简单查询不包含 聚合 和 Group By，而聚合查询则包含这些选项。                                                                 |
+| 列        | 选中的列。可在此字段中直接输入原始 SQL，以使用函数和列别名。                                                                    |
+| 聚合       | [聚合函数](/zh/reference/functions/aggregate-functions/index)列表。支持为函数和列设置自定义值。仅在聚合模式下可见。    |
+| Group By | [GROUP BY](/zh/reference/statements/select/group-by) 表达式列表。仅在聚合模式下可见。                                  |
+| Order By | [ORDER BY](/zh/reference/statements/select/order-by) 表达式列表。                                            |
+| Limit    | 在查询末尾追加一条 [LIMIT](/zh/reference/statements/select/limit) 语句。如果设为 `0`，则不会添加。有些可视化可能需要将其设为 `0` 才能显示所有数据。 |
+| 过滤器      | 应用于 `WHERE` 子句的过滤器列表。                                                                               |
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_table_query.webp" alt="聚合表查询示例" border />
+
+此查询类型会将数据显示为表格。
+
+<div id="logs">
+  ### 日志
+</div>
+
+日志查询类型提供了一个专门用于查询日志数据的查询构建器。
+可以在数据源的[日志配置](/zh/integrations/connectors/data-visualization/grafana/config#logs)中设置默认值，以便查询构建器预加载默认的数据库/表和列。
+还可以启用 OpenTelemetry，以根据 schema 版本自动选择列。
+
+默认会添加 **Time** 和 **Level** 过滤器，以及基于 Time 列的 Order By。
+这些过滤器与各自的字段相关联，并会随着列的变化而更新。
+**Level** 过滤器默认不会包含在 SQL 中，只有将其从 `IS ANYTHING` 选项改为其他值后才会启用。
+
+日志查询类型支持[数据链接](#data-links)。
+
+| 字段             | 说明                                                                                        |
+| -------------- | ----------------------------------------------------------------------------------------- |
+| Use OTel       | 启用 OpenTelemetry 列。会覆盖当前选中的列，改用所选 OTel schema 版本定义的列 (同时禁用列选择) 。                          |
+| Columns        | 要添加到日志行中的额外列。此字段支持输入原始 SQL，以便使用函数和列别名。                                                    |
+| Time           | 日志的主时间戳列。会显示时间类型的字段，但也允许自定义值/函数。                                                          |
+| Log Level      | 可选。日志的 *level* 或 *severity*。值通常类似于 `INFO`、`error`、`Debug` 等。                              |
+| Message        | 日志消息内容。                                                                                   |
+| Order By       | [ORDER BY](/zh/reference/statements/select/order-by) 表达式列表。                                  |
+| Limit          | 在查询末尾追加一条 [LIMIT](/zh/reference/statements/select/limit) 语句。如果设为 `0`，则会被排除，但对于大型日志数据集不建议这样做。 |
+| Filters        | 要应用于 `WHERE` 子句中的过滤器列表。                                                                   |
+| Message Filter | 一个文本输入框，用于通过 `LIKE %value%` 便捷地过滤日志。输入为空时会被排除。                                            |
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query.webp" alt="OTel 日志查询示例" border />
+
+<br />
+
+此查询类型会将数据显示在日志面板中，并在顶部附带一个日志直方图面板。
+
+查询中选取的额外列可在展开的日志行中查看：
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="日志查询中的额外字段示例" border />
+
+<div id="time-series">
+  ### 时间序列
+</div>
+
+时间序列查询类型与[表](#table)类似，但更侧重于时间序列数据。
+
+这两种视图大致相同，但有以下几个显著区别：
+
+* 专门的 *Time* 字段。
+* 在 Aggregate mode 下，会自动应用时间间隔宏，并对 Time 字段执行 Group By。
+* 在 Aggregate mode 下，“Columns”字段会被隐藏。
+* 会自动为 **Time** 字段添加时间范围过滤器和 Order By。
+
+<Warning>
+  **你的可视化是否缺少数据？**
+
+  在某些情况下，时间序列面板看起来会像被截断了一样，因为 limit 默认为 `1000`。
+
+  可尝试将 `LIMIT` 子句设为 `0` 以移除它 (前提是你的数据集允许这样做) 。
+</Warning>
+
+| 字段       | 说明                                                                                                            |
+| -------- | ------------------------------------------------------------------------------------------------------------- |
+| 构建器模式    | 简单查询不包含 聚合 和 Group By，而聚合查询则包含这些选项。                                                                           |
+| Time     | 查询的主时间列。会显示时间类型的列，但也允许使用自定义值/函数。                                                                              |
+| Columns  | 选中的列。可以在此字段中输入原始 SQL，以支持函数和列别名。仅在 Simple mode 下可见。                                                            |
+| 聚合       | [聚合函数](/zh/reference/functions/aggregate-functions/index) 列表。支持为函数和列指定自定义值。仅在 Aggregate mode 下可见。 |
+| Group By | [GROUP BY](/zh/reference/statements/select/group-by) 表达式列表。仅在 Aggregate mode 下可见。                                |
+| Order By | [ORDER BY](/zh/reference/statements/select/order-by) 表达式列表。                                                      |
+| Limit    | 在查询末尾追加 [LIMIT](/zh/reference/statements/select/limit) 语句。如果设为 `0`，则会省略；对于某些时间序列数据集，建议这样设置以显示完整的可视化。             |
+| Filters  | 将应用于 `WHERE` 子句的过滤器列表。                                                                                        |
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_time_series_query.webp" alt="时间序列查询示例" border />
+
+此查询类型会使用时间序列面板来渲染数据。
+
+<div id="traces">
+  ### 链路追踪
+</div>
+
+链路追踪查询类型提供了一个查询构建器，便于轻松搜索和查看链路追踪。
+它专为 OpenTelemetry 数据设计，但也可以通过选择列来渲染来自其他 schema 的链路追踪。
+可以在数据源的[trace 配置](/zh/integrations/connectors/data-visualization/grafana/config#traces)中设置默认值，以便为查询构建器预加载默认的 database/table 和列。如果已配置默认值，列选择默认会折叠。
+还可以启用 OpenTelemetry，根据 schema 版本自动选择列。
+
+系统会添加默认过滤器，以便仅显示顶层 spans。
+此外，还会包含针对 Time 和 Duration Time 列的 ORDER BY。
+这些过滤器与各自对应的字段绑定，并会随着列的更改而更新。
+**Service Name** 过滤器默认不会包含在 SQL 中，只有将其从 `IS ANYTHING` 选项改为其他值时才会启用。
+
+链路追踪查询类型支持[数据链接](#data-links)。
+
+| 字段                    | 描述                                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------------------ |
+| Trace Mode            | 将查询从 Trace Search 切换为 Trace ID 查找。                                                               |
+| Use OTel              | 启用 OpenTelemetry 列。会覆盖当前已选择的列，改用所选 OTel schema 版本定义的列 (禁用列选择) 。                                  |
+| Trace ID Column       | trace 的 ID。                                                                                      |
+| Span ID Column        | Span ID。                                                                                         |
+| Parent Span ID Column | 父 span ID。对于顶层链路追踪，这里通常为空。                                                                       |
+| Service Name Column   | 服务名称。                                                                                            |
+| Operation Name Column | 操作名称。                                                                                            |
+| Start Time Column     | trace span 的主时间列，即 span 开始的时间。                                                                   |
+| Duration Time Column  | span 的耗时。默认情况下，Grafana 要求该值为以毫秒为单位的浮点数。系统会通过 `Duration Unit` 下拉菜单自动进行转换。                         |
+| Duration Unit         | 耗时所用的时间单位。默认为纳秒。所选单位会按 Grafana 的要求转换为以毫秒为单位的浮点数。                                                 |
+| Tags Column           | Span 标签。如果未使用基于 OTel 的 schema，请排除此项，因为它要求特定的 Map 列类型。                                            |
+| Service Tags Column   | 服务标签。如果未使用基于 OTel 的 schema，请排除此项，因为它要求特定的 Map 列类型。                                               |
+| Order By              | [ORDER BY](/zh/reference/statements/select/order-by) expressions 列表。                                |
+| Limit                 | 在查询末尾追加 [LIMIT](/zh/reference/statements/select/limit) 语句。如果设置为 `0`，则不会包含该语句，但对于大型 trace 数据集不建议这样做。 |
+| Filters               | 要应用于 `WHERE` 子句中的过滤器列表。                                                                          |
+| Trace ID              | 用于过滤的 Trace ID。仅在 Trace ID 模式下，以及打开 trace ID [数据链接](#data-links)时使用。                             |
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_trace_query.webp" alt="OTel trace 查询示例" border />
+
+此查询类型在 Trace Search 模式下会以表格视图渲染数据，在 Trace ID 模式下会以 trace 面板渲染数据。
+
+<div id="sql-editor">
+  ## SQL 编辑器
+</div>
+
+对于过于复杂、无法通过查询构建器处理的查询，你可以使用 SQL Editor。
+它允许你直接编写并运行原生 ClickHouse SQL，从而完全掌控查询。
+
+可通过在查询编辑器顶部选择“SQL Editor”来打开 SQL 编辑器。
+
+在此模式下，仍然可以使用[宏函数](#macros)。
+
+你可以在不同的查询类型之间切换，以获得最适合查询的可视化效果。
+即使在仪表板视图中，这种切换也会产生影响，尤其是在处理时间序列数据时。
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="原始 SQL 查询示例" border />
+
+<div id="data-links">
+  ## 数据链接
+</div>
+
+Grafana 的 [数据链接](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links)
+可用于跳转到新的查询。
+ClickHouse 插件已启用此功能，可在 trace 和日志之间相互跳转。如果在[数据源配置](/zh/integrations/connectors/data-visualization/grafana/config#opentelemetry)中同时为日志和链路追踪配置了 OpenTelemetry，则效果最佳。
+
+<div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
+  表中 trace 链接示例
+
+  <Image size="sm" img="/images/integrations/data-visualization/grafana/trace_id_in_table.webp" alt="表中的 trace 链接" border />
+</div>
+
+<div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
+  日志中 trace 链接示例
+
+  <Image size="md" img="/images/integrations/data-visualization/grafana/trace_id_in_logs.webp" alt="日志中的 trace 链接" border />
+</div>
+
+<div id="how-to-make-a-data-link">
+  ### 如何创建数据链接
+</div>
+
+你可以通过在查询中选择一个名为 `traceID` 的列来创建数据链接。该名称不区分大小写，也支持在 “ID” 前添加下划线。例如：`traceId`、`TraceId`、`TRACE_ID` 和 `tracE_iD` 都是有效的。
+
+如果在[日志](#logs)或[trace](#traces)查询中启用了 OpenTelemetry，则会自动包含一个 trace ID 列。
+
+包含 trace ID 列后，数据中会附带“**View Trace**”和“**View Logs**”链接。
+
+<div id="linking-abilities">
+  ### 链接功能
+</div>
+
+配置了数据链接后，你可以使用提供的 trace ID 打开 trace 和日志。
+
+“**View Trace**”会在分栏面板中打开该 trace，“**View Logs**”则会打开一个按 trace ID 过滤的日志查询。
+如果该链接是从仪表板而不是 Explore 视图中点击的，则会在 Explore 视图的新标签页中打开。
+
+跨查询类型跳转时 (日志到链路追踪，以及链路追踪到日志) ，必须同时为 [logs](/zh/integrations/connectors/data-visualization/grafana/config#logs) 和 [链路追踪](/zh/integrations/connectors/data-visualization/grafana/config#traces) 配置默认值。打开相同查询类型的链接时则不需要默认值，因为可以直接复制该查询。
+
+<div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
+  从日志查询 (左侧面板) 查看 trace (右侧面板) 的示例
+
+  <Image size="md" img="/images/integrations/data-visualization/grafana/demo_data_links.webp" alt="数据链接跳转示例" border />
+</div>
+
+<div id="macros">
+  ## 宏
+</div>
+
+宏是一种为查询添加动态 SQL 的简便方式。
+在查询发送到 ClickHouse server 之前，插件会先展开宏，并将其替换为完整的表达式。
+
+SQL Editor 和 Query Builder 中的查询都可以使用宏。
+
+<div id="using-macros">
+  ### 使用宏
+</div>
+
+宏可在查询中的任意位置使用，必要时可多次使用。
+
+下面是使用 `$__timeFilter` 宏的示例：
+
+输入：
+
+```sql
+SELECT log_time, log_message
+FROM logs
+WHERE $__timeFilter(log_time)
+```
+
+最终查询结果：
+
+```sql
+SELECT log_time, log_message
+FROM logs
+WHERE log_time >= toDateTime(1415792726) AND log_time <= toDateTime(1447328726)
+```
+
+在此示例中，Grafana 仪表板的时间范围会应用于 `log_time` 列。
+
+该插件还支持使用花括号 `{}` 的记法。当需要在[参数](/zh/reference/syntax#defining-and-using-query-parameters)中嵌入查询时，请使用这种记法。
+
+<div id="list-of-macros">
+  ### 宏列表
+</div>
+
+以下是插件中所有可用宏的列表：
+
+| 宏                                            | 说明                                                                                          | 输出示例                                                                                                              |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `$__dateFilter(columnName)`                  | 替换为基于所提供列的时间范围过滤器，使用 Grafana 面板的时间范围，并将其转换为 [Date](/zh/reference/data-types/date)。             | `columnName >= toDate('2022-10-21') AND columnName <= toDate('2022-10-23')`                                       |
+| `$__timeFilter(columnName)`                  | 替换为基于所提供列的时间范围过滤器，使用 Grafana 面板的时间范围，并将其转换为 [DateTime](/zh/reference/data-types/datetime)。     | `columnName >= toDateTime(1415792726) AND time <= toDateTime(1447328726)`                                         |
+| `$__timeFilter_ms(columnName)`               | 替换为基于所提供列的时间范围过滤器，使用 Grafana 面板的时间范围，并将其转换为 [DateTime64](/zh/reference/data-types/datetime64)。 | `columnName >= fromUnixTimestamp64Milli(1415792726123) AND columnName <= fromUnixTimestamp64Milli(1447328726456)` |
+| `$__dateTimeFilter(dateColumn, timeColumn)`  | 简写形式，使用单独的 Date 列和 DateTime 列组合 `$__dateFilter()` 与 `$__timeFilter()`。别名为 `$__dt()`         | `$__dateFilter(dateColumn) AND $__timeFilter(timeColumn)`                                                         |
+| `$__fromTime`                                | 替换为 Grafana 面板时间范围的起始时间，并转换为 [DateTime](/zh/reference/data-types/datetime)。                    | `toDateTime(1415792726)`                                                                                          |
+| `$__fromTime_ms`                             | 替换为面板时间范围的起始时间，并转换为 [DateTime64](/zh/reference/data-types/datetime64)。                         | `fromUnixTimestamp64Milli(1415792726123)`                                                                         |
+| `$__toTime`                                  | 替换为 Grafana 面板时间范围的结束时间，并转换为 [DateTime](/zh/reference/data-types/datetime)。                    | `toDateTime(1447328726)`                                                                                          |
+| `$__toTime_ms`                               | 替换为面板时间范围的结束时间，并转换为 [DateTime64](/zh/reference/data-types/datetime64)。                         | `fromUnixTimestamp64Milli(1447328726456)`                                                                         |
+| `$__timeInterval(columnName)`                | 替换为一个根据窗口大小 (以秒为单位) 计算时间间隔的函数。                                                              | `toStartOfInterval(toDateTime(columnName), INTERVAL 20 second)`                                                   |
+| `$__timeInterval_ms(columnName)`             | 替换为一个根据窗口大小 (以毫秒为单位) 计算时间间隔的函数。                                                             | `toStartOfInterval(toDateTime64(columnName, 3), INTERVAL 20 millisecond)`                                         |
+| `$__interval_s`                              | 替换为仪表板时间间隔 (秒) 。                                                                            | `20`                                                                                                              |
+| `$__conditionalAll(condition, $templateVar)` | 当第二个参数中的模板变量未选择全部值时，替换为第一个参数；当模板变量选择了全部值时，替换为 1=1。                                          | `condition` or `1=1`                                                                                              |

@@ -474,8 +474,9 @@ select parseDateTime64InJodaSyntaxOrZero('', '') = toDateTime64('1970-01-01 00:0
 1
 select parseDateTime64InJodaSyntaxOrZero('2177-10-09 10:30:10.123', 'yyyy-MM-dd HH:mm:ss.SSS') = toDateTime64('2177-10-09 10:30:10.123', 3);
 1
--- Test parseDataTime64InJodaSyntax supports range between 1900 - 2299
-select parseDateTime64InJodaSyntax('1899-12-31 23:59:59', 'yyyy-MM-dd HH:mm:ss'); -- { serverError CANNOT_PARSE_DATETIME }
+-- Test parseDataTime64InJodaSyntax supports range between 0000 - 9999
+select parseDateTime64InJodaSyntax('1899-12-31 23:59:59', 'yyyy-MM-dd HH:mm:ss') = toDateTime64('1899-12-31 23:59:59', 0);
+1
 select parseDateTime64InJodaSyntax('1900-01-01 00:00:00', 'yyyy-MM-dd HH:mm:ss') = toDateTime64('1900-01-01 00:00:00', 0);
 1
 select parseDateTime64InJodaSyntax('1920-06-06 00:00:01', 'yyyy-MM-dd HH:mm:ss') = toDateTime64('1920-06-06 00:00:01', 0);
@@ -492,7 +493,10 @@ select parseDateTime64InJodaSyntax('2106-02-07 16:28:15', 'yyyy-MM-dd HH:mm:ss')
 1
 select parseDateTime64InJodaSyntax('2299-12-31 23:59:59', 'yyyy-MM-dd HH:mm:ss') = toDateTime64('2299-12-31 23:59:59', 0);
 1
-select parseDateTime64InJodaSyntax('2300-01-01 00:00:00', 'yyyy-MM-dd HH:mm:ss'); -- { serverError CANNOT_PARSE_DATETIME }
+select parseDateTime64InJodaSyntax('2300-01-01 00:00:00', 'yyyy-MM-dd HH:mm:ss') = toDateTime64('2300-01-01 00:00:00', 0);
+1
+select parseDateTime64InJodaSyntax('9999-12-31 23:59:59', 'yyyy-MM-dd HH:mm:ss') = toDateTime64('9999-12-31 23:59:59', 0);
+1
 -- Test parseDateTimeInJodaSyntax with 3 repetitions in format and 4 digits year
 select parseDateTimeInJodaSyntax('2025', 'YYY', 'UTC') = toDateTime('2025-01-01', 'UTC');
 1

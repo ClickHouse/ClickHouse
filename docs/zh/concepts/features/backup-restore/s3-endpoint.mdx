@@ -1,0 +1,195 @@
+---
+description: 'ClickHouse 备份和恢复概述'
+sidebarTitle: 'S3 端点'
+slug: /operations/backup/s3_endpoint
+title: '备份到 S3 端点 / 从 S3 端点恢复'
+doc_type: 'guide'
+---
+
+import Syntax from '/snippets/zh/_syntax.mdx';
+
+本文介绍如何通过 S3 端点将备份保存到 S3 存储桶，
+或从 S3 存储桶恢复备份。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+<Syntax />
+
+<div id="usage-examples">
+  ## 使用示例
+</div>
+
+<div id="incremental-backup-to-an-s3-endpoint">
+  ### 备份到 S3 端点的增量备份
+</div>
+
+在本示例中，我们将先把备份创建到 S3 端点，然后再从中恢复。
+
+<Note>
+  有关全量备份与增量备份之间差异的说明，请参见[&quot;备份类型&quot;](/zh/concepts/features/backup-restore/overview#backup-types)
+</Note>
+
+使用此方法时，你需要以下信息：
+
+| 参数      | 示例                                                           |
+| ------- | ------------------------------------------------------------ |
+| S3 端点   | `https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/` |
+| 访问密钥 ID | `BKIOZLE2VYN3VXXTP9RC`                                       |
+| 私有访问密钥  | `40bwYnbqN7xU8bVePaUCh3+YEyGXu8UOMV9ANpwL`                   |
+
+<Tip>
+  有关创建 S3 存储桶的说明，请参见[&quot;将 S3 对象存储用作 ClickHouse 磁盘&quot;](/zh/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#configuring-s3-for-clickhouse-use)
+</Tip>
+
+备份的目标端指定如下：
+
+```sql
+S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extra_credentials>')
+```
+
+<br />
+
+<Steps>
+  <Step>
+    #### 准备
+
+    创建以下数据库和表，并向其中插入一些随机数据：
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS test_db;
+    CREATE TABLE test_db.test_table
+    (
+        `key` Int,
+        `value` String,
+        `array` Array(String)
+    )
+    ENGINE = MergeTree
+    ORDER BY tuple()
+    ```
+
+    ```sql
+    INSERT INTO test_db.test_table SELECT *
+    FROM generateRandom('key Int, value String, array Array(String)')
+    LIMIT 1000
+    ```
+  </Step>
+
+  <Step>
+    #### 创建基础备份
+
+    增量备份需要先有一个*基础*备份作为起点。S3 目标端的第一个参数是 S3 端点，后面是 bucket 中
+    用于存放此次备份的目录。在这个示例中，该目录名为 `my_backup`。
+
+    运行以下命令以创建基础备份：
+
+    ```sql
+    BACKUP TABLE test_db.test_table TO S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/base_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    ```
+
+    ```response
+    ┌─id───────────────────────────────────┬─status─────────┐
+    │ de442b75-a66c-4a3c-a193-f76f278c70f3 │ BACKUP_CREATED │
+    └──────────────────────────────────────┴────────────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### 添加更多数据
+
+    增量备份记录的是基础备份与正在备份的表当前内容之间的差异。在执行
+    增量备份之前，请先添加更多数据：
+
+    ```sql
+    INSERT INTO test_db.test_table SELECT *
+    FROM generateRandom('key Int, value String, array Array(String)')
+    LIMIT 100
+    ```
+  </Step>
+
+  <Step>
+    #### 执行增量备份
+
+    此备份命令与基准备份类似，但增加了 `SETTINGS base_backup` 和基准备份的位置。请注意，增量备份的目标端与基准备份不在同一目录中，而是位于同一端点下、bucket 内的另一个目标目录。基准备份位于 `my_backup`，增量备份将写入 `my_incremental`：
+
+    ```sql
+    BACKUP TABLE test_db.test_table TO S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/incremental_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    SETTINGS base_backup = S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/base_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    ```
+
+    ```response
+    ┌─id───────────────────────────────────┬─status─────────┐
+    │ f6cd3900-850f-41c9-94f1-0c4df33ea528 │ BACKUP_CREATED │
+    └──────────────────────────────────────┴────────────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### 从增量备份中恢复
+
+    此命令会将增量备份恢复到新表 `test_table_restored` 中。
+    请注意，恢复增量备份时，也会一并包含基准备份。
+    恢复时只需指定**增量备份**：
+
+    ```sql
+    RESTORE TABLE data AS test_db.test_table_restored FROM S3(
+    'https://backup-ch-docs.s3.us-east-1.amazonaws.com/backups/incremental_backup',
+    '<access key id>',
+    '<secret access key>'
+    )
+    ```
+
+    ```response
+    ┌─id───────────────────────────────────┬─status───┐
+    │ ff0c8c39-7dff-4324-a241-000796de11ca │ RESTORED │
+    └──────────────────────────────────────┴──────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### 验证行数
+
+    原始表 `data` 中进行了两次插入：一次插入了 1,000 行，另一次插入了 100 行，共计 1,100 行。
+    请验证恢复后的表有 1,100 行：
+
+    ```sql
+    SELECT count()
+    FROM test_db.test_table_restored
+    ```
+
+    ```response
+    ┌─count()─┐
+    │    1100 │
+    └─────────┘
+    ```
+  </Step>
+
+  <Step>
+    #### 验证内容
+
+    这里会比较原始表 `test_table` 与已恢复表 `test_table_restored` 的内容：
+
+    ```sql
+    SELECT throwIf((
+       SELECT groupArray(tuple(*))
+       FROM test_db.test_table
+       ) != (
+       SELECT groupArray(tuple(*))
+       FROM test_db.test_table_restored
+    ), 'Data does not match after BACKUP/RESTORE')
+    ```
+  </Step>
+</Steps>

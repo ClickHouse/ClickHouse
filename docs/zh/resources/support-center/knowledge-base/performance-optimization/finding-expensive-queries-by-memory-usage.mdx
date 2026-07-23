@@ -1,0 +1,78 @@
+---
+title: 根据内存使用量识别 ClickHouse 中的高开销查询
+description: 了解如何使用 `system.query_log` 表找出 ClickHouse 中最耗费内存的查询，并提供适用于集群和独立部署的示例。
+date: 2023-06-07
+tags: ['性能与优化']
+keywords: ['高开销查询', '内存使用量']
+---
+
+<div id="using-the-systemquery_log-table">
+  ## 使用 `system.query_log` 表
+</div>
+
+下面这个实用查询会显示你已执行的查询中，哪些占用了最多内存。
+
+关于这个查询，有几点说明：
+
+* 结果基于过去一天 (`now() - toIntervalDay(1))`) 的数据计算得出，不过你也可以轻松调整这个时间间隔
+* 它假设你有一个名为 `default` 的集群；在 [ClickHouse Cloud](https://console.clickhouse.cloud) 中，你的集群名称就是这个。请将 `default` 替换为你的集群名称
+* 如果你没有集群，请参阅本文末尾列出的查询
+
+```sql
+SELECT
+    count() as nb_query,
+    user,
+    query,
+    sum(memory_usage) AS memory,
+    normalized_query_hash
+FROM
+    clusterAllReplicas(default, system.query_log)
+WHERE
+    (event_time >= (now() - toIntervalDay(1)))
+    AND query_kind = 'Select'
+    AND type = 'QueryFinish'
+    and user != 'monitoring-internal'
+GROUP BY
+    normalized_query_hash,
+    query,
+    user
+ORDER BY
+    memory DESC;
+```
+
+响应如下：
+
+```response
+┌─nb_query─┬─user────┬─query─────────────────────────────────────────────────────────┬───memory─┬─normalized_query_hash─┐
+│       11 │ default │ select version()                                              │ 46178924 │   7202516440347714159 │
+│        2 │ default │ SELECT * FROM "system"."table_functions" LIMIT 31 OFFSET 0    │  8391544 │  12830067173062987695 │
+└──────────┴─────────┴───────────────────────────────────────────────────────────────┴──────────┴───────────────────────┘
+```
+
+<Note>
+  如果你没有 `system.query_log` 表，那么很可能尚未启用查询日志。有关如何启用它的详细信息，请参阅 [`query_log` setting](/zh/reference/settings/server-settings/settings#server_configuration_parameters-query-log) 的相关说明。
+</Note>
+
+如果你没有集群，则可以直接查询仅有的那张 `system.query_log` 表：
+
+```sql
+SELECT
+    count() as nb_query,
+    user,
+    query,
+    sum(memory_usage) AS memory,
+    normalized_query_hash
+FROM
+    system.query_log
+WHERE
+    (event_time >= (now() - toIntervalDay(1)))
+    AND query_kind = 'Select'
+    AND type = 'QueryFinish'
+    and user != 'monitoring-internal'
+GROUP BY
+    normalized_query_hash,
+    query,
+    user
+ORDER BY
+    memory DESC;
+```

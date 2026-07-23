@@ -1,0 +1,202 @@
+---
+sidebarTitle: 'Consulter et restaurer les sauvegardes'
+slug: /cloud/manage/backups/overview
+title: 'Consulter et restaurer les sauvegardes'
+keywords: ['sauvegardes', 'sauvegardes cloud', 'restaurer']
+description: 'Présente un aperçu des sauvegardes dans ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/fr/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Ce guide explique le fonctionnement des sauvegardes dans ClickHouse Cloud, les options disponibles pour configurer les sauvegardes de votre service, ainsi que la procédure de restauration à partir d’une sauvegarde.
+
+**Prérequis**
+
+* Vous avez lu [&quot;Fonctionnement des sauvegardes dans ClickHouse Cloud&quot;](/fr/products/cloud/features/backups/overview#how-backups-work-in-clickhouse-cloud) (page de présentation de la fonctionnalité)
+
+<div id="backup-status-list">
+  ## Liste des statuts des sauvegardes
+</div>
+
+Votre service sera sauvegardé selon la planification définie, qu&#39;il s&#39;agisse de la planification quotidienne par défaut ou d&#39;une [planification personnalisée](/fr/products/cloud/guides/backups/configurable-backups) que vous avez choisi. Toutes les sauvegardes disponibles sont visibles dans l&#39;onglet **Sauvegardes** du service. Vous pouvez y consulter le statut de la sauvegarde, sa durée ainsi que sa taille. Vous pouvez également restaurer une sauvegarde spécifique à l&#39;aide de la colonne **Actions**.
+
+<Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="Liste des statuts des sauvegardes dans ClickHouse Cloud" border />
+
+<div id="understanding-backup-cost">
+  ## Comprendre le coût des sauvegardes
+</div>
+
+Selon la politique par défaut, ClickHouse Cloud effectue une sauvegarde chaque jour, avec une rétention de 24 heures. Choisir une planification qui exige de conserver davantage de données ou entraîne des sauvegardes plus fréquentes peut générer des frais de stockage supplémentaires liés aux sauvegardes.
+
+Pour comprendre le coût des sauvegardes, vous pouvez consulter le coût des sauvegardes par service depuis l’écran Utilisation (comme illustré ci-dessous). Une fois que vos sauvegardes s’exécutent depuis quelques jours selon une planification personnalisée, vous pouvez vous faire une idée du coût et l’extrapoler pour estimer le coût mensuel des sauvegardes.
+
+<Image img="/images/cloud/manage/backup-usage.webp" size="md" alt="Graphique d’utilisation des sauvegardes dans ClickHouse Cloud" border />
+
+Pour estimer le coût total de vos sauvegardes, vous devez définir une planification. Avant cela, vous pouvez utiliser le [calculateur de tarification](https://clickhouse.com/pricing) pour obtenir une estimation du coût mensuel en fournissant les informations suivantes :
+
+* Taille des sauvegardes complètes et incrémentielles
+* Fréquence de sauvegarde souhaitée
+* Rétention des sauvegardes souhaitée
+* Fournisseur cloud et région
+
+<Note>
+  Gardez à l’esprit que le coût estimé des sauvegardes évoluera à mesure que le volume de données du service augmentera au fil du temps.
+</Note>
+
+<div id="restore-a-backup">
+  ## Restaurer une sauvegarde
+</div>
+
+Les sauvegardes sont restaurées dans un nouveau service ClickHouse Cloud, et non dans le service existant à partir duquel la sauvegarde a été effectuée.
+
+Après avoir cliqué sur l’icône de sauvegarde **Restore**, vous pouvez indiquer le nom du nouveau service à créer, puis restaurer cette sauvegarde :
+
+<Image img="/images/cloud/manage/backup-restore.webp" size="md" alt="Restauration d’une sauvegarde dans ClickHouse Cloud" />
+
+Le nouveau service apparaîtra dans la liste des services avec l’état `Provisioning` jusqu’à ce qu’il soit prêt :
+
+<Image img="/images/cloud/manage/backup-service-provisioning.webp" size="md" alt="Service en cours de provisionnement" border />
+
+<div id="working-with-your-restored-service">
+  ## Utiliser votre service restauré
+</div>
+
+Après la restauration d’une sauvegarde, vous disposez désormais de deux services similaires : le **service d’origine** qui devait être restauré, et un nouveau **service restauré** issu d’une sauvegarde du service d’origine.
+
+Une fois la restauration de la sauvegarde terminée, vous devez effectuer l’une des opérations suivantes :
+
+* Utiliser le nouveau service restauré et supprimer le service d’origine.
+* Migrer les données du nouveau service restauré vers le service d’origine, puis supprimer le nouveau service restauré.
+
+<div id="use-the-new-restored-service">
+  ### Utiliser le **nouveau service restauré**
+</div>
+
+Pour utiliser le nouveau service, procédez comme suit :
+
+1. Vérifiez que le nouveau service dispose des entrées de l’IP Access List requises pour votre cas d’utilisation.
+2. Vérifiez que le nouveau service contient les données dont vous avez besoin.
+3. Supprimez le service d’origine.
+
+<div id="migrate-data-from-the-newly-restored-service-back-to-the-original-service">
+  ### Migrer les données du **service récemment restauré** vers le **service d&#39;origine**
+</div>
+
+Supposons que, pour une raison quelconque, vous ne puissiez pas utiliser le service récemment restauré, par exemple si des utilisateurs ou des applications se connectent encore au service existant. Vous pouvez alors décider de migrer les données récemment restaurées vers le service d&#39;origine. Pour effectuer cette migration, suivez les étapes ci-dessous :
+
+**Autoriser l&#39;accès à distance au service récemment restauré**
+
+Le nouveau service doit être restauré à partir d&#39;une sauvegarde avec la même liste d’autorisation IP que le service d&#39;origine. Cela est nécessaire, car les connexions vers d&#39;autres services ClickHouse Cloud ne seront pas autorisées, sauf si vous avez autorisé l&#39;accès depuis **Anywhere**. Modifiez temporairement la liste d’autorisation pour autoriser l&#39;accès depuis **Anywhere**. Pour en savoir plus, consultez la documentation [IP Access List](/fr/products/cloud/guides/security/connectivity/setting-ip-filters).
+
+**Sur le service ClickHouse récemment restauré (le système qui héberge les données restaurées)**
+
+<Note>
+  Vous devrez réinitialiser le mot de passe du nouveau service pour pouvoir y accéder. Vous pouvez le faire depuis l&#39;onglet **Paramètres** dans la liste des services.
+</Note>
+
+Ajoutez un utilisateur en lecture seule pouvant lire la table source (`db.table` dans cet exemple) :
+
+```sql
+  CREATE USER exporter
+  IDENTIFIED WITH SHA256_PASSWORD BY 'password-here'
+  SETTINGS readonly = 1;
+```
+
+```sql
+  GRANT SELECT ON db.table TO exporter;
+```
+
+Copiez la définition de la table :
+
+```sql
+  SELECT create_table_query
+  FROM system.tables
+  WHERE database = 'db' AND table = 'table'
+```
+
+**Sur le système de destination ClickHouse Cloud (celui dont la table était endommagée) :**
+
+Créez la base de données de destination :
+
+```sql
+  CREATE DATABASE db
+```
+
+À partir de l’instruction `CREATE TABLE` de la source, créez la destination :
+
+<Tip>
+  Remplacez `ENGINE` par `ReplicatedMergeTree` sans aucun paramètre lorsque vous exécutez l’instruction `CREATE`. ClickHouse Cloud réplique toujours les tables et fournit les paramètres corrects.
+</Tip>
+
+```sql
+  CREATE TABLE db.table ...
+  ENGINE = ReplicatedMergeTree
+  ORDER BY ...
+```
+
+Utilisez la fonction `remoteSecure` pour rapatrier les données depuis le service ClickHouse Cloud nouvellement restauré vers votre service d’origine :
+
+```sql
+  INSERT INTO db.table
+  SELECT *
+  FROM remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
+```
+
+Après avoir correctement inséré les données dans votre service d’origine, assurez-vous de les vérifier dans celui-ci. Vous devez également supprimer le nouveau  service une fois les données vérifiées.
+
+<div id="undeleting-or-undropping-tables">
+  ## Restauration de tables supprimées
+</div>
+
+La commande `UNDROP` est prise en charge dans ClickHouse Cloud via [Shared Catalog](/fr/products/cloud/features/infrastructure/shared-catalog).
+
+Pour éviter qu&#39;un utilisateur ne supprime accidentellement des tables, vous pouvez utiliser des [instructions `GRANT`](/fr/reference/statements/grant) pour révoquer les autorisations liées à la commande [`DROP TABLE`](/fr/reference/statements/drop#drop-table) pour un utilisateur ou un rôle spécifique.
+
+<Note>
+  Pour éviter toute suppression accidentelle de données, notez que, par défaut, il n&#39;est pas possible de supprimer des tables de plus de `1TB` dans ClickHouse Cloud.
+  Si vous souhaitez supprimer des tables dépassant ce seuil, vous pouvez utiliser le paramètre `max_table_size_to_drop` :
+
+  ```sql
+  DROP TABLE IF EXISTS table_to_drop
+  SYNC SETTINGS max_table_size_to_drop=2000000000000 -- augmente la limite à 2TB
+  ```
+</Note>
+
+<Note>
+  Anciens forfaits : pour les clients utilisant d&#39;anciens forfaits, les sauvegardes quotidiennes par défaut conservées pendant 24 heures sont incluses dans le coût du stockage.
+</Note>
+
+<div id="backup-durations">
+  ## Durées des sauvegardes
+</div>
+
+Les durées de sauvegarde et de restauration dépendent de plusieurs facteurs, notamment de la taille de la base de données, de son schéma et du nombre de tables qu&#39;elle contient.
+Les sauvegardes incrémentielles se terminent généralement bien plus rapidement qu&#39;une sauvegarde complète, car elles portent sur moins de données.
+La restauration à partir d&#39;une sauvegarde incrémentielle sera légèrement plus lente que la restauration à partir d&#39;une sauvegarde complète, car elle inclut toutes les sauvegardes incrémentielles ainsi que la dernière sauvegarde complète de la chaîne, comme expliqué ci-dessus.
+
+Lors de nos tests, nous avons constaté que des sauvegardes plus petites, d&#39;environ 1 To, pouvaient prendre entre 10 et 15 minutes, voire davantage.
+Les sauvegardes de moins de 20 To devraient se terminer en moins d&#39;une heure, et la sauvegarde de 50 To de données devrait prendre environ 2 à 3 heures.
+Les sauvegardes bénéficient d&#39;économies d&#39;échelle à mesure que leur taille augmente, et nous avons observé que des sauvegardes allant jusqu&#39;à 1 Po pour certains services internes se terminaient en environ 10 heures.
+
+<Note>
+  Les sauvegardes vers des buckets externes peuvent être plus lentes que les sauvegardes vers des buckets ClickHouse
+</Note>
+
+Les durées de restauration sont à peu près équivalentes à celles des sauvegardes.
+
+Nous vous recommandons d&#39;effectuer des tests avec votre propre base de données ou avec des données d&#39;exemple afin d&#39;obtenir de meilleures estimations, car la durée réelle dépend de plusieurs facteurs, comme indiqué ci-dessus.
+
+<div id="configurable-backups">
+  ## Sauvegardes configurables
+</div>
+
+Si vous souhaitez définir une planification des sauvegardes différente de celle par défaut, consultez [Sauvegardes configurables](/fr/products/cloud/guides/backups/configurable-backups).
+
+<div id="export-backups-to-your-own-cloud-account">
+  ## Exporter des sauvegardes vers votre propre compte cloud
+</div>
+
+Pour les utilisateurs souhaitant exporter des sauvegardes vers leur propre compte cloud, consultez [cette page](/fr/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account).

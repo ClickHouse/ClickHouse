@@ -1,0 +1,112 @@
+---
+description: '파일 목록을 나열하고 메타데이터와 내용을 반환할 수 있도록 파일 시스템에 접근합니다.'
+sidebarTitle: '파일 시스템'
+slug: /sql-reference/table-functions/filesystem
+title: '파일 시스템'
+doc_type: '참고'
+---
+
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="filesystem-table-function">
+  # 파일 시스템 테이블 함수
+</div>
+
+<CloudNotSupportedBadge />
+
+디렉터리를 재귀적으로 순회하며 파일 메타데이터(경로, 크기, 유형, 권한, 수정 시간)와 선택적으로 파일 내용이 포함된 테이블을 반환합니다.
+
+`clickhouse-server` 모드에서는 경로가 [user&#95;files&#95;path](/ko/reference/settings/server-settings/settings#user_files_path) 디렉터리 내에 있어야 합니다. `user_files_path` 내부에 있으면서 외부를 가리키는 심볼릭 링크는 따라가지만, (심볼릭 링크를 통해) 경로가 `user_files_path`로 시작하는 항목만 반환됩니다.
+
+`clickhouse-local` 모드에서는 경로에 제한이 없습니다.
+
+<div id="syntax">
+  ## 구문
+</div>
+
+```sql
+filesystem([path])
+```
+
+<div id="arguments">
+  ## 인수
+</div>
+
+| 매개변수   | 설명                                                                                                                                                        |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path` | 나열할 디렉터리입니다. 절대 경로일 수도 있고(`server` 모드에서는 반드시 `user_files_path` 내부여야 함), `user_files_path` 기준의 상대 경로일 수도 있습니다. 비어 있거나 생략하면 기본값으로 `user_files_path`가 사용됩니다. |
+
+<div id="returned_columns">
+  ## 반환되는 컬럼
+</div>
+
+| Column              | Type                       | Description                                                                                                                           |
+| ------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`              | `String`                   | 항목이 들어 있는 디렉터리(파일/디렉터리 이름 자체는 제외).                                                                                                    |
+| `name`              | `String`                   | 파일 또는 디렉터리 이름(경로의 마지막 구성 요소).                                                                                                         |
+| `file`              | `String` (ALIAS of `name`) | `name` 컬럼의 별칭입니다.                                                                                                                     |
+| `type`              | `Enum8`                    | 파일 유형: `'none'`, `'not_found'`, `'regular'`, `'directory'`, `'symlink'`, `'block'`, `'character'`, `'fifo'`, `'socket'`, `'unknown'`. |
+| `size`              | `Nullable(UInt64)`         | 파일 크기(바이트 단위, 일반 파일에만 해당). 일반 파일이 아닌 경우(디렉터리, 심볼릭 링크 등)와 오류 발생 시에는 `NULL`입니다.                                                         |
+| `depth`             | `UInt16`                   | 재귀 깊이입니다. 쿼리한 디렉터리 자체와 그 직속 하위 항목은 `0`, 한 단계 더 깊은 항목은 `1`이며, 이후도 같은 방식입니다.                                                            |
+| `modification_time` | `Nullable(DateTime64(6))`  | 마이크로초 정밀도의 마지막 수정 시간입니다. 오류 발생 시 `NULL`입니다.                                                                                           |
+| `is_symlink`        | `Bool`                     | 해당 항목이 심볼릭 링크인지 여부입니다.                                                                                                                |
+| `content`           | `Nullable(String)`         | 파일 내용(일반 파일에만 해당). 일반 파일이 아닌 경우(디렉터리, 심볼릭 링크 등)는 `NULL`입니다. 읽기 오류가 발생하면 예외가 발생합니다. 이 컬럼을 읽으면 실제 파일 I/O가 발생하므로 필요하지 않으면 제외하십시오.        |
+| `owner_read`        | `Bool`                     | 소유자에게 읽기 권한이 있습니다.                                                                                                                    |
+| `owner_write`       | `Bool`                     | 소유자에게 쓰기 권한이 있습니다.                                                                                                                    |
+| `owner_exec`        | `Bool`                     | 소유자에게 실행 권한이 있습니다.                                                                                                                    |
+| `group_read`        | `Bool`                     | 그룹에 읽기 권한이 있습니다.                                                                                                                      |
+| `group_write`       | `Bool`                     | 그룹에 쓰기 권한이 있습니다.                                                                                                                      |
+| `group_exec`        | `Bool`                     | 그룹에 실행 권한이 있습니다.                                                                                                                      |
+| `others_read`       | `Bool`                     | 기타 사용자에게 읽기 권한이 있습니다.                                                                                                                 |
+| `others_write`      | `Bool`                     | 기타 사용자에게 쓰기 권한이 있습니다.                                                                                                                 |
+| `others_exec`       | `Bool`                     | 기타 사용자에게 실행 권한이 있습니다.                                                                                                                 |
+| `set_gid`           | `Bool`                     | Set-GID 비트입니다.                                                                                                                        |
+| `set_uid`           | `Bool`                     | Set-UID 비트입니다.                                                                                                                        |
+| `sticky_bit`        | `Bool`                     | 스티키 비트입니다.                                                                                                                            |
+
+쿼리에서 실제로 사용하는 컬럼만 계산되므로, 일부 컬럼만 선택하면(`content`를 생략하는 경우 특히) 효율적입니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+<div id="list-files">
+  ### user_files의 파일 목록 보기
+</div>
+
+```sql
+SELECT name, type, size, depth
+FROM filesystem()
+ORDER BY name;
+```
+
+<div id="find-large-files">
+  ### 대용량 파일 찾기
+</div>
+
+```sql
+SELECT path, name, size
+FROM filesystem()
+WHERE type = 'regular' AND size > 1000000
+ORDER BY size DESC;
+```
+
+<div id="read-contents">
+  ### 파일 내용 읽기
+</div>
+
+```sql
+SELECT name, content
+FROM filesystem('my_directory')
+WHERE name LIKE '%.csv';
+```
+
+<div id="list-immediate">
+  ### 직접 하위 항목만 나열
+</div>
+
+```sql
+SELECT name, type
+FROM filesystem('my_directory')
+WHERE depth = 0;
+```

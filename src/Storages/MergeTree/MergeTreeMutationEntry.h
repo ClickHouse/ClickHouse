@@ -23,6 +23,16 @@ struct MergeTreeMutationEntry
     String file_name;
     bool is_temp = false;
 
+    /// True once this in-memory entry is the canonical owner of the on-disk
+    /// `mutation_*.txt` file. Set when the entry is registered in
+    /// `current_mutations_by_version` or loaded from disk by `loadMutations`.
+    /// If this stays `false` at destruction (e.g. `commit` succeeded but the
+    /// caller threw before registering, see `StorageMergeTree::prepareMutationEntry`
+    /// and `StorageMergeTree::addPreparedMutationEntry`), the destructor
+    /// removes the orphaned file so `loadMutations` cannot replay a stale
+    /// mutation against rolled-back metadata. See #80648.
+    bool is_registered = false;
+
     /// This flag is set periodically in a background thread.
     /// If it is true, then mutation is done. If it is false,
     /// then mutation may be already done but not processed by this thread.
@@ -46,7 +56,11 @@ struct MergeTreeMutationEntry
     MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, UInt64 tmp_number,
                            const TransactionID & tid_, const WriteSettings & settings);
     MergeTreeMutationEntry(const MergeTreeMutationEntry &) = delete;
-    MergeTreeMutationEntry(MergeTreeMutationEntry &&) = default;
+    /// Must clear the moved-from ownership token (`file_name`, `is_temp`,
+    /// `is_registered`); a defaulted move leaves `file_name` unspecified (SSO
+    /// often keeps it) so the source would destruct as a spurious owner and
+    /// remove the file the destination just took over.
+    MergeTreeMutationEntry(MergeTreeMutationEntry &&) noexcept;
 
     /// Commit entry and rename it to a permanent file.
     void commit(UInt64 block_number_);

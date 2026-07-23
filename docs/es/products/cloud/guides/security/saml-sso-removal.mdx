@@ -1,0 +1,76 @@
+---
+sidebarTitle: 'Eliminación de SAML SSO'
+slug: /cloud/security/saml-removal
+title: 'Eliminación de SAML SSO'
+description: 'Cómo eliminar SAML SSO en ClickHouse Cloud'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'SAML', 'SSO', 'single sign-on', 'IdP']
+---
+
+Es posible que los clientes necesiten eliminar una integración de SAML de una organización por motivos como cambiar de proveedor de identidad. Los usuarios de SAML son identidades distintas de las de otros tipos de usuarios. Siga las instrucciones a continuación para cambiar a otro método de autenticación.
+
+<Warning>
+  Esta acción no se puede deshacer. Eliminar una integración de SAML invalidará a los usuarios de SAML y no se podrán recuperar. Siga atentamente las instrucciones a continuación para asegurarse de conservar el acceso a la organización.
+</Warning>
+
+<div id="before-you-begin">
+  ## Antes de comenzar
+</div>
+
+Las organizaciones deben tener un usuario administrador con un método de autenticación alternativo para volver a invitar usuarios a la organización después de eliminar SAML. Se requiere un usuario de ClickHouse Cloud con privilegios de Admin para realizar estos pasos.
+
+<Steps>
+  <Step>
+    ### Habilitar las invitaciones
+
+    Inicie sesión en [ClickHouse Cloud](https://console.clickhouse.cloud) y envíe un ticket de soporte con el asunto `Enable invitations for SAML organization`. Esto es para solicitar la posibilidad de agregar usuarios mediante un método distinto de SAML.
+  </Step>
+
+  <Step>
+    ### Anote los usuarios a los que habrá que volver a invitar
+
+    Haga clic en el nombre de la organización en la parte inferior izquierda y, a continuación, seleccione `Users and Roles`. Revise la columna `Provider` de cada usuario; cualquier usuario que muestre `Signed in with SSO` deberá volver a ser invitado a la organización después de eliminar SAML.
+
+    Asegúrese de que los usuarios sepan que deben aceptar las nuevas invitaciones antes de acceder a la cuenta una vez que se elimine SAML.
+  </Step>
+</Steps>
+
+<div id="add-non-saml-users">
+  ## Agregar usuarios no SAML a la organización
+</div>
+
+<Steps>
+  <Step>
+    ### Invitar a usuarios
+
+    Haga clic en el nombre de la organización, en la esquina inferior izquierda, y luego seleccione `Users and Roles`. Siga las instrucciones para [invitar a usuarios](/es/products/cloud/guides/security/cloud-access-management/manage-cloud-users#invite-users).
+  </Step>
+
+  <Step>
+    ### Los usuarios aceptan la invitación
+
+    Los usuarios deben haber cerrado completamente cualquier sesión iniciada mediante SAML antes de aceptar la invitación. Al aceptar la invitación con el inicio de sesión social de Google o Microsoft, deben hacer clic en los botones `Continue with Google` o `Continue with Microsoft`. Los usuarios que utilicen correo electrónico y contraseña deben ir a https://console.clickhouse.cloud/?with=email para iniciar sesión y aceptar la invitación.
+
+    <Note>
+      La mejor forma de asegurarse de que los usuarios no sean redirigidos automáticamente debido a la configuración de SAML es copiar el enlace para aceptar la invitación y pegarlo en otro navegador o en una sesión privada/de incógnito para aceptarla.
+    </Note>
+  </Step>
+
+  <Step>
+    ### Guardar consultas y dashboards
+
+    Una vez que los usuarios hayan iniciado sesión con sus nuevas identidades, deben cerrar sesión y volver a iniciarla con sus cuentas de SAML para compartir cualquier consulta o dashboard guardado con su nueva identidad. Deben guardar una copia con su nueva identidad para completar el proceso.
+  </Step>
+</Steps>
+
+<div id="remove-saml">
+  ## Eliminar SAML
+</div>
+
+Revise cuidadosamente que se hayan completado los siguientes puntos:
+
+* Hay al menos un usuario con un inicio de sesión que no sea SAML asignado al rol Admin en la organización
+* Se ha vuelto a invitar a todos los usuarios necesarios mediante otro método de autenticación
+* Todas las consultas y dashboards guardados se han migrado a usuarios que no sean SAML
+
+Si estos puntos están completos, vaya a la pestaña Configuración de la organización y desactive la opción `Enable SAML single sign-on`. Esto mostrará una advertencia. Haga clic en `Disable`. Vaya a la pestaña Usuarios y roles para eliminar los usuarios de SAML.

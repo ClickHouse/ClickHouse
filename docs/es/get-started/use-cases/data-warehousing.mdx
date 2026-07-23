@@ -1,0 +1,91 @@
+---
+slug: /cloud/get-started/cloud/use-cases/data_lake_and_warehouse
+title: 'Data warehousing'
+description: 'Cree arquitecturas modernas de almacén de datos combinando la flexibilidad de los lagos de datos con el rendimiento de ClickHouse Cloud'
+keywords: ['almacén de datos', 'lago de datos', 'lakehouse', 'Iceberg', 'Delta Lake', 'Hudi', 'Parquet', 'formatos de tabla abiertos', 'arquitectura híbrida', 'casos de uso']
+sidebarTitle: 'Data warehousing'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+export const ExclusiveGroup = ({ name, children }) => {
+  useEffect(() => {
+    document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
+      d.setAttribute('name', name)
+    );
+  });
+  return <div data-eg={name}>{children}</div>;
+};
+
+El almacén de datos moderno ya no vincula estrechamente el almacenamiento y el cómputo. En su lugar, capas diferenciadas pero interconectadas para el almacenamiento, la gobernanza y el procesamiento de consultas le brindan la flexibilidad de elegir las herramientas adecuadas para sus flujos de trabajo.
+
+Al añadir formatos de tabla abiertos y un motor de consultas de alto rendimiento como ClickHouse al almacenamiento de objetos en la nube, obtiene capacidades propias de una base de datos —transacciones ACID, validación de esquemas y consultas analíticas rápidas— sin sacrificar el carácter abierto de su lago de datos. Esta combinación aúna rendimiento con un almacenamiento interoperable y rentable para dar soporte tanto a sus análisis tradicionales como a sus cargas de trabajo modernas de IA/ML.
+
+<div id="benefits">
+  ## Lo que proporciona esta arquitectura
+</div>
+
+Al combinar almacenamiento de objetos abierto y formatos de tabla con ClickHouse como motor de consultas, obtienes:
+
+| Beneficio                                  | Descripción                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Actualizaciones coherentes de tablas**   | Los commits atómicos del estado de la tabla hacen que las escrituras concurrentes no produzcan datos corruptos ni parciales. Esto resuelve uno de los mayores problemas de los lagos de datos sin procesar.                                                                                                                                                                         |
+| **Gestión de esquemas**                    | La validación obligatoria y el seguimiento de la evolución del esquema evitan el problema del &quot;pantano de datos&quot;, en el que los datos se vuelven inutilizables debido a inconsistencias en el esquema.                                                                                                                                                                    |
+| **Rendimiento de las consultas**           | La indexación, las estadísticas y las optimizaciones de la disposición de los datos, como la omisión de datos y la agrupación, permiten que las consultas SQL se ejecuten a velocidades comparables a las de un almacén de datos dedicado. En combinación con el motor columnar de ClickHouse, esto sigue siendo cierto incluso con datos almacenados en almacenamiento de objetos. |
+| **Gobernanza**                             | Los catálogos y los formatos de tabla proporcionan un control de acceso granular y auditoría a nivel de fila y columna, lo que soluciona las limitaciones de seguridad de los lagos de datos básicos.                                                                                                                                                                               |
+| **Separación de almacenamiento y cómputo** | El almacenamiento y el cómputo escalan de forma independiente sobre almacenamiento de objetos estándar, que es considerablemente más barato que el almacenamiento propietario de los almacenes de datos. Aunque esta separación es estándar en los almacenes de datos modernos en la nube, los formatos abiertos te permiten elegir *qué* motor de cómputo escala con tus datos.    |
+
+<div id="architecture">
+  ## Cómo ClickHouse potencia tu almacén de datos
+</div>
+
+Los datos fluyen desde plataformas de streaming y almacenes de datos existentes, a través del almacenamiento de objetos, hasta ClickHouse, donde se transforman, optimizan y se ponen al servicio de tus herramientas de BI/IA.
+
+<Columns cols={2}>
+  <div>
+    <Image img="/images/cloud/onboard/discover/use_cases/data-warehousing.webp" alt="Arquitectura de almacén de datos de ClickHouse" />
+  </div>
+
+  <ExclusiveGroup name="dw-arch">
+    <AccordionGroup>
+      <Accordion title="Ingestión de datos" defaultOpen>
+        Para cargas masivas de datos, normalmente se utiliza un almacén de objetos como S3 o GCS como intermediario. El rendimiento de lectura de [Parquet](/es/guides/clickhouse/data-formats/parquet) en ClickHouse te permite cargar datos a cientos de millones de filas por segundo usando el [motor de tabla S3](/es/reference/engines/table-engines/integrations/s3). Para streaming en tiempo real, [ClickPipes](/es/integrations/clickpipes/home) se conecta directamente a plataformas como Kafka y Confluent.
+
+        También puedes migrar desde almacenes de datos existentes como Snowflake, BigQuery y Databricks exportando al almacenamiento de objetos y cargando los datos en ClickHouse mediante [motores de tabla](/es/reference/engines/table-engines).
+      </Accordion>
+
+      <Accordion title="Consultas">
+        Puedes consultar datos directamente desde almacenes de objetos como S3 y GCS, o desde lagos de datos con formatos de tabla abiertos como [Iceberg](/es/reference/engines/table-engines/integrations/iceberg), [Delta Lake](/es/reference/engines/table-engines/integrations/deltalake) y [Hudi](/es/reference/engines/table-engines/integrations/hudi) — ya sea directamente o a través de catálogos de datos como [AWS Glue Catalog](/es/guides/use-cases/data-warehousing/glue-catalog), [Unity Catalog](/es/guides/use-cases/data-warehousing/unity-catalog) e [Iceberg REST](/es/guides/use-cases/data-warehousing/rest-catalog).
+
+        ClickHouse Cloud ofrece la [query cache](/es/concepts/features/performance/caches/query-cache), [índices dispersos](/es/concepts/features/performance/skip-indexes/skipping-indexes) y [proyecciones](/es/concepts/features/projections/projections) listas para usar, además de más de 70 formatos de archivo y funciones SQL para fechas, arrays, JSON, datos geoespaciales y agregaciones aproximadas a gran escala.
+      </Accordion>
+
+      <Accordion title="Transformaciones de datos">
+        Las [vistas materializadas](/es/concepts/features/materialized-views) en ClickHouse automatizan las transformaciones: se activan cuando se insertan nuevos datos en las tablas de origen, para que puedas extraer, agregar y modificar datos a medida que llegan sin crear canalizaciones a medida.
+
+        Para un modelado más complejo, la [integración con dbt](/es/integrations/connectors/data-ingestion/etl-tools/dbt) de ClickHouse te permite definir transformaciones como modelos SQL versionados.
+      </Accordion>
+
+      <Accordion title="Integraciones">
+        ClickHouse tiene conectores nativos para herramientas de BI como [Tableau](/es/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse) y [Looker](/es/integrations/connectors/data-visualization/looker-and-clickhouse). Las herramientas sin un conector nativo pueden conectarse a través del [MySQL wire protocol](/es/concepts/features/interfaces/mysql). El [servidor MCP](/es/guides/use-cases/ai-ml/MCP) conecta ClickHouse con LLM para analítica conversacional, y los controles flexibles de [RBAC](/es/concepts/features/security/access-rights) te permiten exponer tablas de solo lectura de forma segura.
+      </Accordion>
+    </AccordionGroup>
+  </ExclusiveGroup>
+</Columns>
+
+<div id="hybrid-architecture-the-best-of-both-worlds">
+  ## Arquitectura híbrida: lo mejor de ambos mundos
+</div>
+
+Además de consultar tu lago de datos, puedes ingestar en el almacenamiento nativo [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree) de ClickHouse los datos críticos para el rendimiento para casos de uso que exigen una latencia ultrabaja: dashboards en tiempo real, analítica operativa o aplicaciones interactivas.
+
+Esto te proporciona una estrategia de datos por niveles. Los datos activos, a los que se accede con frecuencia, residen en el almacenamiento optimizado de ClickHouse para ofrecer respuestas a consultas en menos de un segundo, mientras que el historial completo de datos permanece en el lago y sigue siendo consultable. También puedes usar las vistas materializadas de ClickHouse para transformar y agregar continuamente los datos del lago en tablas optimizadas, conectando automáticamente ambos niveles.
+
+Tú eliges dónde residen los datos en función de los requisitos de rendimiento, no de las limitaciones técnicas.
+
+<Tip>
+  **ClickHouse Academy**
+
+  Realiza el curso gratuito [Data Warehousing with ClickHouse](https://clickhouse.com/learn/data-warehousing) para obtener más información.
+</Tip>

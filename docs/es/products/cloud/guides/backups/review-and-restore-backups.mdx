@@ -1,0 +1,202 @@
+---
+sidebarTitle: 'Revisar y restaurar copias de seguridad'
+slug: /cloud/manage/backups/overview
+title: 'Revisar y restaurar copias de seguridad'
+keywords: ['copias de seguridad', 'copias de seguridad en la nube', 'restaurar']
+description: 'Ofrece una descripción general de las copias de seguridad en ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/es/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Esta guía explica cómo funcionan las copias de seguridad en ClickHouse Cloud, qué opciones tiene para configurar las copias de seguridad de su servicio y cómo restaurar una copia de seguridad.
+
+**Requisitos previos**
+
+* Ha leído [&quot;Cómo funcionan las copias de seguridad en ClickHouse Cloud&quot;](/es/products/cloud/features/backups/overview#how-backups-work-in-clickhouse-cloud) (Página de descripción general de la funcionalidad)
+
+<div id="backup-status-list">
+  ## Lista del estado de las copias de seguridad
+</div>
+
+Se crearán copias de seguridad de su servicio según la programación configurada, ya sea la programación diaria predeterminada o una [programación personalizada](/es/products/cloud/guides/backups/configurable-backups) elegida por usted. Puede ver todas las copias de seguridad disponibles en la pestaña **Copias de seguridad** del servicio. Aquí puede consultar el estado, la duración y el tamaño de cada copia de seguridad. También puede restaurar una copia de seguridad específica desde la columna **Acciones**.
+
+<Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="Lista del estado de las copias de seguridad en ClickHouse Cloud" border />
+
+<div id="understanding-backup-cost">
+  ## Comprender el costo de las copias de seguridad
+</div>
+
+Según la política predeterminada, ClickHouse Cloud exige una copia de seguridad diaria, con una retención de 24 horas. Elegir una programación que requiera conservar más datos o realizar copias de seguridad con mayor frecuencia puede generar cargos adicionales de almacenamiento por las copias de seguridad.
+
+Para comprender el costo de las copias de seguridad, puede ver el costo por servicio en la pantalla de uso (como se muestra a continuación). Una vez que las copias de seguridad se hayan estado ejecutando durante unos días con una programación personalizada, podrá hacerse una idea del costo y extrapolarlo para obtener el costo mensual de las copias de seguridad.
+
+<Image img="/images/cloud/manage/backup-usage.webp" size="md" alt="Gráfico de uso de copias de seguridad en ClickHouse Cloud" border />
+
+Para estimar el costo total de sus copias de seguridad, debe definir una programación. Antes de hacerlo, puede usar la [calculadora de precios](https://clickhouse.com/pricing) para obtener una estimación del costo mensual proporcionando los siguientes datos:
+
+* Tamaño de las copias de seguridad completas e incrementales
+* Frecuencia de copia de seguridad deseada
+* Retención de copias de seguridad deseada
+* Proveedor de Cloud y región
+
+<Note>
+  Tenga en cuenta que el costo estimado de las copias de seguridad cambiará a medida que aumente con el tiempo el volumen de datos del servicio.
+</Note>
+
+<div id="restore-a-backup">
+  ## Restaurar una copia de seguridad
+</div>
+
+Las copias de seguridad se restauran en un nuevo servicio de ClickHouse Cloud, no en el servicio existente del que se obtuvo la copia de seguridad.
+
+Después de hacer clic en el icono **Restore** de la copia de seguridad, puede especificar el nombre del nuevo servicio que se creará y, a continuación, restaurar esta copia de seguridad:
+
+<Image img="/images/cloud/manage/backup-restore.webp" size="md" alt="Restauración de una copia de seguridad en ClickHouse Cloud" />
+
+El nuevo servicio aparecerá en la lista de servicios como `Provisioning` hasta que esté listo:
+
+<Image img="/images/cloud/manage/backup-service-provisioning.webp" size="md" alt="Servicio en proceso de aprovisionamiento" border />
+
+<div id="working-with-your-restored-service">
+  ## Trabajar con tu servicio restaurado
+</div>
+
+Después de restaurar una copia de seguridad, tendrás dos servicios similares: el **servicio original** que necesitaba restaurarse y un nuevo **servicio restaurado** creado a partir de una copia de seguridad del original.
+
+Una vez completada la restauración de la copia de seguridad, debes hacer una de las siguientes acciones:
+
+* Usar el nuevo servicio restaurado y eliminar el servicio original.
+* Migrar los datos del nuevo servicio restaurado al servicio original y eliminar el nuevo servicio restaurado.
+
+<div id="use-the-new-restored-service">
+  ### Use el **nuevo servicio restaurado**
+</div>
+
+Para usar el nuevo servicio, siga estos pasos:
+
+1. Verifique que el nuevo servicio tenga las entradas de la lista de acceso por IP necesarias para su caso de uso.
+2. Verifique que el nuevo servicio contenga los datos que necesita.
+3. Elimine el servicio original.
+
+<div id="migrate-data-from-the-newly-restored-service-back-to-the-original-service">
+  ### Migre los datos del **servicio recién restaurado** al **servicio original**
+</div>
+
+Supongamos que, por algún motivo, no puede trabajar con el servicio recién restaurado; por ejemplo, si todavía tiene usuarios o aplicaciones que se conectan al servicio existente. En ese caso, puede decidir migrar los datos recién restaurados al servicio original. La migración puede realizarse siguiendo estos pasos:
+
+**Permita el acceso remoto al servicio recién restaurado**
+
+El nuevo servicio debe restaurarse desde una copia de seguridad con la misma IP Allow List que el servicio original. Esto es necesario, ya que no se permitirán conexiones a otros servicios de ClickHouse Cloud a menos que haya permitido el acceso desde **Anywhere**. Modifique temporalmente la allow list y permita el acceso desde **Anywhere**. Consulte la documentación de [lista de acceso por IP](/es/products/cloud/guides/security/connectivity/setting-ip-filters) para obtener más información.
+
+**En el servicio de ClickHouse recién restaurado (el sistema que aloja los datos restaurados)**
+
+<Note>
+  Deberá restablecer la contraseña del nuevo servicio para poder acceder a él. Puede hacerlo desde la pestaña **Settings** de la lista de servicios.
+</Note>
+
+Agregue un usuario de solo lectura que pueda leer la tabla de origen (`db.table` en este ejemplo):
+
+```sql
+  CREATE USER exporter
+  IDENTIFIED WITH SHA256_PASSWORD BY 'password-here'
+  SETTINGS readonly = 1;
+```
+
+```sql
+  GRANT SELECT ON db.table TO exporter;
+```
+
+Copie la definición de la tabla:
+
+```sql
+  SELECT create_table_query
+  FROM system.tables
+  WHERE database = 'db' AND table = 'table'
+```
+
+**En el sistema de destino de ClickHouse Cloud (el que tenía la tabla dañada):**
+
+Cree la base de datos de destino:
+
+```sql
+  CREATE DATABASE db
+```
+
+Use la sentencia `CREATE TABLE` del origen para crear el destino:
+
+<Tip>
+  Cambie `ENGINE` por `ReplicatedMergeTree` sin ningún parámetro al ejecutar la sentencia `CREATE`. ClickHouse Cloud siempre replica las tablas y proporciona los parámetros correctos.
+</Tip>
+
+```sql
+  CREATE TABLE db.table ...
+  ENGINE = ReplicatedMergeTree
+  ORDER BY ...
+```
+
+Utilice la función `remoteSecure` para extraer los datos del servicio de ClickHouse Cloud recién restaurado e introducirlos en su servicio original:
+
+```sql
+  INSERT INTO db.table
+  SELECT *
+  FROM remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
+```
+
+Una vez que haya insertado correctamente los datos en su servicio original, asegúrese de comprobar los datos en el servicio. También debe eliminar el servicio nuevo una vez verificados los datos.
+
+<div id="undeleting-or-undropping-tables">
+  ## Recuperar tablas eliminadas
+</div>
+
+El comando `UNDROP` está disponible en ClickHouse Cloud a través de [Shared Catalog](/es/products/cloud/features/infrastructure/shared-catalog).
+
+Para evitar que los usuarios eliminen tablas por accidente, puede usar [sentencias `GRANT`](/es/reference/statements/grant) para revocar los permisos del [comando `DROP TABLE`](/es/reference/statements/drop#drop-table) a un usuario o rol específico.
+
+<Note>
+  Para evitar la eliminación accidental de datos, tenga en cuenta que, de forma predeterminada, no es posible eliminar tablas de más de `1TB` en ClickHouse Cloud.
+  Si desea eliminar tablas que superen este umbral, puede usar la configuración `max_table_size_to_drop` para hacerlo:
+
+  ```sql
+  DROP TABLE IF EXISTS table_to_drop
+  SYNC SETTINGS max_table_size_to_drop=2000000000000 -- aumenta el límite a 2TB
+  ```
+</Note>
+
+<Note>
+  Planes heredados: para los clientes con planes heredados, las copias de seguridad diarias predeterminadas, que se conservan durante 24 horas, están incluidas en el costo de almacenamiento.
+</Note>
+
+<div id="backup-durations">
+  ## Duración de las copias de seguridad
+</div>
+
+Los tiempos de copia de seguridad y restauración dependen de varios factores, como el tamaño de la base de datos, así como del esquema y del número de tablas de la base de datos.
+Las copias de seguridad incrementales suelen completarse mucho más rápido que una copia de seguridad completa, ya que se respaldan menos datos.
+La restauración a partir de una copia de seguridad incremental será ligeramente más lenta que la restauración a partir de una copia de seguridad completa, ya que incluye todas las copias de seguridad incrementales y la última copia de seguridad completa de la cadena, como se explicó anteriormente.
+
+En nuestras pruebas, hemos observado que las copias de seguridad más pequeñas, de ~1 TB, pueden tardar entre 10 y 15 minutos o más en completarse.
+Las copias de seguridad de menos de 20 TB deberían completarse en una hora, y respaldar 50 TB de datos debería llevar entre 2 y 3 horas.
+Las copias de seguridad se benefician de economías de escala a mayor tamaño, y hemos visto que copias de seguridad de hasta 1 PB para algunos servicios internos se completan en unas 10 horas.
+
+<Note>
+  Las copias de seguridad en buckets externos pueden ser más lentas que las copias de seguridad en buckets de ClickHouse
+</Note>
+
+Los tiempos de restauración son aproximadamente los mismos que los tiempos de copia de seguridad.
+
+Recomendamos hacer pruebas con su propia base de datos o con datos de muestra para obtener mejores estimaciones, ya que la duración real depende de varios factores, como se ha indicado anteriormente.
+
+<div id="configurable-backups">
+  ## Copias de seguridad configurables
+</div>
+
+Si quieres establecer un programa de copias de seguridad distinto del predeterminado, consulta [Copias de seguridad configurables](/es/products/cloud/guides/backups/configurable-backups).
+
+<div id="export-backups-to-your-own-cloud-account">
+  ## Exportar copias de seguridad a su propia cuenta en la nube
+</div>
+
+Si desea exportar copias de seguridad a su propia cuenta en la nube, consulte [aquí](/es/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account).

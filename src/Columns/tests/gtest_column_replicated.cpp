@@ -99,6 +99,48 @@ TEST(ColumnReplicated, InsertRangeFrom)
     checkColumn(*column_to, {"s0", "s1", "s4", "s2", "s3"}, {0, 1, 2, 3, 3, 4});
 }
 
+TEST(ColumnReplicated, RollbackClearsInsertionCache)
+{
+    /// insertion_cache memoizes absolute indexes into nested_column keyed by the source id.
+    /// rollback() shrinks nested_column and indexes, so it must invalidate the cache (like filter() does);
+    /// otherwise a re-insert from the same source hits a stale entry, skips the real insert and stores a
+    /// dangling index >= nested_column->size().
+    MutableColumnPtr src_nested = ColumnUInt64::create();
+    src_nested->insert(10);
+    src_nested->insert(11);
+    src_nested->insert(12);
+    MutableColumnPtr src_indexes = ColumnUInt8::create();
+    src_indexes->insert(0);
+    src_indexes->insert(1);
+    src_indexes->insert(2);
+    auto src = ColumnReplicated::create(std::move(src_nested), std::move(src_indexes));
+
+    MutableColumnPtr dest_nested = ColumnUInt64::create();
+    auto dest = ColumnReplicated::create(std::move(dest_nested));
+    auto checkpoint = dest->getCheckpoint();
+
+    dest->insertFrom(*src, 0);
+    dest->insertFrom(*src, 1);
+    dest->insertFrom(*src, 2);
+    ASSERT_EQ(dest->size(), 3);
+    ASSERT_EQ(dest->getNestedColumn()->size(), 3);
+
+    dest->rollback(*checkpoint);
+    ASSERT_EQ(dest->size(), 0);
+    ASSERT_EQ(dest->getNestedColumn()->size(), 0);
+
+    /// Re-insert the source value that was cached before the rollback.
+    dest->insertFrom(*src, 2);
+    ASSERT_EQ(dest->size(), 1);
+    /// The value must have been re-inserted into nested_column (cache miss), not skipped via a stale entry.
+    ASSERT_EQ(dest->getNestedColumn()->size(), 1)
+        << "rollback() left a stale insertion_cache; the re-insert was skipped and the stored index is dangling";
+    ASSERT_LT(assert_cast<const ColumnReplicated &>(*dest).getIndexes().getIndexAt(0), dest->getNestedColumn()->size());
+    auto full = assert_cast<const ColumnReplicated &>(*dest).convertToFullColumnIfReplicated();
+    ASSERT_EQ(full->size(), 1u);
+    ASSERT_EQ(full->getUInt(0), 12u);
+}
+
 TEST(ColumnReplicated, IndicesOfNonDefaultRows)
 {
     auto column = createColumn({"s1", "s2", "", "s3", ""}, {0, 1, 1, 3, 2, 0, 0, 3, 1, 2, 0, 3, 4});

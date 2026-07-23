@@ -1,0 +1,372 @@
+---
+slug: /use-cases/observability/clickstack/integrations/aws-lambda
+title: 'Monitorización de logs de AWS Lambda con ClickStack usando Rotel'
+sidebarTitle: 'Logs de AWS Lambda'
+description: 'Monitorización de logs de AWS Lambda con ClickStack usando Rotel'
+doc_type: 'guide'
+keywords: ['AWS', 'Lambda', 'OTEL', 'ClickStack', 'logs', 'CloudWatch']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/es/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<Info>
+  **TL;DR**
+
+  Esta guía le muestra cómo supervisar funciones de AWS Lambda con ClickStack mediante Rotel Lambda Extension para recopilar y reenviar directamente a ClickHouse los logs de las funciones, los logs de la extensión y los datos de OpenTelemetry. Aprenderá a:
+
+  * Implementar la capa de Rotel Lambda Extension en sus funciones Lambda
+  * Configurar la extensión para exportar logs y traces a ClickStack
+  * Deshabilitar CloudWatch Logs de forma opcional para reducir costos
+
+  Este enfoque puede reducir significativamente sus costos de observabilidad de Lambda al prescindir por completo de CloudWatch Logs.
+
+  Tiempo requerido: 5-10 minutos
+</Info>
+
+<div id="existing-lambda">
+  ## Integración con funciones de Lambda existentes
+</div>
+
+En esta sección se explica cómo configurar sus funciones de AWS Lambda existentes para enviar logs y trazas a ClickStack mediante Rotel Lambda Extension.
+
+<div id="prerequisites">
+  ### Requisitos previos
+</div>
+
+* Instancia de ClickStack en ejecución
+* Funciones de AWS Lambda que se van a supervisar
+* AWS CLI configurado con los permisos adecuados
+* Rol de ejecución de Lambda con permisos para añadir capas
+
+<Steps>
+  <Step>
+    #### Elige la capa adecuada de Rotel Lambda Extension
+
+    Elige la capa de Lambda que coincida con la arquitectura del entorno de ejecución de tu función Lambda. El campo `{version}`
+    depende de la región de AWS en la que la estés desplegando. Consulta la página de [releases](https://github.com/streamfold/rotel-lambda-extension/releases)
+    para ver los números de versión más recientes correspondientes a tu región.
+
+    | Arquitectura | ARN                                                                          |
+    | ------------ | ---------------------------------------------------------------------------- |
+    | x86-64/amd64 | `arn:aws:lambda:{region}:418653438961:layer:rotel-extension-amd64:{version}` |
+    | arm64        | `arn:aws:lambda:{region}:418653438961:layer:rotel-extension-arm64:{version}` |
+
+    **Regiones disponibles:**
+
+    * us-east-{1, 2}, us-west-{1, 2}
+    * eu-central-1, eu-north-1, eu-west-{1, 2, 3}
+    * ca-central-1
+    * ap-southeast-{1, 2}, ap-northeast-{1, 2}
+    * ap-south-1
+    * sa-east-1
+  </Step>
+
+  <Step>
+    #### Añade la capa Rotel a tu función Lambda
+
+    *En estos ejemplos, sustituye `{arch}`, `{region}` y `{version}` por los valores adecuados indicados arriba.*
+
+    ##### Opción 1: Consola de AWS
+
+    1. Abre la consola de AWS Lambda
+    2. Ve a tu función Lambda
+    3. Desplázate hasta la sección **Layers** y haz clic en **Add a layer**
+    4. Selecciona **Specify an ARN**
+    5. Introduce el ARN de la capa Rotel:
+       ```text
+       arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
+       ```
+    6. Haz clic en **Add**
+
+    ##### Opción 2: AWS CLI
+
+    ```bash
+    aws lambda update-function-configuration \
+      --function-name my-function \
+      --layers arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
+    ```
+
+    ##### Opción 3: AWS SAM
+
+    ```yaml
+    Resources:
+      MyFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+          # ... otra configuración ...
+          Layers:
+            - arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
+    ```
+  </Step>
+
+  <Step>
+    #### Configura la extensión para exportar a ClickStack
+
+    Rotel Lambda Extension se configura mediante variables de entorno. Debes configurar el endpoint del exportador OTLP para que apunte a tu instancia de ClickStack. Los ejemplos asumen que tu función de AWS Lambda puede acceder a la instancia de ClickStack.
+
+    ##### Configuración básica (variables de entorno)
+
+    Agrega estas variables de entorno a tu función de Lambda:
+
+    ```bash
+    # Obligatorio: endpoint OTLP de ClickStack
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
+
+    # Opcional: cabeceras de autenticación
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=<YOUR_INGESTION_API_KEY>"
+
+    # Opcional: nombre del servicio (por defecto, el nombre de la función Lambda)
+    ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,service.version=1.0.0"
+    ```
+
+    ##### Configuración avanzada (con el archivo .env)
+
+    Para configuraciones más complejas, crea un archivo `rotel.env` en el paquete de tu función Lambda:
+
+    **rotel.env:**
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=<YOUR_INGESTION_API_KEY>"
+    ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,deployment.environment=production"
+    ```
+
+    A continuación, configura la variable de entorno para que apunte a este archivo:
+
+    ```bash
+    ROTEL_ENV_FILE=/var/task/rotel.env
+    ```
+
+    ##### Uso de AWS Secrets Manager o de Parameter Store
+
+    Para implementaciones de producción, almacena valores confidenciales, como claves de API, en AWS Secrets Manager o Parameter Store:
+
+    **Ejemplo de AWS Secrets Manager:**
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=${arn:aws:secretsmanager:us-east-1:123456789012:secret:clickstack-api-key-abc123}"
+    ```
+
+    **Ejemplo de AWS Parameter Store:**
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=${arn:aws:ssm:us-east-1:123456789012:parameter/clickstack-api-key}"
+    ```
+
+    **Permisos de IAM necesarios:**
+
+    Añada estos permisos a su rol de ejecución de Lambda:
+
+    Para Secrets Manager:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": [
+            "secretsmanager:GetSecretValue",
+            "secretsmanager:BatchGetSecretValue"
+          ],
+          "Resource": "arn:aws:secretsmanager:us-east-1:123456789012:secret:clickstack-api-key-*"
+        }
+      ]
+    }
+    ```
+
+    En Parameter Store:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": [
+            "ssm:GetParameters"
+          ],
+          "Resource": "arn:aws:ssm:us-east-1:123456789012:parameter/clickstack-api-key"
+        }
+      ]
+    }
+    ```
+
+    <Note>
+      Las llamadas a la API de AWS para recuperar secretos añaden entre 100 y 150 ms de latencia al arranque en frío. Los secretos se recuperan en lotes (hasta 10) y solo durante la inicialización, por lo que las invocaciones posteriores no se ven afectadas.
+    </Note>
+  </Step>
+
+  <Step>
+    #### Probar la integración
+
+    Invoca tu función Lambda para comprobar que los logs se están enviando a ClickStack:
+
+    ```bash
+    aws lambda invoke \
+      --function-name my-function \
+      --payload '{"test": "data"}' \
+      response.json
+    ```
+
+    Revise los logs de Lambda para ver si hay errores:
+
+    ```bash
+    aws logs tail /aws/lambda/my-function --follow
+    ```
+  </Step>
+
+  <Step>
+    #### Verifica los logs en HyperDX
+
+    Una vez configurado, inicia sesión en HyperDX (la UI de ClickStack) y verifica que los logs se estén enviando:
+
+    <Image img="/images/clickstack/lambda/lambda-log-view.webp" alt="Vista de logs de Lambda" />
+
+    <Image img="/images/clickstack/lambda/lambda-log.webp" alt="Detalle del log de Lambda" />
+
+    Busca estos atributos clave en los logs:
+
+    * `service.name`: El nombre de tu función Lambda
+    * `faas.name`: Nombre de la función AWS Lambda
+    * `faas.invocation_id`: ID de invocación único
+    * `cloud.provider`: &quot;aws&quot;
+    * `cloud.platform`: &quot;aws&#95;lambda&quot;
+  </Step>
+</Steps>
+
+<div id="disable-cloudwatch">
+  ## Deshabilitar CloudWatch Logs (optimización de costos)
+</div>
+
+De forma predeterminada, AWS Lambda envía todos los logs a CloudWatch Logs, lo que puede resultar costoso a gran escala. Una vez que hayas verificado que los logs se están enviando a ClickStack, puedes deshabilitar el envío de logs a CloudWatch para reducir costos.
+
+<Steps>
+  <Step>
+    #### Quitar los permisos de CloudWatch del rol de ejecución
+
+    1. Abre la consola de AWS y ve a **AWS Lambda**
+    2. Ve a tu función Lambda
+    3. Selecciona **Configuration** → **Permissions**
+    4. Haz clic en el nombre del rol de ejecución para abrir la consola de IAM
+    5. Edita el rol y elimina cualquier acción `logs:*`:
+       * Si usas una política personalizada, edítala para quitar `logs:CreateLogGroup`, `logs:CreateLogStream` y `logs:PutLogEvents`
+       * Si usas la política administrada por AWS `AWSLambdaBasicExecutionRole`, quítala del rol
+    6. Guarda el rol
+  </Step>
+
+  <Step>
+    #### Verifica que el logging de CloudWatch esté deshabilitado
+
+    Invoca tu función de nuevo y verifica que:
+
+    1. No se creen nuevos streams de logs en CloudWatch
+    2. Los logs sigan apareciendo en ClickStack/HyperDX
+
+    ```bash
+    # Esto no debería mostrar nuevos streams de logs después del cambio de política
+    aws logs describe-log-streams \
+      --log-group-name /aws/lambda/my-function \
+      --order-by LastEventTime \
+      --descending \
+      --max-items 5
+    ```
+  </Step>
+</Steps>
+
+<div id="auto-instrumentation">
+  ## Agregar autoinstrumentación de OpenTelemetry
+</div>
+
+Rotel Lambda Extension funciona perfectamente con las capas de autoinstrumentación de OpenTelemetry para recopilar trazas distribuidas y métricas, además de logs.
+
+<Steps>
+  <Step>
+    #### Elige la capa de instrumentación para tu lenguaje
+
+    AWS ofrece capas de autoinstrumentación de OpenTelemetry para varios lenguajes:
+
+    | Lenguaje | Patrón de ARN de la capa                                                              |
+    | -------- | ------------------------------------------------------------------------------------- |
+    | Node.js  | `arn:aws:lambda:{region}:901920570463:layer:aws-otel-nodejs-{arch}-ver-{version}`     |
+    | Python   | `arn:aws:lambda:{region}:901920570463:layer:aws-otel-python-{arch}-ver-{version}`     |
+    | Java     | `arn:aws:lambda:{region}:901920570463:layer:aws-otel-java-agent-{arch}-ver-{version}` |
+
+    Consulta las versiones más recientes en el [repositorio de AWS OpenTelemetry Lambda](https://github.com/aws-observability/aws-otel-lambda).
+  </Step>
+
+  <Step>
+    #### Agrega ambas capas a tu función
+
+    Agrega **ambas** capas: la capa de extensión de Rotel y la capa de instrumentación:
+
+    ```bash
+    aws lambda update-function-configuration \
+      --function-name my-function \
+      --layers \
+        arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version} \
+        arn:aws:lambda:{region}:901920570463:layer:aws-otel-nodejs-{arch}-ver-1-30-2:1
+    ```
+  </Step>
+
+  <Step>
+    #### Configura la autoinstrumentación
+
+    Define la variable de entorno `AWS_LAMBDA_EXEC_WRAPPER` para habilitar la autoinstrumentación:
+
+    **Para Node.js:**
+
+    ```bash
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler
+    ```
+
+    **Para Python:**
+
+    ```bash
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-instrument
+    ```
+
+    **Para Java:**
+
+    ```bash
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler
+    ```
+  </Step>
+
+  <Step>
+    #### Verifica las trazas en HyperDX
+
+    Después de invocar tu función:
+
+    1. Ve a la vista **Traces** de HyperDX
+    2. Deberías ver trazas con spans de tu función Lambda
+    3. Las trazas aparecerán correlacionadas con los logs mediante los atributos `trace_id` y `span_id`
+  </Step>
+</Steps>
+
+<div id="examples">
+  ## Aplicaciones de ejemplo
+</div>
+
+Consulta la aplicación de ejemplo en Python que muestra la Rotel Lambda Extension:
+
+* **[Python + ClickHouse](https://github.com/streamfold/python-aws-lambda-clickhouse-example)**: Aplicación de Python con instrumentación manual de OpenTelemetry, que envía trazas y logs directamente a ClickHouse
+
+<div id="join-rotel-community">
+  ## Únete a la comunidad de Rotel
+</div>
+
+Si tienes preguntas sobre Rotel, únete al [servidor de Discord de Rotel](https://rotel.dev) y comparte tus comentarios o dudas. Échale un vistazo a la [Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension) para contribuir con mejoras.
+
+<div id="resources">
+  ## Recursos adicionales
+</div>
+
+* **[Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension)**: Código fuente y documentación detallada
+* **[Rotel Core](https://github.com/streamfold/rotel)**: El plano de datos ligero de OTel que sirve de base para la extensión

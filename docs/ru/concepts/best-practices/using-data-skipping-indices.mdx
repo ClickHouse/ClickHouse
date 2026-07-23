@@ -1,0 +1,269 @@
+---
+slug: /best-practices/use-data-skipping-indices-where-appropriate
+sidebarTitle: 'Индексы пропуска данных'
+title: 'Используйте индексы пропуска данных там, где это целесообразно'
+description: 'Страница о том, как и когда использовать индексы пропуска данных'
+keywords: ['индекс пропуска данных', 'индекс пропуска данных']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Индексы пропуска данных стоит рассматривать после того, как уже выполнены основные рекомендации: оптимизированы типы, выбран подходящий первичный ключ и использованы materialized views. Если вы только начинаете знакомиться с индексами пропуска данных, хорошей отправной точкой будет [это руководство](/ru/concepts/features/performance/skip-indexes/skipping-indexes).
+
+Эти типы индексов могут ускорить выполнение запросов, если применять их осознанно и понимать, как именно они работают.
+
+ClickHouse предоставляет мощный механизм под названием **индексы пропуска данных**, который может значительно сократить объем данных, сканируемых при выполнении запроса, — особенно когда первичный ключ не помогает для конкретного условия фильтрации. В отличие от традиционных баз данных, которые опираются на вторичные индексы на уровне строк (например, B-деревья), ClickHouse — это столбцовая СУБД и не хранит расположение строк в формате, который позволял бы использовать такие структуры. Вместо этого он использует индексы пропуска данных, которые помогают избегать чтения блоков данных, заведомо не соответствующих условиям фильтрации запроса.
+
+Индексы пропуска данных работают за счет хранения метаданных о блоках данных — например, минимальных/максимальных значений, наборов значений или представлений Bloom filter — и использования этих метаданных во время выполнения запроса, чтобы определить, какие блоки данных можно полностью пропустить. Они применимы только к [семейству движков таблиц MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree) и определяются с помощью выражения, типа индекса, имени и гранулярности, задающей размер каждого индексируемого блока. Эти индексы хранятся рядом с данными таблицы и используются, когда фильтр запроса соответствует выражению индекса.
+
+Существует несколько типов индексов пропуска данных, каждый из которых подходит для разных типов запросов и распределений данных:
+
+* **minmax**: Отслеживает минимальное и максимальное значение выражения для каждого блока. Идеально подходит для диапазонных запросов по слабо отсортированным данным.
+* **set(N)**: Отслеживает набор значений до указанного размера N для каждого блока. Эффективен для столбцов с низкой мощностью в пределах блоков.
+* **text**: Строит инвертированный индекс по токенизированным строковым данным, обеспечивая эффективный и детерминированный полнотекстовый поиск. Рекомендуется для текстов на естественном языке или больших столбцов с произвольным текстом, где требуются точный поиск по токенам и масштабируемый поиск по нескольким терминам, вместо приближенных подходов на основе Bloom filter.
+* **bloom&#95;filter**: Вероятностно определяет, присутствует ли значение в блоке, что позволяет быстро выполнять приближенную фильтрацию на принадлежность множеству. Эффективен для оптимизации запросов вида «иголка в стоге сена», когда требуется найти положительное совпадение.
+* **tokenbf&#95;v1 / ngrambf&#95;v1**: *(Устарело)* Специализированные варианты Bloom filter, предназначенные для поиска токенов или последовательностей символов в строках — особенно полезны для данных логов или сценариев текстового поиска. Устарели в версиях ClickHouse &gt;= 26.2 в пользу текстовых индексов.
+
+Несмотря на свою мощность, индексы пропуска данных нужно использовать с осторожностью. Они приносят пользу только тогда, когда позволяют исключить значимое количество блоков данных, и могут, наоборот, создавать дополнительные накладные расходы, если запрос или структура данных им не соответствуют. Если в блоке есть хотя бы одно подходящее значение, весь этот блок все равно придется прочитать.
+
+**Эффективность использования индексов пропуска данных часто зависит от сильной корреляции между индексируемым столбцом и первичным ключом таблицы либо от вставки данных таким образом, чтобы похожие значения группировались вместе.**
+
+В целом индексы пропуска данных лучше всего применять после того, как обеспечены корректное проектирование первичного ключа и оптимизация типов. Они особенно полезны для:
+
+* Столбцов с высокой общей мощностью, но низкой мощностью внутри блока.
+* Редких значений, критически важных для поиска (например, кодов ошибок, конкретных ID).
+* Случаев, когда фильтрация выполняется по столбцам, не входящим в первичный ключ, при локализованном распределении данных.
+
+Всегда:
+
+1. Тестируйте индексы пропуска данных на реальных данных с реалистичными запросами. Пробуйте разные типы индексов и значения гранулярности.
+2. Оценивайте их влияние с помощью таких инструментов, как send&#95;logs&#95;level=&#39;trace&#39; и `EXPLAIN indexes=1`, чтобы увидеть эффективность индекса.
+3. Всегда оценивайте размер индекса и то, как на него влияет гранулярность. Уменьшение гранулярности часто повышает производительность до определенного предела, поскольку позволяет отфильтровывать больше гранул и уменьшать объем сканирования. Однако по мере роста размера индекса при меньшей гранулярности производительность также может ухудшаться. Измеряйте производительность и размер индекса для разных значений гранулярности. Это особенно актуально для индексов Bloom filter.
+
+<p />
+
+**При правильном использовании индексы пропуска данных могут дать существенный прирост производительности — при бездумном применении они могут привести к лишним затратам.**
+
+Более подробное руководство по индексам пропуска данных смотрите [здесь](/ru/reference/statements/alter/skipping-index).
+
+<div id="example">
+  ## Пример
+</div>
+
+Рассмотрим следующую оптимизированную таблицу. Она содержит данные Stack Overflow: по одной строке на каждый пост.
+
+```sql
+CREATE TABLE stackoverflow.posts
+(
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+  `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+  `AcceptedAnswerId` UInt32,
+  `CreationDate` DateTime64(3, 'UTC'),
+  `Score` Int32,
+  `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+  `Body` String,
+  `OwnerUserId` Int32,
+  `OwnerDisplayName` String,
+  `LastEditorUserId` Int32,
+  `LastEditorDisplayName` String,
+  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+  `LastActivityDate` DateTime64(3, 'UTC'),
+  `Title` String,
+  `Tags` String,
+  `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+  `CommentCount` UInt8,
+  `FavoriteCount` UInt8,
+  `ContentLicense` LowCardinality(String),
+  `ParentId` String,
+  `CommunityOwnedDate` DateTime64(3, 'UTC'),
+  `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate))
+```
+
+Эта таблица оптимизирована для запросов, которые фильтруют и агрегируют данные по типу поста и дате. Предположим, нам нужно подсчитать количество постов с более чем 10 000 000 просмотров, опубликованных после 2009 года.
+
+```sql
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+
+┌─count()─┐
+│     5   │
+└─────────┘
+
+1 row in set. Elapsed: 0.720 sec. Processed 59.55 million rows, 230.23 MB (82.66 million rows/s., 319.56 MB/s.)
+```
+
+Этот запрос может исключить часть строк (и гранул) с помощью основного индекса. Однако большинство строк всё равно необходимо прочитать, что подтверждается приведённым выше результатом и следующим выводом `EXPLAIN indexes = 1`:
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+LIMIT 1
+```
+
+```response
+┌─explain──────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                        │
+│   Limit (preliminary LIMIT (without OFFSET))                     │
+│     Aggregating                                                  │
+│       Expression (Before GROUP BY)                               │
+│         Expression                                               │
+│           ReadFromMergeTree (stackoverflow.posts)                │
+│           Indexes:                                               │
+│             MinMax                                               │
+│               Keys:                                              │
+│                 CreationDate                                     │
+│               Condition: (CreationDate in ('1230768000', +Inf))  │
+│               Parts: 123/128                                     │
+│               Granules: 8513/8545                                │
+│             Partition                                            │
+│               Keys:                                              │
+│                 toYear(CreationDate)                             │
+│               Condition: (toYear(CreationDate) in [2009, +Inf))  │
+│               Parts: 123/123                                     │
+│               Granules: 8513/8513                                │
+│             PrimaryKey                                           │
+│               Keys:                                              │
+│                 toDate(CreationDate)                             │
+│               Condition: (toDate(CreationDate) in [14245, +Inf)) │
+│               Parts: 123/123                                     │
+│               Granules: 8513/8513                                │
+└──────────────────────────────────────────────────────────────────┘
+
+25 rows in set. Elapsed: 0.070 sec.
+```
+
+Простой анализ показывает, что `ViewCount` коррелирует с `CreationDate` (первичным ключом), как и следовало ожидать: чем дольше существует публикация, тем больше у неё просмотров.
+
+```sql
+SELECT toDate(CreationDate) AS day, avg(ViewCount) AS view_count FROM stackoverflow.posts WHERE day > '2009-01-01'  GROUP BY day
+```
+
+Поэтому здесь логично использовать индекс пропуска данных. Учитывая числовой тип, индекс minmax здесь вполне уместен. Мы добавим индекс с помощью следующих команд `ALTER TABLE` — сначала добавим его, а затем &quot;материализуем&quot;.
+
+```sql
+ALTER TABLE stackoverflow.posts
+  (ADD INDEX view_count_idx ViewCount TYPE minmax GRANULARITY 1);
+
+ALTER TABLE stackoverflow.posts MATERIALIZE INDEX view_count_idx;
+```
+
+Этот индекс также можно было добавить при создании таблицы. Схема с индексом minmax, заданным в DDL:
+
+```sql
+CREATE TABLE stackoverflow.posts
+(
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+  `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+  `AcceptedAnswerId` UInt32,
+  `CreationDate` DateTime64(3, 'UTC'),
+  `Score` Int32,
+  `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+  `Body` String,
+  `OwnerUserId` Int32,
+  `OwnerDisplayName` String,
+  `LastEditorUserId` Int32,
+  `LastEditorDisplayName` String,
+  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+  `LastActivityDate` DateTime64(3, 'UTC'),
+  `Title` String,
+  `Tags` String,
+  `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+  `CommentCount` UInt8,
+  `FavoriteCount` UInt8,
+  `ContentLicense` LowCardinality(String),
+  `ParentId` String,
+  `CommunityOwnedDate` DateTime64(3, 'UTC'),
+  `ClosedDate` DateTime64(3, 'UTC'),
+  INDEX view_count_idx ViewCount TYPE minmax GRANULARITY 1 --индекс здесь
+)
+ENGINE = MergeTree
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate))
+```
+
+Следующая анимация показывает, как для таблицы из примера строится наш minmax-индекс пропуска данных, отслеживающий минимальные и максимальные значения `ViewCount` для каждого блока строк (гранулы) в таблице:
+
+<Image img="/images/bestpractices/building_skipping_indices.webp" size="lg" alt="Построение индексов пропуска данных" />
+
+Повторив предыдущий запрос, можно увидеть заметное повышение производительности. Обратите внимание на уменьшение числа просканированных строк:
+
+```sql
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+```
+
+```response
+┌─count()─┐
+│     5   │
+└─────────┘
+
+1 row in set. Elapsed: 0.012 sec. Processed 39.11 thousand rows, 321.39 KB (3.40 million rows/s., 27.93 MB/s.)
+```
+
+`EXPLAIN indexes = 1` подтверждает, что индекс используется.
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+```
+
+```response
+┌─explain────────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                          │
+│   Aggregating                                                      │
+│     Expression (Before GROUP BY)                                   │
+│       Expression                                                   │
+│         ReadFromMergeTree (stackoverflow.posts)                    │
+│         Indexes:                                                   │
+│           MinMax                                                   │
+│             Keys:                                                  │
+│               CreationDate                                         │
+│             Condition: (CreationDate in ('1230768000', +Inf))      │
+│             Parts: 123/128                                         │
+│             Granules: 8513/8545                                    │
+│           Partition                                                │
+│             Keys:                                                  │
+│               toYear(CreationDate)                                 │
+│             Condition: (toYear(CreationDate) in [2009, +Inf))      │
+│             Parts: 123/123                                         │
+│             Granules: 8513/8513                                    │
+│           PrimaryKey                                               │
+│             Keys:                                                  │
+│               toDate(CreationDate)                                 │
+│             Condition: (toDate(CreationDate) in [14245, +Inf))     │
+│             Parts: 123/123                                         │
+│             Granules: 8513/8513                                    │
+│           Skip                                                     │
+│             Name: view_count_idx                                   │
+│             Description: minmax GRANULARITY 1                      │
+│             Parts: 5/123                                           │
+│             Granules: 23/8513                                      │
+└────────────────────────────────────────────────────────────────────┘
+
+29 rows in set. Elapsed: 0.211 sec.
+```
+
+Мы также показываем анимацию того, как minmax индекс пропуска данных отбрасывает все блоки строк, которые заведомо не могут содержать совпадений с предикатом `ViewCount` &gt; 10,000,000 в нашем примере запроса:
+
+<Image img="/images/bestpractices/using_skipping_indices.webp" size="lg" alt="Использование индексов пропуска" />
+
+<div id="related-docs">
+  ## Связанные документы
+</div>
+
+* [Руководство по индексам пропуска данных](/ru/concepts/features/performance/skip-indexes/skipping-indexes)
+* [Примеры индексов пропуска данных](/ru/concepts/features/performance/skip-indexes/skipping-indexes-examples)
+* [Управление индексами пропуска данных](/ru/reference/statements/alter/skipping-index)
+* [Информация о системной таблице](/ru/reference/system-tables/data_skipping_indices)

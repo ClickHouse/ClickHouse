@@ -1,0 +1,86 @@
+---
+alias: []
+description: 'Regexp 格式文档'
+input_format: true
+keywords: ['Regexp']
+output_format: false
+slug: /interfaces/formats/Regexp
+title: 'Regexp'
+doc_type: 'reference'
+---
+
+| 输入 | 输出 | 别名 |
+| -- | -- | -- |
+| ✔  | ✗  |    |
+
+<div id="description">
+  ## 描述
+</div>
+
+`Regex` 格式会根据给定的正则表达式解析导入数据的每一行。
+
+**用法**
+
+[format&#95;regexp](/zh/reference/settings/formats#format_regexp) 设置中的正则表达式会应用到导入数据的每一行。正则表达式中的子模式数量必须与导入数据集中的列数相等。
+
+导入数据中的各行必须以换行符 `'\n'` 或 DOS 风格的换行符 `"\r\n"` 分隔。
+
+每个匹配到的子模式内容都会根据 [format&#95;regexp&#95;escaping&#95;rule](/zh/reference/settings/formats#format_regexp_escaping_rule) 设置，按对应数据类型的解析方法进行解析。
+
+如果正则表达式与某一行不匹配，且 [format&#95;regexp&#95;skip&#95;unmatched](/zh/reference/settings/formats#format_regexp_escaping_rule) 设置为 1，则会静默跳过该行。否则将抛出异常。
+
+<div id="example-usage">
+  ## 示例用法
+</div>
+
+假设有文件 `data.tsv`：
+
+```text title="data.tsv"
+id: 1 array: [1,2,3] string: str1 date: 2020-01-01
+id: 2 array: [1,2,3] string: str2 date: 2020-01-02
+id: 3 array: [1,2,3] string: str3 date: 2020-01-03
+```
+
+以及表 `imp_regex_table`：
+
+```sql title="Query"
+CREATE TABLE imp_regex_table (id UInt32, array Array(UInt32), string String, date Date) ENGINE = Memory;
+```
+
+我们将使用以下查询，把前述文件中的数据插入到上述表中：
+
+```bash title="Query"
+$ cat data.tsv | clickhouse-client  --query "INSERT INTO imp_regex_table SETTINGS format_regexp='id: (.+?) array: (.+?) string: (.+?) date: (.+?)', format_regexp_escaping_rule='Escaped', format_regexp_skip_unmatched=0 FORMAT Regexp;"
+```
+
+现在我们可以从表中 `SELECT` 数据，看看 `Regex` 格式如何解析文件中的数据：
+
+```sql title="Query"
+SELECT * FROM imp_regex_table;
+```
+
+```text title="Response"
+┌─id─┬─array───┬─string─┬───────date─┐
+│  1 │ [1,2,3] │ str1   │ 2020-01-01 │
+│  2 │ [1,2,3] │ str2   │ 2020-01-02 │
+│  3 │ [1,2,3] │ str3   │ 2020-01-03 │
+└────┴─────────┴────────┴────────────┘
+```
+
+<div id="format-settings">
+  ## 格式设置
+</div>
+
+使用 `Regexp` 格式时，可以使用以下设置：
+
+* `format_regexp` — [String](/zh/reference/data-types/string)。包含采用 [re2](https://github.com/google/re2/wiki/Syntax) 语法的正则表达式。
+
+* `format_regexp_escaping_rule` — [String](/zh/reference/data-types/string)。支持以下转义规则：
+
+  * CSV (类似于 [CSV](/zh/reference/formats/CSV/CSV)
+  * JSON (类似于 [JSONEachRow](/zh/reference/formats/JSON/JSONEachRow)
+  * Escaped (类似于 [TSV](/zh/reference/formats/TabSeparated/TabSeparated)
+  * Quoted (类似于 [Values](/zh/reference/formats/Values)
+  * Raw (将子模式作为整体提取，不使用转义规则，类似于 [TSVRaw](/zh/reference/formats/TabSeparated/TabSeparated)
+
+* `format_regexp_skip_unmatched` — [UInt8](/zh/reference/data-types/int-uint)。定义当 `format_regexp` 表达式与导入数据不匹配时，是否抛出异常。可设置为 `0` 或 `1`。

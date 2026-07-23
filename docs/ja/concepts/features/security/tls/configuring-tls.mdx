@@ -1,0 +1,686 @@
+---
+slug: /guides/sre/tls/configuring-tls
+sidebarTitle: 'TLS の設定'
+title: 'TLS の設定'
+description: 'このガイドでは、OpenSSL 証明書を使用して接続を検証するよう ClickHouse を設定するための、シンプルで最小限の設定について説明します。'
+keywords: ['SSL 設定', 'TLS の設定', 'OpenSSL 証明書', 'セキュアな接続', 'SRE ガイド']
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/ja/_self_managed_only_automated.mdx';
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<SelfManaged />
+
+このガイドでは、OpenSSL 証明書を使用して接続を検証するよう ClickHouse を設定するための、シンプルで最小限の構成を説明します。このデモでは、適切な設定で接続できるように、自己署名の認証局 (CA) 証明書と秘密鍵を作成し、あわせてノード証明書も用意します。
+
+<Note>
+  TLS の実装は複雑で、完全に安全かつ堅牢なデプロイメントを実現するには、考慮すべき点が数多くあります。ここでは、基本的な TLS 構成の例を示す入門チュートリアルを紹介します。組織に適した証明書を生成するには、PKI／セキュリティチームに相談してください。
+
+  導入的な概要については、こちらの[証明書の利用に関する基本チュートリアル](https://ubuntu.com/server/docs/security-certificates)を参照してください。
+</Note>
+
+<Steps>
+  <Step>
+    ## ClickHouse デプロイメントを作成する
+
+    このガイドは、Ubuntu 20.04 を使用し、以下のホストに DEB パッケージ (apt を使用) で ClickHouse をインストールした環境を前提に作成されています。ドメインは `marsnet.local` です。
+
+    | Host      | IP Address    |
+    | --------- | ------------- |
+    | `chnode1` | 192.168.1.221 |
+    | `chnode2` | 192.168.1.222 |
+    | `chnode3` | 192.168.1.223 |
+
+    <Note>
+      ClickHouse のインストール方法の詳細については、[クイックスタート](/ja/get-started/setup/install)を参照してください。
+    </Note>
+  </Step>
+
+  <Step>
+    ## TLS 証明書を作成する
+
+    <Note>
+      自己署名証明書の使用はデモ目的に限られ、本番環境では使用すべきではありません。証明書要求は組織による署名を前提に作成し、設定で構成する CA チェーンを使って検証できるようにする必要があります。ただし、これらの手順は設定の構成とテストに使用でき、後で実際に使用する証明書に置き換えることができます。
+    </Note>
+
+    1. 新しい CA で使用する秘密鍵を生成します:
+       ```bash
+       openssl genrsa -out marsnet_ca.key 2048
+       ```
+
+    2. 新しい自己署名 CA 証明書を生成します。以下のコマンドは、CA の秘密鍵を使用して他の証明書に署名するための新しい証明書を作成します:
+       ```bash
+       openssl req -x509 -subj "/CN=marsnet.local CA" -nodes -key marsnet_ca.key -days 1095 -out marsnet_ca.crt
+       ```
+
+    <Note>
+      秘密鍵と CA 証明書は、クラスター外の安全な場所にバックアップしてください。ノード証明書を生成したら、秘密鍵はクラスターのノードから削除する必要があります。
+    </Note>
+
+    3. 新しい CA 証明書の内容を確認します:
+       ```bash
+       openssl x509 -in marsnet_ca.crt -text
+       ```
+
+    4. 各ノードの証明書要求 (CSR) を作成し、秘密鍵を生成します:
+       ```bash
+       openssl req -newkey rsa:2048 -nodes -subj "/CN=chnode1" -addext "subjectAltName = DNS:chnode1.marsnet.local,IP:192.168.1.221" -keyout chnode1.key -out chnode1.csr
+       openssl req -newkey rsa:2048 -nodes -subj "/CN=chnode2" -addext "subjectAltName = DNS:chnode2.marsnet.local,IP:192.168.1.222" -keyout chnode2.key -out chnode2.csr
+       openssl req -newkey rsa:2048 -nodes -subj "/CN=chnode3" -addext "subjectAltName = DNS:chnode3.marsnet.local,IP:192.168.1.223" -keyout chnode3.key -out chnode3.csr
+       ```
+
+    5. CSR と CA を使用して、新しい証明書と秘密鍵のペアを作成します:
+       ```bash
+       openssl x509 -req -in chnode1.csr -out chnode1.crt -CA marsnet_ca.crt -CAkey marsnet_ca.key -days 365 -copy_extensions copy
+       openssl x509 -req -in chnode2.csr -out chnode2.crt -CA marsnet_ca.crt -CAkey marsnet_ca.key -days 365 -copy_extensions copy
+       openssl x509 -req -in chnode3.csr -out chnode3.crt -CA marsnet_ca.crt -CAkey marsnet_ca.key -days 365 -copy_extensions copy
+       ```
+
+    6. subject と issuer を確認します:
+       ```bash
+       openssl x509 -in chnode1.crt -text -noout
+       ```
+
+    7. 新しい証明書が CA 証明書で検証できることを確認します:
+       ```bash
+       openssl verify -CAfile marsnet_ca.crt chnode1.crt
+       chnode1.crt: OK
+       ```
+  </Step>
+
+  <Step>
+    ## 証明書と秘密鍵を格納するディレクトリを作成して設定します。
+
+    <Note>
+      これは各ノードで実施する必要があります。各ホストでは、それぞれに対応する適切な証明書と秘密鍵を使用してください。
+    </Note>
+
+    1. 各ノードで、ClickHouse からアクセス可能な場所にフォルダを作成します。デフォルトの設定ディレクトリ (例: `/etc/clickhouse-server`) を使用することを推奨します。
+       ```bash
+       mkdir /etc/clickhouse-server/certs
+       ```
+
+    2. 各ノードに対応する CA証明書、ノード証明書、および秘密鍵を、新しく作成した certs ディレクトリにコピーします。
+
+    3. ClickHouse が証明書を読み取れるように、所有者とパーミッションを更新します。
+
+       ```bash
+       chown clickhouse:clickhouse -R /etc/clickhouse-server/certs
+       chmod 600 /etc/clickhouse-server/certs/*
+       chmod 755 /etc/clickhouse-server/certs
+       ll /etc/clickhouse-server/certs
+       ```
+
+       ```response
+       total 20
+       drw-r--r-- 2 clickhouse clickhouse 4096 Apr 12 20:23 ./
+       drwx------ 5 clickhouse clickhouse 4096 Apr 12 20:23 ../
+       -rw------- 1 clickhouse clickhouse  997 Apr 12 20:22 chnode1.crt
+       -rw------- 1 clickhouse clickhouse 1708 Apr 12 20:22 chnode1.key
+       -rw------- 1 clickhouse clickhouse 1131 Apr 12 20:23 marsnet_ca.crt
+       ```
+  </Step>
+
+  <Step>
+    ## ClickHouse Keeperを使用した基本クラスターによる環境の構成
+
+    このデプロイメント環境では、各ノードで以下の ClickHouse Keeper 設定を使用します。各サーバーにはそれぞれ固有の `<server_id>` が設定されます (例：ノード `chnode1` には `<server_id>1</server_id>`、以降も同様) 。
+
+    <Note>
+      ClickHouse Keeper の推奨ポートは `9281` です。ただし、ポートは設定可能であり、このポートが環境内の別のアプリケーションですでに使用されている場合は、別のポートに設定できます。
+
+      すべてのオプションの詳細な説明については、https://clickhouse.com/docs/operations/clickhouse-keeper/ を参照してください。
+    </Note>
+
+    1. ClickHouse server の `config.xml` の `<clickhouse>` タグ内に以下を追加します
+
+    <Note>
+      本番環境では、`config.d` ディレクトリ内の別の `.xml` 設定ファイルを使用することを推奨します。
+      詳細については、https://clickhouse.com/docs/operations/configuration-files/ を参照してください。
+    </Note>
+
+    ```xml
+    <keeper_server>
+        <tcp_port_secure>9281</tcp_port_secure>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+
+        <coordination_settings>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <session_timeout_ms>30000</session_timeout_ms>
+            <raft_logs_level>trace</raft_logs_level>
+        </coordination_settings>
+
+        <raft_configuration>
+            <secure>true</secure>
+            <server>
+                <id>1</id>
+                <hostname>chnode1.marsnet.local</hostname>
+                <port>9444</port>
+            </server>
+            <server>
+                <id>2</id>
+                <hostname>chnode2.marsnet.local</hostname>
+                <port>9444</port>
+            </server>
+            <server>
+                <id>3</id>
+                <hostname>chnode3.marsnet.local</hostname>
+                <port>9444</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+    ```
+
+    <Note>
+      ClickHouse Keeper が ClickHouse server に埋め込まれている場合 (上図のとおり) 、Keeper は [ClickHouse ノードで TLS インターフェイスを構成する](#5-configure-tls-interfaces-on-clickhouse-nodes) の OpenSSL セクションで定義された、server の OpenSSL 設定を使用します。ClickHouse Keeper をスタンドアロンのプロセスとして実行する場合は、同じ CA 証明書とノード証明書 / 秘密鍵の設定を含む `<openSSL>` セクションを Keeper の設定ファイルに追加する必要があります。詳細については、以下の [スタンドアロンの ClickHouse Keeper 用に OpenSSL を構成する](#configure-openssl-for-standalone-clickhouse-keeper) を参照してください。
+    </Note>
+
+    2. すべてのノードで Keeper の設定のコメントを外して更新し、`<secure>` フラグを 1 に設定します。
+       ```xml
+       <zookeeper>
+           <node>
+               <host>chnode1.marsnet.local</host>
+               <port>9281</port>
+               <secure>1</secure>
+           </node>
+           <node>
+               <host>chnode2.marsnet.local</host>
+               <port>9281</port>
+               <secure>1</secure>
+           </node>
+           <node>
+               <host>chnode3.marsnet.local</host>
+               <port>9281</port>
+               <secure>1</secure>
+           </node>
+       </zookeeper>
+       ```
+
+    3. `chnode1` と `chnode2` のクラスター設定を更新し、以下の設定を追加します。`chnode3` は ClickHouse Keeper のクォーラムに使用します。
+
+    <Note>
+      この構成では、設定されているサンプルのクラスターは 1 つだけです。テスト用のサンプルクラスターは削除するかコメントアウトする必要があります。あるいは、テスト対象の既存のクラスターがある場合は、ポートを更新し、`<secure>` オプションを追加する必要があります。インストール時または `users.xml` ファイルで `default` ユーザーにあらかじめパスワードが設定されていた場合は、`<user` と `<password>` を設定する必要があります。
+    </Note>
+
+    以下は、2台のサーバー (各ノードに1台) に1つの分片レプリカを持つクラスターを作成します。
+
+    ```xml
+    <remote_servers>
+        <cluster_1S_2R>
+            <shard>
+                <replica>
+                    <host>chnode1.marsnet.local</host>
+                    <port>9440</port>
+                    <user>default</user>
+                    <password>ClickHouse123!</password>
+                    <secure>1</secure>
+                </replica>
+                <replica>
+                    <host>chnode2.marsnet.local</host>
+                    <port>9440</port>
+                    <user>default</user>
+                    <password>ClickHouse123!</password>
+                    <secure>1</secure>
+                </replica>
+            </shard>
+        </cluster_1S_2R>
+    </remote_servers>
+    ```
+
+    4. テスト用のReplicatedMergeTreeテーブルを作成できるよう、マクロの値を定義します。`chnode1` で:
+
+       ```xml
+       <macros>
+           <shard>1</shard>
+           <replica>replica_1</replica>
+       </macros>
+       ```
+
+       `chnode2` で:
+
+       ```xml
+       <macros>
+           <shard>1</shard>
+           <replica>replica_2</replica>
+       </macros>
+       ```
+  </Step>
+
+  <Step>
+    ## ClickHouse ノードで TLS インターフェイスを設定する
+
+    以下の設定は、ClickHouse サーバーの `config.xml` で行います。
+
+    1. デプロイメントの表示名を設定します (任意) 。
+       ```xml
+       <display_name>clickhouse</display_name>
+       ```
+
+    2. ClickHouse が外部ポートでリッスンするように設定します。
+       ```xml
+       <listen_host>0.0.0.0</listen_host>
+       ```
+
+    3. 各ノードで `https` ポートを設定し、`http` ポートを無効にします。
+       ```xml
+       <https_port>8443</https_port>
+       {/*<http_port>8123</http_port>*/}
+       ```
+
+    4. 各ノードで ClickHouse Native のセキュアな TCP ポートを設定し、デフォルトの非セキュアポートを無効にします。
+       ```xml
+       <tcp_port_secure>9440</tcp_port_secure>
+       {/*<tcp_port>9000</tcp_port>*/}
+       ```
+
+    5. 各ノードで `interserver https` ポートを設定し、デフォルトの非セキュアポートを無効にします。
+       ```xml
+       <interserver_https_port>9010</interserver_https_port>
+       {/*<interserver_http_port>9009</interserver_http_port>*/}
+       ```
+
+    6. 証明書とパスを指定して OpenSSL を設定します
+
+    <Note>
+      各ファイル名とパスは、設定対象のノードに合わせて更新する必要があります。
+      たとえば、`chnode2` ホストで設定する場合は、`<certificateFile>` エントリを `chnode2.crt` に更新します。
+    </Note>
+
+    ```xml
+    <openSSL>
+        <server>
+            <certificateFile>/etc/clickhouse-server/certs/chnode1.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/certs/chnode1.key</privateKeyFile>
+            <verificationMode>relaxed</verificationMode>
+            <caConfig>/etc/clickhouse-server/certs/marsnet_ca.crt</caConfig>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+        </server>
+        <client>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <caConfig>/etc/clickhouse-server/certs/marsnet_ca.crt</caConfig>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <verificationMode>relaxed</verificationMode>
+            <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+    ```
+
+    詳細については、[このページ](/ja/reference/settings/server-settings/settings#openssl)を参照してください。
+
+    7. すべてのノードで gRPC 用の TLS を設定します。
+
+       ```xml
+       <grpc>
+           <enable_ssl>1</enable_ssl>
+           <ssl_cert_file>/etc/clickhouse-server/certs/chnode1.crt</ssl_cert_file>
+           <ssl_key_file>/etc/clickhouse-server/certs/chnode1.key</ssl_key_file>
+           <ssl_require_client_auth>true</ssl_require_client_auth>
+           <ssl_ca_cert_file>/etc/clickhouse-server/certs/marsnet_ca.crt</ssl_ca_cert_file>
+           <transport_compression_type>none</transport_compression_type>
+           <transport_compression_level>0</transport_compression_level>
+           <max_send_message_size>-1</max_send_message_size>
+           <max_receive_message_size>-1</max_receive_message_size>
+           <verbose_logs>false</verbose_logs>
+       </grpc>
+       ```
+
+       詳細については、https://clickhouse.com/docs/interfaces/grpc/ を参照してください。
+
+    8. 少なくとも 1 つのノードで、ClickHouse client が自身の `config.xml` ファイル (デフォルトでは `/etc/clickhouse-client/`) で接続に TLS を使用するよう設定します。
+       ```xml
+       <openSSL>
+           <client>
+               <loadDefaultCAFile>false</loadDefaultCAFile>
+               <caConfig>/etc/clickhouse-server/certs/marsnet_ca.crt</caConfig>
+               <cacheSessions>true</cacheSessions>
+               <disableProtocols>sslv2,sslv3</disableProtocols>
+               <preferServerCiphers>true</preferServerCiphers>
+               <invalidCertificateHandler>
+                   <name>RejectCertificateHandler</name>
+               </invalidCertificateHandler>
+           </client>
+       </openSSL>
+       ```
+
+    9. MySQL および PostgreSQL のデフォルトのエミュレーションポートを無効にします。
+       ```xml
+       {/*mysql_port>9004</mysql_port*/}
+       {/*postgresql_port>9005</postgresql_port*/}
+       ```
+  </Step>
+
+  <Step>
+    ## テスト
+
+    1. すべてのノードを1台ずつ起動します。
+       ```bash
+       service clickhouse-server start
+       ```
+
+    2. セキュアなポートが起動し、待ち受け状態になっていることを確認してください。各ノードでは、次の例のように表示されるはずです:
+
+       ```bash
+       root@chnode1:/etc/clickhouse-server# netstat -ano | grep tcp
+       ```
+
+       ```response
+       tcp        0      0 0.0.0.0:9010            0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 127.0.0.53:53           0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 0.0.0.0:8443            0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 0.0.0.0:9440            0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 0.0.0.0:9281            0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 192.168.1.221:33046     192.168.1.222:9444      ESTABLISHED off (0.00/0/0)
+       tcp        0      0 192.168.1.221:42730     192.168.1.223:9444      ESTABLISHED off (0.00/0/0)
+       tcp        0      0 192.168.1.221:51952     192.168.1.222:9281      ESTABLISHED off (0.00/0/0)
+       tcp        0      0 192.168.1.221:22        192.168.1.210:49801     ESTABLISHED keepalive (6618.05/0/0)
+       tcp        0     64 192.168.1.221:22        192.168.1.210:59195     ESTABLISHED on (0.24/0/0)
+       tcp6       0      0 :::22                   :::*                    LISTEN      off (0.00/0/0)
+       tcp6       0      0 :::9444                 :::*                    LISTEN      off (0.00/0/0)
+       tcp6       0      0 192.168.1.221:9444      192.168.1.222:59046     ESTABLISHED off (0.00/0/0)
+       tcp6       0      0 192.168.1.221:9444      192.168.1.223:41976     ESTABLISHED off (0.00/0/0)
+       ```
+
+       | ClickHouse ポート | 説明                         |
+       | -------------- | -------------------------- |
+       | 8443           | HTTPS インターフェイス             |
+       | 9010           | サーバー間 HTTPS ポート            |
+       | 9281           | ClickHouse Keeper のセキュアポート |
+       | 9440           | セキュアなネイティブ TCP プロトコル       |
+       | 9444           | ClickHouse Keeper Raft ポート |
+
+    3. ClickHouse Keeper の正常性を確認する
+       一般的な [4 letter word (4lW)](/ja/guides/oss/deployment-and-scaling/keeper/index#four-letter-word-commands) コマンドは、TLS なしで `echo` を使っても動作しません。以下では、`openssl` を使ってこれらのコマンドを実行する方法を示します。
+       * `openssl` で対話セッションを開始する
+
+    ```bash
+    openssl s_client -connect chnode1.marsnet.local:9281
+    ```
+
+    ```response
+    CONNECTED(00000003)
+    depth=0 CN = chnode1
+    verify error:num=20:unable to get local issuer certificate
+    verify return:1
+    depth=0 CN = chnode1
+    verify error:num=21:unable to verify the first certificate
+    verify return:1
+    ---
+    Certificate chain
+     0 s:CN = chnode1
+       i:CN = marsnet.local CA
+    ---
+    Server certificate
+    -----BEGIN CERTIFICATE-----
+    MIICtDCCAZwCFD321grxU3G5pf6hjitf2u7vkusYMA0GCSqGSIb3DQEBCwUAMBsx
+    ...
+    ```
+
+    * OpenSSL セッションで 4LW コマンドを送信する
+
+      ```bash
+      mntr
+      ```
+
+      ```response highlight={9,15,24}
+      ---
+      Post-Handshake New Session Ticket arrived:
+      SSL-Session:
+          Protocol  : TLSv1.3
+      ...
+      read R BLOCK
+      zk_version      v22.7.3.5-stable-e140b8b5f3a5b660b6b576747063fd040f583cf3
+      zk_avg_latency  0
+      zk_max_latency  4087
+      zk_min_latency  0
+      zk_packets_received     4565774
+      zk_packets_sent 4565773
+      zk_num_alive_connections        2
+      zk_outstanding_requests 0
+      zk_server_state leader
+      zk_znode_count  1087
+      zk_watch_count  26
+      zk_ephemerals_count     12
+      zk_approximate_data_size        426062
+      zk_key_arena_size       258048
+      zk_latest_snapshot_size 0
+      zk_open_file_descriptor_count   187
+      zk_max_file_descriptor_count    18446744073709551615
+      zk_followers    2
+      zk_synced_followers     1
+      closed
+      ```
+
+    4. `--secure` フラグと TLS ポートを指定して ClickHouse client を起動します:
+       ```bash
+       root@chnode1:/etc/clickhouse-server# clickhouse-client --user default --password ClickHouse123! --port 9440 --secure --host chnode1.marsnet.local
+       ClickHouse client version 22.3.3.44 (official build).
+       Connecting to chnode1.marsnet.local:9440 as user default.
+       Connected to ClickHouse server version 22.3.3 revision 54455.
+
+       clickhouse :)
+       ```
+
+    5. `https://chnode1.marsnet.local:8443/play` の `https` インターフェイス経由で Play UI にログインします。
+
+       <Image img="/images/guides/sre/configuring-ssl_01.webp" alt="TLS の設定" size="md" border />
+
+    <Note>
+      ブラウザは、ワークステーションからアクセスしており、かつ証明書がクライアントマシンのルート CA ストアに含まれていないため、信頼されていない証明書として表示します。
+      公開認証局またはエンタープライズ CA が発行した証明書を使用している場合は、信頼済みとして表示されるはずです。
+    </Note>
+
+    6. レプリケートテーブルを作成します。
+
+       ```sql
+       clickhouse :) CREATE TABLE repl_table ON CLUSTER cluster_1S_2R
+                   (
+                       id UInt64,
+                       column1 Date,
+                       column2 String
+                   )
+                   ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/default/repl_table', '{replica}' )
+                   ORDER BY (id);
+       ```
+
+       ```response
+       ┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+       │ chnode2.marsnet.local │ 9440 │      0 │       │                   1 │                0 │
+       │ chnode1.marsnet.local │ 9440 │      0 │       │                   0 │                0 │
+       └───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+       ```
+
+    7. `chnode1` に2行ほど追加します:
+       ```sql
+       INSERT INTO repl_table
+       (id, column1, column2)
+       VALUES
+       (1,'2022-04-01','abc'),
+       (2,'2022-04-02','def');
+       ```
+
+    8. `chnode2` 上の行を確認して、レプリケーションを検証します:
+
+       ```sql
+       SELECT * FROM repl_table
+       ```
+
+       ```response
+       ┌─id─┬────column1─┬─column2─┐
+       │  1 │ 2022-04-01 │ abc     │
+       │  2 │ 2022-04-02 │ def     │
+       └────┴────────────┴─────────┘
+       ```
+  </Step>
+</Steps>
+
+<div id="configure-openssl-for-standalone-clickhouse-keeper">
+  ## スタンドアロンの ClickHouse Keeper 向けに OpenSSL を設定する
+</div>
+
+ClickHouse Keeper をスタンドアロンのプロセスとして実行する場合 (ClickHouse server に埋め込んで実行するのではなく) 、OpenSSL の証明書と設定は Keeper の設定ファイルで個別に構成する必要があります。これを行わないと、Keeper はクライアント通信用の secure connections (`tcp_port_secure`) や、Keeper ノード間の Raft レプリケーションを確立できません。
+
+各ノードのスタンドアロンの ClickHouse Keeper の設定ファイルに、次の `<openSSL>` セクションを追加してください。
+
+<Note>
+  各ファイル名は、設定するノードに合わせて更新する必要があります。
+  たとえば、`chnode2` ホストで設定する場合は、`<certificateFile>` エントリを `chnode2.crt` に更新してください。
+</Note>
+
+```xml
+<openSSL>
+    <server>
+        <certificateFile>/etc/clickhouse-keeper/certs/chnode1.crt</certificateFile>
+        <privateKeyFile>/etc/clickhouse-keeper/certs/chnode1.key</privateKeyFile>
+        <verificationMode>relaxed</verificationMode>
+        <caConfig>/etc/clickhouse-keeper/certs/marsnet_ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+    </server>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <caConfig>/etc/clickhouse-keeper/certs/marsnet_ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <verificationMode>relaxed</verificationMode>
+        <invalidCertificateHandler>
+            <name>RejectCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+`<server>` セクションは、セキュアな Keeper ポート (`tcp_port_secure`) で受け付けるクライアントからの接続に使用されます。`<client>` セクションは、Raft レプリケーション中に Keeper ノード間で行われる送信接続に使用されます。
+
+<Note>
+  上記の証明書パスでは `/etc/clickhouse-keeper/certs/` を使用しています。これは、スタンドアロンの Keeper インストールで一般的なパスです。Keeper を別のパスにインストールした場合は、それに合わせて調整してください。証明書自体は、[ステップ 2](#2-create-tls-certificates) で作成したものと同じです。
+</Note>
+
+<div id="openssl-verification-modes">
+  ## OpenSSL の検証モードと証明書ハンドラ
+</div>
+
+`<openSSL>` の設定では、ClickHouse による TLS 証明書の検証方法を制御する `<verificationMode>` と `<invalidCertificateHandler>` に、いくつかのオプションが用意されています。これらの設定は、clickhouse-server、clickhouse-client、およびスタンドアロンの ClickHouse Keeper に適用されます。
+
+<div id="verification-modes">
+  ### 検証モード
+</div>
+
+`<openSSL>` の `<server>` または `<client>` セクション内で `<verificationMode>` を設定します。
+
+| モード       | 説明                                                                                     |
+| --------- | -------------------------------------------------------------------------------------- |
+| `none`    | 証明書の検証は行いません。接続は暗号化されますが、ピアの身元は確認されません。テスト用途でのみ使用してください。                               |
+| `relaxed` | ピア証明書が提示された場合は検証しますが、証明書が提供されなくても失敗しません。                                               |
+| `once`    | サーバー側では、初回のハンドシェイク時にのみクライアント証明書を検証し、再ネゴシエーション時は検証を省略します。クライアント側では、`relaxed` と同じ動作をします。 |
+| `strict`  | ピア証明書を必須とし、完全に検証します。証明書がない場合、期限切れの場合、または信頼された CA によって署名されていない場合、接続は失敗します。本番環境に推奨されます。  |
+
+<div id="invalid-certificate-handlers">
+  ### 無効な証明書ハンドラ
+</div>
+
+`<openSSL>` の `<server>` または `<client>` セクション内で `<invalidCertificateHandler>` を設定します。このハンドラーは、証明書の検証に失敗した場合の動作を決定します。サーバー側では、無効なクライアント証明書に対する応答を制御します。クライアント側では、無効なサーバー証明書に対する応答を制御します。
+
+| ハンドラー                      | 説明                                     |
+| -------------------------- | -------------------------------------- |
+| `RejectCertificateHandler` | 証明書が無効な場合、接続を拒否します。これはデフォルトかつ推奨の設定です。  |
+| `AcceptCertificateHandler` | 証明書が無効でも接続を受け入れます。これはテスト目的でのみ使用してください。 |
+
+<div id="disabling-certificate-verification">
+  ### 例: 証明書の検証を無効にする
+</div>
+
+<Warning>
+  証明書の検証を無効にすると、TLS の認証確認が行われなくなり、接続が中間者攻撃にさらされるおそれがあります。この設定は、隔離された開発環境またはテスト環境でのみ使用してください。
+</Warning>
+
+証明書の検証を完全にスキップするには (たとえば、テスト環境で自己署名証明書を使用する場合) 、`verificationMode` を `none` に設定し、`AcceptCertificateHandler` を使用します。
+
+`clickhouse-client` では、`--accept-invalid-certificate` CLI フラグを使用することもでき、このフラグを指定すると両方の設定が自動的に適用されます。
+
+**clickhouse-client** (`/etc/clickhouse-client/config.xml`):
+
+```xml
+<openSSL>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <verificationMode>none</verificationMode>
+        <invalidCertificateHandler>
+            <name>AcceptCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+**clickhouse-server** (`config.xml` または `config.d/` 内のファイル)。`<server>` セクションでは、クライアント証明書を検証しない場合でも、サーバー自身の証明書をクライアントに提示する必要があるため、引き続き証明書と秘密鍵のパスを指定する必要があります:
+
+```xml
+<openSSL>
+    <server>
+        <certificateFile>/etc/clickhouse-server/certs/server.crt</certificateFile>
+        <privateKeyFile>/etc/clickhouse-server/certs/server.key</privateKeyFile>
+        <verificationMode>none</verificationMode>
+        <caConfig>/etc/clickhouse-server/certs/ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+    </server>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <verificationMode>none</verificationMode>
+        <invalidCertificateHandler>
+            <name>AcceptCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+**スタンドアロンの ClickHouse Keeper** (Keeper設定ファイル) :
+
+```xml
+<openSSL>
+    <server>
+        <certificateFile>/etc/clickhouse-keeper/certs/keeper.crt</certificateFile>
+        <privateKeyFile>/etc/clickhouse-keeper/certs/keeper.key</privateKeyFile>
+        <verificationMode>none</verificationMode>
+        <caConfig>/etc/clickhouse-keeper/certs/ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+    </server>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <verificationMode>none</verificationMode>
+        <invalidCertificateHandler>
+            <name>AcceptCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+<div id="summary">
+  ## まとめ
+</div>
+
+この記事では、TLS を使用する ClickHouse 環境の構成について説明しました。本番環境では要件に応じて設定が異なり、たとえば証明書の検証レベル、プロトコル、暗号スイートなどが変わります。これで、安全な接続を構成して実装するために必要な手順を十分に理解できたはずです。

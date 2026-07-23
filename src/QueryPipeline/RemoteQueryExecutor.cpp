@@ -22,6 +22,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/ProcessList.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Client/ConnectionEstablisher.h>
 #include <Client/MultiplexedConnections.h>
@@ -56,6 +57,8 @@ namespace Setting
     extern const SettingsBool use_hedged_requests;
     extern const SettingsBool push_external_roles_in_interserver_queries;
     extern const SettingsMilliseconds parallel_replicas_connect_timeout_ms;
+    extern const SettingsUInt64 max_network_bandwidth;
+    extern const SettingsUInt64 max_network_bytes;
 }
 
 namespace ErrorCodes
@@ -72,6 +75,31 @@ namespace FailPoints
 {
     extern const char remote_query_executor_cancel_before_send[];
 }
+
+ThrottlerPtr getThrottler(const ContextPtr & context)
+{
+    const Settings & settings = context->getSettingsRef();
+
+    ThrottlerPtr user_level_throttler;
+    if (auto process_list_element = context->getProcessListElement())
+        user_level_throttler = process_list_element->getUserNetworkThrottler();
+
+    /// Network bandwidth limit, if needed.
+    ThrottlerPtr throttler;
+    if (settings[Setting::max_network_bandwidth] || settings[Setting::max_network_bytes])
+    {
+        throttler = std::make_shared<Throttler>(
+            settings[Setting::max_network_bandwidth],
+            settings[Setting::max_network_bytes],
+            "Limit for bytes to send or receive over network exceeded.",
+            user_level_throttler);
+    }
+    else
+        throttler = user_level_throttler;
+
+    return throttler;
+}
+
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     const String & query_,
@@ -128,12 +156,12 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             auto table_name = main_table.getQualifiedName();
 
             ConnectionEstablisher connection_establisher(pool, &timeouts, settings, log, &table_name);
-            connection_establisher.run(result, fail_message, /*force_connected=*/true);
+            connection_establisher.run(result, fail_message);
         }
         else
         {
             ConnectionEstablisher connection_establisher(pool, &timeouts, settings, log, nullptr);
-            connection_establisher.run(result, fail_message, /*force_connected=*/true);
+            connection_establisher.run(result, fail_message);
         }
 
         ConnectionPoolEntries connection_entries;
@@ -143,13 +171,15 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
             const auto protocol_version = result.entry->getServerRevision(ConnectionTimeouts{});
             const auto parallel_replicas_version = result.entry->getParallelReplicasProtocolVersion();
+            const auto query_plan_serialization_version = result.entry->getQueryPlanSerializationVersion();
 
             if (extension_ && extension_->parallel_reading_coordinator)
             {
                 // consider only replicas with support of stream id, otherwise we can get incorrect result
                 // replicas with older version considered as unavailable
                 if (protocol_version >= DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS
-                    && parallel_replicas_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID)
+                    && parallel_replicas_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID
+                    && (!query_plan || query_plan_serialization_version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS))
                 {
                     ProfileEvents::increment(ProfileEvents::ParallelReplicasAvailableCount);
 
@@ -159,12 +189,16 @@ RemoteQueryExecutor::RemoteQueryExecutor(
                 {
                     LOG_DEBUG(
                         log,
-                        "Disconnecting replica {} (protocol_version={}, parallel_replicas_version={}): "
-                        "no stream_id support (requires parallel_replicas_version >= {})",
+                        "Disconnecting replica {} (protocol_version={}, parallel_replicas_version={}, "
+                        "query_plan_serialization_version={}): "
+                        "remote replica doesn't support stream id (requires parallel_replicas_version >= {}) or query plan serialization "
+                        "for parallel replicas (requires query_plan_serialization_version >= {})",
                         result.entry->getDescription(),
                         protocol_version,
                         parallel_replicas_version,
-                        DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID);
+                        query_plan_serialization_version,
+                        DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID,
+                        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS);
                     result.entry->disconnect();
                 }
             }
@@ -315,7 +349,10 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
     if (read_context && !established)
     {
         /// Set was_cancelled, so the query won't be sent after creating connections.
-        was_cancelled = true;
+        {
+            LockAndBlocker lock(was_cancelled_mutex);
+            was_cancelled = true;
+        }
 
         /// Cancellation may throw (i.e. some timeout), and in case of pipeline
         /// had not been properly created properly (EXCEPTION_BEFORE_START)
@@ -459,6 +496,23 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = query_kind;
 
+    /// Forward this node's current roles so the remote scopes row policies the same way (gated by the setting).
+    /// Reset first against stale/injected values, and skip when initial_user was rewritten (remote(user=>...)).
+    modified_client_info.current_roles.reset();
+    if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries]
+        && modified_client_info.initial_user == modified_client_info.current_user)
+    {
+        const auto & access_control = context->getAccessControl();
+        Strings current_role_names;
+        for (const auto & role_id : context->getCurrentRoles())
+        {
+            /// tryReadName: skip a concurrently-dropped role (its policies already target nobody).
+            if (auto name = access_control.tryReadName(role_id))
+                current_role_names.push_back(*name);
+        }
+        modified_client_info.current_roles = std::move(current_role_names);
+    }
+
     if (extension)
         modified_client_info.collaborate_with_initiator = true;
 
@@ -560,11 +614,19 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 
     while (true)
     {
+        {
+            LockAndBlocker lock(was_cancelled_mutex);
+            if (was_cancelled)
+                return ReadResult(Block());
+        }
+
+
+        auto packet = connections->receivePacket();
+
         LockAndBlocker lock(was_cancelled_mutex);
         if (was_cancelled)
             return ReadResult(Block());
 
-        auto packet = connections->receivePacket();
         auto anything = processPacket(std::move(packet));
 
         if (anything.getType() == ReadResult::Type::Data || anything.getType() == ReadResult::Type::ParallelReplicasToken)
@@ -961,7 +1023,7 @@ void RemoteQueryExecutor::cancelUnlocked()
                 elem->is_cancelled = true;
     }
 
-    if (!isQueryPending() || hasThrownException())
+    if (finished || hasThrownException())
         return;
 
     tryCancel("Cancelling query");

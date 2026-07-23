@@ -1,0 +1,77 @@
+---
+description: '論理更新によるパッチの適用に関するドキュメント'
+sidebarTitle: 'APPLY PATCHES'
+slug: /sql-reference/statements/alter/apply-patches
+title: '論理更新によるパッチの適用'
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] APPLY PATCHES [IN PARTITION partition_id]
+```
+
+このコマンドは、[論理更新 `UPDATE`](/ja/reference/statements/update) ステートメントによって作成されたパッチパートの物理的なマテリアライズを手動でトリガーします。影響を受けたカラムのみを書き換えることで、保留中のパッチをデータパートに強制的に適用します。
+
+<Note>
+  * [`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) ファミリーのテーブル ([レプリケートされた](/ja/reference/engines/table-engines/mergetree-family/replication) テーブルを含む) でのみ動作します。
+  * これは mutation 操作であり、バックグラウンドで非同期に実行されます。
+</Note>
+
+<div id="when-to-use">
+  ## APPLY PATCHES を使用する場面
+</div>
+
+<Tip>
+  通常、`APPLY PATCHES` を使用する必要はありません
+</Tip>
+
+パッチパートは通常、[`apply_patches_on_merge`](/ja/reference/settings/merge-tree-settings#apply_patches_on_merge) 設定が有効 (デフォルト) であれば、マージ時に自動的に適用されます。ただし、次のようなケースでは、パッチの適用を手動で行いたいことがあります。
+
+* `SELECT` クエリ実行時のパッチ適用によるオーバーヘッドを減らすため
+* 複数のパッチパートが蓄積する前にまとめるため
+* パッチがすでに実体化された状態でバックアップまたはエクスポートできるように、データを準備するため
+* `apply_patches_on_merge` が無効で、パッチを適用するタイミングを制御したい場合
+
+<div id="examples">
+  ## 例
+</div>
+
+テーブルの未適用のパッチをすべて適用します:
+
+```sql
+ALTER TABLE my_table APPLY PATCHES;
+```
+
+特定のパーティションにのみパッチを適用します。
+
+```sql
+ALTER TABLE my_table APPLY PATCHES IN PARTITION '2024-01';
+```
+
+ほかの操作と組み合わせる:
+
+```sql
+ALTER TABLE my_table APPLY PATCHES, UPDATE column = value WHERE condition;
+```
+
+<div id="monitor">
+  ## パッチ適用の監視
+</div>
+
+[`system.mutations`](/ja/reference/system-tables/mutations) テーブルを使用すると、パッチ適用の進行状況を監視できます。
+
+```sql
+SELECT * FROM system.mutations
+WHERE table = 'my_table' AND command LIKE '%APPLY PATCHES%';
+```
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [論理更新 `UPDATE`](/ja/reference/statements/update) - 論理更新によってパッチパートを作成します
+* [`apply_patches_on_merge` 設定](/ja/reference/settings/merge-tree-settings#apply_patches_on_merge) - マージ時のパッチの自動適用を制御します

@@ -1,0 +1,182 @@
+---
+description: '了解如何为 MergeTree 表添加自定义分区键。'
+sidebarTitle: '自定义分区键'
+slug: /engines/table-engines/mergetree-family/custom-partitioning-key
+title: '自定义分区键'
+doc_type: 'guide'
+---
+
+<Note>
+  在大多数情况下，您并不需要分区键；而在其余大多数情况下，除非是按天分区较为常见的可观测性场景，否则也不需要比按月更细粒度的分区键。
+
+  切勿使用粒度过细的分区。不要按客户端标识符或名称对数据进行分区，而应将客户端标识符或名称作为 ORDER BY 表达式中的第一列。
+</Note>
+
+[MergeTree 家族表](/zh/reference/engines/table-engines/mergetree-family/mergetree)支持分区，包括[复制表](/zh/reference/engines/table-engines/mergetree-family/replication)和 [materialized views](/zh/reference/statements/create/view#materialized-view)。
+
+分区是按指定条件对表中记录进行的逻辑划分。可以按任意条件设置分区，例如按月、按天或按事件类型。每个分区都会单独存储，以简化对这些数据的操作。访问数据时，ClickHouse 会尽可能只使用最小范围的分区子集。对于包含分区键的查询，分区可以提升性能，因为 ClickHouse 会先按该分区进行过滤，再选择该分区中的 parts 和粒度。
+
+分区是在[创建表](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table)时通过 `PARTITION BY expr` 子句指定的。分区键可以是表列中的任意表达式。例如，要指定按月分区，可使用表达式 `toYYYYMM(date_column)`：
+
+```sql
+CREATE TABLE visits
+(
+    VisitDate Date,
+    Hour UInt8,
+    ClientID UUID
+)
+ENGINE = MergeTree()
+PARTITION BY toYYYYMM(VisitDate)
+ORDER BY Hour;
+```
+
+分区键也可以是由表达式组成的元组 (类似于[主键](/zh/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries)) 。例如：
+
+```sql
+ENGINE = ReplicatedCollapsingMergeTree('/clickhouse/tables/name', 'replica1', Sign)
+PARTITION BY (toMonday(StartDate), EventType)
+ORDER BY (CounterID, StartDate, intHash32(UserID));
+```
+
+在此示例中，我们按当前周内发生的事件类型进行分区。
+
+默认情况下，不支持浮点型分区键。若要使用它，请启用设置 [allow&#95;floating&#95;point&#95;partition&#95;key](/zh/reference/settings/merge-tree-settings#allow_floating_point_partition_key)。
+
+向表中插入新数据时，这些数据会作为单独的 part (chunk) 存储，并按主键排序。插入后的 10–15 分钟内，同一分区中的 parts 会合并为一个完整的 part。
+
+<Info>
+  合并操作仅适用于分区表达式值相同的数据分区片段。这意味着**不应将分区划分得过细** (分区数量不要超过大约一千个) 。否则，由于文件系统中的文件数量过多以及打开的文件描述符过多，`SELECT` 查询的性能会很差。
+</Info>
+
+使用 [system.parts](/zh/reference/system-tables/parts) 表查看表 parts 和分区。例如，假设我们有一个按月分区的 `visits` 表。现在对 `system.parts` 表执行 `SELECT` 查询：
+
+```sql
+SELECT
+    partition,
+    name,
+    active
+FROM system.parts
+WHERE table = 'visits'
+```
+
+```text
+┌─partition─┬─name──────────────┬─active─┐
+│ 201901    │ 201901_1_3_1      │      0 │
+│ 201901    │ 201901_1_9_2_11   │      1 │
+│ 201901    │ 201901_8_8_0      │      0 │
+│ 201901    │ 201901_9_9_0      │      0 │
+│ 201902    │ 201902_4_6_1_11   │      1 │
+│ 201902    │ 201902_10_10_0_11 │      1 │
+│ 201902    │ 201902_11_11_0_11 │      1 │
+└───────────┴───────────────────┴────────┘
+```
+
+`partition` 列包含分区名称。在此示例中有两个分区：`201901` 和 `201902`。您可以使用此列的值，在 [ALTER ... PARTITION](/zh/reference/statements/alter/partition) 查询中指定分区名称。
+
+`name` 列包含分区中各数据分区片段的名称。您可以使用此列，在 [ALTER ATTACH PART](/zh/reference/statements/alter/partition#attach-partitionpart) 查询中指定 part 的名称。
+
+下面来拆解这个 part 的名称：`201901_1_9_2_11`：
+
+* `201901` 是分区名称。
+* `1` 是数据块的最小编号。
+* `9` 是数据块的最大编号。
+* `2` 是 chunk 层级 (即其形成所基于的合并树深度) 。
+* `11` 是变更版本 (如果某个 part 发生过变更) 。
+
+<Info>
+  旧类型表的 part 名称为：`20190117_20190123_2_2_0` (最小日期 - 最大日期 - 最小块编号 - 最大块编号 - 层级) 。
+</Info>
+
+`active` 列显示 part 的状态。`1` 表示活跃；`0` 表示非活跃。例如，非活跃 part 可能是合并成更大 part 后保留下来的源 part。损坏的数据分区片段也会标记为非活跃。
+
+如您在示例中所见，同一分区存在多个彼此独立的 part (例如 `201901_1_3_1` 和 `201901_1_9_2`) 。这意味着这些 part 尚未合并。ClickHouse 会定期合并已插入的数据 part，大约在插入后 15 分钟进行。此外，您还可以使用 [OPTIMIZE](/zh/reference/statements/optimize) 查询执行一次非计划合并。示例：
+
+```sql
+OPTIMIZE TABLE visits PARTITION 201902;
+```
+
+```text
+┌─partition─┬─name─────────────┬─active─┐
+│ 201901    │ 201901_1_3_1     │      0 │
+│ 201901    │ 201901_1_9_2_11  │      1 │
+│ 201901    │ 201901_8_8_0     │      0 │
+│ 201901    │ 201901_9_9_0     │      0 │
+│ 201902    │ 201902_4_6_1     │      0 │
+│ 201902    │ 201902_4_11_2_11 │      1 │
+│ 201902    │ 201902_10_10_0   │      0 │
+│ 201902    │ 201902_11_11_0   │      0 │
+└───────────┴──────────────────┴────────┘
+```
+
+非活动 parts 会在合并后约 10 分钟被删除。
+
+查看一组 parts 和分区的另一种方法，是进入该表的目录：`/var/lib/clickhouse/data/<database>/<table>/`。例如：
+
+```bash
+/var/lib/clickhouse/data/default/visits$ ls -l
+total 40
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 201901_1_3_1
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 16:17 201901_1_9_2_11
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 15:52 201901_8_8_0
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 15:52 201901_9_9_0
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 16:17 201902_10_10_0
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 16:17 201902_11_11_0
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 16:19 201902_4_11_2_11
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  5 12:09 201902_4_6_1
+drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
+```
+
+文件夹 &#39;201901&#95;1&#95;1&#95;0&#39;、&#39;201901&#95;1&#95;7&#95;1&#39; 等都是 parts 的目录。每个 part 都对应一个分区，并且只包含某一个月的数据 (本示例中的表按月分区) 。
+
+`detached` 目录包含通过 [DETACH](/zh/reference/statements/detach) 查询从表中分离出的 parts。损坏的 parts 也会被移到这个目录，而不是直接删除。服务器不会使用 `detached` 目录中的 parts。你可以随时在这个目录中添加、删除或修改数据——只有在运行 [ATTACH](/zh/reference/statements/alter/partition#attach-partitionpart) 查询后，服务器才会感知到这些变更。
+
+请注意，在服务器运行期间，你不能在文件系统中手动更改 parts 集合或其数据，因为服务器无法感知这些变更。对于非复制表，可以在服务器停止时这样做，但不建议这么做。对于复制表，无论在什么情况下都不能更改 parts 集合。
+
+ClickHouse 允许你对分区执行多种操作：删除分区、从一个表复制到另一个表，或创建备份。有关所有操作的列表，请参见 [Manipulations With Partitions and Parts](/zh/reference/statements/alter/partition) 一节。
+
+<div id="group-by-optimisation-using-partition-key">
+  ## 使用分区键进行 Group By 优化
+</div>
+
+对于表的分区键与查询的 group by 键的某些组合，可以对每个分区分别独立执行聚合。
+这样一来，最终就不必合并所有执行线程产生的部分聚合数据，
+因为可以保证每个 group by 键值都不会同时出现在两个不同线程的工作集中。
+
+典型示例如下：
+
+```sql
+CREATE TABLE session_log
+(
+    UserID UInt64,
+    SessionID UUID
+)
+ENGINE = MergeTree
+PARTITION BY sipHash64(UserID) % 16
+ORDER BY tuple();
+
+SELECT
+    UserID,
+    COUNT()
+FROM session_log
+GROUP BY UserID;
+```
+
+<Note>
+  此类查询的性能很大程度上取决于表布局。因此，这项优化默认未启用。
+</Note>
+
+获得良好性能的关键因素包括：
+
+* 查询涉及的分区数量应足够多 (大于 `max_threads / 2`) ，否则查询将无法充分利用机器资源
+* 分区不应过小，否则批次处理会退化为逐行处理
+* 各分区大小应大致相当，这样所有线程承担的工作量才会基本一致
+
+<Info>
+  建议在 `partition by` 子句中的列上应用某种哈希函数，以便将数据均匀分布到各个分区中。
+</Info>
+
+相关设置如下：
+
+* `allow_aggregate_partitions_independently` - 控制是否启用这项优化
+* `force_aggregate_partitions_independently` - 在从正确性角度可以使用时强制启用该优化，即使内部用于评估其是否划算的逻辑原本会将其禁用
+* `max_number_of_partitions_for_independent_aggregation` - 对表可拥有的最大分区数设定硬性上限

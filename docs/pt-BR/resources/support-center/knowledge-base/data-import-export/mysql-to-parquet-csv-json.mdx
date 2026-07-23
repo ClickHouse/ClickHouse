@@ -1,0 +1,100 @@
+---
+title: Como exportar dados do MySQL para Parquet, CSV ou JSON usando ClickHouse
+description: "Aprenda a usar a ferramenta `clickhouse-local` para exportar dados do MySQL em formatos como Parquet, CSV ou JSON de forma rápida e eficiente."
+date: 2023-03-21
+tags: ['Formatos de dados', 'Exportação de dados']
+keywords: ['MySQL', 'Parquet', 'CSV', 'JSON']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="exporting-mysql-data-to-parquet-csv-or-json-using-clickhouse">
+  ## Exportando dados do MySQL para Parquet, CSV ou JSON com o ClickHouse
+</div>
+
+A ferramenta `clickhouse-local` permite ler dados do MySQL e exportá-los de forma rápida e fácil para diversos formatos, incluindo Parquet, CSV e JSON. Vamos:
+
+* Usar a [`mysql` função de tabela](/pt-BR/reference/functions/table-functions/mysql) para ler os dados
+* Usar a cláusula `INTO OUTFILE _filename_ FORMAT` e especificar o formato de saída desejado
+
+A ferramenta `clickhouse-local` faz parte do binário do ClickHouse. Baixe-a com o seguinte:
+
+```bash
+curl https://clickhouse.com/ | sh
+```
+
+<div id="export-mysql-to-parquet">
+  ## Exportar MySQL para Parquet
+</div>
+
+A função de tabela `mysql` cria uma tabela com base nos resultados de uma consulta enviada a uma instância do MySQL. Por exemplo:
+
+```bash
+SELECT *
+FROM
+   mysql(
+    'localhost:3306',
+    'my_sql_database',
+    'my_sql_table',
+    'user',
+    'password'
+);
+```
+
+Podemos redirecionar a saída desta consulta para um arquivo usando `INTO OUTFILE`. Use `FORMAT` para especificar o formato do arquivo que será criado. Vamos extrair todo o conteúdo de uma tabela do MySQL e enviá-lo para um arquivo Parquet:
+
+```bash
+./clickhouse local -q "SELECT * FROM
+   mysql(
+    'localhost:3306',
+    'my_sql_database',
+    'my_sql_table',
+    'user',
+    'password'
+)
+INTO OUTFILE 'my_output_file.parquet'"
+```
+
+<Note>
+  Como o nome do arquivo de saída tem a extensão `.parquet`, o ClickHouse assume que queremos usar o formato Parquet, então observe que omitimos a cláusula `FORMAT Parquet`.
+</Note>
+
+<div id="export-mysql-to-csv">
+  ## Exportar MySQL para CSV
+</div>
+
+É o mesmo que no caso do Parquet, exceto que, desta vez, usamos a extensão `.csv` no nome do arquivo. O ClickHouse entenderá que queremos uma saída separada por vírgulas e os dados serão gravados no arquivo dessa forma:
+
+```bash
+./clickhouse local -q "SELECT * FROM
+   mysql(
+    'localhost:3306',
+    'my_sql_database',
+    'my_sql_table',
+    'user',
+    'password'
+)
+INTO OUTFILE 'my_output_file.csv'"
+```
+
+<div id="export-mysql-to-json">
+  ## Exportar MySQL para JSON
+</div>
+
+Para exportar de MySQL para JSON, basta mudar a extensão do nome do arquivo para `jsonl` ou `ndjson`:
+
+```bash
+./clickhouse local -q "SELECT * FROM
+   mysql(
+    'localhost:3306',
+    'my_sql_database',
+    'my_sql_table',
+    'user',
+    'password'
+)
+INTO OUTFILE 'my_output_file.ndjson'"
+```
+
+É impressionante como a ferramenta `clickhouse-local` é, ao mesmo tempo, simples e poderosa. Você pode facilmente ler dados de um banco de dados como o MySQL e gerá-los em [todos os tipos de formatos de saída diferentes](/pt-BR/reference/formats/index).

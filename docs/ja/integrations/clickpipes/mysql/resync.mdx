@@ -1,0 +1,56 @@
+---
+title: 'データベース ClickPipe の再同期'
+description: 'データベース ClickPipe の再同期に関するドキュメント'
+slug: /integrations/clickpipes/mysql/resync
+sidebarTitle: 'ClickPipe を再同期'
+doc_type: 'guide'
+keywords: ['ClickPipes', 'MySQL', 'CDC（変更データキャプチャ）', 'データインジェスト', 'リアルタイム同期']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="what-mysql-resync-do">
+  ### 再同期では何が行われますか？
+</div>
+
+再同期では、次の操作がこの順序で実行されます。
+
+1. 既存の ClickPipe が削除され、新しい「再同期」ClickPipe が開始されます。そのため、再同期を実行すると、ソーステーブルの構造変更も反映されます。
+2. 再同期 ClickPipe は、新しい一式の宛先テーブルを作成 (または置き換え) します。これらのテーブルは元のテーブルと同名ですが、末尾に `_resync` 接尾辞が付きます。
+3. `_resync` テーブルに対して初期ロードが実行されます。
+4. その後、`_resync` テーブルが元のテーブルとスワップされます。スワップの前に、ソフト削除された行が元のテーブルから `_resync` テーブルに転送されます。
+
+元の ClickPipe のすべての設定は、再同期 ClickPipe に引き継がれます。元の ClickPipe の統計情報は UI 上でクリアされます。
+
+<div id="use-cases-mysql-resync">
+  ### ClickPipe を再同期するユースケース
+</div>
+
+想定されるシナリオは次のとおりです。
+
+1. ソーステーブルに大規模なスキーマ変更を加える必要があり、その結果既存の ClickPipe が動作しなくなって、再開が必要になる場合があります。この場合、変更の実施後に Resync をクリックするだけで対応できます。
+2. 特に ClickHouse では、ターゲットテーブルの ORDER BY キーを変更する必要が生じることがあります。その場合は Resync を実行することで、正しいソートキーを持つ新しいテーブルにデータを再投入できます。
+
+<Note>
+  再同期は複数回実行できますが、実行時にはソースデータベースにかかる負荷を考慮してください。
+</Note>
+
+<div id="guide-mysql-resync">
+  ### ClickPipe 再同期ガイド
+</div>
+
+1. **Data Sources** タブで、再同期する MySQL ClickPipe をクリックします。
+2. **Settings** タブに移動します。
+3. **Resync** ボタンをクリックします。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp" border size="md" />
+
+4. 確認ダイアログが表示されるので、もう一度 **Resync** をクリックします。
+5. **Metrics** タブに移動します。
+6. 約 5 秒後 (またはページを更新すると) 、パイプのステータスは **Setup** または **Snapshot** になります。
+7. 再同期の初期ロードは、**Tables** タブの **Initial Load Stats** セクションで確認できます。
+8. 初期ロードが完了すると、パイプは `_resync` テーブルを元のテーブルとアトミックに入れ替えます。入れ替え中のステータスは **Resync** です。
+9. 入れ替えが完了すると、パイプは **Running** 状態になり、有効な場合は CDC（変更データキャプチャ） を実行します。

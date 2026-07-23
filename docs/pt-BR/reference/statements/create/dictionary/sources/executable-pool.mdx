@@ -1,0 +1,68 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/executable-pool
+title: 'Fonte de dicionário Executable Pool'
+sidebarTitle: 'Executable Pool'
+description: 'Configure um executable pool como fonte de dicionário no ClickHouse.'
+doc_type: 'reference'
+---
+
+O executable pool permite carregar dados a partir de um pool de processos.
+Essa fonte não funciona com layouts de dicionário que precisam carregar todos os dados da fonte.
+
+O executable pool funciona se o dicionário [for armazenado](/pt-BR/reference/statements/create/dictionary/layouts/overview#storing-dictionaries-in-memory) usando um dos seguintes layouts:
+
+* `cache`
+* `complex_key_cache`
+* `ssd_cache`
+* `complex_key_ssd_cache`
+* `direct`
+* `complex_key_direct`
+
+O executable pool iniciará um pool de processos com o comando especificado e os manterá em execução até serem encerrados. O programa deve ler dados de STDIN enquanto estiverem disponíveis e enviar o resultado para STDOUT. Ele pode aguardar o próximo bloco de dados em STDIN. O ClickHouse não fechará o STDIN após processar um bloco de dados, mas enviará outro fragmento de dados quando necessário. O script executável deve estar preparado para essa forma de processamento de dados — ele deve verificar o STDIN e descarregar os dados para o STDOUT o quanto antes.
+
+Exemplo de configurações:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(EXECUTABLE_POOL(
+        command 'while read key; do printf "$key\tData for key $key\n"; done'
+        format 'TabSeparated'
+        pool_size 10
+        max_command_execution_time 10
+        implicit_key false
+    ))
+    ```
+  </Tab>
+
+  <Tab title="Arquivo de configuração">
+    ```xml
+    <source>
+        <executable_pool>
+            <command><command>while read key; do printf "$key\tData for key $key\n"; done</command</command>
+            <format>TabSeparated</format>
+            <pool_size>10</pool_size>
+            <max_command_execution_time>10<max_command_execution_time>
+            <implicit_key>false</implicit_key>
+        </executable_pool>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+Campos de configuração:
+
+| Configuração                  | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `command`                     | O caminho absoluto para o arquivo executável ou o nome do arquivo (se o diretório do programa estiver definido em `PATH`).                                                                                                                                                                                                                                                                                                                          |
+| `format`                      | O formato do arquivo. Todos os formatos descritos em [Formatos](/pt-BR/reference/formats/index) são compatíveis.                                                                                                                                                                                                                                                                                                                                          |
+| `pool_size`                   | Tamanho do pool. Se `0` for especificado como `pool_size`, não haverá restrições para o tamanho do pool. O valor padrão é `16`.                                                                                                                                                                                                                                                                                                                     |
+| `command_termination_timeout` | O script executável deve conter o loop principal de leitura e escrita. Depois que o dicionário for destruído, o pipe será fechado, e o arquivo executável terá `command_termination_timeout` segundos para encerrar antes que o ClickHouse envie o sinal SIGTERM ao processo filho. Especificado em segundos. O valor padrão é `10`. Opcional.                                                                                                      |
+| `max_command_execution_time`  | Tempo máximo de execução do comando do script executável para processar um bloco de dados. Especificado em segundos. O valor padrão é `10`. Opcional.                                                                                                                                                                                                                                                                                               |
+| `command_read_timeout`        | Tempo limite para ler dados do stdout do comando, em milissegundos. O valor padrão é `10000`. Opcional.                                                                                                                                                                                                                                                                                                                                             |
+| `command_write_timeout`       | Tempo limite para gravar dados no stdin do comando, em milissegundos. O valor padrão é `10000`. Opcional.                                                                                                                                                                                                                                                                                                                                           |
+| `implicit_key`                | O arquivo da fonte executável pode retornar apenas valores, e a correspondência com as chaves solicitadas é determinada implicitamente pela ordem das linhas no resultado. O valor padrão é `false`. Opcional.                                                                                                                                                                                                                                      |
+| `execute_direct`              | Se `execute_direct` = `1`, `command` será procurado dentro da pasta user&#95;scripts especificada por [user&#95;scripts&#95;path](/pt-BR/reference/settings/server-settings/settings#user_scripts_path). Argumentos adicionais do script podem ser especificados usando separação por espaço em branco. Exemplo: `script_name arg1 arg2`. Se `execute_direct` = `0`, `command` é passado como argumento para `bin/sh -c`. O valor padrão é `1`. Opcional. |
+| `send_chunk_header`           | Controla se a contagem de linhas deve ser enviada antes de enviar um fragmento de dados ao processo. O valor padrão é `false`. Opcional.                                                                                                                                                                                                                                                                                                            |
+
+Essa fonte de dicionário pode ser configurada apenas via configuração XML. A criação de dicionários com fonte executável via DDL está desabilitada; caso contrário, o usuário do DB poderia executar um binário arbitrário no nó do ClickHouse.

@@ -1,0 +1,93 @@
+---
+alias: []
+description: 'MySQLDump 포맷 문서'
+input_format: true
+keywords: ['MySQLDump']
+output_format: false
+slug: /interfaces/formats/MySQLDump
+title: 'MySQLDump'
+doc_type: 'reference'
+---
+
+| 입력 | 출력 | 별칭 |
+| -- | -- | -- |
+| ✔  | ✗  |    |
+
+<div id="description">
+  ## 설명
+</div>
+
+ClickHouse는 MySQL [덤프](https://dev.mysql.com/doc/refman/8.0/en/mysqldump.html)를 읽을 수 있습니다.
+
+덤프에서 단일 테이블에 속한 `INSERT` 쿼리의 모든 데이터를 읽습니다.
+테이블이 2개 이상이면 기본적으로 첫 번째 테이블의 데이터를 읽습니다.
+
+<Note>
+  이 포맷은 스키마 추론을 지원합니다. 덤프에 지정된 테이블에 대한 `CREATE` 쿼리가 포함되어 있으면 그 쿼리로부터 구조를 추론하고, 그렇지 않으면 `INSERT` 쿼리의 데이터로부터 스키마를 추론합니다.
+</Note>
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+다음과 같은 SQL 덤프 파일이 있다고 가정합니다:
+
+```sql title="dump.sql"
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test` (
+  `x` int DEFAULT NULL,
+  `y` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test` VALUES (1,NULL),(2,NULL),(3,NULL),(3,NULL),(4,NULL),(5,NULL),(6,7);
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test 3` (
+  `y` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test 3` VALUES (1);
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test2` (
+  `x` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test2` VALUES (1),(2),(3);
+```
+
+다음과 같은 쿼리를 실행할 수 있습니다:
+
+```sql title="Query"
+DESCRIBE TABLE file(dump.sql, MySQLDump) 
+SETTINGS input_format_mysql_dump_table_name = 'test2'
+```
+
+```response title="Response"
+┌─name─┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ x    │ Nullable(Int32) │              │                    │         │                  │                │
+└──────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql title="Query"
+SELECT *
+FROM file(dump.sql, MySQLDump)
+SETTINGS input_format_mysql_dump_table_name = 'test2'
+```
+
+```response title="Response"
+┌─x─┐
+│ 1 │
+│ 2 │
+│ 3 │
+└───┘
+```
+
+<div id="format-settings">
+  ## 포맷 설정
+</div>
+
+[`input_format_mysql_dump_table_name`](/ko/reference/settings/formats#input_format_mysql_dump_table_name) 설정을 사용해 데이터를 읽어올 테이블 이름을 지정할 수 있습니다.
+`input_format_mysql_dump_map_columns` 설정이 `1`로 설정되어 있고 덤프에 지정된 테이블에 대한 `CREATE` 쿼리 또는 `INSERT` 쿄리의 컬럼 이름이 포함되어 있으면, 입력 데이터의 컬럼이 이름을 기준으로 테이블 컬럼에 매핑됩니다.
+이름을 알 수 없는 컬럼은 [`input_format_skip_unknown_fields`](/ko/reference/settings/formats#input_format_skip_unknown_fields) 설정이 `1`로 설정된 경우 건너뜁니다.

@@ -1,0 +1,47 @@
+---
+alias: []
+description: 'Documentação do formato RowBinaryWithDefaults'
+input_format: true
+keywords: ['RowBinaryWithDefaults']
+output_format: false
+slug: /interfaces/formats/RowBinaryWithDefaults
+title: 'RowBinaryWithDefaults'
+doc_type: 'reference'
+---
+
+import RowBinaryFormatSettings from '/snippets/pt-BR/common-row-binary-format-settings.mdx';
+
+| Entrada | Saída | Alias |
+| ------- | ----- | ----- |
+| ✔       | ✗     |       |
+
+<div id="description">
+  ## Descrição
+</div>
+
+Semelhante ao formato [`RowBinary`](/pt-BR/reference/formats/RowBinary/RowBinary), mas com um byte extra antes de cada coluna indicando se o valor padrão deve ser usado.
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+Exemplos:
+
+```sql title="Query"
+SELECT * FROM FORMAT('RowBinaryWithDefaults', 'x UInt32 default 42, y UInt32', x'010001000000')
+```
+
+```response title="Response"
+┌──x─┬─y─┐
+│ 42 │ 1 │
+└────┴───┘
+```
+
+* Para a coluna `x`, há apenas um byte `01`, que indica que o valor padrão deve ser usado, e nenhum outro dado é fornecido após esse byte.
+* Para a coluna `y`, os dados começam com o byte `00`, que indica que a coluna tem um valor efetivo, que deve ser lido dos dados subsequentes `01000000`.
+
+<div id="format-settings">
+  ## Configurações de formato
+</div>
+
+<RowBinaryFormatSettings />

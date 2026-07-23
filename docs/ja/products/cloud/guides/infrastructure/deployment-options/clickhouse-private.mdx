@@ -1,0 +1,61 @@
+---
+title: 'ClickHouse Private'
+slug: /cloud/infrastructure/clickhouse-private
+keywords: ['private', 'on-prem']
+description: 'ClickHouse Private の概要'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="overview">
+  ## 概要
+</div>
+
+ClickHouse Private は、ClickHouse Cloud で稼働しているものと同じ商用版 ClickHouse と、コンピュートとストレージの分離向けに構成された ClickHouse Operator で構成される、セルフデプロイ型のパッケージです。
+
+<Info>
+  **注記**
+
+  ClickHouse Private は、2 TB を超えるメモリを必要とし、専用インフラストラクチャを完全に制御したい大規模企業向けに設計されています。インフラストラクチャ全体の管理はお客様の責任となるため、大規模な ClickHouse 運用に関する十分な知識が必要です。このオプションは、[お問い合わせ](https://clickhouse.com/company/contact?loc=nav)いただいた場合にのみご利用いただけます。
+</Info>
+
+<div id="benefits-over-os">
+  ## オープンソース版と比べた利点
+</div>
+
+以下の機能により、ClickHouse Private はセルフマネージドのオープンソース環境との差別化が図られています。
+
+* コンピュートとストレージのネイティブな分離
+* [shared merge tree](/ja/products/cloud/features/infrastructure/shared-merge-tree) や [warehouse](/ja/products/cloud/features/infrastructure/warehouses) の機能に代表される、Cloud 独自の機能
+* ClickHouse Cloud で十分にテストおよび検証された ClickHouse データベースとClickHouse Operatorのバージョン
+* バックアップやスケーリング操作を含む各種操作をプログラムから実行するための API
+
+<div id="architecture">
+  ## アーキテクチャ
+</div>
+
+ClickHouse Private はお客様のデプロイ環境内で完全に完結しており、クラウドネイティブなコンピュートとストレージの分離を実現します。
+
+<br />
+
+<Image img="/images/cloud/reference/private-gov-architecture.webp" size="md" alt="ClickHouse Private アーキテクチャ" background="black" />
+
+<br />
+
+<div id="supported-configurations">
+  ## サポートされている構成
+</div>
+
+ClickHouse Private は現在、以下の構成がサポートされています。
+
+| 環境  | オーケストレーション                       | ストレージ                       | ステータス |
+| :-- | :------------------------------- | :-------------------------- | :---- |
+| AWS | Elastic Kubernetes Service (EKS) | Simple Storage Service (S3) | 利用可能  |
+| GCP | Google Kubernetes Service (GKS)  | Google Cloud Storage (GCS)  | プレビュー |
+
+<div id="onboarding-process">
+  ## オンボーディングプロセス
+</div>
+
+ClickHouse Private にご関心のあるお客様は、[お問い合わせ](https://clickhouse.com/company/contact)いただくことで、ユースケースに関するレビューコールを設定できます。最小規模要件を満たし、サポート対象の構成を想定したリクエストが検討対象となります。ただし、オンボーディングの対応枠には限りがあります。セットアップでは、AWS ECR から取得したイメージと Helm チャートを使用し、環境ごとのインストールガイドに従います。

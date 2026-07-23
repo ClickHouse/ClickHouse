@@ -1,0 +1,99 @@
+---
+sidebarTitle: 'Fermeture du compte'
+slug: /cloud/manage/close_account
+title: 'Fermeture et suppression du compte'
+description: 'Nous savons que certaines situations peuvent nécessiter la fermeture d’un compte. Ce guide vous accompagnera tout au long du processus.'
+keywords: ['ClickHouse Cloud', 'fermeture du compte', 'supprimer le compte', 'gestion des comptes cloud', 'suppression du compte']
+doc_type: 'guide'
+---
+
+<div id="account-close--deletion">
+  ## Fermeture et suppression de compte
+</div>
+
+Notre objectif est de vous aider à mener votre projet à bien. Si vous avez des questions auxquelles ce site ne répond pas ou si vous avez besoin d’aide pour évaluer un
+cas d’usage particulier, veuillez nous contacter à [support@clickhouse.com](mailto:support@clickhouse.com).
+
+Nous savons que certaines situations peuvent parfois nécessiter la fermeture d’un compte. Ce guide vous accompagnera tout au long du processus.
+
+<div id="close-vs-delete">
+  ## Fermer ou supprimer votre compte
+</div>
+
+Les clients peuvent se reconnecter à des comptes fermés pour consulter l&#39;utilisation, la facturation et les journaux d&#39;activité du compte. Cela vous permet d&#39;accéder facilement
+à des informations utiles dans de nombreux cas, qu&#39;il s&#39;agisse de documenter des cas d&#39;usage ou de télécharger des factures en fin d&#39;année à des fins fiscales.
+Vous continuerez également à recevoir des mises à jour produit afin de savoir si une fonctionnalité que vous attendiez est désormais disponible. De plus,
+les comptes fermés peuvent être rouverts à tout moment pour lancer de nouveaux services.
+
+Les clients qui demandent la suppression de leurs données personnelles doivent savoir qu&#39;il s&#39;agit d&#39;un processus irréversible. Le compte et les informations associées ne seront plus
+disponibles. Vous ne recevrez plus de mises à jour produit et vous ne pourrez pas rouvrir le compte. Cela n&#39;affectera pas les abonnements à la newsletter.
+
+Les abonnés à la newsletter peuvent se désabonner à tout moment en utilisant le lien de désabonnement au bas de l&#39;e-mail de la newsletter, sans fermer leur compte ni
+supprimer leurs données.
+
+<div id="preparing-for-closure">
+  ## Préparer la fermeture
+</div>
+
+Avant de demander la fermeture de votre compte, veuillez suivre les étapes ci-dessous pour le préparer.
+
+<Steps>
+  <Step>
+    ### 1. Exportez toutes les données que vous souhaitez conserver.
+
+    > Exportez le contenu du service<br />
+    > Exportez les logs de la console<br />
+    > Exportez les logs de la base de données<br />
+  </Step>
+
+  <Step>
+    ### 2. Arrêtez et supprimez vos services.
+
+    > Cela empêchera des frais supplémentaires de s&#39;accumuler sur votre compte
+  </Step>
+
+  <Step>
+    ### 3. Supprimez tous les utilisateurs, à l&#39;exception de l&#39;admin qui demandera la fermeture.
+
+    > Cela évite toute activité inattendue sur le compte qui pourrait empêcher sa fermeture
+  </Step>
+
+  <Step>
+    ### 4. Vérifiez les onglets &#39;Usage&#39; et &#39;Billing&#39; pour confirmer que tous les frais ont été réglés.
+
+    > Nous ne pouvons pas fermer les comptes présentant un solde impayé.
+  </Step>
+</Steps>
+
+<div id="request-account-closure">
+  ## Demander la fermeture d’un compte
+</div>
+
+Nous sommes tenus d’authentifier les demandes, qu’il s’agisse d’une fermeture ou d’une suppression. Pour que votre demande puisse être traitée rapidement, veuillez suivre les étapes ci-dessous.
+
+1. Connectez-vous à votre compte clickhouse.cloud.
+2. Effectuez toutes les étapes restantes de la section *Préparer la fermeture* ci-dessus.
+3. Cliquez sur le bouton Help (point d’interrogation dans l’angle supérieur droit de l’écran).
+4. Sous &#39;Support&#39;, cliquez sur &#39;Create case.&#39;
+5. Dans l’écran &#39;Create new case&#39;, saisissez les informations suivantes :
+
+```text
+Priority: Severity 3
+Subject: Please close my ClickHouse account
+Description: We would appreciate it if you would share a brief note about why you are cancelling.
+```
+
+5. Cliquez sur &#39;Créer une nouvelle demande&#39;
+6. Nous fermerons votre compte et vous enverrons un e-mail de confirmation pour vous informer une fois l’opération terminée.
+
+<div id="request-personal-data-deletion">
+  ## Demander la suppression de vos données personnelles
+</div>
+
+Veuillez noter que seuls les administrateurs de compte peuvent demander à ClickHouse la suppression de données personnelles. Si vous n’êtes pas administrateur de compte, veuillez contacter
+l’administrateur de votre compte ClickHouse pour demander à être retiré du compte.
+
+Pour demander la suppression des données, suivez les étapes de la section &#39;Demander la fermeture du compte&#39; ci-dessus. Lors de la saisie des informations de la demande, remplacez l’objet par
+&#39;Veuillez fermer mon compte ClickHouse et supprimer mes données personnelles.&#39;
+
+Nous traiterons les demandes de suppression de données personnelles dans un délai de 30 jours.

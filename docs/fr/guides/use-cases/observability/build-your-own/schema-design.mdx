@@ -1,0 +1,1999 @@
+---
+title: 'Conception d’un schéma pour l’observabilité'
+description: 'Conception d’un schéma pour l’observabilité'
+keywords: ['observabilité', 'logs', 'traces', 'metrics', 'OpenTelemetry', 'Grafana', 'OTel']
+slug: /use-cases/observability/schema-design
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Nous recommandons aux utilisateurs de toujours créer leur propre schéma pour les logs et les traces pour les raisons suivantes :
+
+* **Choisir une clé primaire** - Les schémas par défaut utilisent un `ORDER BY` optimisé pour des modèles d’accès spécifiques. Il est peu probable que vos modèles d’accès y correspondent.
+* **Extraire la structure** - Vous pouvez souhaiter extraire de nouvelles colonnes à partir de colonnes existantes, par exemple la colonne `Body`. Cela peut se faire à l’aide de colonnes matérialisées (et de vues matérialisées dans les cas plus complexes). Cela nécessite des modifications du schéma.
+* **Optimiser les Maps** - Les schémas par défaut utilisent le type Map pour stocker les attributs. Ces colonnes permettent de stocker des métadonnées arbitraires. Bien qu’il s’agisse d’une capacité essentielle — les métadonnées des événements n’étant souvent pas définies à l’avance et ne pouvant donc pas être stockées autrement dans une base de données fortement typée comme ClickHouse — l’accès aux clés de map et à leurs valeurs est moins efficace que l’accès à une colonne classique. Pour y remédier, nous modifions le schéma afin que les clés de map les plus fréquemment consultées deviennent des colonnes de premier niveau ; voir [&quot;Extracting structure with SQL&quot;](#extracting-structure-with-sql). Cela nécessite une modification du schéma.
+* **Simplifier l’accès aux clés de map** - L’accès aux clés dans les maps nécessite une syntaxe plus verbeuse. Vous pouvez atténuer cela avec des alias. Voir [&quot;Using Aliases&quot;](#using-aliases) pour simplifier les requêtes.
+* **Index secondaires** - Le schéma par défaut utilise des index secondaires pour accélérer l’accès aux Maps et les requêtes textuelles. Ils ne sont généralement pas nécessaires et consomment de l’espace disque supplémentaire. Ils peuvent être utilisés, mais doivent être testés pour vérifier qu’ils sont réellement utiles. Voir [&quot;Secondary / Data Skipping indices&quot;](#secondarydata-skipping-indices).
+* **Utiliser des codecs** - Vous pouvez souhaiter personnaliser les codecs des colonnes si vous comprenez les caractéristiques des données attendues et disposez d’éléments montrant que cela améliore la compression.
+
+*Nous décrivons en détail chacun des cas d’usage ci-dessus dans la suite de cette section.*
+
+**Important :** Bien que les utilisateurs soient encouragés à étendre et à modifier leur schéma pour obtenir une compression optimale et de bonnes performances de requête, ils devraient respecter autant que possible la convention de nommage du schéma OTel pour les colonnes principales. Le plugin Grafana ClickHouse suppose l’existence de certaines colonnes OTel de base pour faciliter la construction des requêtes, par exemple Timestamp et SeverityText. Les colonnes requises pour les logs et les traces sont documentées ici [[1]](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format)[[2]](https://grafana.com/docs/grafana/latest/explore/logs-integration/) et [ici](https://grafana.com/docs/grafana/latest/explore/trace-integration/#data-frame-structure), respectivement. Vous pouvez choisir de modifier ces noms de colonnes en remplaçant les valeurs par défaut dans la configuration du plugin.
+
+<Tip>
+  **ClickStack est livré avec un schéma par défaut optimisé**
+
+  **ClickStack fournit des schémas prêts à l’emploi pour les logs, les traces et les métriques** qui intègrent les dernières fonctionnalités de ClickHouse (text indexes pour la recherche en texte intégral et par clé de map, colonnes matérialisées et tableaux ALIAS pour le filtrage en lecture directe, recherches de lignes par numéro de bloc) et ont été benchmarkés pour offrir de solides performances prêtes à l’emploi pour les charges de travail de logs et de traces. Utilisez-les comme point de référence pour votre propre conception.
+
+  * DDL canonique : [Tables et schémas utilisés par ClickStack](/fr/clickstack/ingesting-data/schemas).
+  * Recettes d’optimisation : [Performance tuning de ClickStack](/fr/clickstack/managing/performance-tuning). Bon nombre des recommandations de cette page (colonnes matérialisées, skip indexes, choix de la clé primaire, projections, vues matérialisées) s’appliquent directement à une configuration conçue sur mesure.
+</Tip>
+
+<div id="extracting-structure-with-sql">
+  ## Extraction de structure avec SQL
+</div>
+
+Qu’il s’agisse d’ingérer des logs structurés ou non structurés, les utilisateurs ont souvent besoin de pouvoir :
+
+* **Extraire des colonnes à partir de blobs de chaînes**. Les requêtes sur ces colonnes seront plus rapides que l’utilisation d’opérations sur les chaînes au moment de la requête.
+* **Extraire des clés de Map**. Le schéma par défaut place les attributs arbitraires dans des colonnes de type Map. Ce type offre une capacité sans schéma, avec l’avantage que les utilisateurs n’ont pas besoin de prédéfinir les colonnes d’attributs lors de la définition des logs et des traces — ce qui est souvent impossible lors de la collecte de logs depuis Kubernetes si l’on veut s’assurer que les labels des pods sont conservés pour des recherches ultérieures. L’accès aux clés d’une Map et à leurs valeurs est plus lent que les requêtes sur des colonnes ClickHouse classiques. Il est donc souvent préférable d’extraire les clés des Map vers les colonnes de premier niveau de la table.
+
+Considérez les requêtes suivantes :
+
+Supposons que nous souhaitions compter quels chemins d’URL reçoivent le plus de requêtes POST à partir des logs structurés. Le blob JSON est stocké dans la colonne `Body` sous forme de String. De plus, il peut aussi être stocké dans la colonne `LogAttributes` sous la forme d’un `Map(String, String)` si l’utilisateur a activé le json&#95;parser dans le collector.
+
+```sql
+SELECT LogAttributes
+FROM otel_logs
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Body:           {"remote_addr":"54.36.149.41","remote_user":"-","run_time":"0","time_local":"2019-01-22 00:26:14.000","request_type":"GET","request_path":"\/filter\/27|13 ,27|  5 ,p53","request_protocol":"HTTP\/1.1","status":"200","size":"30577","referer":"-","user_agent":"Mozilla\/5.0 (compatible; AhrefsBot\/6.1; +http:\/\/ahrefs.com\/robot\/)"}
+LogAttributes: {'status':'200','log.file.name':'access-structured.log','request_protocol':'HTTP/1.1','run_time':'0','time_local':'2019-01-22 00:26:14.000','size':'30577','user_agent':'Mozilla/5.0 (compatible; AhrefsBot/6.1; +http://ahrefs.com/robot/)','referer':'-','remote_user':'-','request_type':'GET','request_path':'/filter/27|13 ,27|  5 ,p53','remote_addr':'54.36.149.41'}
+```
+
+Si `LogAttributes` est disponible, voici la requête permettant de compter les chemins d’URL du site qui reçoivent le plus de requêtes POST :
+
+```sql
+SELECT path(LogAttributes['request_path']) AS path, count() AS c
+FROM otel_logs
+WHERE ((LogAttributes['request_type']) = 'POST')
+GROUP BY path
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─path─────────────────────┬─────c─┐
+│ /m/updateVariation       │ 12182 │
+│ /site/productCard        │ 11080 │
+│ /site/productPrice       │ 10876 │
+│ /site/productModelImages │ 10866 │
+│ /site/productAdditives   │ 10866 │
+└──────────────────────────┴───────┘
+
+5 rows in set. Elapsed: 0.735 sec. Processed 10.36 million rows, 4.65 GB (14.10 million rows/s., 6.32 GB/s.)
+Peak memory usage: 153.71 MiB.
+```
+
+Notez ici l’utilisation de la syntaxe map, par ex. `LogAttributes['request_path']`, ainsi que de la [fonction `path`](/fr/reference/functions/regular-functions/url-functions#path) pour supprimer les paramètres de requête de l’URL.
+
+Si l’utilisateur n’a pas activé le parsing JSON dans le collector, `LogAttributes` sera vide, ce qui nous obligera à utiliser les [fonctions JSON](/fr/reference/functions/regular-functions/json-functions) pour extraire les colonnes du `Body` de type String.
+
+<Info>
+  **Privilégiez ClickHouse pour le parsing**
+
+  Nous recommandons généralement aux utilisateurs d’effectuer le parsing JSON des logs structurés dans ClickHouse. Nous sommes convaincus que ClickHouse propose l’implémentation de parsing JSON la plus rapide. Cela dit, nous comprenons que vous puissiez vouloir envoyer les logs vers d’autres sources sans intégrer cette logique dans SQL.
+</Info>
+
+```sql
+SELECT path(JSONExtractString(Body, 'request_path')) AS path, count() AS c
+FROM otel_logs
+WHERE JSONExtractString(Body, 'request_type') = 'POST'
+GROUP BY path
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─path─────────────────────┬─────c─┐
+│ /m/updateVariation       │ 12182 │
+│ /site/productCard        │ 11080 │
+│ /site/productPrice       │ 10876 │
+│ /site/productAdditives   │ 10866 │
+│ /site/productModelImages │ 10866 │
+└──────────────────────────┴───────┘
+
+5 rows in set. Elapsed: 0.668 sec. Processed 10.37 million rows, 5.13 GB (15.52 million rows/s., 7.68 GB/s.)
+Peak memory usage: 172.30 MiB.
+```
+
+Examinons maintenant le même cas pour les logs non structurés :
+
+```sql
+SELECT Body, LogAttributes
+FROM otel_logs
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Body:           151.233.185.144 - - [22/Jan/2019:19:08:54 +0330] "GET /image/105/brand HTTP/1.1" 200 2653 "https://www.zanbil.ir/filter/b43,p56" "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36" "-"
+LogAttributes: {'log.file.name':'access-unstructured.log'}
+```
+
+Une requête similaire sur des logs non structurés nécessite l’utilisation d’expressions régulières via la fonction `extractAllGroupsVertical`.
+
+```sql
+SELECT
+        path((groups[1])[2]) AS path,
+        count() AS c
+FROM
+(
+        SELECT extractAllGroupsVertical(Body, '(\\w+)\\s([^\\s]+)\\sHTTP/\\d\\.\\d') AS groups
+        FROM otel_logs
+        WHERE ((groups[1])[1]) = 'POST'
+)
+GROUP BY path
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─path─────────────────────┬─────c─┐
+│ /m/updateVariation       │ 12182 │
+│ /site/productCard        │ 11080 │
+│ /site/productPrice       │ 10876 │
+│ /site/productModelImages │ 10866 │
+│ /site/productAdditives   │ 10866 │
+└──────────────────────────┴───────┘
+
+5 rows in set. Elapsed: 1.953 sec. Processed 10.37 million rows, 3.59 GB (5.31 million rows/s., 1.84 GB/s.)
+```
+
+La complexité et le coût accrus des requêtes nécessaires pour analyser des logs non structurés (notez la différence de performance) expliquent pourquoi nous recommandons aux utilisateurs d’utiliser des logs structurés chaque fois que possible.
+
+<Info>
+  **Pensez aux Dictionaries**
+
+  La requête ci-dessus შეიძლება être optimisée pour exploiter des Dictionaries d’expressions régulières. Voir [Using Dictionaries](#using-dictionaries) pour plus de détails.
+</Info>
+
+Ces deux cas d’usage peuvent être pris en charge avec ClickHouse en déplaçant la logique de la requête ci-dessus au moment de l’insert. Nous examinons ci-dessous plusieurs approches et indiquons dans quels cas chacune est appropriée.
+
+<Info>
+  **OTel ou ClickHouse pour le traitement ?**
+
+  Vous pouvez également effectuer le traitement à l’aide des processors et operators de l’OTel collector, comme décrit [ici](/fr/guides/use-cases/observability/build-your-own/integrating-opentelemetry#processing---filtering-transforming-and-enriching). Dans la plupart des cas, vous constaterez que ClickHouse est nettement plus économe en ressources et plus rapide que les processors du collector. Le principal inconvénient d’effectuer tout le traitement des événements en SQL est le couplage de votre solution à ClickHouse. Par exemple, vous pouvez souhaiter envoyer les logs traités vers d’autres destinations depuis l’OTel collector, par ex. S3.
+</Info>
+
+<div id="materialized-columns">
+  ### Colonnes matérialisées
+</div>
+
+Les colonnes matérialisées constituent la solution la plus simple pour extraire une structure à partir d’autres colonnes. Les valeurs de ces colonnes sont toujours calculées au moment de l’insertion et ne peuvent pas être spécifiées dans des requêtes INSERT.
+
+<Info>
+  **Surcoût**
+
+  Les colonnes matérialisées entraînent un surcoût de stockage supplémentaire, car les valeurs sont extraites vers de nouvelles colonnes sur disque au moment de l’insertion.
+</Info>
+
+Les colonnes matérialisées prennent en charge n’importe quelle expression ClickHouse et peuvent tirer parti de toutes les fonctions analytiques pour le [traitement des chaînes](/fr/reference/functions/regular-functions/string-functions) (y compris les [expressions régulières et la recherche](/fr/reference/functions/regular-functions/string-search-functions)) et les [URL](/fr/reference/functions/regular-functions/url-functions), effectuer des [conversions de type](/fr/reference/functions/regular-functions/type-conversion-functions), [extraire des valeurs depuis JSON](/fr/reference/functions/regular-functions/json-functions) ou réaliser des [opérations mathématiques](/fr/reference/functions/regular-functions/math-functions).
+
+Nous recommandons les colonnes matérialisées pour les traitements de base. Elles sont particulièrement utiles pour extraire des valeurs depuis des maps, les promouvoir en colonnes de premier niveau et effectuer des conversions de type. Elles sont souvent les plus utiles dans des schémas très simples ou en complément de vues matérialisées. Considérez le schéma suivant pour des logs dont le JSON a été extrait dans la colonne `LogAttributes` par le collector :
+
+```sql
+CREATE TABLE otel_logs
+(
+        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `TraceId` String CODEC(ZSTD(1)),
+        `SpanId` String CODEC(ZSTD(1)),
+        `TraceFlags` UInt32 CODEC(ZSTD(1)),
+        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
+        `SeverityNumber` Int32 CODEC(ZSTD(1)),
+        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
+        `Body` String CODEC(ZSTD(1)),
+        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
+        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
+        `ScopeName` String CODEC(ZSTD(1)),
+        `ScopeVersion` String CODEC(ZSTD(1)),
+        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `RequestPage` String MATERIALIZED path(LogAttributes['request_path']),
+        `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
+        `RefererDomain` String MATERIALIZED domain(LogAttributes['referer'])
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SeverityText, toUnixTimestamp(Timestamp), TraceId)
+```
+
+Le schéma équivalent pour extraire des données à l’aide des fonctions JSON à partir d’un `Body` de type String se trouve [ici](https://pastila.nl/?005cbb97/513b174a7d6114bf17ecc657428cf829#gqoOOiomEjIiG6zlWhE+Sg==).
+
+Nos trois colonnes matérialisées extraient la page demandée, le type de requête et le domaine du référent. Elles accèdent aux clés de la map et appliquent des fonctions à leurs valeurs. La requête suivante est nettement plus rapide :
+
+```sql
+SELECT RequestPage AS path, count() AS c
+FROM otel_logs
+WHERE RequestType = 'POST'
+GROUP BY path
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─path─────────────────────┬─────c─┐
+│ /m/updateVariation       │ 12182 │
+│ /site/productCard        │ 11080 │
+│ /site/productPrice       │ 10876 │
+│ /site/productAdditives   │ 10866 │
+│ /site/productModelImages │ 10866 │
+└──────────────────────────┴───────┘
+
+5 rows in set. Elapsed: 0.173 sec. Processed 10.37 million rows, 418.03 MB (60.07 million rows/s., 2.42 GB/s.)
+Peak memory usage: 3.16 MiB.
+```
+
+<Note>
+  Par défaut, les colonnes matérialisées ne sont pas renvoyées dans un `SELECT *`. Cela permet de préserver l&#39;invariant selon lequel le résultat d&#39;un `SELECT *` peut toujours être réinséré dans la table à l&#39;aide d&#39;`INSERT`. Ce comportement peut être désactivé en définissant `asterisk_include_materialized_columns=1` et peut être activé dans Grafana (voir `Additional Settings -> Custom Settings` dans la configuration de la source de données).
+</Note>
+
+<div id="materialized-views">
+  ## Vues matérialisées
+</div>
+
+Les [vues matérialisées](/fr/concepts/features/materialized-views/index) offrent un moyen plus puissant d&#39;appliquer un filtrage SQL et des transformations aux logs et aux traces.
+
+Les vues matérialisées permettent de déplacer le coût du calcul du moment de l&#39;exécution de la requête vers le moment de l’insertion. Une vue matérialisée ClickHouse n&#39;est en réalité qu&#39;un trigger qui exécute une requête sur des blocs de données lorsqu&#39;ils sont insérés dans une table. Les résultats de cette requête sont insérés dans une seconde table « cible ».
+
+<Image img="/images/use-cases/observability/observability-10.webp" alt="Vue matérialisée" size="md" />
+
+<Info>
+  **Mises à jour en temps réel**
+
+  Les vues matérialisées dans ClickHouse sont mises à jour en temps réel à mesure que les données arrivent dans la table sur laquelle elles reposent, et fonctionnent davantage comme des index continuellement mis à jour. À l&#39;inverse, dans d&#39;autres bases de données, les vues matérialisées sont généralement des instantanés statiques d&#39;une requête qui doivent être actualisés (comme les vues matérialisées actualisables de ClickHouse).
+</Info>
+
+La requête associée à la vue matérialisée peut théoriquement être n&#39;importe quelle requête, y compris une agrégation, même s&#39;il existe des [limitations avec les jointures](https://clickhouse.com/blog/using-materialized-views-in-clickhouse#materialized-views-and-joins). Pour les charges de travail de transformation et de filtrage requises pour les logs et les traces, vous pouvez considérer que toute instruction `SELECT` est possible.
+
+Gardez à l&#39;esprit que la requête n&#39;est qu&#39;un trigger qui s&#39;exécute sur les lignes insérées dans une table (la table source), les résultats étant envoyés vers une nouvelle table (la table cible).
+
+Afin d&#39;éviter de persister les données deux fois (dans les tables source et cible), nous pouvons remplacer le moteur de la table source par un [Null table engine](/fr/reference/engines/table-engines/special/null), tout en conservant le schéma d&#39;origine. Nos OTel collectors continueront à envoyer les données vers cette table. Par exemple, pour les logs, la table `otel_logs` devient :
+
+```sql
+CREATE TABLE otel_logs
+(
+        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `TraceId` String CODEC(ZSTD(1)),
+        `SpanId` String CODEC(ZSTD(1)),
+        `TraceFlags` UInt32 CODEC(ZSTD(1)),
+        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
+        `SeverityNumber` Int32 CODEC(ZSTD(1)),
+        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
+        `Body` String CODEC(ZSTD(1)),
+        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
+        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
+        `ScopeName` String CODEC(ZSTD(1)),
+        `ScopeVersion` String CODEC(ZSTD(1)),
+        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1))
+) ENGINE = Null
+```
+
+Le moteur de table Null est une optimisation puissante ; considérez-le comme `/dev/null`. Cette table ne stocke aucune donnée, mais toutes les vues matérialisées attachées sont tout de même exécutées sur les lignes insérées avant que celles-ci ne soient ignorées.
+
+Considérez la requête suivante. Elle transforme nos lignes dans un format que nous souhaitons conserver, en extrayant toutes les colonnes de `LogAttributes` (nous supposons que cela a été défini par le collector à l’aide de l’opérateur `json_parser`), en définissant `SeverityText` et `SeverityNumber` (sur la base de quelques conditions simples et de la définition de [ces colonnes](https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-severitytext)). Dans ce cas, nous sélectionnons également uniquement les colonnes dont nous savons qu’elles seront renseignées, en ignorant des colonnes telles que `TraceId`, `SpanId` et `TraceFlags`.
+
+```sql
+SELECT
+        Body, 
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        LogAttributes['status'] AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['size'] AS Size,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddr,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Body:           {"remote_addr":"54.36.149.41","remote_user":"-","run_time":"0","time_local":"2019-01-22 00:26:14.000","request_type":"GET","request_path":"\/filter\/27|13 ,27|  5 ,p53","request_protocol":"HTTP\/1.1","status":"200","size":"30577","referer":"-","user_agent":"Mozilla\/5.0 (compatible; AhrefsBot\/6.1; +http:\/\/ahrefs.com\/robot\/)"}
+Timestamp:      2019-01-22 00:26:14
+ServiceName:
+Status:         200
+RequestProtocol: HTTP/1.1
+RunTime:        0
+Size:           30577
+UserAgent:      Mozilla/5.0 (compatible; AhrefsBot/6.1; +http://ahrefs.com/robot/)
+Referer:        -
+RemoteUser:     -
+RequestType:    GET
+RequestPath:    /filter/27|13 ,27|  5 ,p53
+RemoteAddr:     54.36.149.41
+RefererDomain:
+RequestPage:    /filter/27|13 ,27|  5 ,p53
+SeverityText:   INFO
+SeverityNumber:  9
+
+1 row in set. Elapsed: 0.027 sec.
+```
+
+Nous extrayons également la colonne `Body` ci-dessus — au cas où des attributs supplémentaires seraient ajoutés ultérieurement sans être extraits par notre SQL. Cette colonne devrait bien se compresser dans ClickHouse et sera rarement consultée, sans impact sur les performances des requêtes. Enfin, nous réduisons le Timestamp en DateTime (pour économiser de l&#39;espace — voir [« Optimisation des types »](#optimizing-types)) via un cast.
+
+<Info>
+  **Expressions conditionnelles**
+
+  Notez l’utilisation des [expressions conditionnelles](/fr/reference/functions/regular-functions/conditional-functions) ci-dessus pour extraire `SeverityText` et `SeverityNumber`. Elles sont extrêmement utiles pour formuler des conditions complexes et vérifier si des valeurs sont définies dans des maps ; ici, nous supposons naïvement que toutes les clés existent dans `LogAttributes`. Nous recommandons aux utilisateurs de bien s’y familiariser : elles sont très utiles pour le parsing des logs, en complément des fonctions de gestion des [valeurs NULL](/fr/reference/functions/regular-functions/functions-for-nulls) !
+</Info>
+
+Nous avons besoin d&#39;une table pour recevoir ces résultats. La table cible ci-dessous correspond à la requête ci-dessus :
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+Les types sélectionnés ici reposent sur les optimisations décrites dans [&quot;Optimisation des types&quot;](#optimizing-types).
+
+<Note>
+  Notez à quel point nous avons profondément modifié notre schéma. En pratique, vous aurez probablement aussi des colonnes de traces à conserver, ainsi que la colonne `ResourceAttributes` (qui contient généralement des métadonnées Kubernetes). Grafana peut exploiter les colonnes de traces pour créer des liens entre les logs et les traces - voir [&quot;Utiliser Grafana&quot;](/fr/guides/use-cases/observability/build-your-own/grafana).
+</Note>
+
+Ci-dessous, nous créons une vue matérialisée `otel_logs_mv`, qui exécute l’instruction SELECT ci-dessus pour la table `otel_logs` et envoie les résultats vers `otel_logs_v2`.
+
+```sql
+CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2 AS
+SELECT
+        Body, 
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        LogAttributes['status']::UInt16 AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['size'] AS Size,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddress,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+```
+
+Ce qui précède est illustré ci-dessous :
+
+<Image img="/images/use-cases/observability/observability-11.webp" alt="Otel MV" size="md" />
+
+Si nous redémarrons maintenant la config du collector utilisée dans [&quot;Exporter vers ClickHouse&quot;](/fr/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse), les données apparaîtront dans `otel_logs_v2` au format souhaité. Notez l’utilisation de fonctions typées d’extraction JSON.
+
+```sql
+SELECT *
+FROM otel_logs_v2
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Body:           {"remote_addr":"54.36.149.41","remote_user":"-","run_time":"0","time_local":"2019-01-22 00:26:14.000","request_type":"GET","request_path":"\/filter\/27|13 ,27|  5 ,p53","request_protocol":"HTTP\/1.1","status":"200","size":"30577","referer":"-","user_agent":"Mozilla\/5.0 (compatible; AhrefsBot\/6.1; +http:\/\/ahrefs.com\/robot\/)"}
+Timestamp:      2019-01-22 00:26:14
+ServiceName:
+Status:         200
+RequestProtocol: HTTP/1.1
+RunTime:        0
+Size:           30577
+UserAgent:      Mozilla/5.0 (compatible; AhrefsBot/6.1; +http://ahrefs.com/robot/)
+Referer:        -
+RemoteUser:     -
+RequestType:    GET
+RequestPath:    /filter/27|13 ,27|  5 ,p53
+RemoteAddress:  54.36.149.41
+RefererDomain:
+RequestPage:    /filter/27|13 ,27|  5 ,p53
+SeverityText:   INFO
+SeverityNumber:  9
+
+1 row in set. Elapsed: 0.010 sec.
+```
+
+Une vue matérialisée équivalente, reposant sur l’extraction de colonnes depuis la colonne `Body` à l’aide de fonctions JSON, est présentée ci-dessous :
+
+```sql
+CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2 AS
+SELECT  Body, 
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        JSONExtractUInt(Body, 'status') AS Status,
+        JSONExtractString(Body, 'request_protocol') AS RequestProtocol,
+        JSONExtractUInt(Body, 'run_time') AS RunTime,
+        JSONExtractUInt(Body, 'size') AS Size,
+        JSONExtractString(Body, 'user_agent') AS UserAgent,
+        JSONExtractString(Body, 'referer') AS Referer,
+        JSONExtractString(Body, 'remote_user') AS RemoteUser,
+        JSONExtractString(Body, 'request_type') AS RequestType,
+        JSONExtractString(Body, 'request_path') AS RequestPath,
+        JSONExtractString(Body, 'remote_addr') AS remote_addr,
+        domain(JSONExtractString(Body, 'referer')) AS RefererDomain,
+        path(JSONExtractString(Body, 'request_path')) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+```
+
+<div id="beware-types">
+  ### Attention aux types
+</div>
+
+Les vues matérialisées ci-dessus reposent sur un transtypage implicite, en particulier lors de l’utilisation de la map `LogAttributes`. ClickHouse convertit souvent de manière transparente la valeur extraite vers le type de la table cible, ce qui réduit la quantité de syntaxe nécessaire. Nous recommandons toutefois aux utilisateurs de toujours tester leurs vues en utilisant l’instruction `SELECT` de la vue avec une instruction [`INSERT INTO`](/fr/reference/statements/insert-into) vers une table cible utilisant le même schéma. Cela devrait permettre de confirmer que les types sont correctement gérés. Portez une attention particulière aux cas suivants :
+
+* Si une clé n’existe pas dans une map, une chaîne vide sera renvoyée. Pour les valeurs numériques, vous devrez la convertir en une valeur appropriée. Cela peut être fait avec des [fonctions conditionnelles](/fr/reference/functions/regular-functions/conditional-functions), par ex. `if(LogAttributes['status'] = ", 200, LogAttributes['status'])`, ou avec des [fonctions de transtypage](/fr/reference/functions/regular-functions/type-conversion-functions) si des valeurs par défaut sont acceptables, par ex. `toUInt8OrDefault(LogAttributes['status'] )`
+* Certains types ne sont pas toujours convertis ; par ex., les représentations textuelles de valeurs numériques ne seront pas converties en valeurs d’enum.
+* Les fonctions d’extraction JSON renvoient les valeurs par défaut de leur type si aucune valeur n’est trouvée. Assurez-vous que ces valeurs sont pertinentes !
+
+<Info>
+  **Évitez Nullable**
+
+  Évitez d’utiliser [Nullable](/fr/reference/data-types/nullable) dans ClickHouse pour les données d’observabilité. Il est rarement nécessaire, pour les logs et les traces, de distinguer une valeur vide d’une valeur NULL. Cette fonctionnalité entraîne un surcoût de stockage et aura un impact négatif sur les performances des requêtes. Voir [ici](/fr/guides/clickhouse/data-modelling/schema-design#optimizing-types) pour plus de détails.
+</Info>
+
+<div id="choosing-a-primary-ordering-key">
+  ## Choisir une clé primaire (de tri)
+</div>
+
+Une fois les colonnes souhaitées extraites, vous pouvez commencer à optimiser votre clé de tri/primaire.
+
+Quelques règles simples peuvent vous aider à choisir une clé de tri. Les points suivants peuvent parfois se contredire ; examinez-les donc dans cet ordre. Ce processus vous permettra d’identifier plusieurs clés possibles, 4 à 5 étant généralement suffisantes :
+
+1. Sélectionnez des colonnes qui correspondent à vos filtres les plus courants et à vos habitudes d’accès. Si vous commencez généralement vos investigations d’observabilité en filtrant sur une colonne donnée, par exemple le nom du pod, cette colonne sera fréquemment utilisée dans les clauses `WHERE`. Priorisez son inclusion dans votre clé plutôt que celle de colonnes moins souvent utilisées.
+2. Privilégiez les colonnes qui permettent d’exclure une grande part du nombre total de lignes lorsqu’un filtre est appliqué, afin de réduire la quantité de données à lire. Les noms de service et les codes d’état sont souvent de bons candidats — dans le second cas, uniquement si vous filtrez sur des valeurs qui excluent la majorité des lignes. Par exemple, filtrer sur des codes 200 correspondra, dans la plupart des systèmes, à la majorité des lignes, contrairement aux erreurs 500, qui ne représenteront qu’un petit sous-ensemble.
+3. Privilégiez les colonnes susceptibles d’être fortement corrélées à d’autres colonnes de la table. Cela permet aussi de garantir que ces valeurs soient stockées de façon contiguë, ce qui améliore la compression.
+4. Les opérations `GROUP BY` et `ORDER BY` sur les colonnes de la clé de tri peuvent être plus économes en mémoire.
+
+<br />
+
+Une fois le sous-ensemble de colonnes de la clé de tri identifié, celles-ci doivent être déclarées dans un ordre précis. Cet ordre peut fortement influencer à la fois l’efficacité du filtrage sur les colonnes de clé secondaires dans les requêtes et le taux de compression des fichiers de données de la table. En règle générale, il est **préférable d’ordonner les clés par cardinalité croissante**. Il faut toutefois tenir compte du fait que le filtrage sur les colonnes situées plus loin dans la clé de tri sera moins efficace que sur celles placées plus tôt dans le tuple. Trouvez le bon équilibre entre ces comportements et tenez compte de vos habitudes d’accès. Surtout, testez différentes variantes. Pour mieux comprendre les clés de tri et savoir comment les optimiser, nous recommandons [cet article](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes).
+
+<Info>
+  **La structure avant tout**
+
+  Nous vous recommandons de définir vos clés de tri une fois vos logs structurés. N’utilisez ni les clés des maps d’attributs ni des expressions d’extraction JSON pour la clé de tri. Assurez-vous que vos clés de tri figurent comme colonnes de premier niveau dans votre table.
+</Info>
+
+<div id="using-maps">
+  ## Utiliser les maps
+</div>
+
+Les exemples précédents montrent comment utiliser la syntaxe de map `map['key']` pour accéder aux valeurs des colonnes `Map(String, String)`. Outre l’utilisation de la notation map pour accéder aux clés imbriquées, ClickHouse propose des [fonctions map](/fr/reference/functions/regular-functions/tuple-map-functions#mapKeys) spécialisées pour filtrer ou sélectionner ces colonnes.
+
+Par exemple, la requête suivante permet d’identifier toutes les clés uniques présentes dans la colonne `LogAttributes` à l’aide de la [fonction `mapKeys`](/fr/reference/functions/regular-functions/tuple-map-functions#mapKeys), suivie de la [fonction `groupArrayDistinctArray`](/fr/reference/functions/aggregate-functions/combinators) (un combinateur).
+
+```sql
+SELECT groupArrayDistinctArray(mapKeys(LogAttributes))
+FROM otel_logs
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+groupArrayDistinctArray(mapKeys(LogAttributes)): ['remote_user','run_time','request_type','log.file.name','referer','request_path','status','user_agent','remote_addr','time_local','size','request_protocol']
+
+1 row in set. Elapsed: 1.139 sec. Processed 5.63 million rows, 2.53 GB (4.94 million rows/s., 2.22 GB/s.)
+Peak memory usage: 71.90 MiB.
+```
+
+<Info>
+  **Évitez les points**
+
+  Nous ne recommandons pas d’utiliser des points dans les noms de colonnes Map et pourrions abandonner cette possibilité à l’avenir. Utilisez plutôt un `_`.
+</Info>
+
+<div id="using-aliases">
+  ## Utilisation des alias
+</div>
+
+Interroger des types Map est plus lent qu’interroger des colonnes normales - voir [&quot;Accélérer les requêtes&quot;](#accelerating-queries). De plus, la syntaxe est plus complexe, ce qui peut rendre leur écriture fastidieuse. Pour remédier à ce problème, nous recommandons d’utiliser des colonnes Alias.
+
+Les colonnes ALIAS sont calculées au moment de la requête et ne sont pas stockées dans la table. Il est donc impossible d’INSERT une valeur dans une colonne de ce type. Les alias permettent de faire référence à des clés de Map, de simplifier la syntaxe et d’exposer de manière transparente les entrées d’une Map comme des colonnes normales. Prenons l’exemple suivant :
+
+```sql
+CREATE TABLE otel_logs
+(
+        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `TraceId` String CODEC(ZSTD(1)),
+        `SpanId` String CODEC(ZSTD(1)),
+        `TraceFlags` UInt32 CODEC(ZSTD(1)),
+        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
+        `SeverityNumber` Int32 CODEC(ZSTD(1)),
+        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
+        `Body` String CODEC(ZSTD(1)),
+        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
+        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
+        `ScopeName` String CODEC(ZSTD(1)),
+        `ScopeVersion` String CODEC(ZSTD(1)),
+        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `RequestPath` String MATERIALIZED path(LogAttributes['request_path']),
+        `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
+        `RefererDomain` String MATERIALIZED domain(LogAttributes['referer']),
+        `RemoteAddr` IPv4 ALIAS LogAttributes['remote_addr']
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, Timestamp)
+```
+
+Nous avons plusieurs colonnes matérialisées et une colonne `ALIAS`, `RemoteAddr`, qui accède à la map `LogAttributes`. Nous pouvons désormais interroger via cette colonne les valeurs de `LogAttributes['remote_addr']`, ce qui simplifie notre requête, c.-à-d.
+
+```sql
+SELECT RemoteAddr
+FROM default.otel_logs
+LIMIT 5
+```
+
+```response
+┌─RemoteAddr────┐
+│ 54.36.149.41  │
+│ 31.56.96.51   │
+│ 31.56.96.51   │
+│ 40.77.167.129 │
+│ 91.99.72.15   │
+└───────────────┘
+
+5 rows in set. Elapsed: 0.011 sec.
+```
+
+De plus, l’ajout de `ALIAS` via la commande `ALTER TABLE` est trivial. Ces colonnes sont immédiatement disponibles, par exemple
+
+```sql
+ALTER TABLE default.otel_logs
+        (ADD COLUMN `Size` String ALIAS LogAttributes['size'])
+
+SELECT Size
+FROM default.otel_logs_v3
+LIMIT 5
+```
+
+```response
+┌─Size──┐
+│ 30577 │
+│ 5667  │
+│ 5379  │
+│ 1696  │
+│ 41483 │
+└───────┘
+
+5 rows in set. Elapsed: 0.014 sec.
+```
+
+<Info>
+  **Les alias sont exclus par défaut**
+
+  Par défaut, `SELECT *` exclut les colonnes ALIAS. Ce comportement peut être désactivé en définissant `asterisk_include_alias_columns=1`.
+</Info>
+
+<div id="optimizing-types">
+  ## Optimisation des types
+</div>
+
+Les [bonnes pratiques générales de ClickHouse](/fr/guides/clickhouse/data-modelling/schema-design#optimizing-types) pour l’optimisation des types s’appliquent également à ce cas d’usage ClickHouse.
+
+<div id="using-codecs">
+  ## Utilisation des codecs
+</div>
+
+En plus des optimisations de type, vous pouvez suivre les [bonnes pratiques générales relatives aux codecs](/fr/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec) lorsque vous cherchez à optimiser la compression pour les schémas d’observabilité de ClickHouse.
+
+De manière générale, le codec `ZSTD` est particulièrement bien adapté aux jeux de données de logs et de traces. Augmenter le niveau de compression par rapport à sa valeur par défaut de 1 peut améliorer la compression. Cela doit toutefois être testé, car des valeurs plus élevées entraînent une surcharge CPU plus importante au moment de l’insert. En pratique, nous constatons généralement peu de gain à augmenter cette valeur.
+
+En outre, les timestamps, bien qu’ils bénéficient de l’encodage delta en termes de compression, peuvent dégrader les performances des query si cette colonne est utilisée dans la clé primaire/de tri. Nous recommandons aux utilisateurs d’évaluer le compromis entre compression et performances des query.
+
+<div id="using-dictionaries">
+  ## Utilisation des dictionnaires
+</div>
+
+Les [dictionnaires](/fr/reference/statements/create/dictionary) sont une [fonctionnalité clé](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse) de ClickHouse : ils fournissent une représentation [clé-valeur](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) en mémoire de données provenant de diverses [sources](/fr/reference/statements/create/dictionary/sources/overview#dictionary-sources), optimisée pour des requêtes de lookup à très faible latence.
+
+<Image img="/images/use-cases/observability/observability-12.webp" alt="Observabilité et dictionnaires" size="md" />
+
+Cela s’avère utile dans divers scénarios, qu’il s’agisse d’enrichir à la volée les données ingérées sans ralentir le processus d’ingestion, ou d’améliorer les performances des requêtes de manière générale, en particulier pour les JOINs.
+Même si les jointures sont rarement nécessaires dans les cas d’usage d’observabilité, les dictionnaires restent utiles pour l’enrichissement, aussi bien à l’insertion qu’au moment de l’exécution des requêtes. Nous donnons ci-dessous des exemples des deux approches.
+
+<Info>
+  **Accélérer les jointures**
+
+  Les utilisateurs qui souhaitent accélérer les jointures avec des dictionnaires trouveront plus de détails [ici](/fr/concepts/features/dictionaries/index).
+</Info>
+
+<div id="insert-time-vs-query-time">
+  ### À l&#39;insertion vs au moment de la requête
+</div>
+
+Les dictionnaires peuvent être utilisés pour enrichir des jeux de données au moment de la requête ou à l&#39;insertion. Chacune de ces approches présente ses avantages et ses inconvénients. En résumé :
+
+* **À l&#39;insertion** - Cette approche est généralement adaptée si la valeur d&#39;enrichissement ne change pas et provient d&#39;une source externe pouvant servir à alimenter le dictionnaire. Dans ce cas, enrichir la ligne à l&#39;insertion évite une recherche dans le dictionnaire au moment de la requête. Cela a toutefois un coût en termes de performances d&#39;insertion, ainsi qu&#39;un surcoût de stockage, car les valeurs enrichies seront stockées dans des colonnes.
+* **Au moment de la requête** - Si les valeurs d&#39;un dictionnaire changent fréquemment, les recherches au moment de la requête sont souvent plus adaptées. Cela évite d&#39;avoir à mettre à jour les colonnes (et à réécrire les données) si les valeurs associées changent. Cette souplesse se paie toutefois par le coût d&#39;une recherche au moment de la requête. Ce coût est généralement sensible lorsqu&#39;une recherche est nécessaire pour un grand nombre de lignes, par exemple lorsqu&#39;une recherche dans le dictionnaire est utilisée dans une clause de filtre. Pour l&#39;enrichissement des résultats, c&#39;est-à-dire dans le `SELECT`, ce surcoût est généralement négligeable.
+
+Nous recommandons aux utilisateurs de se familiariser avec les bases des dictionnaires. Les dictionnaires fournissent une table de correspondance en mémoire à partir de laquelle des valeurs peuvent être récupérées à l&#39;aide de [fonctions spécialisées](/fr/reference/functions/regular-functions/ext-dict-functions#dictGetAll).
+
+Pour des exemples simples d&#39;enrichissement, consultez le guide sur les dictionnaires [ici](/fr/concepts/features/dictionaries/index). Ci-dessous, nous nous concentrons sur des tâches courantes d&#39;enrichissement pour l&#39;observabilité.
+
+<div id="using-ip-dictionaries">
+  ### Utilisation des dictionnaires IP
+</div>
+
+L’enrichissement géographique des logs et des traces avec des valeurs de latitude et de longitude à partir d’adresses IP est un besoin courant en observabilité. Nous pouvons y parvenir à l’aide d’un dictionnaire structuré `ip_trie`.
+
+Nous utilisons le [jeu de données DB-IP à l’échelle des villes](https://github.com/sapics/ip-location-db#db-ip-database-update-monthly), mis à disposition publiquement par [DB-IP.com](https://db-ip.com/) dans le cadre de la [licence CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
+D’après [le README](https://github.com/sapics/ip-location-db#csv-format), les données sont structurées comme suit :
+
+```csv
+| ip_range_start | ip_range_end | country_code | state1 | state2 | city | postcode | latitude | longitude | timezone |
+```
+
+Avec cette structure, commençons par jeter un coup d’œil aux données à l’aide de la fonction de table [url()](/fr/reference/functions/table-functions/url) :
+
+```sql
+SELECT *
+FROM url('https://raw.githubusercontent.com/sapics/ip-location-db/master/dbip-city/dbip-city-ipv4.csv.gz', 'CSV', '\n           \tip_range_start IPv4, \n       \tip_range_end IPv4, \n         \tcountry_code Nullable(String), \n     \tstate1 Nullable(String), \n           \tstate2 Nullable(String), \n           \tcity Nullable(String), \n     \tpostcode Nullable(String), \n         \tlatitude Float64, \n          \tlongitude Float64, \n         \ttimezone Nullable(String)\n   \t')
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+ip_range_start: 1.0.0.0
+ip_range_end:   1.0.0.255
+country_code:   AU
+state1:         Queensland
+state2:         ᴺᵁᴸᴸ
+city:           South Brisbane
+postcode:       ᴺᵁᴸᴸ
+latitude:       -27.4767
+longitude:      153.017
+timezone:       ᴺᵁᴸᴸ
+```
+
+Pour nous simplifier la vie, utilisons le moteur de table [`URL()`](/fr/reference/engines/table-engines/special/url) pour créer une table ClickHouse avec nos noms de champ et vérifier le nombre total de lignes :
+
+```sql
+CREATE TABLE geoip_url(
+        ip_range_start IPv4,
+        ip_range_end IPv4,
+        country_code Nullable(String),
+        state1 Nullable(String),
+        state2 Nullable(String),
+        city Nullable(String),
+        postcode Nullable(String),
+        latitude Float64,
+        longitude Float64,
+        timezone Nullable(String)
+) ENGINE=URL('https://raw.githubusercontent.com/sapics/ip-location-db/master/dbip-city/dbip-city-ipv4.csv.gz', 'CSV')
+
+select count() from geoip_url;
+```
+
+```response
+┌─count()─┐
+│ 3261621 │ -- 3.26 million
+└─────────┘
+```
+
+Comme notre dictionnaire `ip_trie` exige que les plages d’adresses IP soient exprimées au format CIDR, nous devons transformer `ip_range_start` et `ip_range_end`.
+
+Le CIDR correspondant à chaque plage peut être calculé simplement avec la requête suivante :
+
+```sql
+WITH
+        bitXor(ip_range_start, ip_range_end) AS xor,
+        if(xor != 0, ceil(log2(xor)), 0) AS unmatched,
+        32 - unmatched AS cidr_suffix,
+        toIPv4(bitAnd(bitNot(pow(2, unmatched) - 1), ip_range_start)::UInt64) AS cidr_address
+SELECT
+        ip_range_start,
+        ip_range_end,
+        concat(toString(cidr_address),'/',toString(cidr_suffix)) AS cidr    
+FROM
+        geoip_url
+LIMIT 4;
+```
+
+```response
+┌─ip_range_start─┬─ip_range_end─┬─cidr───────┐
+│ 1.0.0.0        │ 1.0.0.255    │ 1.0.0.0/24 │
+│ 1.0.1.0        │ 1.0.3.255    │ 1.0.0.0/22 │
+│ 1.0.4.0        │ 1.0.7.255    │ 1.0.4.0/22 │
+│ 1.0.8.0        │ 1.0.15.255   │ 1.0.8.0/21 │
+└────────────────┴──────────────┴────────────┘
+
+4 rows in set. Elapsed: 0.259 sec.
+```
+
+<Note>
+  Cette requête fait beaucoup de choses. Pour celles et ceux que cela intéresse, lisez cette excellente [explication](https://clickhouse.com/blog/geolocating-ips-in-clickhouse-and-grafana#using-bit-functions-to-convert-ip-ranges-to-cidr-notation). Sinon, retenez simplement qu’elle calcule un CIDR pour une plage d’adresses IP.
+</Note>
+
+Dans notre cas, nous n’aurons besoin que de la plage d’adresses IP, du code pays et des coordonnées. Créons donc une nouvelle table et insérons nos données Geo IP :
+
+```sql
+CREATE TABLE geoip
+(
+        `cidr` String,
+        `latitude` Float64,
+        `longitude` Float64,
+        `country_code` String
+)
+ENGINE = MergeTree
+ORDER BY cidr
+
+INSERT INTO geoip
+WITH
+        bitXor(ip_range_start, ip_range_end) as xor,
+        if(xor != 0, ceil(log2(xor)), 0) as unmatched,
+        32 - unmatched as cidr_suffix,
+        toIPv4(bitAnd(bitNot(pow(2, unmatched) - 1), ip_range_start)::UInt64) as cidr_address
+SELECT
+        concat(toString(cidr_address),'/',toString(cidr_suffix)) as cidr,
+        latitude,
+        longitude,
+        country_code    
+FROM geoip_url
+```
+
+Afin d’effectuer des recherches IP à faible latence dans ClickHouse, nous exploiterons des dictionnaires pour stocker en mémoire la correspondance clé -&gt; attributs de nos données Geo IP. ClickHouse fournit une structure de [dictionnaire](/fr/reference/statements/create/dictionary/layouts/ip-trie) `ip_trie` pour associer nos préfixes réseau (blocs CIDR) à des coordonnées et des codes pays. La requête suivante définit un dictionnaire utilisant ce layout et la table ci-dessus comme source.
+
+```sql
+CREATE DICTIONARY ip_trie (
+   cidr String,
+   latitude Float64,
+   longitude Float64,
+   country_code String
+)
+primary key cidr
+source(clickhouse(table 'geoip'))
+layout(ip_trie)
+lifetime(3600);
+```
+
+Nous pouvons sélectionner des lignes dans le dictionnaire et confirmer que ce jeu de données est disponible pour les opérations de recherche :
+
+```sql
+SELECT * FROM ip_trie LIMIT 3
+```
+
+```response
+┌─cidr───────┬─latitude─┬─longitude─┬─country_code─┐
+│ 1.0.0.0/22 │  26.0998 │   119.297 │ CN           │
+│ 1.0.0.0/24 │ -27.4767 │   153.017 │ AU           │
+│ 1.0.4.0/22 │ -38.0267 │   145.301 │ AU           │
+└────────────┴──────────┴───────────┴──────────────┘
+
+3 rows in set. Elapsed: 4.662 sec.
+```
+
+<Info>
+  **Actualisation périodique**
+
+  Les dictionnaires ClickHouse sont actualisés périodiquement en fonction des données de la table sous-jacente et de la clause lifetime utilisée ci-dessus. Pour mettre à jour notre dictionnaire Geo IP afin qu’il reflète les dernières modifications du jeu de données DB-IP, il suffit de réinsérer les données de la table distante geoip&#95;url dans notre table `geoip`, avec les transformations appliquées.
+</Info>
+
+Maintenant que nous avons chargé les données Geo IP dans notre dictionnaire `ip_trie` (qui, commodément, porte lui aussi le nom `ip_trie`), nous pouvons l’utiliser pour la géolocalisation d’adresses IP. Pour cela, utilisez la [fonction `dictGet()`](/fr/reference/functions/regular-functions/ext-dict-functions) comme suit :
+
+```sql
+SELECT dictGet('ip_trie', ('country_code', 'latitude', 'longitude'), CAST('85.242.48.167', 'IPv4')) AS ip_details
+```
+
+```response
+┌─ip_details──────────────┐
+│ ('PT',38.7944,-9.34284) │
+└─────────────────────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+Remarquez ici la rapidité de récupération. Cela nous permet d’enrichir les logs. Dans ce cas, nous choisissons d’**effectuer un enrichissement au moment de la requête**.
+
+En revenant à notre jeu de données de logs d’origine, nous pouvons utiliser ce qui précède pour agréger nos logs par pays. Ce qui suit suppose que nous utilisons le schéma issu de notre vue matérialisée précédente, qui inclut une colonne `RemoteAddress` extraite.
+
+```sql
+SELECT dictGet('ip_trie', 'country_code', tuple(RemoteAddress)) AS country,
+        formatReadableQuantity(count()) AS num_requests
+FROM default.otel_logs_v2
+WHERE country != ''
+GROUP BY country
+ORDER BY count() DESC
+LIMIT 5
+```
+
+```response
+┌─country─┬─num_requests────┐
+│ IR      │ 7.36 million    │
+│ US      │ 1.67 million    │
+│ AE      │ 526.74 thousand │
+│ DE      │ 159.35 thousand │
+│ FR      │ 109.82 thousand │
+└─────────┴─────────────────┘
+
+5 rows in set. Elapsed: 0.140 sec. Processed 20.73 million rows, 82.92 MB (147.79 million rows/s., 591.16 MB/s.)
+Peak memory usage: 1.16 MiB.
+```
+
+Comme la correspondance entre une adresse IP et un lieu géographique peut changer, les utilisateurs voudront probablement savoir d’où provenait la requête au moment où elle a été effectuée, et non quelle est la localisation géographique actuelle de cette même adresse. C’est pourquoi un enrichissement au moment de l’indexation est probablement préférable ici. Cela peut se faire à l’aide de colonnes matérialisées, comme indiqué ci-dessous, ou dans le select d’une vue matérialisée :
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8,
+        `Country` String MATERIALIZED dictGet('ip_trie', 'country_code', tuple(RemoteAddress)),
+        `Latitude` Float32 MATERIALIZED dictGet('ip_trie', 'latitude', tuple(RemoteAddress)),
+        `Longitude` Float32 MATERIALIZED dictGet('ip_trie', 'longitude', tuple(RemoteAddress))
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+<Info>
+  **Mise à jour périodique**
+
+  Les utilisateurs souhaiteront probablement que le dictionnaire d’enrichissement d’IP soit mis à jour périodiquement à partir des nouvelles données. Cela peut se faire à l’aide de la clause `LIFETIME` du dictionnaire, qui entraînera son rechargement périodique depuis la table sous-jacente. Pour mettre à jour la table sous-jacente, voir [&quot;Vues matérialisées actualisables&quot;](/fr/concepts/features/materialized-views/refreshable-materialized-view).
+</Info>
+
+Les pays et coordonnées ci-dessus offrent des possibilités de visualisation allant au-delà du regroupement et du filtrage par pays. Pour vous en inspirer, voir [&quot;Visualisation des données géographiques&quot;](/fr/guides/use-cases/observability/build-your-own/grafana#visualizing-geo-data).
+
+<div id="using-regex-dictionaries-user-agent-parsing">
+  ### Utilisation des dictionnaires Regex (analyse des user-agents)
+</div>
+
+L’analyse des [chaînes user-agent](https://en.wikipedia.org/wiki/User_agent) est un cas classique d’utilisation des expressions régulières, ainsi qu’un besoin fréquent dans les jeux de données basés sur les logs et les traces. ClickHouse permet d’analyser efficacement les user-agents à l’aide de dictionnaires arborescents d’expressions régulières.
+
+Les dictionnaires arborescents d’expressions régulières sont définis dans ClickHouse open-source à l’aide du type de source de dictionnaire YAMLRegExpTree, qui indique le path vers un fichier YAML contenant l’arbre d’expressions régulières. Si vous souhaitez fournir votre propre dictionnaire d’expressions régulières, vous trouverez [ici](/fr/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source) les détails sur la structure requise. Ci-dessous, nous nous concentrons sur l’analyse des user-agents à l’aide de [uap-core](https://github.com/ua-parser/uap-core) et chargeons notre dictionnaire pour le format CSV pris en charge. Cette approche est compatible avec OSS et ClickHouse Cloud.
+
+<Note>
+  Dans les exemples ci-dessous, nous utilisons des snapshots des expressions régulières uap-core les plus récentes pour l’analyse des user-agents, datant de juin 2024. Le fichier le plus récent, mis à jour occasionnellement, est disponible [ici](https://raw.githubusercontent.com/ua-parser/uap-core/master/regexes.yaml). Vous pouvez suivre les étapes [ici](/fr/reference/statements/create/dictionary/layouts/regexp-tree#collecting-attribute-values) pour charger le fichier CSV utilisé ci-dessous.
+</Note>
+
+Créez les tables Memory suivantes. Elles contiennent nos expressions régulières pour analyser les appareils, les navigateurs et les systèmes d’exploitation.
+
+```sql
+CREATE TABLE regexp_os
+(
+        id UInt64,
+        parent_id UInt64,
+        regexp String,
+        keys   Array(String),
+        values Array(String)
+) ENGINE=Memory;
+
+CREATE TABLE regexp_browser
+(
+        id UInt64,
+        parent_id UInt64,
+        regexp String,
+        keys   Array(String),
+        values Array(String)
+) ENGINE=Memory;
+
+CREATE TABLE regexp_device
+(
+        id UInt64,
+        parent_id UInt64,
+        regexp String,
+        keys   Array(String),
+        values Array(String)
+) ENGINE=Memory;
+```
+
+Ces tables peuvent être alimentées à partir des fichiers CSV suivants, hébergés publiquement, à l’aide de la fonction de table url :
+
+```sql
+INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+
+INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+
+INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+```
+
+Une fois nos tables en mémoire remplies, nous pouvons charger nos dictionnaires d’expressions régulières. Notez que nous devons définir les valeurs clés comme colonnes : ce seront les attributs que nous pourrons extraire du user agent.
+
+```sql
+CREATE DICTIONARY regexp_os_dict
+(
+        regexp String,
+        os_replacement String default 'Other',
+        os_v1_replacement String default '0',
+        os_v2_replacement String default '0',
+        os_v3_replacement String default '0',
+        os_v4_replacement String default '0'
+)
+PRIMARY KEY regexp
+SOURCE(CLICKHOUSE(TABLE 'regexp_os'))
+LIFETIME(MIN 0 MAX 0)
+LAYOUT(REGEXP_TREE);
+
+CREATE DICTIONARY regexp_device_dict
+(
+        regexp String,
+        device_replacement String default 'Other',
+        brand_replacement String,
+        model_replacement String
+)
+PRIMARY KEY(regexp)
+SOURCE(CLICKHOUSE(TABLE 'regexp_device'))
+LIFETIME(0)
+LAYOUT(regexp_tree);
+
+CREATE DICTIONARY regexp_browser_dict
+(
+        regexp String,
+        family_replacement String default 'Other',
+        v1_replacement String default '0',
+        v2_replacement String default '0'
+)
+PRIMARY KEY(regexp)
+SOURCE(CLICKHOUSE(TABLE 'regexp_browser'))
+LIFETIME(0)
+LAYOUT(regexp_tree);
+```
+
+Avec ces dictionnaires chargés, nous pouvons utiliser un user-agent d’exemple et tester nos nouvelles fonctionnalités d’extraction à partir de dictionnaires :
+
+```sql
+WITH 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:127.0) Gecko/20100101 Firefox/127.0' AS user_agent
+SELECT
+        dictGet('regexp_device_dict', ('device_replacement', 'brand_replacement', 'model_replacement'), user_agent) AS device,
+        dictGet('regexp_browser_dict', ('family_replacement', 'v1_replacement', 'v2_replacement'), user_agent) AS browser,
+        dictGet('regexp_os_dict', ('os_replacement', 'os_v1_replacement', 'os_v2_replacement', 'os_v3_replacement'), user_agent) AS os
+```
+
+```response
+┌─device────────────────┬─browser───────────────┬─os─────────────────────────┐
+│ ('Mac','Apple','Mac') │ ('Firefox','127','0') │ ('Mac OS X','10','15','0') │
+└───────────────────────┴───────────────────────┴────────────────────────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+Comme les règles de traitement des user agents changent rarement et que le dictionnaire n’a besoin d’être mis à jour qu’avec l’arrivée de nouveaux navigateurs, systèmes d’exploitation et appareils, il est judicieux d’effectuer cette extraction au moment de l’insertion.
+
+Nous pouvons effectuer ce travail soit à l’aide d’une colonne matérialisée, soit à l’aide d’une vue matérialisée. Ci-dessous, nous modifions la vue matérialisée utilisée précédemment :
+
+```sql
+CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2
+AS SELECT
+        Body,
+        CAST(Timestamp, 'DateTime') AS Timestamp,
+        ServiceName,
+        LogAttributes['status'] AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['size'] AS Size,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddress,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(CAST(Status, 'UInt64') > 500, 'CRITICAL', CAST(Status, 'UInt64') > 400, 'ERROR', CAST(Status, 'UInt64') > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(CAST(Status, 'UInt64') > 500, 20, CAST(Status, 'UInt64') > 400, 17, CAST(Status, 'UInt64') > 300, 13, 9) AS SeverityNumber,
+        dictGet('regexp_device_dict', ('device_replacement', 'brand_replacement', 'model_replacement'), UserAgent) AS Device,
+        dictGet('regexp_browser_dict', ('family_replacement', 'v1_replacement', 'v2_replacement'), UserAgent) AS Browser,
+        dictGet('regexp_os_dict', ('os_replacement', 'os_v1_replacement', 'os_v2_replacement', 'os_v3_replacement'), UserAgent) AS Os
+FROM otel_logs
+```
+
+Cela nous oblige à modifier le schéma de la table cible `otel_logs_v2` :
+
+```sql
+CREATE TABLE default.otel_logs_v2
+(
+ `Body` String,
+ `Timestamp` DateTime,
+ `ServiceName` LowCardinality(String),
+ `Status` UInt8,
+ `RequestProtocol` LowCardinality(String),
+ `RunTime` UInt32,
+ `Size` UInt32,
+ `UserAgent` String,
+ `Referer` String,
+ `RemoteUser` String,
+ `RequestType` LowCardinality(String),
+ `RequestPath` String,
+ `remote_addr` IPv4,
+ `RefererDomain` String,
+ `RequestPage` String,
+ `SeverityText` LowCardinality(String),
+ `SeverityNumber` UInt8,
+ `Device` Tuple(device_replacement LowCardinality(String), brand_replacement LowCardinality(String), model_replacement LowCardinality(String)),
+ `Browser` Tuple(family_replacement LowCardinality(String), v1_replacement LowCardinality(String), v2_replacement LowCardinality(String)),
+ `Os` Tuple(os_replacement LowCardinality(String), os_v1_replacement LowCardinality(String), os_v2_replacement LowCardinality(String), os_v3_replacement LowCardinality(String))
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp, Status)
+```
+
+Après avoir redémarré le collector et ingéré des logs structurés en suivant les étapes documentées précédemment, nous pouvons interroger les colonnes Device, Browser et Os que nous venons d’extraire.
+
+```sql
+SELECT Device, Browser, Os
+FROM otel_logs_v2
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Device:  ('Spider','Spider','Desktop')
+Browser: ('AhrefsBot','6','1')
+Os:     ('Other','0','0','0')
+```
+
+<Info>
+  **Tuples pour les structures complexes**
+
+  Notez l’utilisation de Tuples pour ces colonnes de user agent. Les Tuples sont recommandés pour les structures complexes dont la hiérarchie est connue à l’avance. Les sous-colonnes offrent les mêmes performances que les colonnes classiques (contrairement aux clés de Map) tout en permettant des types hétérogènes.
+</Info>
+
+<div id="further-reading">
+  ### Pour aller plus loin
+</div>
+
+Pour plus d’exemples et d’informations sur les dictionnaires, nous recommandons les articles suivants :
+
+* [Sujets avancés des dictionnaires](/fr/concepts/features/dictionaries/index#advanced-dictionary-topics)
+* [&quot;Utiliser les dictionnaires pour accélérer les requêtes&quot;](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)
+* [Dictionnaires](/fr/reference/statements/create/dictionary)
+
+<div id="accelerating-queries">
+  ## Accélérer les requêtes
+</div>
+
+ClickHouse prend en charge plusieurs techniques pour améliorer les performances des requêtes. Les éléments suivants ne doivent être envisagés qu’après avoir choisi une clé primaire/de tri adaptée afin d’optimiser les modes d’accès les plus courants et de maximiser la compression. C’est généralement ce qui a le plus d’impact sur les performances pour le moins d’efforts.
+
+<div id="using-materialized-views-incremental-for-aggregations">
+  ### Utilisation des vues matérialisées (incrémental) pour les agrégations
+</div>
+
+Dans les sections précédentes, nous avons vu comment utiliser les vues matérialisées pour transformer et filtrer les données. Elles peuvent toutefois aussi servir à précalculer des agrégations au moment de l’insertion et à en stocker le résultat. Ce résultat peut ensuite être mis à jour avec celui des insertions suivantes, ce qui permet en pratique de précalculer une agrégation à l’insertion.
+
+L’idée principale ici est que les résultats constituent souvent une représentation plus compacte des données d’origine (une esquisse partielle dans le cas des agrégations). Associés à une requête plus simple pour lire les résultats depuis la table cible, les temps de requête seront plus courts que si le même calcul était effectué sur les données d’origine.
+
+Considérez la requête suivante, dans laquelle nous calculons le trafic total par heure à l’aide de nos logs structurés :
+
+```sql
+SELECT toStartOfHour(Timestamp) AS Hour,
+        sum(toUInt64OrDefault(LogAttributes['size'])) AS TotalBytes
+FROM otel_logs
+GROUP BY Hour
+ORDER BY Hour DESC
+LIMIT 5
+```
+
+```response
+┌────────────────Hour─┬─TotalBytes─┐
+│ 2019-01-26 16:00:00 │ 1661716343 │
+│ 2019-01-26 15:00:00 │ 1824015281 │
+│ 2019-01-26 14:00:00 │ 1506284139 │
+│ 2019-01-26 13:00:00 │ 1580955392 │
+│ 2019-01-26 12:00:00 │ 1736840933 │
+└─────────────────────┴────────────┘
+
+5 rows in set. Elapsed: 0.666 sec. Processed 10.37 million rows, 4.73 GB (15.56 million rows/s., 7.10 GB/s.)
+Peak memory usage: 1.40 MiB.
+```
+
+On peut imaginer qu’il s’agit d’un graphique en courbes courant que les utilisateurs créent dans Grafana. Cette requête est certes très rapide — l’ensemble de données ne contient que 10 millions de lignes, et ClickHouse est rapide ! Cependant, si l’on passe à des milliards, voire des milliers de milliards de lignes, l’idéal serait de conserver ce niveau de performance pour cette requête.
+
+<Note>
+  Cette requête serait 10x plus rapide si nous utilisions la table `otel_logs_v2`, issue de notre vue matérialisée précédente, qui extrait la clé size de la map `LogAttributes`. Nous utilisons ici les données brutes uniquement à des fins d’illustration et recommandons d’utiliser la vue précédente s’il s’agit d’une requête courante.
+</Note>
+
+Nous avons besoin d’une table pour recevoir les résultats si nous voulons effectuer ce calcul à l’insertion à l’aide d’une vue matérialisée. Cette table ne doit conserver qu’une seule ligne par heure. Si une mise à jour est reçue pour une heure existante, les autres colonnes doivent être fusionnées avec la ligne correspondant à cette heure. Pour que cette fusion d’états incrémentaux ait lieu, des états partiels doivent être stockés pour les autres colonnes.
+
+Cela nécessite un type de moteur spécial dans ClickHouse : le SummingMergeTree. Celui-ci remplace toutes les lignes ayant la même clé de tri par une seule ligne contenant les valeurs additionnées des colonnes numériques. La table suivante fusionnera toutes les lignes ayant la même date, en additionnant toutes les colonnes numériques.
+
+```sql
+CREATE TABLE bytes_per_hour
+(
+  `Hour` DateTime,
+  `TotalBytes` UInt64
+)
+ENGINE = SummingMergeTree
+ORDER BY Hour
+```
+
+Pour illustrer notre vue matérialisée, supposons que notre table `bytes_per_hour` soit vide et n’ait encore reçu aucune donnée. Notre vue matérialisée exécute le `SELECT` ci-dessus sur les données insérées dans `otel_logs` (cette opération s’effectue sur des blocs d’une taille configurée), puis envoie les résultats vers `bytes_per_hour`. La syntaxe est présentée ci-dessous :
+
+```sql
+CREATE MATERIALIZED VIEW bytes_per_hour_mv TO bytes_per_hour AS
+SELECT toStartOfHour(Timestamp) AS Hour,
+       sum(toUInt64OrDefault(LogAttributes['size'])) AS TotalBytes
+FROM otel_logs
+GROUP BY Hour
+```
+
+La clause `TO` est essentielle ici, car elle indique où les résultats seront envoyés, c’est-à-dire dans `bytes_per_hour`.
+
+Si nous redémarrons notre OTel Collector et renvoyons les logs, la table `bytes_per_hour` sera alimentée de manière incrémentale avec le résultat de la requête ci-dessus. Une fois l’opération terminée, nous pouvons vérifier la taille de `bytes_per_hour` : nous devrions avoir 1 ligne par heure :
+
+```sql
+SELECT count()
+FROM bytes_per_hour
+FINAL
+```
+
+```response
+┌─count()─┐
+│     113 │
+└─────────┘
+
+1 row in set. Elapsed: 0.039 sec.
+```
+
+Nous avons ici réduit efficacement le nombre de lignes de 10m (dans `otel_logs`) à 113 en stockant le résultat de notre requête. L’idée clé est que, si de nouveaux logs sont insérés dans la table `otel_logs`, de nouvelles valeurs seront envoyées à `bytes_per_hour` pour l’heure correspondante, où elles seront automatiquement fusionnées de manière asynchrone en arrière-plan. En ne conservant qu’une seule ligne par heure, `bytes_per_hour` restera donc toujours à la fois compacte et à jour.
+
+Comme la fusion des lignes est asynchrone, il peut y avoir plus d’une ligne par heure au moment où un utilisateur exécute une requête. Pour garantir que toutes les lignes en attente soient fusionnées au moment de la requête, nous avons deux options :
+
+* Utiliser le [`modificateur FINAL`](/fr/reference/statements/select/from#final-modifier) sur le nom de la table (ce que nous avons fait pour la requête de comptage ci-dessus).
+* Agréger selon la clé d’ordre utilisée dans notre table finale, c.-à-d. Timestamp, et sommer les métriques.
+
+En général, la deuxième option est plus efficace et plus flexible (la table peut être utilisée à d’autres fins), mais la première peut être plus simple pour certaines requêtes. Nous montrons les deux ci-dessous :
+
+```sql
+SELECT
+        Hour,
+        sum(TotalBytes) AS TotalBytes
+FROM bytes_per_hour
+GROUP BY Hour
+ORDER BY Hour DESC
+LIMIT 5
+```
+
+```response
+┌────────────────Hour─┬─TotalBytes─┐
+│ 2019-01-26 16:00:00 │ 1661716343 │
+│ 2019-01-26 15:00:00 │ 1824015281 │
+│ 2019-01-26 14:00:00 │ 1506284139 │
+│ 2019-01-26 13:00:00 │ 1580955392 │
+│ 2019-01-26 12:00:00 │ 1736840933 │
+└─────────────────────┴────────────┘
+
+5 rows in set. Elapsed: 0.008 sec.
+```
+
+```sql
+SELECT
+        Hour,
+        TotalBytes
+FROM bytes_per_hour
+FINAL
+ORDER BY Hour DESC
+LIMIT 5
+```
+
+```response
+┌────────────────Hour─┬─TotalBytes─┐
+│ 2019-01-26 16:00:00 │ 1661716343 │
+│ 2019-01-26 15:00:00 │ 1824015281 │
+│ 2019-01-26 14:00:00 │ 1506284139 │
+│ 2019-01-26 13:00:00 │ 1580955392 │
+│ 2019-01-26 12:00:00 │ 1736840933 │
+└─────────────────────┴────────────┘
+
+5 rows in set. Elapsed: 0.005 sec.
+```
+
+Cela a permis d’accélérer notre requête de 0,6 s à 0,008 s, soit plus de 75 fois plus rapide !
+
+<Note>
+  Ces gains peuvent être encore plus importants sur des jeux de données plus volumineux et avec des requêtes plus complexes. Voir [ici](https://github.com/ClickHouse/clickpy) pour des exemples.
+</Note>
+
+<div id="a-more-complex-example">
+  #### Un exemple plus complexe
+</div>
+
+L’exemple ci-dessus agrège un simple comptage par heure à l’aide de [SummingMergeTree](/fr/reference/engines/table-engines/mergetree-family/summingmergetree). Pour des statistiques plus élaborées que de simples sommes, il faut utiliser un autre moteur de table cible : [AggregatingMergeTree](/fr/reference/engines/table-engines/mergetree-family/aggregatingmergetree).
+
+Supposons que nous voulions calculer le nombre d’adresses IP uniques (ou d’utilisateurs uniques) par jour. Voici la requête correspondante :
+
+```sql
+SELECT toStartOfHour(Timestamp) AS Hour, uniq(LogAttributes['remote_addr']) AS UniqueUsers
+FROM otel_logs
+GROUP BY Hour
+ORDER BY Hour DESC
+```
+
+```response
+┌────────────────Hour─┬─UniqueUsers─┐
+│ 2019-01-26 16:00:00 │     4763    │
+│ 2019-01-22 00:00:00 │     536     │
+└─────────────────────┴─────────────┘
+
+113 rows in set. Elapsed: 0.667 sec. Processed 10.37 million rows, 4.73 GB (15.53 million rows/s., 7.09 GB/s.)
+```
+
+Pour conserver un décompte de cardinalité afin de permettre une mise à jour incrémentielle, AggregatingMergeTree est nécessaire.
+
+```sql
+CREATE TABLE unique_visitors_per_hour
+(
+  `Hour` DateTime,
+  `UniqueUsers` AggregateFunction(uniq, IPv4)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY Hour
+```
+
+Pour que ClickHouse sache que des états d’agrégation seront stockés, nous définissons la colonne `UniqueUsers` avec le type [`AggregateFunction`](/fr/reference/data-types/aggregatefunction), en précisant la fonction à l’origine des états partiels (uniq) ainsi que le type de la colonne source (IPv4). Comme avec le SummingMergeTree, les lignes ayant la même valeur de clé `ORDER BY` seront fusionnées (Hour dans l’exemple ci-dessus).
+
+La vue matérialisée associée utilise la requête précédente :
+
+```sql
+CREATE MATERIALIZED VIEW unique_visitors_per_hour_mv TO unique_visitors_per_hour AS
+SELECT toStartOfHour(Timestamp) AS Hour,
+        uniqState(LogAttributes['remote_addr']::IPv4) AS UniqueUsers
+FROM otel_logs
+GROUP BY Hour
+ORDER BY Hour DESC
+```
+
+Remarquez que nous ajoutons le suffixe `State` à la fin de nos fonctions d’agrégation. Cela garantit que l’état d’agrégation de la fonction est renvoyé à la place du résultat final. Cet état contiendra des informations supplémentaires lui permettant de fusionner avec d’autres états.
+
+Une fois les données rechargées, à la suite d’un redémarrage du collector, nous pouvons confirmer que 113 lignes sont présentes dans la table `unique_visitors_per_hour`.
+
+```sql
+SELECT count()
+FROM unique_visitors_per_hour
+FINAL
+```
+
+```response
+┌─count()─┐
+│   113   │
+└─────────┘
+
+1 row in set. Elapsed: 0.009 sec.
+```
+
+Notre requête finale doit faire appel au suffixe Merge pour nos fonctions (car les colonnes stockent des états d’agrégation partiels) :
+
+```sql
+SELECT Hour, uniqMerge(UniqueUsers) AS UniqueUsers
+FROM unique_visitors_per_hour
+GROUP BY Hour
+ORDER BY Hour DESC
+```
+
+```response
+┌────────────────Hour─┬─UniqueUsers─┐
+│ 2019-01-26 16:00:00 │      4763   │
+│ 2019-01-22 00:00:00 │      536    │
+└─────────────────────┴─────────────┘
+
+113 rows in set. Elapsed: 0.027 sec.
+```
+
+Notez que nous utilisons ici `GROUP BY` plutôt que `FINAL`.
+
+<div id="using-materialized-views-incremental--for-fast-lookups">
+  ### Utilisation des vues matérialisées (incrémentales)  pour des recherches rapides
+</div>
+
+Vous devez tenir compte des modes d’accès lorsque vous choisissez la clé de tri ClickHouse, en y incluant les colonnes fréquemment utilisées dans les clauses de filtre et d’agrégation. Cela peut être contraignant dans les cas d’usage d’observabilité, où les utilisateurs ont des modes d’accès plus variés qui ne peuvent pas être ramenés à un seul ensemble de colonnes. Cet aspect est particulièrement bien illustré par un exemple intégré aux schémas OTel par défaut. Considérez le schéma par défaut pour les traces :
+
+```sql
+CREATE TABLE otel_traces
+(
+        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `TraceId` String CODEC(ZSTD(1)),
+        `SpanId` String CODEC(ZSTD(1)),
+        `ParentSpanId` String CODEC(ZSTD(1)),
+        `TraceState` String CODEC(ZSTD(1)),
+        `SpanName` LowCardinality(String) CODEC(ZSTD(1)),
+        `SpanKind` LowCardinality(String) CODEC(ZSTD(1)),
+        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
+        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `ScopeName` String CODEC(ZSTD(1)),
+        `ScopeVersion` String CODEC(ZSTD(1)),
+        `SpanAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `Duration` Int64 CODEC(ZSTD(1)),
+        `StatusCode` LowCardinality(String) CODEC(ZSTD(1)),
+        `StatusMessage` String CODEC(ZSTD(1)),
+        `Events.Timestamp` Array(DateTime64(9)) CODEC(ZSTD(1)),
+        `Events.Name` Array(LowCardinality(String)) CODEC(ZSTD(1)),
+        `Events.Attributes` Array(Map(LowCardinality(String), String)) CODEC(ZSTD(1)),
+        `Links.TraceId` Array(String) CODEC(ZSTD(1)),
+        `Links.SpanId` Array(String) CODEC(ZSTD(1)),
+        `Links.TraceState` Array(String) CODEC(ZSTD(1)),
+        `Links.Attributes` Array(Map(LowCardinality(String), String)) CODEC(ZSTD(1)),
+        INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1,
+        INDEX idx_res_attr_key mapKeys(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+        INDEX idx_res_attr_value mapValues(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+        INDEX idx_span_attr_key mapKeys(SpanAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+        INDEX idx_span_attr_value mapValues(SpanAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+        INDEX idx_duration Duration TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SpanName, toUnixTimestamp(Timestamp), TraceId)
+```
+
+Ce schéma est optimisé pour le filtrage sur `ServiceName`, `SpanName` et `Timestamp`. En tracing, les utilisateurs doivent aussi pouvoir effectuer des recherches à partir d’un `TraceId` spécifique et récupérer les spans associés à la trace correspondante. Bien que cet élément figure dans la clé de tri, sa position en fin de clé signifie que le [filtrage ne sera pas aussi efficace](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#ordering-key-columns-efficiently) et qu’il faudra probablement analyser des volumes importants de données pour récupérer une seule trace.
+
+L’OTel collector installe également une vue matérialisée et la table associée pour répondre à ce problème. La table et la vue sont présentées ci-dessous :
+
+```sql
+CREATE TABLE otel_traces_trace_id_ts
+(
+        `TraceId` String CODEC(ZSTD(1)),
+        `Start` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `End` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        INDEX idx_trace_id TraceId TYPE bloom_filter(0.01) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY (TraceId, toUnixTimestamp(Start))
+
+CREATE MATERIALIZED VIEW otel_traces_trace_id_ts_mv TO otel_traces_trace_id_ts
+(
+        `TraceId` String,
+        `Start` DateTime64(9),
+        `End` DateTime64(9)
+)
+AS SELECT
+        TraceId,
+        min(Timestamp) AS Start,
+        max(Timestamp) AS End
+FROM otel_traces
+WHERE TraceId != ''
+GROUP BY TraceId
+```
+
+La vue garantit en pratique que la table `otel_traces_trace_id_ts` contient l’horodatage minimal et maximal de la trace. Cette table, triée par `TraceId`, permet de récupérer efficacement ces horodatages. Ces plages d’horodatage peuvent ensuite être utilisées pour interroger la table principale `otel_traces`. Plus précisément, lorsque Grafana récupère une trace à partir de son identifiant, il utilise la requête suivante :
+
+```sql
+WITH 'ae9226c78d1d360601e6383928e4d22d' AS trace_id,
+        (
+        SELECT min(Start)
+          FROM default.otel_traces_trace_id_ts
+          WHERE TraceId = trace_id
+        ) AS trace_start,
+        (
+        SELECT max(End) + 1
+          FROM default.otel_traces_trace_id_ts
+          WHERE TraceId = trace_id
+        ) AS trace_end
+SELECT
+        TraceId AS traceID,
+        SpanId AS spanID,
+        ParentSpanId AS parentSpanID,
+        ServiceName AS serviceName,
+        SpanName AS operationName,
+        Timestamp AS startTime,
+        Duration * 0.000001 AS duration,
+        arrayMap(key -> map('key', key, 'value', SpanAttributes[key]), mapKeys(SpanAttributes)) AS tags,
+        arrayMap(key -> map('key', key, 'value', ResourceAttributes[key]), mapKeys(ResourceAttributes)) AS serviceTags
+FROM otel_traces
+WHERE (traceID = trace_id) AND (startTime >= trace_start) AND (startTime <= trace_end)
+LIMIT 1000
+```
+
+La CTE identifie ici les horodatages minimal et maximal de l’ID de trace `ae9226c78d1d360601e6383928e4d22d`, avant de les utiliser pour filtrer la table principale `otel_traces` afin de récupérer les spans associés.
+
+Cette même approche peut être appliquée à des schémas d’accès similaires. Nous présentons un exemple semblable dans la section Modélisation des données [ici](/fr/concepts/features/materialized-views/incremental-materialized-view#lookup-table).
+
+<div id="using-projections">
+  ### Utilisation des projections
+</div>
+
+Les projections ClickHouse vous permettent de définir plusieurs clauses `ORDER BY` pour une table.
+
+Dans les sections précédentes, nous avons vu comment les vues matérialisées peuvent être utilisées dans ClickHouse pour précalculer des agrégations, transformer des lignes et optimiser les requêtes d’observability selon différents schémas d’accès.
+
+Nous avons présenté un exemple dans lequel la vue matérialisée envoie des lignes vers une table cible avec une clé de tri différente de celle de la table d’origine qui reçoit les insertions, afin d’optimiser les recherches par ID de trace.
+
+Les projections peuvent être utilisées pour résoudre le même problème, en permettant à l’utilisateur d’optimiser les requêtes sur une colonne qui ne fait pas partie de la clé primaire.
+
+En théorie, cette possibilité peut être utilisée pour fournir plusieurs clés de tri pour une table, avec un inconvénient majeur : la duplication des données. Plus précisément, les données devront être écrites dans l’ordre de la clé primaire principale, en plus de l’ordre spécifié pour chaque projection. Cela ralentira les insertions et consommera davantage d’espace disque.
+
+<Info>
+  **Projections vs vues matérialisées**
+
+  Les projections offrent bon nombre des mêmes possibilités que les vues matérialisées, mais doivent être utilisées avec parcimonie, ces dernières étant souvent à privilégier. Vous devez en comprendre les inconvénients et savoir dans quels cas elles sont appropriées. Par exemple, même si les projections peuvent être utilisées pour précalculer des agrégations, nous recommandons d’utiliser des vues matérialisées pour cela.
+</Info>
+
+<Image img="/images/use-cases/observability/observability-13.webp" alt="Observability et projections" size="md" />
+
+Considérez la requête suivante, qui filtre notre table `otel_logs_v2` sur les codes d’erreur 500. Il s’agit probablement d’un schéma d’accès courant pour la journalisation, les utilisateurs souhaitant filtrer par codes d’erreur :
+
+```sql
+SELECT Timestamp, RequestPath, Status, RemoteAddress, UserAgent
+FROM otel_logs_v2
+WHERE Status = 500
+FORMAT `Null`
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.177 sec. Processed 10.37 million rows, 685.32 MB (58.66 million rows/s., 3.88 GB/s.)
+Peak memory usage: 56.54 MiB.
+```
+
+<Info>
+  **Utilisez Null pour mesurer les performances**
+
+  Nous n&#39;affichons pas les résultats ici en utilisant `FORMAT Null`. Cela force la lecture de tous les résultats sans les renvoyer, ce qui évite qu’une requête se termine prématurément à cause d’une LIMIT. Cela sert uniquement à montrer le temps nécessaire pour parcourir l’ensemble des 10m lignes.
+</Info>
+
+La requête ci-dessus nécessite un balayage linéaire avec la clé de tri choisie `(ServiceName, Timestamp)`. Bien que nous puissions ajouter `Status` à la fin de la clé de tri, ce qui améliorerait les performances de la requête ci-dessus, nous pouvons aussi ajouter une projection.
+
+```sql
+ALTER TABLE otel_logs_v2 (
+  ADD PROJECTION status
+  (
+     SELECT Timestamp, RequestPath, Status, RemoteAddress, UserAgent ORDER BY Status
+  )
+)
+
+ALTER TABLE otel_logs_v2 MATERIALIZE PROJECTION status
+```
+
+Notez qu’il faut d’abord créer la projection, puis la matérialiser. Cette dernière commande entraîne le stockage des données deux fois sur le disque, selon deux ordres différents. La projection peut également être définie lors de la création des données, comme indiqué ci-dessous, et sera ensuite maintenue automatiquement à mesure que des données sont insérées.
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8,
+        PROJECTION status
+        (
+           SELECT Timestamp, RequestPath, Status, RemoteAddress, UserAgent
+           ORDER BY Status
+        )
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+Il est important de noter que, si la projection est créée via un `ALTER`, sa création est asynchrone lorsque la commande `MATERIALIZE PROJECTION` est exécutée. Vous pouvez suivre l’avancement de cette opération avec la query suivante, en attendant que `is_done=1`.
+
+```sql
+SELECT parts_to_do, is_done, latest_fail_reason
+FROM system.mutations
+WHERE (`table` = 'otel_logs_v2') AND (command LIKE '%MATERIALIZE%')
+```
+
+```response
+┌─parts_to_do─┬─is_done─┬─latest_fail_reason─┐
+│           0 │     1   │                    │
+└─────────────┴─────────┴────────────────────┘
+
+1 row in set. Elapsed: 0.008 sec.
+```
+
+Si nous répétons la requête ci-dessus, nous pouvons constater que les performances se sont considérablement améliorées, au prix d’un espace de stockage supplémentaire (voir [&quot;Mesurer la taille de la table et la compression&quot;](#measuring-table-size--compression) pour savoir comment procéder à cette mesure).
+
+```sql
+SELECT Timestamp, RequestPath, Status, RemoteAddress, UserAgent
+FROM otel_logs_v2
+WHERE Status = 500
+FORMAT `Null`
+```
+
+```response
+0 rows in set. Elapsed: 0.031 sec. Processed 51.42 thousand rows, 22.85 MB (1.65 million rows/s., 734.63 MB/s.)
+Peak memory usage: 27.85 MiB.
+```
+
+Dans l&#39;exemple ci-dessus, nous indiquons dans la projection les colonnes utilisées dans la requête précédente. Cela signifie que seules les colonnes spécifiées seront stockées sur disque dans le cadre de la projection, triées par Status. Si, à l&#39;inverse, nous utilisions `SELECT *` ici, toutes les colonnes seraient stockées. Bien que cela permette à davantage de requêtes (utilisant n&#39;importe quel sous-ensemble de colonnes) de tirer parti de la projection, cela entraînerait un stockage supplémentaire. Pour mesurer l&#39;espace disque et la compression, consultez [&quot;Mesurer la taille et la compression d&#39;une table&quot;](#measuring-table-size--compression).
+
+<div id="secondarydata-skipping-indices">
+  ### Index secondaires / data skipping indices
+</div>
+
+Aussi bien réglée que soit la clé primaire dans ClickHouse, certaines requêtes nécessiteront inévitablement un parcours complet de la table. Même si cela peut être atténué à l’aide de vues matérialisées (et, pour certaines requêtes, de projections), celles-ci demandent une maintenance supplémentaire et supposent que les utilisateurs sachent qu’elles existent pour pouvoir en tirer parti. Là où les bases de données relationnelles traditionnelles résolvent ce problème avec des index secondaires, ceux-ci sont inefficaces dans des bases de données orientées colonnes comme ClickHouse. À la place, ClickHouse utilise des index « Skip », qui peuvent améliorer considérablement les performances des requêtes en permettant à la base de données d’ignorer de gros segments de données sans valeur correspondante.
+
+Les schémas OTel par défaut utilisent des index secondaires pour tenter d’accélérer l’accès aux maps. Bien que nous les jugions généralement peu efficaces et ne recommandions pas de les reprendre dans votre schéma personnalisé, les skipping indices peuvent malgré tout être utiles.
+
+Vous devriez lire et comprendre le [guide des index secondaires](/fr/concepts/features/performance/skip-indexes/skipping-indexes) avant d’essayer de les appliquer.
+
+**En règle générale, ils sont efficaces lorsqu’il existe une forte corrélation entre la clé primaire et la colonne/expression non primaire ciblée, et que les utilisateurs recherchent des valeurs rares, c’est-à-dire des valeurs qui n’apparaissent pas dans beaucoup de granules.**
+
+<div id="text-index-for-full-text-search">
+  ### Index de texte pour la recherche en texte intégral
+</div>
+
+ClickHouse fournit un [index de texte](/fr/reference/engines/table-engines/mergetree-family/textindexes) spécialisé pour la recherche en texte intégral.
+Cet index crée un index inversé sur des données textuelles tokenisées, ce qui permet d’exécuter rapidement des requêtes de recherche basées sur des tokens.
+
+Les index de texte sont disponibles à partir de la version 26.2 de ClickHouse.
+
+Ils peuvent être définis sur les types de colonnes suivants dans les tables MergeTree : [String](/fr/reference/data-types/string), [FixedString](/fr/reference/data-types/fixedstring), [Array(String)](/fr/reference/data-types/array), [Array(FixedString)](/fr/reference/data-types/array) et [Map](/fr/reference/data-types/map) (via les fonctions map [mapKeys](/fr/reference/functions/regular-functions/tuple-map-functions#mapKeys) et [mapValues](/fr/reference/functions/regular-functions/tuple-map-functions#mapValues)).
+
+Un index de texte nécessite un argument `tokenizer` dans sa définition. Il est également possible de spécifier une fonction de prétraitement afin de transformer la chaîne d’entrée avant la tokenisation.
+
+Les fonctions recommandées pour rechercher dans l’index sont : `hasAnyTokens` et `hasAllTokens`.
+Certaines fonctions traditionnelles de recherche dans les chaînes sont également automatiquement optimisées lorsqu’un index de texte est présent.
+Consultez la documentation pour plus de détails ainsi que la liste des fonctions prises en charge [ici](/fr/reference/engines/table-engines/mergetree-family/textindexes#using-a-text-index) et [ici](/fr/reference/engines/table-engines/mergetree-family/textindexes#functions-example-hasanytokens-hasalltokens).
+
+Dans les exemples ci-dessous, nous utilisons un jeu de données de logs structurés.
+
+```sql
+CREATE TABLE otel_logs
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8
+)
+ENGINE = MergeTree
+ORDER BY Timestamp
+SETTINGS index_granularity = 8192
+```
+
+Nous pouvons également utiliser `hasAnyTokens` sans index de texte, mais la requête devra effectuer un parcours complet, donc lent, de la colonne Body :
+
+```sql
+SELECT count()
+FROM otel_logs
+WHERE hasAllTokens(Body, ['Connection', 'accepted'])
+```
+
+```response
+Query id: ff0b866c-6df7-47be-9e36-795ef3888169
+
+   ┌─count()─┐
+1. │   27281 │
+   └─────────┘
+
+1 row in set. Elapsed: 0.584 sec. Processed 19.95 million rows, 3.08 GB (34.15 million rows/s., 5.27 GB/s.)
+```
+
+<div id="adding-a-text-index">
+  #### Ajout d’un index de texte
+</div>
+
+Un index de texte sur la colonne Body peut être ajouté lors de la création de la table :
+
+```sql
+CREATE TABLE otel_logs_index_body
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8,
+         INDEX idx_body Body TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 100000000
+)
+ENGINE = MergeTree
+ORDER BY Timestamp
+SETTINGS index_granularity = 8192
+```
+
+ou ajoutée ultérieurement à l’aide de `ALTER TABLE` :
+
+```sql
+ALTER TABLE otel_logs ADD INDEX idx_body Body TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 100000000;
+ALTER TABLE otel_logs MATERIALIZE INDEX idx_body;
+```
+
+Si nous exécutons à nouveau la même requête SELECT, elle utilisera l’index de texte pour effectuer la recherche.
+Le volume de données lues passe de gigaoctets à mégaoctets et les performances s’améliorent d’environ 45 fois.
+
+```sql
+SELECT count()
+FROM otel_logs_index_body
+WHERE hasAllTokens(Body, ['Connection', 'accepted'])
+```
+
+```response
+Query id: ebc31a94-92b3-48aa-860a-939d7e788ef4
+
+   ┌─count()─┐
+1. │   27281 │
+   └─────────┘
+
+1 row in set. Elapsed: 0.013 sec. Processed 20.41 million rows, 20.41 MB (1.59 billion rows/s., 1.59 GB/s.)
+Peak memory usage: 15.23 MiB.
+```
+
+<div id="using-a-preprocessor">
+  #### Utiliser un préprocesseur
+</div>
+
+Dans ce jeu de données, la colonne Body contient une chaîne au format JSON avec plusieurs paires clé-valeur (par ex. `msg`, `id`, `ctx`, `attr`, etc.).
+
+Supposons que nous souhaitions rechercher uniquement dans le champ `msg`.
+Au lieu d’indexer l’ensemble de la chaîne JSON, nous pouvons définir un préprocesseur afin d’extraire uniquement la valeur `msg` avant la tokenisation.
+
+Par exemple :
+
+```sql
+ INDEX idx_text Body TYPE text(tokenizer = splitByNonAlpha,
+                               preprocessor = JSONExtract(Body, 'msg', 'String'))
+```
+
+Dans cet exemple, le préprocesseur :
+
+* réduit la quantité de texte tokenisé et indexé,
+* diminue la taille de l’index,
+* réduit la probabilité de faux positifs,
+* et améliore les performances des requêtes.
+
+```sql
+SELECT count()
+FROM otel_logs_text_body_preprocessed
+WHERE hasAllTokens(Body, ['Connection', 'accepted'])
+```
+
+```response
+Query id: f6a5cd9c-665f-4e4f-82f2-d6a4408a68a8
+
+   ┌─count()─┐
+1. │   27281 │
+   └─────────┘
+
+1 row in set. Elapsed: 0.006 sec. Processed 13.54 million rows, 13.54 MB (2.45 billion rows/s., 2.45 GB/s.)
+Peak memory usage: 1.95 MiB.
+```
+
+Par rapport à l’index non prétraité, les performances sont multipliées par environ 2.
+
+L’utilisation d’un préprocesseur réduit également la taille de l’index, qui passe de plusieurs gigaoctets à quelques centaines de kilo-octets, soit environ 0,01 % de sa taille d’origine
+
+```sql
+SELECT
+    `table`,
+    formatReadableSize(data_compressed_bytes) AS compressed_size,
+    formatReadableSize(data_uncompressed_bytes) AS uncompressed_size
+FROM system.data_skipping_indices
+WHERE startsWith(`table`, 'otel_logs')
+```
+
+```response
+Query id: 730e4b77-e697-40b3-a24d-67219ec42075
+
+   ┌─table───────────────────────────────────┬─compressed_size─┬─uncompressed_size─┐
+1. │ otel_logs_text_index_body_preprocessed  │ 423.98 KiB      │ 424.29 KiB        │
+2. │ otel_logs_text_index_body               │ 2.76 GiB        │ 2.78 GiB          │
+   └─────────────────────────────────────────┴─────────────────┴───────────────────┘
+```
+
+**Autres index pour la recherche de texte
+
+Vous trouverez plus de détails sur les index secondaires de saut [ici](/fr/concepts/features/performance/skip-indexes/skipping-indexes#skip-index-functions).
+
+<details markdown="1">
+  <summary>Bloom filters pour la recherche en texte intégral</summary>
+
+  <Note>
+    Les index `ngrambf_v1` et `tokenbf_v1` ne sont plus recommandés pour la recherche en texte intégral.
+  </Note>
+
+  Les index bloom filter basés sur les ngrams et les tokens, [`ngrambf_v1`](/fr/concepts/features/performance/skip-indexes/skipping-indexes#bloom-filter-types) et [`tokenbf_v1`](/fr/concepts/features/performance/skip-indexes/skipping-indexes#bloom-filter-types), peuvent être utilisés pour accélérer les recherches sur des colonnes de type String avec les opérateurs `LIKE`, `IN` et hasToken. À noter que l&#39;index basé sur les tokens génère des tokens en utilisant les caractères non alphanumériques comme séparateurs. Cela signifie que seuls des tokens entiers (ou des mots complets) peuvent être mis en correspondance au moment de l&#39;exécution de la requête. Pour une correspondance plus fine, le [N-gram bloom filter](/fr/concepts/features/performance/skip-indexes/skipping-indexes#bloom-filter-types) peut être utilisé. Celui-ci découpe les chaînes en ngrams d&#39;une taille définie, permettant ainsi la correspondance au niveau des sous-mots.
+
+  Pour évaluer les tokens qui seront produits et donc mis en correspondance, il est possible d&#39;utiliser la fonction `tokens` :
+
+  ```sql
+  SELECT tokens('https://www.zanbil.ir/m/filter/b113')
+  ```
+
+  ```response
+  ┌─tokens────────────────────────────────────────────┐
+  │ ['https','www','zanbil','ir','m','filter','b113'] │
+  └───────────────────────────────────────────────────┘
+
+  1 row in set. Elapsed: 0.008 sec.
+  ```
+
+  La fonction `ngram` offre des fonctionnalités similaires, où la taille du `ngram` peut être spécifiée en tant que second paramètre :
+
+  ```sql
+  SELECT ngrams('https://www.zanbil.ir/m/filter/b113', 3)
+  ```
+
+  ```response
+  ┌─ngrams('https://www.zanbil.ir/m/filter/b113', 3)────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ ['htt','ttp','tps','ps:','s:/','://','//w','/ww','www','ww.','w.z','.za','zan','anb','nbi','bil','il.','l.i','.ir','ir/','r/m','/m/','m/f','/fi','fil','ilt','lte','ter','er/','r/b','/b1','b11','113'] │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  1 row in set. Elapsed: 0.008 sec.
+  ```
+
+  Pour les besoins de cet exemple, nous utilisons le dataset de logs structurés. Supposons que nous souhaitions compter les logs dont la colonne `Referer` contient `ultra`.
+
+  ```sql
+  SELECT count()
+  FROM otel_logs_v2
+  WHERE Referer LIKE '%ultra%'
+  ```
+
+  ```response
+  ┌─count()─┐
+  │  114514 │
+  └─────────┘
+
+  1 row in set. Elapsed: 0.177 sec. Processed 10.37 million rows, 908.49 MB (58.57 million rows/s., 5.13 GB/s.)
+  ```
+
+  Ici, nous devons effectuer une correspondance sur des ngrams de taille 3. Nous créons donc un index `ngrambf_v1`.
+
+  ```sql
+  CREATE TABLE otel_logs_bloom
+  (
+          `Body` String,
+          `Timestamp` DateTime,
+          `ServiceName` LowCardinality(String),
+          `Status` UInt16,
+          `RequestProtocol` LowCardinality(String),
+          `RunTime` UInt32,
+          `Size` UInt32,
+          `UserAgent` String,
+          `Referer` String,
+          `RemoteUser` String,
+          `RequestType` LowCardinality(String),
+          `RequestPath` String,
+          `RemoteAddress` IPv4,
+          `RefererDomain` String,
+          `RequestPage` String,
+          `SeverityText` LowCardinality(String),
+          `SeverityNumber` UInt8,
+          INDEX idx_span_attr_value Referer TYPE ngrambf_v1(3, 10000, 3, 7) GRANULARITY 1
+  )
+  ENGINE = MergeTree
+  ORDER BY (Timestamp)
+  ```
+
+  L&#39;index `ngrambf_v1(3, 10000, 3, 7)` prend ici quatre paramètres. Le dernier (valeur 7) représente un seed. Les autres représentent la taille des ngrams (3), la valeur `m` (taille du filtre) et le nombre de hash functions `k` (7). `k` et `m` nécessitent un ajustement et dépendent du nombre de ngrams/tokens uniques ainsi que de la probabilité que le filtre produise un vrai négatif — confirmant ainsi qu&#39;une valeur est absente d&#39;un granule. Nous recommandons [ces fonctions](/fr/reference/engines/table-engines/mergetree-family/mergetree#bloom-filter) pour aider à déterminer ces valeurs.
+
+  Correctement configuré, le gain de performance peut être considérable :
+
+  ```sql
+  SELECT count()
+  FROM otel_logs_bloom
+  WHERE Referer LIKE '%ultra%'
+  ```
+
+  ```response
+  ┌─count()─┐
+  │   182   │
+  └─────────┘
+
+  1 row in set. Elapsed: 0.077 sec. Processed 4.22 million rows, 375.29 MB (54.81 million rows/s., 4.87 GB/s.)
+  Peak memory usage: 129.60 KiB.
+  ```
+
+  <Info>
+    **Exemple uniquement**
+
+    Ce qui précède est fourni à titre d’illustration uniquement. Nous recommandons aux utilisateurs d’extraire la structure de leurs logs lors de l’insertion, plutôt que d’essayer d’optimiser les recherches textuelles à l’aide de filtres de Bloom basés sur des jetons. Il existe toutefois des cas où les utilisateurs ont des traces de pile ou d’autres grandes chaînes String, pour lesquelles la recherche textuelle peut s’avérer utile en raison d’une structure moins déterministe.
+  </Info>
+
+  Quelques recommandations générales sur l&#39;utilisation des bloom filters :
+
+  L&#39;objectif du bloom filter est de filtrer les [granules](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design), évitant ainsi de charger toutes les valeurs d&#39;une colonne et d&#39;effectuer un balayage linéaire. La clause `EXPLAIN`, avec le paramètre `indexes=1`, permet d&#39;identifier le nombre de granules ignorés. Examinez les résultats ci-dessous pour la table d&#39;origine `otel_logs_v2` et la table `otel_logs_bloom` dotée d&#39;un bloom filter ngram.
+
+  ```sql
+  EXPLAIN indexes = 1
+  SELECT count()
+  FROM otel_logs_v2
+  WHERE Referer LIKE '%ultra%'
+  ```
+
+  ```response
+  ┌─explain────────────────────────────────────────────────────────────┐
+  │ Expression ((Project names + Projection))                          │
+  │   Aggregating                                                      │
+  │       Expression (Before GROUP BY)                                 │
+  │       Filter ((WHERE + Change column names to column identifiers)) │
+  │       ReadFromMergeTree (default.otel_logs_v2)                     │
+  │       Indexes:                                                     │
+  │               PrimaryKey                                           │
+  │               Condition: true                                      │
+  │               Parts: 9/9                                           │
+  │               Granules: 1278/1278                                  │
+  └────────────────────────────────────────────────────────────────────┘
+
+  10 rows in set. Elapsed: 0.016 sec.
+  ```
+
+  ```sql
+  EXPLAIN indexes = 1
+  SELECT count()
+  FROM otel_logs_bloom
+  WHERE Referer LIKE '%ultra%'
+  ```
+
+  ```response
+  ┌─explain────────────────────────────────────────────────────────────┐
+  │ Expression ((Project names + Projection))                          │
+  │   Aggregating                                                      │
+  │       Expression (Before GROUP BY)                                 │
+  │       Filter ((WHERE + Change column names to column identifiers)) │
+  │       ReadFromMergeTree (default.otel_logs_bloom)                  │
+  │       Indexes:                                                     │
+  │               PrimaryKey                                           │ 
+  │               Condition: true                                      │
+  │               Parts: 8/8                                           │
+  │               Granules: 1276/1276                                  │
+  │               Skip                                                 │
+  │               Name: idx_span_attr_value                            │
+  │               Description: ngrambf_v1 GRANULARITY 1                │
+  │               Parts: 8/8                                           │
+  │               Granules: 517/1276                                   │
+  └────────────────────────────────────────────────────────────────────┘
+  ```
+
+  Le bloom filter n&#39;est généralement plus rapide que s&#39;il est plus petit que la colonne elle-même. S&#39;il est plus grand, le gain de performance sera probablement négligeable. Comparez la taille du filtre à celle de la colonne à l&#39;aide des requêtes suivantes :
+
+  ```sql
+  SELECT
+          name,
+          formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+          formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+          round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+  FROM system.columns
+  WHERE (`table` = 'otel_logs_bloom') AND (name = 'Referer')
+  GROUP BY name
+  ORDER BY sum(data_compressed_bytes) DESC
+  ```
+
+  ```response
+  ┌─name────┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+  │ Referer │ 56.16 MiB       │ 789.21 MiB        │ 14.05 │
+  └─────────┴─────────────────┴───────────────────┴───────┘
+
+  1 row in set. Elapsed: 0.018 sec.
+  ```
+
+  ```sql
+  SELECT
+          `table`,
+          formatReadableSize(data_compressed_bytes) AS compressed_size,
+          formatReadableSize(data_uncompressed_bytes) AS uncompressed_size
+  FROM system.data_skipping_indices
+  WHERE `table` = 'otel_logs_bloom'
+  ```
+
+  ```response
+  ┌─table───────────┬─compressed_size─┬─uncompressed_size─┐
+  │ otel_logs_bloom │ 12.03 MiB       │ 12.17 MiB         │
+  └─────────────────┴─────────────────┴───────────────────┘
+
+  1 row in set. Elapsed: 0.004 sec.
+  ```
+
+  Dans les exemples ci-dessus, on constate que l&#39;index bloom filter secondaire fait 12 Mo, soit près de 5 fois moins que la taille compressée de la colonne elle-même (56 Mo).
+
+  Les bloom filters peuvent nécessiter un réglage minutieux. Nous recommandons de consulter les notes [ici](/fr/reference/engines/table-engines/mergetree-family/mergetree#bloom-filter), qui peuvent s&#39;avérer utiles pour identifier les paramètres optimaux. Les bloom filters peuvent également être coûteux lors des opérations d&#39;insert et de merge. Vous devriez évaluer l&#39;impact sur les performances d&#39;insertion avant d&#39;ajouter des bloom filters en production.
+</details>
+
+<div id="extracting-from-maps">
+  ### Extraction depuis des maps
+</div>
+
+Le type Map est très répandu dans les schémas OTel. Ce type exige que les valeurs et les clés aient le même type, ce qui est suffisant pour des métadonnées telles que les labels Kubernetes. Gardez à l’esprit que, lorsque vous interrogez une sous-clé d’un type Map, l’intégralité de la colonne parente est chargée. Si la map contient de nombreuses clés, cela peut entraîner un surcoût important pour la requête, car il faut lire davantage de données sur le disque que si la clé existait en tant que colonne.
+
+Si vous interrogez fréquemment une clé spécifique, envisagez de la déplacer dans sa propre colonne dédiée au niveau racine. Il s’agit généralement d’une tâche effectuée en réponse à des schémas d’accès courants après le déploiement, et qui peut être difficile à anticiper avant la mise en production. Voir [&quot;Gérer les modifications de schéma&quot;](/fr/guides/use-cases/observability/build-your-own/managing-data#managing-schema-changes) pour savoir comment modifier votre schéma après le déploiement.
+
+<div id="measuring-table-size--compression">
+  ## Mesurer la taille d’une table et la compression
+</div>
+
+L’une des principales raisons pour lesquelles ClickHouse est utilisé pour l’Observability est la compression.
+
+Outre la réduction considérable des coûts de stockage, moins de données sur le disque signifie moins d’entrées/sorties et des requêtes et insertions plus rapides. La réduction des E/S compense largement la surcharge de n’importe quel algorithme de compression du point de vue du CPU. Améliorer la compression des données doit donc être la priorité absolue si vous voulez garantir la rapidité des requêtes ClickHouse.
+
+Vous trouverez plus de détails sur la mesure de la compression [ici](/fr/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).

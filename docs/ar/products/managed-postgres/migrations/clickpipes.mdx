@@ -1,0 +1,231 @@
+---
+slug: /cloud/managed-postgres/migrations/clickpipes
+sidebarTitle: 'ClickPipes'
+title: 'رحّل بيانات PostgreSQL باستخدام مصادر البيانات في ClickPipes'
+description: 'تعرّف على كيفية ترحيل قاعدة بيانات PostgreSQL إلى ClickHouse Managed Postgres باستخدام ClickPipes.'
+keywords: ['Postgres', 'PostgreSQL', 'النسخ المتماثل المنطقي', 'الترحيل', 'ClickPipes', 'Managed Postgres', 'مصادر البيانات', 'استيراد']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-clickhouse-cloud-beta" />
+
+يوفّر ClickHouse Cloud الآن ClickPipes لترحيل قاعدة بيانات PostgreSQL الخارجية لديك إلى خدمة Managed Postgres. يوفّر هذا التكامل المضمّن تجربة سلسة للاتصال بقاعدة بياناتك المصدرية، وتصدير المخطط، واستيراده إلى Managed Postgres، وإعداد النسخ المتماثل المستمر.
+
+<div id="prerequisites">
+  ## المتطلبات المسبقة
+</div>
+
+* إمكانية الوصول إلى قاعدة بيانات PostgreSQL المصدر باستخدام مستخدم لديه صلاحيات النسخ المتماثل. اتبع دليل الإعداد الخاص بالمصدر الذي تستخدمه:
+  * [Amazon RDS Postgres](/ar/integrations/clickpipes/postgres/source/rds)
+  * [Amazon Aurora Postgres](/ar/integrations/clickpipes/postgres/source/aurora)
+  * [Supabase Postgres](/ar/integrations/clickpipes/postgres/source/supabase)
+  * [Google Cloud SQL Postgres](/ar/integrations/clickpipes/postgres/source/google-cloudsql)
+  * [Azure Flexible Server for Postgres](/ar/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
+  * [Neon Postgres](/ar/integrations/clickpipes/postgres/source/neon-postgres)
+  * [Crunchy Bridge Postgres](/ar/integrations/clickpipes/postgres/source/crunchy-postgres)
+  * [TimescaleDB](/ar/integrations/clickpipes/postgres/source/timescale)
+  * [مصدر Postgres عام](/ar/integrations/clickpipes/postgres/source/generic) لأي مزوّد آخر أو لأي مثيل مستضاف ذاتيًا
+* خدمة ClickHouse Managed Postgres لتكون هدف الترحيل. إذا لم تكن لديك واحدة بعد، فراجع [دليل البدء السريع](/ar/products/managed-postgres/quickstart).
+* يجب أن يكون `pg_dump` و`psql` مثبَّتين على جهازك المحلي. يأتي كلاهما ضمن أدوات PostgreSQL client القياسية.
+
+<div id="considerations">
+  ## اعتبارات قبل الترحيل
+</div>
+
+* **نشر تغييرات DDL**: يلتقط النسخ المتماثل المستمر (CDC) عمليات DML و`ADD COLUMN`. أما تغييرات DDL الأخرى، مثل `DROP COLUMN` و`ALTER COLUMN`، فلا تُنقل ويجب تطبيقها يدويًا على النظام الهدف.
+
+<Note>
+  إذا واجهت مشكلات أثناء الترحيل، فراجع [الأسئلة الشائعة حول عمليات ترحيل Managed Postgres](/ar/products/managed-postgres/migrations/faq) للاطلاع على الأخطاء الشائعة وحلولها.
+</Note>
+
+<div id="step-1-connect">
+  ## الخطوة 1: الاتصال بقاعدة البيانات المصدر
+</div>
+
+افتح [ClickHouse Cloud console](https://clickhouse.cloud) وحدد Managed Postgres service الخاص بك.
+
+<Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="بطاقة Managed Postgres service في قائمة خدمات ClickHouse Cloud" size="lg" border />
+
+في الشريط الجانبي الأيسر، انقر على **مصادر البيانات**.
+
+<Image img="/images/managed-postgres/pgpg/overview.webp" alt="إدخال مصادر البيانات في الشريط الجانبي لـ Managed Postgres service" size="lg" border />
+
+انقر على **بدء الاستيراد**.
+
+<Image img="/images/managed-postgres/pgpg/startimport.webp" alt="صفحة مصادر البيانات وبها زر بدء الاستيراد" size="lg" border />
+
+أدخِل تفاصيل الاتصال بقاعدة بيانات PostgreSQL المصدر: المضيف، والمنفذ، واسم المستخدم، وكلمة المرور، واسم قاعدة البيانات. فعِّل **TLS** إذا كان المصدر يتطلب ذلك.
+
+إذا كنت بحاجة إلى اتصال خاص بقاعدة البيانات المصدر، يمكنك اختيار **SSH tunneling** وتقديم تفاصيل SSH اللازمة. يتيح ذلك لعملية الترحيل الاتصال بأمان بقواعد البيانات غير المتاحة علنًا.
+
+اختر طريقة الإدخال:
+
+* **التحميل الأولي + CDC** — ينسخ البيانات الحالية، ثم يُبقي الوجهة متزامنة مع التغييرات المستمرة.
+* **التحميل الأولي فقط** — نسخة لمرة واحدة، من دون نسخ متماثل مستمر.
+* **CDC فقط** — يتخطى النسخة الأولية ويُجري نسخًا متماثلًا للتغييرات الجديدة فقط بدءًا من هذه النقطة.
+
+<Image img="/images/managed-postgres/pgpg/migrationform.webp" alt="الخطوة 1: نموذج الاتصال بقاعدة البيانات المصدر مع خيارات طريقة الإدخال" size="lg" border />
+
+انقر على **التالي**.
+
+<div id="step-2-export-schema">
+  ## الخطوة 2: صدِّر مخطط قاعدة البيانات
+</div>
+
+يعرض المعالج أمر `pg_dump` معبأً مسبقًا بتفاصيل الاتصال بالمصدر. شغِّله في الطرفية:
+
+<Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="الخطوة 2: أمر pg_dump لتصدير المخطط" size="lg" border />
+
+```shell
+pg_dump \
+  -h <source_host> \
+  -U <source_user> \
+  -d <source_database> \
+  --schema-only \
+  -f pg.sql
+```
+
+سيؤدي ذلك إلى إنشاء `pg.sql` في الدليل الحالي.
+
+<Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="مخرجات الطرفية بعد تشغيل pg_dump" size="lg" border />
+
+انقر على **التالي**.
+
+<div id="step-3-import-schema">
+  ## الخطوة 3: استيراد المخطط إلى خدمة Managed Postgres الخاصة بك
+</div>
+
+حدِّد قاعدة البيانات الوجهة من القائمة المنسدلة، أو انقر على **إنشاء قاعدة بيانات جديدة** لإنشاء واحدة.
+
+يعرض المعالج أمر `psql` لتطبيق ملف schema dump على خدمة Managed Postgres الخاصة بك. شغِّله في الطرفية:
+
+<Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="الخطوة 3: أمر psql لاستيراد المخطط" size="lg" border />
+
+```shell
+psql \
+  -h <target_host> \
+  -p 5432 \
+  -U <target_user> \
+  -d <target_database> \
+  -f pg.sql
+```
+
+<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="مخرجات الطرفية بعد تشغيل أمر استيراد مخطط psql" size="lg" border />
+
+انقر على **التالي**.
+
+<div id="step-4-ingestion-settings">
+  ## الخطوة 4: تكوين إعدادات الإدخال
+</div>
+
+حدّد الـ publication المطلوب استخدامه للنسخ المتماثل المنطقي. إذا تركت هذا الحقل فارغًا، فسيتم إنشاء publication تلقائيًا.
+
+وسّع **إعدادات النسخ المتماثل المتقدمة** لضبط معدل النقل:
+
+| الإعداد                                | الافتراضي | الوصف                                           |
+| -------------------------------------- | --------- | ----------------------------------------------- |
+| فاصل المزامنة (بالثواني)               | 10        | مدى تكرار الاستقصاء عن فتحة النسخ المتماثل      |
+| سلاسل التنفيذ المتوازية للتحميل الأولي | 4         | عدد سلاسل التنفيذ لمرحلة النسخ المجمّع          |
+| حجم دفعة السحب                         | 100,000   | عدد الصفوف التي يتم جلبها في كل دفعة نسخ متماثل |
+| عدد الصفوف في اللقطة لكل قسم           | 100000    | حجم القسم للقطات الجداول الكبيرة                |
+| عدد الجداول في اللقطة بالتوازي         | 1         | عدد الجداول التي تُؤخذ لها لقطات بالتوازي       |
+
+<Image img="/images/managed-postgres/pgpg/advancedsettings.webp" alt="الخطوة 4: نموذج إعدادات الإدخال مع publication وخيارات النسخ المتماثل المتقدمة" size="lg" border />
+
+انقر **التالي**.
+
+<div id="step-5-select-tables">
+  ## الخطوة 5: حدِّد الجداول
+</div>
+
+حدِّد الجداول التي تريد نسخها. الجداول مُجمَّعة حسب المخطط. حدِّد جداول فردية أو وسِّع أحد المخططات لاختيارها جميعًا.
+
+<Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="الخطوة 5: منتقي الجداول مُجمَّع حسب المخطط مع زر إنشاء عملية ترحيل" size="lg" border />
+
+انقر على **إنشاء عملية ترحيل**.
+
+<div id="monitor">
+  ## راقب الترحيل
+</div>
+
+بعد إنشاء الترحيل، ستجده مُدرجًا في **مصادر البيانات** بالحالة **قيد التشغيل**.
+
+<Image img="/images/managed-postgres/pgpg/migrationlist.webp" alt="قائمة مصادر البيانات تعرض عملية ترحيل قيد التشغيل" size="lg" border />
+
+انقر على الترحيل لفتح العرض التفصيلي. تعرض علامة التبويب **الجداول** تقدّم التحميل الأوّلي لكل جدول، بما في ذلك الصفوف المُعالجة، والأقسام، ومتوسط الوقت لكل قسم. وتعرض علامة التبويب **المقاييس** تأخر النسخ المتماثل ومعدل النقل بمجرد بدء CDC.
+
+<Image img="/images/managed-postgres/pgpg/initialload.webp" alt="عرض تفصيلي للترحيل يوضح إحصاءات التحميل الأوّلي لكل جدول" size="lg" border />
+
+<div id="post-migration">
+  ## مهام ما بعد الترحيل
+</div>
+
+بمجرد اكتمال التحميل الأولي، وإذا كنت تستخدم CDC، واقترب تأخر النسخ المتماثل من الصفر:
+
+**تحقق من عدد الصفوف.** أجرِ مراجعة سريعة للجداول المهمة في كلٍّ من المصدر والهدف قبل تحويل حركة المرور:
+
+```sql
+SELECT COUNT(*) FROM public.orders;
+```
+
+**أوقِف عمليات الكتابة على المصدر.** أوقِف عمليات كتابة التطبيق مؤقتًا. لفرض وضع القراءة فقط أثناء مرحلة التحويل:
+
+```sql
+ALTER DATABASE <source_db> SET default_transaction_read_only = on;
+```
+
+**تأكّد من اكتمال تزامن النسخ المتماثل.** قارن أحدث صف في كلٍّ من المصدر والهدف:
+
+```sql
+-- Run on both source and target
+SELECT MAX(id), MAX(updated_at) FROM public.orders;
+```
+
+**أعِد ضبط التسلسلات.** اضبط التسلسلات لتتوافق مع القيم القصوى الحالية في كل جدول:
+
+```sql
+DO $$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN
+        SELECT
+            n.nspname AS schema_name,
+            c.relname AS table_name,
+            a.attname AS column_name,
+            pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname) AS seq_name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_attribute a ON a.attrelid = c.oid
+        WHERE c.relkind = 'r'
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+            AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+    LOOP
+        IF r.seq_name IS NOT NULL THEN
+            EXECUTE format(
+                'SELECT setval(%L, COALESCE((SELECT MAX(%I) FROM %I.%I), 0) + 1, false)',
+                r.seq_name, r.column_name, r.schema_name, r.table_name
+            );
+        END IF;
+    END LOOP;
+END $$;
+```
+
+**حوِّل حركة مرور التطبيق.** وجِّه عمليات القراءة والكتابة إلى خدمة Managed Postgres لديك، وراقب الأخطاء ومخالفات القيود وسلامة النسخ المتماثل.
+
+**نظِّف.**  بمجرد إتمام التحويل والتأكد من أن الخدمة الجديدة سليمة، احذف عملية الترحيل من **مصادر البيانات**. إذا كنت قد استخدمت CDC، فاحذف فتحة النسخ المتماثل من المصدر لتحرير الموارد:
+
+```sql
+SELECT pg_drop_replication_slot('<slot_name>');
+```
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* [دليل البدء السريع لـ Managed Postgres](/ar/products/managed-postgres/quickstart)
+* [بيانات الاتصال بـ Managed Postgres](/ar/products/managed-postgres/connection)
+* [FAQ الخاصة بـ ClickPipes Postgres](/ar/integrations/clickpipes/postgres/faq)

@@ -1,0 +1,330 @@
+---
+description: 'Crée une base de données ClickHouse avec des tables à partir d’une base de données PostgreSQL.'
+sidebarTitle: 'MaterializedPostgreSQL'
+slug: /engines/database-engines/materialized-postgresql
+title: 'MaterializedPostgreSQL'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+<Note>
+  Il est recommandé aux utilisateurs de ClickHouse Cloud d’utiliser [ClickPipes](/fr/integrations/clickpipes/home) pour répliquer PostgreSQL vers ClickHouse. Cela prend en charge nativement la capture des changements de données (CDC) haute performance pour PostgreSQL.
+</Note>
+
+Crée une base de données ClickHouse à partir des tables d’une base de données PostgreSQL. Dans un premier temps, une base de données utilisant le moteur `MaterializedPostgreSQL` crée un snapshot de la base de données PostgreSQL et charge les tables requises. Les tables requises peuvent inclure n’importe quel sous-ensemble de tables issu de n’importe quel sous-ensemble de schémas de la base de données spécifiée. En plus du snapshot, le moteur de base de données récupère le LSN et, une fois le dump initial des tables effectué, il commence à extraire les mises à jour depuis le WAL. Une fois la base de données créée, les tables ajoutées par la suite à la base de données PostgreSQL ne sont pas automatiquement ajoutées à la réplication. Elles doivent être ajoutées manuellement avec la requête `ATTACH TABLE db.table`.
+
+La réplication s’appuie sur le protocole de réplication logique de PostgreSQL, qui ne permet pas de répliquer le DDL, mais permet de savoir si des changements incompatibles avec la réplication se sont produits (modification du type de colonne, ajout/suppression de colonnes). Ces changements sont détectés et les tables concernées cessent alors de recevoir des mises à jour. Dans ce cas, vous devez utiliser les requêtes `ATTACH`/ `DETACH PERMANENTLY` pour recharger entièrement la table. Si le DDL ne casse pas la réplication (par exemple, en renommant une colonne), la table continuera à recevoir des mises à jour (l’insertion se fait par position).
+
+<Note>
+  Ce moteur de base de données est expérimental. Pour l’utiliser, définissez `allow_experimental_database_materialized_postgresql` sur 1 dans vos fichiers de configuration ou à l’aide de la commande `SET` :
+
+  ```sql
+  SET allow_experimental_database_materialized_postgresql=1
+  ```
+</Note>
+
+<div id="creating-a-database">
+  ## Créer une base de données
+</div>
+
+```sql
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
+ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SETTINGS ...]
+```
+
+**Paramètres du moteur**
+
+* `host:port` — endpoint du serveur PostgreSQL.
+* `database` — nom de la base de données PostgreSQL.
+* `user` — utilisateur PostgreSQL.
+* `password` — mot de passe de l’utilisateur.
+
+<div id="example-of-use">
+  ## Exemple d&#39;utilisation
+</div>
+
+```sql
+CREATE DATABASE postgres_db
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password');
+
+SHOW TABLES FROM postgres_db;
+
+┌─name───┐
+│ table1 │
+└────────┘
+
+SELECT * FROM postgres_db.postgres_table;
+```
+
+<div id="dynamically-adding-table-to-replication">
+  ## Ajout dynamique de nouvelles tables à la réplication
+</div>
+
+Une fois la base de données `MaterializedPostgreSQL` créée, elle ne détecte pas automatiquement les nouvelles tables de la base de données PostgreSQL correspondante. Ces tables peuvent être ajoutées manuellement :
+
+```sql
+ATTACH TABLE postgres_database.new_table;
+```
+
+<Warning>
+  Avant la version 22.1, l’ajout d’une table à la réplication laissait un slot de réplication temporaire qui n’était pas supprimé (nommé `{db_name}_ch_replication_slot_tmp`). Si vous attachez des tables avec une version de ClickHouse antérieure à 22.1, veillez à le supprimer manuellement (`SELECT pg_drop_replication_slot('{db_name}_ch_replication_slot_tmp')`). Sinon, l’utilisation du disque augmentera. Ce problème a été corrigé dans la version 22.1.
+</Warning>
+
+<div id="dynamically-removing-table-from-replication">
+  ## Retrait dynamique de tables de la réplication
+</div>
+
+Il est possible de retirer certaines tables de la réplication :
+
+```sql
+DETACH TABLE postgres_database.table_to_remove PERMANENTLY;
+```
+
+<div id="schema">
+  ## Schéma PostgreSQL
+</div>
+
+Le [schéma](https://www.postgresql.org/docs/9.1/ddl-schemas.html) PostgreSQL peut être configuré de 3 façons (à partir de la version 21.12).
+
+1. Un schéma pour un moteur de base de données `MaterializedPostgreSQL`. Nécessite l&#39;utilisation du paramètre `materialized_postgresql_schema`.
+   Les tables sont accessibles uniquement par leur nom :
+
+```sql
+CREATE DATABASE postgres_database
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+SETTINGS materialized_postgresql_schema = 'postgres_schema';
+
+SELECT * FROM postgres_database.table1;
+```
+
+2. Un nombre quelconque de schémas avec un ensemble donné de tables pour un moteur de base de données `MaterializedPostgreSQL`. Nécessite l’utilisation du paramètre `materialized_postgresql_tables_list`. Chaque table est spécifiée avec son schéma.
+   Les tables sont accessibles en utilisant à la fois le nom du schéma et celui de la table :
+
+```sql
+CREATE DATABASE database1
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+SETTINGS materialized_postgresql_tables_list = 'schema1.table1,schema2.table2,schema1.table3',
+         materialized_postgresql_tables_list_with_schema = 1;
+
+SELECT * FROM database1.`schema1.table1`;
+SELECT * FROM database1.`schema2.table2`;
+```
+
+Mais dans ce cas, toutes les tables de `materialized_postgresql_tables_list` doivent être indiquées avec leur nom de schéma.
+Nécessite `materialized_postgresql_tables_list_with_schema = 1`.
+
+Avertissement : dans ce cas, les points ne sont pas autorisés dans le nom de la table.
+
+3. Un nombre quelconque de schémas avec l’ensemble complet des tables pour un moteur de base de données `MaterializedPostgreSQL`. Nécessite l’utilisation du paramètre `materialized_postgresql_schema_list`.
+
+```sql
+CREATE DATABASE database1
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+SETTINGS materialized_postgresql_schema_list = 'schema1,schema2,schema3';
+
+SELECT * FROM database1.`schema1.table1`;
+SELECT * FROM database1.`schema1.table2`;
+SELECT * FROM database1.`schema2.table2`;
+```
+
+Avertissement : dans ce cas, le nom de la table ne peut pas contenir de points.
+
+<div id="requirements">
+  ## Prérequis
+</div>
+
+1. Le paramètre [wal&#95;level](https://www.postgresql.org/docs/current/runtime-config-wal.html) doit être défini sur `logical`, et le paramètre `max_replication_slots` doit avoir une valeur d’au moins `2` dans le fichier de configuration de PostgreSQL.
+
+2. Chaque table répliquée doit avoir l’une des [identités de réplica](https://www.postgresql.org/docs/10/sql-altertable.html#SQL-CREATETABLE-REPLICA-IDENTITY) suivantes :
+
+* clé primaire (par défaut)
+
+* index
+
+```bash
+postgres# CREATE TABLE postgres_table (a Integer NOT NULL, b Integer, c Integer NOT NULL, d Integer, e Integer NOT NULL);
+postgres# CREATE unique INDEX postgres_table_index on postgres_table(a, c, e);
+postgres# ALTER TABLE postgres_table REPLICA IDENTITY USING INDEX postgres_table_index;
+```
+
+La clé primaire est toujours vérifiée en premier. Si elle est absente, l’index défini comme index d’identité de réplica est alors vérifié.
+Si l’index est utilisé comme identité de réplica, il ne peut y avoir qu’un seul index de ce type dans une table.
+Vous pouvez vérifier quel type est utilisé pour une table donnée à l’aide de la commande suivante :
+
+```bash
+postgres# SELECT CASE relreplident
+          WHEN 'd' THEN 'default'
+          WHEN 'n' THEN 'nothing'
+          WHEN 'f' THEN 'full'
+          WHEN 'i' THEN 'index'
+       END AS replica_identity
+FROM pg_class
+WHERE oid = 'postgres_table'::regclass;
+```
+
+<Note>
+  La réplication des valeurs [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) n’est pas prise en charge. La valeur par défaut de ce type de données sera utilisée.
+</Note>
+
+<div id="settings">
+  ## Paramètres
+</div>
+
+<div id="materialized-postgresql-tables-list">
+  ### `materialized_postgresql_tables_list`
+</div>
+
+Définit une liste de tables de base de données PostgreSQL séparées par des virgules, qui seront répliquées via le moteur de base de données [MaterializedPostgreSQL](/fr/reference/engines/database-engines/materialized-postgresql).
+
+Chaque table peut avoir un sous-ensemble de colonnes répliquées entre crochets. Si ce sous-ensemble de colonnes est omis, toutes les colonnes de la table seront répliquées.
+
+```sql
+    materialized_postgresql_tables_list = 'table1(co1, col2),table2,table3(co3, col5, col7)
+```
+
+Valeur par défaut : liste vide — ce qui signifie que l’intégralité de la base de données PostgreSQL sera répliquée.
+
+<div id="materialized-postgresql-schema">
+  ### `materialized_postgresql_schema`
+</div>
+
+Valeur par défaut : chaîne vide. (Le schéma par défaut est utilisé)
+
+<div id="materialized-postgresql-schema-list">
+  ### `materialized_postgresql_schema_list`
+</div>
+
+Valeur par défaut : liste vide. (Le schéma par défaut est alors utilisé)
+
+<div id="materialized-postgresql-max-block-size">
+  ### `materialized_postgresql_max_block_size`
+</div>
+
+Définit le nombre de lignes conservées en mémoire avant l&#39;écriture des données dans la table PostgreSQL.
+
+Valeurs possibles :
+
+* Entier positif.
+
+Valeur par défaut : `65536`.
+
+<div id="materialized-postgresql-replication-slot">
+  ### `materialized_postgresql_replication_slot`
+</div>
+
+Un slot de réplication créé par l’utilisateur. Doit être utilisé avec `materialized_postgresql_snapshot`.
+
+<div id="materialized-postgresql-snapshot">
+  ### `materialized_postgresql_snapshot`
+</div>
+
+Chaîne de texte identifiant un snapshot à partir duquel le [dump initial des tables PostgreSQL](/fr/reference/engines/database-engines/materialized-postgresql) sera effectué. Doit être utilisée avec `materialized_postgresql_replication_slot`.
+
+```sql
+    CREATE DATABASE database1
+    ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+    SETTINGS materialized_postgresql_tables_list = 'table1,table2,table3';
+
+    SELECT * FROM database1.table1;
+```
+
+Les paramètres peuvent être modifiés, si nécessaire, à l’aide d’une requête DDL. En revanche, il est impossible de modifier le paramètre `materialized_postgresql_tables_list`. Pour mettre à jour la liste des tables de ce paramètre, utilisez la requête `ATTACH TABLE`.
+
+```sql
+    ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
+```
+
+<div id="materialized_postgresql_use_unique_replication_consumer_identifier">
+  ### `materialized_postgresql_use_unique_replication_consumer_identifier`
+</div>
+
+Utilisez un identifiant unique de consommateur de réplication pour la réplication. Valeur par défaut : `0`.
+Si cette valeur est définie sur `1`, elle permet de configurer plusieurs tables `MaterializedPostgreSQL` pointant vers la même table `PostgreSQL`.
+
+<div id="notes">
+  ## Remarques
+</div>
+
+<div id="logical-replication-slot-failover">
+  ### Basculement du slot de réplication logique
+</div>
+
+Les slots de réplication logique qui existent sur le primaire ne sont pas disponibles sur les répliques de secours.
+Ainsi, en cas de basculement, le nouveau primaire (l’ancien standby physique) n’aura connaissance d’aucun des slots qui existaient sur l’ancien primaire. Cela entraînera une rupture de la réplication depuis PostgreSQL.
+Pour résoudre ce problème, vous pouvez gérer vous-même les slots de réplication et définir un slot de réplication permanent (vous trouverez plus d’informations [ici](https://patroni.readthedocs.io/en/latest/SETTINGS.html)). Vous devrez transmettre le nom du slot via le paramètre `materialized_postgresql_replication_slot`, et celui-ci devra être exporté avec l’option `EXPORT SNAPSHOT`. L’identifiant du snapshot devra être transmis via le paramètre `materialized_postgresql_snapshot`.
+
+Notez que cette solution ne doit être utilisée qu’en cas de besoin réel. S’il n’y a pas de nécessité avérée ni de compréhension claire de la raison pour laquelle elle est requise, il est préférable de laisser le moteur de table créer et gérer son propre slot de réplication.
+
+**Exemple (de [@bchrobot](https://github.com/bchrobot))**
+
+1. Configurez le slot de réplication dans PostgreSQL.
+
+   ```yaml
+   apiVersion: "acid.zalan.do/v1"
+   kind: postgresql
+   metadata:
+     name: acid-demo-cluster
+   spec:
+     numberOfInstances: 2
+     postgresql:
+       parameters:
+         wal_level: logical
+     patroni:
+       slots:
+         clickhouse_sync:
+           type: logical
+           database: demodb
+           plugin: pgoutput
+   ```
+
+2. Attendez que le slot de réplication soit prêt, puis démarrez une transaction et exportez l’identifiant du snapshot de transaction :
+
+   ```sql
+   BEGIN;
+   SELECT pg_export_snapshot();
+   ```
+
+3. Dans ClickHouse, créez la base de données :
+
+   ```sql
+   CREATE DATABASE demodb
+   ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+   SETTINGS
+     materialized_postgresql_replication_slot = 'clickhouse_sync',
+     materialized_postgresql_snapshot = '0000000A-0000023F-3',
+     materialized_postgresql_tables_list = 'table1,table2,table3';
+   ```
+
+4. Terminez la transaction PostgreSQL une fois la réplication vers la base de données ClickHouse confirmée. Vérifiez que la réplication continue après le basculement :
+
+   ```bash
+   kubectl exec acid-demo-cluster-0 -c postgres -- su postgres -c 'patronictl failover --candidate acid-demo-cluster-1 --force'
+   ```
+
+<div id="required-permissions">
+  ### Autorisations requises
+</div>
+
+1. [CREATE PUBLICATION](https://postgrespro.ru/docs/postgresql/14/sql-createpublication) -- privilège CREATE.
+
+2. [CREATE&#95;REPLICATION&#95;SLOT](https://postgrespro.ru/docs/postgrespro/10/protocol-replication#PROTOCOL-REPLICATION-CREATE-SLOT) -- privilège de réplication.
+
+3. [pg&#95;drop&#95;replication&#95;slot](https://postgrespro.ru/docs/postgrespro/9.5/functions-admin#functions-replication) -- privilège de réplication ou superutilisateur.
+
+4. [DROP PUBLICATION](https://postgrespro.ru/docs/postgresql/10/sql-droppublication) -- propriétaire de la publication (`username` dans le moteur MaterializedPostgreSQL lui-même).
+
+Il est possible d’éviter d’exécuter les commandes `2` et `3`, et donc de ne pas avoir besoin de ces autorisations. Utilisez les paramètres `materialized_postgresql_replication_slot` et `materialized_postgresql_snapshot`, mais avec une grande prudence.
+
+Accès aux tables :
+
+1. pg&#95;publication
+
+2. pg&#95;replication&#95;slots
+
+3. pg&#95;publication&#95;tables

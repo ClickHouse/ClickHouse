@@ -1,0 +1,135 @@
+---
+slug: /guides/sre/configuring-tls-acme-client
+sidebarTitle: 'ACME による TLS の自動プロビジョニングの設定'
+title: 'ACME による TLS の自動プロビジョニングの設定'
+description: 'このガイドでは、接続の検証に OpenSSL 証明書を使用するよう ClickHouse を設定するための、シンプルで最小限の設定を紹介します。'
+keywords: ['ACME 設定', 'TLS セットアップ', 'OpenSSL 証明書', '安全な接続', 'SRE ガイド', 'Let`s Encrypt']
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/ja/_self_managed_only_automated.mdx';
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge />
+
+<SelfManaged />
+
+このガイドでは、ClickHouse で [ACME](https://en.wikipedia.org/wiki/Automatic_Certificate_Management_Environment) ([RFC8555](https://www.rfc-editor.org/rfc/rfc8555) で定義) プロトコルを使用するよう設定する方法を説明します。
+ACME をサポートすることで、ClickHouse は [Let&#39;s Encrypt](https://letsencrypt.org/) や [ZeroSSL](https://zerossl.com/) などのプロバイダーから証明書を自動的に取得し、更新できます。
+TLS 暗号化は、クライアントと ClickHouse サーバー間で送受信されるデータを保護し、機密性の高いクエリや結果の盗聴を防ぎます。
+
+<div id="overview">
+  ## 概要
+</div>
+
+ACME プロトコルは、[Let&#39;s Encrypt](https://letsencrypt.org/) や [ZeroSSL](https://zerossl.com/) などのサービスによる証明書の自動更新プロセスを定義しています。簡単に言うと、証明書をリクエストする ClickHouse は、証明書を取得するために、あらかじめ定義されたチャレンジタイプを使ってドメインの所有権を確認する必要があります。
+
+ACME を有効にするには、HTTP ポートと HTTPS ポートを `acme` ブロックとあわせて設定します:
+
+```xml
+<http_port>80</http_port>
+<https_port>443</https_port>
+
+<acme>
+    <email>valid_email@example.com</email>
+    <terms_of_service_agreed>true</terms_of_service_agreed>
+    <domains>
+        <domain>example.com</domain>
+    </domains>
+</acme>
+```
+
+HTTPポートは、ドメイン検証中に ACME の `HTTP-01` チャレンジ (チャレンジタイプの詳細は[こちら](https://letsencrypt.org/docs/challenge-types/)) のリクエストを処理します。検証が完了して証明書が発行されると、HTTPS ポートは取得した証明書を使って暗号化されたトラフィックを処理します。
+
+HTTP ポートは、サーバー自体で 80 である必要はありません。`nftables` などのツールを使って別のポートに再マップできます。`HTTP-01` チャレンジで使用できるポートについては、ACME プロバイダーのドキュメントを確認してください。
+
+`acme` ブロックでは、アカウント作成用の `email` を設定し、ACME サービスの利用規約に同意します。
+その後に必要なのは、ドメインのリストだけです。
+
+<div id="current-limitations">
+  ### 現在の制限事項
+</div>
+
+* サポートされているチャレンジタイプは `HTTP-01` のみです。
+* サポートされている秘密鍵は `RSA 2048` のみです。
+* レート制限には対応していません。
+
+<div id="configuration-parameters">
+  ## 設定パラメータ
+</div>
+
+`acme` セクションで使用できる設定オプション:
+
+| パラメータ                                | デフォルト値                                           | 説明                                                                     |
+| ------------------------------------ | ------------------------------------------------ | ---------------------------------------------------------------------- |
+| `zookeeper_path`                     | `/clickhouse/acme`                               | ACME アカウントデータ、証明書、ClickHouse ノード間の協調状態を保存するための ZooKeeper パス。           |
+| `directory_url`                      | `https://acme-v02.api.letsencrypt.org/directory` | 証明書の発行に使用する ACME ディレクトリエンドポイント。デフォルトでは Let’s Encrypt の本番サーバーが使われます。    |
+| `email`                              |                                                  | ACME アカウントの作成と管理に使用するメールアドレス。ACME プロバイダーが有効期限の通知や重要な更新の連絡に使用する場合があります。 |
+| `terms_of_service_agreed`            | `false`                                          | ACME プロバイダーの利用規約に同意しているかどうかを示します。ACME を有効にするには `true` に設定する必要があります。    |
+| `domains`                            |                                                  | TLS 証明書を発行する対象のドメイン名の一覧。各ドメインは `<domain>` エントリとして指定します。                |
+| `refresh_certificates_before`        | `2592000` (1 か月、秒単位)                             | 証明書の有効期限が切れるどれくらい前に ClickHouse が証明書の更新を試みるかを示す時間。                      |
+| `refresh_certificates_task_interval` | `3600` (1 時間、秒単位)                                | ClickHouse が証明書の更新が必要かどうかを確認する間隔。                                      |
+
+設定では、デフォルトで Let&#39;s Encrypt の本番ディレクトリが使用されます。設定ミスによってリクエストのクォータに達するのを避けるため、まずは [staging directory](https://letsencrypt.org/docs/staging-environment/) で証明書の発行プロセスをテストすることを推奨します。
+
+<div id="administration">
+  # 管理
+</div>
+
+<div id="initial-deployment">
+  ## 初期デプロイ
+</div>
+
+複数のレプリカを持つクラスターで ACME クライアントを有効にする場合、証明書の初回発行時には特に注意が必要です。
+
+ACME を有効にして起動した最初のレプリカは、ただちに ACME オーダーの作成を試み、HTTP-01 チャレンジの検証を行います。その時点でトラフィックを受けているレプリカが一部に限られていると、ほかのレプリカは検証リクエストに応答できないため、チャレンジは失敗する可能性が高くなります。
+
+可能であれば、トラフィックを一時的に 1 つのレプリカのみにルーティングし (たとえば DNS レコードを調整して) 、そのレプリカで初回の証明書発行を完了させることをおすすめします。証明書が正常に発行されて Keeper に保存されたら、残りのレプリカでも ACME を有効にできます。これらのレプリカは既存の証明書を自動的に再利用し、以後の更新にも参加します。
+
+トラフィックを 1 つのレプリカにルーティングできない場合は、代替手段として、ACME クライアントを有効にする前に既存の証明書と秘密鍵を Keeper に手動でアップロードできます。これにより初回の検証ステップを回避でき、すべてのレプリカを、有効な証明書がすでに存在する状態で起動できます。
+
+初回の証明書が発行またはインポートされたあとは、すべてのレプリカですでに ACME クライアントが動作しており、Keeper を介して状態を共有するため、証明書の更新に特別な対応は必要ありません。
+
+<div id="keeper-data-structure">
+  ## Keeper のデータ構造
+</div>
+
+```text
+/clickhouse/acme
+└── <acme-directory-host>
+    ├── account_private_key          # ACME アカウント秘密鍵 (PEM)
+    ├── challenges                   # アクティブな HTTP-01 チャレンジの状態
+    └── domains
+        └── <domain-name>
+            ├── certificate          # 発行済み TLS 証明書 (PEM)
+            └── private_key          # ドメイン秘密鍵 (PEM)
+```
+
+<div id="migrating-from-other-acme-clients">
+  ## 他の ACME クライアントからの移行
+</div>
+
+移行を容易にするため、現在使用中の TLS 証明書と秘密鍵を Keeper に移行できます。
+現時点でサーバーがサポートしているのは、`RSA 2048` の鍵のみです。
+
+`certbot` から移行し、`/etc/letsencrypt/live` ディレクトリを使用している場合は、次の一連のコマンドを使用できます。
+
+```bash
+DOMAIN=example.com
+CERT_DIR=/etc/letsencrypt/live/$DOMAIN
+ZK_BASE=/clickhouse/acme/acme-v02.api.letsencrypt.org/domains/$DOMAIN
+
+clickhouse keeper-client -q "create '/clickhouse' ''"
+clickhouse keeper-client -q "create '/clickhouse/acme' ''"
+clickhouse keeper-client -q "create '/clickhouse/acme/acme-v02.api.letsencrypt.org' ''"
+clickhouse keeper-client -q "create '/clickhouse/acme/acme-v02.api.letsencrypt.org/domains' ''"
+clickhouse keeper-client -q "create '$ZK_BASE' ''"
+
+clickhouse keeper-client -q "create '$ZK_BASE/certificate' \"$(cat $CERT_DIR/fullchain.pem)\""
+clickhouse keeper-client -q "set '$ZK_BASE/certificate' \"$(cat $CERT_DIR/fullchain.pem)\""
+
+clickhouse keeper-client -q "create '$ZK_BASE/private_key' \"$(cat $CERT_DIR/privkey.pem)\""
+clickhouse keeper-client -q "set '$ZK_BASE/private_key' \"$(cat $CERT_DIR/privkey.pem)\""
+```

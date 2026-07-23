@@ -1,0 +1,150 @@
+---
+description: 'توثيق نوع البيانات UUID في ClickHouse'
+sidebarTitle: 'UUID'
+slug: /sql-reference/data-types/uuid
+title: 'UUID'
+doc_type: 'reference'
+---
+
+المعرّف الفريد عالميًا (UUID) هو قيمة بطول 16 بايت تُستخدم لتحديد السجلات. لمزيد من المعلومات التفصيلية حول UUIDs، راجع [Wikipedia](https://en.wikipedia.org/wiki/Universally_unique_identifier).
+
+مع وجود إصدارات مختلفة من UUID، مثل UUIDv4 وUUIDv7 (راجع [هنا](https://datatracker.ietf.org/doc/html/draft-ietf-uuidrev-rfc4122bis))، فإن ClickHouse لا يتحقق مما إذا كانت UUIDs المدرجة تتوافق مع إصدار معيّن.
+تُعامَل UUIDs داخليًا على أنها تسلسل من 16 بايت عشوائي، مع تمثيل [8-4-4-4-12](https://en.wikipedia.org/wiki/Universally_unique_identifier#Textual_representation) على مستوى SQL.
+
+مثال على قيمة UUID:
+
+```text
+61f0c404-5cb3-11e7-907b-a6006ad3dba0
+```
+
+يتألف UUID الافتراضي من أصفار فقط. ويُستخدم، على سبيل المثال، عند إدراج سجل جديد من دون تحديد أي قيمة لعمود UUID:
+
+```text
+00000000-0000-0000-0000-000000000000
+```
+
+<Warning>
+  لأسباب تاريخية، تُرتَّب UUIDs حسب نصفها الثاني.
+
+  وبينما لا يمثل هذا مشكلة لقيم UUIDv4، فإنه قد يضعف الأداء مع أعمدة UUIDv7 المستخدمة في تعريفات الفهرس الأساسي (أما استخدامها في مفاتيح الترتيب أو مفاتيح التقسيم فلا مشكلة فيه).
+  وبشكل أكثر تحديدًا، تتكوّن قيم UUIDv7 من طابع زمني في النصف الأول وعدّاد في النصف الثاني.
+  لذلك سيكون فرز UUIDv7 في فهارس المفتاح الأساسي المتفرقة (أي القيم الأولى في كل index granule) بحسب حقل العدّاد.
+  وبافتراض أن UUIDs كانت ستُرتَّب حسب النصف الأول (الطابع الزمني)، فمن المتوقع أن تؤدي خطوة تحليل الفهرس الأساسي في بداية الاستعلامات إلى استبعاد جميع العلامات في كل الأجزاء ما عدا جزءًا واحدًا.
+  لكن مع الفرز حسب النصف الثاني (العدّاد)، يُتوقع إرجاع علامة واحدة على الأقل من كل الأجزاء، مما يؤدي إلى عمليات وصول غير ضرورية إلى القرص.
+</Warning>
+
+مثال:
+
+```sql title="Query"
+CREATE TABLE tab (uuid UUID) ENGINE = MergeTree PRIMARY KEY (uuid);
+
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+SELECT * FROM tab;
+```
+
+```text title="Response"
+┌─uuid─────────────────────────────────┐
+│ 019d2555-7874-7e9d-a284-9b45a0b2f165 │
+│ 019d2555-7874-7e9d-a284-9b46c3353be7 │
+│ 019d2555-7878-77fc-a36f-4081aa58ec2b │
+│ 019d2555-7878-77fc-a36f-40826555fb9b │
+│ 019d2555-7870-7432-ba62-5250ac595328 │
+│ 019d2555-7870-7432-ba62-5251da22bd19 │
+│ 019d2555-786c-73e9-a031-4a7936df7d56 │
+│ 019d2555-786c-73e9-a031-4a7a35a9544f │
+│ 019d2555-7868-7333-89d1-2bd1639899c3 │
+│ 019d2555-7868-7333-89d1-2bd297eb7d42 │
+└──────────────────────────────────────┘
+
+```
+
+كحل بديل، يمكن تحويل `UUID` إلى طابع زمني يُستخرج من النصف الثاني:
+
+```sql title="Query"
+CREATE TABLE tab (uuid UUID) ENGINE = MergeTree PRIMARY KEY (UUIDv7ToDateTime(uuid));
+-- Or alternatively:                      [...] PRIMARY KEY (toStartOfHour(UUIDv7ToDateTime(uuid)));
+
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+SELECT * FROM tab;
+```
+
+النتيجة (بافتراض أنّ البيانات نفسها أُدرجت):
+
+```text title="Response"
+┌─uuid─────────────────────────────────┐
+│ 019d2555-7868-7333-89d1-2bd1639899c3 │
+│ 019d2555-7868-7333-89d1-2bd297eb7d42 │
+│ 019d2555-786c-73e9-a031-4a7936df7d56 │
+│ 019d2555-786c-73e9-a031-4a7a35a9544f │
+│ 019d2555-7870-7432-ba62-5250ac595328 │
+│ 019d2555-7870-7432-ba62-5251da22bd19 │
+│ 019d2555-7874-7e9d-a284-9b45a0b2f165 │
+│ 019d2555-7874-7e9d-a284-9b46c3353be7 │
+│ 019d2555-7878-77fc-a36f-4081aa58ec2b │
+│ 019d2555-7878-77fc-a36f-40826555fb9b │
+└──────────────────────────────────────┘
+
+```
+
+ORDER BY (UUIDv7ToDateTime(uuid), uuid)
+
+<div id="generating-uuids">
+  ## توليد UUIDs
+</div>
+
+يوفّر ClickHouse الدالة [generateUUIDv4](/ar/reference/functions/regular-functions/uuid-functions) لتوليد قيم UUIDv4 عشوائية.
+
+<div id="usage-example">
+  ## مثال على الاستخدام
+</div>
+
+**مثال 1**
+
+يعرض هذا المثال كيفية إنشاء جدول يتضمن عمود UUID وإدراج قيمة فيه.
+
+```sql title="Query"
+CREATE TABLE t_uuid (x UUID, y String) ENGINE=TinyLog
+
+INSERT INTO t_uuid SELECT generateUUIDv4(), 'Example 1'
+
+SELECT * FROM t_uuid
+```
+
+```text title="Response"
+┌────────────────────────────────────x─┬─y─────────┐
+│ 417ddc5d-e556-4d27-95dd-a34d84e46a50 │ Example 1 │
+└──────────────────────────────────────┴───────────┘
+```
+
+**مثال 2**
+
+في هذا المثال، لا يتم تحديد أي قيمة لعمود UUID عند إدراج السجل، أي تُدرَج قيمة UUID الافتراضية:
+
+```sql
+INSERT INTO t_uuid (y) VALUES ('Example 2')
+
+SELECT * FROM t_uuid
+```
+
+```text
+┌────────────────────────────────────x─┬─y─────────┐
+│ 417ddc5d-e556-4d27-95dd-a34d84e46a50 │ Example 1 │
+│ 00000000-0000-0000-0000-000000000000 │ Example 2 │
+└──────────────────────────────────────┴───────────┘
+```
+
+<div id="restrictions">
+  ## القيود
+</div>
+
+لا يدعم نوع البيانات UUID سوى الدوال التي يدعمها أيضًا نوع البيانات [String](/ar/reference/data-types/string) (على سبيل المثال، [min](/ar/reference/functions/aggregate-functions/min) و[max](/ar/reference/functions/aggregate-functions/max) و[count](/ar/reference/functions/aggregate-functions/count)).
+
+كما أن نوع البيانات UUID لا يدعم العمليات الحسابية (على سبيل المثال، [abs](/ar/reference/functions/regular-functions/arithmetic-functions#abs)) ولا الدوال التجميعية، مثل [sum](/ar/reference/functions/aggregate-functions/sum) و[avg](/ar/reference/functions/aggregate-functions/avg).

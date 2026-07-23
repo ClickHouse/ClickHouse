@@ -1,0 +1,244 @@
+---
+sidebarTitle: 'من Pub/Sub إلى ClickHouse'
+slug: /integrations/google-dataflow/templates/pubsub-to-clickhouse
+description: 'يمكنك بث رسائل JSON من Pub/Sub إلى ClickHouse باستخدام قالب Google Dataflow'
+title: 'قالب Dataflow من Pub/Sub إلى ClickHouse'
+doc_type: 'guide'
+keywords: ['Dataflow', 'Pub/Sub', 'PubSub', 'streaming', 'dead-letter']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+قالب Pub/Sub إلى ClickHouse هو مسار معالجة متدفق يقرأ الرسائل المُرمَّزة بصيغة JSON من اشتراك في Pub/Sub ويكتبها في جدول ClickHouse.
+تُوجَّه الرسائل التي يتعذر parse لها أو يتعذر map لها إلى schema الهدف إلى وجهة الرسائل المتعذّرة: جدول ClickHouse أو topic في Pub/Sub أو كليهما.
+
+<div id="pipeline-requirements">
+  ## متطلبات مسار المعالجة
+</div>
+
+* يجب أن يكون اشتراك Pub/Sub المصدر موجودًا.
+* يجب أن تكون الرسائل المنشورة إلى الاشتراك بتنسيق JSON صالح.
+* يجب أن يكون جدول ClickHouse المستهدف موجودًا، وأن تتطابق أسماء أعمدته مع أسماء الحقول في حمولة JSON.
+* يجب أن يكون مضيف ClickHouse متاحًا من أجهزة العامل في Dataflow.
+* يجب توفير وجهة واحدة على الأقل للرسائل المتعذّرة (`clickHouseDeadLetterTable` أو `deadLetterTopic`). وإذا تم توفير كلتيهما، فسيتم توجيه الرسائل الفاشلة إلى الوجهتين كلتيهما في الوقت نفسه.
+* عند تعيين `clickHouseDeadLetterTable`، يجب أن يكون جدول الرسائل المتعذّرة موجودًا مسبقًا في ClickHouse بالمخطط الموضّح في [معالجة الرسائل المتعذّرة](#dead-letter-handling).
+* عند تعيين `deadLetterTopic`، يجب أن يكون موضوع Pub/Sub موجودًا مسبقًا.
+
+<div id="template-parameters">
+  ## معلمات Template
+</div>
+
+<br />
+
+<br />
+
+| اسم المعلَمة                | وصف المعلَمة                                                                                                                                                                                  | مطلوب | ملاحظات                                                                                                                                                                                            |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `inputSubscription`         | اشتراك Pub/Sub الذي ستُقرأ منه الرسائل. مثال: `projects/<PROJECT_ID>/subscriptions/<SUBSCRIPTION_NAME>`.                                                                                      | ✅     | يجب أن تكون الرسائل مُرمَّزة بصيغة JSON.                                                                                                                                                           |
+| `clickHouseUrl`             | عنوان URL لنقطة نهاية ClickHouse. استخدم `https://` لاتصالات SSL ‏(ClickHouse Cloud) أو `http://` للاتصالات دون SSL. مثال: `https://<HOST>:8443` أو `http://<HOST>:8123`.                     | ✅     | بالنسبة إلى ClickHouse Cloud، استخدم نقطة نهاية HTTPS على المنفذ `8443`.                                                                                                                           |
+| `clickHouseDatabase`        | اسم قاعدة بيانات ClickHouse التي يوجد فيها الجدول الهدف. مثال: `default`.                                                                                                                     | ✅     |                                                                                                                                                                                                    |
+| `clickHouseTable`           | اسم جدول ClickHouse الذي ستُكتب فيه البيانات.                                                                                                                                                 | ✅     | يجب أن يكون الجدول موجودًا قبل تشغيل مسار المعالجة.                                                                                                                                                |
+| `clickHouseUsername`        | اسم المستخدم للمصادقة مع ClickHouse.                                                                                                                                                          | ✅     |                                                                                                                                                                                                    |
+| `clickHousePassword`        | كلمة المرور للمصادقة مع ClickHouse.                                                                                                                                                           | ✅     |                                                                                                                                                                                                    |
+| `clickHouseDeadLetterTable` | جدول ClickHouse الذي ستُكتب فيه الرسائل الفاشلة. مثال: `my_table_dead_letter`.                                                                                                                |       | يجب توفير واحد على الأقل من `clickHouseDeadLetterTable` أو `deadLetterTopic`. ويجب أن يكون الجدول موجودًا وفق مخطط الرسائل المتعذّرة الموضّح في [معالجة الرسائل المتعذّرة](#dead-letter-handling). |
+| `deadLetterTopic`           | موضوع Pub/Sub الذي ستُنشر إليه الرسائل الفاشلة. مثال: `projects/<PROJECT_ID>/topics/<TOPIC_NAME>`.                                                                                            |       | يجب توفير واحد على الأقل من `clickHouseDeadLetterTable` أو `deadLetterTopic`. وتُنشر الحمولات الفاشلة إلى الموضوع مع تعيين `errorMessage` و`failedAt` كسمات للرسالة.                               |
+| `windowSeconds`             | المدة بالثواني لنوافذ التجميع على دفعات المعتمدة على الوقت.                                                                                                                                   |       | راجع [التجميع على دفعات والنوافذ](#batching-and-windowing) لمعرفة التفاعل مع `batchRowCount`. إذا لم يتم تعيين أيٍّ منهما، فسيستخدم الوضع المجمّع القيم الافتراضية `30s` و`1000` صف.               |
+| `batchRowCount`             | عدد الصفوف التي سيتم تجميعها قبل التفريغ إلى ClickHouse.                                                                                                                                      |       | راجع [التجميع على دفعات والنوافذ](#batching-and-windowing) لمعرفة التفاعل مع `windowSeconds`.                                                                                                      |
+| `maxInsertBlockSize`        | الحد الأقصى لعدد الصفوف في كل عبارة `INSERT` تُرسَل إلى ClickHouse. القيمة الافتراضية هي `1,000,000`.                                                                                         |       | خيار من `ClickHouseIO`.                                                                                                                                                                            |
+| `maxRetries`                | الحد الأقصى لعدد محاولات إعادة المحاولة لإدخالات ClickHouse الفاشلة. القيمة الافتراضية هي `5`.                                                                                                |       | خيار من `ClickHouseIO`.                                                                                                                                                                            |
+| `insertDeduplicate`         | ما إذا كان سيتم تمكين إزالة التكرار لاستعلامات `INSERT` في جداول ClickHouse المكررة. القيمة الافتراضية هي `true`.                                                                             |       | خيار من `ClickHouseIO`.                                                                                                                                                                            |
+| `insertQuorum`              | بالنسبة إلى استعلامات `INSERT` في الجداول المكررة، انتظر حتى يقرّ العدد المحدد من النسخ المتماثلة بعملية الكتابة، وبحيث تُضاف البيانات باتساق خطي. تؤدي القيمة `0` إلى تعطيل الكتابة بالنصاب. |       | خيار من `ClickHouseIO`. وهو معطَّل في إعدادات الخادم الافتراضية.                                                                                                                                   |
+| `insertDistributedSync`     | إذا كان مُمكّنًا، فإن استعلامات `INSERT` إلى الجداول الموزعة تنتظر حتى تُرسَل البيانات إلى جميع العُقد في العنقود. القيمة الافتراضية هي `true`.                                               |       | خيار من `ClickHouseIO`.                                                                                                                                                                            |
+
+<Note>
+  يمكن العثور على القيم الافتراضية لجميع معلمات `ClickHouseIO` في [`ClickHouseIO` Apache Beam Connector](/ar/integrations/connectors/data-ingestion/etl-tools/apache-beam#clickhouseiowrite-parameters).
+</Note>
+
+<div id="message-format-and-schema-mapping">
+  ## تنسيق الرسائل وتعيين المخطط
+</div>
+
+يجب أن تكون رسائل Pub/Sub كائنات JSON تتطابق أسماء حقولها ذات المستوى الأعلى تمامًا مع أسماء أعمدة جدول ClickHouse الهدف.
+
+لمواءمة الرسائل الواردة مع الجدول الهدف، ينفّذ مسار المعالجة ما يلي عند بدء التشغيل:
+
+1. يجلب مخطط جدول ClickHouse الهدف.
+2. يبني مخطط `Row` في Beam انطلاقًا من مخطط ClickHouse هذا.
+3. لكل رسالة Pub/Sub واردة، يحلّل حمولة JSON ويُنشئ صفًا بقراءة الحقول المسمّاة في مخطط ClickHouse.
+
+<br />
+
+<Warning>
+  يجب أن تتطابق أسماء حقول JSON تمامًا مع أسماء أعمدة ClickHouse (فالمطابقة حساسة لحالة الأحرف). وتُتجاهل الحقول الموجودة في الرسالة التي لا تقابل أي عمود في ClickHouse. وإذا لم يكن لعمود في ClickHouse حقل مطابق في حمولة JSON، يحاول مسار المعالجة كتابة `NULL` لذلك العمود — ولا ينجح ذلك إلا إذا كان العمود معرّفًا على أنه [`Nullable`](/ar/reference/data-types/nullable). وتُوجَّه الرسائل التي يتعذر تحليلها، أو التي لا يمكن تحويل قيمها إلى نوع العمود، أو التي قد تؤدي إلى كتابة `NULL` في عمود غير قابل للقيم NULL، إلى وجهة الرسائل المتعذّرة.
+</Warning>
+
+<div id="type-conversion">
+  ### تحويل الأنواع
+</div>
+
+تُحوَّل قيم JSON إلى نوع عمود ClickHouse المقابل:
+
+| نوع ClickHouse                                                                     | ملاحظات                                                                                                |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| [`Float32`](/ar/reference/data-types/float)                                           | يُحلَّل باستخدام `Float.valueOf`.                                                                      |
+| [`Float64`](/ar/reference/data-types/float)                                           | يُحلَّل باستخدام `Double.valueOf`.                                                                     |
+| [`Date`](/ar/reference/data-types/date)                                               | يُحلَّل كسلسلة تاريخ بتنسيق ISO-8601.                                                                  |
+| [`DateTime`](/ar/reference/data-types/datetime)                                       | يُحلَّل كسلسلة تاريخ ووقت بتنسيق ISO-8601 (مثل `2026-01-15T12:34:56Z`).                                |
+| [`Array(T)`](/ar/reference/data-types/array)                                          | مصفوفة JSON؛ يُحوَّل كل عنصر إلى نوع العنصر `T`. وتنتج المصفوفات الفارغة أو غير الموجودة مصفوفة فارغة. |
+| Integer types (`Int8`/`Int16`/`Int32`/`Int64`, `UInt8`/`UInt16`/`UInt32`/`UInt64`) | تُحلَّل من الرقم في JSON أو من تمثيله النصي.                                                           |
+| [`String`](/ar/reference/data-types/string)                                           | يُستخدم كما هو للحقول النصية؛ أما عُقد JSON غير النصية فتُسلسَل إلى تمثيلها النصي بصيغة JSON.          |
+
+<div id="batching-and-windowing">
+  ## التجميع على دفعات وتحديد النوافذ
+</div>
+
+نظرًا لأن مسار المعالجة تدفقي، تتراكم الصفوف الواردة ضمن نوافذ قبل كتابتها إلى ClickHouse. وتُختار استراتيجية تحديد النوافذ بناءً على المعلمات التي توفّرها:
+
+| `windowSeconds`    | `batchRowCount`    | السلوك                                                                                       |
+| ------------------ | ------------------ | -------------------------------------------------------------------------------------------- |
+| معيّن              | غير معيّن          | نوافذ ثابتة قائمة على الوقت مدتها `windowSeconds`.                                           |
+| غير معيّن          | معيّن              | نافذة عامة مع مشغّل يعتمد على العدد؛ يُفعَّل كلما بلغ عدد الصفوف `batchRowCount`.            |
+| كلاهما معيّن       | كلاهما معيّن       | نافذة عامة مع مشغّل مركّب؛ يُفعَّل عند تحقق أيٍّ من الشرطين أولًا (الوقت **أو** عدد الصفوف). |
+| لا شيء منهما معيّن | لا شيء منهما معيّن | وضع مركّب بالقيم الافتراضية: `30` ثانية أو `1000` صف، أيهما يتحقق أولًا.                     |
+
+يتيح لك ضبط هذه القيم الموازنة بين زمن الاستجابة وكفاءة الإدراج. فالنوافذ الأصغر تقلل زمن الاستجابة من البداية إلى النهاية، بينما تنتج النوافذ الأكبر دفعات `INSERT` أقل عددًا وأكبر حجمًا.
+
+<div id="dead-letter-handling">
+  ## معالجة الرسائل المتعذّرة
+</div>
+
+تُوجَّه الرسائل التي تفشل في تحليل JSON، أو تعيين المخطط، أو تحويل النوع قسرًا إلى وجهة أو وجهات الرسائل المتعذّرة المُعدّة. ويجب توفير واحد على الأقل من `clickHouseDeadLetterTable` أو `deadLetterTopic`؛ وإذا جرى تعيينهما معًا، فستُرسَل الرسائل الفاشلة إلى كليهما.
+
+<div id="clickhouse-dead-letter-table">
+  ### جدول الرسائل المتعذّرة في ClickHouse
+</div>
+
+عند تعيين `clickHouseDeadLetterTable`، يجب أن يكون جدول الرسائل المتعذّرة موجودًا مسبقًا بهذا المخطط الثابت:
+
+| العمود          | النوع      | الوصف                                              |
+| --------------- | ---------- | -------------------------------------------------- |
+| `raw_message`   | `String`   | حمولة رسالة Pub/Sub الأصلية بصيغة نص UTF-8.        |
+| `error_message` | `String`   | رسالة الاستثناء التي توضّح سبب فشل الصف.           |
+| `stack_trace`   | `String`   | تتبّع مكدس Java الكامل الذي جرى التقاطه وقت الفشل. |
+| `failed_at`     | `DateTime` | الطابع الزمني لوقت المعالجة الذي فشل فيه الصف.     |
+
+تعريف مبسّط لعملية نشر بعقدة واحدة:
+
+```sql
+CREATE TABLE my_table_dead_letter (
+    raw_message   String,
+    error_message String,
+    stack_trace   String,
+    failed_at     DateTime
+) ENGINE = MergeTree()
+ORDER BY failed_at;
+```
+
+<Note>
+  اضبط المحرك وبند `ORDER BY` بما يناسب بيئة النشر لديك — استخدم `ReplicatedMergeTree` للجداول المكررة، وأضف `ON CLUSTER` لعمليات النشر الموزعة، وعدّل التقسيم أو `TTL` حسب الحاجة.
+</Note>
+
+<div id="pubsub-dead-letter-topic">
+  ### موضوع Pub/Sub للرسائل المتعذّرة
+</div>
+
+عند تعيين `deadLetterTopic`، تُعاد كل رسالة فاشلة إلى الموضوع مع:
+
+* **الحمولة**: بايتات الرسالة الأصلية.
+* **السمة** `errorMessage`: رسالة الاستثناء التي تم التقاطها وقت حدوث الفشل.
+* **السمة** `failedAt`: الطابع الزمني لوقت المعالجة الذي فشل عنده الصف.
+
+وهذا يسهّل إعادة تمرير الرسائل الفاشلة بعد حل المشكلة الأساسية في المخطط أو المُنتِج.
+
+<div id="running-the-template">
+  ## تشغيل القالب
+</div>
+
+يتوفر قالب Pub/Sub إلى ClickHouse عبر Google Cloud Console.
+
+<Note>
+  احرص على مراجعة هذا المستند، ولا سيما الأقسام أعلاه، لفهم متطلبات إعداد القالب والمتطلبات المسبقة فهمًا كاملًا.
+</Note>
+
+سجّل الدخول إلى Google Cloud Console وابحث عن Dataflow.
+
+1. اضغط على الزر `CREATE JOB FROM TEMPLATE`.
+   <Image img="/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp" border alt="وحدة تحكم Dataflow" />
+
+2. بعد فتح نموذج القالب، أدخل اسم المهمة وحدد المنطقة المطلوبة.
+
+   {/* PLACEHOLDER: add screenshot of the Pub/Sub to ClickHouse template initial form (job name + region) */}
+
+3. في حقل `Dataflow Template`، اكتب `ClickHouse` أو `Pub/Sub`، ثم اختر قالب `Pub/Sub to ClickHouse`.
+
+   {/* PLACEHOLDER: add screenshot of selecting the "Pub/Sub to ClickHouse" template from the dropdown */}
+
+4. بعد تحديده، يتوسع النموذج. املأ ما يلي:
+
+   * اشتراك إدخال Pub/Sub، بالصيغة `projects/<PROJECT_ID>/subscriptions/<SUBSCRIPTION_NAME>`.
+   * عنوان URL لنقطة نهاية ClickHouse — ولاستخدام ClickHouse Cloud، استخدم `https://<HOST>:8443`.
+   * قاعدة بيانات ClickHouse، والجدول الهدف، واسم المستخدم وكلمة المرور.
+   * وجهة الرسائل المتعذّرة واحدة على الأقل: جدول ClickHouse أو topic في Pub/Sub (أو كلاهما).
+
+   {/* PLACEHOLDER: add screenshot of the expanded Pub/Sub to ClickHouse template form showing the required fields and the dead-letter section */}
+
+5. يمكنك اختياريًا تخصيص التجميع على دفعات (`windowSeconds`, `batchRowCount`) ومعلمات ضبط `ClickHouseIO`، كما هو موضح في قسم [Template parameters](#template-parameters).
+
+<div id="monitor-the-job">
+  ### راقب المهمة
+</div>
+
+انتقل إلى [علامة التبويب Dataflow Jobs](https://console.cloud.google.com/dataflow/jobs) في Google Cloud Console لمتابعة حالة المهمة. ستجد تفاصيل المهمة، بما في ذلك مدى التقدّم وأي أخطاء:
+
+<Image img="/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp" size="lg" border alt="واجهة Dataflow تعرض مهمة Pub/Sub إلى ClickHouse قيد التشغيل" />
+
+يُصدر القالب أيضًا المقاييس المخصّصة التالية ضمن مساحة الاسم `PubSubToClickHouse`، ويمكن الاطلاع عليها من صفحة مهمة Dataflow:
+
+| المقياس                 | النوع | الوصف                                                                          |
+| ----------------------- | ----- | ------------------------------------------------------------------------------ |
+| `messages-received`     | عداد  | إجمالي رسائل Pub/Sub التي استقبلتها خطوة التحليل.                              |
+| `rows-parsed-ok`        | عداد  | الرسائل التي حُوِّلت بنجاح إلى صف وأُرسلت إلى المخرج الرئيسي.                  |
+| `rows-parse-failed`     | عداد  | الرسائل التي فشل تحليلها أو فشل تعيين المخطط لها، وأُرسلت إلى مسار الرسائل المتعذّرة. |
+| `message-payload-bytes` | توزيع | توزيع أحجام حمولة رسائل Pub/Sub الواردة، بالبايت.                              |
+
+<div id="troubleshooting">
+  ## استكشاف الأخطاء وإصلاحها
+</div>
+
+<div id="code-241-dbexception-memory-limit-total-exceeded">
+  ### خطأ تجاوز حد الذاكرة (الإجمالي) (الرمز 241)
+</div>
+
+يحدث هذا الخطأ عندما تنفد ذاكرة ClickHouse أثناء معالجة دفعات كبيرة من البيانات. لحل هذه المشكلة:
+
+* زيادة موارد المثيل: قم بترقية ClickHouse server إلى مثيل أكبر بذاكرة أكثر للتعامل مع حمل معالجة البيانات.
+* تقليل حجم الدفعة: خفّض `batchRowCount` (و/أو `maxInsertBlockSize`) في إعدادات مهمة Dataflow لإرسال أجزاء أصغر من البيانات إلى ClickHouse، مما يقلّل استهلاك الذاكرة لكل دفعة.
+
+<div id="all-messages-going-to-dlq">
+  ### جميع الرسائل تتجه إلى وجهة الرسائل المتعذّرة
+</div>
+
+الأسباب الأكثر شيوعًا هي:
+
+* أسماء حقول JSON لا تتطابق تمامًا مع أسماء أعمدة ClickHouse (والتطابق هنا حساس لحالة الأحرف).
+* يتعذر تحويل قيمة JSON إلى نوع العمود المطلوب (على سبيل المثال، سلسلة غير متوافقة مع ISO-8601 في عمود `DateTime`).
+* تغيّر مخطط الجدول الهدف منذ بدء مسار المعالجة — إذ يُجلَب المخطط مرة واحدة فقط عند بدء التشغيل. أعد تشغيل المهمة بعد تطبيق تغييرات المخطط.
+
+افحص العمودين `error_message` و`stack_trace` في جدول ClickHouse الخاص بالرسائل المتعذّرة (أو السمة `errorMessage` في رسائل Pub/Sub المتعذّرة) لتحديد السبب الجذري.
+
+<div id="no-rows-arriving">
+  ### يبدأ مسار المعالجة ولكن لا تصل أي صفوف إلى ClickHouse
+</div>
+
+* تأكَّد من أن الاشتراك يستقبل الرسائل — تحقّق من مقياس `messages-received` في صفحة مهمة Dataflow.
+* في الوضع المعتمد على الوقت (`windowSeconds` فقط)، لا تُفرَّغ الصفوف إلا عند حدود النافذة. خفِّض قيمة `windowSeconds` للتحقّق من حدوث عمليات التفريغ.
+* تحقّق من إمكانية الوصول الشبكي بين عمّال Dataflow ونقطة نهاية ClickHouse (`firewall` أو VPC peering أو Private Service Connect).
+
+<div id="template-source-code">
+  ## الكود المصدري للقالب
+</div>
+
+الكود المصدري للقالب متاح في:
+
+* [`GoogleCloudPlatform/DataflowTemplates`](https://github.com/GoogleCloudPlatform/DataflowTemplates/tree/main/v2/googlecloud-to-clickhouse) — مستودع Google Cloud Platform الأصلي.
+* [`ClickHouse/DataflowTemplates`](https://github.com/ClickHouse/DataflowTemplates) — النسخة المتفرعة الخاصة بـ ClickHouse.

@@ -1,0 +1,72 @@
+---
+sidebarTitle: '代码解释器'
+slug: /cloud/features/ai-ml/agents/builder/code-interpreter
+title: '代码解释器'
+description: '在 ClickHouse 智能体中执行沙箱化代码'
+keywords: ['AI', 'ClickHouse Cloud', '智能体', '代码解释器', '沙箱', 'Python']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge />
+
+代码解释器允许 agent 在托管沙箱中执行代码。可将其用于计算、数据转换、格式转换、绘图，以及其他任何更适合用代码而非自然语言完成的任务。
+
+<div id="enable-it">
+  ## 启用代码解释器
+</div>
+
+在agent构建器中，在 **功能** 部分启用 **运行代码**，然后保存。agent会根据用户请求及其自身指令，自行决定何时运行代码。
+
+<Image img="/images/cloud/agent-builder/run-code/run-code.webp" alt="“功能”面板中的“运行代码”部分，其中“运行代码”复选框已启用，并带有“上传到代码环境”按钮" size="sm" />
+
+<div id="supported-languages">
+  ## 支持的语言
+</div>
+
+该沙箱是一个 Unix 环境，提供两种通用运行时和一些 shell 实用工具：
+
+* **Python 3** - 数据任务的默认选择。
+* **Node.js (JavaScript)** - 当agent更适合使用 JS 完成任务时。
+* **Bash** 和 **sh** - 用于串接命令和进行快速 I/O 的 shell 脚本。
+* **AWK** 和 **sed** - 面向行的文本处理。
+* **bc** - 任意精度计算。
+
+凡是涉及数据解析、转换或计算的任务，agent都会优先使用 Python。
+
+<Tip>
+  仅在任务确实适合用单行命令解决时，才使用 shell 工具。
+</Tip>
+
+<div id="files">
+  ## 文件
+</div>
+
+用户可以将文件上传到对话中；代码解释器可在沙箱的工作目录中访问这些文件。代码也可以生成输出文件 (CSV、图表、归档文件) ，并以可下载附件的形式显示在对话中。
+
+<div id="sandbox-isolation">
+  ## 沙箱隔离
+</div>
+
+每次执行都会在一个临时沙箱中运行，不提供网络访问，也不提供持久化存储。会话之间不共享状态——除非 agent 明确重新加载，否则某次运行中的变量和文件不会带到下一次运行中。
+
+不同方案的资源限制 (内存、每次运行可用的文件数、每月请求配额) 同样适用。错误和 stderr 会与 stdout 一并显示在对话中。
+
+<div id="when-to-use-it">
+  ## 何时使用它
+</div>
+
+当答案需要依靠确定性计算，而语言模型仅凭推理无法稳定得出结果时，就应使用代码解释器。
+典型场景包括：
+
+* 解析用户上传的 CSV 或 JSON 文件。
+* 计算汇总统计信息或进行快速模拟。
+* 在不同格式之间转换 (Parquet、JSON、CSV) 。
+* 根据查询结果生成图表。
+
+<Tip>
+  对于模型仅凭上下文就能回答的任务，应避免使用它。
+  代码执行会增加延迟，并消耗配额。
+</Tip>

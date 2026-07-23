@@ -1,0 +1,218 @@
+---
+slug: /use-cases/observability/clickstack/integration-partners/bindplane
+title: '使用 Bindplane 将 OpenTelemetry 发送到 ClickStack'
+sidebarTitle: 'Bindplane'
+description: '使用 Bindplane 将遥测数据路由到 ClickStack，实现 collector 的集中管理'
+doc_type: 'guide'
+keywords: ['Bindplane', 'OTEL', 'ClickStack', 'OpenTelemetry', 'collector management']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import PartnerBadge from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<Info>
+  **摘要**
+
+  本指南将介绍如何使用 Bindplane 原生提供的 ClickStack 目标端，将遥测数据路由到 ClickStack。你将了解如何：
+
+  * 在 Bindplane 中将 ClickStack 配置为目标端
+  * 创建配置以处理并路由遥测数据
+  * 将配置远程部署到 OTel collector，并开始采集数据
+  * 在 ClickStack 中查看遥测数据
+
+  该集成将 ClickStack 的高性能摄取能力与 Bindplane 对 collector 的集中式管理结合起来，让你能够更轻松地扩展可观测性，而无需增加运维负担。
+
+  所需时间：10–15 分钟
+</Info>
+
+<div id="what-is-bindplane">
+  ## 什么是 Bindplane？
+</div>
+
+Bindplane 是一个 OpenTelemetry 原生遥测管道，可为 OpenTelemetry Collectors 提供集中式管理。它通过提供可视化配置编辑、安全滚动发布和管道智能分析，简化了大规模 collector 集群的运维。
+
+<div id="why-bindplane-clickstack">
+  ## 为什么选择 Bindplane + ClickStack？
+</div>
+
+在大规模环境中，管理大批 OpenTelemetry Collectors 往往会成为运维瓶颈。ClickStack 已经证明自己能够承受极高的摄取量——客户正以每秒数 GB 的速度摄取遥测数据，并存储数百 PB 的数据。此时，挑战的重点不再是查询性能，而是如何可靠地运维为 ClickHouse 提供数据的 collector 基础设施。
+
+Bindplane 通过以下能力解决这一问题：
+
+* 为从数千到超过一百万的 OpenTelemetry Collectors 提供集中管理
+* 提供可视化配置编辑和安全的一键滚动发布
+* 在数据到达 ClickStack 之前，统一执行自动资源检测与富集
+* 支持扇出路由，使同一遥测数据流能够同时发送到 ClickStack 和其他目标端
+* 提供完整的管道可观测性，包括 collector 健康状态、吞吐量和端到端性能
+
+<Tip>
+  **关键要点**
+
+  * **ClickStack 能够处理极高的摄取量、大规模存储和快速分析查询**
+  * **Bindplane 用于管理摄取管道，以及运行 collector 集群带来的运维复杂性**
+</Tip>
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 正在运行的 ClickStack 实例 (本地、Server 或 ClickHouse Cloud)
+* Bindplane 账户 ([在 `app.bindplane.com` 创建账户](https://app.bindplane.com))
+* 已安装 Bindplane OTel Collector (参见[安装你的第一个 Collector](https://docs.bindplane.com/readme/install-your-first-collector))
+* Bindplane collectors 与 ClickStack OTLP 端点之间具备网络连通性
+* ClickStack API 摄取密钥 (可在 ClickStack Team Settings &gt; API Keys 中找到，[参考此文档](/zh/clickstack/ingesting-data/opentelemetry#sending-otel-data))
+* 已开放相应的网络端口 (HTTP/s 使用 `4318`，gRPC 使用 `4317`)
+
+<div id="integrate-bindplane-clickstack">
+  ## 将 ClickStack 与 Bindplane 集成
+</div>
+
+<Steps>
+  <Step>
+    #### 将 ClickStack 配置为目标端
+
+    1. 登录你的 Bindplane 账户
+    2. 进入 **Library**
+    3. 点击 **Add Destination**
+    4. 从可用目标端列表中选择 **ClickStack**
+    5. 配置连接：
+       * **Protocol**：选择 HTTP 或 gRPC (默认使用 HTTP，端口为 `4318`)
+       * **Hostname**：输入你的 ClickStack OTLP 端点主机名或 IP 地址
+       * **Port**：输入端口 (HTTP 为 `4318`，gRPC 为 `4317`)
+       * **API Ingestion Key**：输入你的 ClickStack API Ingestion Key
+    6. 为目标端命名 (例如“ClickStack Production”)
+    7. 点击 **Save** 创建目标端
+
+    <Tip>
+      **关键要点**
+
+      ClickStack 目标端同时支持 HTTP 和 gRPC 协议。对于高吞吐场景，建议使用启用压缩 (gzip、zstd 或 snappy) 的 gRPC，以获得更好的性能。
+    </Tip>
+  </Step>
+
+  <Step>
+    #### 创建配置
+
+    配置好 ClickStack 目标端后，创建一个配置来处理并路由遥测数据：
+
+    1. 进入 **Configurations** → **Create Configuration**
+    2. 为配置命名 (例如“ClickStack Pipeline”)
+    3. 为你的部署选择 **Collector Type** 和 **Platform**
+    4. 添加源：
+       * 点击 **Add Source**，从 80 多个可用源中选择
+       * 如需测试，你可以添加一个遥测生成器源来模拟流量
+       * 在生产环境中，请为实际遥测数据 (日志、指标、链路追踪) 添加源
+    5. 添加 ClickStack 目标端：
+       * 点击 **Add Destination**
+       * 选择你在上一步创建的 ClickStack 目标端
+       * 选择要发送的遥测类型 (Logs、Metrics、Traces 或全部)
+
+    <Tip>
+      **关键要点**
+
+      你可以添加处理器，在遥测数据到达 ClickStack 之前执行过滤、采样、脱敏、富集、批处理等操作，以便对遥测数据进行整形。这可确保进入 ClickHouse 的数据保持一致且结构清晰。
+    </Tip>
+  </Step>
+
+  <Step>
+    #### 添加处理器 (可选)
+
+    Bindplane 提供管道智能和处理器推荐。你可以添加处理器来执行以下操作：
+
+    * **Filter**：排除不必要的遥测数据，以减少数据量
+    * **Sample**：对高数据量的链路追踪应用采样策略
+    * **Enrich**：添加资源属性、标记或元数据
+    * **Transform**：修改遥测数据的结构或内容
+    * **Batch**：优化批次大小以提高传输效率
+
+    这些处理器会在数据到达 ClickStack 之前，在你的 collector 集群中统一应用。
+  </Step>
+
+  <Step>
+    #### 部署 collectors 并开始滚动发布
+
+    1. 将一个 collector (BDOT Collector) 添加到你的配置中：
+       * 在 Bindplane 中进入 **Agents**
+       * 按照 [Bindplane 的安装说明](https://docs.bindplane.com/readme/install-your-first-collector) 在目标系统上安装 Bindplane collector
+       * 连接成功后，该 collector 就会出现在你的 collector 列表中
+
+    2. 将配置分配给你的 collectors：
+       * 选择你要使用的 collectors
+       * 将 ClickStack 配置分配给它们
+
+    3. 开始滚动发布：
+       * 点击 **Start Rollout** 部署配置
+       * Bindplane 会在滚动发布前验证配置
+       * 在 Bindplane UI 中监控滚动发布状态
+
+    <Tip>
+      **关键要点**
+
+      Bindplane 提供带验证的一键安全滚动发布。你可以通过 Bindplane 界面实时监控 collector 的健康状态、吞吐量和错误。
+    </Tip>
+
+    <Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="通过 Bindplane 在 ClickStack 中查看遥测信号" size="lg" />
+  </Step>
+
+  <Step>
+    #### 在 ClickStack 中验证遥测数据
+
+    配置完成滚动发布后，遥测数据会从你管理的 collector 集群流入 ClickStack：
+
+    1. 登录你的 ClickStack 实例 (HyperDX UI)
+    2. 进入 **Logs**、**Metrics** 或 **Traces** 浏览页面
+    3. 你应该能看到来自 Bindplane 管理的 collectors 的遥测数据开始出现
+    4. 到达 ClickStack 的数据已由 Bindplane 处理器完成富集和结构化
+
+    <Image img="/images/clickstack/bindplane/bindplane-hyperdx.webp" alt="通过 Bindplane 在 ClickStack 中查看遥测信号" size="lg" />
+  </Step>
+</Steps>
+
+<div id="advanced-configuration">
+  ## 高级配置
+</div>
+
+<div id="fan-out-routing">
+  ### 扇出路由
+</div>
+
+Bindplane 支持扇出路由，让您能够同时将相同的遥测数据流发送到多个目标端。您可以：
+
+* 将日志、指标和链路追踪发送到 ClickStack，以便长期存储和分析
+* 将相同的数据路由到其他可观测性平台，以实现实时告警
+* 将特定遥测数据转发到 SIEM 平台，以进行安全分析
+
+这可以通过在 Bindplane 配置中添加多个目标端来实现。
+
+<div id="compression">
+  ### 压缩与性能
+</div>
+
+对于高流量场景，请在 ClickStack 目标端中配置压缩：
+
+* **HTTP**：支持 gzip、deflate、snappy、zstd 或 none (默认值：gzip)
+* **gRPC**：支持 gzip、snappy、zstd 或 none (默认值：gzip)
+
+将遥测数据发送到 ClickStack 时，压缩可减少带宽占用，在大规模场景下尤为重要。
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+现在，既然来自 Bindplane 的遥测数据已经流入 ClickStack，你可以：
+
+* **构建仪表盘**：在 ClickStack (HyperDX) 中为日志、指标和链路追踪创建可视化
+* **设置告警**：在 ClickStack 中为关键情况配置告警
+* **扩展部署规模**：随着可观测性需求增长，添加更多 collector 和数据源
+* **优化管道**：使用 Bindplane 的管道智能功能识别优化机会
+
+<div id="read-more">
+  ## 延伸阅读
+</div>
+
+* [Bindplane 文档中的 ClickStack 集成](https://docs.bindplane.com/integrations/destinations/clickstack)
+
+{/* - [“Bindplane 博客：Bindplane + ClickStack 集成：将 OpenTelemetry (OTel) 发送到 ClickStack”](tbd) -- 发布后添加链接 */}

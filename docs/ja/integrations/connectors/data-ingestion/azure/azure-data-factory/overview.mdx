@@ -1,0 +1,24 @@
+---
+sidebarTitle: '概要'
+slug: /integrations/azure-data-factory/overview
+description: 'Azure データを ClickHouse に取り込む - 概要'
+keywords: ['azure data factory', 'azure', 'microsoft', 'data']
+title: 'Azure データを ClickHouse に取り込む'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+---
+
+import ClickHouseSupportedBadge from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Microsoft Azure には、データの保存、変換、分析のためのさまざまなツールがあります。しかし、多くのケースでは、大規模なデータセットに対する低レイテンシのクエリや処理において、ClickHouse のほうが大幅に優れたパフォーマンスを発揮します。さらに、ClickHouse の列指向ストレージと圧縮により、Azure の汎用データベースと比べて、大量の分析データのクエリにかかるコストを大きく削減できます。
+
+このセクションでは、Microsoft Azure から ClickHouse にデータを取り込む 2 つの方法を紹介します。
+
+| Method                                                                                                                             | Description                                                                                                                                         |
+| ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`azureBlobStorage` Table Function を使用する](/ja/integrations/connectors/data-ingestion/azure/azure-data-factory/using-azureblobstorage) | ClickHouse の [`azureBlobStorage` Table Function](/ja/reference/functions/table-functions/azureBlobStorage) を使用して、Azure Blob Storage からデータを直接転送します。     |
+| [ClickHouse HTTP インターフェイスを使用する](/ja/integrations/connectors/data-ingestion/azure/azure-data-factory/using-http-interface)             | Azure Data Factory 内で [ClickHouse HTTP インターフェイス](/ja/concepts/features/interfaces/http) をデータソースとして使用し、パイプラインの一部としてデータをコピーしたり、データフロー アクティビティで利用したりできます。 |

@@ -1,0 +1,37 @@
+---
+description: 'توثيق تعليمات ALTER TABLE ... UPDATE'
+sidebarTitle: 'UPDATE'
+slug: /sql-reference/statements/alter/update
+title: 'تعليمات ALTER TABLE ... UPDATE'
+doc_type: 'reference'
+---
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
+```
+
+يُعدِّل البيانات المطابقة لتعبير التصفية المحدد. وهو مُنفَّذ على شكل [mutation](/ar/reference/statements/alter/index#mutations).
+
+<Note>
+  تجعل البادئة `ALTER TABLE` هذه الصياغة مختلفة عن معظم الأنظمة الأخرى التي تدعم SQL. والمقصود منها الإشارة إلى أن هذه العملية، بخلاف الاستعلامات المشابهة في قواعد بيانات OLTP، عملية ثقيلة وغير مصممة للاستخدام المتكرر.
+</Note>
+
+يجب أن يكون `filter_expr` من النوع `UInt8`. يحدّث هذا الاستعلام قيم الأعمدة المحددة إلى قيم التعبيرات المقابلة في الصفوف التي تكون فيها قيمة `filter_expr` غير صفرية. تُحوَّل القيم إلى نوع العمود باستخدام العامل `CAST`. لا يُدعم تحديث الأعمدة المستخدمة في حساب المفتاح الأساسي أو مفتاح التقسيم.
+
+يمكن أن يحتوي الاستعلام الواحد على عدة أوامر مفصولة بفواصل.
+
+يُحدَّد تزامن معالجة الاستعلام بواسطة الإعداد [mutations&#95;sync](/ar/reference/settings/session-settings#mutations_sync). وهو غير متزامن افتراضيًا.
+
+**انظر أيضًا**
+
+* [التعديلات](/ar/reference/statements/alter/index#mutations)
+* [تزامن استعلامات ALTER](/ar/reference/statements/alter/index#synchronicity-of-alter-queries)
+* الإعداد [mutations&#95;sync](/ar/reference/settings/session-settings#mutations_sync)
+* [`UPDATE` خفيف الوزن](/ar/reference/statements/update) - تحديث خفيف بديل يستخدم أجزاء التصحيح
+* [`APPLY PATCHES`](/ar/reference/statements/alter/apply-patches) - تطبيق التصحيحات يدويًا من التحديثات الخفيفة
+
+<div id="related-content">
+  ## محتوى ذي صلة
+</div>
+
+* مدونة: [التعامل مع التحديثات وعمليات الحذف في ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

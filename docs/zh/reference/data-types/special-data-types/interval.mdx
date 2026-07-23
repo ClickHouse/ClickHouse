@@ -1,0 +1,132 @@
+---
+description: 'Interval 特殊数据类型的文档'
+sidebarTitle: 'Interval'
+slug: /sql-reference/data-types/special-data-types/interval
+title: 'Interval'
+doc_type: 'reference'
+---
+
+表示时间和日期时间隔的数据类型家族。[INTERVAL](/zh/reference/operators/index#interval) 运算符的结果类型。
+
+结构：
+
+* 以无符号整数值表示的时间间隔。
+* 时间间隔的类型。
+
+支持的时间间隔类型：
+
+* `NANOSECOND`
+* `MICROSECOND`
+* `MILLISECOND`
+* `SECOND`
+* `MINUTE`
+* `HOUR`
+* `DAY`
+* `WEEK`
+* `MONTH`
+* `QUARTER`
+* `YEAR`
+
+每种时间间隔类型都有各自独立的数据类型。例如，`DAY` 时间间隔对应 `IntervalDay` 数据类型：
+
+```sql
+SELECT toTypeName(INTERVAL 4 DAY)
+```
+
+```text
+┌─toTypeName(toIntervalDay(4))─┐
+│ IntervalDay                  │
+└──────────────────────────────┘
+```
+
+<div id="usage-remarks">
+  ## 使用说明
+</div>
+
+您可以将 `Interval` 类型的值与 [Date](/zh/reference/data-types/date) 和 [DateTime](/zh/reference/data-types/datetime) 类型的值进行算术运算。例如，可以在当前时间上加 4 天：
+
+```sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY
+```
+
+```text
+┌───current_date_time─┬─plus(now(), toIntervalDay(4))─┐
+│ 2019-10-23 10:58:45 │           2019-10-27 10:58:45 │
+└─────────────────────┴───────────────────────────────┘
+```
+
+也可以同时使用多个时间间隔：
+
+```sql
+SELECT now() AS current_date_time, current_date_time + (INTERVAL 4 DAY + INTERVAL 3 HOUR)
+```
+
+```text
+┌───current_date_time─┬─plus(current_date_time, plus(toIntervalDay(4), toIntervalHour(3)))─┐
+│ 2024-08-08 18:31:39 │                                                2024-08-12 21:31:39 │
+└─────────────────────┴────────────────────────────────────────────────────────────────────┘
+```
+
+以及比较不同时间间隔的值：
+
+```sql
+SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
+```
+
+```text
+┌─less(toIntervalMicrosecond(179999999), toIntervalMinute(3))─┐
+│                                                           1 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+<div id="mixed-type-intervals">
+  ## 混合类型时间间隔
+</div>
+
+混合类型的时间间隔 (例如同时包含多个小时和多个分钟) 可以使用 `INTERVAL 'value' <from_kind> TO <to_kind>` 语法创建。
+结果是一个由两个或多个时间间隔组成的元组。
+
+支持的组合：
+
+| 语法                 | 字符串格式     | 示例                                    |
+| ------------------ | --------- | ------------------------------------- |
+| `YEAR TO MONTH`    | `Y-M`     | `INTERVAL '2-6' YEAR TO MONTH`        |
+| `DAY TO HOUR`      | `D H`     | `INTERVAL '5 12' DAY TO HOUR`         |
+| `DAY TO MINUTE`    | `D H:M`   | `INTERVAL '5 12:30' DAY TO MINUTE`    |
+| `DAY TO SECOND`    | `D H:M:S` | `INTERVAL '5 12:30:45' DAY TO SECOND` |
+| `HOUR TO MINUTE`   | `H:M`     | `INTERVAL '1:30' HOUR TO MINUTE`      |
+| `HOUR TO SECOND`   | `H:M:S`   | `INTERVAL '1:30:45' HOUR TO SECOND`   |
+| `MINUTE TO SECOND` | `M:S`     | `INTERVAL '5:30' MINUTE TO SECOND`    |
+
+非首位字段会按照 SQL 标准进行校验：`MONTH` 为 0-11，`HOUR` 为 0-23，`MINUTE` 为 0-59，`SECOND` 为 0-59。
+
+```sql
+SELECT INTERVAL '1:30' HOUR TO MINUTE;
+```
+
+```text
+┌─(toIntervalHour(1), toIntervalMinute(30))─┐
+│ (1,30)                                     │
+└────────────────────────────────────────────┘
+```
+
+可选的前导 `+` 或 `-` 符号适用于所有部分：
+
+```sql
+SELECT INTERVAL '+1:30' HOUR TO MINUTE;
+-- 等价于：
+-- SELECT INTERVAL '1:30' HOUR TO MINUTE;
+```
+
+```text
+┌─(toIntervalHour(1), toIntervalMinute(30))─┐
+│ (1,30)                                     │
+└────────────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## 另请参阅
+</div>
+
+* [INTERVAL](/zh/reference/operators/index#interval) 运算符
+* [toInterval](/zh/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) 类型转换函数

@@ -1,0 +1,72 @@
+---
+sidebarTitle: 'Luzmo'
+slug: /integrations/luzmo
+keywords: ['clickhouse', 'Luzmo', 'اتصال', 'تكامل', 'واجهة المستخدم', 'مضمّن']
+description: 'Luzmo هي منصة تحليلات مضمّنة تتضمن تكاملًا أصليًا مع ClickHouse، ومصممة خصيصًا لتطبيقات البرمجيات والبرمجيات كخدمة (SaaS).'
+title: 'دمج Luzmo مع ClickHouse'
+sidebar: 'التكاملات'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<div id="1-setup-a-clickhouse-connection">
+  ## 1. إعداد اتصال ClickHouse
+</div>
+
+لإنشاء اتصال بـ ClickHouse، انتقل إلى **صفحة Connections**، وحدد **New Connection**، ثم اختر ClickHouse من النافذة المنبثقة New Connection.
+
+<Image img="/images/integrations/data-visualization/luzmo_01.webp" size="md" alt="واجهة Luzmo تعرض مربع الحوار Create a New Connection مع تحديد ClickHouse" border />
+
+سيُطلب منك إدخال **المضيف** و**اسم المستخدم** و**كلمة المرور**:
+
+<Image img="/images/integrations/data-visualization/luzmo_02.webp" size="md" alt="نموذج تكوين اتصال Luzmo يعرض حقول مضيف ClickHouse واسم المستخدم وكلمة المرور" border />
+
+* **Host**: هذا هو المضيف الذي تُتاح عليه قاعدة بيانات ClickHouse الخاصة بك. لاحظ أنه لا يُسمح هنا إلا باستخدام `https` لنقل البيانات بأمان عبر الشبكة. ويتوقع عنوان URL الخاص بالمضيف البنية التالية: `https://url-to-clickhouse-db:port/database`
+  افتراضيًا، ستتصل الإضافة بقاعدة البيانات &#39;default&#39; وعلى المنفذ 443. ومن خلال تحديد قاعدة بيانات بعد &#39;/&#39;، يمكنك تعيين قاعدة البيانات المطلوب الاتصال بها.
+* **Username**: اسم المستخدم الذي سيُستخدم للاتصال بـ عنقود ClickHouse الخاص بك.
+* **Password**: كلمة المرور المستخدمة للاتصال بـ عنقود ClickHouse الخاص بك
+
+يُرجى الرجوع إلى الأمثلة في وثائق المطورين الخاصة بنا لمعرفة كيفية [إنشاء اتصال بـ ClickHouse](https://developer.luzmo.com/api/createAccount?exampleSection=AccountCreateClickhouseRequestBody) عبر API الخاص بنا.
+
+<div id="2-add-datasets">
+  ## 2. أضف مجموعات البيانات
+</div>
+
+بعد توصيل ClickHouse، يمكنك إضافة مجموعات البيانات كما هو موضح [هنا](https://academy.luzmo.com/article/ldx3iltg). يمكنك اختيار مجموعة بيانات واحدة أو عدة مجموعات بيانات متاحة في ClickHouse، ثم [ربطها](https://academy.luzmo.com/article/gkrx48x5) في Luzmo لضمان إمكانية استخدامها معًا في لوحة معلومات. واحرص أيضًا على الاطلاع على هذه المقالة حول [إعداد بياناتك لأغراض تحليل](https://academy.luzmo.com/article/u492qov0).
+
+لمعرفة كيفية إضافة مجموعات البيانات باستخدام واجهة API الخاصة بنا، يُرجى الرجوع إلى [هذا المثال في وثائق المطورين](https://developer.luzmo.com/api/createDataprovider?exampleSection=DataproviderCreateClickhouseRequestBody).
+
+يمكنك الآن استخدام مجموعات البيانات لإنشاء لوحات معلومات (مضمّنة) جميلة، أو حتى لتشغيل محلل بيانات مدعوم بالذكاء الاصطناعي ([Luzmo IQ](https://luzmo.com/iq)) يمكنه الإجابة عن أسئلة عملائك.
+
+<Image img="/images/integrations/data-visualization/luzmo_03.webp" size="md" alt="مثال على لوحة معلومات في Luzmo تعرض عدة مرئيات للبيانات من ClickHouse" border />
+
+<div id="usage-notes">
+  ## ملاحظات الاستخدام
+</div>
+
+1. يستخدم موصل Luzmo لـ ClickHouse واجهة HTTP API (التي تعمل عادةً على المنفذ 8123) للاتصال.
+2. إذا كنت تستخدم جداول بمحرك الجدول `Distributed`، فقد تتعطل بعض مخططات Luzmo عندما تكون قيمة `distributed_product_mode` هي `deny`. ومع ذلك، لا يحدث هذا عادةً إلا إذا ربطت الجدول بجدول آخر واستخدمت هذا الربط في مخطط. في هذه الحالة، تأكد من تعيين `distributed_product_mode` إلى خيار آخر مناسب ضمن عنقود ClickHouse لديك. وإذا كنت تستخدم ClickHouse Cloud، فيمكنك تجاهل هذا الإعداد بأمان.
+3. لضمان أن يتمكن تطبيق Luzmo وحده، على سبيل المثال، من الوصول إلى مثيل ClickHouse لديك، يُنصح بشدة **بإدراج** [نطاق عناوين IP الثابتة الخاص بـ Luzmo في قائمة السماح](https://academy.luzmo.com/article/u9on8gbm). كما نوصي باستخدام مستخدم تقني للقراءة فقط.
+4. يدعم موصل ClickHouse حاليًا أنواع البيانات التالية:
+
+   | نوع ClickHouse | نوع Luzmo |
+   | -------------- | --------- |
+   | UInt           | رقمي      |
+   | Int            | رقمي      |
+   | Float          | رقمي      |
+   | Decimal        | رقمي      |
+   | Date           | تاريخ/وقت |
+   | DateTime       | تاريخ/وقت |
+   | String         | هرمي      |
+   | Enum           | هرمي      |
+   | FixedString    | هرمي      |
+   | UUID           | هرمي      |
+   | Bool           | هرمي      |

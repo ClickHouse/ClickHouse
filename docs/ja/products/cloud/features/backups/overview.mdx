@@ -1,0 +1,113 @@
+---
+sidebarTitle: 'バックアップ'
+slug: /cloud/features/backups
+title: 'バックアップ'
+keywords: ['バックアップ', 'クラウドバックアップ', '復元']
+description: 'ClickHouse Cloud におけるバックアップ機能の概要'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+import ScalePlanFeatureBadge from "/snippets/ja/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+データベースのバックアップは、予期せぬ理由でデータが失われた場合でも、最後に成功したバックアップからサービスを以前の状態に復元できるようにすることで、安全網として機能します。
+これにより、ダウンタイムを最小限に抑え、業務上重要なデータが永久に失われるのを防ぎます。
+
+<div id="backups">
+  ## バックアップ
+</div>
+
+<div id="how-backups-work-in-clickhouse-cloud">
+  ### ClickHouse Cloud におけるバックアップの仕組み
+</div>
+
+ClickHouse Cloud のバックアップは、「フル」バックアップと「増分」バックアップを組み合わせたもので、これらがバックアップチェーンを構成します。チェーンはフルバックアップから始まり、その後、以降のいくつかのスケジュールされた期間にわたって増分バックアップが取得され、バックアップの連続した系列が作られます。バックアップチェーンが一定の長さに達すると、新しいチェーンが開始されます。必要に応じて、このバックアップチェーン全体を使用してデータを新しいサービスに復元できます。特定のチェーンに含まれるすべてのバックアップが、そのサービスに設定された保持期間 (保持については後述) を過ぎると、そのチェーンは破棄されます。
+
+以下のスクリーンショットでは、実線の四角がフルバックアップ、点線の四角が増分バックアップを示しています。四角を囲む実線の長方形は保持期間を表しており、エンドユーザーに表示され、バックアップの復元に使用できるバックアップの範囲を示しています。以下のシナリオでは、バックアップは 24 時間ごとに取得され、2 日間保持されます。
+
+1 日目には、バックアップチェーンを開始するためにフルバックアップが取得されます。2 日目には増分バックアップが取得され、フルバックアップと増分バックアップの両方から復元できるようになります。7 日目までに、チェーンには 1 つのフルバックアップと 6 つの増分バックアップが含まれ、そのうち最新の 2 つの増分バックアップがユーザーに表示されます。8 日目には新しいフルバックアップが取得され、9 日目に新しいチェーン内に 2 つのバックアップがそろうと、以前のチェーンは破棄されます。
+
+<Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="ClickHouse Cloudにおけるバックアップチェーンの例" />
+
+<div id="default-backup-policy">
+  ### デフォルトのバックアップポリシー
+</div>
+
+バックアップは、Basic、Scale、Enterprise ティアでは、ストレージとは別に計測・課金されます。
+すべてのサービスでは、デフォルトで1日1回のバックアップが設定されます。Scale ティア以上では、Cloudコンソールの Settings タブから追加で設定できます。
+各バックアップは少なくとも24時間保持されます。
+
+詳細については、[&quot;バックアップの確認と復元&quot;](/ja/products/cloud/guides/backups/review-and-restore-backups)を参照してください。
+
+<div id="configurable-backups">
+  ## 設定可能なバックアップ
+</div>
+
+<ScalePlanFeatureBadge feature="Configurable Backups" linking_verb_are="True" />
+
+ClickHouse Cloud では、**Scale** および **Enterprise** ティアのサービスで、バックアップのスケジュールを設定できます。バックアップは、ビジネス要件に応じて次の項目で設定できます。
+
+* **Retention**: 各バックアップを保持する日数です。Retention は最短 1 日から最長 30 日まで指定でき、その間の複数の値から選択できます。
+* **Frequency**: Frequency では、連続するバックアップの間隔を指定できます。たとえば、&quot;12 時間ごと&quot; を指定すると、バックアップは 12 時間間隔で実行されます。Frequency は &quot;6 時間ごと&quot; から &quot;48 時間ごと&quot; まで、次の時間単位で指定できます: `6`, `8`, `12`, `16`, `20`, `24`, `36`, `48`。
+* **Start Time**: 毎日のバックアップを開始したい時刻です。開始時刻を指定すると、バックアップの &quot;Frequency&quot; はデフォルトで 24 時間ごとに 1 回となります。ClickHouse Cloud は、指定した開始時刻から 1 時間以内にバックアップを開始します。
+
+<Note>
+  カスタムスケジュールを設定すると、対象サービスに対する ClickHouse Cloud のデフォルトのバックアップポリシーは上書きされます。
+
+  まれに、バックアップスケジューラが、バックアップに指定した **Start Time** に従わないことがあります。具体的には、現在スケジュールされているバックアップ時刻の 24 時間以内に、正常に完了したバックアップがトリガーされていた場合に発生します。これは、バックアップに実装されている再試行の仕組みによって起こることがあります。この場合、スケジューラは当日のバックアップをスキップし、翌日のスケジュール時刻にバックアップを再試行します。
+</Note>
+
+バックアップの設定手順については、[&quot;バックアップスケジュールを設定する&quot;](/ja/products/cloud/guides/backups/configurable-backups) を参照してください。
+
+<div id="byob">
+  ## Bring Your Own Bucket (BYOB) バックアップ
+</div>
+
+ClickHouse Cloud では、バックアップをお使いのクラウドサービスプロバイダー (CSP) アカウントのストレージ (AWS S3、Google Cloud Storage、または Azure Blob Storage) にエクスポートできます。
+独自のバケットへのバックアップを設定した場合でも、ClickHouse Cloud は引き続き自身のバケットに毎日バックアップを取得します。
+これは、お使いのバケット内のバックアップが破損した場合でも、復元元として少なくとも 1 つのデータのコピーを確保するためです。
+ClickHouse Cloud のバックアップの仕組みについて詳しくは、[バックアップ](/ja/products/cloud/guides/backups/review-and-restore-backups)のドキュメントを参照してください。
+
+このガイドでは、バックアップを AWS、GCP、Azure のオブジェクトストレージにエクスポートする方法と、アカウント内のそれらのバックアップを新しい ClickHouse Cloud サービスに復元する方法を説明します。
+また、バックアップをお使いのバケットにエクスポートし、そこから復元するためのバックアップ / 復元コマンドも紹介します。
+
+<Info>
+  **クロスリージョンバックアップ**
+
+  同じクラウドプロバイダー内であっても、バックアップを
+  別のリージョンにエクスポートする場合は、[データ転送](/ja/products/cloud/reference/billing/network-data-transfer)
+  料金が発生します。
+
+  現在、[Transparent Data Encryption (TDE)](/ja/products/cloud/guides/security/cmek#transparent-data-encryption-tde) を使用するサービスおよび規制対象サービスでは、バックアップ / 復元はサポートされていません。
+</Info>
+
+AWS、GCP、Azure のオブジェクトストレージに対してフルバックアップおよび増分バックアップを取得する方法と、それらのバックアップから復元する方法の例については、[&quot;Export backups to your own Cloud account&quot;](/ja/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) を参照してください。
+
+<div id="backup-options">
+  ### バックアップオプション
+</div>
+
+バックアップをお客様ご自身のクラウドアカウントにエクスポートする方法は、2 つあります。
+
+<Steps>
+  <Step>
+    ##### Cloud Console UI 経由
+
+    外部バックアップは、[UI で設定](/ja/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui)できます。
+    デフォルトでは、バックアップはその後毎日取得されます ([デフォルトのバックアップポリシー](/ja/products/cloud/features/backups/overview#default-backup-policy)で定義されているとおりです) 。
+    また、お客様ご自身のクラウドアカウントへの[設定可能な](/ja/products/cloud/guides/backups/configurable-backups)バックアップにも対応しており、任意のスケジュールを設定できます。
+    なお、お客様のバケットに保存されるバックアップはすべてフルバックアップであり、過去または将来の他のバックアップとは関連しません。
+  </Step>
+
+  <Step>
+    ##### SQL コマンドを使用する
+
+    [SQL コマンド](/ja/products/cloud/guides/backups/bring-your-own-backup/backup-restore-using-commands)を使用して、バックアップをお客様のバケットにエクスポートできます。
+  </Step>
+</Steps>
+
+<Warning>
+  ClickHouse Cloud は、お客様のバケット内のバックアップのライフサイクルを管理しません。
+  バケット内のバックアップについては、コンプライアンス要件への準拠とコスト管理の観点から、お客様の責任で適切に管理する必要があります。
+  バックアップが破損している場合は、復元できません。
+</Warning>

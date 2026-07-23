@@ -1,0 +1,83 @@
+---
+sidebarTitle: 'Chat'
+slug: /cloud/features/ai-ml/agents/chat
+title: 'Chat'
+description: 'Conversations, favoris, forking, multi-conversation et partage de discussions dans ClickHouse Agents'
+keywords: ['IA', 'ClickHouse Cloud', 'agents', 'chat', 'conversations', 'favoris', 'forking', 'multi-conversation']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<BetaBadge />
+
+L’espace de discussion de ClickHouse Agents prend en charge les conversations, la création de branches, la comparaison côte à côte et le partage.
+
+<Image img="/images/cloud/agent-builder/chat/chat.webp" alt="Espace de discussion de ClickHouse Agent montrant la navigation de gauche, l’en-tête d’identité de l’agent et le champ de saisie des messages" size="lg" />
+
+<div id="conversations">
+  ## Conversations
+</div>
+
+Démarrez une nouvelle conversation en cliquant sur l’icône de composition dans le volet de navigation de gauche.
+Sélectionnez l’agent que vous souhaitez utiliser dans la boîte de dialogue de sélection de l’agent, en haut à gauche de la fenêtre de conversation — par défaut, **ClickHouse Agent** est sélectionné.
+Vous pouvez maintenant saisir votre message dans le champ de saisie, puis cliquer sur Envoyer. Chaque conversation est enregistrée dans l’historique de votre barre latérale et peut être rouverte, renommée ou supprimée ultérieurement.
+
+<Image img="/images/cloud/agent-builder/chat/conversation.webp" alt="Espace de discussion avec l’icône de composition mise en évidence dans le volet de navigation de gauche, la barre latérale affichant l’historique des conversations avec une conversation enregistrée intitulée Top 10 Tables Ranked, et le champ de saisie contenant un exemple de question" size="lg" />
+
+Vous pouvez modifier n’importe lequel de vos messages directement, et l’agent régénérera sa réponse à partir de ce point dans l’historique de la conversation.
+Vous pouvez également régénérer uniquement la dernière réponse de l’agent, sans renvoyer votre message.
+
+<div id="bookmarks">
+  ## Favoris
+</div>
+
+Ajoutez un favori à un message ou à une conversation entière pour le retrouver rapidement. Les favoris sont privés et restent disponibles même si la conversation est renommée.
+
+<Image img="/images/cloud/agent-builder/chat/bookmark.webp" alt="En-tête du chat avec l’icône de favori mise en évidence et une infobulle « Ajouter aux favoris » visible" size="lg" />
+
+<div id="forking">
+  ## Forking
+</div>
+
+Le forking crée une nouvelle conversation à partir d’un message précis. Vous pouvez l’utiliser pour explorer une autre voie sans perturber le fil d’origine.
+Trois modes de fork sont disponibles :
+
+* **Messages visibles uniquement** - vous permet de copier le chemin direct jusqu’au message forké.
+* **Inclure les branches associées** - vous permet de copier le chemin principal ainsi que toutes les branches existantes.
+* **Tout inclure jusqu’ici** - vous permet de tout copier jusqu’au message forké.
+
+Les conversations forkées sont indépendantes ; les modifications ne sont donc pas répercutées sur l’originale.
+
+<Image img="/images/cloud/agent-builder/chat/fork.webp" alt="Boîte de dialogue de sélection d’une option de fork affichant trois icônes de mode de fork, les cases à cocher Start fork here et Remember, ainsi que la barre d’outils d’action du message en dessous" size="lg" />
+
+<div id="multi-conversation">
+  ## Multi-conversation
+</div>
+
+Multi-conversation affiche deux conversations côte à côte et envoie le même prompt aux deux. Utilisez cette fonctionnalité pour comparer les réponses entre différents modèles ou pour effectuer un test A/B de différentes configurations d’agent.
+
+Cliquez sur le bouton **+** dans l’en-tête du chat pour ouvrir une conversation parallèle à côté de la conversation en cours.
+
+<Image img="/images/cloud/agent-builder/chat/multi-conversation.webp" alt="En-tête du chat avec le bouton Add multi-conversation mis en évidence, et un indicateur + ClickHouse Agent au-dessus de la zone de saisie" size="lg" />
+
+Les deux conversations s’affichent alors côte à côte et reçoivent le même prompt :
+
+<Image img="/images/cloud/agent-builder/chat/multi-conversation-2.webp" alt="Vue Multi-conversation avec deux conversations ClickHouse Agent côte à côte, exécutant toutes deux les mêmes appels à l’outil run_select_query" size="lg" />
+
+<div id="sharing-chats">
+  ## Partage des discussions
+</div>
+
+Générez un lien de partage pour n’importe quelle conversation afin de l’envoyer à un collègue ou de l’enregistrer à titre de référence. Les destinataires voient une vue en lecture seule, y compris les artefacts et les branches visibles. Vous pouvez révoquer un lien depuis le tableau de bord de partage à tout moment.
+
+Les modifications apportées aux messages existants apparaissent dans la vue partagée ; les messages ajoutés après la génération du lien n’y figurent pas.
+
+Pour partager une conversation, ouvrez son menu dans la barre latérale et sélectionnez **Share** :
+
+<Image img="/images/cloud/agent-builder/chat/share.webp" alt="Menu de la conversation dans la barre latérale avec les options Share, Rename, Duplicate, Archive et Delete visibles" size="lg" />
+
+Cliquez ensuite sur **Create link** dans la boîte de dialogue de partage :
+
+<Image img="/images/cloud/agent-builder/chat/share-modal.webp" alt="Boîte de dialogue Share link to chat avec le bouton Create link et une note indiquant que votre nom et les messages ajoutés après le partage restent privés" size="md" />

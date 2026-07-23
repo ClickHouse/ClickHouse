@@ -1,0 +1,284 @@
+---
+sidebarTitle: 'Funcionalidades e configurações'
+slug: /integrations/dbt/features-and-configurations
+description: 'Descrição das funcionalidades e das configurações gerais disponíveis'
+keywords: ['clickhouse', 'dbt', 'funcionalidades']
+title: 'Funcionalidades e configurações'
+doc_type: 'guide'
+---
+
+import ClickHouseSupportedBadge from "/snippets/pt-BR/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Nesta seção, apresentamos a documentação de alguns dos recursos disponíveis para o dbt com ClickHouse.
+
+<div id="profile-yml-configurations">
+  ## Configurações do Profile.yml
+</div>
+
+Para se conectar ao ClickHouse pelo dbt, você precisará adicionar um [perfil](https://docs.getdbt.com/docs/core/connect-data-platform/connection-profiles) ao arquivo `profiles.yml`. Um perfil do ClickHouse segue a sintaxe abaixo:
+
+```yaml
+your_profile_name:
+  target: dev
+  outputs:
+    dev:
+      type: clickhouse
+
+      # Optional
+      schema: [default] # ClickHouse database for dbt models
+      driver: [http] # http or native.  If not set this will be autodetermined based on port setting
+      host: [localhost] 
+      port: [8123]  # If not set, defaults to 8123, 8443, 9000, 9440 depending on the secure and driver settings 
+      user: [default] # User for all database operations
+      password: [<empty string>] # Password for the user
+      cluster: [<empty string>] # If set, certain DDL/table operations will be executed with the `ON CLUSTER` clause using this cluster. Distributed materializations require this setting to work. See the following ClickHouse Cluster section for more details.
+      verify: [True] # Validate TLS certificate if using TLS/SSL
+      secure: [False] # Use TLS (native protocol) or HTTPS (http protocol)
+      client_cert: [null] # Path to a TLS client certificate in .pem format
+      client_cert_key: [null] # Path to the private key for the TLS client certificate
+      retries: [1] # Number of times to retry a "retriable" database exception (such as a 503 'Service Unavailable' error)
+      compression: [<empty string>] # Use gzip compression if truthy (http), or compression type for a native connection
+      connect_timeout: [10] # Timeout in seconds to establish a connection to ClickHouse
+      send_receive_timeout: [300] # Timeout in seconds to receive data from the ClickHouse server
+      cluster_mode: [False] # Use specific settings designed to improve operation on Replicated databases (recommended for ClickHouse Cloud)
+      use_lw_deletes: [False] # Use the strategy `delete+insert` as the default incremental strategy.
+      check_exchange: [True] # Validate that clickhouse support the atomic EXCHANGE TABLES command.  (Not needed for most ClickHouse versions)
+      local_suffix: [_local] # Table suffix of local tables on shards for distributed materializations.
+      local_db_prefix: [<empty string>] # Database prefix of local tables on shards for distributed materializations. If empty, it uses the same database as the distributed table.
+      allow_automatic_deduplication: [False] # Enable ClickHouse automatic deduplication for Replicated tables
+      tcp_keepalive: [False] # Native client only, specify TCP keepalive configuration. Specify custom keepalive settings as [idle_time_sec, interval_sec, probes].
+      reuse_connections: [True] # Re-use the same connection across models. Set to `False` to close the connection at the end of each model — useful on multi-replica ClickHouse Cloud services where the load balancer routes by TCP connection.
+      custom_settings: [{}] # A dictionary/mapping of custom ClickHouse settings for the connection - default is empty.
+      database_engine: '' # Database engine to use when creating new ClickHouse schemas (databases).  If not set (the default), new databases will use the default ClickHouse database engine (usually Atomic).
+      threads: [1] # Number of threads to use when running queries. Before setting it to a number higher than 1, make sure to read the [read-after-write consistency](#read-after-write-consistency) section.
+      
+      # Native (clickhouse-driver) connection settings
+      sync_request_timeout: [5] # Timeout for server ping
+      compress_block_size: [1048576] # Compression block size if compression is enabled
+```
+
+<div id="schema-vs-database">
+  ### Schema vs Banco de dados
+</div>
+
+O identificador de relation do model do dbt `database.schema.table` não é compatível com o ClickHouse porque o ClickHouse não
+dá suporte a `schema`.
+Por isso, usamos uma abordagem simplificada, `schema.table`, em que `schema` é o banco de dados do ClickHouse. Não é
+recomendável usar o banco de dados `default`.
+
+<div id="set-statement-warning">
+  ### Aviso sobre a instrução SET
+</div>
+
+Em muitos ambientes, usar a instrução SET para fazer com que uma configuração do ClickHouse persista em todas as consultas do DBT não é confiável
+e pode causar falhas inesperadas. Isso é particularmente verdadeiro ao usar conexões HTTP por meio de um balanceador de carga que
+distribui as consultas entre vários nós (como no ClickHouse Cloud), embora, em algumas circunstâncias, isso também possa
+acontecer com conexões nativas do ClickHouse. Assim, recomendamos definir as configurações necessárias do ClickHouse na
+propriedade &quot;custom&#95;settings&quot; do perfil do DBT como prática recomendada, em vez de depender de uma instrução &quot;SET&quot; em um pre-hook, como
+tem sido sugerido ocasionalmente.
+
+<div id="setting-quote_columns">
+  ### Configurando `quote_columns`
+</div>
+
+Para evitar um aviso, certifique-se de definir explicitamente um valor para `quote_columns` no seu `dbt_project.yml`. Consulte a [documentação sobre quote&#95;columns](https://docs.getdbt.com/reference/resource-configs/quote_columns) para mais informações.
+
+```yaml
+seeds:
+  +quote_columns: false  #ou `true` se os cabeçalhos de coluna do CSV tiverem espaços
+```
+
+<div id="about-the-clickhouse-cluster">
+  ### Sobre o cluster do ClickHouse
+</div>
+
+Ao usar um cluster do ClickHouse, você precisa considerar dois pontos:
+
+* Definir a configuração `cluster`.
+* Garantir a consistência de leitura após escrita, especialmente se você estiver usando mais de um `threads`.
+
+<div id="cluster-setting">
+  #### Configuração de cluster
+</div>
+
+A configuração `cluster` no perfil permite que o dbt-clickhouse seja executado em um cluster ClickHouse. Se `cluster` estiver definida no perfil, **todos os modelos serão criados com a cláusula `ON CLUSTER`** por padrão — exceto os que usam o motor **Replicated**. Isso inclui:
+
+* Criação de banco de dados
+* Materializações de view
+* Materializações de tabela e incrementais
+* Materializações distribuídas
+
+Motores Replicated **não** incluirão a cláusula `ON CLUSTER`, pois foram projetados para gerenciar a replicação internamente.
+
+Para **desativar** a criação baseada em cluster para um modelo específico, adicione a config `disable_on_cluster`:
+
+```sql
+{{ config(
+        engine='MergeTree',
+        materialized='table',
+        disable_on_cluster='true'
+    )
+}}
+
+```
+
+materializações do tipo table e incremental com engine não replicado não serão afetadas pela configuração `cluster` (o modelo
+será criado apenas no nó ao qual você está conectado).
+
+**Compatibilidade**
+
+Se um modelo tiver sido criado sem a configuração `cluster`, o dbt-clickhouse detectará essa situação e executará todo o DDL/DML
+sem a cláusula `on cluster` para esse modelo.
+
+<div id="read-after-write-consistency">
+  #### Consistência de leitura após escrita
+</div>
+
+O dbt depende de um modelo de consistência de leitura após inserção. Isso não é compatível com clusters do ClickHouse com mais de uma réplica se você não puder garantir que todas as operações sejam direcionadas à mesma réplica. Você pode até não encontrar problemas no uso diário do dbt, mas, dependendo do seu cluster, há algumas estratégias para garantir isso:
+
+* Se você estiver usando um cluster do ClickHouse Cloud, basta definir `select_sequential_consistency: 1` na propriedade `custom_settings` do seu perfil. Você pode encontrar mais informações sobre essa configuração [aqui](/pt-BR/reference/settings/session-settings#select_sequential_consistency).
+* Se você estiver usando um cluster self-hosted, certifique-se de que todas as solicitações do dbt sejam enviadas para a mesma réplica do ClickHouse. Se houver um balanceador de carga na frente dele, tente usar algum mecanismo de `replica aware routing`/`sticky sessions` para sempre alcançar a mesma réplica. Adicionar a configuração `select_sequential_consistency = 1` em clusters fora do ClickHouse Cloud [não é recomendado](/pt-BR/reference/settings/session-settings#select_sequential_consistency).
+
+<div id="additional-clickhouse-macros">
+  ## Macros adicionais do ClickHouse
+</div>
+
+<div id="model-materialization-utility-macros">
+  ### Macros utilitárias de materialização de modelos
+</div>
+
+As macros a seguir estão incluídas para facilitar a criação de tabelas e views específicas do ClickHouse:
+
+* `engine_clause` -- Usa a propriedade de configuração `engine` do modelo para definir um engine de tabela do ClickHouse. O dbt-clickhouse
+  usa o engine `MergeTree` por padrão.
+* `partition_cols` -- Usa a propriedade de configuração `partition_by` do modelo para definir uma chave de partição do ClickHouse. Nenhuma
+  chave de partição é definida por padrão.
+* `order_cols` -- Usa a configuração `order_by` do modelo para definir uma chave de ordenação/ORDER BY do ClickHouse. Se não for especificada,
+  o ClickHouse usará uma `tuple()` vazia e a tabela não será ordenada
+* `primary_key_clause` -- Usa a propriedade de configuração `primary_key` do modelo para definir uma chave primária do ClickHouse. Por
+  padrão, a chave primária é definida, e o ClickHouse usará a cláusula ORDER BY como chave primária.
+* `on_cluster_clause` -- Usa a propriedade `cluster` do perfil para adicionar uma cláusula `ON CLUSTER` a determinadas operações do dbt:
+  materializações distribuídas, criação de views e criação de banco de dados.
+* `ttl_config` -- Usa a propriedade de configuração `ttl` do modelo para definir uma expressão de TTL de tabela do ClickHouse. Nenhum TTL é
+  definido por padrão.
+
+<div id="s3source-helper-macro">
+  ### Macro auxiliar `s3Source`
+</div>
+
+A macro `s3source` simplifica o processo de selecionar dados no ClickHouse diretamente do S3 usando a função de tabela S3 do ClickHouse.
+Ela funciona
+preenchendo os parâmetros da função de tabela S3 a partir de um dicionário de configuração nomeado (o nome do dicionário deve terminar
+em `s3`). A macro
+primeiro procura o dicionário nas `vars` do perfil e, depois, na configuração do modelo. O dicionário pode conter
+qualquer uma das seguintes
+chaves usadas para preencher os parâmetros da função de tabela S3:
+
+| Nome do argumento                 | Descrição                                                                                                                                                                                                        |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| bucket                            | A URL base do bucket, como `https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi`. `https://` é presumido se nenhum protocolo for informado.                                                       |
+| path                              | O caminho do S3 a ser usado na consulta da tabela, como `/trips_4.gz`. Os curingas do S3 são compatíveis.                                                                                                        |
+| fmt                               | O formato de entrada esperado pelo ClickHouse (como `TSV` ou `CSVWithNames`) dos objetos S3 referenciados.                                                                                                       |
+| structure                         | A estrutura de colunas dos dados no bucket, como uma lista de pares nome/tipo de dado, como `['id UInt32', 'date DateTime', 'value String']`. Se não for fornecida, o ClickHouse inferirá a estrutura.           |
+| aws&#95;access&#95;key&#95;id     | O ID da chave de acesso do S3.                                                                                                                                                                                   |
+| aws&#95;secret&#95;access&#95;key | A chave secreta do S3.                                                                                                                                                                                           |
+| role&#95;arn                      | O ARN de uma IAM role ClickhouseAccess a ser usada para acessar com segurança os objetos S3. Consulte esta [documentação](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely) para mais informações. |
+| compression                       | O método de compressão usado com os objetos S3. Se não for fornecido, o ClickHouse tentará determinar a compressão com base no nome do arquivo.                                                                  |
+
+Consulte
+o [arquivo de teste do S3](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py)
+para ver exemplos de como usar esta macro.
+
+<div id="cross-database-macro-support">
+  ### Suporte a macros entre bancos de dados
+</div>
+
+Atualmente, o dbt-clickhouse oferece suporte à maioria das macros entre bancos de dados incluídas no `dbt Core`, com as seguintes exceções:
+
+* A função SQL `split_part` é implementada no ClickHouse usando a função splitByChar. Essa função exige
+  o uso de uma string constante como delimitador de divisão, portanto o parâmetro `delimeter` usado nessa macro será
+  interpretado como uma string, e não como um nome de coluna
+* Da mesma forma, a função SQL `replace` no ClickHouse exige strings constantes para os parâmetros `old_chars` e `new_chars`,
+  portanto esses parâmetros serão interpretados como strings, e não como nomes de colunas, ao invocar essa macro.
+
+<div id="catalog-support">
+  ## Suporte a catálogos
+</div>
+
+<div id="dbt-catalog-integration-status">
+  ### Status da integração de catálogo do dbt
+</div>
+
+O dbt Core v1.10 introduziu suporte à integração de catálogo, permitindo que adaptadores materializem modelos em catálogos externos que gerenciam formatos de tabela abertos, como o Apache Iceberg. **Esse recurso ainda não foi implementado nativamente no dbt-clickhouse.** Você pode acompanhar o progresso da implementação desse recurso na [issue #489 do GitHub](https://github.com/ClickHouse/dbt-clickhouse/issues/489).
+
+<div id="clickhouse-catalog-support">
+  ### Suporte a catálogos no ClickHouse
+</div>
+
+O ClickHouse adicionou recentemente suporte nativo a tabelas Apache Iceberg e catálogos de dados. A maioria dos recursos ainda é `experimental`, mas você já pode usá-los com uma versão recente do ClickHouse.
+
+* Você pode usar o ClickHouse para **consultar tabelas Iceberg armazenadas em armazenamento de objetos** (S3, Azure Blob Storage, Google Cloud Storage) usando o [motor de tabela Iceberg](/pt-BR/reference/engines/table-engines/integrations/iceberg) e a [função de tabela iceberg](/pt-BR/reference/functions/table-functions/iceberg).
+
+* Além disso, o ClickHouse oferece o [motor de banco de dados DataLakeCatalog](/pt-BR/reference/engines/database-engines/datalake), que permite a **conexão com catálogos de dados externos**, incluindo AWS Glue Catalog, Databricks Unity Catalog, Hive Metastore e REST Catalogs. Isso permite consultar dados em formatos de tabela abertos (Iceberg, Delta Lake) diretamente de catálogos externos, sem duplicação de dados.
+
+<div id="workarounds-iceberg-catalogs">
+  ### Alternativas para trabalhar com Iceberg e catálogos
+</div>
+
+Você pode ler dados de tabelas Iceberg ou catálogos no seu projeto dbt se já os tiver definido no seu cluster ClickHouse com as ferramentas mencionadas acima. Você pode usar a funcionalidade `source` do dbt para referenciar essas tabelas nos seus projetos dbt. Por exemplo, se quiser acessar suas tabelas em um REST Catalog, você pode:
+
+1. **Criar um banco de dados apontando para um catálogo externo:**
+
+```sql
+-- Exemplo com REST Catalog
+SET allow_experimental_database_iceberg = 1;
+
+CREATE DATABASE iceberg_catalog
+ENGINE = DataLakeCatalog('http://rest:8181/v1', 'admin', 'password')
+SETTINGS 
+    catalog_type = 'rest', 
+    storage_endpoint = 'http://minio:9000/lakehouse', 
+    warehouse = 'demo'
+```
+
+2. **Defina o banco de dados do catálogo e suas tabelas como sources no dbt:** lembre-se de que as tabelas já devem estar disponíveis no ClickHouse
+
+```yaml
+version: 2
+
+sources:
+  - name: external_catalog
+    database: iceberg_catalog
+    tables:
+      - name: orders
+      - name: customers
+```
+
+3. **Use as tabelas de catálogo em seus modelos dbt:**
+
+```sql
+SELECT 
+    o.order_id,
+    c.customer_name,
+    o.order_date
+FROM {{ source('external_catalog', 'orders') }} o
+INNER JOIN {{ source('external_catalog', 'customers') }} c
+    ON o.customer_id = c.customer_id
+```
+
+<div id="benefits-workarounds">
+  ### Observações sobre as soluções alternativas
+</div>
+
+Os pontos positivos dessas soluções alternativas são:
+
+* Você terá acesso imediato a diferentes tipos de tabelas externas e catálogos externos sem precisar esperar pela integração nativa de catálogos do dbt.
+* Você terá um caminho de migração tranquilo quando o suporte nativo a catálogos estiver disponível.
+
+Mas, no momento, há algumas limitações:
+
+* **Configuração manual:** tabelas Iceberg e bancos de dados de catálogo precisam ser criados manualmente no ClickHouse antes de poderem ser referenciados no dbt.
+* **Sem DDL no nível de catálogo:** o dbt não consegue gerenciar operações no nível de catálogo, como criar ou excluir tabelas Iceberg em catálogos externos. Portanto, no momento, você não poderá criá-las pelo conector do dbt. A criação de tabelas com os motores Iceberg() poderá ser adicionada no futuro.
+* **Operações de escrita:** no momento, a escrita em tabelas Iceberg/Data Catalog é limitada. Consulte a documentação do ClickHouse para entender quais opções estão disponíveis.

@@ -1,0 +1,385 @@
+---
+description: "Apprenez à charger les données OpenCelliD dans ClickHouse, à connecter Apache Superset
+  à ClickHouse et à créer un tableau de bord à partir de ces données"
+sidebarTitle: "Antennes relais"
+slug: /getting-started/example-datasets/cell-towers
+title: "Données géographiques à partir du jeu de données des antennes relais"
+keywords: ["données d'antennes relais", "données géographiques", "OpenCelliD", "jeu de données géospatiales", "prise en main"]
+doc_type: 'guide'
+---
+
+import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import ActionsMenu from '/snippets/fr/_service_actions_menu.mdx';
+import SQLConsoleDetail from '/snippets/fr/_launch_sql_console.mdx';
+import SupersetDocker from '/snippets/fr/_add_superset_detail.mdx';
+
+<div id="goal">
+  ## Objectif
+</div>
+
+Dans ce guide, vous apprendrez à :
+
+* Charger les données OpenCelliD dans ClickHouse
+* Connecter Apache Superset à ClickHouse
+* Créer un tableau de bord à partir des données disponibles dans le jeu de données
+
+Voici un aperçu du tableau de bord créé dans ce guide :
+
+<Image img="/images/getting-started/example-datasets/superset-cell-tower-dashboard.webp" size="md" alt="Tableau de bord des antennes-relais par technologie radio dans le mcc 204" />
+
+<div id="get-the-dataset">
+  ## Obtenir le jeu de données
+</div>
+
+Ce jeu de données provient d’[OpenCelliD](https://www.opencellid.org/), la plus grande base de données ouverte d’antennes-relais au monde.
+
+En 2021, il contenait plus de 40 millions d’enregistrements sur des antennes-relais (GSM, LTE, UMTS, etc.) dans le monde entier, avec leurs coordonnées géographiques et leurs métadonnées (code pays, réseau, etc.).
+
+Le projet OpenCelliD est distribué sous licence Creative Commons Attribution-ShareAlike 4.0 International, et nous redistribuons un instantané de ce jeu de données selon les termes de cette même licence. La version la plus récente du jeu de données peut être téléchargée après connexion.
+
+<Tabs>
+  <Tab title="ClickHouse Cloud">
+    ### Charger les données d’exemple
+
+    ClickHouse Cloud propose une option simple pour charger ce jeu de données depuis S3. Connectez-vous à votre organisation ClickHouse Cloud, ou créez un essai gratuit sur [ClickHouse.cloud](https://clickhouse.cloud).
+
+    <ActionsMenu menu="Charger des données" />
+
+    Choisissez le jeu de données **Cell Towers** dans l’onglet **Données d’exemple**, puis cliquez sur **Charger les données** :
+
+    <Image img="/images/_snippets/cloud-load-data-sample.webp" size="md" alt="Charger le jeu de données des antennes-relais" />
+
+    ### Examiner le schéma de la table cell_towers
+
+    ```sql
+    DESCRIBE TABLE cell_towers
+    ```
+
+    <SQLConsoleDetail />
+
+    Voici le résultat de `DESCRIBE`. Plus loin dans ce guide, les choix de types de champs seront expliqués.
+
+    ```response
+    ┌─name──────────┬─type──────────────────────────────────────────────────────────────────┬
+    │ radio         │ Enum8('' = 0, 'CDMA' = 1, 'GSM' = 2, 'LTE' = 3, 'NR' = 4, 'UMTS' = 5) │
+    │ mcc           │ UInt16                                                                │
+    │ net           │ UInt16                                                                │
+    │ area          │ UInt16                                                                │
+    │ cell          │ UInt64                                                                │
+    │ unit          │ Int16                                                                 │
+    │ lon           │ Float64                                                               │
+    │ lat           │ Float64                                                               │
+    │ range         │ UInt32                                                                │
+    │ samples       │ UInt32                                                                │
+    │ changeable    │ UInt8                                                                 │
+    │ created       │ DateTime                                                              │
+    │ updated       │ DateTime                                                              │
+    │ averageSignal │ UInt8                                                                 │
+    └───────────────┴───────────────────────────────────────────────────────────────────────┴
+    ```
+  </Tab>
+
+  <Tab title="Autogéré">
+    1. Créez une table :
+
+    ```sql
+    CREATE TABLE cell_towers
+    (
+        radio Enum8('' = 0, 'CDMA' = 1, 'GSM' = 2, 'LTE' = 3, 'NR' = 4, 'UMTS' = 5),
+        mcc UInt16,
+        net UInt16,
+        area UInt16,
+        cell UInt64,
+        unit Int16,
+        lon Float64,
+        lat Float64,
+        range UInt32,
+        samples UInt32,
+        changeable UInt8,
+        created DateTime,
+        updated DateTime,
+        averageSignal UInt8
+    )
+    ENGINE = MergeTree ORDER BY (radio, mcc, net, created);
+    ```
+
+    2. Importez le jeu de données depuis un bucket S3 public (686 Mo) :
+
+    ```sql
+    INSERT INTO cell_towers SELECT * FROM s3('https://datasets-documentation.s3.amazonaws.com/cell_towers/cell_towers.csv.xz', 'CSVWithNames')
+    ```
+  </Tab>
+</Tabs>
+
+<div id="examples">
+  ## Exécutez quelques requêtes d’exemple
+</div>
+
+1. Nombre d’antennes-relais par type :
+
+```sql
+SELECT radio, count() AS c FROM cell_towers GROUP BY radio ORDER BY c DESC
+```
+
+```response
+┌─radio─┬────────c─┐
+│ UMTS  │ 20686487 │
+│ LTE   │ 12101148 │
+│ GSM   │  9931304 │
+│ CDMA  │   556344 │
+│ NR    │      867 │
+└───────┴──────────┘
+
+5 rows in set. Elapsed: 0.011 sec. Processed 43.28 million rows, 43.28 MB (3.83 billion rows/s., 3.83 GB/s.)
+```
+
+2. Antennes-relais par [code de pays mobile (MCC)](https://en.wikipedia.org/wiki/Mobile_country_code) :
+
+```sql
+SELECT mcc, count() FROM cell_towers GROUP BY mcc ORDER BY count() DESC LIMIT 10
+```
+
+```response
+┌─mcc─┬─count()─┐
+│ 310 │ 5024650 │
+│ 262 │ 2622423 │
+│ 250 │ 1953176 │
+│ 208 │ 1891187 │
+│ 724 │ 1836150 │
+│ 404 │ 1729151 │
+│ 234 │ 1618924 │
+│ 510 │ 1353998 │
+│ 440 │ 1343355 │
+│ 311 │ 1332798 │
+└─────┴─────────┘
+
+10 rows in set. Elapsed: 0.019 sec. Processed 43.28 million rows, 86.55 MB (2.33 billion rows/s., 4.65 GB/s.)
+```
+
+D’après la requête ci-dessus et la [liste des MCC](https://en.wikipedia.org/wiki/Mobile_country_code), les pays qui comptent le plus d’antennes-relais sont les États-Unis, l’Allemagne et la Russie.
+
+Vous pouvez créer un [Dictionary](/fr/reference/statements/create/dictionary) dans ClickHouse pour décoder ces valeurs.
+
+<div id="use-case">
+  ## Cas d’usage : intégrer des données géographiques
+</div>
+
+Utilisation de la fonction [`pointInPolygon`](/fr/reference/functions/regular-functions/geo/coordinates#pointinpolygon).
+
+1. Créez une table dans laquelle nous stockerons les polygones :
+
+<Tabs>
+  <Tab title="ClickHouse Cloud">
+    ```sql
+    CREATE TABLE moscow (polygon Array(Tuple(Float64, Float64)))
+    ORDER BY polygon;
+    ```
+  </Tab>
+
+  <Tab title="Auto-géré">
+    ```sql
+    CREATE TEMPORARY TABLE
+    moscow (polygon Array(Tuple(Float64, Float64)));
+    ```
+  </Tab>
+</Tabs>
+
+2. Voici un tracé approximatif de Moscou (sans la « nouvelle Moscou ») :
+
+```sql
+INSERT INTO moscow VALUES ([(37.84172564285271, 55.78000432402266),
+(37.8381207618713, 55.775874525970494), (37.83979446823122, 55.775626746008065), (37.84243326983639, 55.77446586811748), (37.84262672750849, 55.771974101091104), (37.84153238623039, 55.77114545193181), (37.841124690460184, 55.76722010265554),
+(37.84239076983644, 55.76654891107098), (37.842283558197025, 55.76258709833121), (37.8421759312134, 55.758073999993734), (37.84198330422974, 55.75381499999371), (37.8416827275085, 55.749277102484484), (37.84157576190186, 55.74794544108413),
+(37.83897929098507, 55.74525257875241), (37.83739676451868, 55.74404373042019), (37.838732481460525, 55.74298009816793), (37.841183997352545, 55.743060321833575), (37.84097476190185, 55.73938799999373), (37.84048155819702, 55.73570799999372),
+(37.840095812164286, 55.73228210777237), (37.83983814285274, 55.73080491981639), (37.83846476321406, 55.729799917464675), (37.83835745269769, 55.72919751082619), (37.838636380279524, 55.72859509486539), (37.8395161005249, 55.727705075632784),
+(37.83897964285276, 55.722727886185154), (37.83862557539366, 55.72034817326636), (37.83559735744853, 55.71944437307499), (37.835370708803126, 55.71831419154461), (37.83738169402022, 55.71765218986692), (37.83823396494291, 55.71691750159089),
+(37.838056931213345, 55.71547311301385), (37.836812846557606, 55.71221445615604), (37.83522525396725, 55.709331054395555), (37.83269301586908, 55.70953687463627), (37.829667367706236, 55.70903403789297), (37.83311126588435, 55.70552351822608),
+(37.83058993121339, 55.70041317726053), (37.82983872750851, 55.69883771404813), (37.82934501586913, 55.69718947487017), (37.828926414016685, 55.69504441658371), (37.82876530422971, 55.69287499999378), (37.82894754100031, 55.690759754047335),
+(37.827697554878185, 55.68951421135665), (37.82447346292115, 55.68965045405069), (37.83136543914793, 55.68322046195302), (37.833554015869154, 55.67814012759211), (37.83544184655761, 55.67295011628339), (37.837480388885474, 55.6672498719639),
+(37.838960677246064, 55.66316274139358), (37.83926093121332, 55.66046999999383), (37.839025050262435, 55.65869897264431), (37.83670784390257, 55.65794084879904), (37.835656529083245, 55.65694309303843), (37.83704060449217, 55.65689306460552),
+(37.83696819873806, 55.65550363526252), (37.83760389616388, 55.65487847246661), (37.83687972750851, 55.65356745541324), (37.83515216004943, 55.65155951234079), (37.83312418518067, 55.64979413590619), (37.82801726983639, 55.64640836412121),
+(37.820614174591, 55.64164525405531), (37.818908190475426, 55.6421883258084), (37.81717543386075, 55.64112490388471), (37.81690987037274, 55.63916106913107), (37.815099354492155, 55.637925371757085), (37.808769150787356, 55.633798276884455),
+(37.80100123544311, 55.62873670012244), (37.79598013491824, 55.62554336109055), (37.78634567724606, 55.62033499605651), (37.78334147619623, 55.618768681480326), (37.77746201055901, 55.619855533402706), (37.77527329626457, 55.61909966711279),
+(37.77801986242668, 55.618770300976294), (37.778212973541216, 55.617257701952106), (37.77784818518065, 55.61574504433011), (37.77016867724609, 55.61148576294007), (37.760191219573976, 55.60599579539028), (37.75338926983641, 55.60227892751446),
+(37.746329965606634, 55.59920577639331), (37.73939925396728, 55.59631430313617), (37.73273665739439, 55.5935318803559), (37.7299954450912, 55.59350760316188), (37.7268679946899, 55.59469840523759), (37.72626726983634, 55.59229549697373),
+(37.7262673598022, 55.59081598950582), (37.71897193121335, 55.5877595845419), (37.70871550793456, 55.58393177431724), (37.700497489410374, 55.580917323756644), (37.69204305026244, 55.57778089778455), (37.68544477378839, 55.57815154690915),
+(37.68391050793454, 55.57472945079756), (37.678803592590306, 55.57328235936491), (37.6743402539673, 55.57255251445782), (37.66813862698363, 55.57216388774464), (37.617927457672096, 55.57505691895805), (37.60443099999999, 55.5757737568051),
+(37.599683515869145, 55.57749105910326), (37.59754177842709, 55.57796291823627), (37.59625834786988, 55.57906686095235), (37.59501783265684, 55.57746616444403), (37.593090671936025, 55.57671634534502), (37.587018007904, 55.577944600233785),
+(37.578692203704804, 55.57982895000019), (37.57327546607398, 55.58116294118248), (37.57385012109279, 55.581550362779), (37.57399562266922, 55.5820107079112), (37.5735356072979, 55.58226289171689), (37.57290393054962, 55.582393529795155),
+(37.57037722355653, 55.581919415056234), (37.5592298306885, 55.584471614867844), (37.54189249206543, 55.58867650795186), (37.5297256269836, 55.59158133551745), (37.517837865081766, 55.59443656218868), (37.51200186508174, 55.59635625174229),
+(37.506808949737554, 55.59907823904434), (37.49820432275389, 55.6062944994944), (37.494406071441674, 55.60967103463367), (37.494760001358024, 55.61066689753365), (37.49397137107085, 55.61220931698269), (37.49016528606031, 55.613417718449064),
+(37.48773249206542, 55.61530616333343), (37.47921386508177, 55.622640129112334), (37.470652153442394, 55.62993723476164), (37.46273446298218, 55.6368075123157), (37.46350692265317, 55.64068225239439), (37.46050283203121, 55.640794546982576),
+(37.457627470916734, 55.64118904154646), (37.450718034393326, 55.64690488145138), (37.44239252645875, 55.65397824729769), (37.434587576721185, 55.66053543155961), (37.43582144975277, 55.661693766520735), (37.43576786245721, 55.662755031737014),
+(37.430982915344174, 55.664610641628116), (37.428547447097685, 55.66778515273695), (37.42945134592044, 55.668633314343566), (37.42859571562949, 55.66948145750025), (37.4262836402282, 55.670813882451405), (37.418709037048295, 55.6811141674414),
+(37.41922139651101, 55.68235377885389), (37.419218771842885, 55.68359335082235), (37.417196501327446, 55.684375235224735), (37.41607020370478, 55.68540557585352), (37.415640857147146, 55.68686637150793), (37.414632153442334, 55.68903015131686),
+(37.413344899475064, 55.690896881757396), (37.41171432275391, 55.69264232162232), (37.40948282275393, 55.69455101638112), (37.40703674603271, 55.69638690385348), (37.39607169577025, 55.70451821283731), (37.38952706878662, 55.70942491932811),
+(37.387778313491815, 55.71149057784176), (37.39049275399779, 55.71419814298992), (37.385557272491454, 55.7155489617061), (37.38388335714726, 55.71849856042102), (37.378368238098155, 55.7292763261685), (37.37763597123337, 55.730845879211614),
+(37.37890062088197, 55.73167906388319), (37.37750451918789, 55.734703664681774), (37.375610832015965, 55.734851959522246), (37.3723813571472, 55.74105626086403), (37.37014935714723, 55.746115620904355), (37.36944173016362, 55.750883999993725),
+(37.36975304365541, 55.76335905525834), (37.37244070571134, 55.76432079697595), (37.3724259757175, 55.76636979670426), (37.369922155757884, 55.76735417953104), (37.369892695770275, 55.76823419316575), (37.370214730163575, 55.782312184391266),
+(37.370493611114505, 55.78436801120489), (37.37120164550783, 55.78596427165359), (37.37284851456452, 55.7874378183096), (37.37608325135799, 55.7886695054807), (37.3764587460632, 55.78947647305964), (37.37530000265506, 55.79146512926804),
+(37.38235915344241, 55.79899647809345), (37.384344043655396, 55.80113596939471), (37.38594269577028, 55.80322699999366), (37.38711208598329, 55.804919036911976), (37.3880239841309, 55.806610999993666), (37.38928977249147, 55.81001864976979),
+(37.39038389947512, 55.81348641242801), (37.39235781481933, 55.81983538336746), (37.393709457672124, 55.82417822811877), (37.394685720901464, 55.82792275755836), (37.39557615344238, 55.830447148154136), (37.39844478226658, 55.83167107969975),
+(37.40019761214057, 55.83151823557964), (37.400398790382326, 55.83264967594742), (37.39659544313046, 55.83322180909622), (37.39667059524539, 55.83402792148566), (37.39682089947515, 55.83638877400216), (37.39643489154053, 55.83861656112751),
+(37.3955338994751, 55.84072348043264), (37.392680272491454, 55.84502158126453), (37.39241188227847, 55.84659117913199), (37.392529730163616, 55.84816071336481), (37.39486835714723, 55.85288092980303), (37.39873052645878, 55.859893456073635),
+(37.40272161111449, 55.86441833633205), (37.40697072750854, 55.867579567544375), (37.410007082016016, 55.868369880337), (37.4120992989502, 55.86920843741314), (37.412668021163924, 55.87055369615854), (37.41482461111453, 55.87170587948249),
+(37.41862266137694, 55.873183961039565), (37.42413732540892, 55.874879126654704), (37.4312182698669, 55.875614937236705), (37.43111093783558, 55.8762723478417), (37.43332105622856, 55.87706546369396), (37.43385747619623, 55.87790681284802),
+(37.441303050262405, 55.88027084462084), (37.44747234260555, 55.87942070143253), (37.44716141796871, 55.88072960917233), (37.44769797085568, 55.88121221323979), (37.45204320500181, 55.882080694420715), (37.45673176190186, 55.882346110794586),
+(37.463383999999984, 55.88252729504517), (37.46682797486874, 55.88294937719063), (37.470014457672086, 55.88361266759345), (37.47751410450743, 55.88546991372396), (37.47860317658232, 55.88534929207307), (37.48165826025772, 55.882563306475106),
+(37.48316434442331, 55.8815803226785), (37.483831555817645, 55.882427612793315), (37.483182967125686, 55.88372791409729), (37.483092277908824, 55.88495581062434), (37.4855716508179, 55.8875561994203), (37.486440636245746, 55.887827444039566),
+(37.49014203439328, 55.88897899871799), (37.493210285705544, 55.890208937135604), (37.497512451065035, 55.891342397444696), (37.49780744510645, 55.89174030252967), (37.49940333499519, 55.89239745507079), (37.50018383334346, 55.89339220941865),
+(37.52421672750851, 55.903869074155224), (37.52977457672118, 55.90564076517974), (37.53503220370484, 55.90661661218259), (37.54042858064267, 55.90714113744566), (37.54320461007303, 55.905645048442985), (37.545686966066306, 55.906608607018505),
+(37.54743976120755, 55.90788552162358), (37.55796999999999, 55.90901557907218), (37.572711542327866, 55.91059395704873), (37.57942799999998, 55.91073854155573), (37.58502865872187, 55.91009969268444), (37.58739968913264, 55.90794809960554),
+(37.59131567193598, 55.908713267595054), (37.612687423278814, 55.902866854295375), (37.62348079629517, 55.90041967242986), (37.635797880950896, 55.898141151686396), (37.649487626983664, 55.89639275532968), (37.65619302513125, 55.89572360207488),
+(37.66294133862307, 55.895295577183965), (37.66874564418033, 55.89505457604897), (37.67375601586915, 55.89254677027454), (37.67744661901856, 55.8947775867987), (37.688347, 55.89450045676125), (37.69480554232789, 55.89422926332761),
+(37.70107096560668, 55.89322256101114), (37.705962965606716, 55.891763491662616), (37.711885134918205, 55.889110234998974), (37.71682005026245, 55.886577568759876), (37.7199315476074, 55.88458159806678), (37.72234560316464, 55.882281005794134),
+(37.72364385977171, 55.8809452036196), (37.725371142837474, 55.8809722706006), (37.727870902099546, 55.88037213862385), (37.73394330422971, 55.877941504088696), (37.745339592590376, 55.87208120378722), (37.75525267724611, 55.86703807949492),
+(37.76919976190188, 55.859821640197474), (37.827835219574, 55.82962968399116), (37.83341438888553, 55.82575289922351), (37.83652584655761, 55.82188784027888), (37.83809213491821, 55.81612575504693), (37.83605359521481, 55.81460347077685),
+(37.83632178569025, 55.81276696067908), (37.838623105812026, 55.811486181656385), (37.83912198147584, 55.807329380532785), (37.839079078033414, 55.80510270463816), (37.83965844708251, 55.79940712529036), (37.840581150787344, 55.79131399999368),
+(37.84172564285271, 55.78000432402266)]);
+```
+
+3. Vérifiez combien d’antennes-relais se trouvent à Moscou :
+
+```sql
+SELECT count() FROM cell_towers
+WHERE pointInPolygon((lon, lat), (SELECT * FROM moscow))
+```
+
+```response
+┌─count()─┐
+│  310463 │
+└─────────┘
+
+1 rows in set. Elapsed: 0.067 sec. Processed 43.28 million rows, 692.42 MB (645.83 million rows/s., 10.33 GB/s.)
+```
+
+<div id="review-of-the-schema">
+  ## Revue du schéma
+</div>
+
+Avant de créer des visualisations dans Superset, examinez les colonnes que vous allez utiliser. Ce jeu de données fournit principalement la localisation (longitude et latitude) ainsi que les technologies radio des antennes-relais de téléphonie mobile dans le monde entier. Les descriptions des colonnes sont disponibles sur le [forum communautaire](https://community.opencellid.org/t/documenting-the-columns-in-the-downloadable-cells-database-csv/186). Les colonnes utilisées dans les visualisations décrites ici sont présentées ci-dessous.
+
+Voici une description des colonnes issue du forum OpenCelliD :
+
+| Colonne | Description                                                           |
+| ------- | --------------------------------------------------------------------- |
+| radio   | Génération technologique : CDMA, GSM, UMTS, 5G NR                     |
+| mcc     | Code pays mobile : `204` correspond aux Pays-Bas                      |
+| lon     | Longitude : avec la latitude, localisation approximative de l’antenne |
+| lat     | Latitude : avec la longitude, localisation approximative de l’antenne |
+
+<Tip>
+  **mcc**
+
+  Pour trouver votre MCC, consultez [Mobile network codes](https://en.wikipedia.org/wiki/Mobile_country_code) et utilisez les trois chiffres de la colonne **Mobile country code**.
+</Tip>
+
+Le schéma de cette table a été conçu pour un stockage compact sur disque et des requêtes rapides.
+
+* Les données `radio` sont stockées sous forme d’`Enum8` (`UInt8`) plutôt que comme une chaîne de caractères.
+* `mcc`, ou code pays mobile, est stocké en `UInt16`, car sa plage de valeurs va de 1 à 999.
+* `lon` et `lat` sont des `Float64`.
+
+Aucun des autres champs n’est utilisé dans les requêtes ou les visualisations de ce guide, mais ils sont décrits dans le forum lié ci-dessus si cela vous intéresse.
+
+<div id="build-visualizations-with-apache-superset">
+  ## Créez des visualisations avec Apache Superset
+</div>
+
+Il est facile d’exécuter Superset avec Docker. Si Superset est déjà en cours d’exécution, il vous suffit d’ajouter ClickHouse Connect avec `pip install clickhouse-connect`. Si vous devez installer Superset, consultez la section **Launch Apache Superset in Docker** juste ci-dessous.
+
+<SupersetDocker />
+
+Pour créer un tableau de bord Superset à l’aide du jeu de données OpenCelliD, vous devez :
+
+* Ajouter votre service ClickHouse en tant que **base de données** Superset
+* Ajouter la table **cell&#95;towers** en tant que **jeu de données** Superset
+* Créer quelques **graphiques**
+* Ajouter les graphiques à un **tableau de bord**
+
+<div id="add-your-clickhouse-service-as-a-superset-database">
+  ### Ajoutez votre service ClickHouse en tant que base de données Superset
+</div>
+
+<ConnectionDetails />
+
+Dans Superset, vous pouvez ajouter une base de données en choisissant son type, puis en renseignant les détails de connexion. Ouvrez Superset et repérez le **+** : son menu contient les options **Data**, puis **Connect database**.
+
+<Image img="/images/getting-started/example-datasets/superset-add.webp" size="md" alt="Ajouter une base de données" />
+
+Choisissez **ClickHouse Connect** dans la liste :
+
+<Image img="/images/getting-started/example-datasets/superset-choose-a-database.webp" size="md" alt="Choisir ClickHouse Connect comme type de base de données" />
+
+<Note>
+  Si **ClickHouse Connect** ne figure pas parmi les options proposées, vous devrez l&#39;installer. La commande est `pip install clickhouse-connect`, et plus d&#39;informations sont [disponibles ici](https://pypi.org/project/clickhouse-connect/).
+</Note>
+
+<div id="add-your-connection-details">
+  #### Ajoutez vos coordonnées de connexion
+</div>
+
+<Tip>
+  Assurez-vous d’activer **SSL** lorsque vous vous connectez à ClickHouse Cloud ou à d’autres systèmes ClickHouse qui imposent l’utilisation de SSL.
+</Tip>
+
+<Image img="/images/getting-started/example-datasets/superset-connect-a-database.webp" size="md" alt="Ajouter ClickHouse en tant que source de données Superset" />
+
+<div id="add-the-table-cell_towers-as-a-superset-dataset">
+  ### Ajouter la table **cell_towers** comme **jeu de données** Superset
+</div>
+
+Dans Superset, un **jeu de données** correspond à une table d’une base de données. Cliquez sur add a dataset, puis choisissez votre service ClickHouse, la base de données qui contient votre table (`default`), puis la table `cell_towers` :
+
+<Image img="/images/getting-started/example-datasets/superset-add-dataset.webp" size="md" alt="Ajouter la table cell_towers comme jeu de données" />
+
+<div id="create-some-charts">
+  ### Créer quelques **graphiques**
+</div>
+
+Lorsque vous ajoutez un graphique dans Superset, vous devez préciser le jeu de données (`cell_towers`) ainsi que le type de graphique. Comme le jeu de données OpenCelliD fournit les coordonnées de longitude et de latitude des antennes-relais, nous allons créer un graphique **Map**. Le type **deck.gL Scatterplot** est bien adapté à ce jeu de données, car il fonctionne bien avec des points de données denses sur une carte.
+
+<Image img="/images/getting-started/example-datasets/superset-create-map.webp" size="md" alt="Créer une carte dans Superset" />
+
+<div id="specify-the-query-used-for-the-map">
+  #### Spécifiez la requête utilisée pour la carte
+</div>
+
+Un Scatterplot deck.gl nécessite une longitude et une latitude, et il est également possible d’appliquer un ou plusieurs filtres à la requête. Dans cet exemple, deux filtres sont appliqués : l’un pour les antennes-relais utilisant la technologie UMTS, et l’autre pour le Mobile country code attribué aux Pays-Bas.
+
+Les champs `lon` et `lat` correspondent à la longitude et à la latitude :
+
+<Image img="/images/getting-started/example-datasets/superset-lon-lat.webp" size="md" alt="Spécifier les champs de longitude et de latitude" />
+
+Ajoutez un filtre avec `mcc` = `204` (ou remplacez-le par n’importe quelle autre valeur de `mcc`) :
+
+<Image img="/images/getting-started/example-datasets/superset-mcc-204.webp" size="md" alt="Filtrer sur MCC 204" />
+
+Ajoutez un filtre avec `radio` = `'UMTS'` (ou remplacez-le par n’importe quelle autre valeur de `radio` ; vous pouvez voir les valeurs possibles dans la sortie de `DESCRIBE TABLE cell_towers`) :
+
+<Image img="/images/getting-started/example-datasets/superset-radio-umts.webp" size="md" alt="Filtrer sur une valeur radio égale à UMTS" />
+
+Voici la configuration complète du graphique avec les filtres `radio = 'UMTS'` et `mcc = 204` :
+
+<Image img="/images/getting-started/example-datasets/superset-umts-netherlands.webp" size="md" alt="Graphique des radios UMTS dans le MCC 204" />
+
+Cliquez sur **UPDATE CHART** pour générer la visualisation.
+
+<div id="add-the-charts-to-a-dashboard">
+  ### Ajouter les graphiques à un **tableau de bord**
+</div>
+
+Cette capture d’écran montre l’emplacement des antennes-relais utilisant les technologies radio LTE, UMTS et GSM. Les graphiques sont tous créés de la même façon, puis ajoutés à un tableau de bord.
+
+<Image img="/images/getting-started/example-datasets/superset-cell-tower-dashboard.webp" size="md" alt="Tableau de bord des antennes-relais par type de radio dans le mcc 204" />
+
+<Tip>
+  Les données sont également disponibles pour des requêtes interactives dans le [Playground](https://sql.clickhouse.com).
+
+  Cet [exemple](https://sql.clickhouse.com?query_id=UV8M4MAGS2PWAUOAYAAARM) préremplit même le nom d’utilisateur ainsi que la requête pour vous.
+
+  Même si vous ne pouvez pas créer de tables dans le Playground, vous pouvez exécuter toutes les requêtes et même utiliser Superset (ajustez le nom d’hôte et le numéro de port).
+</Tip>

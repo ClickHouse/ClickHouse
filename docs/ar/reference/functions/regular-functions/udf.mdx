@@ -1,0 +1,532 @@
+---
+description: 'توثيق الدوال المعرّفة من قبل المستخدم (UDFs)'
+sidebarTitle: 'UDF'
+slug: /sql-reference/functions/udf
+title: 'الدوال المعرّفة من قبل المستخدم (UDFs)'
+doc_type: 'reference'
+---
+
+import PrivatePreviewBadge from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="udfs-user-defined-functions">
+  # UDFs الدوال المعرّفة من قِبل المستخدم
+</div>
+
+يدعم ClickHouse عدة أنواع من الدوال المعرّفة من قِبل المستخدم (UDFs):
+
+* تبدأ [Executable UDFs](#executable-user-defined-functions) برنامجًا خارجيًا أو برنامجًا نصيًا (بايثون، Bash، إلخ)، وتُمرِّر إليه blocks من البيانات عبر STDIN / STDOUT. استخدمها لدمج التعليمات البرمجية أو الأدوات الحالية دون الحاجة إلى إعادة تجميع ClickHouse. وهي تفرض overhead أعلى لكل استدعاء مقارنةً بالخيارات التي تعمل داخل العملية، لذا فهي الأنسب للمنطق الأثقل أو عند الحاجة إلى runtime مختلف.
+* تُعرَّف [SQL UDFs](#sql-user-defined-functions) باستخدام `CREATE FUNCTION` بالكامل ضمن SQL. وتُضمَّن/تُوسَّع داخل query plan (من دون حدٍّ فاصل على مستوى العملية)، مما يجعلها lightweight ومثالية لإعادة استخدام منطق expression أو تبسيط columns المحسوبة المعقدة.
+* تُشغِّل [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) تعليمات برمجية مُجمَّعة إلى WebAssembly داخل sandbox ضمن server process. وهي توفّر overhead أقل لكل استدعاء مقارنةً بالبرامج التنفيذية الخارجية، مع عزل أفضل من الامتدادات native، مما يجعلها مناسبة للخوارزميات المخصّصة المكتوبة بلغات يمكنها الاستهداف إلى WASM (مثل C/C++/Rust).
+
+## الدوال المعرفة من قبل المستخدم القابلة للتنفيذ
+
+<PrivatePreviewBadge />
+
+<Note>
+  هذه الميزة متاحة ضمن المعاينة الخاصة في ClickHouse Cloud.
+  يرجى التواصل مع ClickHouse Support عبر https://clickhouse.cloud/support لطلب الوصول.
+</Note>
+
+يمكن لـ ClickHouse استدعاء أي برنامج خارجي قابل للتنفيذ أو برنامج نصي لمعالجة البيانات.
+
+يمكن أن يوجد تكوين الدوال المعرفة من قبل المستخدم القابلة للتنفيذ في ملف XML واحد أو أكثر.
+ويُحدَّد مسار هذا التكوين في المَعلمة [`user_defined_executable_functions_config`](/ar/reference/settings/server-settings/settings#user_defined_executable_functions_config).
+
+يتضمن تكوين الدالة الإعدادات التالية:
+
+| Parameter                     | الوصف                                                                                                                                                                                                                                                                                                                                                                              | مطلوب   | القيمة الافتراضية         |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------------------------- |
+| `name`                        | اسم دالة                                                                                                                                                                                                                                                                                                                                                                           | نعم     | -                         |
+| `command`                     | اسم البرنامج النصي المطلوب تنفيذه، أو الأمر إذا كانت `execute_direct` تساوي `false`                                                                                                                                                                                                                                                                                                | نعم     | -                         |
+| `argument`                    | وصف الوسيطة مع `type` و`name` الاختياري الخاص بها. تُوصَف كل وسيطة في إعداد منفصل. ويكون تحديد الاسم ضروريًا إذا كانت أسماء الوسائط جزءًا من التسلسل لدالة معرّفة من قبل المستخدم بتنسيق مثل [Native](/ar/reference/formats/Native) أو [JSONEachRow](/ar/reference/formats/JSON/JSONEachRow)                                                                                             | نعم     | `c` + argument&#95;number |
+| `format`                      | [تنسيق](/ar/reference/formats/index) تُمرَّر به الوسائط إلى الأمر. ومن المتوقع أيضًا أن يستخدم خرج الأمر التنسيق نفسه                                                                                                                                                                                                                                                                 | نعم     | -                         |
+| `return_type`                 | نوع القيمة المُعادة                                                                                                                                                                                                                                                                                                                                                                | نعم     | -                         |
+| `return_name`                 | اسم القيمة المُعادة. ويكون تحديد اسم الإرجاع ضروريًا إذا كان اسم الإرجاع جزءًا من التسلسل لدالة معرّفة من قبل المستخدم بتنسيق مثل [Native](/ar/reference/formats/Native) أو [JSONEachRow](/ar/reference/formats/JSON/JSONEachRow)                                                                                                                                                        | اختياري | `result`                  |
+| `type`                        | نوع التنفيذ. إذا ضُبطت `type` على `executable`، فسيُشغَّل أمر واحد. وإذا ضُبطت على `executable_pool`، فسيُنشأ مجمّع من الأوامر                                                                                                                                                                                                                                                     | نعم     | -                         |
+| `max_command_execution_time`  | الحد الأقصى لوقت التنفيذ بالثواني لمعالجة كتلة من البيانات. يكون هذا الإعداد صالحًا فقط لأوامر `executable_pool`                                                                                                                                                                                                                                                                   | اختياري | `10`                      |
+| `command_termination_timeout` | المدة بالثواني التي يجب أن ينهي خلالها الأمر عمله بعد إغلاق الأنبوب الخاص به. بعد ذلك، تُرسَل الإشارة `SIGTERM` إلى العملية التي تنفذ الأمر                                                                                                                                                                                                                                        | اختياري | `10`                      |
+| `command_read_timeout`        | مهلة قراءة البيانات من `stdout` الخاص بالأمر، بالمللي ثانية                                                                                                                                                                                                                                                                                                                        | اختياري | `10000`                   |
+| `command_write_timeout`       | مهلة كتابة البيانات إلى `stdin` الخاص بالأمر، بالمللي ثانية                                                                                                                                                                                                                                                                                                                        | اختياري | `10000`                   |
+| `pool_size`                   | حجم مجمّع الأوامر                                                                                                                                                                                                                                                                                                                                                                  | اختياري | `16`                      |
+| `send_chunk_header`           | يتحكم في ما إذا كان سيتم إرسال عدد الصفوف قبل إرسال دفعة من البيانات إلى العملية                                                                                                                                                                                                                                                                                                   | اختياري | `false`                   |
+| `execute_direct`              | إذا كانت `execute_direct` = `1`، فسيُبحث عن `command` داخل مجلد user&#95;scripts المحدد بواسطة [user&#95;scripts&#95;path](/ar/reference/settings/server-settings/settings#user_scripts_path). ويمكن تحديد وسائط إضافية للبرنامج النصي باستخدام فاصل من المسافات البيضاء. مثال: `script_name arg1 arg2`. وإذا كانت `execute_direct` = `0`، فسيُمرَّر `command` كوسيطة إلى `bin/sh -c` | اختياري | `1`                       |
+| `lifetime`                    | فترة إعادة تحميل الدالة بالثواني. إذا ضُبطت على `0` فلن تُعاد تحميل الدالة                                                                                                                                                                                                                                                                                                         | اختياري | `0`                       |
+| `deterministic`               | ما إذا كانت الدالة حتمية (تعيد النتيجة نفسها للإدخال نفسه)                                                                                                                                                                                                                                                                                                                         | اختياري | `false`                   |
+| `stderr_reaction`             | كيفية التعامل مع خرج `stderr` الخاص بالأمر. القيم: `none` (تجاهل)، `log` (تسجيل كل خرج `stderr` فورًا)، `log_first` (تسجيل أول 4 KiB بعد الخروج)، `log_last` (تسجيل آخر 4 KiB بعد الخروج)، `throw` (طرح استثناء فورًا عند أي خرج من `stderr`). عند استخدام `log_first` أو `log_last` مع رمز خروج غير صفري، يُضمَّن محتوى `stderr` في رسالة الاستثناء                               | اختياري | `log_last`                |
+| `check_exit_code`             | إذا كانت القيمة `true`، فسيتحقق ClickHouse من رمز خروج الأمر. ويتسبب رمز الخروج غير الصفري في حدوث استثناء                                                                                                                                                                                                                                                                         | اختياري | `true`                    |
+
+يجب أن يقرأ الأمر الوسائط من `STDIN` وأن يكتب النتيجة إلى `STDOUT`. ويجب أن يعالج الأمر الوسائط على نحو تكراري. أي إنه بعد معالجة دفعة من الوسائط، يجب أن ينتظر الدفعة التالية.
+
+<div id="executable-user-defined-functions">
+  ## الدوال المعرّفة من قبل المستخدم القابلة للتنفيذ
+</div>
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+<div id="udf-inline">
+  ### UDF من برنامج نصي مضمن
+</div>
+
+أنشئ `test_function_sum` يدويًا مع ضبط `execute_direct` على القيمة `0` باستخدام إعدادات XML أو YAML.
+
+<Tabs>
+  <Tab title="XML">
+    الملف `test_function.xml` (`/etc/clickhouse-server/test_function.xml` مع إعدادات المسار الافتراضية).
+
+    ```xml title="/etc/clickhouse-server/test_function.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <name>test_function_sum</name>
+            <return_type>UInt64</return_type>
+            <argument>
+                <type>UInt64</type>
+                <name>lhs</name>
+            </argument>
+            <argument>
+                <type>UInt64</type>
+                <name>rhs</name>
+            </argument>
+            <format>TabSeparated</format>
+            <command>cd /; clickhouse-local --input-format TabSeparated --output-format TabSeparated --structure 'x UInt64, y UInt64' --query "SELECT x + y FROM table"</command>
+            <execute_direct>0</execute_direct>
+            <deterministic>true</deterministic>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    الملف `test_function.yaml` (`/etc/clickhouse-server/test_function.yaml` مع إعدادات المسار الافتراضية).
+
+    ```yml title="/etc/clickhouse-server/test_function.yaml"
+    functions:
+      type: executable
+      name: test_function_sum
+      return_type: UInt64
+      argument:
+        - type: UInt64
+          name: lhs
+        - type: UInt64
+          name: rhs
+      format: TabSeparated
+      command: 'cd /; clickhouse-local --input-format TabSeparated --output-format TabSeparated --structure ''x UInt64, y UInt64'' --query "SELECT x + y FROM table"'
+      execute_direct: 0
+      deterministic: true
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+```sql title="Query"
+SELECT test_function_sum(2, 2);
+```
+
+```text title="Result"
+┌─test_function_sum(2, 2)─┐
+│                       4 │
+└─────────────────────────┘
+```
+
+<div id="udf-python">
+  ### UDF من برنامج نصي بايثون
+</div>
+
+في هذا المثال، ننشئ UDF يقرأ قيمة من `STDIN` ويُرجعها كسلسلة نصية.
+
+أنشئ `test_function` باستخدام تهيئة XML أو YAML.
+
+<Tabs>
+  <Tab title="XML">
+    الملف `test_function.xml` (`/etc/clickhouse-server/test_function.xml` مع إعدادات المسار الافتراضية).
+
+    ```xml title="/etc/clickhouse-server/test_function.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <name>test_function_python</name>
+            <return_type>String</return_type>
+            <argument>
+                <type>UInt64</type>
+                <name>value</name>
+            </argument>
+            <format>TabSeparated</format>
+            <command>test_function.py</command>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    الملف `test_function.yaml` (`/etc/clickhouse-server/test_function.yaml` مع إعدادات المسار الافتراضية).
+
+    ```yml title="/etc/clickhouse-server/test_function.yaml"
+    functions:
+      type: executable
+      name: test_function_python
+      return_type: String
+      argument:
+        - type: UInt64
+          name: value
+      format: TabSeparated
+      command: test_function.py
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+أنشئ ملف البرنامج النصي `test_function.py` داخل مجلد `user_scripts` (`/var/lib/clickhouse/user_scripts/test_function.py` مع إعدادات المسار الافتراضية).
+
+```python
+#!/usr/bin/python3
+
+import sys
+
+if __name__ == '__main__':
+    for line in sys.stdin:
+        print("Value " + line, end='')
+        sys.stdout.flush()
+```
+
+```sql title="Query"
+SELECT test_function_python(toUInt64(2));
+```
+
+```text title="Result"
+┌─test_function_python(2)─┐
+│ Value 2                 │
+└─────────────────────────┘
+```
+
+<div id="udf-stdin">
+  ### اقرأ قيمتين من `STDIN` وأعِد مجموعهما على شكل كائن JSON
+</div>
+
+أنشئ `test_function_sum_json` باستخدام وسيطات مُسمّاة وتنسيق [JSONEachRow](/ar/reference/formats/JSON/JSONEachRow)، وذلك باستخدام تهيئة XML أو YAML.
+
+<Tabs>
+  <Tab title="XML">
+    الملف `test_function.xml` (`/etc/clickhouse-server/test_function.xml` مع إعدادات المسار الافتراضية).
+
+    ```xml title="/etc/clickhouse-server/test_function.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <name>test_function_sum_json</name>
+            <return_type>UInt64</return_type>
+            <return_name>result_name</return_name>
+            <argument>
+                <type>UInt64</type>
+                <name>argument_1</name>
+            </argument>
+            <argument>
+                <type>UInt64</type>
+                <name>argument_2</name>
+            </argument>
+            <format>JSONEachRow</format>
+            <command>test_function_sum_json.py</command>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    الملف `test_function.yaml` (`/etc/clickhouse-server/test_function.yaml` مع إعدادات المسار الافتراضية).
+
+    ```yml title="/etc/clickhouse-server/test_function.yaml"
+    functions:
+      type: executable
+      name: test_function_sum_json
+      return_type: UInt64
+      return_name: result_name
+      argument:
+        - type: UInt64
+          name: argument_1
+        - type: UInt64
+          name: argument_2
+      format: JSONEachRow
+      command: test_function_sum_json.py
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+أنشئ ملف البرنامج النصي `test_function_sum_json.py` داخل المجلد `user_scripts` (`/var/lib/clickhouse/user_scripts/test_function_sum_json.py` مع إعدادات المسار الافتراضية).
+
+```python
+#!/usr/bin/python3
+
+import sys
+import json
+
+if __name__ == '__main__':
+    for line in sys.stdin:
+        value = json.loads(line)
+        first_arg = int(value['argument_1'])
+        second_arg = int(value['argument_2'])
+        result = {'result_name': first_arg + second_arg}
+        print(json.dumps(result), end='\n')
+        sys.stdout.flush()
+```
+
+```sql title="Query"
+SELECT test_function_sum_json(2, 2);
+```
+
+```text title="Result"
+┌─test_function_sum_json(2, 2)─┐
+│                            4 │
+└──────────────────────────────┘
+```
+
+<div id="udf-parameters-in-command">
+  ### استخدام المعلمات في إعداد `command`
+</div>
+
+يمكن للدوال المعرّفة من قبل المستخدم القابلة للتنفيذ أخذ معلمات ثابتة تُضبط في إعداد `command` (يعمل هذا فقط مع الدوال المعرّفة من قبل المستخدم من النوع `executable`).
+ويتطلب ذلك أيضًا الخيار `execute_direct` لضمان عدم وجود ثغرة ناتجة عن توسيع وسيطات الصدفة.
+
+<Tabs>
+  <Tab title="XML">
+    ملف `test_function_parameter_python.xml` (`/etc/clickhouse-server/test_function_parameter_python.xml` مع إعدادات المسار الافتراضية).
+
+    ```xml title="/etc/clickhouse-server/test_function_parameter_python.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <execute_direct>true</execute_direct>
+            <name>test_function_parameter_python</name>
+            <return_type>String</return_type>
+            <argument>
+                <type>UInt64</type>
+            </argument>
+            <format>TabSeparated</format>
+            <command>test_function_parameter_python.py {test_parameter:UInt64}</command>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    ملف `test_function_parameter_python.yaml` (`/etc/clickhouse-server/test_function_parameter_python.yaml` مع إعدادات المسار الافتراضية).
+
+    ```yml title="/etc/clickhouse-server/test_function_parameter_python.yaml"
+    functions:
+      type: executable
+      execute_direct: true
+      name: test_function_parameter_python
+      return_type: String
+      argument:
+        - type: UInt64
+      format: TabSeparated
+      command: test_function_parameter_python.py {test_parameter:UInt64}
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+أنشئ ملف البرنامج النصي `test_function_parameter_python.py` داخل المجلد `user_scripts` (`/var/lib/clickhouse/user_scripts/test_function_parameter_python.py` مع إعدادات المسار الافتراضية).
+
+```python
+#!/usr/bin/python3
+
+import sys
+
+if __name__ == "__main__":
+    for line in sys.stdin:
+        print("Parameter " + str(sys.argv[1]) + " value " + str(line), end="")
+        sys.stdout.flush()
+```
+
+```sql title="Query"
+SELECT test_function_parameter_python(1)(2);
+```
+
+```text title="Result"
+┌─test_function_parameter_python(1)(2)─┐
+│ Parameter 1 value 2                  │
+└──────────────────────────────────────┘
+```
+
+<div id="udf-shell-script">
+  ### UDF من برنامج نصي shell
+</div>
+
+في هذا المثال، ننشئ برنامجًا نصيًا لـ shell يُضاعف كل قيمة.
+
+<Tabs>
+  <Tab title="XML">
+    ملف `test_function_shell.xml` (`/etc/clickhouse-server/test_function_shell.xml` باستخدام إعدادات المسار الافتراضية).
+
+    ```xml title="/etc/clickhouse-server/test_function_shell.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <name>test_shell</name>
+            <return_type>String</return_type>
+            <argument>
+                <type>UInt8</type>
+                <name>value</name>
+            </argument>
+            <format>TabSeparated</format>
+            <command>test_shell.sh</command>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    ملف `test_function_shell.yaml` (`/etc/clickhouse-server/test_function_shell.yaml` باستخدام إعدادات المسار الافتراضية).
+
+    ```yml title="/etc/clickhouse-server/test_function_shell.yaml"
+    functions:
+      type: executable
+      name: test_shell
+      return_type: String
+      argument:
+        - type: UInt8
+          name: value
+      format: TabSeparated
+      command: test_shell.sh
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+أنشئ ملف البرنامج النصي `test_shell.sh` داخل المجلد `user_scripts` (`/var/lib/clickhouse/user_scripts/test_shell.sh` باستخدام إعدادات المسار الافتراضية).
+
+```bash title="/var/lib/clickhouse/user_scripts/test_shell.sh"
+#!/bin/bash
+
+while read read_data;
+    do printf "$(expr $read_data \* 2)\n";
+done
+```
+
+```sql title="Query"
+SELECT test_shell(number) FROM numbers(10);
+```
+
+```text title="Result"
+    ┌─test_shell(number)─┐
+ 1. │ 0                  │
+ 2. │ 2                  │
+ 3. │ 4                  │
+ 4. │ 6                  │
+ 5. │ 8                  │
+ 6. │ 10                 │
+ 7. │ 12                 │
+ 8. │ 14                 │
+ 9. │ 16                 │
+10. │ 18                 │
+    └────────────────────┘
+```
+
+<div id="error-handling">
+  ## معالجة الأخطاء
+</div>
+
+قد تُطلق بعض الدوال استثناءً إذا كانت البيانات غير صالحة.
+في هذه الحالة، يُلغى الاستعلام ويُعاد نص الخطأ إلى العميل.
+في المعالجة الموزعة، إذا حدث استثناء على أحد الخوادم، تحاول الخوادم الأخرى أيضًا إلغاء الاستعلام.
+
+<div id="evaluation-of-argument-expressions">
+  ## تقييم تعبيرات الوسائط
+</div>
+
+في معظم لغات البرمجة، قد لا يُقيَّم أحد الوسائط مع بعض المعاملات.
+وعادةً ما تكون هذه المعاملات هي `&&` و `||` و `?:`.
+في ClickHouse، تُقيَّم وسائط الدوال (المعاملات) دائمًا.
+ويرجع ذلك إلى أن أجزاءً كاملة من الأعمدة تُقيَّم دفعةً واحدة، بدلًا من حساب كل صف على حدة.
+
+<div id="performing-functions-for-distributed-query-processing">
+  ## تنفيذ الدوال في معالجة الاستعلامات الموزعة
+</div>
+
+في معالجة الاستعلامات الموزعة، يُنفَّذ أكبر عدد ممكن من مراحل معالجة الاستعلام على الخوادم البعيدة، وتُنفَّذ بقية المراحل (مثل دمج النتائج الوسيطة وكل ما يلي ذلك) على الخادم الطالب.
+
+وهذا يعني أن الدوال قد تُنفَّذ على خوادم مختلفة.
+على سبيل المثال، في الاستعلام `SELECT f(sum(g(x))) FROM distributed_table GROUP BY h(y),`
+
+* إذا كان `distributed_table` يحتوي على shardين على الأقل، فستُنفَّذ الدالتان &#39;g&#39; و &#39;h&#39; على الخوادم البعيدة، بينما تُنفَّذ الدالة &#39;f&#39; على الخادم الطالب.
+* إذا كان `distributed_table` يحتوي على shard واحد فقط، فستُنفَّذ جميع الدوال &#39;f&#39; و &#39;g&#39; و &#39;h&#39; على خادم هذا الـ shard.
+
+عادةً لا تعتمد نتيجة الدالة على الخادم الذي تُنفَّذ عليه. لكن في بعض الحالات يكون ذلك مهمًا.
+فعلى سبيل المثال، تستخدم الدوال التي تعمل مع القواميس القاموس الموجود على الخادم الذي تعمل عليه.
+ومثال آخر هو الدالة `hostName`، التي تُرجع اسم الخادم الذي تعمل عليه، بحيث يمكن تنفيذ `GROUP BY` حسب الخوادم في استعلام `SELECT`.
+
+إذا كانت دالة في استعلام ما تُنفَّذ على الخادم الطالب، لكنك تحتاج إلى تنفيذها على الخوادم البعيدة، فيمكنك تغليفها داخل الدالة التجميعية &#39;any&#39; أو إضافتها إلى مفتاح في `GROUP BY`.
+
+<div id="sql-user-defined-functions">
+  ## دوال SQL المعرفة من قبل المستخدم
+</div>
+
+يمكن إنشاء دوال مخصصة من تعبيرات lambda باستخدام عبارة [CREATE FUNCTION](/ar/reference/statements/create/function). ولحذف هذه الدوال، استخدم عبارة [DROP FUNCTION](/ar/reference/statements/drop#drop-function).
+
+<div id="webassembly-user-defined-functions">
+  ## دوال WebAssembly المعرّفة من قبل المستخدم
+</div>
+
+<CloudNotSupportedBadge />
+
+<ExperimentalBadge />
+
+تتيح لك دوال WebAssembly المعرّفة من قبل المستخدم (WASM UDFs) تشغيل تعليمات برمجية مخصّصة مُجمَّعة إلى WebAssembly داخل عملية خادم ClickHouse.
+
+<div id="quick-start">
+  ### البدء السريع
+</div>
+
+فعِّل دعم WebAssembly التجريبي في تهيئة ClickHouse:
+
+```xml
+<clickhouse>
+    <allow_experimental_webassembly_udf>true</allow_experimental_webassembly_udf>
+</clickhouse>
+```
+
+أدرِج وحدة WASM المُجمَّعة في جدول النظام:
+
+```sql
+INSERT INTO system.webassembly_modules (name, code)
+SELECT 'my_module', base64Decode('AGFzbQEAAAA...');
+```
+
+أنشئ FUNCTION باستخدام وحدة WASM الخاصة بك:
+
+```sql
+CREATE FUNCTION my_function
+LANGUAGE WASM
+ABI ROW_DIRECT
+FROM 'my_module'
+ARGUMENTS (x UInt32, y UInt32)
+RETURNS UInt32;
+```
+
+استخدم FUNCTION في استعلاماتك:
+
+```sql
+SELECT my_function(10, 20);
+```
+
+<div id="more-information">
+  ### مزيد من المعلومات
+</div>
+
+راجِع وثائق [دوال WebAssembly المعرّفة من قبل المستخدم](/ar/reference/functions/regular-functions/wasm_udf) لمزيد من التفاصيل.
+
+<div id="related-content">
+  ## محتوى ذو صلة
+</div>
+
+* [الدوال المعرَّفة من قبل المستخدم في ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)

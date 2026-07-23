@@ -1,0 +1,431 @@
+---
+sidebarTitle: 'SQL Console'
+title: 'SQL Console'
+slug: /integrations/sql-clients/sql-console
+description: 'تعرّف إلى SQL Console'
+doc_type: 'guide'
+keywords: ['SQL Console', 'واجهة الاستعلام', 'واجهة الويب', 'SQL Editor', 'Cloud Console']
+integration:
+   - support_level: 'community'
+   - category: 'sql_client'
+---
+
+import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+تُعد SQL Console أسرع وأسهل طريقة لاستكشاف قواعد بياناتك وتنفيذ الاستعلامات عليها في ClickHouse Cloud. يمكنك استخدام SQL Console من أجل:
+
+* الاتصال بخدمات ClickHouse Cloud الخاصة بك
+* عرض بيانات الجداول وتصفيتها وفرزها
+* تنفيذ الاستعلامات وتصور بيانات النتائج ببضع نقرات فقط
+* مشاركة الاستعلامات مع أعضاء الفريق والتعاون بفعالية أكبر.
+
+<div id="exploring-tables">
+  ## استعراض الجداول
+</div>
+
+<div id="viewing-table-list-and-schema-info">
+  ### عرض قائمة الجداول ومعلومات المخطط
+</div>
+
+يمكنك العثور على لمحة عامة عن الجداول الموجودة في مثيل ClickHouse الخاص بك في الشريط الجانبي الأيسر. استخدم محدِّد قاعدة البيانات أعلى الشريط الجانبي الأيسر لعرض الجداول في قاعدة بيانات محددة
+
+<Image img="/images/cloud/sqlconsole/table-list-and-schema.webp" size="lg" border alt="عرض قائمة الجداول والمخطط الذي يُظهر جداول قاعدة البيانات في الشريط الجانبي الأيسر" />
+
+يمكن أيضًا توسيع الجداول في القائمة لعرض الأعمدة وأنواع البيانات
+
+<Image img="/images/cloud/sqlconsole/view-columns.webp" size="lg" border alt="عرض جدول موسَّع يُظهر أسماء الأعمدة وأنواع البيانات" />
+
+<div id="exploring-table-data">
+  ### استكشاف بيانات الجدول
+</div>
+
+انقر على أي جدول في القائمة لفتحه في علامة تبويب جديدة. في Table View، يمكنك عرض البيانات وتحديدها ونسخها بسهولة. لاحظ أنه يتم الحفاظ على البنية والتنسيق عند النسخ واللصق في تطبيقات جداول البيانات مثل Microsoft Excel وGoogle Sheets. يمكنك التنقل بين صفحات بيانات الجدول (المقسّمة إلى صفحات من 30 صفًا) باستخدام عناصر التنقل في التذييل.
+
+<Image img="/images/cloud/sqlconsole/abc.webp" size="lg" border alt="عرض Table View يوضّح بيانات يمكن تحديدها ونسخها" />
+
+<div id="inspecting-cell-data">
+  ### فحص بيانات الخلية
+</div>
+
+يمكن استخدام أداة Cell Inspector لعرض كميات كبيرة من البيانات الموجودة داخل خلية واحدة. لفتحها، انقر بزر الماوس الأيمن على خلية ثم اختر &#39;Inspect Cell&#39;. يمكن نسخ محتويات Cell Inspector بالنقر على أيقونة النسخ في الزاوية العلوية اليمنى.
+
+<Image img="/images/cloud/sqlconsole/inspecting-cell-content.webp" size="lg" border alt="مربع حوار Cell Inspector يعرض محتوى خلية محددة" />
+
+<div id="filtering-and-sorting-tables">
+  ## تصفية الجداول وفرزها
+</div>
+
+<div id="sorting-a-table">
+  ### فرز جدول
+</div>
+
+لفرز جدول في SQL Console، افتح جدولًا وحدد زر &#39;Sort&#39; في شريط الأدوات. سيفتح هذا الزر قائمة تتيح لك ضبط إعدادات الفرز. يمكنك اختيار عمود للفرز على أساسه وتحديد ترتيب الفرز (تصاعديًا أو تنازليًا). حدّد &#39;Apply&#39; أو اضغط Enter لفرز جدولك
+
+<Image img="/images/cloud/sqlconsole/sort-descending-on-column.webp" size="lg" border alt="مربع حوار الفرز يعرض إعدادات الفرز التنازلي على أحد الأعمدة" />
+
+يتيح لك SQL Console أيضًا إضافة عدة عمليات فرز إلى جدول. انقر زر &#39;Sort&#39; مرة أخرى لإضافة فرز آخر. ملاحظة: تُطبَّق عمليات الفرز بالترتيب الذي تظهر به في جزء الفرز (من الأعلى إلى الأسفل). لإزالة عملية فرز، ما عليك سوى النقر على زر &#39;x&#39; بجانبها.
+
+<div id="filtering-a-table">
+  ### تصفية جدول
+</div>
+
+لتصفية جدول في SQL Console، افتح جدولًا وحدد الزر &#39;Filter&#39;. وكما هو الحال مع الفرز، سيفتح هذا الزر قائمة تتيح لك ضبط عامل التصفية. يمكنك اختيار العمود الذي تريد التصفية على أساسه وتحديد المعايير المطلوبة. يعرض SQL Console بذكاء خيارات تصفية تتوافق مع نوع البيانات الموجودة في العمود.
+
+<Image img="/images/cloud/sqlconsole/filter-on-radio-column-equal-gsm.webp" size="lg" border alt="مربع حوار التصفية يعرض إعدادًا لتصفية عمود radio بحيث يساوي GSM" />
+
+عندما تصبح إعدادات عامل التصفية مناسبة، يمكنك تحديد &#39;Apply&#39; لتصفية بياناتك. ويمكنك أيضًا إضافة عوامل تصفية إضافية كما هو موضح أدناه.
+
+<Image img="/images/cloud/sqlconsole/add-more-filters.webp" size="lg" border alt="مربع حوار يوضح كيفية إضافة عامل تصفية إضافي إلى نطاق أكبر من 2000" />
+
+وعلى غرار وظيفة الفرز، انقر فوق الزر &#39;x&#39; بجوار عامل التصفية لإزالته.
+
+<div id="filtering-and-sorting-together">
+  ### التصفية والفرز معًا
+</div>
+
+يتيح لك SQL Console تصفية جدول وفرزه في الوقت نفسه. للقيام بذلك، أضِف جميع عوامل التصفية وعمليات الفرز المطلوبة باستخدام الخطوات الموضحة أعلاه، ثم انقر على الزر &#39;Apply&#39;.
+
+<Image img="/images/cloud/sqlconsole/filtering-and-sorting-together.webp" size="lg" border alt="واجهة تُظهر تطبيق التصفية والفرز معًا" />
+
+<div id="creating-a-query-from-filters-and-sorts">
+  ### إنشاء استعلام من عوامل التصفية وخيارات الفرز
+</div>
+
+يمكن لـ SQL Console تحويل خيارات الفرز وعوامل التصفية التي تحددها مباشرةً إلى استعلامات بنقرة واحدة. ما عليك سوى اختيار زر &#39;Create Query&#39; من شريط الأدوات بعد تحديد معلمات الفرز والتصفية المطلوبة. بعد النقر على &#39;Create query&#39;، ستُفتح علامة تبويب جديدة للاستعلام، مع تعبئتها مسبقًا بأمر SQL المطابق للبيانات المعروضة في عرض الجدول.
+
+<Image img="/images/cloud/sqlconsole/create-a-query-from-sorts-and-filters.webp" size="lg" border alt="واجهة تعرض زر Create Query الذي يُنشئ SQL من عوامل التصفية وخيارات الفرز" />
+
+<Note>
+  عوامل التصفية وخيارات الفرز ليست مطلوبة عند استخدام ميزة &#39;Create Query&#39;.
+</Note>
+
+يمكنك معرفة المزيد عن الاستعلام عن البيانات في SQL Console من خلال قراءة وثائق الاستعلام (link).
+
+<div id="creating-and-running-a-query">
+  ## إنشاء استعلام وتشغيله
+</div>
+
+<div id="creating-a-query">
+  ### إنشاء استعلام
+</div>
+
+توجد طريقتان لإنشاء استعلام جديد في SQL Console.
+
+* انقر على زر &#39;+&#39;&#39; في شريط علامات التبويب
+* حدِّد زر &#39;New Query&#39; من قائمة الاستعلامات في الشريط الجانبي الأيسر
+
+<Image img="/images/cloud/sqlconsole/creating-a-query.webp" size="lg" border alt="واجهة توضّح كيفية إنشاء استعلام جديد باستخدام زر + أو زر New Query" />
+
+<div id="running-a-query">
+  ### تشغيل استعلام
+</div>
+
+لتشغيل استعلام، اكتب أمر SQL أو الأوامر داخل SQL Editor وانقر على زر &#39;Run&#39; أو استخدم الاختصار `cmd / ctrl + enter`. ولكتابة عدة أوامر وتشغيلها بالتسلسل، تأكد من إضافة فاصلة منقوطة بعد كل أمر.
+
+خيارات تنفيذ الاستعلام
+افتراضيًا، سيؤدي النقر على زر &#39;Run&#39; إلى تشغيل جميع الأوامر الموجودة في SQL Editor. يدعم SQL Console خيارين آخرين لتنفيذ الاستعلام:
+
+* تشغيل الأوامر المحددة
+* تشغيل الأمر عند المؤشر
+
+لتشغيل الأوامر المحددة، ظلّل الأمر المطلوب أو مجموعة الأوامر المطلوبة ثم انقر على زر &#39;Run&#39; (أو استخدم الاختصار `cmd / ctrl + enter`). ويمكنك أيضًا اختيار &#39;Run selected&#39; من القائمة السياقية في SQL Editor (التي تُفتح بالنقر بزر الماوس الأيمن في أي مكان داخل المحرر) عند وجود تحديد.
+
+<Image img="/images/cloud/sqlconsole/run-selected-query.webp" size="lg" border alt="واجهة توضّح كيفية تشغيل جزء محدد من استعلام SQL" />
+
+يمكن تشغيل الأمر عند موضع المؤشر الحالي بطريقتين:
+
+* اختر &#39;At Cursor&#39; من قائمة خيارات التشغيل الموسعة (أو استخدم اختصار لوحة المفاتيح المقابل `cmd / ctrl + shift + enter`
+
+<Image img="/images/cloud/sqlconsole/run-at-cursor-2.webp" size="lg" border alt="خيار التشغيل عند المؤشر في قائمة خيارات التشغيل الموسعة" />
+
+* اختر &#39;Run at cursor&#39; من القائمة السياقية في SQL Editor
+
+<Image img="/images/cloud/sqlconsole/run-at-cursor.webp" size="lg" border alt="خيار التشغيل عند المؤشر في القائمة السياقية لـ SQL Editor" />
+
+<Note>
+  سيومض الأمر الموجود عند موضع المؤشر باللون الأصفر عند تنفيذه.
+</Note>
+
+<div id="canceling-a-query">
+  ### إلغاء استعلام
+</div>
+
+أثناء تنفيذ استعلام، سيحل زر &#39;Cancel&#39; محل زر &#39;Run&#39; في شريط أدوات محرر الاستعلام. ما عليك سوى النقر على هذا الزر أو الضغط على `Esc` لإلغاء الاستعلام. ملاحظة: ستظل أي نتائج أُعيدت بالفعل متاحة بعد الإلغاء.
+
+<Image img="/images/cloud/sqlconsole/cancel-a-query.webp" size="lg" border alt="زر Cancel الذي يظهر أثناء تنفيذ الاستعلام" />
+
+<div id="saving-a-query">
+  ### حفظ استعلام
+</div>
+
+إذا لم يكن الاستعلام قد سُمّي مسبقًا، فسيكون اسمه &quot;Untitled Query&quot;. انقر على اسم الاستعلام لتغييره. تؤدي إعادة تسمية الاستعلام إلى حفظه.
+
+<Image img="/images/cloud/sqlconsole/give-a-query-a-name.webp" size="lg" border alt="واجهة توضّح كيفية إعادة تسمية استعلام من Untitled Query" />
+
+يمكنك أيضًا استخدام زر الحفظ أو اختصار لوحة المفاتيح `cmd / ctrl + s` لحفظ الاستعلام.
+
+<Image img="/images/cloud/sqlconsole/save-the-query.webp" size="lg" border alt="زر الحفظ في شريط أدوات محرر الاستعلام" />
+
+<div id="using-genai-to-manage-queries">
+  ## استخدام GenAI لإدارة الاستعلامات
+</div>
+
+تتيح لك هذه الميزة كتابة الاستعلامات بصيغة أسئلة بلغة طبيعية، لتتولى وحدة تحكم الاستعلامات إنشاء استعلامات SQL استنادًا إلى سياق الجداول المتاحة. كما يمكن أن يساعدك GenAI في تصحيح أخطاء استعلاماتك.
+
+لمزيد من المعلومات حول GenAI، اطّلع على [مقال المدونة Announcing GenAI powered query suggestions in ClickHouse Cloud](https://clickhouse.com/blog/announcing-genai-powered-query-suggestions-clickhouse-cloud).
+
+<div id="table-setup">
+  ### إعداد الجدول
+</div>
+
+لنستورد مجموعة بيانات UK Price Paid التجريبية ونستخدمها لإنشاء بعض استعلامات GenAI.
+
+1. افتح خدمة ClickHouse Cloud.
+
+2. أنشئ استعلامًا جديدًا بالنقر على أيقونة *+*.
+
+3. الصق الشيفرة التالية ثم شغّلها:
+
+   ```sql
+   CREATE TABLE uk_price_paid
+   (
+       price UInt32,
+       date Date,
+       postcode1 LowCardinality(String),
+       postcode2 LowCardinality(String),
+       type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
+       is_new UInt8,
+       duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
+       addr1 String,
+       addr2 String,
+       street LowCardinality(String),
+       locality LowCardinality(String),
+       town LowCardinality(String),
+       district LowCardinality(String),
+       county LowCardinality(String)
+   )
+   ENGINE = MergeTree
+   ORDER BY (postcode1, postcode2, addr1, addr2);
+   ```
+
+   من المفترض أن يستغرق هذا الاستعلام حوالي ثانية واحدة ليكتمل. وبعد الانتهاء، ينبغي أن يكون لديك جدول فارغ باسم `uk_price_paid`.
+
+4. أنشئ استعلامًا جديدًا والصق الاستعلام التالي:
+
+   ```sql
+   INSERT INTO uk_price_paid
+   WITH
+      splitByChar(' ', postcode) AS p
+   SELECT
+       toUInt32(price_string) AS price,
+       parseDateTimeBestEffortUS(time) AS date,
+       p[1] AS postcode1,
+       p[2] AS postcode2,
+       transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+       b = 'Y' AS is_new,
+       transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+       addr1,
+       addr2,
+       street,
+       locality,
+       town,
+       district,
+       county
+   FROM url(
+       'http://prod.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+       'CSV',
+       'uuid_string String,
+       price_string String,
+       time String,
+       postcode String,
+       a String,
+       b String,
+       c String,
+       addr1 String,
+       addr2 String,
+       street String,
+       locality String,
+       town String,
+       district String,
+       county String,
+       d String,
+       e String'
+   ) SETTINGS max_http_get_redirects=10;
+   ```
+
+يستورد هذا الاستعلام مجموعة البيانات من موقع `gov.uk`. يبلغ حجم هذا الملف حوالي 4GB، لذا سيستغرق اكتمال هذا الاستعلام بضع دقائق. وبعد أن ينتهي ClickHouse من معالجة الاستعلام، ينبغي أن تكون مجموعة البيانات كاملة داخل جدول `uk_price_paid`.
+
+<div id="query-creation">
+  #### إنشاء الاستعلام
+</div>
+
+لننشئ استعلامًا باستخدام اللغة الطبيعية.
+
+1. حدِّد الجدول **uk&#95;price&#95;paid**، ثم انقر على **Create Query**.
+
+2. انقر على **Generate SQL**. قد يُطلب منك الموافقة على إرسال استعلاماتك إلى Chat-GPT. يجب أن تحدد **I agree** للمتابعة.
+
+3. يمكنك الآن استخدام هذا الـ prompt لإدخال استعلام باللغة الطبيعية وجعل ChatGPT يحوّله إلى استعلام SQL. في هذا المثال، سندخل:
+
+   > اعرض لي إجمالي السعر وإجمالي عدد جميع معاملات uk&#95;price&#95;paid حسب السنة.
+
+4. سيُنشئ Console الاستعلام المطلوب ويعرضه في علامة تبويب جديدة. في مثالنا، أنشأ GenAI الاستعلام التالي:
+
+   ```sql
+   -- اعرض لي إجمالي السعر وإجمالي عدد جميع معاملات uk_price_paid حسب السنة.
+   SELECT year(date), sum(price) as total_price, Count(*) as total_transactions
+   FROM uk_price_paid
+   GROUP BY year(date)
+   ```
+
+5. بعد التأكد من صحة الاستعلام، انقر على **Run** لتنفيذه.
+
+<div id="debugging">
+  ### تصحيح الأخطاء
+</div>
+
+الآن، لنختبر إمكانات تصحيح أخطاء الاستعلامات في GenAI.
+
+1. أنشئ استعلامًا جديدًا بالنقر على أيقونة *+* ثم الصق الشيفرة التالية:
+
+   ```sql
+   -- اعرض لي إجمالي السعر وإجمالي عدد جميع معاملات uk_price_paid حسب السنة.
+   SELECT year(date), sum(pricee) as total_price, Count(*) as total_transactions
+   FROM uk_price_paid
+   GROUP BY year(date)
+   ```
+
+2. انقر على **Run**. سيفشل الاستعلام لأننا نحاول جلب قيم من `pricee` بدلًا من `price`.
+
+3. انقر على **Fix Query**.
+
+4. سيحاول GenAI إصلاح الاستعلام. في هذه الحالة، غيّر `pricee` إلى `price`. كما أدرك أن `toYear` دالة أفضل للاستخدام في هذا السيناريو.
+
+5. حدِّد **Apply** لإضافة التغييرات المقترحة إلى استعلامك، ثم انقر على **Run**.
+
+ضع في اعتبارك أن GenAI ميزة تجريبية. توخَّ الحذر عند تشغيل الاستعلامات التي ينشئها GenAI على أي مجموعة بيانات.
+
+<div id="advanced-querying-features">
+  ## ميزات متقدمة للاستعلام
+</div>
+
+<div id="searching-query-results">
+  ### البحث في نتائج الاستعلام
+</div>
+
+بعد تنفيذ الاستعلام، يمكنك البحث بسرعة في مجموعة النتائج المُعادة باستخدام حقل البحث في جزء النتائج. تساعد هذه الميزة في معاينة نتائج عبارة `WHERE` إضافية، أو ببساطة التحقق من أن بيانات محددة مُضمَّنة في مجموعة النتائج. بعد إدخال قيمة في حقل البحث، سيُحدَّث جزء النتائج ويعرض السجلات التي تحتوي على قيمة تطابق القيمة المُدخلة. في هذا المثال، سنبحث عن جميع حالات `breakfast` في جدول `hackernews` ضمن التعليقات التي تحتوي على `ClickHouse` (دون تمييز حالة الأحرف):
+
+<Image img="/images/cloud/sqlconsole/search-hn.webp" size="lg" border alt="البحث في بيانات Hacker News" />
+
+ملاحظة: سيُعاد أي سجل يطابق فيه أي حقل القيمة المُدخلة. على سبيل المثال، السجل الثالث في لقطة الشاشة أعلاه لا يطابق &#39;breakfast&#39; في الحقل `by`، لكن الحقل `text` يطابقها:
+
+<Image img="/images/cloud/sqlconsole/match-in-body.webp" size="lg" border alt="مطابقة في المتن" />
+
+<div id="adjusting-pagination-settings">
+  ### ضبط إعدادات ترقيم الصفحات
+</div>
+
+بشكل افتراضي، تعرض جزء النتائج جميع سجلات النتائج في صفحة واحدة. وبالنسبة إلى مجموعات النتائج الأكبر، قد يكون من الأفضل تقسيم النتائج على صفحات لتسهيل عرضها. ويمكن إجراء ذلك باستخدام مُحدِّد ترقيم الصفحات في الزاوية السفلية اليمنى من جزء النتائج:
+
+<Image img="/images/cloud/sqlconsole/pagination.webp" size="lg" border alt="خيارات ترقيم الصفحات" />
+
+سيؤدي تحديد حجم الصفحة إلى تطبيق ترقيم الصفحات فورًا على مجموعة النتائج، وستظهر خيارات التنقل في منتصف تذييل جزء النتائج
+
+<Image img="/images/cloud/sqlconsole/pagination-nav.webp" size="lg" border alt="التنقل بين الصفحات" />
+
+<div id="exporting-query-result-data">
+  ### تصدير بيانات نتائج الاستعلام
+</div>
+
+يمكن تصدير نتائج الاستعلام بسهولة بتنسيق CSV مباشرةً من SQL Console. للقيام بذلك، افتح قائمة `•••` في الجانب الأيمن من شريط أدوات جزء النتائج، ثم اختر &#39;تنزيل بتنسيق CSV&#39;.
+
+<Image img="/images/cloud/sqlconsole/download-as-csv.webp" size="lg" border alt="تنزيل بتنسيق CSV" />
+
+<div id="visualizing-query-data">
+  ## تصوّر بيانات الاستعلام
+</div>
+
+يمكن فهم بعض البيانات بسهولة أكبر عند عرضها في صورة مخطط. يمكنك إنشاء تصورات بسرعة من بيانات نتيجة الاستعلام مباشرةً من SQL Console ببضع نقرات فقط. على سبيل المثال، سنستخدم استعلامًا يحسب الإحصاءات الأسبوعية لرحلات سيارات الأجرة في NYC:
+
+```sql
+SELECT
+   toStartOfWeek(pickup_datetime) AS week,
+   sum(total_amount) AS fare_total,
+   sum(trip_distance) AS distance_total,
+   count(*) AS trip_total
+FROM
+   nyc_taxi
+GROUP BY
+   1
+ORDER BY
+   1 ASC
+```
+
+<Image img="/images/cloud/sqlconsole/tabular-query-results.webp" size="lg" border alt="نتائج الاستعلام الجدولية" />
+
+من دون تصور، يصعب فهم هذه النتائج. لنحوّلها إلى مخطط بياني.
+
+<div id="creating-charts">
+  ### إنشاء المخططات
+</div>
+
+لبدء إنشاء التصور، حدِّد خيار &#39;Chart&#39; من شريط أدوات جزء النتائج. ستظهر لوحة إعدادات المخطط:
+
+<Image img="/images/cloud/sqlconsole/switch-from-query-to-chart.webp" size="lg" border alt="التبديل من الاستعلام إلى المخطط" />
+
+سنبدأ بإنشاء مخطط شريطي بسيط لتتبّع `trip_total` حسب `week`. ولتنفيذ ذلك، سنسحب الحقل `week` إلى المحور السيني، والحقل `trip_total` إلى المحور الصادي:
+
+<Image img="/images/cloud/sqlconsole/trip-total-by-week.webp" size="lg" border alt="إجمالي الرحلات حسب الأسبوع" />
+
+تدعم معظم أنواع المخططات إضافة عدة حقول إلى المحاور الرقمية. وللتوضيح، سنسحب الحقل `fare_total` إلى المحور الصادي:
+
+<Image img="/images/cloud/sqlconsole/bar-chart.webp" size="lg" border alt="مخطط شريطي" />
+
+<div id="customizing-charts">
+  ### تخصيص المخططات
+</div>
+
+يدعم SQL Console عشرة أنواع من المخططات يمكن اختيارها من محدد نوع المخطط في لوحة إعدادات المخطط. على سبيل المثال، يمكننا بسهولة تغيير نوع المخطط السابق من مخطط أعمدة إلى مخطط مساحي:
+
+<Image img="/images/cloud/sqlconsole/change-from-bar-to-area.webp" size="lg" border alt="التغيير من مخطط أعمدة إلى مخطط مساحي" />
+
+تتوافق عناوين المخططات مع اسم الاستعلام الذي يوفّر البيانات. وسيؤدي تحديث اسم الاستعلام إلى تحديث عنوان المخطط أيضًا:
+
+<Image img="/images/cloud/sqlconsole/update-query-name.webp" size="lg" border alt="تحديث اسم الاستعلام" />
+
+يمكن أيضًا ضبط عدد من خصائص المخطط الأكثر تقدمًا في قسم &#39;Advanced&#39; من لوحة إعدادات المخطط. وللبدء، سنضبط الإعدادات التالية:
+
+* العنوان الفرعي
+* عناوين المحاور
+* اتجاه التسميات على المحور السيني
+
+سيُحدَّث مخططنا وفقًا لذلك:
+
+<Image img="/images/cloud/sqlconsole/update-subtitle-etc.webp" size="lg" border alt="تحديث العنوان الفرعي وما إلى ذلك." />
+
+في بعض الحالات، قد يكون من الضروري ضبط مقياس كل محور لكل حقل على حدة. ويمكن أيضًا تنفيذ ذلك في قسم &#39;Advanced&#39; من لوحة إعدادات المخطط، وذلك بتحديد القيمتين الصغرى والكبرى لنطاق المحور. على سبيل المثال، يبدو المخطط أعلاه جيدًا، ولكن لتوضيح الارتباط بين الحقلين `trip_total` و`fare_total`، تحتاج نطاقات المحاور إلى بعض الضبط:
+
+<Image img="/images/cloud/sqlconsole/adjust-axis-scale.webp" size="lg" border alt="ضبط مقياس المحور" />
+
+<div id="sharing-queries">
+  ## مشاركة الاستعلامات
+</div>
+
+يُمكّنك SQL Console من مشاركة الاستعلامات مع فريقك. وعند مشاركة استعلام، يمكن لجميع أعضاء الفريق رؤيته وتحريره. وتُعد الاستعلامات المشتركة وسيلة فعّالة للتعاون مع فريقك.
+
+لمشاركة استعلام، انقر على الزر &#39;Share&#39; في شريط أدوات الاستعلام.
+
+<Image img="/images/cloud/sqlconsole/sql-console-share.webp" size="lg" border alt="زر Share في شريط أدوات الاستعلام" />
+
+سيفتح مربع حوار يتيح لك مشاركة الاستعلام مع جميع أعضاء الفريق. وإذا كان لديك عدة فرق، يمكنك اختيار الفريق الذي تريد مشاركة الاستعلام معه.
+
+<Image img="/images/cloud/sqlconsole/sql-console-edit-access.webp" size="lg" border alt="مربع حوار لتحرير الوصول إلى استعلام مشترك" />
+
+<Image img="/images/cloud/sqlconsole/sql-console-add-team.webp" size="lg" border alt="واجهة لإضافة فريق إلى استعلام مشترك" />
+
+<Image img="/images/cloud/sqlconsole/sql-console-edit-member.webp" size="lg" border alt="واجهة لتحرير وصول أحد الأعضاء إلى استعلام مشترك" />
+
+في بعض الحالات، قد يكون من الضروري ضبط مقاييس المحاور لكل حقل بشكل مستقل. ويمكن أيضًا تنفيذ ذلك من قسم &#39;Advanced&#39; في لوحة إعدادات المخطط، وذلك بتحديد قيمتي الحد الأدنى والحد الأقصى لنطاق المحور. على سبيل المثال، يبدو المخطط أعلاه جيدًا، ولكن لتوضيح الارتباط بين الحقلين `trip_total` و`fare_total`، تحتاج نطاقات المحاور إلى بعض الضبط:
+
+<Image img="/images/cloud/sqlconsole/sql-console-access-queries.webp" size="lg" border alt="قسم Shared with me في قائمة الاستعلامات" />

@@ -1,0 +1,158 @@
+---
+slug: /cloud/managed-postgres/extensions
+sidebarTitle: '拡張機能'
+title: 'PostgreSQL の拡張機能'
+description: 'ClickHouse Managed Postgres で利用できる PostgreSQL の拡張機能'
+keywords: ['postgres extensions', 'postgis', 'pgvector', 'pg_cron', 'postgresql extensions']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.extensions-beta" />
+
+Managed Postgres には、データベースの機能を拡張するための厳選された拡張機能が含まれています。以下に、利用可能な拡張機能の一覧を示します。
+
+<div id="installing-extensions">
+  ## 拡張機能のインストール
+</div>
+
+拡張機能をインストールするには、データベースに接続し、次を実行します。
+
+```sql
+CREATE EXTENSION extension_name;
+```
+
+現在インストールされている拡張機能を確認するには、次のようにします。
+
+```sql
+SELECT * FROM pg_extension;
+```
+
+利用可能なすべての拡張機能とそのバージョンを表示するには、次のようにします。
+
+```sql
+SELECT * FROM pg_available_extensions;
+```
+
+<div id="available-extensions">
+  ## 利用可能な拡張機能
+</div>
+
+| 拡張機能                           | バージョン  | 説明                                                                          |
+| ------------------------------ | ------ | --------------------------------------------------------------------------- |
+| `address_standardizer`         | 3.6.3  | 住所を構成要素に解析するために使用されます                                                       |
+| `address_standardizer_data_us` | 3.6.3  | Address Standardizer US データセットの例                                            |
+| `adminpack`                    | 2.1    | PostgreSQL の管理機能 *(PG16 のみ)*                                                |
+| `age`                          | 1.7.0  | Apache AGE グラフデータベース拡張機能                                                    |
+| `amcheck`                      |        | リレーションの整合性を検証する関数                                                           |
+| `autoinc`                      | 1.0    | フィールドを自動増分する関数                                                              |
+| `bloom`                        | 1.0    | Bloom アクセスメソッド - シグネチャファイルベースの索引                                            |
+| `bool_plperl`                  | 1.0    | bool と plperl 間の変換                                                          |
+| `bool_plperlu`                 | 1.0    | bool と plperlu 間の変換                                                         |
+| `btree_gin`                    | 1.3    | GIN で一般的なデータ型の索引作成をサポート                                                     |
+| `btree_gist`                   | 1.8    | GiST で一般的なデータ型の索引作成をサポート                                                    |
+| `citext`                       | 1.8    | 大文字と小文字を区別しない文字列用のデータ型                                                      |
+| `cube`                         | 1.5    | 多次元キューブ用のデータ型                                                               |
+| `dblink`                       | 1.2    | データベース内から他の PostgreSQL データベースに接続                                            |
+| `dict_int`                     | 1.0    | 整数用のテキスト検索 Dictionary テンプレート                                                |
+| `dict_xsyn`                    | 1.0    | 拡張同義語処理用のテキスト検索 Dictionary テンプレート                                           |
+| `earthdistance`                | 1.2    | 地球表面上の大円距離を計算                                                               |
+| `file_fdw`                     | 1.0    | フラットファイルアクセス用の外部データラッパー                                                     |
+| `fuzzystrmatch`                | 1.2    | 文字列間の類似度と距離を判定                                                              |
+| `h3`                           | 4.2.3  | PostgreSQL 用の H3 バインディング                                                    |
+| `h3_postgis`                   | 4.2.3  | H3 と PostGIS のインテグレーション                                                     |
+| `hll`                          | 2.19   | HyperLogLog データを格納する型                                                       |
+| `hstore`                       | 1.8    | (キー, 値) ペアの集合を格納するデータ型                                                      |
+| `hstore_plperl`                | 1.0    | hstore と plperl 間の変換                                                        |
+| `hstore_plperlu`               | 1.0    | hstore と plperlu 間の変換                                                       |
+| `hypopg`                       | 1.4.2  | PostgreSQL 用の仮想的な索引                                                         |
+| `intagg`                       | 1.1    | 整数アグリゲーターおよび列挙子 (廃止された)                                                     |
+| `insert_username`              | 1.0    | テーブルを変更したユーザーを追跡する関数                                                        |
+| `intarray`                     | 1.5    | 整数の 1 次元配列に対する関数、演算子、および索引のサポート                                             |
+| `ip4r`                         | 2.4    | IPv4 および IPv6 の範囲索引型                                                        |
+| `isn`                          | 1.3    | 国際製品番号標準用のデータ型                                                              |
+| `jsonb_plperl`                 | 1.0    | jsonb と plperl の間で変換                                                        |
+| `jsonb_plperlu`                | 1.0    | jsonb と plperlu の間で変換                                                       |
+| `lo`                           | 1.2    | ラージオブジェクトの保守                                                                |
+| `ltree`                        | 1.3    | 階層的なツリー構造のためのデータ型                                                           |
+| `moddatetime`                  | 1.0    | 最終更新時刻を追跡するための関数                                                            |
+| `mysql_fdw`                    | 1.2    | MySQL server をクエリするための foreign data wrapper                                 |
+| `old_snapshot`                 | 1.0    | old&#95;snapshot&#95;threshold をサポートするユーティリティ *(PG16 のみ)*                   |
+| `orafce`                       | 4.16   | Oracle RDBMS の関数およびパッケージの一部をエミュレートする関数と演算子                                  |
+| `pageinspect`                  | 1.13   | データベースページの内容を低レベルで検査                                                        |
+| `pg_buffercache`               |        | 共有 buffer cache を調査                                                         |
+| `pg_clickhouse`                | 0.3    | PostgreSQL から ClickHouse データベースをクエリするためのインターフェイス                            |
+| `pg_cron`                      | 1.6    | PostgreSQL 用のジョブスケジューラ                                                      |
+| `pg_freespacemap`              | 1.3    | 空き領域マップ (FSM) を調査                                                           |
+| `pg_hint_plan`                 |        | PostgreSQL 用のオプティマイザヒント                                                     |
+| `pg_ivm`                       | 1.13   | PostgreSQL におけるインクリメンタルなビュー保守                                               |
+| `pg_logicalinspect`            | 1.0    | ロジカルデコードのコンポーネントを調査する関数 *(PG18+)*                                           |
+| `pg_partman`                   | 5.4.3  | 時間または ID によるパーティションテーブルを管理するための拡張機能                                         |
+| `pg_prewarm`                   | 1.2    | リレーションデータをプリウォーム                                                            |
+| `pg_re2`                       | 0.1    | Google&#39;s RE2 を基盤とする ClickHouse 互換の正規表現関数                                |
+| `pg_repack`                    | 1.5.3  | PostgreSQL データベース内のテーブルを最小限のロックで再編成                                         |
+| `pg_similarity`                | 1.0    | 類似度クエリをサポート                                                                 |
+| `pg_stat_ch`                   | 0.3    | クエリごとの実行テレメトリーをリアルタイムで ClickHouse にストリーミング                                  |
+| `pg_stat_statements`           |        | 実行されたすべての SQL ステートメントの計画および実行統計を追跡                                          |
+| `pg_surgery`                   | 1.0    | 損傷したリレーションを修復するための拡張機能                                                      |
+| `pg_tokenizer`                 | 0.1.1  | `vchord_bm25` とともに使用されるテキストトークナイザー                                          |
+| `pg_trgm`                      | 1.6    | trigram に基づくテキスト類似度の測定と索引検索                                                 |
+| `pg_visibility`                | 1.2    | 可視性マップ (VM) とページレベルの可視性情報を調査                                                |
+| `pg_walinspect`                | 1.1    | PostgreSQL Write-Ahead Log の内容を調査する関数                                       |
+| `pgaudit`                      |        | 監査機能を提供                                                                     |
+| `pgcrypto`                     | 1.4    | 暗号化関数                                                                       |
+| `pglogical`                    | 2.4.6  | PostgreSQL の論理レプリケーション                                                      |
+| `pglogical_origin`             | 1.0.0  | Postgres 9.4 からアップグレードする際の互換性のためのダミー拡張機能                                    |
+| `pgrouting`                    | 4.0.1  | pgRouting 拡張機能                                                              |
+| `pgrowlocks`                   | 1.2    | 行レベルのロック情報を表示                                                               |
+| `pgstattuple`                  | 1.5    | タプルレベルの統計情報を表示                                                              |
+| `pgtap`                        | 1.3.4  | PostgreSQL の単体テスト                                                           |
+| `plperl`                       | 1.0    | PL/Perl 手続き言語                                                               |
+| `plperlu`                      | 1.0    | PL/PerlU 非信頼手続き言語                                                           |
+| `plpgsql`                      | 1.0    | PL/pgSQL 手続き言語                                                              |
+| `plpgsql_check`                | 2.8    | plpgsql 関数の拡張チェック                                                           |
+| `postgis`                      | 3.6.3  | PostGIS の geometry および geography 空間型と関数                                     |
+| `postgis_raster`               | 3.6.3  | PostGIS の raster 型と関数                                                       |
+| `postgis_sfcgal`               | 3.6.3  | PostGIS SFCGAL 関数                                                           |
+| `postgis_tiger_geocoder`       | 3.6.3  | PostGIS tiger geocoder および reverse geocoder                                 |
+| `postgis_topology`             | 3.6.3  | PostGIS の topology 空間型と関数                                                   |
+| `postgres_fdw`                 | 1.2    | リモート PostgreSQL サーバー用の foreign data wrapper                                 |
+| `prefix`                       | 1.2.0  | PostgreSQL 用 Prefix Range モジュール                                             |
+| `refint`                       | 1.0    | 参照整合性を実装するための関数 (廃止された)                                                     |
+| `seg`                          | 1.4    | 線分または浮動小数点インターバルを表すための型                                                     |
+| `semver`                       | 0.41.0 | セマンティックバージョンの型                                                              |
+| `sslinfo`                      | 1.2    | SSL 証明書に関する情報                                                               |
+| `tablefunc`                    | 1.0    | crosstab を含む、テーブル全体を操作する関数                                                  |
+| `tcn`                          | 1.0    | トリガーによる変更通知                                                                 |
+| `tds_fdw`                      | 2.0.5  | TDS データベース (Sybase または Microsoft SQL Server) をクエリするための foreign data wrapper |
+| `tsm_system_rows`              | 1.0    | 行数を上限として受け取る TABLESAMPLE method                                             |
+| `tsm_system_time`              | 1.0    | ミリ秒単位の時間を上限として受け取る TABLESAMPLE method                                       |
+| `uint`                         |        | 符号なし整数型                                                                     |
+| `unaccent`                     | 1.1    | アクセントを除去するテキスト検索辞書                                                          |
+| `unit`                         | 7      | SI 単位拡張機能                                                                   |
+| `uuid-ossp`                    | 1.1    | 汎用一意識別子 (UUID) を生成                                                          |
+| `vchord`                       | 1.1.1  | Postgres 向けのベクトル索引アクセスメソッド                                                  |
+| `vchord_bm25`                  | 0.3.0  | 全文検索向けの BM25 ランキングアクセスメソッド                                                  |
+| `vector`                       | 0.8.2  | ベクトルデータ型、および ivfflat と hnsw のアクセスメソッド                                       |
+| `xml2`                         | 1.2    | XPath クエリと XSLT                                                             |
+
+<div id="pg-clickhouse">
+  ## pg_clickhouse 拡張機能
+</div>
+
+`pg_clickhouse` 拡張機能は、すべての Managed Postgres インスタンスにプリインストールされています。これにより、PostgreSQL から ClickHouse データベースに直接クエリを実行でき、トランザクション処理と分析の両方に対して統一されたクエリレイヤーを提供します。
+
+セットアップ手順と使用方法の詳細については、[pg&#95;clickhouse documentation](/ja/products/managed-postgres/extensions/pg_clickhouse/introduction) を参照してください。
+
+<div id="pg-stat-ch">
+  ## pg_stat_ch 拡張機能
+</div>
+
+`pg_stat_ch` 拡張機能は、Managed Postgres インスタンスのクエリレベルのオブザーバビリティを支えます。クエリごとのテレメトリー (実行時間、行数、バッファ、WAL、エラー) を収集して ClickHouse Cloud UI に送信し、そこでスロークエリ、エラー、ワークロードの各ビューとして表示されます。Setup は不要です。
+
+<div id="pg-re2">
+  ## pg_re2 拡張機能
+</div>
+
+`pg_re2` 拡張機能は、Google の RE2 エンジンをベースに、ClickHouse 互換の正規表現関数を Managed Postgres に追加します。両者間でクエリを移植する場合や、両側で同一のパターンマッチングの挙動が必要なハイブリッドワークロードを実行する場合に便利です。

@@ -1,0 +1,1324 @@
+---
+slug: /materialized-view/incremental-materialized-view
+title: '增量materialized view'
+description: '如何使用增量materialized view 加快查询速度'
+keywords: ['增量materialized view', '加快查询速度', '查询优化']
+score: 10000
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="background">
+  ## 背景
+</div>
+
+增量materialized view (Materialized Views) 可将计算成本从查询时转移到写入时，从而加快 `SELECT` 查询。
+
+与 Postgres 这类事务型数据库不同，ClickHouse 的 materialized view 本质上只是一个触发器：当数据块写入某个表时，它会对这些块执行查询。该查询的结果会写入第二个“目标”表。如果后续再写入更多行，结果会再次发送到目标表，并在那里对中间结果进行更新和合并。这个合并后的结果，就等同于在全部原始数据上运行该查询得到的结果。
+
+使用 Materialized Views 的主要动机在于，写入目标表的结果代表了对行进行聚合、过滤或转换后的结果。这些结果通常是原始数据的更小表示形式 (在聚合场景下，则可能是部分 sketch) 。再加上从目标表读取结果所需的查询通常较为简单，因此相比直接在原始数据上执行相同计算，查询会更快，从而将计算开销 (以及查询延迟) 从查询时转移到写入时。
+
+在 ClickHouse 中，materialized view 会随着数据流入其所基于的表而实时更新，作用更像是持续更新的索引。这与其他数据库不同，在那些数据库中，Materialized Views 通常是查询结果的静态快照，必须刷新 (类似于 ClickHouse 的 [可刷新materialized view](/zh/reference/statements/create/view#refreshable-materialized-view)) 。
+
+<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="materialized view 图示" />
+
+<div id="example">
+  ## 示例
+</div>
+
+在本示例中，我们将使用 [《Schema 设计》](/zh/guides/clickhouse/data-modelling/schema-design) 中介绍的 Stack Overflow 数据集。
+
+假设我们希望获取某篇帖子每天的赞成票和反对票数量。
+
+```sql
+CREATE TABLE votes
+(
+    `Id` UInt32,
+    `PostId` Int32,
+    `VoteTypeId` UInt8,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `UserId` Int32,
+    `BountyAmount` UInt8
+)
+ENGINE = MergeTree
+ORDER BY (VoteTypeId, CreationDate, PostId)
+
+INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 29.359 sec. Processed 238.98 million rows, 2.13 GB (8.14 million rows/s., 72.45 MB/s.)
+```
+
+借助 [`toStartOfDay`](/zh/reference/functions/regular-functions/date-time-functions#toStartOfDay) 函数，在 ClickHouse 中实现这一查询相当简单：
+
+```sql
+SELECT toStartOfDay(CreationDate) AS day,
+       countIf(VoteTypeId = 2) AS UpVotes,
+       countIf(VoteTypeId = 3) AS DownVotes
+FROM votes
+GROUP BY day
+ORDER BY day ASC
+LIMIT 10
+```
+
+```response
+┌─────────────────day─┬─UpVotes─┬─DownVotes─┐
+│ 2008-07-31 00:00:00 │       6 │         0 │
+│ 2008-08-01 00:00:00 │     182 │        50 │
+│ 2008-08-02 00:00:00 │     436 │       107 │
+│ 2008-08-03 00:00:00 │     564 │       100 │
+│ 2008-08-04 00:00:00 │    1306 │       259 │
+│ 2008-08-05 00:00:00 │    1368 │       269 │
+│ 2008-08-06 00:00:00 │    1701 │       211 │
+│ 2008-08-07 00:00:00 │    1544 │       211 │
+│ 2008-08-08 00:00:00 │    1241 │       212 │
+│ 2008-08-09 00:00:00 │     576 │        46 │
+└─────────────────────┴─────────┴───────────┘
+
+10 rows in set. Elapsed: 0.133 sec. Processed 238.98 million rows, 2.15 GB (1.79 billion rows/s., 16.14 GB/s.)
+峰值内存占用: 363.22 MiB.
+```
+
+得益于 ClickHouse，这条查询已经很快了，但我们还能做得更好吗？
+
+如果我们希望在写入时通过 materialized view 完成计算，则需要一张表来存储计算结果。该表每天只保留 1 行。若某天已存在数据，后续收到的更新需将其他列合并到该天已有的行中。要实现增量状态的合并，其他列必须以部分状态的形式存储。
+
+这需要在 ClickHouse 中使用一种特殊的引擎类型：[SummingMergeTree](/zh/reference/engines/table-engines/mergetree-family/summingmergetree)。它会将所有具有相同排序键的行合并为一行，并对数值列的值进行求和。以下表将合并所有日期相同的行，并对所有数值列求和：
+
+```sql
+CREATE TABLE up_down_votes_per_day
+(
+  `Day` Date,
+  `UpVotes` UInt32,
+  `DownVotes` UInt32
+)
+ENGINE = SummingMergeTree
+ORDER BY Day
+```
+
+为了演示 materialized view，假设我们的 votes 表为空，尚未写入任何数据。我们的 materialized view 会对插入到 `votes` 中的数据执行上述 `SELECT` 查询，并将结果写入 `up_down_votes_per_day`：
+
+```sql
+CREATE MATERIALIZED VIEW up_down_votes_per_day_mv TO up_down_votes_per_day AS
+SELECT toStartOfDay(CreationDate)::Date AS Day,
+       countIf(VoteTypeId = 2) AS UpVotes,
+       countIf(VoteTypeId = 3) AS DownVotes
+FROM votes
+GROUP BY Day
+```
+
+此处的 `TO` 子句至关重要，用于指定结果的写入目标，即 `up_down_votes_per_day`。
+
+我们可以用之前的 insert 操作重新填充 Votes 表：
+
+```sql
+INSERT INTO votes SELECT toUInt32(Id) AS Id, toInt32(PostId) AS PostId, VoteTypeId, CreationDate, UserId, BountyAmount
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 111.964 sec. Processed 477.97 million rows, 3.89 GB (4.27 million rows/s., 34.71 MB/s.)
+峰值内存占用: 283.49 MiB.
+```
+
+完成后，我们可以确认 `up_down_votes_per_day` 的行数——应该是每天 1 行：
+
+```sql
+SELECT count()
+FROM up_down_votes_per_day
+FINAL
+```
+
+```response
+┌─count()─┐
+│    5723 │
+└─────────┘
+```
+
+通过存储查询结果，我们实际上已将这里的行数从 `votes` 中的 2.38 亿减少到了 5000。不过，关键在于，如果有新的投票数据被插入 `votes` 表，相应日期的新值就会被发送到 `up_down_votes_per_day`，并在后台自动异步合并——这样每天只会保留一行。因此，`up_down_votes_per_day` 将始终保持小巧且最新。
+
+由于行合并是异步进行的，因此用户发起查询时，每天可能会存在多于一条投票记录。为了确保所有尚未完成合并的行都能在查询时完成合并，我们有两个选择：
+
+* 在表名上使用 `FINAL` modifier。我们在上面的计数查询中就是这样做的。
+* 按最终表中使用的排序键进行聚合，即 `CreationDate`，并对指标求和。通常这种方式更高效，也更灵活 (该表还可用于其他用途) ，不过前者对某些查询来说可能更简单。下面我们会同时展示这两种方式：
+
+```sql
+SELECT
+        Day,
+        UpVotes,
+        DownVotes
+FROM up_down_votes_per_day
+FINAL
+ORDER BY Day ASC
+LIMIT 10
+```
+
+```response
+10 rows in set. Elapsed: 0.004 sec. Processed 8.97 thousand rows, 89.68 KB (2.09 million rows/s., 20.89 MB/s.)
+峰值内存占用: 289.75 KiB.
+```
+
+```sql
+SELECT Day, sum(UpVotes) AS UpVotes, sum(DownVotes) AS DownVotes
+FROM up_down_votes_per_day
+GROUP BY Day
+ORDER BY Day ASC
+LIMIT 10
+```
+
+```response
+┌────────Day─┬─UpVotes─┬─DownVotes─┐
+│ 2008-07-31 │       6 │         0 │
+│ 2008-08-01 │     182 │        50 │
+│ 2008-08-02 │     436 │       107 │
+│ 2008-08-03 │     564 │       100 │
+│ 2008-08-04 │    1306 │       259 │
+│ 2008-08-05 │    1368 │       269 │
+│ 2008-08-06 │    1701 │       211 │
+│ 2008-08-07 │    1544 │       211 │
+│ 2008-08-08 │    1241 │       212 │
+│ 2008-08-09 │     576 │        46 │
+└────────────┴─────────┴───────────┘
+
+10 rows in set. Elapsed: 0.010 sec. Processed 8.97 thousand rows, 89.68 KB (907.32 thousand rows/s., 9.07 MB/s.)
+峰值内存占用: 567.61 KiB.
+```
+
+这使我们的查询耗时从 0.133s 缩短到 0.004s——性能提升超过 25 倍！
+
+<Warning>
+  **重要：`ORDER BY` = `GROUP BY`**
+
+  在大多数情况下，如果使用 `SummingMergeTree` 或 `AggregatingMergeTree` 表引擎，Materialized Views 转换中的 `GROUP BY` 子句所使用的列应与目标表中 `ORDER BY` 子句所使用的列保持一致。这些引擎依赖 `ORDER BY` 列在后台合并操作期间合并值相同的行。`GROUP BY` 列与 `ORDER BY` 列不一致，可能会导致查询性能下降、合并效果不佳，甚至出现数据不一致。
+</Warning>
+
+<div id="a-more-complex-example">
+  ### 更复杂的示例
+</div>
+
+上面的示例使用 Materialized Views 来计算并维护每天的两个总和。总和是最简单的聚合形式，最适合用于维护部分状态——因为新值到达时，我们只需将其加到现有值上即可。不过，ClickHouse Materialized Views 可用于任何类型的聚合。
+
+假设我们希望按天为帖子计算一些统计信息：`Score` 的第 99.9 百分位数，以及 `CommentCount` 的平均值。用于计算这些统计信息的查询可能如下所示：
+
+```sql
+SELECT
+        toStartOfDay(CreationDate) AS Day,
+        quantile(0.999)(Score) AS Score_99th,
+        avg(CommentCount) AS AvgCommentCount
+FROM posts
+GROUP BY Day
+ORDER BY Day DESC
+LIMIT 10
+```
+
+```response
+┌─────────────────Day─┬────────Score_99th─┬────AvgCommentCount─┐
+│ 2024-03-31 00:00:00 │  5.23700000000008 │ 1.3429811866859624 │
+│ 2024-03-30 00:00:00 │                 5 │ 1.3097158891616976 │
+│ 2024-03-29 00:00:00 │  5.78899999999976 │ 1.2827635327635327 │
+│ 2024-03-28 00:00:00 │                 7 │  1.277746158224246 │
+│ 2024-03-27 00:00:00 │ 5.738999999999578 │ 1.2113264918282023 │
+│ 2024-03-26 00:00:00 │                 6 │ 1.3097536945812809 │
+│ 2024-03-25 00:00:00 │                 6 │ 1.2836721018539201 │
+│ 2024-03-24 00:00:00 │ 5.278999999999996 │ 1.2931667891256429 │
+│ 2024-03-23 00:00:00 │ 6.253000000000156 │  1.334061135371179 │
+│ 2024-03-22 00:00:00 │ 9.310999999999694 │ 1.2388059701492538 │
+└─────────────────────┴───────────────────┴────────────────────┘
+
+10 rows in set. Elapsed: 0.113 sec. Processed 59.82 million rows, 777.65 MB (528.48 million rows/s., 6.87 GB/s.)
+峰值内存占用: 658.84 MiB.
+```
+
+和前面一样，我们可以创建一个 materialized view，在新的 posts 被插入到我们的 `posts` 表时执行上述查询。
+
+为了便于演示，并避免从 S3 加载 posts 数据，我们将创建一个与 `posts` 具有相同 schema 的副本表 `posts_null`。不过，这个表不会存储任何数据，只会在插入行时供 materialized view 使用。为了防止存储数据，我们可以使用 [`Null` 表引擎类型](/zh/reference/engines/table-engines/special/null)。
+
+```sql
+CREATE TABLE posts_null AS posts ENGINE = Null
+```
+
+Null 表引擎是一种非常实用的优化方式——可以把它看作 `/dev/null`。当 `posts_null` 表在写入时接收到行数据时，materialized view 会计算并存储汇总统计信息——它本质上只是一个触发器。不过，原始数据不会被存储。虽然在我们的场景中，可能仍然希望保留原始 posts，但这种方法可用于计算聚合结果，同时避免原始数据带来的存储开销。
+
+因此，materialized view 变为：
+
+```sql
+CREATE MATERIALIZED VIEW post_stats_mv TO post_stats_per_day AS
+       SELECT toStartOfDay(CreationDate) AS Day,
+       quantileState(0.999)(Score) AS Score_quantiles,
+       avgState(CommentCount) AS AvgCommentCount
+FROM posts_null
+GROUP BY Day
+```
+
+请注意，我们在聚合函数名称末尾加上了后缀 `State`。这样返回的就是函数的聚合状态，而不是最终结果。它会包含额外信息，以便该部分状态能与其他状态合并。例如，对于平均值，它会包含该列的计数和总和。
+
+> 部分聚合状态是计算正确结果所必需的。例如，计算平均值时，如果只是对各子范围的平均值再取平均，结果会不正确。
+
+现在，我们为此视图 `post_stats_per_day` 创建用于存储这些部分聚合状态的目标表：
+
+```sql
+CREATE TABLE post_stats_per_day
+(
+  `Day` Date,
+  `Score_quantiles` AggregateFunction(quantile(0.999), Int32),
+  `AvgCommentCount` AggregateFunction(avg, UInt8)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY Day
+```
+
+虽然前面用 `SummingMergeTree` 存储计数已经足够，但对于其他函数，我们需要一种更高级的引擎类型：[`AggregatingMergeTree`](/zh/reference/engines/table-engines/mergetree-family/aggregatingmergetree)。
+为确保 ClickHouse 知道这里存储的是聚合状态，我们将 `Score_quantiles` 和 `AvgCommentCount` 定义为 `AggregateFunction` 类型，并指定部分状态对应的源函数及其源列的类型。与 `SummingMergeTree` 类似，具有相同 `ORDER BY` 键值的行会被合并 (在上面的示例中为 `Day`) 。
+
+要通过 materialized view 填充 `post_stats_per_day`，只需将 `posts` 中的所有行插入 `posts_null`：
+
+```sql
+INSERT INTO posts_null SELECT * FROM posts
+```
+
+```response
+0 rows in set. Elapsed: 13.329 sec. Processed 119.64 million rows, 76.99 GB (8.98 million rows/s., 5.78 GB/s.)
+```
+
+> 在生产环境中，你很可能会将 materialized view 挂载到 `posts` 表。这里我们使用 `posts_null` 来演示 null 表。
+
+最终查询需要在函数名后使用 `Merge` 后缀 (因为这些列存储的是部分聚合状态) ：
+
+```sql
+SELECT
+        Day,
+        quantileMerge(0.999)(Score_quantiles),
+        avgMerge(AvgCommentCount)
+FROM post_stats_per_day
+GROUP BY Day
+ORDER BY Day DESC
+LIMIT 10
+```
+
+请注意，这里使用的是 `GROUP BY`，而不是 `FINAL`。
+
+<div id="other-applications">
+  ## 其他应用
+</div>
+
+上文主要介绍如何使用 Materialized Views 以增量方式更新数据的部分聚合结果，从而将计算从查询时转移到写入时。除了这一常见用例外，Materialized Views 还有许多其他用途。
+
+<div id="filtering-and-transformation">
+  ### 过滤与转换
+</div>
+
+在某些情况下，我们可能只希望在插入时写入部分行和列。在这种情况下，可以先将数据插入 `posts_null` 表，再通过 `SELECT` 查询在写入 `posts` 表之前对行进行过滤。比如，假设我们想转换 `posts` 表中的 `Tags` 列。该列包含一个由竖线分隔的标签名称列表。将其转换为数组后，我们就能更方便地按单个标签值进行聚合。
+
+> 我们也可以在执行 `INSERT INTO SELECT` 时完成这种转换。materialized view 允许我们将这部分逻辑封装在 ClickHouse DDL 中，并让 `INSERT` 保持简洁，同时将转换自动应用到所有新行。
+
+下面展示了用于此转换的 materialized view：
+
+```sql
+CREATE MATERIALIZED VIEW posts_mv TO posts AS
+        SELECT * EXCEPT Tags, arrayFilter(t -> (t != ''), splitByChar('|', Tags)) as Tags FROM posts_null
+```
+
+<div id="lookup-table">
+  ### 查找表
+</div>
+
+在选择 ClickHouse 排序键时，应考虑其访问模式。应优先使用那些经常出现在过滤和聚合子句中的列。对于用户访问模式更加多样、无法用单一一组列来概括的场景，这可能会带来限制。例如，考虑以下 `comments` 表：
+
+```sql
+CREATE TABLE comments
+(
+    `Id` UInt32,
+    `PostId` UInt32,
+    `Score` UInt16,
+    `Text` String,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `UserId` Int32,
+    `UserDisplayName` LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY PostId
+```
+
+```response
+0 rows in set. Elapsed: 46.357 sec. Processed 90.38 million rows, 11.14 GB (1.95 million rows/s., 240.22 MB/s.)
+```
+
+这里的排序键针对按 `PostId` 过滤的查询对该表进行了优化。
+
+假设用户想按特定的 `UserId` 进行过滤，并计算其平均 `Score`：
+
+```sql
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+```
+
+```response
+┌──────────avg(Score)─┐
+│ 0.18181818181818182 │
+└─────────────────────┘
+
+1 行，耗时 0.778 秒。已处理 9038 万行，361.59 MB（1.1616 亿行/秒，464.74 MB/秒）
+峰值内存占用：217.08 MiB。
+```
+
+虽然这很快 (对 ClickHouse 来说，数据量很小) ，但从处理的行数——9038 万——可以看出，这需要一次全表扫描。对于更大的数据集，我们可以使用 materialized view，为过滤列 `UserId` 查找对应的排序键值 `PostId`。随后即可利用这些值进行高效查找。
+
+在这个示例中，我们的 materialized view 可以非常简单：只需在 insert 时从 `comments` 中选取 `PostId` 和 `UserId`。这些结果随后会写入按 `UserId` 排序的表 `comments_posts_users`。下面我们会创建一个使用 Null 引擎的 `Comments` 表版本，并用它来填充我们的视图和 `comments_posts_users` 表：
+
+```sql
+CREATE TABLE comments_posts_users (
+  PostId UInt32,
+  UserId Int32
+) ENGINE = MergeTree ORDER BY UserId
+
+CREATE TABLE comments_null AS comments
+ENGINE = Null
+
+CREATE MATERIALIZED VIEW comments_posts_users_mv TO comments_posts_users AS
+SELECT PostId, UserId FROM comments_null
+
+INSERT INTO comments_null SELECT * FROM comments
+```
+
+```response
+0 rows in set. Elapsed: 5.163 sec. Processed 90.38 million rows, 17.25 GB (17.51 million rows/s., 3.34 GB/s.)
+```
+
+现在，我们可以在子查询中使用这个视图，从而加快前面的查询：
+
+```sql
+SELECT avg(Score)
+FROM comments
+WHERE PostId IN (
+        SELECT PostId
+        FROM comments_posts_users
+        WHERE UserId = 8592047
+) AND UserId = 8592047
+```
+
+```response
+┌──────────avg(Score)─┐
+│ 0.18181818181818182 │
+└─────────────────────┘
+
+1 row in set. Elapsed: 0.012 sec. Processed 88.61 thousand rows, 771.37 KB (7.09 million rows/s., 61.73 MB/s.)
+```
+
+<div id="chaining">
+  ### 链式 / 级联 materialized view
+</div>
+
+materialized view 可以串联 (或级联) 使用，从而构建复杂的工作流。
+更多信息，请参阅指南 [&quot;级联 materialized view&quot;](/zh/concepts/features/materialized-views/cascading-materialized-views)。
+
+<div id="materialized-views-and-joins">
+  ## materialized views 与 JOIN
+</div>
+
+<Info>
+  **可刷新materialized view**
+
+  以下内容仅适用于增量materialized view。可刷新materialized view 会定期在完整目标数据集上执行其查询，并且完全支持 JOIN。如果可以接受结果新鲜度有所下降，复杂 JOIN 场景可考虑使用它们。
+</Info>
+
+ClickHouse 中的增量materialized view 完全支持 `JOIN` 操作，但有一个关键限制：**materialized view 只会在 source 表 (即查询中最左侧的表) 发生 insert 时触发。** JOIN 右侧的表即使数据发生变化，也不会触发更新。这种行为在构建**增量**materialized view 时尤其重要，因为数据是在写入时完成聚合或转换的。
+
+当增量materialized view 使用 `JOIN` 定义时，`SELECT` 查询中最左侧的表就是 source。当新行被 insert 到这张表时，ClickHouse 只会用这些新插入的行来执行 materialized view 查询。JOIN 右侧的表会在执行过程中被完整读取，但仅这些表自身发生变化并不会触发该视图。
+
+这种行为使得 Materialized Views 中的 JOIN 更像是针对静态维度数据执行的快照 join。
+
+这非常适合使用参考表或维度表来富化数据。不过，右侧表 (例如用户元数据) 的任何更新，都不会回溯更新 materialized view。若要看到更新后的数据，source 表中必须有新的 insert 发生。
+
+<div id="materialized-views-and-joins-example">
+  ### 示例
+</div>
+
+下面通过一个具体示例来说明，使用的是 [Stack Overflow 数据集](/zh/guides/clickhouse/data-modelling/schema-design)。我们将使用 materialized view 计算**每位用户每日获得的徽章数**，其中还包含来自 `users` 表的用户显示名称。
+
+提醒一下，我们的表 schema 如下：
+
+```sql
+CREATE TABLE badges
+(
+    `Id` UInt32,
+    `UserId` Int32,
+    `Name` LowCardinality(String),
+    `Date` DateTime64(3, 'UTC'),
+    `Class` Enum8('Gold' = 1, 'Silver' = 2, 'Bronze' = 3),
+    `TagBased` Bool
+)
+ENGINE = MergeTree
+ORDER BY UserId
+
+CREATE TABLE users
+(
+    `Id` Int32,
+    `Reputation` UInt32,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `DisplayName` LowCardinality(String),
+    `LastAccessDate` DateTime64(3, 'UTC'),
+    `Location` LowCardinality(String),
+    `Views` UInt32,
+    `UpVotes` UInt32,
+    `DownVotes` UInt32
+)
+ENGINE = MergeTree
+ORDER BY Id;
+```
+
+我们假设 `users` 表中已预先填入数据：
+
+```sql
+INSERT INTO users
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet');
+```
+
+materialized view 及其关联的目标表定义如下：
+
+```sql
+CREATE TABLE daily_badges_by_user
+(
+    Day Date,
+    UserId Int32,
+    DisplayName LowCardinality(String),
+    Gold UInt32,
+    Silver UInt32,
+    Bronze UInt32
+)
+ENGINE = SummingMergeTree
+ORDER BY (DisplayName, UserId, Day);
+
+CREATE MATERIALIZED VIEW daily_badges_by_user_mv TO daily_badges_by_user AS
+SELECT
+    toDate(Date) AS Day,
+    b.UserId,
+    u.DisplayName,
+    countIf(Class = 'Gold') AS Gold,
+    countIf(Class = 'Silver') AS Silver,
+    countIf(Class = 'Bronze') AS Bronze
+FROM badges AS b
+LEFT JOIN users AS u ON b.UserId = u.Id
+GROUP BY Day, b.UserId, u.DisplayName;
+```
+
+<Info>
+  **分组与排序对齐**
+
+  materialized view 中的 `GROUP BY` 子句必须包含 `DisplayName`、`UserId` 和 `Day`，以与 `SummingMergeTree` 目标表中的 `ORDER BY` 保持一致。这可确保各行被正确聚合并合并。省略其中任何一项都可能导致结果错误或合并效率低下。
+</Info>
+
+如果我们现在填充 badges 数据，视图就会被触发，从而填充 `daily_badges_by_user` 表。
+
+```sql
+INSERT INTO badges SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 433.762 sec. Processed 1.16 billion rows, 28.50 GB (2.67 million rows/s., 65.70 MB/s.)
+```
+
+如果我们想查看某个用户获得了哪些徽章，可以编写如下查询：
+
+```sql
+SELECT *
+FROM daily_badges_by_user
+FINAL
+WHERE DisplayName = 'gingerwizard'
+```
+
+```response
+┌────────Day─┬──UserId─┬─DisplayName──┬─Gold─┬─Silver─┬─Bronze─┐
+│ 2023-02-27 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-02-28 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2013-10-30 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2024-03-04 │ 2936484 │ gingerwizard │    0 │      1 │      0 │
+│ 2024-03-05 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-04-17 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2013-11-18 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-10-31 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+└────────────┴─────────┴──────────────┴──────┴────────┴────────┘
+
+8 rows in set. Elapsed: 0.018 sec. Processed 32.77 thousand rows, 642.14 KB (1.86 million rows/s., 36.44 MB/s.)
+```
+
+现在，如果该用户获得一个新徽章，并且插入了一行数据，我们的视图就会更新：
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+```
+
+```response
+1 row in set. Elapsed: 7.517 sec.
+```
+
+```sql
+SELECT *
+FROM daily_badges_by_user
+FINAL
+WHERE DisplayName = 'gingerwizard'
+```
+
+```response
+┌────────Day─┬──UserId─┬─DisplayName──┬─Gold─┬─Silver─┬─Bronze─┐
+│ 2013-10-30 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2013-11-18 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-02-27 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-02-28 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-04-17 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-10-31 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2024-03-04 │ 2936484 │ gingerwizard │    0 │      1 │      0 │
+│ 2024-03-05 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2025-04-13 │ 2936484 │ gingerwizard │    1 │      0 │      0 │
+└────────────┴─────────┴──────────────┴──────┴────────┴────────┘
+
+9 rows in set. Elapsed: 0.017 sec. Processed 32.77 thousand rows, 642.27 KB (1.96 million rows/s., 38.50 MB/s.)
+```
+
+<Warning>
+  请注意这里插入操作的延迟。插入的用户行需要与整个 `users` 表进行 JOIN，这会显著影响插入性能。我们在下文的[“在过滤器和 JOIN 中使用 source table”](/zh/concepts/features/materialized-views/incremental-materialized-view#using-source-table-in-filters-and-joins-in-materialized-views)中提出了应对这一问题的方法。
+</Warning>
+
+相反，如果我们先为新用户插入一条 badge，再插入该用户对应的行，那么 materialized view 将无法捕获该用户的指标。
+
+```sql
+INSERT INTO badges VALUES (53505059, 23923286, 'Good Answer', now(), 'Bronze', 0);
+INSERT INTO users VALUES (23923286, 1, now(),  'brand_new_user', now(), 'UK', 1, 1, 0);
+```
+
+```sql
+SELECT *
+FROM daily_badges_by_user
+FINAL
+WHERE DisplayName = 'brand_new_user';
+```
+
+```response
+0 rows in set. Elapsed: 0.017 sec. Processed 32.77 thousand rows, 644.32 KB (1.98 million rows/s., 38.94 MB/s.)
+```
+
+在这种情况下，该视图只会在插入 badge 且用户行尚不存在时执行。如果我们再为该用户插入一个 badge，就会按预期插入一行：
+
+```sql
+INSERT INTO badges VALUES (53505060, 23923286, 'Teacher', now(), 'Bronze', 0);
+
+SELECT *
+FROM daily_badges_by_user
+FINAL
+WHERE DisplayName = 'brand_new_user'
+```
+
+```response
+┌────────Day─┬───UserId─┬─DisplayName────┬─Gold─┬─Silver─┬─Bronze─┐
+│ 2025-04-13 │ 23923286 │ brand_new_user │    0 │      0 │      1 │
+└────────────┴──────────┴────────────────┴──────┴────────┴────────┘
+
+1 row in set. Elapsed: 0.018 sec. Processed 32.77 thousand rows, 644.48 KB (1.87 million rows/s., 36.72 MB/s.)
+```
+
+不过，请注意，这个结果并不正确。
+
+<div id="join-best-practices">
+  ### materialized view 中 JOIN 的最佳实践
+</div>
+
+* **将最左侧的表作为触发器。** 只有 `SELECT` 语句左侧的表会触发 materialized view。右侧表中的变更不会触发更新。
+
+* **预先写入 JOIN 所需的数据。** 确保在向源表插入行之前，关联表中的数据已存在。JOIN 会在写入时求值，因此如果数据缺失，就会出现未匹配的行或 NULL 值。
+
+* **限制从 JOIN 中取回的列。** 只选择关联表中必需的列，以尽量减少内存占用并降低写入时延迟 (见下文) 。
+
+* **评估写入时性能。** JOIN 会增加插入成本，尤其是在右侧表较大时。请使用具有代表性的生产数据对插入速率进行基准测试。
+
+* **简单查找优先使用字典**。对于键值查找 (例如将用户 ID 映射为名称) ，请使用 [字典](/zh/concepts/features/dictionaries/index)，以避免开销较高的 JOIN 操作。
+
+* **对齐 `GROUP BY` 和 `ORDER BY` 以提高合并效率。** 使用 `SummingMergeTree` 或 `AggregatingMergeTree` 时，请确保 `GROUP BY` 与目标表中的 `ORDER BY` 子句一致，以便高效合并行。
+
+* **使用明确的列别名。** 当多个表中存在同名列时，请使用别名以避免歧义，并确保目标表中的结果正确。
+
+* **考虑写入量和频率。** JOIN 在中等写入负载下通常表现良好。对于高吞吐量摄取，请考虑使用暂存表、预 JOIN，或字典以及 [Refreshable Materialized Views](/zh/concepts/features/materialized-views/refreshable-materialized-view) 等其他方式。
+
+<div id="using-source-table-in-filters-and-joins-in-materialized-views">
+  ### 在过滤器和 JOIN 中使用源表
+</div>
+
+在 ClickHouse 中使用 materialized view 时，理解执行 materialized view 查询时源表会如何被处理非常重要。具体来说，materialized view 查询中的源表会被替换为插入的数据块。如果不清楚这一行为，可能会得到一些出乎意料的结果。
+
+<div id="example-scenario">
+  #### 示例场景
+</div>
+
+假设采用以下设置：
+
+```sql
+CREATE TABLE t0 (`c0` Int) ENGINE = Memory;
+CREATE TABLE mvw1_inner (`c0` Int) ENGINE = Memory;
+CREATE TABLE mvw2_inner (`c0` Int) ENGINE = Memory;
+
+CREATE VIEW vt0 AS SELECT * FROM t0;
+
+CREATE MATERIALIZED VIEW mvw1 TO mvw1_inner
+AS SELECT count(*) AS c0
+    FROM t0
+    LEFT JOIN ( SELECT * FROM t0 ) AS x ON t0.c0 = x.c0;
+
+CREATE MATERIALIZED VIEW mvw2 TO mvw2_inner
+AS SELECT count(*) AS c0
+    FROM t0
+    LEFT JOIN vt0 ON t0.c0 = vt0.c0;
+
+INSERT INTO t0 VALUES (1),(2),(3);
+
+INSERT INTO t0 VALUES (1),(2),(3),(4),(5);
+
+SELECT * FROM mvw1;
+```
+
+```response
+┌─c0─┐
+│  3 │
+│  5 │
+└────┘
+```
+
+```sql
+SELECT * FROM mvw2;
+```
+
+```response
+┌─c0─┐
+│  3 │
+│  8 │
+└────┘
+```
+
+<div id="explanation">
+  #### 说明
+</div>
+
+在上面的示例中，我们有两个 materialized view：`mvw1` 和 `mvw2`。它们执行的操作相似，但在引用源表 `t0` 的方式上略有不同。
+
+在 `mvw1` 中，表 `t0` 在 JOIN 右侧的 `(SELECT * FROM t0)` 子查询中被直接引用。当数据插入 `t0` 时，materialized view 的查询会执行，此时 `t0` 会被替换为新插入的数据块。这意味着，JOIN 操作只会针对新插入的行执行，而不是针对整个表。
+
+第二种情况是连接 `vt0`，此时该视图会读取 `t0` 中的全部数据。这样可以确保 JOIN 操作考虑的是 `t0` 中的所有行，而不只是新插入的数据块。
+
+关键区别在于 ClickHouse 在 materialized view 查询中处理源表的方式。当 materialized view 由插入操作触发时，源表 (这里是 `t0`) 会被替换为插入的数据块。这种行为可用于优化查询，但也需要谨慎处理，以避免出现意外结果。
+
+<div id="use-cases-and-caveats">
+  ### 使用场景与注意事项
+</div>
+
+在实际使用中，你可以利用这一行为来优化那些只需处理源表部分数据的 materialized view。例如，可以先通过子查询过滤源表，再将其与其他表连接。这有助于减少 materialized view 需要处理的数据量，从而提升性能。
+
+```sql
+CREATE TABLE t0 (id UInt32, value String) ENGINE = MergeTree() ORDER BY id;
+CREATE TABLE t1 (id UInt32, description String) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO t1 VALUES (1, 'A'), (2, 'B'), (3, 'C');
+
+CREATE TABLE mvw1_target_table (id UInt32, value String, description String) ENGINE = MergeTree() ORDER BY id;
+
+CREATE MATERIALIZED VIEW mvw1 TO mvw1_target_table AS
+SELECT t0.id, t0.value, t1.description
+FROM t0
+JOIN (SELECT * FROM t1 WHERE t1.id IN (SELECT id FROM t0)) AS t1
+ON t0.id = t1.id;
+```
+
+在此示例中，由子查询 `IN (SELECT id FROM t0)` 构建出的 Set 仅包含新插入的行，这有助于用它来过滤 `t1`。
+
+<div id="example-with-stack-overflow">
+  #### 以 Stack Overflow 为例
+</div>
+
+请参考我们[前面的 materialized view 示例](/zh/concepts/features/materialized-views/incremental-materialized-view#example)，计算**每个用户每天获得的徽章数**，并包含 `users` 表中的用户显示名称。
+
+```sql
+CREATE MATERIALIZED VIEW daily_badges_by_user_mv TO daily_badges_by_user
+AS SELECT
+    toDate(Date) AS Day,
+    b.UserId,
+    u.DisplayName,
+    countIf(Class = 'Gold') AS Gold,
+    countIf(Class = 'Silver') AS Silver,
+    countIf(Class = 'Bronze') AS Bronze
+FROM badges AS b
+LEFT JOIN users AS u ON b.UserId = u.Id
+GROUP BY Day, b.UserId, u.DisplayName;
+```
+
+这个视图会对 `badges` 表的写入延迟产生显著影响，例如：
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+```
+
+```response
+1 row in set. Elapsed: 7.517 sec.
+```
+
+使用上述方法，我们可以进一步优化这个视图。我们将利用已插入的 badge 行中的用户 ID，为 `users` 表添加一个过滤器：
+
+```sql
+CREATE MATERIALIZED VIEW daily_badges_by_user_mv TO daily_badges_by_user
+AS SELECT
+    toDate(Date) AS Day,
+    b.UserId,
+    u.DisplayName,
+    countIf(Class = 'Gold') AS Gold,
+    countIf(Class = 'Silver') AS Silver,
+    countIf(Class = 'Bronze') AS Bronze
+FROM badges AS b
+LEFT JOIN
+(
+    SELECT
+        Id,
+        DisplayName
+    FROM users
+    WHERE Id IN (
+        SELECT UserId
+        FROM badges
+    )
+) AS u ON b.UserId = u.Id
+GROUP BY
+    Day,
+    b.UserId,
+    u.DisplayName
+```
+
+这不仅加快了初始徽章数据的插入速度：
+
+```sql
+INSERT INTO badges SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 132.118 sec. Processed 323.43 million rows, 4.69 GB (2.45 million rows/s., 35.49 MB/s.)
+Peak memory usage: 1.99 GiB.
+```
+
+但这也意味着，今后插入 badge 会很高效：
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+```
+
+```response
+1 row in set. Elapsed: 0.583 sec.
+```
+
+在上述操作中，只会从 users 表中检索出 user id `2936484` 对应的一行。借助表的排序键 `Id`，这次查找也得到了优化。
+
+<div id="materialized-views-and-unions">
+  ## materialized view 与 UNION
+</div>
+
+`UNION ALL` 查询通常用于将多个源表中的数据合并为一个结果集。
+
+虽然增量materialized view 不直接支持 `UNION ALL`，但你可以为每个 `SELECT` 分支分别创建一个 materialized view，并将结果写入同一个目标表，以达到相同的效果。
+
+在本示例中，我们将使用 Stack Overflow 数据集。请看下面的 `badges` 和 `comments` 表，它们分别表示用户获得的徽章，以及他们在帖子下发表的评论：
+
+```sql
+CREATE TABLE stackoverflow.comments
+(
+    `Id` UInt32,
+    `PostId` UInt32,
+    `Score` UInt16,
+    `Text` String,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `UserId` Int32,
+    `UserDisplayName` LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY CreationDate
+
+CREATE TABLE stackoverflow.badges
+(
+    `Id` UInt32,
+    `UserId` Int32,
+    `Name` LowCardinality(String),
+    `Date` DateTime64(3, 'UTC'),
+    `Class` Enum8('Gold' = 1, 'Silver' = 2, 'Bronze' = 3),
+    `TagBased` Bool
+)
+ENGINE = MergeTree
+ORDER BY UserId
+```
+
+可使用以下 `INSERT INTO` 命令填充这些内容：
+
+```sql
+INSERT INTO stackoverflow.badges SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+INSERT INTO stackoverflow.comments SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/*.parquet')
+```
+
+假设我们想将这两个表合并，创建一个统一的用户活动视图，显示每个用户的最近一次活动：
+
+```sql
+SELECT
+ UserId,
+ argMax(description, event_time) AS last_description,
+ argMax(activity_type, event_time) AS activity_type,
+    max(event_time) AS last_activity
+FROM
+(
+    SELECT
+ UserId,
+ CreationDate AS event_time,
+        Text AS description,
+        'comment' AS activity_type
+    FROM stackoverflow.comments
+    UNION ALL
+    SELECT
+ UserId,
+        Date AS event_time,
+        Name AS description,
+        'badge' AS activity_type
+    FROM stackoverflow.badges
+)
+GROUP BY UserId
+ORDER BY last_activity DESC
+LIMIT 10
+```
+
+假设我们有一个目标表，用于接收此查询的结果。请注意，这里使用了 [AggregatingMergeTree](/zh/reference/engines/table-engines/mergetree-family/aggregatingmergetree) 表引擎和 [AggregateFunction](/zh/reference/data-types/aggregatefunction)，以确保结果能被正确合并：
+
+```sql
+CREATE TABLE user_activity
+(
+    `UserId` String,
+    `last_description` AggregateFunction(argMax, String, DateTime64(3, 'UTC')),
+    `activity_type` AggregateFunction(argMax, String, DateTime64(3, 'UTC')),
+    `last_activity` SimpleAggregateFunction(max, DateTime64(3, 'UTC'))
+)
+ENGINE = AggregatingMergeTree
+ORDER BY UserId
+```
+
+如果希望在向 `badges` 或 `comments` 插入新行时此表也能随之更新，一个比较直观的做法可能是尝试使用前面的 union 查询创建一个 materialized view：
+
+```sql
+CREATE MATERIALIZED VIEW user_activity_mv TO user_activity AS
+SELECT
+ UserId,
+ argMaxState(description, event_time) AS last_description,
+ argMaxState(activity_type, event_time) AS activity_type,
+    max(event_time) AS last_activity
+FROM
+(
+    SELECT
+ UserId,
+ CreationDate AS event_time,
+        Text AS description,
+        'comment' AS activity_type
+    FROM stackoverflow.comments
+    UNION ALL
+    SELECT
+ UserId,
+        Date AS event_time,
+        Name AS description,
+        'badge' AS activity_type
+    FROM stackoverflow.badges
+)
+GROUP BY UserId
+ORDER BY last_activity DESC
+```
+
+虽然这在语法上是合法的，但会产生非预期的结果——该视图仅会在向 `comments` 表插入数据时触发。例如：
+
+```sql
+INSERT INTO comments VALUES (99999999, 23121, 1, 'The answer is 42', now(), 2936484, 'gingerwizard');
+
+SELECT
+ UserId,
+ argMaxMerge(last_description) AS description,
+ argMaxMerge(activity_type) AS activity_type,
+    max(last_activity) AS last_activity
+FROM user_activity
+WHERE UserId = '2936484'
+GROUP BY UserId
+```
+
+```response
+┌─UserId──┬─description──────┬─activity_type─┬───────────last_activity─┐
+│ 2936484 │ The answer is 42 │ comment       │ 2025-04-15 09:56:19.000 │
+└─────────┴──────────────────┴───────────────┴─────────────────────────┘
+
+1 row in set. Elapsed: 0.005 sec.
+```
+
+向 `badges` 表插入数据不会触发该视图，导致 `user_activity` 无法收到更新：
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+
+SELECT
+ UserId,
+ argMaxMerge(last_description) AS description,
+ argMaxMerge(activity_type) AS activity_type,
+    max(last_activity) AS last_activity
+FROM user_activity
+WHERE UserId = '2936484'
+GROUP BY UserId;
+```
+
+```response
+┌─UserId──┬─description──────┬─activity_type─┬───────────last_activity─┐
+│ 2936484 │ The answer is 42 │ comment       │ 2025-04-15 09:56:19.000 │
+└─────────┴──────────────────┴───────────────┴─────────────────────────┘
+
+1 row in set. Elapsed: 0.005 sec.
+```
+
+为了解决这个问题，我们只需为每条 SELECT 语句创建一个 materialized view：
+
+```sql
+DROP TABLE user_activity_mv;
+TRUNCATE TABLE user_activity;
+
+CREATE MATERIALIZED VIEW comment_activity_mv TO user_activity AS
+SELECT
+ UserId,
+ argMaxState(Text, CreationDate) AS last_description,
+ argMaxState('comment', CreationDate) AS activity_type,
+    max(CreationDate) AS last_activity
+FROM stackoverflow.comments
+GROUP BY UserId;
+
+CREATE MATERIALIZED VIEW badges_activity_mv TO user_activity AS
+SELECT
+ UserId,
+ argMaxState(Name, Date) AS last_description,
+ argMaxState('badge', Date) AS activity_type,
+    max(Date) AS last_activity
+FROM stackoverflow.badges
+GROUP BY UserId;
+```
+
+现在，向任一表插入数据都能得到正确结果。例如，如果我们向 `comments` 表插入数据：
+
+```sql
+INSERT INTO comments VALUES (99999999, 23121, 1, 'The answer is 42', now(), 2936484, 'gingerwizard');
+
+SELECT
+ UserId,
+ argMaxMerge(last_description) AS description,
+ argMaxMerge(activity_type) AS activity_type,
+    max(last_activity) AS last_activity
+FROM user_activity
+WHERE UserId = '2936484'
+GROUP BY UserId;
+```
+
+```response
+┌─UserId──┬─description──────┬─activity_type─┬───────────last_activity─┐
+│ 2936484 │ The answer is 42 │ comment       │ 2025-04-15 10:18:47.000 │
+└─────────┴──────────────────┴───────────────┴─────────────────────────┘
+
+1 row in set. Elapsed: 0.006 sec.
+```
+
+同样，插入到 `badges` 表中的数据也会反映到 `user_activity` 表中：
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+
+SELECT
+ UserId,
+ argMaxMerge(last_description) AS description,
+ argMaxMerge(activity_type) AS activity_type,
+    max(last_activity) AS last_activity
+FROM user_activity
+WHERE UserId = '2936484'
+GROUP BY UserId
+```
+
+```response
+┌─UserId──┬─description──┬─activity_type─┬───────────last_activity─┐
+│ 2936484 │ gingerwizard │ badge         │ 2025-04-15 10:20:18.000 │
+└─────────┴──────────────┴───────────────┴─────────────────────────┘
+
+1 row in set. Elapsed: 0.006 sec.
+```
+
+<div id="materialized-views-parallel-vs-sequential">
+  ## 并行处理与串行处理
+</div>
+
+如前一个示例所示，一个表可以作为多个 Materialized Views 的源表。这些视图的执行顺序取决于设置 [`parallel_view_processing`](/zh/reference/settings/session-settings#parallel_view_processing)。
+
+默认情况下，此设置的值为 `0` (`false`) ，这意味着 Materialized Views 会按照 `uuid` 顺序依次执行。
+
+例如，假设有如下 `source` 表和 3 个 Materialized Views，它们都会将数据行写入 `target` 表：
+
+```sql
+CREATE TABLE source
+(
+    `message` String
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+CREATE TABLE target
+(
+    `message` String,
+    `from` String,
+    `now` DateTime64(9),
+    `sleep` UInt8
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+CREATE MATERIALIZED VIEW mv_2 TO target
+AS SELECT
+    message,
+    'mv2' AS from,
+    now64(9) as now,
+    sleep(1) as sleep
+FROM source;
+
+CREATE MATERIALIZED VIEW mv_3 TO target
+AS SELECT
+    message,
+    'mv3' AS from,
+    now64(9) as now,
+    sleep(1) as sleep
+FROM source;
+
+CREATE MATERIALIZED VIEW mv_1 TO target
+AS SELECT
+    message,
+    'mv1' AS from,
+    now64(9) as now,
+    sleep(1) as sleep
+FROM source;
+```
+
+请注意，每个视图在将各自的行插入 `target` 表之前，都会先暂停 1 秒，同时写入其名称和插入时间。
+
+向 `source` 表插入一行大约需要 3 秒，因为每个视图都会依次执行：
+
+```sql
+INSERT INTO source VALUES ('test')
+```
+
+```response
+1 row in set. Elapsed: 3.786 sec.
+```
+
+我们可以用 `SELECT` 确认每一行的数据都已到达：
+
+```sql
+SELECT
+    message,
+    from,
+    now
+FROM target
+ORDER BY now ASC
+```
+
+```response
+┌─message─┬─from─┬───────────────────────────now─┐
+│ test    │ mv3  │ 2025-04-15 14:52:01.306162309 │
+│ test    │ mv1  │ 2025-04-15 14:52:02.307693521 │
+│ test    │ mv2  │ 2025-04-15 14:52:03.309250283 │
+└─────────┴──────┴───────────────────────────────┘
+
+3 rows in set. Elapsed: 0.015 sec.
+```
+
+这与这些视图的 `uuid` 相对应：
+
+```sql
+SELECT
+    name,
+ uuid
+FROM system.tables
+WHERE name IN ('mv_1', 'mv_2', 'mv_3')
+ORDER BY uuid ASC
+```
+
+```response
+┌─name─┬─uuid─────────────────────────────────┐
+│ mv_3 │ ba5e36d0-fa9e-4fe8-8f8c-bc4f72324111 │
+│ mv_1 │ b961c3ac-5a0e-4117-ab71-baa585824d43 │
+│ mv_2 │ e611cc31-70e5-499b-adcc-53fb12b109f5 │
+└──────┴──────────────────────────────────────┘
+
+3 行，耗时 0.004 秒。
+```
+
+相反，我们来看看在启用 `parallel_view_processing=1` 的情况下插入一行时会发生什么。启用后，这些视图会并行执行，因此无法保证各行到达目标表的顺序：
+
+```sql
+TRUNCATE target;
+SET parallel_view_processing = 1;
+
+INSERT INTO source VALUES ('test');
+```
+
+```response
+1 row in set. Elapsed: 1.588 sec.
+```
+
+```sql
+SELECT
+    message,
+    from,
+    now
+FROM target
+ORDER BY now ASC
+```
+
+```response
+┌─message─┬─from─┬───────────────────────────now─┐
+│ test    │ mv3  │ 2025-04-15 19:47:32.242937372 │
+│ test    │ mv1  │ 2025-04-15 19:47:32.243058183 │
+│ test    │ mv2  │ 2025-04-15 19:47:32.337921800 │
+└─────────┴──────┴───────────────────────────────┘
+
+3 rows in set. Elapsed: 0.004 sec.
+```
+
+尽管我们从每个视图接收到的行到达顺序相同，但这并不一定有保证——从每一行相近的写入时就可以看出这一点。另请注意，写入性能也有所提升。
+
+<div id="materialized-views-when-to-use-parallel">
+  ### 何时使用并行处理
+</div>
+
+启用 `parallel_view_processing=1` 可以显著提升插入吞吐量，如上所示，尤其是在单个表上关联了多个 Materialized Views 时。不过，理解其中的权衡也很重要：
+
+* **插入压力增加**：所有 Materialized Views 都会同时执行，从而增加 CPU 和内存占用。如果每个视图都涉及大量计算或 JOIN，系统可能会过载。
+* **需要严格的执行顺序**：在少数工作流中，如果视图的执行顺序很重要 (例如存在链式依赖) ，并行执行可能导致状态不一致或出现竞态条件。虽然可以通过设计规避这类问题，但这类配置通常比较脆弱，而且在未来版本中可能失效。
+
+<Info>
+  **历史默认值与稳定性**
+
+  由于错误处理较为复杂，顺序执行在很长一段时间里一直是默认方式。历史上，一个 materialized view 执行失败可能会导致其他视图无法执行。较新版本通过按块隔离故障改进了这一点，但顺序执行仍然能提供更清晰的失败语义。
+</Info>
+
+一般来说，在以下情况下启用 `parallel_view_processing=1`：
+
+* 你有多个彼此独立的 Materialized Views
+* 你希望将插入性能最大化
+* 你清楚系统具备处理并发视图执行的能力
+
+在以下情况下应保持禁用：
+
+* Materialized Views 之间存在依赖关系
+* 你需要可预测且有序的执行
+* 你正在调试或审计插入行为，并希望进行确定性的重放
+
+<div id="materialized-views-common-table-expressions-ctes">
+  ## materialized views 与公共表表达式 (CTE)
+</div>
+
+materialized view 支持**非递归**公共表表达式 (CTE) 。
+
+<Info>
+  **公共表表达式 **不会**被物化**
+
+  ClickHouse 不会物化 CTE；相反，它会将 CTE 的定义直接替换到查询中，这可能导致同一 expression 被多次求值 (如果该 CTE 被使用了不止一次) 。
+</Info>
+
+请看下面这个示例，它会为每种帖子类型计算每日活动情况。
+
+```sql
+CREATE TABLE daily_post_activity
+(
+    Day Date,
+ PostType String,
+ PostsCreated SimpleAggregateFunction(sum, UInt64),
+ AvgScore AggregateFunction(avg, Int32),
+ TotalViews SimpleAggregateFunction(sum, UInt64)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY (Day, PostType);
+
+CREATE MATERIALIZED VIEW daily_post_activity_mv TO daily_post_activity AS
+WITH filtered_posts AS (
+    SELECT
+ toDate(CreationDate) AS Day,
+ PostTypeId,
+ Score,
+ ViewCount
+    FROM posts
+    WHERE Score > 0 AND PostTypeId IN (1, 2)  -- 问题或答案
+)
+SELECT
+    Day,
+    CASE PostTypeId
+        WHEN 1 THEN 'Question'
+        WHEN 2 THEN 'Answer'
+    END AS PostType,
+    count() AS PostsCreated,
+    avgState(Score) AS AvgScore,
+    sum(ViewCount) AS TotalViews
+FROM filtered_posts
+GROUP BY Day, PostTypeId;
+```
+
+虽然这里其实并不需要 CTE，但为了演示示例，该视图仍会按预期工作：
+
+```sql
+INSERT INTO posts
+SELECT *
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+```
+
+```sql
+SELECT
+    Day,
+    PostType,
+    avgMerge(AvgScore) AS AvgScore,
+    sum(PostsCreated) AS PostsCreated,
+    sum(TotalViews) AS TotalViews
+FROM daily_post_activity
+GROUP BY
+    Day,
+    PostType
+ORDER BY Day DESC
+LIMIT 10
+```
+
+```response
+┌────────Day─┬─PostType─┬───────────AvgScore─┬─PostsCreated─┬─TotalViews─┐
+│ 2024-03-31 │ Question │ 1.3317757009345794 │          214 │       9728 │
+│ 2024-03-31 │ Answer   │ 1.4747191011235956 │          356 │          0 │
+│ 2024-03-30 │ Answer   │ 1.4587912087912087 │          364 │          0 │
+│ 2024-03-30 │ Question │ 1.2748815165876777 │          211 │       9606 │
+│ 2024-03-29 │ Question │ 1.2641509433962264 │          318 │      14552 │
+│ 2024-03-29 │ Answer   │ 1.4706927175843694 │          563 │          0 │
+│ 2024-03-28 │ Answer   │  1.601637107776262 │          733 │          0 │
+│ 2024-03-28 │ Question │ 1.3530864197530865 │          405 │      24564 │
+│ 2024-03-27 │ Question │ 1.3225806451612903 │          434 │      21346 │
+│ 2024-03-27 │ Answer   │ 1.4907539118065434 │          703 │          0 │
+└────────────┴──────────┴────────────────────┴──────────────┴────────────┘
+
+10 rows in set. Elapsed: 0.013 sec. Processed 11.45 thousand rows, 663.87 KB (866.53 thousand rows/s., 50.26 MB/s.)
+Peak memory usage: 989.53 KiB.
+```
+
+在 ClickHouse 中，CTE 会被内联，也就是说，在优化过程中它们实际上会被直接复制到查询中，而**不会**被 materialize。这意味着：
+
+* 如果你的 CTE 引用了一个不同于源表 (即 materialized view 所附加的那张表) 的表，并且在 `JOIN` 或 `IN` 子句中使用，它的行为更像子查询或 join，而不是触发器。
+* materialized view 仍然只会在主源表发生 insert 时被触发，但 CTE 会在每次 insert 时重新执行，这可能会带来不必要的开销，尤其是在所引用的表很大时。
+
+例如，
+
+```sql
+WITH recent_users AS (
+  SELECT Id FROM stackoverflow.users WHERE CreationDate > now() - INTERVAL 7 DAY
+)
+SELECT * FROM stackoverflow.posts WHERE OwnerUserId IN (SELECT Id FROM recent_users)
+```
+
+在这种情况下，每次向 posts 插入数据时，users CTE 都会重新求值；而插入新的 users 时，materialized view 并不会更新——只有在 posts 插入时才会更新。
+
+通常，应将 CTE 用于处理与 materialized view 所附加的同一个源表相关的逻辑，或者确保所引用的表较小，不太可能成为性能瓶颈。或者，也可以考虑采用[与 Materialized Views 中 JOIN 相同的优化方式](/zh/concepts/features/materialized-views/incremental-materialized-view#join-best-practices)。

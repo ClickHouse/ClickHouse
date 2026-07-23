@@ -1,0 +1,100 @@
+---
+description: 'curl インストールスクリプトを使用して ClickHouse をすばやくインストールします'
+keywords: ['ClickHouse', 'install', 'quick', 'curl']
+sidebarTitle: 'クイックインストール'
+slug: /install/quick-install
+title: 'クイックインストール'
+hide_title: true
+doc_type: 'guide'
+---
+
+本番環境用に ClickHouse をインストールする必要がない場合は、curl を使用してインストールスクリプトを実行できます。このスクリプトは、お使いの OS に適したバイナリを判別します。
+
+<Steps>
+  <Step>
+    ## curl を使用して ClickHouse をインストールする
+
+    次のコマンドを実行して、お使いのオペレーティングシステム向けの単一バイナリをダウンロードします。
+
+    ```bash
+    curl https://clickhouse.com/ | sh
+    ```
+
+    Linux および macOS では、これにより [`clickhousectl`](https://github.com/ClickHouse/clickhousectl) も
+    `~/.local/bin` にインストールされ (`chctl` シンボリックリンク付き) 、
+    ローカルの ClickHouse のバージョンとサーバーを管理できるようになります。
+
+    `clickhousectl` なしで `clickhouse` バイナリのみをインストールするには、
+    `CLICKHOUSE_ONLY=1` を設定します。
+
+    ```bash
+    curl https://clickhouse.com/ | CLICKHOUSE_ONLY=1 sh
+    ```
+
+    <Note>
+      Mac ユーザー向け: バイナリの開発元を検証できないというエラーが表示される場合は、[こちら](/ja/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos)を参照してください。
+    </Note>
+  </Step>
+
+  <Step>
+    ## clickhouse-local を起動する
+
+    `clickhouse-local` を使用すると、設定なしで ClickHouse の
+    強力な SQL 構文を使ってローカルおよびリモートのファイルを処理できます。テーブルデータは
+    一時的な場所に保存されるため、`clickhouse-local` を再起動すると
+    以前に作成したテーブルは利用できなくなります。
+
+    次のコマンドを実行して [clickhouse-local](/ja/concepts/features/tools-and-utilities/clickhouse-local) を起動します。
+
+    ```bash
+    ./clickhouse
+    ```
+  </Step>
+
+  <Step>
+    ## clickhouse-server を起動する
+
+    データを永続化したい場合は、`clickhouse-server` を実行します。次のコマンドで
+    ClickHouse サーバーを起動できます。
+
+    ```bash
+    ./clickhouse server
+    ```
+  </Step>
+
+  <Step>
+    ## clickhouse-client を起動する
+
+    サーバーが起動したら、新しいターミナルウィンドウを開いて次のコマンドを実行し、
+    `clickhouse-client` を起動します。
+
+    ```bash
+    ./clickhouse client
+    ```
+
+    次のような表示になります。
+
+    ```response
+    ./clickhouse client
+    ClickHouse client version 24.5.1.117 (official build).
+    Connecting to localhost:9000 as user default.
+    Connected to ClickHouse server version 24.5.1.
+
+    local-host :)
+    ```
+
+    テーブルデータは現在のディレクトリに保存され、ClickHouse サーバーを再起動した後も
+    引き続き利用できます。必要に応じて、
+    `./clickhouse server` に追加のコマンドライン引数として `-C config.xml` を渡し、
+    設定ファイルでさらに設定を
+    指定できます。利用可能なすべての設定項目は、[こちら](/ja/reference/settings/server-settings/settings) と
+    [設定ファイルのサンプル
+    テンプレート](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) に記載されています。
+
+    これで ClickHouse に SQL コマンドを送信する準備が整いました。
+
+    <Tip>
+      [クイックスタート](/ja/get-started/setup/install) では、テーブルの作成とデータの挿入の手順を案内します。
+    </Tip>
+  </Step>
+</Steps>

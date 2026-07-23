@@ -1,0 +1,57 @@
+---
+slug: /cloud/managed-postgres/rbac
+sidebarTitle: 'RBAC'
+title: 'RBAC в Managed Postgres'
+description: 'Узнайте о ролевом управлении доступом (RBAC) в ClickHouse Managed Postgres'
+keywords: ['RBAC в Managed Postgres', 'управление доступом', 'роли', 'привилегии', 'разрешения']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.rbac-beta" />
+
+ClickHouse Cloud поддерживает ролевое управление доступом (RBAC) для сервисов Managed Postgres. Вы можете создавать пользовательские роли с определёнными разрешениями и назначать их участникам организации, чтобы определить, кто может просматривать ваши сервисы Postgres и управлять ими.
+
+<div id="available-permissions">
+  ## Доступные разрешения
+</div>
+
+В Managed Postgres сейчас поддерживаются два разрешения:
+
+| Разрешение                        | Описание                                                                       |
+| --------------------------------- | ------------------------------------------------------------------------------ |
+| **Просмотр сервисов Postgres**    | Позволяет пользователю просматривать сервис Postgres и сведения о нём.         |
+| **Управление сервисами Postgres** | Позволяет пользователю изменять, масштабировать и настраивать сервис Postgres. |
+
+Для создания нового сервиса Postgres требуется уже имеющееся разрешение **Organization manage**. Указанные выше разрешения применяются только к существующим сервисам.
+
+<Note>
+  Более детальные разрешения станут доступны в одном из будущих релизов.
+</Note>
+
+<div id="creating-a-custom-role">
+  ## Создание пользовательской роли
+</div>
+
+1. Нажмите на имя своей организации на левой боковой панели и выберите **Пользователи и роли**.
+
+<Image img="/images/managed-postgres/rbac/usersandroles.webp" alt="Меню «Пользователи и роли»" size="md" border />
+
+2. Перейдите на вкладку **Роли** и нажмите **Создать роль**.
+3. Введите имя роли, затем нажмите **+ Allow** и выберите **Сервис Postgres** в списке сущностей.
+
+<Image img="/images/managed-postgres/rbac/postgresentity.webp" alt="Выбор сущности «Сервис Postgres»" size="md" border />
+
+4. Выберите сервис Postgres, к которому будет применяться роль, затем укажите разрешения, которые нужно выдать.
+
+<Image img="/images/managed-postgres/rbac/newpostgresperms.webp" alt="Настройка разрешений Postgres для роли" size="md" border />
+
+5. Нажмите **Создать роль**, чтобы сохранить изменения.
+
+<div id="assigning-a-role">
+  ## Назначение роли
+</div>
+
+После создания роли назначьте её пользователям на вкладке **Пользователи** на той же странице **Пользователи и роли**. У пользователя может быть несколько ролей, и их можно комбинировать, чтобы сформировать именно тот профиль доступа, который вам нужен.

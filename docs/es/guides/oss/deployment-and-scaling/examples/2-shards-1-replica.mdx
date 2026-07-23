@@ -1,0 +1,844 @@
+---
+slug: /architecture/horizontal-scaling
+sidebarTitle: 'Escalado'
+title: 'Escalado'
+description: 'Página que describe una arquitectura de ejemplo diseñada para ofrecer escalabilidad'
+doc_type: 'guide'
+keywords: ['fragmentación', 'escalado horizontal', 'datos distribuidos', 'configuración del clúster', 'distribución de datos']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+import ConfigExplanation from '/snippets/es/_config_explanation.mdx';
+import ListenHost from '/snippets/es/_listen_host.mdx';
+import ServerParameterTable from '/snippets/es/_server_parameter_table.mdx';
+import KeeperConfig from '/snippets/es/_keeper_config.mdx';
+import KeeperConfigExplanation from '/snippets/es/_keeper_explanation.mdx';
+import VerifyKeeperStatus from '/snippets/es/_verify_keeper_using_mntr.mdx';
+import DedicatedKeeperServers from '/snippets/es/_dedicated_keeper_servers.mdx';
+import ExampleFiles from '/snippets/es/_working_example.mdx';
+import CloudTip from '/snippets/es/_cloud_tip.mdx';
+
+> En este ejemplo, aprenderás a configurar un clúster sencillo de ClickHouse que
+> puede escalar. Hay cinco servidores configurados. Dos se utilizan para segmentar los datos.
+> Los otros tres servidores se utilizan para la coordinación.
+
+La arquitectura del clúster que configurarás se muestra a continuación:
+
+<Image img="/images/deployment-guides/replication-sharding-examples/sharding.webp" size="md" alt="Diagrama de arquitectura para 2 segmentos y 1 réplica" />
+
+<DedicatedKeeperServers />
+
+<div id="pre-requisites">
+  ## Requisitos previos
+</div>
+
+* Ya has configurado antes un [servidor local de ClickHouse](/es/get-started/setup/install)
+* Estás familiarizado con los conceptos básicos de configuración de ClickHouse, como los [archivos de configuración](/es/concepts/features/configuration/server-config/configuration-files)
+* Tienes Docker instalado en tu equipo
+
+<Steps>
+  <Step>
+    ## Configurar la estructura de directorios y el entorno de prueba
+
+    <ExampleFiles />
+
+    En este tutorial, utilizará [Docker compose](https://docs.docker.com/compose/) para
+    configurar el clúster de ClickHouse. Esta configuración puede adaptarse para funcionar
+    también con máquinas locales independientes, máquinas virtuales o instancias en la nube.
+
+    Ejecute los siguientes comandos para configurar la estructura de directorios de este ejemplo:
+
+    ```bash
+    mkdir cluster_2S_1R
+    cd cluster_2S_1R
+
+    # Crear directorios de clickhouse-keeper
+    for i in {01..03}; do
+      mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
+    done
+
+    # Crear directorios de clickhouse-server
+    for i in {01..02}; do
+      mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
+    done
+    ```
+
+    Añade el siguiente archivo `docker-compose.yml` al directorio `cluster_2S_1R`:
+
+    ```yaml title="docker-compose.yml"
+    version: '3.8'
+    services:
+      clickhouse-01:
+        image: "clickhouse/clickhouse-server:latest"
+        user: "101:101"
+        container_name: clickhouse-01
+        hostname: clickhouse-01
+        networks:
+          cluster_2S_1R:
+            ipv4_address: 192.168.7.1
+        volumes:
+          - ${PWD}/fs/volumes/clickhouse-01/etc/clickhouse-server/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml
+          - ${PWD}/fs/volumes/clickhouse-01/etc/clickhouse-server/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml
+        ports:
+          - "127.0.0.1:8123:8123"
+          - "127.0.0.1:9000:9000"
+        depends_on:
+          - clickhouse-keeper-01
+          - clickhouse-keeper-02
+          - clickhouse-keeper-03
+      clickhouse-02:
+        image: "clickhouse/clickhouse-server:latest"
+        user: "101:101"
+        container_name: clickhouse-02
+        hostname: clickhouse-02
+        networks:
+          cluster_2S_1R:
+            ipv4_address: 192.168.7.2
+        volumes:
+          - ${PWD}/fs/volumes/clickhouse-02/etc/clickhouse-server/config.d/config.xml:/etc/clickhouse-server/config.d/config.xml
+          - ${PWD}/fs/volumes/clickhouse-02/etc/clickhouse-server/users.d/users.xml:/etc/clickhouse-server/users.d/users.xml
+        ports:
+          - "127.0.0.1:8124:8123"
+          - "127.0.0.1:9001:9000"
+        depends_on:
+          - clickhouse-keeper-01
+          - clickhouse-keeper-02
+          - clickhouse-keeper-03
+      clickhouse-keeper-01:
+        image: "clickhouse/clickhouse-keeper:latest-alpine"
+        user: "101:101"
+        container_name: clickhouse-keeper-01
+        hostname: clickhouse-keeper-01
+        networks:
+          cluster_2S_1R:
+            ipv4_address: 192.168.7.5
+        volumes:
+         - ${PWD}/fs/volumes/clickhouse-keeper-01/etc/clickhouse-keeper/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml
+        ports:
+            - "127.0.0.1:9181:9181"
+      clickhouse-keeper-02:
+        image: "clickhouse/clickhouse-keeper:latest-alpine"
+        user: "101:101"
+        container_name: clickhouse-keeper-02
+        hostname: clickhouse-keeper-02
+        networks:
+          cluster_2S_1R:
+            ipv4_address: 192.168.7.6
+        volumes:
+         - ${PWD}/fs/volumes/clickhouse-keeper-02/etc/clickhouse-keeper/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml
+        ports:
+            - "127.0.0.1:9182:9181"
+      clickhouse-keeper-03:
+        image: "clickhouse/clickhouse-keeper:latest-alpine"
+        user: "101:101"
+        container_name: clickhouse-keeper-03
+        hostname: clickhouse-keeper-03
+        networks:
+          cluster_2S_1R:
+            ipv4_address: 192.168.7.7
+        volumes:
+         - ${PWD}/fs/volumes/clickhouse-keeper-03/etc/clickhouse-keeper/keeper_config.xml:/etc/clickhouse-keeper/keeper_config.xml
+        ports:
+            - "127.0.0.1:9183:9181"
+    networks:
+      cluster_2S_1R:
+        driver: bridge
+        ipam:
+          config:
+            - subnet: 192.168.7.0/24
+              gateway: 192.168.7.254
+    ```
+
+    Cree los siguientes subdirectorios y archivos:
+
+    ```bash
+    for i in {01..02}; do
+      mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server/config.d
+      mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server/users.d
+      touch fs/volumes/clickhouse-${i}/etc/clickhouse-server/config.d/config.xml
+      touch fs/volumes/clickhouse-${i}/etc/clickhouse-server/users.d/users.xml
+    done
+    ```
+
+    <ConfigExplanation />
+  </Step>
+
+  <Step>
+    ## Configurar nodos de ClickHouse
+
+    ### Configuración del servidor
+
+    Ahora modifique cada archivo de configuración vacío `config.xml` ubicado en
+    `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. Las líneas resaltadas
+    a continuación deben cambiarse para que sean específicas de cada nodo:
+
+    ```xml highlight={9,54-57}
+    <clickhouse replace="true">
+        <logger>
+            <level>debug</level>
+            <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+            <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+            <size>1000M</size>
+            <count>3</count>
+        </logger>
+        <display_name>cluster_2S_1R node 1</display_name>
+        <listen_host>0.0.0.0</listen_host>
+        <http_port>8123</http_port>
+        <tcp_port>9000</tcp_port>
+        <user_directories>
+            <users_xml>
+                <path>users.xml</path>
+            </users_xml>
+            <local_directory>
+                <path>/var/lib/clickhouse/access/</path>
+            </local_directory>
+        </user_directories>
+        <distributed_ddl>
+            <path>/clickhouse/task_queue/ddl</path>
+        </distributed_ddl>
+        <remote_servers>
+            <cluster_2S_1R>
+                <shard>
+                    <replica>
+                        <host>clickhouse-01</host>
+                        <port>9000</port>
+                    </replica>
+                </shard>
+                <shard>
+                    <replica>
+                        <host>clickhouse-02</host>
+                        <port>9000</port>
+                    </replica>
+                </shard>
+            </cluster_2S_1R>
+        </remote_servers>
+        <zookeeper>
+            <node>
+                <host>clickhouse-keeper-01</host>
+                <port>9181</port>
+            </node>
+            <node>
+                <host>clickhouse-keeper-02</host>
+                <port>9181</port>
+            </node>
+            <node>
+                <host>clickhouse-keeper-03</host>
+                <port>9181</port>
+            </node>
+        </zookeeper>
+        <macros>
+            <shard>01</shard>
+            <replica>01</replica>
+        </macros>
+    </clickhouse>
+    ```
+
+    | Directorio                                                | File                                                                                                                                                                             |
+    | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `fs/volumes/clickhouse-01/etc/clickhouse-server/config.d` | [`config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_2S_1R/fs/volumes/clickhouse-01/etc/clickhouse-server/config.d/config.xml) |
+    | `fs/volumes/clickhouse-02/etc/clickhouse-server/config.d` | [`config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_2S_1R/fs/volumes/clickhouse-02/etc/clickhouse-server/config.d/config.xml) |
+
+    Cada sección del archivo de configuración anterior se explica con más detalle a continuación.
+
+    #### Redes y registro
+
+    <ListenHost />
+
+    El registro se define en el bloque `<logger>`. Esta configuración de ejemplo
+    genera un log de depuración que rotará cada 1000M un máximo de tres veces:
+
+    ```xml
+    <logger>
+        <level>debug</level>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+        <size>1000M</size>
+        <count>3</count>
+    </logger>
+    ```
+
+    Para obtener más información sobre la configuración de logging, consulte los comentarios incluidos en el
+    [archivo de configuración](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) predeterminado de ClickHouse.
+
+    #### Configuración del clúster
+
+    La configuración del clúster se establece en el bloque `<remote_servers>`.
+    Aquí se define el nombre del clúster `cluster_2S_1R`.
+
+    El bloque `<cluster_2S_1R></cluster_2S_1R>` define el layout del clúster
+    mediante las configuraciones `<shard></shard>` y `<replica></replica>`, y actúa como
+    plantilla para las consultas de DDL distribuido, es decir, consultas que se ejecutan en todo el
+    clúster mediante la cláusula `ON CLUSTER`. De forma predeterminada, las consultas de DDL distribuido
+    están permitidas, pero también pueden desactivarse con la configuración `allow_distributed_ddl_queries`.
+
+    `internal_replication` se deja en false de forma predeterminada, ya que solo hay una réplica por segmento.
+
+    ```xml
+    <remote_servers>
+        <cluster_2S_1R>
+            <shard>
+                <replica>
+                    <host>clickhouse-01</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>clickhouse-02</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster_2S_1R>
+    </remote_servers>
+    ```
+
+    <ServerParameterTable />
+
+    #### Configuración de Keeper
+
+    La sección `<ZooKeeper>` indica a ClickHouse dónde se está ejecutando ClickHouse Keeper (o ZooKeeper).
+    Como estamos utilizando un cluster de ClickHouse Keeper, es necesario especificar cada `<node>` del cluster,
+    junto con su hostname y número de puerto mediante las etiquetas `<host>` y `<port>` respectivamente.
+
+    La configuración de ClickHouse Keeper se explica en el siguiente paso del tutorial.
+
+    ```xml
+    <zookeeper>
+        <node>
+            <host>clickhouse-keeper-01</host>
+            <port>9181</port>
+        </node>
+        <node>
+            <host>clickhouse-keeper-02</host>
+            <port>9181</port>
+        </node>
+        <node>
+            <host>clickhouse-keeper-03</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+    ```
+
+    <Note>
+      Aunque es posible ejecutar ClickHouse Keeper en el mismo servidor que ClickHouse Server,
+      en entornos de producción recomendamos encarecidamente que ClickHouse Keeper se ejecute en servidores dedicados.
+    </Note>
+
+    #### Configuración de macros
+
+    Además, la sección `<macros>` se utiliza para definir sustituciones de parámetros para
+    tablas replicadas. Estas se listan en `system.macros` y permiten usar sustituciones
+    como `{shard}` y `{replica}` en las consultas.
+
+    ```xml
+    <macros>
+        <shard>01</shard>
+        <replica>01</replica>
+    </macros>
+    ```
+
+    <Note>
+      Estos se definirán específicamente según la configuración del clúster.
+    </Note>
+
+    ### Configuración de usuario
+
+    Ahora modifique cada archivo de configuración vacío `users.xml` ubicado en
+    `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d` con el siguiente contenido:
+
+    ```xml title="/users.d/users.xml"
+    <?xml version="1.0"?>
+    <clickhouse replace="true">
+        <profiles>
+            <default>
+                <max_memory_usage>10000000000</max_memory_usage>
+                <use_uncompressed_cache>0</use_uncompressed_cache>
+                <load_balancing>in_order</load_balancing>
+                <log_queries>1</log_queries>
+            </default>
+        </profiles>
+        <users>
+            <default>
+                <access_management>1</access_management>
+                <profile>default</profile>
+                <networks>
+                    <ip>::/0</ip>
+                </networks>
+                <quota>default</quota>
+                <access_management>1</access_management>
+                <named_collection_control>1</named_collection_control>
+                <show_named_collections>1</show_named_collections>
+                <show_named_collections_secrets>1</show_named_collections_secrets>
+            </default>
+        </users>
+        <quotas>
+            <default>
+                <interval>
+                    <duration>3600</duration>
+                    <queries>0</queries>
+                    <errors>0</errors>
+                    <result_rows>0</result_rows>
+                    <read_rows>0</read_rows>
+                    <execution_time>0</execution_time>
+                </interval>
+            </default>
+        </quotas>
+    </clickhouse>
+    ```
+
+    | Directorio                                               | File                                                                                                                                                                          |
+    | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `fs/volumes/clickhouse-01/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_2S_1R/fs/volumes/clickhouse-01/etc/clickhouse-server/users.d/users.xml) |
+    | `fs/volumes/clickhouse-02/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_2S_1R/fs/volumes/clickhouse-02/etc/clickhouse-server/users.d/users.xml) |
+
+    En este ejemplo, el usuario predeterminado se configura sin contraseña por motivos de simplicidad.
+    En la práctica, esto no es recomendable.
+
+    <Note>
+      En este ejemplo, cada archivo `users.xml` es idéntico para todos los nodos del clúster.
+    </Note>
+  </Step>
+
+  <Step>
+    ## Configurar ClickHouse Keeper
+
+    ### Configuración de ClickHouse Keeper
+
+    <KeeperConfig />
+
+    | Directorio                                              | Archivo                                                                                                                                                                                      |
+    | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `fs/volumes/clickhouse-keeper-01/etc/clickhouse-keeper` | [`keeper_config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_2S_1R/fs/volumes/clickhouse-keeper-01/etc/clickhouse-keeper/keeper_config.xml) |
+    | `fs/volumes/clickhouse-keeper-02/etc/clickhouse-keeper` | [`keeper_config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_2S_1R/fs/volumes/clickhouse-keeper-02/etc/clickhouse-keeper/keeper_config.xml) |
+    | `fs/volumes/clickhouse-keeper-03/etc/clickhouse-keeper` | [`keeper_config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_2S_1R/fs/volumes/clickhouse-keeper-03/etc/clickhouse-keeper/keeper_config.xml) |
+
+    <KeeperConfigExplanation />
+
+    <CloudTip />
+  </Step>
+
+  <Step>
+    ## Prueba la configuración
+
+    Asegúrate de que Docker se esté ejecutando en tu máquina.
+    Inicia el clúster con el comando `docker-compose up` desde la raíz del directorio `cluster_2S_1R`:
+
+    ```bash
+    docker-compose up -d
+    ```
+
+    Deberías ver que Docker empieza a descargar las imágenes de ClickHouse y Keeper,
+    y luego inicia los contenedores:
+
+    ```bash
+    [+] Running 6/6
+     ✔ Network cluster_2s_1r_default   Created
+     ✔ Container clickhouse-keeper-03  Started
+     ✔ Container clickhouse-keeper-02  Started
+     ✔ Container clickhouse-keeper-01  Started
+     ✔ Container clickhouse-01         Started
+     ✔ Container clickhouse-02         Started
+    ```
+
+    Para verificar que el clúster esté en ejecución, conéctese a `clickhouse-01` o `clickhouse-02` y ejecute la
+    siguiente consulta. A continuación, se muestra el comando para conectarse al primer nodo:
+
+    ```bash
+    # Conectarse a cualquier nodo
+    docker exec -it clickhouse-01 clickhouse-client
+    ```
+
+    Si todo ha ido bien, verás el prompt del cliente de ClickHouse:
+
+    ```response
+    cluster_2S_1R node 1 :)
+    ```
+
+    Ejecute la siguiente consulta para comprobar qué topologías de clúster están definidas en qué
+    hosts:
+
+    ```sql title="Query"
+    SELECT 
+        cluster,
+        shard_num,
+        replica_num,
+        host_name,
+        port
+    FROM system.clusters;
+    ```
+
+    ```response title="Response"
+       ┌─cluster───────┬─shard_num─┬─replica_num─┬─host_name─────┬─port─┐
+    1. │ cluster_2S_1R │         1 │           1 │ clickhouse-01 │ 9000 │
+    2. │ cluster_2S_1R │         2 │           1 │ clickhouse-02 │ 9000 │
+    3. │ default       │         1 │           1 │ localhost     │ 9000 │
+       └───────────────┴───────────┴─────────────┴───────────────┴──────┘
+    ```
+
+    Ejecute la siguiente consulta para comprobar el estado del cluster de ClickHouse Keeper:
+
+    ```sql title="Query"
+    SELECT *
+    FROM system.zookeeper
+    WHERE path IN ('/', '/clickhouse')
+    ```
+
+    ```response title="Response"
+       ┌─name───────┬─value─┬─path────────┐
+    1. │ task_queue │       │ /clickhouse │
+    2. │ sessions   │       │ /clickhouse │
+    3. │ clickhouse │       │ /           │
+    4. │ keeper     │       │ /           │
+       └────────────┴───────┴─────────────┘
+    ```
+
+    <VerifyKeeperStatus />
+
+    Con esto, has configurado correctamente un clúster de ClickHouse con dos segmentos y una réplica por segmento.
+    En el siguiente paso, crearás una tabla en el clúster.
+  </Step>
+
+  <Step>
+    ## Crear una base de datos
+
+    Ahora que ha verificado que el clúster está correctamente configurado y en ejecución,
+    volverá a crear la misma tabla que se utiliza en el tutorial del conjunto de datos de
+    ejemplo [UK property prices](/es/get-started/sample-datasets/uk-price-paid).
+    Consta de alrededor de 30 millones de filas con precios pagados por propiedades
+    inmobiliarias en Inglaterra y Gales desde 1995.
+
+    Conéctese al cliente de cada host ejecutando cada uno de los siguientes comandos en pestañas o ventanas
+    de terminal independientes:
+
+    ```bash
+    docker exec -it clickhouse-01 clickhouse-client
+    docker exec -it clickhouse-02 clickhouse-client
+    ```
+
+    Puede ejecutar la consulta siguiente desde `clickhouse-client` en cada host para confirmar que
+    aún no se ha creado ninguna base de datos, aparte de las predeterminadas:
+
+    ```sql title="Query"
+    SHOW DATABASES;
+    ```
+
+    ```response title="Response"
+       ┌─name───────────────┐
+    1. │ INFORMATION_SCHEMA │
+    2. │ default            │
+    3. │ information_schema │
+    4. │ system             │
+       └────────────────────┘
+    ```
+
+    Desde el cliente `clickhouse-01`, ejecute la siguiente consulta DDL **distribuida** con la
+    cláusula `ON CLUSTER` para crear una nueva base de datos llamada `uk`:
+
+    ```sql highlight={2}
+    CREATE DATABASE IF NOT EXISTS uk 
+    ON CLUSTER cluster_2S_1R;
+    ```
+
+    Puedes volver a ejecutar la misma consulta que antes desde el cliente de cada host
+    para confirmar que la base de datos se ha creado en todo el clúster, a pesar de haber ejecutado
+    la consulta solo en `clickhouse-01`:
+
+    ```sql
+    SHOW DATABASES;
+    ```
+
+    ```response highlight={6}
+       ┌─name───────────────┐
+    1. │ INFORMATION_SCHEMA │
+    2. │ default            │
+    3. │ information_schema │
+    4. │ system             │
+    5. │ uk                 │
+       └────────────────────┘
+    ```
+  </Step>
+
+  <Step>
+    ## Crear una tabla en el clúster
+
+    Ahora que ya se ha creado la base de datos, cree una tabla.
+    Ejecute la siguiente consulta desde cualquiera de los clientes del host:
+
+    ```sql highlight={2}
+    CREATE TABLE IF NOT EXISTS uk.uk_price_paid_local
+    ON CLUSTER cluster_2S_1R
+    (
+        price UInt32,
+        date Date,
+        postcode1 LowCardinality(String),
+        postcode2 LowCardinality(String),
+        type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
+        is_new UInt8,
+        duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
+        addr1 String,
+        addr2 String,
+        street LowCardinality(String),
+        locality LowCardinality(String),
+        town LowCardinality(String),
+        district LowCardinality(String),
+        county LowCardinality(String)
+    )
+    ENGINE = MergeTree
+    ORDER BY (postcode1, postcode2, addr1, addr2);
+    ```
+
+    Tenga en cuenta que es idéntica a la consulta utilizada en la sentencia `CREATE` original del
+    tutorial del conjunto de datos de ejemplo
+    [UK property prices](/es/get-started/sample-datasets/uk-price-paid),
+    excepto por la cláusula `ON CLUSTER`.
+
+    La cláusula `ON CLUSTER` está diseñada para la ejecución distribuida de consultas DDL (Data Definition Language)
+    como `CREATE`, `DROP`, `ALTER` y `RENAME`, lo que garantiza que estos
+    cambios de esquema se apliquen en todos los nodos de un clúster.
+
+    Puede ejecutar la siguiente consulta desde el cliente de cada host para confirmar que la tabla se ha creado en todo el clúster:
+
+    ```sql title="Query"
+    SHOW TABLES IN uk;
+    ```
+
+    ```response title="Response"
+       ┌─name────────────────┐
+    1. │ uk_price_paid_local │
+       └─────────────────────┘
+    ```
+
+    Antes de insertar los datos de precios pagados del Reino Unido, hagamos un experimento rápido para ver
+    qué ocurre cuando insertamos datos en una tabla normal desde cualquiera de los hosts.
+
+    Cree una base de datos y una tabla de prueba con la siguiente consulta desde cualquiera de los hosts:
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS test ON CLUSTER cluster_2S_1R;
+    CREATE TABLE test.test_table ON CLUSTER cluster_2S_1R
+    (
+        `id` UInt64,
+        `name` String
+    )
+    ENGINE = MergeTree()
+    ORDER BY id;
+    ```
+
+    Ahora, ejecute desde `clickhouse-01` la siguiente consulta `INSERT`:
+
+    ```sql
+    INSERT INTO test.test_table (id, name) VALUES (1, 'Clicky McClickface');
+    ```
+
+    Pasa a `clickhouse-02` y ejecuta la siguiente consulta `INSERT`:
+
+    ```sql title="Query"
+    INSERT INTO test.test_table (id, name) VALUES (1, 'Alexey Milovidov');
+    ```
+
+    Ahora, desde `clickhouse-01` o `clickhouse-02`, ejecute la siguiente consulta:
+
+    ```sql
+    -- desde clickhouse-01
+    SELECT * FROM test.test_table;
+    --   ┌─id─┬─name───────────────┐
+    -- 1.│  1 │ Clicky McClickface │
+    --   └────┴────────────────────┘
+
+    --desde clickhouse-02
+    SELECT * FROM test.test_table;
+    --   ┌─id─┬─name───────────────┐
+    -- 1.│  1 │ Alexey Milovidov   │
+    --   └────┴────────────────────┘
+    ```
+
+    Notarás que, a diferencia de una tabla `ReplicatedMergeTree`, solo se devuelve la fila que se insertó en la tabla de ese
+    host concreto, y no ambas filas.
+
+    Para leer los datos de los dos segmentos, necesitamos una interfaz que pueda gestionar consultas
+    en todos los segmentos, combinando los datos de ambos segmentos cuando ejecutamos consultas SELECT
+    sobre ella o insertando datos en ambos segmentos cuando ejecutamos consultas INSERT.
+
+    En ClickHouse, esta interfaz se denomina **tabla distribuida**, y la creamos con
+    el motor de tabla [`Distributed`](/es/reference/engines/table-engines/special/distributed). Veamos cómo funciona.
+  </Step>
+
+  <Step>
+    ## Crear una tabla distribuida
+
+    Cree una tabla distribuida con la consulta siguiente:
+
+    ```sql
+    CREATE TABLE test.test_table_dist ON CLUSTER cluster_2S_1R AS test.test_table
+    ENGINE = Distributed('cluster_2S_1R', 'test', 'test_table', rand())
+    ```
+
+    En este ejemplo, se usa la función `rand()` como clave de sharding para que
+    las inserciones se distribuyan aleatoriamente entre los segmentos.
+
+    Ahora consulta la tabla distribuida desde cualquiera de los hosts y obtendrás
+    ambas filas insertadas en los dos hosts, a diferencia del ejemplo anterior:
+
+    ```sql
+    SELECT * FROM test.test_table_dist;
+    ```
+
+    ```response
+       ┌─id─┬─name───────────────┐
+    1. │  1 │ Alexey Milovidov   │
+    2. │  1 │ Clicky McClickface │
+       └────┴────────────────────┘
+    ```
+
+    Hagamos lo mismo con nuestros datos de precios de propiedades del Reino Unido. Desde cualquiera de los hosts cliente,
+    ejecute la siguiente consulta para crear una tabla distribuida usando la tabla existente
+    que creamos previamente con `ON CLUSTER`:
+
+    ```sql
+    CREATE TABLE IF NOT EXISTS uk.uk_price_paid_distributed
+    ON CLUSTER cluster_2S_1R
+    ENGINE = Distributed('cluster_2S_1R', 'uk', 'uk_price_paid_local', rand());
+    ```
+  </Step>
+
+  <Step>
+    ## Insertar datos en una tabla distribuida
+
+    Ahora conéctese a cualquiera de los hosts e inserte los datos:
+
+    ```sql
+    INSERT INTO uk.uk_price_paid_distributed
+    SELECT
+        toUInt32(price_string) AS price,
+        parseDateTimeBestEffortUS(time) AS date,
+        splitByChar(' ', postcode)[1] AS postcode1,
+        splitByChar(' ', postcode)[2] AS postcode2,
+        transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+        b = 'Y' AS is_new,
+        transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+        addr1,
+        addr2,
+        street,
+        locality,
+        town,
+        district,
+        county
+    FROM url(
+        'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+        'CSV',
+        'uuid_string String,
+        price_string String,
+        time String,
+        postcode String,
+        a String,
+        b String,
+        c String,
+        addr1 String,
+        addr2 String,
+        street String,
+        locality String,
+        town String,
+        district String,
+        county String,
+        d String,
+        e String'
+    ) SETTINGS max_http_get_redirects=10;
+    ```
+
+    Una vez insertados los datos, puede verificar el número de filas usando la tabla
+    distribuida:
+
+    ```sql title="Query"
+    SELECT count(*)
+    FROM uk.uk_price_paid_distributed
+    ```
+
+    ```response title="Response"
+    ┌──count()─┐
+    1. │ 30212555 │ -- 30.21 millones
+       └──────────┘
+    ```
+
+    Si ejecuta la siguiente consulta en cualquiera de los hosts, verá que los datos se han
+    distribuido de forma más o menos uniforme entre los segmentos (tenga en cuenta que el segmento
+    de destino se determinó con `rand()`, por lo que los resultados pueden variar):
+
+    ```sql
+    -- desde clickhouse-01
+    SELECT count(*)
+    FROM uk.uk_price_paid_local
+    --    ┌──count()─┐
+    -- 1. │ 15107353 │ -- 15.11 millones
+    --    └──────────┘
+
+    --desde clickhouse-02
+    SELECT count(*)
+    FROM uk.uk_price_paid_local
+    --    ┌──count()─┐
+    -- 1. │ 15105202 │ -- 15.11 millones
+    --    └──────────┘
+    ```
+
+    ¿Qué ocurrirá si uno de los hosts falla? Simulemos esto apagando
+    `clickhouse-01`:
+
+    ```bash
+    docker stop clickhouse-01
+    ```
+
+    Verifique que el host está caído ejecutando:
+
+    ```bash
+    docker-compose ps
+    ```
+
+    ```response title="Response"
+    NAME                   IMAGE                                        COMMAND            SERVICE                CREATED          STATUS          PORTS
+    clickhouse-02          clickhouse/clickhouse-server:latest          "/entrypoint.sh"   clickhouse-02          X minutes ago    Up X minutes    127.0.0.1:8124->8123/tcp, 127.0.0.1:9001->9000/tcp
+    clickhouse-keeper-01   clickhouse/clickhouse-keeper:latest-alpine   "/entrypoint.sh"   clickhouse-keeper-01   X minutes ago    Up X minutes    127.0.0.1:9181->9181/tcp
+    clickhouse-keeper-02   clickhouse/clickhouse-keeper:latest-alpine   "/entrypoint.sh"   clickhouse-keeper-02   X minutes ago    Up X minutes    127.0.0.1:9182->9181/tcp
+    clickhouse-keeper-03   clickhouse/clickhouse-keeper:latest-alpine   "/entrypoint.sh"   clickhouse-keeper-03   X minutes ago    Up X minutes    127.0.0.1:9183->9181/tcp
+    ```
+
+    Ahora desde `clickhouse-02`, ejecuta la misma consulta SELECT que ejecutamos antes en la tabla
+    distribuida:
+
+    ```sql
+    SELECT count(*)
+    FROM uk.uk_price_paid_distributed
+    ```
+
+    ```response title="Response" highlight={6}
+    Received exception from server (version 25.5.2):
+    Code: 279. DB::Exception: Received from localhost:9000. DB::Exception: All connection tries failed. Log:
+
+    Code: 32. DB::Exception: Attempt to read after eof. (ATTEMPT_TO_READ_AFTER_EOF) (version 25.5.2.47 (official build))
+    Code: 209. DB::NetException: Timeout: connect timed out: 192.168.7.1:9000 (clickhouse-01:9000, 192.168.7.1, local address: 192.168.7.2:37484, connection timeout 1000 ms). (SOCKET_TIMEOUT) (version 25.5.2.47 (official build))
+    Code: 198. DB::NetException: Not found address of host: clickhouse-01: (clickhouse-01:9000, 192.168.7.1, local address: 192.168.7.2:37484). (DNS_ERROR) (version 25.5.2.47 (official build))
+
+    : While executing Remote. (ALL_CONNECTION_TRIES_FAILED)
+    ```
+
+    Lamentablemente, nuestro clúster no es tolerante a fallos. Si uno de los hosts falla, el
+    clúster se considera no saludable y la consulta falla, a diferencia de la tabla replicada
+    que vimos en el [ejemplo anterior](/es/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas), con la que
+    pudimos insertar datos incluso cuando uno de los hosts falló.
+  </Step>
+</Steps>
+
+<div id="conclusion">
+  ## Conclusión
+</div>
+
+La ventaja de esta topología de clúster es que los datos se distribuyen entre
+hosts independientes y utilizan la mitad del almacenamiento por nodo. Más importante aún, las consultas
+se procesan en ambos segmentos, lo que mejora la eficiencia en el uso de la memoria
+y reduce la E/S por host.
+
+La principal desventaja de esta topología de clúster es, por supuesto, que la pérdida de uno de
+los hosts nos impide atender consultas.
+
+En el [siguiente ejemplo](/es/guides/oss/deployment-and-scaling/examples/2-shards-2-replicas), veremos cómo
+configurar un clúster con dos segmentos y dos réplicas que ofrece tanto escalabilidad como
+tolerancia a fallos.

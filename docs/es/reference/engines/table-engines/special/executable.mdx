@@ -1,0 +1,232 @@
+---
+description: 'Los motores de tabla `Executable` y `ExecutablePool` le permiten definir
+  una tabla cuyas filas se generan a partir de un script que usted define (escribiendo filas
+  en **stdout**).'
+sidebarTitle: 'Executable/ExecutablePool'
+slug: /engines/table-engines/special/executable
+title: 'Motores de tabla Executable y ExecutablePool'
+doc_type: 'reference'
+---
+
+Los motores de tabla `Executable` y `ExecutablePool` le permiten definir una tabla cuyas filas se generan a partir de un script que usted define (escribiendo filas en **stdout**). El script ejecutable se almacena en el directorio `user_scripts` y puede leer datos de cualquier fuente.
+
+* Tablas `Executable`: el script se ejecuta para cada consulta
+* Tablas `ExecutablePool`: mantiene un grupo de procesos persistentes y toma procesos de ese grupo para las lecturas
+
+También puede incluir opcionalmente una o más consultas de entrada que envían sus resultados a **stdin** para que el script los lea.
+
+<div id="creating-an-executable-table">
+  ## Creación de una tabla `Executable`
+</div>
+
+El motor de tabla `Executable` requiere dos parámetros: el nombre del script y el formato de los datos de entrada. Opcionalmente, puede pasar una o más consultas de entrada:
+
+```sql
+Executable(script_name, format, [input_query...])
+```
+
+Aquí están las configuraciones relevantes para una tabla `Executable`:
+
+* `send_chunk_header`
+  * Descripción: Envía el número de filas de cada fragmento antes de enviarlo para su procesamiento. Esta configuración puede ayudarte a escribir el script de forma más eficiente, preasignando algunos recursos.
+  * Valor predeterminado: false
+* `command_termination_timeout`
+  * Descripción: Tiempo de espera para la finalización del comando, en segundos
+  * Valor predeterminado: 10
+* `command_read_timeout`
+  * Descripción: Tiempo de espera para leer datos de la salida estándar (`stdout`) del comando, en milisegundos
+  * Valor predeterminado: 10000
+* `command_write_timeout`
+  * Descripción: Tiempo de espera para escribir datos en la entrada estándar (`stdin`) del comando, en milisegundos
+  * Valor predeterminado: 10000
+
+Veamos un ejemplo. El siguiente script de Python se llama `my_script.py` y se guarda en la carpeta `user_scripts`. Lee un número `i` e imprime `i` cadenas aleatorias, cada una precedida por un número separado por una tabulación:
+
+```python
+#!/usr/bin/python3
+
+import sys
+import string
+import random
+
+def main():
+
+    # Leer el valor de entrada
+    for number in sys.stdin:
+        i = int(number)
+
+        # Generar algunas filas aleatorias
+        for id in range(0, i):
+            letters = string.ascii_letters
+            random_string =  ''.join(random.choices(letters ,k=10))
+            print(str(id) + '\t' + random_string + '\n', end='')
+
+        # Volcar los resultados a stdout
+        sys.stdout.flush()
+
+if __name__ == "__main__":
+    main()
+```
+
+La siguiente tabla `my_executable_table` se crea a partir de la salida de `my_script.py`, que generará 10 cadenas aleatorias cada vez que se ejecute un `SELECT` en `my_executable_table`:
+
+```sql
+CREATE TABLE my_executable_table (
+   x UInt32,
+   y String
+)
+ENGINE = Executable('my_script.py', TabSeparated, (SELECT 10))
+```
+
+La creación de la tabla se completa de inmediato y no invoca el script. Al consultar `my_executable_table`, se invoca el script:
+
+```sql
+SELECT * FROM my_executable_table
+```
+
+```response
+┌─x─┬─y──────────┐
+│ 0 │ BsnKBsNGNH │
+│ 1 │ mgHfBCUrWM │
+│ 2 │ iDQAVhlygr │
+│ 3 │ uNGwDuXyCk │
+│ 4 │ GcFdQWvoLB │
+│ 5 │ UkciuuOTVO │
+│ 6 │ HoKeCdHkbs │
+│ 7 │ xRvySxqAcR │
+│ 8 │ LKbXPHpyDI │
+│ 9 │ zxogHTzEVV │
+└───┴────────────┘
+```
+
+<div id="passing-query-results-to-a-script">
+  ## Pasar resultados de una consulta a un script
+</div>
+
+Los usuarios del sitio web Hacker News dejan comentarios. Python incluye una biblioteca de procesamiento del lenguaje natural (`nltk`) con un `SentimentIntensityAnalyzer` para determinar si los comentarios son positivos, negativos o neutros, además de asignarles un valor entre -1 (un comentario muy negativo) y 1 (un comentario muy positivo). Vamos a crear una tabla `Executable` que calcule el sentimiento de los comentarios de Hacker News con `nltk`.
+
+Este ejemplo usa la tabla `hackernews` descrita [aquí](/es/reference/engines/table-engines/mergetree-family/textindexes#hacker-news-dataset). La tabla `hackernews` incluye una columna `id` de tipo `UInt64` y una columna `String` llamada `comment`. Empecemos definiendo la tabla `Executable`:
+
+```sql
+CREATE TABLE sentiment (
+   id UInt64,
+   sentiment Float32
+)
+ENGINE = Executable(
+    'sentiment.py',
+    TabSeparated,
+    (SELECT id, comment FROM hackernews WHERE id > 0 AND comment != '' LIMIT 20)
+);
+```
+
+Algunos comentarios sobre la tabla `sentiment`:
+
+* El archivo `sentiment.py` se guarda en la carpeta `user_scripts` (la carpeta predeterminada de la configuración `user_scripts_path`)
+* El formato `TabSeparated` significa que nuestro script de Python debe generar filas de datos sin procesar que contengan valores separados por tabulaciones
+* La consulta selecciona dos columnas de `hackernews`. El script de Python tendrá que extraer los valores de esas columnas de las filas entrantes
+
+Aquí está la definición de `sentiment.py`:
+
+```python
+#!/usr/local/bin/python3.9
+
+import sys
+import nltk
+from nltk.sentiment import SentimentIntensityAnalyzer
+
+def main():
+    sentiment_analyzer = SentimentIntensityAnalyzer()
+
+    while True:
+        try:
+            row = sys.stdin.readline()
+            if row == '':
+                break
+
+            split_line = row.split("\t")
+
+            id = str(split_line[0])
+            comment = split_line[1]
+
+            score = sentiment_analyzer.polarity_scores(comment)['compound']
+            print(id + '\t' + str(score) + '\n', end='')
+            sys.stdout.flush()
+        except BaseException as x:
+            break
+
+if __name__ == "__main__":
+    main()
+```
+
+Algunos comentarios sobre nuestro script de Python:
+
+* Para que esto funcione, deberás ejecutar `nltk.downloader.download('vader_lexicon')`. Esto podría haberse incluido en el script, pero entonces se descargaría cada vez que se ejecutara una consulta sobre la tabla `sentiment`, lo cual no es eficiente
+* Cada valor de `row` corresponde a una fila del conjunto de resultados de `SELECT id, comment FROM hackernews WHERE id > 0 AND comment != '' LIMIT 20`
+* La fila de entrada está separada por tabulaciones, así que extraemos el `id` y el `comment` con la función `split` de Python
+* El resultado de `polarity_scores` es un objeto JSON con unos cuantos valores. Decidimos simplemente tomar el valor `compound` de este objeto JSON
+* Ten en cuenta que la tabla `sentiment` de ClickHouse usa el formato `TabSeparated` y contiene dos columnas, por lo que nuestra función `print` separa esas columnas con una tabulación
+
+Cada vez que escribes una consulta que selecciona filas de la tabla `sentiment`, se ejecuta la consulta `SELECT id, comment FROM hackernews WHERE id > 0 AND comment != '' LIMIT 20` y el resultado se pasa a `sentiment.py`. Vamos a probarlo:
+
+```sql
+SELECT *
+FROM sentiment
+```
+
+La respuesta es similar a esta:
+
+```response
+┌───────id─┬─sentiment─┐
+│  7398199 │    0.4404 │
+│ 21640317 │    0.1779 │
+│ 21462000 │         0 │
+│ 25168863 │         0 │
+│ 25168978 │   -0.1531 │
+│ 25169359 │         0 │
+│ 25169394 │   -0.9231 │
+│ 25169766 │    0.4137 │
+│ 25172570 │    0.7469 │
+│ 25173687 │    0.6249 │
+│ 28291534 │         0 │
+│ 28291669 │   -0.4767 │
+│ 28291731 │         0 │
+│ 28291949 │   -0.4767 │
+│ 28292004 │    0.3612 │
+│ 28292050 │    -0.296 │
+│ 28292322 │         0 │
+│ 28295172 │    0.7717 │
+│ 28295288 │    0.4404 │
+│ 21465723 │   -0.6956 │
+└──────────┴───────────┘
+```
+
+<div id="creating-an-executablepool-table">
+  ## Creación de una tabla `ExecutablePool`
+</div>
+
+La sintaxis de `ExecutablePool` es similar a la de `Executable`, pero hay un par de ajustes relevantes que son exclusivos de una tabla `ExecutablePool`:
+
+* `pool_size`
+  * Descripción: Tamaño del grupo de procesos. Si el tamaño es 0, no hay restricciones de tamaño.
+  * Valor predeterminado: 16
+* `max_command_execution_time`
+  * Descripción: Tiempo máximo de ejecución del comando, en segundos
+  * Valor predeterminado: 10
+
+Podemos convertir fácilmente la tabla `sentiment` anterior para usar `ExecutablePool` en lugar de `Executable`:
+
+```sql
+CREATE TABLE sentiment_pooled (
+   id UInt64,
+   sentiment Float32
+)
+ENGINE = ExecutablePool(
+    'sentiment.py',
+    TabSeparated,
+    (SELECT id, comment FROM hackernews WHERE id > 0 AND comment != '' LIMIT 20000)
+)
+SETTINGS
+    pool_size = 4;
+```
+
+ClickHouse mantendrá 4 procesos bajo demanda cuando el cliente consulte la tabla `sentiment_pooled`.

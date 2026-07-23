@@ -1,0 +1,116 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-05-29
+title: 'デモデイズ - 2026-05-29'
+sidebarTitle: '2026-05-29'
+description: '2026-05-29 の ClickStack デモデイズ'
+doc_type: 'guide'
+keywords: ['ClickStack', 'デモデイズ']
+---
+
+<div id="version-aware-improved-schema-filtering">
+  ## バージョンを踏まえた改良版スキーマフィルタリング
+</div>
+
+*デモ: [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/bAVaBnfJ82Y" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack では現在、direct&#95;read 最適化は ClickHouse バージョン 26.2 以降でのみ適用されます。これらのバージョンでは、オープンソース版のスキーマに追加されたエイリアスカラムをフルテキスト検索索引が正しくサポートしているためです。以前は、正しく動作しない古いバージョンでもこの最適化が試されることがありました。バージョンの確認は、スキーマを調べることでクエリ時に行われます。また、エイリアスカラム自体もデフォルトでオープンソース版のスキーマに含まれるようになりました。
+
+あわせて、オートコンプリート用の materialized view をテキスト索引への直接クエリに置き換える作業の進捗も紹介されました。現時点では両方が重複する処理を担っており、取り込み時の負荷を増やしています。ベンチマークでテキスト索引クエリの性能に問題がないことが確認できれば、materialized view は簡素化または削除できます。さらに Aaron は、今後の ClickHouse テキスト索引のバージョンで位置エンコーディングが導入されれば、キー・バリューのフィルタルックアップの精度がさらに向上する可能性について、チームからの質問にも答えました。
+
+**関連 PR:** [#2341](https://github.com/hyperdxio/hyperdx/pull/2341) feat: logs と traces に対して direct&#95;read 最適化をデフォルトで追加, [#2405](https://github.com/hyperdxio/hyperdx/pull/2405) feat(common-utils): direct&#95;read の KV items 最適化を SQL フィルターに適用, [#2376](https://github.com/hyperdxio/hyperdx/pull/2376) feat: フィルターとオートコンプリートをテキスト索引で実現
+
+<div id="better-log-parsing">
+  ## ログパースの改善
+</div>
+
+*デモ担当: [@dhable](https://github.com/dhable)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/vhkMlddahu4" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ある顧客のログでは、イベントのボディが `level` フィールドを含む JSON object でした。重大度の推論ロジックは、ボディを JSON としてパースして属性を抽出することと、OTel 側で重大度が設定されていない場合に文字列マッチングにフォールバックすることの2つを行っていました。この文字列マッチングが、ボディ内の alert manager 名に含まれる &quot;alert&quot; という単語を拾ってしまい、ログレベルを誤分類していました。
+
+この修正では、ガード条件が追加されています。ボディが JSON としてパースされ、すでに `level` フィールドを含んでいる場合は、文字列による推論ステップを完全にスキップします。約1年前に作られたスモークテストスイートのおかげで、新しいテストケースを追加するだけで修正を簡単に検証でき、関連するエッジケースも捉えられました。これは、まさにそのために設計されたものでした。
+
+**関連PR:** [#2363](https://github.com/hyperdxio/hyperdx/pull/2363) fix(log-parser): ボディが `level` フィールドを含む JSON としてパースされる場合、文字列による推論をスキップ
+
+<div id="mcp-server-improvements">
+  ## MCPサーバーの改善
+</div>
+
+*デモ: [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/aIy1zfmlz3Y" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+今週はMCPに関する複数の改善がリリースされました。イベントパターンのバケット化とスコアリングの改善、エラーヒントの改善、共通ヘルパーの整理などです。さらに、製品名に合わせて、ツールのプレフィックスも `hyperdx_` から `clickstack_` にリネームされました。
+
+**関連PR:** [#2337](https://github.com/hyperdxio/hyperdx/pull/2337) feat(mcp): MCPツールの品質を改善 — エラーヒント、共通ヘルパー、メッセージの改善、[#2396](https://github.com/hyperdxio/hyperdx/pull/2396) refactor(mcp): ツールのプレフィックスを hyperdx&#95; から clickstack&#95; にリネーム、[#2343](https://github.com/hyperdxio/hyperdx/pull/2343) feat(mcp): patch&#95;dashboard、get&#95;dashboard&#95;tile、search&#95;dashboards ツールを追加、[#2418](https://github.com/hyperdxio/hyperdx/pull/2418) fix(mcp): 読みやすいグラフ凡例のためにエイリアスの説明と例を改善、[#2412](https://github.com/hyperdxio/hyperdx/pull/2412) refactor: 共通ヘルパーとスキーマレベルのチェックにより MCP ObjectId の検証を簡素化
+
+<div id="new-series-color-palette">
+  ## 新しい系列カラーパレット
+</div>
+
+*[@elizabetdev](https://github.com/elizabetdev) によるデモ*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/YzECP3diWvg" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Elizabet は、Alex による カラーピッカー の対応を支える一環として、HyperDX と ClickStack の両テーマでデータ可視化のカラーパレットを統一する作業に取り組みました。これまで 2 つのテーマは別々のパレットを持ち、それぞれに例外ルールもあったため、色の扱いを把握・調整するのが不必要に複雑になっていました。目標は、両方のテーマで使える単一のパレットを作ることでした。
+
+彼女は、コントラストとアクセシビリティを確認するために色覚シミュレーションツールを使い、業界標準のパレット (Tableau、Observable、IBM) と比較検証しました。ClickHouse のパレットは結果が芳しくなく、緑色が白い背景では十分なコントラストを確保できていませんでした。Tableau と Observable も、それぞれ少なくとも 1 項目で基準を満たしませんでした。IBM のパレットはすべてのチェックを通過したものの、色数が 5 色しかなく、それでは不十分です。総合的には Observable のパレットが最も近く、青をわずかに調整したうえで、今後は両テーマで共通利用されることになりました。
+
+**関連 PR:** [#2362](https://github.com/hyperdxio/hyperdx/pull/2362) refactor(theme): rename chart palette tokens to hue names + unify across themes
+
+<div id="new-page-layout-with-sticky-header">
+  ## スティッキーヘッダー対応の新しいページレイアウト
+</div>
+
+*[@elizabetdev](https://github.com/elizabetdev) によるデモ*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/e7d3ocqi4Ac" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+新しい PageHeader と PageLayout のコンポーネントの組み合わせが、dashboards、service map、Client Sessions、Kubernetes、ClickHouse dashboard など、主要なすべてのページに導入されました。これにより、すべてのページで余白、ヘッダー下の区切り線、タイトル構成が統一されました。以前はページごとにばらつきがあり、左側にタイトル、右側に操作項目があるページもあれば、タイトル自体がないページもありました。
+
+スティッキー動作は prop で有効化するオプトイン方式です。sticky slot に渡した内容は、スクロールしてもヘッダーの下に固定されたままになり、それ以外の部分は通常どおりスクロールします。何も渡さない場合は、breadcrumbs またはページオプションのみが自動的にスティッキーになります。
+
+**関連 PR:** [#2282](https://github.com/hyperdxio/hyperdx/pull/2282) PageHeader/PageLayout を追加して Sessions を移行, [#2345](https://github.com/hyperdxio/hyperdx/pull/2345) リストページで PageHeader の title を使用, [#2346](https://github.com/hyperdxio/hyperdx/pull/2346) Service Map を PageLayout に移行, [#2347](https://github.com/hyperdxio/hyperdx/pull/2347) Kubernetes dashboard を PageLayout に移行, [#2348](https://github.com/hyperdxio/hyperdx/pull/2348) ClickHouse dashboard を PageLayout に移行, [#2364](https://github.com/hyperdxio/hyperdx/pull/2364) feat(dashboard): スティッキーなクエリツールバー付きの PageLayout へ移行, [#2394](https://github.com/hyperdxio/hyperdx/pull/2394) fix(PageHeader): スティッキーヘッダーがドロワーのオーバーレイの下に維持されるよう修正
+
+<div id="new-datasource-selector-and-color-picking-for-series">
+  ## 新しいデータソースセレクターと系列の色選択
+</div>
+
+*デモ: [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/DKfJs9onl50" title="YouTube動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+AlexによるUIの改善が2つあります。データソースセレクターは整理され、クリックすると選択候補のデータソースだけが表示されるようになりました。スキーマの表示や新しいログソースの作成といった管理操作は、別のケバブメニューに移されています。これにより選択と設定が分離され、以前からの懸案だった点が解消されるとともに、チームからのフィードバックにも対応しています。
+
+Numberタイルには、メトリクスに特定の色を割り当てられる固定色用のカラーピッカーも追加されました。条件付きの色ルール (しきい値やカラムに応じて赤、緑、黄色に変わる機能) も現在開発中です。Elizabetの統一パレットが導入されれば、どちらも現在の「色 1、2、3」というラベルではなく、適切な名前の付いた色を使うようになります。これは、Grafanaのようなツールから移行してきたユーザーにとっても、わかりやすい改善になるはずです。
+
+**関連PR:** [#2365](https://github.com/hyperdxio/hyperdx/pull/2365) feat(source-picker): chip + kebab menu UX, [#2265](https://github.com/hyperdxio/hyperdx/pull/2265) feat(app): number tile static color picker
+
+<div id="better-hints-for-dashboard-actions">
+  ## ダッシュボードアクションのヒントを改善
+</div>
+
+*デモ担当 [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/yQaKMSXp8YA" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ダッシュボードのテーブルタイルの行で、ホバー時の表示がより分かりやすく、実用的になりました。マウスオーバーするとカーソルとアイコンが変化し、クリック時の動作が分かるようになります。リンク先のダッシュボードを開くのか、ログソースにドリルダウンするのかが一目で分かります。この変更以前は、行がクリック可能であること自体が分かりにくく、クリックすると何が起きるのかはなおさら伝わりませんでした。
+
+**関連PR:** [#2321](https://github.com/hyperdxio/hyperdx/pull/2321) feat(app): ダッシュボードのテーブルタイル行クリックに、ホバー時のヒントとネイティブなリンクの見た目を追加

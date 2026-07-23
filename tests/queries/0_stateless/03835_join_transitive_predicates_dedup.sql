@@ -1,6 +1,7 @@
 -- Tests for predicate deduplication and multiple independent equivalence classes.
 SET explain_query_plan_default = 'legacy';
 
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET allow_experimental_analyzer = 1;
 SET query_plan_optimize_join_order_limit = 10;
 SET use_statistics = 1;
