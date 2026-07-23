@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-shared-merge-tree, no-object-storage, no-parallel-replicas
+# Tags: long, no-fasttest, no-shared-merge-tree, no-object-storage, no-parallel-replicas
 
 # Regression test for a data-loss bug: writeColumns rewrites columns.txt in place (no atomic rename,
 # no fsync), so an interrupted rewrite plus a power loss can leave a zero-byte columns.txt in a
@@ -36,29 +36,31 @@ run_case()
     ${CLICKHOUSE_CLIENT} --query "SELECT throwIf(substring('${data_path}', 1, 1) != '/', 'Path is relative: ${data_path}')" > /dev/null || exit 1
 
     echo "-- ${table}: rows before"
-    ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${table}"
+    ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(a), sum(cityHash64(s)) FROM ${table}"
 
     # Empty (zero-byte) columns.txt must not brick the part.
     ${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${table}"
     : > "${data_path}columns.txt"
     ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE ${table}" 2>/dev/null
     echo "-- ${table}: rows after empty columns.txt reload"
-    ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${table}"
+    ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(a), sum(cityHash64(s)) FROM ${table}"
 
     # Persistence proof (server-side, no stat of the live part): reload the part from disk. A rebuild
     # that only lived in memory would leave columns.txt empty and brick on this reload, so a reload
-    # that still returns all rows proves recovery persisted a valid columns.txt to disk.
+    # that still returns the same digest proves recovery persisted a valid columns.txt to disk. The
+    # per-column digest (not just count()) also catches a recovery that keeps the row count but drops
+    # a physical column, which would then read back as all-default values.
     ${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${table}"
     ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE ${table}" 2>/dev/null
     echo "-- ${table}: rows after recovered reload"
-    ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${table}"
+    ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(a), sum(cityHash64(s)) FROM ${table}"
 
     # Absent columns.txt must still self-heal (regression guard for the pre-existing path).
     ${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${table}"
     rm -f "${data_path}columns.txt"
     ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE ${table}" 2>/dev/null
     echo "-- ${table}: rows after absent columns.txt reload"
-    ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${table}"
+    ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(a), sum(cityHash64(s)) FROM ${table}"
 
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${table}"
 }

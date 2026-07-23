@@ -1,27 +1,27 @@
 -- t_empty_columns: rows before
-1000
+1000	499500	12688800205083956790
 -- t_empty_columns: rows after empty columns.txt reload
-1000
+1000	499500	12688800205083956790
 -- t_empty_columns: rows after recovered reload
-1000
+1000	499500	12688800205083956790
 -- t_empty_columns: rows after absent columns.txt reload
-1000
+1000	499500	12688800205083956790
 -- t_empty_columns_bn: rows before
-1000
+1000	499500	12444261028201855304
 -- t_empty_columns_bn: rows after empty columns.txt reload
-1000
+1000	499500	12444261028201855304
 -- t_empty_columns_bn: rows after recovered reload
-1000
+1000	499500	12444261028201855304
 -- t_empty_columns_bn: rows after absent columns.txt reload
-1000
+1000	499500	12444261028201855304
 -- t_empty_columns_ld: rows before
-500
+500	250000	6753304225218678229
 -- t_empty_columns_ld: rows after empty columns.txt reload
-500
+500	250000	6753304225218678229
 -- t_empty_columns_ld: rows after recovered reload
-500
+500	250000	6753304225218678229
 -- t_empty_columns_ld: rows after absent columns.txt reload
-500
+500	250000	6753304225218678229
 -- t_empty_columns_tuple: value digest before
 999000
 -- t_empty_columns_tuple: value digest after empty columns.txt reload
