@@ -38,6 +38,26 @@ public:
     String operator() (const bool & x) const;
 };
 
+/** Same as FieldVisitorToString, but escapes string literals using PostgreSQL rules
+  * (single quotes are doubled: 'a''b', not backslash-escaped), and recurses into
+  * containers with the same escaping. Used when pushing predicates down to a
+  * PostgreSQL source, where backslash escaping is unsafe under standard_conforming_strings.
+  */
+class FieldVisitorToStringPostgreSQL : public StaticVisitor<String>
+{
+public:
+    template <typename T>
+    String operator() (const T & x) const { return regular(x); }
+
+    String operator() (const String & x) const;
+    String operator() (const Array & x) const;
+    String operator() (const Tuple & x) const;
+    String operator() (const Map & x) const;
+
+private:
+    FieldVisitorToString regular;
+};
+
 /// Get value from field and convert it to string.
 /// Also remove quotes from strings.
 String convertFieldToString(const Field & field);

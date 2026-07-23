@@ -142,6 +142,23 @@ static void checkOld(
     EXPECT_EQ(transformed_query, expected) << query;
 }
 
+/// Transforms with PostgreSQL literal escaping, so we can assert single quotes are doubled.
+static std::string transformWithPostgreSQLEscaping(const State & state, size_t table_num, const std::string & query)
+{
+    ParserSelectQuery parser;
+    ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
+    SelectQueryInfo query_info;
+    SelectQueryOptions select_options;
+    query_info.syntax_analyzer_result
+        = TreeRewriter(state.context).analyzeSelect(ast, DB::TreeRewriterResult(state.getColumns(0)), select_options, state.getTables(table_num));
+    query_info.query = ast;
+    return transformQueryForExternalDatabase(
+        query_info,
+        query_info.syntax_analyzer_result->requiredSourceColumns(),
+        state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
+        LiteralEscapingStyle::PostgreSQL, "test", "table", state.context);
+}
+
 /// Required for transformQueryForExternalDatabase. In real life table expression is calculated via planner.
 /// But in tests we can just find it in JOIN TREE.
 static QueryTreeNodePtr findTableExpression(const QueryTreeNodePtr & node, const String & table_name)
@@ -475,4 +492,23 @@ TEST(TransformQueryForExternalDatabase, UUIDColumn)
     check(state, 1, {"uuid_col"},
           "SELECT uuid_col FROM table WHERE uuid_col = toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AND uuid_col > toUUID('12345678-1234-1234-1234-123456789012')",
           R"(SELECT "uuid_col" FROM "test"."table" WHERE "uuid_col" = '61f0c404-5cb3-11e7-907b-a6006ad3dba0')");
+}
+
+TEST(TransformQueryForExternalDatabase, PostgreSQLEscapingInList)
+{
+    const State & state = State::instance();
+    state.context->setSetting("external_table_strict_query", false);
+
+    /// A multi-element IN-list is pushed down as a Tuple. Its string elements must be escaped with
+    /// PostgreSQL rules (single quotes doubled), never backslash-escaped - otherwise a value with a
+    /// quote breaks out of the literal under standard_conforming_strings (CVE-2025-1520 class).
+    /// See https://github.com/ClickHouse/clickhouse-private/issues/65381
+    EXPECT_EQ(
+        transformWithPostgreSQLEscaping(state, 1, "SELECT field FROM table WHERE field IN ('a''b', 'c')"),
+        R"(SELECT "field" FROM "test"."table" WHERE "field" IN ('a''b', 'c'))");
+
+    /// Row/tuple IN-lists nest the strings one level deeper; escaping must still propagate.
+    EXPECT_EQ(
+        transformWithPostgreSQLEscaping(state, 1, "SELECT field, value FROM table WHERE (field, value) IN (('a''b', 'x'), ('y', 'z'))"),
+        R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN (('a''b', 'x'), ('y', 'z')))");
 }
