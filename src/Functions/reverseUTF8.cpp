@@ -23,7 +23,8 @@ namespace
   */
 struct ReverseUTF8Impl
 {
-    static constexpr bool can_throw = false;
+    /// Rejects FixedString at execution.
+    static constexpr bool can_throw = true;
 
     static void vector(
         const ColumnString::Chars & data,

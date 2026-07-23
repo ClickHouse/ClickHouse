@@ -636,7 +636,10 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool canThrowImpl(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments) const override
+    {
+        return !isNativeInteger(arguments[1].type);
+    }
 
     size_t getNumberOfArguments() const override { return 2; }
 

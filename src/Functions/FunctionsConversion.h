@@ -3069,8 +3069,13 @@ public:
                 || which.isTime() || which.isTime64() || which.isUUID() || which.isIPv4() || which.isIPv6());
         }
 
-        return !(IsDataTypeDateOrDateTime<ToDataType> && isNumber(*from)
-            && settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
+        /// Converting a number to Date/Date32/DateTime only clamps the range, so it throws only
+        /// when date_time_overflow_behavior is 'throw'.
+        if constexpr (std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>
+            || std::is_same_v<ToDataType, DataTypeDateTime>)
+            return !isNumber(*from) || settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw;
+
+        return true;
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
