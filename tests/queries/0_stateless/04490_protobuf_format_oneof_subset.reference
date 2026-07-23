@@ -14,3 +14,6 @@ outer_string2		no
 >> empty_additive_forward_compat
 unknown
 >> empty_rejected_missing_omitted_marker
+>> empty_only_omitted_marker_not_supported
+>> empty_only_omitted_marker_with_other_columns
+id2	unknown

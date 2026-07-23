@@ -107,3 +107,27 @@ SELECT '>> empty_rejected_missing_omitted_marker';
 CREATE TABLE oneof_empty_no_zero_04490 ( type Enum8('nothing'=1) ) Engine=MergeTree ORDER BY tuple();
 INSERT INTO oneof_empty_no_zero_04490 from INFILE '$CURDIR/data_protobuf/RecordTotallyEmpty' SETTINGS format_schema='$SCHEMADIR/04046_empty_record.proto:Record' FORMAT ProtobufSingle; -- { clientError DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD }
 EOF
+
+# (i) Unsupported shape: when the message contains only empty-message oneof branches and the
+#     table keeps only the presence column, `Enum8('unknown'=0)` is still insufficient today.
+#     No empty branch gets a wrapper, so serializer construction fails with
+#     NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS.
+$CLICKHOUSE_CLIENT <<EOF
+SET input_format_protobuf_oneof_presence=1;
+DROP TABLE IF EXISTS oneof_empty_only_zero_04490;
+SELECT '>> empty_only_omitted_marker_not_supported';
+CREATE TABLE oneof_empty_only_zero_04490 ( type Enum8('unknown'=0) ) Engine=MergeTree ORDER BY tuple();
+INSERT INTO oneof_empty_only_zero_04490 from INFILE '$CURDIR/data_protobuf/RecordTotallyEmpty' SETTINGS format_schema='$SCHEMADIR/04046_empty_record.proto:Record' FORMAT ProtobufSingle; -- { clientError NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS }
+EOF
+
+# (j) The `Enum8('unknown'=0)` limitation is specific to the presence-only shape above. If the
+#     message also has some other mapped field, serializer construction succeeds and an unmatched
+#     empty-message branch is read as omitted.
+$CLICKHOUSE_CLIENT <<EOF
+SET input_format_protobuf_oneof_presence=1;
+DROP TABLE IF EXISTS oneof_empty_only_zero_with_id_04490;
+SELECT '>> empty_only_omitted_marker_with_other_columns';
+CREATE TABLE oneof_empty_only_zero_with_id_04490 ( id String, type Enum8('unknown'=0) ) Engine=MergeTree ORDER BY tuple();
+INSERT INTO oneof_empty_only_zero_with_id_04490 from INFILE '$CURDIR/data_protobuf/RecordEmpty' SETTINGS format_schema='$SCHEMADIR/04046_record.proto:Record' FORMAT ProtobufSingle;
+SELECT id, type FROM oneof_empty_only_zero_with_id_04490 FORMAT TSV;
+EOF
