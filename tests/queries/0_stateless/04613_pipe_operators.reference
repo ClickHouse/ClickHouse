@@ -87,6 +87,11 @@ charlie	300
 -- An INSERT-scoped WITH stays visible in the pipe operators
 alice	100
 alice	250
+-- SAMPLE with OFFSET requires an explicit SELECT in the FROM-first form
+8
+9
+0
+1
 -- The resulting AST is the same as with nested subqueries
 SELECT * FROM (SELECT * FROM (SELECT customer, sum(amount) AS total FROM (SELECT * FROM (SELECT * FROM orders) WHERE equals(cancelled, 0)) GROUP BY customer) ORDER BY total DESC) LIMIT 3
 SELECT * FROM (SELECT * EXCEPT cancelled FROM (SELECT * REPLACE (plus(amount, 1) AS amount) FROM (SELECT * FROM orders))) AS t ALL LEFT JOIN big_orders AS b USING (customer)

@@ -89,6 +89,16 @@ CREATE TABLE filtered_orders (customer String, amount UInt64) ENGINE = MergeTree
 WITH 100 AS lo, 300 AS hi INSERT INTO filtered_orders FROM orders |> WHERE amount >= lo |> WHERE amount < hi |> SELECT customer, amount;
 FROM filtered_orders ORDER BY customer, amount;
 
+SELECT '-- SAMPLE with OFFSET requires an explicit SELECT in the FROM-first form';
+DROP TABLE IF EXISTS sampled;
+CREATE TABLE sampled (id UInt64) ENGINE = MergeTree ORDER BY intHash32(id) SAMPLE BY intHash32(id);
+INSERT INTO sampled SELECT number FROM numbers(10);
+FROM sampled SAMPLE 1 SELECT * ORDER BY id OFFSET 8;
+FROM sampled SAMPLE 1 OFFSET 0 SELECT * ORDER BY id LIMIT 2;
+FROM sampled SAMPLE 1 OFFSET 0; -- { clientError SYNTAX_ERROR }
+FROM sampled SAMPLE 1 OFFSET 0 |> LIMIT 1; -- { clientError SYNTAX_ERROR }
+DROP TABLE sampled;
+
 -- The following sections require the analyzer: the old analyzer does not support WITH RECURSIVE
 -- and column alias lists on subqueries, and it expands asterisks in EXPLAIN SYNTAX.
 SET enable_analyzer = 1;

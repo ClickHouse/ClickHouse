@@ -4,6 +4,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IParserBase.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -168,6 +169,23 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     bool has_select_keyword = s_select.ignore(pos, expected);
     if (!has_select_keyword && tables)
     {
+        /// FROM t SAMPLE 1/10 OFFSET 5 is ambiguous when SELECT is omitted: the OFFSET has already been
+        /// consumed as the SAMPLE offset, while in the explicit form FROM t SAMPLE 1/10 SELECT * OFFSET 5
+        /// it is a query-level OFFSET (the formatter of ASTSelectQuery relies on the explicit form to
+        /// disambiguate). Reject the omitted-SELECT form for this shape and require an explicit SELECT.
+        for (const auto & child : tables->children)
+        {
+            if (const auto * tables_element = child->as<ASTTablesInSelectQueryElement>())
+            {
+                if (tables_element->table_expression
+                    && tables_element->table_expression->as<ASTTableExpression &>().sample_offset)
+                {
+                    expected.add(pos, "SELECT (it cannot be omitted when the table has SAMPLE with OFFSET)");
+                    return false;
+                }
+            }
+        }
+
         /// A query that starts with the FROM clause can omit SELECT - then it is equivalent to SELECT *.
         /// This form is mostly used in queries with pipe operators: FROM t |> WHERE x |> LIMIT 1.
         auto asterisk_list = make_intrusive<ASTExpressionList>();

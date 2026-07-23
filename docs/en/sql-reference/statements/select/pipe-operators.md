@@ -50,6 +50,8 @@ FROM orders WHERE amount > 100;
 FROM orders |> WHERE amount > 100;
 ```
 
+The `SELECT` clause cannot be omitted when the table is sampled with an offset, because in `FROM t SAMPLE 1/10 OFFSET 5` the `OFFSET` belongs to `SAMPLE`, while in `FROM t SAMPLE 1/10 SELECT * OFFSET 5` it is a query-level `OFFSET` - the explicit `SELECT` is required to disambiguate the two.
+
 ## Operators {#operators}
 
 ### WHERE {#where}
