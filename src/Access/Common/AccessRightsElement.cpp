@@ -187,7 +187,7 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer) const
                     buffer << "*";
                 else
                 {
-                    if (hasFilter() && is_enabled_read_write_grants)
+                    if (hasFilter())
                         formatFilter(buffer);
                 }
             }
