@@ -144,15 +144,14 @@ void RabbitMQSource::updateChannel()
     consumer->updateChannel(storage.getConnection());
 }
 
+uint64_t RabbitMQSource::driveBudgetMs() const
+{
+    return max_execution_time_ms ? max_execution_time_ms : DEFAULT_LOOP_DRIVE_WAIT_MS;
+}
+
 bool RabbitMQSource::driveLoopUntilMessage()
 {
-    /// Absolute drive budget for THIS source, started on its first empty poll. It is not the shared
-    /// construction-time `total_stopwatch` (all sources are constructed together, so the first would
-    /// spend a shared budget and starve the serially-run rest) and it is not reset per poll (that would
-    /// let a steadily-fed queue keep the single worker past the cycle interval and stall other tables).
-    if (!drive_stopwatch)
-        drive_stopwatch.emplace(CLOCK_MONOTONIC_COARSE);
-    const uint64_t drive_budget_ms = max_execution_time_ms ? max_execution_time_ms : DEFAULT_LOOP_DRIVE_WAIT_MS;
+    const uint64_t drive_budget_ms = driveBudgetMs();
 
     auto is_cancelled = [this]{ return storage.isConsumeCancelRequested(cancel_epoch); };
     auto & handler = storage.getConnection().getHandler();
@@ -160,7 +159,8 @@ bool RabbitMQSource::driveLoopUntilMessage()
     {
         if (consumer->isConsumerStopped() || is_cancelled())
             return false;
-        if (drive_stopwatch->elapsedMilliseconds() >= drive_budget_ms)
+        const uint64_t elapsed_ms = drive_stopwatch->elapsedMilliseconds();
+        if (elapsed_ms >= drive_budget_ms)
             return false;
 
         /// Drive the AMQP event loop on this worker instead of parking on the consumer's condition
@@ -169,7 +169,7 @@ bool RabbitMQSource::driveLoopUntilMessage()
         /// iterateLoop() is a no-op when the looping task already owns the loop (try_lock).
         handler.iterateLoop();
         if (!consumer->hasPendingMessages())
-            consumer->waitForMessages(LOOP_DRIVE_POLL_MS, is_cancelled);
+            consumer->waitForMessages(std::min(LOOP_DRIVE_POLL_MS, drive_budget_ms - elapsed_ms), is_cancelled);
     }
 
     return true;
@@ -216,6 +216,11 @@ Chunk RabbitMQSource::generateImpl()
     /// Currently it is one time usage source: to make sure data is flushed
     /// strictly by timeout or by block size.
     is_finished = true;
+
+    /// Start the self-driving cycle deadline now, so it bounds the whole cycle regardless of whether any
+    /// poll returns rows (a steady backlog otherwise never re-enters driveLoopUntilMessage).
+    if (drive_loop_on_worker)
+        drive_stopwatch.emplace(CLOCK_MONOTONIC_COARSE);
 
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
     EmptyReadBuffer empty_buf;
@@ -401,15 +406,16 @@ Chunk RabbitMQSource::generateImpl()
 
         bool is_time_limit_exceeded = false;
         UInt64 remaining_execution_time = 0;
-        /// The self-driving REFRESH path bounds itself per empty poll (see driveLoopUntilMessage), so it
-        /// ignores the shared construction-time budget, which the first of several sibling sources would
-        /// otherwise exhaust for the rest.
-        if (max_execution_time_ms && !drive_loop_on_worker)
+        /// The self-driving REFRESH path is bounded by its own per-source drive_stopwatch/driveBudgetMs
+        /// (a steady backlog never re-enters driveLoopUntilMessage, so the deadline must be checked here
+        /// too); the normal path uses the shared construction-time total_stopwatch vs the flush interval.
+        const uint64_t budget_ms = drive_loop_on_worker ? driveBudgetMs() : max_execution_time_ms;
+        if (budget_ms)
         {
-            uint64_t elapsed_time_ms = total_stopwatch.elapsedMilliseconds();
-            is_time_limit_exceeded = max_execution_time_ms <= elapsed_time_ms;
+            uint64_t elapsed_time_ms = (drive_loop_on_worker ? *drive_stopwatch : total_stopwatch).elapsedMilliseconds();
+            is_time_limit_exceeded = budget_ms <= elapsed_time_ms;
             if (!is_time_limit_exceeded)
-                remaining_execution_time = max_execution_time_ms - elapsed_time_ms;
+                remaining_execution_time = budget_ms - elapsed_time_ms;
         }
 
         if (total_rows >= max_block_size || consumer->isConsumerStopped() || is_time_limit_exceeded)

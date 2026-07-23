@@ -68,8 +68,7 @@ private:
 
     uint64_t max_execution_time_ms = 0;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
-    /// Absolute drive budget for the self-driving REFRESH path, started on this source's first empty
-    /// poll (see driveLoopUntilMessage).
+    /// Per-source deadline for the self-driving REFRESH cycle (see driveLoopUntilMessage).
     std::optional<Stopwatch> drive_stopwatch;
 
     RabbitMQConsumer::CommitInfo commit_info;
@@ -90,6 +89,10 @@ private:
         bool drive_loop_on_worker_ = false);
 
     Chunk generateImpl();
+
+    /// Absolute budget bounding the whole self-driving REFRESH cycle: the flush interval when set, else
+    /// a finite default (the flush interval may be 0, i.e. no per-cycle time budget).
+    uint64_t driveBudgetMs() const;
 
     /// Drive the AMQP loop on this worker until a message is pending (bounded, cancel-aware).
     /// Returns true if a message is now pending, false if it timed out / was cancelled / stopped.
