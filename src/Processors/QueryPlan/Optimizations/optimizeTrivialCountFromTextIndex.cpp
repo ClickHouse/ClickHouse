@@ -189,7 +189,6 @@ bool guardsHold(const ReadFromMergeTree & reading)
     if (reading.isParallelReadingFromReplicas())
         return false;
 
-    /// A bucketed distributed read is re-optimized per worker fragment, and each bucket covers only a slice of a part's ranges.
     if (reading.getDistributedReadBucketCount() > 0)
         return false;
 
@@ -401,6 +400,9 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
     auto matched = matchSubtree(node);
     if (!matched)
         return false;
+
+    if (!matched->reading->getAnalyzedResult())
+        matched->reading->setAnalyzedResult(matched->reading->selectRangesToRead());
 
     if (!guardsHold(*matched->reading))
         return false;
