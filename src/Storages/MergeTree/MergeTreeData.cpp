@@ -1311,15 +1311,15 @@ void MergeTreeData::setProperties(
         allow_nullable_key,
         local_context);
 
-    setInMemoryMetadata(new_metadata);
-
+    {
+        /// Publish the new metadata and clear the cache of effective sorting keys atomically.
+        std::lock_guard lock(patch_parts_sorting_keys_mutex);
+        setInMemoryMetadata(new_metadata);
+        patch_parts_sorting_keys_cache.clear();
+    }
     {
         std::lock_guard lock(patch_parts_metadata_mutex);
         patch_parts_metadata_cache.clear();
-    }
-    {
-        std::lock_guard lock(patch_parts_sorting_keys_mutex);
-        patch_parts_sorting_keys_cache.clear();
     }
 }
 
