@@ -180,6 +180,27 @@ def main():
     # "Merge only for releases" ruleset on release-pattern branches
     # (refs/heads/[0-9][0-9].[0-9]*)? The push only needs HEAD, not any history,
     # so run it here — before the slow `--unshallow` fetch — and stop.
+    # We only need 30.12's tip, not the whole history, so fetch just that one ref
+    # shallowly (not the slow `--unshallow`). Then build a *fast-forward* update:
+    # an empty commit on top of 30.12's tip. A plain (non-force) fast-forward push
+    # is exactly what the real release does to a release branch, so it reaches the
+    # server-side ruleset — whereas pushing our unrelated shallow HEAD is rejected
+    # client-side as non-fast-forward before the ruleset is ever consulted. The
+    # commit is empty, so nothing is destroyed: if the rule allows the push, 30.12
+    # merely gains one no-op commit; if it blocks it, 30.12 is untouched.
+    Shell.check(
+        "git fetch --depth=1 --no-recurse-submodules origin"
+        " +refs/heads/30.12:refs/remotes/origin/30.12",
+        strict=True,
+        verbose=True,
+    )
+    Shell.check(
+        "git checkout -q --detach refs/remotes/origin/30.12"
+        " && git -c user.email=robot@clickhouse.com -c user.name=robot"
+        " commit --allow-empty -m 'ruleset push test'",
+        strict=True,
+        verbose=True,
+    )
     # Authenticate with the PAT via the x-access-token URL syntax. The token is a
     # literal ${ROBOT_CLICKHOUSE_COMMIT_TOKEN} that the shell expands at run time,
     # so praktika's verbose command logging never prints its value. Clear
@@ -187,7 +208,7 @@ def main():
     # credentials (our PAT), not the checkout GITHUB_TOKEN, authenticate the push.
     print(
         "=== ROBOT-TOKEN PUSH TEST (ROBOT_CLICKHOUSE_COMMIT_TOKEN via "
-        "x-access-token): push HEAD -> refs/heads/30.12 ==="
+        "x-access-token): fast-forward push -> refs/heads/30.12 ==="
     )
     push_ok = Shell.check(
         "git -c http.https://github.com/.extraheader= push"
