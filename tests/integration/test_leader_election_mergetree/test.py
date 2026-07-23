@@ -1,3 +1,4 @@
+import io
 import logging
 import random
 import threading
@@ -1071,6 +1072,114 @@ def test_cleanup_skipped_on_stale_lease_after_partition_ddl(started_cluster):
             node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
         except Exception:
             pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
+
+
+SHARED_UUID_BROKEN = "12345678-abcd-abcd-abcd-12345678ab09"
+
+
+def find_part_object_key_prefix(uuid, part_name):
+    """Locate the S3 key prefix of a part directory on the `plain_rewritable` disk.
+
+    The disk stores each logical directory under a random remapped prefix:
+    `data/__meta/<prefix>/prefix.path` holds the logical directory path, and the
+    directory's files live flat under `data/<prefix>/`.
+    """
+    for obj in cluster.minio_client.list_objects(
+        cluster.minio_bucket, "data/__meta/", recursive=True
+    ):
+        if not obj.object_name.endswith("/prefix.path"):
+            continue
+        response = cluster.minio_client.get_object(
+            cluster.minio_bucket, obj.object_name
+        )
+        try:
+            content = response.read().decode().strip()
+        finally:
+            response.close()
+            response.release_conn()
+        if uuid in content and content.rstrip("/").endswith("/" + part_name):
+            return obj.object_name.replace("__meta/", "", 1)[: -len("prefix.path")]
+    return None
+
+
+def test_broken_part_detached_on_takeover(started_cluster):
+    """
+    Regression test: a broken part whose cleanup was skipped by the read-only pre-lease
+    startup load must not livelock leadership acquisition.
+
+    Under `leader_election`, the startup part loaders run before the lease is acquired
+    and therefore load read-only (only the lease-holding leader may mutate shared
+    storage), so a broken part is left in place under its active name instead of being
+    detached. The takeover scan (`loadNewlyAppearedParts` with `strict_takeover`) then
+    rediscovers it; if it aborted the takeover unconditionally, every heartbeat retry
+    would hit the same part and the table would stay read-only forever. The new leader
+    must instead replay the skipped cleanup: detach the broken part as
+    `broken-on-start`, keep the intact parts, and enable writes.
+    """
+    ensure_node_up(node1)
+    table = "test_broken_takeover"
+    node1.query(
+        f"""
+        CREATE TABLE {table} UUID '{SHARED_UUID_BROKEN}' (x UInt64)
+        ENGINE = MergeTree ORDER BY x
+        SETTINGS {TABLE_SETTINGS}
+        """
+    )
+    try:
+        wait_for_leader([node1], table_name=table)
+
+        # Two separate parts; merges are stopped so the part we corrupt survives as-is
+        # until the server is stopped (`STOP MERGES` does not persist across restarts,
+        # but by then the part is already corrupted and skipped by loading).
+        node1.query(f"SYSTEM STOP MERGES {table}")
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
+        node1.query(f"INSERT INTO {table} VALUES (4), (5)")
+
+        part_name = node1.query(
+            f"SELECT name FROM system.parts WHERE database = currentDatabase()"
+            f" AND table = '{table}' AND active AND rows = 2"
+        ).strip()
+        assert part_name, "Could not find the two-row part to corrupt"
+
+        node1.stop_clickhouse()
+
+        # Corrupt the part on shared storage while the server is down, so the next
+        # startup's pre-lease part loading classifies it as broken.
+        key_prefix = find_part_object_key_prefix(SHARED_UUID_BROKEN, part_name)
+        assert key_prefix, f"Could not locate part {part_name} on the object storage"
+        payload = b"broken by test_broken_part_detached_on_takeover"
+        started_cluster.minio_client.put_object(
+            started_cluster.minio_bucket,
+            key_prefix + "checksums.txt",
+            io.BytesIO(payload),
+            len(payload),
+        )
+
+        node1.start_clickhouse()
+
+        # Without the takeover-time cleanup this times out: every heartbeat rediscovers
+        # the broken part, aborts the takeover, and the table stays read-only.
+        wait_for_leader([node1], table_name=table)
+
+        # The intact part survived and the corrupted one is out of the active set ...
+        assert (
+            node1.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").strip()
+            == "1\n2\n3"
+        )
+
+        # ... and was detached rather than silently dropped.
+        detached = node1.query(
+            f"SELECT name FROM system.detached_parts WHERE database = currentDatabase()"
+            f" AND table = '{table}'"
+        ).strip()
+        assert "broken-on-start" in detached, (
+            f"Expected a broken-on-start detached part, got: {detached!r}"
+        )
+    finally:
         try:
             node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         except Exception:

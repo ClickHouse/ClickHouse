@@ -3110,6 +3110,10 @@ size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
     bool have_lightweight_in_parts = false;
     bool have_parts_with_version_metadata = false;
 
+    size_t suspicious_broken_parts = 0;
+    UInt64 suspicious_broken_parts_bytes = 0;
+    const auto settings = getSettings();
+
     for (const auto & my_part : parts_to_add)
     {
         auto res = loadDataPartWithRetries(
@@ -3120,11 +3124,48 @@ size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
         if (res.is_broken)
         {
             if (strict_takeover)
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Data part {} on shared storage is broken and cannot be loaded during leadership "
-                    "takeover; refusing to enable writes with an incomplete active set",
-                    res.part->name);
-            LOG_ERROR(log, "The new data part {} appears broken - skip loading", res.part->name);
+            {
+                /// A broken part discovered here is typically one whose detach was skipped by the
+                /// read-only pre-lease/follower startup loaders (`mayMutateSharedStorage`). Those
+                /// loaders are one-shot, so this scan is the deterministic point to replay the
+                /// skipped cleanup — the lease is held during the takeover callback, so detaching
+                /// on shared storage is permitted. Aborting the takeover instead would rediscover
+                /// the same broken part on every heartbeat retry and livelock leadership
+                /// acquisition, leaving the table permanently read-only. Bound the replay by the
+                /// same sanity limits as startup loading: mass breakage still fails the takeover
+                /// closed rather than silently detaching a large slice of the active set.
+                ++suspicious_broken_parts;
+                if (res.size_of_part)
+                    suspicious_broken_parts_bytes += *res.size_of_part;
+
+                if (suspicious_broken_parts > (*settings)[MergeTreeSetting::max_suspicious_broken_parts]
+                    || suspicious_broken_parts_bytes > (*settings)[MergeTreeSetting::max_suspicious_broken_parts_bytes])
+                    throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
+                        "Suspiciously many ({} parts, {} in total) broken parts on shared storage "
+                        "during leadership takeover, while the maximum allowed is {} parts / {}; "
+                        "refusing to enable writes (change `max_suspicious_broken_parts` / "
+                        "`max_suspicious_broken_parts_bytes` if this is expected)",
+                        suspicious_broken_parts,
+                        formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes),
+                        (*settings)[MergeTreeSetting::max_suspicious_broken_parts].value,
+                        formatReadableSizeWithBinarySuffix((*settings)[MergeTreeSetting::max_suspicious_broken_parts_bytes].value));
+
+                LOG_ERROR(log, "Detaching broken part {} discovered during leadership takeover", res.part->name);
+                res.part->renameToDetached("broken-on-start", /*ignore_error=*/ false); /// detached parts must not have '_' in prefixes
+            }
+            else
+                LOG_ERROR(log, "The new data part {} appears broken - skip loading", res.part->name);
+        }
+        else if (res.part->is_duplicate)
+        {
+            /// Same replay rationale as for broken parts above: a duplicate whose removal the
+            /// read-only startup loaders skipped. A follower (non-strict refresh) leaves it in
+            /// place; only the lease-holding leader may remove it from shared storage.
+            if (strict_takeover)
+            {
+                LOG_ERROR(log, "Removing duplicate part {} discovered during leadership takeover", res.part->getDataPartStorage().getFullPath());
+                res.part->remove();
+            }
         }
         else
         {

@@ -380,9 +380,13 @@ void StorageMergeTree::startup()
                     {
                         for (const auto & disk : getStoragePolicy()->getDisks())
                             disk->refresh(/* not_sooner_than_milliseconds= */ 0);
-                        /// Strict load: if any part written by the previous leader cannot be
-                        /// loaded, abort the takeover rather than enabling writes with an
-                        /// incomplete active set or advancing the block counter past a missing part.
+                        /// Strict load: broken/duplicate parts get the cleanup (detach/remove)
+                        /// that the read-only pre-lease and follower loaders skipped, replayed
+                        /// here under the held lease — bounded by `max_suspicious_broken_parts`,
+                        /// beyond which the takeover aborts rather than enabling writes having
+                        /// detached a suspiciously large slice of the active set. Unconditionally
+                        /// aborting on any broken part would livelock takeover: every heartbeat
+                        /// retry would rediscover the same part, keeping the table read-only.
                         size_t newly_loaded = loadNewlyAppearedParts(/* strict_takeover = */ true);
                         Int64 max_block_number = getMaxBlockNumber();
                         UInt64 next_block = std::max<UInt64>(increment.value.load(), static_cast<UInt64>(std::max<Int64>(0, max_block_number)));

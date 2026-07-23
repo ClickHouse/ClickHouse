@@ -714,11 +714,17 @@ public:
     /// `disk->refresh(...)` before this call when it needs the freshest view.
     /// Returns the number of newly loaded parts.
     ///
-    /// When `strict_takeover` is true (a `leader_election` leadership acquisition), a part that
-    /// cannot be loaded aborts the call with an exception instead of being skipped, so the new
-    /// leader never enables writes with an incomplete active set or advances the block-number
-    /// counter past a part it failed to load. The periodic follower refresh leaves it false and
-    /// stays best-effort.
+    /// When `strict_takeover` is true (a `leader_election` leadership acquisition), broken and
+    /// duplicate parts get the same treatment startup loading would have given them on a
+    /// standalone writer — detach ("broken-on-start") and remove respectively. The read-only
+    /// pre-lease/follower startup loaders (`mayMutateSharedStorage`) skip that cleanup and are
+    /// one-shot, so the takeover scan is where the skipped work is deterministically replayed,
+    /// now under a held lease. Aborting instead would livelock leadership acquisition on the
+    /// same broken part forever. The detaching is bounded by `max_suspicious_broken_parts` /
+    /// `max_suspicious_broken_parts_bytes`: mass breakage still aborts the takeover, so the new
+    /// leader never enables writes having detached a suspiciously large slice of the active set.
+    /// The periodic follower refresh leaves `strict_takeover` false and stays best-effort
+    /// read-only (a follower merely skips parts it cannot load).
     size_t loadNewlyAppearedParts(bool strict_takeover = false);
 
     /// Returns a pointer to primary index cache if it is enabled.
