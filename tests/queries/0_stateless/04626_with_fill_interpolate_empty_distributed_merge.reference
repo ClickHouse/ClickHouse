@@ -4,3 +4,12 @@
 6	1023
 8	1023
 10	1023
+--- empty INTERPOLATE, repeated destination name ---
+0	0	0
+0.5	0	0
+1	10	10
+1.5	10	10
+0	0	0
+0.5	0	0
+1	10	10
+1.5	10	10

@@ -21,3 +21,15 @@ SELECT n, inter FROM remote('127.0.0.1,127.0.0.2', view(
     SELECT number AS inter, toFloat32(number / 10) AS n FROM numbers(10) WHERE 0))
 ORDER BY n WITH FILL FROM 0 TO 6 STEP 2 INTERPOLATE (`inter` AS 1, `inter` AS 2)
 SETTINGS prefer_localhost_replica = 0; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+
+-- Empty INTERPOLATE () when two output columns resolve to the same block name (`a AS a, a AS a2`).
+-- InterpolateDescription used to list that destination twice, so FillingTransform appended to one
+-- output column twice per generated row and produced a ragged block. Must fill correctly on both
+-- analyzers (the old analyzer's empty-INTERPOLATE path was the reachable one).
+SELECT '--- empty INTERPOLATE, repeated destination name ---';
+SELECT n, a AS a, a AS a2 FROM (SELECT toFloat32(number) AS n, number * 10 AS a FROM numbers(2))
+ORDER BY n WITH FILL FROM 0 TO 2 STEP 0.5 INTERPOLATE ()
+SETTINGS enable_analyzer = 0;
+SELECT n, a AS a, a AS a2 FROM (SELECT toFloat32(number) AS n, number * 10 AS a FROM numbers(2))
+ORDER BY n WITH FILL FROM 0 TO 2 STEP 0.5 INTERPOLATE ()
+SETTINGS enable_analyzer = 1;

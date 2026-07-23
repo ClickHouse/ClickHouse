@@ -30,8 +30,12 @@ namespace DB
             if (const auto & p = aliases.find(name); p != aliases.end())
                 name = p->second->getColumnName();
 
-            result_columns_set.insert(name);
-            result_columns_order.push_back(name);
+            /// Several result columns may resolve to the same block name (e.g. `INTERPOLATE (x AS a, x AS a)`
+            /// or aliases collapsing to one column). `result_columns_order` must list each destination once:
+            /// FillingTransform maps every entry to a header position, and a repeated position makes it append
+            /// to the same output column twice per generated row, producing a ragged (non-rectangular) block.
+            if (result_columns_set.insert(name).second)
+                result_columns_order.push_back(name);
         }
     }
 }
