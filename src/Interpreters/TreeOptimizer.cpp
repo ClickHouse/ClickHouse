@@ -16,6 +16,7 @@
 #include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
 #include <Interpreters/RewriteCountVariantsVisitor.h>
 #include <Interpreters/ConvertStringsToEnumVisitor.h>
+#include <Interpreters/ConvertFunctionOrLikeVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
@@ -43,8 +44,11 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_hyperscan;
     extern const SettingsBool convert_query_to_cnf;
     extern const SettingsBool enable_positional_arguments;
+    extern const SettingsUInt64 max_hyperscan_regexp_length;
+    extern const SettingsUInt64 max_hyperscan_regexp_total_length;
     extern const SettingsBool optimize_aggregators_of_group_by_keys;
     extern const SettingsBool optimize_append_index;
     extern const SettingsBool optimize_arithmetic_operations_in_aggregate_functions;
@@ -56,6 +60,7 @@ namespace Setting
     extern const SettingsBool optimize_time_filter_with_preimage;
     extern const SettingsBool optimize_using_constraints;
     extern const SettingsBool optimize_redundant_functions_in_order_by;
+    extern const SettingsBool optimize_or_like_chain;
 }
 
 namespace ErrorCodes
@@ -581,6 +586,12 @@ void transformIfStringsIntoEnum(ASTPtr & query)
     ConvertStringsToEnumVisitor(convert_data).visit(query);
 }
 
+void optimizeOrLikeChain(ASTPtr & query)
+{
+    ConvertFunctionOrLikeVisitor::Data data = {};
+    ConvertFunctionOrLikeVisitor(data).visit(query);
+}
+
 }
 
 void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif, bool multiif_to_if)
@@ -711,8 +722,11 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     /// Remove duplicated columns from USING(...).
     optimizeUsing(select_query);
 
-    /// Note: `optimize_or_like_chain` is an analyzer-only optimization (`ConvertOrLikeChainPass`);
-    /// the old analyzer does not rewrite `OR LIKE` chains.
+    if (settings[Setting::optimize_or_like_chain] && settings[Setting::allow_hyperscan] && settings[Setting::max_hyperscan_regexp_length] == 0
+        && settings[Setting::max_hyperscan_regexp_total_length] == 0)
+    {
+        optimizeOrLikeChain(query);
+    }
 }
 
 }

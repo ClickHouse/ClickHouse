@@ -3,7 +3,6 @@
 
 #include <Core/Field.h>
 #include <Common/IntervalKind.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/IDataType.h>
 #include <Columns/Collator.h>
 
@@ -135,9 +134,9 @@ struct SortColumnDescriptionWithColumnIndex
 class CompiledSortDescriptionFunctionHolder;
 
 /// Description of the sorting rule for several columns.
-using SortDescriptionWithPositions = VectorWithMemoryTracking<SortColumnDescriptionWithColumnIndex>;
+using SortDescriptionWithPositions = std::vector<SortColumnDescriptionWithColumnIndex>;
 
-class SortDescription : public VectorWithMemoryTracking<SortColumnDescription>
+class SortDescription : public std::vector<SortColumnDescription>
 {
 public:
     /// Can be safely cast into JITSortDescriptionFunc

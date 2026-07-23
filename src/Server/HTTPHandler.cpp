@@ -27,7 +27,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
-#include <Common/maskSensitiveQueryParameters.h>
 #include <Common/SettingsChanges.h>
 #include <Common/StringUtils.h>
 #include <Common/scope_guard_safe.h>
@@ -91,42 +90,40 @@ namespace ErrorCodes
 
 namespace
 {
-void addHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
+bool tryAddHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
 {
-    if (!config.has("http_options_response"))
-        return;
-
-    Strings config_keys;
-    config.keys("http_options_response", config_keys);
-    for (const std::string & config_key : config_keys)
+    if (config.has("http_options_response"))
     {
-        if (config_key == "header" || config_key.starts_with("header["))
+        Strings config_keys;
+        config.keys("http_options_response", config_keys);
+        for (const std::string & config_key : config_keys)
         {
-            /// If there is empty header name, it will not be processed and message about it will be in logs
-            if (config.getString("http_options_response." + config_key + ".name", "").empty())
-                LOG_WARNING(getLogger("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
-            else
-                response.add(config.getString("http_options_response." + config_key + ".name", ""),
-                             config.getString("http_options_response." + config_key + ".value", ""));
+            if (config_key == "header" || config_key.starts_with("header["))
+            {
+                /// If there is empty header name, it will not be processed and message about it will be in logs
+                if (config.getString("http_options_response." + config_key + ".name", "").empty())
+                    LOG_WARNING(getLogger("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
+                else
+                    response.add(config.getString("http_options_response." + config_key + ".name", ""),
+                                 config.getString("http_options_response." + config_key + ".value", ""));
 
+            }
         }
+        return true;
     }
+    return false;
 }
 
 /// Process options request. Useful for CORS.
 void processOptionsRequest(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
 {
-    /// Add extra response headers (e.g. for CORS) when an `http_options_response` section is configured.
-    addHTTPOptionHeadersFromConfig(response, config);
-
-    /// Always answer an OPTIONS request, even when there is nothing to add from the config. Otherwise the
-    /// connection is closed without any HTTP response and the client sees an empty reply. The default
-    /// `clickhouse-server` config ships an `http_options_response` section, but `clickhouse-local` (which
-    /// typically runs without a config) does not, so without this the web UI (`/play`) reports the
-    /// connection as broken — its `OPTIONS` health-check fails — even though queries work.
-    response.setKeepAlive(false);
-    response.setStatusAndReason(HTTPResponse::HTTP_NO_CONTENT);
-    response.send();
+    /// If can add some headers from config
+    if (tryAddHTTPOptionHeadersFromConfig(response, config))
+    {
+        response.setKeepAlive(false);
+        response.setStatusAndReason(HTTPResponse::HTTP_NO_CONTENT);
+        response.send();
+    }
 }
 }
 
@@ -195,7 +192,7 @@ void HTTPHandler::processQuery(
 {
     using namespace Poco::Net;
 
-    LOG_TRACE(log, "Request URI: {}", maskSensitiveQueryParametersInURI(request.getURI()));
+    LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     if (!authenticateUser(request, params, response))
         return; // '401 Unauthorized' response with 'Negotiate' has been sent at this point.
@@ -354,9 +351,6 @@ void HTTPHandler::processQuery(
     bool enable_http_compression = params.getParsedLast<bool>("enable_http_compression", settings[Setting::enable_http_compression]);
     Int64 http_zlib_compression_level
         = params.getParsed<Int64>("http_zlib_compression_level", settings[Setting::http_zlib_compression_level]);
-    /// HTTP `Content-Encoding: snappy` is standardized to use the snappy framing format,
-    /// independent of the user-tunable `snappy_mode` (which controls generic `file()`/`url()` reads).
-    auto snappy_mode = SnappyMode::Framed;
 
     used_output.out_holder =
         std::make_shared<WriteBufferFromHTTPServerResponse>(
@@ -374,7 +368,6 @@ void HTTPHandler::processQuery(
             http_response_compression_method,
             static_cast<int>(http_zlib_compression_level),
             0,
-            snappy_mode,
             DBMS_DEFAULT_BUFFER_SIZE,
             nullptr,
             0,
@@ -439,8 +432,7 @@ void HTTPHandler::processQuery(
     auto in_post = wrapReadBufferWithCompressionMethod(
         wrapReadBufferPointer(request.getStream()),
         chooseCompressionMethod({}, http_request_compression_method_str),
-        zstd_window_log_max,
-        snappy_mode);
+        zstd_window_log_max);
     LOG_DEBUG(getLogger("HTTPServerRequest"), "creating in_post id {}", size_t(in_post.get()));
 
 
@@ -769,8 +761,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             context->getSettingsRef(),
             context->getOpenTelemetrySpanLog());
         thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
-        thread_trace_context->root_span.addAttribute(
-            "clickhouse.uri", [&] { return maskSensitiveQueryParametersInURI(request.getURI()); });
+        thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
         thread_trace_context->root_span.addAttribute("http.referer", request.get("Referer", ""));
         thread_trace_context->root_span.addAttribute("http.user.agent", request.get("User-Agent", ""));
         thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
@@ -780,7 +771,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
 
         if (!request.get("Origin", "").empty())
-            addHTTPOptionHeadersFromConfig(response, server.config());
+            tryAddHTTPOptionHeadersFromConfig(response, server.config());
 
         /// For keep-alive to work.
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
@@ -972,10 +963,7 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
 
     for (const auto & [header_name, regex] : header_name_with_capture_regexp)
     {
-        /// Use a defaulted lookup like `headersFilter` does: a missing header is treated as an empty string.
-        /// A header regex can match the empty string, so the rule may match a request without that header,
-        /// and reading it here without a default would raise an exception after the rule has already matched.
-        const auto header_value = request.get(header_name, "");
+        const auto & header_value = request.get(header_name);
         set_query_params(header_value.data(), header_value.data() + header_value.size(), regex);
     }
 

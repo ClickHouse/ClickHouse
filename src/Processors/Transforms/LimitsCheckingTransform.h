@@ -32,7 +32,6 @@ public:
     String getName() const override { return "LimitsCheckingTransform"; }
 
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota_) { quota = quota_; }
-    void setNormalizedQueryHash(UInt64 normalized_query_hash_) { normalized_query_hash = normalized_query_hash_; }
 
 protected:
     void transform(Chunk & chunk) override;
@@ -41,7 +40,6 @@ private:
     StreamLocalLimits limits;
 
     std::shared_ptr<const EnabledQuota> quota;
-    UInt64 normalized_query_hash = 0;
     UInt64 prev_elapsed = 0;
 
     ProcessorProfileInfo info;

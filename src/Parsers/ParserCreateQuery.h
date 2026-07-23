@@ -578,7 +578,6 @@ protected:
   *     INDEX name1 expr TYPE type1(args) GRANULARITY value,
   *     ...
   * ) ENGINE = engine
-  *   [DEFINER = {user_name | CURRENT_USER}] [SQL SECURITY {DEFINER | INVOKER | NONE}]
   *
   * Or:
   * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name [UUID 'uuid'] [ON CLUSTER cluster] AS [db2.]name2 [ENGINE = engine]
