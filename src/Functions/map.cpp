@@ -100,6 +100,21 @@ public:
                " OR (K1, V1, ...) -> Map(leastSupertype(K1, ...), leastSupertype(V1, ...))";
     }
 
+    /// The declarative signature cannot express `allow_lossy_numeric_supertype` (the `leastSupertype`
+    /// type-function always uses the strict mode), so when that setting is enabled, compute the common
+    /// type explicitly, mirroring the legacy implementation. Otherwise the signature stays authoritative.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (!allow_lossy_numeric_supertype)
+            return IFunction::getReturnTypeImpl(arguments);
+
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (const auto & arg : arguments)
+            types.push_back(arg.type);
+        return getReturnTypeImpl(types);
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() % 2 != 0)
