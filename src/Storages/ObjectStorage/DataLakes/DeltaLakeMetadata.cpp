@@ -790,26 +790,21 @@ void DeltaLakeMetadata::createInitial(
                 "Cannot create DeltaLake table with column `{}` because it is reserved for a virtual column",
                 column.name);
 
-    /// `StorageObjectStorage::ctor` calls `configuration->check()` only after this path, so
-    /// enforce `RemoteHostFilter`/`HTTPHeaderFilter` here, before the first remote commit.
-    configuration_ptr->check(local_context);
-
-    /// Only a catalog registration needs to know the pre-`createTable` state, so probe storage for it
-    /// only when we will register (a fresh create writes commit 0, which would otherwise make the
-    /// post-create `deltaLogExists` always true); `createTable` itself makes the create/attach decision.
+    /// Register the new table with the catalog only when the catalog manages Delta tables (Unity).
+    /// Other catalogs (Glue / Iceberg REST) expect an Iceberg payload from `createTable`, so registering
+    /// a Delta table there would misregister it -- reject before the first remote side effect so nothing
+    /// is written. Also gated on writes: without them `createTable` writes no `_delta_log` to register.
     const bool register_with_catalog = catalog && local_context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes];
+    if (register_with_catalog && catalog->getCatalogType() != DatabaseDataLakeCatalogType::UNITY)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "CREATE TABLE with ENGINE = DeltaLake is only supported in a Unity catalog database");
 
-    /// If a Delta table already exists at the location, `createTable` attaches to it (no new commit);
-    /// otherwise it writes commit 0 from `columns`. Remember which happened for catalog registration.
-    const bool delta_log_existed = register_with_catalog && deltaLogExists(*object_storage, configuration_ptr->getRawPath().path);
-
-    /// Materialize the initial `_delta_log` commit (Protocol + Metadata actions) on storage.
-    DeltaLakeMetadataDeltaKernel::createTable(
+    /// Materialize the initial `_delta_log` commit (Protocol + Metadata actions) on storage. Returns
+    /// whether a fresh table was created (commit 0 written) or an existing `_delta_log` was attached.
+    const bool created_fresh = DeltaLakeMetadataDeltaKernel::createTable(
         object_storage, configuration, local_context, *columns, partition_by, if_not_exists);
 
-    /// For catalog databases (e.g. Unity) register the new table so it is visible via the catalog,
-    /// mirroring `IcebergMetadata::createInitial`. Gated on writes too: without them `createTable`
-    /// above wrote no `_delta_log`, so there is nothing to register.
     if (register_with_catalog)
     {
         /// Register the full URI (`s3://…`, `file://…`) the kernel reads, not the scheme-less `getRawPath().path` (which `TableMetadata::setLocation` cannot parse back).
@@ -818,16 +813,38 @@ void DeltaLakeMetadata::createInitial(
         /// Register the schema that is actually on storage: the just-committed `columns` for a fresh
         /// table, or the existing snapshot schema when attaching to a preexisting `_delta_log` (the
         /// declared `columns` may differ from it and were not committed).
-        const auto registration_schema = delta_log_existed
-            ? DeltaLakeMetadataDeltaKernel::create(object_storage, configuration)->getTableSchema(local_context)
-            : columns->getAllPhysical();
+        const auto registration_schema = created_fresh
+            ? columns->getAllPhysical()
+            : DeltaLakeMetadataDeltaKernel::create(object_storage, configuration)->getTableSchema(local_context);
 
         Poco::JSON::Object::Ptr metadata_content = new Poco::JSON::Object;
         metadata_content->set("location", location);
         metadata_content->set("fields", buildDeltaSchemaFields(registration_schema));
 
         const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
-        catalog->createTable(namespace_name, table_name, location, metadata_content);
+        try
+        {
+            catalog->createTable(namespace_name, table_name, location, metadata_content);
+        }
+        catch (...)
+        {
+            /// Commit 0 was already written, so a failed registration would orphan a fresh `_delta_log`.
+            /// Best-effort roll back only what this statement created (a preexisting table we merely
+            /// attached to is left untouched), so a failed CREATE leaves nothing behind.
+            if (created_fresh)
+            {
+                try
+                {
+                    const auto commit_zero = fs::path(configuration_ptr->getRawPath().path) / "_delta_log" / "00000000000000000000.json";
+                    object_storage->removeObjectIfExists(StoredObject(commit_zero));
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("DeltaLakeMetadata", "Failed to roll back the initial Delta commit after catalog registration failed");
+                }
+            }
+            throw;
+        }
     }
 #endif
 }

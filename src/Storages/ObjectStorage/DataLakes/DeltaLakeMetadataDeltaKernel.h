@@ -73,7 +73,8 @@ public:
     /// Initialize a new Delta table at the configured location by writing the
     /// `00000000000000000000.json` commit with Protocol + Metadata actions.
     /// When the location already has a `_delta_log`, attaches to the existing table.
-    static void createTable(
+    /// Returns true if a new table was created (commit 0 was written), false if it attached.
+    static bool createTable(
         const ObjectStoragePtr & object_storage_,
         const StorageObjectStorageConfigurationWeakPtr & configuration,
         const ContextPtr & local_context,

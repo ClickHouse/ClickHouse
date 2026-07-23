@@ -718,7 +718,7 @@ Names extractPartitionColumnNames(ASTPtr partition_by)
 
 }
 
-void DeltaLakeMetadataDeltaKernel::createTable(
+bool DeltaLakeMetadataDeltaKernel::createTable(
     const ObjectStoragePtr & object_storage_,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
     const ContextPtr & local_context,
@@ -738,7 +738,7 @@ void DeltaLakeMetadataDeltaKernel::createTable(
     if (deltaLogExists(*object_storage_, data_path))
     {
         LOG_DEBUG(log, "Delta table already exists at `{}`; attaching to it without creating", data_path);
-        return;
+        return false;
     }
 
     /// A fresh CREATE (no `_delta_log`) must write the initial commit, which requires delta lake writes.
@@ -765,6 +765,8 @@ void DeltaLakeMetadataDeltaKernel::createTable(
         log,
         "Initialized Delta table at `{}` with {} column(s), partition columns: [{}]",
         data_path, schema_list.size(), fmt::join(partition_columns, ", "));
+
+    return true;
 }
 
 void DeltaLakeMetadataDeltaKernel::logMetadataFiles(ContextPtr context) const

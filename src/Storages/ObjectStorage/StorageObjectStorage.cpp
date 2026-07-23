@@ -176,6 +176,11 @@ StorageObjectStorage::StorageObjectStorage(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Delta lake CDF is allowed only for deltaLake table function");
     }
 
+    /// Validate the configuration (RemoteHostFilter / HTTPHeaderFilter / format) before any remote access:
+    /// the create path below can drive remote commits, and schema/format inference further down reads
+    /// remote data. The `url` table function does the same in `TableFunctionURL::getActualTableStructure`.
+    configuration->check(context);
+
     if (!is_table_function && !columns_in_table_or_function_definition.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)
     {
         LOG_DEBUG(log, "Creating new storage with specified columns");
@@ -230,11 +235,6 @@ StorageObjectStorage::StorageObjectStorage(
 
         configuration->setSchemaHash(StorageObjectStorageConfiguration::computeSchemaHash(columns));
     }
-
-    /// Validate the configuration before schema/format inference, so that e.g. the HTTP host/header
-    /// filters are enforced before any inference network request reads remote data. The `url` table
-    /// function does the same in `TableFunctionURL::getActualTableStructure`.
-    configuration->check(context);
 
     if (need_resolve_columns_or_format)
         resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
