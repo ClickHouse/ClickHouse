@@ -1,3 +1,4 @@
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnReplicated.h>
@@ -124,8 +125,71 @@ std::string_view ColumnReplicated::getDataAt(size_t n) const
     return nested_column->getDataAt(indexes.getIndexAt(n));
 }
 
+namespace
+{
+
+/// Materialize Replicated(Array) by copying whole row ranges.
+/// The generic index path (ColumnArray::indexImpl) builds a UInt64 index per nested
+/// element; when array rows are long, these indexes take more memory than the copied
+/// data itself (8 bytes per index vs e.g. 2 bytes per UInt16 element).
+template <typename T>
+ColumnPtr materializeReplicatedArrayImpl(const ColumnArray & src, const PaddedPODArray<T> & row_indexes)
+{
+    const auto & src_offsets = src.getOffsets();
+    const IColumn & src_data = src.getData();
+    size_t num_rows = row_indexes.size();
+
+    auto res_offsets_column = ColumnArray::ColumnOffsets::create(num_rows);
+    auto & res_offsets = res_offsets_column->getData();
+
+    size_t total_elements = 0;
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        ssize_t row = row_indexes[i];
+        total_elements += src_offsets[row] - src_offsets[row - 1];
+        res_offsets[i] = total_elements;
+    }
+
+    auto res_data = src_data.cloneEmpty();
+    res_data->reserve(total_elements);
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        ssize_t row = row_indexes[i];
+        res_data->insertRangeFrom(src_data, src_offsets[row - 1], src_offsets[row] - src_offsets[row - 1]);
+    }
+
+    return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));
+}
+
+ColumnPtr materializeReplicatedArray(const ColumnArray & src, const IColumn & row_indexes)
+{
+    if (const auto * indexes_uint8 = typeid_cast<const ColumnUInt8 *>(&row_indexes))
+        return materializeReplicatedArrayImpl(src, indexes_uint8->getData());
+    if (const auto * indexes_uint16 = typeid_cast<const ColumnUInt16 *>(&row_indexes))
+        return materializeReplicatedArrayImpl(src, indexes_uint16->getData());
+    if (const auto * indexes_uint32 = typeid_cast<const ColumnUInt32 *>(&row_indexes))
+        return materializeReplicatedArrayImpl(src, indexes_uint32->getData());
+    if (const auto * indexes_uint64 = typeid_cast<const ColumnUInt64 *>(&row_indexes))
+        return materializeReplicatedArrayImpl(src, indexes_uint64->getData());
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected indexes column type {} in ColumnReplicated", row_indexes.getName());
+}
+
+}
+
 ColumnPtr ColumnReplicated::convertToFullColumnIfReplicated() const
 {
+    /// For long array rows copy whole row ranges instead of the generic per-element
+    /// index path, see materializeReplicatedArrayImpl. For short rows the generic
+    /// path is faster and its per-element indexes are small.
+    if (const auto * src_array = typeid_cast<const ColumnArray *>(nested_column.get()))
+    {
+        size_t src_rows_count = src_array->size();
+        size_t src_elements = src_array->getOffsets().back();
+        if (src_rows_count != 0 && src_elements >= src_rows_count * 8)
+            return materializeReplicatedArray(*src_array, *indexes.getIndexes());
+    }
+
     return nested_column->index(*indexes.getIndexes(), 0);
 }
 

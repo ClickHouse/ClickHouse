@@ -29,7 +29,8 @@ private:
         const ColumnsWithTypeAndName & columns_to_capture,
         bool is_short_circuit_argument_ = false,
         bool is_function_compiled_ = false,
-        bool recursively_convert_result_to_full_column_if_low_cardinality_ = false);
+        bool recursively_convert_result_to_full_column_if_low_cardinality_ = false,
+        bool allow_lazy_replicated_captures_ = false);
 
 public:
     const char * getFamilyName() const override { return "Function"; }
@@ -216,6 +217,13 @@ private:
 
     /// Determine if passed function is compiled. Used for profiling.
     bool is_function_compiled;
+
+    /// If true, replicate wraps captured columns into ColumnReplicated instead of
+    /// physically copying them, and appendArgument keeps incoming ColumnReplicated
+    /// captures as is. Avoids a quadratic memory blowup when a lambda captures
+    /// a large column (e.g. arrayMap(x -> f(large_array, x), ...)).
+    /// Controlled by the setting enable_lazy_columns_replication.
+    bool allow_lazy_replicated_captures = false;
 
     void appendArgument(const ColumnWithTypeAndName & column);
 };
