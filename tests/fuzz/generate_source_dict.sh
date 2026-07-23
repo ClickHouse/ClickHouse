@@ -64,6 +64,31 @@ grep -rhozE 'struct [A-Za-z_0-9]*Label[[:space:]]*\{[^{}]*"[^"]+"[^{}]*\}' \
     "$SOURCE_ROOT/src/TableFunctions" \
     | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"' > "$LABEL_FRAGMENTS_FILE" || true
 
+# The distance / norm computation kernels carry fragments the same way:
+#     struct CosineDistance { static constexpr auto name = "Cosine"; ... };
+# in src/Functions/array/arrayDistance.cpp is pasted into arrayCosineDistance
+# (and its siblings in arrayNorm.cpp into arrayL1Norm, ...). A kernel is
+# recognizable mechanically: the struct is named <fragment><Suffix> for the
+# composition suffix - L1Norm carries "L1", CosineDistance carries "Cosine" -
+# while real name carriers are not: NameEditDistance carries "editDistance",
+# L1DistanceTraits carries the complete name "L1Distance".
+{ grep -rhozE 'struct [A-Za-z_0-9]+[[:space:]]*(:[[:space:]]*[A-Za-z_0-9]+[[:space:]]*)?\{[^{}"]*static constexpr auto name = "[^"]+";' \
+    "$SOURCE_ROOT/src/Functions" \
+    "$SOURCE_ROOT/src/AggregateFunctions" \
+    "$SOURCE_ROOT/src/TableFunctions" || true; } \
+    | while IFS= read -r -d '' kernel_chunk
+do
+    kernel_struct=$(sed -E 's/^struct ([A-Za-z_0-9]+).*/\1/' <<< "${kernel_chunk//$'\n'/ }")
+    kernel_fragment=$(grep -aoE '"[^"]+"' <<< "${kernel_chunk//$'\n'/ }" | head -1 | tr -d '"')
+    for kernel_suffix in Distance Norm
+    do
+        if [ "$kernel_struct" == "${kernel_fragment}${kernel_suffix}" ]
+        then
+            echo "$kernel_fragment"
+        fi
+    done
+done >> "$LABEL_FRAGMENTS_FILE"
+
 {
     # Parser keywords, e.g. MR_MACROS(ADD_COLUMN, "ADD COLUMN").
     sed -n 's/.*MR_MACROS([A-Z_0-9]*, *"\([^"]*\)").*/\1/p' \
@@ -89,13 +114,22 @@ grep -rhozE 'struct [A-Za-z_0-9]*Label[[:space:]]*\{[^{}]*"[^"]+"[^{}]*\}' \
     # as well. Arrays of names are covered too:
     #     constexpr std::array<const char *, 2> names = {"generate_series", "generateSeries"};
     # Every identifier-shaped string literal in the initializer is taken,
-    # except the *Label compile-time name fragments collected above.
+    # except the compile-time name fragments collected above. Two declaration
+    # shapes carry no registered names and are dropped whole: map-typed lookup
+    # tables (their literals are labels keyed by something else, e.g.
+    # capnp_simple_type_names in src/Formats/CapnProtoSchema.cpp maps Cap'n
+    # Proto type enums to "Data" / "Interface" / "AnyPointer"), and
+    # initializers composing the name with + (their literals are fragments,
+    # e.g. std::string("L") + FuncLabel::name + "Normalize" in
+    # src/Functions/vectorFunctions.cpp; the composed names live in the
+    # curated old.dict).
     grep -rhozE '\bconst(expr)?[[:space:]]+[a-zA-Z_0-9,:<> *]+[Nn]ames?(\[\])?[[:space:]]*[={][^;]*;' \
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
         "$SOURCE_ROOT/src/Formats" \
         "$SOURCE_ROOT/src/Storages/ObjectStorage/StorageObjectStorageDefinitions.h" \
+        | { grep -zvE '\+|map<' || true; } \
         | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"' \
         | identifiers_only | grep -Fxvf "$LABEL_FRAGMENTS_FILE"
 
@@ -132,8 +166,14 @@ grep -rhozE 'struct [A-Za-z_0-9]*Label[[:space:]]*\{[^{}]*"[^"]+"[^{}]*\}' \
     #         else
     #             return "mergeTreeAnalyzeIndexes";
     #     }
-    # Every string literal in the (brace-free) function body is taken.
-    grep -rhozE '[A-Za-z_]*[Nn]ame[[:space:]]*\([^()]*\)[[:space:]]*(const[[:space:]]*)?(override[[:space:]]*)?\{[^{}"]*"[^{}]*\}' \
+    # Every string literal in the (brace-free) function body is taken. The
+    # body must open right after the parameter list: virtual `const override`
+    # helpers return *display* names, not registered names - getName of
+    # internal function classes ("FunctionExpression", "FunctionCapture",
+    # "GeneratorJSONPath"), getFactoryName ("FunctionFactory",
+    # "AggregateFunctionFactory"), getStorageEngineName ("Loop", "FuzzQuery") -
+    # so they are deliberately not matched.
+    grep -rhozE '[A-Za-z_]*[Nn]ame[[:space:]]*\([^()]*\)[[:space:]]*\{[^{}"]*"[^{}]*\}' \
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
@@ -186,7 +226,8 @@ grep -rhozE 'struct [A-Za-z_0-9]*Label[[:space:]]*\{[^{}]*"[^"]+"[^{}]*\}' \
         {
             grep -rhozE --exclude-dir=Combinators \
                 '\bconst(expr)?[[:space:]]+[a-zA-Z_:<> *]+[Nn]ame(\[\])?[[:space:]]*[={][^;]*;' \
-                "$SOURCE_ROOT/src/AggregateFunctions"
+                "$SOURCE_ROOT/src/AggregateFunctions" \
+                | { grep -zvE '\+|map<' || true; }
             grep -rhozE --exclude-dir=Combinators \
                 'getName\(\)[[:space:]]*\{[[:space:]]*return[[:space:]]+"[^"]+"' \
                 "$SOURCE_ROOT/src/AggregateFunctions"
