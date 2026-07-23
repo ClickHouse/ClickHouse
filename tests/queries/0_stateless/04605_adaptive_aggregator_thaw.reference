@@ -11,6 +11,6 @@ Thaw under WITH TOTALS
 Give-up: repeat-dominated stream below the freeze threshold
 1
 Analytic guard: thaw shape
-20000	4000000	7999998000000
+20000	2000000	1999999000000
 Analytic guard: give-up shape
-50	4000000	100000
+50	2000000	100000

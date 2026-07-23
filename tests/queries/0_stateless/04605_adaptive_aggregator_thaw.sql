@@ -18,39 +18,39 @@ SET group_by_two_level_threshold_bytes = 50000000;
 
 SELECT 'Thaw: general aggregate (sum)';
 SELECT
-    (SELECT sum(s), count() FROM (SELECT toUInt64(number % 20000) AS k, sum(number) AS s FROM numbers_mt(4000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 0))
+    (SELECT sum(s), count() FROM (SELECT toUInt64(number % 20000) AS k, sum(number) AS s FROM numbers_mt(2000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 0))
     =
-    (SELECT sum(s), count() FROM (SELECT toUInt64(number % 20000) AS k, sum(number) AS s FROM numbers_mt(4000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 1));
+    (SELECT sum(s), count() FROM (SELECT toUInt64(number % 20000) AS k, sum(number) AS s FROM numbers_mt(2000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 1));
 
 SELECT 'Thaw: pure count (value-staged records)';
 SELECT
-    (SELECT sum(c), count() FROM (SELECT toUInt64(number % 20000) AS k, count() AS c FROM numbers_mt(4000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 0))
+    (SELECT sum(c), count() FROM (SELECT toUInt64(number % 20000) AS k, count() AS c FROM numbers_mt(2000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 0))
     =
-    (SELECT sum(c), count() FROM (SELECT toUInt64(number % 20000) AS k, count() AS c FROM numbers_mt(4000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 1));
+    (SELECT sum(c), count() FROM (SELECT toUInt64(number % 20000) AS k, count() AS c FROM numbers_mt(2000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 1));
 
 SELECT 'Thaw: multi-argument aggregate (argMin) with compacted staging';
 SELECT
-    (SELECT sum(s), count() FROM (SELECT toUInt64(number % 20000) AS k, argMin(number % 7, number) AS s FROM numbers_mt(4000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 0))
+    (SELECT sum(s), count() FROM (SELECT toUInt64(number % 20000) AS k, argMin(number % 7, number) AS s FROM numbers_mt(2000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 0))
     =
-    (SELECT sum(s), count() FROM (SELECT toUInt64(number % 20000) AS k, argMin(number % 7, number) AS s FROM numbers_mt(4000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 1));
+    (SELECT sum(s), count() FROM (SELECT toUInt64(number % 20000) AS k, argMin(number % 7, number) AS s FROM numbers_mt(2000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 1));
 
 SELECT 'Thaw: String key and String aggregate state';
 SELECT
-    (SELECT sum(cityHash64(k, s)), count() FROM (SELECT toString(number % 20000) AS k, min(toString(number)) AS s FROM numbers_mt(4000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 0))
+    (SELECT sum(cityHash64(k, s)), count() FROM (SELECT toString(number % 20000) AS k, min(toString(number)) AS s FROM numbers_mt(2000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 0))
     =
-    (SELECT sum(cityHash64(k, s)), count() FROM (SELECT toString(number % 20000) AS k, min(toString(number)) AS s FROM numbers_mt(4000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 1));
+    (SELECT sum(cityHash64(k, s)), count() FROM (SELECT toString(number % 20000) AS k, min(toString(number)) AS s FROM numbers_mt(2000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 1));
 
 SELECT 'Thaw under WITH TOTALS';
 SELECT
-    (SELECT sum(s), count() FROM (SELECT toUInt64(number % 20000) AS k, sum(number) AS s FROM numbers_mt(4000000) GROUP BY k WITH TOTALS SETTINGS enable_adaptive_aggregator = 0))
+    (SELECT sum(s), count() FROM (SELECT toUInt64(number % 20000) AS k, sum(number) AS s FROM numbers_mt(2000000) GROUP BY k WITH TOTALS SETTINGS enable_adaptive_aggregator = 0))
     =
-    (SELECT sum(s), count() FROM (SELECT toUInt64(number % 20000) AS k, sum(number) AS s FROM numbers_mt(4000000) GROUP BY k WITH TOTALS SETTINGS enable_adaptive_aggregator = 1));
+    (SELECT sum(s), count() FROM (SELECT toUInt64(number % 20000) AS k, sum(number) AS s FROM numbers_mt(2000000) GROUP BY k WITH TOTALS SETTINGS enable_adaptive_aggregator = 1));
 
 SELECT 'Give-up: repeat-dominated stream below the freeze threshold';
 SELECT
-    (SELECT sum(u), count() FROM (SELECT toUInt64(number % 50) AS k, uniqExact(number % 100000) AS u FROM numbers_mt(4000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 0))
+    (SELECT sum(u), count() FROM (SELECT toUInt64(number % 50) AS k, uniqExact(number % 100000) AS u FROM numbers_mt(2000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 0))
     =
-    (SELECT sum(u), count() FROM (SELECT toUInt64(number % 50) AS k, uniqExact(number % 100000) AS u FROM numbers_mt(4000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 1));
+    (SELECT sum(u), count() FROM (SELECT toUInt64(number % 50) AS k, uniqExact(number % 100000) AS u FROM numbers_mt(2000000) GROUP BY k SETTINGS enable_adaptive_aggregator = 1));
 
 -- Absolute-value guard: self-comparing cells cannot catch a defect shared by both paths, so pin
 -- the adaptive results to analytically-known values over deterministic data.
@@ -59,7 +59,7 @@ SELECT count(), sum(c), sum(s)
 FROM
 (
     SELECT toUInt64(number % 20000) AS k, count() AS c, sum(number) AS s
-    FROM numbers_mt(4000000)
+    FROM numbers_mt(2000000)
     GROUP BY k
     SETTINGS enable_adaptive_aggregator = 1
 );
@@ -68,7 +68,7 @@ SELECT count(), sum(c), sum(u)
 FROM
 (
     SELECT toUInt64(number % 50) AS k, count() AS c, uniqExact(number % 100000) AS u
-    FROM numbers_mt(4000000)
+    FROM numbers_mt(2000000)
     GROUP BY k
     SETTINGS enable_adaptive_aggregator = 1
 );

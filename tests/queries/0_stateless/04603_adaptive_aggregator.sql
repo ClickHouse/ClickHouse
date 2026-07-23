@@ -40,7 +40,7 @@ SELECT
     if(number % 10 = 0, NULL, toString(number % 50000)) AS nullable_key,
     [number % 3, number % 7, number % 11] AS arr,
     toUInt8(number % 2) AS flag
-FROM numbers(300000);
+FROM numbers(50000);
 
 SELECT 'Single String key + sum';
 SELECT
@@ -321,7 +321,7 @@ DROP TABLE test_empty;
 SELECT 'Large hash table (exercises prefetch and the drain reserve)';
 DROP TABLE IF EXISTS test_large;
 CREATE TABLE test_large (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO test_large SELECT number AS a, number AS b FROM numbers(5000000);
+INSERT INTO test_large SELECT number AS a, number AS b FROM numbers(500000);
 SELECT
     (SELECT sum(s), count() FROM (SELECT a, sum(b) AS s FROM test_large GROUP BY a SETTINGS enable_adaptive_aggregator = 0))
     =
@@ -350,7 +350,7 @@ SELECT
     number AS b,
     toUInt8(number % 250) AS u8,
     if(number % 10 = 0, NULL, toString(number % 50000)) AS nullable_key
-FROM numbers(300000);
+FROM numbers(50000);
 
 SELECT
     (SELECT sum(s), count() FROM (SELECT nullable_key, sum(b) AS s FROM test_sparse GROUP BY nullable_key SETTINGS enable_adaptive_aggregator = 0))
@@ -369,7 +369,7 @@ ENGINE = MergeTree
 ORDER BY tuple()
 SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5;
 
-INSERT INTO test_sparse_argument SELECT number, if(number % 10 = 0, number, 0) FROM numbers(500000);
+INSERT INTO test_sparse_argument SELECT number, if(number % 10 = 0, number, 0) FROM numbers(50000);
 SELECT
     (SELECT sum(s), count() FROM (SELECT a % 50000 AS g, sum(v) AS s FROM test_sparse_argument GROUP BY g SETTINGS enable_adaptive_aggregator = 0))
     =

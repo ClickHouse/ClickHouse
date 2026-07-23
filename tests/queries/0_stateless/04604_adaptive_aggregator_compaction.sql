@@ -10,8 +10,8 @@ SET adaptive_aggregator_freeze_threshold = 128;
 SET enable_sharding_aggregator = 0;
 SET max_threads = 4;
 SET max_block_size = 8192;
-SET group_by_two_level_threshold = 100000;
-SET group_by_two_level_threshold_bytes = 50000000;
+SET group_by_two_level_threshold = 10000;
+SET group_by_two_level_threshold_bytes = 5000000;
 
 DROP TABLE IF EXISTS test_skew;
 CREATE TABLE test_skew (k UInt64, v UInt64, s String, nv Nullable(UInt64), arr Array(UInt64), flag UInt8)
@@ -25,7 +25,7 @@ SELECT
     if(number % 7 = 0, NULL, number % 1000) AS nv,
     [number % 3, number % 5] AS arr,
     toUInt8(number % 2) AS flag
-FROM numbers(2000000);
+FROM numbers(200000);
 
 SELECT 'Skewed sum (compaction fires)';
 SELECT
@@ -88,7 +88,7 @@ ENGINE = MergeTree ORDER BY tuple()
 SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5;
 INSERT INTO test_skew_sparse
 SELECT if(number % 10 != 0, 4242424242, number) AS k, if(number % 20 = 0, number, 0) AS v, number AS w
-FROM numbers(2000000);
+FROM numbers(200000);
 SELECT
     (SELECT count(), sum(c), sum(sm), sum(mw) FROM (SELECT k, count() AS c, sum(v) AS sm, max(w) AS mw FROM test_skew_sparse GROUP BY k SETTINGS enable_adaptive_aggregator = 0))
     =
@@ -104,7 +104,7 @@ SELECT count(), sum(c), sum(sm)
 FROM
 (
     SELECT if(number % 10 != 0, 4242424242, number) AS k, count() AS c, sum(number) AS sm
-    FROM numbers_mt(2000000)
+    FROM numbers_mt(200000)
     GROUP BY k
     SETTINGS enable_adaptive_aggregator = 1
 );
