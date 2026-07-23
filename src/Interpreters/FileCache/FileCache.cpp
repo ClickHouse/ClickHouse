@@ -30,6 +30,8 @@
 #include <Interpreters/FileCache/OvercommitFileCachePriority.h>
 #endif
 
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
 #include <exception>
 #include <filesystem>
 #include <functional>
@@ -124,6 +126,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsUInt64 dynamic_resize_lock_wait_ms;
     extern const FileCacheSettingsBool use_split_cache;
     extern const FileCacheSettingsDouble split_cache_ratio;
+    extern const FileCacheSettingsString system_cache_extensions;
     extern const FileCacheSettingsUInt64 overcommit_eviction_evict_step;
     extern const FileCacheSettingsBool skip_cache_on_disk_failure;
     extern const FileCacheSettingsUInt64 idle_client_ttl_sec;
@@ -274,6 +277,20 @@ bool FileCache::CheckCacheProbability::doCheck()
     return distribution(rndgen);
 }
 
+static std::set<std::string> parseSystemCacheExtensions(const String & raw)
+{
+    std::vector<std::string> parts;
+    boost::split(parts, raw, [](char c) { return c == ',';});
+    std::set<std::string> result;
+    for (auto & ext : parts)
+    {
+        boost::trim(ext);
+        if (!ext.empty())
+            result.insert(ext);
+    }
+    return result;
+}
+
 FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & settings)
     : max_file_segment_size(settings[FileCacheSetting::max_file_segment_size])
     , bypass_cache_threshold(settings[FileCacheSetting::enable_bypass_cache_with_threshold] ? settings[FileCacheSetting::bypass_cache_threshold] : 0)
@@ -297,6 +314,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , idle_client_eviction_threads(settings[FileCacheSetting::idle_client_eviction_threads])
     , use_split_cache(settings[FileCacheSetting::use_split_cache])
     , split_cache_ratio(settings[FileCacheSetting::split_cache_ratio])
+    , system_cache_extensions(parseSystemCacheExtensions(settings[FileCacheSetting::system_cache_extensions].value))
     , skip_cache_on_disk_failure(settings[FileCacheSetting::skip_cache_on_disk_failure])
     , expose_eviction_metrics(settings[FileCacheSetting::expose_prometheus_eviction_metrics])
     , expose_eviction_metrics_per_user(settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user])
@@ -436,8 +454,7 @@ FileCache::OriginInfo FileCache::getCommonOriginWithSegmentKeyType(const fs::pat
     if (!use_split_cache)
         return origin;
 
-    const static std::set<std::string> system_cache_type = {".txt", ".json", ".idx", ".cidx", ".dat"};
-    origin.segment_type = system_cache_type.contains(filename.extension().string()) ? FileSegmentKeyType::System : FileSegmentKeyType::Data;
+    origin.segment_type = system_cache_extensions.contains(filename.extension().string()) ? FileSegmentKeyType::System : FileSegmentKeyType::Data;
     return origin;
 }
 
