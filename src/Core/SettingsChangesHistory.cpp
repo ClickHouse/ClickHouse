@@ -1318,6 +1318,13 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.8",
+        {
+            {"leader_election", false, false, "New setting to enable leader election for non-replicated MergeTree tables on shared object storage"},
+            {"leader_election_heartbeat_interval", 10, 10, "New setting to control leader lease renewal interval"},
+            {"leader_election_session_timeout", 30, 30, "New setting to control leader lease expiry threshold"},
+        });
+
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
             {"allow_experimental_text_index_phrase_search", false, false, "New setting"},
@@ -1325,9 +1332,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"compute_exact_num_defaults_for_sparse_columns", false, false, "New setting gating exact per-column num_defaults computation for sparsity-based pruning and trivial-count rewrite"},
             {"shared_merge_tree_virtual_parts_partition_atomic_discovery", false, true, "New setting"},
             {"allow_minmax_index_for_json", true, false, "Forbid creating minmax skip index on JSON columns by default because the index serialization cannot handle heterogeneous Field values"},
-            {"leader_election", false, false, "New setting to enable leader election for non-replicated MergeTree tables on shared object storage"},
-            {"leader_election_heartbeat_interval", 10, 10, "New setting to control leader lease renewal interval"},
-            {"leader_election_session_timeout", 30, 30, "New setting to control leader lease expiry threshold"},
             {"auto_statistics_types", "minmax, uniq", "basic, uniq", "Deprecate the `minmax` statistics type and replace it with `basic` (a superset of `minmax`) in the default auto statistics"},
             {"auto_statistics_types", "minmax, uniq", "basic, uniq_v2", "Deprecate the `minmax` statistics type and replace it with `basic` (a superset of `minmax`) in the default auto statistics; also replace `uniq` with `uniq_v2` for less overhead on inserts and memory"},
             {"allow_dimensions_outside_sorting_key", true, false, "AggregatingMergeTree now rejects, at table creation, schemas where a column is neither part of the sorting key nor an aggregate-state measure; previously such schemas were accepted (the old behavior corresponds to the value 'true')."},
