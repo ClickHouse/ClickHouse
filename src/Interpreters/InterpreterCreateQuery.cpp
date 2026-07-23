@@ -90,6 +90,8 @@
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
 
+#include <Disks/IDisk.h>
+
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
 #include <Compression/CompressionFactory.h>
@@ -2925,6 +2927,16 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
             database->checkDetachedTableNotInUse(create.uuid);
     }
 
+    auto db_disk = database->getDisk();
+    String table_metadata_path = database->getObjectMetadataPath(create.getTable());
+    String table_metadata_tmp_path = table_metadata_path + ".tmp";
+
+    /// Syncs the metadata directory on scope exit. Acquired before any destructive work below,
+    /// because guard construction can throw and must not leave a half-converted table.
+    SyncGuardPtr metadata_dir_sync_guard;
+    if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+        metadata_dir_sync_guard = db_disk->getDirectorySyncGuard(fs::path(table_metadata_path).parent_path());
+
     /// When converting to replicated, remove all transaction metadata files
     if (to_replicated && !engine_name.starts_with("Replicated"))
     {
@@ -2936,9 +2948,6 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     DatabaseOrdinary::setMergeTreeEngine(create, getContext(), to_replicated);
 
     /// Save new metadata
-    auto db_disk = database->getDisk();
-    String table_metadata_path = database->getObjectMetadataPath(create.getTable());
-    String table_metadata_tmp_path = table_metadata_path + ".tmp";
     String statement = DB::getObjectDefinitionFromCreateQuery(create.clone());
     writeMetadataFile(
         db_disk,
@@ -2955,6 +2964,7 @@ void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_
     /// Use disk API to remove transaction metadata files from all disks
     auto disks = local_context->getDisksMap();
     size_t total_removed = 0;
+    const bool fsync_metadata = local_context->getSettingsRef()[Setting::fsync_metadata];
 
     for (const auto & [disk_name, disk] : disks)
     {
@@ -2984,12 +2994,19 @@ void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_
                 /// Remove the temporary file first so the cleanup is fail-closed: if removing the
                 /// main file then throws, the part is left with a valid `txn_version.txt` (still a
                 /// committed part) rather than the dangerous tmp-only state described above.
+                ///
+                /// Syncs this part directory on scope exit. Acquired lazily before the first
+                /// removal, so it is opened only for parts we touch and before (not after) any
+                /// unlink.
+                SyncGuardPtr part_dir_sync_guard;
                 for (const auto * file_name : {VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME,
                                                VersionMetadata::TXN_VERSION_METADATA_FILE_NAME})
                 {
                     String txn_file = fs::path(part_path) / file_name;
                     if (disk->existsFile(txn_file))
                     {
+                        if (fsync_metadata && !part_dir_sync_guard)
+                            part_dir_sync_guard = disk->getDirectorySyncGuard(part_path);
                         disk->removeFile(txn_file);
                         total_removed++;
                     }
