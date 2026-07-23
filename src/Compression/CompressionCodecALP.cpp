@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 
 namespace DB
 {
@@ -308,15 +309,10 @@ struct ALPUtils
 {
     /**
      * Calculate the number of bits required to encode the given value, based on the position of the most significant bit.
-     * Returns 0 for value 0, otherwise returns the position of the highest set bit.
      */
     static UInt8 calculateBitWidth(const UInt64 value)
     {
-        if (unlikely(value == 0))
-            return 0;
-
-        const auto bits = sizeof(UInt64) * 8 - getLeadingZeroBitsUnsafe<UInt64>(value);
-        return static_cast<UInt8>(bits);
+        return static_cast<UInt8>(std::bit_width(value));
     }
 
     /**
