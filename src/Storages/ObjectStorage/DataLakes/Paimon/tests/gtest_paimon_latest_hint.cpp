@@ -6,6 +6,7 @@
 
 #include <Storages/ObjectStorage/DataLakes/Paimon/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadata.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/CurrentThread.h>
@@ -331,6 +332,29 @@ TEST(PaimonLatestHint, ConcurrentSnapshotRewriteDoesNotCrash)
     expectReadDoesNotUseAsyncBoundedBuffer([&] { snapshot.emplace(client.getSnapshot({1, snapshot1.string()})); });
     ASSERT_TRUE(snapshot.has_value());
     EXPECT_EQ(snapshot->id, 1);
+}
+
+/// Incremental read may skip a snapshot whose load failed (and advance the watermark past it)
+/// only when the `snapshot-N` file is genuinely gone, i.e. removed by Paimon compaction.
+/// If the file still exists, the failure was a live-read problem (torn read during an external
+/// recreate, transient backend error) and the caller must fail closed instead of losing data.
+TEST(PaimonIncrementalRead, SkipsOnlyGenuinelyMissingSnapshots)
+{
+    ScopedTempDir tmp("paimon_snapshot_skip_test");
+    auto table = makePaimonTable(tmp.path, /*snapshot_ids=*/{1}, /*latest_hint=*/"1");
+    auto storage = makeLocalObjectStorage(tmp.path.string());
+
+    const auto snapshot1 = table / Paimon::PAIMON_SNAPSHOT_DIR / (std::string(Paimon::PAIMON_SNAPSHOT_PREFIX) + "1");
+    const auto snapshot2 = table / Paimon::PAIMON_SNAPSHOT_DIR / (std::string(Paimon::PAIMON_SNAPSHOT_PREFIX) + "2");
+
+    /// The snapshot file is still there: a failed load must not be skipped (fail closed).
+    EXPECT_FALSE(PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot1.string()));
+    /// The snapshot file never existed / was removed by compaction: skipping is safe.
+    EXPECT_TRUE(PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot2.string()));
+
+    /// Removing the file flips the verdict for the same snapshot id.
+    fs::remove(snapshot1);
+    EXPECT_TRUE(PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot1.string()));
 }
 
 #endif

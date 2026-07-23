@@ -98,6 +98,17 @@ public:
     /// inside iterate(). This method exists for manual overrides only.
     void commitSnapshot(Int64 snapshot_id);
 
+    /// Decide whether a failed snapshot load may be skipped by incremental read, advancing
+    /// the watermark past it.  Skipping is safe only when the `snapshot-N` file is genuinely
+    /// gone (removed by Paimon compaction / snapshot expiration).  IObjectStorage has no
+    /// unified "not found" exception type across backends, so instead of matching
+    /// backend-specific exception types this probes the object's existence after the failed
+    /// load: if the file is still there, the failure was a live-read problem (a torn read of
+    /// the mutable snapshot file during an external recreate, or a transient backend error)
+    /// and the caller must fail closed rather than advance the watermark past a live snapshot.
+    /// Public and static so the decision is unit-testable without constructing PaimonMetadata.
+    static bool isSnapshotLoadFailureSkippable(const ObjectStoragePtr & object_storage, const String & snapshot_path);
+
 private:
     enum class ManifestKind : UInt8
     {

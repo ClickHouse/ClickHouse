@@ -12,6 +12,8 @@
 #include <vector>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Disks/IStoragePolicy.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -705,13 +707,26 @@ void PaimonMetadata::runBackgroundRefresh()
     refresh_task->scheduleAfter(refresh_interval_sec * 1000);
 }
 
+namespace
+{
+
+/// Build snapshot file path: `table_location/snapshot/snapshot-<id>`
+String snapshotFilePath(const String & table_location, Int64 snapshot_id)
+{
+    return std::filesystem::path(table_location) / PAIMON_SNAPSHOT_DIR / fmt::format("{}{}", PAIMON_SNAPSHOT_PREFIX, snapshot_id);
+}
+
+}
+
+bool PaimonMetadata::isSnapshotLoadFailureSkippable(const ObjectStoragePtr & object_storage, const String & snapshot_path)
+{
+    return !object_storage->exists(StoredObject(snapshot_path));
+}
+
 PaimonTableStatePtr PaimonMetadata::loadStateForSnapshot(Int64 snapshot_id) const
 {
     /// Get snapshot by ID
-    /// Build snapshot file path: `table_location/snapshot/snapshot-<id>`
-    const String snapshot_path = (std::filesystem::path(persistent_components.table_location)
-        / PAIMON_SNAPSHOT_DIR
-        / fmt::format("{}{}", PAIMON_SNAPSHOT_PREFIX, snapshot_id));
+    const String snapshot_path = snapshotFilePath(persistent_components.table_location, snapshot_id);
     auto snapshot = table_client->getSnapshot({snapshot_id, snapshot_path});
 
     /// Ensure schema is cached for this snapshot_id
@@ -770,21 +785,24 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
         }
         catch (...)
         {
-            /// Snapshot file may have been removed by Paimon compaction.
-            /// Log and skip — the watermark will still advance past it.
+            /// Snapshot file may have been removed by Paimon compaction / snapshot
+            /// expiration — in that case log and skip, and the watermark will still
+            /// advance past it.
             ///
-            /// We use catch(...) rather than filtering for specific "file not found"
-            /// exceptions because IObjectStorage has no unified "not found" exception
-            /// type — each backend (S3, Azure, Local, HDFS) throws its own SDK-level
-            /// exception.  Coupling this metadata layer to backend-specific exception
-            /// types would violate layering and require updating every time a new
-            /// backend is added.  Under At-Most-Once semantics the worst outcome of
-            /// a false positive (transient error mistaken for a missing snapshot) is
-            /// skipping one snapshot — which is within the accepted data-loss budget.
-            /// The logged error message provides sufficient observability for operators
-            /// to distinguish transient failures from genuine compaction gaps.
-            LOG_WARNING(log, "Failed to load snapshot_id={}, it may have been removed by "
-                "Paimon compaction. Skipping. Error: {}",
+            /// We use catch(...) plus an existence probe rather than filtering for
+            /// specific "file not found" exceptions because IObjectStorage has no
+            /// unified "not found" exception type — each backend (S3, Azure, Local,
+            /// HDFS) throws its own SDK-level exception, and coupling this metadata
+            /// layer to backend-specific exception types would violate layering.
+            /// If the snapshot file still exists, the failure was a live-read problem
+            /// (a torn read of the mutable `snapshot-N` file during an external
+            /// recreate, or a transient backend error), so fail closed: rethrow
+            /// instead of advancing the watermark past a live snapshot.  The probe
+            /// itself failing also propagates, which is equally fail-closed.
+            if (!isSnapshotLoadFailureSkippable(object_storage, snapshotFilePath(persistent_components.table_location, snapshot_id)))
+                throw;
+            LOG_WARNING(log, "Failed to load snapshot_id={} and it no longer exists: "
+                "removed by Paimon compaction. Skipping. Error: {}",
                 snapshot_id, getCurrentExceptionMessage(false));
             continue;
         }
