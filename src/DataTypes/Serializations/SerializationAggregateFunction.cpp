@@ -223,10 +223,6 @@ void SerializationAggregateFunction::serializeBinary(const Field & field, WriteB
 
 void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    /// This method must honor `aggregate_function_input_format`: `BinaryRowInputFormat::skipField` uses it
-    /// to consume unknown columns of `RowBinary(WithNamesAndTypes)` input, so it has to read exactly the same
-    /// bytes as the column-based `deserializeBinary` does for the format the input is declared to be in,
-    /// otherwise all following columns are misaligned.
     field = AggregateFunctionStateData();
     AggregateFunctionStateData & s = field.safeGet<AggregateFunctionStateData>();
     s.name = type_name;
@@ -237,59 +233,18 @@ void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer
         return;
     }
 
-    const auto & argument_types = function->getArgumentTypes();
-    const auto value_type = argument_types.size() == 1 ? argument_types[0] : std::make_shared<DataTypeTuple>(argument_types);
+    /// This method must honor `aggregate_function_input_format`: `BinaryRowInputFormat::skipField` uses it
+    /// to consume unknown columns of `RowBinary(WithNamesAndTypes)` input, so it has to read exactly the same
+    /// bytes as the column-based `deserializeBinary` does, otherwise all following columns are misaligned.
+    /// Delegate to the column-based path to guarantee that: parsing the value with the argument type's
+    /// Field-based deserializer would diverge for types whose two paths read different representations
+    /// (e.g. `SerializationObject` reads a length-prefixed string into a column when
+    /// `input_format_binary_read_json_as_string` is enabled, but always the structured form into a `Field`).
+    auto tmp_column = ColumnAggregateFunction::create(function, version);
+    deserializeBinary(*tmp_column, istr, settings);
 
-    Arena arena{};
-    size_t size_of_state = function->sizeOfData();
-    AggregateDataPtr place = arena.alignedAlloc(size_of_state, function->alignOfData());
-    function->create(place);
-
-    try
-    {
-        absl::InlinedVector<const IColumn *, 7> columns_ptrs;
-        size_t num_rows = 0;
-        if (settings.aggregate_function_input_format == FormatSettings::AggregateFunctionInputFormat::Value)
-        {
-            const auto tmp_column = value_type->createColumn();
-            Field tmp;
-            value_type->getDefaultSerialization()->deserializeBinary(tmp, istr, settings);
-            tmp_column->insert(tmp);
-
-            if (argument_types.size() == 1)
-                columns_ptrs.push_back(tmp_column.get());
-            else
-                for (const auto & col : assert_cast<const ColumnTuple*>(tmp_column.get())->getColumns())
-                    columns_ptrs.push_back(col.get());
-            num_rows = 1;
-        } else
-        {
-            auto array_type = DataTypeArray(value_type);
-            const auto tmp_column = array_type.createColumn();
-            Field tmp;
-            array_type.getDefaultSerialization()->deserializeBinary(tmp, istr, settings);
-            tmp_column->insert(tmp);
-
-            const auto & array_column = assert_cast<const ColumnArray&>(*tmp_column);
-            if (argument_types.size() == 1)
-                columns_ptrs.push_back(array_column.getDataPtr().get());
-            else if (!argument_types.empty())
-                for (const auto & col : assert_cast<const ColumnTuple&>(array_column.getData()).getColumns())
-                    columns_ptrs.push_back(col.get());
-            num_rows = array_column.getData().size();
-        }
-
-        function->addBatchSinglePlace(0, num_rows, place, columns_ptrs.data(), &arena);
-        WriteBufferFromString buf(s.data);
-        function->serialize(place, buf, version);
-    }
-    catch (...)
-    {
-        function->destroy(place);
-        throw;
-    }
-
-    function->destroy(place);
+    WriteBufferFromString buf(s.data);
+    function->serialize(tmp_column->getData()[0], buf, version);
 }
 
 void SerializationAggregateFunction::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const

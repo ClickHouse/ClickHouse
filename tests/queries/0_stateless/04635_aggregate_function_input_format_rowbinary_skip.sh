@@ -31,6 +31,19 @@ $CLICKHOUSE_LOCAL -q "SELECT a, finalizeAggregation(s), b FROM file('$ARRAY_FILE
 echo '-- skip, array'
 $CLICKHOUSE_LOCAL -q "SELECT a, b FROM file('$ARRAY_FILE', 'RowBinaryWithNamesAndTypes', 'a UInt8, b UInt8') SETTINGS input_format_skip_unknown_fields = 1, aggregate_function_input_format = 'array'"
 
+# A `JSON` argument with `input_format_binary_read_json_as_string = 1` is read as a length-prefixed
+# string, while the `Field`-based deserialization of `JSON` always reads the structured form, so the
+# skip path must go through the column-based read path to consume the same bytes.
+JSON_FILE="${CLICKHOUSE_TMP}/04635_json.rowbinary"
+JSON_HEADER='\x03\x01a\x01s\x01b\x05UInt8\x1cAggregateFunction(any, JSON)\x05UInt8'
+# Row: a = 1, s = JSON string '{"k":1}' (length-prefixed), b = 3.
+printf "${JSON_HEADER}\x01\x07{\"k\":1}\x03" > "$JSON_FILE"
+
+echo '-- read, value JSON-as-string'
+$CLICKHOUSE_LOCAL -q "SELECT a, finalizeAggregation(s), b FROM file('$JSON_FILE', 'RowBinaryWithNamesAndTypes', 'a UInt8, s AggregateFunction(any, JSON), b UInt8') SETTINGS aggregate_function_input_format = 'value', input_format_binary_read_json_as_string = 1"
+echo '-- skip, value JSON-as-string'
+$CLICKHOUSE_LOCAL -q "SELECT a, b FROM file('$JSON_FILE', 'RowBinaryWithNamesAndTypes', 'a UInt8, b UInt8') SETTINGS input_format_skip_unknown_fields = 1, aggregate_function_input_format = 'value', input_format_binary_read_json_as_string = 1"
+
 # The default `state` mode is unchanged: a state-encoded file written by ClickHouse itself round-trips
 # through the column read path.
 STATE_FILE="${CLICKHOUSE_TMP}/04635_state.rowbinary"
@@ -38,4 +51,4 @@ $CLICKHOUSE_LOCAL -q "SELECT 1::UInt8 AS a, avgState(2::UInt32) AS s, 3::UInt8 A
 echo '-- read, state'
 $CLICKHOUSE_LOCAL -q "SELECT a, finalizeAggregation(s), b FROM file('$STATE_FILE', 'RowBinaryWithNamesAndTypes', 'a UInt8, s AggregateFunction(avg, UInt32), b UInt8')"
 
-rm -f "$VALUE_FILE" "$ARRAY_FILE" "$STATE_FILE"
+rm -f "$VALUE_FILE" "$ARRAY_FILE" "$JSON_FILE" "$STATE_FILE"
