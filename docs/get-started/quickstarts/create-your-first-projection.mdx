@@ -34,8 +34,7 @@ By the end, you'll understand how to add and materialize a projection, how Click
 
 <Steps titleSize="h3">
 
-    <Step>
-        ### Understand why you need a projection
+    <Step title="Understand why you need a projection" id="understand-why-you-need-a-projection">
 
         Your `uk_price_paid` table is sorted by `(postcode, addr1, addr2)`. This means ClickHouse can skip large blocks of data when you filter by `postcode`, `addr1` or `addr2`, but queries that filter by `town` must scan every row - all 30 million of them.
 
@@ -50,8 +49,7 @@ By the end, you'll understand how to add and materialize a projection, how Click
 
     </Step>
 
-    <Step>
-        ### Add a projection to your table
+    <Step title="Add a projection to your table" id="add-a-projection-to-your-table">
 
         Define a projection on `uk_price_paid` that stores `town`, `date`, `price`, and `type` sorted by `(town, date)`:
 
@@ -76,8 +74,7 @@ By the end, you'll understand how to add and materialize a projection, how Click
 
     </Step>
 
-    <Step>
-        ### Materialize the projection for existing data
+    <Step title="Materialize the projection for existing data" id="materialize-the-projection-for-existing-data">
 
         Like materialized views, a newly added projection only applies to future inserts. To populate it with the 30 million rows already in the table, materialize it explicitly:
 
@@ -115,8 +112,7 @@ By the end, you'll understand how to add and materialize a projection, how Click
 
     </Step>
 
-    <Step>
-        ### Query the table and observe automatic projection usage
+    <Step title="Query the table and observe automatic projection usage" id="query-the-table-and-observe-automatic-projection-usage">
 
         Now run a query filtering by `town` - on the **same table** you've always queried:
 
@@ -165,15 +161,13 @@ By the end, you'll understand how to add and materialize a projection, how Click
 
     </Step>
 
-    <Step>
-        ### Compare projections to materialized views
+    <Step title="Compare projections to materialized views" id="compare-projections-to-materialized-views">
 
         Projections and materialized views both solve the same problem - faster reads on alternative access patterns - but they make different trade-offs. In short, projections are best when you just need a different sort order on the same data; materialized views are more flexible when you need to transform, aggregate, or route data to a different schema. For a detailed comparison, see [Materialized views versus projections](/concepts/features/projections/materialized-views-versus-projections).
 
     </Step>
 
-    <Step>
-        ### Observe the storage overhead
+    <Step title="Observe the storage overhead" id="observe-the-storage-overhead">
 
         Projections store a second copy of the selected columns inside the same table, increasing disk usage. Query `system.parts` to see the total size of `uk_price_paid` (which now includes the projection data):
 

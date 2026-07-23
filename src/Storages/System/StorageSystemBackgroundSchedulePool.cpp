@@ -15,7 +15,7 @@ ColumnsDescription StorageSystemBackgroundSchedulePool::getColumnsDescription()
 {
     return ColumnsDescription
     {
-        {"pool", std::make_shared<DataTypeString>(), "Pool name. Possible values: `schedule` — general purpose schedule pool, `buffer_flush` — pool for flushing Buffer table data, `distributed` — pool for distributed table operations, `message_broker` — pool for message broker operations."},
+        {"pool", std::make_shared<DataTypeString>(), "Pool name. Possible values: `schedule` (general purpose schedule pool), `buffer_flush` (pool for flushing Buffer table data), `distributed` (pool for distributed table operations), `message_broker` (pool for message broker operations), `streaming` (pool for streaming queries background jobs), `iceberg` (pool for Iceberg table metadata refresh)."},
         {"database", std::make_shared<DataTypeString>(), "Database name."},
         {"table", std::make_shared<DataTypeString>(), "Table name."},
         {"table_uuid", std::make_shared<DataTypeUUID>(), "Table UUID."},
@@ -55,6 +55,8 @@ void StorageSystemBackgroundSchedulePool::fillData(MutableColumns & res_columns,
     fill_from_pool(context->getBufferFlushSchedulePool(), "buffer_flush");
     fill_from_pool(context->getDistributedSchedulePool(), "distributed");
     fill_from_pool(context->getMessageBrokerSchedulePool(), "message_broker");
+    fill_from_pool(context->getStreamingSchedulePool(), "streaming");
+    fill_from_pool(context->getIcebergSchedulePool(), "iceberg");
 }
 
 }

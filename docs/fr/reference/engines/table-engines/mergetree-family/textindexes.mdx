@@ -186,7 +186,6 @@ SELECT tokens('abc def', 'ngrams', 3);
 *Utilisation de données d’entrée non ASCII.*
 Les index de texte peuvent être créés à partir de données textuelles dans n’importe quelle langue et avec n’importe quel jeu de caractères.
 Pour le texte non ASCII, le tokenizer `asciiCJK` est recommandé, car il gère correctement les limites de mots Unicode, y compris pour les caractères CJK.
-:::
 
 **Argument de préprocesseur (facultatif)**. Le préprocesseur correspond à une expression appliquée à la chaîne d’entrée avant la tokenisation.
 

@@ -17,7 +17,8 @@ import CommunityMaintainedBadge from "/snippets/components/CommunityMaintainedBa
 
 <CommunityMaintainedBadge/>
 
-## 1. Setup a ClickHouse connection {#1-setup-a-clickhouse-connection}
+<Steps>
+<Step title="Setup a ClickHouse connection" id="1-setup-a-clickhouse-connection">
 
 To make a connection to ClickHouse, navigate to the **Connections page**, select **New Connection**, then select the ClickHouse from the New Connection modal.
 
@@ -34,7 +35,8 @@ You'll be asked to provide a **host**, **username** and **password**:
 
 Please refer to the examples in our developer documentation to find out how to [create a connection to ClickHouse](https://developer.luzmo.com/api/createAccount?exampleSection=AccountCreateClickhouseRequestBody) via our API.
 
-## 2. Add datasets {#2-add-datasets}
+</Step>
+<Step title="Add datasets" id="2-add-datasets">
 
 Once you have connected your ClickHouse you can add datasets as explained [here](https://academy.luzmo.com/article/ldx3iltg). You can select one or multiple datasets as available in your ClickHouse and [link](https://academy.luzmo.com/article/gkrx48x5) them in Luzmo to ensure they can be used together in a dashboard. Also make sure to check out this article on [Preparing your data for analytics](https://academy.luzmo.com/article/u492qov0).
 
@@ -43,6 +45,9 @@ To find out how to add datasets using our API, please refer to [this example in 
 You can now use your datasets to build beautiful (embedded) dashboards, or even power an AI Data Analyst ([Luzmo IQ](https://luzmo.com/iq)) that can answer your clients' questions.
 
 <Image img="/images/integrations/data-visualization/luzmo_03.webp" size="md" alt="Luzmo dashboard example showing multiple visualizations of data from ClickHouse" border />
+
+</Step>
+</Steps>
 
 ## Usage notes {#usage-notes}
 

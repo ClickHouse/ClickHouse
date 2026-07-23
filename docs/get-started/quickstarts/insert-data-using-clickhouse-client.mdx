@@ -32,8 +32,7 @@ By the end, you'll know how to use clickhouse-client to load local files into Cl
 
 <Steps titleSize="h3">
 
-    <Step>
-        ### Install clickhouse-client
+    <Step title="Install clickhouse-client" id="install-clickhouse-client">
 
         `clickhouse-client` is the official CLI for connecting to ClickHouse. It is included in the ClickHouse binary.
 
@@ -52,8 +51,7 @@ By the end, you'll know how to use clickhouse-client to load local files into Cl
         You should see output showing the ClickHouse version number, confirming `clickhouse-client` is ready to use.
     </Step>
 
-    <Step>
-        ### Prepare a sample CSV file
+    <Step title="Prepare a sample CSV file" id="prepare-a-sample-csv-file">
 
         Create a small sample CSV file so this quickstart is self-contained. Run the following in your terminal:
 
@@ -74,8 +72,7 @@ By the end, you'll know how to use clickhouse-client to load local files into Cl
         ```
     </Step>
 
-    <Step>
-        ### Connect to your Cloud service
+    <Step title="Connect to your Cloud service" id="connect-to-your-cloud-service">
 
         The commands below assume you've exported `CLICKHOUSE_HOST`, `CLICKHOUSE_USER`, and `CLICKHOUSE_PASSWORD` as environment variables, as described in the [Obtain your Cloud connection details](/get-started/quickstarts/obtain-your-cloud-connection-details) quickstart. If you haven't, you can replace them with your values directly.
 
@@ -98,8 +95,7 @@ By the end, you'll know how to use clickhouse-client to load local files into Cl
         </Note>
     </Step>
 
-    <Step>
-        ### Create a target table and insert data
+    <Step title="Create a target table and insert data" id="create-a-target-table-and-insert-data">
 
         First, create a table on your Cloud service to receive the data:
 
@@ -138,8 +134,7 @@ By the end, you'll know how to use clickhouse-client to load local files into Cl
         `clickhouse-client` sends the contents of the CSV file directly to your Cloud service. The `CSVWithNames` format tells ClickHouse that the first row contains column headers.
     </Step>
 
-    <Step>
-        ### Verify the data was inserted
+    <Step title="Verify the data was inserted" id="verify-the-data-was-inserted">
 
         Query your Cloud service to confirm the rows arrived:
 

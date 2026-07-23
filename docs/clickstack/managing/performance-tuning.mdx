@@ -636,8 +636,7 @@ If you're confident of your access patterns prior to data ingestion, simply drop
 The example below shows a simple way to create a new logs table with the existing schema, but with a new primary key that includes the column `SeverityText` before the `ServiceName`.
 
 <Steps>
-<Step>
-#### Create new table {#create-new-table-with-key}
+<Step title="Create new table" id="create-new-table-with-key">
 
 ```sql
 CREATE TABLE otel_logs_temp AS otel_logs
@@ -654,8 +653,7 @@ The `ORDER BY` controls the physical data layout, while the `PRIMARY KEY` define
 In rare, very large workloads, these may differ, but most users should keep them aligned.
 </Info>
 </Step>
-<Step>
-#### Exchange and drop table {#exhange-and-drop-table}
+<Step title="Exchange and drop table" id="exhange-and-drop-table">
 
 The `EXCHANGE` statement is used to swap the names of the tables [atomically](/concepts/core-concepts/glossary#atomicity). The temporary table (now the old default table), can be dropped.
 
@@ -677,8 +675,7 @@ Backfilling existing data into a new table is rarely worthwhile at scale. The co
 The same example of introducing the `SeverityText` as the first column in the primary key is used below. In this case, a table is created for new data, retaining the old table for historical analysis.
 
 <Steps>
-<Step>
-#### Create new table {#create-new-table-with-key-2}
+<Step title="Create new table" id="create-new-table-with-key-2">
 
 Create the new table with the desired primary key. Note the `_23_01_2025` suffix - adapt this to be the current date. e.g.
 
@@ -688,8 +685,7 @@ PRIMARY KEY (SeverityText, ServiceName, Timestamp)
 ORDER BY (SeverityText, ServiceName, Timestamp)
 ```
 </Step>
-<Step>
-#### Create a Merge table {#create-merge-table}
+<Step title="Create a Merge table" id="create-merge-table">
 
 The [Merge engine](/reference/engines/table-engines/special/merge) (not to be confused with MergeTree) doesn't store data itself, but allows reading from any number of other tables simultaneously.
 
@@ -705,8 +701,7 @@ ENGINE = Merge(currentDatabase(), 'otel_logs*')
 
 You can now query this table to confirm it returns data from `otel_logs`.
 </Step>
-<Step>
-#### Update the ClickStack UI to read from the merge table {#update-clickstack-ui-to-read-from-merge-tree}
+<Step title="Update the ClickStack UI to read from the merge table" id="update-clickstack-ui-to-read-from-merge-tree">
 
 Configure the ClickStack UI to use `otel_logs_merge` as the table for the logs data source.
 
@@ -714,8 +709,7 @@ Configure the ClickStack UI to use `otel_logs_merge` as the table for the logs d
 
 At this point, writes continue to `otel_logs` with the original primary key, while reads use the merge table. There is no visible change for users or impact on ingestion.
 </Step>
-<Step>
-#### Exchange the tables {#exchange-the-tables}
+<Step title="Exchange the tables" id="exchange-the-tables">
 
 An `EXCHANGE` statement is now used to swap the names of the `otel_logs` and `otel_logs_23_01_2025` tables atomically.
 
@@ -732,8 +726,7 @@ This process allows primary key changes with no ingest interruption and no user-
 This process can be adapted should further changes be required to primary keys. For example, if you decide that actually the `SeverityNumber` should be part of the primary key one week later, rather than the `SeverityText`. The following process can be adapted as many times as primary key changes are required.
 
 <Steps>
-<Step>
-#### Create new table {#create-new-table-with-key-3}
+<Step title="Create new table" id="create-new-table-with-key-3">
 
 Create the new table with the desired primary key.
 In the example below `30_01_2025` is used as our suffix to denote the date of the table. e.g.
@@ -744,8 +737,7 @@ PRIMARY KEY (SeverityNumber, ServiceName, TimestampTime)
 ORDER BY (SeverityNumber, ServiceName, TimestampTime)
 ```
 </Step>
-<Step>
-#### Exchange the tables {#exchange-the-tables-v2}
+<Step title="Exchange the tables" id="exchange-the-tables-v2">
 
 An `EXCHANGE` statement is now used to swap the names of the `otel_logs` and `otel_logs_30_01_2025` tables atomically.
 

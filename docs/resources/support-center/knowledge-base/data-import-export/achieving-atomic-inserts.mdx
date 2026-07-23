@@ -28,32 +28,28 @@ Instead of inserting directly into production tables and attempting to clean up 
 
 ## Step-by-step for single-table atomicity {#step-by-step}
 <Steps>
-<Step>
-### Create a staging table {#create-staging-table}
+<Step title="Create a staging table" id="create-staging-table">
 Use the same schema, partition key, `ORDER BY`, and storage policy as the production table.
 
 ```sql
 CREATE TABLE my_table_staging AS my_table_prod;
 ```
 </Step>
-<Step>
-### Insert data into the staging table {#insert-into-staging}
+<Step title="Insert data into the staging table" id="insert-into-staging">
 Run your insert against the staging table instead of the production table.
 
 ```sql
 INSERT INTO my_table_staging SELECT ... FROM source;
 ```
 </Step>
-<Step>
-### If the insert fails, truncate and retry {#on-failure}
+<Step title="If the insert fails, truncate and retry" id="on-failure">
 Truncate the staging table and run the load again. No production data has been affected.
 
 ```sql
 TRUNCATE TABLE my_table_staging;
 ```
 </Step>
-<Step>
-### If the insert succeeds, move the partitions to production {#on-success}
+<Step title="If the insert succeeds, move the partitions to production" id="on-success">
 To move the data into production and remove it from the staging table, use `MOVE PARTITION`.
 
 ```sql
@@ -68,8 +64,7 @@ ALTER TABLE my_table_prod ATTACH PARTITION tuple() FROM my_table_staging;
 
 Both operations are metadata-level changes on the same storage policy and complete almost instantaneously.
 </Step>
-<Step>
-### Clean up the staging table {#clean-up}
+<Step title="Clean up the staging table" id="clean-up">
 Once all partitions have been moved, truncate the staging table to leave it empty for the next load.
 
 ```sql

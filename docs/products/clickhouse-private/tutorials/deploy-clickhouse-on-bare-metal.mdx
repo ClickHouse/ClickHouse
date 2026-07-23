@@ -26,9 +26,7 @@ For detailed infrastructure specifications, see [reference/infrastructure-requir
 
 <Steps>
 
-<Step>
-
-## Phase 1: Install Terraform
+<Step title="Phase 1: Install Terraform" id="phase-1-install-terraform">
 
 ``` text
 dnf install -y unzip git
@@ -63,9 +61,7 @@ on linux_amd64
 
 </Step>
 
-<Step>
-
-## Phase 2: Download Example Scripts
+<Step title="Phase 2: Download Example Scripts" id="phase-2-download-example-scripts">
 
 Download and extract the example scripts provided by ClickHouse:
 
@@ -80,9 +76,7 @@ The archive contains Terraform modules, Ansible playbooks, inventory templates, 
 
 </Step>
 
-<Step>
-
-## Phase 3: Configure AWS Credentials
+<Step title="Phase 3: Configure AWS Credentials" id="phase-3-configure-aws-credentials">
 
 Create a credentials file with your AWS IAM access key and secret key:
 
@@ -106,9 +100,7 @@ source ./aws-creds.sh
 
 </Step>
 
-<Step>
-
-## Phase 4: Initialize and Apply Terraform
+<Step title="Phase 4: Initialize and Apply Terraform" id="phase-4-initialize-and-apply-terraform">
 
 Initialize the RKE2 Terraform module. Add `-migrate-state` if moving state from local to S3.
 
@@ -136,9 +128,7 @@ This creates the EC2 instances, networking, and security groups needed for the R
 
 </Step>
 
-<Step>
-
-## Phase 5: Install Ansible Dependencies
+<Step title="Phase 5: Install Ansible Dependencies" id="phase-5-install-ansible-dependencies">
 
 Navigate to the Ansible directory and install the required Galaxy roles and collections:
 
@@ -158,9 +148,7 @@ ansible-galaxy collection install kubernetes.core
 
 </Step>
 
-<Step>
-
-## Phase 6: Provision RKE2
+<Step title="Phase 6: Provision RKE2" id="phase-6-provision-rke2">
 
 ### Verify Nodes Are Ready
 
@@ -200,9 +188,7 @@ The `K8s nodes state` task will also print a summary showing all nodes in `Ready
 
 </Step>
 
-<Step>
-
-## Phase 7: Configure cert-manager and Certificates
+<Step title="Phase 7: Configure cert-manager and Certificates" id="phase-7-configure-cert-manager-and-certificates">
 
 Install cert-manager, trust-manager, and generate certificates for ClickHouse using the Ansible playbook:
 
@@ -233,9 +219,7 @@ PLAY RECAP *****************************************************************
 
 </Step>
 
-<Step>
-
-## Phase 8: Install Local Storage
+<Step title="Phase 8: Install Local Storage" id="phase-8-install-local-storage">
 
 ### Install local-path-provisioner
 
@@ -283,9 +267,7 @@ allowedTopologies:
 
 </Step>
 
-<Step>
-
-## Phase 9: Label Nodes
+<Step title="Phase 9: Label Nodes" id="phase-9-label-nodes">
 
 Label nodes with the ClickHouse group and topology zone labels required by the operator:
 
@@ -303,9 +285,7 @@ Adjust the node names and labels to match your environment.
 
 </Step>
 
-<Step>
-
-## Phase 10: Install ClickHouse Operator and Cluster
+<Step title="Phase 10: Install ClickHouse Operator and Cluster" id="phase-10-install-clickhouse-operator-and-cluster">
 
 ### Set Environment Variables
 
