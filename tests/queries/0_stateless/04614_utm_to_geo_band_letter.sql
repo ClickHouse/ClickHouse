@@ -51,6 +51,8 @@ SELECT isNull(g), g = UTMToGeo(448251.6, 5411935.13, 31, 1)
 FROM (SELECT UTMToGeo(448251.6, 5411935.13, 31, band) AS g FROM values('band Nullable(String)', (NULL), ('U')));
 SELECT isNull(g), g = UTMToGeo(334368.634, 6250948.345, 56, 0)
 FROM (SELECT UTMToGeo(334368.634, 6250948.345, 56, band) AS g FROM values('band Nullable(FixedString(1))', (NULL), ('H')));
+SELECT isNull(g), g = UTMToGeo(448251.6, 5411935.13, 31, 1)
+FROM (SELECT UTMToGeo(448251.6, 5411935.13, 31, band) AS g FROM values('band LowCardinality(Nullable(String))', (NULL), ('U')));
 SELECT toTypeName(UTMToGeo(448251.6, 5411935.13, 31, band)) FROM values('band Nullable(String)', (NULL)) LIMIT 1;
 
 SELECT '-- NULL propagation works for the other arguments and for the integer flag too';

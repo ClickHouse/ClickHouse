@@ -23,6 +23,8 @@ M	1
 0	1
 1	\N
 0	1
+1	\N
+0	1
 Nullable(Tuple(longitude Float64, latitude Float64))
 -- NULL propagation works for the other arguments and for the integer flag too
 1
