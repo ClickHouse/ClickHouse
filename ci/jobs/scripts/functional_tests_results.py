@@ -213,12 +213,7 @@ class FTResultsProcessor:
 
         return s
 
-    def run(
-        self,
-        task_name="Tests",
-        runner_exit_code: Optional[int] = None,
-        is_bugfix_validation: bool = False,
-    ):
+    def run(self, task_name="Tests", runner_exit_code: Optional[int] = None):
         state = Result.Status.OK
         s = self._process_test_output()
         test_results = s.test_results
@@ -245,20 +240,7 @@ class FTResultsProcessor:
                     result.status = Result.Status.UNKNOWN
             elif len(failed_results) == 1:
                 # Single test failed - sequential run, this test is the culprit.
-                # Demote it to ERROR so a test that merely witnessed the server
-                # death is not reported as an ordinary test failure - except in
-                # bugfix validation, where the new test crashing the server on
-                # master HEAD is the expected reproduction of the bug: keep the
-                # FAIL so `invert_bugfix_validation_status` counts it as a
-                # reproduction instead of tripping its fail-closed ERROR guard
-                # and reporting the run inconclusive (#105789). Accepted
-                # tradeoff: ABORTED_RUN_EXIT_CODES also covers host-caused
-                # kills (e.g. 128+SIGKILL from an OOM of the runner), so in
-                # bugfix validation such a death with a single failed test
-                # reads as a reproduction too - same tradeoff the >1-failed
-                # (UNKNOWN + flipped `Server died` row) path already makes.
-                if not is_bugfix_validation:
-                    failed_results[0].status = Result.Status.ERROR
+                failed_results[0].status = Result.Status.ERROR
             test_results.append(Result("Server died", Result.Status.FAIL, info="Server died"))
         elif runner_exit_code == MAX_FAILURES_EXIT_CODE:
             # The run stopped early because too many tests failed
