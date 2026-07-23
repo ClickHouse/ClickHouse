@@ -133,6 +133,15 @@ struct Part
     UInt64 initial_part_checksum_low64 = 0;
     UInt64 initial_part_checksum_high64 = 0;
 
+    /// Whether the first announcing replica's storage guarantees that a part name identifies the
+    /// same content on every replica (snapshotted from `description.storage_replication` at first
+    /// insertion). For `NotReplicated` storage a missing fingerprint makes same-named parts
+    /// unverifiable, so the coordinator fails closed; for `Replicated` storage the engine's
+    /// contract makes same-named parts safe to merge even without a fingerprint. `Unknown` means
+    /// the first replica spoke an older protocol that did not carry the field.
+    RangesInDataPartDescription::StorageReplication initial_storage_replication
+        = RangesInDataPartDescription::StorageReplication::Unknown;
+
     bool operator<(const Part & rhs) const { return description.info < rhs.description.info; }
 };
 }
@@ -176,10 +185,17 @@ namespace
 ///      instances that each created a part named `all_1_1_0` from independent local inserts).
 ///      When both sides carry a non-zero fingerprint, mismatch means divergent underlying data.
 ///
-///   2. **Total mark count** — fallback used when either side's fingerprint is unset (older
-///      protocol replica that predates `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PART_FINGERPRINT`,
-///      coordinator-internal queue entry, or part whose checksums were not loaded). Catches the
-///      common AST-fuzzer shape where mark counts diverge.
+///   2. **Fail closed on non-replicated storage** — when either side's fingerprint is unset
+///      (older protocol replica that predates
+///      `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PART_FINGERPRINT`, or part whose checksums were
+///      not loaded) and either side reports non-replicated storage, the announcement is rejected:
+///      without a fingerprint there is no way to verify that two same-named non-replicated parts
+///      hold the same data, and merging them blindly could return incorrect results.
+///
+///   3. **Total mark count** — fallback used when the fingerprint is unset and no side reports
+///      non-replicated storage (replicated engines guarantee part-name/content identity, so the
+///      weaker check is safe there and mixed-version clusters keep working). Catches the common
+///      AST-fuzzer shape where mark counts diverge.
 ///
 /// We deliberately do NOT compare `description.rows`, `description.ranges`, `getLastMark`, or
 /// any other analyzed-view field because:
@@ -210,9 +226,24 @@ bool sameLocalLayout(const Part & known, const RangesInDataPartDescription & ann
             && known.initial_part_checksum_high64 == announced.part_checksum_high64;
     }
 
-    /// Fingerprint is unset on at least one side. Fall back to the cheaper mark-count check, which
-    /// still catches divergent underlying parts whose mark counts disagree. Skip the check when
-    /// either side's mark count is unset (older protocol or coordinator-internal queue entry).
+    /// Fingerprint is unset on at least one side. If either side reports non-replicated storage,
+    /// same-named parts are not guaranteed to hold the same data (block numbers come from a
+    /// node-local counter) and there is no content identity to verify, so fail closed instead of
+    /// weakening the check: a fail-open fallback would let two divergent same-named parts merge
+    /// whenever their mark counts happen to coincide, and ranges from the first replica's
+    /// snapshot could then be dispatched against the second replica's different data, returning
+    /// incorrect results. For replicated storage a part name implies identical content by the
+    /// engine's contract, so the fallback below stays safe there (this keeps mixed-version
+    /// clusters working during rolling upgrades).
+    using StorageReplication = RangesInDataPartDescription::StorageReplication;
+    if (known.initial_storage_replication == StorageReplication::NotReplicated
+        || announced.storage_replication == StorageReplication::NotReplicated)
+        return false;
+
+    /// Both sides are replicated storage or predate the fingerprint protocol version. Fall back
+    /// to the cheaper mark-count check, which still catches divergent underlying parts whose mark
+    /// counts disagree. Skip the check when either side's mark count is unset (older protocol or
+    /// coordinator-internal queue entry).
     if (known.initial_total_marks_in_part == 0 || announced.total_marks_in_part == 0)
         return true;
     return known.initial_total_marks_in_part == announced.total_marks_in_part;
@@ -244,6 +275,23 @@ bool sameLocalLayout(const Part & known, const RangesInDataPartDescription & ann
             known.initial_part_checksum_low64);
     }
 
+    using StorageReplication = RangesInDataPartDescription::StorageReplication;
+    if (known.initial_storage_replication == StorageReplication::NotReplicated
+        || announced.storage_replication == StorageReplication::NotReplicated)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Replica {} announced part {} of a non-replicated MergeTree table, but the content "
+            "fingerprint needed to verify that it matches the same-named part announced by an "
+            "earlier replica is unavailable (a replica runs an older server version or the part's "
+            "checksums are not loaded). Same-named parts of non-replicated tables may hold "
+            "different data, so the query is rejected instead of risking incorrect results. "
+            "Upgrade all replicas, use ReplicatedMergeTree, or disable "
+            "parallel_replicas_for_non_replicated_merge_tree.",
+            replica_num,
+            announced.info.getPartNameV1());
+    }
+
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
         "Replica {} announced part {} with {} marks in the underlying part, but an earlier "
@@ -265,6 +313,7 @@ void captureInitialLayout(Part & p)
     p.initial_total_marks_in_part = p.description.total_marks_in_part;
     p.initial_part_checksum_low64 = p.description.part_checksum_low64;
     p.initial_part_checksum_high64 = p.description.part_checksum_high64;
+    p.initial_storage_replication = p.description.storage_replication;
 }
 
 }

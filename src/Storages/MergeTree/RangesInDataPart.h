@@ -54,6 +54,31 @@ struct RangesInDataPartDescription
     UInt64 part_checksum_low64 = 0;
     UInt64 part_checksum_high64 = 0;
 
+    /// Whether the announcing replica's storage guarantees that a part name identifies the same
+    /// content on every replica.
+    enum class StorageReplication : UInt8
+    {
+        /// Field was not populated: the announcement came from a replica whose protocol predates
+        /// `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PART_FINGERPRINT`, or the description is a
+        /// coordinator-internal queue entry.
+        Unknown = 0,
+        /// Non-replicated `MergeTree`: block numbers are allocated by a node-local
+        /// `SimpleIncrement`, so two replicas can independently produce same-named parts with
+        /// divergent content. Same-named parts MUST be verified by content fingerprint; the
+        /// coordinator fails closed when the fingerprint is unavailable.
+        NotReplicated = 1,
+        /// `ReplicatedMergeTree` and descendants: block numbers come from a Keeper-coordinated
+        /// counter, so a part name implies identical content across replicas and same-named
+        /// parts are safe to merge even without a fingerprint.
+        Replicated = 2,
+    };
+
+    /// Populated from `data_part->storage.supportsReplication` in `RangesInDataPart::getDescription`.
+    /// Used by `ParallelReplicasReadingCoordinator` to decide whether a missing part fingerprint
+    /// is tolerable (replicated storage: yes, by the engine's contract) or must fail closed
+    /// (non-replicated storage: same-named parts may hold divergent data).
+    StorageReplication storage_replication = StorageReplication::Unknown;
+
     void serialize(WriteBuffer & out, UInt64 parallel_replicas_protocol_version) const;
     String describe() const;
     void deserialize(ReadBuffer & in, UInt64 parallel_replicas_protocol_version);

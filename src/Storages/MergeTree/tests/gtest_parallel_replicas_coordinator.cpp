@@ -511,27 +511,112 @@ TEST(ParallelReplicasCoordinator, InOrderAcceptsSameChecksumWithDivergentAnalyze
 
 /// Backward-compatibility for the fingerprint check: an older replica that does not populate
 /// `part_checksum_*` (protocol below `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PART_FINGERPRINT`)
-/// must still interoperate with newer replicas. When either side's fingerprint is unset, the
-/// coordinator falls back to the cheaper `total_marks_in_part` check.
-TEST(ParallelReplicasCoordinator, DefaultFallsBackToMarksWhenChecksumUnset)
+/// must still interoperate with newer replicas when the storage is REPLICATED — there a part
+/// name implies identical content by the engine's contract, so the coordinator may safely fall
+/// back to the cheaper `total_marks_in_part` check. This keeps `ReplicatedMergeTree` parallel
+/// replicas working during a rolling upgrade.
+TEST(ParallelReplicasCoordinator, DefaultFallsBackToMarksWhenChecksumUnsetOnReplicatedStorage)
 {
     ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
 
-    /// First announcement: newer replica that DOES populate the fingerprint.
+    /// First announcement: newer replica that populates the fingerprint and reports replicated storage.
     {
         RangesInDataPartsDescription parts;
-        parts.push_back(makePartWithFingerprint(
+        auto desc = makePartWithFingerprint(
             "all", 1, 1, 0, /*marks=*/8,
             /*fingerprint_low64=*/0xAAAAAAAAAAAAAAAAull,
-            /*fingerprint_high64=*/0xBBBBBBBBBBBBBBBBull));
+            /*fingerprint_high64=*/0xBBBBBBBBBBBBBBBBull);
+        desc.storage_replication = RangesInDataPartDescription::StorageReplication::Replicated;
+        parts.push_back(desc);
         coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/0, std::move(parts)));
     }
 
-    /// Second announcement: older replica without the fingerprint, but matching `total_marks_in_part`.
-    /// The coordinator skips the fingerprint check (one side unset) and falls through to the
-    /// mark-count check, which agrees, so the announcement is accepted.
+    /// Second announcement: older replica without the fingerprint (and without the storage
+    /// replication field), but matching `total_marks_in_part`. The coordinator skips the
+    /// fingerprint check (one side unset), sees no side reporting non-replicated storage, and
+    /// falls through to the mark-count check, which agrees, so the announcement is accepted.
     RangesInDataPartsDescription parts_old;
     parts_old.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
     EXPECT_NO_THROW(
         coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/1, std::move(parts_old))));
+}
+
+/// Fail-closed behavior for NON-replicated storage: when the snapshot part came from a plain
+/// `MergeTree` (block numbers from a node-local counter, so same-named parts may hold divergent
+/// data) and a later announcement of the same-named part carries no content fingerprint (older
+/// replica protocol), there is no way to verify part identity, so the coordinator must reject
+/// the announcement instead of weakening the check to mark-count equality. Otherwise two
+/// divergent same-named parts with a coincidentally equal mark count would merge, and ranges
+/// from the first replica's snapshot could be dispatched against the second replica's different
+/// data, returning incorrect results.
+TEST(ParallelReplicasCoordinator, InOrderFailsClosedWhenFingerprintUnavailableOnNonReplicatedStorage)
+{
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+
+    /// First announcement: newer replica, non-replicated MergeTree, fingerprint populated.
+    {
+        RangesInDataPartsDescription parts;
+        auto desc = makePartWithFingerprint(
+            "all", 1, 1, 0, /*marks=*/8,
+            /*fingerprint_low64=*/0xAAAAAAAAAAAAAAAAull,
+            /*fingerprint_high64=*/0xBBBBBBBBBBBBBBBBull);
+        desc.storage_replication = RangesInDataPartDescription::StorageReplication::NotReplicated;
+        parts.push_back(desc);
+        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/0, std::move(parts)));
+    }
+
+    /// Second announcement: older replica without the fingerprint, same mark count. Even though
+    /// the mark counts agree, identity cannot be verified on non-replicated storage, so the
+    /// coordinator fails closed.
+    RangesInDataPartsDescription parts_old;
+    parts_old.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+    EXPECT_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/1, std::move(parts_old))),
+        DB::Exception);
+}
+
+/// The same fail-closed rule with the sides swapped: the snapshot came from an older replica
+/// (no fingerprint, no storage replication field) and a later NEWER replica announces the
+/// same-named part reporting non-replicated storage but without a usable fingerprint (for
+/// example, a part whose checksums were not loaded). One side reporting non-replicated storage
+/// is enough to make the missing fingerprint fatal.
+TEST(ParallelReplicasCoordinator, DefaultFailsClosedWhenFingerprintUnavailableOnNonReplicatedStorage)
+{
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+
+    /// First announcement: older replica, no fingerprint, no storage replication field.
+    {
+        RangesInDataPartsDescription parts;
+        parts.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+        coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/0, std::move(parts)));
+    }
+
+    /// Second announcement: newer replica on non-replicated storage whose part carries no
+    /// fingerprint (checksums not loaded). Mark counts agree, but identity is unverifiable.
+    RangesInDataPartsDescription parts_new;
+    auto desc = makePart("all", 1, 1, 0, /*marks=*/8);
+    desc.storage_replication = RangesInDataPartDescription::StorageReplication::NotReplicated;
+    parts_new.push_back(desc);
+    EXPECT_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/1, std::move(parts_new))),
+        DB::Exception);
+}
+
+/// Two newer replicas on non-replicated storage announcing the SAME part (matching fingerprints)
+/// must still be accepted: the fail-closed rule applies only when the fingerprint is missing.
+TEST(ParallelReplicasCoordinator, InOrderAcceptsMatchingFingerprintOnNonReplicatedStorage)
+{
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+
+    for (size_t replica_num = 0; replica_num < 2; ++replica_num)
+    {
+        RangesInDataPartsDescription parts;
+        auto desc = makePartWithFingerprint(
+            "all", 1, 1, 0, /*marks=*/8,
+            /*fingerprint_low64=*/0xAAAAAAAAAAAAAAAAull,
+            /*fingerprint_high64=*/0xBBBBBBBBBBBBBBBBull);
+        desc.storage_replication = RangesInDataPartDescription::StorageReplication::NotReplicated;
+        parts.push_back(desc);
+        EXPECT_NO_THROW(coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(replica_num, std::move(parts))));
+    }
 }

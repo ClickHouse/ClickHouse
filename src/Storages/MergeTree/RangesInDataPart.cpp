@@ -8,6 +8,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <IO/VarInt.h>
 
 template <>
@@ -28,6 +29,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int UNKNOWN_PROTOCOL;
 }
 
 
@@ -50,6 +52,7 @@ void RangesInDataPartDescription::serialize(WriteBuffer & out, UInt64 parallel_r
     {
         writeVarUInt(part_checksum_low64, out);
         writeVarUInt(part_checksum_high64, out);
+        writeVarUInt(static_cast<UInt64>(storage_replication), out);
     }
 }
 
@@ -87,6 +90,15 @@ void RangesInDataPartDescription::deserialize(ReadBuffer & in, UInt64 parallel_r
     {
         readVarUInt(part_checksum_low64, in);
         readVarUInt(part_checksum_high64, in);
+
+        UInt64 storage_replication_value = 0;
+        readVarUInt(storage_replication_value, in);
+        if (storage_replication_value > static_cast<UInt64>(StorageReplication::Replicated))
+            throw Exception(
+                ErrorCodes::UNKNOWN_PROTOCOL,
+                "Unexpected storage replication value {} in parallel replicas part description",
+                storage_replication_value);
+        storage_replication = static_cast<StorageReplication>(storage_replication_value);
     }
 }
 
@@ -177,6 +189,11 @@ RangesInDataPartDescription RangesInDataPart::getDescription() const
         .total_marks_in_part = data_part->index_granularity->getMarksCountWithoutFinal(),
         .part_checksum_low64 = fingerprint_low64,
         .part_checksum_high64 = fingerprint_high64,
+        /// Tells the coordinator whether a part name is a content identity here (replicated
+        /// engines) or same-named parts must be verified by fingerprint (plain MergeTree).
+        .storage_replication = data_part->storage.supportsReplication()
+            ? RangesInDataPartDescription::StorageReplication::Replicated
+            : RangesInDataPartDescription::StorageReplication::NotReplicated,
     };
 }
 
