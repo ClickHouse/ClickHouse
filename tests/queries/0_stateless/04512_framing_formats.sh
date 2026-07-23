@@ -704,11 +704,16 @@ data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPack
 # rows would surface only at a later boundary and the totals / extremes bytes would be mislabeled as
 # `data` packets of the next boundary. `FORMAT JSON` installs the validating buffer here because of
 # the `String` key column, and the packet kinds and contents below pin the correct attribution.
-# `optimize_injective_functions_in_group_by` is pinned because it changes the key value in the
-# totals row: with the rewrite, the group key is `intDiv(number, 2)` and `toString` recomputes the
-# default key of the totals row into '0'; without it, the key is the `String` expression itself and
-# the totals row carries the empty default.
+# The key is a non-injective function of `number` on purpose: an injective one (for example
+# `toString(intDiv(number, 2))`) is eliminated from `GROUP BY` in favor of its argument, which
+# changes the key value in the totals row (the key expression recomputes the default argument into
+# '0' instead of the `String` empty default). With `enable_analyzer = 0` that rewrite happens
+# unconditionally, so pinning `optimize_injective_functions_in_group_by` (which gates only the
+# corresponding pass of the analyzer) is not enough to make the result deterministic.
+# A conditional with string literals (for example
+# `if(number < 2, '0', '1')`) does not work either: `optimize_if_transform_strings_to_enum`
+# rewrites it to an `Enum`, whose default (the first value, '0') again changes the totals row.
 echo '--- format-owned UTF-8 validation buffers are drained at packet boundaries (JSON with totals and extremes)'
-${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&extremes=1&output_format_write_statistics=0&optimize_injective_functions_in_group_by=0${SINGLE_BLOCK}" \
-    -d "SELECT toString(intDiv(number, 2)) AS k, count() AS c FROM numbers(4) GROUP BY k WITH TOTALS ORDER BY k FORMAT JSON" \
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&extremes=1&output_format_write_statistics=0${SINGLE_BLOCK}" \
+    -d "SELECT substring(toString(intDiv(number, 2)), 1, 1) AS k, count() AS c FROM numbers(4) GROUP BY k WITH TOTALS ORDER BY k FORMAT JSON" \
     | grep -v -e '"packet":"progress"' -e '"packet":"profile_events"'
