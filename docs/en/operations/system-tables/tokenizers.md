@@ -38,5 +38,6 @@ SELECT * FROM system.tokenizers;
 │ splitByString   │
 │ sparse_grams    │
 │ asciiCJK        │
+│ japanese        │
 └─────────────────┘
 ```

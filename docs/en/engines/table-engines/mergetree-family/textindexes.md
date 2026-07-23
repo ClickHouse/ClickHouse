@@ -80,6 +80,7 @@ CREATE TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | japanese
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
@@ -115,6 +116,7 @@ ALTER TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | japanese
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
@@ -151,6 +153,7 @@ ALTER TABLE table DROP INDEX text_idx;
   Note that each string can consist of multiple characters (`', '` in the example).
   The default separator list, if not specified explicitly (for example, `tokenizer = splitByString`), is a single whitespace `[' ']`.
 - `asciiCJK` splits strings into tokens using Unicode word boundary rules (similar to [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). ASCII alphanumeric characters and underscores form tokens with connectors (ASCII `:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters, including [CJK](https://en.wikipedia.org/wiki/CJK_characters) characters, become single-character tokens.
+- `japanese` splits Japanese text into words using the [MeCab](https://github.com/taku910/mecab) morphological analyzer. Unlike `asciiCJK`, which emits single-character tokens for CJK, this tokenizer performs proper word segmentation. It requires a dictionary that is loaded at runtime from the server configuration (see [Japanese tokenizer dictionary](#japanese-tokenizer-dictionary)) and is only available when ClickHouse is built with MeCab support.
 - `ngrams(N)` splits strings into equally large `N`-grams (see function [ngrams](/sql-reference/functions/splitting-merging-functions.md/#ngrams)).
   The ngram length can be specified using an optional integer parameter between 1 and 8, for example, `tokenizer = ngrams(3)`.
   The default ngram size, if not specified explicitly (for example, `tokenizer = ngrams`), is 3.
@@ -162,6 +165,59 @@ ALTER TABLE table DROP INDEX text_idx;
 - `array` performs no tokenization, i.e. every row value is a token (see function [array](/sql-reference/functions/array-functions.md/#array)).
 
 All available tokenizers are listed in [system.tokenizers](../../../operations/system-tables/tokenizers.md).
+
+### Japanese tokenizer dictionary {#japanese-tokenizer-dictionary}
+
+The `japanese` tokenizer needs a MeCab dictionary, which ClickHouse does not ship. Provide one in the server configuration:
+
+```xml
+<tokenizer>
+    <japanese>
+        <dictionaryLocation>https://example.com/dictionary.tar.zst</dictionaryLocation>
+        <dictionarySha>0123...cdef</dictionarySha>
+    </japanese>
+</tokenizer>
+```
+
+- `dictionaryLocation` is an `http(s)` URL or a local file path to an archive (for example `.tar.zst`) of a compiled MeCab dictionary. Any official dictionary works, such as [IPADIC](https://github.com/taku910/mecab) or [UniDic](https://clrd.ninjal.ac.jp/unidic/).
+- `dictionarySha` is the SHA-256 of that archive. It is verified before the dictionary is loaded; on a mismatch the dictionary is not loaded and an error is raised.
+
+The archive is downloaded and extracted once, then cached locally. Because the dictionary determines how documents are tokenized, the same `dictionarySha` must be configured on all replicas.
+
+Once the dictionary is configured, the `japanese` tokenizer is used like any other. For example:
+
+```sql title="Query"
+CREATE TABLE docs
+(
+    id UInt64,
+    body String,
+    INDEX body_idx body TYPE text(tokenizer = 'japanese')
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO docs VALUES (1, '日本語の形態素解析エンジン'), (2, 'これはテストの文章です');
+
+SELECT id FROM docs WHERE hasAllTokens(body, '形態 解析', 'japanese') ORDER BY id;
+```
+
+```text title="Response"
+┌─id─┐
+│  1 │
+└────┘
+```
+
+You can inspect the tokenization directly with the [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function:
+
+```sql title="Query"
+SELECT tokens('日本語の形態素解析エンジン', 'japanese');
+```
+
+```text title="Response"
+┌─tokens('日本語の形態素解析エンジン', 'japanese')─┐
+│ ['日本語','の','形態','素','解析','エンジン']    │
+└──────────────────────────────────────────────────┘
+```
 
 :::note
 The `splitByString` tokenizer applies the split separators left-to-right.
@@ -186,7 +242,7 @@ SELECT tokens('abc def', 'ngrams', 3);
 
 *Working with non-ASCII inputs.*
 Text indexes can be built on top of text data in any language and character set.
-For non-ASCII text, the `asciiCJK` tokenizer is recommended as it correctly handles Unicode word boundaries including CJK characters.
+For non-ASCII text, the `asciiCJK` tokenizer is recommended as it correctly handles Unicode word boundaries including CJK characters. For Japanese, the `japanese` tokenizer segments text into words rather than single characters and generally gives better search results.
 :::
 
 **Preprocessor argument (optional)**. The preprocessor refers to an expression which is applied to the input string before tokenization.
