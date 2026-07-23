@@ -210,7 +210,7 @@ Repeating the command with the same complete `REFRESH` specification is safe. Ma
 ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE;
 
 -- Change retry settings (schedule must be repeated).
-ALTER TABLE rmv MODIFY REFRESH EVERY 1 HOUR
+ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE
 SETTINGS refresh_retries = 5,
          refresh_retry_initial_backoff_ms = 500,
          refresh_retry_max_backoff_ms = 60000;
