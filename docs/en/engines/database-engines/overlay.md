@@ -158,6 +158,9 @@ tables that enumerate tables per database (`system.parts`, `system.parts_columns
 `system.mutations`, `system.replicas`, `system.replication_queue`, `system.distribution_queue`,
 `system.data_skipping_indices`, `system.projections`, `system.constraints`, and similar): a
 facade row is shown only when `SHOW TABLES` is also granted on the underlying source table.
+The `Maybe you meant ...?` hints attached to unknown-table errors follow the same rule: a
+misspelled facade name suggests a source table only to a user who holds the `SHOW` privilege
+on both the `Overlay` and that source table, so error messages do not reveal hidden names.
 
 System views and metrics that aggregate or enumerate tables across all databases
 (`CHECK ALL TABLES`, `system.graphite_retentions`, `system.rocksdb`, `system.s3_queue_settings`,
