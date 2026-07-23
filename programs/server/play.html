@@ -11685,7 +11685,11 @@ async function updateQueryParams()
     return true;   /// `currentQueryParams` now reflects the current query
 }
 
-query_area.addEventListener('input', (e) =>
+/// The query editor's 'input' listener, named at top level so the regression harnesses drive the
+/// REAL handler (ordering included) instead of a hand-written model of it. The browser ignores a
+/// listener's return value; the returned rebuild promise exists so a test can await the rebuild
+/// or deliberately keep it pending to model an edit racing a run/completion.
+function onQueryInput(e)
 {
     /// A real keystroke/paste into the editor before reconciliation completes means the live
     /// query is newer than the saved workspace; keep it. `restoreEditor`/bootstrap dispatch
@@ -11694,17 +11698,15 @@ query_area.addEventListener('input', (e) =>
 
     resizeQueryAreaIfSlightlyOverflowing();
 
-    /// Run the update synchronously instead of with a setTimeout: the heavy work
-    /// (WASM tokenize, building backdrop HTML) is fast, and the await chain inside
-    /// `updateQueryParams` runs in microtasks — i.e. it finishes before the browser
-    /// paints the next frame. If we deferred this with `setTimeout`, the browser
-    /// would render one frame with the textarea's own text hidden (`color:
-    /// transparent` from `.has-backdrop`) and the backdrop still showing the
-    /// pre-edit contents, so the freshly typed characters would be invisible.
-    updateQueryParams();
-
     /// Keep the active tab and its persisted copy in sync with the editor. The hue of
     /// the active tab follows the page background, so no per-tab recolor is needed here.
+    /// This MUST happen before `updateQueryParams()` below: clearing the editor takes that
+    /// function's empty-query fast path, which SYNCHRONOUSLY refreshes the current history entry
+    /// from `tab.query` (`syncParamsAfterRebuild` -> `refreshCurrentHistoryEntry`) — with a stale
+    /// `tab.query` the URL/hash would be rewritten from the PRE-edit text, so copying the URL or
+    /// reloading right after clearing a parameterized query would resurrect the cleared query.
+    /// (The tokenizing path is ordering-insensitive: it reaches `syncParamsAfterRebuild` only
+    /// after an await, i.e. after this handler has returned either way.)
     const tab = getActiveTab();
     if (tab) {
         /// Keep only the in-memory copy of the editor in sync on each keystroke. We deliberately do
@@ -11731,7 +11733,18 @@ query_area.addEventListener('input', (e) =>
         /// happened during startup, so reconciliation yields to it.
         tab.query = query_area.value;
     }
-});
+
+    /// Run the update synchronously instead of with a setTimeout: the heavy work
+    /// (WASM tokenize, building backdrop HTML) is fast, and the await chain inside
+    /// `updateQueryParams` runs in microtasks — i.e. it finishes before the browser
+    /// paints the next frame. If we deferred this with `setTimeout`, the browser
+    /// would render one frame with the textarea's own text hidden (`color:
+    /// transparent` from `.has-backdrop`) and the backdrop still showing the
+    /// pre-edit contents, so the freshly typed characters would be invisible.
+    return updateQueryParams();
+}
+
+query_area.addEventListener('input', onQueryInput);
 
 function setColorTheme(new_theme, update_preference) {
     theme = new_theme;

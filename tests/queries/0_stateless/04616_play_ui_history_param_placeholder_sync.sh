@@ -68,7 +68,8 @@ const FUNCS = ['toBase64', 'fromBase64', 'nextDefaultTitle', 'uniqueTitle', 'tab
     'stampSelectedDatabaseConnection', 'refreshCurrentHistoryEntry', 'saveHistory', 'syncHistory',
     'markBootstrapDirty', 'scheduleSave', 'persist', 'restoreEditor',
     'extractQueryParams', 'getParamValues', 'setParamValues', 'pickRunParams', 'resolveRunParams',
-    'extractRunParamNames', 'syncParamsAfterRebuild', 'updateQueryParams', 'loadLexer', 'tokenize'];
+    'extractRunParamNames', 'syncParamsAfterRebuild', 'updateQueryParams', 'onQueryInput',
+    'loadLexer', 'tokenize'];
 const code = FUNCS.map(f => extractTopLevel(new RegExp('^(async )?function ' + f + '\\('), f)).join('\n');
 
 /// The parameter-input DOM `updateQueryParams` rebuilds: real enough for element creation,
@@ -141,6 +142,7 @@ const sandbox = {
     applyColumnColors: () => {},
     applyPinnedColumns: () => {},
     updateQueryBackdrop: () => {},
+    resizeQueryAreaIfSlightlyOverflowing: () => {},
     getQueryBoundaries: () => [],
     focusEditorForRun: () => {},
     updateRunButtons: () => {},
@@ -235,15 +237,14 @@ function assert_params(label, actual, expected)
     assert_eq(label, canon(actual), canon(expected));
 }
 
-/// A keystroke: the real `input` listener syncs only the in-memory tab and kicks off the async
-/// input rebuild (`updateQueryParams`). Await the returned promise to let the rebuild land, or
-/// keep it pending to model an edit racing a run/completion.
+/// A keystroke: drives the REAL `input` listener (`onQueryInput`) — including its internal
+/// ordering of the in-memory tab sync vs the input rebuild, which the empty-query fast path
+/// depends on. Await the returned rebuild promise to let the rebuild land, or keep it pending
+/// to model an edit racing a run/completion.
 function type(q)
 {
     sandbox.query_area.value = q;
-    const tab = active();
-    if (tab) tab.query = q;
-    return sandbox.updateQueryParams();
+    return sandbox.onQueryInput({ type: 'input', isTrusted: true });
 }
 
 /// A trusted edit of a live `param_*` input: drives the REAL listener `updateQueryParams`
@@ -326,6 +327,30 @@ function reset()
     assert_eq('clean rerun after removal: run=1 is kept', curUrl().includes('run=1'), true);
     assert_eq('clean rerun after removal: no stale param_x in the URL', curUrl().includes('param_x'), false);
     assert_params('clean rerun after removal: the entry params are empty', curState().params, {});
+
+    /// Clearing a parameterized query to EMPTY text: `updateQueryParams`'s empty-query fast path
+    /// refreshes the current history entry SYNCHRONOUSLY (no tokenization await), so the real
+    /// input listener (`onQueryInput`) must sync `tab.query` BEFORE kicking off the rebuild —
+    /// otherwise the entry/URL is rewritten from the stale PRE-edit query, and copying the URL or
+    /// reloading right after the clear resurrects the query the user just cleared. Assert
+    /// IMMEDIATELY, before the returned rebuild promise is awaited: the URL/hash must already be
+    /// clear, not only after a later persist/reload.
+    reset();
+    const cleared_b64 = sandbox.toBase64('SELECT {x:Int32}');
+    await type('SELECT {x:Int32}');
+    setTrustedParam('x', '1');
+    await run('SELECT {x:Int32}');
+    assert_eq('clear to empty: the baseline URL carries the query', curUrl().includes(cleared_b64), true);
+    const clear_rebuild = type('');   /// deliberately not awaited: the fast path is synchronous
+    assert_eq('clear to empty: the entry query is cleared immediately', curState().query, '');
+    assert_eq('clear to empty: the URL drops the cleared query immediately', curUrl().includes(cleared_b64), false);
+    assert_eq('clear to empty: no stale param_x in the URL', curUrl().includes('param_x'), false);
+    assert_eq('clear to empty: no run=1 on the cleared draft', curUrl().includes('run=1'), false);
+    assert_params('clear to empty: tab.params is emptied immediately', active().params, {});
+    await clear_rebuild;
+    await drain();
+    assert_eq('clear to empty: the draft stays empty after the rebuild settles', active().query, '');
+    assert_eq('clear to empty: the URL stays clear after the rebuild settles', curUrl().includes(cleared_b64), false);
 
     /// REORDERING placeholders is not a change of bindings: a clean run of the reordered text
     /// keeps run=1 and both values, and the tab still reads as clean for the editor-only writers.

@@ -6,6 +6,14 @@ removal edit: the diverged editor drops run=1
 clean rerun after removal: run=1 is kept
 clean rerun after removal: no stale param_x in the URL
 clean rerun after removal: the entry params are empty
+clear to empty: the baseline URL carries the query
+clear to empty: the entry query is cleared immediately
+clear to empty: the URL drops the cleared query immediately
+clear to empty: no stale param_x in the URL
+clear to empty: no run=1 on the cleared draft
+clear to empty: tab.params is emptied immediately
+clear to empty: the draft stays empty after the rebuild settles
+clear to empty: the URL stays clear after the rebuild settles
 reorder baseline: the clean run carries run=1
 reordered clean run: run=1 is kept
 reordered clean run: x keeps its value
