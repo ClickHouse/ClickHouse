@@ -782,8 +782,12 @@ def test_refresh_drains_backlog_with_single_broker_worker(rabbitmq_cluster):
     table = "rabbitmq_starve"
     exchange = "starve_exchange"
 
-    # Flush interval large enough for one out-of-order cycle to drain the backlog on a single worker;
-    # the point of the test is that the backlog is consumed at all, not that it races a small cap.
+    # The one out-of-order REFRESH cycle self-drives the AMQP loop, and each serial source keeps that
+    # up until its own drive budget (flush_interval_ms) elapses. Self-driven delivery on a single
+    # worker is paced (~0.5s per message), so the backlog per consumer must fit comfortably inside one
+    # budget: 2 messages/consumer against a 5000ms budget leaves a wide margin even under a sanitizer
+    # slowdown. A larger backlog would need the source to outrun its budget, which is not what the one
+    # cycle guarantees.
     setup_consuming_table(
         table, exchange, node=node, flush_interval_ms=5000, num_consumers=2
     )
@@ -791,12 +795,20 @@ def test_refresh_drains_backlog_with_single_broker_worker(rabbitmq_cluster):
     # never by normal streaming (which cannot make progress with a single worker anyway).
     node.query(f"SYSTEM STOP test.{table}")
 
-    publish(rabbitmq_cluster, exchange, 0, 20)
+    publish(rabbitmq_cluster, exchange, 0, 4)
     assert_dst_count_stable(table, 0, seconds=2, node=node)
 
     node.query(f"SYSTEM REFRESH test.{table}")
 
     # The single REFRESH must drain the full queued backlog across both consumers.
-    wait_dst_count(table, 20, node=node)
-    # Still stopped: no further consumption without START.
-    assert_dst_count_stable(table, 20, seconds=3, node=node)
+    wait_dst_count(table, 4, node=node)
+    # Still stopped: no further consumption without another command.
+    assert_dst_count_stable(table, 4, seconds=3, node=node)
+
+    # A second REFRESH must also run: the self-driving cycle must not leave the AMQP looping task
+    # holding the sole worker, or no later REFRESH could ever be scheduled again.
+    publish(rabbitmq_cluster, exchange, 4, 4)
+    assert_dst_count_stable(table, 4, seconds=2, node=node)
+    node.query(f"SYSTEM REFRESH test.{table}")
+    wait_dst_count(table, 8, node=node)
+    assert_dst_count_stable(table, 8, seconds=3, node=node)

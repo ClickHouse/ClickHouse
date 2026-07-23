@@ -1323,7 +1323,10 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
     std::atomic_size_t rows = 0;
     block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
 
-    if (!connection->getHandler().loopRunning())
+    /// When the source drives the event loop itself (a blocked REFRESH cycle), do not also start the
+    /// background looping task: it would keep spinning uv_run after the cycle and, with a single
+    /// message-broker worker, monopolize it so no later REFRESH or START cycle can run.
+    if (!drive_loop_on_worker && !connection->getHandler().loopRunning())
         startLoop();
 
     bool write_failed = false;
@@ -1441,8 +1444,14 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
         return false;
     }
 
-    LOG_TEST(log, "Will start background loop to let messages be pushed to channel");
-    startLoop();
+    /// A self-driving blocked REFRESH cycle drove the loop itself and must not leave the background
+    /// looping task running: the table is stopped (no continuous streaming follows), and with a single
+    /// message-broker worker a lingering loop would monopolize it and block later REFRESH/START cycles.
+    if (!drive_loop_on_worker)
+    {
+        LOG_TEST(log, "Will start background loop to let messages be pushed to channel");
+        startLoop();
+    }
 
 
     /// Reschedule.
