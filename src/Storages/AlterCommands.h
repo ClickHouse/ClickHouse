@@ -246,12 +246,18 @@ public:
     /// prune incorrectly. Similarly, if the matcher expansion of an existing
     /// `MATERIALIZED` column changes, a MATERIALIZE_COLUMN command is returned
     /// so existing parts do not silently diverge from new inserts.
+    /// `storage_has_active_parts` tells whether the storage holds any active data
+    /// parts: when it does not, there is nothing to rematerialize — the ALTER only
+    /// affects future inserts — so no MATERIALIZE_COLUMN commands are returned.
+    /// Replicated storages must pass true: the local part state cannot prove that
+    /// the table is empty on all replicas.
     MutationCommands getMutationCommands(
         StorageInMemoryMetadata metadata,
         bool materialize_ttl,
         ContextPtr context,
         bool with_alters = false,
-        AlterColumnSecondaryIndexMode index_mode = AlterColumnSecondaryIndexMode::REBUILD) const;
+        AlterColumnSecondaryIndexMode index_mode = AlterColumnSecondaryIndexMode::REBUILD,
+        bool storage_has_active_parts = true) const;
 
     /// Names of explicit skip indices whose effective (normalized) expression
     /// changes when these commands are applied, paired with a human-readable

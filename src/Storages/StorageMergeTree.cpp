@@ -478,7 +478,8 @@ void StorageMergeTree::alter(
         query_settings[Setting::materialize_ttl_after_modify],
         local_context,
         /*with_alters=*/ false,
-        (*old_storage_settings)[MergeTreeSetting::alter_column_secondary_index_mode]);
+        (*old_storage_settings)[MergeTreeSetting::alter_column_secondary_index_mode],
+        /*storage_has_active_parts=*/ getActivePartsCount() > 0);
     if (!maybe_mutation_commands.empty())
         delayMutationOrThrowIfNeeded(nullptr, local_context);
 

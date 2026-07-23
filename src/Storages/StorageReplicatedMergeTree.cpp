@@ -7002,12 +7002,15 @@ void StorageReplicatedMergeTree::alter(
         alter_entry->alter_version = new_metadata_version;
         alter_entry->create_time = time(nullptr);
 
+        /// The local part state cannot prove that the table is empty on all replicas,
+        /// so replicated tables always rematerialize.
         auto maybe_mutation_commands = commands.getMutationCommands(
             *current_metadata,
             query_settings[Setting::materialize_ttl_after_modify],
             query_context,
             /*with_alters=*/ false,
-            (*getSettings())[MergeTreeSetting::alter_column_secondary_index_mode]);
+            (*getSettings())[MergeTreeSetting::alter_column_secondary_index_mode],
+            /*storage_has_active_parts=*/ true);
 
         bool have_mutation = !maybe_mutation_commands.empty();
         alter_entry->have_mutation = have_mutation;

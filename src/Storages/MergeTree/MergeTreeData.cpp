@@ -4728,7 +4728,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             settings[Setting::materialize_ttl_after_modify],
             local_context,
             /*with_alters=*/ false,
-            (*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode]);
+            (*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode],
+            /*storage_has_active_parts=*/ supportsReplication() || getActivePartsCount() > 0);
 
         if (!mutation_commands.empty())
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
@@ -5055,13 +5056,20 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     const auto index_mode = (*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode];
 
+    /// The two guards below protect data already stored in parts. When the table has no active
+    /// parts, there are no stale index files to leave behind and nothing to rematerialize — the
+    /// ALTER only affects future inserts — so neither guard applies. Replicated tables always
+    /// take the guards: the local part state cannot prove that the table is empty on all replicas.
+    const bool alter_affects_existing_parts = supportsReplication() || getActivePartsCount() > 0;
+
     /// Changing the effective expression of an explicit skip index — by editing the body of a
     /// referenced ALIAS column, or implicitly through matcher re-expansion inside such a body on
     /// an unrelated schema change — invalidates index files built from the old expression. In
     /// REBUILD and DROP modes `AlterCommands::getMutationCommands` handles this with an
     /// additional mutation; THROW and COMPATIBILITY modes forbid such alters.
     /// `new_metadata` already has the commands applied (see above).
-    if (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY)
+    if (alter_affects_existing_parts
+        && (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY))
     {
         auto affected_indices = commands.getSkipIndicesWithChangedExpression(old_metadata, new_metadata, local_context);
         if (!affected_indices.empty())
@@ -5080,6 +5088,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     /// `MATERIALIZE COLUMN` refuses to run on sort-key columns because it could break the sort
     /// order. Reject such ALTERs up front instead of persisting the new metadata and queueing
     /// a mutation that can never succeed.
+    if (alter_affects_existing_parts)
     {
         Names sorting_key_columns = new_metadata.getSortingKeyColumns();
         for (const auto & column_name : commands.getMaterializedColumnsWithChangedExpansion(old_metadata, new_metadata, local_context))

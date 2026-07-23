@@ -2482,7 +2482,8 @@ MutationCommands AlterCommands::getMutationCommands(
     bool materialize_ttl,
     ContextPtr context,
     bool with_alters,
-    AlterColumnSecondaryIndexMode index_mode) const
+    AlterColumnSecondaryIndexMode index_mode,
+    bool storage_has_active_parts) const
 {
     /// Save a copy of the original metadata before applying commands.
     /// We need it for isTTLAlter check below, because apply() updates TTL in metadata,
@@ -2553,9 +2554,14 @@ MutationCommands AlterCommands::getMutationCommands(
     /// New inserts would compute the column from the new expansion while existing parts keep
     /// values computed from the old one, so the same column would silently return two different
     /// definitions depending on row age. Rematerialize such columns so existing parts follow
-    /// the new expansion.
-    for (const auto & column_name : getMaterializedColumnsWithChangedExpansion(original_metadata, metadata, context))
-        result.push_back(createMaterializeColumnCommand(column_name));
+    /// the new expansion. When the storage has no active parts, there is nothing to
+    /// rematerialize — the ALTER only affects future inserts — so no mutation is queued and the
+    /// EPHEMERAL-dependency rejection inside the helper does not apply.
+    if (storage_has_active_parts)
+    {
+        for (const auto & column_name : getMaterializedColumnsWithChangedExpansion(original_metadata, metadata, context))
+            result.push_back(createMaterializeColumnCommand(column_name));
+    }
 
     return result;
 }
