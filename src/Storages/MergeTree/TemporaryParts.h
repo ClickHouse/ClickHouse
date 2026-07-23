@@ -40,6 +40,7 @@ private:
     void releaseCleanupClaim(const std::string & basename);
 
     friend class MergeTreeData;
+    friend class TemporaryPartsTestAccessor;
 public:
     /// Returns true if passed part name is active.
     /// (is the destination for one of active mutation/merge).
