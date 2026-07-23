@@ -12,18 +12,26 @@ TABLE_OFF="${TABLE}_disabled"
 ENABLE_STATS="SET predicate_statistics_sample_rate = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"
 ENABLE_STATS_MULTI_STEP="$ENABLE_STATS, enable_multiple_prewhere_read_steps = 1"
 
-Q1="${TABLE}_q1"
-Q2="${TABLE}_q2"
-Q3="${TABLE}_q3"
-Q4="${TABLE}_q4"
-Q5="${TABLE}_q5"
-Q6="${TABLE}_q6"
-Q7="${TABLE}_q7"
+# Per-invocation token so that re-running against a fixed database (direct `bash`, or
+# `clickhouse-test --database=...`) never matches `query_log` / `predicate_statistics_log`
+# rows left by an earlier run.
+RUN="${CLICKHOUSE_DATABASE}_$$_${RANDOM}"
+Q1="q1_${RUN}"
+Q2="q2_${RUN}"
+Q3="q3_${RUN}"
+Q4="q4_${RUN}"
+Q5="q5_${RUN}"
+Q6="q6_${RUN}"
+Q7="q7_${RUN}"
+
+# Start of this run: every log read below is bounded to `event_time` >= $START so an earlier
+# run's rows are excluded even within the `event_date` >= yesterday() window.
+START=$($CLICKHOUSE_CLIENT --query "SELECT now()")
 
 # Under parallel replicas the reads run on remote sub-queries, so `system.predicate_statistics_log`
 # rows are keyed by the sub-query `query_id` rather than the client one. Match them all through
-# `initial_query_id`.
-qids() { echo "query_id IN (SELECT query_id FROM system.query_log WHERE initial_query_id = '$1' AND event_date >= yesterday() AND type = 'QueryFinish')"; }
+# `initial_query_id`, scoped to this run.
+qids() { echo "query_id IN (SELECT query_id FROM system.query_log WHERE initial_query_id = '$1' AND event_date >= yesterday() AND event_time >= '$START' AND type = 'QueryFinish')"; }
 
 $CLICKHOUSE_CLIENT -m --query "
 $ENABLE_STATS;
@@ -148,7 +156,7 @@ SELECT
     min(total_selectivity) >= 0 AS total_min_ok,
     max(total_selectivity) <= 1 AS total_max_ok
 FROM system.predicate_statistics_log
-WHERE table = '$TABLE' AND predicate_expression != '';
+WHERE table = '$TABLE' AND event_time >= '$START' AND predicate_expression != '';
 "
 
 # passed_rows <= input_rows invariant
@@ -156,7 +164,7 @@ echo '--- passed <= input ---'
 $CLICKHOUSE_CLIENT --query "
 SELECT count() = 0 AS ok
 FROM system.predicate_statistics_log
-WHERE table = '$TABLE' AND passed_rows > input_rows;
+WHERE table = '$TABLE' AND event_time >= '$START' AND passed_rows > input_rows;
 "
 
 # Q7: remote parallel-replica reads were actually used, and their predicate statistics are captured
@@ -168,7 +176,7 @@ $CLICKHOUSE_CLIENT -m --query "
 SELECT
     (SELECT sum(ProfileEvents['ParallelReplicasUsedCount']) > 0
      FROM system.query_log
-     WHERE initial_query_id = '$Q7' AND current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish') AS used_parallel_replicas,
+     WHERE initial_query_id = '$Q7' AND current_database = currentDatabase() AND event_date >= yesterday() AND event_time >= '$START' AND type = 'QueryFinish') AS used_parallel_replicas,
     sum(passed_rows) > 0 AS has_passed,
     round(sum(passed_rows) / sum(input_rows), 1) AS sel
 FROM system.predicate_statistics_log
