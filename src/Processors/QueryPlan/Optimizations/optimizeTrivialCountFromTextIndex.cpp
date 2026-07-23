@@ -25,6 +25,8 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 
+#include <algorithm>
+
 /// Trivial count from the text index: answers `SELECT count() FROM t WHERE <text predicate>` from the index instead of reading data.
 ///
 /// A single-token predicate uses the metadata `TokenPostingsInfo::cardinality`.
@@ -232,7 +234,9 @@ std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & readin
 
     for (const auto & [index_name, task] : reading.getIndexReadTasks())
     {
-        if (!task.index.condition_template)
+        /// Only the task that produced this virtual column can resolve it.
+        bool owns_column = std::ranges::any_of(task.columns, [&column_name](const auto & column) { return column.name == column_name; });
+        if (!owns_column || !task.index.condition_template)
             continue;
 
         auto condition = std::dynamic_pointer_cast<MergeTreeIndexConditionText>(task.index.condition_template->generateUnsubstituted());
@@ -240,8 +244,6 @@ std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & readin
             continue;
 
         auto query = condition->getSearchQueryForVirtualColumn(column_name);
-        if (!query)
-            continue;
 
         /// Hint mode keeps the original predicate, so only Exact is answerable from the index alone.
         if (query->getDirectReadMode() != TextIndexDirectReadMode::Exact)
