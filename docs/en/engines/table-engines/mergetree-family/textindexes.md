@@ -735,7 +735,7 @@ Function [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhr
 Unlike `hasAllTokens`, which only requires all tokens to be present somewhere, `hasPhrase` requires them to appear as a consecutive sequence.
 The search phrase is tokenized using the same tokenizer configured for the index column.
 When the text index uses a postprocessor, the search phrase is normalized before the index lookup as well.
-Note that the function requires one of the `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, or `asciiCJK` tokenizers.
+The function works with all but the array tokenizer.
 
 Example:
 
@@ -1144,7 +1144,7 @@ Within those granules, ClickHouse then verifies exact token adjacency.
 This process is relatively costly and slower than regular text search queries.
 To speed phrase search queries up, please enable position storage in the text index (see `Optional parameters` above).
 
-`hasPhrase` can be used together with tokenizers `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, and `asciiCJK`.
+`hasPhrase` works with all but the array tokenizer.
 The given phrase string is tokenized using the index's tokenizer.
 Separator characters in the phrase are ignored: `hasPhrase(text, 'quick+brown')` is equivalent to `hasPhrase(text, 'quick brown')`, assuming `splitByNonAlpha` is used as tokenizer.
 
