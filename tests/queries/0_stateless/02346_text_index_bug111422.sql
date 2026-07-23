@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- Text-index direct read left an unused virtual column in the ReadFromMergeTree output header,
 -- which desynced positional bookkeeping in optimizeLazyMaterialization2 and caused an out-of-bounds
 -- read (release) / assertion (debug). See issue #111422.
