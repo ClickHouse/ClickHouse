@@ -217,7 +217,29 @@ void ASTCreateWasmFunctionQuery::readJSON(const Poco::JSON::Object & json)
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'function_name' for `CreateWasmFunctionQuery` during AST JSON deserialization");
     if (auto ast = r.readChildOfType<ASTExpressionList>("arguments"))
+    {
+        /// `ParserCreateFunctionQuery` builds `ARGUMENTS (...)` from `ParserNameTypePairList` or
+        /// `ParserTypeList` (or leaves it empty), so every child is either an `ASTNameTypePair` or a
+        /// data-type node, and the two shapes never mix within one list. Reject anything else here
+        /// so a foreign child cannot format as parser-impossible SQL (`ARGUMENTS (1)`) or reach
+        /// `DataTypeFactory::get` in `validateAndGetDefinition` as `UNEXPECTED_AST_STRUCTURE`.
+        bool has_name_type_pair = false;
+        bool has_bare_type = false;
+        for (const auto & argument : ast->children)
+        {
+            if (argument->as<ASTNameTypePair>())
+                has_name_type_pair = true;
+            else if (dynamic_cast<const ASTDataType *>(argument.get()))
+                has_bare_type = true;
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Each 'arguments' child must be a name-type pair or a data type for `CreateWasmFunctionQuery` during AST JSON deserialization");
+        }
+        if (has_name_type_pair && has_bare_type)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'arguments' cannot mix name-type pairs and bare data types for `CreateWasmFunctionQuery` during AST JSON deserialization");
         setArguments(std::move(ast));
+    }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'arguments' for `CreateWasmFunctionQuery` during AST JSON deserialization");
     if (auto ast = r.readChild("result_type"))
