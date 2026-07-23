@@ -411,14 +411,18 @@ def build_file_map(migrate, slug_map):
 
 
 def transform_body(migrate, content, src_docu, dest_path, lk):
-    # Apply the same body transforms migrate.py runs on a migrated page.
-    issues = []
-    content, _ = migrate.transform_imports(
-        content, lk, issues, source_docu_path=Path(src_docu), dest_path=Path(dest_path)
+    # Generated fragments contain the same Docusaurus-flavoured Markdown as
+    # whole-page descriptions, so run the complete Mintlify body pipeline.
+    return migrate.transform_body_content(
+        content,
+        title=None,
+        lk=lk,
+        issues=[],
+        source_docu_path=Path(src_docu),
+        dest_path=Path(dest_path),
+        source_docu_file=src_docu,
+        row={"docusaurus_file": src_docu},
     )
-    content = migrate.transform_html_comments(content)
-    content = migrate.rewrite_links(content, src_docu, lk, issues, dest_path=Path(dest_path))
-    return content
 
 
 TITLE_RE = re.compile(r"^title:\s*(.+?)\s*$", re.MULTILINE)
