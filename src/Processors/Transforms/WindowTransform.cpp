@@ -3753,16 +3753,16 @@ Aggregate states can be combined independently of the input order, including in 
 The aggregate-function form is experimental and requires `allow_experimental_time_decay_aggregate_functions = 1`.
 The window-function form is not affected by this setting.
     )";
-    FunctionDocumentation::Syntax exponentialTimeDecayedSum_syntax = "exponentialTimeDecayedSum(x)(v, t)";
+    FunctionDocumentation::Syntax exponentialTimeDecayedSum_syntax = "exponentialTimeDecayedSum(decay_length)(v, t)";
     FunctionDocumentation::Arguments exponentialTimeDecayedSum_arguments = {
         {"v", "Value.", {"(U)Int*", "Float*", "Decimal"}},
         {"t", "Time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::Parameters exponentialTimeDecayedSum_parameters = {
-        {"x", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
+        {"decay_length", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue exponentialTimeDecayedSum_returned_value = {
-        "The aggregate form returns ExponentialTimeDecayingFloat64; its decay_length field is `x`. "
+        "The aggregate form returns ExponentialTimeDecayingFloat64; its decay_length field matches the `decay_length` parameter. "
         "The window form returns Float64.",
         {"ExponentialTimeDecayingFloat64", "Float64"}};
     FunctionDocumentation::Examples exponentialTimeDecayedSum_examples = {
@@ -3856,13 +3856,13 @@ FROM
     FunctionDocumentation::Description exponentialTimeDecayedMax_description = R"(
 Returns the maximum of the computed exponentially smoothed moving average at index `t` in time with that at `t-1`.
     )";
-    FunctionDocumentation::Syntax exponentialTimeDecayedMax_syntax = "exponentialTimeDecayedMax(x)(value, timeunit)";
+    FunctionDocumentation::Syntax exponentialTimeDecayedMax_syntax = "exponentialTimeDecayedMax(decay_length)(value, timeunit)";
     FunctionDocumentation::Arguments exponentialTimeDecayedMax_arguments = {
         {"value", "Value.", {"(U)Int*", "Float*", "Decimal"}},
         {"timeunit", "Timeunit.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::Parameters exponentialTimeDecayedMax_parameters = {
-        {"x", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
+        {"decay_length", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue exponentialTimeDecayedMax_returned_value = {"Returns the maximum of the exponentially smoothed weighted moving average at `t` and `t-1`.", {"Float64"}};
     FunctionDocumentation::Examples exponentialTimeDecayedMax_examples = {
@@ -3955,15 +3955,15 @@ Aggregate states can be combined independently of the input order, including in 
 The aggregate-function form is experimental and requires `allow_experimental_time_decay_aggregate_functions = 1`.
 The window-function form is not affected by this setting.
     )";
-    FunctionDocumentation::Syntax exponentialTimeDecayedCount_syntax = "exponentialTimeDecayedCount(x)(t)";
+    FunctionDocumentation::Syntax exponentialTimeDecayedCount_syntax = "exponentialTimeDecayedCount(decay_length)(t)";
     FunctionDocumentation::Arguments exponentialTimeDecayedCount_arguments = {
         {"t", "Time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::Parameters exponentialTimeDecayedCount_parameters = {
-        {"x", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
+        {"decay_length", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue exponentialTimeDecayedCount_returned_value = {
-        "The aggregate form returns ExponentialTimeDecayingFloat64; its decay_length field is `x`. "
+        "The aggregate form returns ExponentialTimeDecayingFloat64; its decay_length field matches the `decay_length` parameter. "
         "The window form returns Float64.",
         {"ExponentialTimeDecayingFloat64", "Float64"}};
     FunctionDocumentation::Examples exponentialTimeDecayedCount_examples = {
@@ -4060,13 +4060,13 @@ Aggregate states can be combined independently of the input order, including in 
 The aggregate-function form is experimental and requires `allow_experimental_time_decay_aggregate_functions = 1`.
 The window-function form is not affected by this setting.
     )";
-    FunctionDocumentation::Syntax exponentialTimeDecayedAvg_syntax = "exponentialTimeDecayedAvg(x)(v, t)";
+    FunctionDocumentation::Syntax exponentialTimeDecayedAvg_syntax = "exponentialTimeDecayedAvg(decay_length)(v, t)";
     FunctionDocumentation::Arguments exponentialTimeDecayedAvg_arguments = {
         {"v", "Value.", {"(U)Int*", "Float*", "Decimal"}},
         {"t", "Time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::Parameters exponentialTimeDecayedAvg_parameters = {
-        {"x", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
+        {"decay_length", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue exponentialTimeDecayedAvg_returned_value = {"Returns the exponentially weighted average relative to the greatest time value.", {"Float64"}};
     FunctionDocumentation::Examples exponentialTimeDecayedAvg_examples = {
