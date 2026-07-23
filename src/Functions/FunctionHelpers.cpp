@@ -109,7 +109,7 @@ String withOrdinalEnding(size_t i)
         case 2:
             return "3rd";
         default:
-            return std::to_string(i) + "th";
+            return std::to_string(i + 1) + "th";
     }
 }
 
