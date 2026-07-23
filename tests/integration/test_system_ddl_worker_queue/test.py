@@ -150,7 +150,33 @@ def test_distributed_ddl_rubbish(started_cluster):
         == 4
     )
 
+    # Regression for issue #111383: a malformed (unparseable) DDL entry that embeds
+    # credentials must not expose them to users without displaySecretsInShowAndSelect.
+    node1.query("CREATE USER IF NOT EXISTS ddl_viewer IDENTIFIED WITH no_password")
+    node1.query("GRANT SELECT ON system.distributed_ddl_queue TO ddl_viewer")
+    try:
+        # A user without displaySecretsInShowAndSelect sees the placeholder, not raw text.
+        unprivileged = node1.query(
+            f"SELECT query FROM system.distributed_ddl_queue WHERE entry='{new_query}' AND cluster='' LIMIT 1",
+            user="ddl_viewer",
+        )
+        assert unprivileged.strip() == "<DDL entry could not be parsed>", (
+            f"Unprivileged user should see placeholder for malformed DDL, got: {unprivileged!r}"
+        )
+
+        # An admin with format_display_secrets_in_show_and_select=1 sees the raw text.
+        privileged = node1.query(
+            f"SELECT query FROM system.distributed_ddl_queue WHERE entry='{new_query}' AND cluster='' LIMIT 1",
+            settings={"format_display_secrets_in_show_and_select": "1"},
+        )
+        assert "TUBLE" in privileged, (
+            f"Privileged user should see raw query for malformed DDL, got: {privileged!r}"
+        )
+    finally:
+        node1.query("DROP USER IF EXISTS ddl_viewer")
+
     node1.query(
         f"ALTER TABLE testdb.{test_table} ON CLUSTER test_cluster DROP COLUMN somenewcolumn",
         settings={"replication_alter_partitions_sync": "2"},
     )
+
