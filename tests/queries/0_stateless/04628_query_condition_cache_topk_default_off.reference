@@ -1,0 +1,10 @@
+--- A TopK read must not reuse a plain WHERE entry when the gate is off
+04628_prime	0
+04628_topk_after_prime	0
+04628_plain_reuse	1
+--- TopK still returns the planted row
+10000
+--- A TopK read must not write any QCC entry when the gate is off
+0
+04628_topk_write_1	0
+04628_topk_write_2	0
