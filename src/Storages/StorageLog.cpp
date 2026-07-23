@@ -271,7 +271,7 @@ void LogSource::fillPhysicalColumns(Columns & result_columns, size_t max_rows_to
 
         try
         {
-            column = name_type_on_disk.type->createColumn();
+            column = name_type_on_disk.type->createColumn(*IDataType::getSerialization(name_type_on_disk));
             readData(name_type_on_disk, column, max_rows_to_read, caches[getCacheKey(name_type_on_disk)]);
         }
         catch (Exception & e)
