@@ -82,7 +82,7 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
         {"event_time", std::make_shared<DataTypeDateTime>(), "Timestamp of the sampling moment."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Timestamp of the sampling moment with microseconds precision."},
         {"timestamp_ns", std::make_shared<DataTypeUInt64>(), "Timestamp of the sampling moment in nanoseconds."},
-        {"revision", std::make_shared<DataTypeUInt32>(), "ClickHouse server build revision. When connecting to the server by `clickhouse-client`, you see a string similar to `Connected to ClickHouse server version 19.18.1.`. This field contains the `revision`, but not the `version` of a server."},
+        {"revision", std::make_shared<DataTypeUInt32>(), "ClickHouse server build revision."},
         {"trace_type", std::make_shared<TraceDataType>(trace_values), "Trace type: "
             "`Real` represents collecting stack traces by wall-clock time. "
             "`CPU` represents collecting stack traces by CPU time. "
@@ -105,7 +105,7 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
         {"memory_blocked_context", std::make_shared<ContextDataType>(context_values), fmt::format("Context for which memory tracker is blocked (for ClickHouse developers only): {}", context_description)},
         {"event", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "For trace type ProfileEvent is the name of updated profile event, for other trace types is an empty string."},
         {"increment", std::make_shared<DataTypeInt64>(), "For trace type ProfileEvent is the amount of increment of profile event, for other trace types is 0."},
-        {"symbols", symbolized_type, "If the symbolization is enabled, contains demangled symbol names, corresponding to the `trace`. Symbolization can be enabled or disabled in the `symbolize` setting under `trace_log` in the server configuration file."},
+        {"symbols", symbolized_type, "If the symbolization is enabled, contains demangled symbol names, corresponding to the `trace`."},
         {"lines", symbolized_type, "If the symbolization is enabled, contains strings with file names with line numbers, corresponding to the `trace`."},
         {"function_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>()), "For trace type Instrumentation, ID assigned to the function in xray_instr_map section of elf-binary."},
         {"function_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "For trace type Instrumentation, name of the instrumented function."},
@@ -118,7 +118,7 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
 NamesAndAliases TraceLogElement::getNamesAndAliases()
 {
     String build_id_hex;
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
     build_id_hex = SymbolIndex::instance().getBuildIDHex();
 #endif
     return
@@ -128,7 +128,7 @@ NamesAndAliases TraceLogElement::getNamesAndAliases()
 }
 
 
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
 namespace
 {
     class AddressToLineCache
@@ -139,7 +139,7 @@ namespace
         Map map;
         std::unordered_map<std::string, Dwarf> dwarfs;
 
-        void setResult(std::string_view & result, const Dwarf::LocationInfo & location, const VectorWithMemoryTracking<Dwarf::SymbolizedFrame> &)
+        void setResult(std::string_view & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> &)
         {
             const char * arena_begin = nullptr;
             WriteBufferFromArena out(arena, arena_begin);
@@ -158,40 +158,29 @@ namespace
         {
             const SymbolIndex & symbol_index = SymbolIndex::instance();
 
-#if defined(OS_DARWIN)
-            /// DWARF for source locations lives in a .dSYM bundle on macOS (the Mach-O linker leaves it
-            /// out of the binary). Without a dSYM there is no file:line info, so `lines` stays empty for
-            /// this frame (the `symbols` column is still filled from the symbol table by the caller).
-            const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr));
-            if (!object || !object->dsym)
-                return {};
-            auto dwarf_it = dwarfs.try_emplace(object->name, object->dsym).first;
-            /// Convert the runtime address to the linked (pre-ASLR) address the dSYM's DWARF uses.
-            const uintptr_t dwarf_addr = addr - object->slide;
-#else
-            const auto * object = symbol_index.thisObject();
-            if (!object || !std::filesystem::exists(object->name))
-                return {};
-            auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
-            const uintptr_t dwarf_addr = addr;
-#endif
-            Dwarf::LocationInfo location;
-            VectorWithMemoryTracking<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
-            std::string_view result;
-            if (dwarf_it->second.findAddress(dwarf_addr, location, Dwarf::LocationInfoMode::FAST, frames))
+            if (const auto * object = symbol_index.thisObject())
             {
-                setResult(result, location, frames);
-                return result;
+                auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
+                if (!std::filesystem::exists(object->name))
+                    return {};
+
+                Dwarf::LocationInfo location;
+                std::vector<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
+                std::string_view result;
+                if (dwarf_it->second.findAddress(addr, location, Dwarf::LocationInfoMode::FAST, frames))
+                {
+                    setResult(result, location, frames);
+                    return result;
+                }
+                return object->name;
             }
-            /// `lines` holds source locations only; an unresolved frame stays empty rather than
-            /// borrowing the object path (that would violate the file:line:col column contract).
             return {};
         }
 
         std::string_view implCached(uintptr_t addr)
         {
-            typename Map::LookupResult it = nullptr;
-            bool inserted = false;
+            typename Map::LookupResult it;
+            bool inserted;
             map.emplace(addr, it, inserted);
             if (inserted)
                 it->getMapped() = impl(addr);
@@ -256,7 +245,7 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
 
     typeid_cast<ColumnInt64 &>(*columns[i++]).getData().push_back(increment);
 
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
     if (symbolize)
     {
         auto & column_symbols = typeid_cast<ColumnArray &>(*columns[i++]);

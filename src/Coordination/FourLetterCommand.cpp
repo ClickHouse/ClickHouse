@@ -247,9 +247,9 @@ bool FourLetterCommandFactory::supportArguments(int32_t code) const
 
 void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dispatcher)
 {
-    const auto & server_config = keeper_dispatcher.getKeeperConfiguration();
+    const auto & keeper_settings = keeper_dispatcher.getKeeperConfigurationAndSettings();
     auto log = getLogger("FourLetterCommandFactory");
-    String list_str = server_config->four_letter_word_allow_list;
+    String list_str = keeper_settings->four_letter_word_allow_list;
     std::vector<std::string_view> tokens;
     splitInto<','>(tokens, list_str);
 
@@ -323,12 +323,12 @@ String MonitorCommand::run()
 
     print(ret, "server_state", keeper_info.getRole());
 
-    const auto storage_stats = state_machine.getStorageStats();
+    const auto & storage_stats = state_machine.getStorageStats();
 
-    print(ret, "znode_count", storage_stats.nodes_count);
-    print(ret, "watch_count", storage_stats.total_watches_count);
-    print(ret, "ephemerals_count", storage_stats.total_emphemeral_nodes_count);
-    print(ret, "approximate_data_size", storage_stats.approximate_data_size);
+    print(ret, "znode_count", storage_stats.nodes_count.load(std::memory_order_relaxed));
+    print(ret, "watch_count", storage_stats.total_watches_count.load(std::memory_order_relaxed));
+    print(ret, "ephemerals_count", storage_stats.total_emphemeral_nodes_count.load(std::memory_order_relaxed));
+    print(ret, "approximate_data_size", storage_stats.approximate_data_size.load(std::memory_order_relaxed));
     print(ret, "key_arena_size", 0);
     print(ret, "latest_snapshot_size", state_machine.getLatestSnapshotSize());
 
@@ -372,7 +372,7 @@ String ConfCommand::run()
         return SERVER_NOT_ACTIVE_MSG;
 
     StringBuffer buf;
-    keeper_dispatcher.getKeeperConfiguration()->dump(buf);
+    keeper_dispatcher.getKeeperConfigurationAndSettings()->dump(buf);
     keeper_dispatcher.getKeeperContext()->dumpConfiguration(buf);
     return buf.str();
 }
@@ -413,7 +413,7 @@ String ServerStatCommand::run()
 
     auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
-    const auto storage_stats = keeper_dispatcher.getStateMachine().getStorageStats();
+    const auto & storage_stats = keeper_dispatcher.getStateMachine().getStorageStats();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
 
@@ -425,9 +425,9 @@ String ServerStatCommand::run()
     write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
-    write("Zxid", formatZxid(storage_stats.last_committed_zxid));
+    write("Zxid", formatZxid(storage_stats.last_zxid.load(std::memory_order_relaxed)));
     write("Mode", keeper_info.getRole());
-    write("Node count", toString(storage_stats.nodes_count));
+    write("Node count", toString(storage_stats.nodes_count.load(std::memory_order_relaxed)));
 
     return buf.str();
 }
@@ -443,7 +443,7 @@ String StatCommand::run()
 
     auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
-    const auto storage_stats = keeper_dispatcher.getStateMachine().getStorageStats();
+    const auto & storage_stats = keeper_dispatcher.getStateMachine().getStorageStats();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
 
@@ -459,9 +459,9 @@ String StatCommand::run()
     write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
-    write("Zxid", formatZxid(storage_stats.last_committed_zxid));
+    write("Zxid", formatZxid(storage_stats.last_zxid.load(std::memory_order_relaxed)));
     write("Mode", keeper_info.getRole());
-    write("Node count", toString(storage_stats.nodes_count));
+    write("Node count", toString(storage_stats.nodes_count.load(std::memory_order_relaxed)));
 
     return buf.str();
 }
@@ -473,10 +473,9 @@ String BriefWatchCommand::run()
 
     StringBuffer buf;
     const auto & state_machine = keeper_dispatcher.getStateMachine();
-    const auto storage_stats = state_machine.getStorageStats();
-    buf << storage_stats.sessions_with_watches_count << " connections watching "
-        << storage_stats.watched_paths_count << " paths\n";
-    buf << "Total watches:" << storage_stats.total_watches_count << "\n";
+    buf << state_machine.getSessionsWithWatchesCount() << " connections watching "
+        << state_machine.getWatchedPathsCount() << " paths\n";
+    buf << "Total watches:" << state_machine.getTotalWatchesCount() << "\n";
     return buf.str();
 }
 
@@ -657,7 +656,7 @@ String YieldLeadershipCommand::run()
 
 #if USE_JEMALLOC
 
-static void printToString(void * output, const char * data)
+void printToString(void * output, const char * data)
 {
     std::string * output_data = reinterpret_cast<std::string *>(output);
     *output_data += std::string(data);
@@ -703,7 +702,7 @@ String ProfileEventsCommand::run()
 
     for (auto i : ProfileEvents::keeper_profile_events)
     {
-        const auto counter = ProfileEvents::global_counters[i];
+        const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
         std::string metric_name{ProfileEvents::getName(static_cast<ProfileEvents::Event>(i))};
         std::string metric_doc{ProfileEvents::getDocumentation(static_cast<ProfileEvents::Event>(i))};
         append(metric_name, counter, metric_doc);

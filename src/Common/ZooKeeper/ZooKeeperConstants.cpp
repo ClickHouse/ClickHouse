@@ -11,7 +11,6 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
     static_cast<int32_t>(OpNum::Error),
     static_cast<int32_t>(OpNum::Create),
     static_cast<int32_t>(OpNum::Create2),
-    static_cast<int32_t>(OpNum::CreateContainer),
     static_cast<int32_t>(OpNum::Remove),
     static_cast<int32_t>(OpNum::TryRemove),
     static_cast<int32_t>(OpNum::Exists),
@@ -24,7 +23,6 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
     static_cast<int32_t>(OpNum::Check),
     static_cast<int32_t>(OpNum::Reconfig),
     static_cast<int32_t>(OpNum::Multi),
-    static_cast<int32_t>(OpNum::CreateTTL),
     static_cast<int32_t>(OpNum::MultiRead),
     static_cast<int32_t>(OpNum::CreateIfNotExists),
     static_cast<int32_t>(OpNum::Auth),
@@ -41,7 +39,6 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
     static_cast<int32_t>(OpNum::RemoveWatch),
     static_cast<int32_t>(OpNum::SetWatch),
     static_cast<int32_t>(OpNum::SetWatch2),
-    static_cast<int32_t>(OpNum::ListRecursive),
 };
 
 OpNum getOpNum(int32_t raw_op_num)
@@ -59,8 +56,6 @@ std::string_view opNumToString(OpNum op_num)
         case OpNum::Error: return "Error";
         case OpNum::Create: return "Create";
         case OpNum::Create2: return "Create2";
-        case OpNum::CreateContainer: return "CreateContainer";
-        case OpNum::CreateTTL: return "CreateTTL";
         case OpNum::Remove: return "Remove";
         case OpNum::Exists: return "Exists";
         case OpNum::Get: return "Get";
@@ -88,7 +83,6 @@ std::string_view opNumToString(OpNum op_num)
         case OpNum::SetWatch: return "SetWatch";
         case OpNum::SetWatch2: return "SetWatch2";
         case OpNum::TryRemove: return "TryRemove";
-        case OpNum::ListRecursive: return "ListRecursive";
         case OpNum::FilteredListWithStatsAndData: return "FilteredListWithStatsAndData";
     }
 }
@@ -108,7 +102,6 @@ const char * toOperationTypeMetricLabel(OpNum op_num)
         case OpNum::CheckNotExists:
         case OpNum::CheckWatch:
         case OpNum::CheckStat:
-        case OpNum::ListRecursive:
             return "readonly";
 
         case OpNum::Multi:
@@ -119,8 +112,6 @@ const char * toOperationTypeMetricLabel(OpNum op_num)
 
         case OpNum::Create:
         case OpNum::Create2:
-        case OpNum::CreateContainer:
-        case OpNum::CreateTTL:
         case OpNum::Remove:
         case OpNum::TryRemove:
         case OpNum::RemoveWatch:
