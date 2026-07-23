@@ -1269,3 +1269,96 @@ def test_create_delta_table_in_unity_catalog(started_cluster):
             f"DROP DATABASE IF EXISTS {db_name}",
             settings={"allow_experimental_database_unity_catalog": 1},
         )
+
+
+def test_register_existing_delta_table_in_unity_catalog(started_cluster):
+    """
+    Onboarding an *existing* Delta table (a `_delta_log` already on storage but not yet in the catalog) into
+    a Unity-backed `DataLakeCatalog` database must register it, for both:
+      - a columnless `CREATE` (schema inferred from the `_delta_log`), and
+      - an explicit-column `CREATE` with `allow_experimental_delta_lake_writes = 0` (attach, no commit written).
+    Regression for the registration gaps found in review: the columnless path never reached
+    `DeltaLakeMetadata::createInitial`, and the explicit-column attach path skipped catalog registration
+    whenever writes were disabled.
+    """
+    node1 = started_cluster.instances["node1"]
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
+    db_name = f"unity_register_{test_uuid}"
+    schema_name = f"register_schema_{test_uuid}"
+    columnless_table = f"columnless_{test_uuid}"
+    attach_table = f"attach_{test_uuid}"
+    columnless_creator = f"creator_columnless_{test_uuid}"
+    attach_creator = f"creator_attach_{test_uuid}"
+    columnless_loc = f"/var/lib/clickhouse/user_files/tmp/{schema_name}/{columnless_table}"
+    attach_loc = f"/var/lib/clickhouse/user_files/tmp/{schema_name}/{attach_table}"
+
+    execute_multiple_spark_queries(
+        node1, [f"CREATE SCHEMA IF NOT EXISTS {schema_name}"], retry_on_timeout=True
+    )
+    node1.query(
+        f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
+        "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
+        "allow_experimental_delta_kernel_rs=1",
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+
+    write_settings = {
+        "allow_experimental_delta_kernel_rs": 1,
+        "allow_experimental_delta_lake_writes": 1,
+    }
+    # Attach must not need writes: the `_delta_log` already exists, so no commit is written.
+    attach_settings = {
+        "allow_experimental_delta_kernel_rs": 1,
+        "allow_experimental_delta_lake_writes": 0,
+    }
+
+    def make_unregistered_delta_table(creator, location):
+        # A plain (non-catalog) DeltaLakeLocal table writes commit 0 at `location` without registering it
+        # in Unity, giving us an existing Delta table to onboard.
+        node1.query(
+            f"CREATE TABLE default.{creator} (id Int32, name String) ENGINE = DeltaLakeLocal('{location}')",
+            settings=write_settings,
+        )
+        node1.query(
+            f"INSERT INTO default.{creator} VALUES (1, 'a')", settings=write_settings
+        )
+
+    try:
+        # (1) columnless CREATE onboards the existing table (schema inferred from the `_delta_log`).
+        make_unregistered_delta_table(columnless_creator, columnless_loc)
+        node1.query(
+            f"CREATE TABLE {db_name}.`{schema_name}.{columnless_table}` ENGINE = DeltaLakeLocal('{columnless_loc}')",
+            settings=write_settings,
+        )
+        tables = node1.query(
+            f"SHOW TABLES FROM {db_name} LIKE '{schema_name}%'", settings=write_settings
+        ).strip()
+        assert f"{schema_name}.{columnless_table}" in tables, tables
+        assert (
+            int(
+                node1.query(
+                    f"SELECT count() FROM {db_name}.`{schema_name}.{columnless_table}`",
+                    settings=write_settings,
+                ).strip()
+            )
+            == 1
+        )
+
+        # (2) explicit-column CREATE with writes OFF onboards the existing table (attach, no commit written).
+        make_unregistered_delta_table(attach_creator, attach_loc)
+        node1.query(
+            f"CREATE TABLE {db_name}.`{schema_name}.{attach_table}` (id Int32, name String) "
+            f"ENGINE = DeltaLakeLocal('{attach_loc}')",
+            settings=attach_settings,
+        )
+        tables = node1.query(
+            f"SHOW TABLES FROM {db_name} LIKE '{schema_name}%'", settings=write_settings
+        ).strip()
+        assert f"{schema_name}.{attach_table}" in tables, tables
+    finally:
+        node1.query(
+            f"DROP DATABASE IF EXISTS {db_name}",
+            settings={"allow_experimental_database_unity_catalog": 1},
+        )
+        node1.query(f"DROP TABLE IF EXISTS default.{columnless_creator}")
+        node1.query(f"DROP TABLE IF EXISTS default.{attach_creator}")

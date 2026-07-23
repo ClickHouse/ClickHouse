@@ -179,9 +179,15 @@ StorageObjectStorage::StorageObjectStorage(
     /// Validate the configuration (RemoteHostFilter / HTTPHeaderFilter / format) before any remote access.
     configuration->check(context);
 
-    if (!is_table_function && !columns_in_table_or_function_definition.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)
+    /// A DeltaLake CREATE in a catalog database must reach `create(...)` even without explicit columns, so
+    /// an existing table gets registered with the catalog (its schema is read from the `_delta_log`).
+    const bool columnless_delta_catalog_create = columns_in_table_or_function_definition.empty() && catalog
+        && configuration->getEngineName().starts_with("DeltaLake");
+
+    if (!is_table_function && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE
+        && (!columns_in_table_or_function_definition.empty() || columnless_delta_catalog_create))
     {
-        LOG_DEBUG(log, "Creating new storage with specified columns");
+        LOG_DEBUG(log, "Creating new storage");
         configuration->create(
             object_storage, context, columns_in_table_or_function_definition, partition_by_, order_by_, if_not_exists_, catalog, storage_id);
     }

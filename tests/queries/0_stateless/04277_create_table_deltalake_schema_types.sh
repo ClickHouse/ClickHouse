@@ -125,3 +125,25 @@ else
 fi
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_dl_reserved" >/dev/null 2>&1
 rm -rf "$reserved_path"
+
+# A special column (MATERIALIZED / ALIAS / EPHEMERAL) must also be rejected *before* commit 0 is written
+# (Code: 36 = BAD_ARGUMENTS); otherwise a rejected CREATE would leave an orphan Delta table behind.
+echo "special-column:"
+special_path="${TABLE_PATH}_special"
+rm -rf "$special_path"
+if $CLICKHOUSE_CLIENT --query "
+SET allow_experimental_delta_kernel_rs = 1;
+SET allow_experimental_delta_lake_writes = 1;
+CREATE TABLE t_dl_special (id Int32, m Int32 MATERIALIZED 1) ENGINE = DeltaLakeLocal('${special_path}', Parquet);
+" 2>&1 | grep -q "Code: 36"; then
+    echo "MATERIALIZED: rejected"
+else
+    echo "MATERIALIZED: NOT rejected"
+fi
+if [ -d "${special_path}/_delta_log" ]; then
+    echo "MATERIALIZED: fail: orphan _delta_log left behind"
+else
+    echo "MATERIALIZED: no orphan _delta_log"
+fi
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_dl_special" >/dev/null 2>&1
+rm -rf "$special_path"

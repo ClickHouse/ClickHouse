@@ -22,7 +22,6 @@
 #include <Poco/JSON/Object.h>
 
 #include <fmt/format.h>
-#include <filesystem>
 
 namespace DB
 {
@@ -146,27 +145,9 @@ void registerDeltaTableInCatalog(
     metadata_content->set("fields", buildDeltaSchemaFields(registration_schema));
 
     const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-    try
-    {
-        catalog->createTable(namespace_name, table_name, location, metadata_content);
-    }
-    catch (...)
-    {
-        /// Best-effort roll back the just-written commit 0 so a failed registration does not orphan a fresh `_delta_log`.
-        if (created_fresh)
-        {
-            try
-            {
-                const auto commit_zero = std::filesystem::path(configuration_ptr->getRawPath().path) / "_delta_log" / "00000000000000000000.json";
-                object_storage->removeObjectIfExists(StoredObject(commit_zero));
-            }
-            catch (...)
-            {
-                tryLogCurrentException("DeltaLakeCatalogRegistration", "Failed to roll back the initial Delta commit after catalog registration failed");
-            }
-        }
-        throw;
-    }
+
+    /// Do not roll back commit 0 on failure: a generic catalog error is ambiguous (a racing server may have already registered our `_delta_log`), so we keep the log and surface the error rather than risk corrupting that entry.
+    catalog->createTable(namespace_name, table_name, location, metadata_content);
 }
 
 }
