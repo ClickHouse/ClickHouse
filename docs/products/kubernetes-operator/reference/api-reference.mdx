@@ -84,7 +84,7 @@ ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
 | `labels` | object (keys:string, values:string) | Additional labels that are added to resources. | false |  |
 | `annotations` | object (keys:string, values:string) | Additional annotations that are added to resources. | false |  |
 | `podDisruptionBudget` | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec) | PodDisruptionBudget configures the PDB created for each shard.<br />When unset, the operator defaults to maxUnavailable=1 for single-replica<br />shards and minAvailable=1 for multi-replica shards. | false |  |
-| `settings` | [ClickHouseSettings](#clickhousesettings) | Configuration parameters for ClickHouse server. | false |  |
+| `settings` | [ClickHouseSettings](#clickhousesettings) | Configuration parameters for ClickHouse server. | false | \{  \} |
 | `clusterDomain` | string | ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution. | false | cluster.local |
 | `upgradeChannel` | string | UpgradeChannel specifies the release channel for major version upgrade checks.<br />When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8). | false |  |
 | `versionProbeTemplate` | [VersionProbeTemplate](#versionprobetemplate) | VersionProbeTemplate overrides for the version detection Job. | false |  |
@@ -122,6 +122,7 @@ ClickHouseSettings defines ClickHouse server settings options.
 | `defaultUserPassword` | [DefaultPasswordSelector](#defaultpasswordselector) | Specifies source and type of the password for `default` ClickHouse user. | false |  |
 | `logger` | [LoggerConfig](#loggerconfig) | Configuration of ClickHouse server logging. | false |  |
 | `tls` | [ClusterTLSSpec](#clustertlsspec) | TLS settings, allows to configure secure endpoints and certificate verification for ClickHouse server. | false |  |
+| `encryption` | [EncryptionSettings](#encryptionsettings) | Encryption, when set, enables at-rest encryption of table data through a dedicated storage policy.<br />Opt in per table with `SETTINGS storage_policy = '<policyName>'`. | false |  |
 | `enableDatabaseSync` | boolean | Enables synchronization of ClickHouse databases to the newly created replicas and cleanup of stale replicas<br />after scale down.<br />Supports only Replicated and integration databases. | false | true |
 | `extraConfig` | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | Additional ClickHouse configuration that will be merged with the default one. | false |  |
 | `extraUsersConfig` | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | Additional ClickHouse users configuration that will be merged with the default one. | false |  |
@@ -197,6 +198,19 @@ DefaultPasswordSelector selects the source for the default user's password.
 | `passwordType` | string | Type of the provided password. Consider documentation for possible values https://clickhouse.com/docs/operations/settings/settings-users#user-namepassword | true | password |
 | `secret` | [SecretKeySelector](#secretkeyselector) | Select password value from a Secret key | false |  |
 | `configMap` | [ConfigMapKeySelector](#configmapkeyselector) | Select password value from a ConfigMap key | false |  |
+
+Appears in:
+- [ClickHouseSettings](#clickhousesettings)
+
+## EncryptionSettings {#encryptionsettings}
+
+EncryptionSettings enables at-rest encryption of table data. When present, the operator generates an
+encrypted ClickHouse storage policy wrapping every data disk; tables opt in via `SETTINGS storage_policy`.
+Encryption cannot be disabled once enabled.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `policyName` | string | PolicyName is the name of the generated encrypted storage policy. | false | encrypted |
 
 Appears in:
 - [ClickHouseSettings](#clickhousesettings)
@@ -413,8 +427,8 @@ PodTemplateSpec describes the pod configuration overrides for the cluster's pods
 | `runtimeClassName` | string | RuntimeClassName is the name of the RuntimeClass to use for the pod. | false |  |
 | `volumes` | [Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volume-v1-core) array | Volumes defines the list of volumes that can be mounted by containers belonging to the pod.<br />More info: https://kubernetes.io/docs/concepts/storage/volumes<br />Merged with operator defaults by name; a user volume replaces any operator volume with the same name. | false |  |
 | `securityContext` | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core) | SecurityContext holds pod-level security attributes and common container settings.<br />A non-nil SecurityContext fully replaces operator defaults; the user owns the<br />entire struct. When nil, operator defaults are preserved. | false |  |
-| `topologyZoneKey` | string | TopologyZoneKey is the key of node labels.<br />Nodes that have a label with this key and identical values are considered to be in the same topology zone.<br />Set it to enable default TopologySpreadConstraints and Affinity rules to spread pods across zones.<br />Recommended to be set to "topology.kubernetes.io/zone" | false |  |
-| `nodeHostnameKey` | string | NodeHostnameKey is the key of node labels.<br />Nodes that have a label with this key and identical values are considered to be on the same node.<br />Set it to enable default AntiAffinity rules to spread replicas from the different shards across nodes.<br />Recommended to be set to "kubernetes.io/hostname" | false |  |
+| `topologyZoneKey` | string | TopologyZoneKey is the key of node labels.<br />Nodes that have a label with this key and identical values are considered to be in the same topology domain,<br />e.g. the same availability zone for "topology.kubernetes.io/zone" or the same node for "kubernetes.io/hostname".<br />Set it to balance pods holding the same data (replicas of one shard for ClickHouse, all replicas for Keeper)<br />across domains: a required TopologySpreadConstraint (maxSkew 1, DoNotSchedule) plus a preferred PodAntiAffinity rule.<br />Pods of different shards may share a domain, so multiple pods per domain are allowed.<br />With fewer domains than replicas, several replicas share a domain, still evenly balanced.<br />ClickHouse pods additionally prefer domains hosting the Keeper pods they use.<br />Recommended to be set to "topology.kubernetes.io/zone". | false |  |
+| `nodeHostnameKey` | string | NodeHostnameKey is the key of node labels.<br />Nodes that have a label with this key and identical values are considered to be on the same node.<br />Set it to enforce exclusive node occupancy: a required PodAntiAffinity rule across all pods of the cluster,<br />at most one pod per node regardless of shard. Requires at least as many nodes as pods;<br />with fewer nodes the excess pods stay Pending.<br />To spread replicas of the same shard across nodes while packing several pods per node,<br />set TopologyZoneKey to "kubernetes.io/hostname" instead.<br />Recommended to be set to "kubernetes.io/hostname". | false |  |
 | `initContainers` | [Container](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#container-v1-core) array | InitContainers is the list of init containers to run before the main server container starts.<br />Merged with operator defaults by name.<br />with the same name. | false |  |
 
 Appears in:
