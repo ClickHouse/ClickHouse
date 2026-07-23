@@ -429,6 +429,7 @@ bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
             ParserUnionQueryElement element_parser;
 
             ASTs elements;
+            bool last_element_parenthesized = pos->type == TokenType::OpeningRoundBracket;
             ASTPtr element;
             if (!element_parser.parse(pos, element, expected))
                 return false;
@@ -439,6 +440,7 @@ bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
                 IParser::Pos saved_pos = pos;
                 ++pos;
 
+                bool next_element_parenthesized = pos->type == TokenType::OpeningRoundBracket;
                 ASTPtr next_element;
                 if (!element_parser.parse(pos, next_element, expected))
                 {
@@ -446,7 +448,17 @@ bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
                     pos = saved_pos;
                     break;
                 }
+                last_element_parenthesized = next_element_parenthesized;
                 elements.push_back(std::move(next_element));
+            }
+
+            /// A pipe operator after an unparenthesized operand is ambiguous: it is unclear whether it
+            /// applies to the last operand or to the whole set operation, so parentheses are required:
+            /// FROM lhs |> UNION ALL (FROM rhs) |> WHERE ... or FROM lhs |> UNION ALL (FROM rhs |> WHERE ...)
+            if (!last_element_parenthesized && pos->type == TokenType::PipeOperator)
+            {
+                expected.add(pos, "parenthesized set operation operand before a pipe operator");
+                return false;
             }
 
             /// The alias would be lost otherwise, so give the aliased query its own nesting level.

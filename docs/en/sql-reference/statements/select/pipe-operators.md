@@ -158,6 +158,8 @@ FROM orders
 |> DISTINCT
 ```
 
+The parentheses around an operand are optional for a single query, but they are required when the chain continues with another pipe operator after the set operation - otherwise it would be unclear whether the next operator applies to the last operand or to the whole result.
+
 ## Notes {#notes}
 
 - The `WITH` clause of the query stays visible in all following pipe operators, both for scalar aliases and for CTEs: `WITH 10 AS threshold FROM t |> WHERE x < threshold`.

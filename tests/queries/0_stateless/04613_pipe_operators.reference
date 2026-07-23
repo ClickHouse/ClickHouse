@@ -4,6 +4,12 @@ alice	250
 alice	250	0
 charlie	300	0
 charlie	300	0
+-- Table aliases without AS are allowed when SELECT is written explicitly
+alice	100
+alice	250
+alice
+bob
+charlie
 -- WHERE
 alice	100	0
 alice	250	0
@@ -68,6 +74,9 @@ bob
 alice
 charlie
 2
+-- A pipe operator continues after a set operation only if the last operand is parenthesized
+6
+3
 -- Pipe operators after a regular SELECT query
 4
 -- Pipe operators in a subquery

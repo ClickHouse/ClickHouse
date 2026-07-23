@@ -9,6 +9,10 @@ FROM orders SELECT customer, amount ORDER BY customer, amount LIMIT 2;
 FROM orders WHERE amount > 200 ORDER BY customer;
 FROM orders ORDER BY amount DESC LIMIT 1;
 
+SELECT '-- Table aliases without AS are allowed when SELECT is written explicitly';
+FROM orders o SELECT o.customer, o.amount ORDER BY o.customer, o.amount LIMIT 2;
+FROM (SELECT customer FROM orders) s SELECT DISTINCT s.customer ORDER BY s.customer;
+
 SELECT '-- WHERE';
 FROM orders |> WHERE amount >= 100 |> WHERE cancelled = 0 |> ORDER BY amount;
 
@@ -63,6 +67,10 @@ FROM orders |> SELECT customer |> INTERSECT DISTINCT (SELECT 'bob') |> ORDER BY 
 FROM orders |> SELECT DISTINCT customer |> EXCEPT (SELECT 'bob') |> ORDER BY customer;
 SELECT 1 AS x UNION ALL SELECT 2 |> AGGREGATE count() AS c;
 
+SELECT '-- A pipe operator continues after a set operation only if the last operand is parenthesized';
+SELECT count() FROM (FROM orders |> SELECT customer |> UNION ALL SELECT 'zed');
+FROM orders |> SELECT customer |> UNION ALL (SELECT 'bob') |> WHERE customer = 'bob' |> AGGREGATE count() AS c;
+
 SELECT '-- Pipe operators after a regular SELECT query';
 SELECT number AS n FROM numbers(10) |> WHERE n % 3 = 0 |> AGGREGATE count() AS c;
 
@@ -106,6 +114,7 @@ FROM orders |> FOO; -- { clientError SYNTAX_ERROR }
 FROM orders |>; -- { clientError SYNTAX_ERROR }
 SELECT 1 |> WHERE; -- { clientError SYNTAX_ERROR }
 FROM orders |> LIMIT 1 UNION ALL SELECT 'x', 0, 0; -- { clientError SYNTAX_ERROR }
+FROM orders |> SELECT customer |> UNION ALL SELECT 'zed' |> WHERE customer = 'bob'; -- { clientError SYNTAX_ERROR }
 
 DROP TABLE filtered_orders;
 DROP TABLE big_orders;
