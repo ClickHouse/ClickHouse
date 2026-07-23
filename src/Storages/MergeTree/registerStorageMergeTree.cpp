@@ -8,6 +8,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/TableZnodeInfo.h>
 
+#include <Compression/CompressionFactory.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Common/Jemalloc.h>
@@ -47,6 +48,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_deprecated_syntax_for_merge_tree;
+    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_unique_key;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsBool allow_suspicious_ttl_expressions;
@@ -71,8 +73,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_block_number_column;
     extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsString auto_statistics_types;
+    extern const MergeTreeSettingsString default_compression_codec;
     extern const MergeTreeSettingsBool escape_index_filenames;
     extern const MergeTreeSettingsString disk;
+    extern const MergeTreeSettingsString marks_compression_codec;
+    extern const MergeTreeSettingsString primary_key_compression_codec;
     extern const MergeTreeSettingsString storage_policy;
 }
 
@@ -833,6 +838,50 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             if (args.mode <= LoadingStrictnessLevel::CREATE)
                 args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
             metadata.settings_changes = args.storage_def->settings->ptr();
+        }
+
+        /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
+        /// going through the experimental-codec gate that column codecs and `TTL ... RECOMPRESS` use, so an
+        /// experimental codec (e.g. `ZXC`) could slip in through `SETTINGS default_compression_codec = ...`.
+        /// For freshly introduced definitions the merged value (explicit or inherited from the current
+        /// `<merge_tree>` config defaults) is checked against `allow_experimental_codecs`. A full-definition
+        /// `ATTACH TABLE t UUID '...' (...) ENGINE = MergeTree ...` is CREATE-like user input that also runs
+        /// under `LoadingStrictnessLevel::ATTACH`, so it counts as fresh too. Definitions read back from
+        /// metadata stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart) are
+        /// marked with `attach_short_syntax` (see `createTableFromAST`); for those (and for
+        /// `SECONDARY_CREATE`: DDL replay in `Replicated` databases, `RESTORE`) values written in the stored
+        /// `SETTINGS` clause were already gated when they were introduced and are exempt, so existing tables
+        /// remain loadable. Values *not* stored in the definition, however, fall back to the *current*
+        /// `<merge_tree>` config defaults, so they are validated even on load — otherwise an operator could
+        /// introduce an experimental codec into existing tables via a config default plus a restart, without
+        /// anyone enabling `allow_experimental_codecs` (at startup the check runs against the default
+        /// profile, which is where such a config default can be legitimately allowed). `FORCE_RESTORE` is
+        /// documented to skip all sanity checks and is left alone.
+        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+        if (args.mode != LoadingStrictnessLevel::FORCE_RESTORE && !local_settings[Setting::allow_experimental_codecs])
+        {
+            const auto is_stored_in_definition = [&](std::string_view name)
+            {
+                if (!args.storage_def->settings)
+                    return false;
+                for (const auto & change : args.storage_def->settings->changes)
+                    if (change.name == name)
+                        return true;
+                return false;
+            };
+
+            const auto validate_codec_setting = [&](std::string_view name, const String & codec)
+            {
+                if (codec.empty())
+                    return;
+                if (is_fresh_definition || !is_stored_in_definition(name))
+                    CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/ false, /*allow_experimental_codecs=*/ false);
+            };
+
+            validate_codec_setting("marks_compression_codec", (*storage_settings)[MergeTreeSetting::marks_compression_codec].value);
+            validate_codec_setting("primary_key_compression_codec", (*storage_settings)[MergeTreeSetting::primary_key_compression_codec].value);
+            validate_codec_setting("default_compression_codec", (*storage_settings)[MergeTreeSetting::default_compression_codec].value);
         }
 
         /// UNIQUE KEY tables must reside on local-only storage policies.
