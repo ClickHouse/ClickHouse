@@ -13,6 +13,8 @@ ENGINE = MergeTree
 ORDER BY k
 SETTINGS
     merge_sorting_queue_strategy = 'default',
+    enable_block_number_column = 1,
+    enable_block_offset_column = 1,
     enable_vertical_merge_algorithm = 1,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_bytes_to_activate = 0,
@@ -27,6 +29,8 @@ ENGINE = MergeTree
 ORDER BY k
 SETTINGS
     merge_sorting_queue_strategy = 'batch',
+    enable_block_number_column = 1,
+    enable_block_offset_column = 1,
     enable_vertical_merge_algorithm = 1,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_bytes_to_activate = 0,
@@ -125,13 +129,13 @@ OPTIMIZE TABLE equal_keys_batch_04413 FINAL SETTINGS optimize_throw_if_noop = 1;
 
 SELECT throwIf(
     (
-        SELECT groupArray(tuple(id, k, payload, values, n))
-        FROM (SELECT id, k, payload, values, n FROM equal_keys_default_04413 ORDER BY k, _part_offset)
+        SELECT groupArray(tuple(id, k, payload, values, n, _block_number, _block_offset))
+        FROM (SELECT id, k, payload, values, n, _block_number, _block_offset FROM equal_keys_default_04413 ORDER BY k, _part_offset)
     ) != (
-        SELECT groupArray(tuple(id, k, payload, values, n))
-        FROM (SELECT id, k, payload, values, n FROM equal_keys_batch_04413 ORDER BY k, _part_offset)
+        SELECT groupArray(tuple(id, k, payload, values, n, _block_number, _block_offset))
+        FROM (SELECT id, k, payload, values, n, _block_number, _block_offset FROM equal_keys_batch_04413 ORDER BY k, _part_offset)
     ),
-    'Equal-key merge order differs between default and batch sorting queue strategies')
+    'Equal-key merge order or row identity differs between default and batch sorting queue strategies')
 FORMAT Null;
 
 SELECT 'equal keys ok';
