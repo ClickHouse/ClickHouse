@@ -1,0 +1,68 @@
+Results are the same with and without an ESCAPE clause when the escape character is not used in the pattern
+1024
+1024
+1024
+4096
+4096
+ESCAPE used to match a literal LIKE wildcard
+1024
+0
+The bloom-filter text index prunes with LIKE ESCAPE just like the plain 2-argument LIKE (force_data_skipping_indices accepts the folded query, including the negated and functional forms)
+1024
+1024
+4096
+Index analysis with LIKE ESCAPE narrows to the matching part (8 of 40 granules), same as the plain 2-argument LIKE
+Parts: 1 | Granules: 8
+Granules: 40/40
+Name: idx
+Granules: 8/40
+Parts: 1 | Granules: 8
+Granules: 40/40
+Name: idx
+Granules: 8/40
+Index analysis with a consumed escape character also narrows to 8 of 40 granules
+Parts: 1 | Granules: 8
+Granules: 40/40
+Name: idx
+Granules: 8/40
+Functional 3-argument form like(haystack, needle, escape) is equivalent to the operator form and also narrows to 8 of 40 granules
+1024
+Parts: 1 | Granules: 8
+Granules: 40/40
+Name: idx
+Granules: 8/40
+A tokenbf_v1 text index also uses the index with LIKE ESCAPE, with the same plan as the plain LIKE (16 of 32 granules)
+1024
+1024
+1024
+Parts: 2 | Granules: 16
+Granules: 32/32
+Name: idx
+Granules: 16/32
+Parts: 2 | Granules: 16
+Granules: 32/32
+Name: idx
+Granules: 16/32
+A sparse_grams text index also uses the index with LIKE ESCAPE (8 of 16 granules)
+1024
+1024
+1024
+Parts: 1 | Granules: 8
+Granules: 16/16
+Name: idx
+Granules: 8/16
+A non-ASCII ESCAPE byte is rejected at planning time so a granule cannot be skipped for a query that must raise
+An unknown backslash escape is not pruned by the bloom-filter text index, in both the 3-argument ESCAPE form and the plain 2-argument form
+Correctness check (3-argument ESCAPE form): the row containing the literal backslash is returned
+1
+Index analysis declines the 3-argument condition: all 3 granules are scanned
+Parts: 1 | Granules: 3
+Granules: 3/3
+Correctness check (plain 2-argument form): the row containing the literal backslash is returned
+1
+Index analysis declines the plain 2-argument condition: all 3 granules are scanned
+Parts: 1 | Granules: 3
+Granules: 3/3
+A trailing escape character in a 3-argument LIKE ESCAPE raises at index-analysis time (the fold rejects it, so a granule cannot be skipped for a query that must raise)
+Index analysis raises instead of pruning
+Correctness check: the query raises instead of silently returning an empty result
