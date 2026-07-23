@@ -8,7 +8,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Stopwatch.h>
-#include <Examples/clickhouse_examples.h>
 
 int mainEntryExampleLzmaBuffers(int, char **)
 try
@@ -44,7 +43,7 @@ try
         stopwatch.restart();
         for (size_t i = 0; i < n; ++i)
         {
-            size_t x = {};
+            size_t x;
             DB::readIntText(x, lzma_buf);
             lzma_buf.ignore();
 

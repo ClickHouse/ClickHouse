@@ -6,7 +6,6 @@
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupInfo.h>
 #include <Common/Logger_fwd.h>
-#include <atomic>
 #include <map>
 #include <mutex>
 
@@ -62,10 +61,8 @@ public:
 
     const String & getNameForLogging() const override { return backup_name_for_logging; }
     OpenMode getOpenMode() const override { return open_mode; }
-    std::map<String, String> getEngineSettings() const override;
     time_t getTimestamp() const override { return timestamp; }
     UUID getUUID() const override { return *uuid; }
-    const String & getBackupId() const override { return backup_id; }
     BackupPtr getBaseBackup() const override;
     size_t getNumFiles() const override;
     UInt64 getTotalSize() const override;
@@ -159,7 +156,6 @@ private:
     std::unordered_map<String, BackupFileInfo> lightweight_snapshot_file_infos TSA_GUARDED_BY(mutex);
 
     std::optional<UUID> uuid;
-    String backup_id; /// Set from params on write, from the manifest on read; empty for legacy backups without the field.
     time_t timestamp = 0;
     size_t num_files = 0;
     UInt64 total_size = 0;
@@ -169,7 +165,7 @@ private:
     UInt64 compressed_size = 0;
     mutable size_t num_read_files = 0;
     mutable UInt64 num_read_bytes = 0;
-    int version{};
+    int version;
     mutable std::optional<BackupInfo> base_backup_info;
     mutable std::shared_ptr<const IBackup> base_backup;
     mutable std::optional<UUID> base_backup_uuid;

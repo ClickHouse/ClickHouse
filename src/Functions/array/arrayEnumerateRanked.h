@@ -8,7 +8,6 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/HashTable/ClearableHashMap.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 
 /** The function will enumerate distinct values of the passed multidimensional arrays looking inside at the specified depths.
@@ -65,7 +64,7 @@ class FunctionArrayEnumerateUniqRanked;
 class FunctionArrayEnumerateDenseRanked;
 
 using DepthType = uint32_t;
-using DepthTypes = VectorWithMemoryTracking<DepthType>;
+using DepthTypes = std::vector<DepthType>;
 
 struct ArraysDepths
 {
@@ -121,7 +120,7 @@ private:
     static constexpr size_t INITIAL_SIZE_DEGREE = 6;
 
     void executeMethodImpl(
-        const VectorWithMemoryTracking<const ColumnArray::Offsets *> & offsets_by_depth,
+        const std::vector<const ColumnArray::Offsets *> & offsets_by_depth,
         const ColumnRawPtrs & columns,
         const ArraysDepths & arrays_depths,
         ColumnUInt32::Container & res_values) const;
@@ -129,7 +128,7 @@ private:
 
 
 /// Hash a set of keys into a UInt128 value.
-UInt128 hash128depths(const VectorWithMemoryTracking<size_t> & indices, const ColumnRawPtrs & key_columns);
+UInt128 hash128depths(const std::vector<size_t> & indices, const ColumnRawPtrs & key_columns);
 
 template <typename Derived>
 ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
@@ -158,8 +157,8 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
         return array;
     };
 
-    VectorWithMemoryTracking<const ColumnArray::Offsets *> offsets_by_depth;
-    VectorWithMemoryTracking<ColumnPtr> offsetsptr_by_depth;
+    std::vector<const ColumnArray::Offsets *> offsets_by_depth;
+    std::vector<ColumnPtr> offsetsptr_by_depth;
 
     size_t array_num = 0;
     for (size_t i = 0; i < num_arguments; ++i)
@@ -280,7 +279,7 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
 
 template <typename Derived>
 void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
-    const VectorWithMemoryTracking<const ColumnArray::Offsets *> & offsets_by_depth,
+    const std::vector<const ColumnArray::Offsets *> & offsets_by_depth,
     const ColumnRawPtrs & columns,
     const ArraysDepths & arrays_depths,
     ColumnUInt32::Container & res_values) const
@@ -294,14 +293,14 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
 
     Container indices;
 
-    VectorWithMemoryTracking<size_t> indices_by_depth(depth_to_look);
-    VectorWithMemoryTracking<size_t> current_offset_n_by_depth(depth_to_look);
-    VectorWithMemoryTracking<size_t> last_offset_by_depth(depth_to_look, 0); // For skipping empty arrays
+    std::vector<size_t> indices_by_depth(depth_to_look);
+    std::vector<size_t> current_offset_n_by_depth(depth_to_look);
+    std::vector<size_t> last_offset_by_depth(depth_to_look, 0); // For skipping empty arrays
 
     /// For arrayEnumerateDense variant: to calculate every distinct value.
     UInt32 rank = 0;
 
-    VectorWithMemoryTracking<size_t> columns_indices(columns.size());
+    std::vector<size_t> columns_indices(columns.size());
 
     /// For each array at the depth we want to look.
     ColumnArray::Offset prev_off = 0;

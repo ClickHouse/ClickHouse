@@ -1,7 +1,7 @@
 import json
 import re
 import pytest
-from typing import Optional
+from typing import Optional, Any
 
 from helpers.iceberg_utils import (
     default_upload_directory,

@@ -40,7 +40,10 @@ DatabaseReplicatedSettings::DatabaseReplicatedSettings(const DatabaseReplicatedS
 {
 }
 
-DatabaseReplicatedSettings::DatabaseReplicatedSettings(DatabaseReplicatedSettings && settings) noexcept = default;
+DatabaseReplicatedSettings::DatabaseReplicatedSettings(DatabaseReplicatedSettings && settings) noexcept
+    : impl(std::make_unique<DatabaseReplicatedSettingsImpl>(std::move(*settings.impl)))
+{
+}
 
 DatabaseReplicatedSettings::~DatabaseReplicatedSettings() = default;
 

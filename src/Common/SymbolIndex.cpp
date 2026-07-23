@@ -235,7 +235,7 @@ void collectSymbolsFromProgramHeaders(
                     if (!sym_name)
                         continue;
 
-                    SymbolIndex::Symbol symbol{};
+                    SymbolIndex::Symbol symbol;
                     symbol.offset_begin = reinterpret_cast<const void *>(
                         elf_sym[sym_index].value);
                     symbol.offset_end = reinterpret_cast<const void *>(
@@ -303,7 +303,7 @@ void collectSymbolsFromELFSymbolTable(
         if (!symbol_name)
             continue;
 
-        SymbolIndex::Symbol symbol{};
+        SymbolIndex::Symbol symbol;
         symbol.offset_begin = reinterpret_cast<const void *>(
             symbol_table_entry->value);
         symbol.offset_end = reinterpret_cast<const void *>(

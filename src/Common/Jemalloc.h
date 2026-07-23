@@ -142,7 +142,7 @@ struct MibCache
 
 private:
     static constexpr size_t max_mib_length = 4;
-    size_t mib[max_mib_length]{};
+    size_t mib[max_mib_length];
     size_t mib_length = max_mib_length;
     bool valid = false;
 };

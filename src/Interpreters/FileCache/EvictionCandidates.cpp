@@ -49,96 +49,81 @@ std::string QueueEvictionInfo::toString() const
     return wb.str();
 }
 
-void QueueEvictionInfo::setEvictTarget(const QueueEvictionInfo & other)
+void QueueEvictionInfo::merge(QueueEvictionInfoPtr other)
 {
-    size_to_evict = other.size_to_evict;
-    elements_to_evict = other.elements_to_evict;
-}
-
-void QueueEvictionInfo::absorbHoldSpace(IFileCachePriority::HoldSpacePtr other_hold)
-{
-    if (!other_hold)
-        return;
-    if (hold_space)
-        hold_space->merge(std::move(other_hold));
-    else
-        hold_space = std::move(other_hold);
+    size_to_evict += other->size_to_evict;
+    elements_to_evict += other->elements_to_evict;
+    if (other->hold_space)
+    {
+        if (hold_space)
+            hold_space->merge(std::move(other->hold_space));
+        else
+            hold_space = std::move(other->hold_space);
+    }
 }
 
 EvictionInfo::EvictionInfo(QueueID queue_id, QueueEvictionInfoPtr info)
 {
-    addImpl(queue_id, std::move(info), /* replace_if_exists */false);
+    addImpl(queue_id, std::move(info), /* merge_if_exists */false);
 }
 
 std::string EvictionInfo::toString() const
 {
     WriteBufferFromOwnString wb;
-    wb << "total size to evict: " << size_to_evict
-       << ", total elements to evict: " << elements_to_evict
-       << ", total hold size: " << hold_size
-       << ", total hold elements: " << hold_elements;
+    bool first = true;
     for (const auto & [queue_id, info] : *this)
-        wb << ", [queue id " << queue_id << ", " << info->toString() << "]";
+    {
+        if (!first)
+            wb << ", ";
+        first = false;
+        wb << "[queue id " << queue_id << ", " << info->toString() << "]";
+    }
     return wb.str();
+}
+
+bool EvictionInfo::hasHoldSpace() const
+{
+    for (const auto & [_, elem] : *this)
+        if (elem->hasHoldSpace())
+            return true;
+    return false;
 }
 
 void EvictionInfo::releaseHoldSpace(const CacheStateGuard::Lock & lock)
 {
     for (auto & [_, elem] : *this)
         elem->releaseHoldSpace(lock);
-    hold_size = 0;
-    hold_elements = 0;
 }
 
 void EvictionInfo::add(EvictionInfoPtr && info)
 {
-    /// Take the pins before moving the entries: if `addImpl` throws mid-loop,
-    /// already-moved entries must not outlive the pins they rely on.
-    takeKeptAliveCacheUsage(*info);
     for (auto && [queue_id, info_] : *info)
-        addImpl(queue_id, std::move(info_), /* replace_if_exists */false);
+        addImpl(queue_id, std::move(info_), /* merge_if_exists */false);
 }
 
 void EvictionInfo::addOrUpdate(EvictionInfoPtr && info)
 {
-    takeKeptAliveCacheUsage(*info);
     for (auto && [queue_id, info_] : *info)
-        addImpl(queue_id, std::move(info_), /* replace_if_exists */true);
+        addImpl(queue_id, std::move(info_), /* merge_if_exists */true);
 }
 
 void EvictionInfo::addImpl(
     const QueueID & queue_id,
     QueueEvictionInfoPtr info,
-    bool replace_if_exists)
+    bool merge_if_exists)
 {
-    const size_t incoming_size = info->size_to_evict;
-    const size_t incoming_elements = info->elements_to_evict;
-    const size_t incoming_hold_size = info->hold_space ? info->hold_space->getSize() : 0;
-    const size_t incoming_hold_elements = info->hold_space ? info->hold_space->getElements() : 0;
-
+    size_to_evict += info->size_to_evict;
+    elements_to_evict += info->elements_to_evict;
     auto [it, inserted] = try_emplace(queue_id, std::move(info));
-    if (inserted)
+    if (!inserted)
     {
-        size_to_evict += incoming_size;
-        elements_to_evict += incoming_elements;
-        hold_size += incoming_hold_size;
-        hold_elements += incoming_hold_elements;
-        return;
+        if (!merge_if_exists)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Queue with id {} already exists", queue_id);
+
+        if (it->second)
+            it->second->merge(std::move(info));
     }
-
-    if (!replace_if_exists)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Queue with id {} already exists", queue_id);
-
-    /// Target is replaced — adjust by delta. Hold is additive — just add incoming.
-    size_to_evict -= it->second->size_to_evict;
-    elements_to_evict -= it->second->elements_to_evict;
-    it->second->setEvictTarget(*info);
-    it->second->absorbHoldSpace(std::move(info->hold_space));
-    size_to_evict += it->second->size_to_evict;
-    elements_to_evict += it->second->elements_to_evict;
-    hold_size += incoming_hold_size;
-    hold_elements += incoming_hold_elements;
 }
 
 const QueueEvictionInfo & EvictionInfo::get(const QueueID & queue_id) const
@@ -239,7 +224,7 @@ void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::WriteLock 
             /// the SLRU_Protected/SLRU_Probationary type, not SplitCache_Data/System.
             original_queue_types[candidate.get()] = queue_iterator->getNestedOrThis()->getType();
 
-            queue_iterator->invalidateBeforeRemove(lock);
+            queue_iterator->invalidate();
 
             chassert(candidate->releasable());
             candidate->file_segment->markDelayedRemovalAndResetQueueIterator();
@@ -301,18 +286,15 @@ void EvictionCandidates::evict()
                 const auto segment = candidate->file_segment;
 
                 IFileCachePriority::IteratorPtr iterator;
-                if (removed_queue_entries)
-                {
-                    /// Affects only dynamic cache resize.
-                    fiu_do_on(FailPoints::file_cache_dynamic_resize_fail_to_evict, {
-                        throw Exception(ErrorCodes::FAULT_INJECTED, "Failed to evict file segment");
-                    });
-                }
-                else
+                if (!removed_queue_entries)
                 {
                     iterator = segment->getQueueIterator();
                     chassert(iterator);
                 }
+
+                fiu_do_on(FailPoints::file_cache_dynamic_resize_fail_to_evict, {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Failed to evict file segment");
+                });
 
                 locked_key->removeFileSegment(
                     segment->offset(), segment->lock(),
@@ -345,7 +327,7 @@ void EvictionCandidates::evict()
                 {
                     try
                     {
-                        on_evict_callback(*segment, key_candidates.key_metadata->origin->user_id);
+                        on_evict_callback(*segment);
                     }
                     catch (...)
                     {
@@ -379,9 +361,11 @@ void EvictionCandidates::evict()
 
 void EvictionCandidates::afterEvictWrite(const CachePriorityGuard::WriteLock & lock)
 {
-    for (auto & func : after_evict_write_callbacks)
-        func(lock);
-    after_evict_write_callbacks.clear();
+    if (after_evict_write_func)
+    {
+        after_evict_write_func(lock);
+        after_evict_write_func = {};
+    }
 }
 
 void EvictionCandidates::afterEvictState(const CacheStateGuard::Lock & lock)
@@ -400,9 +384,11 @@ void EvictionCandidates::afterEvictState(const CacheStateGuard::Lock & lock)
         queue_entries_to_invalidate.pop_back();
     }
 
-    for (auto & func : after_evict_state_callbacks)
-        func(lock);
-    after_evict_state_callbacks.clear();
+    if (after_evict_state_func)
+    {
+        after_evict_state_func(lock);
+        after_evict_state_func = {};
+    }
 }
 
 }
