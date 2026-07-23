@@ -22,7 +22,7 @@ SELECT count() FROM
 );
 
 -- The queries below build a `Variant` from a set operation over unrelated types, which only the
--- new analyzer does (the old one fails to find a common type for the branches).
+-- analyzer does (the old one fails to find a common type for the branches).
 SET enable_analyzer = 1;
 
 -- The same, but the aggregate state is nested inside a `Variant`: a set operation over two
