@@ -257,8 +257,8 @@ struct Date32Traits
     static constexpr auto YYYYMMDDName = "YYYYMMDDToDate32";
     using ReturnDataType = DataTypeDate32;
 
-    static constexpr auto MIN_YEAR = 1900;
-    static constexpr auto MAX_YEAR = 2299;
+    static constexpr auto MIN_YEAR = 0;
+    static constexpr auto MAX_YEAR = 9999;
     static constexpr std::array MAX_DATE = {MAX_YEAR, 12, 31};
 };
 

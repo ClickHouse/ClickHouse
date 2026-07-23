@@ -436,15 +436,15 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
                 for (size_t i = 0; i < rows; ++i)
                 {
                     Int32 days = src[i];
-                    if (days > DATE_LUT_MAX_EXTEND_DAY_NUM || days < -DAYNUM_OFFSET_EPOCH)
+                    if (days > DATE_LUT_MAX_EXTEND_DAY_NUM || days < DATE_LUT_MIN_EXTEND_DAY_NUM)
                     {
                         if (saturate)
-                            days = days < -DAYNUM_OFFSET_EPOCH ? -DAYNUM_OFFSET_EPOCH : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                            days = days < DATE_LUT_MIN_EXTEND_DAY_NUM ? DATE_LUT_MIN_EXTEND_DAY_NUM : DATE_LUT_MAX_EXTEND_DAY_NUM;
                         else
                             throw Exception(
                                 ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                                 "Arrow IPC date32 value {} is out of the allowed Date32 range [{}, {}]",
-                                days, -DAYNUM_OFFSET_EPOCH, DATE_LUT_MAX_EXTEND_DAY_NUM);
+                                days, DATE_LUT_MIN_EXTEND_DAY_NUM, DATE_LUT_MAX_EXTEND_DAY_NUM);
                     }
                     data[i] = days;
                 }

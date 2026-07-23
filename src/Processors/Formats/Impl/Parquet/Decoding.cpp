@@ -1333,14 +1333,14 @@ void IntConverter::convertColumn(std::span<const char> data, size_t num_values, 
         for (size_t i = values.size() - num_values; i < values.size(); ++i)
         {
             Int32 & days_num = values[i];
-            if (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH)
+            if (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < DATE_LUT_MIN_EXTEND_DAY_NUM)
             {
                 if (date_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
-                    days_num = (days_num < -DAYNUM_OFFSET_EPOCH) ? -DAYNUM_OFFSET_EPOCH : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                    days_num = (days_num < DATE_LUT_MIN_EXTEND_DAY_NUM) ? DATE_LUT_MIN_EXTEND_DAY_NUM : DATE_LUT_MAX_EXTEND_DAY_NUM;
                 else
                     throw Exception{ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                         "Input value {} is out of allowed Date32 range, which is [{}, {}]",
-                        days_num, -DAYNUM_OFFSET_EPOCH, DATE_LUT_MAX_EXTEND_DAY_NUM};
+                        days_num, DATE_LUT_MIN_EXTEND_DAY_NUM, DATE_LUT_MAX_EXTEND_DAY_NUM};
             }
         }
     }
@@ -1400,7 +1400,7 @@ void IntConverter::convertField(std::span<const char> data, bool /*is_max*/, Fie
     else if (field_signed)
     {
         if (date_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Ignore &&
-            (Int64(val) > DATE_LUT_MAX_EXTEND_DAY_NUM || Int64(val) < -DAYNUM_OFFSET_EPOCH))
+            (Int64(val) > DATE_LUT_MAX_EXTEND_DAY_NUM || Int64(val) < DATE_LUT_MIN_EXTEND_DAY_NUM))
             return;
 
         out = Field(Int64(val));

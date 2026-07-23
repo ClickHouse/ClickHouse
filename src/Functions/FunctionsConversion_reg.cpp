@@ -1114,7 +1114,7 @@ Converts the argument to the Date data type. This is a MySQL compatibility alias
     /// toDate32 documentation
     FunctionDocumentation::Description description_toDate32 = R"(
 Converts the argument to the [Date32](../data-types/date32.md) data type.
-If the value is outside the range, `toDate32` returns the border values supported by [Date32](../data-types/date32.md).
+If the value is outside the `[0000-01-01, 9999-12-31]` range, `toDate32` returns the border values supported by [Date32](../data-types/date32.md).
 If the argument is of type [`Date`](../data-types/date.md), it's bounds are taken into account.
     )";
     FunctionDocumentation::Syntax syntax_toDate32 = "toDate32(expr)";
@@ -1137,7 +1137,7 @@ toTypeName(value): Date32
         )"
     },
     {
-        "Outside range",
+        "Before 1900",
         R"(
 SELECT toDate32('1899-01-01') AS value, toTypeName(value)
 FORMAT Vertical
@@ -1145,7 +1145,7 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-value:           1900-01-01
+value:           1899-01-01
 toTypeName(value): Date32
         )"
     }

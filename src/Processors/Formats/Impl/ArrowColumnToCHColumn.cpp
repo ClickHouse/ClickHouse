@@ -924,12 +924,12 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
             for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
             {
                 Int32 days_num = static_cast<Int32>(chunk.Value(value_i));
-                if (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH)
+                if (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < DATE_LUT_MIN_EXTEND_DAY_NUM)
                 {
                     switch (date_time_overflow_behavior)
                     {
                         case FormatSettings::DateTimeOverflowBehavior::Saturate:
-                            days_num = (days_num < -DAYNUM_OFFSET_EPOCH) ? -DAYNUM_OFFSET_EPOCH : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                            days_num = (days_num < DATE_LUT_MIN_EXTEND_DAY_NUM) ? DATE_LUT_MIN_EXTEND_DAY_NUM : DATE_LUT_MAX_EXTEND_DAY_NUM;
                             break;
                         default:
                         /// Prior to introducing `date_time_overflow_behavior`, this function threw an error in case value was out of range.
@@ -937,7 +937,7 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
                         /// (As we want to make this backwards compatible, not break any workflows.)
                             throw Exception{ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                                             "Input value {} of a column \"{}\" is out of allowed Date32 range, which is [{}, {}]",
-                                            days_num,column_name, -DAYNUM_OFFSET_EPOCH, DATE_LUT_MAX_EXTEND_DAY_NUM};
+                                            days_num, column_name, DATE_LUT_MIN_EXTEND_DAY_NUM, DATE_LUT_MAX_EXTEND_DAY_NUM};
                     }
                 }
 

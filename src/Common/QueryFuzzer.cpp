@@ -389,7 +389,7 @@ Field QueryFuzzer::getRandomField(int type)
         }
         case 3: {
             /// Date/Date32 boundary values as strings — stress date parsing and arithmetic.
-            /// Date range is [1970-01-01, 2149-06-06], Date32 range is [1900-01-01, 2299-12-31].
+            /// Date range is [1970-01-01, 2149-06-06], Date32 range is [0000-01-01, 9999-12-31].
             static constexpr const char * date_values[]
                 = {"0000-01-01",
                    "1899-12-31",
@@ -424,7 +424,7 @@ Field QueryFuzzer::getRandomField(int type)
         case 5: {
             /// DateTime/DateTime64 boundary values as strings — stress timestamp parsing, overflow and sub-second precision.
             /// DateTime range is [1970-01-01 00:00:00, 2106-02-07 06:28:15],
-            /// DateTime64 range is [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999].
+            /// DateTime64 range is [0000-01-01 00:00:00, 9999-12-31 23:59:59.99999999].
             static constexpr const char * datetime_values[]
                 = {"1900-01-01 00:00:00",
                    "1900-01-01 00:00:00.000000000",

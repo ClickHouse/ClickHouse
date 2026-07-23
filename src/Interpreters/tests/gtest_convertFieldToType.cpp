@@ -108,19 +108,33 @@ INSTANTIATE_TEST_SUITE_P(
     Date32ToDateTime64,
     ConvertFieldToTypeTest,
     ::testing::ValuesIn(std::initializer_list<ConvertFieldToTypeTestParams>{
-        // min value of Date32: 1st Jan 1900 (see DATE_LUT_MIN_YEAR)
+        // 1st Jan 1900 (see DATE_LUT_MIN_YEAR)
         {
             "Date32",
             Field(-25'567),
             "DateTime64(0, 'UTC')",
             DecimalField<DateTime64>(DateTime64(-25'567 * Day), 0)
         },
-        // max value of Date32: 31 Dec 2299 (see DATE_LUT_MAX_YEAR)
+        // 31 Dec 2299 (see DATE_LUT_MAX_YEAR)
         {
             "Date32",
             Field(120'529),
             "DateTime64(0, 'UTC')",
             DecimalField<DateTime64>(DateTime64(120'529 * Day), 0)
+        },
+        // min value of Date32: 1st Jan 0000 (see DATE_LUT_MIN_EXTEND_DAY_NUM)
+        {
+            "Date32",
+            Field(-719'528),
+            "DateTime64(0, 'UTC')",
+            DecimalField<DateTime64>(DateTime64(-719'528 * Day), 0)
+        },
+        // max value of Date32: 31 Dec 9999 (see DATE_LUT_MAX_EXTEND_DAY_NUM)
+        {
+            "Date32",
+            Field(2'932'896),
+            "DateTime64(0, 'UTC')",
+            DecimalField<DateTime64>(DateTime64(2'932'896 * Day), 0)
         },
         // check that scale is respected
         {

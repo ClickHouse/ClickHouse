@@ -143,13 +143,23 @@ TEST(DateLUTTest, dayShiftStaysWithinLUT)
 TEST(DateLUTTest, makeDayNumTest)
 {
     const DateLUTImpl & lut = DateLUT::instance("UTC");
-    EXPECT_EQ(0, lut.makeDayNum(1899, 12, 31));
-    EXPECT_EQ(-1, lut.makeDayNum(1899, 12, 31, -1));
+    /// Valid dates outside the LUT years take the cctz escape path instead of clamping.
+    EXPECT_EQ(-25568, lut.makeDayNum(1899, 12, 31));
+    EXPECT_EQ(-25568, lut.makeDayNum(1899, 12, 31, -1));
     EXPECT_EQ(-25567, lut.makeDayNum(1900, 1, 1));
     EXPECT_EQ(-16436, lut.makeDayNum(1925, 1, 1));
     EXPECT_EQ(0, lut.makeDayNum(1970, 1, 1));
-    EXPECT_EQ(120529, lut.makeDayNum(2300, 12, 31));
-    EXPECT_EQ(120529, lut.makeDayNum(2500, 12, 25));
+    EXPECT_EQ(120894, lut.makeDayNum(2300, 12, 31));
+    EXPECT_EQ(193937, lut.makeDayNum(2500, 12, 25));
+
+    /// The whole representable window [0000-01-01, 9999-12-31]; years outside are clamped.
+    EXPECT_EQ(DATE_LUT_MIN_EXTEND_DAY_NUM, lut.makeDayNum(0, 1, 1));
+    EXPECT_EQ(DATE_LUT_MAX_EXTEND_DAY_NUM, lut.makeDayNum(9999, 12, 31));
+    EXPECT_EQ(lut.makeDayNum(9999, 1, 1), lut.makeDayNum(10000, 1, 1));
+
+    /// A calendar-invalid date still yields the error default.
+    EXPECT_EQ(0, lut.makeDayNum(2000, 13, 1));
+    EXPECT_EQ(-1, lut.makeDayNum(2000, 13, 1, -1));
 }
 
 

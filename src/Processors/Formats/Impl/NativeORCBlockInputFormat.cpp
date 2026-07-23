@@ -1713,13 +1713,13 @@ static ColumnWithTypeAndName readColumnWithDateData(
         if (!orc_int_column->hasNulls || orc_int_column->notNull[i])
         {
             Int32 days_num = static_cast<Int32>(orc_int_column->data[i]);
-            if (check_date32_range && (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH))
+            if (check_date32_range && (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < DATE_LUT_MIN_EXTEND_DAY_NUM))
                 throw Exception(
                     ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                     "Input value {} of a column \"{}\" exceeds the range of type Date32, which is [{}, {}]",
                     days_num,
                     column_name,
-                    -DAYNUM_OFFSET_EPOCH,
+                    DATE_LUT_MIN_EXTEND_DAY_NUM,
                     DATE_LUT_MAX_EXTEND_DAY_NUM);
 
             if (check_date_range && (days_num > DATE_LUT_MAX_DAY_NUM || days_num < 0))
