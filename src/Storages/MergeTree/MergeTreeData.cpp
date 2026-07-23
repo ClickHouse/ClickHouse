@@ -3692,11 +3692,11 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, siz
 
                     /// Take a transient cleanup hold on the name, so a concurrent operation claiming it via
                     /// `claimTemporaryPartDirectory` waits for the removal below to finish instead of recreating
-                    /// the directory under our feet. Actually we don't rely on temporary_directories_lifetime when
-                    /// removing old temporary directories, it's just an extra level of protection just in case we
-                    /// have a bug.
+                    /// the directory under our feet.
                     if (!temporary_parts.tryClaimForCleanup(basename))
                     {
+                        /// Actually we don't rely on temporary_directories_lifetime when removing old temporary
+                        /// directories, it's just an extra level of protection just in case we have a bug.
                         LOG_INFO(LogFrequencyLimiter(log.load(), 10), "{} is in use (by merge/mutation/INSERT) (consider increasing temporary_directories_lifetime setting)", full_path);
                         continue;
                     }
