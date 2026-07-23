@@ -36,24 +36,24 @@ SELECT toTypeName(anyRespectNullsTupleIfTupleState(tuple(tuple(NULL), tuple(toNu
 -- states under the declared type name. When the name did not encode the nulls-action variant, the
 -- initiator reconstructed the wrong nested variant and reinterpreted the state bytes, crashing under
 -- GROUP BY ALL WITH CUBE. It must now merge compatibly (or reject cleanly), never crash.
-DROP TABLE IF EXISTS 08520_src;
-DROP TABLE IF EXISTS 08520_dist;
+DROP TABLE IF EXISTS 04627_src;
+DROP TABLE IF EXISTS 04627_dist;
 
-CREATE TABLE 08520_src (number UInt64) ENGINE = MergeTree ORDER BY number;
-INSERT INTO 08520_src SELECT number FROM numbers(10);
+CREATE TABLE 04627_src (number UInt64) ENGINE = MergeTree ORDER BY number;
+INSERT INTO 04627_src SELECT number FROM numbers(10);
 
-CREATE TABLE 08520_dist (number UInt128)
-    ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), 08520_src, number);
+CREATE TABLE 04627_dist (number UInt128)
+    ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), 04627_src, number);
 
 SELECT last_valueTupleOrNull(tuple(
         tuple(* APPLY lambda(tuple(x), isNull(x)) EXCEPT '.*' REPLACE (2147483647 AS `e`)),
         tuple(* APPLY (lambda(tuple(x), isNull(x)), 'f_') EXCEPT '.*' REPLACE (1024 AS `e`))))
     RESPECT NULLS
-FROM 08520_dist
+FROM 04627_dist
 GROUP BY ALL WITH CUBE;
 
-DROP TABLE 08520_dist;
-DROP TABLE 08520_src;
+DROP TABLE 04627_dist;
+DROP TABLE 04627_src;
 
 -- The nested function may itself be combinator-wrapped, so the -Tuple name must encode the
 -- action-adjusted variant of the RESOLVED nested function, not of the pre-resolution name string.
@@ -68,23 +68,23 @@ SELECT toTypeName(anyRespectNullsArgMinTupleState(tuple(toNullable(number)), tup
 -- merges the totals row on the initiator. With a non-injective name the ArgMin key offset differed
 -- between the resolved state and the reconstructed one, dereferencing a wild pointer while merging
 -- SingleValueDataNumeric. It must now merge without crashing.
-DROP TABLE IF EXISTS 08520_totals_src;
-DROP TABLE IF EXISTS 08520_totals_dist;
+DROP TABLE IF EXISTS 04627_totals_src;
+DROP TABLE IF EXISTS 04627_totals_dist;
 
-CREATE TABLE 08520_totals_src (number UInt64) ENGINE = MergeTree ORDER BY number;
-INSERT INTO 08520_totals_src SELECT number FROM numbers(10);
+CREATE TABLE 04627_totals_src (number UInt64) ENGINE = MergeTree ORDER BY number;
+INSERT INTO 04627_totals_src SELECT number FROM numbers(10);
 
-CREATE TABLE 08520_totals_dist (number UInt64)
-    ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), 08520_totals_src);
+CREATE TABLE 04627_totals_dist (number UInt64)
+    ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), 04627_totals_src);
 
 SELECT anyRespectNullsArgMinTupleOrNull(tuple(toNullable(number)), tuple(1.)) IGNORE NULLS
-FROM 08520_totals_dist
+FROM 04627_totals_dist
 WITH TOTALS;
 
 SELECT anyRespectNullsOrNullDistinctOrDefaultDistinctOrNullArgMinTupleOrNull(
         tuple((SELECT DISTINCT isNotNull(*) GROUP BY ALL)), tuple(1.)) IGNORE NULLS
-FROM 08520_totals_dist
+FROM 04627_totals_dist
 WITH TOTALS;
 
-DROP TABLE 08520_totals_dist;
-DROP TABLE 08520_totals_src;
+DROP TABLE 04627_totals_dist;
+DROP TABLE 04627_totals_src;
