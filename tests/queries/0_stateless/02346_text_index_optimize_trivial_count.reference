@@ -1,0 +1,25 @@
+-- fires: single-token hasToken / hasAnyTokens / hasAllTokens
+└──ReadFromPreparedSource (Trivial count from text index (idx, token = \'alpha\'))
+└──ReadFromPreparedSource (Trivial count from text index (idx, token = \'alpha\'))
+└──ReadFromPreparedSource (Trivial count from text index (idx, token = \'alpha\'))
+-- result matches the normal path
+750
+750
+750
+0
+-- disabled by optimize_trivial_count_from_text_index = 0
+0
+-- disabled by the parent optimize_trivial_count_query = 0
+0
+-- fires: multi-token hasAllTokens (intersection) / hasAnyTokens (union)
+└──ReadFromPreparedSource (Trivial count from text index (idx, tokens = [\'alpha\', \'beta\']))
+└──ReadFromPreparedSource (Trivial count from text index (idx, tokens = [\'alpha\', \'zeta\']))
+500
+500
+1500
+1500
+-- does not fire: residual non-text predicate
+0
+741
+-- does not fire: not a bare count()
+0
