@@ -25,8 +25,23 @@ using VolumePtr = std::shared_ptr<IVolume>;
 class MergeTreeDataPartBuilder
 {
 public:
-    MergeTreeDataPartBuilder(const MergeTreeData & data_, String name_, VolumePtr volume_, String root_path_, String part_dir_, const ReadSettings & read_settings_);
-    MergeTreeDataPartBuilder(const MergeTreeData & data_, String name_, MutableDataPartStoragePtr part_storage_, const ReadSettings & read_settings_);
+    MergeTreeDataPartBuilder(
+        const MergeTreeData & data_,
+        String name_,
+        VolumePtr volume_,
+        String root_path_,
+        String part_dir_,
+        const ReadSettings & read_settings_
+        , bool part_may_exist_on_disk = true
+        );
+
+    MergeTreeDataPartBuilder(
+        const MergeTreeData & data_,
+        String name_,
+        MutableDataPartStoragePtr part_storage_,
+        const ReadSettings & read_settings_
+        , bool part_may_exist_on_disk_ = true
+        );
 
     std::shared_ptr<IMergeTreeDataPart> build();
 
@@ -58,6 +73,7 @@ private:
         const VolumePtr & volume_,
         const String & root_path_,
         const String & part_dir_,
+        bool part_may_exist_on_disk,
         const ReadSettings & read_settings);
 
     const MergeTreeData & data;
@@ -72,6 +88,7 @@ private:
     const IMergeTreeDataPart * parent_part = nullptr;
     ProjectionDescriptionRawPtr projection = nullptr;
 
+    const bool part_may_exist_on_disk;
     const ReadSettings read_settings;
 };
 
