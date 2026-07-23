@@ -10398,20 +10398,13 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     if (params.copy_instead_of_hardlink)
         with_copy = " (copying data)";
 
-    /// Reclaim a stale leftover destination directory (e.g. tmp_clone_* / tmp_* left by a clone that was
-    /// interrupted or rolled back and then retried with the same deterministic name) before freeze
-    /// constructs the destination storage. Otherwise packed storage seeds its archive reader from the
-    /// leftover data.packed, and finalizeWriter carries stale archive members that the current source
-    /// does not rewrite into the new clone. The temporary-directory lock above guarantees no concurrent
-    /// operation owns this name, so an existing directory can only be such a stale leftover.
+    /// `freeze`/`freezeRemote` (via `Backup`) reject a non-empty destination, and packed storage must
+    /// not seed its archive reader from a stale leftover; reclaim it before freezing, see
+    /// `reclaimStaleTemporaryPartDirectory` for details. The claim was taken above, before the
+    /// destination disk was known.
     auto reclaim_stale_destination = [&](const DiskPtr & dst_disk)
     {
-        auto relative_dst_dir = fs::path(relative_data_path) / tmp_dst_part_name;
-        if (dst_disk->existsDirectory(relative_dst_dir))
-        {
-            LOG_WARNING(log, "Removing old temporary directory {}", (fs::path(dst_disk->getPath()) / relative_dst_dir).string());
-            dst_disk->removeRecursive(relative_dst_dir);
-        }
+        reclaimStaleTemporaryPartDirectory(dst_disk, tmp_dst_part_name);
     };
 
     std::shared_ptr<IDataPartStorage> dst_part_storage{};
