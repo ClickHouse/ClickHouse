@@ -1392,9 +1392,14 @@ public:
     {
         checkConditionArgType(arguments[0].type);
 
-        // Some processing - for constant strings - for LowCardinality
-        if (use_low_cardinality_optimisation && arguments[1].column && arguments[2].column && isColumnConst(*arguments[1].column)
-            && isColumnConst(*arguments[2].column))
+        // Some processing - for constant strings - for LowCardinality.
+        // If the condition is constant too, the whole expression is constant and gets folded into a single
+        // `Const(LowCardinality(String))` value. `LowCardinality` gives no benefit for a constant, and functions
+        // that opt out of the default LowCardinality implementation (e.g. `arrayReduce`, `joinGet`,
+        // `tupleElement`) expect their constant string arguments as `Const(String)`, so keep plain `String` then.
+        auto const is_condition_constant = arguments[0].column && isColumnConst(*arguments[0].column);
+        if (use_low_cardinality_optimisation && !is_condition_constant && arguments[1].column && arguments[2].column
+            && isColumnConst(*arguments[1].column) && isColumnConst(*arguments[2].column))
         {
             auto const is_string1 = isString(arguments[1].type);
             auto const is_string2 = isString(arguments[2].type);

@@ -941,8 +941,11 @@ namespace
                         "transform(T, Array(T), Array(U), U) -> U; "
                         "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
                         getName());
-                if (use_low_cardinality_optimisation && is_x_constant)
-                    ret = wrap_in_low_cardinality(ret);
+                /// No `LowCardinality` here: without a default, unmatched non-constant values pass through
+                /// unchanged (potentially high cardinality), and with a constant input the whole expression
+                /// is constant and gets folded, where `LowCardinality` gives no benefit while breaking
+                /// functions that expect their constant string arguments as `Const(String)`
+                /// (e.g. `arrayReduce`, `joinGet`, `tupleElement`).
                 FunctionTransform::checkAllowedType(ret);
                 return ret;
             }
@@ -955,11 +958,13 @@ namespace
                     "transform(T, Array(T), Array(U), U) -> U; "
                     "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
                     getName());
-            if (use_low_cardinality_optimisation && arguments[3].column && isColumnConst(*arguments[3].column))
-            {
-                /// We don't check is_x_constant - as we've a default value
+            /// If the input is constant too, the whole expression is constant and gets folded into a single
+            /// `Const(LowCardinality(String))` value. `LowCardinality` gives no benefit for a constant, and
+            /// functions that opt out of the default LowCardinality implementation (e.g. `arrayReduce`,
+            /// `joinGet`, `tupleElement`) expect their constant string arguments as `Const(String)`,
+            /// so keep plain `String` then.
+            if (use_low_cardinality_optimisation && !is_x_constant && arguments[3].column && isColumnConst(*arguments[3].column))
                 ret = wrap_in_low_cardinality(ret);
-            }
             FunctionTransform::checkAllowedType(ret);
             return ret;
         }

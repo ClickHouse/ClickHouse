@@ -139,9 +139,13 @@ public:
         size_t string_branches_count = 0;
         size_t nullable_string_branches_count = 0;
         size_t only_null_branches_count = 0;
+        size_t const_conditions_count = 0;
+        size_t conditions_count = 0;
 
         for_conditions([&](const ColumnWithTypeAndName & arg)
         {
+            ++conditions_count;
+            const_conditions_count += arg.column && isColumnConst(*arg.column);
             const auto & arg_type = recursiveRemoveLowCardinality(arg.type);
             const IDataType * nested_type = nullptr;
             if (arg_type->isNullable())
@@ -183,7 +187,12 @@ public:
 
         auto const num_branches = types_of_branches.size();
 
-        if (optimize_if_transform_const_strings_to_lowcardinality && const_branches_count == num_branches)
+        /// If all conditions are constant too, the whole expression is constant and gets folded into a single
+        /// `Const(LowCardinality(String))` value. `LowCardinality` gives no benefit for a constant, and functions
+        /// that opt out of the default LowCardinality implementation (e.g. `arrayReduce`, `joinGet`,
+        /// `tupleElement`) expect their constant string arguments as `Const(String)`, so keep plain `String` then.
+        if (optimize_if_transform_const_strings_to_lowcardinality && const_branches_count == num_branches
+            && const_conditions_count < conditions_count)
         {
             if (string_branches_count == num_branches)
                 return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
