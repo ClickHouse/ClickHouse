@@ -83,7 +83,9 @@ using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflow
 /// bucket-parallel merge). And when the staged stream as a whole proves to repeat the same keys
 /// over and over, every thread thaws its table: those repeats are neither frequent enough for
 /// the local tables nor rare keys to store once, and staging them re-processes the bulk of the
-/// stream that ordinary insertion would absorb as cheap in-place updates.
+/// stream that ordinary insertion would absorb as cheap in-place updates. The thaw verdict is
+/// remembered in the hash-table statistics, so later runs of the query skip the engagement
+/// altogether instead of re-measuring the stream.
 ///
 /// Merge phase: at the end of input every local table converts to two-level and the standard
 /// bucket-parallel merge runs, except that the merge task owning bucket b first drains backlog b
@@ -452,7 +454,10 @@ public:
       */
     AggregatedChunks convertToChunks(AggregatedDataVariants & data_variants, bool final) const;
 
-    ManyAggregatedDataVariants prepareVariantsToMerge(ManyAggregatedDataVariants && data_variants) const;
+    /// `adaptive_shared_state` (or nullptr when the adaptive aggregation is off) feeds the
+    /// thaw verdict into the hash-table statistics next to the observed sizes.
+    ManyAggregatedDataVariants prepareVariantsToMerge(
+        ManyAggregatedDataVariants && data_variants, AdaptiveAggregationSharedState * adaptive_shared_state) const;
 
     using BucketToChunks = std::map<Int32, AggregatedChunks>;
     /// Merge partially aggregated chunks separated to buckets into one data structure.

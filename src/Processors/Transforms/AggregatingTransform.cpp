@@ -1105,7 +1105,8 @@ void AggregatingTransform::initGenerate()
     {
         if (!skip_merging)
         {
-            auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
+            auto prepared_data = params->aggregator.prepareVariantsToMerge(
+                std::move(many_data->variants), adaptive_context ? adaptive_context->shared_state.get() : nullptr);
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
             processors.emplace_back(std::make_shared<ConvertingAggregatedToChunksTransform>(
                 params, std::move(prepared_data_ptr), max_threads, updater, adaptive_engaged ? adaptive_context->shared_state : nullptr));
@@ -1115,7 +1116,7 @@ void AggregatingTransform::initGenerate()
             if (updater)
                 updater->markUnsupportedCase();
 
-            auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
+            auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants), /*adaptive_shared_state=*/nullptr);
             Pipes pipes;
             for (auto & variant : prepared_data)
             {

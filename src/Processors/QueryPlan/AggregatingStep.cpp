@@ -13,6 +13,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -373,6 +374,17 @@ bool AggregatingStep::canUseAdaptiveAggregator(const QueryPipelineBuilder & pipe
 
     if (params.group_by_two_level_threshold == 0 && params.group_by_two_level_threshold_bytes == 0)
         return false;
+
+    /// A prior run measured the query's staged stream as repeat-dominated and thawed: freezing
+    /// cannot pay for this query, so do not engage it again. The verdict lives in the hash-table
+    /// statistics; a run without it takes the ordinary path with the statistics-driven
+    /// initialization, exactly as if the feature were off.
+    if (params.stats_collecting_params.isCollectionAndUseEnabled())
+    {
+        const auto hint = getHashTablesStatistics<AggregationEntry>().getSizeHint(params.stats_collecting_params);
+        if (hint && hint->adaptive_staging_repeat_dominated)
+            return false;
+    }
 
     /// TODO (nihalzp): Support LowCardinality and Nullable keys.
     for (const auto & key : params.keys)

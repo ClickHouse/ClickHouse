@@ -79,6 +79,48 @@ namespace ErrorCodes
 
 }
 
+/// Tuning of the adaptive aggregation.
+namespace
+{
+    /// The probe bypass decides after this many post-freeze rows per thread. It must be reachable
+    /// by every stream: at 64 threads over a 100M-row table a thread only sees ~1.5M rows.
+    constexpr size_t adaptive_bypass_sample_rows = 262'144;
+    /// Probing the frozen table pays off only while at least one row in this many hits it.
+    constexpr size_t adaptive_bypass_hit_rate_inverse = 4;
+    /// The drain reserves a bucket's table after sampling this fraction of its records.
+    constexpr size_t adaptive_reserve_sample_inverse = 8;
+    /// Headroom over the sampled insert rate when reserving.
+    constexpr double adaptive_reserve_headroom = 1.25;
+    /// Fixed lookahead of the drain's hash prefetch.
+    constexpr size_t adaptive_drain_prefetch_look_ahead = 16;
+    /// A thread gives up on freezing once it has consumed this many times the freeze threshold
+    /// in rows while holding fewer keys than the threshold. High-cardinality streams freeze
+    /// within a couple of blocks and skewed streams at roughly threshold / (1 - hot share) rows,
+    /// so only repeat-dominated tables (average multiplicity above the multiple) ever give up.
+    /// The value balances two bounds: it caps the tolerated hot share at 1 - 1/multiple (a 90%
+    /// hot key still freezes with a wide margin), and it must fire within the rows one thread
+    /// sees on a medium table at a wide fan-out (a 64-thread scan of 50M rows gives each thread
+    /// less than a million rows).
+    constexpr size_t adaptive_freeze_give_up_row_multiple = 16;
+
+    /// The thaw guard for the opposite failure past the freeze. Staged misses are supposed to
+    /// be rare keys, each staged about once; a uniform mid-cardinality stream instead misses on
+    /// the same keys over and over, and staging then re-processes the bulk of the stream that
+    /// ordinary insertion would absorb as cheap in-place updates. The repeat factor of the
+    /// staged stream is estimated over a shared sparse sample of staged hashes: repeats of a
+    /// key collapse onto one sample entry across all threads, so the estimate does not depend
+    /// on how a key's occurrences spread over the threads. Once the factor exceeds the bound,
+    /// every thread thaws its table and returns to the baseline path. The unit is the delayed
+    /// record, because staging and draining cost per record (a run of one key collapses into a
+    /// single value-staged record). Streams that want the freeze stay well below the bound
+    /// (high-cardinality keys repeat a few times in total, a skewed tail almost never); a
+    /// stream that crosses it fires after about the bound times the distinct staged keys in
+    /// records, a small share of a repeat-dominated stream.
+    constexpr UInt64 adaptive_thaw_sample_mask = 0xFF;
+    constexpr size_t adaptive_thaw_min_staged_records = 524'288;
+    constexpr size_t adaptive_thaw_repeat_factor = 16;
+}
+
 namespace
 {
 bool worthConvertToTwoLevel(
@@ -138,7 +180,10 @@ void initDataVariantsWithSizeHint(
 }
 
 /// Collection and use of the statistics should be enabled.
-void updateStatistics(const DB::ManyAggregatedDataVariants & data_variants, const DB::StatsCollectingParams & params)
+void updateStatistics(
+    const DB::ManyAggregatedDataVariants & data_variants,
+    DB::AdaptiveAggregationSharedState * adaptive_shared_state,
+    const DB::StatsCollectingParams & params)
 {
     if (!params.isCollectionAndUseEnabled())
         return;
@@ -149,7 +194,28 @@ void updateStatistics(const DB::ManyAggregatedDataVariants & data_variants, cons
     const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
     ::nth_element(sizes.begin(), median_size, sizes.end());
     const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
-    DB::getHashTablesStatistics<DB::AggregationEntry>().update({.sum_of_sizes = sum_of_sizes, .median_size = *median_size}, params);
+
+    /// A run that staged enough records to trust the thaw sampler records the measured verdict;
+    /// any other run carries the stored verdict over, so that runs without an adaptive
+    /// measurement do not erase it. The verdict gates the admission of later runs (see
+    /// `AggregatingStep::canUseAdaptiveAggregator`), so a query marked repeat-dominated is not
+    /// re-measured until its cache entry is evicted.
+    bool repeat_dominated = false;
+    bool measured = false;
+    if (adaptive_shared_state)
+    {
+        std::lock_guard lock(adaptive_shared_state->thaw_sample_mutex);
+        measured = adaptive_shared_state->staged_records >= adaptive_thaw_min_staged_records;
+        repeat_dominated = adaptive_shared_state->thaw_all.load(std::memory_order_relaxed);
+    }
+    if (!measured)
+    {
+        if (const auto prev = DB::getHashTablesStatistics<DB::AggregationEntry>().getSizeHint(params))
+            repeat_dominated = prev->adaptive_staging_repeat_dominated;
+    }
+
+    DB::getHashTablesStatistics<DB::AggregationEntry>().update(
+        {.sum_of_sizes = sum_of_sizes, .median_size = *median_size, .adaptive_staging_repeat_dominated = repeat_dominated}, params);
 }
 
 DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Aggregator::Params & params)
@@ -1620,49 +1686,6 @@ void Aggregator::prepareAggregateInstructions(
     }
 }
 
-
-/// Tuning of the adaptive aggregation.
-namespace
-{
-    /// The probe bypass decides after this many post-freeze rows per thread. It must be reachable
-    /// by every stream: at 64 threads over a 100M-row table a thread only sees ~1.5M rows.
-    constexpr size_t adaptive_bypass_sample_rows = 262'144;
-    /// Probing the frozen table pays off only while at least one row in this many hits it.
-    constexpr size_t adaptive_bypass_hit_rate_inverse = 4;
-    /// The drain reserves a bucket's table after sampling this fraction of its records.
-    constexpr size_t adaptive_reserve_sample_inverse = 8;
-    /// Headroom over the sampled insert rate when reserving.
-    constexpr double adaptive_reserve_headroom = 1.25;
-    /// Fixed lookahead of the drain's hash prefetch.
-    constexpr size_t adaptive_drain_prefetch_look_ahead = 16;
-    /// A thread gives up on freezing once it has consumed this many times the freeze threshold
-    /// in rows while holding fewer keys than the threshold. High-cardinality streams freeze
-    /// within a couple of blocks and skewed streams at roughly threshold / (1 - hot share) rows,
-    /// so only repeat-dominated tables (average multiplicity above the multiple) ever give up.
-    /// The value balances two bounds: it caps the tolerated hot share at 1 - 1/multiple (a 90%
-    /// hot key still freezes with a wide margin), and it must fire within the rows one thread
-    /// sees on a medium table at a wide fan-out (a 64-thread scan of 50M rows gives each thread
-    /// less than a million rows).
-    constexpr size_t adaptive_freeze_give_up_row_multiple = 16;
-
-    /// The thaw guard for the opposite failure past the freeze. Staged misses are supposed to
-    /// be rare keys, each staged about once; a uniform mid-cardinality stream instead misses on
-    /// the same keys over and over, and staging then re-processes the bulk of the stream that
-    /// ordinary insertion would absorb as cheap in-place updates. The repeat factor of the
-    /// staged stream is estimated over a shared sparse sample of staged hashes: repeats of a
-    /// key collapse onto one sample entry across all threads, so the estimate does not depend
-    /// on how a key's occurrences spread over the threads. Once the factor exceeds the bound,
-    /// every thread thaws its table and returns to the baseline path. The unit is the delayed
-    /// record, because staging and draining cost per record (a run of one key collapses into a
-    /// single value-staged record). Streams that want the freeze stay well below the bound
-    /// (high-cardinality keys repeat a few times in total, a skewed tail almost never); a
-    /// stream that crosses it fires after about the bound times the distinct staged keys in
-    /// records, a small share of a repeat-dominated stream.
-    constexpr UInt64 adaptive_thaw_sample_mask = 0xFF;
-    constexpr size_t adaptive_thaw_min_staged_records = 524'288;
-    constexpr size_t adaptive_thaw_repeat_factor = 16;
-}
-
 bool Aggregator::executeOnBlock(Columns columns,
     size_t row_begin, size_t row_end,
     AggregatedDataVariants & result,
@@ -1863,8 +1886,6 @@ bool Aggregator::executeOnBlock(Columns columns,
 
     return true;
 }
-
-
 
 template <typename State>
 bool ALWAYS_INLINE adaptiveKeyViewsAreBlockStable(const State & state)
@@ -2197,7 +2218,10 @@ void NO_INLINE Aggregator::publishDelayedRecords(
         shared.thaw_sampled_records += sampled_hashes.size();
         for (const auto hash : sampled_hashes)
             shared.thaw_sampled_keys.insert(hash);
-        if (shared.staged_records >= adaptive_thaw_min_staged_records
+        /// Re-checked under the lock: a thread that sampled while another was firing would
+        /// otherwise fire a second time.
+        if (!shared.thaw_all.load(std::memory_order_relaxed)
+            && shared.staged_records >= adaptive_thaw_min_staged_records
             && shared.thaw_sampled_records > adaptive_thaw_repeat_factor * shared.thaw_sampled_keys.size())
         {
             shared.thaw_all.store(true, std::memory_order_relaxed);
@@ -4091,14 +4115,15 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     }
 }
 
-ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedDataVariants && data_variants) const
+ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
+    ManyAggregatedDataVariants && data_variants, AdaptiveAggregationSharedState * adaptive_shared_state) const
 {
     if (data_variants.empty())
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Empty data passed to Aggregator::prepareVariantsToMerge.");
 
     LOG_TRACE(log, "Merging aggregated data");
 
-    updateStatistics(data_variants, params.stats_collecting_params);
+    updateStatistics(data_variants, adaptive_shared_state, params.stats_collecting_params);
 
     ManyAggregatedDataVariants non_empty_data;
     non_empty_data.reserve(data_variants.size());
