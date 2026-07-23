@@ -678,12 +678,7 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
 namespace
 {
 
-/// Extract logical column names from a `PARTITION BY` AST. Supports the common
-/// shapes `PARTITION BY col` (ASTIdentifier) and `PARTITION BY (a, b)`
-/// (ASTFunction("tuple") wrapping ASTExpressionList of identifiers). Returns
-/// an empty list when `partition_by` is null. Throws on unsupported shapes
-/// (expressions other than plain column references), since the Delta protocol
-/// only models column-level partitioning.
+/// Extract logical column names from a `PARTITION BY` AST (plain column or tuple of columns); throws on other expressions.
 Names extractPartitionColumnNames(ASTPtr partition_by)
 {
     if (!partition_by)
@@ -732,8 +727,7 @@ bool DeltaLakeMetadataDeltaKernel::createTable(
     if (!configuration_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Delta table, but storage configuration is expired");
 
-    /// If a `_delta_log` already exists, attach to the existing table instead of creating (any entry,
-    /// including a checkpoint-only log). Duplicate table names are rejected by `IDatabase::createTable`.
+    /// If a `_delta_log` already exists, attach to the existing table instead of creating.
     const auto data_path = configuration_ptr->getRawPath().path;
     if (deltaLogExists(*object_storage_, data_path))
     {
@@ -741,21 +735,17 @@ bool DeltaLakeMetadataDeltaKernel::createTable(
         return false;
     }
 
-    /// A fresh CREATE (no `_delta_log`) must write the initial commit, which requires delta lake writes.
-    /// When they are off, fail rather than silently reporting success while writing nothing -- matching
-    /// the non-kernel branch in `DeltaLakeMetadata::createInitial`.
+    /// A fresh CREATE must write the initial commit, which requires delta lake writes; fail when they are off.
     if (!local_context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes])
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Creating a new Delta Lake table requires allow_experimental_delta_lake_writes = 1");
 
-    /// Qualify: a member function `getKernelHelper()` shadows the free
-    /// function inside this class's static methods.
+    /// Qualify with `DB::`: a member `getKernelHelper()` shadows the free function here.
     auto kernel_helper = DB::getKernelHelper(configuration_ptr, object_storage_);
     Names partition_columns = extractPartitionColumnNames(partition_by);
 
-    /// Use `getAllPhysical()` (ordinary + materialized) so the Delta schema matches the physical
-    /// columns the writer emits to Parquet -- `EPHEMERAL`/`ALIAS` are excluded, `MATERIALIZED` kept.
+    /// Use `getAllPhysical()` so the Delta schema matches the physical columns the writer emits to Parquet.
     auto schema_list = columns.getAllPhysical();
 
     auto write_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper);

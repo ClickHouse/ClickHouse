@@ -70,10 +70,7 @@ public:
         return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage_, configuration);
     }
 
-    /// Initialize a new Delta table at the configured location by writing the
-    /// `00000000000000000000.json` commit with Protocol + Metadata actions.
-    /// When the location already has a `_delta_log`, attaches to the existing table.
-    /// Returns true if a new table was created (commit 0 was written), false if it attached.
+    /// Initialize a new Delta table by writing commit 0, or attach to an existing `_delta_log`; returns true if created.
     static bool createTable(
         const ObjectStoragePtr & object_storage_,
         const StorageObjectStorageConfigurationWeakPtr & configuration,

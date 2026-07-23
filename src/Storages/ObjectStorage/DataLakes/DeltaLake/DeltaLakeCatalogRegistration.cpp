@@ -35,8 +35,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Serialize a ClickHouse type to the Delta "type" JSON (a string for primitives, an object for
-/// array/map/struct). Primitive mapping/rejection is shared via `classifyDeltaPrimitive`.
+/// Serialize a ClickHouse type to the Delta "type" JSON (string for primitives, object for array/map/struct).
 Poco::Dynamic::Var deltaTypeToJSON(const DataTypePtr & full_type)
 {
     DataTypePtr type = full_type->isNullable() ? removeNullable(full_type) : full_type;
@@ -134,13 +133,10 @@ void registerDeltaTableInCatalog(
     bool created_fresh,
     const StorageID & table_id)
 {
-    /// Register the full URI (`s3://…`, `file://…`) the kernel reads, not the scheme-less `getRawPath().path`
-    /// (which `TableMetadata::setLocation` cannot parse back).
+    /// Register the full URI (`s3://…`, `file://…`) the kernel reads, not the scheme-less `getRawPath().path`.
     const auto location = getKernelHelper(configuration_ptr, object_storage)->getTableLocation();
 
-    /// Register the schema that is actually on storage: the just-committed `columns` for a fresh table, or
-    /// the existing snapshot schema when attaching to a preexisting `_delta_log` (the declared `columns`
-    /// may differ from it and were not committed).
+    /// Register the schema on storage: the just-committed `columns` for a fresh table, else the existing snapshot schema.
     const auto registration_schema = created_fresh
         ? columns.getAllPhysical()
         : DeltaLakeMetadataDeltaKernel::create(object_storage, configuration)->getTableSchema(local_context);
@@ -156,9 +152,7 @@ void registerDeltaTableInCatalog(
     }
     catch (...)
     {
-        /// Commit 0 was already written, so a failed registration would orphan a fresh `_delta_log`.
-        /// Best-effort roll back only what this statement created (a preexisting table we merely attached
-        /// to is left untouched), so a failed CREATE leaves nothing behind.
+        /// Best-effort roll back the just-written commit 0 so a failed registration does not orphan a fresh `_delta_log`.
         if (created_fresh)
         {
             try

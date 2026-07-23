@@ -660,8 +660,7 @@ void DeltaLakeMetadata::createInitial(
     const bool kernel_enabled = false;
 #endif
 
-    /// Without the kernel there is no Delta Lake writer: attaching to an existing `_delta_log` is fine,
-    /// but a fresh CREATE (no `_delta_log`) must fail rather than silently succeed writing nothing.
+    /// Without the kernel there is no Delta Lake writer, so a fresh CREATE (no `_delta_log`) must fail.
     if (!kernel_enabled)
     {
         if (configuration_ptr && !deltaLogExists(*object_storage, configuration_ptr->getRawPath().path))
@@ -684,10 +683,7 @@ void DeltaLakeMetadata::createInitial(
     if (!columns.has_value())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "CREATE TABLE for DeltaLake requires explicit column definitions");
 
-    /// Reject columns whose names are reserved for virtual columns *before* the first remote commit.
-    /// `InterpreterCreateQuery::validateVirtualColumns` performs the same check, but only after the
-    /// storage constructor has already written `_delta_log`, which would leave an orphan Delta table
-    /// behind at the target path when the DDL is rejected.
+    /// Reject columns with virtual-column names before the first commit, else `_delta_log` is written before the DDL is rejected.
     const auto reserved_virtual_columns = VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
     for (const auto & column : *columns)
         if (reserved_virtual_columns.contains(column.name))
@@ -696,18 +692,14 @@ void DeltaLakeMetadata::createInitial(
                 "Cannot create DeltaLake table with column `{}` because it is reserved for a virtual column",
                 column.name);
 
-    /// Register the new table with the catalog only when the catalog manages Delta tables (Unity).
-    /// Other catalogs (Glue / Iceberg REST) expect an Iceberg payload from `createTable`, so registering
-    /// a Delta table there would misregister it -- reject before the first remote side effect so nothing
-    /// is written. Also gated on writes: without them `createTable` writes no `_delta_log` to register.
+    /// Register with the catalog only for Unity (which manages Delta tables) and only when writes are enabled.
     const bool register_with_catalog = catalog && local_context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes];
     if (register_with_catalog && catalog->getCatalogType() != DatabaseDataLakeCatalogType::UNITY)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "CREATE TABLE with ENGINE = DeltaLake is only supported in a Unity catalog database");
 
-    /// Materialize the initial `_delta_log` commit (Protocol + Metadata actions) on storage. Returns
-    /// whether a fresh table was created (commit 0 written) or an existing `_delta_log` was attached.
+    /// Write the initial `_delta_log` commit; returns whether a fresh table was created or an existing one attached.
     const bool created_fresh = DeltaLakeMetadataDeltaKernel::createTable(
         object_storage, configuration, local_context, *columns, partition_by, if_not_exists);
 
@@ -811,8 +803,7 @@ DataTypePtr DeltaLakeMetadata::getSimpleTypeByName(const String & type_name)
 
 DeltaPrimitiveType DeltaLakeMetadata::classifyDeltaPrimitive(const DataTypePtr & type)
 {
-    /// `Bool` is stored as `UInt8`, so detect it before the plain `UInt8` case -- otherwise a `UInt8`
-    /// column would be committed as Delta `boolean` and corrupt values 2..255.
+    /// `Bool` is stored as `UInt8`, so detect it before the plain `UInt8` case below.
     if (isBool(type))
         return DeltaPrimitiveType::Boolean;
 
@@ -836,8 +827,7 @@ DeltaPrimitiveType DeltaLakeMetadata::classifyDeltaPrimitive(const DataTypePtr &
                     "DeltaLake `timestamp` is microsecond precision; declare the column as `DateTime64(6)` "
                     "instead of `{}` for CREATE TABLE",
                     type->getName());
-            /// Delta `timestamp` carries no time zone; a `DateTime64(6, 'TZ')` reads back as plain
-            /// `DateTime64(6)` (the explicit zone is dropped), so it does not round-trip.
+            /// Delta `timestamp` carries no time zone, so a `DateTime64(6, 'TZ')` would not round-trip.
             if (datetime64.hasExplicitTimeZone())
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
@@ -850,8 +840,7 @@ DeltaPrimitiveType DeltaLakeMetadata::classifyDeltaPrimitive(const DataTypePtr &
         case TypeIndex::Decimal64:
         case TypeIndex::Decimal128:
         case TypeIndex::Decimal256:
-            /// Delta `decimal` allows precision up to 38, but ClickHouse `Decimal256` allows up to 76;
-            /// a higher precision would emit an invalid Delta `decimal(P,S)` and cannot round-trip.
+            /// Delta `decimal` supports precision up to 38, so a higher precision cannot round-trip.
             if (getDecimalPrecision(*type) > 38)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,

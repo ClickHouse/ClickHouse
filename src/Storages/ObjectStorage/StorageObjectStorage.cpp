@@ -176,9 +176,7 @@ StorageObjectStorage::StorageObjectStorage(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Delta lake CDF is allowed only for deltaLake table function");
     }
 
-    /// Validate the configuration (RemoteHostFilter / HTTPHeaderFilter / format) before any remote access:
-    /// the create path below can drive remote commits, and schema/format inference further down reads
-    /// remote data. The `url` table function does the same in `TableFunctionURL::getActualTableStructure`.
+    /// Validate the configuration (RemoteHostFilter / HTTPHeaderFilter / format) before any remote access.
     configuration->check(context);
 
     if (!is_table_function && !columns_in_table_or_function_definition.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)

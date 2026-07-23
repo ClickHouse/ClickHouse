@@ -428,9 +428,7 @@ public:
         return builder;
     }
 
-    /// The kernel's local `object_store` backend requires the table directory to exist
-    /// before `get_engine_builder`; create it for a brand-new table. The path has already
-    /// been validated to be inside `user_files` by `DataLakeConfiguration::assertLocalPathCorrect`.
+    /// The kernel's local `object_store` backend requires the table directory to exist before `get_engine_builder`; create it here.
     void prepareForTableCreation() const override
     {
         std::filesystem::create_directories(path);

@@ -16,11 +16,7 @@ namespace DB
 
 class ColumnsDescription;
 
-/// Register a Delta table that `DeltaLakeMetadata::createInitial` just created or attached with a data
-/// lake catalog (Unity): serializes the schema and location into the catalog `createTable` payload.
-/// `created_fresh` tells whether commit 0 was just written (the declared `columns` are authoritative) or
-/// an existing `_delta_log` was attached (the on-storage snapshot schema is used instead). If the catalog
-/// rejects the registration, a freshly written commit 0 is rolled back so the failed CREATE leaves nothing behind.
+/// Register a Delta table (just created or attached by `DeltaLakeMetadata::createInitial`) with a data lake catalog (Unity).
 void registerDeltaTableInCatalog(
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const ObjectStoragePtr & object_storage,

@@ -277,26 +277,19 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
 
 void WriteTransaction::createTable(const DB::NamesAndTypesList & schema, const DB::Names & partition_columns)
 {
-    /// Reject non-round-tripping column types before the kernel FFI (and before `prepareForTableCreation`),
-    /// so an unsupported type is a normal exception rather than a throw through the Rust visitor callback.
+    /// Reject non-round-tripping column types before the kernel FFI, so unsupported types raise a normal exception.
     DeltaLake::validateSchemaForDeltaCreate(schema);
 
     if (!partition_columns.empty())
     {
-        /// The v0.23.0 FFI `get_create_table_builder` does not expose
-        /// `with_data_layout(DataLayout::Partitioned)` -- the kernel-side builder
-        /// supports it but no FFI setter is provided yet. Persist the columns in
-        /// ClickHouse's in-memory metadata; the actual delta log will be created
-        /// without `partitionColumns`. Matches the current INSERT-into-partitioned
-        /// limitation noted in `04259_create_table_deltalake_local.sh`.
+        /// Partition columns are kept only in ClickHouse metadata: the v0.23.0 FFI `get_create_table_builder` has no `with_data_layout(Partitioned)` setter yet.
         LOG_INFO(log,
             "PARTITION BY columns are not yet persisted into the Delta log "
             "(kernel FFI does not expose with_data_layout): {}",
             fmt::join(partition_columns, ", "));
     }
 
-    /// For the local filesystem the kernel refuses a table location whose root directory
-    /// does not yet exist; create it up front. No-op for object stores (S3/Azure).
+    /// The kernel needs the table location's root directory to exist; create it up front. No-op for object stores (S3/Azure).
     kernel_helper->prepareForTableCreation();
 
     auto * engine_builder = kernel_helper->createBuilder();
@@ -310,8 +303,7 @@ void WriteTransaction::createTable(const DB::NamesAndTypesList & schema, const D
     using KernelCreateTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCreateTransaction, ffi::create_table_free_transaction>;
     using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCommittedTransaction, ffi::free_committed_transaction>;
 
-    /// The visitor ran inside the call above; if it captured an exception (rather than unwinding
-    /// through Rust frames), surface it now, before touching the result.
+    /// If the visitor captured an exception (rather than unwinding through Rust frames), surface it before touching the result.
     auto builder_result = ffi::get_create_table_builder(
         DeltaLake::KernelUtils::toDeltaString(kernel_helper->getTableLocation()),
         &engine_schema,
@@ -321,8 +313,7 @@ void WriteTransaction::createTable(const DB::NamesAndTypesList & schema, const D
         std::rethrow_exception(schema_state.exception);
     KernelCreateTableBuilder builder(DeltaLake::KernelUtils::unwrapResult(builder_result, "get_create_table_builder"));
 
-    /// `create_table_builder_build` consumes the builder on both success and
-    /// failure paths inside the kernel, so release() is correct here.
+    /// `create_table_builder_build` consumes the builder on both success and failure, so release() is correct here.
     KernelCreateTransaction create_txn(DeltaLake::KernelUtils::unwrapResult(
         ffi::create_table_builder_build(builder.release(), engine.get()),
         "create_table_builder_build"));

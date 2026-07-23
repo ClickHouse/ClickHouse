@@ -28,8 +28,7 @@ struct DeltaLakePartitionColumn
 /// Data file -> partition columns
 using DeltaLakePartitionColumns = std::unordered_map<std::string, std::vector<DeltaLakePartitionColumn>>;
 
-/// Delta Lake primitive types a ClickHouse column can map to for CREATE TABLE (the set that
-/// round-trips through Delta metadata). See `DeltaLakeMetadata::classifyDeltaPrimitive`.
+/// Delta Lake primitive types a ClickHouse column can map to for CREATE TABLE. See `DeltaLakeMetadata::classifyDeltaPrimitive`.
 enum class DeltaPrimitiveType
 {
     Boolean,
@@ -89,8 +88,7 @@ public:
     static DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
     static DataTypePtr getSimpleTypeByName(const String & type_name);
 
-    /// Map a non-nested ClickHouse type to its Delta primitive for CREATE TABLE (reverse of
-    /// `getSimpleTypeByName`), throwing `NOT_IMPLEMENTED` if it would not round-trip. Nested types handled by callers.
+    /// Map a non-nested ClickHouse type to its Delta primitive for CREATE TABLE, throwing `NOT_IMPLEMENTED` if it would not round-trip.
     static DeltaPrimitiveType classifyDeltaPrimitive(const DataTypePtr & type);
     static DataTypePtr getFieldValue(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
     static Field getFieldValue(const String & value, DataTypePtr data_type);

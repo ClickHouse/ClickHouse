@@ -611,15 +611,7 @@ DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema, ffi:
     return data.getSchemaResult().names_and_types;
 }
 
-/// =============================================================================
-/// CH -> kernel: schema visitor used by `ffi::get_create_table_builder`.
-///
-/// The kernel calls the function-pointer stored in `EngineSchema::visitor`
-/// once, passing back the opaque `schema` field as the user data. The visitor
-/// must call `ffi::visit_field_*` for every leaf type to register field IDs,
-/// then call `ffi::visit_field_struct` for the top-level struct (anonymous
-/// name) and return its ID.
-/// =============================================================================
+/// CH -> kernel schema visitor for `ffi::get_create_table_builder`: registers each leaf via `ffi::visit_field_*`, then the top-level struct.
 
 namespace
 {
@@ -647,8 +639,7 @@ uintptr_t visitFieldFromClickHouseType(
         return KernelUtils::unwrapResult(result, label);
     };
 
-    /// Nested types recurse and register their children first; primitive/leaf types are classified
-    /// (and rejected if they would not round-trip) via the shared `DeltaLakeMetadata::classifyDeltaPrimitive`.
+    /// Nested types recurse to register children; leaf types are classified (and rejected if not round-tripping) via `DeltaLakeMetadata::classifyDeltaPrimitive`.
     switch (type->getTypeId())
     {
         case DB::TypeIndex::Array:
@@ -722,16 +713,11 @@ uintptr_t visitFieldFromClickHouseType(
 
 uintptr_t visitElementFromClickHouseType(ffi::KernelSchemaVisitorState * state, const DB::DataTypePtr & full_type)
 {
-    /// For array elements / map keys & values the kernel expects a synthetic anonymous
-    /// field. We reuse `visitFieldFromClickHouseType` with an empty name.
+    /// Array elements / map keys & values are visited as anonymous fields (empty name).
     return visitFieldFromClickHouseType(state, /* name */ "", full_type);
 }
 
-/// Stored in `EngineSchema::visitor` and called once by the kernel. No `extern "C"` is needed:
-/// the FFI function-pointer field has C++ language linkage (the generated header is not wrapped
-/// in `extern "C"`), and on the supported ABIs the calling convention matches the kernel's
-/// `extern "C" fn`. Keeping it inside the anonymous namespace gives it internal linkage, which
-/// also satisfies `-Wmissing-prototypes`.
+/// Stored in `EngineSchema::visitor` and called once by the kernel; the anonymous namespace gives it internal linkage.
 uintptr_t kernelEngineSchemaVisitorTrampoline(void * schema_void, ffi::KernelSchemaVisitorState * state)
 {
     auto * ctx = static_cast<KernelCreateSchemaState *>(schema_void);
@@ -753,8 +739,7 @@ uintptr_t kernelEngineSchemaVisitorTrampoline(void * schema_void, ffi::KernelSch
     }
     catch (...)
     {
-        /// A C++ exception must not unwind through the kernel's Rust frames; capture it and return a
-        /// sentinel. The caller rethrows `state.exception` after the FFI returns.
+        /// A C++ exception must not unwind through the kernel's Rust frames; capture it and return a sentinel for the caller to rethrow.
         ctx->exception = std::current_exception();
         return 0;
     }
@@ -797,8 +782,7 @@ void validateSchemaForDeltaCreate(const DB::NamesAndTypesList & schema)
 
 ffi::EngineSchema buildKernelEngineSchema(KernelCreateSchemaState & state)
 {
-    /// `schema` is `void *`; the kernel never mutates it. The visitor reads `state.schema_list` and,
-    /// on error, stores the exception in `state.exception` for the caller to rethrow.
+    /// `schema` is an opaque `void *` the kernel never mutates; the visitor reads `state.schema_list` and stores any error in `state.exception`.
     return ffi::EngineSchema{
         /* schema */  &state,
         /* visitor */ &kernelEngineSchemaVisitorTrampoline,

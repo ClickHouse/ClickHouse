@@ -103,8 +103,7 @@ std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::getJSONRequest(const st
 std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const
 {
     const auto & context = getContext();
-    /// Unity's server (Armeria) selects the JSON request converter based on `Content-Type`; without it the
-    /// `@RequestObject` body is not deserialized and the server responds with HTTP 500.
+    /// Unity's server (Armeria) needs `Content-Type: application/json` to deserialize the `@RequestObject` body, else it responds with HTTP 500.
     DB::HTTPHeaderEntries headers{auth_header, {"Content-Type", "application/json"}};
     return makeHTTPRequestAndReadJSON(base_url / route, context, credentials, {}, headers, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callaback);
 }
@@ -344,8 +343,7 @@ void UnityCatalog::createTable(
     const String & new_metadata_path,
     Poco::JSON::Object::Ptr metadata_content) const
 {
-    /// Build the Unity `ColumnInfo` array from the Delta schema fields. `type_json` matches what the
-    /// read path (`tryGetTableMetadata`) parses back: a quoted type name for primitives, an object for nested.
+    /// Build the Unity `ColumnInfo` array from the Delta schema fields, with `type_json` matching what the read path (`tryGetTableMetadata`) parses back.
     auto fields = metadata_content->getArray("fields");
     if (!fields)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Delta schema fields are missing for Unity createTable");
@@ -453,8 +451,7 @@ bool UnityCatalog::existsTable(const std::string & schema_name, const std::strin
     }
     catch (const DB::HTTPException & e)
     {
-        /// Unity returns 404 for a table that does not exist; treat that as "does not exist" instead
-        /// of an error (e.g. the existence check `InterpreterCreateQuery` runs before CREATE TABLE).
+        /// Unity returns 404 for a missing table; treat that as "does not exist" instead of an error.
         if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
             return false;
         throw;

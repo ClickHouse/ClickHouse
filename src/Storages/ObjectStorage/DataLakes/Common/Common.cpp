@@ -51,10 +51,7 @@ std::vector<String> listFiles(
 
 bool deltaLogExists(const IObjectStorage & object_storage, const String & path)
 {
-    /// `listObjects` matches `<path>/_delta_log` as a plain prefix, so it would also return sibling keys
-    /// like `<path>/_delta_log_backup/...` or `<path>/_delta_log_old/...`. Require the `_delta_log/`
-    /// directory itself: keep only entries inside it. The filter accepts every file within (commits,
-    /// checkpoints and `_last_checkpoint`), not only `*.json` commits.
+    /// Keep only entries inside the `_delta_log/` directory (not sibling prefixes like `_delta_log_backup/`), matching any file, not only `*.json` commits.
     const auto delta_log_dir = (std::filesystem::path(path) / "_delta_log").string() + "/";
     return !listFiles(
         object_storage,
