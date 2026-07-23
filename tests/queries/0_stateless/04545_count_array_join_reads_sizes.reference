@@ -26,4 +26,11 @@ When the array is read elsewhere, the rewrite must NOT fire, so the plan keeps t
 1
 1
 9
+Join-tree shapes the rewrite does not handle must decline (keep the ARRAY JOIN) and stay equal to the optimization-off result.
+1
+1
+1
+1
+1
+1
 1

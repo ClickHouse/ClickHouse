@@ -66,6 +66,17 @@ SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT arr FROM t_count_aj ARR
 -- GROUP BY over the exploded array (INNER) drops empty-array groups; the count must be unchanged.
 SELECT count() FROM (SELECT arr, count() FROM t_count_aj ARRAY JOIN arr AS value GROUP BY arr);
 
+SELECT 'Join-tree shapes the rewrite does not handle must decline (keep the ARRAY JOIN) and stay equal to the optimization-off result.';
+-- Chained ARRAY JOIN (cartesian product of the arrays): the ARRAY JOIN input is another ARRAY JOIN, not a table.
+SELECT (SELECT count() FROM t_count_aj ARRAY JOIN arr ARRAY JOIN narr) = (SELECT count() FROM t_count_aj ARRAY JOIN arr ARRAY JOIN narr SETTINGS optimize_functions_to_subcolumns = 0);
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj ARRAY JOIN arr ARRAY JOIN narr) WHERE explain ILIKE '%ARRAY JOIN%';
+-- A regular JOIN in the same query: the join tree root is a JOIN, not an ARRAY JOIN over a table.
+SELECT (SELECT count() FROM t_count_aj AS a INNER JOIN t_count_aj AS b ON a.id = b.id ARRAY JOIN a.arr) = (SELECT count() FROM t_count_aj AS a INNER JOIN t_count_aj AS b ON a.id = b.id ARRAY JOIN a.arr SETTINGS optimize_functions_to_subcolumns = 0);
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj AS a INNER JOIN t_count_aj AS b ON a.id = b.id ARRAY JOIN a.arr) WHERE explain ILIKE '%ARRAY JOIN%';
+-- GROUP BY in the same query: the count is per group, not a single row count.
+SELECT (SELECT count() FROM (SELECT id, count() FROM t_count_aj ARRAY JOIN arr AS value GROUP BY id)) = (SELECT count() FROM (SELECT id, count() FROM t_count_aj ARRAY JOIN arr AS value GROUP BY id) SETTINGS optimize_functions_to_subcolumns = 0);
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT id, count() FROM t_count_aj ARRAY JOIN arr AS value GROUP BY id) WHERE explain ILIKE '%ARRAY JOIN%';
+
 -- With the setting disabled, the optimization must not fire (backward compatible).
 SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj ARRAY JOIN arr AS value SETTINGS optimize_functions_to_subcolumns = 0) WHERE explain ILIKE '%arr.size0%';
 
