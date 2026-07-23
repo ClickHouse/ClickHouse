@@ -337,6 +337,12 @@ public:
         size_t bypass_sampled_rows = 0;
         size_t bypass_sampled_hits = 0;
         bool bypass_local_probe = false;
+
+        /// Rows consumed while the local table was neither frozen nor given up. A thread whose
+        /// table stays far below the freeze threshold across many times that many rows is
+        /// repeat-dominated and hands itself back to the baseline path (see `executeOnBlock`).
+        size_t rows_seen_unfrozen = 0;
+        bool gave_up_freezing = false;
     };
 
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').

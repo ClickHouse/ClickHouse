@@ -442,8 +442,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     if (use_adaptive_aggregator)
     {
         /// TODO (nihalzp): Support external aggregation.
-        params.group_by_two_level_threshold = 0;
-        params.group_by_two_level_threshold_bytes = 0;
         params.max_bytes_before_external_group_by = 0;
     }
 

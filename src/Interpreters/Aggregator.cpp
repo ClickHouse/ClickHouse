@@ -1624,6 +1624,27 @@ void Aggregator::prepareAggregateInstructions(
 }
 
 
+/// Tuning of the adaptive aggregation.
+namespace
+{
+    /// The probe bypass decides after this many post-freeze rows per thread. It must be reachable
+    /// by every stream: at 64 threads over a 100M-row table a thread only sees ~1.5M rows.
+    constexpr size_t adaptive_bypass_sample_rows = 262'144;
+    /// Probing the frozen table pays off only while at least one row in this many hits it.
+    constexpr size_t adaptive_bypass_hit_rate_inverse = 4;
+    /// The drain reserves a bucket's table after sampling this fraction of its records.
+    constexpr size_t adaptive_reserve_sample_inverse = 8;
+    /// Headroom over the sampled insert rate when reserving.
+    constexpr double adaptive_reserve_headroom = 1.25;
+    /// Fixed lookahead of the drain's hash prefetch.
+    constexpr size_t adaptive_drain_prefetch_look_ahead = 16;
+    /// A thread gives up on freezing once it has consumed this many times the freeze threshold
+    /// in rows while holding fewer keys than the threshold. High-cardinality streams freeze
+    /// within a couple of blocks and skewed streams at roughly threshold / (1 - hot share) rows,
+    /// so only repeat-dominated tables (average multiplicity above the multiple) ever give up.
+    constexpr size_t adaptive_freeze_give_up_row_multiple = 64;
+}
+
 bool Aggregator::executeOnBlock(Columns columns,
     size_t row_begin, size_t row_end,
     AggregatedDataVariants & result,
@@ -1735,11 +1756,11 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// Here all the results in the sum are taken into account, from different threads.
     Int64 result_size_bytes = use_own_tracker ? memory_tracker->get() : current_memory_usage - memory_usage_before_aggregation;
 
-    if (adaptive)
+    if (adaptive && !adaptive->gave_up_freezing)
     {
         /// The freeze replaces the local two-level conversion: from now on the local table only
         /// updates the keys it already holds, so it stays single-level and bounded by the
-        /// threshold, and the shared table is the only two-level structure of this aggregation.
+        /// threshold, and the frozen kernel pairs it with its two-level twin.
         if (!adaptive->local_table_frozen && result_size >= params.adaptive_aggregator_freeze_threshold
             && result.isConvertibleToTwoLevel())
         {
@@ -1748,11 +1769,38 @@ bool Aggregator::executeOnBlock(Columns columns,
             LOG_TRACE(log, "Adaptive aggregation: local table frozen at {} keys", result_size);
         }
 
-        /// Checking the constraints.
-        if (!checkLimits(result_size, no_more_keys))
-            return false;
+        if (adaptive->local_table_frozen)
+        {
+            /// Checking the constraints.
+            if (!checkLimits(result_size, no_more_keys))
+                return false;
 
-        return true;
+            return true;
+        }
+
+        /// A table that consumed this many rows while staying below the freeze threshold in keys
+        /// is repeat-dominated and will not freeze in practice: either the group count plateaus
+        /// below the threshold (few groups with fat states, e.g. `uniqExact` per region, where
+        /// the freeze would foreclose the byte-triggered conversion and its bucket-parallel
+        /// merge), or the hot share is so extreme that staging the sliver of a tail cannot pay.
+        /// The thread falls back to the baseline checks below, permanently.
+        adaptive->rows_seen_unfrozen += row_end - row_begin;
+        if (adaptive->rows_seen_unfrozen
+            >= adaptive_freeze_give_up_row_multiple * params.adaptive_aggregator_freeze_threshold
+            && result_size < params.adaptive_aggregator_freeze_threshold)
+        {
+            adaptive->gave_up_freezing = true;
+            LOG_TRACE(log, "Adaptive aggregation: giving up on freezing after {} rows at {} keys", adaptive->rows_seen_unfrozen, result_size);
+        }
+
+        if (!adaptive->gave_up_freezing)
+        {
+            /// Checking the constraints.
+            if (!checkLimits(result_size, no_more_keys))
+                return false;
+
+            return true;
+        }
     }
 
     bool worth_convert_to_two_level = worthConvertToTwoLevel(
@@ -1784,21 +1832,6 @@ bool Aggregator::executeOnBlock(Columns columns,
 }
 
 
-/// Tuning of the adaptive aggregation.
-namespace
-{
-    /// The probe bypass decides after this many post-freeze rows per thread. It must be reachable
-    /// by every stream: at 64 threads over a 100M-row table a thread only sees ~1.5M rows.
-    constexpr size_t adaptive_bypass_sample_rows = 262'144;
-    /// Probing the frozen table pays off only while at least one row in this many hits it.
-    constexpr size_t adaptive_bypass_hit_rate_inverse = 4;
-    /// The drain reserves a bucket's table after sampling this fraction of its records.
-    constexpr size_t adaptive_reserve_sample_inverse = 8;
-    /// Headroom over the sampled insert rate when reserving.
-    constexpr double adaptive_reserve_headroom = 1.25;
-    /// Fixed lookahead of the drain's hash prefetch.
-    constexpr size_t adaptive_drain_prefetch_look_ahead = 16;
-}
 
 template <typename State>
 bool ALWAYS_INLINE adaptiveKeyViewsAreBlockStable(const State & state)
