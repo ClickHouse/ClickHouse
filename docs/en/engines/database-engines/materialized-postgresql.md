@@ -158,7 +158,7 @@ WHERE oid = 'postgres_table'::regclass;
 ```
 
 :::note
-Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
+[**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) values are replicated. When PostgreSQL sends an unchanged TOAST reference during an update, the existing value is preserved.
 :::
 
 ## Settings {#settings}

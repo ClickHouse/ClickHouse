@@ -262,6 +262,55 @@ VALUES (1, (SELECT array_to_string(ARRAY(SELECT chr((100 + round(random() * 25))
         order_by="id",
     )
 
+    pg_manager.execute(f"UPDATE {table} SET other = 'updated' WHERE id = 1")
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert (
+        instance.query(f"SELECT id, length(txt), other FROM test_database.{table}")
+        == "1\t30000\tupdated\n"
+    )
+
+    conn = get_postgres_conn(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        database=True,
+        auto_commit=False,
+    )
+    cursor = conn.cursor()
+    cursor.execute(f"UPDATE {table} SET other = 'first update' WHERE id = 1")
+    cursor.execute(f"UPDATE {table} SET other = 'second update' WHERE id = 1")
+    conn.commit()
+    conn.close()
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert (
+        instance.query(f"SELECT id, length(txt), other FROM test_database.{table}")
+        == "1\t30000\tsecond update\n"
+    )
+
+    # When the replica identity changes, PostgreSQL sends its old value in a
+    # separate key tuple. The unchanged TOAST value must be looked up with that
+    # old key and then written with the new key.
+    pg_manager.execute(f"UPDATE {table} SET id = 2, other = 'new key' WHERE id = 1")
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert (
+        instance.query(f"SELECT id, length(txt), other FROM test_database.{table}")
+        == "2\t30000\tnew key\n"
+    )
+
 
 def test_replica_consumer(started_cluster):
     table = "test_replica_consumer"

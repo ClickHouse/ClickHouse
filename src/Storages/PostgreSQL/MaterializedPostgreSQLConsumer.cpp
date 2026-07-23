@@ -5,16 +5,27 @@
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/logger_useful.h>
+#include <Core/Field.h>
 #include <base/hex.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/SelectQueryOptions.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/SettingsChanges.h>
+
+#include <map>
+#include <set>
 
 
 namespace DB
@@ -26,6 +37,7 @@ namespace ErrorCodes
     extern const int POSTGRESQL_REPLICATION_INTERNAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -133,8 +145,16 @@ MaterializedPostgreSQLConsumer::StorageData::StorageData(const StorageInfo & sto
 
 MaterializedPostgreSQLConsumer::StorageData::Buffer::Buffer(
     ColumnsWithTypeAndName && columns_,
+    std::vector<size_t> key_column_indices_,
     const ExternalResultDescription & table_description_)
+    : key_column_indices(std::move(key_column_indices_))
 {
+    for (const auto column_idx : key_column_indices)
+    {
+        if (column_idx >= columns_.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Replica identity column index {} is out of range", column_idx);
+    }
+
     if (columns_.end() != std::find_if(
             columns_.begin(), columns_.end(),
             [](const auto & col) { return col.name == "_sign" || col.name == "_version"; }))
@@ -338,15 +358,18 @@ Int8 MaterializedPostgreSQLConsumer::readInt8(const char * message, size_t & pos
     return result;
 }
 
-void MaterializedPostgreSQLConsumer::readTupleData(
+size_t MaterializedPostgreSQLConsumer::readTupleData(
     StorageData & storage_data,
     const char * message,
     size_t & pos,
     size_t size,
     PostgreSQLQuery type,
-    bool old_value)
+    bool old_value,
+    std::optional<size_t> key_source_row_idx)
 {
     Int16 num_columns = readInt16(message, pos, size);
+    auto & buffer = storage_data.getLastBuffer();
+    const size_t row_idx = buffer.columns.front()->size();
 
     auto process_column_value = [&](Int8 identifier, Int16 column_idx)
     {
@@ -369,10 +392,20 @@ void MaterializedPostgreSQLConsumer::readTupleData(
             }
             case 'u': /// TOAST value && unchanged at the same time. Actual value is not sent.
             {
-                /// TOAST values are not supported. (TOAST values are values that are considered in postgres
-                /// to be too large to be stored directly)
-                LOG_WARNING(log, "Got TOAST value, which is not supported, default value will be used instead.");
                 insertDefaultValue(storage_data, column_idx);
+                if (type == PostgreSQLQuery::UPDATE && !old_value)
+                {
+                    buffer.unchanged_toast_values.push_back(
+                        {
+                            .row_idx = row_idx,
+                            .column_idx = static_cast<size_t>(column_idx),
+                            .key_source_row_idx = key_source_row_idx.value_or(row_idx),
+                        });
+                }
+                else
+                {
+                    LOG_WARNING(log, "Got an unchanged TOAST value outside the new tuple of an UPDATE");
+                }
                 break;
             }
             case 'b': /// Binary data.
@@ -448,6 +481,224 @@ void MaterializedPostgreSQLConsumer::readTupleData(
 
     if (error)
         std::rethrow_exception(error);
+
+    return row_idx;
+}
+
+void MaterializedPostgreSQLConsumer::preserveUnchangedToastValues(StorageData & storage_data, StorageData::Buffer & buffer)
+{
+    if (buffer.unchanged_toast_values.empty())
+        return;
+
+    if (buffer.key_column_indices.empty())
+    {
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Cannot preserve unchanged TOAST values for table {} because the replication message has no replica identity columns",
+            storage_data.storage->getStorageID().getNameForLogs());
+    }
+
+    const size_t rows = buffer.columns.front()->size();
+    const size_t sign_column_idx = buffer.sample_block.getPositionByName("_sign");
+
+    std::vector<std::vector<const StorageData::Buffer::UnchangedToastValue *>> unchanged_values_by_row(rows);
+    std::set<size_t> affected_columns;
+    for (const auto & value : buffer.unchanged_toast_values)
+    {
+        if (value.row_idx >= rows || value.key_source_row_idx >= rows)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Invalid row index while preserving an unchanged TOAST value for table {}",
+                storage_data.storage->getStorageID().getNameForLogs());
+        }
+
+        unchanged_values_by_row[value.row_idx].push_back(&value);
+        affected_columns.insert(value.column_idx);
+    }
+
+    auto get_key = [&](size_t row_idx)
+    {
+        Row key;
+        key.reserve(buffer.key_column_indices.size());
+        for (const auto column_idx : buffer.key_column_indices)
+            key.push_back((*buffer.columns[column_idx])[row_idx]);
+        return key;
+    };
+
+    std::map<Row, size_t> latest_buffer_rows;
+    std::set<Row> keys_to_read;
+    /// Several updates of the same row can be present in one buffer. Only the
+    /// first one needs a lookup in the nested table; later updates use the
+    /// preceding buffered row after it has been restored.
+    for (size_t row_idx = 0; row_idx < rows; ++row_idx)
+    {
+        for (const auto * value : unchanged_values_by_row[row_idx])
+        {
+            auto source_key = get_key(value->key_source_row_idx);
+            if (!latest_buffer_rows.contains(source_key))
+                keys_to_read.insert(std::move(source_key));
+        }
+
+        if (buffer.columns[sign_column_idx]->getInt(row_idx) == 1)
+            latest_buffer_rows[get_key(row_idx)] = row_idx;
+    }
+
+    std::vector<size_t> affected_column_indices(affected_columns.begin(), affected_columns.end());
+    std::map<size_t, size_t> affected_column_offsets;
+    for (size_t offset = 0; offset < affected_column_indices.size(); ++offset)
+        affected_column_offsets[affected_column_indices[offset]] = offset;
+
+    std::map<Row, Row> stored_values;
+    constexpr size_t max_keys_per_query = 1000;
+    /// Read the current rows in batches to avoid one query per unchanged value
+    /// and to keep the generated `IN` expression reasonably small.
+    for (auto key_it = keys_to_read.begin(); key_it != keys_to_read.end();)
+    {
+        auto select = make_intrusive<ASTSelectQuery>();
+        auto select_list = make_intrusive<ASTExpressionList>();
+
+        for (const auto column_idx : buffer.key_column_indices)
+            select_list->children.push_back(make_intrusive<ASTIdentifier>(buffer.sample_block.getByPosition(column_idx).name));
+        for (const auto column_idx : affected_column_indices)
+            select_list->children.push_back(make_intrusive<ASTIdentifier>(buffer.sample_block.getByPosition(column_idx).name));
+        select_list->children.push_back(make_intrusive<ASTIdentifier>("_sign"));
+        select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+
+        auto tables = make_intrusive<ASTTablesInSelectQuery>();
+        auto table_element = make_intrusive<ASTTablesInSelectQueryElement>();
+        auto table_expression = make_intrusive<ASTTableExpression>();
+        table_expression->database_and_table_name
+            = make_intrusive<ASTTableIdentifier>(storage_data.storage->getStorageID());
+        table_expression->final = true;
+        table_expression->children.push_back(table_expression->database_and_table_name);
+        table_element->table_expression = table_expression;
+        table_element->children.push_back(table_expression);
+        tables->children.push_back(table_element);
+        select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+
+        ASTs key_identifiers;
+        for (const auto column_idx : buffer.key_column_indices)
+            key_identifiers.push_back(make_intrusive<ASTIdentifier>(buffer.sample_block.getByPosition(column_idx).name));
+
+        ASTPtr key_expression;
+        if (key_identifiers.size() == 1)
+            key_expression = std::move(key_identifiers.front());
+        else
+            key_expression = makeASTFunction("tuple", std::move(key_identifiers));
+
+        ASTs keys;
+        size_t keys_in_query = 0;
+        for (; key_it != keys_to_read.end() && keys_in_query < max_keys_per_query; ++key_it, ++keys_in_query)
+        {
+            ASTs key_values;
+            for (size_t key_idx = 0; key_idx < key_it->size(); ++key_idx)
+            {
+                const auto column_idx = buffer.key_column_indices[key_idx];
+                key_values.push_back(
+                    makeASTFunction(
+                        "cast",
+                        make_intrusive<ASTLiteral>((*key_it)[key_idx]),
+                        make_intrusive<ASTLiteral>(buffer.sample_block.getByPosition(column_idx).type->getName())));
+            }
+
+            if (key_values.size() == 1)
+                keys.push_back(std::move(key_values.front()));
+            else
+                keys.push_back(makeASTFunction("tuple", std::move(key_values)));
+        }
+
+        select->setExpression(
+            ASTSelectQuery::Expression::WHERE,
+            makeASTFunction("in", std::move(key_expression), makeASTFunction("tuple", std::move(keys))));
+
+        auto select_context = Context::createCopy(context);
+        select_context->makeQueryContext();
+        select_context->setInternalQuery(true);
+
+        InterpreterSelectQuery interpreter(
+            select,
+            select_context,
+            SelectQueryOptions().setInternal(true).ignoreAccessCheck());
+        auto io = interpreter.execute();
+        PullingPipelineExecutor executor(io.pipeline);
+
+        Block block;
+        while (executor.pull(block))
+        {
+            for (size_t row_idx = 0; row_idx < block.rows(); ++row_idx)
+            {
+                if (block.getByPosition(block.columns() - 1).column->getInt(row_idx) != 1)
+                    continue;
+
+                Row key;
+                key.reserve(buffer.key_column_indices.size());
+                for (size_t column_idx = 0; column_idx < buffer.key_column_indices.size(); ++column_idx)
+                    key.push_back((*block.getByPosition(column_idx).column)[row_idx]);
+
+                Row values;
+                values.reserve(affected_column_indices.size());
+                for (size_t offset = 0; offset < affected_column_indices.size(); ++offset)
+                {
+                    values.push_back((*block.getByPosition(buffer.key_column_indices.size() + offset).column)[row_idx]);
+                }
+                stored_values[std::move(key)] = std::move(values);
+            }
+        }
+    }
+
+    for (const auto column_idx : affected_column_indices)
+    {
+        const auto & old_column = buffer.columns[column_idx];
+        auto new_column = old_column->cloneEmpty();
+        new_column->reserve(rows);
+        latest_buffer_rows.clear();
+
+        /// Rebuild only affected columns. Processing rows in replication order
+        /// makes already restored buffered rows available to subsequent updates.
+        for (size_t row_idx = 0; row_idx < rows; ++row_idx)
+        {
+            const auto marker = std::find_if(
+                unchanged_values_by_row[row_idx].begin(),
+                unchanged_values_by_row[row_idx].end(),
+                [column_idx](const auto * value) { return value->column_idx == column_idx; });
+
+            if (marker == unchanged_values_by_row[row_idx].end())
+            {
+                new_column->insertFrom(*old_column, row_idx);
+            }
+            else
+            {
+                const auto source_key = get_key((*marker)->key_source_row_idx);
+                const auto buffer_source = latest_buffer_rows.find(source_key);
+                if (buffer_source != latest_buffer_rows.end())
+                {
+                    new_column->insertFrom(*new_column, buffer_source->second);
+                }
+                else
+                {
+                    const auto stored_source = stored_values.find(source_key);
+                    if (stored_source == stored_values.end())
+                    {
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "Cannot preserve an unchanged TOAST value for column {} of table {} because the previous row was not found",
+                            buffer.sample_block.getByPosition(column_idx).name,
+                            storage_data.storage->getStorageID().getNameForLogs());
+                    }
+
+                    new_column->insert(stored_source->second[affected_column_offsets.at(column_idx)]);
+                }
+            }
+
+            if (buffer.columns[sign_column_idx]->getInt(row_idx) == 1)
+                latest_buffer_rows[get_key(row_idx)] = row_idx;
+        }
+
+        buffer.columns[column_idx] = std::move(new_column);
+    }
+
+    buffer.unchanged_toast_values.clear();
 }
 
 /// https://www.postgresql.org/docs/13/protocol-logicalrep-message-formats.html
@@ -501,6 +752,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                 return;
 
             auto & storage_data = storages.find(table_name)->second;
+            std::optional<size_t> old_row_idx;
 
             auto process_identifier = [&](Int8 identifier) -> bool
             {
@@ -515,13 +767,20 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                     /// it is much more efficient to use replica identity index, but support all possible cases.
                     case 'O':
                     {
-                        readTupleData(storage_data, replication_message, pos, size, PostgreSQLQuery::UPDATE, true);
+                        old_row_idx = readTupleData(storage_data, replication_message, pos, size, PostgreSQLQuery::UPDATE, true);
                         break;
                     }
                     case 'N':
                     {
                         /// New row.
-                        readTupleData(storage_data, replication_message, pos, size, PostgreSQLQuery::UPDATE);
+                        readTupleData(
+                            storage_data,
+                            replication_message,
+                            pos,
+                            size,
+                            PostgreSQLQuery::UPDATE,
+                            false,
+                            old_row_idx);
                         read_next = false;
                         break;
                     }
@@ -647,11 +906,14 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             std::set<std::string> all_columns(storage_data.column_names.begin(), storage_data.column_names.end());
             std::set<std::string> received_columns;
             ColumnsWithTypeAndName columns;
+            std::vector<size_t> key_column_indices;
 
             for (uint16_t i = 0; i < num_columns; ++i)
             {
                 String column_name;
-                readInt8(replication_message, pos, size); /// Marks column as part of replica identity index
+                const auto flags = readInt8(replication_message, pos, size);
+                if (flags & 1) /// Marks the column as part of the replica identity.
+                    key_column_indices.push_back(i);
                 readString(replication_message, pos, size, column_name);
 
                 if (!all_columns.contains(column_name))
@@ -707,7 +969,8 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                 }
             }
 
-            storage_data.addBuffer(std::make_unique<StorageData::Buffer>(std::move(columns), description));
+            storage_data.addBuffer(
+                std::make_unique<StorageData::Buffer>(std::move(columns), std::move(key_column_indices), description));
             tables_to_sync.insert(table_name);
             break;
         }
@@ -746,6 +1009,16 @@ void MaterializedPostgreSQLConsumer::syncTables()
 
         while (auto buffer = storage_data.popBuffer())
         {
+            try
+            {
+                preserveUnchangedToastValues(storage_data, *buffer);
+            }
+            catch (...)
+            {
+                storage_data.returnBuffer(std::move(buffer));
+                throw;
+            }
+
             Block result_rows = buffer->sample_block.cloneWithColumns(std::move(buffer->columns));
             try
             {
