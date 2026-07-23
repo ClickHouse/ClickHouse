@@ -500,15 +500,23 @@ TEST(TransformQueryForExternalDatabase, PostgreSQLEscapingInList)
     state.context->setSetting("external_table_strict_query", false);
 
     /// A multi-element IN-list is pushed down as a Tuple. Its string elements must be escaped with
-    /// PostgreSQL rules (single quotes doubled), never backslash-escaped - otherwise a value with a
-    /// quote breaks out of the literal under standard_conforming_strings (CVE-2025-1520 class).
-    /// See https://github.com/ClickHouse/clickhouse-private/issues/65381
+    /// PostgreSQL rules and emitted as an E'...' constant with both the quote (doubled) and the
+    /// backslash (doubled) escaped - otherwise a value with a quote breaks out of the literal
+    /// (CVE-2025-1520 class). See https://github.com/ClickHouse/clickhouse-private/issues/65381
     EXPECT_EQ(
         transformWithPostgreSQLEscaping(state, 1, "SELECT field FROM table WHERE field IN ('a''b', 'c')"),
-        R"(SELECT "field" FROM "test"."table" WHERE "field" IN ('a''b', 'c'))");
+        R"(SELECT "field" FROM "test"."table" WHERE "field" IN (E'a''b', E'c'))");
 
     /// Row/tuple IN-lists nest the strings one level deeper; escaping must still propagate.
     EXPECT_EQ(
         transformWithPostgreSQLEscaping(state, 1, "SELECT field, value FROM table WHERE (field, value) IN (('a''b', 'x'), ('y', 'z'))"),
-        R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN (('a''b', 'x'), ('y', 'z')))");
+        R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN ((E'a''b', E'x'), (E'y', E'z')))");
+
+    /// The case that only the E'...' form gets right: with standard_conforming_strings = off a plain
+    /// '...' literal that doubles only the quote is exploitable, because an embedded backslash escapes
+    /// the first quote of a doubled pair. The backslash must be doubled inside an E'' constant, so the
+    /// value a\b (SQL 'a\\b') must come out as E'a\\b'.
+    EXPECT_EQ(
+        transformWithPostgreSQLEscaping(state, 1, "SELECT field FROM table WHERE field IN ('a\\\\b', 'c')"),
+        R"(SELECT "field" FROM "test"."table" WHERE "field" IN (E'a\\b', E'c'))");
 }

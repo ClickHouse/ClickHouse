@@ -38,10 +38,13 @@ public:
     String operator() (const bool & x) const;
 };
 
-/** Same as FieldVisitorToString, but escapes string literals using PostgreSQL rules
-  * (single quotes are doubled: 'a''b', not backslash-escaped), and recurses into
-  * containers with the same escaping. Used when pushing predicates down to a
-  * PostgreSQL source, where backslash escaping is unsafe under standard_conforming_strings.
+/** Same as FieldVisitorToString, but escapes string literals for a PostgreSQL source and
+  * recurses into containers with the same escaping. Strings are emitted as an E'...' escape-string
+  * constant with both the single quote and the backslash doubled ('a''b', 'a\\b'). This is safe
+  * irrespective of the remote session's standard_conforming_strings: in an E'' constant PostgreSQL
+  * always treats backslash as an escape character, so no embedded byte can terminate the literal.
+  * Used when pushing predicates down to a PostgreSQL source; a plain '...' literal with only the
+  * quote doubled would be exploitable when standard_conforming_strings is off.
   */
 class FieldVisitorToStringPostgreSQL : public StaticVisitor<String>
 {

@@ -179,8 +179,18 @@ String FieldVisitorToString::operator() (const Map & x) const { return formatMap
 
 String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
 {
+    /// Emit an E'...' escape-string constant, doubling both the single quote ('') and the
+    /// backslash (\\). In an E'' constant PostgreSQL always treats backslash as an escape
+    /// character irrespective of standard_conforming_strings, so escaping both characters makes
+    /// the literal unambiguous on every server. A plain '...' literal that doubles only the quote
+    /// is unsafe when standard_conforming_strings is off: an embedded backslash then escapes the
+    /// first quote of the doubled pair, the second quote terminates the literal early, and the
+    /// remainder is executed as SQL.
     WriteBufferFromOwnString wb;
-    writeQuotedStringPostgreSQL(x, wb);
+    wb << "E'";
+    writeAnyEscapedString<'\'', /*escape_quote_with_quote=*/true, /*escape_backslash_with_backslash=*/true>(
+        x.data(), x.data() + x.size(), wb);
+    wb << '\'';
     return wb.str();
 }
 
