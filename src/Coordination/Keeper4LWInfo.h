@@ -90,6 +90,13 @@ struct KeeperClusterMemberInfo
     bool is_leader{};
     bool is_self{};
     std::optional<uint64_t> last_log_index;
+
+    /// Peer health from the current node's NuRaft view. Populated for all members when this
+    /// node is the Raft leader (self is always alive/synced). Empty on followers/observers.
+    std::optional<bool> is_alive;
+    std::optional<bool> is_synced;
+    /// Elapsed time since last successful Raft response, in milliseconds. Leader-only; unset for self.
+    std::optional<uint64_t> last_succ_resp_ms;
 };
 
 }
