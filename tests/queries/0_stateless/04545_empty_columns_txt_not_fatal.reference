@@ -1,0 +1,66 @@
+-- t_empty_columns: rows before
+1000
+-- t_empty_columns: rows after empty columns.txt reload
+1000
+-- t_empty_columns: persisted columns.txt non-empty
+1
+-- t_empty_columns: persisted columns.txt lists 2 declared columns
+2
+-- t_empty_columns: rows after recovered reload
+1000
+-- t_empty_columns: rows after absent columns.txt reload
+1000
+-- t_empty_columns_bn: rows before
+1000
+-- t_empty_columns_bn: rows after empty columns.txt reload
+1000
+-- t_empty_columns_bn: persisted columns.txt non-empty
+1
+-- t_empty_columns_bn: persisted columns.txt lists 2 declared columns
+2
+-- t_empty_columns_bn: rows after recovered reload
+1000
+-- t_empty_columns_bn: rows after absent columns.txt reload
+1000
+-- t_empty_columns_ld: rows before
+500
+-- t_empty_columns_ld: rows after empty columns.txt reload
+500
+-- t_empty_columns_ld: persisted columns.txt non-empty
+1
+-- t_empty_columns_ld: persisted columns.txt lists 2 declared columns
+2
+-- t_empty_columns_ld: rows after recovered reload
+500
+-- t_empty_columns_ld: rows after absent columns.txt reload
+500
+-- t_empty_columns_tuple: value digest before
+999000
+-- t_empty_columns_tuple: value digest after empty columns.txt reload
+999000
+-- t_empty_columns_tuple: recovered columns.txt lists t
+1
+-- t_empty_columns_map: value digest before
+1498500
+-- t_empty_columns_map: value digest after empty columns.txt reload
+1498500
+-- t_empty_columns_map: recovered columns.txt lists m
+1
+-- t_empty_columns_map_bucketed: value digest before
+1498500
+-- t_empty_columns_map_bucketed: value digest after empty columns.txt reload
+1498500
+-- t_empty_columns_map_bucketed: recovered columns.txt lists m
+1
+-- t_empty_columns_nested: n.a digest before
+1000000
+-- t_empty_columns_nested: n.a digest after empty columns.txt reload
+1000000
+-- t_empty_columns_nested: recovered columns.txt excludes data-less n.b
+0
+-- t_empty_columns_fallback: t.x digest before
+999000
+-- t_empty_columns_fallback: t.x digest after empty columns.txt + absent columns_substreams.txt reload
+999000
+-- t_empty_columns_fallback: recovered columns.txt lists t
+1

@@ -2117,14 +2117,28 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     NamesAndTypesList loaded_columns;
     bool is_readonly_storage = getDataPartStorage().isReadonly();
 
-    if (auto in = readFileIfExists("columns.txt"))
-    {
-        loaded_columns.readText(*in);
+    const bool has_columns_file = getDataPartStorage().existsFile("columns.txt");
 
-        for (auto & column : loaded_columns)
-            setVersionToAggregateFunctions(column.type, true);
+    /// An existing but empty columns.txt is treated like an absent one (both fall through to the
+    /// rebuild-from-metadata branch below), not as a fatal parse error that detaches the part.
+    /// readFile forces local pread, so a zero-byte file reports eof instead of faulting under a
+    /// randomized mmap read method.
+    bool columns_file_loaded = false;
+    if (has_columns_file)
+    {
+        auto in = readFile("columns.txt");
+        if (!in->eof())
+        {
+            loaded_columns.readText(*in);
+
+            for (auto & column : loaded_columns)
+                setVersionToAggregateFunctions(column.type, true);
+
+            columns_file_loaded = true;
+        }
     }
-    else
+
+    if (!columns_file_loaded)
     {
         /// We can get list of columns only from columns.txt in compact parts.
         if (require || part_type == Type::Compact || info.isPatch())
@@ -2132,9 +2146,33 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
                 name, path, getDataPartStorage().getDiskName());
 
         auto metadata_snapshot = getMetadataSnapshot();
-        /// If there is no file with a list of columns, write it down.
+
+        /// No (or empty) columns.txt: rebuild it. writeColumns rewrites in WriteMode::Rewrite.
+        /// Membership comes from columns_substreams.txt (the physically-written columns, independent
+        /// of on-disk serialization); parts predating it fall back to probing each column's streams.
+        ColumnsSubstreams disk_substreams;
+        if (getDataPartStorage().existsFile(COLUMNS_SUBSTREAMS_FILE_NAME))
+        {
+            auto in = readFile(COLUMNS_SUBSTREAMS_FILE_NAME);
+            if (!in->eof())
+                disk_substreams.readText(*in);
+        }
+
+        auto column_is_present = [&](const NameAndTypePair & column)
+        {
+            if (!disk_substreams.empty())
+                return disk_substreams.tryGetColumnSubstreams(column.name) != nullptr;
+            return getFileNameForColumn(column).has_value();
+        };
+
         for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
-            if (getFileNameForColumn(column))
+            if (column_is_present(column))
+                loaded_columns.push_back(column);
+
+        /// Persistent virtual columns the part carries (getAllPhysical omits them), in the order
+        /// writeColumns wrote them: after the physical columns.
+        for (const auto & column : metadata_snapshot->virtuals.getNamesAndTypes(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader))
+            if (column_is_present(column))
                 loaded_columns.push_back(column);
 
         if (loaded_columns.empty())
