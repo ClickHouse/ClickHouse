@@ -238,23 +238,12 @@ constexpr std::array<T, exponent_count> generatePowersOf10()
 
 /**
  * ALP Float64 parameters.
- *
- * Float64 scaling is limited to 10^18 and inputs are clamped to ±9223372036854773760 (2^63 − 2048).
- * In this range, a meaningful subset of values still "survives" scale by 10^e → round → cast to Int64.
- * The reference implementation use 9223372036854774784 (2^63 − 1024), which led to integer overflow after rounding (num + magic - magic).
  */
 template<>
 struct ALPFloatTraits<Float64>
 {
+    /// Float64 scaling is limited to 10^18.
     static constexpr UInt8 EXPONENT_COUNT = 19;
-
-    static constexpr std::array<Float64, EXPONENT_COUNT> EXPONENTS = generatePowersOf10<Float64, EXPONENT_COUNT, false>();
-    static constexpr std::array<Float64, EXPONENT_COUNT> FRACTIONS = generatePowersOf10<Float64, EXPONENT_COUNT, true>();
-
-    static constexpr Float64 UPPER = 9223372036854773760.0;
-    static constexpr Float64 LOWER = -9223372036854773760.0;
-
-    static constexpr Float64 ROUND_MAGIC = 6755399441055744.0; // 2^51 + 2^52
 
     /// `AUTO` falls back to `RD` when the best estimated `STD` size per sampled value exceeds this threshold.
     /// The 48-bit (`Float64`) / 22-bit (`Float32`) limit follows the ALP paper (https://ir.cwi.nl/pub/33334 §3.4).
@@ -267,63 +256,63 @@ struct ALPFloatTraits<Float64>
 };
 
 /**
- * ALP Float32 parameters.
- *
- * Float32 scaling is limited to 10^9 and inputs are clamped to ±9223371487098961920.
- * In this range, a meaningful subset of values still "survives" scale by 10^e → round → cast to Int64.
- *
- * The UPPER value is the largest Float32 value that has an exact Int64 representation.
- * Higher values would overflow when cast to Int64 after Float32 rounding (num + magic - magic).
+ * ALP Float32 parameters. 
  */
 template<>
 struct ALPFloatTraits<Float32>
 {
     static constexpr UInt8 EXPONENT_COUNT = 10;
-
-    static constexpr std::array<Float32, EXPONENT_COUNT> EXPONENTS = generatePowersOf10<Float32, EXPONENT_COUNT, false>();
-    static constexpr std::array<Float32, EXPONENT_COUNT> FRACTIONS = generatePowersOf10<Float32, EXPONENT_COUNT, true>();
-
-    static constexpr Float32 UPPER = 9223371487098961920.0f;
-    static constexpr Float32 LOWER = -9223371487098961920.0f;
-
-    static constexpr Float32 ROUND_MAGIC = 12582912.0f; // 2^22 + 2^23
-
-    /// `AUTO` selection threshold for `Float32`. See `RD_SIZE_THRESHOLD_LIMIT` in `ALPFloatTraits<Float64>`.
     static constexpr size_t RD_SIZE_THRESHOLD_LIMIT = 22 * ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS;
-
-    /**
-     * Unsigned integer type with the same size as the float type, used for bit-level operations and reinterpretation.
-     */
     using Unsigned = UInt32;
 };
 
-template<FLOAT T>
+/**
+ * Scaling arithmetic for the STD variant.
+ *
+ * The reference implementation scales `Float32` natively, but the constant fl32(10^-e) is too inexact.
+ * E.g. 0.05f encodes to the integer 5, yet 5 * fl32(0.01) decodes to the neighboring float 0.049999997f.
+ * Such values fail the bit-exact round-trip and are stored as exceptions (similar to the 8.0605 example in section 2.5 of the ALP paper).
+ * `Float64` constants are a billion times more precise, so the decode error can never reach a neighboring `Float32`.
+ */
+template <FLOAT T>
 struct ALPFloatUtils
 {
+    /// Size of the shared constants tables, covering the `Float64` range.
+    /// The per-type search space is bounded separately by `ALPFloatTraits<T>::EXPONENT_COUNT` (10 for `Float32`).
+    static constexpr UInt8 EXPONENT_COUNT = ALPFloatTraits<Float64>::EXPONENT_COUNT;
+
+    static constexpr std::array<Float64, EXPONENT_COUNT> EXPONENTS = generatePowersOf10<Float64, EXPONENT_COUNT, false>();
+    static constexpr std::array<Float64, EXPONENT_COUNT> FRACTIONS = generatePowersOf10<Float64, EXPONENT_COUNT, true>();
+
+    /// Scaled values are clamped to ±(2^63 − 2048): the largest magnitude whose rounding (num + magic - magic) cannot overflow the cast to Int64.
+    /// The reference implementation uses 2^63 − 1024, which does overflow.
+    static constexpr Float64 UPPER = 9223372036854773760.0;
+    static constexpr Float64 LOWER = -9223372036854773760.0;
+
+    static constexpr Float64 ROUND_MAGIC = 6755399441055744.0; // 2^51 + 2^52
+
+    /// d = round(v * 10^e * 10^-f)
     static Int64 encodeValue(T value, UInt8 exponent, UInt8 fraction)
     {
-        // Scale float to integer, it is important to keep two multiplication steps to comply with the ALP paper and reference implementation
-        T value_enc = value * ALPFloatTraits<T>::EXPONENTS[exponent] * ALPFloatTraits<T>::FRACTIONS[fraction];
+        Float64 value_enc = static_cast<Float64>(value) * EXPONENTS[exponent] * FRACTIONS[fraction];
 
-        const bool invalid = std::isinf(value_enc) ||
-            std::isnan(value_enc) ||
-                value_enc < ALPFloatTraits<T>::LOWER || value_enc > ALPFloatTraits<T>::UPPER ||
-                    (value_enc == static_cast<T>(0.0) && std::signbit(value_enc));
+        const bool invalid = std::isinf(value_enc) || std::isnan(value_enc) || value_enc < LOWER || value_enc > UPPER
+            || (value_enc == 0.0 && std::signbit(value_enc));
 
         if (unlikely(invalid))
-            return static_cast<Int64>(ALPFloatTraits<T>::UPPER);
+            return static_cast<Int64>(UPPER);
 
         // Fast rounding to integer by adding and subtracting a large constant (IEEE-754 mantissa limit)
-        value_enc = value_enc + ALPFloatTraits<T>::ROUND_MAGIC - ALPFloatTraits<T>::ROUND_MAGIC;
+        value_enc = value_enc + ROUND_MAGIC - ROUND_MAGIC;
         return static_cast<Int64>(value_enc);
     }
 
+    /// v = d * 10^f * 10^-e
     static T decodeValue(Int64 value, UInt8 exponent, UInt8 fraction)
     {
-        T value_float = static_cast<T>(value);
-        // Scale back to float, it is important to keep two multiplication steps to comply with the ALP paper and reference implementation
-        T value_dec = value_float * ALPFloatTraits<T>::EXPONENTS[fraction] * ALPFloatTraits<T>::FRACTIONS[exponent];
-        return value_dec;
+        /// It's important to keep two multiplication steps as float multiplication is not associative.
+        Float64 value_dec = static_cast<Float64>(value) * EXPONENTS[fraction] * FRACTIONS[exponent];
+        return static_cast<T>(value_dec);
     }
 };
 
