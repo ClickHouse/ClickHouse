@@ -459,7 +459,16 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             /// matching the Time64 -> Time column conversion in FunctionsConversion.
             static constexpr Int64 max_time_seconds = 3599999; /// 999:59:59, == MAX_TIME_TIMESTAMP
             const auto & from_type = src.safeGet<Decimal64>();
-            const Int64 whole = from_type.getValue().value / from_type.getScaleMultiplier().value;
+            const Int64 scale_multiplier = from_type.getScaleMultiplier().value;
+            const Int64 raw = from_type.getValue().value;
+            const Int64 whole = raw / scale_multiplier;
+
+            /// Strict callers (e.g. IN-set construction in Analyzer/SetUtils) must not silently normalize a
+            /// value that is not exactly representable as Time, otherwise a non-representable set element
+            /// would start matching. Reject fractional or out-of-range values instead of truncating/clamping.
+            if (strict && (raw % scale_multiplier != 0 || whole < -max_time_seconds || whole > max_time_seconds))
+                return {};
+
             const Int64 clamped = std::min<Int64>(std::max<Int64>(whole, -max_time_seconds), max_time_seconds);
             /// Reuse the Int64 -> Time path so the produced Field matches the isTime() integer branch above.
             return convertNumericType<Int32>(Field(clamped), type, strict, convert_inexact_floats);

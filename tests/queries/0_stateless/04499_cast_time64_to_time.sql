@@ -23,3 +23,7 @@ CREATE TABLE t_04499_time (c1 Time) ENGINE = Memory;
 INSERT INTO t_04499_time VALUES (CAST('01:02:03.5' AS Time64(1)));
 SELECT c1 = CAST('01:02:03' AS Time) FROM t_04499_time;
 DROP TABLE t_04499_time;
+
+-- Strict callers (IN-set construction) must reject a non-representable Time64 element, not truncate it.
+SELECT CAST('01:02:03' AS Time) IN (CAST('01:02:03.5' AS Time64(1)));
+SELECT CAST('01:02:03' AS Time) IN (CAST('01:02:03.0' AS Time64(1)));
