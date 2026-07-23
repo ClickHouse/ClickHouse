@@ -145,6 +145,8 @@ public:
     /// inputs, so the deferred-build NDV shortcut stays restricted to the simple, reliable case (see
     /// `extractTrustworthyRightKeyNdv`).
     const std::unordered_map<String, ColumnStats> & getRightInputColumnStats() const { return right_input_column_stats; }
+    std::optional<UInt64> getInputRowsEstimation(JoinTableSide side) const;
+
     void setOptimized(
         std::optional<UInt64> estimated_rows_ = {},
         std::optional<UInt64> left_rows_ = {},

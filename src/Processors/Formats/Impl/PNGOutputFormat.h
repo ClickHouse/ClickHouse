@@ -2,7 +2,7 @@
 
 #include "config.h"
 
-#if USE_LIBPNG && USE_SIMDUTF
+#if USE_SIMDUTF
 
 #include <Core/Block_fwd.h>
 #include <Formats/FormatSettings.h>
