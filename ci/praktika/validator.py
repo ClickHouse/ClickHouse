@@ -31,16 +31,18 @@ class Validator:
                     f"Setting ENABLED_WORKFLOWS has non-existing workflow file [{file}]",
                 )
 
-        if Settings.USE_CUSTOM_GH_AUTH and not Settings.GH_AUTH_LAMBDA_NAME:
+        # When no token-minting lambda is configured but the GitHub App secrets
+        # are (i.e. secrets-based auth is opted into), all three must be present.
+        if not Settings.GH_AUTH_LAMBDA_NAME and Settings.SECRET_GH_APP_ID:
             cls.evaluate_check_simple(
                 Settings.SECRET_GH_APP_ID and Settings.SECRET_GH_APP_PEM_KEY and Settings.SECRET_GH_APP_INSTALLATION_ID,
-                "Setting SECRET_GH_APP_ID, SECRET_GH_APP_PEM_KEY and SECRET_GH_APP_INSTALLATION_ID must be provided with USE_CUSTOM_GH_AUTH == True",
+                "Settings SECRET_GH_APP_ID, SECRET_GH_APP_PEM_KEY and SECRET_GH_APP_INSTALLATION_ID must all be provided for secrets-based GH auth",
             )
 
         workflows = _get_workflows(_for_validation_check=True)
         for workflow in workflows:
             print(f"Validating workflow [{workflow.name}]")
-            if Settings.USE_CUSTOM_GH_AUTH and not Settings.GH_AUTH_LAMBDA_NAME and workflow.enable_report:
+            if not Settings.GH_AUTH_LAMBDA_NAME and Settings.SECRET_GH_APP_ID and workflow.enable_report:
                 secret = workflow.get_secret(Settings.SECRET_GH_APP_ID)
                 cls.evaluate_check(
                     bool(secret),
