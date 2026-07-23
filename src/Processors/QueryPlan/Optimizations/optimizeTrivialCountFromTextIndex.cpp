@@ -8,14 +8,15 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
+#include <Access/EnabledRowPolicies.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Core/Settings.h>
-#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
@@ -24,22 +25,16 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 
-/// Trivial count from the text index: answers `SELECT count() FROM t WHERE <text predicate>` from the
-/// index's stored per-token row counts (`TokenPostingsInfo::cardinality`) instead of reading data. When
-/// the subtree above a `ReadFromMergeTree` is a bare `count()` over a pure text-index predicate, it is
-/// replaced with a `ReadFromPreparedSource` holding a pre-filled count() state, mirroring the exact-count
-/// projection path in `optimizeUseAggregateProjection.cpp`.
+/// Trivial count from the text index: answers `SELECT count() FROM t WHERE <text predicate>` from the index instead of reading data.
 ///
-/// First cut: single-token `hasToken`/`hasAnyTokens`/`hasAllTokens`, Exact direct-read mode, materialized
-/// index, no residual predicate / FINAL / SAMPLE / mutations. `hasPhrase` and multi-token AND/OR need
-/// posting decoding and are follow-ups.
+/// A single-token predicate uses the metadata `TokenPostingsInfo::cardinality`.
+/// A multi-token `hasAllTokens`/`hasAnyTokens` combines the per-token posting lists (intersection / union) and takes the cardinality.
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
-    extern const SettingsBool optimize_trivial_count_query;
 }
 }
 
@@ -49,8 +44,7 @@ namespace DB::QueryPlanOptimizations
 namespace
 {
 
-/// The count() output column if `aggregating` is a bare `count()`/`count(*)` (no GROUP BY, one aggregate,
-/// no arguments), else nullopt. Mirrors the detection in getAggregateProjectionCandidates.
+/// The count() output column if `aggregating` is a bare `count()`/`count(*)` (no GROUP BY, one aggregate, no arguments), else nullopt.
 std::optional<String> matchBareCount(const AggregatingStep & aggregating)
 {
     if (aggregating.isGroupingSets())
@@ -72,10 +66,6 @@ std::optional<String> matchBareCount(const AggregatingStep & aggregating)
     return desc.column_name;
 }
 
-/// True iff the filter column's expression is composed only of text-index virtual-column inputs joined by
-/// `and` (through transparent alias/cast wrappers), collecting those columns; any other node returns false.
-/// Matches the plan after `processAndOptimizeTextIndexFunctions` has turned `hasToken(...)` into an
-/// `__text_index_...` column.
 bool collectTextIndexPredicateColumns(const ActionsDAG::Node * node, NameSet & out_columns)
 {
     switch (node->type)
@@ -127,8 +117,6 @@ struct MatchedSubtree
     NameSet predicate_columns;
 };
 
-/// Walks AggregatingStep -> ReadFromMergeTree through only Expression/Filter steps; every FilterStep (and
-/// the read's PREWHERE) must be a pure text-index predicate. nullopt if the shape does not match.
 std::optional<MatchedSubtree> matchSubtree(QueryPlan::Node & aggregating_node)
 {
     MatchedSubtree matched;
@@ -177,16 +165,20 @@ std::optional<MatchedSubtree> matchSubtree(QueryPlan::Node & aggregating_node)
     return matched;
 }
 
-/// Correctness guards; any false => bail to the normal read. These mirror the trivial-count framework's
-/// opt-outs. Row policies / residual predicates need no check: they appear as non-text filter conjuncts
-/// that `matchSubtree` already rejects.
 bool guardsHold(const ReadFromMergeTree & reading)
 {
     auto context = reading.getContext();
 
-    /// Mutations, patch parts and lightweight deletes change row visibility, so index-time cardinalities
-    /// would disagree. Read the mutations snapshot directly: `MergeTreeData::supportsTrivialCountOptimization`
-    /// dereferences the read step's (null) storage-snapshot data and would segfault here.
+    /// A row policy filters rows the posting cardinalities do not reflect. `matchSubtree` also rejects it
+    /// as a non-text conjunct, but guard it explicitly like the planner trivial-count paths do.
+    if (auto storage_id = reading.getStorageID(); storage_id.hasDatabase())
+    {
+        auto row_policy_filter = context->getRowPolicyFilter(
+            storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+            return false;
+    }
+
     if (const auto & mutations = reading.getMutationsSnapshot();
         mutations && (mutations->hasDataMutations() || mutations->hasPatchParts() || mutations->hasLightweightDeletedMask()))
         return false;
@@ -209,14 +201,10 @@ bool guardsHold(const ReadFromMergeTree & reading)
     if (reading.getParts().empty())
         return false;
 
-    /// A token's cardinality is part-wide (one index granule per part), so it equals the selected-granule
-    /// count only if no granule holding the token was pruned. Text-index pruning drops only token-free
-    /// granules (safe), but PK/minmax pruning can drop matching ones -> require none happened...
     auto analysis = reading.getAnalyzedResult();
     if (!analysis || analysis->total_marks_pk != analysis->selected_marks_pk)
         return false;
 
-    /// ...and that every skip index that pruned is a text index, leaving the text predicate as the only pruner.
     const auto & indexes = reading.getIndexes();
     if (!indexes)
         return false;
@@ -235,11 +223,6 @@ struct ResolvedQuery
     TextSearchQueryPtr query;
 };
 
-/// Resolves the matched virtual column back to its text-search query, or nullopt unless there is exactly
-/// one predicate resolving to a single-token, Exact-mode, non-phrase, non-pattern query -- the only shape
-/// whose count equals a sum of posting cardinalities. The `virtual_column -> query` map is read back from
-/// the condition retained on the read step's index read tasks. A multi-predicate AND would need the row-set
-/// intersection, not a sum, so we bail (follow-up).
 std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & reading, const NameSet & predicate_columns)
 {
     if (predicate_columns.size() != 1)
@@ -268,7 +251,7 @@ std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & readin
         if (query->getSearchMode() == TextSearchMode::Phrase || !query->getPatterns().empty())
             return {};
 
-        if (query->getTokens().size() != 1)
+        if (query->getTokens().empty())
             return {};
 
         return ResolvedQuery{.index = task.index, .condition = std::move(condition), .query = std::move(query)};
@@ -277,23 +260,23 @@ std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & readin
     return {};
 }
 
-/// Loads a part's text index granule (mirrors `MergeTreeReaderTextIndex::readGranule`) to read the
-/// dictionary-resident token cardinalities. nullptr if the index is not materialized in the part.
-MergeTreeIndexGranulePtr loadTextIndexGranuleForPart(
-    const IMergeTreeDataPart & part,
-    const MergeTreeIndexWithCondition & index,
-    const MergeTreeIndexConditionText & condition,
+std::optional<UInt64> computeCountForPart(
+    const RangesInDataPart & part_with_ranges,
+    const ResolvedQuery & resolved,
     const MergeTreeReaderSettings & reader_settings)
 {
-    auto index_format = index.index->getDeserializedFormat(part.checksums, index.index->getFileName(), &part.getDataPartStorage());
+    const auto & data_part = part_with_ranges.data_part;
+    const auto & index = resolved.index;
+
+    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName(), &data_part->getDataPartStorage());
     if (!index_format)
-        return nullptr;
+        return {};
 
     MergeTreeIndexDeserializationState state
     {
         .version = index_format.version,
-        .condition = &condition,
-        .part = part,
+        .condition = resolved.condition.get(),
+        .part = *data_part,
         .index = *index.index,
         .readable_ranges = nullptr,
     };
@@ -302,7 +285,7 @@ MergeTreeIndexGranulePtr loadTextIndexGranuleForPart(
     auto make_stream = [&](const MergeTreeIndexSubstream & substream)
     {
         return makeTextIndexInputStream(
-            part.getDataPartStoragePtr(),
+            data_part->getDataPartStoragePtr(),
             index.index->getFileName() + substream.suffix,
             substream.extension,
             MergeTreeIndexReader::patchSettings(reader_settings, substream.type));
@@ -319,40 +302,68 @@ MergeTreeIndexGranulePtr loadTextIndexGranuleForPart(
     streams[MergeTreeIndexSubstream::Type::TextIndexDictionary] = dictionary_stream.get();
     streams[MergeTreeIndexSubstream::Type::TextIndexPostings] = postings_stream.get();
 
-    auto granule = index.index->createIndexGranule();
-    granule->deserializeBinaryWithMultipleStreams(streams, state);
-    return granule;
-}
+    auto granule_ptr = index.index->createIndexGranule();
+    granule_ptr->deserializeBinaryWithMultipleStreams(streams, state);
+    auto granule = std::dynamic_pointer_cast<const MergeTreeIndexGranuleText>(granule_ptr);
 
-/// Exact matching-row count for `resolved` in one part from the token's dictionary cardinality, or nullopt
-/// if it cannot be answered from the index (the caller then abandons the optimization).
-std::optional<UInt64> computeCountForPart(
-    const RangesInDataPart & part_with_ranges,
-    const ResolvedQuery & resolved,
-    const MergeTreeReaderSettings & reader_settings)
-{
-    const auto & data_part = part_with_ranges.data_part;
-
-    /// Part-wide cardinality is exact here: guardsHold established the text predicate was the only pruner.
-    auto granule = loadTextIndexGranuleForPart(*data_part, resolved.index, *resolved.condition, reader_settings);
     if (!granule)
         return {};
 
-    auto text_granule = std::dynamic_pointer_cast<const MergeTreeIndexGranuleText>(granule);
-    if (!text_granule)
-        return {};
+    const auto & analyzer = granule->getAnalyzer();
+    const auto & tokens = resolved.query->getTokens();
 
-    const auto & token_infos = text_granule->getAnalyzer().getAllTokenInfos();
+    /// Single token: the exact count is the dictionary-resident cardinality; no posting-list I/O.
+    if (tokens.size() == 1)
+    {
+        const auto & token_infos = analyzer.getAllTokenInfos();
+        auto it = token_infos.find(tokens.front());
+        return it == token_infos.end() ? 0 : static_cast<UInt64>(it->second->cardinality);
+    }
 
-    const auto & token = resolved.query->getTokens().front();
-    auto it = token_infos.find(token);
-    if (it == token_infos.end())
+    /// `is_failed`: e.g. All mode with a token missing from the part. An empty part matches nothing.
+    if (data_part->rows_count == 0)
         return 0;
 
-    return it->second->cardinality;
+    const auto & query_builder = analyzer.getQueryBuilder(*resolved.query);
+    if (query_builder.is_failed)
+        return 0;
+
+    auto postings_serialization = PostingsSerialization(
+        PostingListCodecFactory::createPostingListCodec(granule->getPostingsCodecType()),
+        granule->getSerializationVersion());
+    const RowsRange full_range(0, data_part->rows_count - 1);
+    const bool intersect = resolved.query->getSearchMode() == TextSearchMode::All;
+
+    std::optional<PostingList> result;
+    for (const auto & [token, token_info] : query_builder.tokens)
+    {
+        PostingList token_postings;
+        if (token_info->embedded_postings)
+        {
+            token_postings = *token_info->embedded_postings;
+        }
+        else
+        {
+            for (size_t block_idx : token_info->getBlocksToRead(full_range))
+            {
+                auto block = MergeTreeIndexGranuleText::readPostingsBlock(
+                    *postings_stream, state, *token_info, block_idx, postings_serialization, granule->getIndexIdForCaches());
+                if (block)
+                    token_postings |= *block;
+            }
+        }
+
+        if (!result)
+            result = std::move(token_postings);
+        else if (intersect)
+            *result &= token_postings;
+        else
+            *result |= token_postings;
+    }
+
+    return result ? result->cardinality() : 0;
 }
 
-/// A ReadFromPreparedSource emitting one pre-filled count() state named `count_column`.
 QueryPlanStepPtr makeCountSource(UInt64 count, const String & count_column)
 {
     auto agg_count = std::make_shared<AggregateFunctionCount>(DataTypes{});
@@ -370,7 +381,8 @@ QueryPlanStepPtr makeCountSource(UInt64 count, const String & count_column)
 
 bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings)
 {
-    auto log = getLogger("optimizeTrivialCountFromTextIndex");
+    if (!settings.optimize_trivial_count_from_text_index)
+        return false;
 
     auto * aggregating = typeid_cast<AggregatingStep *>(node.step.get());
     if (!aggregating)
@@ -378,38 +390,18 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
 
     auto count_column = matchBareCount(*aggregating);
     if (!count_column)
-    {
-        LOG_TRACE(log, "bail: not a bare count()");
         return false;
-    }
 
     auto matched = matchSubtree(node);
     if (!matched)
-    {
-        LOG_TRACE(log, "bail: not a pure text-index predicate over ReadFromMergeTree");
         return false;
-    }
-
-    /// Kill switch: honour the trivial-count family's parent setting instead of adding our own (also
-    /// implicitly gated by direct read, which produces the `__text_index_...` column we match).
-    if (!matched->reading->getContext()->getSettingsRef()[Setting::optimize_trivial_count_query])
-    {
-        LOG_TRACE(log, "bail: optimize_trivial_count_query = 0");
-        return false;
-    }
 
     if (!guardsHold(*matched->reading))
-    {
-        LOG_TRACE(log, "bail: guardsHold not satisfied (modifiers / mutations / parallel replicas / non-text pruning)");
         return false;
-    }
 
     auto resolved = recoverSearchQuery(*matched->reading, matched->predicate_columns);
     if (!resolved)
-    {
-        LOG_TRACE(log, "bail: not a single-token Exact non-phrase query");
         return false;
-    }
 
     const auto & reader_settings = matched->reading->getReaderSettings();
 
@@ -418,20 +410,24 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
     {
         auto part_count = computeCountForPart(part_with_ranges, *resolved, reader_settings);
         if (!part_count)
-        {
-            LOG_TRACE(log, "bail: cannot count part '{}' exactly", part_with_ranges.data_part->name);
             return false;
-        }
         total_count += *part_count;
     }
 
-    LOG_DEBUG(log, "Answered count() = {} from text index", total_count);
+    const auto & query_tokens = resolved->query->getTokens();
+    String quoted_tokens;
+    for (const auto & token : query_tokens)
+        quoted_tokens += fmt::format("{}'{}'", quoted_tokens.empty() ? "" : ", ", token);
+    String tokens_desc = query_tokens.size() == 1
+        ? fmt::format("token = {}", quoted_tokens)
+        : fmt::format("tokens = [{}]", quoted_tokens);
 
     auto & source_node = nodes.emplace_back();
     source_node.step = makeCountSource(total_count, *count_column);
-    source_node.step->setStepDescription("Trivial count from text index", settings.max_step_description_length);
+    source_node.step->setStepDescription(
+        fmt::format("Trivial count from text index ({}, {})", resolved->index.index->index.name, tokens_desc),
+        settings.max_step_description_length);
 
-    /// Feed the precomputed state to the aggregate as a merge-only input.
     aggregating->requestOnlyMergeForAggregateProjection(source_node.step->getOutputHeader());
     node.children.front() = &source_node;
 
