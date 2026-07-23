@@ -59,7 +59,7 @@ import json
 import os
 import subprocess
 import traceback
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from ci.jobs.scripts.log_cluster import LogCluster
 from ci.praktika.gh import GH
@@ -387,6 +387,12 @@ def extend_master_shas(master_shas: List[str], days: int = TU_BASE_DAYS, list_pa
     PR does not have). The listing follows all parents, not just the first
     one, but the extra shas are harmless: only commits master actually built
     carry pull_request_number = 0 warmup profile rows.
+
+    Fail-close: a GitHub API failure propagates and fails the job (which is
+    `allow_failure`) instead of degrading to the un-extended ~100-sha chain.
+    The shallow chain would silently hide valid 8-14 day warmup baselines,
+    turning a transient API hiccup into a false-green compile-time comparison
+    (TUs misreported as new, or the whole section as the catch-up note).
     """
     if not master_shas:
         return master_shas
@@ -394,23 +400,18 @@ def extend_master_shas(master_shas: List[str], days: int = TU_BASE_DAYS, list_pa
     shas = list(master_shas)
     seen = set(shas)
     anchor = master_shas[-1]
-    try:
-        for page in range(1, EXTEND_MAX_PAGES + 1):
-            commits = list_page(anchor, page)
-            for commit in commits:
-                if commit["sha"] not in seen:
-                    seen.add(commit["sha"])
-                    shas.append(commit["sha"])
-            # ISO 8601 UTC dates compare lexicographically.
-            if len(commits) < 100 or commits[-1]["date"] < cutoff:
-                return shas
-        print(f"WARNING: the master chain still does not span {days} days after {EXTEND_MAX_PAGES} pages ({len(shas)} commits)")
-    except Exception:
-        # The un-extended chain is a valid, just shallower, baseline set; a
-        # GitHub API hiccup must not fail the whole comparison. The warning
-        # stays in the job log.
-        print("WARNING: failed to extend the master commit chain for the per-TU baseline window:")
-        traceback.print_exc()
+    for page in range(1, EXTEND_MAX_PAGES + 1):
+        commits = list_page(anchor, page)
+        for commit in commits:
+            if commit["sha"] not in seen:
+                seen.add(commit["sha"])
+                shas.append(commit["sha"])
+        # ISO 8601 UTC dates compare lexicographically.
+        if len(commits) < 100 or commits[-1]["date"] < cutoff:
+            return shas
+    # Hitting the page cap is a bounded, loud partial (~2000 commits, well past
+    # the window under normal merge rates), unlike the unbounded API failure.
+    print(f"WARNING: the master chain still does not span {days} days after {EXTEND_MAX_PAGES} pages ({len(shas)} commits)")
     return shas
 
 
@@ -734,24 +735,43 @@ def compare_compile_times(db: Db, pr_side, master_shas) -> Section:
     TU_BASE_DAYS window - not from the BASE_DAYS object-size baseline, whose
     shorter window would suppress this whole section while usable (8-14 days
     old) warmup traces still exist.
+
+    Both sides are keyed by (file, library), not file alone: the same source
+    path can be compiled more than once per build - with
+    BUILD_STANDALONE_KEEPER=1, `programs/keeper/Keeper.cpp` is built into both
+    `clickhouse-keeper-lib` and the standalone `clickhouse-keeper` - and
+    `prepare-time-trace.sh` keeps the target name only in `library`. Keying by
+    file alone would collapse those distinct compile jobs into one pseudo-TU
+    and compare the PR's standalone compile against the master's library one.
     """
     section = Section(title="Compile time of recompiled translation units")
     pr_cond = side_conditions(pr_side, "name = 'ExecuteCompiler'")
     pr_rows = db.query(
-        f"""SELECT file, max(dur) AS dur
+        f"""SELECT file, library, max(dur) AS dur
         FROM build_time_trace
         WHERE {pr_cond}
-        GROUP BY file"""
+        GROUP BY file, library"""
     )
     if not pr_rows:
         section.body = "No translation units were recompiled in this build (everything was served from the compiler cache)."
         return section
-    pr_durs = {row["file"]: int(row["dur"]) for row in pr_rows}
+    pr_durs = {(row["file"], row["library"]): int(row["dur"]) for row in pr_rows}
+
+    # A file compiled into several targets is ambiguous by name alone: label
+    # such TUs with their library so the two compile jobs stay tellable apart.
+    file_lib_counts: Dict[str, int] = {}
+    for file, _library in pr_durs:
+        file_lib_counts[file] = file_lib_counts.get(file, 0) + 1
+
+    def tu_label(file: str, library: str) -> str:
+        if library and file_lib_counts.get(file, 0) > 1:
+            return f"{strip_build_dir(file)} ({library})"
+        return strip_build_dir(file)
 
     # The recompiled set can be the whole tree (a common-header PR), so the
     # file filter is a subquery rather than a literal IN list.
     base_rows = db.query(
-        f"""SELECT file,
+        f"""SELECT file, library,
             argMax(dur, time) AS dur,
             argMax(commit_sha, time) AS sha,
             argMax(check_start_time, time) AS check_start_time,
@@ -761,13 +781,13 @@ def compare_compile_times(db: Db, pr_side, master_shas) -> Section:
             AND pull_request_number = 0
             AND check_name = {quote(WARMUP_CHECK_NAME)}
             AND name = 'ExecuteCompiler'
-            AND file IN (
-                SELECT DISTINCT file
+            AND (file, library) IN (
+                SELECT DISTINCT file, library
                 FROM build_time_trace
                 WHERE {pr_cond}
             )
             AND commit_sha IN ({in_list(master_shas)})
-        GROUP BY file"""
+        GROUP BY file, library"""
     )
     # Carry the exact run (check_start_time, instance_id) that produced each
     # baseline duration, so drill_down_tu reads its entities from that same run
@@ -776,7 +796,7 @@ def compare_compile_times(db: Db, pr_side, master_shas) -> Section:
     # drill-down to a run with no rows for this file, reporting every PR entity
     # as new.
     base_durs = {
-        row["file"]: (
+        (row["file"], row["library"]): (
             int(row["dur"]),
             row["sha"],
             row["check_start_time"],
@@ -810,21 +830,21 @@ def compare_compile_times(db: Db, pr_side, master_shas) -> Section:
     # the skew itself is reported as an informational line (it can also be a
     # genuine everything-got-slower change, e.g. a heavy common header - that
     # still shows up, just not as per-TU findings).
-    ratios = sorted(pr_durs[file] / max(base_dur, 1) for file, (base_dur, *_) in base_durs.items() if file in pr_durs)
+    ratios = sorted(pr_durs[tu] / max(base_dur, 1) for tu, (base_dur, *_) in base_durs.items() if tu in pr_durs)
     skew = ratios[len(ratios) // 2] if len(ratios) >= 10 else 1.0
 
     total_s = sum(pr_durs.values()) / 1e6
     findings = []
-    for file, pr_dur in pr_durs.items():
-        if file not in base_durs:
+    for tu, pr_dur in pr_durs.items():
+        if tu not in base_durs:
             continue
-        base_dur, base_tu_sha, base_cst, base_iid = base_durs[file]
+        base_dur, base_tu_sha, base_cst, base_iid = base_durs[tu]
         base_tu_side = Side(TU_BASE_DAYS, 0, base_tu_sha, base_cst, base_iid, WARMUP_CHECK_NAME)
         adjusted_base = base_dur * skew
         delta_s = (pr_dur - adjusted_base) / 1e6
         ratio = max(pr_dur, adjusted_base) / max(min(pr_dur, adjusted_base), 1)
         if abs(delta_s) >= TU_REPORT_SECONDS and ratio >= TU_REPORT_RATIO:
-            findings.append((file, pr_dur, base_dur, base_tu_side, delta_s, ratio))
+            findings.append((tu, pr_dur, base_dur, base_tu_side, delta_s, ratio))
     findings.sort(key=lambda f: -abs(f[4]))
 
     lines = [f"{len(pr_durs)} translation units recompiled, {total_s:.0f} s compile time in total, {len(base_durs)} of them have a recent master baseline."]
@@ -839,31 +859,31 @@ def compare_compile_times(db: Db, pr_side, master_shas) -> Section:
             "| Translation unit | Master | PR | Δ vs median |",
             "|---|---:|---:|---:|",
         ]
-        for file, pr_dur, base_dur, base_tu_side, delta_s, ratio in findings[:MAX_TABLE_ROWS]:
+        for tu, pr_dur, base_dur, base_tu_side, delta_s, ratio in findings[:MAX_TABLE_ROWS]:
             if abs(delta_s) >= TU_SIG_SECONDS and ratio >= TU_SIG_RATIO:
                 section.significant = True
-            lines.append(f"| {md_code(strip_build_dir(file))} | {base_dur / 1e6:.1f} s | {pr_dur / 1e6:.1f} s | {format_seconds_delta(delta_s, base_dur * skew / 1e6)} |")
+            lines.append(f"| {md_code(tu_label(*tu))} | {base_dur / 1e6:.1f} s | {pr_dur / 1e6:.1f} s | {format_seconds_delta(delta_s, base_dur * skew / 1e6)} |")
         section.summary = f"{len(findings)} translation units changed compile time"
 
         # Attribute the biggest slowdowns to concrete frontend/backend entities
         # (template instantiations, included headers, function codegen).
-        for file, pr_dur, base_dur, base_tu_side, delta_s, ratio in findings[:3]:
+        for tu, pr_dur, base_dur, base_tu_side, delta_s, ratio in findings[:3]:
             if delta_s <= 0:
                 continue
-            drill = drill_down_tu(db, pr_side, base_tu_side, file, skew)
+            drill = drill_down_tu(db, pr_side, base_tu_side, *tu, skew=skew)
             if drill:
-                lines += ["", f"Slowest changed entities of {md_code(strip_build_dir(file))}:", ""]
+                lines += ["", f"Slowest changed entities of {md_code(tu_label(*tu))}:", ""]
                 lines += drill
 
     # A brand-new TU has no baseline; surface it when it is expensive.
     new_tus = sorted(
-        ((f, d) for f, d in pr_durs.items() if f not in base_durs and d >= 30e6),
+        ((tu, d) for tu, d in pr_durs.items() if tu not in base_durs and d >= 30e6),
         key=lambda x: -x[1],
     )
     if new_tus:
         lines += ["", "Expensive translation units without a recent master baseline:", ""]
-        for file, dur in new_tus[:10]:
-            lines.append(f"- {md_code(strip_build_dir(file))}: {dur / 1e6:.1f} s")
+        for tu, dur in new_tus[:10]:
+            lines.append(f"- {md_code(tu_label(*tu))}: {dur / 1e6:.1f} s")
         # A large new compile-time cost is significant even without a baseline to
         # diff against; a missing baseline must not silence the top-level verdict.
         if any(dur >= TU_SIG_SECONDS * 1e6 for _, dur in new_tus):
@@ -875,7 +895,7 @@ def compare_compile_times(db: Db, pr_side, master_shas) -> Section:
     return section
 
 
-def drill_down_tu(db: Db, pr_side, base_side, file, skew=1.0) -> List[str]:
+def drill_down_tu(db: Db, pr_side, base_side, file, library, skew=1.0) -> List[str]:
     """Top per-entity compile time changes inside one translation unit.
 
     Entity deltas are filtered against the same median machine-speed ratio as
@@ -885,7 +905,9 @@ def drill_down_tu(db: Db, pr_side, base_side, file, skew=1.0) -> List[str]:
     `base_side` is the exact run that produced this TU's baseline compile time
     (carried out of `compare_compile_times` so the drill-down reads its entities
     from the same run, not from a later rerun of the same commit that may not
-    have recompiled this TU).
+    have recompiled this TU). The TU is identified by (file, library), like the
+    per-TU comparison itself: a source compiled into several targets is several
+    distinct compile jobs.
     """
     rows = db.query(
         f"""SELECT name, detail,
@@ -898,7 +920,7 @@ def drill_down_tu(db: Db, pr_side, base_side, file, skew=1.0) -> List[str]:
                 "name, detail, dur",
                 pr_side,
                 base_side,
-                f"file = {quote(file)} AND detail != '' AND name IN ('InstantiateFunction', 'InstantiateClass', 'ParseClass', 'Source', 'OptFunction', 'CodeGen Function')",
+                f"file = {quote(file)} AND library = {quote(library)} AND detail != '' AND name IN ('InstantiateFunction', 'InstantiateClass', 'ParseClass', 'Source', 'OptFunction', 'CodeGen Function')",
             )
         }
         GROUP BY name, detail

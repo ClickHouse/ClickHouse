@@ -66,7 +66,8 @@ CREATE TABLE build_time_trace
 (
     date Date DEFAULT today(), pull_request_number Int64, commit_sha String,
     check_start_time DateTime, check_name String, instance_type String,
-    instance_id String, file String, name String, detail String, dur UInt64,
+    instance_id String, file String, library LowCardinality(String) DEFAULT '',
+    name String, detail String, dur UInt64,
     time DateTime64(6) DEFAULT now64()
 ) ENGINE = Memory;
 
@@ -106,6 +107,19 @@ INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time,
     (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release_pr_cache_warmup', 'W0', 'tu.cpp', 'ExecuteCompiler', '', 20000000),
     (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release_pr_cache_warmup', 'W0', 'tu.cpp', 'InstantiateFunction', 'foo', 5000000),
     (0, '{_BASE_SHA}', '2026-07-01 00:00:00', 'arm_release_pr_cache_warmup', 'W0b', 'other_tu.cpp', 'ExecuteCompiler', '', 10000000);
+
+-- One source compiled into two targets: with BUILD_STANDALONE_KEEPER=1,
+-- ``programs/keeper/Keeper.cpp`` is built into both ``clickhouse-keeper-lib``
+-- and the standalone ``clickhouse-keeper``; ``prepare-time-trace.sh`` strips
+-- the ``CMakeFiles/<target>.dir`` path component and keeps the target only in
+-- ``library``. The PR's standalone compile regressed (10 s -> 60 s) while the
+-- library compile is unchanged (12 s): keyed by file alone, the two jobs
+-- collapse into one pseudo-TU and the comparison mixes them up.
+INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, library, name, detail, dur) VALUES
+    ({_PR}, '{_PR_SHA}', '2026-07-02 00:00:00', 'arm_release', 'I2', 'programs/keeper/Keeper.cpp', 'clickhouse-keeper', 'ExecuteCompiler', '', 60000000),
+    ({_PR}, '{_PR_SHA}', '2026-07-02 00:00:00', 'arm_release', 'I2', 'programs/keeper/Keeper.cpp', 'clickhouse-keeper-lib', 'ExecuteCompiler', '', 12000000),
+    (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release_pr_cache_warmup', 'W0', 'programs/keeper/Keeper.cpp', 'clickhouse-keeper', 'ExecuteCompiler', '', 10000000),
+    (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release_pr_cache_warmup', 'W0', 'programs/keeper/Keeper.cpp', 'clickhouse-keeper-lib', 'ExecuteCompiler', '', 12000000);
 
 -- A master commit whose only warmup profile data is 8-14 days old: too old for
 -- the BASE_DAYS object-size baseline, but well inside the TU_BASE_DAYS window
@@ -347,6 +361,30 @@ def test_opt_functions_missing_pr_side_binary_is_flagged():
     assert "missing PR-side link trace" in section.summary
 
 
+def test_compile_times_key_baselines_by_file_and_library():
+    """A source compiled into two targets stays two distinct compile jobs.
+
+    ``programs/keeper/Keeper.cpp`` is compiled into both the standalone
+    ``clickhouse-keeper`` (10 s -> 60 s, a real regression) and
+    ``clickhouse-keeper-lib`` (12 s, unchanged). Keyed by file alone the two
+    jobs merge into one pseudo-TU - the PR's standalone compile gets compared
+    against whichever baseline wins the aggregation, and the unchanged library
+    compile can mask or garble the regression. Keyed by (file, library), the
+    standalone regression is reported (labelled with its library, since the
+    file name alone is ambiguous) and the library compile stays quiet.
+    """
+    db = FixtureDb()
+    pr_side = job.resolve_run(db, job.PR_DAYS, _PR, _PR_SHA)
+    section = job.compare_compile_times(db, pr_side, [_BASE_SHA])
+    # The standalone compile regressed 10 s -> 60 s: reported and labelled.
+    assert "`programs/keeper/Keeper.cpp (clickhouse-keeper)`" in section.body
+    assert "| 10.0 s | 60.0 s |" in section.body
+    assert section.significant
+    # The unchanged library compile is not reported - neither as a finding nor
+    # as a "new TU" (it has a baseline under its own (file, library) key).
+    assert "(clickhouse-keeper-lib)" not in section.body
+
+
 def test_extend_master_shas_pages_past_the_anchored_chain():
     """The per-TU candidate set is extended beyond the ~100-commit chain.
 
@@ -381,11 +419,15 @@ def test_extend_master_shas_pages_past_the_anchored_chain():
     assert "d42" in shas and "ancient" in shas
     assert [page for _, page in calls] == [1, 2]
 
-    # A GitHub hiccup degrades to the un-extended (still valid) chain.
+    # Fail-close: a GitHub API failure must propagate and fail the (allow_failure)
+    # job, not silently degrade to the un-extended chain - the shallow chain hides
+    # valid 8-14 day warmup baselines behind a false-green comparison.
     def failing_list_page(anchor, page):
         raise RuntimeError("api down")
 
-    assert job.extend_master_shas(["a"], list_page=failing_list_page) == ["a"]
+    with pytest.raises(RuntimeError, match="api down"):
+        job.extend_master_shas(["a"], list_page=failing_list_page)
+    # An empty chain never reaches the API: nothing to anchor the extension on.
     assert job.extend_master_shas([], list_page=failing_list_page) == []
 
 
