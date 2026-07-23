@@ -3751,6 +3751,9 @@ LIMIT 9
 The aggregate-function form returns the sum of values weighted by exponential decay relative to the greatest time argument.
 Its states can be combined independently of the input order, including in an `AggregatingMergeTree`.
 The window-function form preserves the existing behavior and evaluates relative to the time argument of the last row in the current frame.
+Aggregation uses `Float64` arithmetic. Large signed values that nearly cancel can produce different
+results when their order or state grouping changes. Users who require stronger numerical reproducibility
+should normalize magnitudes or use a numerically stable method to pre-aggregate sensitive inputs.
 The aggregate-function form is experimental and requires `allow_experimental_time_decay_aggregate_functions = 1`.
 The window-function form is not affected by this setting.
     )";
@@ -4060,6 +4063,9 @@ FROM
 The aggregate-function form returns the average of values weighted by exponential decay relative to the greatest time argument.
 Its states can be combined independently of the input order, including in an `AggregatingMergeTree`.
 The window-function form preserves the existing behavior and evaluates relative to the time argument of the last row in the current frame.
+Aggregation uses `Float64` arithmetic. Large signed values that nearly cancel can produce different
+results when their order or state grouping changes. Users who require stronger numerical reproducibility
+should normalize magnitudes or use a numerically stable method to pre-aggregate sensitive inputs.
 The aggregate-function form is experimental and requires `allow_experimental_time_decay_aggregate_functions = 1`.
 The window-function form is not affected by this setting.
     )";

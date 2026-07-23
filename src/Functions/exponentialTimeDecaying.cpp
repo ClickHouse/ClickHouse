@@ -299,6 +299,9 @@ The anchor is stored as `Float64`; DateTime and DateTime64 inputs are converted 
 Adds two exponentially time-decaying values at their greatest anchor time.
 Both inputs must have identical decay lengths. The function rebases them to
 `ct = greatest(A.time, B.time)` and returns `(A.value_at(ct) + B.value_at(ct), ct, A.decay_length)`.
+Because values are stored as `Float64`, large signed values that nearly cancel can be sensitive to
+addition order and grouping. Normalize magnitudes or use a numerically stable method to pre-aggregate
+sensitive inputs when stronger numerical reproducibility is required.
 )",
         .syntax = "exponentialTimeDecayingAdd(a, b)",
         .arguments = {

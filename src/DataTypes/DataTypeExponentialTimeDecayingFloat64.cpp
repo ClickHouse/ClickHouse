@@ -56,6 +56,11 @@ Represents one or more finite exponentially time-decaying values at a shared anc
 The fields are `value`, `time`, and `decay_length`, all stored as `Float64`. DateTime and DateTime64
 inputs are represented as seconds. Values can only be added when their decay lengths are identical.
 Use `tupleElement(decaying_value, 'time')` to read the greatest observed or current anchor time.
+
+Addition uses `Float64` arithmetic. Large signed values that nearly cancel can produce different
+results when their order or grouping changes. Users who require stronger numerical reproducibility
+should normalize magnitudes or pre-aggregate numerically sensitive inputs with a numerically stable
+method before constructing or combining these values.
 )",
             .syntax = "ExponentialTimeDecayingFloat64",
             .examples = {},
