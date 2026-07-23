@@ -14,6 +14,9 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/NamedCollectionsHelpers.h>
 
+#include <map>
+#include <optional>
+
 namespace DB
 {
 namespace Setting
@@ -144,13 +147,13 @@ String BackupInfo::toStringForLogging() const
 
 String BackupInfo::evaluateKeyValueArgument(const ASTPtr & kv_arg, size_t index, ContextPtr context)
 {
+    const auto * function = kv_arg ? kv_arg->as<const ASTFunction>() : nullptr;
+    const auto * arguments = function && function->arguments ? function->arguments->as<const ASTExpressionList>() : nullptr;
+    if (!function || function->name != "equals" || !arguments || arguments->children.size() != 2 || index >= 2)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid backup locator key-value argument");
+
     try
     {
-        const auto * function = kv_arg->as<const ASTFunction>();
-        const auto * arguments = function && function->arguments ? function->arguments->as<const ASTExpressionList>() : nullptr;
-        if (!arguments || arguments->children.size() != 2 || index >= 2)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid key-value argument");
-
         ASTPtr evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arguments->children[index], context);
         const auto * literal = evaluated->as<const ASTLiteral>();
         if (!literal || literal->value.getType() != Field::Types::Which::String)
@@ -162,6 +165,38 @@ String BackupInfo::evaluateKeyValueArgument(const ASTPtr & kv_arg, size_t index,
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Backup locator key-value argument must be a constant string");
     }
 }
+
+bool BackupInfo::isEquivalentTo(const BackupInfo & other, ContextPtr context) const
+{
+    if (!context)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Context is required to compare backup locators");
+
+    /// Named collection overrides are an unordered key-value map, but all other locator syntax must match exactly.
+    BackupInfo lhs = *this;
+    BackupInfo rhs = other;
+    lhs.kv_args.clear();
+    rhs.kv_args.clear();
+    if (lhs.toString() != rhs.toString())
+        return false;
+
+    auto get_key_values = [&](const ASTs & key_value_args)
+    {
+        std::map<String, String> key_values;
+        for (const auto & arg : key_value_args)
+        {
+            String key = evaluateKeyValueArgument(arg, 0, context);
+            String value = evaluateKeyValueArgument(arg, 1, context);
+            if (!key_values.emplace(std::move(key), std::move(value)).second)
+                return std::optional<std::map<String, String>>{};
+        }
+        return std::optional{std::move(key_values)};
+    };
+
+    const auto lhs_key_values = get_key_values(kv_args);
+    const auto rhs_key_values = get_key_values(other.kv_args);
+    return lhs_key_values && rhs_key_values && lhs_key_values == rhs_key_values;
+}
+
 
 NamedCollectionPtr BackupInfo::getNamedCollection(ContextPtr context) const
 {

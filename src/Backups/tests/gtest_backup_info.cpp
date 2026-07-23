@@ -215,6 +215,17 @@ TEST(BackupInfo, WithoutS3CredentialsRedactsURLOverride)
 TEST(BackupInfo, WithoutCredentialsRejectsMalformedKeyValueArgument)
 {
     EXPECT_THROW(withoutCredentials(BackupInfo::fromString("S3(collection, equals())")), Exception);
+
+    auto info = BackupInfo::fromString("S3(collection, tuple('key', 'value'))");
+    try
+    {
+        (void)BackupInfo::evaluateKeyValueArgument(info.function_arg, 0, getContext().context);
+        FAIL() << "Expected an invalid key-value argument";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.message(), "Invalid backup locator key-value argument");
+    }
 }
 
 TEST(BackupInfo, WithoutS3CredentialsKeepsPlainQuery)
@@ -253,6 +264,28 @@ TEST(BackupInfo, CopyCredentialsSupportsS3)
     checkCopyCredentials("S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')", "S3(collection)", nullptr);
     checkCopyCredentials("Disk('backups', 'path')", "S3('https://s3.example.com/base')", nullptr);
     checkCopyCredentials("S3('https://s3.example.com/backup')", "S3('https://s3.example.com/base')", nullptr);
+}
+
+
+TEST(BackupInfo, CopyCredentialsRequiresContext)
+{
+    auto source = BackupInfo::fromString("S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')");
+    auto destination = BackupInfo::fromString("S3('https://s3.example.com/base')");
+    expectExceptionCode(
+        [&] { (void)BackupFactory::instance().copyCredentials(source, destination, {}); },
+        ErrorCodes::BAD_ARGUMENTS);
+}
+
+
+TEST(BackupInfo, EquivalentLocatorsIgnoreKeyValueArgumentOrder)
+{
+    auto context = getContext().context;
+    const auto first = BackupInfo::fromString("S3(collection, url = 's3://bucket/base', access_key_id = 'key')");
+    const auto second = BackupInfo::fromString("S3(collection, access_key_id = 'key', url = 's3://bucket/base')");
+    const auto different = BackupInfo::fromString("S3(collection, access_key_id = 'other', url = 's3://bucket/base')");
+
+    EXPECT_TRUE(first.isEquivalentTo(second, context));
+    EXPECT_FALSE(first.isEquivalentTo(different, context));
 }
 
 
@@ -381,6 +414,30 @@ TEST(BackupInfo, FreezeNamedCollectionPreservesDestinationSnapshot)
 #if USE_AZURE_BLOB_STORAGE
 TEST(BackupInfo, CopyCredentialsSupportsAzure)
 {
+    const String collection_name = "backup_azure_inline_credentials";
+    const String base_collection_name = "backup_azure_inline_base";
+    auto create_query = make_intrusive<ASTCreateNamedCollectionQuery>();
+    create_query->collection_name = collection_name;
+    create_query->changes.emplace_back("container", Field("container"));
+    NamedCollectionFactory::instance().createFromSQL(*create_query);
+
+    auto create_base_query = make_intrusive<ASTCreateNamedCollectionQuery>();
+    create_base_query->collection_name = base_collection_name;
+    create_base_query->changes.emplace_back("container", Field("container"));
+    NamedCollectionFactory::instance().createFromSQL(*create_base_query);
+
+    auto drop_collection = [&]
+    {
+        for (const auto & name : {collection_name, base_collection_name})
+        {
+            auto drop_query = make_intrusive<ASTDropNamedCollectionQuery>();
+            drop_query->collection_name = name;
+            drop_query->if_exists = true;
+            NamedCollectionFactory::instance().removeFromSQL(*drop_query);
+        }
+    };
+    SCOPE_EXIT({ drop_collection(); });
+
     checkCopyCredentials(
         "AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=account;AccountKey=SECRET', 'container', 'incremental')",
         "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'base')",
@@ -393,12 +450,75 @@ TEST(BackupInfo, CopyCredentialsSupportsAzure)
         "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'incremental', 'account', 'SECRET')",
         "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'base')",
         "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'base', 'account', 'SECRET')");
+    const String expected_named = "AzureBlobStorage(" + base_collection_name
+        + ", equals(storage_account_url, 'https://account.blob.core.windows.net'), "
+          "equals(account_name, 'account'), equals(account_key, 'SECRET'), equals(blob_path, 'base'))";
     checkCopyCredentials(
-        "AzureBlobStorage(collection, storage_account_url = 'https://account.blob.core.windows.net', account_name = 'account', "
-        "account_key = 'SECRET', blob_path = 'incremental')",
-        "AzureBlobStorage(base_collection, storage_account_url = 'https://account.blob.core.windows.net', blob_path = 'base')",
-        "AzureBlobStorage(base_collection, equals(storage_account_url, 'https://account.blob.core.windows.net'), "
-        "equals(account_name, 'account'), equals(account_key, 'SECRET'), equals(blob_path, 'base'))");
+        "AzureBlobStorage(" + collection_name
+            + ", storage_account_url = 'https://account.blob.core.windows.net', account_name = 'account', "
+              "account_key = 'SECRET', blob_path = 'incremental')",
+        "AzureBlobStorage(" + base_collection_name
+            + ", storage_account_url = 'https://account.blob.core.windows.net', blob_path = 'base')",
+        expected_named.c_str());
+}
+
+
+TEST(BackupInfo, CopyCredentialsSupportsInheritedAzureNamedCollectionCredentials)
+{
+    const String collection_name = "backup_azure_inherited_credentials";
+    const String base_collection_name = "backup_azure_base_without_credentials";
+    const String conflicting_base_collection_name = "backup_azure_base_with_conflicting_endpoint";
+    auto create_query = make_intrusive<ASTCreateNamedCollectionQuery>();
+    create_query->collection_name = collection_name;
+    create_query->changes.emplace_back("storage_account_url", Field("https://account.blob.core.windows.net"));
+    create_query->changes.emplace_back("container", Field("container"));
+    create_query->changes.emplace_back("account_name", Field("account"));
+    create_query->changes.emplace_back("account_key", Field("SECRET"));
+    NamedCollectionFactory::instance().createFromSQL(*create_query);
+
+    auto create_base_query = make_intrusive<ASTCreateNamedCollectionQuery>();
+    create_base_query->collection_name = base_collection_name;
+    create_base_query->changes.emplace_back("container", Field("container"));
+    NamedCollectionFactory::instance().createFromSQL(*create_base_query);
+
+    auto create_conflicting_base_query = make_intrusive<ASTCreateNamedCollectionQuery>();
+    create_conflicting_base_query->collection_name = conflicting_base_collection_name;
+    create_conflicting_base_query->changes.emplace_back("connection_string", Field("https://other.blob.core.windows.net"));
+    create_conflicting_base_query->changes.emplace_back("container", Field("other_container"));
+    NamedCollectionFactory::instance().createFromSQL(*create_conflicting_base_query);
+
+    auto drop_collection = [&]
+    {
+        for (const auto & name : {collection_name, base_collection_name, conflicting_base_collection_name})
+        {
+            auto drop_query = make_intrusive<ASTDropNamedCollectionQuery>();
+            drop_query->collection_name = name;
+            drop_query->if_exists = true;
+            NamedCollectionFactory::instance().removeFromSQL(*drop_query);
+        }
+    };
+    SCOPE_EXIT({ drop_collection(); });
+
+    auto context = getContext().context;
+    auto source = BackupInfo::fromString("AzureBlobStorage(" + collection_name + ", 'incremental')");
+    auto destination = BackupInfo::fromString(
+        "AzureBlobStorage(" + base_collection_name
+        + ", storage_account_url = 'https://account.blob.core.windows.net', blob_path = 'base')");
+    ASSERT_TRUE(BackupFactory::instance().copyCredentials(source, destination, context));
+    EXPECT_TRUE(destination.isEquivalentTo(
+        BackupInfo::fromString(
+            "AzureBlobStorage(" + base_collection_name
+            + ", blob_path = 'base', account_key = 'SECRET', account_name = 'account', "
+              "storage_account_url = 'https://account.blob.core.windows.net')"),
+        context));
+
+    auto inherited_destination = BackupInfo::fromString(
+        "AzureBlobStorage(" + conflicting_base_collection_name + ", 'base')");
+    ASSERT_TRUE(BackupFactory::instance().copyCredentials(source, inherited_destination, context));
+    const auto inherited_collection = inherited_destination.getNamedCollection(context);
+    EXPECT_FALSE(inherited_collection->has("connection_string"));
+    EXPECT_EQ(inherited_collection->get<String>("storage_account_url"), "https://account.blob.core.windows.net");
+    EXPECT_EQ(inherited_collection->get<String>("container"), "container");
 }
 
 

@@ -96,6 +96,9 @@ BackupInfo BackupFactory::withoutCredentials(const BackupInfo & backup_info, Con
 
 bool BackupFactory::copyCredentials(const BackupInfo & source, BackupInfo & destination, ContextPtr context) const
 {
+    if (!context)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Context is required to copy credentials between backup locators");
+
     if (source.backup_engine_name != destination.backup_engine_name)
         return false;
 

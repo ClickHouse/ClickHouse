@@ -26,6 +26,7 @@ struct BackupInfo
 
     String toStringForLogging() const;
     static String evaluateKeyValueArgument(const ASTPtr & kv_arg, size_t index, ContextPtr context);
+    bool isEquivalentTo(const BackupInfo & other, ContextPtr context) const;
 
     /// Gets the named collection specified by id_arg, checks access rights,
     /// and applies any key-value overrides from kv_args.

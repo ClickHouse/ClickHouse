@@ -485,7 +485,10 @@ void BackupImpl::writeBackupMetadata()
                 base_backup_can_use_this_backup_credentials
                     = BackupFactory::instance().copyCredentials(
                         backup_info, base_backup_info_with_this_backup_credentials, params.context)
-                    && base_backup_info_with_this_backup_credentials.toString() == effective_base_backup_info.toString();
+                    && base_backup_info_with_this_backup_credentials.isEquivalentTo(effective_base_backup_info, params.context)
+                    && BackupFactory::instance().getDestinationIdentity(base_backup_info_with_this_backup_credentials, params.context)
+                        == BackupFactory::instance().getDestinationIdentity(
+                            effective_base_backup_info.freezeNamedCollection(params.context), params.context);
             }
 
             *out << "<base_backup>" << xml << base_backup_info_for_metadata.toString() << "</base_backup>";

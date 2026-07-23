@@ -1,20 +1,21 @@
 #include "config.h"
 
 #include <Backups/BackupFactory.h>
+#include <Backups/BackupInfo.h>
 #include <Core/Settings.h>
 #include <Common/Exception.h>
+#include <Common/NamedCollections/NamedCollections.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Backups/BackupIO_AzureBlobStorage.h>
 #include <Backups/BackupImpl.h>
-#include <Backups/BackupInfo.h>
-#include <Common/NamedCollections/NamedCollections.h>
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 
 #include <Poco/URI.h>
@@ -67,9 +68,41 @@ namespace
             return true;
         }
 
+        ASTs source_args = source.kv_args;
+        auto has_key = [&](const ASTs & args, std::string_view expected_key)
+        {
+            for (const auto & arg : args)
+                if (BackupInfo::evaluateKeyValueArgument(arg, 0, context) == expected_key)
+                    return true;
+            return false;
+        };
+
+        auto source_collection = source.getNamedCollection(context);
+        auto destination_collection = destination.getNamedCollection(context)->duplicate();
+        auto append_collection_value = [&](const char * key)
+        {
+            if (!has_key(source_args, key) && source_collection->has(key))
+            {
+                source_args.emplace_back(makeASTFunction(
+                    "equals", make_intrusive<ASTIdentifier>(key), make_intrusive<ASTLiteral>(source_collection->get<String>(key))));
+            }
+        };
+
+        const char * connection_key = source_collection->has("connection_string") ? "connection_string" : "storage_account_url";
+        const String connection_value = source_collection->getOrDefault<String>(connection_key, "");
+        const String container = source_collection->getOrDefault<String>("container", "");
+        if (connection_value.empty() || container.empty())
+            return false;
+        /// Bind inherited credentials to their source endpoint, but do not materialize an inherited SAS token in a printable AST.
+        if (!connection_value.starts_with("http") || connection_value.find('?') == String::npos)
+            append_collection_value(connection_key);
+        const auto credential_keys = {"account_name", "account_key", "client_id", "tenant_id"};
+        for (const auto * key : credential_keys)
+            append_collection_value(key);
+
         ASTs kv_args;
         bool copied = false;
-        for (const auto & source_arg : source.kv_args)
+        for (const auto & source_arg : source_args)
         {
             String source_key = BackupInfo::evaluateKeyValueArgument(source_arg, 0, context);
             if (isAzureCredentialKey(source_key) || isAzureConnectionKey(source_key))
@@ -93,7 +126,7 @@ namespace
         {
             String destination_key = BackupInfo::evaluateKeyValueArgument(destination_arg, 0, context);
             bool found = false;
-            for (const auto & source_arg : source.kv_args)
+            for (const auto & source_arg : source_args)
             {
                 if (BackupInfo::evaluateKeyValueArgument(source_arg, 0, context) == destination_key)
                 {
@@ -101,10 +134,27 @@ namespace
                     break;
                 }
             }
-            if (!found)
+            if (!found && !isAzureConnectionKey(destination_key))
                 kv_args.emplace_back(destination_arg);
         }
         destination.kv_args = std::move(kv_args);
+
+        if (copied)
+        {
+            for (const auto * key : {"connection_string", "storage_account_url"})
+                if (destination_collection->has(key))
+                    destination_collection->remove(key);
+            destination_collection->setOrUpdate<String>(connection_key, connection_value, {});
+            destination_collection->setOrUpdate<String>("container", container, {});
+            for (const auto * key : credential_keys)
+            {
+                if (destination_collection->has(key))
+                    destination_collection->remove(key);
+                if (source_collection->has(key))
+                    destination_collection->setOrUpdate<String>(key, source_collection->get<String>(key), {});
+            }
+            destination.frozen_named_collection = std::move(destination_collection);
+        }
         return copied;
     }
 }
