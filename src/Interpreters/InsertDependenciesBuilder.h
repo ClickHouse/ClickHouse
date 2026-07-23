@@ -184,6 +184,28 @@ public:
     /// resolved or the chain is too deep.
     static bool storageForwardsInsertToSeparateContext(const StoragePtr & storage, size_t depth = 0);
 
+    /// Whether inserting into `storage` can reach - through a dependent-view graph *hidden* behind an
+    /// `Alias` hop - a materialized view whose write forwards into a separate context (a `Buffer` or a
+    /// `Distributed`, see `storageForwardsInsertToSeparateContext`). The hidden graph is expanded only
+    /// inside the nested `INSERT` each `AliasSink` runs, so neither `collectAllDependencies` nor the
+    /// per-entry hazard scan sees it. A parallel write fan-out then runs one such nested `INSERT` per
+    /// branch; the separate-context sink at the end of the hidden chain (`BufferSink` /
+    /// `DistributedSink`) drops the carried deduplication info and its downstream write restamps the
+    /// source block numbering from scratch, per branch - so identical blocks on different branches can
+    /// collide on the final deduplicating destination and rows are silently dropped, regardless of this
+    /// query's deduplication settings (they do not reach the separate-context write). It fails closed
+    /// (returns true) when a hop of the chain cannot be resolved or the chain is too deep.
+    static bool forwardedInsertHidesDependentViewForwardingToSeparateContext(
+        const StoragePtr & storage, ContextPtr context, size_t depth = 0);
+
+    /// Whether the dependent-view graph of `storage` itself (not hidden behind a forwarding hop)
+    /// contains a materialized view whose write forwards into a separate context, at any depth -
+    /// including further view chains and view graphs hidden behind `Alias` targets. Helper for
+    /// `forwardedInsertHidesDependentViewForwardingToSeparateContext`; fails closed (returns true)
+    /// when a view or its target cannot be resolved or the graph is too deep.
+    static bool dependentViewForwardsInsertToSeparateContext(
+        const StoragePtr & storage, ContextPtr context, size_t depth = 0);
+
     size_t getViewProcessingNumThreads() const;
 
 

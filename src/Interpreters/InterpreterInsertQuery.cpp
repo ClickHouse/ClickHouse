@@ -857,6 +857,19 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     const bool forwards_to_separate_context =
         InsertDependenciesBuilder::storageForwardsInsertToSeparateContext(table);
 
+    /// An `Alias` itself keeps the nested `INSERT` in this query's context, but the dependent-view
+    /// graph of its target - hidden behind the nested `INSERT` each `AliasSink` runs - can contain a
+    /// materialized view whose target is a `Buffer` or a `Distributed`. That hidden separate-context
+    /// sink drops the carried deduplication info (`BufferSink` / `DistributedSink` restamp the source
+    /// block numbering from scratch in another context), so with a fan-out to several `AliasSink`s
+    /// identical blocks from different branches can still collide on the final deduplicating
+    /// destination - even when this query disabled deduplication, because those settings never reach
+    /// the separate-context write. The visible variant of this topology is failed closed inside
+    /// `InsertDependenciesBuilder`; the hidden-behind-an-`Alias` variant must be failed closed here,
+    /// independent of the deduplication settings on this query.
+    const bool hidden_views_forward_to_separate_context =
+        InsertDependenciesBuilder::forwardedInsertHidesDependentViewForwardingToSeparateContext(table, context);
+
     // `parallel_view_processing = 0` keeps the pushing to dependent materialized views sequential.
     // For a dependent-view graph visible to `InsertDependenciesBuilder` this is enforced there (the
     // sink stream size stays 1 when views are involved and the setting is disabled) and by the
@@ -872,7 +885,8 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     const bool dedup_single_stream = !async_insert
         && ((per_branch_dedup_ids && source_deduplicates)
             || forwarded_dependent_mv_dedup_hazard
-            || forwards_to_separate_context);
+            || forwards_to_separate_context
+            || hidden_views_forward_to_separate_context);
     const size_t insert_threads = (async_insert || dedup_single_stream || serial_hidden_views) ? 1 : max_insert_threads;
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table,

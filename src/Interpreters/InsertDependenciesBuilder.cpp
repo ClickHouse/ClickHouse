@@ -974,6 +974,82 @@ bool InsertDependenciesBuilder::storageForwardsInsertToSeparateContext(const Sto
 }
 
 
+bool InsertDependenciesBuilder::dependentViewForwardsInsertToSeparateContext(
+    const StoragePtr & storage, ContextPtr context, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(storage->getStorageID()))
+    {
+        auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
+        /// Fail closed on a dependent view that cannot be resolved or is not a materialized view
+        /// (its write path is not modelled here).
+        if (!view)
+            return true;
+        const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get());
+        if (!materialized_view)
+            return true;
+        auto target = materialized_view->tryGetTargetTable();
+        if (!target)
+            return true;
+        /// The view target itself (or a forwarding chain it starts) switches to a separate context ...
+        if (storageForwardsInsertToSeparateContext(target, depth + 1))
+            return true;
+        /// ... or the target cascades into further dependent views that do ...
+        if (dependentViewForwardsInsertToSeparateContext(target, context, depth + 1))
+            return true;
+        /// ... or the target is an `Alias` hiding yet another dependent-view graph that does.
+        if (forwardedInsertHidesDependentViewForwardingToSeparateContext(target, context, depth + 1))
+            return true;
+    }
+    return false;
+}
+
+
+bool InsertDependenciesBuilder::forwardedInsertHidesDependentViewForwardingToSeparateContext(
+    const StoragePtr & storage, ContextPtr context, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    /// An `Alias` executes a full nested `INSERT` into its target per sink (`AliasSink`), so the
+    /// target's dependent-view graph is expanded only inside that nested `INSERT` at execution time -
+    /// the outer builder never sees it. Check that hidden graph for a separate-context forwarder, and
+    /// follow further `Alias` hops of the target chain.
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    {
+        auto target = alias->tryGetTargetTable();
+        if (!target)
+            return true;
+        return dependentViewForwardsInsertToSeparateContext(target, context, depth + 1)
+            || forwardedInsertHidesDependentViewForwardingToSeparateContext(target, context, depth + 1);
+    }
+
+    /// `Distributed` and `Buffer` switch to a separate context themselves; the write into them is
+    /// already kept single-stream by `storageForwardsInsertToSeparateContext`, so nothing hidden
+    /// behind them needs to be reported here.
+    if (dynamic_cast<const StorageDistributed *>(storage.get()) || dynamic_cast<const StorageBuffer *>(storage.get()))
+        return false;
+
+    /// `MaterializedView` and proxies pass the write through within this pipeline, and
+    /// `collectAllDependencies` follows their targets: look through them (failing closed when the
+    /// target cannot be resolved).
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        auto target = materialized_view->tryGetTargetTable();
+        return !target || forwardedInsertHidesDependentViewForwardingToSeparateContext(target, context, depth + 1);
+    }
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return forwardedInsertHidesDependentViewForwardingToSeparateContext(proxy->getNested(), context, depth + 1);
+
+    /// A concrete local target: its dependent views are visible to `collectAllDependencies`, so the
+    /// hazard scan over `storages` checks them (and the graphs their `Alias` targets hide) directly -
+    /// nothing is hidden at this level.
+    return false;
+}
+
+
 InsertDependenciesBuilder::InsertDependenciesBuilder(
     StoragePtr table, ASTPtr query, SharedHeader insert_header,
     bool async_insert_, bool skip_destination_table_, size_t max_insert_threads,
@@ -1058,12 +1134,16 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     /// identical blocks on different branches collide on that destination and rows are silently dropped -
     /// the same hazard the top-level path guards against for a direct `Buffer` / `Distributed` target in
     /// `InterpreterInsertQuery` via `storageForwardsInsertToSeparateContext`. Fail closed on such a
-    /// dependent target regardless of this query's deduplication settings.
+    /// dependent target regardless of this query's deduplication settings. A dependent target that is
+    /// an `Alias` additionally hides its own target's dependent-view graph behind the nested `INSERT`
+    /// its `AliasSink` runs, so a separate-context forwarder inside that hidden graph must be probed
+    /// explicitly - `collectAllDependencies` never expands it.
     const bool any_dependent_target_forwards_to_separate_context = std::ranges::any_of(storages, [&] (const auto & entry)
     {
         if (isView(entry.first) || entry.first == init_table_id)
             return false;
-        return storageForwardsInsertToSeparateContext(entry.second);
+        return storageForwardsInsertToSeparateContext(entry.second)
+            || forwardedInsertHidesDependentViewForwardingToSeparateContext(entry.second, init_context);
     });
 
     const bool mv_dedup_single_stream = isViewsInvolved()
