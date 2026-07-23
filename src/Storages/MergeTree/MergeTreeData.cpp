@@ -219,6 +219,7 @@ namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_indices;
@@ -4933,6 +4934,45 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             Field value;
             if (command.settings_changes.tryGet("auto_statistics_types", value))
                 validateAutoStatisticsTypes(value.safeGet<String>());
+        }
+    }
+
+    /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
+    /// going through the experimental-codec gate that column codecs and `TTL ... RECOMPRESS` use. Enforce
+    /// `allow_experimental_codecs` for an explicit `ALTER TABLE ... MODIFY SETTING` here, on the initiator
+    /// with the query context; applying the resulting metadata (`changeSettings`, e.g. on other replicas)
+    /// is not re-checked, so tables that already carry such a codec keep working. The same applies to
+    /// `ALTER TABLE ... RESET SETTING`: the post-reset value comes from the current `<merge_tree>` config
+    /// defaults (`changeSettings` rebuilds from `getDefaultSettings`), so a config default carrying an
+    /// experimental codec must not re-enter the table without the session opting in. The CREATE-time
+    /// counterpart of this check lives in `registerStorageMergeTree`.
+    if (!settings[Setting::allow_experimental_codecs])
+    {
+        std::unique_ptr<MergeTreeSettings> default_settings;
+        for (const auto & command : commands)
+        {
+            if (command.type != AlterCommand::MODIFY_SETTING && command.type != AlterCommand::RESET_SETTING)
+                continue;
+
+            for (const auto * setting_name : {"marks_compression_codec", "primary_key_compression_codec", "default_compression_codec"})
+            {
+                String codec;
+                if (command.type == AlterCommand::MODIFY_SETTING)
+                {
+                    Field value;
+                    if (command.settings_changes.tryGet(setting_name, value))
+                        codec = value.safeGet<String>();
+                }
+                else if (command.settings_resets.contains(setting_name))
+                {
+                    if (!default_settings)
+                        default_settings = getDefaultSettings();
+                    codec = default_settings->get(setting_name).safeGet<String>();
+                }
+
+                if (!codec.empty())
+                    CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/ false, /*allow_experimental_codecs=*/ false);
+            }
         }
     }
 
