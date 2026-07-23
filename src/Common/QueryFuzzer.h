@@ -259,7 +259,6 @@ private:
     void fuzzMergeFunctionArguments(ASTFunction & fn);
     String makeBraceExpansion();
     String makeRemoteHostDescriptor(bool secure);
-    String makeFuzzedUrl(const String & format, const String & structure);
     void wrapTableAsDistributed(ASTTableExpression & table);
     void wrapTableAsMerge(ASTTableExpression & table);
     void replaceTableExpressionWithFunction(ASTTableExpression & table, ASTPtr replaced, ASTPtr wrapped);
