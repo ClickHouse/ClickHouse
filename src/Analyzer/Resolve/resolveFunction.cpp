@@ -536,7 +536,20 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
         placeholder_column->getData().push_back(static_cast<UInt8>(0));
         ConstantValue placeholder_value(ColumnConst::create(std::move(placeholder_column), 1), std::make_shared<DataTypeUInt8>());
         auto placeholder_const_node = std::make_shared<ConstantNode>(std::move(placeholder_value), new_unique_subquery);
-        node = std::move(placeholder_const_node);
+
+        /// The placeholder value is fabricated, so it must not be observable by outer constant
+        /// folding or branch pruning: `intDiv(1, UNIQUE(...))` would fold to `intDiv(1, 0)` and
+        /// throw during `CREATE VIEW` validation even though the executed query is valid, and a
+        /// conditional such as `if(UNIQUE(...), a, b)` could prune the branch that actually
+        /// executes. Wrap the constant in `__scalarSubqueryResult` — an identity function with
+        /// `isSuitableForConstantFolding` = false, the same mechanism the old analyzer uses for
+        /// analyzer-only scalar-subquery results — so outer expressions keep the correct `UInt8`
+        /// type and structure but never see the fake boolean as a foldable constant.
+        auto placeholder_wrapper_node = std::make_shared<FunctionNode>("__scalarSubqueryResult");
+        placeholder_wrapper_node->getArguments().getNodes().push_back(std::move(placeholder_const_node));
+        auto placeholder_wrapper_function = FunctionFactory::instance().get("__scalarSubqueryResult", scope.context);
+        placeholder_wrapper_node->resolveAsFunction(placeholder_wrapper_function->build(placeholder_wrapper_node->getArgumentColumns()));
+        node = std::move(placeholder_wrapper_node);
         return {unique_projection_name};
     }
 
