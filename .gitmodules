@@ -142,7 +142,7 @@
 	url = https://github.com/tukaani-project/xz
 [submodule "contrib/abseil-cpp"]
 	path = contrib/abseil-cpp
-	url = https://github.com/ClickHouse/abseil-cpp.git
+	url = https://github.com/abseil/abseil-cpp.git
 [submodule "contrib/fast_float"]
 	path = contrib/fast_float
 	url = https://github.com/fastfloat/fast_float
@@ -411,3 +411,6 @@
 [submodule "contrib/mapbox-geometry"]
 	path = contrib/mapbox-geometry
 	url = https://github.com/ClickHouse/geometry.hpp
+[submodule "contrib/zxc"]
+	path = contrib/zxc
+	url = https://github.com/ClickHouse/zxc

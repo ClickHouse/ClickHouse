@@ -1040,6 +1040,11 @@ public:
         const String & full_quoted_table_name,
         const Names & column_names);
 
+    /// Remove a table (and any columns recorded under it) from the query access info. Used to drop an
+    /// internal temporary table that was accessed while executing the query but should not be exposed to
+    /// the user (e.g. the temporary table used to publish a `CREATE ... AS SELECT` atomically).
+    void removeQueryAccessInfoTable(const String & full_quoted_table_name);
+
     void addQueryAccessInfo(const Names & partition_names);
     void addViewAccessInfo(const String & view_name);
     void addUsedRowPolicy(const String & policy_name);
