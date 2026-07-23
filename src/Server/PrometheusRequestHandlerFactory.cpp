@@ -6,6 +6,7 @@
 #include <Server/PrometheusMetricsWriter.h>
 #include <Server/PrometheusRequestHandler.h>
 #include <Server/PrometheusRequestHandlerConfig.h>
+#include <Common/StringUtils.h>
 
 
 namespace DB
@@ -13,6 +14,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INVALID_CONFIG_PARAMETER;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
@@ -29,12 +31,50 @@ namespace
         res.keep_alive_timeout = config.getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
     }
 
+    /// Prometheus label names must match [a-zA-Z_][a-zA-Z0-9_]*.
+    bool isValidPrometheusLabelName(const String & name)
+    {
+        if (name.empty() || isNumericASCII(name[0]))
+            return false;
+        for (char c : name)
+        {
+            if (!isWordCharASCII(c))
+                return false;
+        }
+        return true;
+    }
+
+    /// Parses a configuration like this:
+    /// <labels>
+    ///     <shard>1</shard>
+    ///     <replica>r1</replica>
+    /// </labels>
+    void parseConstantLabelsFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, PrometheusRequestHandlerConfig & res)
+    {
+        const String labels_prefix = config_prefix + ".labels";
+        if (!config.has(labels_prefix))
+            return;
+
+        Strings label_names;
+        config.keys(labels_prefix, label_names);
+        for (const String & label_name : label_names)
+        {
+            if (!isValidPrometheusLabelName(label_name))
+                throw Exception(
+                    ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "Invalid Prometheus label name '{}' in the configuration: label names must match [a-zA-Z_][a-zA-Z0-9_]* and must not be repeated",
+                    label_name);
+            res.constant_labels[label_name] = config.getString(labels_prefix + "." + label_name);
+        }
+    }
+
     /// Parses a configuration like this:
     /// <!-- <type>metrics</type> (Implied, not actually parsed) -->
     /// <metrics>true</metrics>
     /// <asynchronous_metrics>true</asynchronous_metrics>
     /// <events>true</events>
     /// <errors>true</errors>
+    /// <labels><shard>1</shard></labels>
     PrometheusRequestHandlerConfig parseMetricsConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
     {
         PrometheusRequestHandlerConfig res;
@@ -46,6 +86,7 @@ namespace
         res.expose_errors = config.getBool(config_prefix + ".errors", true);
         res.expose_histograms = config.getBool(config_prefix + ".histograms", true);
         res.expose_dimensional_metrics = config.getBool(config_prefix + ".dimensional_metrics", true);
+        parseConstantLabelsFromConfig(config, config_prefix, res);
         parseCommonConfig(config, res);
         return res;
     }
@@ -193,11 +234,11 @@ namespace
     }
 
     /// Creates a writer which serializes exposing metrics.
-    std::shared_ptr<PrometheusMetricsWriter> createPrometheusMetricWriter(bool for_keeper)
+    std::shared_ptr<PrometheusMetricsWriter> createPrometheusMetricWriter(const PrometheusRequestHandlerConfig & config, bool for_keeper)
     {
         if (for_keeper)
-            return std::make_unique<KeeperPrometheusMetricsWriter>();
-        return std::make_unique<PrometheusMetricsWriter>();
+            return std::make_unique<KeeperPrometheusMetricsWriter>(config.constant_labels);
+        return std::make_unique<PrometheusMetricsWriter>(config.constant_labels);
     }
 
     /// Base function for making a factory for PrometheusRequestHandler. This function can return nullptr.
@@ -210,7 +251,7 @@ namespace
     {
         if (!canBeHandled(config, for_keeper))
             return nullptr;
-        auto metric_writer = createPrometheusMetricWriter(for_keeper);
+        auto metric_writer = createPrometheusMetricWriter(config, for_keeper);
         auto creator = [&server, &async_metrics, config, metric_writer, headers_moved = std::move(headers)]() -> std::unique_ptr<PrometheusRequestHandler>
         {
             return std::make_unique<PrometheusRequestHandler>(server, config, async_metrics, metric_writer, headers_moved);

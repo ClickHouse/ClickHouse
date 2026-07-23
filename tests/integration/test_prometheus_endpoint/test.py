@@ -8,6 +8,9 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", main_configs=["configs/prom_conf.xml"])
+node_labels = cluster.add_instance(
+    "node_labels", main_configs=["configs/prom_conf_labels.xml"]
+)
 
 
 @pytest.fixture(scope="module")
@@ -35,11 +38,13 @@ def parse_response_line(line):
     return {name: int(val)}
 
 
-def get_and_check_metrics(retries):
+def get_metrics_response(instance, retries):
     while True:
         try:
             response = requests.get(
-                "http://{host}:{port}/metrics".format(host=node.ip_address, port=8001),
+                "http://{host}:{port}/metrics".format(
+                    host=instance.ip_address, port=8001
+                ),
                 allow_redirects=False,
                 # less than default keep-alive timeout (10 seconds)
                 timeout=5,
@@ -58,6 +63,11 @@ def get_and_check_metrics(retries):
                 raise
 
     assert response.headers["content-type"].startswith("text/plain")
+    return response
+
+
+def get_and_check_metrics(retries):
+    response = get_metrics_response(node, retries)
 
     results = {}
     for resp_line in response.text.split("\n"):
@@ -89,3 +99,28 @@ def test_prometheus_endpoint(start_cluster):
     assert metrics_dict["ClickHouseErrorMetric_NUMBER_OF_ARGUMENTS_DOESNT_MATCH"] >= 1
     assert metrics_dict["ClickHouseErrorMetric_ALL"] >= 1
     assert metrics_dict["ClickHouse_Info"] == 1
+
+
+def test_prometheus_endpoint_constant_labels(start_cluster):
+    node_labels.query("SELECT 1")
+
+    response = get_metrics_response(node_labels, 10)
+
+    for line in response.text.split("\n"):
+        line = line.rstrip()
+        if not line or line.startswith("#"):
+            continue
+        # Every exposed metric must carry the constant labels from the config.
+        assert 'environment="staging"' in line, line
+        assert 'shard="shard-01"' in line, line
+
+    # Constant labels are merged with the metric's own labels.
+    assert (
+        'ClickHouse_Info{environment="staging",shard="shard-01",name="'
+        in response.text
+    )
+    assert re.search(
+        r'^ClickHouseProfileEvents_Query\{environment="staging",shard="shard-01"\} \d+',
+        response.text,
+        re.MULTILINE,
+    )
