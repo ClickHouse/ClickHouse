@@ -44,6 +44,9 @@ for ((i = 0; i < N; i++)); do
     query+=";"
 done
 
+# The query is generated; keep it in the reference so a failing diff shows what was inserted.
+echo "$query"
+
 # Fire them all without waiting, and keep them in a single batch: disable the adaptive/busy
 # timeout flush and raise the size/count thresholds, so nothing flushes until we ask.
 # All inserts share one query+settings key, so they land in one shard and one flush.
