@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-msan
 # Test that KILL QUERY works for WASM UDF in WHERE clause, covering the cancelExecution path
-# inside a single long-running function (UserDefinedWebAssembly).
-# Uses infinite_loop_04613 from faulty.wasm (unique name for isolation from 03207_wasm_fault.sh) with unlimited fuel, then KILL QUERY.
-# Asserts QUERY_WAS_CANCELLED — if the test hangs, cancellation is broken.
-# no-parallel: wasm_invoke_pause is a global PAUSEABLE failpoint, unrelated queries could consume it.
+# inside a long-running guest function.
+# Uses infinite_loop_04613 (which calls _wasm_signal_ready before entering its infinite loop)
+# from faulty.wasm. The host function _wasm_signal_ready fires the wasm_guest_pause failpoint
+# to prove that guest code actually started executing (unlike the old wasm_invoke_pause which
+# fired before invoke()).
+# no-parallel: wasm_guest_pause is a global PAUSEABLE failpoint, unrelated queries could consume it.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -14,7 +16,7 @@ query_id="kill_query_filter_wasm_${CLICKHOUSE_DATABASE}_$RANDOM"
 output_file="${CLICKHOUSE_TMP}/kill_query_filter_wasm_${CLICKHOUSE_DATABASE}.out"
 
 # EXIT trap covers failed reruns that crashed before explicit cleanup.
-trap '${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT wasm_invoke_pause" 2>/dev/null;
+trap '${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT wasm_guest_pause" 2>/dev/null;
       ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q "DROP FUNCTION IF EXISTS infinite_loop_04613" 2>/dev/null;
       ${CLICKHOUSE_CLIENT} -q "DELETE FROM system.webassembly_modules WHERE name = '\''faulty_04613'\''" 2>/dev/null' EXIT
 
@@ -24,20 +26,22 @@ trap '${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT wasm_invoke_pause" 2>/de
 ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q "DROP FUNCTION IF EXISTS infinite_loop_04613"
 ${CLICKHOUSE_CLIENT} -q "DELETE FROM system.webassembly_modules WHERE name = 'faulty_04613'"
 
-# Load the WASM module with the infinite_loop function
+# Load the WASM module with the infinite_loop_signal function
 cat ${CUR_DIR}/wasm/faulty.wasm | ${CLICKHOUSE_CLIENT} --query "INSERT INTO system.webassembly_modules (name, code) SELECT 'faulty_04613', code FROM input('code String') FORMAT RawBlob"
 
-# Create the infinite_loop_04613 function
+# Create the infinite_loop_04613 function using infinite_loop_signal from faulty.wasm
 ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q "
-    CREATE OR REPLACE FUNCTION infinite_loop_04613 LANGUAGE WASM ABI ROW_DIRECT FROM 'faulty_04613' :: 'infinite_loop' ARGUMENTS (UInt32) RETURNS UInt32;
+    CREATE OR REPLACE FUNCTION infinite_loop_04613 LANGUAGE WASM ABI ROW_DIRECT FROM 'faulty_04613' :: 'infinite_loop_signal' ARGUMENTS (UInt32) RETURNS UInt32;
 "
 
 # Enable failpoint before starting the query
-${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT wasm_invoke_pause"
+${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT wasm_guest_pause"
 
-# Start a query that uses infinite_loop in WHERE with unlimited fuel
-# (so it keeps running until cancelled via cancelExecution)
-# No max_execution_time: if KILL doesn't work the test hangs (fails loudly).
+# Start a query that uses infinite_loop_signal in WHERE.
+# The function calls _wasm_signal_ready() before entering its infinite loop,
+# and the host function fires the wasm_guest_pause failpoint — proving that
+# guest code actually started executing (unlike wasm_invoke_pause which fired
+# before invoke()).
 ${CLICKHOUSE_CLIENT} --query_id="$query_id" --allow_experimental_analyzer=1 --query "
     SELECT count()
     FROM numbers(100000000)
@@ -46,15 +50,18 @@ ${CLICKHOUSE_CLIENT} --query_id="$query_id" --allow_experimental_analyzer=1 --qu
     SETTINGS webassembly_udf_max_fuel = 0, max_threads = 1, max_block_size = 10000000, max_rows_to_read = 0
 " >"$output_file" 2>&1 &
 
-# Wait for the failpoint to be hit — proves the WASM function is about to execute
-${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT wasm_invoke_pause PAUSE"
+# Wait for the failpoint to be hit — proves the WASM guest code is actually executing
+${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT wasm_guest_pause PAUSE"
 
-# Kill the query (ASYNC) — this triggers onCancel -> cancelExecution on the WASM function
-# cancelExecution calls interrupt_source.request_stop(), which the WasmEdge runtime checks
+# Kill the query (ASYNC) — this triggers onCancel -> cancelExecution -> interrupt_source.request_stop()
+# The StopCallback registered in invokeImpl sets WasmEdge's cost limit to 0,
+# causing CostLimitExceeded on the next instruction after the host function returns.
 ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
 
-# Disable failpoint — unblocks the WASM invocation, which then sees cancellation
-${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT wasm_invoke_pause"
+# Disable failpoint — unblocks _wasm_signal_ready(), which returns to the WASM guest code
+# The guest then enters the infinite loop, and the first WASM instruction triggers
+# CostLimitExceeded (since the cost limit was set to 0 by the KILL callback).
+${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT wasm_guest_pause"
 
 wait
 

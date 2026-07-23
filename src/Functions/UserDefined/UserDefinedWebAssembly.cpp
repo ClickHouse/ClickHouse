@@ -48,7 +48,6 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <Common/FailPoint.h>
 
 namespace ProfileEvents
 {
@@ -80,11 +79,6 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int RESOURCE_NOT_FOUND;
 extern const int TOO_LARGE_STRING_SIZE;
 extern const int WASM_ERROR;
-}
-
-namespace FailPoints
-{
-    extern const char wasm_invoke_pause[];
 }
 
 UserDefinedWebAssemblyFunction::UserDefinedWebAssemblyFunction(
@@ -177,7 +171,6 @@ public:
         {
             if (auto * column_typed = typeid_cast<ColumnVector<T> *>(result_column.get()))
             {
-                FailPointInjection::pauseFailPoint(FailPoints::wasm_invoke_pause);
                 auto value = compartment->invoke<typename WasmStorageType<T>::Type>(function_name, args, stop_token);
                 column_typed->insertValue(static_cast<T>(value));
                 return true;
