@@ -45,6 +45,7 @@ _OBJ = f"{job.BUILD_DIR}/src/CMakeFiles/dbms.dir/foo.cpp.o"
 _PR = 111164
 _PR_SHA = "prsha"
 _BASE_SHA = "basesha"
+_OLD_WARMUP_SHA = "oldwarmupsha"
 _SCHEMA = f"""
 CREATE TABLE binary_sizes
 (
@@ -105,6 +106,15 @@ INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time,
     (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release_pr_cache_warmup', 'W0', 'tu.cpp', 'ExecuteCompiler', '', 20000000),
     (0, '{_BASE_SHA}', '2026-06-30 00:00:00', 'arm_release_pr_cache_warmup', 'W0', 'tu.cpp', 'InstantiateFunction', 'foo', 5000000),
     (0, '{_BASE_SHA}', '2026-07-01 00:00:00', 'arm_release_pr_cache_warmup', 'W0b', 'other_tu.cpp', 'ExecuteCompiler', '', 10000000);
+
+-- A master commit whose only warmup profile data is 8-14 days old: too old for
+-- the BASE_DAYS object-size baseline, but well inside the TU_BASE_DAYS window
+-- the per-TU compile-time comparison advertises. The compile-time section must
+-- still compare against it instead of degrading to the catch-up note.
+INSERT INTO binary_sizes (date, pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, size) VALUES
+    (today() - 10, 0, '{_OLD_WARMUP_SHA}', '2026-06-20 00:00:00', 'arm_release_pr_cache_warmup', 'W9', '{_OBJ}', 262144);
+INSERT INTO build_time_trace (date, pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
+    (today() - 10, 0, '{_OLD_WARMUP_SHA}', '2026-06-20 00:00:00', 'arm_release_pr_cache_warmup', 'W9', 'tu.cpp', 'ExecuteCompiler', '', 10000000);
 
 -- ThinLTO link-trace fixture: both final binaries have OptFunction rows on
 -- both sides. ``main_fn`` (clickhouse) is unchanged; ``keeper_fn``
@@ -198,7 +208,7 @@ def test_objects_degrade_to_catchup_note_without_warmup_baseline():
     section = job.compare_objects(db, pr_side, None)
     assert section.body == job.WARMUP_CATCHUP_NOTE
     assert not section.significant
-    section = job.compare_compile_times(db, pr_side, [_BASE_SHA], warmup_available=False)
+    section = job.compare_compile_times(db, pr_side, ["sha-without-warmup-data"])
     assert section.body == job.WARMUP_CATCHUP_NOTE
     assert not section.significant
 
@@ -229,7 +239,7 @@ def test_drill_down_reads_the_run_that_compiled_the_tu():
     """
     db = FixtureDb()
     pr_side = job.resolve_run(db, job.PR_DAYS, _PR, _PR_SHA)
-    section = job.compare_compile_times(db, pr_side, [_BASE_SHA], warmup_available=True)
+    section = job.compare_compile_times(db, pr_side, [_BASE_SHA])
     assert "foo" in section.body
     # The baseline entity time is present, so it is a change, not a "new" entity.
     assert "5.0 s" in section.body
@@ -243,7 +253,7 @@ def test_expensive_new_tu_without_baseline_is_significant():
     """
     db = FixtureDb()
     pr_side = job.resolve_run(db, job.PR_DAYS, _PR, _PR_SHA)
-    section = job.compare_compile_times(db, pr_side, [_BASE_SHA], warmup_available=True)
+    section = job.compare_compile_times(db, pr_side, [_BASE_SHA])
     assert "new_tu.cpp" in section.body
     assert section.significant
     assert "without a master baseline" in (section.summary or "")
@@ -285,6 +295,27 @@ def test_opt_functions_missing_baseline_is_called_out():
     assert f"`{job.strip_build_dir(_MAIN)}`" in section.body
     assert f"`{job.strip_build_dir(_KEEPER)}`" in section.body
     assert not section.significant
+
+
+def test_compile_times_use_warmup_traces_older_than_the_object_baseline():
+    """An 8-14 day old warmup trace still yields a real compile-time comparison.
+
+    The object-size baseline (``find_warmup_baseline``) looks back only
+    BASE_DAYS = 7 days, but the per-TU comparison advertises TU_BASE_DAYS = 14.
+    Gating the compile-time section on the 7-day baseline would replace a
+    perfectly usable comparison with the catch-up note whenever the newest
+    warmup data is 8-14 days old. ``oldwarmupsha``'s only warmup data is 10
+    days old: no object baseline, yet ``tu.cpp`` (50 s vs 10 s) must be
+    compared, not suppressed.
+    """
+    db = FixtureDb()
+    pr_side = job.resolve_run(db, job.PR_DAYS, _PR, _PR_SHA)
+    assert job.find_warmup_baseline(db, [_OLD_WARMUP_SHA], _PR_SHA) is None
+    section = job.compare_compile_times(db, pr_side, [_OLD_WARMUP_SHA])
+    assert section.body != job.WARMUP_CATCHUP_NOTE
+    assert "tu.cpp" in section.body
+    assert "10.0 s" in section.body
+    assert section.significant
 
 
 def test_get_master_shas_prefers_the_anchored_track():

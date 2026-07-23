@@ -635,7 +635,7 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
     return section
 
 
-def compare_compile_times(db: Db, pr_side, master_shas, warmup_available) -> Section:
+def compare_compile_times(db: Db, pr_side, master_shas) -> Section:
     """Per-TU compile time of TUs this PR recompiled.
 
     sccache makes the recompiled set exactly the TUs affected by the PR. Each
@@ -643,11 +643,13 @@ def compare_compile_times(db: Db, pr_side, master_shas, warmup_available) -> Sec
     recompiled it - the warmup build compiles with the PR's exact flags, so
     unlike the official master build (which emits debug info) its compile
     times are directly comparable.
+
+    Warmup availability is resolved here, over this comparison's own
+    TU_BASE_DAYS window - not from the BASE_DAYS object-size baseline, whose
+    shorter window would suppress this whole section while usable (8-14 days
+    old) warmup traces still exist.
     """
     section = Section(title="Compile time of recompiled translation units")
-    if not warmup_available:
-        section.body = WARMUP_CATCHUP_NOTE
-        return section
     pr_cond = side_conditions(pr_side, "name = 'ExecuteCompiler'")
     pr_rows = db.query(
         f"""SELECT file, max(dur) AS dur
@@ -696,6 +698,24 @@ def compare_compile_times(db: Db, pr_side, master_shas, warmup_available) -> Sec
         )
         for row in base_rows
     }
+
+    # No baseline for any recompiled TU can mean two very different things: no
+    # warmup trace data at all (master has not caught up profiling the warmup
+    # build - degrade to the catch-up note), or warmup data exists but none of
+    # it covers this PR's TUs (a legitimate comparison where every TU is new).
+    if not base_durs:
+        any_warmup = db.query(
+            f"""SELECT count() AS c
+            FROM build_time_trace
+            WHERE date >= today() - {TU_BASE_DAYS}
+                AND pull_request_number = 0
+                AND check_name = {quote(WARMUP_CHECK_NAME)}
+                AND name = 'ExecuteCompiler'
+                AND commit_sha IN ({in_list(master_shas)})"""
+        )
+        if not (any_warmup and int(any_warmup[0]["c"]) > 0):
+            section.body = WARMUP_CATCHUP_NOTE
+            return section
 
     # Compile times of the PR build and of the (older, different-machine)
     # master baselines carry a uniform machine-speed skew: with enough matched
@@ -977,7 +997,7 @@ def main():
         compare_binaries(db, pr_side, base_side),
         compare_objects(db, pr_side, warmup_side),
         compare_opt_functions(db, pr_side, base_side),
-        compare_compile_times(db, pr_side, master_shas, warmup_side is not None),
+        compare_compile_times(db, pr_side, master_shas),
         compare_symbols(db, pr_side, base_side),
     ]
 
