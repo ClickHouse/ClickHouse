@@ -94,15 +94,27 @@ BackupInfo BackupFactory::withoutCredentials(const BackupInfo & backup_info, Con
     return res;
 }
 
+bool BackupFactory::copyCredentials(const BackupInfo & source, BackupInfo & destination) const
+{
+    if (source.backup_engine_name != destination.backup_engine_name)
+        return false;
+
+    auto it = engines.find(destination.backup_engine_name);
+    if (it == engines.end())
+        throw Exception(ErrorCodes::BACKUP_ENGINE_NOT_FOUND, "Not found backup engine '{}'", destination.backup_engine_name);
+    return it->second.copy_credentials(source, destination);
+}
+
 void BackupFactory::registerBackupEngine(
     const String & engine_name,
     const CreatorFn & creator_fn,
     const DestinationIdentityFn & destination_identity_fn,
-    const RemoveCredentialsFn & remove_credentials_fn)
+    const RemoveCredentialsFn & remove_credentials_fn,
+    const CopyCredentialsFn & copy_credentials_fn)
 {
     if (engines.contains(engine_name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup engine '{}' was registered twice", engine_name);
-    engines.emplace(engine_name, RegisteredEngine{creator_fn, destination_identity_fn, remove_credentials_fn});
+    engines.emplace(engine_name, RegisteredEngine{creator_fn, destination_identity_fn, remove_credentials_fn, copy_credentials_fn});
 }
 
 void registerBackupEnginesFileAndDisk(BackupFactory &);

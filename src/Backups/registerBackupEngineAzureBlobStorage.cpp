@@ -18,7 +18,6 @@
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 
 #include <Poco/URI.h>
-#include <algorithm>
 
 #endif
 
@@ -36,6 +35,25 @@ namespace ErrorCodes
 namespace Setting
 {
 extern const SettingsUInt64 archive_adaptive_buffer_max_size_bytes;
+}
+
+namespace
+{
+    bool copyAzureCredentials(const BackupInfo & source, BackupInfo & destination)
+    {
+        if (!source.id_arg.empty() || !destination.id_arg.empty() || destination.args.size() != 3)
+            return false;
+
+        if (source.args.size() == 3)
+            destination.args[0] = source.args[0];
+        else if (source.args.size() == 5)
+        {
+            destination.args.insert(destination.args.end(), source.args.begin() + 3, source.args.end());
+        }
+        else
+            return false;
+        return true;
+    }
 }
 
 #if USE_AZURE_BLOB_STORAGE
@@ -228,26 +246,25 @@ namespace
         }
         else
         {
-            backup_info.kv_args.erase(
-                std::remove_if(
-                    backup_info.kv_args.begin(),
-                    backup_info.kv_args.end(),
-                    [&](ASTPtr & kv_arg)
-                    {
-                        String key = BackupInfo::evaluateKeyValueArgument(kv_arg, 0, context);
-                        if (key == "account_name" || key == "account_key" || key == "client_id" || key == "tenant_id")
-                            return true;
-                        if (key == "connection_string" || key == "storage_account_url")
-                        {
-                            ASTPtr cloned = kv_arg->clone();
-                            cloned->as<ASTFunction>()->arguments->children[1]
-                                = make_intrusive<ASTLiteral>(removeAzureCredentials(
-                                    BackupInfo::evaluateKeyValueArgument(kv_arg, 1, context)));
-                            kv_arg = std::move(cloned);
-                        }
-                        return false;
-                    }),
-                backup_info.kv_args.end());
+            ASTs kv_args;
+            kv_args.reserve(backup_info.kv_args.size());
+            for (const auto & kv_arg : backup_info.kv_args)
+            {
+                String key = BackupInfo::evaluateKeyValueArgument(kv_arg, 0, context);
+                if (key == "account_name" || key == "account_key" || key == "client_id" || key == "tenant_id")
+                    continue;
+
+                if (key == "connection_string" || key == "storage_account_url")
+                {
+                    ASTPtr cloned = kv_arg->clone();
+                    cloned->as<ASTFunction>()->arguments->children[1]
+                        = make_intrusive<ASTLiteral>(removeAzureCredentials(BackupInfo::evaluateKeyValueArgument(kv_arg, 1, context)));
+                    kv_args.emplace_back(std::move(cloned));
+                }
+                else
+                    kv_args.emplace_back(kv_arg);
+            }
+            backup_info.kv_args = std::move(kv_args);
         }
         backup_info.function_arg = nullptr;
     }
@@ -378,7 +395,8 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
 #endif
     };
 
-    factory.registerBackupEngine("AzureBlobStorage", creator_fn, destination_identity_fn, remove_credentials_fn);
+    factory.registerBackupEngine(
+        "AzureBlobStorage", creator_fn, destination_identity_fn, remove_credentials_fn, copyAzureCredentials);
 }
 
 }

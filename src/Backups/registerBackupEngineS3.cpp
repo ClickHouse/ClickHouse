@@ -3,11 +3,11 @@
 #include <Backups/BackupFactory.h>
 #include <Core/Settings.h>
 #include <Common/Exception.h>
+#include <IO/S3/URI.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
 #include <Poco/URI.h>
-#include <algorithm>
 
 #if USE_AWS_S3
 #include <Backups/BackupIO_S3.h>
@@ -77,8 +77,7 @@ namespace
             Poco::URI::QueryParameters kept_params;
             for (const auto & [key, value] : uri.getQueryParameters())
             {
-                if (key == "AWSAccessKeyId" || key == "Signature" || key == "Expires" || key.starts_with("X-Amz-")
-                    || key == "GoogleAccessId" || key.starts_with("X-Goog-"))
+                if (S3::isAuthenticationQueryParameter(key))
                 {
                     changed = true;
                     query_changed = true;
@@ -106,29 +105,39 @@ namespace
         if (backup_info.id_arg.empty() && !backup_info.args.empty() && backup_info.args[0].getType() == Field::Types::Which::String)
             backup_info.args[0] = removeCredentialsFromS3URL(backup_info.args[0].safeGet<String>());
 
-        backup_info.kv_args.erase(
-            std::remove_if(
-                backup_info.kv_args.begin(),
-                backup_info.kv_args.end(),
-                [&](ASTPtr & kv_arg)
-                {
-                    String key = BackupInfo::evaluateKeyValueArgument(kv_arg, 0, context);
-                    if (key == "access_key_id" || key == "secret_access_key" || key == "session_token" || key == "role_arn"
-                        || key == "role_session_name" || key == "external_id" || key == "google_adc_client_secret"
-                        || key == "google_adc_refresh_token")
-                        return true;
-                    if (key == "url")
-                    {
-                        ASTPtr cloned = kv_arg->clone();
-                        cloned->as<ASTFunction>()->arguments->children[1]
-                            = make_intrusive<ASTLiteral>(removeCredentialsFromS3URL(
-                                BackupInfo::evaluateKeyValueArgument(kv_arg, 1, context)));
-                        kv_arg = std::move(cloned);
-                    }
-                    return false;
-                }),
-            backup_info.kv_args.end());
+        ASTs kv_args;
+        kv_args.reserve(backup_info.kv_args.size());
+        for (const auto & kv_arg : backup_info.kv_args)
+        {
+            String key = BackupInfo::evaluateKeyValueArgument(kv_arg, 0, context);
+            if (key == "access_key_id" || key == "secret_access_key" || key == "session_token" || key == "role_arn"
+                || key == "role_session_name" || key == "external_id" || key == "google_adc_client_secret"
+                || key == "google_adc_refresh_token")
+                continue;
+
+            if (key == "url")
+            {
+                ASTPtr cloned = kv_arg->clone();
+                cloned->as<ASTFunction>()->arguments->children[1]
+                    = make_intrusive<ASTLiteral>(removeCredentialsFromS3URL(BackupInfo::evaluateKeyValueArgument(kv_arg, 1, context)));
+                kv_args.emplace_back(std::move(cloned));
+            }
+            else
+                kv_args.emplace_back(kv_arg);
+        }
+        backup_info.kv_args = std::move(kv_args);
         backup_info.function_arg = nullptr;
+    }
+
+    bool copyS3Credentials(const BackupInfo & source, BackupInfo & destination)
+    {
+        if (!source.id_arg.empty() || !destination.id_arg.empty() || source.args.size() != 3)
+            return false;
+
+        destination.args.resize(3);
+        destination.args[1] = source.args[1];
+        destination.args[2] = source.args[2];
+        return true;
     }
 }
 
@@ -463,7 +472,7 @@ void registerBackupEngineS3(BackupFactory & factory)
 #endif
     };
 
-    factory.registerBackupEngine("S3", creator_fn, destination_identity_fn, removeS3Credentials);
+    factory.registerBackupEngine("S3", creator_fn, destination_identity_fn, removeS3Credentials, copyS3Credentials);
 }
 
 }

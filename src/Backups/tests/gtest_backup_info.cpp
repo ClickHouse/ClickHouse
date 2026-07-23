@@ -29,23 +29,13 @@ namespace DB::ErrorCodes
 
 namespace
 {
-    void checkCanCopyS3CredentialsInvariant(const String & source_str, const String & dest_str)
+    void checkCopyCredentials(const String & source_str, const String & destination_str, const char * expected)
     {
         auto source = BackupInfo::fromString(source_str);
-        auto dest = BackupInfo::fromString(dest_str);
-        auto dest_for_copy = dest;
-
-        bool copy_succeeded = true;
-        try
-        {
-            source.copyS3CredentialsTo(dest_for_copy);
-        }
-        catch (const Exception &)
-        {
-            copy_succeeded = false;
-        }
-
-        EXPECT_EQ(source.canCopyS3CredentialsTo(dest), copy_succeeded) << source_str << " -> " << dest_str;
+        auto destination = BackupInfo::fromString(destination_str);
+        EXPECT_EQ(BackupFactory::instance().copyCredentials(source, destination), expected != nullptr);
+        if (expected)
+            EXPECT_EQ(destination.toString(), expected);
     }
 
     void requireContains(const String & str, const String & expected)
@@ -222,6 +212,11 @@ TEST(BackupInfo, WithoutS3CredentialsRedactsURLOverride)
     EXPECT_EQ(str.find("URLSIGNATURE"), String::npos) << str;
 }
 
+TEST(BackupInfo, WithoutCredentialsRejectsMalformedKeyValueArgument)
+{
+    EXPECT_THROW(withoutCredentials(BackupInfo::fromString("S3(collection, equals())")), Exception);
+}
+
 TEST(BackupInfo, WithoutS3CredentialsKeepsPlainQuery)
 {
     auto info = BackupInfo::fromString("S3('https://s3.example.com/bucket/backup?foo&encoded=a+b%2B')");
@@ -248,14 +243,16 @@ TEST(BackupInfo, WithoutS3CredentialsKeepsOtherEngines)
     }
 }
 
-TEST(BackupInfo, CanCopyS3CredentialsToMatchesCopyS3CredentialsTo)
+TEST(BackupInfo, CopyCredentialsSupportsS3)
 {
-    checkCanCopyS3CredentialsInvariant("S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')", "S3('https://s3.example.com/base')");
-    checkCanCopyS3CredentialsInvariant("S3(collection)", "S3('https://s3.example.com/base')");
-    checkCanCopyS3CredentialsInvariant("S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')", "S3(collection)");
-    checkCanCopyS3CredentialsInvariant("Disk('backups', 'path')", "S3('https://s3.example.com/base')");
-    checkCanCopyS3CredentialsInvariant("S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')", "Disk('backups', 'path')");
-    checkCanCopyS3CredentialsInvariant("S3('https://s3.example.com/backup')", "S3('https://s3.example.com/base')");
+    checkCopyCredentials(
+        "S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')",
+        "S3('https://s3.example.com/base')",
+        "S3('https://s3.example.com/base', 'KEYID', 'KEYSECRET')");
+    checkCopyCredentials("S3(collection)", "S3('https://s3.example.com/base')", nullptr);
+    checkCopyCredentials("S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')", "S3(collection)", nullptr);
+    checkCopyCredentials("Disk('backups', 'path')", "S3('https://s3.example.com/base')", nullptr);
+    checkCopyCredentials("S3('https://s3.example.com/backup')", "S3('https://s3.example.com/base')", nullptr);
 }
 
 
@@ -382,6 +379,23 @@ TEST(BackupInfo, FreezeNamedCollectionPreservesDestinationSnapshot)
 
 
 #if USE_AZURE_BLOB_STORAGE
+TEST(BackupInfo, CopyCredentialsSupportsAzure)
+{
+    checkCopyCredentials(
+        "AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=account;AccountKey=SECRET', 'container', 'incremental')",
+        "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'base')",
+        "AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=account;AccountKey=SECRET', 'container', 'base')");
+    checkCopyCredentials(
+        "AzureBlobStorage('https://account.blob.core.windows.net?sig=SECRET', 'container', 'incremental')",
+        "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'base')",
+        "AzureBlobStorage('https://account.blob.core.windows.net?sig=SECRET', 'container', 'base')");
+    checkCopyCredentials(
+        "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'incremental', 'account', 'SECRET')",
+        "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'base')",
+        "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'base', 'account', 'SECRET')");
+}
+
+
 TEST(BackupInfo, WithoutCredentialsRedactsAzureArguments)
 {
     for (const auto * locator : {

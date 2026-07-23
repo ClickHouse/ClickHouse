@@ -147,7 +147,11 @@ String BackupInfo::evaluateKeyValueArgument(const ASTPtr & kv_arg, size_t index,
     try
     {
         const auto * function = kv_arg->as<const ASTFunction>();
-        ASTPtr evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(function->arguments->children[index], context);
+        const auto * arguments = function && function->arguments ? function->arguments->as<const ASTExpressionList>() : nullptr;
+        if (!arguments || arguments->children.size() != 2 || index >= 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid key-value argument");
+
+        ASTPtr evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arguments->children[index], context);
         const auto * literal = evaluated->as<const ASTLiteral>();
         if (!literal || literal->value.getType() != Field::Types::Which::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a string");
@@ -157,33 +161,6 @@ String BackupInfo::evaluateKeyValueArgument(const ASTPtr & kv_arg, size_t index,
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Backup locator key-value argument must be a constant string");
     }
-}
-
-bool BackupInfo::canCopyS3CredentialsTo(const BackupInfo & dest) const
-{
-    /// Must mirror the conditions checked by `copyS3CredentialsTo`.
-    return id_arg.empty() && dest.id_arg.empty()
-        && backup_engine_name == "S3" && dest.backup_engine_name == "S3"
-        && args.size() == 3;
-}
-
-void BackupInfo::copyS3CredentialsTo(BackupInfo & dest) const
-{
-    /// named_collection case, no need to update
-    if (!dest.id_arg.empty() || !id_arg.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "use_same_s3_credentials_for_base_backup is not compatible with named_collections");
-
-    if (backup_engine_name != "S3")
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "use_same_s3_credentials_for_base_backup supported only for S3, got {}", toStringForLogging());
-    if (dest.backup_engine_name != "S3")
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "use_same_s3_credentials_for_base_backup supported only for S3, got {}", dest.toStringForLogging());
-    if (args.size() != 3)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "use_same_s3_credentials_for_base_backup requires access_key_id, secret_access_key, got {}", toStringForLogging());
-
-    auto & dest_args = dest.args;
-    dest_args.resize(3);
-    dest_args[1] = args[1];
-    dest_args[2] = args[2];
 }
 
 NamedCollectionPtr BackupInfo::getNamedCollection(ContextPtr context) const

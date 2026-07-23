@@ -27,12 +27,6 @@ struct BackupInfo
     String toStringForLogging() const;
     static String evaluateKeyValueArgument(const ASTPtr & kv_arg, size_t index, ContextPtr context);
 
-    void copyS3CredentialsTo(BackupInfo & dest) const;
-
-    /// Whether `copyS3CredentialsTo` would succeed (both sides are `S3` without named collections
-    /// and this backup locator carries explicit credentials).
-    bool canCopyS3CredentialsTo(const BackupInfo & dest) const;
-
     /// Gets the named collection specified by id_arg, checks access rights,
     /// and applies any key-value overrides from kv_args.
     /// Returns nullptr if id_arg is empty (i.e., no named collection is used).

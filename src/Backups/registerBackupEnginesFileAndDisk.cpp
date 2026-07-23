@@ -235,8 +235,8 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
         return std::make_unique<BackupImpl>(params, archive_params, writer);
     };
 
-    factory.registerBackupEngine("File", creator_fn, getLocalDestinationIdentity, [](BackupInfo &, ContextPtr) {});
-    factory.registerBackupEngine("Disk", creator_fn, getLocalDestinationIdentity, [](BackupInfo &, ContextPtr) {});
+    factory.registerBackupEngine("File", creator_fn, getLocalDestinationIdentity, [](BackupInfo &, ContextPtr) {}, [](const BackupInfo &, BackupInfo &) { return false; });
+    factory.registerBackupEngine("Disk", creator_fn, getLocalDestinationIdentity, [](BackupInfo &, ContextPtr) {}, [](const BackupInfo &, BackupInfo &) { return false; });
 }
 
 }

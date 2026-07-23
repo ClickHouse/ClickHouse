@@ -52,12 +52,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
     {
         if (
             qk == "versionId" ||
-            qk == "AWSAccessKeyId" ||
-            qk == "Signature" ||
-            qk == "Expires" ||
-            qk.starts_with("X-Amz-") ||
-            qk == "GoogleAccessId" ||
-            qk.starts_with("X-Goog-")
+            isAuthenticationQueryParameter(qk)
         )
         {
             looks_like_presigned = true;

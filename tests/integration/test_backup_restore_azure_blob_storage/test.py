@@ -318,6 +318,31 @@ def test_backup_restore(cluster):
     )
 
 
+def test_incremental_backup_credentials_metadata(cluster):
+    node = cluster.instances["node"]
+    port = cluster.env_variables["AZURITE_PORT"]
+    connection_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
+    base_name = new_backup_name()
+    incremental_name = new_backup_name()
+    base = f"AzureBlobStorage('{connection_string}', 'cont', '{base_name}')"
+    incremental = f"AzureBlobStorage('{connection_string}', 'cont', '{incremental_name}')"
+
+    node.query("DROP TABLE IF EXISTS incremental_credentials")
+    node.query("CREATE TABLE incremental_credentials (x UInt64) ENGINE=MergeTree ORDER BY x")
+    node.query("INSERT INTO incremental_credentials VALUES (1)")
+    azure_query(node, f"BACKUP TABLE incremental_credentials TO {base}")
+    node.query("INSERT INTO incremental_credentials VALUES (2)")
+    azure_query(node, f"BACKUP TABLE incremental_credentials TO {incremental} SETTINGS base_backup={base}")
+
+    metadata = get_azure_file_content(f"{incremental_name}/.backup", port)
+    assert "AccountKey=" not in metadata
+    assert "<base_backup_copy_credentials_from_backup>true" in metadata
+
+    node.query("DROP TABLE incremental_credentials")
+    azure_query(node, f"RESTORE TABLE incremental_credentials FROM {incremental}")
+    assert node.query("SELECT x FROM incremental_credentials ORDER BY x") == "1\n2\n"
+
+
 def test_backup_restore_diff_container(cluster):
     node = cluster.instances["node"]
     cluster.env_variables["AZURITE_PORT"]
