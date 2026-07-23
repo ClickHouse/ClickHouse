@@ -20,7 +20,7 @@ function cleanup()
 trap cleanup EXIT
 
 # The failpoint fires inside `claimTemporaryPartDirectory` and injects a pre-existing non-empty
-# `tmp_merge_<part>` directory right before the claim, simulating a stale leftover of a previously
+# `tmp_merge_<part>` directory under the claim, right before the reclaim, simulating a stale leftover of a previously
 # interrupted merge (the merge temporary directory name is deterministic). Previously this made the
 # merge fail with DIRECTORY_ALREADY_EXISTS until `temporary_directories_lifetime` expired; now the
 # stale directory is reclaimed with a warning and the merge proceeds. Enable, OPTIMIZE and disable

@@ -3652,7 +3652,6 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, siz
     if (!lock.try_lock())
         return 0;
 
-    const auto settings = getSettings();
     time_t current_time = time(nullptr);
     ssize_t deadline = current_time - custom_directories_lifetime_seconds;
 
@@ -3708,19 +3707,7 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, siz
 
                     LOG_WARNING(log, "Removing temporary directory {}", full_path);
 
-                    /// Even if it's a temporary part it could be downloaded with zero copy replication and this function
-                    /// is executed as a callback.
-                    ///
-                    /// We don't control the amount of refs for temporary parts so we cannot decide can we remove blobs
-                    /// or not. So we are not doing it
-                    bool keep_shared = false;
-                    if (disk->supportZeroCopyReplication() && (*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication] && supportsReplication())
-                    {
-                        LOG_WARNING(log, "Since zero-copy replication is enabled we are not going to remove blobs from shared storage for {}", full_path);
-                        keep_shared = true;
-                    }
-
-                    disk->removeSharedRecursive(it->path(), keep_shared, {});
+                    removeSharedTemporaryDirectory(disk, it->path());
                     ++cleared_count;
                 }
             }
@@ -3745,44 +3732,48 @@ scope_guard MergeTreeData::getTemporaryPartDirectoryHolder(const String & part_d
     return [this, part_dir_name]() { temporary_parts.remove(part_dir_name); };
 }
 
+void MergeTreeData::removeSharedTemporaryDirectory(const DiskPtr & disk, const String & relative_path) const
+{
+    /// Even a temporary part could be downloaded with zero-copy replication (e.g. this function is
+    /// executed as a callback). We don't control the amount of refs for temporary parts, so we cannot
+    /// decide whether the blobs can be removed or not, and we keep them.
+    bool keep_shared = false;
+    if (disk->supportZeroCopyReplication() && (*getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication] && supportsReplication())
+    {
+        LOG_WARNING(log, "Since zero-copy replication is enabled we are not going to remove blobs from shared storage for {}", fullPath(disk, relative_path));
+        keep_shared = true;
+    }
+
+    disk->removeSharedRecursive(relative_path, keep_shared, {});
+}
+
 void MergeTreeData::reclaimStaleTemporaryPartDirectory(const DiskPtr & disk, const String & part_dir_name) const
 {
+    /// Only temporary names may be auto-reclaimed. For anything else (e.g. "detached/<dir>" during
+    /// ATTACH) the directory contents are the payload, and reclaiming would destroy user data.
+    if (!startsWith(part_dir_name, "tmp") || part_dir_name.find('/') != String::npos)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reclaim {}: not a temporary part directory name", part_dir_name);
+
     /// The claim guarantees that no concurrent operation owns this name, so an existing directory can
     /// only be a stale leftover of an operation that was interrupted (or rolled back) after creating the
     /// directory and retried later with the same deterministic name. It must be removed BEFORE the part
     /// storage is constructed, so packed storage does not seed its archive reader or snapshot the mark
     /// layout (`index_granularity_info`) from the stale contents, and so `freeze`/`freezeRemote` (via
     /// `Backup`) does not reject a non-empty destination.
-    chassert(temporary_parts.contains(part_dir_name));
+    if (!temporary_parts.contains(part_dir_name))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reclaim {}: the name is not claimed", part_dir_name);
 
-    auto relative_part_dir = fs::path(relative_data_path) / part_dir_name;
+    String relative_part_dir = fs::path(relative_data_path) / part_dir_name;
     if (!disk->existsDirectory(relative_part_dir))
         return;
 
-    LOG_WARNING(log, "Removing stale temporary directory {}", (fs::path(disk->getPath()) / relative_part_dir).string());
+    LOG_WARNING(log, "Removing stale temporary directory {}", fullPath(disk, relative_part_dir));
 
-    /// Same rule as in `clearOldTemporaryDirectories`: even a temporary part could be downloaded with
-    /// zero-copy replication, and we don't control the amount of refs for temporary parts, so we cannot
-    /// decide whether the blobs can be removed or not.
-    const auto settings = getSettings();
-    bool keep_shared = false;
-    if (disk->supportZeroCopyReplication() && (*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication] && supportsReplication())
-    {
-        LOG_WARNING(log, "Since zero-copy replication is enabled we are not going to remove blobs from shared storage for {}",
-            (fs::path(disk->getPath()) / relative_part_dir).string());
-        keep_shared = true;
-    }
-
-    disk->removeSharedRecursive(relative_part_dir, keep_shared, {});
+    removeSharedTemporaryDirectory(disk, relative_part_dir);
 }
 
 scope_guard MergeTreeData::claimTemporaryPartDirectory(const DiskPtr & disk, const String & part_dir_name, bool may_have_leftover) const
 {
-    /// Only temporary names may be auto-reclaimed. For anything else (e.g. "detached/<dir>" during
-    /// ATTACH) the directory contents are the payload, and reclaiming would destroy user data.
-    if (!startsWith(part_dir_name, "tmp") || part_dir_name.find('/') != String::npos)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot claim {}: not a temporary part directory name", part_dir_name);
-
     scope_guard temporary_directory_lock = getTemporaryPartDirectoryHolder(part_dir_name);
 
     if (may_have_leftover)
@@ -10405,15 +10396,10 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     /// not seed its archive reader from a stale leftover; reclaim it before freezing, see
     /// `reclaimStaleTemporaryPartDirectory` for details. The claim was taken above, before the
     /// destination disk was known.
-    auto reclaim_stale_destination = [&](const DiskPtr & dst_disk)
-    {
-        reclaimStaleTemporaryPartDirectory(dst_disk, tmp_dst_part_name);
-    };
-
     std::shared_ptr<IDataPartStorage> dst_part_storage{};
     if (on_same_disk)
     {
-        reclaim_stale_destination(same_disk);
+        reclaimStaleTemporaryPartDirectory(same_disk, tmp_dst_part_name);
         dst_part_storage = src_part_storage->freeze(
             relative_data_path,
             tmp_dst_part_name,
@@ -10431,7 +10417,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             throw Exception(error.message, error.code);
         }
         auto dst_disk = (*reservation_on_dst_or_error)->getDisk();
-        reclaim_stale_destination(dst_disk);
+        reclaimStaleTemporaryPartDirectory(dst_disk, tmp_dst_part_name);
         dst_part_storage = src_part_storage->freezeRemote(
             relative_data_path,
             tmp_dst_part_name,
@@ -12028,9 +12014,10 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     /// (DROP/DETACH/MOVE/REPLACE PARTITION) that created this empty part can be interrupted after the
     /// directory is created but before the part is renamed to its persistent name. Claim the name and
     /// reclaim the leftover, see `claimTemporaryPartDirectory` for the rationale.
-    auto tmp_dir_holder = claimTemporaryPartDirectory(data_part_volume->getDisk(), EMPTY_PART_TMP_PREFIX + new_part_name);
+    String tmp_part_dir_name = EMPTY_PART_TMP_PREFIX + new_part_name;
+    auto tmp_dir_holder = claimTemporaryPartDirectory(data_part_volume->getDisk(), tmp_part_dir_name);
 
-    auto new_data_part = getDataPartBuilder(new_part_name, data_part_volume, EMPTY_PART_TMP_PREFIX + new_part_name, getReadSettings(), PartDirIntent::CreateFresh)
+    auto new_data_part = getDataPartBuilder(new_part_name, data_part_volume, tmp_part_dir_name, getReadSettings(), PartDirIntent::CreateFresh)
         .withBytesAndRows(0, 0, 0)
         .withPartInfo(new_part_info)
         .build();

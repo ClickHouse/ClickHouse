@@ -584,8 +584,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     std::optional<MergeTreeDataPartBuilder> builder;
     if (global_ctx->parent_part)
     {
-        /// The parent temporary directory is freshly created by this same merge, so there is nothing to
-        /// seed the storage from; take the non-initializing variant, consistent with `CreateFresh`.
+        /// Take the non-initializing variant, so nothing is seeded from an existing directory; see
+        /// `IMergeTreeDataPart::getProjectionPartBuilder` for the rationale.
         auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjectionNoInitialize(local_tmp_part_basename,  /* use parent transaction */ false);
         builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage, getReadSettings(), PartDirIntent::CreateFresh);
         builder->withParentPart(global_ctx->parent_part);
@@ -609,10 +609,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     auto data_part_storage = global_ctx->new_data_part->getDataPartStoragePtr();
 
     /// For top-level merges the claim above already reclaimed any stale leftover, and true concurrency
-    /// on the same name throws a `LOGICAL_ERROR` exception from `TemporaryParts::add`. Projection merges
-    /// write nested inside the parent's freshly created temporary directory, which has no claim of its
-    /// own (the background temporary directory cleaner cannot see it either), so the defensive check
-    /// stays for them.
+    /// on the same name throws a `LOGICAL_ERROR` exception from `TemporaryParts::add`. For projection
+    /// merges the parent temporary directory is freshly created by this same operation, so an existing
+    /// nested directory means a logic bug; this check is the release-build backstop for the builder's
+    /// debug `chassert`.
     if (global_ctx->parent_part && data_part_storage->exists())
         throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists", data_part_storage->getFullPath());
 
@@ -1388,7 +1388,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
     {
         auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
         auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-            *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+            *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
 
         tmp_part->finalize();
         tmp_part->part->getDataPartStorage().commitTransaction();
@@ -1430,7 +1430,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+                *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
 
             temp_part->finalize();
             temp_part->part->getDataPartStorage().commitTransaction();

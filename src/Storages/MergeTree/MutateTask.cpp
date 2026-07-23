@@ -1948,7 +1948,6 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
 
     auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
         *ctx->data,
-        ctx->log,
         result,
         projection,
         ctx->new_data_part.get(),
@@ -3390,7 +3389,6 @@ bool MutateTask::prepare()
             files_to_copy_instead_of_hardlinks.insert(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK);
 
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
-        std::string prefix = "tmp_clone_";
 
         IDataPartStorage::ClonePartParams clone_params
         {
@@ -3405,7 +3403,7 @@ bool MutateTask::prepare()
 
         {
             std::tie(part, lock) = ctx->data->cloneAndLoadDataPart(
-                ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings(), true/*must_on_same_disk*/);
+                ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings(), true/*must_on_same_disk*/);
             part->getDataPartStorage().beginTransaction();
             ctx->temporary_directory_lock = std::move(lock);
         }
@@ -3520,9 +3518,7 @@ bool MutateTask::prepare()
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
     ctx->disk = single_disk_volume->getDisk();
 
-    std::string prefix = TEMP_DIRECTORY_PREFIX;
-
-    String tmp_part_dir_name = prefix + ctx->future_part->name;
+    String tmp_part_dir_name = TEMP_DIRECTORY_PREFIX + ctx->future_part->name;
 
     /// The temporary directory name is deterministic, so an interrupted mutation can leave a stale
     /// leftover behind; claim the name and reclaim the leftover, see

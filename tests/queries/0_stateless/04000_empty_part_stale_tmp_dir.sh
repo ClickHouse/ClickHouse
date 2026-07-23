@@ -26,9 +26,10 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO t_empty_part_stale_tmp SELECT number FRO
 # claimTemporaryPartDirectory (for every claimed temporary directory, so also for the empty part
 # created here) and injects a pre-existing temporary directory, simulating a stale leftover from
 # a previously interrupted DROP/DETACH/MOVE/REPLACE PARTITION (the part was promoted to PreActive
-# with a deferred rename and then rolled back, leaving tmp_empty_<part> on disk). The claim must
-# reclaim the stale directory instead of aborting the server with LOGICAL_ERROR "New empty part
-# is about to materialize but the directory already exist".
+# with a deferred rename and then rolled back, leaving tmp_empty_<part> on disk). Previously
+# `createEmptyPart` failed with the LOGICAL_ERROR exception "New empty part is about to materialize
+# but the directory already exist"; now the claim reclaims the stale directory and the operation
+# proceeds.
 #
 # Enable, drop and disable the failpoint in a single client invocation so the server-wide
 # failpoint is armed only for this one DROP PARTITION. send_logs_level=error hides the expected

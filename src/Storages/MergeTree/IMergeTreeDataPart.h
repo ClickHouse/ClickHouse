@@ -788,8 +788,6 @@ protected:
     /// They can be hardlinks to some newer parts.
     std::pair<bool, NameSet> canRemovePart() const;
 
-    void initializeIndexGranularityInfo(const MergeTreeSettings & storage_settings);
-
     virtual void doCheckConsistency(bool require_part_metadata) const;
 
 private:

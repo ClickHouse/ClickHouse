@@ -536,14 +536,14 @@ IMergeTreeDataPart::IMergeTreeDataPart(
 
     if (intent == PartDirIntent::OpenExisting)
     {
-        initializeIndexGranularityInfo(storage_settings);
+        /// The mark type (and with it the granularity layout) is authoritative on disk and may differ
+        /// from the current settings (which the member initializer already applied).
+        if (auto mrk_type = MergeTreeIndexGranularityInfo::getMarksTypeFromFilesystem(getDataPartStorage()))
+            index_granularity_info = MergeTreeIndexGranularityInfo(storage_settings, *mrk_type);
     }
-    else
-    {
-        /// Fresh parts are fully initialized from settings without touching the filesystem:
-        /// `index_granularity_info` was already built from settings in the member initializer list.
-        index_granularity = std::make_unique<MergeTreeIndexGranularityAdaptive>();
-    }
+
+    /// It may be converted to constant index granularity after loading.
+    index_granularity = std::make_unique<MergeTreeIndexGranularityAdaptive>();
 
     /// By default set the order of common metadata files. Later on it can be changed by the part itself.
     getDataPartStorage().setPreferredFileOrder(COMMON_METADATA_FILES);
@@ -1428,6 +1428,15 @@ MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(
     auto projection_storage = intent == PartDirIntent::CreateFresh
         ? getDataPartStorage().getProjectionNoInitialize(projection_name + projection_extension, !is_temp_projection)
         : getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection);
+    if (intent == PartDirIntent::CreateFresh && projection_storage->exists())
+    {
+        /// Nested projection directories have no temporary-directory claim (the background cleaner
+        /// cannot see inside part directories), so a retried materialization reclaims the leftover of
+        /// a previously interrupted attempt here; the non-initializing handle above guarantees that
+        /// nothing was seeded from it.
+        LOG_WARNING(storage.log, "Removing stale temporary projection directory {}", projection_storage->getFullPath());
+        projection_storage->removeRecursive();
+    }
     MergeTreeDataPartBuilder builder(storage, projection_name, projection_storage, getReadSettings(), intent);
     return builder.withPartInfo(MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION).withParentPart(this).withProjection(projection);
 }
@@ -2373,18 +2382,6 @@ std::pair<bool, NameSet> IMergeTreeDataPart::canRemovePart() const
     }
 
     return storage.unlockSharedData(*this);
-}
-
-void IMergeTreeDataPart::initializeIndexGranularityInfo(const MergeTreeSettings & storage_settings)
-{
-    auto mrk_type = MergeTreeIndexGranularityInfo::getMarksTypeFromFilesystem(getDataPartStorage());
-    if (mrk_type)
-        index_granularity_info = MergeTreeIndexGranularityInfo(storage_settings, *mrk_type);
-    else
-        index_granularity_info = MergeTreeIndexGranularityInfo(storage, storage_settings, part_type);
-
-    /// It may be converted to constant index granularity after loading it.
-    index_granularity = std::make_unique<MergeTreeIndexGranularityAdaptive>();
 }
 
 void IMergeTreeDataPart::remove()

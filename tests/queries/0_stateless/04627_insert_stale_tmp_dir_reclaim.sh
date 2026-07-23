@@ -21,7 +21,7 @@ $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS $TABLE SYNC"
 $CLICKHOUSE_CLIENT --query "CREATE TABLE $TABLE (a UInt64) ENGINE = MergeTree ORDER BY a"
 
 # The failpoint fires inside `claimTemporaryPartDirectory` and injects a pre-existing non-empty
-# `tmp_insert_<part>` directory right before the claim, simulating a stale leftover of a previously
+# `tmp_insert_<part>` directory under the claim, right before the reclaim, simulating a stale leftover of a previously
 # interrupted insert. The claim must reclaim (remove) the stale directory and the INSERT must
 # succeed. Enable, insert and disable in a single client invocation so the server-wide failpoint is
 # armed only for this one INSERT. send_logs_level=error hides the expected "Removing stale temporary
