@@ -445,6 +445,9 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
 struct ITokenizer;
 using TokenizerPtr = const ITokenizer *;
 
+class MergeTreeIndexTextPostprocessor;
+struct MergeTreeIndexTextInlineFilter;
+
 struct MergeTreeIndexTextGranuleBuilder
 {
     MergeTreeIndexTextGranuleBuilder(
@@ -480,6 +483,9 @@ struct MergeTreeIndexTextGranuleBuilder
     /// Position data for phrase query support.
     /// Only allocated when params.positions is true.
     std::unique_ptr<TokenToPositionListMap> position_map;
+    /// Fast path for IN/NOT IN filter-only postprocessors: when set, addToken drops a token before inserting it,
+    /// so dropped tokens allocate no map entry and build no postings. Non-owning.
+    const MergeTreeIndexTextInlineFilter * postprocessor_drop_filter = nullptr;
 };
 
 class MergeTreeIndexTextPreprocessor;
@@ -517,6 +523,8 @@ private:
     MergeTreeIndexTextGranuleBuilder granule_builder;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
     MergeTreeIndexTextPostprocessorPtr postprocessor;
+    /// True when the postprocessor is an IN/NOT IN filter handled by the per-distinct-token drop fast path.
+    bool use_postprocessor_drop_fast_path = false;
 };
 
 class MergeTreeIndexText final : public IMergeTreeIndex
