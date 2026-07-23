@@ -23,6 +23,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/TableJoin.h>
+#include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Core/Settings.h>
 
@@ -241,7 +242,15 @@ static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node *
 
     if (auto * read = typeid_cast<ReadFromMergeTree *>(node->step.get()))
     {
-        if (!read->getMergeTreeData().supportsReplication()
+        /// A refreshable MaterializedView that swaps its target on each refresh (non-APPEND) must stay
+        /// local: the target read is shipped by name and re-resolved per replica without RefreshTask's
+        /// sync/lock, so a refresh could swap or drop it under the remote read. RefreshSet registers
+        /// exactly these swap targets. An APPEND refreshable MV reads a fixed target (like a regular MV)
+        /// and is safe to distribute.
+        const auto & mergetree_data = read->getMergeTreeData();
+        if (read->getContext()->getRefreshSet().tryGetTaskForInnerTable(mergetree_data.getStorageID()))
+            return {};
+        if (!mergetree_data.supportsReplication()
             && !read->getContext()->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree])
             return {};
         return {node};
