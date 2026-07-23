@@ -49,7 +49,8 @@ public:
         ContextMutablePtr context_,
         const String & date_column_name,
         const MergingParams & merging_params_,
-        std::unique_ptr<MergeTreeSettings> settings_);
+        std::unique_ptr<MergeTreeSettings> settings_,
+        bool allow_experimental_codecs);
 
     void startup() override;
     void flushAndPrepareForShutdown() override;

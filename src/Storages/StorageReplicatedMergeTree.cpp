@@ -425,6 +425,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const String & date_column_name,
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> settings_,
+    bool allow_experimental_codecs,
     bool need_check_structure,
     const ZooKeeperRetriesInfo & create_query_zookeeper_retries_info_)
     : MergeTreeData(table_id_,
@@ -433,6 +434,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                     date_column_name,
                     merging_params_,
                     std::move(settings_),
+                    allow_experimental_codecs,
                     true,                   /// require_part_metadata
                     mode,
                     [this] (const std::string & name) { enqueuePartForCheck(name); })

@@ -77,7 +77,8 @@ TEST(SupportsTrivialCountOptimization, NullMutationsSnapshot)
         context,
         /*date_column_name=*/"",
         MergeTreeData::MergingParams{},
-        std::move(storage_settings));
+        std::move(storage_settings),
+        /*allow_experimental_codecs=*/false);
 
     auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
 

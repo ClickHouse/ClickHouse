@@ -53,6 +53,23 @@ def test_create_inheriting_config_default_is_gated(started_cluster):
     node.query("DROP TABLE t_create SYNC")
 
 
+def test_create_deprecated_syntax_inheriting_config_default_is_gated(started_cluster):
+    # The deprecated `MergeTree(date, key, granularity)` syntax also inherits the config
+    # default, so it is gated on CREATE too (the check runs for every CREATE regardless of syntax).
+    deprecated = {"allow_experimental_codecs": 0, "allow_deprecated_syntax_for_merge_tree": 1}
+    error = node.query_and_get_error(
+        "CREATE TABLE t_create_dep (d Date, x UInt64) ENGINE = MergeTree(d, (x), 8192)",
+        settings=deprecated,
+    )
+    assert "experimental" in error
+
+    node.query(
+        "CREATE TABLE t_create_dep (d Date, x UInt64) ENGINE = MergeTree(d, (x), 8192)",
+        settings={"allow_experimental_codecs": 1, "allow_deprecated_syntax_for_merge_tree": 1},
+    )
+    node.query("DROP TABLE t_create_dep SYNC")
+
+
 def test_reset_setting_to_config_default_is_gated(started_cluster):
     node.query(
         "CREATE TABLE t_reset (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS default_compression_codec = 'LZ4'",
@@ -86,6 +103,23 @@ def test_attach_inheriting_config_default_is_gated(started_cluster):
 
     node.query("ATTACH TABLE t_attach", settings=ENABLED)
     node.query("DROP TABLE t_attach SYNC")
+
+
+def test_attach_deprecated_syntax_inheriting_config_default_is_gated(started_cluster):
+    # A deprecated-syntax table stores no codec settings and is re-attached through the
+    # old-syntax branch, so the inherited config default must be re-validated on load too.
+    deprecated_enabled = {"allow_experimental_codecs": 1, "allow_deprecated_syntax_for_merge_tree": 1}
+    node.query(
+        "CREATE TABLE t_attach_dep (d Date, x UInt64) ENGINE = MergeTree(d, (x), 8192)",
+        settings=deprecated_enabled,
+    )
+    node.query("DETACH TABLE t_attach_dep")
+
+    error = node.query_and_get_error("ATTACH TABLE t_attach_dep", settings=DISABLED)
+    assert "experimental" in error
+
+    node.query("ATTACH TABLE t_attach_dep", settings=ENABLED)
+    node.query("DROP TABLE t_attach_dep SYNC")
 
 
 def test_attach_with_stored_codec_setting_is_exempt(started_cluster):

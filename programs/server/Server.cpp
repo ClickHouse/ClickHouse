@@ -3261,12 +3261,14 @@ try
 
     /// Check sanity of MergeTreeSettings on server startup
     {
-        /// All settings can be changed in the global config
+        /// All settings can be changed in the global config, including experimental codecs in the
+        /// codec-valued settings (this is where an operator legitimately opts in to such a config default).
         bool allowed_experimental = true;
         bool allowed_beta = true;
+        bool allowed_experimental_codecs = true;
         size_t background_pool_tasks = global_context->getMergeMutateExecutor()->getMaxTasksCount();
-        global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta, global_context->wasBackgroundPoolAutoLowered());
-        global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta, global_context->wasBackgroundPoolAutoLowered());
+        global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta, allowed_experimental_codecs, global_context->wasBackgroundPoolAutoLowered());
+        global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta, allowed_experimental_codecs, global_context->wasBackgroundPoolAutoLowered());
     }
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");

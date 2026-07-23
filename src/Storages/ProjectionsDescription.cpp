@@ -331,10 +331,13 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
         bool allow_experimental = ac.getAllowExperimentalTierSettings();
         bool allow_beta = ac.getAllowBetaTierSettings();
         query_context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
+        /// The codec-valued MergeTree settings are not in the projection settings allow-list above, so the
+        /// experimental-codec gate cannot fire here; pass it as satisfied.
         merge_tree_settings->sanityCheck(
             query_context->getMergeMutateExecutor()->getMaxTasksCount(),
             allow_experimental,
             allow_beta,
+            /*allow_experimental_codecs=*/true,
             query_context->wasBackgroundPoolAutoLowered());
     }
 

@@ -113,6 +113,7 @@ public:
         const String & date_column_name,
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
+        bool allow_experimental_codecs,
         bool need_check_structure,
         const ZooKeeperRetriesInfo & create_query_zookeeper_retries_info_);
 

@@ -725,6 +725,7 @@ MergeTreeData::MergeTreeData(
     const String & date_column_name,
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> storage_settings_,
+    bool allow_experimental_codecs,
     bool require_part_metadata_,
     LoadingStrictnessLevel mode,
     BrokenPartCallback broken_part_callback_)
@@ -764,6 +765,7 @@ MergeTreeData::MergeTreeData(
             getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
             allow_experimental,
             allow_beta,
+            allow_experimental_codecs,
             getContext()->wasBackgroundPoolAutoLowered());
     }
 
@@ -5743,10 +5745,14 @@ void MergeTreeData::changeSettings(
             const auto & ac = getContext()->getAccessControl();
             bool allow_experimental = ac.getAllowExperimentalTierSettings();
             bool allow_beta = ac.getAllowBetaTierSettings();
+            /// The experimental-codec gate for an explicit ALTER MODIFY/RESET SETTING is enforced on the
+            /// initiator in `checkAlterIsPossible`. This apply path also runs on other replicas, where a
+            /// table already carrying such a codec must keep applying, so skip the codec gate here.
             copy->sanityCheck(
                 getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
                 allow_experimental,
                 allow_beta,
+                /*allow_experimental_codecs=*/true,
                 getContext()->wasBackgroundPoolAutoLowered());
         }
 

@@ -2346,7 +2346,7 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database);
 
     /// Check that the values are sane taking also query-level settings into account.
-    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const;
+    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool allow_experimental_codecs, bool background_pool_auto_lowered) const;
 
     /// Subscript operators so that MergeTreeSetting::NAME can be used inside Impl methods.
     /// Delegate to `BaseSettings::operator[]` so the Impl->Data subobject offset is handled
@@ -2451,7 +2451,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 #undef ADD_IF_ABSENT
 }
 
-void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const
+void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool allow_experimental_codecs, bool background_pool_auto_lowered) const
 {
     if (!allow_experimental || !allow_beta)
     {
@@ -2664,6 +2664,18 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         CompressionCodecFactory::instance().get(codec);
     if (auto codec = (*this)[MergeTreeSetting::default_compression_codec].value; !codec.empty())
         CompressionCodecFactory::instance().get(codec);
+
+    /// Reject experimental codecs in the codec-valued settings unless the session opted in; the load
+    /// paths that do not run sanityCheck have a counterpart in registerStorageMergeTree.
+    if (!allow_experimental_codecs)
+    {
+        if (auto codec = (*this)[MergeTreeSetting::marks_compression_codec].value; !codec.empty())
+            CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/false, /*allow_experimental_codecs=*/false);
+        if (auto codec = (*this)[MergeTreeSetting::primary_key_compression_codec].value; !codec.empty())
+            CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/false, /*allow_experimental_codecs=*/false);
+        if (auto codec = (*this)[MergeTreeSetting::default_compression_codec].value; !codec.empty())
+            CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/false, /*allow_experimental_codecs=*/false);
+    }
 }
 
 void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
@@ -2884,9 +2896,9 @@ bool MergeTreeSettings::needSyncPart(size_t input_rows, size_t input_bytes) cons
         || ((*this)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_merge] && input_bytes >= (*this)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_merge]));
 }
 
-void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const
+void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool allow_experimental_codecs, bool background_pool_auto_lowered) const
 {
-    impl->sanityCheck(background_pool_tasks, allow_experimental, allow_beta, background_pool_auto_lowered);
+    impl->sanityCheck(background_pool_tasks, allow_experimental, allow_beta, allow_experimental_codecs, background_pool_auto_lowered);
 }
 
 void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const

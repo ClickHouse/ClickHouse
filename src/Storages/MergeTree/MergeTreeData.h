@@ -520,6 +520,7 @@ public:
                   const String & date_column_name,
                   const MergingParams & merging_params_,
                   std::unique_ptr<MergeTreeSettings> settings_,
+                  bool allow_experimental_codecs,
                   bool require_part_metadata_,
                   LoadingStrictnessLevel mode,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
