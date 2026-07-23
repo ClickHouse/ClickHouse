@@ -270,3 +270,85 @@ SELECT
     without_opt = with_opt AS correct;
 
 DROP TABLE lag_streaming_dynamic_t;
+
+-- Stacked windows: converting the sort below the first window to `MergeOnly` weakens the
+-- delivered order from the window's `full_sort_description` (`partition_by + order_by`) to only
+-- `prefix + order_by`.  Plan construction decides whether a later window needs its own sort
+-- *before* this optimization runs, by checking prefixes of the previous window's original
+-- `full_sort_description`: here `row_number() OVER (PARTITION BY MetricName, Attributes)` is
+-- planned without a sort because `(MetricName, Attributes)` is a prefix of
+-- `(MetricName, Attributes, TimeUnix)`.  Streaming the first window would feed the second one
+-- data ordered only by `(MetricName, TimeUnix)`, interleaving its partitions.  The optimization
+-- must therefore NOT activate when a `WindowStep` sits above the candidate without a full sort
+-- in between.
+CREATE TABLE lag_streaming_stacked_t (
+    MetricName LowCardinality(String),
+    TimeUnix UInt64,
+    Count UInt64,
+    Attributes Map(LowCardinality(String), String)
+) ENGINE = MergeTree()
+ORDER BY (MetricName, TimeUnix)
+SETTINGS index_granularity = 8192;
+
+-- `intDiv(number, 10) % 5` makes `Attributes` alternate between consecutive rows of the same
+-- `MetricName` (it must not be a function of `MetricName`, or the interleaving below would be
+-- unobservable): under the weakened `(MetricName, TimeUnix)` order the `(MetricName, Attributes)`
+-- partitions of the second window are maximally interleaved.
+INSERT INTO lag_streaming_stacked_t
+SELECT
+    concat('metric_', toString(number % 10)) AS MetricName,
+    number * 1000 AS TimeUnix,
+    number AS Count,
+    map('k1', toString(intDiv(number, 10) % 5)) AS Attributes
+FROM numbers(0, 100000);
+
+-- A second window reusing the first window's original sort order: streaming must NOT activate.
+SELECT countIf(explain LIKE '%StreamingLag%')
+FROM (
+    EXPLAIN pipeline
+    SELECT
+        lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix) AS prev_count,
+        row_number() OVER (PARTITION BY MetricName, Attributes) AS rn
+    FROM lag_streaming_stacked_t
+    SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1
+);
+
+-- Correctness: the second window's result must match the unoptimized path.  Both window results
+-- must be consumed, otherwise the unused `lagInFrame` window is removed from the plan and the
+-- streaming rewrite (whose misapplication this checks) never happens.
+SELECT
+    (
+        SELECT (sum(rn), sum(prev_count)) FROM (
+            SELECT
+                lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix) AS prev_count,
+                row_number() OVER (PARTITION BY MetricName, Attributes) AS rn
+            FROM lag_streaming_stacked_t
+            SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 0
+        )
+    ) AS without_opt,
+    (
+        SELECT (sum(rn), sum(prev_count)) FROM (
+            SELECT
+                lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix) AS prev_count,
+                row_number() OVER (PARTITION BY MetricName, Attributes) AS rn
+            FROM lag_streaming_stacked_t
+            SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1
+        )
+    ) AS with_opt,
+    without_opt = with_opt AS correct;
+
+-- A later window whose sort keys are not covered by the first window's order gets its own
+-- full `SortingStep`, which re-establishes order independently of its input: the first
+-- window may still stream.
+SELECT countIf(explain LIKE '%StreamingLag%')
+FROM (
+    EXPLAIN pipeline
+    SELECT row_number() OVER (PARTITION BY MetricName ORDER BY prev_count) AS rn
+    FROM (
+        SELECT MetricName, lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix) AS prev_count
+        FROM lag_streaming_stacked_t
+    )
+    SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1
+);
+
+DROP TABLE lag_streaming_stacked_t;

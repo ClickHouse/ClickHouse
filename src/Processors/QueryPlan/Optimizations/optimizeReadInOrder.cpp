@@ -1920,14 +1920,8 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 ///     prefix-key group arrive in a single stream.
 ///   - `WindowStep` is set to streaming mode; its `transformPipeline` creates a single
 ///     `StreamingLagTransform` instead of `WindowTransform`.
-void optimizeStreamingWindowFunctions(
-    QueryPlan::Node & node,
-    QueryPlan::Nodes & /*nodes*/,
-    const QueryPlanOptimizationSettings & optimization_settings)
+static void tryStreamWindowFunctions(QueryPlan::Node & node)
 {
-    if (!optimization_settings.reuse_storage_ordering_for_window_functions)
-        return;
-
     auto * window = typeid_cast<WindowStep *>(node.step.get());
     if (!window)
         return;
@@ -2170,6 +2164,60 @@ void optimizeStreamingWindowFunctions(
         std::move(suffix_col_names),
         std::move(value_col_names),
         std::move(default_values));
+}
+
+/// Walk the plan from the root and apply the streaming-lag rewrite to every eligible
+/// `WindowStep`, skipping candidates that have an order-dependent `WindowStep` ancestor.
+///
+/// The rewrite weakens the order the sort below the window delivers: instead of the
+/// window's `full_sort_description` (`partition_by + order_by`) the pipeline only
+/// produces `prefix_description + order_by`.  Plan construction
+/// (`InterpreterSelectQuery::executeWindow` and the analyzer's `addWindowSteps`)
+/// decides whether a later window needs its own `SortingStep` by checking prefixes of
+/// the previous window's original `full_sort_description` — before this optimization
+/// runs.  So if a `WindowStep` sits above the candidate without a full `SortingStep`
+/// in between, it may be relying on the candidate's original output order (e.g.
+/// `lagInFrame(x) OVER (PARTITION BY a, b ORDER BY t)` followed by
+/// `row_number() OVER (PARTITION BY a, b)` on storage `ORDER BY (a, t)`), and
+/// weakening that order would feed it improperly sorted data.  Only a full sort
+/// re-establishes an order independent of its input; every other step (including
+/// `FinishSorting`/`MergingSorted`, which merely refine or merge an existing order)
+/// conservatively keeps the dependency.
+void optimizeStreamingWindowFunctions(
+    QueryPlan::Node & root,
+    QueryPlan::Nodes & /*nodes*/,
+    const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (!optimization_settings.reuse_storage_ordering_for_window_functions)
+        return;
+
+    struct Frame
+    {
+        QueryPlan::Node * node;
+        bool has_order_dependent_window_above;
+    };
+
+    std::vector<Frame> stack;
+    stack.push_back({.node = &root, .has_order_dependent_window_above = false});
+
+    while (!stack.empty())
+    {
+        const auto [node, has_order_dependent_window_above] = stack.back();
+        stack.pop_back();
+
+        if (!has_order_dependent_window_above)
+            tryStreamWindowFunctions(*node);
+
+        bool children_flag = has_order_dependent_window_above;
+        if (typeid_cast<WindowStep *>(node->step.get()))
+            children_flag = true;
+        else if (const auto * sorting = typeid_cast<SortingStep *>(node->step.get());
+                 sorting && sorting->getType() == SortingStep::Type::Full)
+            children_flag = false;
+
+        for (auto * child : node->children)
+            stack.push_back({.node = child, .has_order_dependent_window_above = children_flag});
+    }
 }
 
 }
