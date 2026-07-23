@@ -103,8 +103,8 @@ SELECT
     (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_fixed_key WHERE b = 1 ORDER BY a DESC, c DESC SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1))
   = (SELECT groupArray((a, c)) FROM (SELECT a, c FROM t_virtual_row_fixed_key WHERE b = 1 ORDER BY a DESC, c DESC SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
 
--- A fixed key that stays in ORDER BY is announced with the constant the filter fixes it to
--- (the index value at the boundary may belong to a filtered-out row).
+-- A fixed key that stays in ORDER BY is not supported for the virtual row (as before this fix):
+-- the index value at the boundary may belong to a filtered-out row.
 SELECT count()
 FROM (EXPLAIN actions = 1 SELECT a, b, c FROM t_virtual_row_fixed_key WHERE b = 1 ORDER BY a, b, c
       SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1)
