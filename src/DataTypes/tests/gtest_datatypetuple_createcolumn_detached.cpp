@@ -24,7 +24,7 @@ using namespace DB;
 TEST(DataTypeTupleCreateColumn, HandlesSerializationDetached)
 {
     auto int32_type = std::make_shared<DataTypeInt32>();
-    auto tuple_type = std::make_shared<DataTypeTuple>(DataTypes{int32_type, int32_type});
+    DataTypePtr tuple_type = std::make_shared<DataTypeTuple>(DataTypes{int32_type, int32_type});
 
     auto default_serialization = tuple_type->getDefaultSerialization();
     auto detached_serialization = SerializationDetached::create(default_serialization);
