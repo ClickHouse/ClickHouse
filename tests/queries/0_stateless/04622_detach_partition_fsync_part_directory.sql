@@ -15,7 +15,7 @@
 -- so on btrfs the un-synced clone dentries roll back and the only copy of the detached data is destroyed.
 -- The directory fsyncs are observed via ProfileEvents['DirectorySync'] on the covering empty part's
 -- NewPart row in system.part_log (part_log ProfileEvents are a synchronous snapshot taken on the query
--- thread, unlike the per-query system.query_log counters which under CI load do not reliably capture the
+-- thread, unlike the per-query query_log counters which under CI load do not reliably capture the
 -- clone-freeze fsyncs run in a nested profile-events scope).
 --
 -- The signal is relative: a DROP fsyncs only the covering empty part, while a DETACH additionally fsyncs
