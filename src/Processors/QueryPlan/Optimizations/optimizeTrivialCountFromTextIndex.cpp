@@ -189,6 +189,10 @@ bool guardsHold(const ReadFromMergeTree & reading)
     if (reading.isParallelReadingFromReplicas())
         return false;
 
+    /// A bucketed distributed read is re-optimized per worker fragment, and each bucket covers only a slice of a part's ranges.
+    if (reading.getDistributedReadBucketCount() > 0)
+        return false;
+
     /// A transaction may see Outdated parts that the cardinalities do not reflect.
     if (context->getCurrentTransaction())
         return false;
