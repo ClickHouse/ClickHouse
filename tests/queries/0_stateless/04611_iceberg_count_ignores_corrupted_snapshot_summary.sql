@@ -1,0 +1,17 @@
+-- Tags: no-fasttest
+-- Tag no-fasttest: Depends on AWS
+
+-- The fixture is a copy of the `est` table (1 row) whose snapshot summary was edited
+-- to claim `total-records = 100`. Writers maintain that hint as parent total + added,
+-- so it can silently diverge from the data when the table history contains a corrupted
+-- commit. The trivial count optimization must derive the count from the manifest list
+-- row counts (which are authoritative) instead of trusting the summary hint.
+
+-- Trivial count enabled (default): must return the real row count, not 100.
+SELECT count() FROM icebergS3(s3_conn, filename='iceberg_corrupted_summary_test');
+
+-- Sanity check: same result as a full scan.
+SELECT count() FROM icebergS3(s3_conn, filename='iceberg_corrupted_summary_test') SETTINGS optimize_trivial_count_query = 0;
+
+-- The optimization itself must still be applied (the fix must not silently disable it).
+SELECT count() FROM (EXPLAIN SELECT count() FROM icebergS3(s3_conn, filename='iceberg_corrupted_summary_test')) WHERE explain LIKE '%Optimized trivial count%';

@@ -216,9 +216,27 @@ ManifestFileCacheKeys getManifestList(
                     f_partition_spec_id);
             Int32 partition_spec_id = static_cast<Int32>(
                 manifest_list_deserializer.getValueFromRowByName(i, f_partition_spec_id, TypeIndex::Int32).safeGet<Int32>());
+
+            /// Row counts are required in v2+ manifest lists and optional in v1.
+            /// They let totalRows() compute an exact count without opening manifest files.
+            std::optional<Int64> added_rows_count;
+            std::optional<Int64> existing_rows_count;
+            if (manifest_list_deserializer.hasPath(f_added_rows_count))
+            {
+                auto value = manifest_list_deserializer.getValueFromRowByName(i, f_added_rows_count);
+                if (!value.isNull())
+                    added_rows_count = value.safeGet<Int64>();
+            }
+            if (manifest_list_deserializer.hasPath(f_existing_rows_count))
+            {
+                auto value = manifest_list_deserializer.getValueFromRowByName(i, f_existing_rows_count);
+                if (!value.isNull())
+                    existing_rows_count = value.safeGet<Int64>();
+            }
+
             manifest_file_cache_keys.emplace_back(
                 manifest_file_name, manifest_length, added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type,
-                partition_spec_id);
+                partition_spec_id, added_rows_count, existing_rows_count);
 
             insertRowToLogTable(
                 local_context,
