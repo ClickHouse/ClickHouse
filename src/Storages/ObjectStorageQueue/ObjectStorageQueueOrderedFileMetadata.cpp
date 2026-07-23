@@ -376,8 +376,6 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
     }
     else if (ownership_lost || code == Coordination::Error::ZNONODE || code == Coordination::Error::ZBADVERSION)
     {
-        /// The same invariant violation as in refresh, detected at release time.
-        /// released is already set, so the destructor does not retry.
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueBucketLockLostOwnership);
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,

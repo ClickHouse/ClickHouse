@@ -76,8 +76,7 @@ public:
 
         /// Refresh bucket locks which were not refreshed for more than a quarter of
         /// the TTL, after which the cleanup removes them as abandoned (the TTL is
-        /// meant to remove locks of dead servers). Called on every next and, in
-        /// streaming (where the iterator sits idle between batches), after each commit.
+        /// meant to remove locks of dead servers).
         void refreshExpiringBucketLocks();
 
         bool useBucketsForProcessing() const { return use_buckets_for_processing; }
@@ -132,7 +131,7 @@ public:
         std::atomic_bool iterator_finished = false;
 
         /// Set when a bucket lock refresh or release fails (e.g. lost ownership):
-        /// next stops returning keys, isFinished returns true.
+        /// next() stops returning keys, isFinished returns true.
         std::atomic_bool iterator_invalidated = false;
 
         bool is_path_with_hive_partitioning = false;

@@ -504,8 +504,6 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
             std::lock_guard lock(mutex);
 
-            /// Invalidated by a failed bucket lock refresh (the detecting thread has thrown).
-            /// The flag is set and checked under the mutex, so no more cached keys are drained.
             if (iterator_invalidated)
             {
                 LOG_WARNING(log, "Bucket lock refresh failed, stopping the file iterator");
@@ -673,7 +671,6 @@ void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
             }
             catch (...)
             {
-                /// Release throws on lost lock ownership detected at release time.
                 iterator_invalidated = true;
                 throw;
             }
