@@ -473,7 +473,7 @@
             "reference/functions/regular-functions/numeric-indexed-vector-functions",
             "reference/functions/regular-functions/other-functions",
             "reference/functions/regular-functions/random-functions",
-            "reference/functions/regular-functions/regular-functions-index",
+            "reference/functions/regular-functions/overview",
             "reference/functions/regular-functions/rounding-functions",
             "reference/functions/regular-functions/splitting-merging-functions",
             "reference/functions/regular-functions/string-functions",
@@ -489,7 +489,7 @@
             "reference/functions/regular-functions/url-functions",
             "reference/functions/regular-functions/uuid-functions"
           ],
-          "root": "reference/functions/regular-functions/overview"
+          "root": "reference/functions/regular-functions/regular-functions-index"
         },
         {
           "expanded": false,
@@ -945,10 +945,10 @@
       "expanded": false,
       "group": "Settings",
       "pages": [
-        "reference/settings/server-settings/settings",
-        "reference/settings/session-settings",
-        "reference/settings/merge-tree-settings",
-        "reference/settings/formats",
+        { "$ref": "./settings/server-settings/settings/navigation.json" },
+        { "$ref": "./settings/session-settings/navigation.json" },
+        { "$ref": "./settings/merge-tree-settings/navigation.json" },
+        { "$ref": "./settings/formats/navigation.json" },
         "reference/settings/beta-and-experimental-features"
       ],
       "root": "reference/settings/index"
