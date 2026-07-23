@@ -652,6 +652,12 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
 
 void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)
 {
+#if defined(OS_DARWIN)
+    /// Temporarily disabled on macOS: the sampling profiler's async-signal stack unwinding faults
+    /// in Darwin's __thread_stack_pcs and crashes the server (https://github.com/ClickHouse/ClickHouse/issues/111579).
+    /// Re-enable once the macOS unwinder is made signal-safe.
+    return;
+#endif
 #if defined(SIGEV_THREAD_ID) || defined(OS_DARWIN)
     /// profilers are useless without trace collector
     auto context = Context::getGlobalContextInstance();
@@ -678,6 +684,12 @@ void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_re
 
 void ThreadStatus::initQueryProfiler()
 {
+#if defined(OS_DARWIN)
+    /// See initGlobalProfiler: the sampling profiler is temporarily disabled on macOS because its
+    /// async-signal stack unwinding crashes the server (https://github.com/ClickHouse/ClickHouse/issues/111579).
+    return;
+#endif
+
     /// query profilers are useless without trace collector
     auto global_context_ptr = global_context.lock();
     if (!global_context_ptr || !global_context_ptr->hasTraceCollector())
