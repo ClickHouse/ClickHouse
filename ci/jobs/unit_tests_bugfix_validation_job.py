@@ -209,6 +209,39 @@ def gitmodules_shape_violation():
     return None
 
 
+def get_submodule_state_changes(merge_base, pr_sha):
+    """Paths whose submodule state differs between the merge-base and the PR head.
+
+    Returns the list of changed submodule gitlinks (mode 160000 entries in either tree)
+    plus `.gitmodules` itself if it changed. The before-worktree is populated by
+    hardlinking submodule working trees from the primary checkout, which is at the PR's
+    submodule revisions — content-correct only while the PR does not touch submodule
+    state. If it does, the "before" binary would silently build against PR-head
+    submodule content (or miss a merge-base-only submodule entirely), so the caller
+    must fail close instead of validating against the wrong code.
+    """
+    # `--ignore-submodules=none` is essential: a `diff.ignoreSubmodules=all` config (set
+    # in some environments) would otherwise silently drop every gitlink change from the
+    # diff and this guard would never fire.
+    diff = Shell.get_output(
+        "git diff --raw --ignore-submodules=none "
+        f"{shlex.quote(merge_base)} {shlex.quote(pr_sha)}"
+    )
+    changed = []
+    for line in diff.splitlines():
+        # raw format: ':<old_mode> <new_mode> <old_sha> <new_sha> <status>\t<path>'
+        if not line.startswith(":"):
+            continue
+        meta, _, path = line.partition("\t")
+        parts = meta.lstrip(":").split()
+        if len(parts) < 4 or not path:
+            continue
+        old_mode, new_mode = parts[0], parts[1]
+        if old_mode == "160000" or new_mode == "160000" or path == ".gitmodules":
+            changed.append(path)
+    return sorted(set(changed))
+
+
 def ensure_primary_submodules():
     """Populate the primary checkout's submodule working trees.
 
@@ -249,8 +282,10 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
     Submodule working trees are populated by hardlinking from the primary checkout
     (fast, no network) so the build sees contrib sources.  This is content-correct
     whenever the PR did not bump submodule pointers, which is the normal case for a
-    unit-test bugfix.  Returns True iff every submodule the primary checkout has was
-    hardlinked into the worktree non-empty — the caller must fail close otherwise.
+    unit-test bugfix — main() fails close (via get_submodule_state_changes) before
+    calling this when the PR changes any gitlink or `.gitmodules`.  Returns True iff
+    every submodule the primary checkout has was hardlinked into the worktree
+    non-empty — the caller must fail close otherwise.
     """
     # Populate the primary checkout's submodule working trees FIRST, before touching the
     # worktree: the hardlink step below has nothing to copy otherwise, and doing it up
@@ -526,6 +561,35 @@ def main():
             ],
             "Bugfix validation inconclusive: refused unsafe .gitmodules before any "
             f"submodule fetch ({gitmodules_error}).",
+        )
+        return
+
+    # Fail close if the PR changes submodule state (any gitlink or `.gitmodules`): the
+    # before-worktree's submodules are hardlinked from the primary checkout, which is at
+    # the PR-head revisions, so the "before" binary would be built against the PR's
+    # submodule content (or miss a merge-base-only submodule entirely) — the validator
+    # could report a false reproduction or refutation. Inconclusive (ERROR), not a pass.
+    submodule_changes = get_submodule_state_changes(merge_base, pr_sha)
+    if submodule_changes:
+        finalize(
+            [
+                Result(
+                    name="Bugfix validation (unit tests)",
+                    status=Result.Status.ERROR,
+                    info=(
+                        "The PR changes submodule state ("
+                        + ", ".join(submodule_changes)
+                        + "), but the before-worktree can only be populated with the "
+                        "primary checkout's (PR-head) submodule content, not the "
+                        "merge-base's. Building the before-binary would validate "
+                        "against the wrong submodule code, so this is inconclusive — "
+                        "NOT a reproduction or a refutation."
+                    ),
+                )
+            ],
+            "Bugfix validation inconclusive: the PR changes submodule pointers or "
+            "`.gitmodules`, and the before-worktree cannot be populated at the "
+            "merge-base submodule revisions.",
         )
         return
 
