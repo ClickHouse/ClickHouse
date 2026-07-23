@@ -12,6 +12,7 @@
 #include <Processors/Chunk.h>
 #include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
+#include <Common/HashTable/HashSet.h>
 #include <Common/Logger.h>
 #include <Common/MemoryTracker.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -74,6 +75,15 @@ using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflow
 /// carry the precomputed routing hash. Nothing is drained while production runs, so the staged
 /// records accumulate until the merge (external aggregation settings are ignored on this path:
 /// spilling the staged state is not implemented yet).
+///
+/// Two guards hand the work back to the baseline path, with its ordinary byte-triggered
+/// two-level conversion, when freezing cannot pay. A table that consumes many times the
+/// threshold in rows while staying below it in keys gives up on freezing, per thread: the
+/// stream has few groups (typically with fat states, which want the conversion and its
+/// bucket-parallel merge). And when the staged stream as a whole proves to repeat the same keys
+/// over and over, every thread thaws its table: those repeats are neither frequent enough for
+/// the local tables nor rare keys to store once, and staging them re-processes the bulk of the
+/// stream that ordinary insertion would absorb as cheap in-place updates.
 ///
 /// Merge phase: at the end of input every local table converts to two-level and the standard
 /// bucket-parallel merge runs, except that the merge task owning bucket b first drains backlog b
@@ -156,6 +166,19 @@ struct AdaptiveAggregationSharedState
     std::atomic<bool> initialized{false};
 
     std::atomic<size_t> pending_records{0};
+
+    /// The thaw sampler (see the tuning constants in `Aggregator.cpp`). At publish the threads
+    /// fold a sparse sample of their staged record hashes in here; repeats of a key collapse
+    /// onto one entry across all threads, so sampled records per distinct sampled hash estimates
+    /// the repeat factor of the staged stream as a whole, independently of how a key's
+    /// occurrences spread over the threads.
+    std::mutex thaw_sample_mutex;
+    HashSet<UInt64> thaw_sampled_keys;
+    size_t thaw_sampled_records = 0;
+    size_t staged_records = 0;
+    /// Set once the staged stream proves repeat-dominated; every thread then thaws its local
+    /// table at the next block and returns to the baseline path for good.
+    std::atomic<bool> thaw_all{false};
 };
 
 using AdaptiveAggregationSharedStatePtr = std::shared_ptr<AdaptiveAggregationSharedState>;

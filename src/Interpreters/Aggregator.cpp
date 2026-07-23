@@ -1642,7 +1642,28 @@ namespace
     /// in rows while holding fewer keys than the threshold. High-cardinality streams freeze
     /// within a couple of blocks and skewed streams at roughly threshold / (1 - hot share) rows,
     /// so only repeat-dominated tables (average multiplicity above the multiple) ever give up.
-    constexpr size_t adaptive_freeze_give_up_row_multiple = 64;
+    /// The value balances two bounds: it caps the tolerated hot share at 1 - 1/multiple (a 90%
+    /// hot key still freezes with a wide margin), and it must fire within the rows one thread
+    /// sees on a medium table at a wide fan-out (a 64-thread scan of 50M rows gives each thread
+    /// less than a million rows).
+    constexpr size_t adaptive_freeze_give_up_row_multiple = 16;
+
+    /// The thaw guard for the opposite failure past the freeze. Staged misses are supposed to
+    /// be rare keys, each staged about once; a uniform mid-cardinality stream instead misses on
+    /// the same keys over and over, and staging then re-processes the bulk of the stream that
+    /// ordinary insertion would absorb as cheap in-place updates. The repeat factor of the
+    /// staged stream is estimated over a shared sparse sample of staged hashes: repeats of a
+    /// key collapse onto one sample entry across all threads, so the estimate does not depend
+    /// on how a key's occurrences spread over the threads. Once the factor exceeds the bound,
+    /// every thread thaws its table and returns to the baseline path. The unit is the delayed
+    /// record, because staging and draining cost per record (a run of one key collapses into a
+    /// single value-staged record). Streams that want the freeze stay well below the bound
+    /// (high-cardinality keys repeat a few times in total, a skewed tail almost never); a
+    /// stream that crosses it fires after about the bound times the distinct staged keys in
+    /// records, a small share of a repeat-dominated stream.
+    constexpr UInt64 adaptive_thaw_sample_mask = 0xFF;
+    constexpr size_t adaptive_thaw_min_staged_records = 524'288;
+    constexpr size_t adaptive_thaw_repeat_factor = 16;
 }
 
 bool Aggregator::executeOnBlock(Columns columns,
@@ -1758,48 +1779,63 @@ bool Aggregator::executeOnBlock(Columns columns,
 
     if (adaptive && !adaptive->gave_up_freezing)
     {
-        /// The freeze replaces the local two-level conversion: from now on the local table only
-        /// updates the keys it already holds, so it stays single-level and bounded by the
-        /// threshold, and the frozen kernel pairs it with its two-level twin.
-        if (!adaptive->local_table_frozen && result_size >= params.adaptive_aggregator_freeze_threshold
-            && result.isConvertibleToTwoLevel())
+        if (adaptive->shared_state->thaw_all.load(std::memory_order_relaxed))
         {
-            std::call_once(adaptive->shared_state->init_flag, [&] { initAdaptiveSharedState(result, *adaptive->shared_state); });
-            adaptive->local_table_frozen = true;
-            LOG_TRACE(log, "Adaptive aggregation: local table frozen at {} keys", result_size);
-        }
-
-        if (adaptive->local_table_frozen)
-        {
-            /// Checking the constraints.
-            if (!checkLimits(result_size, no_more_keys))
-                return false;
-
-            return true;
-        }
-
-        /// A table that consumed this many rows while staying below the freeze threshold in keys
-        /// is repeat-dominated and will not freeze in practice: either the group count plateaus
-        /// below the threshold (few groups with fat states, e.g. `uniqExact` per region, where
-        /// the freeze would foreclose the byte-triggered conversion and its bucket-parallel
-        /// merge), or the hot share is so extreme that staging the sliver of a tail cannot pay.
-        /// The thread falls back to the baseline checks below, permanently.
-        adaptive->rows_seen_unfrozen += row_end - row_begin;
-        if (adaptive->rows_seen_unfrozen
-            >= adaptive_freeze_give_up_row_multiple * params.adaptive_aggregator_freeze_threshold
-            && result_size < params.adaptive_aggregator_freeze_threshold)
-        {
+            /// The staged stream proved repeat-dominated (see `publishDelayedRecords`): thaw and
+            /// return to the baseline checks below, permanently. The table resumes ordinary
+            /// insertion; the records staged so far stay published and the merge drains them.
+            /// A thread that has not frozen yet stands down the same way, so that it does not
+            /// freeze against the verdict.
+            if (adaptive->local_table_frozen)
+                LOG_TRACE(log, "Adaptive aggregation: thawed the local table at {} keys", result_size);
+            adaptive->local_table_frozen = false;
             adaptive->gave_up_freezing = true;
-            LOG_TRACE(log, "Adaptive aggregation: giving up on freezing after {} rows at {} keys", adaptive->rows_seen_unfrozen, result_size);
         }
-
-        if (!adaptive->gave_up_freezing)
+        else
         {
-            /// Checking the constraints.
-            if (!checkLimits(result_size, no_more_keys))
-                return false;
+            /// The freeze replaces the local two-level conversion: from now on the local table
+            /// only updates the keys it already holds, so it stays single-level and bounded by
+            /// the threshold, and the frozen kernel pairs it with its two-level twin.
+            if (!adaptive->local_table_frozen && result_size >= params.adaptive_aggregator_freeze_threshold
+                && result.isConvertibleToTwoLevel())
+            {
+                std::call_once(adaptive->shared_state->init_flag, [&] { initAdaptiveSharedState(result, *adaptive->shared_state); });
+                adaptive->local_table_frozen = true;
+                LOG_TRACE(log, "Adaptive aggregation: local table frozen at {} keys", result_size);
+            }
 
-            return true;
+            if (adaptive->local_table_frozen)
+            {
+                /// Checking the constraints.
+                if (!checkLimits(result_size, no_more_keys))
+                    return false;
+
+                return true;
+            }
+
+            /// A table that consumed this many rows while staying below the freeze threshold in
+            /// keys is repeat-dominated and will not freeze in practice: either the group count
+            /// plateaus below the threshold (few groups with fat states, e.g. `uniqExact` per
+            /// region, where the freeze would foreclose the byte-triggered conversion and its
+            /// bucket-parallel merge), or the hot share is so extreme that staging the sliver of
+            /// a tail cannot pay. The thread falls back to the baseline checks below, permanently.
+            adaptive->rows_seen_unfrozen += row_end - row_begin;
+            if (adaptive->rows_seen_unfrozen
+                >= adaptive_freeze_give_up_row_multiple * params.adaptive_aggregator_freeze_threshold
+                && result_size < params.adaptive_aggregator_freeze_threshold)
+            {
+                adaptive->gave_up_freezing = true;
+                LOG_TRACE(log, "Adaptive aggregation: giving up on freezing after {} rows at {} keys", adaptive->rows_seen_unfrozen, result_size);
+            }
+
+            if (!adaptive->gave_up_freezing)
+            {
+                /// Checking the constraints.
+                if (!checkLimits(result_size, no_more_keys))
+                    return false;
+
+                return true;
+            }
         }
     }
 
@@ -2146,6 +2182,35 @@ void NO_INLINE Aggregator::publishDelayedRecords(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adaptive aggregation got a block of {} rows; row numbers are 32-bit.", num_rows);
 
     auto & shared = *adaptive.shared_state;
+
+    /// The thaw check (see the tuning constants). The sample is collected outside the lock (a
+    /// publish contributes on the order of `total` / 256 entries) and folded into the shared
+    /// sampler; the verdict takes effect at every thread's next block, through the ordinary
+    /// dispatch on the per-thread flags. The current records are still published: their rows
+    /// were deferred by the frozen kernel and only the drain will aggregate them.
+    if (!shared.thaw_all.load(std::memory_order_relaxed))
+    {
+        PaddedPODArray<UInt64> sampled_hashes;
+        for (const auto hash : adaptive.miss_hashes)
+            if ((hash & adaptive_thaw_sample_mask) == 0)
+                sampled_hashes.push_back(hash);
+
+        std::lock_guard lock(shared.thaw_sample_mutex);
+        shared.staged_records += total;
+        shared.thaw_sampled_records += sampled_hashes.size();
+        for (const auto hash : sampled_hashes)
+            shared.thaw_sampled_keys.insert(hash);
+        if (shared.staged_records >= adaptive_thaw_min_staged_records
+            && shared.thaw_sampled_records > adaptive_thaw_repeat_factor * shared.thaw_sampled_keys.size())
+        {
+            shared.thaw_all.store(true, std::memory_order_relaxed);
+            LOG_TRACE(
+                log,
+                "Adaptive aggregation: thawing the local tables after {} staged records (sampled repeat factor {})",
+                shared.staged_records,
+                shared.thaw_sampled_records / shared.thaw_sampled_keys.size());
+        }
+    }
 
     auto block = std::make_shared<AdaptiveAggregationSharedState::DelayedBlock>();
     block->value_staged = value_staged;
