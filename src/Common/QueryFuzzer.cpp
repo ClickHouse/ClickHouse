@@ -3860,6 +3860,21 @@ void QueryFuzzer::notifyQueryFailed(ASTPtr ast)
         remove_fuzzed_table(insert->getTable());
 }
 
+/// Introspection wrappers accepting an argument of any type: they force full serialization
+/// or type walks of the wrapped expression and never fail on type grounds.
+static const Strings any_type_wrappers
+    = {"byteSize",
+       "blockSerializedSize",
+       "dumpColumnStructure",
+       "toColumnTypeName",
+       "toTypeName",
+       "getTypeSerializationStreams",
+       "defaultValueOfArgumentType",
+       "visibleWidth",
+       "isConstant",
+       "identity",
+       "ignore"};
+
 ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
 {
     checkIterationLimit();
@@ -3910,10 +3925,53 @@ ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
         child = makeASTFunction("toNullable", child);
 
     if (fuzz_rand() % 7 == 0)
+    {
         child = makeASTFunction("toLowCardinality", child);
+        /// Peek into the dictionary internals of the `LowCardinality` value just built
+        if (fuzz_rand() % 20 == 0)
+            child = makeASTFunction(fuzz_rand() % 2 == 0 ? "lowCardinalityIndices" : "lowCardinalityKeys", child);
+    }
 
     if (fuzz_rand() % 7 == 0)
         child = makeASTFunction("materialize", child);
+
+    if (type != Field::Types::Which::Null && fuzz_rand() % 50 == 0)
+    {
+        /// Build an aggregation state directly from the value via `initializeAggregation`
+        /// (type-agnostic aggregates only, so any literal type is accepted), sometimes
+        /// finalizing it back, exercising `AggregateFunction` states in scalar expressions.
+        /// NULL literals are skipped: over `Nullable(Nothing)` the state collapses to a plain value.
+        static const Strings state_aggregates
+            = {"anyState",
+               "anyLastState",
+               "minState",
+               "maxState",
+               "uniqState",
+               "uniqExactState",
+               "groupArrayState",
+               "countState",
+               "uniqThetaState"};
+        const String & agg = pickRandomly(fuzz_rand, state_aggregates);
+        child = makeASTFunction("initializeAggregation", make_intrusive<ASTLiteral>(String(agg)), child);
+        /// Combine two theta sketches with a set operation; both sides get the same
+        /// argument type, which the theta functions require.
+        if (agg == "uniqThetaState" && fuzz_rand() % 2 == 0)
+        {
+            static const Strings theta_ops = {"uniqThetaUnion", "uniqThetaIntersect", "uniqThetaNot"};
+            child = makeASTFunction(pickRandomly(fuzz_rand, theta_ops), child, child->clone());
+        }
+        if (fuzz_rand() % 3 == 0)
+            child = makeASTFunction("finalizeAggregation", child);
+    }
+
+    if (fuzz_rand() % 100 == 0)
+    {
+        String wrapper = pickRandomly(fuzz_rand, any_type_wrappers);
+        /// A constant String argument of `getTypeSerializationStreams` is parsed as a type name
+        if (wrapper == "getTypeSerializationStreams" && type == Field::Types::Which::String)
+            wrapper = "toTypeName";
+        child = makeASTFunction(wrapper, child);
+    }
 
     return child;
 }
@@ -3925,7 +3983,19 @@ ASTPtr QueryFuzzer::reverseLiteralFuzzing(ASTPtr child)
     if (auto * function = child.get()->as<ASTFunction>())
     {
         static const std::unordered_set<String> can_be_reverted{
+            "blockSerializedSize",
+            "byteSize",
+            "defaultValueOfArgumentType",
+            "dumpColumnStructure",
+            "finalizeAggregation", /// Unwrapping leaves the bare state expression, which is still valid
+            "getTypeSerializationStreams",
+            "identity",
+            "ignore",
+            "isConstant",
+            "lowCardinalityIndices", /// Unwrapping leaves the toLowCardinality expression, which is still valid
+            "lowCardinalityKeys",
             "materialize",
+            "toColumnTypeName",
             "toDecimal32", /// Keeping the first parameter only should be ok (valid query most of the time)
             "toDecimal64",
             "toDecimal128",
@@ -3935,12 +4005,20 @@ ASTPtr QueryFuzzer::reverseLiteralFuzzing(ASTPtr child)
             "toInt256",
             "toLowCardinality",
             "toNullable",
+            "toTypeName",
             "toUInt128",
-            "toUInt256"};
+            "toUInt256",
+            "visibleWidth"};
         if (can_be_reverted.contains(function->name) && function->arguments && function->arguments->children.size() == 1)
         {
             if (fuzz_rand() % 7 == 0)
                 return function->arguments->children[0];
+        }
+        /// initializeAggregation('<agg>State', value): revert to the wrapped value (the second argument)
+        if (function->name == "initializeAggregation" && function->arguments && function->arguments->children.size() == 2)
+        {
+            if (fuzz_rand() % 7 == 0)
+                return function->arguments->children[1];
         }
     }
 
@@ -4084,6 +4162,12 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
                         new_child = makeASTFunction("if", cond, other, child);
                 }
             }
+            else if (fuzz_rand() % 500 == 0)
+            {
+                /// Wrap child in an introspection function accepting any argument type,
+                /// forcing serialization or type walks of the whole expression.
+                new_child = makeASTFunction(pickRandomly(fuzz_rand, any_type_wrappers), child);
+            }
             else if (fuzz_rand() % 800 == 0 && current_ast_depth < 80)
             {
                 /// Build multiIf(cond1, e1[, cond2, e2], else): a CASE WHEN expression
@@ -4153,9 +4237,17 @@ void QueryFuzzer::checkIterationLimit()
 static const std::unordered_set<String> comparison_comparators
     = {"equals", "notEquals", "greater", "greaterOrEquals", "less", "lessOrEquals", "isDistinctFrom", "isNotDistinctFrom"};
 
-ASTPtr QueryFuzzer::tryNegateNextPredicate(const ASTPtr & pred, const int prob)
+ASTPtr QueryFuzzer::fuzzPredicate(const ASTPtr & pred, const int negProb)
 {
-    return fuzz_rand() % prob == 0 ? makeASTFunction("not", pred) : pred;
+    ASTPtr res = pred;
+
+    if (fuzz_rand() % negProb == 0)
+        res = makeASTFunction("not", res);
+    else if (fuzz_rand() % 30 == 0)
+        res = makeASTFunction("indexHint", res);
+    else if (fuzz_rand() % 30 == 0)
+        res = makeASTFunction("throwIf", res);
+    return res;
 }
 
 ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
@@ -4340,10 +4432,10 @@ ASTPtr QueryFuzzer::generatePredicate()
                         expression_1,
                         expression_2);
                 }
-                next_condition = tryNegateNextPredicate(next_condition, 30);
+                next_condition = fuzzPredicate(next_condition, 30);
                 /// Sometimes use multiple conditions
                 predicate = predicate ? makeASTFunction((fuzz_rand() % 10) < 3 ? "or" : "and", predicate, next_condition) : next_condition;
-                predicate = tryNegateNextPredicate(predicate, 50);
+                predicate = fuzzPredicate(predicate, 50);
             }
             return predicate;
         }
@@ -4397,12 +4489,12 @@ ASTPtr QueryFuzzer::permutePredicateClause(const ASTPtr & predicate, const int n
             for (auto & entry : predicates)
             {
                 /// Try to negate an entry
-                entry = tryNegateNextPredicate(entry, negProb);
+                entry = fuzzPredicate(entry, negProb);
             }
             return makeASTFunction(func->name, predicates);
         }
     }
-    return tryNegateNextPredicate(predicate, negProb);
+    return fuzzPredicate(predicate, negProb);
 }
 
 void QueryFuzzer::fuzzMandatoryPredicate(ASTPtr & predicate, ASTs & children)
@@ -4689,12 +4781,12 @@ ASTPtr QueryFuzzer::addJoinClause()
                     (fuzz_rand() % 10 == 0) ? pickRandomly(fuzz_rand, comparison_comparators) : String("equals"),
                     expression_1,
                     expression_2);
-                next_condition = tryNegateNextPredicate(next_condition, 30);
+                next_condition = fuzzPredicate(next_condition, 30);
 
                 /// Sometimes use multiple conditions
                 join_condition = join_condition ? makeASTFunction((fuzz_rand() % 10) == 0 ? "or" : "and", join_condition, next_condition)
                                                 : next_condition;
-                join_condition = tryNegateNextPredicate(join_condition, 50);
+                join_condition = fuzzPredicate(join_condition, 50);
             }
             chassert(join_condition);
             table_join->children.push_back(join_condition);
@@ -5902,6 +5994,13 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
 
         fuzzCodecFunction(*fn);
         fuzz(fn->children);
+
+        /// Wrap `-State` aggregate and window calls in `finalizeAggregation`, materializing the
+        /// state into its final value inside the expression itself. `-SimpleState` is excluded:
+        /// `finalizeAggregation` rejects `SimpleAggregateFunction` arguments.
+        if (endsWith(fn->name, "State") && !endsWith(fn->name, "SimpleState") && fuzz_rand() % 20 == 0
+            && AggregateUtils::isAggregateFunction(*fn))
+            ast = makeASTFunction("finalizeAggregation", ast);
     }
     else if (auto * aj = typeid_cast<ASTArrayJoin *>(ast.get()))
     {

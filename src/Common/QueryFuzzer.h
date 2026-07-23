@@ -265,7 +265,7 @@ private:
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
     ASTPtr reverseLiteralFuzzing(ASTPtr child);
     void fuzzExpressionList(ASTExpressionList & expr_list);
-    ASTPtr tryNegateNextPredicate(const ASTPtr & pred, int prob);
+    ASTPtr fuzzPredicate(const ASTPtr & pred, int negProb);
     ASTPtr setIdentifierAliasOrNot(ASTPtr & exp);
     ASTPtr addJoinClause();
     ASTPtr addArrayJoinClause();
