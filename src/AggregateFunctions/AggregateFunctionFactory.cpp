@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteHelpers.h>
@@ -25,6 +24,7 @@ namespace DB
 struct Settings;
 namespace Setting
 {
+    extern const SettingsBool allow_lossy_numeric_supertype;
     extern const SettingsBool log_queries;
 }
 
@@ -262,6 +262,22 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
     auto properties = tryGetProperties(name, action);
     bool is_float_promoting = properties.has_value() && properties->is_float_promoting;
 
+    /// The lossy promotion itself is opt-in: it applies only under the same `allow_lossy_numeric_supertype`
+    /// setting that lets if/multiIf/coalesce/ifNull/array/map resolve such numeric mixes to Float64 at type
+    /// inference. With the setting off (the default) the adapter handles only lossless supertypes, and the
+    /// original "illegal type" error (which points at the setting when it would help) is reported unchanged.
+    /// Resolution on a query thread reads the setting from the query context. Without a query context the
+    /// promotion is allowed: those are the background paths (table load / ATTACH, merges) that reconstruct
+    /// state types such as AggregateFunction(sum, Variant(Int64, Float64)) already validated when the DDL was
+    /// executed (with the setting enabled), and a stored table must never become unloadable because of the
+    /// current value of a query setting.
+    bool allow_lossy_numeric_supertype = true;
+    if (CurrentThread::isInitialized())
+    {
+        if (auto query_context = CurrentThread::get().tryGetQueryContext())
+            allow_lossy_numeric_supertype = query_context->getSettingsRef()[Setting::allow_lossy_numeric_supertype];
+    }
+
     /// is_float_promoting classifies the base function (tryGetProperties strips the combinator suffixes: sumArgMax ->
     /// sum), so a `-ArgMin` / `-ArgMax` combinator over a float-promoting base would inherit the Float64 fallback for
     /// its comparison key too. That key is compared exactly (AggregateFunctionCombinatorArgMinArgMax rejects a Variant
@@ -290,17 +306,20 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
         /// getLeastSupertype is strict and reports no common type for e.g. Decimal + Float64 or Int64 + Float64
         /// (there is no lossless conversion). For an aggregate whose result is a floating-point value computed by
         /// arithmetic over its input (sum/avg/...), a mix of numeric types is naturally computed in Float64
-        /// (exactly as arithmetic does: Int64 + Float64 -> Float64), so fall back to Float64 when all the variants
-        /// are numeric. This fallback is deliberately NOT applied to exact/order-based aggregates (min/max/argMin/
-        /// argMax/...): a lossy Float64 cast would silently return wrong results for them (two distinct integers
-        /// above 2^53 collapse to the same Float64), so they keep reporting the original error when there is no
-        /// lossless common supertype. See AggregateFunctionProperties::is_float_promoting. The same applies to the
-        /// exact comparison key of the `-ArgMin` / `-ArgMax` combinators, so it is excluded here as well.
+        /// (exactly as arithmetic does: Int64 + Float64 -> Float64), so, when the user has opted into the lossy
+        /// numeric supertype with `allow_lossy_numeric_supertype`, fall back to the same Float64 promotion the
+        /// type-inference resolvers use (all-numeric variants with at least one floating-point member; an
+        /// integer-only mix such as Variant(Int64, UInt64) has no obvious lossy supertype and is not promoted).
+        /// This fallback is deliberately NOT applied to exact/order-based aggregates (min/max/argMin/argMax/...)
+        /// even under the setting: a lossy Float64 cast would silently return wrong results for them (two distinct
+        /// integers above 2^53 collapse to the same Float64), so they keep reporting the original error when there
+        /// is no lossless common supertype. See AggregateFunctionProperties::is_float_promoting. The same applies
+        /// to the exact comparison key of the `-ArgMin` / `-ArgMax` combinators, so it is excluded here as well.
         if (!supertype
-            && std::all_of(variants.begin(), variants.end(), [](const auto & v) { return isNumber(v); })
+            && allow_lossy_numeric_supertype
             && is_float_promoting
             && i != argminmax_key_argument)
-            supertype = std::make_shared<DataTypeFloat64>();
+            supertype = tryGetLossyNumericSupertype(variants);
         /// The supertype must be wrappable in Nullable: the adapter relies on Nullable to carry the implicit NULLs
         /// of the Variant (which the aggregation then skips). This is not possible when there is no common supertype,
         /// when it is itself a composite type (e.g. Variant), or when it is a container type such as Array/Tuple/Map.

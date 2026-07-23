@@ -1,9 +1,10 @@
 -- Aggregate functions that do not support the Variant type natively (sum, avg, min, max, ...) can now be applied
 -- to Variant arguments: they aggregate over the least common supertype of the variants, wrapped in Nullable.
 -- A numeric mix with no lossless common supertype (e.g. Decimal + Float64, Int64 + Float64) is aggregated in
--- Float64 -- but only for the arithmetic functions whose result is a floating-point value (sum, avg, ...), exactly
--- as arithmetic does. Exact/order-based functions (min, max, argMin, argMax, ...) keep the original error in that
--- case, because a lossy Float64 cast would silently return wrong results (distinct integers above 2^53 collapse).
+-- Float64 when the lossy numeric supertype is enabled with allow_lossy_numeric_supertype -- and only for the
+-- arithmetic functions whose result is a floating-point value (sum, avg, ...), exactly as arithmetic does.
+-- Exact/order-based functions (min, max, argMin, argMax, ...) keep the original error in that case even under the
+-- setting, because a lossy Float64 cast would silently return wrong results (distinct integers above 2^53 collapse).
 
 SET allow_experimental_variant_type = 1;
 SET allow_suspicious_variant_types = 1;
@@ -15,6 +16,13 @@ CREATE TABLE t_variant_agg (id UInt64, v Variant(Decimal(7, 2), Float64)) ENGINE
 INSERT INTO t_variant_agg SELECT number, number::Decimal(7, 2) FROM numbers(3);        -- 0, 1, 2
 INSERT INTO t_variant_agg SELECT number + 10, (number + 0.5)::Float64 FROM numbers(3);  -- 0.5, 1.5, 2.5
 INSERT INTO t_variant_agg VALUES (100, NULL);
+
+-- With the default allow_lossy_numeric_supertype = 0 the lossy Float64 promotion is off: a numeric mix with no
+-- lossless common supertype is rejected with the original error (which points at the setting), for every function.
+SET allow_lossy_numeric_supertype = 0;
+SELECT sum(v) FROM t_variant_agg; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT avg(v) FROM t_variant_agg; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SET allow_lossy_numeric_supertype = 1;
 
 -- The motivating example: sum over Variant(Decimal(7, 2), Float64) is aggregated over the supertype Float64.
 SELECT 'sum', sum(v), toTypeName(sum(v)) FROM t_variant_agg;
@@ -104,7 +112,10 @@ SELECT avgTuple(tuple(CAST(1 AS Variant(UInt8, UInt64)))); -- { serverError ILLE
 -- (e.g. as the type of a non-final aggregation block, which keeps the original Variant argument list) and
 -- reconstructible, so -Merge must resolve its nested function through the same Variant adapter, otherwise it would
 -- throw ILLEGAL_TYPE_OF_ARGUMENT when reconstructing the state. sum/avg over Variant(Int64, Float64) use the
--- Float64 fallback (they are float-promoting), so such state types can be declared.
+-- Float64 fallback (they are float-promoting and allow_lossy_numeric_supertype is enabled in this session), so
+-- such state types can be declared. Background reconstruction of an already-declared state type (table load /
+-- ATTACH at startup, merges) has no query context and always allows the promotion, so a table created this way
+-- never becomes unloadable because of the setting's current value.
 DROP TABLE IF EXISTS t_variant_state;
 CREATE TABLE t_variant_state
 (

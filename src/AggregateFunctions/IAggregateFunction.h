@@ -992,7 +992,8 @@ struct AggregateFunctionProperties
       *
       * For such a function, casting a numeric-mix `Variant` argument that has no lossless common supertype to
       * `Float64` is exactly what the function already does internally, so `AggregateFunctionVariantAdapter` is
-      * allowed to fall back to `Float64` for it. Exact / order-based aggregates (`min` / `max` / `argMin` / `argMax`
+      * allowed to fall back to `Float64` for it when the user has opted into the lossy numeric supertype with the
+      * `allow_lossy_numeric_supertype` setting. Exact / order-based aggregates (`min` / `max` / `argMin` / `argMax`
       * / `any` / `quantileExact` / `uniqExact` / `sumWithOverflow` / ...) must leave this false: a lossy `Float64`
       * cast would silently return wrong results for them (two distinct integers above 2^53 collapse to the same
       * `Float64`), so they keep reporting the original error when there is no lossless common supertype. The

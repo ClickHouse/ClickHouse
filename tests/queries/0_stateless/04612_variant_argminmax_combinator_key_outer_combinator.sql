@@ -7,6 +7,8 @@
 -- to the same Float64 and returns the wrong argMax / argMin row instead of being rejected.
 
 SET allow_experimental_variant_type = 1;
+-- The lossy Float64 fallback of the Variant adapter is opt-in, under the same setting as type inference.
+SET allow_lossy_numeric_supertype = 1;
 SET allow_suspicious_variant_types = 1;
 
 DROP TABLE IF EXISTS t_argminmax_outer_key;

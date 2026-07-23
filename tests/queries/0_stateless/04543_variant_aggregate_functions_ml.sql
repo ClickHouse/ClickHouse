@@ -4,6 +4,8 @@
 -- forwarded all the way down to the nested AggregateFunctionMLMethod state.
 
 SET allow_experimental_variant_type = 1;
+-- The lossy Float64 fallback of the Variant adapter is opt-in, under the same setting as type inference.
+SET allow_lossy_numeric_supertype = 1;
 -- Single-threaded aggregation so that the SGD mini-batch boundaries (and therefore the trained weights) are
 -- deterministic and identical between the plain and the Variant trainings.
 SET max_threads = 1;

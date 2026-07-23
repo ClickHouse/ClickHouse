@@ -4,6 +4,8 @@
 -- float-promoting, so the same mix keeps the original ILLEGAL_TYPE_OF_ARGUMENT error, exactly as before.
 
 SET allow_experimental_variant_type = 1;
+-- The lossy Float64 fallback of the Variant adapter is opt-in, under the same setting as type inference.
+SET allow_lossy_numeric_supertype = 1;
 SET allow_suspicious_variant_types = 1;
 
 DROP TABLE IF EXISTS t_gam_variant;

@@ -7,6 +7,8 @@
 -- functions are not float-promoting, so there is no Float64 fallback).
 
 SET allow_experimental_variant_type = 1;
+-- The lossy Float64 fallback of the Variant adapter is opt-in, under the same setting as type inference.
+SET allow_lossy_numeric_supertype = 1;
 SET allow_suspicious_variant_types = 1;
 SET allow_experimental_dynamic_type = 1;
 
