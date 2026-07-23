@@ -183,11 +183,6 @@ public:
             if (!std::isfinite(value))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of aggregate function {} must be finite", getName());
         }
-        if constexpr (result_kind == ExponentialTimeDecayedResult::Sum)
-        {
-            if (value < 0)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of aggregate function {} must be non-negative", getName());
-        }
 
         this->data(place).add(value, time, decay_length);
     }

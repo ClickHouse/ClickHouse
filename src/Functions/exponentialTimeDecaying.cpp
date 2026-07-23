@@ -86,8 +86,8 @@ void assertValidRow(const DecayingColumnView & input, size_t row, const String &
     const Float64 value = input.value.getData()[row];
     const Float64 time = input.time.getData()[row];
     const Float64 decay_length = input.decay_length.getData()[row];
-    if (!std::isfinite(value) || value < 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of function {} must be finite and non-negative", function_name);
+    if (!std::isfinite(value))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of function {} must be finite", function_name);
     if (!std::isfinite(time))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time of function {} must be finite", function_name);
     if (!std::isfinite(decay_length) || decay_length <= 0)
@@ -161,8 +161,8 @@ public:
         auto & time_data = time->getData();
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            if (!std::isfinite(value_data[row]) || value_data[row] < 0)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of function {} must be finite and non-negative", getName());
+            if (!std::isfinite(value_data[row]))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of function {} must be finite", getName());
             if (!std::isfinite(decay_length_data[row]) || decay_length_data[row] <= 0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Decay length of function {} must be finite and positive", getName());
             time_data[row] = arguments[1].column->getFloat64(row);
@@ -277,7 +277,7 @@ REGISTER_FUNCTION(ExponentialTimeDecaying)
     factory.registerFunction<FunctionExponentialTimeDecayingFloat64>(FunctionDocumentation{
         .description = R"(
 Constructs an `ExponentialTimeDecayingFloat64` value anchored at `time`.
-The value must be finite and non-negative, and the decay length must be finite and positive.
+The value must be finite, and the decay length must be finite and positive.
 The anchor is stored as `Float64`; DateTime and DateTime64 inputs are converted to seconds.
 )",
         .syntax = "exponentialTimeDecayingFloat64(value, time, decay_length)",

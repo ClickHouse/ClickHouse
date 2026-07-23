@@ -3748,8 +3748,9 @@ LIMIT 9
 )DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description exponentialTimeDecayedSum_description = R"(
-Returns the sum of values weighted by exponential decay relative to the greatest time value.
-Aggregate states can be combined independently of the input order, including in an `AggregatingMergeTree`.
+The aggregate-function form returns the sum of values weighted by exponential decay relative to the greatest time argument.
+Its states can be combined independently of the input order, including in an `AggregatingMergeTree`.
+The window-function form preserves the existing behavior and evaluates relative to the time argument of the last row in the current frame.
 The aggregate-function form is experimental and requires `allow_experimental_time_decay_aggregate_functions = 1`.
 The window-function form is not affected by this setting.
     )";
@@ -3950,8 +3951,9 @@ FROM
         }, exponentialTimeDecayedMax_documentation, properties});
 
     FunctionDocumentation::Description exponentialTimeDecayedCount_description = R"(
-Returns the sum of exponential weights relative to the greatest time value.
-Aggregate states can be combined independently of the input order, including in an `AggregatingMergeTree`.
+The aggregate-function form returns the sum of exponential weights relative to the greatest time argument.
+Its states can be combined independently of the input order, including in an `AggregatingMergeTree`.
+The window-function form preserves the existing behavior and evaluates relative to the time argument of the last row in the current frame.
 The aggregate-function form is experimental and requires `allow_experimental_time_decay_aggregate_functions = 1`.
 The window-function form is not affected by this setting.
     )";
@@ -4055,8 +4057,9 @@ FROM
         }});
 
     FunctionDocumentation::Description exponentialTimeDecayedAvg_description = R"(
-Returns the average of values weighted by exponential decay relative to the greatest time value.
-Aggregate states can be combined independently of the input order, including in an `AggregatingMergeTree`.
+The aggregate-function form returns the average of values weighted by exponential decay relative to the greatest time argument.
+Its states can be combined independently of the input order, including in an `AggregatingMergeTree`.
+The window-function form preserves the existing behavior and evaluates relative to the time argument of the last row in the current frame.
 The aggregate-function form is experimental and requires `allow_experimental_time_decay_aggregate_functions = 1`.
 The window-function form is not affected by this setting.
     )";

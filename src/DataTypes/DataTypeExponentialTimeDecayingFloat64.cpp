@@ -51,7 +51,7 @@ void registerDataTypeExponentialTimeDecayingFloat64(DataTypeFactory & factory)
         DataTypeFactory::Case::Sensitive,
         Documentation{
             .description = R"(
-Represents one or more non-negative exponentially time-decaying values at a shared anchor time.
+Represents one or more finite exponentially time-decaying values at a shared anchor time.
 
 The fields are `value`, `time`, and `decay_length`, all stored as `Float64`. DateTime and DateTime64
 inputs are represented as seconds. Values can only be added when their decay lengths are identical.
