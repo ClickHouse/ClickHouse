@@ -681,14 +681,18 @@ size_t countOutputStreams(
     /// Price the capacity-priced (widened / default-filled) columns now that every stream visible for them in
     /// the source parts is known: the recorded substream union by name (tryCountColumnSubstreamsFromParts does
     /// not require type equality, so it sees the old, narrower type's recorded substreams too) plus the real
-    /// dynamic .bin files recovered above from unrecorded legacy wide parts. The output type's write-time
-    /// capacity prices a variant at a fixed worst case (STREAMS_PER_DYNAMIC_VARIANT), which a wide composite
-    /// variant a source part already materialized can exceed - there the visible streams are the ground truth -
-    /// while the capacity covers what the sources cannot show (paths and variants the wider output type
-    /// materializes beyond what the narrower source type could record, and the substreams a DEFAULT expression
-    /// materializes for the rows of parts that predate an ADD COLUMN, which no source part records at all).
-    /// Taking the max never prices such a column below either bound and stays proportional to real data, so it
-    /// cannot re-introduce the saturating over-reservation.
+    /// dynamic .bin files recovered above from unrecorded legacy wide parts. Each arm of the max is a FULL
+    /// per-column footprint: the output type's static skeleton plus its write-time dynamic capacity, or the
+    /// streams the source parts demonstrably wrote (the recorded union already contains the source skeleton, so
+    /// the skeleton must not be added on top of it - that would double-count every statically enumerable stream
+    /// and price a metadata-only scalar widen such as Enum value addition at two streams instead of one). The
+    /// capacity arm covers what the sources cannot show (paths and variants the wider output type materializes
+    /// beyond what the narrower source type could record, and the substreams a DEFAULT expression materializes
+    /// for the rows of parts that predate an ADD COLUMN, which no source part records at all); the visible arm
+    /// is the ground truth for a wide composite variant a source part already materialized, which the fixed
+    /// per-variant capacity (STREAMS_PER_DYNAMIC_VARIANT) can exceed. Taking the max of the two footprints
+    /// never prices such a column below either bound and stays proportional to real data, so it cannot
+    /// re-introduce the saturating over-reservation.
     for (const auto & column : output_columns)
     {
         if (!capacity_priced_columns.contains(column.name))
@@ -696,7 +700,7 @@ size_t countOutputStreams(
         size_t visible_streams = tryCountColumnSubstreamsFromParts(column.name, source_parts).value_or(0);
         if (const auto it = capacity_priced_dynamic_files.find(column.name); it != capacity_priced_dynamic_files.end())
             visible_streams += it->second.size();
-        streams += countColumnStreams({column}) + std::max(countDynamicCapacityStreams(*column.type, settings), visible_streams);
+        streams += std::max(countColumnStreams({column}) + countDynamicCapacityStreams(*column.type, settings), visible_streams);
     }
 
     /// The merged wide part is never narrower than any single source part, so floor the estimate at the
