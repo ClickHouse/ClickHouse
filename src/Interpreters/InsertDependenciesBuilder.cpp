@@ -1741,14 +1741,17 @@ Chain InsertDependenciesBuilder::createRetry(const std::vector<StorageIDMaybeEmp
 
     /// Behind a table with the `Alias` engine the deduplication info travels into a nested insert
     /// chain, and its visited views belong to the outer chain's builder, so this builder cannot
-    /// rebuild them. Refuse loudly instead of failing with a bare `std::out_of_range` below.
-    if (!isView(path.back()))
+    /// rebuild them. That concerns both the end of the path (a direct insert into the source
+    /// table) and its start (a direct insert into a materialized view keeps the view as
+    /// `start_from`, which the nested builder does not own either). Refuse loudly instead of
+    /// failing with a bare `std::out_of_range` below.
+    if (!isView(path.back()) || !isView(start_from))
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Cannot rebuild the deduplication retry chain for '{}': it does not belong to this insert chain. "
             "This happens when deduplicated rows have to be recalculated after a table with the `Alias` engine. "
             "Retry path: {}",
-            path.back(),
+            isView(path.back()) ? start_from : path.back(),
             fmt::join(path, "/"));
 
     Chain result;
