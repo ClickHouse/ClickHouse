@@ -345,7 +345,9 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
             ownership_lost = true;
             return;
         }
-        /// Version check protects from removing a lock re-created by another server.
+        /// The version check below protects from removing a lock re-created by
+        /// another server; on the first attempt also assert ownership in debug builds.
+        chassert(zk_retry.isRetry() || checkBucketOwnership(zk_client));
         code = zk_client->tryRemove(bucket_info->bucket_lock_path, bucket_lock_version);
         if (code == Coordination::Error::ZBADVERSION)
         {

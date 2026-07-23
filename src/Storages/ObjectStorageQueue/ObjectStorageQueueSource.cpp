@@ -164,7 +164,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
 
 bool ObjectStorageQueueSource::FileIterator::isFinished()
 {
-    if (bucket_lock_refresh_failed)
+    if (iterator_invalidated)
         return true;
 
     std::lock_guard lock(mutex);
@@ -505,8 +505,8 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
             std::lock_guard lock(mutex);
 
             /// Invalidated by a failed bucket lock refresh (the detecting thread has thrown).
-            /// Checked under the mutex (set under it too), so no more cached keys are drained.
-            if (bucket_lock_refresh_failed)
+            /// The flag is set and checked under the mutex, so no more cached keys are drained.
+            if (iterator_invalidated)
             {
                 LOG_WARNING(log, "Bucket lock refresh failed, stopping the file iterator");
                 return {};
@@ -620,7 +620,7 @@ void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks()
 
     /// Already invalidated (possibly by another thread), nothing to refresh.
     /// Checked under the mutex to never hit the released holder of the lost lock.
-    if (bucket_lock_refresh_failed)
+    if (iterator_invalidated)
         return;
     for (auto & [processor, holders] : bucket_holders)
     {
@@ -634,9 +634,7 @@ void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks()
                 }
                 catch (...)
                 {
-                    /// Fail closed: the bucket could be acquired by another server,
-                    /// so the iterator must not continue draining keys cached for it.
-                    bucket_lock_refresh_failed = true;
+                    iterator_invalidated = true;
                     throw;
                 }
             }
@@ -675,9 +673,8 @@ void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
             }
             catch (...)
             {
-                /// Fail closed, same as in refreshExpiringBucketLocks: release
-                /// throws on lost lock ownership detected at release time.
-                bucket_lock_refresh_failed = true;
+                /// Release throws on lost lock ownership detected at release time.
+                iterator_invalidated = true;
                 throw;
             }
             ++released_holders;

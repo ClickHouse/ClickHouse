@@ -74,11 +74,10 @@ public:
         /// because we want to be able to rethrow exceptions if they might happen.
         void releaseFinishedBuckets();
 
-        /// Refresh bucket locks which were not refreshed
-        /// for more than a quarter of the TTL, after which they are cleaned up
-        /// as abandoned (the TTL is meant to remove locks of dead servers).
-        /// Called on every next and, in streaming (where the iterator outlives
-        /// the batch and sits idle between batches), also after each commit.
+        /// Refresh bucket locks which were not refreshed for more than a quarter of
+        /// the TTL, after which the cleanup removes them as abandoned (the TTL is
+        /// meant to remove locks of dead servers). Called on every next and, in
+        /// streaming (where the iterator sits idle between batches), after each commit.
         void refreshExpiringBucketLocks();
 
         bool useBucketsForProcessing() const { return use_buckets_for_processing; }
@@ -132,9 +131,9 @@ public:
         /// Is glob_iterator finished?
         std::atomic_bool iterator_finished = false;
 
-        /// Set when a bucket lock refresh fails (e.g. lost ownership). Invalidates the
-        /// iterator: next stops returning keys, isFinished returns true.
-        std::atomic_bool bucket_lock_refresh_failed = false;
+        /// Set when a bucket lock refresh or release fails (e.g. lost ownership):
+        /// next stops returning keys, isFinished returns true.
+        std::atomic_bool iterator_invalidated = false;
 
         bool is_path_with_hive_partitioning = false;
 
