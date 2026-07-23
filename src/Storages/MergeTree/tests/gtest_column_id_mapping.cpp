@@ -1,11 +1,15 @@
 #include <gtest/gtest.h>
 
+#include <base/defines.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/ColumnIdMapping.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MutateTask.h>
+#include <Storages/VirtualColumnsDescription.h>
+#include <Common/Exception.h>
 
 
 using namespace DB;
@@ -100,8 +104,10 @@ TEST(ColumnIdMapping, UnmappedColumnsPassthrough)
 
     EXPECT_EQ(mapping.getColumnIdOrDefault("_row_exists"), "_row_exists");
 
+    /// A virtual column is left UNSTAMPED; `getColumnIdInStorage()` falls back to the name,
+    /// so empty is equivalent to the old write behavior of stamping it to its own name.
     auto columns = makeColumns({"a", "_row_exists"});
-    populateColumnIds(columns, mapping);
+    mapping.stampColumnIds(columns);
 
     auto a = columns.tryGetByName("a");
     auto row_exists = columns.tryGetByName("_row_exists");
@@ -109,6 +115,7 @@ TEST(ColumnIdMapping, UnmappedColumnsPassthrough)
     ASSERT_TRUE(a.has_value());
     ASSERT_TRUE(row_exists.has_value());
     EXPECT_EQ(a->getColumnIdInStorage(), "a");
+    EXPECT_TRUE(row_exists->column_id.empty());
     EXPECT_EQ(row_exists->getColumnIdInStorage(), "_row_exists");
 }
 
@@ -203,7 +210,7 @@ TEST(ColumnIdMapping, RenameToExistingColumnIdIsRejected)
     EXPECT_EQ(mapping.getColumnId(id), id);
 }
 
-/// stampColumnIdsForRead must NOT clobber a column that already carries a part-local id.
+/// stampColumnIds must NOT clobber a column that already carries a part-local id.
 /// Callers such as MergeTreeDataPartWide::getListOfStreamsForColumn (subcolumn sizes) feed
 /// an already-stamped part column into the reader factory, which then re-stamps off the
 /// *live* metadata mapping. After a DROP + re-ADD reuses the logical name at a fresh id,
@@ -224,12 +231,12 @@ TEST(ColumnIdMapping, StampForReadPreservesExistingId)
     /// A pre-stamped old-part column keeps its own id.
     NamesAndTypesList prestamped = makeColumns({"a"});
     prestamped.front().setColumnId("a");
-    stampColumnIdsForRead(prestamped, mapping);
+    mapping.stampColumnIds(prestamped);
     EXPECT_EQ(prestamped.front().getColumnIdInStorage(), "a");
 
     /// An id-less query column (the main read path) still gets stamped to the live id.
     NamesAndTypesList idless = makeColumns({"a"});
-    stampColumnIdsForRead(idless, mapping);
+    mapping.stampColumnIds(idless);
     EXPECT_EQ(idless.front().getColumnIdInStorage(), "1");
 }
 
@@ -247,7 +254,7 @@ TEST(ColumnIdMapping, RemapEvictsDroppedNameCollision)
 
     auto load_mapping = ColumnIdMapping::createIdentity(loaded);
     NamesAndTypesList part_id_columns = loaded;
-    populateColumnIds(part_id_columns, load_mapping);
+    load_mapping.stampColumnIds(part_id_columns);
 
     auto mapping = load_mapping;
     mapping.removeColumn("q");
@@ -278,4 +285,75 @@ TEST(ColumnIdMapping, IsPersistentVirtualColumnMatchesAddPersistentSet)
     EXPECT_FALSE(isPersistentVirtualColumn(PartDataVersionColumn::name));
     EXPECT_FALSE(isPersistentVirtualColumn("_part"));
     EXPECT_FALSE(isPersistentVirtualColumn("_part_offset"));
+}
+
+/// Drift guard: `isVirtualColumn` and `MergeTreeData::createVirtuals` now share one registry
+/// (`getMergeTreeVirtuals`), so they cannot drift. This asserts the invariant end-to-end
+/// (were the single source ever re-forked, this catches it): the predicate must cover every
+/// virtual `createVirtuals` registers, plus `_partition_value` (added only when a partition key
+/// is present, so absent from `createVirtuals(nullptr)`). With strict stamping, a miss means the
+/// stamp treats a virtual as a real physical column and throws.
+TEST(ColumnIdMapping, IsVirtualColumnCoversCreateVirtuals)
+{
+    const auto virtuals = MergeTreeData::createVirtuals(nullptr);
+    for (const auto & column : virtuals)
+        EXPECT_TRUE(isVirtualColumn(column.name)) << "createVirtuals registers '" << column.name
+            << "' but isVirtualColumn does not cover it";
+
+    EXPECT_TRUE(isVirtualColumn(PartitionValueColumn::name));
+
+    /// A real user column is not virtual.
+    EXPECT_FALSE(isVirtualColumn("a"));
+}
+
+/// Unified stamp (write == read): a mapped column takes its id, a virtual is left UNSTAMPED
+/// (empty ≡ name-keyed on disk), and an already-stamped part-local id is preserved (not
+/// clobbered by the live mapping after a DROP + re-ADD name reuse).
+TEST(ColumnIdMapping, StampColumnIdsStampsMappedLeavesVirtualEmpty)
+{
+    auto mapping = ColumnIdMapping::createIdentity(makeColumns({"a"}));
+    mapping.removeColumn("a");
+    auto fresh_id = mapping.allocateColumnId();
+    mapping.addColumn("a", fresh_id);
+    ASSERT_EQ(fresh_id, "1");
+
+    auto columns = makeColumns({"a", BlockNumberColumn::name});
+    mapping.stampColumnIds(columns);
+    EXPECT_EQ(columns.tryGetByName("a")->getColumnIdInStorage(), "1");
+    /// Virtual left unstamped; name fallback yields its own name (the old write behavior).
+    EXPECT_TRUE(columns.tryGetByName(BlockNumberColumn::name)->column_id.empty());
+    EXPECT_EQ(columns.tryGetByName(BlockNumberColumn::name)->getColumnIdInStorage(), BlockNumberColumn::name);
+
+    NamesAndTypesList prestamped = makeColumns({"a"});
+    prestamped.front().setColumnId("42");
+    mapping.stampColumnIds(prestamped);
+    EXPECT_EQ(prestamped.front().getColumnIdInStorage(), "42");
+}
+
+/// Lenient stamp: mapped columns get their id, columns outside the mapping (synthetic
+/// projection aggregates, not-yet-applied ALTER columns, a projection part's parent-mapped
+/// columns during loadColumns) are left UNSTAMPED, and it never throws.
+TEST(ColumnIdMapping, StampColumnIdsLenientLeavesUnmappedEmpty)
+{
+    auto mapping = ColumnIdMapping::createIdentity(makeColumns({"a", "c"}));
+
+    auto columns = makeColumns({"a", "sum(c)"});
+    EXPECT_NO_THROW(mapping.stampColumnIdsLenient(columns));
+    EXPECT_EQ(columns.tryGetByName("a")->getColumnIdInStorage(), "a");
+    EXPECT_TRUE(columns.tryGetByName("sum(c)")->column_id.empty());
+}
+
+/// Discriminating: a real physical column absent from an active mapping is a schema/mapping
+/// desync. The unified stamp must fail loud (LOGICAL_ERROR -> abort under debug/sanitizer, a
+/// throw otherwise) instead of silently defaulting the id to the name / leaving it empty.
+/// With the old lenient code it would not fail, so this is RED without the fix.
+TEST(ColumnIdMappingDeathTest, StampColumnIdsRejectsUnmappedColumn)
+{
+    auto mapping = ColumnIdMapping::createIdentity(makeColumns({"a"}));
+    auto columns = makeColumns({"a", "ghost"});
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    EXPECT_DEATH({ mapping.stampColumnIds(columns); }, "desynced");
+#else
+    EXPECT_THROW(mapping.stampColumnIds(columns), DB::Exception);
+#endif
 }

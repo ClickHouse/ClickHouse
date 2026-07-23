@@ -72,7 +72,7 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
     /// reader reads `column.getColumnIdInStorage()` and needs no mapping of its own.
     NamesAndTypesList columns = columns_to_read;
     if (const auto mapping = storage_snapshot->metadata->getActiveColumnIdMapping())
-        stampColumnIdsForRead(columns, *mapping);
+        mapping->stampColumnIds(columns);
 
     return std::make_unique<MergeTreeReaderCompactSingleBuffer>(
         read_info, columns, virtual_fields,

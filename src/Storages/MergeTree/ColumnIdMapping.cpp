@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/ColumnIdMapping.h>
 
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromString.h>
@@ -358,31 +360,50 @@ ColumnIdMapping ColumnIdMapping::fromString(const String & str)
     return mapping;
 }
 
-void populateColumnIds(NamesAndTypesList & columns, const ColumnIdMapping & mapping)
+void ColumnIdMapping::stampColumnIds(NamesAndTypesList & columns) const
 {
-    if (!mapping.isActive())
-        return;
-
-    for (auto & column : columns)
-        column.setColumnId(mapping.getColumnIdOrDefault(column.getNameInStorage()));
-}
-
-void stampColumnIdsForRead(NamesAndTypesList & columns, const ColumnIdMapping & mapping)
-{
-    if (!mapping.isActive())
+    if (!active)
         return;
 
     for (auto & column : columns)
     {
-        /// Only stamp columns that don't already carry a part-local id. Some callers
-        /// (e.g. getListOfStreamsForColumn, for subcolumn sizes) pass columns already
-        /// stamped with the part's real id; re-stamping from the (possibly live) mapping
-        /// would clobber it after a DROP + re-ADD name reuse and mis-resolve streams.
+        /// Preserve an already-stamped part-local id. Some read callers (e.g.
+        /// getListOfStreamsForColumn, for subcolumn sizes) pass columns already stamped with
+        /// the part's real id; re-stamping from the (possibly live) mapping would clobber it
+        /// after a DROP + re-ADD name reuse. On the write path columns arrive id-less, so
+        /// this guard is a no-op there.
         if (!column.column_id.empty())
             continue;
+
         const auto name_in_storage = column.getNameInStorage();
-        if (mapping.hasLogicalName(name_in_storage))
-            column.setColumnId(mapping.getColumnId(name_in_storage));
+        if (hasLogicalName(name_in_storage))
+            column.setColumnId(getColumnId(name_in_storage));
+        /// Virtual columns are not id-managed: persistent ones are stored by name, ephemeral
+        /// ones (e.g. `_part_offset`, `_part_data_version`) are materialized by the reader.
+        /// Leave them UNSTAMPED (empty id ≡ name-keyed on disk) for the name-resolution path.
+        else if (!isVirtualColumn(name_in_storage))
+            /// A real physical column absent from the active mapping is a schema/mapping
+            /// desync — a torn snapshot would otherwise stamp ids that no reader resolves
+            /// (write) or mis-resolve by a stale name (read). Fail loud instead.
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Column '{}' is absent from the active column-ID mapping while stamping a part; "
+                "the table schema and column-ID mapping have desynced", name_in_storage);
+    }
+}
+
+void ColumnIdMapping::stampColumnIdsLenient(NamesAndTypesList & columns) const
+{
+    if (!active)
+        return;
+
+    for (auto & column : columns)
+    {
+        const auto name_in_storage = column.getNameInStorage();
+        if (hasLogicalName(name_in_storage))
+            column.setColumnId(getColumnId(name_in_storage));
+        /// Everything else (synthetic projection aggregates, not-yet-applied ALTER columns,
+        /// a projection part's parent-mapping-stamped columns) is left UNSTAMPED
+        /// (empty id ≡ name-keyed on disk). No throw.
     }
 }
 

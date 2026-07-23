@@ -1434,15 +1434,26 @@ ORDER BY id
 SETTINGS serialization_info_version = 'with_column_ids';
 ```
 
-For existing tables, set the same setting.
-Column IDs are activated on the first compatible `ALTER` (`ADD COLUMN`, `DROP COLUMN`, or `RENAME COLUMN`):
+Column IDs are activated by the setting becoming `with_column_ids` — either at `CREATE TABLE` (as above), or via `ALTER TABLE ... MODIFY SETTING` on an existing table.
+For an existing table that was created without the setting, the `MODIFY SETTING` itself activates column IDs immediately (it creates the identity mapping and writes `column_ids.json` in that same commit); no subsequent column `ALTER` is required:
 
 ```sql
-ALTER TABLE example MODIFY SETTING
+-- A table created without the setting:
+CREATE TABLE existing_table
+(
+    id UInt64,
+    name String,
+    value Float64
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+-- This MODIFY SETTING activates column IDs immediately:
+ALTER TABLE existing_table MODIFY SETTING
     serialization_info_version = 'with_column_ids';
 
--- This ALTER activates column IDs and is already metadata-only:
-ALTER TABLE example RENAME COLUMN name TO title;
+-- Column IDs are now active, so this RENAME is metadata-only:
+ALTER TABLE existing_table RENAME COLUMN name TO title;
 ```
 
 ### Behavior changes {#physical-names-behavior-changes}

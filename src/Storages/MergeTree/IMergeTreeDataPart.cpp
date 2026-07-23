@@ -2344,8 +2344,13 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
         auto metadata_snapshot = getMetadataSnapshot();
         /// If there is no file with a list of columns, write it down.
         auto columns_to_load = metadata_snapshot->getColumns().getAllPhysical();
+        /// Lenient, not strict: for a projection part this fallback rebuilds columns from
+        /// projection metadata (synthetic aggregates like `sum(c)`, `_parent_part_offset`) and
+        /// stamps them against the PARENT table's mapping, where those names are legitimately
+        /// absent and non-virtual — the strict stamp would (wrongly) throw. loadColumns stamps a
+        /// part's own columns, so "unmapped ⇒ name-keyed" is correct here.
         if (column_id_mapping)
-            populateColumnIds(columns_to_load, *column_id_mapping);
+            column_id_mapping->stampColumnIdsLenient(columns_to_load);
 
         for (const auto & column : columns_to_load)
             if (getFileNameForColumn(column))

@@ -2892,7 +2892,7 @@ private:
                         columns_for_writer.push_back(col);
             }
             if (const auto column_id_mapping = ctx->getColumnIdMapping())
-                populateColumnIds(columns_for_writer, *column_id_mapping);
+                column_id_mapping->stampColumnIds(columns_for_writer);
 
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
@@ -3151,7 +3151,7 @@ MutateTask::MutateTask(
     ctx->space_reservation = space_reservation_;
     ctx->storage_columns = metadata_snapshot_->getColumns().getAllPhysical();
     if (const auto column_id_mapping = ctx->getColumnIdMapping())
-        populateColumnIds(ctx->storage_columns, *column_id_mapping);
+        column_id_mapping->stampColumnIds(ctx->storage_columns);
     ctx->txn = txn;
     ctx->source_part = ctx->future_part->parts[0];
     ctx->need_prefix = need_prefix_;
@@ -3718,7 +3718,7 @@ bool MutateTask::prepare()
         ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames, ctx->getColumnIdMapping());
 
     if (const auto column_id_mapping = ctx->getColumnIdMapping())
-        populateColumnIds(new_columns, *column_id_mapping);
+        column_id_mapping->stampColumnIds(new_columns);
 
     /// The part's records are keyed by stamped column ID; `getColumnsForNewDataPart`
     /// produced `new_infos` in the logical-name domain.

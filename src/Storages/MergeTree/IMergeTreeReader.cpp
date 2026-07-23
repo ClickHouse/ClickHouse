@@ -74,7 +74,7 @@ IMergeTreeReader::IMergeTreeReader(
     serializations.reserve(getColumns().size());
 
     /// The requested columns were stamped with their physical IDs at read ingress
-    /// (stampColumnIdsForRead, before convertToSubcolumns), so name->ID translation is
+    /// (ColumnIdMapping::stampColumnIds, before convertToSubcolumns), so name->ID translation is
     /// already done here: a stamped column resolves by ID, an unstamped one is legacy
     /// by-name. The part's stamped IDs still decide what the part contains; the ID only
     /// translates the request. Resolving by name instead would bind stale state: after

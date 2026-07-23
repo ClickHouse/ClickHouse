@@ -626,7 +626,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     global_ctx->storage_snapshot = global_ctx->data->getStorageSnapshotWithoutData(global_ctx->metadata_snapshot, global_ctx->context);
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
     if (const auto column_id_mapping = global_ctx->metadata_snapshot->getActiveColumnIdMapping())
-        populateColumnIds(global_ctx->storage_columns, *column_id_mapping);
+        column_id_mapping->stampColumnIds(global_ctx->storage_columns);
     global_ctx->virtual_columns = global_ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
     global_ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(global_ctx->metadata_snapshot->getPartitionKey(), global_ctx->data_settings);
 

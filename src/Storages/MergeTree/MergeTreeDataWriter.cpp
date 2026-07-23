@@ -710,7 +710,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     /// so a concurrent ALTER RENAME can prove the writer stamps from the captured mapping.
     FailPointInjection::pauseFailPoint(FailPoints::insert_write_temp_part_pause);
     if (column_id_mapping)
-        populateColumnIds(columns, *column_id_mapping);
+        column_id_mapping->stampColumnIds(columns);
 
     /// Do not write _block_number and _block_offset for 0-level parts: block number is not known on this step.
     const auto minmax_columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
@@ -1092,8 +1092,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     new_data_part->is_temp = is_temp;
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
+    /// Projection columns are the projection's SELECT output (group-by keys plus synthetic
+    /// aggregates like `sum(c)`); the aggregates are never in the base table's column-ID mapping.
+    /// Use the lenient stamp rather than the strict base-table write stamp.
     if (column_id_mapping)
-        populateColumnIds(columns, *column_id_mapping);
+        column_id_mapping->stampColumnIdsLenient(columns);
     SerializationInfo::Settings settings
     {
         static_cast<double>((*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),

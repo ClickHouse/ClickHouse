@@ -1112,30 +1112,10 @@ MergeTreeData::MergeTreeData(
 
 VirtualColumnsDescription MergeTreeData::createVirtuals(const KeyDescription * partition_key)
 {
-    VirtualColumnsDescription desc;
-
-    desc.addEphemeral("_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of part", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_part_index", std::make_shared<DataTypeUInt64>(), "Sequential index of the part in the query result", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_part_starting_offset", std::make_shared<DataTypeUInt64>(), "Cumulative starting row of the part in the query result", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_part_uuid", std::make_shared<DataTypeUUID>(), "Unique part identifier (if enabled MergeTree setting assign_part_uuids)", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral(PartitionIdColumn::name, PartitionIdColumn::type, "Name of partition", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_sample_factor", std::make_shared<DataTypeFloat64>(), "Sample factor (from the query)", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "Number of row in the part", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_part_granule_offset", std::make_shared<DataTypeUInt64>(), "Number of granule in the part", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral(PartDataVersionColumn::name, PartDataVersionColumn::type, "Data version of part (either min block number or mutation version)", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Disk name", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_distance", std::make_shared<DataTypeFloat32>(), "Pre-computed distance for vector search queries", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
-
-    if (partition_key && partition_key->sample_block.columns() > 0)
-        desc.addEphemeral(PartitionValueColumn::name, PartitionValueColumn::type(partition_key), "Value (a tuple) of a PARTITION BY expression", VirtualsMaterializationPlace::Reader);
-
-    desc.addPersistent(RowExistsColumn::name, RowExistsColumn::type, nullptr, "Persisted mask created by lightweight delete that show whether row exists or is deleted");
-    desc.addPersistent(BlockNumberColumn::name, BlockNumberColumn::type, BlockNumberColumn::codec, "Persisted original number of block that was assigned at insert");
-    desc.addPersistent(BlockOffsetColumn::name, BlockOffsetColumn::type, BlockOffsetColumn::codec, "Persisted original number of row in block that was assigned at insert");
-
-    return desc;
+    /// Single source of truth for the MergeTree virtual-column set lives in the low layer
+    /// (MergeTreeVirtualColumns), so `isVirtualColumn` — which the strict column-ID stamp relies
+    /// on to distinguish a virtual from a schema/mapping desync — cannot drift from it.
+    return getMergeTreeVirtuals(partition_key);
 }
 
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
@@ -10642,8 +10622,12 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
         ? Nested::collect(columns.getAllPhysical())
         : columns.getAllPhysical();
 
+    /// Filename-collision pre-check for a PROPOSED schema (e.g. `checkAlterIsPossible` passes the
+    /// post-ALTER columns). A newly added or renamed column is legitimately absent from the live
+    /// mapping at this point, so use the lenient stamp rather than the strict write stamp: this
+    /// only needs a stable per-column key to detect two columns sharing a stream file.
     if (auto mapping = getActiveColumnIdMapping())
-        populateColumnIds(columns_list, *mapping);
+        mapping->stampColumnIdsLenient(columns_list);
 
     SerializationInfo::Settings serialization_settings
     {
