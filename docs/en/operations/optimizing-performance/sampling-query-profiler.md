@@ -20,7 +20,7 @@ You can trace CPU time and wall-clock time spent including idle time.
 The query profiler is automatically enabled in ClickHouse Cloud.
 The following example query finds the most frequent stack traces for a profiled query, with resolved function names and source locations.
 
-By default, the profiler symbolizes stack traces at collection time and stores the results in the `symbols` and `lines` columns of [`system.trace_log`](/operations/system-tables/trace_log), so the examples below read those columns directly and do not require introspection functions. Symbolization is controlled by the `symbolize` setting in the `trace_log` server configuration section (enabled by default) and is supported on ELF platforms (such as Linux) and macOS; on FreeBSD the `symbols` and `lines` columns are always empty. If symbolization is disabled or unavailable on your platform, use the `addressToSymbol`, `demangle` and `addressToLine` [introspection functions](../../sql-reference/functions/introspection.md) to resolve the raw addresses in the `trace` column instead.
+By default, the profiler symbolizes stack traces at collection time and stores the results in the `symbols` and `lines` columns of [`system.trace_log`](/operations/system-tables/trace_log), so the examples below read those columns directly and do not require introspection functions. Symbolization is controlled by the `symbolize` setting in the `trace_log` server configuration section (enabled by default) and is supported on ELF platforms (such as Linux) and macOS; on FreeBSD the `symbols` and `lines` columns are always empty. Function names in `symbols` come from the binary's symbol table and are available by default. Source locations in `lines` are best-effort: they require debug info (on macOS, a `.dSYM` bundle next to the binary), and on ELF platforms only frames inside the main ClickHouse binary are resolved, so entries for frames that cannot be resolved (for example, in shared libraries) are left empty. If symbolization is disabled or unavailable on your platform, use the `addressToSymbol`, `demangle` and `addressToLine` [introspection functions](../../sql-reference/functions/introspection.md) to resolve the raw addresses in the `trace` column instead.
 
 :::tip
 Replace the `query_id` value with the ID of the query you want to profile.
@@ -99,6 +99,7 @@ Ensure that the [`trace_log`](../../operations/server-configuration-parameters/s
 
 This section configures the [trace_log](/operations/system-tables/trace_log) system table containing the results of the profiler functioning.
 The `symbolize` option (enabled by default) makes ClickHouse resolve each stack frame at collection time and store the demangled function names and source locations in the `symbols` and `lines` columns.
+Function names in `symbols` come from the symbol table and are available by default, while source locations in `lines` require debug info (a `.dSYM` bundle on macOS) and, on ELF platforms, are resolved only for frames inside the main ClickHouse binary; unresolved frames have empty `lines` entries.
 
 Note that the raw addresses in the `trace` column are less stable across restarts and upgrades than the pre-symbolized columns.
 On ELF platforms except FreeBSD, frames in the main ClickHouse binary are stored as physical file offsets, so they stay resolvable across restarts as long as the binary is unchanged; on macOS and FreeBSD they are stored as runtime virtual addresses that may become invalid after a restart.
@@ -123,7 +124,7 @@ If you need to profile each individual query, use a higher sampling frequency.
 To get a profile for some query, you need to aggregate data from the `trace_log` table.
 You can aggregate data by individual functions or by the whole stack traces.
 
-When symbolization is enabled (the default), the demangled function names and source locations are already available in the `symbols` and `lines` columns, so no additional setup is required. Symbolization is not supported on FreeBSD, where these columns are always empty.
+When symbolization is enabled (the default), the demangled function names and source locations are already available in the `symbols` and `lines` columns, so no additional setup is required. Symbolization is not supported on FreeBSD, where these columns are always empty. `lines` entries may be empty for frames that lack debug info or fall outside the main ClickHouse binary (see [above](#server-config)).
 
 If symbolization is disabled, or you want to resolve the raw addresses in the `trace` column on the fly (for example, to expand inline frames), allow introspection functions with the [`allow_introspection_functions`](../../operations/settings/settings.md#allow_introspection_functions) setting:
 
