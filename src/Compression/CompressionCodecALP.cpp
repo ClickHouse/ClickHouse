@@ -262,7 +262,6 @@ struct ALPFloatTraits
  * Such values fail the bit-exact round-trip and are stored as exceptions (similar to the 8.0605 example in section 2.5 of the ALP paper).
  * `Float64` constants are a billion times more precise, so the decode error can never reach a neighboring `Float32`.
  */
-template <FLOAT T>
 struct ALPFloatUtils
 {
     /// Size of the shared constants tables, covering the `Float64` range.
@@ -280,9 +279,14 @@ struct ALPFloatUtils
     static constexpr Float64 ROUND_MAGIC = 6755399441055744.0; // 2^51 + 2^52
 
     /// d = round(v * 10^e * 10^-f)
-    static Int64 encodeValue(T value, UInt8 exponent, UInt8 fraction)
+    static ALWAYS_INLINE Int64 encodeValue(Float32 value, UInt8 exponent, UInt8 fraction)
     {
-        Float64 value_enc = static_cast<Float64>(value) * EXPONENTS[exponent] * FRACTIONS[fraction];
+        return encodeValue(static_cast<Float64>(value), exponent, fraction); // the promotion is exact
+    }
+
+    static Int64 encodeValue(Float64 value, UInt8 exponent, UInt8 fraction)
+    {
+        Float64 value_enc = value * EXPONENTS[exponent] * FRACTIONS[fraction];
 
         const bool invalid = std::isinf(value_enc) || std::isnan(value_enc) || value_enc < LOWER || value_enc > UPPER
             || (value_enc == 0.0 && std::signbit(value_enc));
@@ -296,6 +300,7 @@ struct ALPFloatUtils
     }
 
     /// v = d * 10^f * 10^-e
+    template <FLOAT T>
     static T decodeValue(Int64 value, UInt8 exponent, UInt8 fraction)
     {
         /// It's important to keep two multiplication steps as float multiplication is not associative.
@@ -511,8 +516,8 @@ private:
         for (UInt16 i = 0; i < float_count; ++i, source += sizeof(T))
         {
             const T value = unalignedLoadLittleEndian<T>(source);
-            const Int64 value_enc = ALPFloatUtils<T>::encodeValue(value, block.params.exponent, block.params.fraction);
-            const T value_dec = ALPFloatUtils<T>::decodeValue(value_enc, block.params.exponent, block.params.fraction);
+            const Int64 value_enc = ALPFloatUtils::encodeValue(value, block.params.exponent, block.params.fraction);
+            const T value_dec = ALPFloatUtils::decodeValue<T>(value_enc, block.params.exponent, block.params.fraction);
 
             block.encoded_floats[block.encoded_float_count++] = value_enc;
 
@@ -691,8 +696,8 @@ private:
         for (UInt32 i = 0; i < float_count; ++i)
         {
             const T value = source[i];
-            const Int64 value_enc = ALPFloatUtils<T>::encodeValue(value, params.exponent, params.fraction);
-            const T value_dec = ALPFloatUtils<T>::decodeValue(value_enc, params.exponent, params.fraction);
+            const Int64 value_enc = ALPFloatUtils::encodeValue(value, params.exponent, params.fraction);
+            const T value_dec = ALPFloatUtils::decodeValue<T>(value_enc, params.exponent, params.fraction);
 
             if (likely(value == value_dec))
             {
@@ -821,7 +826,7 @@ private:
         char * dest_start = dest;
         for (UInt16 i = 0; i < float_count; ++i, dest += sizeof(T))
         {
-            const T decoded_value = ALPFloatUtils<T>::decodeValue(block.encoded[i], exponent, fraction);
+            const T decoded_value = ALPFloatUtils::decodeValue<T>(block.encoded[i], exponent, fraction);
             unalignedStoreLittleEndian<T>(dest, decoded_value);
         }
 
