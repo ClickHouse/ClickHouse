@@ -1,7 +1,6 @@
 <test>
     <settings>
         <enable_analyzer>1</enable_analyzer>
-        <enable_join_runtime_filters>0</enable_join_runtime_filters>
         <!-- Single thread makes the speedup visible in wall clock instead of being lost in
              parallel-scan overhead, and brings full-scan baselines into the 1-2 s window
              on the perf machine. -->

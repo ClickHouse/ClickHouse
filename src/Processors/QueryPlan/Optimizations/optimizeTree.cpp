@@ -279,8 +279,9 @@ void optimizeTreeSecondPass(
         },
         [&](auto & frame_node)
         {
-            if (optimization_settings.enable_join_runtime_filters)
-                join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
+            /// The lift must run before `tryAddJoinRuntimeFilter`: the latter wraps the probe side
+            /// in an `Apply runtime join filter` `FilterStep` and the build side in `BuildRuntimeFilterStep`,
+            /// which would hide the original source filters and indexed reads from the lift's walk.
             if (optimization_settings.lift_predicate_across_join)
             {
                 if (tryLiftPredicateAcrossEquiJoin(&frame_node, nodes, extra_settings) > 0)
@@ -309,6 +310,8 @@ void optimizeTreeSecondPass(
                     }
                 }
             }
+            if (optimization_settings.enable_join_runtime_filters)
+                join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
             convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
 
