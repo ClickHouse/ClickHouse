@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Tags: no-random-settings, no-object-storage, no-replicated-database, no-shared-merge-tree
+# Tag no-replicated-database: plain rewritable should not be shared between replicas
+
+# A writer table (adaptive granularity) creates a Compact part on a plain_rewritable path. A reader
+# table with non-adaptive granularity (index_granularity_bytes = 0, so canUsePolymorphicParts() is
+# false) shares the same backing path. SYSTEM RESTART DISK makes the reader re-scan and load the
+# writer's Compact part. Previously the part-load path rejected the Compact part with a LOGICAL_ERROR
+# ("... table does not support polymorphic parts"), aborting the server in debug/sanitizer builds. An
+# existing Compact part is always adaptive, so it must load regardless of the reader's current policy.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS writer SYNC"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS reader SYNC"
+
+${CLICKHOUSE_CLIENT} --query "
+CREATE TABLE writer (s String) ORDER BY ()
+SETTINGS table_disk = true,
+  disk = disk(
+      name = poly_load_writer_${CLICKHOUSE_DATABASE},
+      type = object_storage,
+      object_storage_type = local,
+      metadata_type = plain_rewritable,
+      path = 'disks/04371/${CLICKHOUSE_DATABASE}/')
+"
+
+# Same backing path, readonly, and non-adaptive granularity (index_granularity_bytes = 0) so that
+# canUsePolymorphicParts() is false for this table.
+${CLICKHOUSE_CLIENT} --query "
+CREATE TABLE reader (s String) ORDER BY ()
+SETTINGS table_disk = true, index_granularity_bytes = 0,
+  disk = disk(
+      readonly = true,
+      name = poly_load_reader_${CLICKHOUSE_DATABASE},
+      type = object_storage,
+      object_storage_type = local,
+      metadata_type = plain_rewritable,
+      path = 'disks/04371/${CLICKHOUSE_DATABASE}/')
+"
+
+# A single small insert produces a Compact part.
+${CLICKHOUSE_CLIENT} --query "INSERT INTO writer VALUES ('Hello')"
+echo "writer part type:"
+${CLICKHOUSE_CLIENT} --query "SELECT part_type FROM system.parts WHERE database = currentDatabase() AND table = 'writer' AND active"
+
+# Reloads the readonly reader's part list; it now loads the writer's Compact part.
+${CLICKHOUSE_CLIENT} --query "SYSTEM RESTART DISK poly_load_reader_${CLICKHOUSE_DATABASE}"
+echo "reader after restart:"
+${CLICKHOUSE_CLIENT} --query "SELECT count(), min(s) FROM reader"
+
+${CLICKHOUSE_CLIENT} --query "DROP TABLE reader SYNC"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE writer SYNC"
