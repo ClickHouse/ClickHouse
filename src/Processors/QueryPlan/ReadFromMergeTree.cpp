@@ -2371,6 +2371,316 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     return std::make_unique<ReadFromMergeTree>(*this);
 }
 
+std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs)
+{
+    if (output_header == nullptr)
+        return {};
+
+    NameSet columns_to_keep;
+
+    for (const auto & column_name : required_outputs)
+        columns_to_keep.insert(column_name);
+
+    if (query_info.row_level_filter)
+    {
+        for (const auto * input : query_info.row_level_filter->actions.getInputs())
+            columns_to_keep.insert(input->result_name);
+    }
+
+
+    if (query_info.prewhere_info)
+    {
+        for (const auto * input : query_info.prewhere_info->prewhere_actions.getInputs())
+            columns_to_keep.insert(input->result_name);
+    }
+
+    const auto & virtuals = getStorageMetadata()->virtuals;
+
+    Names new_column_names;
+    Names columns_to_remove;
+    for (const auto & column_name : all_column_names)
+    {
+        if (columns_to_keep.contains(column_name) || virtuals.has(column_name))
+            new_column_names.push_back(column_name);
+        else
+            columns_to_remove.push_back(column_name);
+    }
+
+    if (columns_to_remove.empty())
+        return {};
+
+    auto lazy_reading_header = std::make_shared<const Block>(
+        MergeTreeSelectProcessor::transformHeader(
+            storage_snapshot->getSampleBlockForColumns(columns_to_remove),
+            nullptr, //query_info.row_level_filter,
+            nullptr) //query_info.prewhere_info)
+    );
+
+    PartRangesReadInfo info(getParts(), context->getSettingsRef(), *data.getSettings());
+
+    auto new_reading = std::make_unique<LazilyReadFromMergeTree>(
+        std::move(lazy_reading_header),
+        block_size.max_block_size_rows,
+        info.min_marks_for_concurrent_read,
+        reader_settings,
+        mutations_snapshot,
+        storage_snapshot,
+        context,
+        data.getLogName());
+
+    all_column_names = std::move(new_column_names);
+
+    output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
+        storage_snapshot->getSampleBlockForColumns(all_column_names),
+        query_info.row_level_filter,
+        query_info.prewhere_info));
+
+    /// Update analysis result if it exists
+    if (analyzed_result_ptr)
+        analyzed_result_ptr->column_names_to_read = all_column_names;
+
+    required_source_columns = all_column_names;
+
+    return new_reading;
+}
+
+void ReadFromMergeTree::addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset)
+{
+    /// A read column consumed by a filter is exposed again by adding it back to the filter outputs,
+    /// the same way `PREWHERE` keeps pass-through columns. When the column is the filter column itself
+    /// (e.g. `PREWHERE _part_offset`), it is already among the outputs, so the remove-filter flag is
+    /// cleared instead: after filtering it keeps its original values for the surviving rows.
+    /// Both are required for the data-read pipeline to actually emit it, not only for the plan header.
+    auto reexpose_in_filter = [](ActionsDAG & filter_actions, const String & filter_column_name, bool & remove_filter_column, const String & column_name) -> bool
+    {
+        auto & dag_outputs = filter_actions.getOutputs();
+        for (const auto * input : filter_actions.getInputs())
+        {
+            if (input->result_name != column_name)
+                continue;
+
+            if (std::ranges::find(dag_outputs, input) == dag_outputs.end())
+            {
+                dag_outputs.push_back(input);
+                return true;
+            }
+
+            if (filter_column_name == column_name && remove_filter_column)
+            {
+                remove_filter_column = false;
+                return true;
+            }
+        }
+        return false;
+    };
+
+    auto expose_in_output = [&](const String & column_name) -> bool
+    {
+        if (output_header && output_header->has(column_name))
+            return false;
+
+        bool reexposed = false;
+        if (query_info.row_level_filter)
+            reexposed |= reexpose_in_filter(
+                query_info.row_level_filter->actions,
+                query_info.row_level_filter->column_name,
+                query_info.row_level_filter->do_remove_column,
+                column_name);
+        if (query_info.prewhere_info)
+            reexposed |= reexpose_in_filter(
+                query_info.prewhere_info->prewhere_actions,
+                query_info.prewhere_info->prewhere_column_name,
+                query_info.prewhere_info->remove_prewhere_column,
+                column_name);
+
+        if (!reexposed && std::ranges::find(all_column_names, column_name) == all_column_names.end())
+            all_column_names.insert(all_column_names.begin(), column_name);
+
+        return true;
+    };
+
+    added_part_starting_offset = expose_in_output("_part_starting_offset");
+    added_part_offset = expose_in_output("_part_offset");
+
+    if (!added_part_starting_offset && !added_part_offset)
+        return;
+
+    output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
+        storage_snapshot->getSampleBlockForColumns(all_column_names),
+        query_info.row_level_filter,
+        query_info.prewhere_info));
+
+    /// Update analysis result if it exists
+    if (analyzed_result_ptr)
+        analyzed_result_ptr->column_names_to_read = all_column_names;
+
+    required_source_columns = all_column_names;
+}
+
+bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
+{
+    if (!indexes || !indexes->use_skip_indexes || indexes->skip_indexes.empty())
+        return false;
+
+    /// When a vector similarity index is present, disable the use_skip_indexes_on_data_read path entirely and apply
+    /// all skip indexes during index analysis instead - the vector index runs first (it is the most selective) and the
+    /// remaining skip indexes run after it.
+    const bool has_vector_similarity_index = std::ranges::any_of(indexes->skip_indexes.useful_indices, [](const auto & idx)
+    {
+        return idx.index->isVectorSimilarityIndex();
+    });
+    if (has_vector_similarity_index)
+        return false;
+
+    const auto & settings = context->getSettingsRef();
+    if (!settings[Setting::use_skip_indexes_on_data_read])
+        return false;
+
+    /// Remove this after statistics based cardinality estimation is enabled.
+    if (query_info.query_tree)
+    {
+        const QueryTreeNodePtr & join_tree_node = query_info.query_tree->as<QueryNode &>().getJoinTree();
+
+        if (join_tree_node && (join_tree_node->getNodeType() == QueryTreeNodeType::JOIN || join_tree_node->getNodeType() == QueryTreeNodeType::CROSS_JOIN))
+            return false;
+    }
+
+    if (query_info.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode])
+        return false;
+
+    /// Settings `read_overflow_mode = 'throw'` with `max_rows_to_read` (and the symmetric
+    /// `read_overflow_mode_leaf` with `max_rows_to_read_leaf`) are evaluated early during execution,
+    /// during initialization of the pipeline based on estimated row counts. Estimation doesn't work properly
+    /// if the skip index is evaluated during data read (scan).
+    if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
+        return false;
+    if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf])
+        return false;
+
+    /// Pending ALTER mutations (e.g. `MODIFY COLUMN`) can change the type of an indexed column,
+    /// making the existing on-disk index data incompatible with the current column type.
+    /// In the data-read phase the skip index is applied without the per-part `can_use_index` check
+    /// that `filterPartsByPrimaryKeyAndSkipIndexes` performs, so disable the feature entirely when
+    /// any data/alter mutations or patches are pending.
+    if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts())
+        return false;
+
+    return true;
+}
+
+
+static const char * indexTypeToString(ReadFromMergeTree::IndexType type);
+
+void ReadFromMergeTree::logPredicateStatistics(const AnalysisResult & result) const
+{
+    UInt64 sample_rate = context->getSettingsRef()[Setting::predicate_statistics_sample_rate];
+    if (sample_rate == 0)
+        return;
+
+    if (sample_rate > 1)
+    {
+        auto qid = CurrentThread::getQueryId();
+        if (CityHash_v1_0_2::CityHash64(qid.data(), qid.size()) % sample_rate != 0)
+            return;
+    }
+
+    auto predicate_stats_log = context->getPredicateStatisticsLog();
+    if (!predicate_stats_log)
+        return;
+
+    if (result.index_stats.empty())
+        return;
+
+    auto storage_id = data.getStorageID();
+    if (storage_id.database_name.empty())
+        return;
+
+    PredicateStatisticsLogElement elem;
+    auto now = time(nullptr);
+    elem.event_date = static_cast<UInt16>(DateLUT::instance().toDayNum(now));
+    elem.event_time = now;
+    elem.database = storage_id.database_name;
+    elem.table = storage_id.table_name;
+    elem.query_id = String(CurrentThread::getQueryId());
+
+    UInt64 prev_granules = 0;
+    for (const auto & stat : result.index_stats)
+    {
+        if (stat.type == IndexType::None)
+        {
+            prev_granules = stat.num_granules_after;
+            continue;
+        }
+
+        if (!stat.part_name.empty())
+            continue;
+
+        UInt64 total = prev_granules > 0 ? prev_granules : stat.num_granules_after;
+        UInt64 after = stat.num_granules_after;
+
+        elem.index_names.push_back(stat.name.empty() ? indexTypeToString(stat.type) : stat.name);
+        elem.index_types.push_back(indexTypeToString(stat.type));
+        elem.total_granules.push_back(total);
+        elem.granules_after.push_back(after);
+        elem.index_selectivities.push_back(total > 0 ? static_cast<Float64>(after) / static_cast<Float64>(total) : 1.0);
+
+        prev_granules = after;
+    }
+
+    if (!elem.index_names.empty())
+        predicate_stats_log->add(std::move(elem));
+}
+
+/// Splits the analyzed marks across `bucket_count` distributed-read buckets as contiguous, mark-balanced
+/// slices: bucket b gets global mark offsets [b*M/bucket_count, (b+1)*M/bucket_count) of the parts' marks
+/// flattened in analyzed order (M = total marks). Computed on the coordinator so a worker never re-derives
+/// ranges. Consecutive ranges of one part are coalesced; a bucket with no marks is left empty.
+static std::vector<RangesInDataPartsDescription> sliceMarksAcrossBuckets(const RangesInDataParts & parts, size_t bucket_count)
+{
+    std::vector<RangesInDataPartsDescription> result(bucket_count);
+    const size_t total_marks = parts.getMarksCountAllParts();
+    if (total_marks == 0 || bucket_count == 0)
+        return result;
+
+    auto bucket_end_global = [&](size_t bucket) -> size_t
+    {
+        return bucket + 1 >= bucket_count ? total_marks : ((bucket + 1) * total_marks) / bucket_count;
+    };
+
+    size_t current_bucket = 0;
+    size_t global_offset = 0;
+    for (const auto & part : parts)
+    {
+        const auto & info = part.data_part->info;
+        for (const auto & range : part.ranges)
+        {
+            const size_t length = range.end - range.begin;
+            size_t covered = 0;
+            while (covered < length)
+            {
+                const size_t global_mark = global_offset + covered;
+                while (current_bucket + 1 < bucket_count && global_mark >= bucket_end_global(current_bucket))
+                    ++current_bucket;
+                const size_t take = std::min(length - covered, bucket_end_global(current_bucket) - global_mark);
+                const MarkRange sub_range{range.begin + covered, range.begin + covered + take};
+                auto & bucket = result[current_bucket];
+                if (!bucket.empty() && bucket.back().info == info)
+                    bucket.back().ranges.push_back(sub_range);
+                else
+                {
+                    RangesInDataPartDescription desc;
+                    desc.info = info;
+                    desc.ranges = MarkRanges{sub_range};
+                    bucket.push_back(std::move(desc));
+                }
+                covered += take;
+            }
+            global_offset += length;
+        }
+    }
+    return result;
+}
+
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto & result = getAnalysisResult();
