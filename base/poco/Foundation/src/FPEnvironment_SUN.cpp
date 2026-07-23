@@ -64,7 +64,7 @@ bool FPEnvironmentImpl::isInfiniteImpl(double value)
 
 bool FPEnvironmentImpl::isInfiniteImpl(long double value)
 {
-	int cls = fpclass(static_cast<double>(value));
+	int cls = fpclass(value);
 	return cls == FP_PINF || cls == FP_NINF;
 }
 

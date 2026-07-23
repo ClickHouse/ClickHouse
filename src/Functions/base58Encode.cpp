@@ -16,7 +16,7 @@ using FunctionBase58Encode = FunctionBaseXXConversion<Base58EncodeImpl>;
 REGISTER_FUNCTION(Base58Encode)
 {
     FunctionDocumentation::Description description = R"(
-Encodes a string using [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58-01) encoding.
+Encodes a string using [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) encoding.
 )";
     FunctionDocumentation::Syntax syntax = "base58Encode(plaintext)";
     FunctionDocumentation::Arguments arguments = {
@@ -36,7 +36,7 @@ Encodes a string using [Base58](https://datatracker.ietf.org/doc/html/draft-mspo
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBase58Encode>(documentation);
 }

@@ -1,10 +1,14 @@
 #!/usr/bin/python3
 
 import argparse
+import ast
+import collections
 import csv
 import itertools
+import json
 import os
 import os.path
+import pprint
 import sys
 import traceback
 
@@ -28,11 +32,9 @@ slower_queries = 0
 unstable_queries = 0
 very_unstable_queries = 0
 unstable_backward_incompatible_queries = 0
-benchmarks = {"clickbench", "tpch", "tpcds"}
 
 # max seconds to run one query by itself, not counting preparation
-# by default it's 2 seconds, but for benchmarks it's 8 seconds
-get_allowed_single_run_time = lambda test_name: 8 if test_name in benchmarks else 2
+allowed_single_run_time = 2
 
 color_bad = "#ffb0c0"
 color_good = "#b0d050"
@@ -128,20 +130,12 @@ tr:nth-child(odd) td {{filter: brightness(90%);}}
 {{ text-align: right; }}
 
   </style>
-  <title>ClickHouse performance comparison</title>
+  <title>Clickhouse performance comparison</title>
 </head>
 <body>
 <div class="main">
 
 <h1>ClickHouse performance comparison</h1>
-
-<div style="border: 1px solid #ccc; padding: 0 10px; border-radius: 8px; max-width: 1000px; background-color: #fffbea; text-align: center;">
-  <h3>Good to know</h3>
-  <p>
-      You can learn how to interact with this report and find a lot of useful information (e.g., flame graphs) from the
-      <a href="https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/scripts/README.md#how-to-read-the-report" target="_blank">documentation</a>
-  </p>
-</div>
 """
 
 table_anchor = 0
@@ -234,7 +228,7 @@ def tableStart(title):
     return f"""
         <h2 id="{anchor}">
             <a class="cancela" href="#{anchor}">{title}</a>
-            <a class="cancela" href="https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/scripts/README.md#{help_anchor}"><sup style="color: #888">?</sup></a>
+            <a class="cancela" href="https://github.com/ClickHouse/ClickHouse/tree/master/docker/test/performance-comparison#{help_anchor}"><sup style="color: #888">?</sup></a>
         </h2>
         <table class="{cls}">
     """
@@ -413,7 +407,6 @@ if args.report == "main":
         attrs = ["" for c in columns]
         for row in rows:
             anchor = f"{currentTableAnchor()}.{row[2]}.{row[3]}"
-            allowed_single_run_time = get_allowed_single_run_time(row[2])
             if float(row[1]) > 0.10:
                 attrs[1] = f'style="background: {color_bad}"'
                 unstable_backward_incompatible_queries += 1
@@ -487,45 +480,6 @@ if args.report == "main":
         tables.append(text)
 
     add_changes()
-
-    def add_unconfirmed_changes():
-        # Queries flagged as changed on the main run whose difference did not
-        # reproduce when rerun after a server restart (compare.sh's
-        # confirm_changes). They do not fail the check, but are kept visible
-        # with both the original and the rerun statistics.
-        #
-        # The confirmation step is optional and fail-open, so a missing file
-        # is normal and must not become a report error (which would fail the
-        # check) -- only read it if it exists.
-        if not os.path.exists("report/unconfirmed-changes.tsv"):
-            return
-        rows = tsvRows("report/unconfirmed-changes.tsv")
-        if not rows:
-            return
-
-        global tables
-        text = tableStart("Unconfirmed Changes")
-        columns = [
-            "Old,&nbsp;s",  # 0
-            "New,&nbsp;s",  # 1
-            "Relative difference (new&nbsp;&minus;&nbsp;old) / old",  # 2
-            "p&nbsp;<&nbsp;0.01 threshold",  # 3
-            "Rerun relative difference",  # 4
-            "Rerun threshold",  # 5
-            "Test",  # 6
-            "#",  # 7
-            "Query",  # 8
-        ]
-        text += tableHeader(columns)
-
-        for row in rows:
-            anchor = f"{currentTableAnchor()}.{row[6]}.{row[7]}"
-            text += tableRow(row, anchor=anchor)
-
-        text += tableEnd()
-        tables.append(text)
-
-    add_unconfirmed_changes()
 
     def add_unstable_queries():
         global unstable_queries, very_unstable_queries, tables
@@ -603,7 +557,7 @@ if args.report == "main":
             "Longest query, total for measured runs,&nbsp;s",  # 4
             "Average query wall clock time,&nbsp;s",  # 5
             "Shortest query, total for measured runs,&nbsp;s",  # 6
-            "",  # Runs (average per query)                          #7
+            "",  # Runs                                               #7
         ]
         attrs = ["" for c in columns]
         attrs[7] = None
@@ -611,25 +565,10 @@ if args.report == "main":
         text = tableStart("Test Times")
         text += tableHeader(columns, attrs)
 
-        # Worst per-single-run wall time per test, written by compare.sh:
-        # each query is judged against its own adaptive run count, so a mixed
-        # test cannot hide a slow query behind a high average count. Absent in
-        # older workspaces - the legacy per-test approximation applies then
-        # (the existence check keeps tsvRows from recording a report error).
-        max_single_run_times = {}
-        if os.path.exists("report/max-single-run-times.tsv"):
-            max_single_run_times = {
-                r[0]: float(r[1])
-                for r in tsvRows("report/max-single-run-times.tsv")
-            }
-
         allowed_average_run_time = 3.75  # 60 seconds per test at (7 + 1) * 2 runs
         for r in rows:
             anchor = f"{currentTableAnchor()}.{r[0]}"
-            # Run counts are adaptive per query; r[7] is the per-test average
-            # (ceil), which keeps this budget proportional to the actual total
-            # number of runs of the test instead of a median proxy.
-            total_runs = (float(r[7]) + 1) * 2  # one prewarm run, two servers
+            total_runs = (int(r[7]) + 1) * 2  # one prewarm run, two servers
             if r[0] != "Total" and float(r[5]) > allowed_average_run_time * total_runs:
                 # FIXME should be 15s max -- investigate parallel_insert
                 slow_average_tests += 1
@@ -642,15 +581,7 @@ if args.report == "main":
             else:
                 attrs[5] = ""
 
-            if r[0] in max_single_run_times:
-                query_too_slow = max_single_run_times[
-                    r[0]
-                ] > get_allowed_single_run_time(r[0])
-            else:
-                query_too_slow = float(r[4]) > get_allowed_single_run_time(
-                    r[0]
-                ) * total_runs
-            if r[0] != "Total" and query_too_slow:
+            if r[0] != "Total" and float(r[4]) > allowed_single_run_time * total_runs:
                 slow_average_tests += 1
                 attrs[4] = f'style="background: {color_bad}"'
                 errors_explained.append(
@@ -691,6 +622,8 @@ if args.report == "main":
     </div>
     <p class="links">
     <a href="all-queries.html">All queries</a>
+    <a href="compare.log">Log</a>
+    <a href="output.7z">Test output</a>
     {os.getenv("CHPC_ADD_REPORT_LINKS") or ''}
     </p>
     </body>
@@ -710,20 +643,9 @@ if args.report == "main":
         message_array.append(str(faster_queries) + " faster")
 
     if slower_queries:
-        # Only fail the whole check when a large number of distinct queries
-        # regress at once. A handful of "slower" queries is dominated by CI
-        # noise: a single bad shard run (noisy neighbour, frequency scaling) or
-        # code-layout artifacts can push several unrelated micro benchmarks over
-        # the threshold simultaneously. A genuine, targeted regression shows up
-        # as a small cluster of related queries with large magnitudes that the
-        # per-query thresholds catch on their own. The false positive rate
-        # should be kept < 1%.
-        #
-        # This threshold must stay synchronized with SLOWER_QUERIES_FAIL_THRESHOLD
-        # in ci/jobs/performance_tests.py: that script discards the status
-        # embedded here and recomputes the final Praktika status by reparsing the
-        # "N slower" message below, so the effective gate lives there.
-        if slower_queries > 10:
+        # This threshold should be synchronized with the value in https://github.com/ClickHouse/ClickHouse/blob/master/tests/ci/performance_comparison_check.py#L225
+        # False positives rate should be < 1%: https://shorturl.at/CDEK8
+        if slower_queries > 5:
             status = "failure"
         message_array.append(str(slower_queries) + " slower")
 
@@ -801,7 +723,7 @@ elif args.report == "all-queries":
             else:
                 attrs[4] = attrs[5] = ""
 
-            if (float(r[2]) + float(r[3])) / 2 > get_allowed_single_run_time(r[7]):
+            if (float(r[2]) + float(r[3])) / 2 > allowed_single_run_time:
                 attrs[2] = f'style="background: {color_bad}"'
                 attrs[3] = f'style="background: {color_bad}"'
             else:

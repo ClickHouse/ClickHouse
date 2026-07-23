@@ -11,8 +11,6 @@
 #include <IO/WriteBufferFromVector.h>
 
 #include <Common/Stopwatch.h>
-#include <Examples/clickhouse_examples.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 
 static UInt64 rdtsc()
@@ -28,7 +26,7 @@ static UInt64 rdtsc()
 }
 
 
-int mainEntryExampleParseIntPerf(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     pcg64 rng;
 
@@ -43,28 +41,29 @@ int mainEntryExampleParseIntPerf(int argc, char ** argv)
         using T = UInt8;
 
         size_t n = std::stol(argv[1]);
-        chassert(n > 0);
+        assert(n > 0);
 
-        DB::VectorWithMemoryTracking<T> data(n);
-        DB::VectorWithMemoryTracking<T> data2(n);
+        std::vector<T> data(n);
+        std::vector<T> data2(n);
 
         {
             Stopwatch watch;
 
             for (size_t i = 0; i < n; ++i)
-                data[i] = static_cast<T>(rng());
+                data[i] = rng();
 
             watch.stop();
-            std::cerr << std::fixed << std::setprecision(2) << "Generated " << n << " numbers ("
-                      << static_cast<double>(data.size()) * sizeof(data[0]) / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
-                      << static_cast<double>(data.size()) * sizeof(data[0]) / watch.elapsedSeconds() / 1000000 << " MB/s." << std::endl;
+            std::cerr << std::fixed << std::setprecision(2)
+                << "Generated " << n << " numbers (" << data.size() * sizeof(data[0]) / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
+                << data.size() * sizeof(data[0]) / watch.elapsedSeconds() / 1000000 << " MB/s."
+                << std::endl;
         }
 
-        DB::VectorWithMemoryTracking<char> formatted;
+        std::vector<char> formatted;
         formatted.reserve(n * 21);
 
         {
-            auto wb = DB::WriteBufferFromVector<DB::VectorWithMemoryTracking<char>>(formatted);
+            auto wb = DB::WriteBufferFromVector<std::vector<char>>(formatted);
             Stopwatch watch;
 
             UInt64 tsc = rdtsc();
@@ -81,9 +80,9 @@ int mainEntryExampleParseIntPerf(int argc, char ** argv)
 
             watch.stop();
             std::cerr << std::fixed << std::setprecision(2)
-                << "Written " << n << " numbers (" << static_cast<double>(wb.count()) / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
-                << static_cast<double>(n) / watch.elapsedSeconds() << " num/s., "
-                << static_cast<double>(wb.count()) / watch.elapsedSeconds() / 1000000 << " MB/s., "
+                << "Written " << n << " numbers (" << wb.count() / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
+                << n / watch.elapsedSeconds() << " num/s., "
+                << wb.count() / watch.elapsedSeconds() / 1000000 << " MB/s., "
                 << watch.elapsed() / n << " ns/num., "  // NOLINT
                 << tsc / n << " ticks/num., "  // NOLINT
                 << watch.elapsed() / wb.count() << " ns/byte., "
@@ -103,8 +102,8 @@ int mainEntryExampleParseIntPerf(int argc, char ** argv)
 
             watch.stop();
             std::cerr << std::fixed << std::setprecision(2)
-                << "Read " << n << " numbers (" << static_cast<double>(rb.count()) / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
-                << static_cast<double>(rb.count()) / watch.elapsedSeconds() / 1000000 << " MB/s."
+                << "Read " << n << " numbers (" << rb.count() / 1000000.0 << " MB) in " << watch.elapsedSeconds() << " sec., "
+                << rb.count() / watch.elapsedSeconds() / 1000000 << " MB/s."
                 << std::endl;
         }
 

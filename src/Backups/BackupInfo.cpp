@@ -3,7 +3,6 @@
 #include <Access/ContextAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTExpressionList.h>
@@ -22,11 +21,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_named_collection_override_by_default;
-}
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -161,20 +155,21 @@ namespace
 
 ASTPtr BackupInfo::toAST() const
 {
-    auto func = make_intrusive<ASTFunction>();
+    auto func = std::make_shared<ASTFunction>();
     func->name = backup_engine_name;
-    func->setKind(ASTFunction::Kind::BACKUP_NAME);
+    func->no_empty_args = true;
+    func->kind = ASTFunction::Kind::BACKUP_NAME;
 
-    auto list = make_intrusive<ASTExpressionList>();
+    auto list = std::make_shared<ASTExpressionList>();
     func->arguments = list;
     func->children.push_back(list);
     list->children.reserve(args.size() + kv_args.size() + !id_arg.empty());
 
     if (!id_arg.empty())
-        list->children.push_back(make_intrusive<ASTIdentifier>(id_arg));
+        list->children.push_back(std::make_shared<ASTIdentifier>(id_arg));
 
     for (const auto & arg : args)
-        list->children.push_back(make_intrusive<ASTLiteral>(arg));
+        list->children.push_back(std::make_shared<ASTLiteral>(arg));
 
     for (const auto & kv_arg : kv_args)
         list->children.push_back(kv_arg);
@@ -182,7 +177,6 @@ ASTPtr BackupInfo::toAST() const
     if (function_arg)
         list->children.push_back(function_arg);
 
-    func->setNoEmptyArgs(true);
     return func;
 }
 
@@ -304,8 +298,7 @@ BackupInfo BackupInfo::withoutS3Credentials(ContextPtr context) const
                 auto key = getEffectiveKeyValueArgName(kv_arg, context);
                 return key
                     && (*key == "access_key_id" || *key == "secret_access_key" || *key == "session_token" || *key == "role_arn"
-                        || *key == "role_session_name" || *key == "external_id"
-                        || *key == "google_adc_client_secret" || *key == "google_adc_refresh_token");
+                        || *key == "role_session_name" || *key == "external_id");
             }),
         res.kv_args.end());
 
@@ -342,7 +335,7 @@ BackupInfo BackupInfo::withoutS3Credentials(ContextPtr context) const
         {
             /// The AST may be shared with the query, so it must not be modified in place.
             ASTPtr cloned = kv_arg->clone();
-            cloned->as<ASTFunction>()->arguments->children[1] = make_intrusive<ASTLiteral>(redacted);
+            cloned->as<ASTFunction>()->arguments->children[1] = std::make_shared<ASTLiteral>(redacted);
             kv_arg = cloned;
         }
     }
@@ -370,18 +363,8 @@ NamedCollectionPtr BackupInfo::getNamedCollection(ContextPtr context) const
     {
         auto mutable_collection = collection->duplicate();
         auto params_from_query = getParamsMapFromAST(kv_args, context);
-        const auto allow_override_by_default = context->getSettingsRef()[Setting::allow_named_collection_override_by_default];
         for (const auto & [key, value] : params_from_query)
-        {
-            /// Enforce the same override permission as the table-function/storage paths
-            /// (`tryGetNamedCollectionWithOverrides`): a non-overridable key (e.g. an operator-static endpoint or
-            /// credentials) must not be redirected from the query, otherwise the collection's static credentials
-            /// could be reused against a user-chosen endpoint under the S3 credential restriction.
-            if (!mutable_collection->isOverridable(key, allow_override_by_default))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
-            mutable_collection->setOrUpdate<String>(key, fieldToString(value), {});
-            mutable_collection->markQueryOverridden(key);
-        }
+            mutable_collection->setOrUpdate<String>(key, value.safeGet<String>(), {});
         collection = std::move(mutable_collection);
     }
 

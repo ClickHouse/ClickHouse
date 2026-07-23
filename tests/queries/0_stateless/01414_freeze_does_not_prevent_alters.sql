@@ -2,7 +2,7 @@
 -- It's not longer the case. Let's prove it.
 
 DROP TABLE IF EXISTS t;
-CREATE TABLE t (k UInt64, s String) ENGINE = MergeTree ORDER BY k SETTINGS old_parts_lifetime = 600;
+CREATE TABLE t (k UInt64, s String) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t VALUES (1, 'hello'), (2, 'world');
 
 SELECT * FROM t;

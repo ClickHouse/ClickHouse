@@ -51,7 +51,7 @@ public:
         if (func_plus_minus_nodes.size() != 2)
             return;
 
-        size_t column_id = 0;
+        size_t column_id;
         if (func_plus_minus_nodes[0]->as<ColumnNode>() && func_plus_minus_nodes[1]->as<ConstantNode>())
             column_id = 0;
         else if (func_plus_minus_nodes[0]->as<ConstantNode>() && func_plus_minus_nodes[1]->as<ColumnNode>())
@@ -85,7 +85,6 @@ public:
         resolveAggregateFunctionNodeByName(*rhs_count, rhs_count->getFunctionName());
 
         const auto rhs = std::make_shared<FunctionNode>("multiply");
-        rhs->markAsOperator();
         rhs->getArguments().getNodes().push_back(func_plus_minus_nodes[literal_id]);
         rhs->getArguments().getNodes().push_back(rhs_count);
         resolveOrdinaryFunctionNodeByName(*rhs, rhs->getFunctionName(), getContext());

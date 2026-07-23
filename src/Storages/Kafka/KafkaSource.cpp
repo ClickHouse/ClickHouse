@@ -3,7 +3,6 @@
 #include <Columns/IColumn.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DeadLetterQueue.h>
@@ -45,8 +44,7 @@ KafkaSource::KafkaSource(
     const Names & columns,
     LoggerPtr log_,
     size_t max_block_size_,
-    bool commit_in_suffix_,
-    std::optional<UInt64> cancel_epoch_)
+    bool commit_in_suffix_)
     : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -56,9 +54,8 @@ KafkaSource::KafkaSource(
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
-    , virtual_header(storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader))
+    , virtual_header(storage.getVirtualsHeader())
     , handle_error_mode(storage.getStreamingHandleErrorMode())
-    , cancel_epoch(cancel_epoch_.value_or(storage_.currentCancelEpoch()))
 {
 }
 
@@ -159,7 +156,7 @@ Chunk KafkaSource::generateImpl()
             case StreamingHandleErrorMode::DEFAULT:
             {
                 e.addMessage(
-                    "while parsing Kafka message (topic: {}, partition: {}, offset: {})",
+                    "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
                     consumer->currentTopic(),
                     consumer->currentPartition(),
                     consumer->currentOffset());
@@ -171,29 +168,14 @@ Chunk KafkaSource::generateImpl()
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
 
-    bool cancelled = false;
-
     while (true)
     {
-        if (storage.isConsumeCancelRequested(cancel_epoch))
-        {
-            cancelled = true;
-            break;
-        }
-
         size_t new_rows = 0;
         exception_message.reset();
         is_dead_letter = false;
 
         if (auto buf = consumer->consume())
         {
-            /// The cancel may have arrived while consume() was blocked polling; check again so the
-            /// just-polled message is dropped with the rest of the block rather than committed.
-            if (storage.isConsumeCancelRequested(cancel_epoch))
-            {
-                cancelled = true;
-                break;
-            }
             ProfileEvents::increment(ProfileEvents::KafkaMessagesRead);
             new_rows = executor.execute(*buf);
         }
@@ -252,45 +234,41 @@ Chunk KafkaSource::generateImpl()
                 }
                 virtual_columns[6]->insert(headers_names);
                 virtual_columns[7]->insert(headers_values);
-                virtual_columns[8]->insert(storage.getStorageID().getTableName());
                 if (handle_error_mode == StreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)
                     {
                         const auto & payload = consumer->currentPayload();
-                        virtual_columns[9]->insertData(reinterpret_cast<const char *>(payload.get_data()), payload.get_size());
-                        virtual_columns[10]->insertData(exception_message->data(), exception_message->size());
+                        virtual_columns[8]->insertData(reinterpret_cast<const char *>(payload.get_data()), payload.get_size());
+                        virtual_columns[9]->insertData(exception_message->data(), exception_message->size());
                     }
                     else
                     {
+                        virtual_columns[8]->insertDefault();
                         virtual_columns[9]->insertDefault();
-                        virtual_columns[10]->insertDefault();
                     }
                 }
             }
             if (is_dead_letter)
             {
-                chassert(exception_message);
+                assert(exception_message);
                 const auto time_now = std::chrono::system_clock::now();
                 auto storage_id = storage.getStorageID();
 
                 auto dead_letter_queue = context->getDeadLetterQueue();
-                if (!dead_letter_queue)
-                    LOG_WARNING(log, "Table system.dead_letter_queue is not configured, skipping message");
-                else
-                    dead_letter_queue->add(DeadLetterQueueElement{
-                            .table_engine = DeadLetterQueueElement::StreamType::Kafka,
-                            .event_time = timeInSeconds(time_now),
-                            .event_time_microseconds = timeInMicroseconds(time_now),
-                            .database = storage_id.database_name,
-                            .table = storage_id.table_name,
-                            .raw_message = consumer->currentPayload(),
-                            .error = exception_message.value(),
-                            .details = DeadLetterQueueElement::KafkaDetails{
-                                .topic_name = consumer->currentTopic(),
-                                .partition = consumer->currentPartition(),
-                                .offset = consumer->currentOffset(),
-                                .key = consumer->currentKey()}});
+                dead_letter_queue->add(DeadLetterQueueElement{
+                        .table_engine = DeadLetterQueueElement::StreamType::Kafka,
+                        .event_time = timeInSeconds(time_now),
+                        .event_time_microseconds = timeInMicroseconds(time_now),
+                        .database = storage_id.database_name,
+                        .table = storage_id.table_name,
+                        .raw_message = consumer->currentPayload(),
+                        .error = exception_message.value(),
+                        .details = DeadLetterQueueElement::KafkaDetails{
+                            .topic_name = consumer->currentTopic(),
+                            .partition = consumer->currentPartition(),
+                            .offset = consumer->currentPartition(),
+                            .key = consumer->currentKey()}});
             }
 
             total_rows = total_rows + new_rows;
@@ -325,21 +303,6 @@ Chunk KafkaSource::generateImpl()
         }
     }
 
-    if (cancelled || storage.isConsumeCancelRequested(cancel_epoch))
-    {
-        try
-        {
-            consumer->rewindToLastCommitted();
-        }
-        catch (const cppkafka::HandleException & e)
-        {
-            LOG_WARNING(log, "Failed to rewind to last committed offset on abort: {}", e.what());
-            consumer->cleanBlockStartOffsets();
-            consumer->markDirty();
-        }
-        return {};
-    }
-
     if (total_rows == 0)
     {
         return {};
@@ -369,8 +332,7 @@ Chunk KafkaSource::generateImpl()
     auto converting_dag = ActionsDAG::makeConvertingActions(
         result_block.cloneEmpty().getColumnsWithTypeAndName(),
         getPort().getHeader().getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name,
-        context);
+        ActionsDAG::MatchColumnsMode::Name);
 
     auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
     converting_actions->execute(result_block);
@@ -393,7 +355,6 @@ void KafkaSource::commit()
         return;
 
     consumer->commit();
-    consumer->cleanBlockStartOffsets();
 
     broken = false;
 }

@@ -6,7 +6,6 @@ keywords: ['JSONObjectEachRow']
 output_format: true
 slug: /interfaces/formats/JSONObjectEachRow
 title: 'JSONObjectEachRow'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -155,13 +154,13 @@ If you have a table with the [`Nested`](/sql-reference/data-types/nested-data-st
 
 For example, consider the following table:
 
-```sql title="Query"
+```sql
 CREATE TABLE json_each_row_nested (n Nested (s String, i Int32) ) ENGINE = Memory
 ```
 
 As you can see in the `Nested` data type description, ClickHouse treats each component of the nested structure as a separate column (`n.s` and `n.i` for our table). You can insert data in the following way:
 
-```sql title="Query"
+```sql
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
 ```
 

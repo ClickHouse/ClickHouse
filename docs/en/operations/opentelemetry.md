@@ -5,7 +5,6 @@ sidebar_label: 'Tracing ClickHouse with OpenTelemetry'
 sidebar_position: 62
 slug: /operations/opentelemetry
 title: 'Tracing ClickHouse with OpenTelemetry'
-doc_type: 'guide'
 ---
 
 [OpenTelemetry](https://opentelemetry.io/) is an open standard for collecting traces and metrics from the distributed application. ClickHouse has some support for OpenTelemetry.
@@ -23,55 +22,6 @@ The trace context is propagated to downstream services in the following cases:
 * Queries to remote ClickHouse servers, such as when using [Distributed](../engines/table-engines/special/distributed.md) table engine.
 
 * [url](../sql-reference/table-functions/url.md) table function. Trace context information is sent in HTTP headers.
-
-## Tracing ClickHouse Keeper Requests {#tracing-clickhouse-keeper-requests}
-
-ClickHouse supports OpenTelemetry tracing for [ClickHouse Keeper](../guides/sre/keeper/index.md) requests (ZooKeeper-compatible coordination service). This feature provides detailed visibility into the lifecycle of Keeper operations, from client request submission through server-side processing.
-
-### Enabling Keeper Tracing {#enabling-keeper-tracing}
-
-To enable tracing for Keeper requests, configure the following settings in your ZooKeeper/Keeper client configuration:
-
-```xml
-<clickhouse>
-    <zookeeper>
-        <node>
-            <host>keeper1</host>
-            <port>9181</port>
-        </node>
-        <!-- Enable OpenTelemetry tracing context propagation -->
-        <pass_opentelemetry_tracing_context>true</pass_opentelemetry_tracing_context>
-    </zookeeper>
-</clickhouse>
-```
-
-### Keeper Span Types {#keeper-span-types}
-
-When tracing is enabled, ClickHouse creates spans for both client-side and server-side Keeper operations:
-
-**Client-side spans:**
-- `zookeeper.create` — Create a new node
-- `zookeeper.get` — Get node data
-- `zookeeper.set` — Set node data
-- `zookeeper.remove` — Remove a node
-- `zookeeper.list` — List child nodes
-- `zookeeper.exists` — Check if a node exists
-- `zookeeper.multi` — Execute multiple operations atomically
-- `zookeeper.client.requests_queue` — Time spent queueing requests before sending
-
-**Server-side spans (Keeper):**
-- `keeper.receive_request` — Receiving and parsing the request from the client
-- `keeper.dispatcher.requests_queue` — Request queuing in the dispatcher
-- `keeper.write.pre_commit` — Preprocessing write requests before Raft commit
-- `keeper.write.commit` — Processing write requests after Raft commit
-- `keeper.read.wait_for_write` — Read requests waiting for dependent writes
-- `keeper.read.process` — Processing read requests
-- `keeper.dispatcher.responses_queue` — Response queuing in the dispatcher
-- `keeper.send_response` — Sending the response to the client
-
-### Sampling and Performance {#sampling-and-performance}
-
-To manage tracing overhead, Keeper implements dynamic sampling. Sampling rate automatically adjusts between 1/10,000 and 1/10 based on request size. All requests (sampled and unsampled) have their durations recorded to histogram metrics for performance monitoring.
 
 ## Tracing the ClickHouse Itself {#tracing-the-clickhouse-itself}
 

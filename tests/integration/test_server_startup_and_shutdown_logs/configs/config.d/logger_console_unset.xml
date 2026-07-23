@@ -1,6 +1,0 @@
-<clickhouse>
-    <logger>
-        <level>information</level>
-        <startup_console_log_level>trace</startup_console_log_level>
-    </logger>
-</clickhouse>

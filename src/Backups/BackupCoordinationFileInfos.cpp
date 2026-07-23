@@ -1,5 +1,4 @@
 #include <Backups/BackupCoordinationFileInfos.h>
-#include <Backups/getBackupDataFileName.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
 
@@ -24,25 +23,23 @@ void BackupCoordinationFileInfos::addFileInfos(BackupFileInfos && file_infos_, c
     file_infos.emplace(host_id_, std::move(file_infos_));
 }
 
-const BackupFileInfos & BackupCoordinationFileInfos::getFileInfos(const String & host_id_) const
+BackupFileInfos BackupCoordinationFileInfos::getFileInfos(const String & host_id_) const
 {
     prepare();
     auto it = file_infos.find(host_id_);
     if (it == file_infos.end())
-    {
-        static const BackupFileInfos empty;
-        return empty;
-    }
-    /// Safe to return by reference: after prepare() the per-host vectors are never mutated (addFileInfos() throws
-    /// once prepared), and file_infos_for_all_hosts already holds raw pointers into them.
+        return {};
     return it->second;
 }
 
-void BackupCoordinationFileInfos::forEachFileInfoForAllHosts(const std::function<void(const BackupFileInfo &)> & callback) const
+BackupFileInfos BackupCoordinationFileInfos::getFileInfosForAllHosts() const
 {
     prepare();
+    BackupFileInfos res;
+    res.reserve(file_infos_for_all_hosts.size());
     for (const auto * file_info : file_infos_for_all_hosts)
-        callback(*file_info);
+        res.emplace_back(*file_info);
+    return res;
 }
 
 BackupFileInfo BackupCoordinationFileInfos::getFileInfoByDataFileIndex(size_t data_file_index) const
@@ -112,7 +109,7 @@ void BackupCoordinationFileInfos::prepare() const
         }
     };
 
-    if (config.plain_backup)
+    if (plain_backup)
     {
         const auto try_resolve_reference = [&](BackupFileInfo & reference)
         {
@@ -197,7 +194,7 @@ void BackupCoordinationFileInfos::prepare() const
                 if (inserted)
                 {
                     /// Found a new file.
-                    info.data_file_name = getBackupDataFileName(info, config.data_file_name_generator, config.data_file_name_prefix_length);
+                    info.data_file_name = info.file_name;
                     info.data_file_index = i;
                     ++num_files;
                     total_size_of_files += info.size - info.base_size;

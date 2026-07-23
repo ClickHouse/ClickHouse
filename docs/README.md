@@ -36,9 +36,9 @@ Writing the docs is extremely useful for project's users and developers, and gro
 
 ## What is the ClickHouse Documentation
 
-The documentation contains information about all the aspects of the ClickHouse lifecycle: developing, testing, installing, operating, and using. The base language of the documentation is English. The English version is the most current. All other languages are supported by contributors from different countries as much as possible.
+The documentation contains information about all the aspects of the ClickHouse lifecycle: developing, testing, installing, operating, and using. The base language of the documentation is English. The English version is the most actual. All other languages are supported as much as they can by contributors from different countries.
 
-At the moment, [documentation](https://clickhouse.com/docs) exists in English, Russian, and Chinese. We store the reference documentation alongside the ClickHouse source code in the [GitHub repository](https://github.com/ClickHouse/ClickHouse/tree/master/docs), and user guides in a separate repo [ClickHouse/clickhouse-docs](https://github.com/ClickHouse/clickhouse-docs).
+At the moment, [documentation](https://clickhouse.com/docs) exists in English, Russian, and Chinese. We store the reference documentation besides the ClickHouse source code in the [GitHub repository](https://github.com/ClickHouse/ClickHouse/tree/master/docs), and user guides in a separate repo [Clickhouse/clickhouse-docs](https://github.com/ClickHouse/clickhouse-docs).
 
 To get the latter launch the `get-clickhouse-docs.sh` script.
 
@@ -60,7 +60,7 @@ You can contribute to the documentation in many ways, for example:
 
     When you are saving a file, GitHub opens a pull-request for your contribution. Add the `documentation` label to this pull request for proper automatic checks applying. If you have no permissions for adding labels, the reviewer of your PR adds it.
 
-Contribute all new information in English. Other languages are translations from English.
+Contribute all new information in English language. Other languages are translations from English.
 
 <a name="markdown-cheatsheet"/>
 
@@ -106,7 +106,7 @@ Contribute all new information in English. Other languages are translations from
         4 spaces indented text.
     ```
 
-- Text hidden behind a cut (single string that opens on click):
+- Text hidden behind a cut (single sting that opens on click):
 
     ```text
     <details markdown="1"> <summary>Visible text</summary>
@@ -189,42 +189,18 @@ ClickHouse documentation can be divided up by the audience for the following par
 
 <a name="templates"/>
 
-### Templates
+### Description Templates
 
-When writing docs, you can use prepared templates. Copy the code of a template and use it in your contribution. Sometimes you just need to change the level of headers.
+When writing docs, you can use prepared templates. Copy the code of a template and use it in your contribution. Sometimes you just need to change level of headers.
 
-Reference templates (paste a section into a page):
+Templates:
 
-- [Function](_templates/template-function.md)
-- [Server Setting](_templates/template-server-setting.md)
-- [Database or Table engine](_templates/template-engine.md)
-- [System table](_templates/template-system-table.md)
-- [Statement](_templates/template-statement.md)
-
-Narrative templates (full page):
-
-- [Setup guide](_templates/template-setup-guide.mdx) — how-to and setup guides
-
-#### Choosing components for narrative guides
-
-The section order in a narrative template is fixed; drop a section only if it genuinely doesn't apply. Classify the content's *shape* — the shape dictates the component:
-
-| Content shape | Component |
-|---|---|
-| Procedure with depth (screenshots, code, sub-steps) | `<Steps>` / `<Step title="…" id="…">` — the `id` makes a step deep-linkable via `#id` |
-| A step or section that differs by variant (provider, OS, deployment) | `<Tabs>` / `<Tab title="…" id="…">` — the `id` makes a variant deep-linkable via `#id` |
-| Selective-consult content — the reader wants one item (Troubleshooting, FAQ) | `<Accordion title="…">`, one per item |
-| Advisory list read in full (Best practices) | `### {#anchor}` subheadings, one per item |
-| Matrix — the reader scans a column *down* to compare values (action→result, source→target mappings) | markdown table |
-| Callout | `<Note>` / `<Warning>` / `<Tip>` |
-
-Guidelines:
-
-- **How it works** goes *before* the steps and describes the end-to-end *flow* (what happens, in order) — not behavioral or reference detail, which belongs in FAQ.
-- The main procedure can be **one or several `## {Task}` sections**.
-- **Verify**, **Best practices**, and **FAQ** are prompts as much as sections: include them when there's real content to add; don't fabricate to fill them.
-- Frontmatter uses `sidebarTitle` (no repeated `# H1`). Built-in components (`Steps`, `Accordion`, `Tabs`, `Note`, `Warning`, `Tip`) need no import.
-- Every `##` / `###` needs a unique `{#anchor}`; `<Step>` and `<Tab>` carry their anchor in an `id` prop.
+- [Function](_description_templates/template-function.md)
+- [Server Setting](_description_templates/template-server-setting.md)
+- [Database or Table engine](_description_templates/template-engine.md)
+- [System table](_description_templates/template-system-table.md)
+- [Data type](_description_templates/template-data-type.md)
+- [Statement](_description_templates/template-statement.md)
 
 
 <a name="how-to-build-docs"/>

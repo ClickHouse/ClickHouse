@@ -4,8 +4,7 @@
 
 #if USE_LIBPQXX
 #include <Interpreters/Context_fwd.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
-#include <Storages/TableNameOrQuery.h>
+#include <Storages/IStorage.h>
 
 namespace Poco
 {
@@ -21,16 +20,14 @@ using PoolWithFailoverPtr = std::shared_ptr<PoolWithFailover>;
 namespace DB
 {
 class NamedCollection;
-struct StorageID;
-struct PostgreSQLSettings;
 
-class StoragePostgreSQL final : public StorageWithCommonVirtualColumns
+class StoragePostgreSQL final : public IStorage
 {
 public:
     StoragePostgreSQL(
         const StorageID & table_id_,
         postgres::PoolWithFailoverPtr pool_,
-        const TableNameOrQuery & remote_table_or_query_,
+        const String & remote_table_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
@@ -40,11 +37,7 @@ public:
 
     String getName() const override { return "PostgreSQL"; }
 
-    bool isExternalDatabase() const override { return true; }
-
-    static VirtualColumnsDescription createVirtuals();
-
-    void readImpl(
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -63,7 +56,7 @@ public:
         String username = "default";
         String password;
         String database;
-        TableNameOrQuery table_or_query;
+        String table;
         String schema;
         String on_conflict;
 
@@ -71,21 +64,18 @@ public:
         String addresses_expr;
     };
 
-    /// `storage_settings` may be nullptr for callers that do not honor the `PostgreSQLSettings`
-    /// (e.g. the `MaterializedPostgreSQL` engines): the setting names are then rejected in named
-    /// collections instead of being accepted and silently ignored.
-    static Configuration getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id = nullptr);
+    static Configuration getConfiguration(ASTs engine_args, ContextPtr context);
 
-    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table = true);
+    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table = true);
 
     static ColumnsDescription getTableStructureFromData(
         const postgres::PoolWithFailoverPtr & pool_,
-        const TableNameOrQuery & table_or_query,
+        const String & table,
         const String & schema,
         const ContextPtr & context_);
 
 private:
-    TableNameOrQuery remote_table_or_query;
+    String remote_table_name;
     String remote_table_schema;
     String on_conflict;
     postgres::PoolWithFailoverPtr pool;

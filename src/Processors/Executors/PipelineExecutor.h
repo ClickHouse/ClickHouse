@@ -1,18 +1,15 @@
 #pragma once
 
-#include <Processors/Executors/ExecutingGraph.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Executors/ExecutorTasks.h>
 #include <Common/EventCounter.h>
-#include <Common/Logger.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ISlotControl.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 
+#include <deque>
 #include <queue>
 #include <memory>
-
-#include <boost/container/devector.hpp>
 
 
 namespace DB
@@ -26,8 +23,6 @@ using ExecutingGraphPtr = std::unique_ptr<ExecutingGraph>;
 class ReadProgressCallback;
 using ReadProgressCallbackPtr = std::unique_ptr<ReadProgressCallback>;
 
-class StepWallClockRegistry;
-struct WorkloadResources;
 
 /// Executes query pipeline.
 class PipelineExecutor
@@ -42,7 +37,7 @@ public:
     /// PipelineExecutor must be destroyed before the corresponding QueryPipeline, because
     /// QueryPlanResourceHolder may hold some resources referenced by processors and used in
     /// processor destructors.
-    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, const StepWallClockRegistry * step_wall_clock_registry = nullptr);
+    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem);
     ~PipelineExecutor();
 
     /// Execute pipeline in multiple threads. Must be called once.
@@ -94,21 +89,6 @@ private:
     std::unique_ptr<ThreadPool> pool;
     std::mutex spawn_mutex;
 
-    /// Pipeline's max thread count (captured from execute(num_threads)).
-    size_t max_pipeline_threads = 1;
-
-    /// Current setMax target. Written by initializeExecution before any worker thread exists,
-    /// then read and updated only under `spawn_mutex` from the upscaling block. Non-atomic
-    /// because all mutations are serialized by spawn_mutex and initial write happens-before
-    /// any spawned worker via the ThreadPool barrier in initializeExecution.
-    size_t desired_threads = 1;
-
-    /// Accumulates spawn_count from pushTasks calls that couldn't acquire `spawn_mutex`
-    /// (another thread was already handling the spawn). The thread that owns the mutex
-    /// drains this counter before deciding the new setMax target, so no demand is ever
-    /// silently dropped.
-    std::atomic<size_t> pending_demand{0};
-
     /// Flag that checks that initializeExecution was called.
     bool is_execution_initialized = false;
     /// system.processors_profile_log
@@ -116,21 +96,20 @@ private:
     /// system.opentelemetry_span_log
     bool trace_processors = false;
     bool trace_cpu_scheduling = false;
-    /// EXPLAIN ANALYZE
-    const StepWallClockRegistry * step_wall_clock_registry = nullptr;
 
     std::atomic<ExecutionStatus> execution_status = ExecutionStatus::NotStarted;
     std::atomic_bool cancelled_reading = false;
 
     LoggerPtr log = getLogger("PipelineExecutor");
 
+    /// Now it's used to check if query was killed.
     QueryStatusPtr process_list_element;
 
     ReadProgressCallbackPtr read_progress_callback;
 
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new
-    using DequeWithMemoryTracker = boost::container::devector<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
+    using DequeWithMemoryTracker = std::deque<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
     using Queue = std::queue<ExecutingGraph::Node *, DequeWithMemoryTracker>;
 
     void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
@@ -138,13 +117,13 @@ private:
 
     /// Methods connected to execution.
     void executeImpl(size_t num_threads, bool concurrency_control);
-    void executeStepImpl(size_t thread_num, WorkloadResources && resources, std::atomic_bool * yield_flag = nullptr);
-    void executeSingleThread(size_t thread_num, WorkloadResources && resources);
+    void executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_slot, std::atomic_bool * yield_flag = nullptr);
+    void executeSingleThread(size_t thread_num, IAcquiredSlot * cpu_slot);
     void finish();
     void cancel(ExecutionStatus reason);
 
     // Methods for CPU scheduling
-    SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control, bool lazy_allocation);
+    SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control);
     void spawnThreads(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
 
     /// If execution_status == from, change it to desired.

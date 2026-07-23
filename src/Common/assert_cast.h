@@ -1,17 +1,22 @@
 #pragma once
 
-#include <exception>
-#include <typeinfo>
-
 #ifdef DEBUG_OR_SANITIZER_BUILD
 #include <type_traits>
+#include <typeinfo>
 #include <typeindex>
 #include <string>
+
+#include <Common/Exception.h>
+#include <base/demangle.h>
+
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int LOGICAL_ERROR;
+    }
+}
 #endif
-
-
-[[noreturn]] void throwBadAssertCast(const std::type_info & from, const std::type_info & to);
-[[noreturn]] void throwBadAssertCastFromException(const std::exception & e);
 
 
 /** Perform static_cast in release build.
@@ -37,10 +42,11 @@ inline To assert_cast(From && from)
     }
     catch (const std::exception & e)
     {
-        throwBadAssertCastFromException(e);
+        throw DB::Exception::createDeprecated(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
     }
 
-    throwBadAssertCast(typeid(from), typeid(To));
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Bad cast from type {} to {}",
+                        demangle(typeid(from).name()), demangle(typeid(To).name()));
 #else
     return static_cast<To>(from);
 #endif

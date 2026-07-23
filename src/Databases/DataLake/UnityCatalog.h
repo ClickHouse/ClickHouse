@@ -1,5 +1,4 @@
 #pragma once
-#include <Interpreters/StorageID.h>
 #include "config.h"
 
 #if USE_PARQUET
@@ -28,9 +27,7 @@ public:
 
     bool empty() const override;
 
-    CatalogTables getTables() const override;
-
-    Namespaces getNamespaces() const override;
+    DB::Names getTables() const override;
 
     bool existsTable(const std::string & schema_name, const std::string & table_name) const override;
 
@@ -64,21 +61,13 @@ private:
 
     DataLake::ICatalog::Namespaces getSchemas(const std::string & base_prefix, size_t limit = 0) const;
 
-    CatalogTables getTablesForSchema(const std::string & schema, size_t limit = 0) const;
-    CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
-    void getCredentials(const String & table_id, TableMetadata & metadata) const;
-
-    Poco::JSON::Object::Ptr requestReadCredentials(const String & table_id) const;
-
-    std::shared_ptr<IStorageCredentials> parseS3Credentials(const Poco::JSON::Object::Ptr & response) const;
-    std::shared_ptr<IStorageCredentials> parseAzureCredentials(const Poco::JSON::Object::Ptr & response) const;
+    DB::Names getTablesForSchema(const std::string & schema, size_t limit = 0) const;
+    void getCredentials(const std::string & table_id, TableMetadata & metadata) const;
 
     bool getTableMetadataImpl(
         const std::string & namespace_name,
         const std::string & table_name,
         TableMetadata & result) const;
-
-    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & table_id) override;
 };
 
 }

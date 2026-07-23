@@ -9,13 +9,13 @@ select _part, min(x), max(x) from tab group by _part order by _part ;
 
 select x from tab where bitAnd(y, 1023) == 0 order by x limit 10 settings read_in_order_use_virtual_row=1, log_processors_profiles=1, optimize_move_to_prewhere=0, max_threads=2;
 
-system flush logs query_log, processors_profile_log;
+system flush logs;
 
 WITH
     (
         SELECT query_id
         FROM system.query_log
-        WHERE current_database = currentDatabase() AND query like 'select x from tab%' AND event_date >= (today() - 1) AND event_time >= now() - 600
+        WHERE current_database = currentDatabase() AND query like 'select x from tab%' AND event_date >= (today() - 1)
         ORDER BY event_time DESC
         LIMIT 1
     ) AS id
