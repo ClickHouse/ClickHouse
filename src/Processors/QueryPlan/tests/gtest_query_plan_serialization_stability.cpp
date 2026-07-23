@@ -19,13 +19,13 @@
 
 using namespace DB;
 
-/// Golden-bytes tests for the native leaf codecs that the query plan format carries as opaque
-/// payload bytes (`ActionsDAG`, data type encoding, sort/aggregate descriptions, the header
-/// encoding). Framing can skip *around* these blobs but cannot protect readers from changes
-/// *inside* them, so any wire change here requires an explicit query plan version decision and a
-/// `NativeProtocol.md` sync -- and this test failing is the gate that forces that decision.
-/// If you changed a codec deliberately: bump/gate the plan version, update the spec, then update
-/// the golden constants below.
+/// Checks that the serialized bytes of the basic building blocks of the query plan format never
+/// change unnoticed. The plan format carries these blocks as opaque byte blobs inside step
+/// payloads (`ActionsDAG`, the binary data type encoding, sort/aggregate descriptions, the
+/// header encoding). The payload framing lets a reader skip *around* such a blob, but an old
+/// reader cannot survive a change *inside* one -- so any byte change here must be a deliberate
+/// decision: bump or gate the plan version, update `NativeProtocol.md`, and only then update the
+/// expected constants below. These tests failing is the gate that forces that decision.
 /// (Set payload encodings are pinned indirectly by the round-trip tests in
 /// gtest_query_plan_serialization.cpp.)
 
@@ -52,7 +52,7 @@ std::string capture(F && write)
 
 }
 
-TEST(QueryPlanLeafCodecGoldens, DataTypeEncoding)
+TEST(QueryPlanSerializationStability, DataTypeEncoding)
 {
     const std::vector<std::pair<String, String>> cases =
     {
@@ -67,14 +67,14 @@ TEST(QueryPlanLeafCodecGoldens, DataTypeEncoding)
     };
 
     const auto & factory = DataTypeFactory::instance();
-    for (const auto & [type_name, golden] : cases)
+    for (const auto & [type_name, expected_hex] : cases)
     {
         auto actual = capture([&](WriteBuffer & out) { encodeDataType(factory.get(type_name), out); });
-        EXPECT_EQ(actual, golden) << "type " << type_name;
+        EXPECT_EQ(actual, expected_hex) << "type " << type_name;
     }
 }
 
-TEST(QueryPlanLeafCodecGoldens, HeaderEncoding)
+TEST(QueryPlanSerializationStability, HeaderEncoding)
 {
     ColumnsWithTypeAndName columns;
     columns.emplace_back(DataTypeUInt64().createColumn(), std::make_shared<DataTypeUInt64>(), "x");
@@ -85,7 +85,7 @@ TEST(QueryPlanLeafCodecGoldens, HeaderEncoding)
     EXPECT_EQ(actual, "02017804017315");
 }
 
-TEST(QueryPlanLeafCodecGoldens, SortDescription)
+TEST(QueryPlanSerializationStability, SortDescription)
 {
     SortDescription description;
     description.emplace_back("a", 1, 1);
@@ -95,7 +95,7 @@ TEST(QueryPlanLeafCodecGoldens, SortDescription)
     EXPECT_EQ(actual, "02016103016200");
 }
 
-TEST(QueryPlanLeafCodecGoldens, AggregateDescriptions)
+TEST(QueryPlanSerializationStability, AggregateDescriptions)
 {
     tryRegisterAggregateFunctions();
 
@@ -111,7 +111,7 @@ TEST(QueryPlanLeafCodecGoldens, AggregateDescriptions)
     EXPECT_EQ(actual, "010673756d287829010178040373756d00");
 }
 
-TEST(QueryPlanLeafCodecGoldens, ActionsDag)
+TEST(QueryPlanSerializationStability, ActionsDag)
 {
     tryRegisterFunctions();
 
