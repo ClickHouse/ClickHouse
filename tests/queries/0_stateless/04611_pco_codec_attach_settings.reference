@@ -11,3 +11,8 @@ default_sz3_after_alter	1000
 marks_t64	1000
 default_t64	1000
 default_t64_after_alter	1000
+marks_alp	1000
+default_alp	1000
+default_alp_after_alter	1000
+default_zxc	1000
+default_zxc_kept	1

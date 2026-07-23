@@ -137,7 +137,7 @@ public:
         RD = 3 // Real Doubles ALP variant with bit-split and dictionary encoding of the high bits.
     };
 
-    explicit CompressionCodecALP(UInt8 float_width_, Variant variant_);
+    explicit CompressionCodecALP(UInt8 float_width_, Variant variant_, bool has_column_type_);
     uint8_t getMethodByte() const override;
     void updateHash(SipHash & hash) const override;
 protected:
@@ -148,10 +148,16 @@ protected:
     bool isGenericCompression() const override { return false; }
     bool isFloatingPointTimeSeriesCodec() const override { return true; }
     bool isExperimental() const override { return true; }
+    /// Built without a column type, ALP falls back to the `Float64` element width, reinterprets the
+    /// bytes as floating-point values and throws for any input whose size is not a multiple of that
+    /// width, so it cannot reliably compress untyped data (decompression is unaffected: it reads the
+    /// element width from the frame header).
+    bool requiresColumnTypeToCompress() const override { return !has_column_type; }
     String getDescription() const override;
 private:
     UInt8 float_width;
     Variant variant;
+    bool has_column_type;
 };
 
 namespace ErrorCodes
@@ -1328,8 +1334,8 @@ private:
 
 }
 
-CompressionCodecALP::CompressionCodecALP(UInt8 float_width_, Variant variant_)
-    : float_width(float_width_), variant(variant_)
+CompressionCodecALP::CompressionCodecALP(UInt8 float_width_, Variant variant_, bool has_column_type_)
+    : float_width(float_width_), variant(variant_), has_column_type(has_column_type_)
 {
     ASTs arguments;
     if (variant != Variant::DEFAULT)
@@ -1540,7 +1546,7 @@ void registerCodecALP(CompressionCodecFactory & factory)
                     variant_str);
         }
 
-        return std::make_shared<CompressionCodecALP>(float_width, variant);
+        return std::make_shared<CompressionCodecALP>(float_width, variant, column_type != nullptr);
     };
     factory.registerCompressionCodecWithType("ALP", method_code, codec_builder);
 }

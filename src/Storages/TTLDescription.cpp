@@ -328,7 +328,7 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             /// A recompression codec is always resolved with a null column type in
             /// `MergeTreeData::getCompressionCodecForPart`, so a codec that is unsafe for untyped data —
-            /// experimental (e.g. `PCO`), one that requires a column type, or a lossy one (e.g. `SZ3`) — cannot
+            /// one that requires a column type (e.g. `PCO`) or a lossy one (e.g. `SZ3`) — cannot
             /// actually be used there: it would throw or silently corrupt data at the first `TTL ... RECOMPRESS`
             /// merge.
             ///

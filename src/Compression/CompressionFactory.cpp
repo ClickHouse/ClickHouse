@@ -145,10 +145,12 @@ String CompressionCodecFactory::getReasonUnsafeForUntypedData(const ASTPtr & cod
         if (codec_family_name == DEFAULT_CODEC_NAME)
             continue;
 
+        /// Experimentality is deliberately not classified here: it is a policy gate, not a data-safety
+        /// property. It is enforced with the session `allow_experimental_codecs` setting at the points
+        /// where fresh user input enters (`validateCodecAndGetPreprocessedAST` and the codec-valued
+        /// MergeTree settings gates in `registerStorageMergeTree` / `MergeTreeData::checkAlterIsPossible`),
+        /// while stored metadata carrying an experimental codec must remain loadable and writable.
         auto codec = getImpl(codec_family_name, codec_arguments, nullptr);
-        if (codec->isExperimental())
-            return "it is experimental (experimental codecs can only be specified per column, with the"
-                   " 'allow_experimental_codecs' setting enabled)";
         if (codec->requiresColumnTypeToCompress())
             return "it requires a column type and can not be applied to untyped data";
         if (codec->isLossyCompression())

@@ -60,6 +60,22 @@ cat > "${WORKING_FOLDER}/metadata/local/t_def_t64.sql" <<EOF
 ATTACH TABLE local.t_def_t64 (id UInt64, v Int64 STATISTICS(tdigest)) ENGINE=MergeTree ORDER BY id SETTINGS default_compression_codec='T64';
 EOF
 
+# And for `ALP`, which without a column type falls back to the Float64 element width and rejects any
+# blob whose size is not a multiple of it (the tdigest statistics stream below has such sizes).
+cat > "${WORKING_FOLDER}/metadata/local/t_marks_alp.sql" <<EOF
+ATTACH TABLE local.t_marks_alp (x UInt32) ENGINE=MergeTree ORDER BY tuple() SETTINGS marks_compression_codec='ALP';
+EOF
+cat > "${WORKING_FOLDER}/metadata/local/t_def_alp.sql" <<EOF
+ATTACH TABLE local.t_def_alp (id UInt64, v Int64 STATISTICS(tdigest)) ENGINE=MergeTree ORDER BY id SETTINGS default_compression_codec='ALP';
+EOF
+
+# An experimental codec that is safe for untyped data (`ZXC` is generic and lossless) must NOT be
+# reset: experimentality is gated with the session 'allow_experimental_codecs' setting where fresh
+# user input enters, while stored metadata must stay loadable and keep its codec.
+cat > "${WORKING_FOLDER}/metadata/local/t_def_zxc.sql" <<EOF
+ATTACH TABLE local.t_def_zxc (id UInt64, v Int64 STATISTICS(tdigest)) ENGINE=MergeTree ORDER BY id SETTINGS default_compression_codec='ZXC';
+EOF
+
 # Each table loads through the ATTACH path (sanity checks skipped); the first write must succeed, not
 # throw `Codec 'PCO' was created without a numeric column type and cannot compress` (nor the lossy
 # `SZ3` error) after the unsafe setting is reset to the default codec. The reset must also be durable:
@@ -94,6 +110,15 @@ INSERT INTO local.t_def_t64 SELECT number, number FROM numbers(1000);
 SELECT 'default_t64', count() FROM local.t_def_t64;
 ALTER TABLE local.t_def_t64 ADD COLUMN w UInt32;
 SELECT 'default_t64_after_alter', count() FROM local.t_def_t64;
+INSERT INTO local.t_marks_alp SELECT number FROM numbers(1000);
+SELECT 'marks_alp', count() FROM local.t_marks_alp;
+INSERT INTO local.t_def_alp SELECT number, number FROM numbers(1000);
+SELECT 'default_alp', count() FROM local.t_def_alp;
+ALTER TABLE local.t_def_alp ADD COLUMN w UInt32;
+SELECT 'default_alp_after_alter', count() FROM local.t_def_alp;
+INSERT INTO local.t_def_zxc SELECT number, number FROM numbers(1000);
+SELECT 'default_zxc', count() FROM local.t_def_zxc;
+SELECT 'default_zxc_kept', create_table_query LIKE '%ZXC%' FROM system.tables WHERE database = 'local' AND name = 't_def_zxc';
 "
 
 rm -rf "${WORKING_FOLDER}"

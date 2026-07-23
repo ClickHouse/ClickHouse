@@ -86,20 +86,15 @@ public:
             const auto & element = elements.emplace_back(config, config_prefix + "." + name);
 
             /// The chosen codec becomes the part's default codec, which some writers (statistics and
-            /// text-index streams) feed raw, untyped data into. An experimental codec would bypass the
-            /// per-column `allow_experimental_codecs` gate, and a codec that requires a column type (e.g.
-            /// `PCO`) would only fail later, at the first such write, with a confusing error. Reject both
-            /// here — mirroring how the `default_compression_codec`, `marks_compression_codec` and
-            /// `primary_key_compression_codec` settings are validated — so a misconfiguration is reported
-            /// when the server configuration is loaded.
+            /// text-index streams) feed raw, untyped data into. A codec that requires a column type
+            /// (e.g. `PCO`) would only fail later, at the first such write, with a confusing error.
+            /// Reject it here — mirroring how the `default_compression_codec`, `marks_compression_codec`
+            /// and `primary_key_compression_codec` settings are validated — so a misconfiguration is
+            /// reported when the server configuration is loaded. A lossy codec (e.g. `SZ3`) is rejected
+            /// by `get` itself while resolving without a column type. Experimental codecs are not
+            /// rejected: writing one into the server configuration is the operator's opt-in, and the
+            /// session `allow_experimental_codecs` gate applies only where per-query user input enters.
             auto codec = factory.get(element.family_name, element.level);
-            if (codec->isExperimental())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "The '{}' configuration cannot use the experimental codec {}. Experimental codecs can only be"
-                    " specified per column (with the 'allow_experimental_codecs' setting enabled)",
-                    config_prefix,
-                    element.family_name);
             if (codec->requiresColumnTypeToCompress())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,

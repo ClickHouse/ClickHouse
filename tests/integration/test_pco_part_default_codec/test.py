@@ -7,12 +7,13 @@ cluster = ClickHouseCluster(__file__)
 # A data part records its default compression codec in `default_compression_codec.txt`. That codec is
 # fed raw — without a column type — into untyped streams such as the statistics and text-index
 # serialization, and a mutation copies the source part default codec straight into the writer of the
-# new part. Such a stream can only accept a codec that neither requires a column type (e.g. `PCO`) nor
-# is experimental (e.g. the lossy `SZ3` / `ALP`, which reinterpret the opaque bytes as floating-point
-# values). The table compression settings and the server `<compression>` selector already reject such
-# codecs up front, but an attached or pre-fix part may still carry an unsuitable `CODEC(...)` in its
-# metadata. The part-load path must enforce the same invariant (fall back to the server default codec)
-# so the bad metadata cannot reach a mutation writer and fail with a confusing write-time error.
+# new part. Such a stream can only accept a codec that does not require a column type (`PCO` cannot
+# compress typeless data at all, and `ALP` reinterprets the opaque bytes as floating-point values and
+# rejects a blob whose size is not a multiple of the element width). The table compression settings
+# and the server `<compression>` selector already reject such codecs up front, but an attached or
+# pre-fix part may still carry an unsuitable `CODEC(...)` in its metadata. The part-load path must
+# enforce the same invariant (fall back to the server default codec) so the bad metadata cannot reach
+# a mutation writer and fail with a confusing write-time error.
 node = cluster.add_instance("node")
 # A node whose default codec comes from a size-based `<compression>` selector (parts >= 1000 bytes use
 # `ZSTD(3)`, smaller parts fall through to `LZ4`) rather than from the `default_compression_codec`
@@ -97,11 +98,11 @@ def test_part_default_codec_requiring_type_is_sanitized_on_load(start_cluster):
     check_part_default_codec_is_sanitized_on_load("t_pco_default", "PCO")
 
 
-def test_part_default_codec_experimental_is_sanitized_on_load(start_cluster):
-    # `ALP` is experimental but does NOT report `requiresColumnTypeToCompress()`, so the load-path guard
-    # must reject experimental codecs too (not only type-requiring ones), matching the table-settings /
-    # `<compression>` selector predicate. Without that, `ALP` would slip through and corrupt or reject
-    # the opaque statistics bytes at the first mutation.
+def test_part_default_codec_alp_untyped_is_sanitized_on_load(start_cluster):
+    # `ALP` built without a column type falls back to the `Float64` element width and reports
+    # `requiresColumnTypeToCompress()`: it reinterprets the bytes as floating-point values and rejects
+    # any blob whose size is not a multiple of that width. Without the guard it would slip through and
+    # reject the opaque statistics bytes at the first mutation.
     check_part_default_codec_is_sanitized_on_load("t_alp_default", "ALP")
 
 

@@ -84,8 +84,9 @@ public:
     CompressionCodecPtr get(const String & compression_codec) const;
 
     /// Return a human-readable reason why `compression_codec` (a codec name or chain such as
-    /// `"PCO, LZ4"`) can not be safely applied without a column type — because a codec in it is
-    /// experimental, requires a column type, or is lossy — or an empty string if it is safe.
+    /// `"PCO, LZ4"`) can not be safely applied without a column type — because a codec in it
+    /// requires a column type or is lossy — or an empty string if it is safe. Experimentality is
+    /// not classified here: it is a session-gated policy, not a data-safety property.
     /// Unlike `get(const String &)`, this does NOT throw while resolving a lossy codec (e.g. `SZ3`)
     /// without a column type; it classifies it. This lets callers both reject such a codec on the
     /// create path and normalize (reset) it on the metadata-load path, where throwing would fail the

@@ -2654,13 +2654,14 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
 /// Whether a codec is unsafe for the untyped MergeTree compression settings
 /// (`default_compression_codec`, `marks_compression_codec`, `primary_key_compression_codec`).
 ///
-/// These settings are applied without a column type, which bypasses the `allow_experimental_codecs`
-/// validation of column-level codecs; experimental codecs must not sneak in through them. They are
-/// also applied to untyped streams: `marks_compression_codec` and `primary_key_compression_codec`
-/// compress the marks and primary key directly, and `default_compression_codec` becomes the part
-/// default codec, which is fed raw into the statistics and text-index streams. So a codec that
-/// requires a column type (e.g. `PCO`) or is lossy (e.g. `SZ3`) would only fail later, at the first
-/// such write.
+/// These settings are applied to untyped streams: `marks_compression_codec` and
+/// `primary_key_compression_codec` compress the marks and primary key directly, and
+/// `default_compression_codec` becomes the part default codec, which is fed raw into the statistics
+/// and text-index streams. So a codec that requires a column type (e.g. `PCO`) or is lossy
+/// (e.g. `SZ3`) would only fail later, at the first such write. Experimental codecs are not
+/// classified as unsafe here: they are gated with the session `allow_experimental_codecs` setting
+/// where fresh user input enters (see `registerStorageMergeTree` and
+/// `MergeTreeData::checkAlterIsPossible`), and stored metadata carrying one must remain loadable.
 ///
 /// Returns an empty string if the codec is safe, otherwise a human-readable reason. The classification
 /// is delegated to `CompressionCodecFactory::getReasonUnsafeForUntypedData`, which — unlike

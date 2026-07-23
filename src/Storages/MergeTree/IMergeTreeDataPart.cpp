@@ -1679,11 +1679,10 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
 
     /// The part default codec is fed raw — without a column type — into untyped streams such as the
     /// statistics and text-index serialization, and a mutation copies it straight into the writer of
-    /// the new part (see `MutateTask`). Such a stream can only accept a codec that neither requires a
-    /// column type (e.g. `PCO`) nor is experimental (e.g. the lossy `SZ3` and `ALP`): the former cannot
-    /// compress typeless data at all, while the latter reinterpret the opaque bytes (e.g. as
-    /// floating-point values) and would corrupt them or reject a blob whose size is not a multiple of the
-    /// element width. Both would only fail — or silently lose data — at the first such write. The table
+    /// the new part (see `MutateTask`). Such a stream can only accept a codec that does not require a
+    /// column type (e.g. `PCO` cannot compress typeless data at all, and `ALP` reinterprets the opaque
+    /// bytes as floating-point values and rejects a blob whose size is not a multiple of the element
+    /// width). Such a codec would only fail — or silently lose data — at the first such write. The table
     /// compression settings and the server `<compression>` selector already reject such codecs up front
     /// with the same predicate (see `unsafeUntypedCompressionCodecReason` in `MergeTreeSettings.cpp`);
     /// enforce the same invariant on the metadata-load path too, where an attached or pre-fix part may
@@ -1703,18 +1702,18 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
     /// merge. The part is not counted as active yet while its metadata loads, so its size is also
     /// added to the active total (the last argument) to evaluate a `min_part_size_ratio` selector
     /// case as if the part were already active — e.g. a lone attached part must get ratio `1`, not `0`.
-    if (default_codec->requiresColumnTypeToCompress() || default_codec->isExperimental())
+    if (default_codec->requiresColumnTypeToCompress())
     {
         LOG_WARNING(
             storage.log,
             "Part {} has a default compression codec that cannot be used for untyped streams (it requires a column "
-            "type or is experimental); falling back to the table's default codec.",
+            "type); falling back to the table's default codec.",
             name);
         default_codec = storage.getCompressionCodecForPart(getBytesOnDisk(), {}, time(nullptr), getBytesOnDisk());
 
         /// The selection above never returns a codec unsafe for untyped data; this is a fail-safe for
         /// a future drift of that invariant, because such a codec would corrupt data at the next write.
-        if (default_codec->requiresColumnTypeToCompress() || default_codec->isExperimental())
+        if (default_codec->requiresColumnTypeToCompress())
             default_codec = CompressionCodecFactory::instance().getDefaultCodec();
     }
 }
