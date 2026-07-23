@@ -3531,21 +3531,11 @@ bool MutateTask::prepare()
         prefix = TEMP_DIRECTORY_PREFIX;
 
     String tmp_part_dir_name = prefix + ctx->future_part->name;
-    ctx->temporary_directory_lock = ctx->data->getTemporaryPartDirectoryHolder(tmp_part_dir_name);
 
-    /// Reclaim a stale leftover temporary directory (a mutation interrupted or rolled back and retried
-    /// with the same deterministic name) BEFORE constructing the part storage. Otherwise packed storage
-    /// seeds its archive reader and snapshots the mark layout from the leftover data.packed, and
-    /// finalizeWriter later carries every logical file the new mutation did not rewrite into the new
-    /// part. The temporary-directory lock above guarantees no concurrent operation owns this name.
-    {
-        auto relative_tmp_dir = fs::path(ctx->data->getRelativeDataPath()) / tmp_part_dir_name;
-        if (ctx->disk->existsDirectory(relative_tmp_dir))
-        {
-            LOG_WARNING(ctx->log, "Removing old temporary directory {}", (fs::path(ctx->disk->getPath()) / relative_tmp_dir).string());
-            ctx->disk->removeRecursive(relative_tmp_dir);
-        }
-    }
+    /// The temporary directory name is deterministic, so an interrupted mutation can leave a stale
+    /// leftover behind; claim the name and reclaim the leftover, see
+    /// `MergeTreeData::claimTemporaryPartDirectory` for the rationale.
+    ctx->temporary_directory_lock = ctx->data->claimTemporaryPartDirectory(ctx->disk, tmp_part_dir_name);
 
     auto builder = ctx->data->getDataPartBuilder(ctx->future_part->name, single_disk_volume, tmp_part_dir_name, getReadSettings());
     builder.withPartFormat(ctx->future_part->part_format);

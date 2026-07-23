@@ -357,7 +357,6 @@ namespace ServerSetting
 
 namespace FailPoints
 {
-    extern const char create_empty_part_inject_stale_dir[];
     extern const char claim_inject_stale_part_dir[];
 }
 
@@ -12027,29 +12026,11 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     ReservationPtr reservation = reserveSpacePreferringTTLRules(metadata_snapshot, 0, move_ttl_infos, time(nullptr), 0, true);
     VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
 
-    auto tmp_dir_holder = getTemporaryPartDirectoryHolder(EMPTY_PART_TMP_PREFIX + new_part_name);
-
-    auto empty_part_disk = data_part_volume->getDisk();
-    auto relative_empty_part_dir = fs::path(relative_data_path) / (EMPTY_PART_TMP_PREFIX + new_part_name);
-
-    /// For testing: simulate a stale leftover directory from a previously interrupted operation.
-    fiu_do_on(FailPoints::create_empty_part_inject_stale_dir,
-    {
-        empty_part_disk->createDirectories(relative_empty_part_dir);
-    });
-
     /// The directory may already exist as a stale leftover: a previous covering operation
     /// (DROP/DETACH/MOVE/REPLACE PARTITION) that created this empty part can be interrupted after the
-    /// directory is created but before the part is renamed to its persistent name (e.g. a rolled-back
-    /// transaction with a deferred rename, or a crash). The tmp_dir_holder acquired above guarantees no
-    /// concurrent operation owns this name, so an existing directory can only be such a leftover and is
-    /// safe to remove. Remove it BEFORE constructing the storage, so packed storage does not seed its
-    /// archive reader or snapshot the mark layout (index_granularity_info) from the stale contents.
-    if (empty_part_disk->existsDirectory(relative_empty_part_dir))
-    {
-        LOG_WARNING(log, "Removing old temporary directory {}", (fs::path(empty_part_disk->getPath()) / relative_empty_part_dir).string());
-        empty_part_disk->removeRecursive(relative_empty_part_dir);
-    }
+    /// directory is created but before the part is renamed to its persistent name. Claim the name and
+    /// reclaim the leftover, see `claimTemporaryPartDirectory` for the rationale.
+    auto tmp_dir_holder = claimTemporaryPartDirectory(data_part_volume->getDisk(), EMPTY_PART_TMP_PREFIX + new_part_name);
 
     auto new_data_part = getDataPartBuilder(new_part_name, data_part_volume, EMPTY_PART_TMP_PREFIX + new_part_name, getReadSettings())
         .withBytesAndRows(0, 0, 0)

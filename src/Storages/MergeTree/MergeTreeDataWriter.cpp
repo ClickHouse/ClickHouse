@@ -758,7 +758,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         temp_prefix += temp_postfix + "_";
 
     std::string part_dir = temp_prefix + part_name;
-    temp_part->temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
 
     auto indices = collectSkipIndicesToMaterialize(
         metadata_snapshot,
@@ -888,24 +887,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
 
-    /// The part directory name can be non-unique because of stale files from previous runs (an insert
-    /// interrupted or rolled back after the directory was created but before it was committed, then
-    /// retried with the same block/part name). Such a leftover must be removed BEFORE the part storage
-    /// is constructed: otherwise packed storage would seed its archive reader and snapshot the mark
-    /// layout (index_granularity_info) from the stale contents at construction, and a retry could
-    /// inherit them even though the directory is later reclaimed. The temporary-directory lock acquired
-    /// above guarantees no concurrent operation owns this name, so an existing directory can only be
-    /// such a stale leftover and is safe to remove.
-    if (may_exist)
-    {
-        auto data_part_disk = data_part_volume->getDisk();
-        auto relative_part_dir = fs::path(data.getRelativeDataPath()) / part_dir;
-        if (data_part_disk->existsDirectory(relative_part_dir))
-        {
-            LOG_WARNING(log, "Removing old temporary directory {}", (fs::path(data_part_disk->getPath()) / relative_part_dir).string());
-            data_part_disk->removeRecursive(relative_part_dir);
-        }
-    }
+    /// The part directory name can be non-unique because of stale leftovers of previous runs; claim the
+    /// name and reclaim the leftover, see `MergeTreeData::claimTemporaryPartDirectory` for the rationale.
+    temp_part->temporary_directory_lock = data.claimTemporaryPartDirectory(data_part_volume->getDisk(), part_dir, may_exist);
 
     auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings(), /*part_may_exist_on_disk=*/ may_exist)
         .withPartFormat(data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr))
