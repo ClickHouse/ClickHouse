@@ -399,10 +399,11 @@ check_if_not_detached "EXISTS DICTIONARY t_reattach_kind" "t_reattach_kind"
 
 function check_fails_kind_without_detach()
 {
+    local expected_error="${3:-BAD_ARGUMENTS}"
     check_if_detached_impl "$1" "$2"
     if [ "$REATTACH_STATUS" -eq 0 ]; then
         echo "FAIL (query unexpectedly succeeded)"
-    elif ! echo "$REATTACH_OUTPUT" | grep -q "BAD_ARGUMENTS"; then
+    elif ! echo "$REATTACH_OUTPUT" | grep -q "$expected_error"; then
         echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
     elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.$2"; then
         echo "FAIL (table was detached for a kind-mismatched metadata query)"
@@ -413,6 +414,14 @@ function check_fails_kind_without_detach()
 
 check_fails_kind_without_detach "SHOW CREATE VIEW t_reattach_kind" "t_reattach_kind"
 check_fails_kind_without_detach "SHOW CREATE DICTIONARY t_reattach_kind" "t_reattach_kind"
+
+# The kind-specific `DROP`/`DETACH` forms fail the same way: `InterpreterDropQuery` throws INCORRECT_QUERY
+# on an `is_view`/`is_dictionary` mismatch before touching the table's storage, so the hook must not
+# detach the table either.
+check_fails_kind_without_detach "DROP VIEW t_reattach_kind" "t_reattach_kind" "INCORRECT_QUERY"
+check_fails_kind_without_detach "DETACH VIEW t_reattach_kind" "t_reattach_kind" "INCORRECT_QUERY"
+check_fails_kind_without_detach "DROP DICTIONARY t_reattach_kind" "t_reattach_kind" "INCORRECT_QUERY"
+check_fails_kind_without_detach "DETACH DICTIONARY t_reattach_kind" "t_reattach_kind" "INCORRECT_QUERY"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_kind"
 

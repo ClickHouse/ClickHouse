@@ -1309,14 +1309,23 @@ bool mainTableExistenceRequired(const IAST & ast)
 }
 
 /// The object kind the query's main-table reference demands (see `ExpectedObjectKind`). Everything not
-/// enumerated here — including `SHOW CREATE TABLE` and `EXISTS TABLE`, which accept any object kind —
-/// places no constraint on the resolved storage.
+/// enumerated here — including `SHOW CREATE TABLE`, `EXISTS TABLE` and plain `DROP`/`DETACH TABLE`, which
+/// accept any object kind — places no constraint on the resolved storage. The kind-specific `DROP`/`DETACH`
+/// forms are constrained because `InterpreterDropQuery::executeToTableImpl` throws `INCORRECT_QUERY` on an
+/// `is_view`/`is_dictionary` mismatch before touching the table's storage.
 ExpectedObjectKind mainTableExpectedObjectKind(const IAST & ast)
 {
     if (ast.as<ASTExistsViewQuery>() || ast.as<ASTShowCreateViewQuery>())
         return ExpectedObjectKind::View;
     if (ast.as<ASTExistsDictionaryQuery>() || ast.as<ASTShowCreateDictionaryQuery>())
         return ExpectedObjectKind::Dictionary;
+    if (const auto * drop = ast.as<ASTDropQuery>())
+    {
+        if (drop->is_view)
+            return ExpectedObjectKind::View;
+        if (drop->is_dictionary)
+            return ExpectedObjectKind::Dictionary;
+    }
     return ExpectedObjectKind::Any;
 }
 
