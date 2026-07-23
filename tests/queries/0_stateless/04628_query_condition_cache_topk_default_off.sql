@@ -6,7 +6,9 @@
 -- gated behind the `use_query_condition_cache_for_top_k` setting and is DISABLED by default.
 -- This test asserts the default-off contract at every gated touch point:
 --   * a TopK read must not reuse an entry primed by a plain `SELECT ... WHERE` with the same
---     predicate (no predicate-only reuse path);
+--     predicate (no predicate-only reuse path) — including skip-index-only TopK shapes where no
+--     `__topKFilter` node is folded into the filter DAG, so the plain condition hash of the TopK
+--     read would otherwise match the plain `WHERE` entry;
 --   * a TopK read must not write any QCC entry (neither the WHERE write in
 --     `updateQueryConditionCache`, nor index-analysis exclusions in `selectRangesToRead`,
 --     nor row-level entries from the reader);
@@ -64,6 +66,46 @@ ORDER BY event_time_microseconds;
 
 SELECT '--- TopK still returns the planted row';
 SELECT v1 FROM tab WHERE v2 = 10000 ORDER BY v1 ASC LIMIT 5;
+
+SELECT '--- A skip-index-only TopK read must not reuse a plain WHERE entry either';
+
+DROP TABLE IF EXISTS tab_idx;
+
+CREATE TABLE tab_idx (id UInt32, v1 UInt32, v2 UInt32, INDEX idx_v1 v1 TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 64,
+         min_bytes_for_wide_part = 0,
+         min_bytes_for_full_part_storage = 0,
+         add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO tab_idx SELECT rand(), number, number FROM numbers(1_000_000);
+
+SYSTEM CLEAR QUERY CONDITION CACHE;
+
+-- With dynamic filtering off, the plan is stamped as TopK via the minmax skip index on the sort
+-- column alone, and no `__topKFilter` node is folded into the filter DAG. The plain condition hash
+-- of the TopK read then equals that of the plain WHERE, so without the read-side gate in
+-- `filterPartsByQueryConditionCache` the TopK read would hit the primed entry.
+SELECT v1 FROM tab_idx WHERE v2 = 10000 FORMAT Null SETTINGS log_comment = '04628_si_prime';
+SELECT v1 FROM tab_idx WHERE v2 = 10000 ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS use_top_k_dynamic_filtering = 0, log_comment = '04628_si_topk_after_prime';
+SELECT v1 FROM tab_idx WHERE v2 = 10000 FORMAT Null SETTINGS log_comment = '04628_si_plain_reuse';
+
+SYSTEM FLUSH LOGS query_log;
+
+-- Column: (any QCC hit). Expected: prime = 0, topk-after-prime = 0, plain-reuse = 1.
+SELECT
+    log_comment,
+    ProfileEvents['QueryConditionCacheHits'] > 0
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+    AND type = 'QueryFinish'
+    AND current_database = currentDatabase()
+    AND log_comment IN ('04628_si_prime', '04628_si_topk_after_prime', '04628_si_plain_reuse')
+ORDER BY event_time_microseconds;
+
+SELECT '--- Skip-index-only TopK still returns the planted row';
+SELECT v1 FROM tab_idx WHERE v2 = 10000 ORDER BY v1 ASC LIMIT 5 SETTINGS use_top_k_dynamic_filtering = 0;
+
+DROP TABLE tab_idx;
 
 SELECT '--- A TopK read must not write any QCC entry when the gate is off';
 SYSTEM CLEAR QUERY CONDITION CACHE;

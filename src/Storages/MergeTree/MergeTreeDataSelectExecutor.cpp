@@ -1557,6 +1557,16 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
         return;
 
+    /// The query condition cache for `ORDER BY ... LIMIT n` (TopK) reads is gated behind the
+    /// `use_query_condition_cache_for_top_k` setting (disabled by default). When it is off, skip the
+    /// consult entirely for any read stamped as TopK — including shapes where no `__topKFilter` node
+    /// is folded into the filter DAG (skip-index-only TopK, or a query with a PREWHERE), whose plain
+    /// condition hash would otherwise still hit entries primed by an ordinary `SELECT ... WHERE`.
+    /// The write sides are gated symmetrically (see updateQueryConditionCache, setTopKColumn and
+    /// selectRangesToRead), so with the gate off a TopK read neither reads nor writes the cache.
+    if (top_k_filter_info && !settings[Setting::use_query_condition_cache_for_top_k])
+        return;
+
     QueryConditionCachePtr query_condition_cache = context->getQueryConditionCache();
 
     /// Each condition is looked up under two keys (see the write sides):
@@ -1572,7 +1582,8 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     /// different disjunction mode) never reads them. The two verdicts are merged: a mark may be
     /// skipped iff either verdict says it does not match. This keeps the pure-QCC case
     /// (use_skip_indexes = 0 still reusing row-level entries) working while preventing the
-    /// skip-index poisoning of issue #108519. TopK WHERE reads also consult the
+    /// skip-index poisoning of issue #108519. TopK WHERE reads (which only get here when
+    /// `use_query_condition_cache_for_top_k` is on, see the gate above) also consult the
     /// `topk_reuse_predicate_only_hash` so plain `SELECT ... WHERE` entries can be reused;
     /// TopK-salted entries are not read otherwise.
 
@@ -1760,13 +1771,10 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     if (const auto & filter_actions_dag = select_query_info.filter_actions_dag)
     {
         const auto * output = filter_actions_dag->getOutputs().front();
-        /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
-        /// `use_query_condition_cache_for_top_k` setting (disabled by default). Only partition the WHERE
-        /// consult key by the TopK plan (and take the predicate-only reuse path) when the setting is on;
-        /// otherwise consult with the plain condition hash. When off, the write paths store no TopK-salted
-        /// entries, so an unsalted consult is both correct and consistent with them.
-        const bool apply_top_k_salt = settings[Setting::use_query_condition_cache_for_top_k];
-        auto stats = drop_mark_ranges(output, apply_top_k_salt);
+        /// Reaching this point with a TopK read implies `use_query_condition_cache_for_top_k` is on
+        /// (the gate returns early above otherwise), so the WHERE consult key is always partitioned
+        /// by the TopK plan (with the predicate-only reuse path) for TopK reads.
+        auto stats = drop_mark_ranges(output, /*apply_top_k_salt=*/ true);
         LOG_DEBUG(log,
                 "Query condition cache has dropped {}/{} granules for WHERE condition {}.",
                 stats.granules_dropped,
