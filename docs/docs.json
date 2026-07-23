@@ -156,9 +156,6 @@
       "src": "/_site/customizations/galaxy.js"
     },
     {
-      "src": "/_site/customizations/scroll-reset.js"
-    },
-    {
       "src": "/_site/customizations/custom-footer.js"
     },
     {
