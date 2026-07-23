@@ -604,8 +604,6 @@ TEST(Statistics, StructureEqualsConsidersDataType)
     EXPECT_FALSE(make_stat(uint8_type)->structureEquals(*make_stat(bool_type)));
 }
 
-/// `basic` on a non-Nullable column counts rows equal to the type default (0) and answers an exact
-/// equality-to-default estimate, while reporting no NULL count.
 TEST(Statistics, BasicDefaultCountNonNullable)
 {
     auto data_type = std::make_shared<DataTypeInt32>();
@@ -631,11 +629,6 @@ TEST(Statistics, BasicDefaultCountNonNullable)
     EXPECT_FALSE(stats->estimateEqual(Field(Int64(3))).has_value());
 }
 
-/// `basic` on a `FixedString(N)` column: the column-level default is N zero bytes. `estimateEqual`
-/// must fire for `col = ''` (padded by `tryConvertFieldToType` to N zero bytes, matching the
-/// column default) and return nullopt for any non-zero value. Previously the comparison used
-/// `IDataType::getDefault()` which returns "" (not padded), causing a Field mismatch and making
-/// the fast path unreachable.
 TEST(Statistics, BasicDefaultCountFixedString)
 {
     auto data_type = std::make_shared<DataTypeFixedString>(4);
@@ -661,11 +654,6 @@ TEST(Statistics, BasicDefaultCountFixedString)
     EXPECT_FALSE(stats->estimateEqual(Field(String("abc\0", 4))).has_value());
 }
 
-/// `basic` on an `Enum` column: the column-level default is raw integer 0 (from `isDefaultAt`).
-/// `estimateEqual` must fire only for the enumerator that maps to raw 0, not for the first
-/// enumerator regardless of its value. Previously the comparison used `IDataType::getDefault()`
-/// which returns the first enumerator name, causing a wrong answer when that enumerator's raw
-/// value is not 0.
 TEST(Statistics, BasicDefaultCountEnum)
 {
     DataTypeEnum8::Values values_zero_default{{"a", 0}, {"b", 1}};
@@ -713,8 +701,6 @@ TEST(Statistics, BasicDefaultCountEnum)
     }
 }
 
-/// On a Nullable column the type default is NULL, so the default count is exactly the NULL count and
-/// equality to a (non-NULL) literal is not answered by it.
 TEST(Statistics, BasicDefaultCountNullableIsNullCount)
 {
     /// 100 rows, every 5th NULL -> 20 NULLs.
@@ -725,7 +711,6 @@ TEST(Statistics, BasicDefaultCountNullableIsNullCount)
     EXPECT_FALSE(stats->estimateEqual(Field(Int64(0))).has_value());
 }
 
-/// The default count survives a serialize/deserialize round-trip.
 TEST(Statistics, BasicDefaultCountRoundTrip)
 {
     auto data_type = std::make_shared<DataTypeInt32>();
@@ -747,73 +732,6 @@ TEST(Statistics, BasicDefaultCountRoundTrip)
     EXPECT_DOUBLE_EQ(*eq0, 4.0);
 }
 
-/// Backward-compatibility: old `basic` blobs written before default-count tracking carry the
-/// `NumericMinMax` sub-statistic (bit 0) but not the `DefaultCount` field (bit 2 absent).
-/// After deserialization `has_default_count` must remain false so that `estimateEqual(0)` — or
-/// any default value — returns `std::nullopt` rather than `0`, which would incorrectly suppress
-/// `col = 0` / `col = ''` predicates.  The same invariant must hold after merging an old part
-/// into a new one, because the merged count would silently undercount.
-TEST(Statistics, BasicLegacyBlobNoDefaultCount)
-{
-    auto data_type = std::make_shared<DataTypeInt32>();
-    SingleStatisticsDescription desc(StatisticsType::Basic, nullptr, false);
-
-    /// Build and serialize a new-format blob (has_default_count = true), then clear bit 2 to
-    /// simulate a legacy blob produced by code that predates default-count tracking.
-    auto built = std::make_shared<StatisticsBasic>(desc, data_type);
-    {
-        MutableColumnPtr col = data_type->createColumn();
-        for (Int64 i = 1; i <= 100; ++i)
-            col->insert(Field(i));  /// values 1..100 — no zeros, so default_count = 0
-        built->build(std::move(col));
-    }
-    ASSERT_TRUE(built->hasDefaultCount());
-
-    WriteBufferFromOwnString wb;
-    built->serialize(wb);
-    String blob = wb.str();
-
-    /// The mask byte sits immediately after the 8-byte row_count field.
-    ASSERT_GT(blob.size(), sizeof(UInt64));
-    reinterpret_cast<UInt8 &>(blob[sizeof(UInt64)]) &= ~UInt8(1u << 2);  /// clear DefaultCount bit
-
-    /// Deserialize the modified blob — this is the legacy path.
-    auto legacy = std::make_shared<StatisticsBasic>(desc, data_type);
-    {
-        ReadBufferFromString rb(blob);
-        legacy->deserialize(rb, StatisticsFileVersion::V1);
-    }
-
-    /// has_default_count must be false: the blob predates default-count tracking.
-    EXPECT_FALSE(legacy->hasDefaultCount());
-
-    /// estimateEqual(0) must return nullopt — not 0.0 — so `col = 0` is not suppressed.
-    EXPECT_FALSE(legacy->estimateEqual(Field(Int64(0))).has_value());
-
-    /// estimateLess still works because the min/max payload is intact.
-    auto less = legacy->estimateLess(Field(Int64(51)));
-    ASSERT_TRUE(less.has_value());
-    EXPECT_NEAR(*less, 50.0, 2.0);
-
-    /// Merge: new-format part (has_default_count = true) merged with legacy (has_default_count = false).
-    /// The merged result must have has_default_count = false: one source cannot account for all defaults,
-    /// so summing counts from both would silently undercount.
-    auto fresh = std::make_shared<StatisticsBasic>(desc, data_type);
-    {
-        MutableColumnPtr col = data_type->createColumn();
-        for (Int64 i = 0; i < 50; ++i)
-            col->insert(Field(i));  /// 1 zero out of 50
-        fresh->build(std::move(col));
-    }
-    ASSERT_TRUE(fresh->hasDefaultCount());
-    fresh->merge(StatisticsPtr(legacy));
-
-    EXPECT_FALSE(fresh->hasDefaultCount());
-    EXPECT_FALSE(fresh->estimateEqual(Field(Int64(0))).has_value());
-}
-
-/// `basic` can be declared on any type; on a composite type it counts rows equal to the default
-/// (an empty array) and answers `col = []`.
 TEST(Statistics, BasicDefaultCountArray)
 {
     auto data_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());

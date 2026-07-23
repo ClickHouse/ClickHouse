@@ -31,9 +31,6 @@ enum BasicFeatureMask : UInt8
 {
     NumericMinMax = 1u << 0,
     StringLengthSum = 1u << 1,
-    /// Count of rows equal to the type's default value. Historically this bit held the NULL count
-    /// of a Nullable column; the type default of a Nullable column *is* NULL, so the on-disk value
-    /// is unchanged and old blobs deserialize correctly (see the class comment in the header).
     DefaultCount = 1u << 2,
 };
 
@@ -90,12 +87,6 @@ StatisticsBasic::StatisticsBasic(const SingleStatisticsDescription & description
     default_col->insertDefault();
     column_default_field = (*default_col)[0];
 
-    /// A column's type default is NULL when it is `Nullable`/`LowCardinality(Nullable)` (detected
-    /// via `isNullableOrLowCardinalityNullable`) OR when the column-level default field is `NULL`
-    /// even without a `Nullable` wrapper — concretely `Variant` and `Dynamic`, whose
-    /// `ColumnVariant::isDefaultAt` / `ColumnDynamic::isDefaultAt` return true for
-    /// `NULL_DISCRIMINATOR` rows.  In both cases `default_count` from `build` equals the NULL
-    /// count and should be surfaced via `hasNullCount()` / `getNullCount()`.
     is_nullable = isNullableOrLowCardinalityNullable(data_type_) || column_default_field.isNull();
 }
 
@@ -103,11 +94,6 @@ void StatisticsBasic::build(const ColumnPtr & column)
 {
     const size_t column_size = column->size();
 
-    /// Count rows equal to the type's default value. For a Nullable / LowCardinality(Nullable)
-    /// column the type default is NULL, and `getNumberOfDefaultRows` counts exactly the NULL rows
-    /// (`ColumnNullable::isDefaultAt` == `isNullAt`; the LC dictionary keeps NULL at index 0). For a
-    /// non-Nullable column it counts the type-default rows (0, '', [], ...). This works natively on
-    /// Const/Sparse columns without materializing them.
     const UInt64 defaults_in_block = column->getNumberOfDefaultRows();
     default_count += defaults_in_block;
     has_default_count = true;
@@ -115,10 +101,6 @@ void StatisticsBasic::build(const ColumnPtr & column)
     /// NULL rows in this block; used only to detect all-NULL blocks for the min/max guard below.
     const UInt64 nulls_in_block = is_nullable ? defaults_in_block : 0;
 
-    /// Skip the min/max update for blocks with no non-NULL rows. `ColumnNullable::getExtremes`
-    /// returns the `POSITIVE_INFINITY/POSITIVE_INFINITY` sentinel for an all-NULL block, which
-    /// would otherwise be merged into the running bounds and poison the stored max for the
-    /// whole part as soon as the sentinel meets a real bound from another block.
     if (tracks_numeric && nulls_in_block < column_size)
     {
         Field min_field;
@@ -153,23 +135,9 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
     if (tracks_string)
         string_total_bytes += other->string_total_bytes;
 
-    /// The MergeTask pipeline merges built parts into an empty collector created by
-    /// `ColumnsStatistics(metadata)`.  An empty accumulator (`row_count == 0`) has
-    /// `has_default_count == false` because nothing has been built yet; applying the
-    /// conjunction below would permanently clear the flag even when `other` has a valid
-    /// count.  Special-case that state: adopt the other side wholesale.  The symmetric
-    /// case (other empty) requires no action — the accumulator is unchanged.  Only when
-    /// both sides are non-empty does the conjunction rule apply (to handle legacy parts
-    /// that predate `default_count` tracking).
-    if (row_count == 0)
-    {
-        default_count = other->default_count;
-        has_default_count = other->has_default_count;
-    }
-    else if (other->row_count > 0)
+    if (has_default_count)
     {
         default_count += other->default_count;
-        has_default_count = has_default_count && other->has_default_count;
     }
 
     row_count += other->row_count;
@@ -184,8 +152,8 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
         mask |= BasicFeatureMask::NumericMinMax;
     if (tracks_string)
         mask |= BasicFeatureMask::StringLengthSum;
-    if (has_default_count)
-        mask |= BasicFeatureMask::DefaultCount;
+
+    mask |= BasicFeatureMask::DefaultCount;
     writeIntBinary(mask, buf);
 
     if (tracks_numeric)
@@ -195,8 +163,8 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
     }
     if (tracks_string)
         writeIntBinary(string_total_bytes, buf);
-    if (has_default_count)
-        writeIntBinary(default_count, buf);
+
+    writeIntBinary(default_count, buf);
 }
 
 void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
@@ -309,6 +277,16 @@ Int64 StatisticsBasic::getStringLengthAvg() const
     if (non_null == 0)
         return 0;
     return static_cast<Int64>(string_total_bytes / non_null);
+}
+
+bool StatisticsBasic::isCompatibleWith(const IStatistics & other) const
+{
+    const auto * other_basic = typeid_cast<const StatisticsBasic *>(&other);
+    if (!other_basic)
+        return false;
+    return tracks_numeric == other_basic->tracks_numeric
+        && tracks_string == other_basic->tracks_string
+        && has_default_count == other_basic->has_default_count;
 }
 
 bool basicStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & /*data_type*/)

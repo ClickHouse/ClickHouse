@@ -48,6 +48,8 @@ public:
     std::optional<Float64> estimateEqual(const Field & val) const override;
     String getNameForLogs() const override;
 
+    bool isCompatibleWith(const IStatistics & other) const override;
+
     bool hasNumericMinMax() const { return tracks_numeric; }
     bool hasStringLengthAvg() const { return tracks_string; }
     /// A NULL count is available when the type's column default is `NULL` (i.e. `Nullable`,
@@ -78,10 +80,7 @@ private:
     UInt64 row_count = 0;
 
     DataTypePtr data_type; /// stored with LowCardinality and Nullable removed
-    /// Column-level default: the Field produced by `IColumn::insertDefault()`. Used in
-    /// `estimateEqual` to match what `getNumberOfDefaultRows` / `isDefaultAt` counts during
-    /// `build`. This differs from `IDataType::getDefault()` for types such as `FixedString(N)`
-    /// (N zero bytes vs. "") and `Enum` (raw integer 0 vs. first enumerator name).
+    /// Column-level default: the Field produced by `IColumn::insertDefault()`.
     Field column_default_field;
     bool tracks_numeric = false;
     bool tracks_string = false;
