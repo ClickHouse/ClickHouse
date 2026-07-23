@@ -1,8 +1,11 @@
 #include <gtest/gtest.h>
 
+#include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
+#include <Storages/VirtualColumnsDescription.h>
 
 using namespace DB;
 
@@ -55,12 +58,27 @@ ReplicatedMergeTreeTableMetadata makeMetadata(const MetadataFields & fields)
     return ReplicatedMergeTreeTableMetadata::parseRaw(s);
 }
 
+/// The bugfix validation compiles this test against the merge-base sources, where
+/// `checkAndFindDiff` still takes a column set and a context to resolve the parsed
+/// expressions against. Dispatch on the available signature (from a template, so the
+/// discarded branch is not instantiated) — the test then builds against both sources
+/// and demonstrates the bug at runtime instead of breaking the "before" build.
+template <typename Metadata>
+ReplicatedMergeTreeTableMetadata::Diff callCheckAndFindDiff(const Metadata & local, const Metadata & from_zk)
+{
+    if constexpr (requires { local.checkAndFindDiff(from_zk, "test_table"); })
+        return local.checkAndFindDiff(from_zk, "test_table");
+    else
+        return local.checkAndFindDiff(
+            from_zk, ColumnsDescription{}, VirtualColumnsDescription{}, "test_table", getContext().context);
+}
+
 ReplicatedMergeTreeTableMetadata::Diff diffOf(const MetadataFields & local_fields, const MetadataFields & zk_fields)
 {
     tryRegisterFunctions();
     tryRegisterAggregateFunctions();
 
-    return makeMetadata(local_fields).checkAndFindDiff(makeMetadata(zk_fields), "test_table");
+    return callCheckAndFindDiff(makeMetadata(local_fields), makeMetadata(zk_fields));
 }
 
 }
